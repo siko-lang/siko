@@ -179,6 +179,7 @@ impl Lexer {
             ".." => Token::DoubleDot,
             ":" => Token::Colon,
             "=>" => Token::KeywordConstraint,
+            "&" => Token::Ampersand,
             _ => {
                 return Err(LexerError::General(
                     format!("Unsupported operator {}", operator),

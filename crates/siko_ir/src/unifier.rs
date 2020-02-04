@@ -107,6 +107,12 @@ impl Unifier {
                 self.unify(&to1, &to2)?;
                 Ok(())
             }
+            (Type::Ref(ty), type2) => {
+                return self.unify(ty, type2);
+            }
+            (type1, Type::Ref(ty)) => {
+                return self.unify(type1, ty);
+            }
             _ => return Err(Error::Fail),
         }
     }
