@@ -31,6 +31,10 @@ pub fn process_type(
             let (_, mir_typedef_id) = typedef_store.add_tuple(ir_type.clone(), items, mir_program);
             MirType::Named(mir_typedef_id)
         }
+        IrType::Ref(item) => {
+            let item = process_type(item, typedef_store, ir_program, mir_program);
+            MirType::Ref(Box::new(item))
+        }
     }
 }
 

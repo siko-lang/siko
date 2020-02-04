@@ -32,5 +32,6 @@ pub fn ir_type_to_rust_type(ty: &Type, program: &Program) -> String {
             )
         }
         Type::Boxed(ty) => format!("Box<{}>", ir_type_to_rust_type(ty, program)),
+        Type::Ref(ty) => format!("&{}", ir_type_to_rust_type(ty, program)),
     }
 }

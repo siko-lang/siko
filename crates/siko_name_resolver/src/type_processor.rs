@@ -143,6 +143,9 @@ pub fn subtitute_type_signature(
             IrTypeSignature::Tuple(new_items)
         }
         IrTypeSignature::Variant(_, _) => unreachable!(),
+        IrTypeSignature::Ref(item) => {
+            IrTypeSignature::Ref(subtitute_type_signature(item, from, to, ir_program))
+        }
     };
     let id = ir_program.type_signatures.get_id();
     let type_info = ItemInfo::new(new_signature, info.location_id);
@@ -180,6 +183,9 @@ pub fn collect_type_args(
             }
         }
         AstTypeSignature::Wildcard => {}
+        AstTypeSignature::Ref(item) => {
+            collect_type_args(item, program, type_args);
+        }
     }
 }
 
@@ -310,6 +316,21 @@ pub fn process_type_signature(
             IrTypeSignature::Function(ir_from, ir_to)
         }
         AstTypeSignature::Wildcard => IrTypeSignature::Wildcard,
+        AstTypeSignature::Ref(item) => {
+            let ir_item = process_type_signature(
+                item,
+                program,
+                ir_program,
+                module,
+                type_arg_resolver,
+                errors,
+            );
+            if let Some(ir_item) = ir_item {
+                IrTypeSignature::Ref(ir_item)
+            } else {
+                return None;
+            }
+        }
     };
     let id = ir_program.type_signatures.get_id();
     let type_info = ItemInfo::new(ir_type_signature, location_id);

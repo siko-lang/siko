@@ -10,6 +10,7 @@ pub enum Type {
     Function(Box<Type>, Box<Type>),
     Closure(Box<Type>),
     Boxed(Box<Type>),
+    Ref(Box<Type>),
 }
 
 impl Type {
@@ -22,6 +23,7 @@ impl Type {
             }
             Type::Closure(ty) => ty.get_args(args),
             Type::Boxed(ty) => ty.get_args(args),
+            Type::Ref(ty) => ty.get_args(args),
         }
     }
 
@@ -31,6 +33,7 @@ impl Type {
             Type::Function(..) => true,
             Type::Closure(..) => false,
             Type::Boxed(ty) => false,
+            Type::Ref(..) => false,
         }
     }
 
@@ -56,6 +59,7 @@ impl Type {
                 }
             }
             Type::Boxed(ty) => ty.get_result_type(arg_count),
+            Type::Ref(..) => self.clone(),
         }
     }
 
@@ -65,6 +69,7 @@ impl Type {
             Type::Function(_, _) => None,
             Type::Closure(..) => None,
             Type::Boxed(ty) => ty.get_typedef_id_opt(),
+            Type::Ref(..) => None,
         }
     }
 
@@ -74,6 +79,7 @@ impl Type {
             Type::Function(_, _) => unreachable!(),
             Type::Closure(ty) => ty.get_typedef_id(),
             Type::Boxed(ty) => ty.get_typedef_id(),
+            Type::Ref(..) => unreachable!(),
         }
     }
 
@@ -83,6 +89,7 @@ impl Type {
             Type::Named(_) => unreachable!(),
             Type::Closure(ty) => ty.get_from_to(),
             Type::Boxed(ty) => ty.get_from_to(),
+            Type::Ref(..) => unreachable!(),
         }
     }
 
@@ -105,6 +112,7 @@ impl Type {
                 closure.get_name()
             }
             Type::Boxed(ty) => format!("Boxed({})", ty.to_string(program)),
+            Type::Ref(item) => format!("&{}", item.to_string(program)),
         }
     }
 }

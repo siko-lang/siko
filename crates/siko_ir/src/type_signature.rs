@@ -19,5 +19,6 @@ pub enum TypeSignature {
     TypeArgument(usize, String, Vec<ClassId>),
     Named(String, TypeDefId, Vec<TypeSignatureId>),
     Variant(String, Vec<TypeSignatureId>),
+    Ref(TypeSignatureId),
     Wildcard,
 }

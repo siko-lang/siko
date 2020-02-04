@@ -85,6 +85,10 @@ impl Substitution {
                 Some(ty) => self.apply(ty),
                 None => ty.clone(),
             },
+            Type::Ref(item) => {
+                let item = self.apply(item);
+                Type::Ref(Box::new(item))
+            }
         }
     }
 

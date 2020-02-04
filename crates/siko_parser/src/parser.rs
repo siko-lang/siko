@@ -533,6 +533,13 @@ impl<'a> Parser<'a> {
                     let id = self.add_type_signature(ty, start_index);
                     return Ok(id);
                 }
+                Token::Ampersand => {
+                    self.expect(TokenKind::Ampersand)?;
+                    let arg = self.parse_function_type(false, allow_wildcard)?;
+                    let ty = TypeSignature::Ref(arg);
+                    let id = self.add_type_signature(ty, start_index);
+                    return Ok(id);
+                }
                 Token::Wildcard => {
                     if allow_wildcard {
                         self.expect(TokenKind::Wildcard)?;
