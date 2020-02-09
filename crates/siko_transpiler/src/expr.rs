@@ -246,6 +246,10 @@ pub fn write_expr(
             write_expr(*rhs, output_file, program, indent)?;
             write!(output_file, ".clone()")?;
         }
+        Expr::Deref(rhs) => {
+            write!(output_file, "*")?;
+            write_expr(*rhs, output_file, program, indent)?;
+        }
     }
     Ok(is_statement)
 }

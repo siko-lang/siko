@@ -29,11 +29,15 @@ impl Type {
 
     pub fn is_function(&self) -> bool {
         match self {
-            Type::Named(..) => false,
             Type::Function(..) => true,
-            Type::Closure(..) => false,
-            Type::Boxed(ty) => false,
-            Type::Ref(..) => false,
+            _ => false,
+        }
+    }
+
+    pub fn is_boxed(&self) -> bool {
+        match self {
+            Type::Boxed(ty) => true,
+            _ => false,
         }
     }
 

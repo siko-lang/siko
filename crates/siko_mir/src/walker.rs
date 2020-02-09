@@ -17,6 +17,9 @@ pub fn walk_expr(expr_id: &ExprId, visitor: &mut dyn Visitor) {
         Expr::Clone(rhs) => {
             walk_expr(rhs, visitor);
         }
+        Expr::Deref(rhs) => {
+            walk_expr(rhs, visitor);
+        }
         Expr::StaticFunctionCall(_, args) => {
             for arg in args {
                 walk_expr(arg, visitor);
