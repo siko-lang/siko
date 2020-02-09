@@ -13,22 +13,24 @@ enum Rewrite {
 fn check_type(
     typedef_id: TypeDefId,
     program: &Program,
-    checked_types: Vec<TypeDefId>,
+    checked_types: &mut BTreeSet<TypeDefId>,
+    cycle: Vec<TypeDefId>,
     rewrites: &mut BTreeSet<Rewrite>,
 ) {
+    checked_types.insert(typedef_id);
     let typedef = program.typedefs.get(&typedef_id);
     match typedef {
         TypeDef::Adt(adt) => {
             for (variant_index, variant) in adt.variants.iter().enumerate() {
                 for (item_index, item) in variant.items.iter().enumerate() {
                     if let Some(id) = item.get_typedef_id_opt() {
-                        if checked_types.contains(&id) {
+                        if cycle.contains(&id) {
                             let rewrite = Rewrite::Variant(typedef_id, variant_index, item_index);
                             rewrites.insert(rewrite);
                         } else {
-                            let mut checked_types = checked_types.clone();
-                            checked_types.push(id);
-                            check_type(id, program, checked_types, rewrites);
+                            let mut cycle = cycle.clone();
+                            cycle.push(id);
+                            check_type(id, program, checked_types, cycle, rewrites);
                         }
                     }
                 }
@@ -37,13 +39,13 @@ fn check_type(
         TypeDef::Record(record) => {
             for (index, field) in record.fields.iter().enumerate() {
                 if let Some(id) = field.ty.get_typedef_id_opt() {
-                    if checked_types.contains(&id) {
+                    if cycle.contains(&id) {
                         let rewrite = Rewrite::RecordField(typedef_id, index);
                         rewrites.insert(rewrite);
                     } else {
-                        let mut checked_types = checked_types.clone();
-                        checked_types.push(id);
-                        check_type(id, program, checked_types, rewrites);
+                        let mut cycle = cycle.clone();
+                        cycle.push(id);
+                        check_type(id, program, checked_types, cycle, rewrites);
                     }
                 }
             }
@@ -53,10 +55,13 @@ fn check_type(
 
 pub fn check_recursive_data_types(program: &mut Program) {
     let mut rewrites = BTreeSet::new();
+    let mut checked_types = BTreeSet::new();
     for (id, _) in program.typedefs.items.iter() {
-        let mut checked_types = Vec::new();
-        checked_types.push(*id);
-        check_type(*id, program, checked_types, &mut rewrites);
+        if checked_types.insert(*id) {
+            let mut cycle = Vec::new();
+            cycle.push(*id);
+            check_type(*id, program, &mut checked_types, cycle, &mut rewrites);
+        }
     }
     for rewrite in rewrites {
         match rewrite {
