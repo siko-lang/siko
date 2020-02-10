@@ -57,6 +57,8 @@ fn process_args(args: Vec<String>) -> bool {
     process_dir(success_dir, &mut success_files);
     let mut fail_files = Vec::new();
     process_dir(fail_dir, &mut fail_files);
+    success_files.sort_by(|a, b| a.1.cmp(&b.1));
+    fail_files.sort_by(|a, b| a.1.cmp(&b.1));
     let mut success_count = 0;
     let mut fail_count = 0;
     let mut failed_tcs = BTreeSet::new();
