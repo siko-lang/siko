@@ -5,13 +5,22 @@ use crate::typedef_store::TypeDefStore;
 use siko_ir::expr::ExprId as IrExprId;
 use siko_ir::pattern::Pattern as IrPattern;
 use siko_ir::pattern::PatternId as IrPatternId;
+use siko_ir::pattern::RangeKind as IrRangeKind;
 use siko_ir::program::Program as IrProgram;
 use siko_ir::unifier::Unifier;
 use siko_mir::expr::ExprId as MirExprId;
 use siko_mir::pattern::Pattern as MirPattern;
 use siko_mir::pattern::PatternId as MirPatternId;
+use siko_mir::pattern::RangeKind as MirRangeKind;
 use siko_mir::program::Program as MirProgram;
 use std::collections::BTreeMap;
+
+fn to_mir_kind(kind: &IrRangeKind) -> MirRangeKind {
+    match kind {
+        IrRangeKind::Exclusive => MirRangeKind::Exclusive,
+        IrRangeKind::Inclusive => MirRangeKind::Inclusive,
+    }
+}
 
 pub fn process_pattern(
     ir_pattern_id: &IrPatternId,
@@ -55,7 +64,9 @@ pub fn process_pattern(
         }
         IrPattern::IntegerLiteral(v) => MirPattern::IntegerLiteral(v.clone()),
         IrPattern::CharLiteral(v) => MirPattern::CharLiteral(v.clone()),
-        IrPattern::CharRange(start, end) => MirPattern::CharRange(start.clone(), end.clone()),
+        IrPattern::CharRange(start, end, kind) => {
+            MirPattern::CharRange(start.clone(), end.clone(), to_mir_kind(kind))
+        }
         IrPattern::Record(_, items) => {
             let mir_typedef_id = typedef_store.add_type(ir_pattern_ty, ir_program, mir_program);
             let mir_items: Vec<_> = items

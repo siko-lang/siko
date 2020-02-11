@@ -33,6 +33,7 @@ use siko_ir::function::NamedFunctionKind;
 use siko_ir::instance_resolver::ResolutionResult;
 use siko_ir::pattern::Pattern;
 use siko_ir::pattern::PatternId;
+use siko_ir::pattern::RangeKind;
 use siko_ir::program::Program;
 use siko_ir::types::Type;
 use siko_ir::unifier::Unifier;
@@ -239,12 +240,18 @@ impl Interpreter {
                 };
                 return r;
             }
-            Pattern::CharRange(start, end) => {
+            Pattern::CharRange(start, end, kind) => {
                 let r = match &value.core {
-                    ValueCore::Char(v) => {
-                        let range = std::ops::Range { start, end };
-                        range.contains(&v)
-                    }
+                    ValueCore::Char(v) => match kind {
+                        RangeKind::Exclusive => {
+                            let range = std::ops::Range { start, end };
+                            range.contains(&v)
+                        }
+                        RangeKind::Inclusive => {
+                            let range = std::ops::RangeInclusive::new(start, end);
+                            range.contains(&v)
+                        }
+                    },
                     _ => false,
                 };
                 return r;

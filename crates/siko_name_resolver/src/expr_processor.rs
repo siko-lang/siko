@@ -25,6 +25,7 @@ use siko_ir::function::LambdaInfo;
 use siko_ir::pattern::BindGroup;
 use siko_ir::pattern::Pattern as IrPattern;
 use siko_ir::pattern::PatternId as IrPatternId;
+use siko_ir::pattern::RangeKind as IrRangeKind;
 use siko_ir::program::Program as IrProgram;
 use siko_location_info::item::ItemInfo;
 use siko_location_info::location_id::LocationId;
@@ -32,6 +33,7 @@ use siko_syntax::expr::Expr;
 use siko_syntax::expr::ExprId;
 use siko_syntax::pattern::Pattern;
 use siko_syntax::pattern::PatternId;
+use siko_syntax::pattern::RangeKind;
 use siko_syntax::program::Program;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
@@ -424,13 +426,17 @@ fn process_pattern(
                 IrPattern::Wildcard
             }
         }
-        Pattern::CharRange(start, end) => {
+        Pattern::CharRange(start, end, kind) => {
             if irrefutable {
                 let err = ResolverError::NotIrrefutablePattern(location_id);
                 errors.push(err);
                 IrPattern::Wildcard
             } else {
-                IrPattern::CharRange(*start, *end)
+                let ir_kind = match kind {
+                    RangeKind::Exclusive => IrRangeKind::Exclusive,
+                    RangeKind::Inclusive => IrRangeKind::Inclusive,
+                };
+                IrPattern::CharRange(*start, *end, ir_kind)
             }
         }
     };

@@ -12,6 +12,7 @@ use siko_syntax::expr::ExprId;
 use siko_syntax::expr::RecordConstructionItem;
 use siko_syntax::pattern::Pattern;
 use siko_syntax::pattern::PatternId;
+use siko_syntax::pattern::RangeKind;
 use siko_syntax::pattern::RecordFieldPattern;
 
 fn parse_paren_expr(parser: &mut Parser) -> Result<ExprId, ParseError> {
@@ -176,7 +177,21 @@ fn parse_sub_pattern(parser: &mut Parser, inner: bool) -> Result<Option<PatternI
                     if parser.current_kind() == TokenKind::CharLiteral {
                         let literal = parser.advance()?;
                         if let Token::CharLiteral(c2) = literal.token {
-                            let pattern = Pattern::CharRange(c, c2);
+                            let pattern = Pattern::CharRange(c, c2, RangeKind::Exclusive);
+                            let id = parser.add_pattern(pattern, start_index);
+                            id
+                        } else {
+                            unreachable!()
+                        }
+                    } else {
+                        return report_unexpected_token(parser, format!("char literal"));
+                    }
+                } else if parser.current(TokenKind::InclusiveRange) {
+                    parser.expect(TokenKind::InclusiveRange)?;
+                    if parser.current_kind() == TokenKind::CharLiteral {
+                        let literal = parser.advance()?;
+                        if let Token::CharLiteral(c2) = literal.token {
+                            let pattern = Pattern::CharRange(c, c2, RangeKind::Inclusive);
                             let id = parser.add_pattern(pattern, start_index);
                             id
                         } else {
