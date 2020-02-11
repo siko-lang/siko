@@ -21,6 +21,12 @@ impl From<usize> for PatternId {
 }
 
 #[derive(Debug, Clone)]
+pub enum RangeKind {
+    Exclusive,
+    Inclusive,
+}
+
+#[derive(Debug, Clone)]
 pub enum Pattern {
     Binding(String),
     Tuple(Vec<PatternId>),
@@ -31,7 +37,7 @@ pub enum Pattern {
     IntegerLiteral(i64),
     StringLiteral(String),
     CharLiteral(char),
-    CharRange(char, char),
+    CharRange(char, char, RangeKind),
     Typed(PatternId, TypeSignatureId),
 }
 

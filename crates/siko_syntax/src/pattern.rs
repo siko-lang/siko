@@ -28,6 +28,12 @@ pub struct RecordFieldPattern {
 }
 
 #[derive(Debug, Clone)]
+pub enum RangeKind {
+    Exclusive,
+    Inclusive,
+}
+
+#[derive(Debug, Clone)]
 pub enum Pattern {
     Binding(String),
     Tuple(Vec<PatternId>),
@@ -39,6 +45,6 @@ pub enum Pattern {
     CharLiteral(char),
     Typed(PatternId, TypeSignatureId),
     Record(String, Vec<RecordFieldPattern>),
-    CharRange(char, char),
+    CharRange(char, char, RangeKind),
     Or(Vec<PatternId>),
 }

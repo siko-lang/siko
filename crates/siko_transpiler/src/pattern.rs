@@ -3,6 +3,7 @@ use crate::types::ir_type_to_rust_type;
 use crate::util::Indent;
 use siko_mir::pattern::Pattern;
 use siko_mir::pattern::PatternId;
+use siko_mir::pattern::RangeKind;
 use siko_mir::program::Program;
 use std::io::Result;
 use std::io::Write;
@@ -76,13 +77,24 @@ pub fn write_pattern(
             let ty = ir_type_to_rust_type(ty, program);
             write!(output_file, "{} {{ value: '{}' }}", ty, i)?;
         }
-        Pattern::CharRange(start, end) => {
-            write!(
-                output_file,
-                "p if std::ops::Range{{ start : '{}', end: ",
-                start
-            )?;
-            write!(output_file, "'{}'}}.contains(&p.value)", end)?;
+        Pattern::CharRange(start, end, kind) => {
+            match kind {
+                RangeKind::Exclusive => {
+                    write!(
+                        output_file,
+                        "p if std::ops::Range{{ start : '{}', end: '{}' }}",
+                        start, end
+                    )?;
+                }
+                RangeKind::Inclusive => {
+                    write!(
+                        output_file,
+                        "p if std::ops::RangeInclusive::new('{}', '{}')",
+                        start, end
+                    )?;
+                }
+            }
+            write!(output_file, ".contains(&p.value)")?;
         }
         Pattern::StringLiteral(s) => {
             let ty = program.get_pattern_type(&pattern_id);

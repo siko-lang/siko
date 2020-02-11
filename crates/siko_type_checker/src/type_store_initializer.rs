@@ -261,7 +261,7 @@ impl<'a> Visitor for TypeStoreInitializer<'a> {
                 self.type_store
                     .initialize_pattern(pattern_id, self.program.get_char_type());
             }
-            Pattern::CharRange(_, _) => {
+            Pattern::CharRange(_, _, _) => {
                 self.type_store
                     .initialize_pattern(pattern_id, self.program.get_char_type());
             }

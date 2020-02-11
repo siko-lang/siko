@@ -177,6 +177,7 @@ impl Lexer {
             "::" => Token::KeywordDoubleColon,
             "." => Token::Dot,
             ".." => Token::DoubleDot,
+            "..=" => Token::InclusiveRange,
             ":" => Token::Colon,
             "=>" => Token::KeywordConstraint,
             "&" => Token::Ampersand,
