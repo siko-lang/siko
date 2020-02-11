@@ -82,9 +82,44 @@ impl ExternFunction for ListPartialEq {
     }
 }
 
+pub struct AtIndex {}
+
+impl ExternFunction for AtIndex {
+    fn call(
+        &self,
+        environment: &mut Environment,
+        _: Option<ExprId>,
+        _: &NamedFunctionKind,
+        _: Type,
+    ) -> Value {
+        let list = environment.get_arg_by_index(0);
+        let index = environment.get_arg_by_index(1).core.as_int();
+        let value = list.core.as_list()[index as usize].clone();
+        return value;
+    }
+}
+
+pub struct GetLength {}
+
+impl ExternFunction for GetLength {
+    fn call(
+        &self,
+        environment: &mut Environment,
+        _: Option<ExprId>,
+        _: &NamedFunctionKind,
+        ty: Type,
+    ) -> Value {
+        let list = environment.get_arg_by_index(0);
+        let len = list.core.as_list().len();
+        return Value::new(ValueCore::Int(len as i64), ty);
+    }
+}
+
 pub fn register_extern_functions(interpreter: &mut Interpreter) {
     interpreter.add_extern_function(LIST_MODULE_NAME, "show", Box::new(Show {}));
     interpreter.add_extern_function(LIST_MODULE_NAME, "iter", Box::new(Iter {}));
     interpreter.add_extern_function(LIST_MODULE_NAME, "toList", Box::new(ToList {}));
     interpreter.add_extern_function(LIST_MODULE_NAME, "opEq", Box::new(ListPartialEq {}));
+    interpreter.add_extern_function(LIST_MODULE_NAME, "atIndex", Box::new(AtIndex {}));
+    interpreter.add_extern_function(LIST_MODULE_NAME, "getLength", Box::new(GetLength {}));
 }

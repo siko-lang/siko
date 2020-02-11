@@ -99,6 +99,7 @@ pub fn get_implicit_module_list() -> Vec<&'static str> {
         ITERATOR_MODULE_NAME,
         STD_UTIL_BASIC_MODULE_NAME,
         STD_OPS_MODULE_NAME,
+        CHAR_MODULE_NAME,
     ];
     implicit_modules
 }

@@ -28,7 +28,6 @@ fn process_named_type(
     let ir_type_signature = match module.imported_items.get(name) {
         Some(items) => match ImportedItemInfo::resolve_ambiguity(items, Namespace::Type) {
             None => {
-                println!("WTF {:?}", items);
                 let error = ResolverError::AmbiguousName(name.to_string(), location_id);
                 errors.push(error);
                 return None;
