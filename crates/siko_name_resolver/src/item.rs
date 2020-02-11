@@ -33,7 +33,14 @@ impl Item {
     }
 
     pub fn is_value_level(&self) -> bool {
-        !self.is_type_level()
+        match self {
+            Item::Function(..) => true,
+            Item::Record(..) => true,
+            Item::Adt(..) => false,
+            Item::Variant(..) => true,
+            Item::Class(..) => false,
+            Item::ClassMember(..) => true,
+        }
     }
 }
 
