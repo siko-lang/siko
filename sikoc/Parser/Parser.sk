@@ -2,5 +2,55 @@ module Siko.Parser where
 
 import Siko.Syntax.Program
 
+data LexerState =
+    {
+        index :: Int
+    }
+
+emptyState = LexerState 0 
+
+isDone :: [Char] -> LexerState -> Bool
+isDone cs state = state.index >= getLength cs
+
+step :: LexerState -> LexerState
+step state = state { index = state.index + 1 }
+
+isIdentifier c = case c of
+    'a'..='z' | 'A'..='Z' | '0'..='9' | '_' -> True
+    _ -> False
+
+consumeWhile cs state cond = do
+    current <- ""
+    loop (state, current) \(state, current) ->
+      do
+        if not (isDone cs state)
+            then
+                do
+                    c <- atIndex cs state.index
+                    case c of
+                        _ if cond c -> do
+                            current <- current + "{}" % c
+                            ((step state, current), True)
+                        _ -> ((state, current), False)
+            else
+                ((state, current), False)
+
 parse :: String -> Program
-parse a = Program []
+parse input = 
+    do
+        cs <- String.chars input
+        state <- emptyState
+        loop state \state -> if not (isDone cs state)
+            then
+                do
+                    c <- atIndex cs state.index
+                    state <- case c of
+                        _ if isIdentifier c -> do
+                            (state, current) <- consumeWhile cs state isIdentifier
+                            println "ID: {}" % current 
+                            state
+                        _ -> step state
+                    (state, True)
+            else
+                (state, False)
+        Program []
