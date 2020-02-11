@@ -283,6 +283,15 @@ impl Interpreter {
         })
     }
 
+    pub fn get_char_type() -> Type {
+        INTERPRETER_CONTEXT.with(|i| {
+            let b = i.borrow();
+            let i = b.as_ref().expect("Interpreter not set");
+            let bool_ty = i.program.get_char_type();
+            bool_ty
+        })
+    }
+
     pub fn get_bool_value(v: bool) -> Value {
         INTERPRETER_CONTEXT.with(|i| {
             let b = i.borrow();

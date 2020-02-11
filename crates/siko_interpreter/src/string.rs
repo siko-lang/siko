@@ -91,6 +91,25 @@ impl ExternFunction for StringShow {
     }
 }
 
+pub struct StringChars {}
+
+impl ExternFunction for StringChars {
+    fn call(
+        &self,
+        environment: &mut Environment,
+        _: Option<ExprId>,
+        _: &NamedFunctionKind,
+        ty: Type,
+    ) -> Value {
+        let value = environment.get_arg_by_index(0).core.as_string();
+        let chars: Vec<_> = value
+            .chars()
+            .map(|c| Value::new(ValueCore::Char(c), Interpreter::get_char_type()))
+            .collect();
+        return Value::new(ValueCore::List(chars), ty);
+    }
+}
+
 pub fn register_extern_functions(interpreter: &mut Interpreter) {
     interpreter.add_extern_function(STRING_MODULE_NAME, "opAdd", Box::new(StringAdd {}));
     interpreter.add_extern_function(STRING_MODULE_NAME, "opEq", Box::new(StringPartialEq {}));
@@ -101,4 +120,5 @@ pub fn register_extern_functions(interpreter: &mut Interpreter) {
     );
     interpreter.add_extern_function(STRING_MODULE_NAME, "cmp", Box::new(StringOrd {}));
     interpreter.add_extern_function(STRING_MODULE_NAME, "show", Box::new(StringShow {}));
+    interpreter.add_extern_function(STRING_MODULE_NAME, "chars", Box::new(StringChars {}));
 }
