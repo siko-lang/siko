@@ -186,9 +186,7 @@ fn parse_sub_pattern(parser: &mut Parser, inner: bool) -> Result<Option<PatternI
                     } else {
                         return report_unexpected_token(parser, format!("char literal"));
                     }
-                }
-                else
-                if parser.current(TokenKind::InclusiveRange) {
+                } else if parser.current(TokenKind::InclusiveRange) {
                     parser.expect(TokenKind::InclusiveRange)?;
                     if parser.current_kind() == TokenKind::CharLiteral {
                         let literal = parser.advance()?;
