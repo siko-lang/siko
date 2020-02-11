@@ -628,11 +628,14 @@ pub fn process_expr(
         }
         Expr::Builtin(_) => panic!("Builtinop reached!"),
         Expr::If(cond, true_branch, false_branch) => {
+            let mut cond_env = Environment::child(environment);
+            let mut true_env = Environment::child(environment);
+            let mut false_env = Environment::child(environment);
             let ir_cond = process_expr(
                 *cond,
                 program,
                 module,
-                environment,
+                &mut cond_env,
                 ir_program,
                 errors,
                 lambda_helper.clone(),
@@ -642,7 +645,7 @@ pub fn process_expr(
                 *true_branch,
                 program,
                 module,
-                environment,
+                &mut true_env,
                 ir_program,
                 errors,
                 lambda_helper.clone(),
@@ -652,7 +655,7 @@ pub fn process_expr(
                 *false_branch,
                 program,
                 module,
-                environment,
+                &mut false_env,
                 ir_program,
                 errors,
                 lambda_helper.clone(),
