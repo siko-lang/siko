@@ -82,6 +82,23 @@ impl ExternFunction for ListPartialEq {
     }
 }
 
+pub struct ListAdd {}
+
+impl ExternFunction for ListAdd {
+    fn call(
+        &self,
+        environment: &mut Environment,
+        _: Option<ExprId>,
+        _: &NamedFunctionKind,
+        ty: Type,
+    ) -> Value {
+        let mut l = environment.get_arg_by_index(0).core.as_list();
+        let r = environment.get_arg_by_index(1).core.as_list();
+        l.extend(r.into_iter());
+        return Value::new(ValueCore::List(l), ty);
+    }
+}
+
 pub struct AtIndex {}
 
 impl ExternFunction for AtIndex {
@@ -120,6 +137,7 @@ pub fn register_extern_functions(interpreter: &mut Interpreter) {
     interpreter.add_extern_function(LIST_MODULE_NAME, "iter", Box::new(Iter {}));
     interpreter.add_extern_function(LIST_MODULE_NAME, "toList", Box::new(ToList {}));
     interpreter.add_extern_function(LIST_MODULE_NAME, "opEq", Box::new(ListPartialEq {}));
+    interpreter.add_extern_function(LIST_MODULE_NAME, "opAdd", Box::new(ListAdd {}));
     interpreter.add_extern_function(LIST_MODULE_NAME, "atIndex", Box::new(AtIndex {}));
     interpreter.add_extern_function(LIST_MODULE_NAME, "getLength", Box::new(GetLength {}));
 }

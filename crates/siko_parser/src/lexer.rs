@@ -278,6 +278,10 @@ impl Lexer {
                     prev_backslash = false;
                     let special = match c {
                         '\'' => '\'',
+                        'n' => '\n',
+                        '\\' => '\\',
+                        't' => '\t',
+                        'r' => '\r',
                         _ => {
                             return Err(LexerError::General(
                                 format!("Invalid escape sequence \\{}", c),
