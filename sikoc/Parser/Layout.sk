@@ -1,0 +1,132 @@
+module Siko.Parser.Layout(processLayout) where
+
+import Siko.Syntax.Location
+import Siko.Parser.Token
+import Siko.Parser.Lexer
+
+data LayoutProcessorState =
+    {
+        input :: [TokenInfo],
+        index :: Int,
+        tokens :: [TokenInfo],
+        errors :: [LexerError],
+    }
+
+emptyState tokens = LayoutProcessorState tokens 0 [] []
+
+isDone :: LayoutProcessorState -> Bool
+isDone state = state.index >= getLength state.input
+
+peek :: LayoutProcessorState -> TokenInfo
+peek state = atIndex state.input state.index
+
+lastSpan :: LayoutProcessorState -> Span
+lastSpan state = (atIndex state.input (state.index - 1)).span
+
+step :: LayoutProcessorState -> LayoutProcessorState
+step state = do
+    state { index = state.index + 1 }
+
+addToken :: LayoutProcessorState -> TokenInfo -> LayoutProcessorState
+addToken state token = do
+        tokens <- state.tokens + [token]
+        state { tokens = tokens }
+
+advance :: LayoutProcessorState -> LayoutProcessorState
+advance state = do
+    state <- addToken state (peek state)
+    state <- step state
+    state
+
+addError :: LayoutProcessorState -> LexerError -> LayoutProcessorState
+addError state error = state { errors = state.errors + [error] }
+
+processItem :: LayoutProcessorState -> Span -> LayoutProcessorState
+processItem state firstSpan = do
+    loop state \state -> if not (isDone state)
+        then
+            do
+                token <- peek state
+                if token.span.start.offset <= firstSpan.start.offset
+                    then
+                        do
+                            state <- addToken state (TokenInfo EndOfItem (lastSpan state))
+                            (state, False)
+                    else
+                        do
+                            case token.token of
+                                KeywordDo | KeywordWhere -> (processBlock state, True)
+                                KeywordModule -> (state, False)
+                                _ -> do
+                                    state <- advance state
+                                    (state, True)
+        else
+            (state, False)
+
+processBlock :: LayoutProcessorState -> LayoutProcessorState
+processBlock state = do
+    token <- peek state
+    span <- token.span
+    state <- addToken state token
+    state <- if not (isDone state)
+        then
+            do
+            blockStart <- peek state
+            blockStartSpan <- blockStart.span
+            state <- loop state \state -> if not (isDone state)
+                    then
+                        do
+                        first <- peek state
+                        case first.token of
+                            KeywordModule -> (state, False)
+                            _ -> do
+                            if first.span.start.offset < blockStart.span.start.offset
+                                then
+                                    (state, False)
+                                else do
+                                    state <- advance state
+                                    state <- processItem state blockStartSpan
+                                    (state, True)
+                    else
+                        (state, False)
+            state <- do
+                        state <- addToken state (TokenInfo EndOfBlock (lastSpan state))
+                        state
+            state
+        else
+            addError state (EmptyBlock span)
+    state
+
+processModule :: LayoutProcessorState -> LayoutProcessorState
+processModule state = do
+    state <- addToken state (peek state)
+    state <- step state
+    state <- loop state \state -> if not (isDone state)
+            then
+                do
+                    token <- peek state
+                    case token.token of
+                        KeywordWhere -> (processBlock state, True)
+                        KeywordModule -> (state, False)
+                        _ -> do
+                            state <- advance state
+                            (state, True)
+            else
+                (state, False)
+    state <- addToken state (TokenInfo EndOfModule (lastSpan state))
+    state
+
+processLayout :: [TokenInfo] -> ([TokenInfo], [LexerError])
+processLayout tokens = do
+    state <- emptyState tokens
+    state <- loop state \state -> if not (isDone state)
+            then
+                do
+                    token <- peek state
+                    state <- case token.token of
+                            KeywordModule -> processModule state
+                            _ -> step state
+                    (state, True)
+            else
+                (state, False)
+    (state.tokens, state.errors)

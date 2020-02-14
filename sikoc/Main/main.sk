@@ -2,7 +2,28 @@ module Main where
 
 import Siko.Parser
 
+source = do
+        lines <- ["module Main where",
+                  "main = do",
+                  "   println \"alma\"",
+                  "   println \"alma\"",
+                  "main2 = do",
+                  "   println \"alma\"",
+                  "   println \"alma\"",
+                  "module",
+                  ]
+        (_, src) <- loop (0, "") \(count, src) -> if count < getLength lines
+                        then
+                            do
+                                line <- atIndex lines count
+                                count <- count + 1
+                                src <- src + "\n" + line
+                                ((count, src), True)
+                        else
+                            ((count, src), False)
+        src
+
 main = do
     println "Sikoc experiment"
-    program <- parse "module Main where\nmain = () \"alma\""
+    program <- parse source
     ()
