@@ -1,4 +1,4 @@
 # siko
 Siko
 
-Status: ![](https://github.com/elszben/siko/workflows/Master/badge.svg)
+Status: ![](https://github.com/siko-lang/siko/workflows/Master/badge.svg)
