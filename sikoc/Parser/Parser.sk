@@ -3,8 +3,137 @@ module Siko.Parser where
 import Siko.Syntax.Program
 import Siko.Syntax.Location
 import Siko.Parser.Token
+import Siko.Parser.Token.Kind as Kind
 import Siko.Parser.Layout
 import Siko.Parser.Lexer
+
+data ParserError = GeneralError
+                | UnexpectedToken String String Span
+                | Context ParserError String
+                deriving (Show)
+
+data ParserState =
+    {
+        tokens :: [TokenInfo],
+        index :: Int,
+        errors :: [ParserError],
+    }
+
+isDone :: ParserState -> Bool
+isDone state = state.index >= getLength state.tokens
+
+peek :: ParserState -> TokenInfo
+peek state = atIndex state.tokens state.index
+
+step :: ParserState -> ParserState
+step state = do
+    state { index = state.index + 1 }
+
+addError :: ParserState -> ParserError -> ParserState
+addError state error = state { errors = state.errors + [error] }
+
+unexpectedToken :: ParserState -> String -> ParserError
+unexpectedToken state expected = do
+    ti <- peek state
+    found <- show ti.token
+    UnexpectedToken expected found ti.span
+
+expect :: ParserState -> Kind.TokenKind -> Result ParserState (ParserState, ParserError)
+expect state kind = do
+    ti <- peek state
+    if getKind ti.token == kind
+        then
+            Ok (step state)
+        else
+            Err (state, unexpectedToken state (show kind))
+
+parseModuleName :: ParserState -> (ParserState, String)
+parseModuleName state = do
+    name <- ""
+    loop (state, name) \(state, name) -> do
+        ti <- peek state
+        case ti.token of
+            TypeIdentifier id -> do
+                name <- name + id
+                ((step state, name), True)
+            Dot -> do
+                name <- name + "."
+                ((step state, name), True)
+            _ -> ((state, name), False)
+
+
+parseExpr :: ParserState -> Result ParserState (ParserState, ParserError)
+parseExpr state = do
+    ti <- peek state
+    case ti.token of
+        VarIdentifier id -> do
+            println "Calling {}" % id
+            Ok (step state)
+        _ -> 
+            Err (state, unexpectedToken state "expression")
+
+parseFunction :: ParserState -> Result ParserState (ParserState, ParserError)
+parseFunction state = do
+    ti <- peek state
+    case ti.token of
+        VarIdentifier id -> do
+            println "name of func {}" % id
+            state <- step state
+            case expect state Kind.Equal of
+                Ok state -> case parseExpr state of
+                            Ok state ->
+                                expect state Kind.EndOfItem
+                            Err (state, err) ->
+                                Err (state, Context err "Expression as function body")
+                Err (state, err) -> Err (state, Context err "in function definition")
+        _ -> Err (state, unexpectedToken state "identifier as function name")
+
+parseModule :: ParserState -> Result ParserState (ParserState, ParserError)
+parseModule state = do
+    case expect state Kind.KeywordModule of
+        Ok state -> do
+            (state, name) <- parseModuleName state
+            if name == ""
+                then
+                    Err (state, unexpectedToken state "<module name>")
+                else do
+                    println "module {}" % name
+                    case expect state Kind.KeywordWhere of
+                        Ok state -> do
+                            (state, err) <- loop (state, None) \(state, _) -> do
+                                case parseFunction state of
+                                    Ok state -> ((state, None), True)
+                                    Err (state, err) -> ((state, Some err), False)
+                            case err of
+                                None ->
+                                    expect state Kind.EndOfBlock
+                                Some err ->
+                                    Err (state, err)
+                        Err (state, err) -> Err (state, Context err "where in module definition")
+        Err (state, err) -> Err (state, Context err "keyword module")
+
+processTokens :: ParserState -> (Program, [ParserError])
+processTokens state = do
+    state <- loop state \state -> do
+        if not (isDone state)
+            then
+                do
+                    case parseModule state of
+                        Ok state -> (state, True)
+                        Err (state, err) -> do
+                            state <- addError state err
+                            (state, False)
+            else
+                (state, False)
+    (Program [], state.errors)
+
+printErr err = do
+            case err of
+            GeneralError -> println "General error"
+            UnexpectedToken expected found span -> println "Expected {}, found {} at {}" % (expected, found, span)
+            Context err msg -> do
+                println msg
+                printErr err
 
 parse :: String -> Program
 parse input = 
@@ -12,4 +141,8 @@ parse input =
         (tokens, errors) <- lex input
         println "Tokens: {}" % tokens
         println "Errors: {}" % errors
-        Program []
+        state <- ParserState tokens 0 []
+        (program, errors) <- processTokens state
+        //println "Errors: {}" % errors
+        errors |> List.iter |> forEach \x -> printErr x
+        program

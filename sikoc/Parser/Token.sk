@@ -1,6 +1,23 @@
+module Siko.Parser.Token.Kind where
+
+data TokenKind = VarIdentifier
+    | TypeIdentifier
+    | Equal
+    | LParen
+    | RParen
+    | StringLiteral
+    | Dot
+    | KeywordModule
+    | KeywordWhere
+    | KeywordDo
+    | EndOfItem
+    | EndOfBlock
+    deriving (Show, PartialEq, Eq)
+
 module Siko.Parser.Token where
 
 import Siko.Syntax.Location
+import Siko.Parser.Token.Kind as Kind
 
 data Token = VarIdentifier String
     | TypeIdentifier String
@@ -8,13 +25,14 @@ data Token = VarIdentifier String
     | LParen
     | RParen
     | StringLiteral String
+    | Dot
     | KeywordModule
     | KeywordWhere
     | KeywordDo
     | EndOfItem
     | EndOfBlock
-    | EndOfModule
     deriving (Show)
+
 
 data TokenInfo = {
         token :: Token,
@@ -23,3 +41,18 @@ data TokenInfo = {
 
 instance Show TokenInfo where
     show a = show a.token
+
+getKind :: Token -> Kind.TokenKind
+getKind token = case token of
+    VarIdentifier _ -> Kind.VarIdentifier
+    TypeIdentifier _ -> Kind.TypeIdentifier
+    Equal -> Kind.Equal
+    LParen -> Kind.LParen
+    RParen -> Kind.RParen
+    StringLiteral _ -> Kind.StringLiteral
+    Dot -> Kind.Dot
+    KeywordModule -> Kind.KeywordModule
+    KeywordWhere -> Kind.KeywordWhere
+    KeywordDo -> Kind.KeywordDo
+    EndOfItem -> Kind.EndOfItem
+    EndOfBlock -> Kind.EndOfBlock
