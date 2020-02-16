@@ -59,6 +59,15 @@ impl<'a> Visitor for VarRefCollector<'a> {
                     self.refs.push(expr_id);
                 }
             }
+            Expr::FieldAccess(index, receiver) => {
+                let receiver_ty = self.program.get_expr_type(receiver);
+                let typedef_id = receiver_ty.get_typedef_id();
+                let record = self.program.typedefs.get(&typedef_id).get_record();
+                let field_ty = &record.fields[*index].ty;
+                if field_ty.is_boxed() {
+                    self.refs.push(expr_id);
+                }
+            }
             _ => {}
         }
     }

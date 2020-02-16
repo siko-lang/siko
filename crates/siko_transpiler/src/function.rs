@@ -236,7 +236,12 @@ pub fn write_function(
                 write!(output_file, "{}{}", indent, result_ty_str)?;
                 let mut args = Vec::new();
                 for (index, field) in record.fields.iter().enumerate() {
-                    let arg_str = format!("{}: {}", field.name, arg_name(index));
+                    let arg_str = if let Type::Boxed(_) = field.ty {
+                        format!("Box::new({})", arg_name(index))
+                    } else {
+                        format!("{}", arg_name(index))
+                    };
+                    let arg_str = format!("{}: {}", field.name, arg_str);
                     args.push(arg_str);
                 }
                 write!(output_file, "{{ {} }}", args.join(", "))?;

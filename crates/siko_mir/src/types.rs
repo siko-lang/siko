@@ -36,7 +36,7 @@ impl Type {
 
     pub fn is_boxed(&self) -> bool {
         match self {
-            Type::Boxed(ty) => true,
+            Type::Boxed(_) => true,
             _ => false,
         }
     }

@@ -83,7 +83,7 @@ impl ExternFunction for CharIsUppercase {
         environment: &mut Environment,
         _: Option<ExprId>,
         _: &NamedFunctionKind,
-        ty: Type,
+        _: Type,
     ) -> Value {
         let value = environment.get_arg_by_index(0).core.as_char();
         return Interpreter::get_bool_value(value.is_uppercase());
@@ -95,5 +95,9 @@ pub fn register_extern_functions(interpreter: &mut Interpreter) {
     interpreter.add_extern_function(CHAR_MODULE_NAME, "partialCmp", Box::new(CharPartialOrd {}));
     interpreter.add_extern_function(CHAR_MODULE_NAME, "cmp", Box::new(CharOrd {}));
     interpreter.add_extern_function(CHAR_MODULE_NAME, "show", Box::new(CharShow {}));
-    interpreter.add_extern_function(CHAR_MODULE_NAME, "isUppercase", Box::new(CharIsUppercase {}));
+    interpreter.add_extern_function(
+        CHAR_MODULE_NAME,
+        "isUppercase",
+        Box::new(CharIsUppercase {}),
+    );
 }
