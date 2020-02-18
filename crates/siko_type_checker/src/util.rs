@@ -78,6 +78,7 @@ pub fn process_type_signature(
         }
         TypeSignature::Variant(..) => panic!("Variant should not appear here"),
         TypeSignature::Wildcard => type_var_generator.get_new_type_var(),
+        TypeSignature::Never => Type::Never(type_var_generator.get_new_index()),
         TypeSignature::Ref(item) => {
             let ty = process_type_signature(*item, program, type_var_generator);
             Type::Ref(Box::new(ty))

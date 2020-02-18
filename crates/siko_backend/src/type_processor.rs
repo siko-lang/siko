@@ -35,6 +35,7 @@ pub fn process_type(
             let item = process_type(item, typedef_store, ir_program, mir_program);
             MirType::Ref(Box::new(item))
         }
+        IrType::Never(_) => MirType::Never,
     }
 }
 

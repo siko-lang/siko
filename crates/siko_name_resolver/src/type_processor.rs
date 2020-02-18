@@ -120,6 +120,9 @@ pub fn subtitute_type_signature(
         IrTypeSignature::Wildcard => {
             return *source;
         }
+        IrTypeSignature::Never => {
+            return *source;
+        }
         IrTypeSignature::Named(name, type_id, items) => {
             let new_items: Vec<_> = items
                 .iter()
@@ -182,6 +185,7 @@ pub fn collect_type_args(
             }
         }
         AstTypeSignature::Wildcard => {}
+        AstTypeSignature::Never => {}
         AstTypeSignature::Ref(item) => {
             collect_type_args(item, program, type_args);
         }
@@ -315,6 +319,7 @@ pub fn process_type_signature(
             IrTypeSignature::Function(ir_from, ir_to)
         }
         AstTypeSignature::Wildcard => IrTypeSignature::Wildcard,
+        AstTypeSignature::Never => IrTypeSignature::Never,
         AstTypeSignature::Ref(item) => {
             let ir_item = process_type_signature(
                 item,

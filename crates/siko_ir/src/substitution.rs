@@ -89,6 +89,10 @@ impl Substitution {
                 let item = self.apply(item);
                 Type::Ref(Box::new(item))
             }
+            Type::Never(index) => match self.var_map.get(index) {
+                Some(ty) => self.apply(ty),
+                None => ty.clone(),
+            },
         }
     }
 

@@ -77,6 +77,7 @@ pub enum Type {
     Var(usize, Vec<ClassId>),
     FixedTypeArg(String, usize, Vec<ClassId>),
     Ref(Box<Type>),
+    Never(usize),
 }
 
 impl Type {
@@ -114,6 +115,7 @@ impl Type {
                 return *i == index;
             }
             Type::Ref(item) => item.contains(index),
+            Type::Never(_) => false,
         }
     }
 
@@ -141,6 +143,7 @@ impl Type {
             Type::Var(..) => BaseType::Generic,
             Type::FixedTypeArg(..) => BaseType::Generic,
             Type::Ref(item) => item.get_base_type(),
+            Type::Never(_) => BaseType::Generic,
         }
     }
 
@@ -165,6 +168,7 @@ impl Type {
                 let item = item.remove_fixed_types();
                 Type::Ref(Box::new(item))
             }
+            Type::Never(_) => self.clone(),
         }
     }
 
@@ -207,6 +211,11 @@ impl Type {
                 let item = item.duplicate(arg_map, type_var_generator);
                 Type::Ref(Box::new(item))
             }
+            Type::Never(index) => {
+                let mut gen = type_var_generator.clone();
+                let new_index = arg_map.entry(*index).or_insert_with(|| gen.get_new_index());
+                Type::Never(*new_index)
+            }
         }
     }
 
@@ -218,6 +227,7 @@ impl Type {
             Type::Var(..) => 0,
             Type::FixedTypeArg(..) => 0,
             Type::Ref(..) => 0,
+            Type::Never(_) => 0,
         }
     }
 
@@ -232,6 +242,7 @@ impl Type {
             Type::Var(..) => {}
             Type::FixedTypeArg(..) => {}
             Type::Ref(..) => {}
+            Type::Never(_) => {}
         }
     }
 
@@ -253,6 +264,7 @@ impl Type {
             Type::Var(..) => self.clone(),
             Type::FixedTypeArg(..) => self.clone(),
             Type::Ref(..) => self.clone(),
+            Type::Never(_) => self.clone(),
         }
     }
 
@@ -286,6 +298,7 @@ impl Type {
                 }
             }
             Type::Ref(item) => item.collect(args, context),
+            Type::Never(_) => {}
         }
     }
 
@@ -311,6 +324,7 @@ impl Type {
             Type::Var(..) => false,
             Type::FixedTypeArg(..) => false,
             Type::Ref(item) => item.is_concrete_type(),
+            Type::Never(_) => true,
         }
     }
 
@@ -420,6 +434,7 @@ impl Type {
                 }
             }
             Type::Ref(item) => format!("&{}", item.as_string(need_parens, resolver_context)),
+            Type::Never(_) => format!("!"),
         }
     }
 
@@ -479,6 +494,7 @@ impl fmt::Display for Type {
                 write!(f, "f${}{}", id, c)
             }
             Type::Ref(item) => write!(f, "&{}", item),
+            Type::Never(_) => write!(f, "!"),
         }
     }
 }

@@ -107,6 +107,12 @@ impl Unifier {
                 self.unify(&to1, &to2)?;
                 Ok(())
             }
+            (Type::Never(index), type2) => {
+                return self.substitution.add(*index, &type2);
+            }
+            (type1, Type::Never(index)) => {
+                return self.substitution.add(*index, &type1);
+            }
             (Type::Ref(ty), type2) => {
                 return self.unify(ty, type2);
             }

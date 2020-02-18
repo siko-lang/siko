@@ -874,6 +874,9 @@ impl Interpreter {
         kind: &NamedFunctionKind,
         ty: Type,
     ) -> ExprResult {
+        if (module, name) == ("Std.Util.Basic", "abort") {
+            return ExprResult::Abort;
+        }
         if let Some(f) = self
             .extern_functions
             .get(&(module.to_string(), name.to_string()))
@@ -1157,7 +1160,7 @@ impl Interpreter {
         ) {
             ExprResult::Ok(v) => v,
             ExprResult::Return(v) => v,
-            ExprResult::Abort => panic!("Abort called\n"),
+            ExprResult::Abort => panic!("Abort called"),
         }
     }
 

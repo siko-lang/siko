@@ -18,4 +18,5 @@ pub enum TypeSignature {
     Function(TypeSignatureId, TypeSignatureId),
     Ref(TypeSignatureId),
     Wildcard,
+    Never,
 }

@@ -553,6 +553,12 @@ impl<'a> Parser<'a> {
                         return report_parser_error(self, reason);
                     }
                 }
+                Token::Op(BuiltinOperator::Not) => {
+                    self.expect(TokenKind::Op(BuiltinOperator::Not))?;
+                    let ty = TypeSignature::Never;
+                    let ty = self.add_type_signature(ty, start_index);
+                    return Ok(ty);
+                }
                 _ => {
                     return report_unexpected_token(self, format!("type signature"));
                 }

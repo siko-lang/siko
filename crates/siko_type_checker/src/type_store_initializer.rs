@@ -234,11 +234,10 @@ impl<'a> Visitor for TypeStoreInitializer<'a> {
                 self.type_store.initialize_expr(expr_id, ty);
             }
             Expr::Return(_) => {
-                let ty = self
-                    .type_info_provider
-                    .type_var_generator
-                    .get_new_type_var();
-                self.type_store.initialize_expr(expr_id, ty);
+                self.type_store.initialize_expr(
+                    expr_id,
+                    Type::Never(self.type_info_provider.type_var_generator.get_new_index()),
+                );
             }
         }
     }

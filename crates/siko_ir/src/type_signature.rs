@@ -21,4 +21,5 @@ pub enum TypeSignature {
     Variant(String, Vec<TypeSignatureId>),
     Ref(TypeSignatureId),
     Wildcard,
+    Never,
 }
