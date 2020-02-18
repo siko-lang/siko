@@ -95,6 +95,9 @@ pub fn walk_expr(expr_id: &ExprId, visitor: &mut dyn Visitor) {
                 walk_expr(arg, visitor);
             }
         }
+        Expr::Return(inner) => {
+            walk_expr(inner, visitor);
+        }
     }
     visitor.visit_expr(*expr_id, expr);
 }

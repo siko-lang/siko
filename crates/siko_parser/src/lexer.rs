@@ -139,6 +139,7 @@ impl Lexer {
             "actor" => Token::KeywordActor,
             "deriving" => Token::KeywordDeriving,
             "_" => Token::Wildcard,
+            "return" => Token::KeywordReturn,
             _ => {
                 let first = identifier.chars().next().expect("empty identifer");
                 if first.is_uppercase() {

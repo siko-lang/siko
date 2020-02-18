@@ -66,6 +66,12 @@ impl VariantCache {
     }
 }
 
+enum ExprResult {
+    Ok(Value),
+    Return(Value),
+    Abort,
+}
+
 #[derive(Clone)]
 pub struct TypeDefIdCache {
     pub option_id: TypeDefId,
@@ -91,7 +97,7 @@ impl Interpreter {
         }
     }
 
-    fn call(&self, callable_value: Value, args: Vec<Value>, expr_id: Option<ExprId>) -> Value {
+    fn call(&self, callable_value: Value, args: Vec<Value>, expr_id: Option<ExprId>) -> ExprResult {
         match callable_value.core {
             ValueCore::Callable(mut callable) => {
                 let mut callable_func_ty = callable_value.ty;
@@ -111,7 +117,10 @@ impl Interpreter {
                     };
                     if needed_arg_count > callable.values.len() {
                         callable_func_ty = callable_func_ty.get_result_type(callable.values.len());
-                        return Value::new(ValueCore::Callable(callable), callable_func_ty);
+                        return ExprResult::Ok(Value::new(
+                            ValueCore::Callable(callable),
+                            callable_func_ty,
+                        ));
                     } else {
                         let rest = callable.values.split_off(needed_arg_count);
                         let mut call_args = Vec::new();
@@ -127,13 +136,21 @@ impl Interpreter {
                                 &callable.unifier,
                                 callable_func_ty.clone(),
                             ),
-                            CallableKind::FunctionId(id) => self.execute(
-                                *id,
-                                &mut environment,
-                                expr_id,
-                                &callable.unifier,
-                                callable_func_ty.clone(),
-                            ),
+                            CallableKind::FunctionId(id) => {
+                                match self.execute(
+                                    *id,
+                                    &mut environment,
+                                    expr_id,
+                                    &callable.unifier,
+                                    callable_func_ty.clone(),
+                                ) {
+                                    ExprResult::Ok(v) => v,
+                                    ExprResult::Return(v) => v,
+                                    r => {
+                                        return r;
+                                    }
+                                }
+                            }
                         };
                         if !rest.is_empty() {
                             if let ValueCore::Callable(new_callable) = result.core {
@@ -144,7 +161,7 @@ impl Interpreter {
                                 unreachable!()
                             }
                         } else {
-                            return result;
+                            return ExprResult::Ok(result);
                         }
                     }
                 }
@@ -216,7 +233,10 @@ impl Interpreter {
             },
             Pattern::Guarded(id, guard_expr_id) => {
                 if self.match_pattern(id, value, environment, unifier) {
-                    let guard_value = self.eval_expr(*guard_expr_id, environment, unifier);
+                    let guard_value = match self.eval_expr(*guard_expr_id, environment, unifier) {
+                        ExprResult::Ok(v) => v,
+                        _ => unimplemented!(),
+                    };
                     return guard_value.core.as_bool();
                 } else {
                     return false;
@@ -348,8 +368,11 @@ impl Interpreter {
                 .expect("Show not found");
             let class = i.program.classes.get(class_id);
             let class_member_id = class.members.get(member_name).expect("show not found");
-            let v = i.call_class_member(class_member_id, args, None, expr_ty);
-            v
+            if let ExprResult::Ok(v) = i.call_class_member(class_member_id, args, None, expr_ty) {
+                v
+            } else {
+                unreachable!()
+            }
         })
     }
 
@@ -357,7 +380,11 @@ impl Interpreter {
         INTERPRETER_CONTEXT.with(|i| {
             let b = i.borrow();
             let i = b.as_ref().expect("Interpreter not set");
-            return i.call(callable, args, expr_id);
+            if let ExprResult::Ok(v) = i.call(callable, args, expr_id) {
+                v
+            } else {
+                unreachable!()
+            }
         })
     }
 
@@ -451,7 +478,7 @@ impl Interpreter {
         arg_values: Vec<Value>,
         expr_id: Option<ExprId>,
         expr_ty: Type,
-    ) -> Value {
+    ) -> ExprResult {
         for arg in &arg_values {
             assert!(arg.ty.is_concrete_type());
         }
@@ -545,28 +572,37 @@ impl Interpreter {
         expr_id: ExprId,
         environment: &mut Environment,
         unifier: &Unifier,
-    ) -> Value {
+    ) -> ExprResult {
         let expr = &self.program.exprs.get(&expr_id).item;
         //println!("Eval {} {}", expr_id, expr);
         let expr_ty = self.program.get_expr_type(&expr_id).clone();
         let expr_ty = unifier.apply(&expr_ty);
         match expr {
-            Expr::IntegerLiteral(v) => Value::new(ValueCore::Int(*v), expr_ty),
-            Expr::StringLiteral(v) => Value::new(ValueCore::String(v.clone()), expr_ty),
-            Expr::FloatLiteral(v) => Value::new(ValueCore::Float(*v), expr_ty),
-            Expr::CharLiteral(v) => Value::new(ValueCore::Char(*v), expr_ty),
+            Expr::IntegerLiteral(v) => ExprResult::Ok(Value::new(ValueCore::Int(*v), expr_ty)),
+            Expr::StringLiteral(v) => {
+                ExprResult::Ok(Value::new(ValueCore::String(v.clone()), expr_ty))
+            }
+            Expr::FloatLiteral(v) => ExprResult::Ok(Value::new(ValueCore::Float(*v), expr_ty)),
+            Expr::CharLiteral(v) => ExprResult::Ok(Value::new(ValueCore::Char(*v), expr_ty)),
             Expr::ArgRef(arg_ref) => {
-                return environment.get_arg(arg_ref);
+                return ExprResult::Ok(environment.get_arg(arg_ref));
             }
             Expr::StaticFunctionCall(function_id, args) => {
                 let func_ty = self
                     .program
                     .get_function_type(function_id)
                     .remove_fixed_types();
-                let arg_values: Vec<_> = args
-                    .iter()
-                    .map(|arg| self.eval_expr(*arg, environment, unifier))
-                    .collect();
+                let mut arg_values = Vec::new();
+                for arg in args {
+                    match self.eval_expr(*arg, environment, unifier) {
+                        ExprResult::Ok(v) => {
+                            arg_values.push(v);
+                        }
+                        r => {
+                            return r;
+                        }
+                    };
+                }
                 for arg in &arg_values {
                     assert!(arg.ty.is_concrete_type());
                     //println!("ARG {}", arg.ty.get_resolved_type_string(&self.program));
@@ -594,11 +630,24 @@ impl Interpreter {
                 return self.call(callable, arg_values, Some(expr_id));
             }
             Expr::DynamicFunctionCall(function_expr_id, args) => {
-                let function_expr_id = self.eval_expr(*function_expr_id, environment, unifier);
-                let arg_values: Vec<_> = args
-                    .iter()
-                    .map(|arg| self.eval_expr(*arg, environment, unifier))
-                    .collect();
+                let function_expr_id = match self.eval_expr(*function_expr_id, environment, unifier)
+                {
+                    ExprResult::Ok(v) => v,
+                    r => {
+                        return r;
+                    }
+                };
+                let mut arg_values = Vec::new();
+                for arg in args {
+                    match self.eval_expr(*arg, environment, unifier) {
+                        ExprResult::Ok(v) => {
+                            arg_values.push(v);
+                        }
+                        r => {
+                            return r;
+                        }
+                    };
+                }
                 return self.call(function_expr_id, arg_values, Some(expr_id));
             }
             Expr::Do(exprs) => {
@@ -606,21 +655,38 @@ impl Interpreter {
                 let mut result = Value::new(ValueCore::Tuple(vec![]), expr_ty);
                 assert!(!exprs.is_empty());
                 for expr in exprs {
-                    result = self.eval_expr(*expr, &mut environment, unifier);
+                    match self.eval_expr(*expr, &mut environment, unifier) {
+                        ExprResult::Ok(v) => {
+                            result = v;
+                        }
+                        r => {
+                            return r;
+                        }
+                    }
                 }
-                return result;
+                return ExprResult::Ok(result);
             }
             Expr::Bind(pattern_id, expr_id) => {
-                let value = self.eval_expr(*expr_id, environment, unifier);
+                let value = match self.eval_expr(*expr_id, environment, unifier) {
+                    ExprResult::Ok(v) => v,
+                    r => {
+                        return r;
+                    }
+                };
                 let r = self.match_pattern(pattern_id, &value, environment, unifier);
                 assert!(r);
-                return Value::new(ValueCore::Tuple(vec![]), expr_ty);
+                return ExprResult::Ok(Value::new(ValueCore::Tuple(vec![]), expr_ty));
             }
             Expr::ExprValue(_, pattern_id) => {
-                return environment.get_value(pattern_id);
+                return ExprResult::Ok(environment.get_value(pattern_id));
             }
             Expr::If(cond, true_branch, false_branch) => {
-                let cond_value = self.eval_expr(*cond, environment, unifier);
+                let cond_value = match self.eval_expr(*cond, environment, unifier) {
+                    ExprResult::Ok(v) => v,
+                    r => {
+                        return r;
+                    }
+                };
                 if cond_value.core.as_bool() {
                     return self.eval_expr(*true_branch, environment, unifier);
                 } else {
@@ -628,33 +694,59 @@ impl Interpreter {
                 }
             }
             Expr::Tuple(exprs) => {
-                let values: Vec<_> = exprs
-                    .iter()
-                    .map(|e| self.eval_expr(*e, environment, unifier))
-                    .collect();
-                return Value::new(ValueCore::Tuple(values), expr_ty);
+                let mut values = Vec::new();
+                for e in exprs {
+                    match self.eval_expr(*e, environment, unifier) {
+                        ExprResult::Ok(v) => {
+                            values.push(v);
+                        }
+                        r => {
+                            return r;
+                        }
+                    };
+                }
+                return ExprResult::Ok(Value::new(ValueCore::Tuple(values), expr_ty));
             }
             Expr::List(exprs) => {
-                let values: Vec<_> = exprs
-                    .iter()
-                    .map(|e| self.eval_expr(*e, environment, unifier))
-                    .collect();
-                return Value::new(ValueCore::List(values), expr_ty);
+                let mut values = Vec::new();
+                for e in exprs {
+                    match self.eval_expr(*e, environment, unifier) {
+                        ExprResult::Ok(v) => {
+                            values.push(v);
+                        }
+                        r => {
+                            return r;
+                        }
+                    };
+                }
+                return ExprResult::Ok(Value::new(ValueCore::List(values), expr_ty));
             }
             Expr::TupleFieldAccess(index, tuple) => {
-                let tuple_value = self.eval_expr(*tuple, environment, unifier);
+                let tuple_value = match self.eval_expr(*tuple, environment, unifier) {
+                    ExprResult::Ok(v) => v,
+                    r => {
+                        return r;
+                    }
+                };
                 if let ValueCore::Tuple(t) = &tuple_value.core {
-                    return t[*index].clone();
+                    return ExprResult::Ok(t[*index].clone());
                 } else {
                     unreachable!()
                 }
             }
             Expr::Formatter(fmt, args) => {
                 let subs: Vec<_> = fmt.split("{}").collect();
-                let values: Vec<_> = args
-                    .iter()
-                    .map(|e| self.eval_expr(*e, environment, unifier))
-                    .collect();
+                let mut values = Vec::new();
+                for e in args {
+                    match self.eval_expr(*e, environment, unifier) {
+                        ExprResult::Ok(v) => {
+                            values.push(v);
+                        }
+                        r => {
+                            return r;
+                        }
+                    };
+                }
                 let mut result = String::new();
                 for (index, sub) in subs.iter().enumerate() {
                     result += sub;
@@ -663,10 +755,15 @@ impl Interpreter {
                         result += &value_as_string;
                     }
                 }
-                return Value::new(ValueCore::String(result), expr_ty);
+                return ExprResult::Ok(Value::new(ValueCore::String(result), expr_ty));
             }
             Expr::FieldAccess(infos, record_expr) => {
-                let record = self.eval_expr(*record_expr, environment, unifier);
+                let record = match self.eval_expr(*record_expr, environment, unifier) {
+                    ExprResult::Ok(v) => v,
+                    r => {
+                        return r;
+                    }
+                };
                 let (id, values) = if let ValueCore::Record(id, values) = &record.core {
                     (id, values)
                 } else {
@@ -676,12 +773,17 @@ impl Interpreter {
                     if info.record_id != *id {
                         continue;
                     }
-                    return values[info.index].clone();
+                    return ExprResult::Ok(values[info.index].clone());
                 }
                 unreachable!()
             }
             Expr::CaseOf(body, cases, _) => {
-                let case_value = self.eval_expr(*body, environment, unifier);
+                let case_value = match self.eval_expr(*body, environment, unifier) {
+                    ExprResult::Ok(v) => v,
+                    r => {
+                        return r;
+                    }
+                };
                 for case in cases {
                     let mut case_env = Environment::block_child(environment);
                     if self.match_pattern(&case.pattern_id, &case_value, &mut case_env, unifier) {
@@ -698,32 +800,67 @@ impl Interpreter {
                     // dummy value
                 }
                 for item in items {
-                    let value = self.eval_expr(item.expr_id, environment, unifier);
+                    let value = match self.eval_expr(item.expr_id, environment, unifier) {
+                        ExprResult::Ok(v) => v,
+                        r => {
+                            return r;
+                        }
+                    };
                     values[item.index] = value;
                 }
-                return Value::new(ValueCore::Record(*type_id, values), expr_ty);
+                return ExprResult::Ok(Value::new(ValueCore::Record(*type_id, values), expr_ty));
             }
             Expr::RecordUpdate(record_expr_id, updates) => {
-                let value = self.eval_expr(*record_expr_id, environment, unifier);
+                let value = match self.eval_expr(*record_expr_id, environment, unifier) {
+                    ExprResult::Ok(v) => v,
+                    r => {
+                        return r;
+                    }
+                };
                 if let ValueCore::Record(id, mut values) = value.core {
                     for update in updates {
                         if id == update.record_id {
                             for item in &update.items {
-                                let value = self.eval_expr(item.expr_id, environment, unifier);
+                                let value = match self.eval_expr(item.expr_id, environment, unifier)
+                                {
+                                    ExprResult::Ok(v) => v,
+                                    r => {
+                                        return r;
+                                    }
+                                };
                                 values[item.index] = value;
                             }
-                            return Value::new(ValueCore::Record(id, values), expr_ty);
+                            return ExprResult::Ok(Value::new(
+                                ValueCore::Record(id, values),
+                                expr_ty,
+                            ));
                         }
                     }
                 }
                 unreachable!()
             }
             Expr::ClassFunctionCall(class_member_id, args) => {
-                let arg_values: Vec<_> = args
-                    .iter()
-                    .map(|e| self.eval_expr(*e, environment, unifier))
-                    .collect();
-                return self.call_class_member(class_member_id, arg_values, Some(expr_id), expr_ty);
+                let mut values = Vec::new();
+                for e in args {
+                    match self.eval_expr(*e, environment, unifier) {
+                        ExprResult::Ok(v) => {
+                            values.push(v);
+                        }
+                        r => {
+                            return r;
+                        }
+                    };
+                }
+                return self.call_class_member(class_member_id, values, Some(expr_id), expr_ty);
+            }
+            Expr::Return(inner) => {
+                let v = match self.eval_expr(*inner, environment, unifier) {
+                    ExprResult::Ok(v) => v,
+                    r => {
+                        return r;
+                    }
+                };
+                ExprResult::Return(v)
             }
         }
     }
@@ -736,12 +873,12 @@ impl Interpreter {
         current_expr: Option<ExprId>,
         kind: &NamedFunctionKind,
         ty: Type,
-    ) -> Value {
+    ) -> ExprResult {
         if let Some(f) = self
             .extern_functions
             .get(&(module.to_string(), name.to_string()))
         {
-            return f.call(environment, current_expr, kind, ty);
+            return ExprResult::Ok(f.call(environment, current_expr, kind, ty));
         } else {
             panic!("Unimplemented extern function {} {}", module, name);
         }
@@ -930,7 +1067,7 @@ impl Interpreter {
         current_expr: Option<ExprId>,
         unifier: &Unifier,
         expr_ty: Type,
-    ) -> Value {
+    ) -> ExprResult {
         assert!(expr_ty.is_concrete_type());
         let function = self.program.functions.get(&id);
         match &function.info {
@@ -960,10 +1097,10 @@ impl Interpreter {
                     let v = environment.get_arg_by_index(index);
                     values.push(v);
                 }
-                return Value::new(
+                return ExprResult::Ok(Value::new(
                     ValueCore::Variant(info.type_id, info.index, values),
                     expr_ty,
-                );
+                ));
             }
             FunctionInfo::RecordConstructor(info) => {
                 let record = self.program.typedefs.get(&info.type_id).get_record();
@@ -972,7 +1109,10 @@ impl Interpreter {
                     let v = environment.get_arg_by_index(index);
                     values.push(v);
                 }
-                return Value::new(ValueCore::Record(info.type_id, values), expr_ty);
+                return ExprResult::Ok(Value::new(
+                    ValueCore::Record(info.type_id, values),
+                    expr_ty,
+                ));
             }
         }
     }
@@ -1008,13 +1148,17 @@ impl Interpreter {
         let main_id = interpreter.program.get_main().expect("Main does not exist");
         let mut environment = Environment::new(CallableKind::FunctionId(main_id), vec![]);
         let unifier = interpreter.program.get_unifier();
-        return interpreter.execute(
+        match interpreter.execute(
             main_id,
             &mut environment,
             None,
             &unifier,
             Type::Tuple(vec![]),
-        );
+        ) {
+            ExprResult::Ok(v) => v,
+            ExprResult::Return(v) => v,
+            ExprResult::Abort => panic!("Abort called\n"),
+        }
     }
 
     pub fn add_extern_function(

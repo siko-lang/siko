@@ -608,6 +608,7 @@ impl Typechecker {
             ExpressionChecker::new(program, group, type_store, type_info_provider, errors);
         walk_expr(&body, &mut checker);
         checker.match_expr_with(body, &result_ty);
+        checker.match_returns(body);
         let disambiguations = checker.get_disambiguations();
         for (expr_id, selected_index) in disambiguations {
             program.disambiguate_expr(expr_id, selected_index);

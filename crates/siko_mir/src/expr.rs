@@ -49,4 +49,5 @@ pub enum Expr {
     StaticFunctionCall(FunctionId, Vec<ExprId>),
     PartialFunctionCall(PartialFunctionCallId, Vec<ExprId>),
     StringLiteral(String),
+    Return(ExprId),
 }

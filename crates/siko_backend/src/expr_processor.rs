@@ -392,6 +392,19 @@ pub fn process_expr(
             );
             MirExpr::FieldAccess(*index, mir_receiver_expr_id)
         }
+        IrExpr::Return(inner_id) => {
+            let mir_inner_id = process_expr(
+                inner_id,
+                ir_program,
+                mir_program,
+                unifier,
+                function_queue,
+                typedef_store,
+                expr_id_map,
+                pattern_id_map,
+            );
+            MirExpr::Return(mir_inner_id)
+        }
     };
     let mir_expr_id = mir_program.add_expr(mir_expr, item_info.location_id, mir_expr_ty);
     expr_id_map.insert(*ir_expr_id, mir_expr_id);

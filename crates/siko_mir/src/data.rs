@@ -1,10 +1,16 @@
 use crate::types::Type;
 use std::fmt;
 
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
+pub enum OwnershipKind {
+    Arg(usize),
+}
+
 #[derive(Debug, Clone)]
 pub struct RecordField {
     pub name: String,
     pub ty: Type,
+    pub ownership_kind: OwnershipKind,
 }
 
 #[derive(Debug, Clone)]
@@ -34,9 +40,15 @@ pub struct Record {
 }
 
 #[derive(Debug, Clone)]
+pub struct VariantItem {
+    pub ty: Type,
+    pub ownership_kind: OwnershipKind,
+}
+
+#[derive(Debug, Clone)]
 pub struct Variant {
     pub name: String,
-    pub items: Vec<Type>,
+    pub items: Vec<VariantItem>,
 }
 
 #[derive(Debug, Clone)]

@@ -116,6 +116,7 @@ pub enum Expr {
     CaseOf(ExprId, Vec<Case>, Vec<BindGroup>),
     RecordInitialization(TypeDefId, Vec<RecordFieldValueExpr>),
     RecordUpdate(ExprId, Vec<RecordUpdateInfo>),
+    Return(ExprId),
 }
 
 impl fmt::Display for Expr {
@@ -163,6 +164,7 @@ impl fmt::Display for Expr {
             Expr::RecordUpdate(expr_id, items) => {
                 write!(f, "RecordUpdate({}, {})", expr_id, format_list(items))
             }
+            Expr::Return(expr_id) => write!(f, "Return({})", expr_id),
         }
     }
 }

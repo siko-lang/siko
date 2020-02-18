@@ -21,6 +21,7 @@ pub struct ExpressionChecker<'a> {
     type_info_provider: &'a mut TypeInfoProvider,
     errors: &'a mut Vec<TypecheckError>,
     disambiguations: Vec<(ExprId, usize)>,
+    return_exprs: Vec<ExprId>,
 }
 
 impl<'a> ExpressionChecker<'a> {
@@ -38,6 +39,7 @@ impl<'a> ExpressionChecker<'a> {
             type_info_provider: type_info_provider,
             errors: errors,
             disambiguations: Vec::new(),
+            return_exprs: Vec::new(),
         }
     }
 
@@ -101,6 +103,12 @@ impl<'a> ExpressionChecker<'a> {
 
     pub fn get_disambiguations(&self) -> Vec<(ExprId, usize)> {
         self.disambiguations.clone()
+    }
+
+    pub fn match_returns(&mut self, body: ExprId) {
+        for return_expr in self.return_exprs.clone() {
+            self.match_exprs(body, return_expr);
+        }
     }
 }
 
@@ -326,6 +334,9 @@ impl<'a> Visitor for ExpressionChecker<'a> {
                 let location = self.program.exprs.get(&receiver_expr_id).location_id;
                 let err = TypecheckError::TypeMismatch(location, expected_type, found_type);
                 self.errors.push(err);
+            }
+            Expr::Return(inner) => {
+                self.return_exprs.push(*inner);
             }
         }
     }

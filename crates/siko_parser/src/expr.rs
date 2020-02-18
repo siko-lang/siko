@@ -453,6 +453,13 @@ fn parse_arg(parser: &mut Parser) -> Result<ExprId, ParseError> {
         Token::KeywordCase => {
             return parse_case(parser);
         }
+        Token::KeywordReturn => {
+            parser.expect(TokenKind::KeywordReturn)?;
+            let item = parser.parse_expr()?;
+            let expr = Expr::Return(item);
+            let id = parser.add_expr(expr, start_index);
+            id
+        }
         _ => {
             return report_unexpected_token(parser, format!("expression"));
         }

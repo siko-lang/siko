@@ -1134,5 +1134,19 @@ pub fn process_expr(
             let ir_expr = IrExpr::RecordUpdate(record_expr_id, updates);
             return add_expr(ir_expr, id, ir_program, program);
         }
+        Expr::Return(inner_expr_id) => {
+            let ir_inner_expr_id = process_expr(
+                *inner_expr_id,
+                program,
+                module,
+                environment,
+                ir_program,
+                errors,
+                lambda_helper.clone(),
+                type_arg_resolver,
+            );
+            let ir_expr = IrExpr::Return(ir_inner_expr_id);
+            return add_expr(ir_expr, id, ir_program, program);
+        }
     }
 }

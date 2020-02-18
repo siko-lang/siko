@@ -263,6 +263,10 @@ pub fn write_expr(
             write!(output_file, "*")?;
             write_expr(*rhs, output_file, program, indent)?;
         }
+        Expr::Return(rhs) => {
+            write!(output_file, "return ")?;
+            write_expr(*rhs, output_file, program, indent)?;
+        }
     }
     Ok(is_statement)
 }
