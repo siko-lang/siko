@@ -44,7 +44,7 @@ pub fn get_ord_type_from_optional_ord(ty: &Type, program: &Program) -> String {
     let mut ord_ty = None;
     for v in &adt_opt.variants {
         if v.name == "Some" {
-            ord_ty = Some(v.items[0].clone());
+            ord_ty = Some(v.items[0].ty.clone());
         }
     }
     let ord_ty = ord_ty.expect("Ord ty not found");

@@ -8,7 +8,6 @@ use siko_constants::EQ_CLASS_NAME;
 use siko_mir::function::FunctionId;
 use siko_mir::function::FunctionInfo;
 use siko_mir::program::Program;
-use siko_mir::types::Type;
 use std::io::Result;
 use std::io::Write;
 
@@ -218,8 +217,8 @@ pub fn write_function(
                 if function.arg_count > 0 {
                     let mut args = Vec::new();
                     for i in 0..function.arg_count {
-                        let item_type = &variant.items[i];
-                        let arg_str = if let Type::Boxed(_) = item_type {
+                        let item = &variant.items[i];
+                        let arg_str = if item.ty.is_boxed() {
                             format!("Box::new({})", arg_name(i))
                         } else {
                             format!("{}", arg_name(i))
@@ -236,7 +235,7 @@ pub fn write_function(
                 write!(output_file, "{}{}", indent, result_ty_str)?;
                 let mut args = Vec::new();
                 for (index, field) in record.fields.iter().enumerate() {
-                    let arg_str = if let Type::Boxed(_) = field.ty {
+                    let arg_str = if field.ty.is_boxed() {
                         format!("Box::new({})", arg_name(index))
                     } else {
                         format!("{}", arg_name(index))

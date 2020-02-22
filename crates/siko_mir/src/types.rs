@@ -4,17 +4,41 @@ use crate::function::FunctionId;
 use crate::program::Program;
 use std::fmt;
 
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
+pub enum Modifier {
+    Owned,
+    Ref,
+    Boxed,
+    Var(usize),
+}
+
+impl Modifier {
+    pub fn to_string(&self) -> &'static str {
+        match self {
+            Modifier::Owned => "",
+            Modifier::Ref => "&",
+            Modifier::Boxed => "~",
+            Modifier::Var(_) => "^",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub enum Type {
-    Named(TypeDefId),
+    Named(Modifier, TypeDefId),
     Function(Box<Type>, Box<Type>),
     Closure(Box<Type>),
-    Boxed(Box<Type>),
-    Ref(Box<Type>),
     Never,
 }
 
 impl Type {
+    pub fn with_var_modifier(&self, var: usize) -> Type {
+        match self {
+            Type::Named(_, id) => Type::Named(Modifier::Var(var), *id),
+            _ => self.clone(),
+        }
+    }
+
     pub fn get_args(&self, args: &mut Vec<Type>) {
         match self {
             Type::Named(..) => {}
@@ -23,8 +47,6 @@ impl Type {
                 to.get_args(args);
             }
             Type::Closure(ty) => ty.get_args(args),
-            Type::Boxed(ty) => ty.get_args(args),
-            Type::Ref(ty) => ty.get_args(args),
             Type::Never => {}
         }
     }
@@ -38,7 +60,7 @@ impl Type {
 
     pub fn is_boxed(&self) -> bool {
         match self {
-            Type::Boxed(_) => true,
+            Type::Named(Modifier::Boxed, _) => true,
             _ => false,
         }
     }
@@ -64,30 +86,24 @@ impl Type {
                     ty.get_result_type(arg_count)
                 }
             }
-            Type::Boxed(ty) => ty.get_result_type(arg_count),
-            Type::Ref(..) => self.clone(),
             Type::Never => self.clone(),
         }
     }
 
     pub fn get_typedef_id_opt(&self) -> Option<TypeDefId> {
         match self {
-            Type::Named(id) => Some(*id),
+            Type::Named(_, id) => Some(*id),
             Type::Function(_, _) => None,
             Type::Closure(..) => None,
-            Type::Boxed(ty) => ty.get_typedef_id_opt(),
-            Type::Ref(..) => None,
             Type::Never => None,
         }
     }
 
     pub fn get_typedef_id(&self) -> TypeDefId {
         match self {
-            Type::Named(id) => *id,
+            Type::Named(_, id) => *id,
             Type::Function(_, _) => unreachable!(),
             Type::Closure(ty) => ty.get_typedef_id(),
-            Type::Boxed(ty) => ty.get_typedef_id(),
-            Type::Ref(..) => unreachable!(),
             Type::Never => unreachable!(),
         }
     }
@@ -95,10 +111,8 @@ impl Type {
     pub fn get_from_to(&self) -> (Type, Type) {
         match self {
             Type::Function(from, to) => (*from.clone(), *to.clone()),
-            Type::Named(_) => unreachable!(),
+            Type::Named(..) => unreachable!(),
             Type::Closure(ty) => ty.get_from_to(),
-            Type::Boxed(ty) => ty.get_from_to(),
-            Type::Ref(..) => unreachable!(),
             Type::Never => unreachable!(),
         }
     }
@@ -110,19 +124,19 @@ impl Type {
                 let to = to.to_string(program);
                 format!("{} -> {}", from, to)
             }
-            Type::Named(id) => {
+            Type::Named(m, id) => {
                 let typedef = program.typedefs.get(id);
                 match typedef {
-                    TypeDef::Adt(adt) => format!("{}.{}", adt.module, adt.name),
-                    TypeDef::Record(record) => format!("{}.{}", &record.module, record.name),
+                    TypeDef::Adt(adt) => format!("{}{}.{}", m.to_string(), adt.module, adt.name),
+                    TypeDef::Record(record) => {
+                        format!("{}{}.{}", m.to_string(), &record.module, record.name)
+                    }
                 }
             }
             Type::Closure(ty) => {
                 let closure = program.get_closure_type(ty);
                 closure.get_name()
             }
-            Type::Boxed(ty) => format!("Boxed({})", ty.to_string(program)),
-            Type::Ref(item) => format!("&{}", item.to_string(program)),
             Type::Never => format!("!"),
         }
     }

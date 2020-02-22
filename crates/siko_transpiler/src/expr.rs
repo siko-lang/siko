@@ -8,7 +8,6 @@ use siko_mir::expr::Expr;
 use siko_mir::expr::ExprId;
 use siko_mir::pattern::Pattern;
 use siko_mir::program::Program;
-use siko_mir::types::Type;
 use std::io::Result;
 use std::io::Write;
 
@@ -54,7 +53,7 @@ pub fn write_expr(
             for (item, index) in items {
                 let field = &record.fields[*index];
                 write!(output_file, "{}: ", field.name)?;
-                if let Type::Boxed(_) = field.ty {
+                if field.ty.is_boxed() {
                     write!(output_file, "Box::new(")?;
                     write_expr(*item, output_file, program, indent)?;
                     write!(output_file, ")")?;
@@ -76,7 +75,7 @@ pub fn write_expr(
             for (item, index) in items {
                 let field = &record.fields[*index];
                 write!(output_file, "{}value.{} = ", indent, field.name)?;
-                if let Type::Boxed(_) = field.ty {
+                if field.ty.is_boxed() {
                     write!(output_file, "Box::new(")?;
                     write_expr(*item, output_file, program, indent)?;
                     write!(output_file, ")")?;

@@ -1,8 +1,8 @@
 use siko_mir::data::TypeDef;
 use siko_mir::data::TypeDefId;
 use siko_mir::program::Program;
+use siko_mir::types::Modifier;
 use siko_mir::types::Type;
-use siko_util::Counter;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 
@@ -40,7 +40,7 @@ impl<'a> DependencyCollector<TypeDefId> for DataDependencyProcessor<'a> {
             TypeDef::Adt(adt) => {
                 for variant in &adt.variants {
                     for item in &variant.items {
-                        if let Some(id) = item.get_typedef_id_opt() {
+                        if let Some(id) = item.ty.get_typedef_id_opt() {
                             deps.insert(id);
                         }
                     }
@@ -59,23 +59,20 @@ impl<'a> DependencyCollector<TypeDefId> for DataDependencyProcessor<'a> {
     }
 }
 
-fn calculate_lifetime_variables(groups: &Vec<DependencyGroup<TypeDefId>>, program: &Program) {
-    let mut lifetimes: BTreeMap<TypeDefId, Vec<String>> = BTreeMap::new();
+fn calculate_modifier_variables(groups: &Vec<DependencyGroup<TypeDefId>>, program: &mut Program) {
+    let mut modifiers: BTreeMap<TypeDefId, Vec<usize>> = BTreeMap::new();
     for group in groups {
-        let mut counter = Counter::new();
-        let mut lifetime_vars = Vec::new();
-        for item in &group.items {
-            let typedef = program.typedefs.get(item);
+        let mut modifier_vars = Vec::new();
+        for group_item in &group.items {
+            let typedef = program.typedefs.get(group_item);
             match typedef {
                 TypeDef::Adt(adt) => {
                     for variant in &adt.variants {
                         for item in &variant.items {
-                            if let Some(id) = item.get_typedef_id_opt() {
-                                lifetime_vars.push(format!("{}", counter.next()));
-                                if let Some(lifetimes) = lifetimes.get(&id) {
-                                    for _ in 0..lifetimes.len() {
-                                        lifetime_vars.push(format!("{}", counter.next()));
-                                    }
+                            if let Type::Named(Modifier::Var(var), id) = item.ty {
+                                modifier_vars.push(var);
+                                if let Some(modifiers) = modifiers.get(&id) {
+                                    modifier_vars.extend(modifiers);
                                 }
                             }
                         }
@@ -83,20 +80,34 @@ fn calculate_lifetime_variables(groups: &Vec<DependencyGroup<TypeDefId>>, progra
                 }
                 TypeDef::Record(record) => {
                     for field in &record.fields {
-                        if let Some(id) = field.ty.get_typedef_id_opt() {
-                            lifetime_vars.push(format!("{}", counter.next()));
-                            if let Some(lifetimes) = lifetimes.get(&id) {
-                                for _ in 0..lifetimes.len() {
-                                    lifetime_vars.push(format!("{}", counter.next()));
-                                }
+                        if let Type::Named(Modifier::Var(var), id) = field.ty {
+                            modifier_vars.push(var);
+                            if let Some(modifiers) = modifiers.get(&id) {
+                                modifier_vars.extend(modifiers);
                             }
                         }
                     }
                 }
             }
         }
-        for item in &group.items {
-            lifetimes.insert(*item, lifetime_vars.clone());
+        for group_item in &group.items {
+            modifiers.insert(*group_item, modifier_vars.clone());
+            let typedef = program.typedefs.get_mut(group_item);
+            match typedef {
+                TypeDef::Adt(adt) => {
+                    adt.modifier_args = modifier_vars.clone();
+                    //println!("ADT {}/{} {:?}", adt.module, adt.name, adt.modifier_args);
+                }
+                TypeDef::Record(record) => {
+                    record.modifier_args = modifier_vars.clone();
+                    /*
+                    println!(
+                        "RECORD {}/{} {:?}",
+                        record.module, record.name, record.modifier_args
+                    );
+                    */
+                }
+            }
         }
     }
 }
@@ -112,7 +123,7 @@ fn get_indirection_count(
         TypeDef::Adt(adt) => {
             for variant in &adt.variants {
                 for item in &variant.items {
-                    if let Some(id) = item.get_typedef_id_opt() {
+                    if let Some(id) = item.ty.get_typedef_id_opt() {
                         if group.items.contains(&id) {
                             indirection_count += 1;
                         }
@@ -150,10 +161,10 @@ fn calculate_boxed_members(groups: &Vec<DependencyGroup<TypeDefId>>, program: &m
         match typedef {
             TypeDef::Adt(adt) => {
                 for variant in &mut adt.variants {
-                    for item_type in &mut variant.items {
-                        if let Some(id) = item_type.get_typedef_id_opt() {
+                    for item in &mut variant.items {
+                        if let Some(id) = item.ty.get_typedef_id_opt() {
                             if group.items.contains(&id) {
-                                *item_type = Type::Boxed(Box::new(item_type.clone()));
+                                item.ty = Type::Named(Modifier::Boxed, id);
                             }
                         }
                     }
@@ -163,7 +174,7 @@ fn calculate_boxed_members(groups: &Vec<DependencyGroup<TypeDefId>>, program: &m
                 for field in &mut record.fields {
                     if let Some(id) = field.ty.get_typedef_id_opt() {
                         if group.items.contains(&id) {
-                            field.ty = Type::Boxed(Box::new(field.ty.clone()));
+                            field.ty = Type::Named(Modifier::Boxed, id);
                         }
                     }
                 }
@@ -175,6 +186,6 @@ fn calculate_boxed_members(groups: &Vec<DependencyGroup<TypeDefId>>, program: &m
 pub fn process_data_types(program: &mut Program) {
     let processor = DataDependencyProcessor::new(program);
     let groups = processor.process_typedefs();
-    calculate_lifetime_variables(&groups, program);
+    calculate_modifier_variables(&groups, program);
     calculate_boxed_members(&groups, program);
 }

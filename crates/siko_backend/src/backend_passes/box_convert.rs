@@ -3,6 +3,7 @@ use siko_mir::expr::ExprId;
 use siko_mir::pattern::Pattern;
 use siko_mir::pattern::PatternId;
 use siko_mir::program::Program;
+use siko_mir::types::Modifier;
 use siko_mir::types::Type;
 use siko_mir::walker::walk_expr;
 use siko_mir::walker::Visitor;
@@ -24,7 +25,7 @@ impl<'a> Visitor for RetypePattern<'a> {
                 let adt = self.program.typedefs.get(id).get_adt();
                 let variant = &adt.variants[*index];
                 for (item, variant_item) in items.iter().zip(variant.items.iter()) {
-                    if variant_item.is_boxed() {
+                    if variant_item.ty.is_boxed() {
                         self.patterns.push(*item);
                     }
                 }
@@ -87,7 +88,7 @@ pub fn box_convert_pass(expr_id: &ExprId, program: &mut Program) {
             .pattern_types
             .get_mut(&pattern)
             .expect("Pattern type not found");
-        *ty = Type::Boxed(Box::new(ty.clone()));
+        *ty = Type::Named(Modifier::Boxed, ty.get_typedef_id());
     }
     let mut collector = VarRefCollector {
         program: program,

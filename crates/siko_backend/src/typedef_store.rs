@@ -12,18 +12,22 @@ use siko_mir::data::RecordKind as MirRecordKind;
 use siko_mir::data::TypeDef as MirTypeDef;
 use siko_mir::data::TypeDefId as MirTypeDefId;
 use siko_mir::data::Variant as MirVariant;
+use siko_mir::data::VariantItem;
 use siko_mir::program::Program as MirProgram;
 use siko_mir::types::Type as MirType;
+use siko_util::Counter;
 use std::collections::BTreeMap;
 
 pub struct TypeDefStore {
     typedefs: BTreeMap<IrType, MirTypeDefId>,
+    counter: Counter,
 }
 
 impl TypeDefStore {
     pub fn new() -> TypeDefStore {
         TypeDefStore {
             typedefs: BTreeMap::new(),
+            counter: Counter::new(),
         }
     }
 
@@ -43,6 +47,7 @@ impl TypeDefStore {
             let mut fields = Vec::new();
             for (index, field_ty) in field_types.into_iter().enumerate() {
                 let field_ty = process_stored_type(field_ty, mir_program);
+                let field_ty = field_ty.with_var_modifier(self.counter.next());
                 let mir_field = MirRecordField {
                     name: format!("field_{}", index),
                     ty: field_ty,
@@ -53,6 +58,7 @@ impl TypeDefStore {
                 id: mir_typedef_id,
                 module: format!("{}", MIR_INTERNAL_MODULE_NAME),
                 name: name.clone(),
+                modifier_args: Vec::new(),
                 fields: fields,
                 kind: MirRecordKind::Normal,
             };
@@ -96,7 +102,10 @@ impl TypeDefStore {
                                     let mir_item_ty =
                                         process_type(item_ty, self, ir_program, mir_program);
                                     let mir_item_ty = process_stored_type(mir_item_ty, mir_program);
-                                    mir_item_types.push(mir_item_ty);
+                                    let mir_item_ty =
+                                        mir_item_ty.with_var_modifier(self.counter.next());
+                                    let variant_item = VariantItem { ty: mir_item_ty };
+                                    mir_item_types.push(variant_item);
                                 }
                                 let mir_variant = MirVariant {
                                     name: ir_adt.variants[index].name.clone(),
@@ -106,8 +115,9 @@ impl TypeDefStore {
                             }
                             let mir_adt = MirAdt {
                                 id: mir_typedef_id,
-                                module: ir_adt.module.clone(),
                                 name: format!("{}_{}", ir_adt.name, mir_typedef_id.id),
+                                module: ir_adt.module.clone(),
+                                modifier_args: Vec::new(),
                                 variants: variants,
                             };
                             let mir_typedef = MirTypeDef::Adt(mir_adt);
@@ -131,6 +141,8 @@ impl TypeDefStore {
                                 let mir_field_ty =
                                     process_type(field_ty, self, ir_program, mir_program);
                                 let mir_field_ty = process_stored_type(mir_field_ty, mir_program);
+                                let mir_field_ty =
+                                    mir_field_ty.with_var_modifier(self.counter.next());
                                 let mir_field = MirRecordField {
                                     name: ir_record.fields[index].name.clone(),
                                     ty: mir_field_ty,
@@ -168,8 +180,9 @@ impl TypeDefStore {
                             };
                             let mir_record = MirRecord {
                                 id: mir_typedef_id,
-                                module: ir_record.module.clone(),
                                 name: name,
+                                module: ir_record.module.clone(),
+                                modifier_args: Vec::new(),
                                 fields: fields,
                                 kind: kind,
                             };

@@ -2,6 +2,7 @@ use crate::typedef_store::TypeDefStore;
 use siko_ir::program::Program as IrProgram;
 use siko_ir::types::Type as IrType;
 use siko_mir::program::Program as MirProgram;
+use siko_mir::types::Modifier;
 use siko_mir::types::Type as MirType;
 
 pub fn process_type(
@@ -21,7 +22,7 @@ pub fn process_type(
         }
         IrType::Named(_, _, _) => {
             let mir_typedef_id = typedef_store.add_type(ir_type.clone(), ir_program, mir_program);
-            MirType::Named(mir_typedef_id)
+            MirType::Named(Modifier::Owned, mir_typedef_id)
         }
         IrType::Tuple(items) => {
             let items: Vec<_> = items
@@ -29,11 +30,14 @@ pub fn process_type(
                 .map(|item| process_type(item, typedef_store, ir_program, mir_program))
                 .collect();
             let (_, mir_typedef_id) = typedef_store.add_tuple(ir_type.clone(), items, mir_program);
-            MirType::Named(mir_typedef_id)
+            MirType::Named(Modifier::Owned, mir_typedef_id)
         }
         IrType::Ref(item) => {
             let item = process_type(item, typedef_store, ir_program, mir_program);
-            MirType::Ref(Box::new(item))
+            match item {
+                MirType::Named(_, id) => MirType::Named(Modifier::Ref, id),
+                _ => panic!("Ref of non structs are not implemented/supported"),
+            }
         }
         IrType::Never(_) => MirType::Never,
     }

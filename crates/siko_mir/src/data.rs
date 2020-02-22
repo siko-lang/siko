@@ -28,21 +28,28 @@ pub enum RecordKind {
 pub struct Record {
     pub name: String,
     pub module: String,
+    pub modifier_args: Vec<usize>,
     pub id: TypeDefId,
     pub fields: Vec<RecordField>,
     pub kind: RecordKind,
 }
 
 #[derive(Debug, Clone)]
+pub struct VariantItem {
+    pub ty: Type,
+}
+
+#[derive(Debug, Clone)]
 pub struct Variant {
     pub name: String,
-    pub items: Vec<Type>,
+    pub items: Vec<VariantItem>,
 }
 
 #[derive(Debug, Clone)]
 pub struct Adt {
     pub name: String,
     pub module: String,
+    pub modifier_args: Vec<usize>,
     pub id: TypeDefId,
     pub variants: Vec<Variant>,
 }

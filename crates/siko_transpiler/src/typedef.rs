@@ -26,7 +26,7 @@ pub fn write_typedef(
                 } else {
                     let mut is = Vec::new();
                     for item in &variant.items {
-                        let rust_ty = ir_type_to_rust_type(&item, program);
+                        let rust_ty = ir_type_to_rust_type(&item.ty, program);
                         is.push(rust_ty);
                     }
                     format!("({})", is.join(", "))
