@@ -43,25 +43,25 @@ addError state error = state { errors = state.errors + [error] }
 
 processItem :: LayoutProcessorState -> Span -> LayoutProcessorState
 processItem state firstSpan = do
-    loop state \state -> if not (isDone state)
+    state <- loop state <- state do
+      if not (isDone state)
         then
             do
                 token <- peek state
                 if token.span.start.offset <= firstSpan.start.offset
                     then
-                        do
-                            state <- addToken state (TokenInfo EndOfItem (lastSpan state))
-                            (state, False)
+                        break state
                     else
                         do
                             case token.token of
-                                KeywordDo | KeywordWhere -> (processBlock state, True)
-                                KeywordModule -> (state, False)
+                                KeywordDo | KeywordWhere -> processBlock state
+                                KeywordModule -> break state
                                 _ -> do
-                                    state <- advance state
-                                    (state, True)
+                                    advance state
         else
-            (state, False)
+            break state
+    state <- addToken state (TokenInfo EndOfItem (lastSpan state))
+    state
 
 processBlock :: LayoutProcessorState -> LayoutProcessorState
 processBlock state = do
@@ -74,22 +74,23 @@ processBlock state = do
             do
             blockStart <- peek state
             blockStartSpan <- blockStart.span
-            state <- loop state \state -> if not (isDone state)
+            state <- loop state <- state do
+                 if not (isDone state)
                     then
                         do
                         first <- peek state
                         case first.token of
-                            KeywordModule -> (state, False)
+                            KeywordModule -> break state
                             _ -> do
                             if first.span.start.offset < blockStart.span.start.offset
                                 then
-                                    (state, False)
+                                    break state
                                 else do
                                     state <- advance state
                                     state <- processItem state blockStartSpan
-                                    (state, True)
+                                    state
                     else
-                        (state, False)
+                        break state
             state <- do
                         state <- addToken state (TokenInfo EndOfBlock (lastSpan state))
                         state
@@ -102,31 +103,31 @@ processModule :: LayoutProcessorState -> LayoutProcessorState
 processModule state = do
     state <- addToken state (peek state)
     state <- step state
-    state <- loop state \state -> if not (isDone state)
+    state <- loop state <- state do
+         if not (isDone state)
             then
                 do
                     token <- peek state
                     case token.token of
-                        KeywordWhere -> (processBlock state, True)
-                        KeywordModule -> (state, False)
-                        _ -> do
-                            state <- advance state
-                            (state, True)
+                        KeywordWhere -> processBlock state
+                        KeywordModule -> break state
+                        _ -> advance state
             else
-                (state, False)
+                break state
     state
 
 processLayout :: [TokenInfo] -> ([TokenInfo], [LexerError])
 processLayout tokens = do
     state <- emptyState tokens
-    state <- loop state \state -> if not (isDone state)
+    state <- loop state <- state do 
+        if not (isDone state)
             then
                 do
                     token <- peek state
                     state <- case token.token of
                             KeywordModule -> processModule state
                             _ -> step state
-                    (state, True)
+                    state
             else
-                (state, False)
+                break state
     (state.tokens, state.errors)

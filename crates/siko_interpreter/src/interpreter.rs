@@ -69,6 +69,8 @@ impl VariantCache {
 enum ExprResult {
     Ok(Value),
     Return(Value),
+    Continue(Value),
+    Break(Value),
     Abort,
 }
 
@@ -862,6 +864,48 @@ impl Interpreter {
                 };
                 ExprResult::Return(v)
             }
+            Expr::Loop(pattern_id, initializer, items, _, _) => {
+                let mut loop_val = match self.eval_expr(*initializer, environment, unifier) {
+                    ExprResult::Ok(v) => v,
+                    r => {
+                        return r;
+                    }
+                };
+                loop {
+                    let mut loop_env = Environment::block_child(environment);
+                    let r = self.match_pattern(pattern_id, &loop_val, &mut loop_env, unifier);
+                    assert!(r);
+                    assert!(!items.is_empty());
+                    for item in items {
+                        match self.eval_expr(*item, &mut loop_env, unifier) {
+                            ExprResult::Ok(v) => {
+                                loop_val = v;
+                            }
+                            ExprResult::Continue(v) => {
+                                loop_val = v;
+                            }
+                            ExprResult::Break(v) => {
+                                return ExprResult::Ok(v);
+                            }
+                            r => {
+                                return r;
+                            }
+                        }
+                    }
+                }
+            }
+            Expr::Continue(expr) => match self.eval_expr(*expr, environment, unifier) {
+                ExprResult::Ok(v) => return ExprResult::Continue(v),
+                r => {
+                    return r;
+                }
+            },
+            Expr::Break(expr) => match self.eval_expr(*expr, environment, unifier) {
+                ExprResult::Ok(v) => return ExprResult::Break(v),
+                r => {
+                    return r;
+                }
+            },
         }
     }
 
@@ -1161,6 +1205,8 @@ impl Interpreter {
             ExprResult::Ok(v) => v,
             ExprResult::Return(v) => v,
             ExprResult::Abort => panic!("Abort called"),
+            ExprResult::Continue(_) => panic!("Continue outside loop"),
+            ExprResult::Break(_) => panic!("Break outside loop"),
         }
     }
 

@@ -516,7 +516,8 @@ impl Error {
                         }
                         ResolverError::NamedInstancedNotUnique(module, instance, id) => {
                             eprintln!(
-                                "named instance {} is not unique in module {}",
+                                "{} named instance {} is not unique in module {}",
+                                error.red(),
                                 instance.yellow(),
                                 module.yellow()
                             );
@@ -524,7 +525,11 @@ impl Error {
                             print_location_set(file_manager, location_set);
                         }
                         ResolverError::PatternBindConflict(name, ids) => {
-                            eprintln!("Multiple variable named {} found", name.yellow(),);
+                            eprintln!(
+                                "{} multiple variable named {} found",
+                                error.red(),
+                                name.yellow(),
+                            );
                             for id in ids {
                                 let location_set = location_info.get_item_location(id);
                                 print_location_set(file_manager, location_set);
@@ -532,9 +537,20 @@ impl Error {
                         }
                         ResolverError::PatternBindNotPresent(name, id) => {
                             eprintln!(
-                                "Variable {} not present in all patterns in or pattern",
+                                "{} variable {} not present in all patterns in or pattern",
+                                error.red(),
                                 name.yellow(),
                             );
+                            let location_set = location_info.get_item_location(id);
+                            print_location_set(file_manager, location_set);
+                        }
+                        ResolverError::ContinueOutsideLoop(id) => {
+                            eprintln!("{} continue outside of a loop", error.red());
+                            let location_set = location_info.get_item_location(id);
+                            print_location_set(file_manager, location_set);
+                        }
+                        ResolverError::BreakOutsideLoop(id) => {
+                            eprintln!("{} break outside of a loop", error.red());
                             let location_set = location_info.get_item_location(id);
                             print_location_set(file_manager, location_set);
                         }

@@ -5,19 +5,20 @@ import Siko.Parser
 source = do
         lines <- ["module Main.Foo where",
                   "main = ",
-                  "   . println",
+                  "   println",
                   "main2 = ",
                   "   println",
                   ]
-        (_, src) <- loop (0, "") \(count, src) -> if count < getLength lines
-                        then
-                            do
-                                line <- atIndex lines count
-                                count <- count + 1
-                                src <- src + "\n" + line
-                                ((count, src), True)
-                        else
-                            ((count, src), False)
+        (_, src) <- loop (count, src) <- (0, "")  do
+                        if count < getLength lines
+                            then
+                                do
+                                    line <- atIndex lines count
+                                    count <- count + 1
+                                    src <- src + "\n" + line
+                                    continue (count, src)
+                            else
+                                break (count, src)
         src
 
 main = do

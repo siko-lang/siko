@@ -6,6 +6,7 @@ use crate::import::Namespace;
 use crate::item::DataMember;
 use crate::item::Item;
 use crate::lambda_helper::LambdaHelper;
+use crate::loop_helper::LoopHelper;
 use crate::module::Module;
 use crate::type_arg_resolver::TypeArgResolver;
 use crate::type_processor::process_type_signature;
@@ -220,6 +221,7 @@ fn process_pattern(
     lambda_helper: LambdaHelper,
     irrefutable: bool,
     type_arg_resolver: &mut TypeArgResolver,
+    loop_helper: Option<LoopHelper>,
 ) -> IrPatternId {
     let ir_pattern_id = ir_program.patterns.get_id();
     let info = program.patterns.get(&pattern_id);
@@ -248,6 +250,7 @@ fn process_pattern(
                         lambda_helper.clone(),
                         irrefutable,
                         type_arg_resolver,
+                        loop_helper.clone(),
                     )
                 })
                 .collect();
@@ -269,6 +272,7 @@ fn process_pattern(
                         lambda_helper.clone(),
                         irrefutable,
                         type_arg_resolver,
+                        loop_helper.clone(),
                     )
                 })
                 .collect();
@@ -287,6 +291,7 @@ fn process_pattern(
                 lambda_helper.clone(),
                 irrefutable,
                 type_arg_resolver,
+                loop_helper.clone(),
             );
             let ir_guard_expr_id = process_expr(
                 *guard_expr_id,
@@ -297,6 +302,7 @@ fn process_pattern(
                 errors,
                 lambda_helper.clone(),
                 type_arg_resolver,
+                loop_helper.clone(),
             );
             IrPattern::Guarded(ir_pattern_id, ir_guard_expr_id)
         }
@@ -341,6 +347,7 @@ fn process_pattern(
                 lambda_helper.clone(),
                 irrefutable,
                 type_arg_resolver,
+                loop_helper.clone(),
             );
 
             let result = process_type_signature(
@@ -401,6 +408,7 @@ fn process_pattern(
                             lambda_helper.clone(),
                             irrefutable,
                             type_arg_resolver,
+                            loop_helper.clone(),
                         );
                         (field_index, ir_pattern_id)
                     })
@@ -457,6 +465,7 @@ pub fn process_expr(
     errors: &mut Vec<ResolverError>,
     lambda_helper: LambdaHelper,
     type_arg_resolver: &mut TypeArgResolver,
+    loop_helper: Option<LoopHelper>,
 ) -> IrExprId {
     let expr = &program.exprs.get(&id).item;
     let location_id = program.exprs.get(&id).location_id;
@@ -499,6 +508,7 @@ pub fn process_expr(
                 errors,
                 local_lambda_helper.clone(),
                 type_arg_resolver,
+                loop_helper.clone(),
             );
 
             let lambda_info = LambdaInfo {
@@ -542,6 +552,7 @@ pub fn process_expr(
                         errors,
                         lambda_helper.clone(),
                         type_arg_resolver,
+                        loop_helper.clone(),
                     )
                 })
                 .collect();
@@ -620,6 +631,7 @@ pub fn process_expr(
                         errors,
                         lambda_helper.clone(),
                         type_arg_resolver,
+                        loop_helper.clone(),
                     );
                     let ir_expr = IrExpr::DynamicFunctionCall(id_expr, ir_args);
                     return add_expr(ir_expr, id, ir_program, program);
@@ -640,6 +652,7 @@ pub fn process_expr(
                 errors,
                 lambda_helper.clone(),
                 type_arg_resolver,
+                loop_helper.clone(),
             );
             let ir_true_branch = process_expr(
                 *true_branch,
@@ -650,6 +663,7 @@ pub fn process_expr(
                 errors,
                 lambda_helper.clone(),
                 type_arg_resolver,
+                loop_helper.clone(),
             );
             let ir_false_branch = process_expr(
                 *false_branch,
@@ -660,6 +674,7 @@ pub fn process_expr(
                 errors,
                 lambda_helper.clone(),
                 type_arg_resolver,
+                loop_helper.clone(),
             );
             let ir_expr = IrExpr::If(ir_cond, ir_true_branch, ir_false_branch);
             return add_expr(ir_expr, id, ir_program, program);
@@ -677,6 +692,7 @@ pub fn process_expr(
                         errors,
                         lambda_helper.clone(),
                         type_arg_resolver,
+                        loop_helper.clone(),
                     )
                 })
                 .collect();
@@ -696,6 +712,7 @@ pub fn process_expr(
                         errors,
                         lambda_helper.clone(),
                         type_arg_resolver,
+                        loop_helper.clone(),
                     )
                 })
                 .collect();
@@ -756,6 +773,7 @@ pub fn process_expr(
                         errors,
                         lambda_helper.clone(),
                         type_arg_resolver,
+                        loop_helper.clone(),
                     )
                 })
                 .collect();
@@ -772,6 +790,7 @@ pub fn process_expr(
                 errors,
                 lambda_helper.clone(),
                 type_arg_resolver,
+                loop_helper.clone(),
             );
             let mut bindings = BTreeMap::new();
             let ir_pattern_id = process_pattern(
@@ -786,6 +805,7 @@ pub fn process_expr(
                 lambda_helper.clone(),
                 true,
                 type_arg_resolver,
+                loop_helper.clone(),
             );
             for binding in bindings {
                 if binding.1.len() > 1 {
@@ -807,6 +827,7 @@ pub fn process_expr(
                 errors,
                 lambda_helper,
                 type_arg_resolver,
+                loop_helper.clone(),
             );
             let accesses = process_field_access(module, errors, name.to_string(), location_id);
             let ir_expr = IrExpr::FieldAccess(accesses, ir_expr_id);
@@ -822,6 +843,7 @@ pub fn process_expr(
                 errors,
                 lambda_helper,
                 type_arg_resolver,
+                loop_helper.clone(),
             );
             let ir_expr = IrExpr::TupleFieldAccess(*index, ir_expr_id);
             return add_expr(ir_expr, id, ir_program, program);
@@ -839,6 +861,7 @@ pub fn process_expr(
                         errors,
                         lambda_helper.clone(),
                         type_arg_resolver,
+                        loop_helper.clone(),
                     )
                 })
                 .collect();
@@ -855,6 +878,7 @@ pub fn process_expr(
                 errors,
                 lambda_helper.clone(),
                 type_arg_resolver,
+                loop_helper.clone(),
             );
             let mut ir_cases = Vec::new();
             let mut bind_groups = Vec::new();
@@ -876,6 +900,7 @@ pub fn process_expr(
                             lambda_helper.clone(),
                             false,
                             type_arg_resolver,
+                            loop_helper.clone(),
                         );
                         for binding in bindings {
                             if binding.1.len() > 1 {
@@ -907,6 +932,7 @@ pub fn process_expr(
                             errors,
                             lambda_helper.clone(),
                             type_arg_resolver,
+                            loop_helper.clone(),
                         );
                         let ir_case = IrCase {
                             pattern_id: pattern_id,
@@ -945,6 +971,7 @@ pub fn process_expr(
                         lambda_helper.clone(),
                         false,
                         type_arg_resolver,
+                        loop_helper.clone(),
                     );
                     for binding in bindings {
                         if binding.1.len() > 1 {
@@ -964,6 +991,7 @@ pub fn process_expr(
                         errors,
                         lambda_helper.clone(),
                         type_arg_resolver,
+                        loop_helper.clone(),
                     );
                     let ir_case = IrCase {
                         pattern_id: pattern_id,
@@ -1016,6 +1044,7 @@ pub fn process_expr(
                             errors,
                             lambda_helper.clone(),
                             type_arg_resolver,
+                            loop_helper.clone(),
                         );
                         let value_expr = RecordFieldValueExpr {
                             expr_id: ir_body_id,
@@ -1098,6 +1127,7 @@ pub fn process_expr(
                     errors,
                     lambda_helper.clone(),
                     type_arg_resolver,
+                    loop_helper.clone(),
                 );
                 field_exprs.push(ir_body_id);
             }
@@ -1144,8 +1174,106 @@ pub fn process_expr(
                 errors,
                 lambda_helper.clone(),
                 type_arg_resolver,
+                loop_helper.clone(),
             );
             let ir_expr = IrExpr::Return(ir_inner_expr_id);
+            return add_expr(ir_expr, id, ir_program, program);
+        }
+        Expr::Loop(pattern_id, initializer, items) => {
+            let ir_initializer_id = process_expr(
+                *initializer,
+                program,
+                module,
+                environment,
+                ir_program,
+                errors,
+                lambda_helper.clone(),
+                type_arg_resolver,
+                loop_helper.clone(),
+            );
+            let mut loop_environment = Environment::child(environment);
+            let mut bindings = BTreeMap::new();
+            let ir_pattern_id = process_pattern(
+                ir_initializer_id,
+                *pattern_id,
+                program,
+                ir_program,
+                module,
+                &mut loop_environment,
+                &mut bindings,
+                errors,
+                lambda_helper.clone(),
+                true,
+                type_arg_resolver,
+                loop_helper.clone(),
+            );
+            let loop_helper = LoopHelper::new();
+            let ir_items: Vec<_> = items
+                .iter()
+                .map(|item| {
+                    process_expr(
+                        *item,
+                        program,
+                        module,
+                        &mut loop_environment,
+                        ir_program,
+                        errors,
+                        lambda_helper.clone(),
+                        type_arg_resolver,
+                        Some(loop_helper.clone()),
+                    )
+                })
+                .collect();
+            let (continues, breaks) = loop_helper.get();
+            let ir_expr = IrExpr::Loop(
+                ir_pattern_id,
+                ir_initializer_id,
+                ir_items,
+                continues,
+                breaks,
+            );
+            return add_expr(ir_expr, id, ir_program, program);
+        }
+        Expr::Continue(inner_expr_id) => {
+            let ir_inner_expr_id = process_expr(
+                *inner_expr_id,
+                program,
+                module,
+                environment,
+                ir_program,
+                errors,
+                lambda_helper.clone(),
+                type_arg_resolver,
+                loop_helper.clone(),
+            );
+            let ir_expr = IrExpr::Continue(ir_inner_expr_id);
+            if let Some(loop_helper) = loop_helper {
+                loop_helper.add_continue(ir_inner_expr_id);
+            } else {
+                let err = ResolverError::ContinueOutsideLoop(location_id);
+                errors.push(err);
+            }
+            return add_expr(ir_expr, id, ir_program, program);
+        }
+        Expr::Break(inner_expr_id) => {
+            let ir_inner_expr_id = process_expr(
+                *inner_expr_id,
+                program,
+                module,
+                environment,
+                ir_program,
+                errors,
+                lambda_helper.clone(),
+                type_arg_resolver,
+                loop_helper.clone(),
+            );
+            let ir_expr = IrExpr::Break(ir_inner_expr_id);
+            if let Some(loop_helper) = loop_helper {
+                loop_helper.add_break(ir_inner_expr_id);
+            } else {
+                let err = ResolverError::BreakOutsideLoop(location_id);
+                errors.push(err);
+            }
             return add_expr(ir_expr, id, ir_program, program);
         }
     }

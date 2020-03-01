@@ -98,6 +98,19 @@ pub fn walk_expr(expr_id: &ExprId, visitor: &mut dyn Visitor) {
         Expr::Return(inner) => {
             walk_expr(inner, visitor);
         }
+        Expr::Loop(pattern, initializer, items, _, _) => {
+            walk_expr(initializer, visitor);
+            walk_pattern(pattern, visitor);
+            for item in items {
+                walk_expr(item, visitor);
+            }
+        }
+        Expr::Continue(expr) => {
+            walk_expr(expr, visitor);
+        }
+        Expr::Break(expr) => {
+            walk_expr(expr, visitor);
+        }
     }
     visitor.visit_expr(*expr_id, expr);
 }

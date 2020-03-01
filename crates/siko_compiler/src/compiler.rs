@@ -46,6 +46,13 @@ fn parse(
             return Err(Error::LexerError(errors));
         }
     };
+    /*
+    let t: Vec<_> = tokens
+        .iter()
+        .map(|t| format!("{:?}", t.token.kind()))
+        .collect();
+    println!("Tokens {:?}", t);
+    */
     let mut parser = Parser::new(file_path, &tokens[..], program, location_info);
     parser.parse()?;
     Ok(())

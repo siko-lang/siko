@@ -51,10 +51,8 @@ isIdentifier c = case c of
     'a'..='z' | 'A'..='Z' | '0'..='9' | '_' -> True
     _ -> False
 
-consumeWhile state cond = do
-    current <- ""
-    span <- startSpan state
-    loop (state, (current, span)) \(state, (current, span)) ->
+consumeWhile state cond = 
+    loop (state, (current, span)) <- (state, ("", startSpan state))
       do
         if not (isDone state)
             then
@@ -64,10 +62,10 @@ consumeWhile state cond = do
                         _ if cond c -> do
                             current <- current + "{}" % c
                             span <- updateSpan state span
-                            ((step state, (current, span)), True)
-                        _ -> ((state, (current, span)), False)
+                            (step state, (current, span))
+                        _ -> break (state, (current, span))
             else
-                ((state, (current, span)), False)
+                break (state, (current, span))
 
 consumeSingle :: LexerState -> Token -> LexerState
 consumeSingle state token = do
@@ -77,10 +75,8 @@ consumeSingle state token = do
 
 consumeString :: LexerState -> LexerState
 consumeString state = do
-    current <- ""
     state <- step state
-    span <- startSpan state
-    (state, (current, span)) <- loop (state, (current, span)) \(state, (current, span)) ->
+    (state, (current, span)) <- loop (state, (current, span)) <- (state, ("", startSpan state))
       do
         if not (isDone state)
             then
@@ -89,7 +85,7 @@ consumeString state = do
                     case c of
                         '"' -> do
                             state <- step state
-                            ((state, (current, span)), False)
+                            break (state, (current, span))
                         '\\' -> do
                             state <- step state
                             c <- peek state
@@ -108,38 +104,37 @@ consumeString state = do
                                     state <- addError state (InvalidEscapeSequence span)
                                     (current, state)
                             span <- updateSpan state span
-                            ((step state, (current, span)), True)
+                            (step state, (current, span))
                         _  -> do
                             current <- current + "{}" % c
                             span <- updateSpan state span
-                            ((step state, (current, span)), True)
+                            (step state, (current, span))
             else
-                ((state, (current, span)), False)
+                break (state, (current, span))
     addToken state (StringLiteral current) span
 
 consumeIdentifier :: LexerState -> LexerState
 consumeIdentifier state = do
     (state, (ident, span)) <- consumeWhile state isIdentifier
     keyword <- case ident of
-        "module" -> Some KeywordModule
-        "where" -> Some KeywordWhere
-        "do" -> Some KeywordDo
-        _ -> None
-    case keyword of
-        Some keyword -> addToken state keyword span
-        None ->
-            if startsWithUppercase ident
+        "module" -> KeywordModule
+        "where" -> KeywordWhere
+        "do" -> KeywordDo
+        "class" -> KeywordClass
+        _ -> if startsWithUppercase ident
                 then
-                    addToken state (TypeIdentifier ident) span
+                    return addToken state (TypeIdentifier ident) span
                 else
-                    addToken state (VarIdentifier ident) span
+                    return addToken state (VarIdentifier ident) span
+    addToken state keyword span
 
 lex :: String -> ([TokenInfo], [LexerError])
 lex input = 
     do
         cs <- String.chars input
         state <- emptyState cs
-        state <- loop state \state -> if not (isDone state)
+        state <- loop state <- state do
+         if not (isDone state)
             then
                 do
                     c <- peek state
@@ -152,9 +147,9 @@ lex input =
                         '.' -> consumeSingle state Dot
                         '\n' -> step state
                         _ -> step state
-                    (state, True)
+                    state
             else
-                (state, False)
+                break state
         (tokens, errors) <- processLayout state.tokens
         errors <- errors + state.errors
         (tokens, errors)

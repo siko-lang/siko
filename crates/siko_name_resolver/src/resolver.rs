@@ -465,6 +465,7 @@ impl Resolver {
                 errors,
                 lambda_helper,
                 type_arg_resolver,
+                None,
             );
             body = Some(body_id);
         }

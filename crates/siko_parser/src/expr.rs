@@ -17,7 +17,7 @@ use siko_syntax::pattern::RecordFieldPattern;
 
 fn parse_paren_expr(parser: &mut Parser) -> Result<ExprId, ParseError> {
     let start_index = parser.get_index();
-    let res = parse_parens(parser, |p| p.parse_expr(), " expression")?;
+    let res = parse_parens(parser, |p| p.parse_expr(false), " expression")?;
     match res {
         ParenParseResult::Single(e) => {
             return Ok(e);
@@ -38,7 +38,7 @@ fn parse_list_expr(parser: &mut Parser) -> Result<ExprId, ParseError> {
         if parser.current(TokenKind::RBracket) {
             break;
         }
-        let expr = parser.parse_expr()?;
+        let expr = parser.parse_expr(false)?;
         items.push(expr);
         if parser.current(TokenKind::Comma) {
             parser.expect(TokenKind::Comma)?;
@@ -56,7 +56,7 @@ fn parse_lambda(parser: &mut Parser) -> Result<ExprId, ParseError> {
     parser.expect(TokenKind::Lambda)?;
     let args = parser.parse_lambda_args()?;
     parser.expect(TokenKind::Op(BuiltinOperator::Arrow))?;
-    let body_expr_id = parser.parse_expr()?;
+    let body_expr_id = parser.parse_expr(false)?;
     let mut temp_arg_exprs = Vec::new();
     let mut temp_args = Vec::new();
     for arg in args.iter() {
@@ -80,8 +80,7 @@ fn parse_lambda(parser: &mut Parser) -> Result<ExprId, ParseError> {
     Ok(lambda_expr_id)
 }
 
-fn parse_do(parser: &mut Parser) -> Result<ExprId, ParseError> {
-    let start_index = parser.get_index();
+fn parse_do_block(parser: &mut Parser) -> Result<Vec<ExprId>, ParseError> {
     parser.expect(TokenKind::KeywordDo)?;
     let mut exprs = Vec::new();
     loop {
@@ -98,7 +97,7 @@ fn parse_do(parser: &mut Parser) -> Result<ExprId, ParseError> {
             parser.expect(TokenKind::Op(BuiltinOperator::Bind))?;
             pattern_id = Some(inner_pattern_id);
         }
-        let expr = parser.parse_expr()?;
+        let expr = parser.parse_expr(false)?;
         parser.expect(TokenKind::EndOfItem)?;
         if let Some(pattern_id) = pattern_id {
             let expr = Expr::Bind(pattern_id, expr);
@@ -111,9 +110,15 @@ fn parse_do(parser: &mut Parser) -> Result<ExprId, ParseError> {
             break;
         }
     }
+    parser.expect(TokenKind::EndOfBlock)?;
+    Ok(exprs)
+}
+
+fn parse_do(parser: &mut Parser) -> Result<ExprId, ParseError> {
+    let start_index = parser.get_index();
+    let exprs = parse_do_block(parser)?;
     let expr = Expr::Do(exprs);
     let id = parser.add_expr(expr, start_index);
-    parser.expect(TokenKind::EndOfBlock)?;
     Ok(id)
 }
 
@@ -283,7 +288,7 @@ pub fn parse_pattern(parser: &mut Parser) -> Result<PatternId, ParseError> {
 fn parse_case(parser: &mut Parser) -> Result<ExprId, ParseError> {
     let start_index = parser.get_index();
     parser.expect(TokenKind::KeywordCase)?;
-    let body = parser.parse_expr()?;
+    let body = parser.parse_expr(false)?;
     parser.expect(TokenKind::KeywordOf)?;
     let mut cases = Vec::new();
     loop {
@@ -306,12 +311,12 @@ fn parse_case(parser: &mut Parser) -> Result<ExprId, ParseError> {
         };
         if parser.current(TokenKind::KeywordIf) {
             parser.expect(TokenKind::KeywordIf)?;
-            let guard_expr = parser.parse_expr()?;
+            let guard_expr = parser.parse_expr(false)?;
             let pattern = Pattern::Guarded(pattern_id, guard_expr);
             pattern_id = parser.add_pattern(pattern, start_index);
         }
         parser.expect(TokenKind::Op(BuiltinOperator::Arrow))?;
-        let case_body = parser.parse_expr()?;
+        let case_body = parser.parse_expr(false)?;
         parser.expect(TokenKind::EndOfItem)?;
         let case = Case {
             pattern_id: pattern_id,
@@ -331,12 +336,24 @@ fn parse_case(parser: &mut Parser) -> Result<ExprId, ParseError> {
 fn parse_if(parser: &mut Parser) -> Result<ExprId, ParseError> {
     let start_index = parser.get_index();
     parser.expect(TokenKind::KeywordIf)?;
-    let cond = parser.parse_expr()?;
+    let cond = parser.parse_expr(false)?;
     parser.expect(TokenKind::KeywordThen)?;
-    let true_branch = parser.parse_expr()?;
+    let true_branch = parser.parse_expr(false)?;
     parser.expect(TokenKind::KeywordElse)?;
-    let false_branch = parser.parse_expr()?;
+    let false_branch = parser.parse_expr(false)?;
     let expr = Expr::If(cond, true_branch, false_branch);
+    let id = parser.add_expr(expr, start_index);
+    Ok(id)
+}
+
+fn parse_loop(parser: &mut Parser) -> Result<ExprId, ParseError> {
+    let start_index = parser.get_index();
+    parser.expect(TokenKind::KeywordLoop)?;
+    let pattern = parse_pattern(parser)?;
+    parser.expect(TokenKind::Op(BuiltinOperator::Bind))?;
+    let start_expr = parser.parse_expr(true)?;
+    let exprs = parse_do_block(parser)?;
+    let expr = Expr::Loop(pattern, start_expr, exprs);
     let id = parser.add_expr(expr, start_index);
     Ok(id)
 }
@@ -349,7 +366,7 @@ fn parse_record_construction_item(
     let end_index = parser.get_index();
     parser.expect(TokenKind::Equal)?;
     let location_id = parser.get_location_id(start_index, end_index);
-    let body = parser.parse_expr()?;
+    let body = parser.parse_expr(false)?;
     let item = RecordConstructionItem {
         field_name: field_name,
         body: body,
@@ -421,9 +438,9 @@ fn parse_arg(parser: &mut Parser) -> Result<ExprId, ParseError> {
             if parser.current(TokenKind::Formatter) {
                 parser.expect(TokenKind::Formatter)?;
                 let items = if parser.current(TokenKind::LParen) {
-                    parser.parse_list1_in_parens(|p| parse_ops(p))?
+                    parser.parse_list1_in_parens(|p| parse_ops(p, false))?
                 } else {
-                    let item = parser.parse_expr()?;
+                    let item = parser.parse_expr(false)?;
                     vec![item]
                 };
                 let expr = Expr::Formatter(s, items);
@@ -455,8 +472,25 @@ fn parse_arg(parser: &mut Parser) -> Result<ExprId, ParseError> {
         }
         Token::KeywordReturn => {
             parser.expect(TokenKind::KeywordReturn)?;
-            let item = parser.parse_expr()?;
+            let item = parser.parse_expr(false)?;
             let expr = Expr::Return(item);
+            let id = parser.add_expr(expr, start_index);
+            id
+        }
+        Token::KeywordLoop => {
+            return parse_loop(parser);
+        }
+        Token::KeywordContinue => {
+            parser.expect(TokenKind::KeywordContinue)?;
+            let item = parser.parse_expr(false)?;
+            let expr = Expr::Continue(item);
+            let id = parser.add_expr(expr, start_index);
+            id
+        }
+        Token::KeywordBreak => {
+            parser.expect(TokenKind::KeywordBreak)?;
+            let item = parser.parse_expr(false)?;
+            let expr = Expr::Break(item);
             let id = parser.add_expr(expr, start_index);
             id
         }
@@ -467,7 +501,7 @@ fn parse_arg(parser: &mut Parser) -> Result<ExprId, ParseError> {
     Ok(id)
 }
 
-fn parse_primary(parser: &mut Parser) -> Result<ExprId, ParseError> {
+fn parse_primary(parser: &mut Parser, for_initializer: bool) -> Result<ExprId, ParseError> {
     let start_index = parser.get_index();
     let f = parse_unary(parser, false)?;
     let mut args = Vec::new();
@@ -482,9 +516,9 @@ fn parse_primary(parser: &mut Parser) -> Result<ExprId, ParseError> {
             | TokenKind::CharLiteral
             | TokenKind::LParen
             | TokenKind::KeywordIf
-            | TokenKind::KeywordDo
             | TokenKind::LBracket
             | TokenKind::Lambda => {}
+            TokenKind::KeywordDo if !for_initializer => {}
             _ => break,
         }
         let arg = parse_unary(parser, true)?;
@@ -538,15 +572,16 @@ fn parse_unary(parser: &mut Parser, is_arg: bool) -> Result<ExprId, ParseError> 
 fn parse_binary_op(
     parser: &mut Parser,
     ops: &[BuiltinOperator],
-    next: fn(&mut Parser) -> Result<ExprId, ParseError>,
+    for_initializer: bool,
+    next: fn(&mut Parser, bool) -> Result<ExprId, ParseError>,
 ) -> Result<ExprId, ParseError> {
     let start_index = parser.get_index();
-    let mut left = next(parser)?;
+    let mut left = next(parser, for_initializer)?;
     loop {
         if let Some((op, _)) = parser.consume_op(ops) {
             let function_id_expr = Expr::Builtin(op);
             let function_id_expr_id = parser.add_expr(function_id_expr, start_index);
-            let right = next(parser)?;
+            let right = next(parser, for_initializer)?;
             let expr = Expr::FunctionCall(function_id_expr_id, vec![left, right]);
             let id = parser.add_expr(expr, start_index);
             left = id;
@@ -558,27 +593,29 @@ fn parse_binary_op(
     Ok(left)
 }
 
-pub fn parse_ops(parser: &mut Parser) -> Result<ExprId, ParseError> {
-    return parse_andor(parser);
+pub fn parse_ops(parser: &mut Parser, for_initializer: bool) -> Result<ExprId, ParseError> {
+    return parse_andor(parser, for_initializer);
 }
 
-fn parse_andor(parser: &mut Parser) -> Result<ExprId, ParseError> {
+fn parse_andor(parser: &mut Parser, for_initializer: bool) -> Result<ExprId, ParseError> {
     return parse_binary_op(
         parser,
         &[BuiltinOperator::And, BuiltinOperator::Or],
+        for_initializer,
         parse_equal,
     );
 }
 
-fn parse_equal(parser: &mut Parser) -> Result<ExprId, ParseError> {
+fn parse_equal(parser: &mut Parser, for_initializer: bool) -> Result<ExprId, ParseError> {
     return parse_binary_op(
         parser,
         &[BuiltinOperator::Equals, BuiltinOperator::NotEquals],
+        for_initializer,
         parse_ord_ops,
     );
 }
 
-fn parse_ord_ops(parser: &mut Parser) -> Result<ExprId, ParseError> {
+fn parse_ord_ops(parser: &mut Parser, for_initializer: bool) -> Result<ExprId, ParseError> {
     return parse_binary_op(
         parser,
         &[
@@ -587,28 +624,36 @@ fn parse_ord_ops(parser: &mut Parser) -> Result<ExprId, ParseError> {
             BuiltinOperator::GreaterThan,
             BuiltinOperator::GreaterOrEqualThan,
         ],
+        for_initializer,
         parse_addsub,
     );
 }
 
-fn parse_addsub(parser: &mut Parser) -> Result<ExprId, ParseError> {
+fn parse_addsub(parser: &mut Parser, for_initializer: bool) -> Result<ExprId, ParseError> {
     return parse_binary_op(
         parser,
         &[BuiltinOperator::Add, BuiltinOperator::Sub],
+        for_initializer,
         parse_muldiv,
     );
 }
 
-fn parse_muldiv(parser: &mut Parser) -> Result<ExprId, ParseError> {
+fn parse_muldiv(parser: &mut Parser, for_initializer: bool) -> Result<ExprId, ParseError> {
     return parse_binary_op(
         parser,
         &[BuiltinOperator::Mul, BuiltinOperator::Div],
+        for_initializer,
         parse_pipe_forward,
     );
 }
 
-fn parse_pipe_forward(parser: &mut Parser) -> Result<ExprId, ParseError> {
-    return parse_binary_op(parser, &[BuiltinOperator::PipeForward], parse_primary);
+fn parse_pipe_forward(parser: &mut Parser, for_initializer: bool) -> Result<ExprId, ParseError> {
+    return parse_binary_op(
+        parser,
+        &[BuiltinOperator::PipeForward],
+        for_initializer,
+        parse_primary,
+    );
 }
 
 fn parse_field_access(parser: &mut Parser) -> Result<ExprId, ParseError> {

@@ -47,6 +47,8 @@ pub enum ResolverError {
     NamedInstancedNotUnique(String, String, LocationId),
     PatternBindConflict(String, Vec<LocationId>),
     PatternBindNotPresent(String, LocationId),
+    ContinueOutsideLoop(LocationId),
+    BreakOutsideLoop(LocationId),
 }
 
 #[derive(Debug)]

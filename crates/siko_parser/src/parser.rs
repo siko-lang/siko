@@ -172,6 +172,9 @@ impl<'a> Parser<'a> {
             if self.tokens[index].token.kind() == TokenKind::EndOfItem {
                 return false;
             }
+            if self.tokens[index].token.kind() == TokenKind::KeywordLoop {
+                return false;
+            }
             if self.tokens[index].token.kind() == TokenKind::KeywordDo {
                 return false;
             }
@@ -382,8 +385,8 @@ impl<'a> Parser<'a> {
         None
     }
 
-    pub fn parse_expr(&mut self) -> Result<ExprId, ParseError> {
-        let id = parse_ops(self)?;
+    pub fn parse_expr(&mut self, for_initializer: bool) -> Result<ExprId, ParseError> {
+        let id = parse_ops(self, for_initializer)?;
         Ok(id)
     }
 
@@ -659,7 +662,7 @@ impl<'a> Parser<'a> {
                     }
                     FunctionBody::Extern
                 } else {
-                    let body_expr_id = self.parse_expr()?;
+                    let body_expr_id = self.parse_expr(false)?;
                     if args.is_empty() {
                         FunctionBody::Expr(body_expr_id)
                     } else {

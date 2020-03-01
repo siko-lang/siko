@@ -68,6 +68,9 @@ pub enum Expr {
     RecordInitialization(String, Vec<RecordConstructionItem>),
     RecordUpdate(String, Vec<RecordConstructionItem>),
     Return(ExprId),
+    Loop(PatternId, ExprId, Vec<ExprId>),
+    Continue(ExprId),
+    Break(ExprId),
 }
 
 impl fmt::Display for Expr {
@@ -107,6 +110,11 @@ impl fmt::Display for Expr {
                 write!(f, "RecordUpdate({}, {})", name, format_list(items))
             }
             Expr::Return(expr) => write!(f, "Return({})", expr),
+            Expr::Loop(pattern, start, block) => {
+                write!(f, "Loop({}, {}, {})", pattern, start, format_list(block))
+            }
+            Expr::Continue(expr) => write!(f, "Continue({})", expr),
+            Expr::Break(expr) => write!(f, "Break({})", expr),
         }
     }
 }

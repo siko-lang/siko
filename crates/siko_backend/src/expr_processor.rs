@@ -405,6 +405,9 @@ pub fn process_expr(
             );
             MirExpr::Return(mir_inner_id)
         }
+        IrExpr::Loop(..) => unimplemented!(),
+        IrExpr::Break(..) => unimplemented!(),
+        IrExpr::Continue(..) => unimplemented!(),
     };
     let mir_expr_id = mir_program.add_expr(mir_expr, item_info.location_id, mir_expr_ty);
     expr_id_map.insert(*ir_expr_id, mir_expr_id);

@@ -338,6 +338,20 @@ impl<'a> Visitor for ExpressionChecker<'a> {
             Expr::Return(inner) => {
                 self.return_exprs.push(*inner);
             }
+            Expr::Loop(pattern, initializer, items, continues, breaks) => {
+                self.match_expr_with_pattern(*initializer, *pattern);
+                for continue_expr in continues {
+                    self.match_exprs(*initializer, *continue_expr);
+                }
+                for break_expr in breaks {
+                    self.match_exprs(*initializer, *break_expr);
+                }
+                let last_expr_id = items[items.len() - 1];
+                self.match_exprs(expr_id, last_expr_id);
+                self.match_exprs(*initializer, last_expr_id);
+            }
+            Expr::Break(..) => {}
+            Expr::Continue(..) => {}
         }
     }
 

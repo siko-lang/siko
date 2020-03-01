@@ -50,16 +50,16 @@ expect state kind = do
 parseModuleName :: ParserState -> (ParserState, String)
 parseModuleName state = do
     name <- ""
-    loop (state, name) \(state, name) -> do
+    loop (state, name) <- (state, "") do
         ti <- peek state
         case ti.token of
             TypeIdentifier id -> do
                 name <- name + id
-                ((step state, name), True)
+                (step state, name)
             Dot -> do
                 name <- name + "."
-                ((step state, name), True)
-            _ -> ((state, name), False)
+                (step state, name)
+            _ -> break (state, name)
 
 
 parseExpr :: ParserState -> Result ParserState (ParserState, ParserError)
@@ -90,41 +90,42 @@ parseFunction state = do
 
 parseModule :: ParserState -> Result ParserState (ParserState, ParserError)
 parseModule state = do
-    case expect state Kind.KeywordModule of
-        Ok state -> do
-            (state, name) <- parseModuleName state
-            if name == ""
-                then
-                    Err (state, unexpectedToken state "<module name>")
-                else do
-                    println "module {}" % name
-                    case expect state Kind.KeywordWhere of
-                        Ok state -> do
-                            (state, err) <- loop (state, None) \(state, _) -> do
-                                case parseFunction state of
-                                    Ok state -> ((state, None), True)
-                                    Err (state, err) -> ((state, Some err), False)
-                            case err of
-                                None ->
-                                    expect state Kind.EndOfBlock
-                                Some err ->
-                                    Err (state, err)
-                        Err (state, err) -> Err (state, Context err "where in module definition")
-        Err (state, err) -> Err (state, Context err "keyword module")
+    state <- case expect state Kind.KeywordModule of
+        Ok state -> state
+        Err (state, err) -> return Err (state, Context err "keyword module")
+    (state, name) <- parseModuleName state
+    if name == ""
+        then
+            return Err (state, unexpectedToken state "<module name>")
+        else
+        do
+            println "module {}" % name
+            state <- case expect state Kind.KeywordWhere of
+                Ok state -> state
+                Err (state, err) -> return Err (state, Context err "where in module definition")
+            (state, err) <- loop (state, err) <- (state, None) do
+                case parseFunction state of
+                    Ok state -> (state, None)
+                    Err (state, err) -> break (state, Some err)
+            case err of
+                None ->
+                    expect state Kind.EndOfBlock
+                Some err ->
+                    Err (state, err)
 
 processTokens :: ParserState -> (Program, [ParserError])
 processTokens state = do
-    state <- loop state \state -> do
+    state <- loop state <- state do
         if not (isDone state)
             then
                 do
                     case parseModule state of
-                        Ok state -> (state, True)
+                        Ok state -> state
                         Err (state, err) -> do
                             state <- addError state err
-                            (state, False)
+                            break state
             else
-                (state, False)
+                break state
     (Program [], state.errors)
 
 printErr err = do
