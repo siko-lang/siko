@@ -39,11 +39,11 @@ fn process_dir(arg: String, inputs: &mut Vec<(PathBuf, String)>) -> bool {
 
 fn print_usage() {
     println!("Usage:");
-    println!("SikoTester SIKOC SIKO_STD COMP_DIR RUST_COMP_DIR SUCCESS_DIRFAIL_DIR");
+    println!("SikoTester SIKOC SIKO_STD COMP_DIR RUST_COMP_DIR SUCCESS_DIRFAIL_DIR RT_DIR");
 }
 
 fn process_args(args: Vec<String>) -> bool {
-    if args.len() != 6 {
+    if args.len() != 7 {
         print_usage();
         return false;
     }
@@ -53,6 +53,7 @@ fn process_args(args: Vec<String>) -> bool {
     let rust_comp_dir = args[3].clone();
     let success_dir = args[4].clone();
     let fail_dir = args[5].clone();
+    let rt_dir = args[6].clone();
     let mut success_files = Vec::new();
     process_dir(success_dir, &mut success_files);
     let mut fail_files = Vec::new();
@@ -79,7 +80,12 @@ fn process_args(args: Vec<String>) -> bool {
             print!("OK");
         }
         //println!("Compiling {}", s.display());
-        let rs_output_file = format!("{}/{}.rs", comp_dir, tc_name);
+        let rs_output_dir = format!("{}/{}", comp_dir, tc_name);
+        std::fs::create_dir_all(&rs_output_dir).expect("Failed to create comp dir");
+        let rs_output_file = format!("{}/source.rs", rs_output_dir);
+        let main_output_file = format!("{}/main.rs", rs_output_dir);
+        let main_source_file = format!("{}/main.rs", rt_dir);
+        std::fs::copy(main_source_file, &main_output_file).expect("Failed to copy main.rs");
         let rustc_output_file = format!("{}/{}", rust_comp_dir.clone(), tc_name);
         let status = Command::new(sikoc.clone())
             .arg("-s")
@@ -98,10 +104,12 @@ fn process_args(args: Vec<String>) -> bool {
             print!("/OK");
         }
         let output = Command::new("rustc")
-            .arg(rs_output_file)
+            .arg(main_output_file)
             .arg("-o")
             .arg(rustc_output_file.clone())
             .arg("--edition=2018")
+            .arg("--crate-name")
+            .arg("source")
             .output()
             .expect("failed to execute process");
         if !output.status.success() {

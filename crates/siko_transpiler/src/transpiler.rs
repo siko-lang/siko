@@ -39,10 +39,6 @@ impl RustProgram {
                 module.write(output_file, program, &mut indent)?;
             }
         }
-        write!(output_file, "fn main() {{\n")?;
-        indent.inc();
-        write!(output_file, "{}crate::Main::main_0();\n", indent)?;
-        write!(output_file, "}}\n")?;
         Ok(())
     }
 }

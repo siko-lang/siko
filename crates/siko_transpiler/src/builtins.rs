@@ -18,33 +18,9 @@ fn generate_partial_cmp_builtin_body(
     let ord_ty_str = get_ord_type_from_optional_ord(result_ty, program);
     write!(
         output_file,
-        "{}match arg0.value.partial_cmp(&arg1.value) {{\n",
-        indent
-    )?;
-    indent.inc();
-    write!(
-        output_file,
-        "{} Some(std::cmp::Ordering::Less) => {{ {}::Some({}::Less) }}\n",
+        "{}partial_cmp_body!(arg0, arg1, {}, {})",
         indent, result_ty_str, ord_ty_str
     )?;
-    write!(
-        output_file,
-        "{} Some(std::cmp::Ordering::Equal) => {{ {}::Some({}::Equal) }}\n",
-        indent, result_ty_str, ord_ty_str
-    )?;
-    write!(
-        output_file,
-        "{} Some(std::cmp::Ordering::Greater) => {{ {}::Some({}::Greater) }}\n",
-        indent, result_ty_str, ord_ty_str
-    )?;
-    write!(
-        output_file,
-        "{} None => {{ {}::None }}\n",
-        indent, result_ty_str
-    )?;
-    indent.dec();
-    write!(output_file, "{}}}", indent)?;
-
     Ok(())
 }
 
@@ -56,28 +32,9 @@ fn generate_cmp_builtin_body(
 ) -> Result<()> {
     write!(
         output_file,
-        "{}match arg0.value.cmp(&arg1.value) {{\n",
-        indent
-    )?;
-    indent.inc();
-    write!(
-        output_file,
-        "{} std::cmp::Ordering::Less => {{ {}::Less }}\n",
+        "{}cmp_body!(arg0, arg1, {})",
         indent, result_ty_str
     )?;
-    write!(
-        output_file,
-        "{} std::cmp::Ordering::Equal => {{ {}::Equal }}\n",
-        indent, result_ty_str
-    )?;
-    write!(
-        output_file,
-        "{} std::cmp::Ordering::Greater => {{ {}::Greater }}\n",
-        indent, result_ty_str
-    )?;
-    indent.dec();
-    write!(output_file, "{}}}", indent)?;
-
     Ok(())
 }
 
@@ -292,78 +249,30 @@ fn generate_map_builtins(
     indent.inc();
     match original_name {
         "empty" => {
-            write!(
-                output_file,
-                "{}let value = std::collections::BTreeMap::new();\n",
-                indent
-            )?;
-            write!(
-                output_file,
-                "{}{} {{ value : value }}",
-                indent, result_ty_str
-            )?;
+            write!(output_file, "{}map_empty!({})", indent, result_ty_str)?;
         }
         "insert" => {
             let result_id = result_ty.get_typedef_id();
             let tuple_record = program.typedefs.get(&result_id).get_record();
             let option_ty = ir_type_to_rust_type(&tuple_record.fields[1].ty, program);
-            write!(output_file, "{}let mut arg0 = arg0;\n", indent)?;
             write!(
                 output_file,
-                "{}let value = match arg0.value.insert(arg1, arg2) {{\n",
-                indent
-            )?;
-            indent.inc();
-            write!(
-                output_file,
-                "{} Some(v) => {}::Some(v),\n",
-                indent, option_ty
-            )?;
-            write!(output_file, "{} None => {}::None,\n", indent, option_ty)?;
-            indent.dec();
-            write!(output_file, "{}}};\n", indent)?;
-            write!(
-                output_file,
-                "{}{} {{ field_0 : arg0, field_1: value }}",
-                indent, result_ty_str
+                "{}map_insert!(arg0, arg1, arg2, {}, {})",
+                indent, option_ty, result_ty_str
             )?;
         }
         "remove" => {
             let result_id = result_ty.get_typedef_id();
             let tuple_record = program.typedefs.get(&result_id).get_record();
             let option_ty = ir_type_to_rust_type(&tuple_record.fields[1].ty, program);
-            write!(output_file, "{}let mut arg0 = arg0;\n", indent)?;
             write!(
                 output_file,
-                "{}let value = match arg0.value.remove(&arg1) {{\n",
-                indent
-            )?;
-            indent.inc();
-            write!(
-                output_file,
-                "{} Some(v) => {}::Some(v),\n",
-                indent, option_ty
-            )?;
-            write!(output_file, "{} None => {}::None,\n", indent, option_ty)?;
-            indent.dec();
-            write!(output_file, "{}}};\n", indent)?;
-            write!(
-                output_file,
-                "{}{} {{ field_0 : arg0, field_1: value }}",
-                indent, result_ty_str
+                "{}map_remove!(arg0, arg1, {}, {})",
+                indent, option_ty, result_ty_str
             )?;
         }
         "get" => {
-            write!(output_file, "{}match arg0.value.get(&arg1) {{\n", indent)?;
-            indent.inc();
-            write!(
-                output_file,
-                "{} Some(v) => {}::Some(v.clone()),\n",
-                indent, result_ty_str
-            )?;
-            write!(output_file, "{} None => {}::None,\n", indent, result_ty_str)?;
-            indent.dec();
-            write!(output_file, "{}}}", indent)?;
+            write!(output_file, "{}map_get!(arg0, arg1, {})", indent, result_ty_str)?;
         }
         _ => panic!("Map/{} not implemented", original_name),
     }
@@ -424,13 +333,19 @@ fn generate_list_builtins(
             let list_type = &arg_types[0];
             let base_list_type: Vec<_> = list_type.split("::").collect();
             let list_iter_name = format!("{}_Iter", base_list_type[2]);
-            let iter_trait_name =
-                result_ty_str.replace("crate::Iterator::", "crate::Iterator::Trait_");
+            let iter_trait_name = result_ty_str.replace(
+                "crate::source::Iterator::",
+                "crate::source::Iterator::Trait_",
+            );
 
             write!(output_file, "{}#[derive(Clone)]\n", indent)?;
             write!(output_file, "{}pub struct {} {{\n", indent, list_iter_name)?;
             indent.inc();
-            write!(output_file, "{}pub value: Vec<crate::Int::Int>,\n", indent)?;
+            write!(
+                output_file,
+                "{}pub value: Vec<crate::source::Int::Int>,\n",
+                indent
+            )?;
             write!(output_file, "{}pub index: usize,\n", indent)?;
             indent.dec();
             write!(output_file, "{}}}\n", indent)?;
@@ -443,7 +358,7 @@ fn generate_list_builtins(
             indent.inc();
             write!(
                 output_file,
-                "{}fn next(&mut self) -> Option<crate::Int::Int> {{\n",
+                "{}fn next(&mut self) -> Option<crate::source::Int::Int> {{\n",
                 indent
             )?;
             indent.inc();
@@ -684,7 +599,7 @@ pub fn generate_builtin(
                     indent.inc();
                     write!(
                         output_file,
-                        "{}fn next(&mut self) -> Option<crate::Int::Int> {{\n",
+                        "{}fn next(&mut self) -> Option<crate::source::Int::Int> {{\n",
                         indent
                     )?;
                     indent.inc();

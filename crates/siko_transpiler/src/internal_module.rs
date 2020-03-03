@@ -191,7 +191,7 @@ fn write_dyn_trait_impl_real_call(
     let function = program.functions.get(&partial_function_call.function);
     write!(
         output_file,
-        "{}crate::{}::{}(",
+        "{}crate::source::{}::{}(",
         indent, function.module, function.name
     )?;
     for index in 0..partial_function_call.fields.len() {

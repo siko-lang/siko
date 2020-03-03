@@ -12,7 +12,7 @@ pub fn ir_type_to_rust_type(ty: &Type, program: &Program) -> String {
             let from = ir_type_to_rust_type(from, program);
             let to = ir_type_to_rust_type(to, program);
             format!(
-                "Box<dyn crate::{}::{}<{}, {}>>",
+                "Box<dyn crate::source::{}::{}<{}, {}>>",
                 MIR_INTERNAL_MODULE_NAME, MIR_FUNCTION_TRAIT_NAME, from, to
             )
         }
@@ -23,16 +23,16 @@ pub fn ir_type_to_rust_type(ty: &Type, program: &Program) -> String {
                 TypeDef::Record(record) => (get_module_name(&record.module), record.name.clone()),
             };
             match m {
-                Modifier::Ref => format!("&crate::{}::{}", module_name, name),
-                Modifier::Boxed => format!("Box<crate::{}::{}>", module_name, name),
-                Modifier::Owned => format!("crate::{}::{}", module_name, name),
-                Modifier::Var(_) => format!("crate::{}::{}", module_name, name), // TODO
+                Modifier::Ref => format!("&crate::source::{}::{}", module_name, name),
+                Modifier::Boxed => format!("Box<crate::source::{}::{}>", module_name, name),
+                Modifier::Owned => format!("crate::source::{}::{}", module_name, name),
+                Modifier::Var(_) => format!("crate::source::{}::{}", module_name, name), // TODO
             }
         }
         Type::Closure(ty) => {
             let closure = program.get_closure_type(ty);
             format!(
-                "crate::{}::{}",
+                "crate::source::{}::{}",
                 MIR_INTERNAL_MODULE_NAME,
                 closure.get_name()
             )

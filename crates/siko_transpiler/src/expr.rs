@@ -109,7 +109,7 @@ pub fn write_expr(
             let name = partial_function_call.get_name();
             write!(
                 output_file,
-                "crate::{}::{} {{ value: Box::new(crate::{}::{} {{",
+                "crate::source::{}::{} {{ value: Box::new(crate::source::{}::{} {{",
                 get_module_name(MIR_INTERNAL_MODULE_NAME),
                 closure.name,
                 get_module_name(MIR_INTERNAL_MODULE_NAME),
@@ -135,7 +135,7 @@ pub fn write_expr(
             let function = program.functions.get(id);
             assert_eq!(function.arg_count, args.len());
             let name = format!(
-                "crate::{}::{}",
+                "crate::source::{}::{}",
                 get_module_name(&function.module),
                 function.name
             );

@@ -34,7 +34,7 @@ impl Module {
         program: &Program,
         indent: &mut Indent,
     ) -> Result<()> {
-        write!(output_file, "mod {} {{\n", get_module_name(&self.name))?;
+        write!(output_file, "pub mod {} {{\n", get_module_name(&self.name))?;
         indent.inc();
         for typedef_id in &self.typedefs {
             write_typedef(*typedef_id, output_file, program, indent)?;
