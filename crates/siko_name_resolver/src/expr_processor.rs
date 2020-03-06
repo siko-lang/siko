@@ -279,7 +279,15 @@ fn process_pattern(
                     )
                 })
                 .collect();
-            resolve_pattern_type_constructor(name, module, errors, location_id, ids, irrefutable, ir_program)
+            resolve_pattern_type_constructor(
+                name,
+                module,
+                errors,
+                location_id,
+                ids,
+                irrefutable,
+                ir_program,
+            )
         }
         Pattern::Guarded(pattern_id, guard_expr_id) => {
             let ir_pattern_id = process_pattern(

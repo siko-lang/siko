@@ -272,7 +272,11 @@ fn generate_map_builtins(
             )?;
         }
         "get" => {
-            write!(output_file, "{}map_get!(arg0, arg1, {})", indent, result_ty_str)?;
+            write!(
+                output_file,
+                "{}map_get!(arg0, arg1, {})",
+                indent, result_ty_str
+            )?;
         }
         _ => panic!("Map/{} not implemented", original_name),
     }

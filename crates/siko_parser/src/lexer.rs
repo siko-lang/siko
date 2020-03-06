@@ -143,6 +143,7 @@ impl Lexer {
             "loop" => Token::KeywordLoop,
             "continue" => Token::KeywordContinue,
             "break" => Token::KeywordBreak,
+            "try" => Token::KeywordTry,
             _ => {
                 let first = identifier.chars().next().expect("empty identifer");
                 if first.is_uppercase() {

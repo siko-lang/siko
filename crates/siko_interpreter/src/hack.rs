@@ -25,9 +25,5 @@ impl ExternFunction for ReadTextFile {
 }
 
 pub fn register_extern_functions(interpreter: &mut Interpreter) {
-    interpreter.add_extern_function(
-        "Hack",
-        "readTextFile",
-        Box::new(ReadTextFile {}),
-    );
+    interpreter.add_extern_function("Hack", "readTextFile", Box::new(ReadTextFile {}));
 }

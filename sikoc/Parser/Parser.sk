@@ -112,16 +112,10 @@ parseFunction state = do
 
 parseClass :: ParserState -> Result (ParserState, Class) (ParserState, ParserError)
 parseClass state = do
-    state <- case expect state Kind.KeywordClass of
-        Ok state -> state
-        Err (state, err) -> return Err (state, Context err "keyword class")
-    (state, name) <- case expectTypeIdent state "class name" of
-        Ok (state, name) -> (state, name)
-        Err (state, err) -> return Err (state, err)
+    state <- try expect state Kind.KeywordClass
+    (state, name) <- try expectTypeIdent state "class name"
     println "name of class {}" % name
-    state <- case expect state Kind.EndOfItem of
-        Ok state -> state
-        Err (state, err) -> return Err (state, err)
+    state <- try expect state Kind.EndOfItem
     clazz <- Class {
                 name = name,
                 argument = TypeArg "a",
@@ -133,12 +127,8 @@ parseClass state = do
 
 parseModule :: ParserState -> Result ParserState (ParserState, ParserError)
 parseModule state = do
-    state <- case expect state Kind.KeywordModule of
-        Ok state -> state
-        Err (state, err) -> return Err (state, err)
-    (state, name) <- case parseModuleName state of
-            Ok (state, name) -> (state, name)
-            Err (state, err) -> return Err (state, err)
+    state <- try expect state Kind.KeywordModule
+    (state, name) <- try parseModuleName state
     println "module {}" % name
     mod <- Module {
                 name = name,
@@ -150,27 +140,22 @@ parseModule state = do
                 instances = [],
                 exports = []
             }
-    state <- case expect state Kind.KeywordWhere of
-        Ok state -> state
-        Err (state, err) -> return Err (state, err)
+    state <- try expect state Kind.KeywordWhere
     (state, mod) <- loop (state, mod) <- (state, mod) do
         ti <- peek state
         case getKind ti.token of
-            Kind.EndOfBlock -> break state
+            Kind.EndOfBlock -> break (state, mod)
             Kind.KeywordClass -> case parseClass state of
                                     Ok (state, clazz) -> do
+                                        mod :: Module <- mod // FIXME: fix type inference here
                                         mod <- mod { classes = mod.classes + [clazz] }
                                         (state, mod)
                                     Err (state, err) -> return Err (state, err)
             _ -> case parseFunction state of
-                    Ok state -> state
+                    Ok state -> (state, mod)
                     Err (state, err) -> return Err (state, err)
-    state <- case expect state Kind.EndOfBlock of
-        Ok state -> state
-        Err (state, err) -> return Err (state, err)
-    state <- case expect state Kind.EndOfModule of
-        Ok state -> state
-        Err (state, err) -> return Err (state, err)
+    state <- try expect state Kind.EndOfBlock
+    state <- try expect state Kind.EndOfModule
     state <- addModule state mod
     Ok state
 

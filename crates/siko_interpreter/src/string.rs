@@ -124,7 +124,12 @@ impl ExternFunction for StringSplit {
         let sep = environment.get_arg_by_index(1).core.as_string();
         let output: Vec<_> = input
             .split(&sep)
-            .map(|o| Value::new(ValueCore::String(o.to_string()), Interpreter::get_string_type()))
+            .map(|o| {
+                Value::new(
+                    ValueCore::String(o.to_string()),
+                    Interpreter::get_string_type(),
+                )
+            })
             .collect();
         return Value::new(ValueCore::List(output), ty);
     }

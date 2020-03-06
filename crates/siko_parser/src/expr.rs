@@ -494,6 +494,41 @@ fn parse_arg(parser: &mut Parser) -> Result<ExprId, ParseError> {
             let id = parser.add_expr(expr, start_index);
             id
         }
+        Token::KeywordTry => {
+            parser.expect(TokenKind::KeywordTry)?;
+            let body = parser.parse_expr(false)?;
+            let ok_arg = Pattern::Binding("ok".to_string());
+            let ok_arg_id = parser.add_pattern(ok_arg, start_index);
+            let ok_pattern = Pattern::Constructor("Ok".to_string(), vec![ok_arg_id]);
+            let ok_pattern_id = parser.add_pattern(ok_pattern, start_index);
+            let ok_case_body = Expr::Path("ok".to_string());
+            let ok_case_body_id = parser.add_expr(ok_case_body, start_index);
+            let ok_case = Case {
+                pattern_id: ok_pattern_id,
+                body: ok_case_body_id,
+            };
+
+            let err_arg = Pattern::Binding("err".to_string());
+            let err_arg_id = parser.add_pattern(err_arg, start_index);
+            let err_pattern = Pattern::Constructor("Err".to_string(), vec![err_arg_id]);
+            let err_pattern_id = parser.add_pattern(err_pattern, start_index);
+            let err_ctor = Expr::Path("Err".to_string());
+            let err_ctor_id = parser.add_expr(err_ctor, start_index);
+            let err_ctor_arg = Expr::Path("err".to_string());
+            let err_ctor_arg_id = parser.add_expr(err_ctor_arg, start_index);
+            let err_case_body = Expr::FunctionCall(err_ctor_id, vec![err_ctor_arg_id]);
+            let err_case_body_id = parser.add_expr(err_case_body, start_index);
+            let err_case_body = Expr::Return(err_case_body_id);
+            let err_case_body_id = parser.add_expr(err_case_body, start_index);
+            let err_case = Case {
+                pattern_id: err_pattern_id,
+                body: err_case_body_id,
+            };
+
+            let case_expr = Expr::CaseOf(body, vec![ok_case, err_case]);
+            let id = parser.add_expr(case_expr, start_index);
+            id
+        }
         _ => {
             return report_unexpected_token(parser, format!("expression"));
         }
