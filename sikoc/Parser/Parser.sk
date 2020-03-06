@@ -1,10 +1,14 @@
 module Siko.Parser where
 
+import Siko.Parser.Type
+import Siko.Parser.Class
+import Siko.Parser.Function
+import Siko.Parser.Module
+
 import Siko.Syntax.Ident
 import Siko.Syntax.Program
 import Siko.Syntax.Module
 import Siko.Syntax.TypeSignature
-import Siko.Syntax.Class
 import Siko.Syntax.Location
 import Siko.Parser.Token
 import Siko.Parser.Token.Kind as Kind
@@ -25,7 +29,7 @@ data ParserState =
         file_id :: FileId
     }
 
-initState file_id = ParserState [] 0 [] [] file_id
+initState file_id tokens = ParserState tokens 0 [] [] file_id
 
 getLocation :: Span -> ParserState -> Location
 getLocation span state = Location state.file_id span
@@ -68,96 +72,12 @@ expectTypeIdent state msg = do
         TypeIdentifier id -> Ok (step state, Ident id (getLocation ti.span state))
         _ -> Err (state, unexpectedToken state msg)
 
-parseModuleName :: ParserState -> Result (ParserState, Ident) (ParserState, ParserError)
-parseModuleName state = do
-    (state, name) <- case expectTypeIdent state "module name" of
-        Ok (state, name) -> (state, name)
-        Err (state, err) -> return Err (state, err)
-    (state, name) <- loop (state, name) <- (state, name) do
-        ti <- peek state
-        case ti.token of
-            TypeIdentifier id -> do
-                name <- mergeIdent name id (getLocation ti.span state)
-                (step state, name)
-            Dot -> do
-                name <- mergeIdent name "." (getLocation ti.span state)
-                (step state, name)
-            _ -> break (state, name)
-    Ok (state, name)
-
-parseExpr :: ParserState -> Result ParserState (ParserState, ParserError)
-parseExpr state = do
+expectVarIdent :: ParserState -> String -> Result (ParserState, Ident) (ParserState, ParserError)
+expectVarIdent state msg = do
     ti <- peek state
     case ti.token of
-        VarIdentifier id -> do
-            Ok (step state)
-        _ -> 
-            Err (state, unexpectedToken state "expression")
-
-parseFunction :: ParserState -> Result ParserState (ParserState, ParserError)
-parseFunction state = do
-    ti <- peek state
-    case ti.token of
-        VarIdentifier id -> do
-            println "name of func {}" % id
-            state <- step state
-            case expect state Kind.Equal of
-                Ok state -> case parseExpr state of
-                            Ok state ->
-                                expect state Kind.EndOfItem
-                            Err (state, err) ->
-                                Err (state, Context err "Expression as function body")
-                Err (state, err) -> Err (state, Context err "in function definition")
-        _ -> Err (state, unexpectedToken state "identifier as function name")
-
-parseClass :: ParserState -> Result (ParserState, Class) (ParserState, ParserError)
-parseClass state = do
-    state <- try expect state Kind.KeywordClass
-    (state, name) <- try expectTypeIdent state "class name"
-    println "name of class {}" % name
-    state <- try expect state Kind.EndOfItem
-    clazz <- Class {
-                name = name,
-                argument = TypeArg "a",
-                constraints = [],
-                member_functions = [],
-                member_function_type_signatures = []
-            }
-    Ok (state, clazz)
-
-parseModule :: ParserState -> Result ParserState (ParserState, ParserError)
-parseModule state = do
-    state <- try expect state Kind.KeywordModule
-    (state, name) <- try parseModuleName state
-    println "module {}" % name
-    mod <- Module {
-                name = name,
-                functions = [],
-                data_definitions = [],
-                function_signatures = [],
-                imports = [],
-                classes = [],
-                instances = [],
-                exports = []
-            }
-    state <- try expect state Kind.KeywordWhere
-    (state, mod) <- loop (state, mod) <- (state, mod) do
-        ti <- peek state
-        case getKind ti.token of
-            Kind.EndOfBlock -> break (state, mod)
-            Kind.KeywordClass -> case parseClass state of
-                                    Ok (state, clazz) -> do
-                                        mod :: Module <- mod // FIXME: fix type inference here
-                                        mod <- mod { classes = mod.classes + [clazz] }
-                                        (state, mod)
-                                    Err (state, err) -> return Err (state, err)
-            _ -> case parseFunction state of
-                    Ok state -> (state, mod)
-                    Err (state, err) -> return Err (state, err)
-    state <- try expect state Kind.EndOfBlock
-    state <- try expect state Kind.EndOfModule
-    state <- addModule state mod
-    Ok state
+        VarIdentifier id -> Ok (step state, Ident id (getLocation ti.span state))
+        _ -> Err (state, unexpectedToken state msg)
 
 processTokens :: ParserState -> (Program, [ParserError])
 processTokens state = do
@@ -166,7 +86,7 @@ processTokens state = do
             then
                 do
                     case parseModule state of
-                        Ok state-> state
+                        Ok state -> state
                         Err (state, err) -> do
                             state <- addError state err
                             break state
@@ -188,7 +108,7 @@ parse input =
         (tokens, lexer_errors) <- lex input
         println "Tokens: {}" % tokens
         println "Errors: {}" % lexer_errors
-        state <- initState (FileId 0)
+        state <- initState (FileId 0) tokens
         (program, parser_errors) <- processTokens state
         parser_errors |> List.iter |> forEach \x -> printErr x
         (program, lexer_errors, parser_errors)

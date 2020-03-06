@@ -1,0 +1,17 @@
+module Siko.Parser.Expr where
+
+import Siko.Parser
+import Siko.Parser.Type
+import Siko.Parser.Class
+import Siko.Parser.Function
+import Siko.Parser.Token
+import Siko.Parser.Token.Kind as Kind
+
+parseExpr :: ParserState -> Result ParserState (ParserState, ParserError)
+parseExpr state = do
+    ti <- peek state
+    case ti.token of
+        VarIdentifier id -> do
+            Ok (step state)
+        _ -> 
+            Err (state, unexpectedToken state "expression")

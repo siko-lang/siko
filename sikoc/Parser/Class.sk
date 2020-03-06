@@ -1,0 +1,24 @@
+module Siko.Parser.Class where
+
+import Siko.Parser
+import Siko.Parser.Type
+
+import Siko.Parser.Token.Kind as Kind
+import Siko.Syntax.Class
+
+parseClass :: ParserState -> Result (ParserState, Class) (ParserState, ParserError)
+parseClass state = do
+    state <- try expect state Kind.KeywordClass
+    (state, name) <- try expectTypeIdent state "class name"
+    println "name of class {}" % name
+    (state, argument) <- try parseTypeSignature state False False
+    println argument
+    state <- try expect state Kind.EndOfItem
+    clazz <- Class {
+                name = name,
+                argument = argument,
+                constraints = [],
+                member_functions = [],
+                member_function_type_signatures = []
+            }
+    Ok (state, clazz)

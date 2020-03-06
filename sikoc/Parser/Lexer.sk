@@ -6,6 +6,7 @@ import Siko.Parser.Layout
 
 data LexerError = InvalidEscapeSequence Span
                   | UnsupportedCharacter Span
+                  | InvalidOperator Span
             deriving (Show)
 
 data LexerState =
@@ -49,6 +50,10 @@ addError state error = state { errors = state.errors + [error] }
 
 isIdentifier c = case c of
     'a'..='z' | 'A'..='Z' | '0'..='9' | '_' -> True
+    _ -> False
+
+isOperator c = case c of
+    '|' | '>' | '<' | '&' | '*' | '+' | '-' | '/' | '=' | '!' | '\\' | ':' | '.' -> True
     _ -> False
 
 consumeWhile state cond = 
@@ -128,6 +133,16 @@ consumeIdentifier state = do
                     return addToken state (VarIdentifier ident) span
     addToken state keyword span
 
+consumeOperator :: LexerState -> LexerState
+consumeOperator state = do
+    (state, (ident, span)) <- consumeWhile state isOperator
+    op <- case ident of
+        "=" -> Equal
+        "->" -> RightArrow
+        "<-" -> LeftArrow
+        _ -> return addError state (InvalidOperator span)
+    addToken state op span
+
 lex :: String -> ([TokenInfo], [LexerError])
 lex input = 
     do
@@ -140,8 +155,8 @@ lex input =
                     c <- peek state
                     state <- case c of
                         _ if isIdentifier c -> consumeIdentifier state
+                        _ if isOperator c -> consumeOperator state
                         '"' -> consumeString state
-                        '=' -> consumeSingle state Equal
                         '(' -> consumeSingle state LParen
                         ')' -> consumeSingle state RParen
                         '.' -> consumeSingle state Dot

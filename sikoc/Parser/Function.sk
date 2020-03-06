@@ -1,0 +1,23 @@
+module Siko.Parser.Function where
+
+import Siko.Parser
+import Siko.Parser.Type
+import Siko.Parser.Expr
+import Siko.Parser.Token.Kind as Kind
+import Siko.Parser.Token
+
+parseFunction :: ParserState -> Result ParserState (ParserState, ParserError)
+parseFunction state = do
+    ti <- peek state
+    case ti.token of
+        VarIdentifier id -> do
+            println "name of func {}" % id
+            state <- step state
+            case expect state Kind.Equal of
+                Ok state -> case parseExpr state of
+                            Ok state ->
+                                expect state Kind.EndOfItem
+                            Err (state, err) ->
+                                Err (state, Context err "Expression as function body")
+                Err (state, err) -> Err (state, Context err "in function definition")
+        _ -> Err (state, unexpectedToken state "identifier as function name")

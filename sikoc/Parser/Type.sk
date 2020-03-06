@@ -1,0 +1,26 @@
+module Siko.Parser.Type(parseTypeSignature) where
+
+import Siko.Parser
+import Siko.Syntax.TypeSignature
+
+import Siko.Parser.Token
+import Siko.Parser.Token.Kind as Kind
+
+parseTypeSignature :: ParserState -> Bool -> Bool -> Result (ParserState, TypeSignature) (ParserState, ParserError)
+parseTypeSignature state parsingVariant allowWildcard = do
+    (state, from) <- try parseTypeSignaturePart state parsingVariant allowWildcard
+    (state, final) <- loop (state, from) <- (state, from) do
+            ti <- peek state
+            case ti.token of
+                RightArrow -> do
+                    state <- try expect state Kind.RightArrow
+                    (state, to) <- try parseTypeSignaturePart state parsingVariant allowWildcard
+                    from <- Function from to
+                    (state, from)
+                _ -> break (state, from)
+    Ok (state, final)
+
+parseTypeSignaturePart :: ParserState -> Bool -> Bool -> Result (ParserState, TypeSignature) (ParserState, ParserError)
+parseTypeSignaturePart state parsingVariant allowWildcard = do
+    (state, ident) <- try expectVarIdent state "type argument"
+    Ok (state, TypeArg ident)

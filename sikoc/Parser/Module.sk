@@ -1,0 +1,60 @@
+module Siko.Parser.Module where
+
+import Siko.Parser
+import Siko.Parser.Class
+import Siko.Parser.Function
+import Siko.Syntax.Ident
+import Siko.Parser.Token
+import Siko.Parser.Token.Kind as Kind
+import Siko.Syntax.Module
+
+parseModuleName :: ParserState -> Result (ParserState, Ident) (ParserState, ParserError)
+parseModuleName state = do
+    (state, name) <- case expectTypeIdent state "module name" of
+        Ok (state, name) -> (state, name)
+        Err (state, err) -> return Err (state, err)
+    (state, name) <- loop (state, name) <- (state, name) do
+        ti <- peek state
+        case ti.token of
+            TypeIdentifier id -> do
+                name <- mergeIdent name id (getLocation ti.span state)
+                (step state, name)
+            Dot -> do
+                name <- mergeIdent name "." (getLocation ti.span state)
+                (step state, name)
+            _ -> break (state, name)
+    Ok (state, name)
+
+parseModule :: ParserState -> Result ParserState (ParserState, ParserError)
+parseModule state = do
+    state <- try expect state Kind.KeywordModule
+    (state, name) <- try parseModuleName state
+    println "module {}" % name
+    mod <- Module {
+                name = name,
+                functions = [],
+                data_definitions = [],
+                function_signatures = [],
+                imports = [],
+                classes = [],
+                instances = [],
+                exports = []
+            }
+    state <- try expect state Kind.KeywordWhere
+    (state, mod) <- loop (state, mod) <- (state, mod) do
+        ti <- peek state
+        case getKind ti.token of
+            Kind.EndOfBlock -> break (state, mod)
+            Kind.KeywordClass -> case parseClass state of
+                                    Ok (state, clazz) -> do
+                                        mod :: Module <- mod // FIXME: fix type inference here
+                                        mod <- mod { classes = mod.classes + [clazz] }
+                                        (state, mod)
+                                    Err (state, err) -> return Err (state, err)
+            _ -> case parseFunction state of
+                    Ok state -> (state, mod)
+                    Err (state, err) -> return Err (state, err)
+    state <- try expect state Kind.EndOfBlock
+    state <- try expect state Kind.EndOfModule
+    state <- addModule state mod
+    Ok state
