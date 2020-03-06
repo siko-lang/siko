@@ -1,27 +1,30 @@
 module Main where
 
+import Siko.Parser.Lexer
 import Siko.Parser
+import Siko.Syntax.Location
+import Hack
 
-source = do
-        lines <- ["module Main.Foo where",
-                  "main = ",
-                  "   println",
-                  "main2 = ",
-                  "   println",
-                  ]
-        (_, src) <- loop (count, src) <- (0, "")  do
-                        if count < getLength lines
-                            then
-                                do
-                                    line <- atIndex lines count
-                                    count <- count + 1
-                                    src <- src + "\n" + line
-                                    continue (count, src)
-                            else
-                                break (count, src)
-        src
+printLexerErr :: LexerError -> String -> ()
+printLexerErr error source = do
+    println "Lex err {}" % error
+    case error of
+        UnsupportedCharacter (Span start end) -> do
+                                        lines <- split source "\n"
+                                        println lines
+                                        loop line <- start.line do
+                                            if line > end.line
+                                                then break line
+                                                else
+                                                    do
+                                                    l <- atIndex lines line
+                                                    println "[{}]" % l
+                                                    line + 1
+                                        ()
+        _ -> ()
 
 main = do
-    println "Sikoc experiment"
-    program <- parse source
+    source <- readTextFile "sikoc.sk"
+    (program, lexer_errors, parser_errors) <- parse source
+    lexer_errors |> List.iter |> forEach \error -> printLexerErr error source
     ()

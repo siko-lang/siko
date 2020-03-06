@@ -70,8 +70,8 @@ pub fn walk_expr(expr_id: &ExprId, visitor: &mut dyn Visitor) {
         Expr::CaseOf(body, cases, _) => {
             walk_expr(body, visitor);
             for case in cases {
-                walk_expr(&case.body, visitor);
                 walk_pattern(&case.pattern_id, visitor);
+                walk_expr(&case.body, visitor);
             }
         }
         Expr::RecordInitialization(_, items) => {

@@ -1,4 +1,5 @@
 pub mod char;
+pub mod hack;
 pub mod environment;
 pub mod extern_function;
 pub mod float;

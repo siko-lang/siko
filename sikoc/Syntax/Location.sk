@@ -1,12 +1,14 @@
 module Siko.Syntax.Location where
 
-data FileId = FileId Int deriving (Show)
+import Std.Util
+
+data FileId = FileId Int deriving (Show, PartialEq, Eq)
 data LocationId = LocationId Int deriving (Show)
 
 data Position = {
               line :: Int,
               offset :: Int
-            } deriving (Show)
+            } deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
 data Span = {
                 start :: Position,
@@ -18,3 +20,13 @@ data Location = {
                   span :: Span,
                 } deriving (Show)
 
+mergeSpan :: Span -> Span -> Span
+mergeSpan (Span s1 e1) (Span s2 e2) = do
+    assert (s1 <= s2)
+    assert (e1 <= e2)
+    Span s1 e2
+
+mergeLocation :: Location -> Location -> Location
+mergeLocation (Location f1 span1) (Location f2 span2) = do
+    assert (f1 == f2)
+    Location f1 (mergeSpan span1 span2)

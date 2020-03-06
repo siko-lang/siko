@@ -146,6 +146,7 @@ fn resolve_pattern_type_constructor(
     location_id: LocationId,
     ids: Vec<IrPatternId>,
     irrefutable: bool,
+    program: &IrProgram,
 ) -> IrPattern {
     if let Some(items) = module.imported_items.get(name) {
         match ImportedItemInfo::resolve_ambiguity(items, Namespace::Value) {
@@ -161,12 +162,14 @@ fn resolve_pattern_type_constructor(
                 }
                 Item::Variant(_, _, ir_typedef_id, index) => {
                     if irrefutable {
-                        let err = ResolverError::NotIrrefutablePattern(location_id);
-                        errors.push(err);
-                        return IrPattern::Wildcard;
-                    } else {
-                        return IrPattern::Variant(ir_typedef_id, index, ids);
+                        let adt = program.typedefs.get(&ir_typedef_id).get_adt();
+                        if adt.variants.len() > 1 {
+                            let err = ResolverError::NotIrrefutablePattern(location_id);
+                            errors.push(err);
+                            return IrPattern::Wildcard;
+                        }
                     }
+                    return IrPattern::Variant(ir_typedef_id, index, ids);
                 }
                 _ => {}
             },
@@ -276,7 +279,7 @@ fn process_pattern(
                     )
                 })
                 .collect();
-            resolve_pattern_type_constructor(name, module, errors, location_id, ids, irrefutable)
+            resolve_pattern_type_constructor(name, module, errors, location_id, ids, irrefutable, ir_program)
         }
         Pattern::Guarded(pattern_id, guard_expr_id) => {
             let ir_pattern_id = process_pattern(

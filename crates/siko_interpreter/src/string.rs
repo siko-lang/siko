@@ -110,6 +110,26 @@ impl ExternFunction for StringChars {
     }
 }
 
+pub struct StringSplit {}
+
+impl ExternFunction for StringSplit {
+    fn call(
+        &self,
+        environment: &mut Environment,
+        _: Option<ExprId>,
+        _: &NamedFunctionKind,
+        ty: Type,
+    ) -> Value {
+        let input = environment.get_arg_by_index(0).core.as_string();
+        let sep = environment.get_arg_by_index(1).core.as_string();
+        let output: Vec<_> = input
+            .split(&sep)
+            .map(|o| Value::new(ValueCore::String(o.to_string()), Interpreter::get_string_type()))
+            .collect();
+        return Value::new(ValueCore::List(output), ty);
+    }
+}
+
 pub fn register_extern_functions(interpreter: &mut Interpreter) {
     interpreter.add_extern_function(STRING_MODULE_NAME, "opAdd", Box::new(StringAdd {}));
     interpreter.add_extern_function(STRING_MODULE_NAME, "opEq", Box::new(StringPartialEq {}));
@@ -121,4 +141,5 @@ pub fn register_extern_functions(interpreter: &mut Interpreter) {
     interpreter.add_extern_function(STRING_MODULE_NAME, "cmp", Box::new(StringOrd {}));
     interpreter.add_extern_function(STRING_MODULE_NAME, "show", Box::new(StringShow {}));
     interpreter.add_extern_function(STRING_MODULE_NAME, "chars", Box::new(StringChars {}));
+    interpreter.add_extern_function(STRING_MODULE_NAME, "split", Box::new(StringSplit {}));
 }

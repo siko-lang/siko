@@ -5,7 +5,7 @@ import Siko.Parser.Token
 import Siko.Parser.Layout
 
 data LexerError = InvalidEscapeSequence Span
-                  | EmptyBlock Span
+                  | UnsupportedCharacter Span
             deriving (Show)
 
 data LexerState =
@@ -146,7 +146,13 @@ lex input =
                         ')' -> consumeSingle state RParen
                         '.' -> consumeSingle state Dot
                         '\n' -> step state
-                        _ -> step state
+                        '\r' -> step state
+                        ' ' -> step state
+                        '\t' -> step state
+                        _ -> do
+                              span <- startSpan state
+                              state <- step state
+                              addError state (UnsupportedCharacter span)
                     state
             else
                 break state

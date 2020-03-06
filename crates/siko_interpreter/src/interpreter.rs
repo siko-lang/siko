@@ -3,6 +3,7 @@ use crate::environment::Environment;
 use crate::extern_function::ExternFunction;
 use crate::float;
 use crate::int;
+use crate::hack;
 use crate::iterator;
 use crate::list;
 use crate::map;
@@ -1232,6 +1233,7 @@ impl Interpreter {
         std_util::register_extern_functions(&mut interpreter);
         std_ops::register_extern_functions(&mut interpreter);
         iterator::register_extern_functions(&mut interpreter);
+        hack::register_extern_functions(&mut interpreter);
         interpreter.build_typedefid_cache();
         INTERPRETER_CONTEXT.with(|c| {
             let mut p = c.borrow_mut();

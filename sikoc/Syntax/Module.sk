@@ -1,5 +1,6 @@
 module Siko.Syntax.Module where
 
+import Siko.Syntax.Ident
 import Siko.Syntax.Class
 import Siko.Syntax.Location
 import Siko.Syntax.Function
@@ -8,45 +9,29 @@ import Siko.Syntax.Data
 
 data ImportList = {
                     items :: [Specification],
-                    alternative_name :: Option String
+                    alternative_name :: Option Ident
                   }
 
-data HiddenItem = {
-                    name :: String,
-                    location :: LocationId,
-                  }
-
-data ImportKind = Hiding [HiddenItem] | List ImportList
+data ImportKind = Hiding [Ident] | List ImportList
 
 data Import = {
-                module_path :: String,
-                kind :: ImportKind,
-                location :: LocationId,
+                module_path :: Ident,
+                kind :: ImportKind
               }
 
-data GroupMember = Specific String | All
-
-data GroupMemberInfo = {
-                         member :: GroupMember,
-                         location :: LocationId,
-                       }
+data GroupMember = Specific Ident | All Location
 
 data ItemGroup = {
                    name :: String,
-                   members :: GroupMemberInfo,
+                   members :: [GroupMember],
                  }
 
-data Item = Named String | Group ItemGroup
+data Item = Named Ident | Group ItemGroup
 
-data ItemInfo = {
-                  item :: Item,
-                  location :: LocationId,
-                }
+data Specification = Implicit | Explicit [Ident]
 
-data Specification = Implicit | Explicit [ItemInfo]
-
-data Module = { 
-                name :: String,
+data Module = {
+                name :: Ident,
                 functions :: [Function],
                 data_definitions :: [DataDefinition],
                 function_signatures :: [FunctionSignature],
