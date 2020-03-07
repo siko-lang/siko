@@ -65,6 +65,11 @@ expect state kind = do
         else
             Err (state, unexpectedToken state (show kind))
 
+check :: ParserState -> Kind.TokenKind -> Bool
+check state kind = do
+    ti <- peek state
+    getKind ti.token == kind
+
 expectTypeIdent :: ParserState -> String -> Result (ParserState, Ident) (ParserState, ParserError)
 expectTypeIdent state msg = do
     ti <- peek state
@@ -78,6 +83,37 @@ expectVarIdent state msg = do
     case ti.token of
         VarIdentifier id -> Ok (step state, Ident id (getLocation ti.span state))
         _ -> Err (state, unexpectedToken state msg)
+
+data ParenParse a = Single a | Multi [a]
+
+parseParens a :: ParserState -> (ParserState -> Result (ParserState, a) (ParserState, ParserError)) -> String -> Result (ParserState, ParenParse a) (ParserState, ParserError)
+parseParens state parser msg = do
+    state <- try expect state Kind.LParen
+    (state, parts, comma_found) <- loop (state, parts, comma_found) <- (state, [], False) do
+            if check state Kind.RParen
+                then
+                    break (state, parts, comma_found)
+                else
+                    do
+                        (state, item) <- try parser state
+                        parts <- parts + [item]
+                        if check state Kind.Comma
+                            then
+                                do
+                                    state <- try expect state Kind.Comma
+                                    (state, parts, True)
+                            else
+                                if check state Kind.RParen
+                                    then
+                                        break (state, parts, comma_found)
+                                    else
+                                        return Err (state, unexpectedToken state msg)
+    state <- try expect state Kind.RParen
+    if comma_found || getLength parts == 0 // FIXME: isEmpty
+        then
+            Ok (state, Multi parts)
+        else
+            Ok (state, Single (atIndex parts 0))
 
 processTokens :: ParserState -> (Program, [ParserError])
 processTokens state = do

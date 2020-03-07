@@ -121,17 +121,18 @@ consumeString state = do
 consumeIdentifier :: LexerState -> LexerState
 consumeIdentifier state = do
     (state, (ident, span)) <- consumeWhile state isIdentifier
-    keyword <- case ident of
+    special <- case ident of
         "module" -> KeywordModule
         "where" -> KeywordWhere
         "do" -> KeywordDo
         "class" -> KeywordClass
+        "_" -> Wildcard
         _ -> if startsWithUppercase ident
                 then
                     return addToken state (TypeIdentifier ident) span
                 else
                     return addToken state (VarIdentifier ident) span
-    addToken state keyword span
+    addToken state special span
 
 consumeOperator :: LexerState -> LexerState
 consumeOperator state = do
@@ -140,6 +141,8 @@ consumeOperator state = do
         "=" -> Equal
         "->" -> RightArrow
         "<-" -> LeftArrow
+        "!" -> ExclamationMark
+        "&" -> Ampersand
         _ -> return addError state (InvalidOperator span)
     addToken state op span
 
@@ -159,7 +162,10 @@ lex input =
                         '"' -> consumeString state
                         '(' -> consumeSingle state LParen
                         ')' -> consumeSingle state RParen
+                        '[' -> consumeSingle state LBracket
+                        ']' -> consumeSingle state RBracket
                         '.' -> consumeSingle state Dot
+                        ',' -> consumeSingle state Comma
                         '\n' -> step state
                         '\r' -> step state
                         ' ' -> step state

@@ -2,9 +2,26 @@ module Siko.Parser.Type(parseTypeSignature) where
 
 import Siko.Parser
 import Siko.Syntax.TypeSignature
-
-import Siko.Parser.Token
+import Siko.Syntax.Ident
+import Siko.Parser.Token as T
 import Siko.Parser.Token.Kind as Kind
+
+parseQualifiedTypeName :: ParserState -> Result (ParserState, Ident) (ParserState, ParserError)
+parseQualifiedTypeName state = do
+    (state, name) <- case expectTypeIdent state "type name" of
+        Ok (state, name) -> (state, name)
+        Err (state, err) -> return Err (state, err)
+    (state, name) <- loop (state, name) <- (state, name) do
+        ti <- peek state
+        case ti.token of
+            T.TypeIdentifier id -> do
+                name <- mergeIdent name id (getLocation ti.span state)
+                (step state, name)
+            T.Dot -> do
+                name <- mergeIdent name "." (getLocation ti.span state)
+                (step state, name)
+            _ -> break (state, name)
+    Ok (state, name)
 
 parseTypeSignature :: ParserState -> Bool -> Bool -> Result (ParserState, TypeSignature) (ParserState, ParserError)
 parseTypeSignature state parsingVariant allowWildcard = do
@@ -12,7 +29,7 @@ parseTypeSignature state parsingVariant allowWildcard = do
     (state, final) <- loop (state, from) <- (state, from) do
             ti <- peek state
             case ti.token of
-                RightArrow -> do
+                T.RightArrow -> do
                     state <- try expect state Kind.RightArrow
                     (state, to) <- try parseTypeSignaturePart state parsingVariant allowWildcard
                     from <- Function from to
@@ -20,7 +37,48 @@ parseTypeSignature state parsingVariant allowWildcard = do
                 _ -> break (state, from)
     Ok (state, final)
 
+parseTupleType :: ParserState -> Bool -> Result (ParserState, TypeSignature) (ParserState, ParserError)
+parseTupleType state allowWildcard = do
+    case try parseParens state (\state -> parseTypeSignature state False allowWildcard) "type signature" of
+        (state, Single ty) -> Ok (state, ty)
+        (state, Multi types) -> Ok (state, Tuple types)
+
 parseTypeSignaturePart :: ParserState -> Bool -> Bool -> Result (ParserState, TypeSignature) (ParserState, ParserError)
 parseTypeSignaturePart state parsingVariant allowWildcard = do
-    (state, ident) <- try expectVarIdent state "type argument"
-    Ok (state, TypeArg ident)
+    ti <- peek state
+    case ti.token of
+        T.LParen -> parseTupleType state allowWildcard
+        T.LBracket -> do
+            state <- try expect state Kind.LBracket
+            (state, ty) <- try parseTypeSignature state False allowWildcard
+            state <- try expect state Kind.RBracket
+            Ok (state, List ty)
+        T.VarIdentifier id -> do
+            (state, ident) <- try expectVarIdent state "type argument"
+            Ok (state, TypeArg ident)
+        T.TypeIdentifier id -> do
+            (state, name) <- try parseQualifiedTypeName state
+            (state, args) <- loop (state, args) <- (state, []) do
+                    ti  <- peek state
+                    case T.getKind ti.token of
+                        Kind.TypeIdentifier | Kind.VarIdentifier | Kind.LParen | Kind.LBracket | Kind.ExclamationMark -> do
+                            (state, ty) <- try parseTypeSignaturePart state False allowWildcard
+                            args <- args + [ty]
+                            (state, args)
+                        _ -> break (state, args)
+            if parsingVariant
+                then
+                    Ok (state, Variant name args)
+                else
+                    Ok (state, Named name args)
+        T.Wildcard -> do
+            state <- try expect state Kind.Wildcard
+            Ok (state, Wildcard)
+        T.ExclamationMark -> do
+            state <- try expect state Kind.ExclamationMark
+            Ok (state, Never)
+        T.Ampersand -> do
+            state <- try expect state Kind.Ampersand
+            (state, ty) <- try parseTypeSignature state False allowWildcard
+            Ok (state, Ref ty)
+        _ -> return Err (state, unexpectedToken state "type signature")
