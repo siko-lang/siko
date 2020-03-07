@@ -31,6 +31,13 @@ data ParserState =
 
 initState file_id tokens = ParserState tokens 0 [] [] file_id
 
+buildLocation :: Int -> ParserState -> Location
+buildLocation index state = do
+    start_span <- (atIndex state.tokens index).span
+    end_span <- (atIndex state.tokens state.index).span
+    span <- mergeSpan start_span end_span
+    getLocation span state
+
 getLocation :: Span -> ParserState -> Location
 getLocation span state = Location state.file_id span
 
