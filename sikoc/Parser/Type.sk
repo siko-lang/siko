@@ -10,23 +10,6 @@ buildTypeSignature :: SimpleTypeSignature -> Int -> ParserState -> TypeSignature
 buildTypeSignature ty start_index state = do
     TypeSignature ty (buildLocation start_index state)
 
-parseQualifiedTypeName :: ParserState -> Result (ParserState, Ident) (ParserState, ParserError)
-parseQualifiedTypeName state = do
-    (state, name) <- case expectTypeIdent state "type name" of
-        Ok (state, name) -> (state, name)
-        Err (state, err) -> return Err (state, err)
-    (state, name) <- loop (state, name) <- (state, name) do
-        ti <- peek state
-        case ti.token of
-            T.TypeIdentifier id -> do
-                name <- mergeIdent name id (getLocation ti.span state)
-                (step state, name)
-            T.Dot -> do
-                name <- mergeIdent name "." (getLocation ti.span state)
-                (step state, name)
-            _ -> break (state, name)
-    Ok (state, name)
-
 parseTypeSignature :: ParserState -> Bool -> Bool -> Result (ParserState, TypeSignature) (ParserState, ParserError)
 parseTypeSignature state parsingVariant allowWildcard = do
     start_index <- state.index
@@ -64,16 +47,18 @@ parseTypeSignaturePart state parsingVariant allowWildcard = do
             (state, ident) <- try expectVarIdent state "type argument"
             Ok (state, buildTypeSignature (TypeArg ident) start_index state)
         T.TypeIdentifier id -> do
-            (state, name) <- try parseQualifiedTypeName state
+            (state, name) <- try parseQualifiedName state "type name"
             (state, args) <- loop (state, args) <- (state, []) do
                     ti  <- peek state
                     case T.getKind ti.token of
-                        Kind.TypeIdentifier
+                        Kind.LParen
+                         | Kind.LBracket
+                         | Kind.TypeIdentifier
                          | Kind.VarIdentifier
-                         | Kind.LParen
-                         | Kind.LBracket 
-                         | Kind.ExclamationMark -> do
-                            (state, ty) <- unwrap (parseTypeSignaturePart state False allowWildcard)
+                         | Kind.Wildcard
+                         | Kind.ExclamationMark 
+                         | Kind.Ampersand-> do
+                            (state, ty) <- try (parseTypeSignaturePart state False allowWildcard)
                             args <- args + [ty]
                             (state, args)
                         _ -> break (state, args)

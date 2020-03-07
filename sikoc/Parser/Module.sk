@@ -8,27 +8,10 @@ import Siko.Parser.Token
 import Siko.Parser.Token.Kind as Kind
 import Siko.Syntax.Module
 
-parseModuleName :: ParserState -> Result (ParserState, Ident) (ParserState, ParserError)
-parseModuleName state = do
-    (state, name) <- case expectTypeIdent state "module name" of
-        Ok (state, name) -> (state, name)
-        Err (state, err) -> return Err (state, err)
-    (state, name) <- loop (state, name) <- (state, name) do
-        ti <- peek state
-        case ti.token of
-            TypeIdentifier id -> do
-                name <- mergeIdent name id (getLocation ti.span state)
-                (step state, name)
-            Dot -> do
-                name <- mergeIdent name "." (getLocation ti.span state)
-                (step state, name)
-            _ -> break (state, name)
-    Ok (state, name)
-
 parseModule :: ParserState -> Result ParserState (ParserState, ParserError)
 parseModule state = do
     state <- try expect state Kind.KeywordModule
-    (state, name) <- try parseModuleName state
+    (state, name) <- try parseQualifiedName state "module name"
     println "module {}" % name
     mod <- Module {
                 name = name,

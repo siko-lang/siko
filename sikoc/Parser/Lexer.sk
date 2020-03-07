@@ -143,6 +143,9 @@ consumeOperator state = do
         "<-" -> LeftArrow
         "!" -> ExclamationMark
         "&" -> Ampersand
+        "." -> Dot
+        ".." -> DoubleDot
+        "..=" -> InclusiveRange
         _ -> return addError state (InvalidOperator span)
     addToken state op span
 
@@ -164,7 +167,8 @@ lex input =
                         ')' -> consumeSingle state RParen
                         '[' -> consumeSingle state LBracket
                         ']' -> consumeSingle state RBracket
-                        '.' -> consumeSingle state Dot
+                        '{' -> consumeSingle state LCurly
+                        '}' -> consumeSingle state RCurly
                         ',' -> consumeSingle state Comma
                         '\n' -> step state
                         '\r' -> step state

@@ -91,36 +91,74 @@ expectVarIdent state msg = do
         VarIdentifier id -> Ok (step state, Ident id (getLocation ti.span state))
         _ -> Err (state, unexpectedToken state msg)
 
+parseQualifiedName :: ParserState -> String -> Result (ParserState, Ident) (ParserState, ParserError)
+parseQualifiedName state msg = do
+    (state, name) <- case expectTypeIdent state msg of
+        Ok (state, name) -> (state, name)
+        Err (state, err) -> return Err (state, err)
+    (state, name) <- loop (state, name) <- (state, name) do
+        ti <- peek state
+        case ti.token of
+            TypeIdentifier id -> do
+                name <- mergeIdent name id (getLocation ti.span state)
+                (step state, name)
+            Dot -> do
+                name <- mergeIdent name "." (getLocation ti.span state)
+                (step state, name)
+            _ -> break (state, name)
+    Ok (state, name)
+
 data ParenParse a = Single a | Multi [a]
 
 parseParens a :: ParserState -> (ParserState -> Result (ParserState, a) (ParserState, ParserError)) -> String -> Result (ParserState, ParenParse a) (ParserState, ParserError)
 parseParens state parser msg = do
     state <- try expect state Kind.LParen
-    (state, parts, comma_found) <- loop (state, parts, comma_found) <- (state, [], False) do
+    (state, items, comma_found) <- loop (state, items, comma_found) <- (state, [], False) do
             if check state Kind.RParen
                 then
-                    break (state, parts, comma_found)
+                    break (state, items, comma_found)
                 else
                     do
                         (state, item) <- try parser state
-                        parts <- parts + [item]
+                        items <- items + [item]
                         if check state Kind.Comma
                             then
                                 do
                                     state <- try expect state Kind.Comma
-                                    (state, parts, True)
+                                    (state, items, True)
                             else
                                 if check state Kind.RParen
                                     then
-                                        break (state, parts, comma_found)
+                                        break (state, items, comma_found)
                                     else
                                         return Err (state, unexpectedToken state msg)
     state <- try expect state Kind.RParen
-    if comma_found || getLength parts == 0 // FIXME: isEmpty
+    if comma_found || getLength items == 0 // FIXME: isEmpty
         then
-            Ok (state, Multi parts)
+            Ok (state, Multi items)
         else
-            Ok (state, Single (atIndex parts 0))
+            Ok (state, Single (atIndex items 0))
+
+parseListInCurly a :: ParserState -> (ParserState -> Result (ParserState, a) (ParserState, ParserError)) -> Result (ParserState, [a]) (ParserState, ParserError)
+parseListInCurly state parser = do
+    state <- try expect state Kind.LCurly
+    (state, items) <- loop (state, items) <- (state, []) do
+            if check state Kind.RCurly
+                then
+                    break (state, items)
+                else
+                    do
+                        (state, item) <- try parser state
+                        items <- items + [item]
+                        if check state Kind.Comma
+                            then
+                                do
+                                    state <- try expect state Kind.Comma
+                                    (state, items)
+                            else
+                                break (state, items)
+    state <- try expect state Kind.RCurly
+    Ok (state, items)
 
 processTokens :: ParserState -> (Program, [ParserError])
 processTokens state = do

@@ -1,22 +1,29 @@
 module Siko.Syntax.Pattern where
 
 import Siko.Syntax.Location
+import Siko.Syntax.Ident
 import Siko.Syntax.Expr
 import Siko.Syntax.TypeSignature
 
-data RecordFieldPattern = {
-                            name :: String,
-                            pattern :: Pattern,
-                            location :: LocationId,
-                          }
+data RangeKind = Exclusive 
+                | Inclusive deriving (Show)
 
-data Pattern = Binding String
+data RecordFieldPattern = {
+                            name :: Ident,
+                            pattern :: Pattern,
+                          } deriving (Show)
+
+data Pattern = Pattern SimplePattern Location deriving (Show)
+
+data SimplePattern = Binding Ident
             | Tuple [Pattern]
-            | Constructor String [Pattern]
+            | Constructor Ident [Pattern]
             | Guarded Pattern Expr
             | Wildcard
-            | IntegerLiteral Int
+            | IntegerLiteral String
             | StringLiteral String
+            | CharLiteral Char
+            | CharRange Char Char RangeKind
             | Typed Pattern TypeSignature
-            | Record String [RecordFieldPattern]
-            | Or Pattern
+            | Record Ident [RecordFieldPattern]
+            | Or Pattern deriving (Show)
