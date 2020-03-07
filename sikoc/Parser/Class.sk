@@ -2,23 +2,52 @@ module Siko.Parser.Class where
 
 import Siko.Parser
 import Siko.Parser.Type
+import Siko.Parser.Function
 
 import Siko.Parser.Token.Kind as Kind
 import Siko.Syntax.Class
 
+parseClassConstraint :: ParserState -> Result (ParserState, Constraint) (ParserState, ParserError)
+parseClassConstraint state = do
+    (state, name) <- try parseQualifiedName state "class name"
+    (state, arg) <- try expectVarIdent state "type argument"
+    Ok (state, Constraint name arg)
+
 parseClass :: ParserState -> Result (ParserState, Class) (ParserState, ParserError)
 parseClass state = do
     state <- try expect state Kind.KeywordClass
+    (state, constraints) <- if check state Kind.LParen
+        then
+            do
+                (state, constraints) <- try parseList state parseClassConstraint Kind.LParen Kind.RParen
+                state <- try expect state Kind.DoubleRightArrow
+                (state, constraints)
+        else
+            (state, [])
     (state, name) <- try expectTypeIdent state "class name"
-    println "name of class {}" % name
     (state, argument) <- try parseTypeSignature state False False
-    println argument
+    (state, functions, function_type_signatures) <- if check state Kind.KeywordWhere
+        then
+            do
+                state <- try expect state Kind.KeywordWhere
+                (state, functions, function_type_signatures) <- loop (state, functions, function_type_signatures) <- (state, [], []) do
+                        if check state Kind.EndOfBlock
+                            then
+                                break (state, functions, function_type_signatures)
+                            else
+                                case try parseFunction state of
+                                    (state, Left function) -> (state, functions + [function], function_type_signatures)
+                                    (state, Right function_type_signature) -> (state, functions, function_type_signatures + [function_type_signature])
+                state <- try expect state Kind.EndOfBlock
+                (state, functions, function_type_signatures)
+        else
+            (state, [], [])
     state <- try expect state Kind.EndOfItem
     clazz <- Class {
                 name = name,
                 argument = argument,
-                constraints = [],
-                member_functions = [],
-                member_function_type_signatures = []
+                constraints = constraints,
+                member_functions = functions,
+                member_function_type_signatures = function_type_signatures,
             }
     Ok (state, clazz)

@@ -5,19 +5,22 @@ import Siko.Parser.Type
 import Siko.Parser.Expr
 import Siko.Parser.Token.Kind as Kind
 import Siko.Parser.Token
+import Siko.Syntax.Function
 
-parseFunction :: ParserState -> Result ParserState (ParserState, ParserError)
+parseFunction :: ParserState -> Result (ParserState, Either Function FunctionSignature) (ParserState, ParserError)
 parseFunction state = do
+    start_index <- state.index
     ti <- peek state
     case ti.token of
         VarIdentifier id -> do
-            println "name of func {}" % id
-            state <- step state
+            (state, name) <- try expectVarIdent state "function name"
             case expect state Kind.Equal of
                 Ok state -> case parseExpr state of
-                            Ok state ->
-                                expect state Kind.EndOfItem
-                            Err (state, err) ->
-                                Err (state, Context err "Expression as function body")
+                                Ok state -> do
+                                        state <- try expect state Kind.EndOfItem
+                                        function <- Function { name = name, arguments = [], body = None, location = buildLocation start_index state }
+                                        Ok (state, Left function)
+                                Err (state, err) ->
+                                    Err (state, Context err "Expression as function body")
                 Err (state, err) -> Err (state, Context err "in function definition")
         _ -> Err (state, unexpectedToken state "identifier as function name")

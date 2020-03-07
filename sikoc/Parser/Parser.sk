@@ -139,11 +139,11 @@ parseParens state parser msg = do
         else
             Ok (state, Single (atIndex items 0))
 
-parseListInCurly a :: ParserState -> (ParserState -> Result (ParserState, a) (ParserState, ParserError)) -> Result (ParserState, [a]) (ParserState, ParserError)
-parseListInCurly state parser = do
-    state <- try expect state Kind.LCurly
+parseList a :: ParserState -> (ParserState -> Result (ParserState, a) (ParserState, ParserError)) -> Kind.TokenKind -> Kind.TokenKind -> Result (ParserState, [a]) (ParserState, ParserError)
+parseList state parser start end = do
+    state <- try expect state start
     (state, items) <- loop (state, items) <- (state, []) do
-            if check state Kind.RCurly
+            if check state end
                 then
                     break (state, items)
                 else
@@ -157,7 +157,7 @@ parseListInCurly state parser = do
                                     (state, items)
                             else
                                 break (state, items)
-    state <- try expect state Kind.RCurly
+    state <- try expect state end
     Ok (state, items)
 
 processTokens :: ParserState -> (Program, [ParserError])

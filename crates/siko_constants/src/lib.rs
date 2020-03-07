@@ -81,6 +81,7 @@ pub const STD_OPS_MODULE_NAME: &str = "Std.Ops";
 pub const STD_UTIL_BASIC_MODULE_NAME: &str = "Std.Util.Basic";
 pub const MIR_INTERNAL_MODULE_NAME: &str = "__siko__";
 pub const MIR_FUNCTION_TRAIT_NAME: &str = "Function";
+pub const EITHER_MODULE_NAME: &str = "Either";
 
 pub fn get_qualified_list_type_name() -> String {
     format!("{}.{}", LIST_MODULE_NAME, LIST_TYPE_NAME)
@@ -100,6 +101,7 @@ pub fn get_implicit_module_list() -> Vec<&'static str> {
         STD_UTIL_BASIC_MODULE_NAME,
         STD_OPS_MODULE_NAME,
         CHAR_MODULE_NAME,
+        EITHER_MODULE_NAME,
     ];
     implicit_modules
 }
