@@ -56,7 +56,7 @@ isOperator c = case c of
     '|' | '>' | '<' | '&' | '*' | '+' | '-' | '/' | '=' | '!' | '\\' | ':' | '.' -> True
     _ -> False
 
-consumeWhile state cond = 
+consumeWhile state cond =
     loop (state, (current, span)) <- (state, ("", startSpan state))
       do
         if not (isDone state)
@@ -126,6 +126,9 @@ consumeIdentifier state = do
         "where" -> KeywordWhere
         "do" -> KeywordDo
         "class" -> KeywordClass
+        "instance" -> KeywordInstance
+        "extern" -> KeywordExtern
+        "data" -> KeywordData
         "_" -> Wildcard
         _ -> if startsWithUppercase ident
                 then
@@ -146,12 +149,14 @@ consumeOperator state = do
         "." -> Dot
         ".." -> DoubleDot
         "..=" -> InclusiveRange
+        ":" -> Colon
+        "::" -> DoubleColon
         "=>" -> DoubleRightArrow
         _ -> return addError state (InvalidOperator span)
     addToken state op span
 
 lex :: String -> ([TokenInfo], [LexerError])
-lex input = 
+lex input =
     do
         cs <- String.chars input
         state <- emptyState cs

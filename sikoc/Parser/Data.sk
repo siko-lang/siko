@@ -1,0 +1,45 @@
+module Siko.Parser.Data where
+
+import Siko.Syntax.Data
+import Siko.Parser
+import Siko.Parser.Type
+import Siko.Parser.Token.Kind as Kind
+import Siko.Parser.Token
+
+parseRecordField :: ParserState -> Result (ParserState, RecordField) (ParserState, ParserError)
+parseRecordField state = do
+    (state, name) <- try expectVarIdent state "record field"
+    state <- try expect state Kind.DoubleColon
+    (state, type_signature) <- try parseTypeSignature state False False
+    Ok (state, RecordField name type_signature)
+
+parseData :: ParserState -> Result (ParserState, DataDefinition) (ParserState, ParserError)
+parseData state = do
+    state <- try expect state Kind.KeywordData
+    (state, name) <- try expectTypeIdent state "type identifier"
+    (state, args) <- loop (state, args) <- (state, []) do
+        ti <- peek state
+        case ti.token of
+            Equal -> break (state, args)
+            _ -> do
+                (state, arg) <- try expectVarIdent state "type argument"
+                args <- args + [arg]
+                (state, args)
+    state <- try expect state Kind.Equal
+    (state, data_definition) <- if check state Kind.KeywordExtern
+        then do
+            state <- try expect state Kind.KeywordExtern
+            record <- Record { name = name, type_arguments = args, fields = [], external = True, derived_classes = [] }
+            (state, RecordDef record)
+        else do
+            (state, data_definition) <- if check state Kind.LCurly
+                then do
+                    (state, fields) <- try parseList state parseRecordField Kind.LCurly Kind.RCurly
+                    record <- Record { name = name, type_arguments = args, fields = fields, external = False, derived_classes = [] }
+                    (state, RecordDef record)
+                else do
+                    (state, body) <- unimplemented
+                    (state, body)
+            (state, data_definition)
+    state <- try expect state Kind.EndOfItem
+    Ok (state, data_definition)

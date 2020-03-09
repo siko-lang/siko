@@ -18,6 +18,7 @@ import Siko.Parser.Lexer
 data ParserError = GeneralError
                 | UnexpectedToken String String Span
                 | Context ParserError String
+                | InvalidTypeArgument Span
                 deriving (Show)
 
 data ParserState =
@@ -179,6 +180,7 @@ printErr err = do
             case err of
             GeneralError -> println "General error"
             UnexpectedToken expected found span -> println "Expected {}, found {} at {}" % (expected, found, span)
+            InvalidTypeArgument _ -> println "Invalid Type Argument"
             Context err msg -> do
                 println msg
                 printErr err

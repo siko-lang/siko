@@ -1,26 +1,59 @@
 module Siko.Parser.Function where
 
 import Siko.Parser
+import Siko.Parser.Class
 import Siko.Parser.Type
 import Siko.Parser.Expr
 import Siko.Parser.Token.Kind as Kind
 import Siko.Parser.Token
+import Siko.Parser.Pattern
 import Siko.Syntax.Function
+import Siko.Syntax.Ident
+import Siko.Syntax.Pattern
+import Siko.Syntax.Location
+
+checkTypeArgs :: ([Ident], [ParserError]) -> Pattern -> ([Ident], [ParserError])
+checkTypeArgs (args, errors) (Pattern pattern (Location _ span)) = do
+    case pattern of
+        Binding arg -> (args + [arg], errors)
+        _ -> (args, errors + [InvalidTypeArgument span])
 
 parseFunction :: ParserState -> Result (ParserState, Either Function FunctionSignature) (ParserState, ParserError)
 parseFunction state = do
-    start_index <- state.index
     ti <- peek state
     case ti.token of
         VarIdentifier id -> do
             (state, name) <- try expectVarIdent state "function name"
-            case expect state Kind.Equal of
-                Ok state -> case parseExpr state of
-                                Ok state -> do
-                                        state <- try expect state Kind.EndOfItem
-                                        function <- Function { name = name, arguments = [], body = None, location = buildLocation start_index state }
-                                        Ok (state, Left function)
-                                Err (state, err) ->
-                                    Err (state, Context err "Expression as function body")
-                Err (state, err) -> Err (state, Context err "in function definition")
-        _ -> Err (state, unexpectedToken state "identifier as function name")
+            (state, args, sep) <- loop (state, args, sep) <- (state, [], None) do
+                ti <- peek state
+                case ti.token of
+                    Equal -> break (state, args, Some Equal)
+                    DoubleColon -> break (state, args, Some DoubleColon)
+                    _ -> do
+                        (state, arg) <- try parsePattern state False
+                        args <- args + [arg]
+                        (state, args, None)
+            case sep of
+                Some Equal -> do
+                    state <- try expect state Kind.Equal
+                    (state, body) <- if check state Kind.KeywordExtern
+                        then do
+                            state <- try expect state Kind.KeywordExtern
+                            (state, None)
+                        else do
+                            (state, body) <- try parseExpr state
+                            (state, Some body)
+                    state <- try expect state Kind.EndOfItem
+                    function <- Function { name = name, arguments = args, body = body }
+                    Ok (state, Left function)
+                Some DoubleColon -> do
+                    state <- try expect state Kind.DoubleColon
+                    (args, errors) <- fold checkTypeArgs ([], []) (args |> List.iter)
+                    state <- state { errors = state.errors + errors }
+                    (state, constraints) <- try parseClassConstraints state
+                    (state, type_signature) <- try parseTypeSignature state False False
+                    state <- try expect state Kind.EndOfItem
+                    function_signature <- FunctionSignature { name = name, type_arguments = args, constraints = [], type_signature = type_signature}
+                    Ok (state, Right function_signature)
+                _ -> unreachable
+        _ -> Err (state, unexpectedToken state "function name")

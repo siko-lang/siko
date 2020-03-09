@@ -27,6 +27,46 @@ impl ExternFunction for Map {
     }
 }
 
+pub struct Filter {}
+
+impl ExternFunction for Filter {
+    fn call(
+        &self,
+        environment: &mut Environment,
+        _: Option<ExprId>,
+        _: &NamedFunctionKind,
+        ty: Type,
+    ) -> Value {
+        let func = environment.get_arg_by_index(0);
+        let iterator = environment.get_arg_by_index(1);
+        return Value::new(
+            ValueCore::IteratorFilter(Box::new(iterator), Box::new(func)),
+            ty,
+        );
+    }
+}
+
+pub struct Fold {}
+
+impl ExternFunction for Fold {
+    fn call(
+        &self,
+        environment: &mut Environment,
+        _: Option<ExprId>,
+        _: &NamedFunctionKind,
+        ty: Type,
+    ) -> Value {
+        let func = environment.get_arg_by_index(0);
+        let initial = environment.get_arg_by_index(1);
+        let iterator = environment.get_arg_by_index(2);
+        let iterator = iterator.core.as_iterator();
+        let value = iterator.fold(initial, move |acc, x| {
+            Interpreter::call_func(func.clone(), vec![acc.clone(), x.clone()], None)
+        });
+        value
+    }
+}
+
 pub struct ForEach {}
 
 impl ExternFunction for ForEach {
@@ -48,5 +88,7 @@ impl ExternFunction for ForEach {
 
 pub fn register_extern_functions(interpreter: &mut Interpreter) {
     interpreter.add_extern_function(ITERATOR_MODULE_NAME, "map", Box::new(Map {}));
+    interpreter.add_extern_function(ITERATOR_MODULE_NAME, "filter", Box::new(Filter {}));
+    interpreter.add_extern_function(ITERATOR_MODULE_NAME, "fold", Box::new(Fold {}));
     interpreter.add_extern_function(ITERATOR_MODULE_NAME, "forEach", Box::new(ForEach {}));
 }

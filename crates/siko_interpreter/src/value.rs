@@ -87,6 +87,7 @@ pub enum ValueCore {
     Map(BTreeMap<Value, Value>),
     Iterator(Box<Value>),
     IteratorMap(Box<Value>, Box<Value>),
+    IteratorFilter(Box<Value>, Box<Value>),
 }
 
 impl ValueCore {
@@ -217,6 +218,16 @@ impl ValueCore {
                     iterator.map(move |x| Interpreter::call_func(func.clone(), vec![x], None));
                 Box::new(iterator)
             }
+            ValueCore::IteratorFilter(v, func) => {
+                let func = *func.clone();
+                let iterator = v.core.as_iterator();
+                let iterator = iterator.filter(move |x| {
+                    Interpreter::call_func(func.clone(), vec![x.clone()], None)
+                        .core
+                        .as_bool()
+                });
+                Box::new(iterator)
+            }
             _ => unreachable!(),
         }
     }
@@ -255,6 +266,9 @@ impl fmt::Display for ValueCore {
             }
             ValueCore::Iterator(v) => write!(f, "Iterator({})", v.core),
             ValueCore::IteratorMap(v, func) => write!(f, "IteratorMap({}, {})", v.core, func.core),
+            ValueCore::IteratorFilter(v, func) => {
+                write!(f, "IteratorFilter({}, {})", v.core, func.core)
+            }
         }
     }
 }
