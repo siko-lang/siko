@@ -92,6 +92,14 @@ expectVarIdent state msg = do
         VarIdentifier id -> Ok (step state, Ident id (getLocation ti.span state))
         _ -> Err (state, unexpectedToken state msg)
 
+expectAnyIdent :: ParserState -> String -> Result (ParserState, Ident) (ParserState, ParserError)
+expectAnyIdent state msg = do
+    ti <- peek state
+    case ti.token of
+        VarIdentifier id -> Ok (step state, Ident id (getLocation ti.span state))
+        TypeIdentifier id -> Ok (step state, Ident id (getLocation ti.span state))
+        _ -> Err (state, unexpectedToken state msg)
+
 parseQualifiedName :: ParserState -> String -> Result (ParserState, Ident) (ParserState, ParserError)
 parseQualifiedName state msg = do
     (state, name) <- case expectTypeIdent state msg of
@@ -189,7 +197,7 @@ parse :: String -> (Program, [LexerError], [ParserError])
 parse input =
     do
         (tokens, lexer_errors) <- lex input
-        println "Tokens: {}" % tokens
+        //println "Tokens: {}" % tokens
         println "Errors: {}" % lexer_errors
         state <- initState (FileId 0) tokens
         (program, parser_errors) <- processTokens state
