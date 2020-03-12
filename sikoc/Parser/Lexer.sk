@@ -146,6 +146,8 @@ consumeOperator state = do
     (state, (ident, span)) <- consumeWhile state isOperator
     op <- case ident of
         "=" -> Equal
+        "==" -> DoubleEqual
+        "!=" -> NotEqual
         "->" -> RightArrow
         "<-" -> LeftArrow
         "!" -> ExclamationMark
@@ -157,6 +159,17 @@ consumeOperator state = do
         "::" -> DoubleColon
         "=>" -> DoubleRightArrow
         "|" -> Pipe
+        "&&" -> And
+        "||" -> Or
+        "<" -> LessThan
+        ">" -> GreaterThan
+        "<=" -> LessOrEqualThan
+        ">=" -> GreaterOrEqualThan
+        "+" -> Add
+        "-" -> Sub
+        "*" -> Mul
+        "/" -> Div
+        "|>" -> PipeForward
         _ -> return addError state (InvalidOperator span)
     addToken state op span
 

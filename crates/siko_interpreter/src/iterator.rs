@@ -54,7 +54,7 @@ impl ExternFunction for Fold {
         environment: &mut Environment,
         _: Option<ExprId>,
         _: &NamedFunctionKind,
-        ty: Type,
+        _: Type,
     ) -> Value {
         let func = environment.get_arg_by_index(0);
         let initial = environment.get_arg_by_index(1);

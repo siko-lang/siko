@@ -132,6 +132,23 @@ impl ExternFunction for GetLength {
     }
 }
 
+
+pub struct IsEmpty {}
+
+impl ExternFunction for IsEmpty {
+    fn call(
+        &self,
+        environment: &mut Environment,
+        _: Option<ExprId>,
+        _: &NamedFunctionKind,
+        _: Type,
+    ) -> Value {
+        let list = environment.get_arg_by_index(0);
+        let empty = list.core.as_list().is_empty();
+        return Interpreter::get_bool_value(empty);
+    }
+}
+
 pub fn register_extern_functions(interpreter: &mut Interpreter) {
     interpreter.add_extern_function(LIST_MODULE_NAME, "show", Box::new(Show {}));
     interpreter.add_extern_function(LIST_MODULE_NAME, "iter", Box::new(Iter {}));
@@ -140,4 +157,5 @@ pub fn register_extern_functions(interpreter: &mut Interpreter) {
     interpreter.add_extern_function(LIST_MODULE_NAME, "opAdd", Box::new(ListAdd {}));
     interpreter.add_extern_function(LIST_MODULE_NAME, "atIndex", Box::new(AtIndex {}));
     interpreter.add_extern_function(LIST_MODULE_NAME, "getLength", Box::new(GetLength {}));
+    interpreter.add_extern_function(LIST_MODULE_NAME, "isEmpty", Box::new(IsEmpty {}));
 }

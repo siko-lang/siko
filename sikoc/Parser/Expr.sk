@@ -4,15 +4,101 @@ import Siko.Parser
 import Siko.Parser.Type
 import Siko.Parser.Class
 import Siko.Parser.Function
-import Siko.Parser.Token
+import Siko.Parser.Token as T
 import Siko.Parser.Token.Kind as Kind
 import Siko.Syntax.Expr
 
-parseExpr :: ParserState -> Result (ParserState, Expr) (ParserState, ParserError)
-parseExpr state = do
+parseUnary :: ParserState -> Bool -> Result (ParserState, Expr) (ParserState, ParserError)
+parseUnary state is_arg = do
     ti <- peek state
     case ti.token of
-        VarIdentifier id -> do
-            Ok (step state, Do [])
+        T.VarIdentifier id -> do
+            (state, ident) <- try expectVarIdent state "expression"
+            Ok (state, Path ident)
+        T.TypeIdentifier id -> do
+            (state, ident) <- try expectTypeIdent state "expression"
+            Ok (state, Path ident)
         _ ->
             Err (state, unexpectedToken state "expression")
+
+parsePrimary :: ParserState -> Bool -> Result (ParserState, Expr) (ParserState, ParserError)
+parsePrimary state for_initializer = do
+    (state, fn) <- try parseUnary state False
+    (state, args) <- loop (state, args) <- (state, []) do
+        ti <- peek state
+        case T.getKind ti.token of
+            Kind.ExclamationMark
+             | Kind.TypeIdentifier
+             | Kind.VarIdentifier
+             | Kind.IntegerLiteral
+             //| Kind.FloatLiteral
+             | Kind.StringLiteral
+             | Kind.CharLiteral
+             | Kind.LParen
+             //| Kind.KeywordIf
+             //| Kind.Lambda
+             | Kind.LBracket
+              -> ()
+            Kind.KeywordDo if !for_initializer -> ()
+            _ -> break (state, args)
+        (state, arg) <- try parseUnary state True
+        args <- args + [arg]
+        (state, args)
+    expr <- if isEmpty args
+        then fn
+        else do
+            FunctionCall fn args
+    Ok (state, expr)
+
+createBinaryOpExpr :: Expr -> Expr -> Kind.TokenKind -> Expr
+createBinaryOpExpr left right matching_op = do
+    op <- case matching_op of
+        Kind.And -> And
+        Kind.Or -> Or
+        Kind.DoubleEqual -> Equal
+        Kind.NotEqual -> NotEqual
+        Kind.LessThan -> LessThan
+        Kind.GreaterThan -> GreaterThan
+        Kind.LessOrEqualThan -> LessOrEqualThan
+        Kind.GreaterOrEqualThan -> GreaterOrEqualThan
+        Kind.Add -> Add
+        Kind.Sub -> Sub
+        Kind.Mul -> Mul
+        Kind.Div -> Div
+        Kind.PipeForward -> PipeForward
+        _ -> unreachable
+    BinaryOp op left right
+
+callNext :: ParserState -> Bool -> Int -> [[Kind.TokenKind]] -> Result (ParserState, Expr) (ParserState, ParserError)
+callNext state for_initializer index ops_table = do
+    if index + 1 < getLength ops_table
+        then
+            parseBinaryOps state for_initializer (index + 1)
+        else
+            parsePrimary state for_initializer
+
+parseBinaryOps :: ParserState -> Bool -> Int -> Result (ParserState, Expr) (ParserState, ParserError)
+parseBinaryOps state for_initializer index = do
+    ops_table <- [[Kind.And, Kind.Or],
+                  [Kind.DoubleEqual, Kind.NotEqual],
+                  [Kind.LessThan, Kind.GreaterThan, Kind.LessOrEqualThan, Kind.GreaterOrEqualThan],
+                  [Kind.Add, Kind.Sub],
+                  [Kind.Mul, Kind.Div],
+                  [Kind.PipeForward]
+                 ]
+    (state, left) <- try callNext state for_initializer index ops_table
+    (state, expr) <- loop (state, left) <- (state, left) do
+        current_ops <- atIndex ops_table index
+        ti <- peek state
+        matching_op <- current_ops |> List.iter |> fold (\result, kind -> if kind == T.getKind ti.token then Some kind else result) None
+        case matching_op of
+            Some matching_op -> do
+                state <- step state
+                (state, right) <- try callNext state for_initializer index ops_table
+                left <- createBinaryOpExpr left right matching_op
+                (state, left)
+            None -> break (state, left)
+    Ok (state, expr)
+
+parseExpr :: ParserState -> Result (ParserState, Expr) (ParserState, ParserError)
+parseExpr state = parseBinaryOps state False 0
