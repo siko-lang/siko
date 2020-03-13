@@ -47,7 +47,7 @@ parseTypeSignaturePart state parsingVariant allowWildcard = do
             (state, ident) <- try expectVarIdent state "type argument"
             Ok (state, buildTypeSignature (TypeArg ident) start_index state)
         T.TypeIdentifier id -> do
-            (state, name) <- try parseQualifiedName state "type name"
+            (state, name) <- try parseQualifiedTypeName state "type name"
             (state, args) <- loop (state, args) <- (state, []) do
                     ti  <- peek state
                     case T.getKind ti.token of
@@ -56,7 +56,7 @@ parseTypeSignaturePart state parsingVariant allowWildcard = do
                          | Kind.TypeIdentifier
                          | Kind.VarIdentifier
                          | Kind.Wildcard
-                         | Kind.ExclamationMark 
+                         | Kind.ExclamationMark
                          | Kind.Ampersand-> do
                             (state, ty) <- try (parseTypeSignaturePart state False allowWildcard)
                             args <- args + [ty]

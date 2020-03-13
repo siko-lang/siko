@@ -1,6 +1,7 @@
-module Siko.Parser.Pattern where
+module Siko.Parser.Pattern(parsePattern, parseExtendedPattern) where
 
 import Siko.Parser
+import Siko.Parser.Expr
 import Siko.Syntax.Ident
 import Siko.Syntax.Pattern
 import Siko.Parser.Token as T
@@ -13,7 +14,7 @@ buildPattern p start_index state =
 parseTuplePattern :: ParserState -> Result (ParserState, Pattern) (ParserState, ParserError)
 parseTuplePattern state = do
     start_index <- state.index
-    case try parseParens state (\state -> parsePattern state False) "pattern" of
+    case try parseParens state (\state -> parsePatternL state False) "pattern" of
         (state, Single ty) -> Ok (state, ty)
         (state, Multi types) -> Ok (state, buildPattern (Tuple types) start_index state)
 
@@ -21,7 +22,7 @@ parseRecordFieldPattern :: ParserState -> Result (ParserState, RecordFieldPatter
 parseRecordFieldPattern state = do
     (state, name) <- try expectVarIdent state "record field"
     state <- try expect state Kind.Equal
-    (state, pattern) <- try parsePattern state True
+    (state, pattern) <- try parsePatternL state True
     Ok (state, RecordFieldPattern name pattern)
 
 parseConstructorPattern :: ParserState -> Bool -> Int -> Result (ParserState, Pattern) (ParserState, ParserError)
@@ -29,11 +30,11 @@ parseConstructorPattern state inner start_index = do
     if inner
         then
             do
-                (state, name) <- try parseQualifiedName state "type constructor"
+                (state, name) <- try parseQualifiedTypeName state "type constructor"
                 Ok (state, buildPattern (Constructor name []) start_index state)
         else
             do
-                (state, name) <- try parseQualifiedName state "type constructor"
+                (state, name) <- try parseQualifiedTypeName state "type constructor"
                 if check state Kind.LCurly
                     then
                         do
@@ -51,14 +52,39 @@ parseConstructorPattern state inner start_index = do
                                         | Kind.TypeIdentifier
                                         | Kind.VarIdentifier
                                         | Kind.Wildcard -> do
-                                        (state, ty) <- try (parsePattern state True)
+                                        (state, ty) <- try (parsePatternL state True)
                                         args <- args + [ty]
                                         (state, args)
                                     _ -> break (state, args)
                             Ok (state, buildPattern (Constructor name args) start_index state)
 
-parsePattern :: ParserState -> Bool -> Result (ParserState, Pattern) (ParserState, ParserError)
-parsePattern state inner = do
+parsePattern :: ParserState -> Result (ParserState, Pattern) (ParserState, ParserError)
+parsePattern state = parsePatternL state False
+
+parseExtendedPattern :: ParserState -> Result (ParserState, Pattern) (ParserState, ParserError)
+parseExtendedPattern state = do
+    start_index <- state.index
+    (state, patterns) <- loop (state, patterns) <- (state, []) do
+        (state, pattern) <- try parsePattern state
+        patterns <- patterns + [pattern]
+        if check state Kind.Pipe
+            then do
+                state <- step state
+                (state, patterns)
+            else break (state, patterns)
+    pattern <- if getLength patterns == 1
+        then atIndex patterns 0
+        else (buildPattern (Or patterns) start_index state)
+    (state, pattern) <- if check state Kind.KeywordIf
+        then do
+            state <- step state
+            (state, expr) <- try parseExpr state
+            (state, buildPattern (Guarded pattern expr) start_index state)
+        else (state, pattern)
+    Ok (state, pattern)
+
+parsePatternL :: ParserState -> Bool -> Result (ParserState, Pattern) (ParserState, ParserError)
+parsePatternL state inner = do
     start_index <- state.index
     ti <- peek state
     case ti.token of
@@ -74,7 +100,7 @@ parsePattern state inner = do
                         state <- try expect state Kind.DoubleDot
                         ti <- peek state
                         case ti.token of
-                            T.CharLiteral v2 -> do 
+                            T.CharLiteral v2 -> do
                                 state <- try expect state Kind.CharLiteral
                                 Ok (state, buildPattern (CharRange v1 v2 Exclusive) start_index state)
                             _ -> return Err (state, unexpectedToken state "char literal")

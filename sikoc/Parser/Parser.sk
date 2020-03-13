@@ -100,6 +100,23 @@ expectAnyIdent state msg = do
         TypeIdentifier id -> Ok (step state, Ident id (getLocation ti.span state))
         _ -> Err (state, unexpectedToken state msg)
 
+parseQualifiedTypeName :: ParserState -> String -> Result (ParserState, Ident) (ParserState, ParserError)
+parseQualifiedTypeName state msg = do
+    (state, name) <- case expectTypeIdent state msg of
+        Ok (state, name) -> (state, name)
+        Err (state, err) -> return Err (state, err)
+    (state, name) <- loop (state, name) <- (state, name) do
+        ti <- peek state
+        case ti.token of
+            TypeIdentifier id -> do
+                name <- mergeIdent name id (getLocation ti.span state)
+                (step state, name)
+            Dot -> do
+                name <- mergeIdent name "." (getLocation ti.span state)
+                (step state, name)
+            _ -> break (state, name)
+    Ok (state, name)
+
 parseQualifiedName :: ParserState -> String -> Result (ParserState, Ident) (ParserState, ParserError)
 parseQualifiedName state msg = do
     (state, name) <- case expectTypeIdent state msg of
@@ -114,6 +131,9 @@ parseQualifiedName state msg = do
             Dot -> do
                 name <- mergeIdent name "." (getLocation ti.span state)
                 (step state, name)
+            VarIdentifier id -> do
+                name <- mergeIdent name id (getLocation ti.span state)
+                break (step state, name)
             _ -> break (state, name)
     Ok (state, name)
 

@@ -53,8 +53,14 @@ isIdentifier c = case c of
     _ -> False
 
 isOperator c = case c of
-    '|' | '>' | '<' | '&' | '*' | '+' | '-' | '/' | '=' | '!' | '\\' | ':' | '.' -> True
+    '|' | '>' | '<' | '&' | '*' | '+' | '-' | '/' | '=' | '!' | '\\' | ':' | '.' | '%' -> True
     _ -> False
+
+isInteger c = case c of
+    '0'..='9' -> True
+    _ -> False
+
+isIntegerLiteral s = chars s |> List.iter |> fold (\is_integer, c -> if isInteger c then is_integer else False) True
 
 consumeWhile state cond =
     loop (state, (current, span)) <- (state, ("", startSpan state))
@@ -133,12 +139,26 @@ consumeIdentifier state = do
         "import" -> KeywordImport
         "hiding" -> KeywordHiding
         "as" -> KeywordAs
+        "if" -> KeywordIf
+        "then" -> KeywordThen
+        "else" -> KeywordElse
+        "return" -> KeywordReturn
+        "try" -> KeywordTry
+        "loop" -> KeywordLoop
+        "continue" -> KeywordContinue
+        "break" -> KeywordBreak
+        "case" -> KeywordCase
+        "of" -> KeywordOf
         "_" -> Wildcard
-        _ -> if startsWithUppercase ident
+        _ -> if isIntegerLiteral ident
                 then
-                    return addToken state (TypeIdentifier ident) span
+                    return addToken state (IntegerLiteral ident) span
                 else
-                    return addToken state (VarIdentifier ident) span
+                    if startsWithUppercase ident
+                        then
+                            return addToken state (TypeIdentifier ident) span
+                        else
+                            return addToken state (VarIdentifier ident) span
     addToken state special span
 
 consumeOperator :: LexerState -> LexerState
@@ -170,6 +190,8 @@ consumeOperator state = do
         "*" -> Mul
         "/" -> Div
         "|>" -> PipeForward
+        "%" -> Percent
+        "\\" -> Backslash
         _ -> return addError state (InvalidOperator span)
     addToken state op span
 

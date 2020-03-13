@@ -29,7 +29,7 @@ data Op = Equal
           | PipeForward
           deriving (Show)
 
-data Expr = Lambda [Ident] Expr
+data Expr = Lambda [Pattern] Expr
         | FunctionCall Expr [Expr]
         | Builtin BuiltinOperator
         | BinaryOp Op Expr Expr
@@ -37,14 +37,22 @@ data Expr = Lambda [Ident] Expr
         | Tuple [Expr]
         | List [Expr]
         | Path Ident
-        | IntegerLiteral Int
-        | FloatLiteral Float
+        | IntegerLiteral String
+        | FloatLiteral String
         | StringLiteral String
         | Do [Expr]
         | Bind Pattern Expr
-        | FieldAccess String Expr
-        | TupleFieldAccess Int Expr
+        | FieldAccess Ident Expr
+        | TupleFieldAccess String Expr
         | Formatter String [Expr]
         | CaseOf Expr [Case]
-        | RecordInitialization String [RecordConstructionItem]
-        | RecordUpdate String [RecordConstructionItem] deriving (Show)
+        | Not Expr
+        | Negative Expr
+        | RecordInitialization Ident [RecordConstructionItem]
+        | RecordUpdate Ident [RecordConstructionItem]
+        | Return Expr
+        | Try Expr
+        | Continue Expr
+        | Break Expr
+        | Loop Pattern Expr [Expr]
+        deriving (Show)

@@ -2,28 +2,178 @@ module Siko.Parser.Expr where
 
 import Siko.Parser
 import Siko.Parser.Type
+import Siko.Parser.Pattern
 import Siko.Parser.Class
 import Siko.Parser.Function
 import Siko.Parser.Token as T
 import Siko.Parser.Token.Kind as Kind
 import Siko.Syntax.Expr
 
-parseUnary :: ParserState -> Bool -> Result (ParserState, Expr) (ParserState, ParserError)
-parseUnary state is_arg = do
+parseDoBlock :: ParserState -> Result (ParserState, [Expr]) (ParserState, ParserError)
+parseDoBlock state = do
+    state <- try expect state Kind.KeywordDo
+    (state, items) <- loop (state, items) <- (state, []) do
+        if check state Kind.EndOfBlock
+            then
+                break (state, items)
+            else do
+                (state, item) <- try parseExpr state
+                items <- items + [item]
+                state <- try expect state Kind.EndOfItem
+                (state, items)
+    state <- try expect state Kind.EndOfBlock
+    Ok (state, items)
+
+parseRecordFieldExpr :: ParserState -> Result (ParserState, RecordConstructionItem) (ParserState, ParserError)
+parseRecordFieldExpr state = do
+    (state, name) <- try expectVarIdent state "record field"
+    state <- try expect state Kind.Equal
+    (state, expr) <- try parseExpr state
+    Ok (state, RecordConstructionItem name expr)
+
+parseUnary :: ParserState -> Result (ParserState, Expr) (ParserState, ParserError)
+parseUnary state = do
     ti <- peek state
     case ti.token of
         T.VarIdentifier id -> do
-            (state, ident) <- try expectVarIdent state "expression"
-            Ok (state, Path ident)
+            (state, name) <- try expectVarIdent state "expression"
+            if check state Kind.LCurly
+                then do
+                        (state, fields) <- try parseList state parseRecordFieldExpr Kind.LCurly Kind.RCurly
+                        Ok (state, (RecordUpdate name fields))
+                else Ok (state, Path name)
         T.TypeIdentifier id -> do
-            (state, ident) <- try expectTypeIdent state "expression"
-            Ok (state, Path ident)
+            (state, name) <- try parseQualifiedName state "expression"
+            if check state Kind.LCurly
+                then do
+                        (state, fields) <- try parseList state parseRecordFieldExpr Kind.LCurly Kind.RCurly
+                        Ok (state, (RecordInitialization name fields))
+                else Ok (state, Path name)
+        T.IntegerLiteral i -> do
+            state <- step state
+            if check state Kind.Dot
+                then
+                    do
+                        state <- try expect state Kind.Dot
+                        ti <- peek state
+                        case ti.token of
+                            T.IntegerLiteral i2 -> Ok (step state, FloatLiteral "{}.{}" % (i, i2))
+                            _ -> Err (state, unexpectedToken state "numeric literal")
+                else
+                    Ok (state, IntegerLiteral i)
+        T.StringLiteral s -> do
+            state <- step state
+            if check state Kind.Percent
+                then
+                    do
+                        state <- try expect state Kind.Percent
+                        if check state Kind.LParen
+                            then
+                                do
+                                    (state, exprs) <- try parseList state parseExpr Kind.LParen Kind.RParen
+                                    Ok (state, Formatter s exprs)
+                            else
+                                do
+                                    (state, expr) <- try parseExpr state
+                                    Ok (state, Formatter s [expr])
+                else
+                    Ok (state, StringLiteral s)
+        T.Sub -> do
+            state <- step state
+            (state, expr) <- try parseUnary state
+            Ok (state, Negative expr)
+        T.ExclamationMark -> do
+            state <- step state
+            (state, expr) <- try parseUnary state
+            Ok (state, Not expr)
+        T.KeywordIf -> do
+            state <- try expect state Kind.KeywordIf
+            (state, cond) <- try parseExpr state
+            state <- try expect state Kind.KeywordThen
+            (state, true_branch) <- try parseExpr state
+            state <- try expect state Kind.KeywordElse
+            (state, false_branch) <- try parseExpr state
+            Ok (state, If cond true_branch false_branch)
+        T.LParen -> do
+            (state, result) <- try parseParens state parseExpr "expression"
+            case result of
+                Single e -> Ok (state, e)
+                Multi exprs -> Ok (state, Tuple exprs)
+        T.LBracket -> do
+            (state, exprs) <- try parseList state parseExpr Kind.LBracket Kind.RBracket
+            Ok (state, List exprs)
+        T.KeywordReturn -> do
+            state <- step state
+            (state, expr) <- try parseExpr state
+            Ok (state, Return expr)
+        T.KeywordTry -> do
+            state <- step state
+            (state, expr) <- try parseExpr state
+            Ok (state, Try expr)
+        T.KeywordContinue -> do
+            state <- step state
+            (state, expr) <- try parseExpr state
+            Ok (state, Continue expr)
+        T.KeywordBreak -> do
+            state <- step state
+            (state, expr) <- try parseExpr state
+            Ok (state, Break expr)
+        T.Backslash -> do
+            (state, args) <- try parseList state parsePattern Kind.Backslash Kind.RightArrow
+            (state, body) <- try parseExpr state
+            Ok (state, Lambda args body)
+        T.KeywordCase -> do
+            state <- step state
+            (state, body) <- try parseExpr state
+            state <- try expect state Kind.KeywordOf
+            (state, cases) <- loop (state, cases) <- (state, []) do
+                if check state Kind.EndOfBlock
+                    then
+                        break (state, cases)
+                    else do
+                        (state, pattern) <- try parseExtendedPattern state
+                        state <- try expect state Kind.RightArrow
+                        (state, case_body) <- try parseExpr state
+                        cases <- cases + [Case pattern case_body]
+                        state <- try expect state Kind.EndOfItem
+                        (state, cases)
+            state <- try expect state Kind.EndOfBlock
+            Ok (state, CaseOf body cases)
+        T.KeywordDo -> do
+            (state, items) <- try parseDoBlock state
+            Ok (state, Do items)
+        T.KeywordLoop -> do
+            state <- try expect state Kind.KeywordLoop
+            (state, pattern) <- try parsePattern state
+            state <- try expect state Kind.LeftArrow
+            (state, start_expr) <- try parseBinaryOps state True 0
+            (state, items) <- try parseDoBlock state
+            Ok (state, Loop pattern start_expr items)
         _ ->
             Err (state, unexpectedToken state "expression")
 
+parseFieldAccess :: ParserState -> Result (ParserState, Expr) (ParserState, ParserError)
+parseFieldAccess state = do
+    (state, expr) <- try parseUnary state
+    (state, expr) <- loop (state, expr) <- (state, expr) do
+        if check state Kind.Dot
+            then
+                do
+                    state <- try expect state Kind.Dot
+                    ti <- peek state
+                    case ti.token of
+                        T.IntegerLiteral i -> (step state, TupleFieldAccess i expr)
+                        T.VarIdentifier i -> do
+                            (state, name) <- try expectVarIdent state "field"
+                            (state, FieldAccess name expr)
+                        _ -> return Err (state, unexpectedToken state "field")
+            else
+                break (state, expr)
+    Ok (state, expr)
+
 parsePrimary :: ParserState -> Bool -> Result (ParserState, Expr) (ParserState, ParserError)
 parsePrimary state for_initializer = do
-    (state, fn) <- try parseUnary state False
+    (state, fn) <- try parseFieldAccess state
     (state, args) <- loop (state, args) <- (state, []) do
         ti <- peek state
         case T.getKind ti.token of
@@ -31,23 +181,21 @@ parsePrimary state for_initializer = do
              | Kind.TypeIdentifier
              | Kind.VarIdentifier
              | Kind.IntegerLiteral
-             //| Kind.FloatLiteral
              | Kind.StringLiteral
              | Kind.CharLiteral
              | Kind.LParen
-             //| Kind.KeywordIf
-             //| Kind.Lambda
+             | Kind.KeywordIf
+             | Kind.Backslash
              | Kind.LBracket
               -> ()
             Kind.KeywordDo if !for_initializer -> ()
             _ -> break (state, args)
-        (state, arg) <- try parseUnary state True
+        (state, arg) <- try parseFieldAccess state
         args <- args + [arg]
         (state, args)
     expr <- if isEmpty args
         then fn
-        else do
-            FunctionCall fn args
+        else FunctionCall fn args
     Ok (state, expr)
 
 createBinaryOpExpr :: Expr -> Expr -> Kind.TokenKind -> Expr

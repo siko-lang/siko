@@ -30,7 +30,7 @@ parseFunction state = do
                     Equal -> break (state, args, Some Equal)
                     DoubleColon -> break (state, args, Some DoubleColon)
                     _ -> do
-                        (state, arg) <- try parsePattern state False
+                        (state, arg) <- try parsePattern state
                         args <- args + [arg]
                         (state, args, None)
             case sep of
@@ -45,7 +45,6 @@ parseFunction state = do
                             (state, Some body)
                     state <- try expect state Kind.EndOfItem
                     function <- Function { name = name, arguments = args, body = body }
-                    println "Body {}" % body
                     Ok (state, Left function)
                 Some DoubleColon -> do
                     state <- try expect state Kind.DoubleColon
