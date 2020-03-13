@@ -1,15 +1,45 @@
-module Siko.Parser.Pattern(parsePattern, parseExtendedPattern) where
+module Siko.Parser.Pattern(parsePattern,
+                           parseExtendedPattern,
+                           irrefutablePatternFollows,
+                           parseBindPattern) where
 
 import Siko.Parser
 import Siko.Parser.Expr
+import Siko.Parser.Type
 import Siko.Syntax.Ident
 import Siko.Syntax.Pattern
 import Siko.Parser.Token as T
 import Siko.Parser.Token.Kind as Kind
 
+irrefutablePatternFollows :: ParserState -> Bool
+irrefutablePatternFollows state = do
+    loop index <- state.index do
+        ti <- peekAt state index
+        case ti.token of
+            T.EndOfItem -> return False
+            T.KeywordIf -> return False
+            T.KeywordCase -> return False
+            T.KeywordLoop -> return False
+            T.KeywordDo -> return False
+            T.LeftArrow -> return True
+            _ -> continue index + 1
+    False
+
 buildPattern :: SimplePattern -> Int -> ParserState -> Pattern
 buildPattern p start_index state =
     Pattern p (buildLocation start_index state)
+
+parseBindPattern :: ParserState -> Result (ParserState, Pattern) (ParserState, ParserError)
+parseBindPattern state = do
+    start_index <- state.index
+    (state, pattern) <- try parsePattern state
+    (state, pattern) <- if check state Kind.DoubleColon
+        then do
+            state <- step state
+            (state, type_signature) <- try parseTypeSignature state False True
+            (state, buildPattern (Typed pattern type_signature) start_index state)
+        else (state, pattern)
+    Ok (state, pattern)
 
 parseTuplePattern :: ParserState -> Result (ParserState, Pattern) (ParserState, ParserError)
 parseTuplePattern state = do

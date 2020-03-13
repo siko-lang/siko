@@ -9,6 +9,10 @@ import Siko.Parser.Token as T
 import Siko.Parser.Token.Kind as Kind
 import Siko.Syntax.Expr
 
+buildExpr :: SimpleExpr -> Int -> ParserState -> Expr
+buildExpr expr start_index state = do
+    Expr expr (buildLocation start_index state)
+
 parseDoBlock :: ParserState -> Result (ParserState, [Expr]) (ParserState, ParserError)
 parseDoBlock state = do
     state <- try expect state Kind.KeywordDo
@@ -17,7 +21,14 @@ parseDoBlock state = do
             then
                 break (state, items)
             else do
-                (state, item) <- try parseExpr state
+                start_index <- state.index
+                (state, item) <- if irrefutablePatternFollows state
+                    then do
+                        (state, pattern) <- try parseBindPattern state
+                        state <- try expect state Kind.LeftArrow
+                        (state, expr) <- try parseExpr state
+                        (state, buildExpr (Bind pattern expr) start_index state)
+                    else try parseExpr state
                 items <- items + [item]
                 state <- try expect state Kind.EndOfItem
                 (state, items)
@@ -33,6 +44,7 @@ parseRecordFieldExpr state = do
 
 parseUnary :: ParserState -> Result (ParserState, Expr) (ParserState, ParserError)
 parseUnary state = do
+    start_index <- state.index
     ti <- peek state
     case ti.token of
         T.VarIdentifier id -> do
@@ -40,15 +52,15 @@ parseUnary state = do
             if check state Kind.LCurly
                 then do
                         (state, fields) <- try parseList state parseRecordFieldExpr Kind.LCurly Kind.RCurly
-                        Ok (state, (RecordUpdate name fields))
-                else Ok (state, Path name)
+                        Ok (state, buildExpr (RecordUpdate name fields) start_index state)
+                else Ok (state,  buildExpr (Path name) start_index state)
         T.TypeIdentifier id -> do
             (state, name) <- try parseQualifiedName state "expression"
             if check state Kind.LCurly
                 then do
                         (state, fields) <- try parseList state parseRecordFieldExpr Kind.LCurly Kind.RCurly
-                        Ok (state, (RecordInitialization name fields))
-                else Ok (state, Path name)
+                        Ok (state, buildExpr (RecordInitialization name fields) start_index state)
+                else Ok (state, buildExpr (Path name) start_index state)
         T.IntegerLiteral i -> do
             state <- step state
             if check state Kind.Dot
@@ -57,10 +69,12 @@ parseUnary state = do
                         state <- try expect state Kind.Dot
                         ti <- peek state
                         case ti.token of
-                            T.IntegerLiteral i2 -> Ok (step state, FloatLiteral "{}.{}" % (i, i2))
+                            T.IntegerLiteral i2 -> do
+                                state <- step state
+                                Ok (state, buildExpr (FloatLiteral "{}.{}" % (i, i2)) start_index state)
                             _ -> Err (state, unexpectedToken state "numeric literal")
                 else
-                    Ok (state, IntegerLiteral i)
+                    Ok (state, buildExpr (IntegerLiteral i) start_index state)
         T.StringLiteral s -> do
             state <- step state
             if check state Kind.Percent
@@ -71,21 +85,21 @@ parseUnary state = do
                             then
                                 do
                                     (state, exprs) <- try parseList state parseExpr Kind.LParen Kind.RParen
-                                    Ok (state, Formatter s exprs)
+                                    Ok (state, buildExpr (Formatter s exprs) start_index state)
                             else
                                 do
                                     (state, expr) <- try parseExpr state
-                                    Ok (state, Formatter s [expr])
+                                    Ok (state, buildExpr (Formatter s [expr]) start_index state)
                 else
-                    Ok (state, StringLiteral s)
+                    Ok (state, buildExpr (StringLiteral s) start_index state)
         T.Sub -> do
             state <- step state
             (state, expr) <- try parseUnary state
-            Ok (state, Negative expr)
+            Ok (state, buildExpr (Negative expr) start_index state)
         T.ExclamationMark -> do
             state <- step state
             (state, expr) <- try parseUnary state
-            Ok (state, Not expr)
+            Ok (state, buildExpr (Not expr) start_index state)
         T.KeywordIf -> do
             state <- try expect state Kind.KeywordIf
             (state, cond) <- try parseExpr state
@@ -93,35 +107,35 @@ parseUnary state = do
             (state, true_branch) <- try parseExpr state
             state <- try expect state Kind.KeywordElse
             (state, false_branch) <- try parseExpr state
-            Ok (state, If cond true_branch false_branch)
+            Ok (state, buildExpr (If cond true_branch false_branch) start_index state)
         T.LParen -> do
             (state, result) <- try parseParens state parseExpr "expression"
             case result of
-                Single e -> Ok (state, e)
-                Multi exprs -> Ok (state, Tuple exprs)
+                Single e -> Ok (state, buildExpr (Paren e) start_index state)
+                Multi exprs -> Ok (state, buildExpr (Tuple exprs) start_index state)
         T.LBracket -> do
             (state, exprs) <- try parseList state parseExpr Kind.LBracket Kind.RBracket
-            Ok (state, List exprs)
+            Ok (state, buildExpr (List exprs) start_index state)
         T.KeywordReturn -> do
             state <- step state
             (state, expr) <- try parseExpr state
-            Ok (state, Return expr)
+            Ok (state, buildExpr (Return expr) start_index state)
         T.KeywordTry -> do
             state <- step state
             (state, expr) <- try parseExpr state
-            Ok (state, Try expr)
+            Ok (state, buildExpr (Try expr) start_index state)
         T.KeywordContinue -> do
             state <- step state
             (state, expr) <- try parseExpr state
-            Ok (state, Continue expr)
+            Ok (state, buildExpr (Continue expr) start_index state)
         T.KeywordBreak -> do
             state <- step state
             (state, expr) <- try parseExpr state
-            Ok (state, Break expr)
+            Ok (state, buildExpr (Break expr) start_index state)
         T.Backslash -> do
             (state, args) <- try parseList state parsePattern Kind.Backslash Kind.RightArrow
             (state, body) <- try parseExpr state
-            Ok (state, Lambda args body)
+            Ok (state, buildExpr (Lambda args body) start_index state)
         T.KeywordCase -> do
             state <- step state
             (state, body) <- try parseExpr state
@@ -138,17 +152,17 @@ parseUnary state = do
                         state <- try expect state Kind.EndOfItem
                         (state, cases)
             state <- try expect state Kind.EndOfBlock
-            Ok (state, CaseOf body cases)
+            Ok (state, buildExpr (CaseOf body cases) start_index state)
         T.KeywordDo -> do
             (state, items) <- try parseDoBlock state
-            Ok (state, Do items)
+            Ok (state, buildExpr (Do items) start_index state)
         T.KeywordLoop -> do
             state <- try expect state Kind.KeywordLoop
             (state, pattern) <- try parsePattern state
             state <- try expect state Kind.LeftArrow
             (state, start_expr) <- try parseBinaryOps state True 0
             (state, items) <- try parseDoBlock state
-            Ok (state, Loop pattern start_expr items)
+            Ok (state, buildExpr (Loop pattern start_expr items) start_index state)
         _ ->
             Err (state, unexpectedToken state "expression")
 
@@ -162,10 +176,14 @@ parseFieldAccess state = do
                     state <- try expect state Kind.Dot
                     ti <- peek state
                     case ti.token of
-                        T.IntegerLiteral i -> (step state, TupleFieldAccess i expr)
+                        T.IntegerLiteral i -> do
+                            start_index <- state.index
+                            state <- step state
+                            (state, buildExpr (TupleFieldAccess i expr) start_index state)
                         T.VarIdentifier i -> do
+                            start_index <- state.index
                             (state, name) <- try expectVarIdent state "field"
-                            (state, FieldAccess name expr)
+                            (state, buildExpr (FieldAccess name expr) start_index state)
                         _ -> return Err (state, unexpectedToken state "field")
             else
                 break (state, expr)
@@ -173,6 +191,7 @@ parseFieldAccess state = do
 
 parsePrimary :: ParserState -> Bool -> Result (ParserState, Expr) (ParserState, ParserError)
 parsePrimary state for_initializer = do
+    start_index <- state.index
     (state, fn) <- try parseFieldAccess state
     (state, args) <- loop (state, args) <- (state, []) do
         ti <- peek state
@@ -195,10 +214,10 @@ parsePrimary state for_initializer = do
         (state, args)
     expr <- if isEmpty args
         then fn
-        else FunctionCall fn args
+        else buildExpr (FunctionCall fn args) start_index state
     Ok (state, expr)
 
-createBinaryOpExpr :: Expr -> Expr -> Kind.TokenKind -> Expr
+createBinaryOpExpr :: Expr -> Expr -> Kind.TokenKind -> SimpleExpr
 createBinaryOpExpr left right matching_op = do
     op <- case matching_op of
         Kind.And -> And
@@ -234,6 +253,7 @@ parseBinaryOps state for_initializer index = do
                   [Kind.Mul, Kind.Div],
                   [Kind.PipeForward]
                  ]
+    start_index <- state.index
     (state, left) <- try callNext state for_initializer index ops_table
     (state, expr) <- loop (state, left) <- (state, left) do
         current_ops <- atIndex ops_table index
@@ -244,7 +264,7 @@ parseBinaryOps state for_initializer index = do
                 state <- step state
                 (state, right) <- try callNext state for_initializer index ops_table
                 left <- createBinaryOpExpr left right matching_op
-                (state, left)
+                (state, buildExpr left start_index state)
             None -> break (state, left)
     Ok (state, expr)
 

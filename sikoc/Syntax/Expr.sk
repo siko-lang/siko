@@ -2,7 +2,7 @@ module Siko.Syntax.Expr where
 
 import Siko.Syntax.Ident
 import Siko.Syntax.Pattern
-import Siko.Syntax.Operator
+import Siko.Syntax.Location
 
 data Case = {
               pattern :: Pattern,
@@ -29,9 +29,11 @@ data Op = Equal
           | PipeForward
           deriving (Show)
 
-data Expr = Lambda [Pattern] Expr
+data Expr = Expr SimpleExpr Location deriving (Show)
+
+data SimpleExpr = Lambda [Pattern] Expr
+        | Paren Expr
         | FunctionCall Expr [Expr]
-        | Builtin BuiltinOperator
         | BinaryOp Op Expr Expr
         | If Expr Expr Expr
         | Tuple [Expr]
