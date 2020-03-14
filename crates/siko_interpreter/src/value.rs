@@ -208,7 +208,12 @@ impl ValueCore {
         match self {
             ValueCore::Iterator(v) => match v.core.clone() {
                 ValueCore::List(v) => Box::new(v.into_iter()),
-                //ValueCore::Map(v) => Box::new(v.into_iter()),
+                ValueCore::Map(v) => Box::new(v.into_iter().map(|(k, v)| {
+                    Value::new(
+                        ValueCore::Tuple(vec![k.clone(), v.clone()]),
+                        Type::Tuple(vec![k.ty.clone(), v.ty.clone()]),
+                    )
+                })),
                 _ => unreachable!(),
             },
             ValueCore::IteratorMap(v, func) => {

@@ -1,0 +1,34 @@
+module Siko.Resolver where
+
+import Siko.Syntax.Program
+import Siko.Syntax.Module
+import Siko.Syntax.Ident
+import Siko.Resolver.Error
+import Map
+
+update :: Ident -> Option [Ident] -> Option [Ident]
+update name names = case names of
+    Some names -> Some (names + [name])
+    None -> Some [name]
+
+processModule :: Map String [Ident] -> Module -> Map String [Ident]
+processModule module_names mod = do
+    (module_names, _) <- alter (update mod.name) (getString mod.name) module_names
+    module_names
+
+getDuplicates :: [ResolverError] -> (String, [Ident]) -> [ResolverError]
+getDuplicates duplicates (name, idents) = do
+    if getLength idents > 1
+        then duplicates + [ModuleConflict name idents]
+        else duplicates
+
+checkConflictingModules :: Program -> [ResolverError]
+checkConflictingModules program = do
+    module_names <- program.modules |> List.iter |> fold processModule empty
+    duplicates <- module_names |> Map.iter |> fold getDuplicates []
+    println duplicates
+    duplicates
+
+processProgram :: Program -> [ResolverError]
+processProgram program = do
+    checkConflictingModules program

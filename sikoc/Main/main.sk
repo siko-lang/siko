@@ -2,7 +2,9 @@ module Main where
 
 import Siko.Parser.Lexer
 import Siko.Parser
+import Siko.Parser.Error
 import Siko.Syntax.Location
+import Siko.Resolver
 import Hack
 
 printLexerErr :: LexerError -> String -> ()
@@ -27,4 +29,5 @@ main = do
     source <- readTextFile "sikoc.sk"
     (program, lexer_errors, parser_errors) <- parse source
     lexer_errors |> List.iter |> forEach \error -> printLexerErr error source
+    processProgram program
     ()

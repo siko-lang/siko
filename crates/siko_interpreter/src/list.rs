@@ -132,7 +132,6 @@ impl ExternFunction for GetLength {
     }
 }
 
-
 pub struct IsEmpty {}
 
 impl ExternFunction for IsEmpty {
