@@ -20,7 +20,7 @@ parseDerivedClass state = do
     (state, derived_class) <- try expectTypeIdent state "class name"
     Ok (state, derived_class)
 
-parseAdt :: ParserState -> [Ident] -> Ident -> Result (ParserState, DataDefinition) (ParserState, ParserError)
+parseAdt :: ParserState -> [Ident] -> Ident -> Result (ParserState, AbstractDataType) (ParserState, ParserError)
 parseAdt state args name = do
     (state, variants, derived_classes) <- loop (state, variants, derived_classes) <- (state, [], []) do
         if check state Kind.EndOfItem
@@ -42,9 +42,9 @@ parseAdt state args name = do
                                     then (try expect state Kind.Pipe, variants, [])
                                     else break (state, variants, [])
     adt <- AbstractDataType { name = name, type_arguments = args, variants = variants, derived_classes = derived_classes }
-    Ok (state, AdtDef adt)
+    Ok (state, adt)
 
-parseRecord :: ParserState -> [Ident] -> Ident -> Result (ParserState, DataDefinition) (ParserState, ParserError)
+parseRecord :: ParserState -> [Ident] -> Ident -> Result (ParserState, Record) (ParserState, ParserError)
 parseRecord state args name = do
     (state, fields) <- try parseList state parseRecordField Kind.LCurly Kind.RCurly
     (state, derived_classes) <- if check state Kind.KeywordDeriving
@@ -55,9 +55,9 @@ parseRecord state args name = do
         else
             (state, [])
     record <- Record { name = name, type_arguments = args, fields = fields, external = False, derived_classes = derived_classes }
-    Ok (state, RecordDef record)
+    Ok (state, record)
 
-parseData :: ParserState -> Result (ParserState, DataDefinition) (ParserState, ParserError)
+parseData :: ParserState -> Result (ParserState, Either AbstractDataType Record) (ParserState, ParserError)
 parseData state = do
     state <- try expect state Kind.KeywordData
     (state, name) <- try expectTypeIdent state "type identifier"
@@ -78,15 +78,19 @@ parseData state = do
                     then do
                             state <- try expect state Kind.KeywordExtern
                             record <- Record { name = name, type_arguments = args, fields = [], external = True, derived_classes = [] }
-                            (state, RecordDef record)
+                            (state, Right record)
                     else do
                             (state, data_definition) <- if check state Kind.LCurly
-                                then try parseRecord state args name
-                                else try parseAdt state args name
+                                then do
+                                    (state, record) <- try parseRecord state args name
+                                    (state, Right record)
+                                else do
+                                    (state, adt) <- try parseAdt state args name
+                                    (state, Left adt)
                             (state, data_definition)
         else
             do
                 adt <- AbstractDataType { name = name, type_arguments = [], variants = [], derived_classes = [] }
-                (state, AdtDef adt)
+                (state, Left adt)
     state <- try expect state Kind.EndOfItem
     Ok (state, data_definition)

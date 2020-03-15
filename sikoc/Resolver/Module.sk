@@ -1,0 +1,114 @@
+module Siko.Resolver.Module where
+
+import Siko.Syntax.Program
+import Siko.Syntax.Module
+import Siko.Syntax.Function as F
+import Siko.Syntax.Ident
+import Siko.Syntax.Data as D
+import Siko.Syntax.Class as C
+import Siko.Syntax.TypeSignature as T
+import Siko.Resolver
+import Siko.Resolver.Error
+import Map
+
+data Symbol = Adt Ident
+            | Record Ident
+            | Class Ident
+            | ClassMember Ident
+            | Function Ident
+            | Variant Ident
+            deriving (Show)
+
+data SymbolTable = {
+                    module_name :: Ident,
+                    symbols :: Map String [Symbol]
+                   } deriving (Show)
+
+getSymbolName :: Symbol -> Ident
+getSymbolName symbol = case symbol of
+    Adt ident -> ident
+    Record ident -> ident
+    Class ident -> ident
+    ClassMember ident -> ident
+    Function ident -> ident
+    Variant ident -> ident
+
+append a :: a -> Option [a] -> Option [a]
+append item items = case items of
+    Some items -> Some (items + [item])
+    None -> Some [item]
+
+addModule :: Map String [Ident] -> Module -> Map String [Ident]
+addModule module_names mod = do
+    (module_names, _) <- alter (append mod.name) (getString mod.name) module_names
+    module_names
+
+getDuplicates :: ResolverState -> (String, [SymbolTable]) -> ResolverState
+getDuplicates state (name, symbol_tables) = do
+    errors <- if getLength symbol_tables > 1
+        then state.errors + [ModuleConflict name (symbol_tables |> List.iter |> map (\st -> st.module_name) |> toList)]
+        else state.errors
+    state { errors = errors }
+
+checkConflictingModules :: Map String [SymbolTable] -> ResolverState -> (Map String SymbolTable, ResolverState)
+checkConflictingModules symbol_tables state = do
+    state <- symbol_tables |> Map.iter |> fold getDuplicates state
+    symbol_tables <- symbol_tables |> Map.iter |> map (\(name, symbol_tables) -> (name, atIndex symbol_tables 0)) |> toMap
+    (symbol_tables, state)
+
+addItem :: Map String [Symbol] -> Symbol -> Map String [Symbol]
+addItem items item = do
+    item_name <- getSymbolName item
+    (items, _) <- alter (append item) (getString item_name) items
+    items
+
+addItems :: Map String [Symbol] -> [Symbol] -> Map String [Symbol]
+addItems items_map items = do
+    items |> List.iter |> fold addItem items_map
+
+collect a :: [a] -> (a -> Symbol) -> Map String [Symbol] -> Map String [Symbol]
+collect xs f items = xs |> List.iter |> map f |> fold addItem items
+
+variantToItem :: T.TypeSignature -> Option Symbol
+variantToItem variant_type_signature = case variant_type_signature of
+    T.TypeSignature (T.Variant name _) _ -> Some (Variant name)
+    _ -> None
+
+fillSymbolTable :: Map String [Symbol] -> Module -> Map String [Symbol]
+fillSymbolTable items mod = do
+    items <- collect mod.adts (\a -> Adt a.name) items
+    items <- mod.adts
+        |> List.iter
+        |> map (\a -> a.variants |> List.iter
+                                 |> map variantToItem
+                                 |> filter (\v -> isSome v)
+                                 |> map Option.unwrap
+                                 |> toList)
+        |> fold addItems items
+    items <- collect mod.records (\r -> Record r.name) items
+    items <- collect mod.functions (\f -> Function f.name) items
+    items <- collect mod.classes (\c -> Class c.name) items
+    items
+
+addSymbolTable :: Map String [SymbolTable] -> (String, SymbolTable) -> Map String [SymbolTable]
+addSymbolTable symbol_tables (name, symbol_table) = do
+    (symbol_tables, _) <- alter (append symbol_table) name symbol_tables
+    symbol_tables
+
+createSymbolTable :: Module -> (String, SymbolTable)
+createSymbolTable mod = do
+    symbol_table <- SymbolTable mod.name (fillSymbolTable empty mod)
+    (getString mod.name, symbol_table)
+
+collectSymbolTables :: Program -> Map String [SymbolTable]
+collectSymbolTables program = 
+        program.modules 
+        |> List.iter
+        |> map createSymbolTable
+        |> fold addSymbolTable empty
+
+processModules :: Program -> ResolverState -> (Map String SymbolTable, ResolverState)
+processModules program state = do
+    symbol_tables <- collectSymbolTables program
+    (symbol_tables, state) <- checkConflictingModules symbol_tables state
+    (symbol_tables, state)

@@ -196,6 +196,28 @@ impl ExternFunction for Iter {
     }
 }
 
+pub struct ToMap {}
+
+impl ExternFunction for ToMap {
+    fn call(
+        &self,
+        environment: &mut Environment,
+        _: Option<ExprId>,
+        _: &NamedFunctionKind,
+        ty: Type,
+    ) -> Value {
+        let iter = environment.get_arg_by_index(0);
+        let iter = iter.core.as_iterator();
+        let map: BTreeMap<_, _> = iter
+            .map(|v| {
+                let mut ts = v.core.as_tuple();
+                (ts.remove(0), ts.remove(0))
+            })
+            .collect();
+        return Value::new(ValueCore::Map(map), ty);
+    }
+}
+
 pub fn register_extern_functions(interpreter: &mut Interpreter) {
     interpreter.add_extern_function(MAP_MODULE_NAME, "empty", Box::new(Empty {}));
     interpreter.add_extern_function(MAP_MODULE_NAME, "insert", Box::new(Insert {}));
@@ -204,4 +226,5 @@ pub fn register_extern_functions(interpreter: &mut Interpreter) {
     interpreter.add_extern_function(MAP_MODULE_NAME, "alter", Box::new(Alter {}));
     interpreter.add_extern_function(MAP_MODULE_NAME, "show", Box::new(Show {}));
     interpreter.add_extern_function(MAP_MODULE_NAME, "iter", Box::new(Iter {}));
+    interpreter.add_extern_function(MAP_MODULE_NAME, "toMap", Box::new(ToMap {}));
 }

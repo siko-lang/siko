@@ -1,0 +1,13 @@
+module Siko.Resolver.Import where
+
+import Map
+import Siko.Syntax.Program
+import Siko.Resolver.Module
+
+processModuleExports :: String -> SymbolTable -> Program -> ()
+processModuleExports name symbol_table program = do
+    mod <- program.modules
+
+processExports :: Map String SymbolTable -> Program -> ()
+processExports symbol_tables program = do
+    _ <- symbol_tables |> Map.iter |> map (\(name, symbol_table) -> processModuleExports name symbol_table program)

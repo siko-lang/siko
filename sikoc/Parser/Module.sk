@@ -19,7 +19,8 @@ parseModule state = do
     mod <- Module {
                 name = name,
                 functions = [],
-                data_definitions = [],
+                adts = [],
+                records = [],
                 function_signatures = [],
                 imports = [],
                 classes = [],
@@ -38,10 +39,15 @@ parseModule state = do
                                         (state, mod)
                                     Err (state, err) -> return Err (state, err)
             Kind.KeywordData -> case parseData state of
-                                    Ok (state, data_def) -> do
-                                        mod :: Module <- mod // FIXME: fix type inference here
-                                        mod <- mod { data_definitions = mod.data_definitions + [data_def] }
-                                        (state, mod)
+                                    Ok (state, d) -> case d of
+                                        Left adt -> do
+                                            mod :: Module <- mod // FIXME: fix type inference here
+                                            mod <- mod { adts = mod.adts + [adt] }
+                                            (state, mod)
+                                        Right record -> do
+                                            mod :: Module <- mod // FIXME: fix type inference here
+                                            mod <- mod { records = mod.records + [record] }
+                                            (state, mod)
                                     Err (state, err) -> return Err (state, err)
             Kind.KeywordInstance -> case parseInstance state of
                                     Ok (state, inst) -> do
@@ -56,7 +62,15 @@ parseModule state = do
                                         (state, mod)
                                     Err (state, err) -> return Err (state, err)
             _ -> case parseFunction state of
-                    Ok (state, _) -> (state, mod)
+                    Ok (state, f) -> case f of
+                            Left function -> do
+                                mod :: Module <- mod // FIXME: fix type inference here
+                                mod <- mod { functions = mod.functions + [function] }
+                                (state, mod)
+                            Right function_signature -> do
+                                mod :: Module <- mod // FIXME: fix type inference here
+                                mod <- mod { function_signatures = mod.function_signatures + [function_signature] }
+                                (state, mod)
                     Err (state, err) -> return Err (state, err)
     state <- try expect state Kind.EndOfBlock
     state <- try expect state Kind.EndOfModule
