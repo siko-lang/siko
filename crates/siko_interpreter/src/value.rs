@@ -170,6 +170,13 @@ impl ValueCore {
         }
     }
 
+    pub fn as_tuple(&self) -> Vec<Value> {
+        match self {
+            ValueCore::Tuple(items) => items.clone(),
+            _ => unreachable!(),
+        }
+    }
+
     pub fn show(&self, program: &Program) -> String {
         match self {
             ValueCore::Variant(id, index, items) => {
