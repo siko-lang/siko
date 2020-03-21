@@ -83,10 +83,29 @@ processModuleImports imported_items exported_items state module_name imports = d
     imports |> List.iter |> fold (\(all_imported_items, state), i -> do
                                                 (imported_items, state) <- processImport exported_items state i
                                                 (all_imported_items + imported_items, state)) (imported_items, state)
+
+checkHiddenImport :: Import -> ImportedItem -> Bool
+checkHiddenImport i (ImportedItem _ source_module item) =
+    case i of
+        Hiding module_name hidden_items -> do
+            module_name <- getString module_name
+            if module_name == source_module
+                then
+                    do
+                        hidden_items <- hidden_items |> List.iter |> map (\name -> getString name) |> toList
+                        contains hidden_items (getItemName item)
+                else False
+        _ -> False
+
+checkHiddenImports :: [Import] -> ImportedItem -> Bool
+checkHiddenImports imports imported_item = imports |> List.iter |> fold (\total, i -> total || checkHiddenImport i imported_item) False
+
 processModule :: String -> [Item] -> [Import] -> ImportState -> Map String [Item] -> ([ImportedItem], ImportState)
 processModule module_name locals imports state exports = do
     imported_items <- processLocals module_name locals
-    processModuleImports imported_items exports state module_name imports
+    (imported_items, state) <- processModuleImports imported_items exports state module_name imports
+    imported_items <- imported_items |> List.iter |> filter (\item -> not (checkHiddenImports imports item)) |> toList
+    (imported_items, state)
 
 processImports :: Map String [Item] -> Map String [Item] -> Map String [Import] -> Map String [ImportedItem]
 processImports locals exports imports = do
@@ -95,7 +114,6 @@ processImports locals exports imports = do
                                     (imported_items, state) <- processModule module_name locals module_imports state exports
                                     (all_imported_items, _) <- insert all_imported_items module_name imported_items
                                     (all_imported_items, state)) (empty, emptyState)
-    //println "{}" % imported_items
     foo_imports <- Option.unwrap (get imported_items "Foo")
     println "{} {}" % (foo_imports, state)
     imported_items
