@@ -107,9 +107,10 @@ parseQualifiedTypeName state msg = do
             Dot -> do
                 dot <- Ident "." (getLocation ti.span state)
                 name <- mergeIdents name dot
+                state <- step state
                 (state, n) <- try expectTypeIdent state msg
                 name <- mergeIdents name n
-                (step state, name)
+                (state, name)
             _ -> break (state, name)
     Ok (state, name)
 
