@@ -1,0 +1,38 @@
+module Siko.Resolver.Data where
+
+import Siko.Resolver
+import Siko.Resolver.Type
+import Siko.Resolver.Error
+import Siko.Syntax.Ident
+import Siko.Syntax.Data as SD
+import Siko.Syntax.TypeSignature as ST
+import Siko.HIR.Data as HD
+import Siko.HIR.Type
+
+processVariant :: ResolverState -> TypeResolverState -> ST.TypeSignature -> (ResolverState, TypeResolverState, Option HD.Variant)
+processVariant state type_resolver (ST.TypeSignature type_signature location) = do
+    case type_signature of
+        ST.Variant name args -> do
+            name <- getString name
+            (state, type_resolver, args) <-  args |> List.iter |> fold (\(state, type_resolver, args), arg -> do
+                    (type_resolver, state, arg) <- processTypeSignature type_resolver state arg
+                    args <- args + [arg]
+                    (state, type_resolver, args)) (state, type_resolver, [])
+            (state, type_resolver, Some (HD.Variant name args))
+        _ -> do
+            state <- addError state (InvalidVariant location)
+            (state, type_resolver, None)
+
+processData :: ResolverState -> ModuleResolver -> SD.AbstractDataType -> (ResolverState, ())
+processData state module_resolver (SD.AbstractDataType name type_arguments variants derived_classes) = do
+    println "Processing adt {}" % name
+    type_resolver <- createTypeResolverState module_resolver False
+    type_resolver <- type_arguments |> List.iter |> fold (\type_resolver, arg -> addTypeArgument type_resolver arg) type_resolver
+    (state, type_resolver, variants) <- variants |> List.iter |> fold (\(state, type_resolver, variants), variant -> do
+                (state, type_resolver, variant) <- processVariant state type_resolver variant
+                variants <- case variant of
+                    Some v -> variants + [v]
+                    None -> variants
+                (state, type_resolver, variants)) (state, type_resolver, [])
+    println "Errors {} {}" % (state.errors, variants)
+    (state, ())

@@ -51,16 +51,24 @@ parseTypeSignaturePart state parsingVariant allowWildcard = do
             (state, name) <- try parseQualifiedTypeName state "type name"
             (state, args) <- loop (state, args) <- (state, []) do
                     ti  <- peek state
-                    case T.getKind ti.token of
-                        Kind.LParen
-                         | Kind.LBracket
-                         | Kind.TypeIdentifier
-                         | Kind.VarIdentifier
-                         | Kind.Wildcard
-                         | Kind.ExclamationMark
-                         | Kind.Ampersand-> do
-                            (state, ty) <- try (parseTypeSignaturePart state False allowWildcard)
-                            args <- args + [ty]
+                    case ti.token of
+                        T.LParen
+                         | T.LBracket
+                         | T.Wildcard
+                         | T.ExclamationMark
+                         | T.Ampersand-> do
+                            (state, arg) <- try (parseTypeSignaturePart state False allowWildcard)
+                            args <- args + [arg]
+                            (state, args)
+                        T.VarIdentifier id -> do
+                            (state, ident) <- try expectVarIdent state "type argument"
+                            arg <- buildTypeSignature (TypeArg ident) start_index state
+                            args <- args + [arg]
+                            (state, args)
+                        T.TypeIdentifier id -> do
+                            (state, name) <- try parseQualifiedTypeName state "type name"
+                            arg <- buildTypeSignature (Named name []) start_index state
+                            args <- args + [arg]
                             (state, args)
                         _ -> break (state, args)
             if parsingVariant

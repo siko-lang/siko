@@ -3,39 +3,32 @@ module Siko.Resolver.Type where
 import Siko.Syntax.TypeSignature as ST
 import Siko.Syntax.Ident
 import Siko.Resolver
-import Siko.Resolver.Error as E
+import Siko.Resolver.Error
 import Siko.Constants
+import Siko.HIR.Type
 import Map
 
-data TypeVar = TypeVar Int deriving (Show, PartialEq, Eq, PartialOrd, Ord)
-
-data Constraint = ClassConstraint String deriving (Show)
-
-data Type = TypeArg TypeVar [Constraint]
-            | FixedTypeArg String TypeVar [Constraint]
-            | Named String [Type]
-            | Function Type Type
-            | Never TypeVar
-            | Ref Type
-            | Tuple [Type]
-            deriving (Show)
-
-data TypeResolverState = { resolver_state :: ResolverState,
-                           args :: Map String TypeVar,
+data TypeResolverState = { args :: Map String TypeVar,
                            constraints :: Map TypeVar [Constraint],
-                           type_names :: Map String [String],
+                           module_resolver :: ModuleResolver,
                            next_type_var :: Int,
                            allow_implicit :: Bool }
 
-addError :: TypeResolverState -> E.ResolverError -> TypeResolverState
-addError state error = do
-    resolver_state <- E.addError state.resolver_state error
-    state { resolver_state = resolver_state }
+createTypeResolverState :: ModuleResolver -> Bool -> TypeResolverState
+createTypeResolverState module_resolver allow_implicit =
+    TypeResolverState empty empty module_resolver 0 allow_implicit
 
-processArgs :: TypeResolverState -> [ST.TypeSignature] -> (TypeResolverState, [Type])
-processArgs state args = args |> List.iter |> fold (\(state, args), arg -> do
-                        (state, arg) <- processTypeSignature state arg
-                        (state, args + [arg])) (state, [])
+addTypeArgument :: TypeResolverState -> Ident -> TypeResolverState
+addTypeArgument state arg = do
+    arg <- getString arg
+    (state, var) <- getTypeVar state
+    (args, _) <- insert state.args arg var
+    state { args = args }
+
+processArgs :: TypeResolverState -> ResolverState -> [ST.TypeSignature] -> (TypeResolverState, ResolverState, [Type])
+processArgs state resolver_state args = args |> List.iter |> fold (\(state, resolver_state, args), arg -> do
+                        (state, resolver_state, arg) <- processTypeSignature state resolver_state arg
+                        (state, resolver_state, args + [arg])) (state, resolver_state, [])
 
 getTypeVar :: TypeResolverState -> (TypeResolverState, TypeVar)
 getTypeVar state = do
@@ -43,70 +36,70 @@ getTypeVar state = do
     state <- state { next_type_var = var + 1 }
     (state, TypeVar var)
 
-resolveTypeName :: TypeResolverState -> Ident -> Result String E.ResolverError
+resolveTypeName :: TypeResolverState -> Ident -> Result String ResolverError
 resolveTypeName state name = do
     n <- getString name
-    case get state.type_names n of
+    case get state.module_resolver.type_names n of
         Some names -> if getLength names > 1
-                        then Err (E.AmbiguousType name names)
+                        then Err (AmbiguousType name names)
                         else Ok (atIndex names 0)
-        None -> Err (E.UnknownType name)
+        None -> Err (UnknownType name)
 
-resolveTypeArg :: TypeResolverState -> Ident -> (TypeResolverState, (TypeVar, [Constraint]))
-resolveTypeArg state name = do
+resolveTypeArg :: TypeResolverState -> ResolverState -> Ident -> (TypeResolverState, ResolverState, TypeVar, [Constraint])
+resolveTypeArg state resolver_state name = do
         n <- getString name
         case get state.args n of
             Some var -> do
                     constraints <- case get state.constraints var of
                         Some constraints -> constraints
                         None -> []
-                    (state, (var, constraints))
+                    (state, resolver_state, var, constraints)
             None -> if state.allow_implicit
                     then
                         do
                         (state, var) <- getTypeVar state
                         (args, _) <- insert state.args n var
                         state <- state { args  = args }
-                        (state, (var, []))
+                        (state, resolver_state, var, [])
                     else
                         do
-                        state <- addError state (E.UnknownTypeArg name)
+                        resolver_state <- addError resolver_state (UnknownTypeArg name)
                         (state, var) <- getTypeVar state
-                        (state, (var, []))
+                        (state, resolver_state, var, [])
 
-processTypeSignature :: TypeResolverState -> ST.TypeSignature -> (TypeResolverState, Type)
-processTypeSignature state (ST.TypeSignature type_signature location) = case type_signature of
+processTypeSignature :: TypeResolverState -> ResolverState -> ST.TypeSignature -> (TypeResolverState, ResolverState, Type)
+processTypeSignature state resolver_state (ST.TypeSignature type_signature location) = case type_signature of
     ST.TypeArg name -> do
-            (state, (var, constraints)) <- resolveTypeArg state name
+            (state, resolver_state, var, constraints) <- resolveTypeArg state resolver_state name
             name <- getString name
-            (state, FixedTypeArg name var constraints)
+            (state, resolver_state, FixedTypeArg name var constraints)
     ST.Named name args -> do
         case resolveTypeName state name of
             Ok resolved_name -> do
-                (state, args) <- processArgs state args
-                (state, Named resolved_name args)
+                (state, resolver_state, args) <- processArgs state resolver_state args
+                (state, resolver_state, Named resolved_name args)
             Err error -> do
-                state <- addError state error
+                resolver_state <- addError resolver_state error
                 (state, var) <- getTypeVar state
-                (state, TypeArg var [])
+                (state, resolver_state, TypeArg var [])
     ST.Variant _ _ -> unreachable
     ST.List arg -> do
         name <- getFullListTypeName
-        (state, arg) <- processTypeSignature state arg
-        (state, Named name [arg])
+        (state, resolver_state, arg) <- processTypeSignature state resolver_state arg
+        (state, resolver_state, Named name [arg])
     ST.Tuple args -> do
-        (state, args) <- processArgs state args
-        (state, Tuple args)
+        (state, resolver_state, args) <- processArgs state resolver_state args
+        (state, resolver_state, Tuple args)
     ST.Function from to -> do
-        (state, from) <- processTypeSignature state from
-        (state, to) <- processTypeSignature state to
-        (state, Function from to)
+        (state, resolver_state, from) <- processTypeSignature state resolver_state from
+        (state, resolver_state, to) <- processTypeSignature state resolver_state to
+        (state, resolver_state, Function from to)
     ST.Never -> do
         (state, var) <- getTypeVar state
-        (state, Never var)
+        (state, resolver_state, Never var)
     ST.Ref arg -> do
-        (state, arg) <- processTypeSignature state arg
-        (state, Ref arg)
+        (state, resolver_state, arg) <- processTypeSignature state resolver_state arg
+        (state, resolver_state, Ref arg)
     ST.Wildcard -> do
         (state, var) <- getTypeVar state
-        (state, TypeArg var [])
+        (state, resolver_state, TypeArg var [])

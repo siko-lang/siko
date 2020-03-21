@@ -1,11 +1,14 @@
 module Siko.Resolver where
 
 import Siko.Syntax.Program
+import Siko.Syntax.Module as M
 import Siko.Resolver.Error
 import Siko.Resolver.Module
 import Siko.Resolver.Import
 import Siko.Resolver.Local
 import Siko.Resolver.Export
+import Siko.Resolver.Data
+import Map
 
 data ResolverState = {
                         errors :: [ResolverError],
@@ -13,6 +16,23 @@ data ResolverState = {
 
 emptyState :: ResolverState
 emptyState = ResolverState []
+
+data ModuleResolver = {
+                        type_names :: Map String [String]
+                      }
+
+processItem :: ResolverState -> ModuleResolver -> M.Item -> (ResolverState, ())
+processItem state module_resolver item = do
+    case item of
+        M.Adt adt -> processData state module_resolver adt
+        _ -> (state, ())
+    (state, ())
+
+processModule :: ResolverState -> String -> M.Module -> (String, ())
+processModule state module_name mod = do
+    module_resolver <- ModuleResolver empty
+    mod.items |> List.iter |> map (\item -> processItem state module_resolver item) |> toList
+    (module_name, ())
 
 processProgram :: Program -> Result () ResolverState
 processProgram program = do
@@ -25,6 +45,6 @@ processProgram program = do
     imports <- getImports program
     //println "imports {}" % imports
     (state, imported_items) <- processImports state local_items exported_items imports
-    println "imported item: {}" % imported_items
-
+    //println "imported item: {}" % imported_items
+    modules |> Map.iter |> map (\(module_name, mod) -> processModule state module_name mod) |> toMap
     Ok ()
