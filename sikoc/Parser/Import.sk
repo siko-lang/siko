@@ -5,7 +5,6 @@ import Siko.Parser hiding (Single)
 import Siko.Syntax.Ident
 import Siko.Parser.Token
 import Siko.Parser.Token.Kind as Kind
-import Siko.Syntax.Module
 import Siko.Syntax.Import
 import Siko.Parser.Error
 
@@ -21,8 +20,8 @@ parseMember state msg = do
                 (state, name) <- try expectAnyIdent state msg
                 Ok (state, Specific name)
 
-parseItem :: ParserState -> String -> Result (ParserState, Item) (ParserState, ParserError)
-parseItem state msg = do
+parseFilter :: ParserState -> String -> Result (ParserState, Filter) (ParserState, ParserError)
+parseFilter state msg = do
     (state, name) <- try expectAnyIdent state msg
     if check state Kind.LParen
         then
@@ -37,8 +36,8 @@ parseExport state = do
     if check state Kind.LParen
         then
             do
-                (state, exported_items) <- try parseList state (\state -> parseItem state "exported item") Kind.LParen Kind.RParen
-                Ok (state, ExportSpecific exported_items)
+                (state, exported_filters) <- try parseList state (\state -> parseFilter state "exported item") Kind.LParen Kind.RParen
+                Ok (state, ExportSpecific exported_filters)
         else
             Ok (state, ExportAll)
 
@@ -69,9 +68,9 @@ parseImport state = do
                 (state, import_def) <- if check state Kind.LParen
                         then
                             do
-                                (state, imported_items) <- try parseList state (\state -> parseItem state "imported item") Kind.LParen Kind.RParen
+                                (state, imported_filters) <- try parseList state (\state -> parseFilter state "imported item") Kind.LParen Kind.RParen
                                 (state, alternative_name) <- try parseAlternativeName state
-                                (state, ImportSpecific name imported_items alternative_name)
+                                (state, ImportSpecific name imported_filters alternative_name)
                         else
                             do
                                 (state, alternative_name) <- try parseAlternativeName state

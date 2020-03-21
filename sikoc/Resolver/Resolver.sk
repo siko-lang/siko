@@ -3,6 +3,9 @@ module Siko.Resolver where
 import Siko.Syntax.Program
 import Siko.Resolver.Error
 import Siko.Resolver.Module
+import Siko.Resolver.Import
+import Siko.Resolver.Local
+import Siko.Resolver.Export
 
 data ResolverState = {
                         errors :: [ResolverError]
@@ -10,7 +13,14 @@ data ResolverState = {
 
 processProgram :: Program -> Result () ResolverState
 processProgram program = do
-    state <- ResolverState []
-    (symbols, state) <- processModules program state
-    println "symbols {} {}" % (symbols, state)
+    modules <- getModules program
+    local_items <- processLocals modules
+    //println "locals: {}" % local_items
+    exported_items <- processExports local_items modules
+    //println "exported items: {}" % exported_items
+    imports <- getImports program
+    //println "imports {}" % imports
+    imported_items <- processImports local_items exported_items imports
+    //println "imported item: {}" % imported_items
+
     Ok ()

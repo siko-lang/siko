@@ -1,0 +1,58 @@
+module Siko.Resolver.Local where
+
+import Siko.Syntax.Module as M
+import Siko.Syntax.Data as D
+import Siko.Syntax.Class as C
+import Siko.Syntax.TypeSignature as T
+import Siko.Syntax.Ident
+import Siko.Syntax.Function as F
+import Siko.Syntax.Program
+import Siko.Resolver.Item
+import Map
+
+getVariants :: D.AbstractDataType -> [Item]
+getVariants adt =
+    adt.variants
+      |> List.iter
+      |> filter (\v -> case v of
+                    T.TypeSignature (T.Variant _ _) _ -> True
+                    _ -> False)
+      |> fold (\variants, v -> case v of
+                            T.TypeSignature (T.Variant v _) _ -> variants + [Variant (getString adt.name) (getString v)]
+                            _ -> unreachable) []
+
+getMemberFunctions :: C.Class -> [Item]
+getMemberFunctions c =
+    c.member_function_type_signatures
+      |> List.iter
+      |> fold (\members, fs -> members + [ClassMember (getString c.name) (getString fs.name)]) []
+
+processItem :: M.Item -> [Item]
+processItem m_item = case m_item of
+    M.Function f -> [Function (getString f.name)]
+    M.Adt a -> [Adt (getString a.name)] + getVariants a
+    M.Record r -> [Record (getString r.name)]
+    M.Class c -> [Class (getString c.name)] + getMemberFunctions c
+    _ -> unreachable
+
+exportable :: M.Item -> Bool
+exportable m_item = case m_item of
+    M.FunctionSignature _ -> False
+    M.Function _ -> True
+    M.Adt _ -> True
+    M.Record _ -> True
+    M.Import _ -> False
+    M.Class _ -> True
+    M.Instance _ -> False
+
+processModule :: M.Module -> [Item]
+processModule mod = do
+    items <- mod.items |> List.iter |> filter exportable |> map processItem |> fold (\total, items -> total + items)  []
+    items
+
+processLocals :: Map String M.Module -> Map String [Item]
+processLocals modules = do
+    local_items <- modules |> Map.iter |> map (\(name, mod) -> do
+                                                            items <- processModule mod
+                                                            (name, items)) |> toMap
+    local_items

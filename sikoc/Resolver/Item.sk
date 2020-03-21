@@ -1,0 +1,53 @@
+module Siko.Resolver.Item where
+
+import Siko.Syntax.Import as SI
+import Siko.Syntax.Ident
+
+data Item = Adt String
+            | Variant String String
+            | Record String
+            | Class String
+            | ClassMember String String
+            | Function String
+            deriving (Show)
+
+getItemName :: Item -> String
+getItemName item = case item of
+    Adt a -> a
+    Variant a v -> v
+    Record r -> r
+    Class c -> c
+    ClassMember c m -> m
+    Function f -> f
+
+matchSpec :: SI.MemberSpecification -> String -> Bool
+matchSpec spec name = case spec of
+    SI.Specific n -> getString n == name
+    SI.All -> True
+
+matchSpecs :: [SI.MemberSpecification] -> String -> Bool
+matchSpecs specs name = specs |> List.iter |> fold (\total, spec -> total || (matchSpec spec name)) False
+
+matchFilter :: SI.Filter -> Item -> Bool
+matchFilter filter item = case filter of
+    SI.Single name -> do
+                    name <- getString name
+                    case item of
+                        Adt a -> a == name
+                        Variant a v -> v == name
+                        Record r -> r == name
+                        Class c -> c == name
+                        ClassMember c m -> m == name
+                        Function f -> f == name
+    SI.Group name specs -> do
+                    name <- getString name
+                    case item of
+                        Adt a -> a == name
+                        Variant a v -> a == name && matchSpecs specs v
+                        Record r -> False
+                        Class c -> c == name
+                        ClassMember c m -> c == name && matchSpecs specs m
+                        Function f -> False
+
+matchFilters :: [SI.Filter] -> Item -> Bool
+matchFilters filters item = filters |> List.iter |> fold (\total, filter -> total || (matchFilter filter item)) False

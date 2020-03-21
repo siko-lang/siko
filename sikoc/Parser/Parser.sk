@@ -100,38 +100,40 @@ expectAnyIdent state msg = do
 
 parseQualifiedTypeName :: ParserState -> String -> Result (ParserState, Ident) (ParserState, ParserError)
 parseQualifiedTypeName state msg = do
-    (state, name) <- case expectTypeIdent state msg of
-        Ok (state, name) -> (state, name)
-        Err (state, err) -> return Err (state, err)
+    (state, name) <- try expectTypeIdent state msg
     (state, name) <- loop (state, name) <- (state, name) do
         ti <- peek state
         case ti.token of
-            TypeIdentifier id -> do
-                name <- mergeIdent name id (getLocation ti.span state)
-                (step state, name)
             Dot -> do
-                name <- mergeIdent name "." (getLocation ti.span state)
+                dot <- Ident "." (getLocation ti.span state)
+                name <- mergeIdents name dot
+                (state, n) <- try expectTypeIdent state msg
+                name <- mergeIdents name n
                 (step state, name)
             _ -> break (state, name)
     Ok (state, name)
 
 parseQualifiedName :: ParserState -> String -> Result (ParserState, Ident) (ParserState, ParserError)
 parseQualifiedName state msg = do
-    (state, name) <- case expectTypeIdent state msg of
-        Ok (state, name) -> (state, name)
-        Err (state, err) -> return Err (state, err)
+    (state, name) <- try expectTypeIdent state msg
     (state, name) <- loop (state, name) <- (state, name) do
         ti <- peek state
         case ti.token of
-            TypeIdentifier id -> do
-                name <- mergeIdent name id (getLocation ti.span state)
-                (step state, name)
             Dot -> do
-                name <- mergeIdent name "." (getLocation ti.span state)
-                (step state, name)
-            VarIdentifier id -> do
-                name <- mergeIdent name id (getLocation ti.span state)
-                break (step state, name)
+                dot <- Ident "." (getLocation ti.span state)
+                name <- mergeIdents name dot
+                state <- step state
+                ti <- peek state
+                case ti.token of
+                    TypeIdentifier id -> do
+                        (state, n) <- try expectTypeIdent state msg
+                        name <- mergeIdents name n
+                        continue (step state, name)
+                    VarIdentifier id -> do
+                        (state, n) <- try expectVarIdent state msg
+                        name <- mergeIdents name n
+                        break (state, name)
+                    _ -> return Err (state, unexpectedToken state "identifier")
             _ -> break (state, name)
     Ok (state, name)
 
