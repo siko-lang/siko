@@ -157,6 +157,8 @@ consumeIdentifier state = do
                             return addToken state (VarIdentifier ident) span
     addToken state special span
 
+
+
 consumeOperator :: LexerState -> LexerState
 consumeOperator state = do
     (state, (ident, span)) <- consumeWhile state isOperator
@@ -188,6 +190,9 @@ consumeOperator state = do
         "|>" -> PipeForward
         "%" -> Percent
         "\\" -> Backslash
+        "//" -> do
+            (state, (comment, span)) <- consumeWhile state \c -> c != '\n'
+            return state
         _ -> return addError state (InvalidOperator span)
     addToken state op span
 
