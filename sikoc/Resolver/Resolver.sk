@@ -8,11 +8,15 @@ import Siko.Resolver.Local
 import Siko.Resolver.Export
 
 data ResolverState = {
-                        errors :: [ResolverError]
+                        errors :: [ResolverError],
                      } deriving (Show)
+
+emptyState :: ResolverState
+emptyState = ResolverState []
 
 processProgram :: Program -> Result () ResolverState
 processProgram program = do
+    state <- emptyState
     modules <- getModules program
     local_items <- processLocals modules
     //println "locals: {}" % local_items
@@ -20,7 +24,7 @@ processProgram program = do
     //println "exported items: {}" % exported_items
     imports <- getImports program
     //println "imports {}" % imports
-    imported_items <- processImports local_items exported_items imports
-    //println "imported item: {}" % imported_items
+    (state, imported_items) <- processImports state local_items exported_items imports
+    println "imported item: {}" % imported_items
 
     Ok ()
