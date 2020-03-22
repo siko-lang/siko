@@ -13,6 +13,7 @@ import Map
 data TypeResolverState = { args :: Map String TypeVar,
                            constraints :: Map TypeVar [Constraint],
                            module_resolver :: ModuleResolver,
+                           used_type_args :: [String],
                            next_type_var :: Int,
                            allow_implicit :: Bool }
 
@@ -30,7 +31,7 @@ resolveTypeName state name = do
 
 createTypeResolverState :: ModuleResolver -> Bool -> TypeResolverState
 createTypeResolverState module_resolver allow_implicit =
-    TypeResolverState empty empty module_resolver 0 allow_implicit
+    TypeResolverState empty empty module_resolver [] 0 allow_implicit
 
 addTypeArgument :: TypeResolverState -> Ident -> TypeResolverState
 addTypeArgument state arg = do
@@ -58,6 +59,8 @@ resolveTypeArg state resolver_state name = do
                     constraints <- case get state.constraints var of
                         Some constraints -> constraints
                         None -> []
+                    used_type_args <- state.used_type_args + [n]
+                    state <- state { used_type_args = used_type_args }
                     (state, resolver_state, var, constraints)
             None -> if state.allow_implicit
                     then

@@ -17,7 +17,10 @@ emptyState = ResolverState []
 processItem :: ResolverState -> ModuleResolver -> M.Item -> (ResolverState, ())
 processItem state module_resolver item = do
     case item of
-        M.Adt adt -> processData state module_resolver adt
+        M.Adt adt -> do
+            (state, adt) <- processAdt state module_resolver adt
+            println "HIR Adt {} {}" % (adt, state.errors)
+            (state, ())
         _ -> (state, ())
     (state, ())
 
