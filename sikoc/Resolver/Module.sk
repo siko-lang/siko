@@ -1,4 +1,4 @@
-module Siko.Resolver.Module(processExportsImports) where
+module Siko.Resolver.Module(processExportsImports, ModuleResolver(..), resolveItem, ResolvedItem(..)) where
 
 import Siko.Syntax.Module as M
 import Siko.Syntax.Program
@@ -7,9 +7,29 @@ import Siko.Syntax.Import
 import Siko.Resolver.Local
 import Siko.Resolver.Import
 import Siko.Resolver.Item
+import Siko.Resolver.Error
 import Siko.Resolver.Export
 import Siko.Resolver
 import Map
+
+data ResolvedItem = ResolvedItem String Item
+
+data ModuleResolver = {
+                        type_names :: Map String [ResolvedItem],
+                        value_names :: Map String [ResolvedItem],
+                      }
+
+getCandidates :: [ResolvedItem] -> [String]
+getCandidates resolved_items = resolved_items |> List.iter |> map (\ResolvedItem name _-> name) |> toList
+
+resolveItem :: Map String [ResolvedItem] -> Ident -> Result ResolvedItem ResolverError
+resolveItem items name = do
+    n <- getString name
+    case get items n of
+        Some resolved_items -> if getLength resolved_items > 1
+                        then Err (AmbiguousType name (getCandidates resolved_items))
+                        else Ok (atIndex resolved_items 0)
+        None -> Err (UnknownType name)
 
 getModules :: Program -> Map String M.Module
 getModules program = do
@@ -35,30 +55,50 @@ getImports program = do
                                                          imports) empty
         imports
 
-add :: String -> Option [String] -> Option [String]
-add type_name type_names = case type_names of
-        Some type_names -> Some (type_names + [type_name])
-        None -> Some [type_name]
+add :: ResolvedItem -> Option [ResolvedItem] -> Option [ResolvedItem]
+add resolved_item type_names = case type_names of
+        Some type_names -> Some (type_names + [resolved_item])
+        None -> Some [resolved_item]
 
-addTypeName :: ModuleResolver -> String -> String -> ModuleResolver
-addTypeName module_resolver name fully_qualified_name = do
-        (type_names, _) <- alter (add fully_qualified_name) name module_resolver.type_names
+addTypeName :: ModuleResolver -> String -> ResolvedItem -> ModuleResolver
+addTypeName module_resolver name resolved_item = do
+        (type_names, _) <- alter (add resolved_item) name module_resolver.type_names
         module_resolver <- module_resolver { type_names = type_names }
+        module_resolver
+
+addValueName :: ModuleResolver -> String -> ResolvedItem -> ModuleResolver
+addValueName module_resolver name resolved_item = do
+        (value_names, _) <- alter (add resolved_item) name module_resolver.value_names
+        module_resolver <- module_resolver { value_names = value_names }
         module_resolver
 
 addImportedItem :: ModuleResolver -> ImportedItem -> ModuleResolver
 addImportedItem module_resolver (ImportedItem visible_name source_module item) = case item of
-        Adt name -> addTypeName module_resolver visible_name (fullyQualifiedName source_module name)
-        Variant _ name -> addTypeName module_resolver visible_name (fullyQualifiedName source_module name)
-        Record name -> addTypeName module_resolver visible_name (fullyQualifiedName source_module name)
-        Class name -> addTypeName module_resolver visible_name (fullyQualifiedName source_module name)
-        ClassMember _ name -> addTypeName module_resolver visible_name (fullyQualifiedName source_module name)
-        Function name -> addTypeName module_resolver visible_name (fullyQualifiedName source_module name)
+        Adt name -> do
+                resolved_item <- ResolvedItem (fullyQualifiedName source_module name) item
+                addTypeName module_resolver visible_name resolved_item
+        Variant _ name -> do
+                resolved_item <- ResolvedItem (fullyQualifiedName source_module name) item
+                addValueName module_resolver visible_name resolved_item
+        Record name -> do
+                resolved_item <- ResolvedItem (fullyQualifiedName source_module name) item
+                module_resolver <- addTypeName module_resolver visible_name resolved_item
+                module_resolver <- addValueName module_resolver visible_name resolved_item
+                module_resolver
+        Class name -> do
+                resolved_item <- ResolvedItem (fullyQualifiedName source_module name) item
+                addTypeName module_resolver visible_name resolved_item
+        ClassMember _ name -> do
+                resolved_item <- ResolvedItem (fullyQualifiedName source_module name) item
+                addValueName module_resolver visible_name resolved_item
+        Function name -> do
+                resolved_item <- ResolvedItem (fullyQualifiedName source_module name) item
+                addValueName module_resolver visible_name resolved_item
 
 createModuleResolver :: [ImportedItem] -> ModuleResolver
 createModuleResolver items = items
         |> List.iter
-        |> fold (\module_resolver, item -> addImportedItem module_resolver item) (ModuleResolver empty)
+        |> fold (\module_resolver, item -> addImportedItem module_resolver item) (ModuleResolver empty empty)
 
 processExportsImports :: Program -> ResolverState -> (ResolverState, Map String (M.Module, ModuleResolver))
 processExportsImports program state = do

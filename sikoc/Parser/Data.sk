@@ -22,25 +22,19 @@ parseDerivedClass state = do
 
 parseAdt :: ParserState -> [Ident] -> Ident -> Result (ParserState, AbstractDataType) (ParserState, ParserError)
 parseAdt state args name = do
-    (state, variants, derived_classes) <- loop (state, variants, derived_classes) <- (state, [], []) do
-        if check state Kind.EndOfItem
-            then
-                break (state, variants, [])
-            else
-                do
-                    if check state Kind.KeywordDeriving
-                        then
-                            do
-                                state <- try expect state Kind.KeywordDeriving
-                                (state, derived_classes) <- try parseList state parseDerivedClass Kind.LParen Kind.RParen
-                                break (state, variants, derived_classes)
-                        else
-                            do
-                                (state, variant) <- try parseTypeSignature state True False
-                                variants <- variants + [variant]
-                                if check state Kind.Pipe
-                                    then (try expect state Kind.Pipe, variants, [])
-                                    else break (state, variants, [])
+    (state, variants) <- loop (state, variants) <- (state, []) do
+        (state, variant) <- try parseTypeSignature state True False
+        variants <- variants + [variant]
+        if check state Kind.Pipe
+            then (try expect state Kind.Pipe, variants)
+            else break (state, variants)
+    (state, derived_classes) <- if check state Kind.KeywordDeriving
+        then
+            do
+                state <- try expect state Kind.KeywordDeriving
+                (state, derived_classes) <- try parseList state parseDerivedClass Kind.LParen Kind.RParen
+                (state, derived_classes)
+        else (state, [])
     adt <- AbstractDataType { name = name, type_arguments = args, variants = variants, derived_classes = derived_classes }
     Ok (state, adt)
 

@@ -3,6 +3,8 @@ module Siko.Resolver.Type where
 import Siko.Syntax.TypeSignature as ST
 import Siko.Syntax.Ident
 import Siko.Resolver
+import Siko.Resolver.Item as I
+import Siko.Resolver.Module
 import Siko.Resolver.Error
 import Siko.Constants
 import Siko.HIR.Type
@@ -13,6 +15,18 @@ data TypeResolverState = { args :: Map String TypeVar,
                            module_resolver :: ModuleResolver,
                            next_type_var :: Int,
                            allow_implicit :: Bool }
+
+resolveClass :: ModuleResolver -> Ident -> Result String ResolverError
+resolveClass module_resolver name = do
+    ResolvedItem n item <- try resolveItem module_resolver.type_names name
+    case item of
+        I.Class _ -> Ok (n)
+        _ -> Err (NotAClassName name)
+
+resolveTypeName :: TypeResolverState -> Ident -> Result String ResolverError
+resolveTypeName state name = do
+    ResolvedItem name _ <- try resolveItem state.module_resolver.type_names name
+    Ok name
 
 createTypeResolverState :: ModuleResolver -> Bool -> TypeResolverState
 createTypeResolverState module_resolver allow_implicit =
@@ -35,15 +49,6 @@ getTypeVar state = do
     var <- state.next_type_var
     state <- state { next_type_var = var + 1 }
     (state, TypeVar var)
-
-resolveTypeName :: TypeResolverState -> Ident -> Result String ResolverError
-resolveTypeName state name = do
-    n <- getString name
-    case get state.module_resolver.type_names n of
-        Some names -> if getLength names > 1
-                        then Err (AmbiguousType name names)
-                        else Ok (atIndex names 0)
-        None -> Err (UnknownType name)
 
 resolveTypeArg :: TypeResolverState -> ResolverState -> Ident -> (TypeResolverState, ResolverState, TypeVar, [Constraint])
 resolveTypeArg state resolver_state name = do
