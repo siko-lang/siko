@@ -1,3 +1,110 @@
 module Siko.Resolver.Function where
 
-processFunction = ()
+import Siko.Syntax.Function as SF
+import Siko.Syntax.Ident
+import Siko.Syntax.Class as SC
+import Siko.HIR.Function as HF
+import Siko.Resolver
+import Siko.Resolver.Module
+import Siko.Resolver.Error
+import Siko.HIR.Type
+import Siko.Resolver.Type
+import Map
+
+data FunctionInfo = {
+                        signatures :: [SF.FunctionSignature],
+                        functions :: [SF.Function],
+                    } deriving (Show)
+
+addFunction :: SF.Function -> Option FunctionInfo -> Option FunctionInfo
+addFunction function info = case info of
+        Some info -> do
+            info :: FunctionInfo <- info // FIXME: fix type inference
+            info <- info { functions = info.functions + [function] }
+            Some info
+        None -> Some (FunctionInfo [] [function])
+
+addFunctionSignature :: SF.FunctionSignature -> Option FunctionInfo -> Option FunctionInfo
+addFunctionSignature signature info = case info of
+        Some info -> do
+            info :: FunctionInfo <- info // FIXME: fix type inference
+            info <- info { signatures = info.signatures + [signature] }
+            Some info
+        None -> Some (FunctionInfo [signature] [])
+
+/*
+data FunctionSignature = {
+                           name :: Ident,
+                           type_arguments :: [Ident],
+                           constraints :: [Constraint],
+                           type_signature :: TypeSignature,
+                         } deriving (Show)
+*/
+
+processClassConstraint :: ResolverState -> TypeResolverState -> ModuleResolver -> SC.Constraint -> (ResolverState, TypeResolverState)
+processClassConstraint state type_resolver module_resolver c = do
+    (state, type_resolver) <- case resolveClass module_resolver c.class_name of
+        Ok class_name -> do
+            constraint <- ClassConstraint class_name
+            type_arg <- getString c.argument
+            (success, type_resolver) <- addTypeArgumentConstraint type_resolver type_arg constraint
+            if success
+                then (state, type_resolver)
+                else do
+                    state <- addError state (UnknownTypeArg c.argument)
+                    (state, type_resolver)
+        Err err -> do
+            state <- addError state err
+            (state, type_resolver)
+    (state, type_resolver)
+
+processFunctionSignature :: ResolverState -> ModuleResolver -> SF.FunctionSignature -> (ResolverState, Type)
+processFunctionSignature state module_resolver signature = do
+    type_arguments <- signature.type_arguments
+    type_resolver <- initTypeResolver module_resolver type_arguments
+    (state, type_resolver) <- signature.constraints |> List.iter |> fold (\(state, type_resolver), c ->
+            processClassConstraint state type_resolver module_resolver c
+        ) (state, type_resolver)
+    (type_resolver, state, type) <- processTypeSignature type_resolver state signature.type_signature
+    (state, type_args) <- processTypeArgs state type_resolver signature.type_arguments
+    (state, type)
+
+processFunction :: ResolverState -> SF.Function -> (ResolverState, HF.Function)
+processFunction state function_info = (state, HF.Function "alma")
+
+processFunctionInfo :: ResolverState -> ModuleResolver -> String -> FunctionInfo -> Bool -> ResolverState
+processFunctionInfo state module_resolver name function_info allowMissingImpl = do
+    (state, signature) <- case getLength function_info.signatures of
+        0 -> (state, None)
+        1 -> do
+            (state, signature) <- processFunctionSignature state module_resolver (atIndex function_info.signatures 0)
+            (state, Some signature)
+        _ ->
+            do
+            signatures <- function_info.signatures |> List.iter |> map (\s -> s.name) |> toList
+            state <- addError state (ConflictingSignatures signatures)
+            (state, None)
+    (state, function) <- case getLength function_info.functions of
+        0 if not allowMissingImpl -> do
+            first_signature <- atIndex function_info.signatures 0
+            sig_name <- first_signature.name
+            (addError state (MissingImpl sig_name), None)
+        0 if allowMissingImpl -> (state, None)
+        1 -> do
+            (state, function) <- processFunction state (atIndex function_info.functions 0)
+            (state, Some function)
+        _ -> (state, None)
+    println "Errors {} {}" % (state.errors, signature)
+    state
+
+processFunctionsAndSignatures :: ResolverState -> ModuleResolver -> [SF.Function] -> [SF.FunctionSignature] -> ResolverState
+processFunctionsAndSignatures state module_resolver functions signatures = do
+    function_info_map <- empty
+    function_info_map <- functions |> List.iter |> fold (\function_info_map, function -> do
+                                    (function_info_map, _) <- alter (addFunction function) (getString function.name) function_info_map
+                                    function_info_map) function_info_map
+    function_info_map <- signatures |> List.iter |> fold (\function_info_map, signature -> do
+                                    (function_info_map, _) <- alter (addFunctionSignature signature) (getString signature.name) function_info_map
+                                    function_info_map) function_info_map
+    state <- function_info_map |> Map.iter |> fold (\state, (name, function_info) -> processFunctionInfo state module_resolver name function_info False) state
+    state

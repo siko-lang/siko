@@ -54,7 +54,10 @@ parseFunction state = do
                     (state, constraints) <- try parseClassConstraints state
                     (state, type_signature) <- try parseTypeSignature state False False
                     state <- try expect state Kind.EndOfItem
-                    function_signature <- FunctionSignature { name = name, type_arguments = args, constraints = [], type_signature = type_signature}
+                    function_signature <- FunctionSignature { name = name,
+                                                              type_arguments = args,
+                                                              constraints = constraints,
+                                                              type_signature = type_signature }
                     Ok (state, Right function_signature)
                 _ -> unreachable
         _ -> Err (state, unexpectedToken state "function name")

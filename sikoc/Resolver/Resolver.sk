@@ -1,10 +1,12 @@
 module Siko.Resolver where
 
 import Siko.Syntax.Program
-import Siko.Syntax.Module as M
+import Siko.Syntax.Module as SM
+import Siko.HIR.Module as HM
 import Siko.Resolver.Error
 import Siko.Resolver.Module
 import Siko.Resolver.Data
+import Siko.Resolver.Function
 import Map
 
 data ResolverState = {
@@ -14,25 +16,35 @@ data ResolverState = {
 emptyState :: ResolverState
 emptyState = ResolverState []
 
-processItem :: ResolverState -> ModuleResolver -> M.Item -> (ResolverState, ())
+processItem :: ResolverState -> ModuleResolver -> SM.Item -> (ResolverState, Option HM.Item)
 processItem state module_resolver item = do
     case item of
-        M.Adt adt -> do
+        SM.Adt adt -> do
             (state, adt) <- processAdt state module_resolver adt
-            println "HIR Adt {} {}" % (adt, state.errors)
-            (state, ())
-        _ -> (state, ())
-    (state, ())
+            (state, Some (HM.Adt adt))
+        SM.Record record -> do
+            (state, record) <- processRecord state module_resolver record
+            (state, Some (HM.Record record))
+        _ -> (state, None)
 
-processModule :: ResolverState -> String -> ModuleResolver -> M.Module -> (String, ())
+processFunctions :: ResolverState -> ModuleResolver ->[SM.Item] -> ResolverState
+processFunctions state module_resolver items = do
+    (functions, signatures) <- items |> List.iter |> fold (\(functions, signatures), item -> case item of
+                                            SM.Function f -> (functions + [f], signatures)
+                                            SM.FunctionSignature s -> (functions, signatures + [s])
+                                            _ -> (functions, signatures)) ([], [])
+    processFunctionsAndSignatures state module_resolver functions signatures
+
+processModule :: ResolverState -> String -> ModuleResolver -> SM.Module -> (String, ())
 processModule state module_name module_resolver mod = do
     mod.items |> List.iter |> map (\item -> processItem state module_resolver item) |> toList
+    processFunctions state module_resolver mod.items
     (module_name, ())
 
 processProgram :: Program -> Result () ResolverState
 processProgram program = do
     state <- emptyState
-    (state, modules) <- processExportsImports program state 
+    (state, modules) <- processExportsImports program state
     modules |> Map.iter |> map (\(module_name, (mod, module_resolver)) -> do
                                     processModule state module_name module_resolver mod) |> toMap
     Ok ()

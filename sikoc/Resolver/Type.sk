@@ -33,12 +33,42 @@ createTypeResolverState :: ModuleResolver -> Bool -> TypeResolverState
 createTypeResolverState module_resolver allow_implicit =
     TypeResolverState empty empty module_resolver [] 0 allow_implicit
 
+initTypeResolver :: ModuleResolver -> [Ident] -> TypeResolverState
+initTypeResolver module_resolver type_arguments = do
+    type_resolver <- createTypeResolverState module_resolver False
+    type_resolver <- type_arguments |> List.iter |> fold (\type_resolver, arg -> addTypeArgument type_resolver arg) type_resolver
+    type_resolver
+
+processTypeArgs :: ResolverState -> TypeResolverState -> [Ident] -> (ResolverState, [TypeVar])
+processTypeArgs resolver_state state type_arguments = do
+    resolver_state <- type_arguments |> List.iter |> fold (\resolver_state, arg -> do
+        n <- getString arg
+        if not (contains state.used_type_args n)
+            then addError resolver_state (UnusedTypeArg arg)
+            else resolver_state) resolver_state
+    type_args <- state.args |> Map.iter |> map (\(_, var) -> var) |> toList
+    (resolver_state, type_args)
+
 addTypeArgument :: TypeResolverState -> Ident -> TypeResolverState
 addTypeArgument state arg = do
     arg <- getString arg
     (state, var) <- getTypeVar state
     (args, _) <- insert state.args arg var
     state { args = args }
+
+addConstraint :: Constraint -> Option [Constraint] -> Option [Constraint]
+addConstraint constraint constraints = case constraints of
+    Some constraints -> Some (constraints + [constraint])
+    None -> Some [constraint]
+
+addTypeArgumentConstraint :: TypeResolverState -> String -> Constraint -> (Bool, TypeResolverState)
+addTypeArgumentConstraint state type_arg constraint = do
+    var <- case get state.args type_arg of
+        Some var -> var
+        None -> return (False, state)
+    (constraints, _) <- alter (addConstraint constraint) var state.constraints
+    state <- state { constraints = constraints }
+    (True, state)
 
 processArgs :: TypeResolverState -> ResolverState -> [ST.TypeSignature] -> (TypeResolverState, ResolverState, [Type])
 processArgs state resolver_state args = args |> List.iter |> fold (\(state, resolver_state, args), arg -> do

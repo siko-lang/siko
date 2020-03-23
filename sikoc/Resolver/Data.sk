@@ -9,6 +9,7 @@ import Siko.Syntax.Data as SD
 import Siko.Syntax.TypeSignature as ST
 import Siko.HIR.Data as HD
 import Siko.HIR.Type
+import Map
 
 processVariant :: ResolverState -> TypeResolverState -> ST.TypeSignature -> (ResolverState, TypeResolverState, Option HD.Variant)
 processVariant state type_resolver (ST.TypeSignature type_signature location) = do
@@ -24,25 +25,42 @@ processVariant state type_resolver (ST.TypeSignature type_signature location) = 
             state <- addError state (InvalidVariant location)
             (state, type_resolver, None)
 
+processRecordField :: ResolverState -> TypeResolverState -> SD.RecordField -> (ResolverState, TypeResolverState, HD.RecordField)
+processRecordField state type_resolver (SD.RecordField name type_signature) = do
+    (type_resolver, state, type) <- processTypeSignature type_resolver state type_signature
+    (state, type_resolver, HD.RecordField (getString name) type)
+
+processDerivedClasses :: ResolverState -> ModuleResolver -> [Ident] -> (ResolverState, [String])
+processDerivedClasses state module_resolver derived_classes = do
+    (state, derived_classes) <- derived_classes |> List.iter |> fold (\(state, derived_classes), derived_class -> do
+            case resolveClass module_resolver derived_class of
+                Ok name -> (state, derived_classes + [name])
+                Err err -> do
+                    (addError state err, derived_classes)) (state, [])
+    (state, derived_classes)
+
 processAdt :: ResolverState -> ModuleResolver -> SD.AbstractDataType -> (ResolverState, HD.AbstractDataType)
 processAdt state module_resolver (SD.AbstractDataType name type_arguments variants derived_classes) = do
-    type_resolver <- createTypeResolverState module_resolver False
-    type_resolver <- type_arguments |> List.iter |> fold (\type_resolver, arg -> addTypeArgument type_resolver arg) type_resolver
+    type_resolver <- initTypeResolver module_resolver type_arguments
     (state, type_resolver, variants) <- variants |> List.iter |> fold (\(state, type_resolver, variants), variant -> do
                 (state, type_resolver, variant) <- processVariant state type_resolver variant
                 variants <- case variant of
                     Some v -> variants + [v]
                     None -> variants
                 (state, type_resolver, variants)) (state, type_resolver, [])
-    state <- type_arguments |> List.iter |> fold (\state, arg -> do
-        n <- getString arg
-        if not (contains type_resolver.used_type_args n)
-            then addError state (UnusedTypeArg arg)
-            else state) state
-    (state, derived_classes) <- derived_classes |> List.iter |> fold (\(state, derived_classes), derived_class -> do
-            case resolveClass module_resolver derived_class of
-                Ok name -> (state, derived_classes + [name])
-                Err err -> do
-                    (addError state err, derived_classes)) (state, [])
-    adt <- HD.AbstractDataType (getString name) variants derived_classes
+    (state, type_args) <- processTypeArgs state type_resolver type_arguments
+    (stat, derived_classes) <- processDerivedClasses state module_resolver derived_classes
+    adt <- HD.AbstractDataType (getString name) type_args variants derived_classes
     (state, adt)
+
+processRecord :: ResolverState -> ModuleResolver -> SD.Record -> (ResolverState, HD.Record)
+processRecord state module_resolver (SD.Record name type_arguments fields external derived_classes) = do
+    type_resolver <- initTypeResolver module_resolver type_arguments
+    (state, type_resolver, fields) <- fields |> List.iter |> fold (\(state, type_resolver, fields), field -> do
+                (state, type_resolver, field) <- processRecordField state type_resolver field
+                fields <- fields + [field]
+                (state, type_resolver, fields)) (state, type_resolver, [])
+    (state, type_args) <- processTypeArgs state type_resolver type_arguments
+    (stat, derived_classes) <- processDerivedClasses state module_resolver derived_classes
+    record <- HD.Record (getString name) type_args fields external derived_classes
+    (state, record)
