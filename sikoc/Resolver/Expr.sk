@@ -1,7 +1,34 @@
 module Siko.Resolver.Expr where
 
 import Siko.Syntax.Expr as SE
+import Siko.Syntax.Pattern as SP
 import Siko.HIR.Expr as HE
+import Siko.HIR.Pattern as HP
+import Siko.Resolver.Pattern
+import Siko.Syntax.Location
+
+desugarFunctionArgs :: [SP.Pattern] -> SE.Expr -> SE.Expr
+desugarFunctionArgs patterns orig_body = do
+    location <- patterns |> List.iter |> fold (\merged, (SP.Pattern _ location) -> case merged of
+        Some l -> Some (mergeLocations l location)
+        None -> Some location) None
+    location <- case location of
+        Some location -> location
+        None -> return orig_body
+    pattern_tuple <- SP.Pattern (SP.Tuple patterns) location
+    (arg_refs, _) <- patterns |> List.iter |> fold (\(arg_refs, index), _ -> do
+                    arg_ref <- SE.Expr (SE.ArgRef index) location
+                    arg_refs <- arg_refs + [arg_ref]
+                    (arg_refs, index + 1)) ([], 0)
+    case_body <- SE.Expr (SE.Tuple arg_refs) location
+    c <- SE.Case pattern_tuple orig_body
+    SE.Expr (SE.CaseOf case_body [c]) location
+
+processCase :: SE.Case -> HE.Case
+processCase (SE.Case pattern body) = do
+    p <- processPattern pattern
+    b <- processExpr body
+    HE.Case p b
 
 processExpr :: SE.Expr -> HE.Expr
 processExpr (SE.Expr expr location) = do
@@ -10,5 +37,10 @@ processExpr (SE.Expr expr location) = do
             hir_items <- items |> List.iter |> map (\item -> processExpr item) |> toList
             HE.Tuple hir_items
         SE.IntegerLiteral lit -> HE.IntegerLiteral lit
+        SE.CaseOf body cases -> do
+            hir_body <- processExpr body
+            cases <- cases |> List.iter |> map (\c -> processCase c) |> toList
+            HE.CaseOf hir_body cases
+        SE.ArgRef i -> HE.ArgRef i
         _ -> unimplemented
     HE.Expr hir_expr location

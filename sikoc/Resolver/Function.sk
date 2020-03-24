@@ -2,6 +2,7 @@ module Siko.Resolver.Function where
 
 import Siko.Syntax.Function as SF
 import Siko.Syntax.Ident
+import Siko.Syntax.Pattern as SP
 import Siko.Syntax.Class as SC
 import Siko.HIR.Function as HF
 import Siko.Resolver
@@ -62,19 +63,17 @@ processFunctionSignature state module_resolver signature = do
     (state, type_args) <- processTypeArgs state type_resolver signature.type_arguments
     (state, type)
 
-/*
-data Function = {
-                  name :: Ident,
-                  arguments :: [Pattern],
-                  body :: Option Expr,
-                } deriving (Show)
-
-*/
-
 processFunction :: ResolverState -> SF.Function -> Option HT.Type -> (ResolverState, HF.Function)
 processFunction state function type = do
-    hir_patterns <- function.arguments |> List.iter |> map (\p -> processPattern p) |> toList
-    hir_body <- case function.body of
+    (state, desugared_body) <- case function.body of
+        Some body -> (state, Some (desugarFunctionArgs function.arguments body))
+        None -> do
+            state <- function.arguments |> List.iter |> fold (\state, p -> case p of
+                SP.Pattern (SP.Binding _) _ -> state
+                SP.Pattern _ location -> do
+                    addError state (InvalidExternArg location)) state
+            (state, None)
+    hir_body <- case desugared_body of
                 Some expr -> Some (processExpr expr)
                 None -> None
     println "body {}" % hir_body
@@ -102,6 +101,7 @@ processFunctionInfo state module_resolver name function_info allowMissingImpl = 
             (state, function) <- processFunction state (atIndex function_info.functions 0) type
             (state, Some function)
         _ -> (state, None)
+    println "Err {}" % state.errors
     println "Typenice: {}" % HT.toString (Option.unwrap type)
     state
 
