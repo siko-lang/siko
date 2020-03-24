@@ -218,6 +218,22 @@ impl ExternFunction for ToMap {
     }
 }
 
+pub struct GetSize {}
+
+impl ExternFunction for GetSize {
+    fn call(
+        &self,
+        environment: &mut Environment,
+        _: Option<ExprId>,
+        _: &NamedFunctionKind,
+        ty: Type,
+    ) -> Value {
+        let map = environment.get_arg_by_index(0).core.as_map();
+        let s = map.len();
+        return Value::new(ValueCore::Int(s as i64), ty);
+    }
+}
+
 pub fn register_extern_functions(interpreter: &mut Interpreter) {
     interpreter.add_extern_function(MAP_MODULE_NAME, "empty", Box::new(Empty {}));
     interpreter.add_extern_function(MAP_MODULE_NAME, "insert", Box::new(Insert {}));
@@ -227,4 +243,5 @@ pub fn register_extern_functions(interpreter: &mut Interpreter) {
     interpreter.add_extern_function(MAP_MODULE_NAME, "show", Box::new(Show {}));
     interpreter.add_extern_function(MAP_MODULE_NAME, "iter", Box::new(Iter {}));
     interpreter.add_extern_function(MAP_MODULE_NAME, "toMap", Box::new(ToMap {}));
+    interpreter.add_extern_function(MAP_MODULE_NAME, "getSize", Box::new(GetSize {}));
 }
