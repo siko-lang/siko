@@ -1,4 +1,7 @@
-module Siko.HIR.Type where
+module Siko.HIR.Type(Type(..), TypeVar(..), Constraint(..), toString) where
+
+import Siko.Constants
+import Map
 
 data TypeVar = TypeVar Int deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
@@ -12,3 +15,106 @@ data Type = TypeArg TypeVar [Constraint]
             | Ref Type
             | Tuple [Type]
             deriving (Show)
+
+isSimple :: Type -> Bool
+isSimple type = case type of
+    TypeArg _  _ -> True
+    FixedTypeArg _ _ _ -> True
+    Named n args -> getLength args == 0
+    Function _ _ -> False
+    Never _ -> True
+    Ref _ -> True
+    Tuple _ -> True
+
+isFunction :: Type -> Bool
+isFunction type = case type of
+    Function _ _ -> True
+    _ -> False
+
+toStringComplex :: Type -> Map String Bool -> String
+toStringComplex type names = if isSimple type then convertType type names else "({})" % (convertType type names)
+
+addConstraint :: String -> [Constraint] -> Map String [Constraint] -> Map String [Constraint]
+addConstraint n constraints constraint_map = do
+    (constraint_map, _) <- insert constraint_map n constraints
+    constraint_map
+
+collectConstraints :: [Constraint] -> [String]
+collectConstraints constraints = constraints |> List.iter |> map (\c -> case c of
+                ClassConstraint s -> s) |> toList
+
+collect :: Type -> Map String [Constraint] -> ([String], Map String [Constraint])
+collect type constraint_map = case type of
+    TypeArg (TypeVar v)  constraints -> (collectConstraints constraints, addConstraint ("t{}" % v) constraints constraint_map)
+    FixedTypeArg n _ constraints -> (collectConstraints constraints, addConstraint n constraints constraint_map)
+    Named n args -> args |> List.iter |> fold (\(all, constraint_map), arg -> do
+                (args, constraint_map) <- collect arg constraint_map
+                (all + args, constraint_map)) ([n], constraint_map)
+    Function from to -> do
+        (args_from, constraint_map) <- collect from constraint_map
+        (args_to, constraint_map) <- collect to constraint_map
+        (args_from + args_to, constraint_map)
+    Never _ -> ([], constraint_map)
+    Ref t -> collect t constraint_map
+    Tuple args -> args |> List.iter |> fold (\(all, constraint_map), arg -> do
+                (args, constraint_map) <- collect arg constraint_map
+                (all + args, constraint_map)) ([], constraint_map)
+
+getShortName :: String -> String
+getShortName name = do
+    parts <- split name "."
+    atIndex parts ((getLength parts) - 1)
+
+addShortName :: String -> Option [String] -> Option [String]
+addShortName name names = case names of
+    Some names -> if contains names name then Some names else Some (names + [name])
+    None -> Some [name]
+
+toString :: Type -> String
+toString type = do
+    (names, constraint_map) <- collect type empty
+    conflicting_names <- names |> List.iter |> fold (\short_names, name -> do
+                short <- getShortName name
+                (short_names, _) <- alter (addShortName name) short short_names
+                short_names) empty
+    conflicting_names <- conflicting_names |> Map.iter |> map (\(short, names) -> if getLength names > 1 then (short, True) else (short, False)) |> toMap
+    constraints <- constraint_map |> Map.iter |> map (\(name, constraints) -> do
+                                constraints <- constraints |> List.iter |> map (\c -> case c of
+                                                    ClassConstraint s -> "{} {}" % (getNiceName s conflicting_names, name)) |> toList
+                                constraints) |> fold (\all, constraints -> all + constraints) []
+    string_type <- convertType type conflicting_names
+    if isEmpty constraints
+        then string_type
+        else "({}) => {}" % (join constraints ", ", string_type)
+
+getNiceName :: String -> Map String Bool -> String
+getNiceName full_name conflicting_names = do
+    short <- getShortName full_name
+    case get conflicting_names short of
+        Some True -> full_name
+        _ -> short
+
+convertType :: Type -> Map String Bool -> String
+convertType type names = case type of
+    TypeArg var _ -> do
+        TypeVar v <- var
+        "t{}" % v
+    FixedTypeArg n _ _ -> n
+    Named n args -> if n == getFullListTypeName
+        then "[{}]" % (convertType (atIndex args 0) names)
+        else if isEmpty args
+            then getNiceName n names
+            else do
+                args <- args |> List.iter |> map (\arg -> toStringComplex arg names) |> toList
+                "{} {}" % (getNiceName n names, join args " ")
+    Function from to -> do
+        from <- convertType from names
+        to <- if isFunction to then "({})" % (convertType to names) else convertType to names
+        "{} -> {}" % (from, to)
+    Never _ -> "!"
+    Ref t -> "&{}" % (toStringComplex t names)
+    Tuple args -> do
+        args <- args |> List.iter |> map (\arg -> convertType arg names) |> toList
+        if getLength args == 1
+            then "({},)" % (join args ", ")
+            else "({})" % (join args ", ")

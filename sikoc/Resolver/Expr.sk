@@ -1,0 +1,14 @@
+module Siko.Resolver.Expr where
+
+import Siko.Syntax.Expr as SE
+import Siko.HIR.Expr as HE
+
+processExpr :: SE.Expr -> HE.Expr
+processExpr (SE.Expr expr location) = do
+    hir_expr <- case expr of
+        SE.Tuple items -> do
+            hir_items <- items |> List.iter |> map (\item -> processExpr item) |> toList
+            HE.Tuple hir_items
+        SE.IntegerLiteral lit -> HE.IntegerLiteral lit
+        _ -> unimplemented
+    HE.Expr hir_expr location

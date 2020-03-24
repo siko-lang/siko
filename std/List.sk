@@ -41,3 +41,15 @@ contains l i = do
                     else
                         index + 1
     False
+
+join a :: (Show a) => [a] -> String -> String
+join items separator = do
+    len <- getLength items
+    (s, _) <- items |> List.iter
+         |> map (\item -> "{}" % item)
+         |> fold (\(total, index), s -> do
+            total <- case index of
+                    0 -> s
+                    _  -> "{}{}{}" % (total, separator, s)
+            (total, index + 1)) ("", 0)
+    s

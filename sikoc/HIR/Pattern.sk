@@ -1,0 +1,30 @@
+module Siko.HIR.Pattern where
+
+import Siko.Syntax.Location
+import Siko.Syntax.Ident
+import Siko.HIR.Expr
+import Siko.HIR.Type
+
+data RangeKind = Exclusive
+                | Inclusive deriving (Show)
+
+data RecordFieldPattern = {
+                            name :: Ident,
+                            pattern :: Pattern,
+                          } deriving (Show)
+
+data Pattern = Pattern SimplePattern Location deriving (Show)
+
+data SimplePattern = Binding Ident
+            | Tuple [Pattern]
+            | Constructor Ident [Pattern]
+            | Guarded Pattern Expr
+            | Wildcard
+            | IntegerLiteral String
+            | StringLiteral String
+            | CharLiteral Char
+            | CharRange Char Char RangeKind
+            | Typed Pattern Type
+            | Record Ident [RecordFieldPattern]
+            | Or [Pattern]
+            deriving (Show)

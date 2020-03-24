@@ -1,0 +1,45 @@
+module Siko.HIR.Expr where
+
+import Siko.Syntax.Ident
+import Siko.HIR.Pattern
+import Siko.Syntax.Location
+
+data Case = {
+              pattern :: Pattern,
+              body :: Expr,
+            } deriving (Show)
+
+data RecordConstructionItem = {
+                                field_name :: Ident,
+                                body :: Expr,
+                              } deriving (Show)
+
+data Expr = Expr SimpleExpr Location
+
+instance Show Expr where
+  show (Expr s _) = show s
+
+data SimpleExpr = StaticFunctionCall String [Expr]
+        | DynamicFunctionCall String [Expr]
+        | ClassMemberCall String Location Expr Expr
+        | If Expr Expr Expr
+        | Tuple [Expr]
+        | List [Expr]
+        | Path Ident
+        | IntegerLiteral String
+        | FloatLiteral String
+        | StringLiteral String
+        | Do [Expr]
+        | Bind Pattern Expr
+        | FieldAccess Ident Expr
+        | TupleFieldAccess String Expr
+        | Formatter String [Expr]
+        | CaseOf Expr [Case]
+        | RecordInitialization Ident [RecordConstructionItem]
+        | RecordUpdate Ident [RecordConstructionItem]
+        | Return Expr
+        | Try Expr
+        | Continue Expr
+        | Break Expr
+        | Loop Pattern Expr [Expr]
+        deriving (Show)

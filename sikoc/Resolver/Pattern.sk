@@ -1,0 +1,14 @@
+module Siko.Resolver.Pattern where
+
+import Siko.Syntax.Pattern as SP
+import Siko.HIR.Pattern as HP
+
+processPattern :: SP.Pattern -> HP.Pattern
+processPattern (SP.Pattern pattern location) = do
+    hir_pattern <- case pattern of
+        SP.Tuple items -> do
+            hir_items <- items |> List.iter |> map (\item -> processPattern item) |> toList
+            HP.Tuple hir_items
+        SP.IntegerLiteral lit -> HP.IntegerLiteral lit
+        _ -> unimplemented
+    HP.Pattern hir_pattern location

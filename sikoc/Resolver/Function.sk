@@ -7,7 +7,9 @@ import Siko.HIR.Function as HF
 import Siko.Resolver
 import Siko.Resolver.Module
 import Siko.Resolver.Error
-import Siko.HIR.Type
+import Siko.HIR.Type as HT
+import Siko.Resolver.Expr
+import Siko.Resolver.Pattern
 import Siko.Resolver.Type
 import Map
 
@@ -32,20 +34,11 @@ addFunctionSignature signature info = case info of
             Some info
         None -> Some (FunctionInfo [signature] [])
 
-/*
-data FunctionSignature = {
-                           name :: Ident,
-                           type_arguments :: [Ident],
-                           constraints :: [Constraint],
-                           type_signature :: TypeSignature,
-                         } deriving (Show)
-*/
-
 processClassConstraint :: ResolverState -> TypeResolverState -> ModuleResolver -> SC.Constraint -> (ResolverState, TypeResolverState)
 processClassConstraint state type_resolver module_resolver c = do
     (state, type_resolver) <- case resolveClass module_resolver c.class_name of
         Ok class_name -> do
-            constraint <- ClassConstraint class_name
+            constraint <- HT.ClassConstraint class_name
             type_arg <- getString c.argument
             (success, type_resolver) <- addTypeArgumentConstraint type_resolver type_arg constraint
             if success
@@ -58,7 +51,7 @@ processClassConstraint state type_resolver module_resolver c = do
             (state, type_resolver)
     (state, type_resolver)
 
-processFunctionSignature :: ResolverState -> ModuleResolver -> SF.FunctionSignature -> (ResolverState, Type)
+processFunctionSignature :: ResolverState -> ModuleResolver -> SF.FunctionSignature -> (ResolverState, HT.Type)
 processFunctionSignature state module_resolver signature = do
     type_arguments <- signature.type_arguments
     type_resolver <- initTypeResolver module_resolver type_arguments
@@ -69,16 +62,31 @@ processFunctionSignature state module_resolver signature = do
     (state, type_args) <- processTypeArgs state type_resolver signature.type_arguments
     (state, type)
 
-processFunction :: ResolverState -> SF.Function -> (ResolverState, HF.Function)
-processFunction state function_info = (state, HF.Function "alma")
+/*
+data Function = {
+                  name :: Ident,
+                  arguments :: [Pattern],
+                  body :: Option Expr,
+                } deriving (Show)
+
+*/
+
+processFunction :: ResolverState -> SF.Function -> Option HT.Type -> (ResolverState, HF.Function)
+processFunction state function type = do
+    hir_patterns <- function.arguments |> List.iter |> map (\p -> processPattern p) |> toList
+    hir_body <- case function.body of
+                Some expr -> Some (processExpr expr)
+                None -> None
+    println "body {}" % hir_body
+    (state, HF.Function "alma" type hir_body)
 
 processFunctionInfo :: ResolverState -> ModuleResolver -> String -> FunctionInfo -> Bool -> ResolverState
 processFunctionInfo state module_resolver name function_info allowMissingImpl = do
-    (state, signature) <- case getLength function_info.signatures of
+    (state, type) <- case getLength function_info.signatures of
         0 -> (state, None)
         1 -> do
-            (state, signature) <- processFunctionSignature state module_resolver (atIndex function_info.signatures 0)
-            (state, Some signature)
+            (state, type) <- processFunctionSignature state module_resolver (atIndex function_info.signatures 0)
+            (state, Some type)
         _ ->
             do
             signatures <- function_info.signatures |> List.iter |> map (\s -> s.name) |> toList
@@ -91,10 +99,10 @@ processFunctionInfo state module_resolver name function_info allowMissingImpl = 
             (addError state (MissingImpl sig_name), None)
         0 if allowMissingImpl -> (state, None)
         1 -> do
-            (state, function) <- processFunction state (atIndex function_info.functions 0)
+            (state, function) <- processFunction state (atIndex function_info.functions 0) type
             (state, Some function)
         _ -> (state, None)
-    println "Errors {} {}" % (state.errors, signature)
+    println "Typenice: {}" % HT.toString (Option.unwrap type)
     state
 
 processFunctionsAndSignatures :: ResolverState -> ModuleResolver -> [SF.Function] -> [SF.FunctionSignature] -> ResolverState
