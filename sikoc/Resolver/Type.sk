@@ -8,6 +8,7 @@ import Siko.Resolver.Module
 import Siko.Resolver.Error
 import Siko.Constants
 import Siko.HIR.Type
+import Siko.HIR.Program as HP
 import Map
 
 data TypeResolverState = { args :: Map String TypeVar,
@@ -17,16 +18,16 @@ data TypeResolverState = { args :: Map String TypeVar,
                            next_type_var :: Int,
                            allow_implicit :: Bool }
 
-resolveClass :: ModuleResolver -> Ident -> Result String ResolverError
+resolveClass :: ModuleResolver -> Ident -> Result HP.FullyQualifiedName ResolverError
 resolveClass module_resolver name = do
-    ResolvedItem n item <- try resolveItem module_resolver.type_names name
+    ResolvedItem n item <- try resolveItem module_resolver.type_names UnknownType name
     case item of
         I.Class _ -> Ok (n)
         _ -> Err (NotAClassName name)
 
-resolveTypeName :: TypeResolverState -> Ident -> Result String ResolverError
+resolveTypeName :: TypeResolverState -> Ident -> Result HP.FullyQualifiedName ResolverError
 resolveTypeName state name = do
-    ResolvedItem name _ <- try resolveItem state.module_resolver.type_names name
+    ResolvedItem name _ <- try resolveItem state.module_resolver.type_names UnknownType name
     Ok name
 
 createTypeResolverState :: ModuleResolver -> Bool -> TypeResolverState
@@ -122,7 +123,7 @@ processTypeSignature state resolver_state (ST.TypeSignature type_signature locat
                 (state, resolver_state, TypeArg var [])
     ST.Variant _ _ -> unreachable
     ST.List arg -> do
-        name <- getFullListTypeName
+        name <- HP.FullyQualifiedName getFullListTypeName
         (state, resolver_state, arg) <- processTypeSignature state resolver_state arg
         (state, resolver_state, Named name [arg])
     ST.Tuple args -> do

@@ -2,13 +2,17 @@ module Siko.Resolver.Pattern where
 
 import Siko.Syntax.Pattern as SP
 import Siko.HIR.Pattern as HP
+import Siko.Resolver.Expr
 
-processPattern :: SP.Pattern -> HP.Pattern
-processPattern (SP.Pattern pattern location) = do
-    hir_pattern <- case pattern of
+processPattern :: Context -> SP.Pattern -> (Context, HP.Pattern)
+processPattern context (SP.Pattern pattern location) = do
+    (context, hir_pattern) <- case pattern of
         SP.Tuple items -> do
-            hir_items <- items |> List.iter |> map (\item -> processPattern item) |> toList
-            HP.Tuple hir_items
-        SP.IntegerLiteral lit -> HP.IntegerLiteral lit
+            (context, hir_items) <- items |> List.iter |> fold (\(context, items), item -> do
+                (context, hir_item) <- processPattern context item
+                items <- items + [hir_item]
+                (context, items)) (context, [])
+            (context, HP.Tuple hir_items)
+        SP.IntegerLiteral lit -> (context, HP.IntegerLiteral lit)
         _ -> unimplemented
-    HP.Pattern hir_pattern location
+    (context, HP.Pattern hir_pattern location)

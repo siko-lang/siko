@@ -1,11 +1,29 @@
 module Siko.Resolver.Expr where
 
+import Siko.Syntax.Ident
 import Siko.Syntax.Expr as SE
 import Siko.Syntax.Pattern as SP
 import Siko.HIR.Expr as HE
 import Siko.HIR.Pattern as HP
+import Siko.HIR.Program as HPO
 import Siko.Resolver.Pattern
+import Siko.Resolver
+import Siko.Resolver.Module
+import Siko.Resolver.Item as RI
+import Siko.Resolver.Error
 import Siko.Syntax.Location
+
+data Context = {
+                    state :: ResolverState,
+                    module_resolver :: ModuleResolver,
+                    program :: HPO.Program
+               }
+
+addErrorToContext :: Context -> ResolverError -> Context
+addErrorToContext context err = do
+    state <- addError context.state err
+    context <- context { state = state }
+    context
 
 processFunctionArgs :: [SP.Pattern] -> (SP.Pattern, Location)
 processFunctionArgs patterns = do
@@ -45,23 +63,60 @@ desugarFunctionArgsMulti arg_cases = do
     case_body <- createCaseBody first_patterns location
     SE.Expr (SE.CaseOf case_body cases) location
 
-processCase :: SE.Case -> HE.Case
-processCase (SE.Case pattern body) = do
-    p <- processPattern pattern
-    b <- processExpr body
-    HE.Case p b
+processCase :: Context -> SE.Case -> (Context, HE.Case)
+processCase context (SE.Case pattern body) = do
+    (context, p) <- processPattern context pattern
+    (context, b) <- processExpr context body
+    (context, HE.Case p b)
 
-processExpr :: SE.Expr -> HE.Expr
-processExpr (SE.Expr expr location) = do
-    hir_expr <- case expr of
+resolvePath :: Context -> Ident -> Result (Context, HPO.FullyQualifiedName) (Context)
+resolvePath context path = do
+    case resolveItem context.module_resolver.term_names UnknownFunction path of
+        Ok (ResolvedItem qn item) -> do
+            case item of
+                RI.Record _ -> Ok (context, qn)
+                _ -> do
+                    err <- NotAFunction path
+                    Err (addErrorToContext context err)
+        Err err -> Err (addErrorToContext context err)
+
+processExprs :: Context -> [SE.Expr] -> (Context, [HE.Expr])
+processExprs context exprs = do
+    (context, hir_exprs) <- exprs |> List.iter |> fold (\(context, hir_exprs), expr -> do
+                (context, hir_expr) <- processExpr context expr
+                hir_exprs <- hir_exprs + [hir_expr]
+                (context, hir_exprs)) (context, [])
+    (context, hir_exprs)
+
+processExpr :: Context -> SE.Expr -> (Context, HE.Expr)
+processExpr context (SE.Expr expr location) = do
+    (context, hir_expr) <- case expr of
         SE.Tuple items -> do
-            hir_items <- items |> List.iter |> map (\item -> processExpr item) |> toList
-            HE.Tuple hir_items
-        SE.IntegerLiteral lit -> HE.IntegerLiteral lit
+            (context, hir_items) <- processExprs context items
+            (context, HE.Tuple hir_items)
+        SE.IntegerLiteral lit -> (context, HE.IntegerLiteral lit)
         SE.CaseOf body cases -> do
-            hir_body <- processExpr body
-            cases <- cases |> List.iter |> map (\c -> processCase c) |> toList
-            HE.CaseOf hir_body cases
-        SE.ArgRef i -> HE.ArgRef i
+            (context, hir_body) <- processExpr context body
+            (state, cases) <- cases |> List.iter |> fold (\(context, cases), c -> do
+                (context, hir_case) <- processCase context c
+                cases <- cases + [hir_case]
+                (context, cases)) (context, [])
+            (context, HE.CaseOf hir_body cases)
+        SE.ArgRef i -> (context, HE.ArgRef i)
+        SE.FunctionCall receiver args -> do
+            case receiver of
+                SE.Expr (SE.Path p) _ -> do
+                    case resolvePath context p of
+                        Ok (_, n) -> println "Resolve ok {}" % n
+                        Err context -> do
+                            context :: Context <- context
+                            println "Resolve err {}" % context.state.errors
+                    ()
+                _ -> do
+                    (context, hir_receiver) <- processExpr context receiver
+                    (context, hir_args) <- processExprs context args
+                    (context, HE.DynamicFunctionCall hir_receiver hir_args)
+                    ()
+            (context, HE.Tuple [])
         _ -> unimplemented
-    HE.Expr hir_expr location
+    (context, HE.Expr hir_expr location)

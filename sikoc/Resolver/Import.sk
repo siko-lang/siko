@@ -1,4 +1,4 @@
-module Siko.Resolver.Import(processImports, ImportedItem, fullyQualifiedName) where
+module Siko.Resolver.Import(processImports, ImportedItem, fullyQualifiedName, unpackItemRef, ItemRef) where
 
 import Map
 import Siko.Syntax.Program
@@ -10,18 +10,28 @@ import Siko.Resolver.Export as E
 import Siko.Resolver.Module
 import Siko.Resolver as R
 import Siko.Resolver.Error
+import Siko.HIR.Program (FullyQualifiedName(..))
 
-data ImportedItem = { name :: String,
+data ItemRef = FullyQualifiedNameRef FullyQualifiedName
+               | Local String
+               deriving (Show)
+
+unpackItemRef :: ItemRef -> String
+unpackItemRef ref = case ref of
+    FullyQualifiedNameRef (FullyQualifiedName n) -> n
+    Local n -> n
+
+data ImportedItem = { name :: ItemRef,
                       source_module :: String,
                       item :: Item } deriving (Show)
 
-fullyQualifiedName :: String -> String -> String
-fullyQualifiedName module_name name = "{}.{}" % (module_name, name)
+fullyQualifiedName :: String -> String -> FullyQualifiedName
+fullyQualifiedName module_name name = FullyQualifiedName "{}.{}" % (module_name, name)
 
 importLocalItem :: String -> Item -> [ImportedItem]
 importLocalItem module_name item = do
     name <- getItemName item
-    [ImportedItem name module_name item, ImportedItem (fullyQualifiedName module_name name) module_name item]
+    [ImportedItem (Local name) module_name item, ImportedItem (FullyQualifiedNameRef (fullyQualifiedName module_name name)) module_name item]
 
 processLocals :: String -> [Item] -> [ImportedItem]
 processLocals module_name locals = do
@@ -34,9 +44,9 @@ importExportedItem alternative_name module_name item = do
     names <- case alternative_name of
         Some alternative_name -> do
             alternative_name <- getString alternative_name
-            [fullyQualifiedName alternative_name name]
+            [FullyQualifiedNameRef (fullyQualifiedName alternative_name name)]
         None ->
-            [(fullyQualifiedName module_name name), name]
+            [FullyQualifiedNameRef (fullyQualifiedName module_name name), Local name]
     names |> List.iter |> map (\name -> ImportedItem name module_name item) |> toList
 
 processImport :: Map String [Item] -> R.ResolverState -> Import -> (R.ResolverState, [ImportedItem])

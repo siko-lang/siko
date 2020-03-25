@@ -1,0 +1,27 @@
+module Siko.HIR.Program where
+
+import Siko.HIR.Function as F
+import Siko.HIR.Data as D
+import Siko.HIR.Class as C
+import Map
+
+data FullyQualifiedName = FullyQualifiedName String deriving (PartialEq, Eq, PartialOrd, Ord)
+
+instance Show FullyQualifiedName where
+    show (FullyQualifiedName s) = s
+
+data Item = Function F.Function
+            | Adt D.AbstractDataType
+            | Record D.Record
+            | Class C.Class
+            deriving (Show)
+
+data Program = {
+                  items :: Map FullyQualifiedName Item
+               } deriving (Show)
+
+addItem :: Program -> FullyQualifiedName -> Item -> Program
+addItem program name item = do
+    (items, _) <- insert program.items name item
+    program <- program { items = items }
+    program

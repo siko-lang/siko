@@ -1,15 +1,16 @@
 module Siko.HIR.Type(Type(..), TypeVar(..), Constraint(..), toString) where
 
 import Siko.Constants
+import Siko.HIR.Program as HP
 import Map
 
 data TypeVar = TypeVar Int deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
-data Constraint = ClassConstraint String deriving (Show)
+data Constraint = ClassConstraint HP.FullyQualifiedName deriving (Show)
 
 data Type = TypeArg TypeVar [Constraint]
             | FixedTypeArg String TypeVar [Constraint]
-            | Named String [Type]
+            | Named HP.FullyQualifiedName [Type]
             | Function Type Type
             | Never TypeVar
             | Ref Type
@@ -41,13 +42,15 @@ addConstraint n constraints constraint_map = do
 
 collectConstraints :: [Constraint] -> [String]
 collectConstraints constraints = constraints |> List.iter |> map (\c -> case c of
-                ClassConstraint s -> s) |> toList
+                ClassConstraint (HP.FullyQualifiedName s) -> s) |> toList
 
 collect :: Type -> Map String [Constraint] -> ([String], Map String [Constraint])
 collect type constraint_map = case type of
     TypeArg (TypeVar v)  constraints -> (collectConstraints constraints, addConstraint ("t{}" % v) constraints constraint_map)
     FixedTypeArg n _ constraints -> (collectConstraints constraints, addConstraint n constraints constraint_map)
-    Named n args -> args |> List.iter |> fold (\(all, constraint_map), arg -> do
+    Named n args -> do
+                HP.FullyQualifiedName n <- n
+                args |> List.iter |> fold (\(all, constraint_map), arg -> do
                 (args, constraint_map) <- collect arg constraint_map
                 (all + args, constraint_map)) ([n], constraint_map)
     Function from to -> do
@@ -80,7 +83,7 @@ toString type = do
     conflicting_names <- conflicting_names |> Map.iter |> map (\(short, names) -> if getLength names > 1 then (short, True) else (short, False)) |> toMap
     constraints <- constraint_map |> Map.iter |> map (\(name, constraints) -> do
                                 constraints <- constraints |> List.iter |> map (\c -> case c of
-                                                    ClassConstraint s -> "{} {}" % (getNiceName s conflicting_names, name)) |> toList
+                                                    ClassConstraint (HP.FullyQualifiedName s) -> "{} {}" % (getNiceName s conflicting_names, name)) |> toList
                                 constraints) |> fold (\all, constraints -> all + constraints) []
     string_type <- convertType type conflicting_names
     if isEmpty constraints
@@ -100,13 +103,15 @@ convertType type names = case type of
         TypeVar v <- var
         "t{}" % v
     FixedTypeArg n _ _ -> n
-    Named n args -> if n == getFullListTypeName
-        then "[{}]" % (convertType (atIndex args 0) names)
-        else if isEmpty args
-            then getNiceName n names
-            else do
-                args <- args |> List.iter |> map (\arg -> toStringComplex arg names) |> toList
-                "{} {}" % (getNiceName n names, join args " ")
+    Named n args -> do
+        HP.FullyQualifiedName n <- n
+        if n == getFullListTypeName
+            then "[{}]" % (convertType (atIndex args 0) names)
+            else if isEmpty args
+                then getNiceName n names
+                else do
+                    args <- args |> List.iter |> map (\arg -> toStringComplex arg names) |> toList
+                    "{} {}" % (getNiceName n names, join args " ")
     Function from to -> do
         from <- convertType from names
         to <- if isFunction to then "({})" % (convertType to names) else convertType to names
