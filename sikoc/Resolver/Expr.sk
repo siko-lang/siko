@@ -7,22 +7,43 @@ import Siko.HIR.Pattern as HP
 import Siko.Resolver.Pattern
 import Siko.Syntax.Location
 
-desugarFunctionArgs :: [SP.Pattern] -> SE.Expr -> SE.Expr
-desugarFunctionArgs patterns orig_body = do
+processFunctionArgs :: [SP.Pattern] -> (SP.Pattern, Location)
+processFunctionArgs patterns = do
     location <- patterns |> List.iter |> fold (\merged, (SP.Pattern _ location) -> case merged of
         Some l -> Some (mergeLocations l location)
         None -> Some location) None
     location <- case location of
         Some location -> location
-        None -> return orig_body
+        None -> unreachable
     pattern_tuple <- SP.Pattern (SP.Tuple patterns) location
+    (pattern_tuple, location)
+
+createCaseBody :: [SP.Pattern] -> Location -> SE.Expr
+createCaseBody patterns location = do
     (arg_refs, _) <- patterns |> List.iter |> fold (\(arg_refs, index), _ -> do
                     arg_ref <- SE.Expr (SE.ArgRef index) location
                     arg_refs <- arg_refs + [arg_ref]
                     (arg_refs, index + 1)) ([], 0)
     case_body <- SE.Expr (SE.Tuple arg_refs) location
+    case_body
+
+desugarFunctionArgs :: [SP.Pattern] -> SE.Expr -> SE.Expr
+desugarFunctionArgs patterns orig_body = do
+    (pattern_tuple, location) <- processFunctionArgs patterns
+    case_body <- createCaseBody patterns location
     c <- SE.Case pattern_tuple orig_body
     SE.Expr (SE.CaseOf case_body [c]) location
+
+desugarFunctionArgsMulti :: [([SP.Pattern], SE.Expr)] -> SE.Expr
+desugarFunctionArgsMulti arg_cases = do
+    first_patterns <- (atIndex arg_cases 0).0
+    cases <- arg_cases |> List.iter |> map (\(patterns, body) -> do
+            (pattern_tuple, location) <- processFunctionArgs patterns
+            c <- SE.Case pattern_tuple body
+            c) |> toList
+    SE.Case (SP.Pattern _ location) _ <- atIndex cases 0
+    case_body <- createCaseBody first_patterns location
+    SE.Expr (SE.CaseOf case_body cases) location
 
 processCase :: SE.Case -> HE.Case
 processCase (SE.Case pattern body) = do

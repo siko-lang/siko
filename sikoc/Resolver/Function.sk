@@ -77,7 +77,34 @@ processFunction state function type = do
                 Some expr -> Some (processExpr expr)
                 None -> None
     println "body {}" % hir_body
-    (state, HF.Function "alma" type hir_body)
+    (state, HF.Function (getString function.name) type hir_body)
+
+processFunctionMulti :: ResolverState -> FunctionInfo -> Option HT.Type -> (ResolverState, Option HF.Function)
+processFunctionMulti state function_info type = do
+    (state, arg_count_map, err) <- function_info.functions |> List.iter |> fold (\(state, arg_count_map, err), f -> do
+                (state, err) <- if isNone f.body
+                    then do
+                        state <- addError state (ExternFnWithMultiDef f.name)
+                        (state, True)
+                    else (state, err)
+                (arg_count_map, _) <- alter (addArgCount f.name) (getLength (f.arguments)) arg_count_map
+                (state, arg_count_map, err)) (state, empty, False)
+    (state, err) <- if getSize arg_count_map != 1
+        then do
+            names <- function_info.functions |> List.iter |> map (\f -> DefArgCount f.name (getLength f.arguments)) |> toList
+            state <- addError state (MultiDefArgCountMismatch names)
+            (state, True)
+        else (state, err)
+    if not err
+        then do
+            arg_cases <- function_info.functions |> List.iter |> map (\f -> (f.arguments, Option.unwrap f.body)) |> toList
+            desugared_body <- desugarFunctionArgsMulti arg_cases
+            hir_body <- Some (processExpr desugared_body)
+            println "body {}" % hir_body
+            name <- (atIndex function_info.functions 0).name
+            function <- HF.Function (getString name) type hir_body
+            (state, Some function)
+        else (state, None)
 
 addArgCount :: Ident -> Option [Ident] -> Option [Ident]
 addArgCount name names = case names of
@@ -105,21 +132,7 @@ processFunctionInfo state module_resolver name function_info allowMissingImpl = 
         1 -> do
             (state, function) <- processFunction state (atIndex function_info.functions 0) type
             (state, Some function)
-        _ -> do
-            (state, arg_count_map) <- function_info.functions |> List.iter |> fold (\(state, arg_count_map), f -> do
-                state <- if isNone f.body
-                    then do
-                        state <- addError state (ExternFnWithMultiDef f.name)
-                        state
-                    else state
-                (arg_count_map, _) <- alter (addArgCount f.name) (getLength (f.arguments)) arg_count_map
-                (state, arg_count_map)) (state, empty)
-            state <- if getSize arg_count_map != 1
-                then do
-                    names <- function_info.functions |> List.iter |> map (\f -> f.name) |> toList
-                    addError state (MultiDefArgCountMismatch names)
-                else state
-            (state, None)
+        _ -> processFunctionMulti state function_info type
     println "Err {}" % state.errors
     println "Typenice: {}" % HT.toString (Option.unwrap type)
     state
