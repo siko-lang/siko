@@ -3,6 +3,7 @@ module Siko.Parser.Class where
 import Siko.Parser
 import Siko.Parser.Type
 import Siko.Parser.Function
+import Siko.Parser.Token as T
 import Siko.Parser.Token.Kind as Kind
 import Siko.Syntax.Class
 import Siko.Parser.Error
@@ -13,9 +14,20 @@ parseClassConstraint state = do
     (state, arg) <- try expectVarIdent state "type argument"
     Ok (state, Constraint name arg)
 
+classConstraintFollows :: ParserState -> Bool
+classConstraintFollows state = do
+    loop index <- state.index do
+        ti <- peekAt state index
+        case ti.token of
+            T.EndOfItem -> return False
+            T.RightArrow -> return False
+            T.DoubleRightArrow -> return True
+            _ -> continue index + 1
+    False
+
 parseClassConstraints :: ParserState -> Result (ParserState, [Constraint]) (ParserState, ParserError)
 parseClassConstraints state =
-    if check state Kind.LParen
+    if check state Kind.LParen && classConstraintFollows state
             then
                 do
                     (state, constraints) <- try parseList state parseClassConstraint Kind.LParen Kind.RParen

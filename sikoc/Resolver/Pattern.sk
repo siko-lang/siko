@@ -8,6 +8,7 @@ import Siko.Resolver.Expr
 import Siko.Resolver.Error
 import Siko.Resolver.Item as RI
 import Siko.Resolver.Module
+import Siko.Resolver.Type
 import Siko.Syntax.Ident
 import Siko.Resolver
 
@@ -71,7 +72,10 @@ processPattern context (SP.Pattern pattern location) = do
                         _ -> unreachable
                 Err context -> do
                     (context, HP.Tuple [])
-        SP.Guarded _ _ -> (context, HP.Tuple [])  // TODO
+        SP.Guarded p e -> do
+            (context, hir_p) <- processPattern context p
+            (context, hir_e) <- processExpr context e
+            (context, HP.Guarded hir_p hir_e)
         SP.Wildcard -> (context, HP.Wildcard)
         SP.IntegerLiteral lit -> (context, HP.IntegerLiteral lit)
         SP.StringLiteral lit -> (context, HP.StringLiteral lit)
@@ -81,7 +85,11 @@ processPattern context (SP.Pattern pattern location) = do
                 SP.Exclusive -> HP.Exclusive
                 SP.Inclusive -> HP.Inclusive
             (context, HP.CharRange c1 c2 kind)
-        SP.Typed _ _ -> (context, HP.Tuple [])  // TODO
+        SP.Typed p t -> do
+            (context, hir_p) <- processPattern context p
+            (type_resolver, state, hir_type) <- processTypeSignature context.type_resolver context.state t
+            context <- context { type_resolver = type_resolver, state = state }
+            (context, HP.Typed hir_p hir_type)
         SP.Record _ _ -> (context, HP.Tuple [])  // TODO
         SP.Or _ -> (context, HP.Tuple [])  // TODO
     (context, HP.Pattern hir_pattern location)
