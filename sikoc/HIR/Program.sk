@@ -14,6 +14,7 @@ data Item = Function F.Function
             | Adt D.AbstractDataType
             | Record D.Record
             | Class C.Class
+            | Variant D.VariantInfo
             deriving (Show)
 
 data Program = {
@@ -25,3 +26,14 @@ addItem program name item = do
     (items, _) <- insert program.items name item
     program <- program { items = items }
     program
+
+getItem :: Program -> FullyQualifiedName -> Item
+getItem program name = case get program.items name of
+    Some i -> i
+    None -> panic "No item found {}" % name
+
+getVariant :: Program -> FullyQualifiedName -> Int -> D.Variant
+getVariant program name index = case get program.items name of
+    Some (Adt adt) -> do
+        atIndex adt.variants index
+    _ -> panic "No adt found {}" % name

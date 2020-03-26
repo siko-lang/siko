@@ -40,14 +40,14 @@ initTypeResolver module_resolver type_arguments = do
     type_resolver <- type_arguments |> List.iter |> fold (\type_resolver, arg -> addTypeArgument type_resolver arg) type_resolver
     type_resolver
 
-processTypeArgs :: ResolverState -> TypeResolverState -> [Ident] -> (ResolverState, [TypeVar])
+processTypeArgs :: ResolverState -> TypeResolverState -> [Ident] -> (ResolverState, [Type])
 processTypeArgs resolver_state state type_arguments = do
     resolver_state <- type_arguments |> List.iter |> fold (\resolver_state, arg -> do
         n <- getString arg
         if not (contains state.used_type_args n)
             then addError resolver_state (UnusedTypeArg arg)
             else resolver_state) resolver_state
-    type_args <- state.args |> Map.iter |> map (\(_, var) -> var) |> toList
+    type_args <- state.args |> Map.iter |> map (\(n, var) -> FixedTypeArg n var []) |> toList
     (resolver_state, type_args)
 
 addTypeArgument :: TypeResolverState -> Ident -> TypeResolverState

@@ -69,12 +69,17 @@ processCase context (SE.Case pattern body) = do
     (context, b) <- processExpr context body
     (context, HE.Case p b)
 
-resolvePath :: Context -> Ident -> Result (Context, HPO.FullyQualifiedName) (Context)
+data PathResolveResult = FunctionCall ([HE.Expr] -> HE.SimpleExpr)
+
+resolvePath :: Context -> Ident -> Result (Context, PathResolveResult) (Context)
 resolvePath context path = do
     case resolveItem context.module_resolver.term_names UnknownFunction path of
         Ok (ResolvedItem qn item) -> do
             case item of
-                RI.Record _ -> Ok (context, qn)
+                RI.Record _ -> Ok (context, FunctionCall (HE.RecordConstructorCall qn))
+                RI.Variant _ _ -> Ok (context, FunctionCall (HE.VariantConstructorCall qn))
+                RI.Function _ -> Ok (context, FunctionCall (HE.StaticFunctionCall qn))
+                RI.ClassMember _ _ -> Ok (context, FunctionCall (HE.ClassMemberCall qn))
                 _ -> do
                     err <- NotAFunction path
                     Err (addErrorToContext context err)
@@ -97,7 +102,7 @@ processExpr context (SE.Expr expr location) = do
         SE.IntegerLiteral lit -> (context, HE.IntegerLiteral lit)
         SE.CaseOf body cases -> do
             (context, hir_body) <- processExpr context body
-            (state, cases) <- cases |> List.iter |> fold (\(context, cases), c -> do
+            (context, cases) <- cases |> List.iter |> fold (\(context, cases), c -> do
                 (context, hir_case) <- processCase context c
                 cases <- cases + [hir_case]
                 (context, cases)) (context, [])
@@ -107,16 +112,20 @@ processExpr context (SE.Expr expr location) = do
             case receiver of
                 SE.Expr (SE.Path p) _ -> do
                     case resolvePath context p of
-                        Ok (_, n) -> println "Resolve ok {}" % n
-                        Err context -> do
-                            context :: Context <- context
-                            println "Resolve err {}" % context.state.errors
-                    ()
+                        Ok (context, result) -> case result of
+                                FunctionCall fn -> do
+                                    (context, hir_args) <- processExprs context args
+                                    (context, fn hir_args)
+                        Err context -> (context, HE.Tuple [])
                 _ -> do
                     (context, hir_receiver) <- processExpr context receiver
                     (context, hir_args) <- processExprs context args
                     (context, HE.DynamicFunctionCall hir_receiver hir_args)
-                    ()
-            (context, HE.Tuple [])
+        SE.Path p -> do
+            case resolvePath context p of
+                        Ok (context, result) -> case result of
+                                FunctionCall fn -> do
+                                    (context, fn [])
+                        Err context -> (context, HE.Tuple [])
         _ -> unimplemented
     (context, HE.Expr hir_expr location)

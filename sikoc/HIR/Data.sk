@@ -5,10 +5,13 @@ import Siko.HIR.Program as HP
 
 data Variant = Variant String [Type] deriving (Show)
 
+data VariantInfo = VariantInfo HP.FullyQualifiedName Int deriving (Show)
+
 data AbstractDataType = { name :: String,
                           module_name :: String,
-                          type_args :: [TypeVar],
+                          type_args :: [Type],
                           variants :: [Variant],
+                          variant_ctors :: [Type],
                           derived_classes :: [HP.FullyQualifiedName],
                           type :: Type,
                         } deriving (Show)
@@ -17,9 +20,10 @@ data RecordField = RecordField String Type deriving (Show)
 
 data Record = { name :: String,
                 module_name :: String,
-                type_args :: [TypeVar],
+                type_args :: [Type],
                 fields :: [RecordField],
                 external :: Bool,
+                record_ctor :: Type,
                 derived_classes :: [HP.FullyQualifiedName],
                 type :: Type,
               } deriving (Show)

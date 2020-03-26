@@ -42,13 +42,18 @@ processDerivedClasses state module_resolver derived_classes = do
                     (addError state err, derived_classes)) (state, [])
     (state, derived_classes)
 
-createType :: HP.FullyQualifiedName -> [TypeVar] -> Type
-createType qn type_args = do
-    args <- type_args |> List.iter |> map (\arg -> TypeArg arg []) |> toList
-    Named qn args
+createFunctionFromArgs :: [Type] -> Option Type
+createFunctionFromArgs args = do
+    case head args of
+        Some from -> do
+            args <- Option.unwrap (tail args)
+            case createFunctionFromArgs args of
+                Some to -> Some (Function from to)
+                None -> Some from
+        None -> None
 
-processAdt :: ResolverState -> ModuleResolver -> SD.AbstractDataType -> (ResolverState, HD.AbstractDataType, HP.FullyQualifiedName)
-processAdt state module_resolver (SD.AbstractDataType name type_arguments variants derived_classes) = do
+processAdt :: ResolverState -> HP.Program -> ModuleResolver -> SD.AbstractDataType -> (ResolverState, HP.Program)
+processAdt state hir_program module_resolver (SD.AbstractDataType name type_arguments variants derived_classes) = do
     type_resolver <- initTypeResolver module_resolver type_arguments
     (state, type_resolver, variants) <- variants |> List.iter |> fold (\(state, type_resolver, variants), variant -> do
                 (state, type_resolver, variant) <- processVariant state type_resolver variant
@@ -60,9 +65,21 @@ processAdt state module_resolver (SD.AbstractDataType name type_arguments varian
     (stat, derived_classes) <- processDerivedClasses state module_resolver derived_classes
     n <- getString name
     qn <- fullyQualifiedName module_resolver.module_name n
-    type <- createType qn type_args
-    adt <- HD.AbstractDataType n module_resolver.module_name type_args variants derived_classes type
-    (state, adt, qn)
+    type <- Named qn type_args
+    variant_ctors <- variants |> List.iter |> fold (\variant_ctors, (HD.Variant name args) -> do
+                                    ctor_type <- case createFunctionFromArgs args of
+                                        Some from -> Function from type
+                                        None -> type
+                                    variant_ctors <- variant_ctors + [ctor_type]
+                                    variant_ctors) []
+    (hir_program, _) <- variants |> List.iter |> fold (\(hir_program, index), (HD.Variant name _) -> do
+                                                variant_qn <- fullyQualifiedName module_resolver.module_name name
+                                                info <- HD.VariantInfo qn index
+                                                hir_program <- HP.addItem hir_program variant_qn (HP.Variant info)
+                                                (hir_program, index + 1)) (hir_program, 0)
+    adt <- HD.AbstractDataType n module_resolver.module_name type_args variants variant_ctors derived_classes type
+    hir_program <- HP.addItem hir_program qn (HP.Adt adt)
+    (state, hir_program)
 
 processRecord :: ResolverState -> ModuleResolver -> SD.Record -> (ResolverState, HD.Record, HP.FullyQualifiedName)
 processRecord state module_resolver (SD.Record name type_arguments fields external derived_classes) = do
@@ -75,16 +92,20 @@ processRecord state module_resolver (SD.Record name type_arguments fields extern
     (stat, derived_classes) <- processDerivedClasses state module_resolver derived_classes
     n <- getString name
     qn <- fullyQualifiedName module_resolver.module_name n
-    type <- createType qn type_args
-    record <- HD.Record n module_resolver.module_name type_args fields external derived_classes type
+    type <- Named qn type_args
+    ctor_arg_types <- fields |> List.iter |> map (\(HD.RecordField _ type) -> type) |> toList
+    ctor_type <- case createFunctionFromArgs ctor_arg_types of
+        Some from -> Function from type
+        None -> type
+    record <- HD.Record n module_resolver.module_name type_args fields external ctor_type derived_classes type
     (state, record, qn)
 
 processItem :: ResolverState -> HP.Program -> ModuleResolver -> SM.Item -> (ResolverState, HP.Program)
 processItem state hir_program module_resolver item = do
     case item of
         SM.Adt adt -> do
-            (state, adt, qn) <- processAdt state module_resolver adt
-            hir_program <- HP.addItem hir_program qn (HP.Adt adt)
+            (state, hir_program) <- processAdt state hir_program module_resolver adt
+
             (state, hir_program)
         SM.Record record -> do
             (state, record, qn) <- processRecord state module_resolver record

@@ -1,6 +1,8 @@
 use crate::environment::Environment;
 use crate::extern_function::ExternFunction;
 use crate::interpreter::Interpreter;
+use crate::util::create_none;
+use crate::util::create_some;
 use crate::value::Value;
 use crate::value::ValueCore;
 use siko_constants::LIST_MODULE_NAME;
@@ -148,6 +150,52 @@ impl ExternFunction for IsEmpty {
     }
 }
 
+pub struct Head {}
+
+impl ExternFunction for Head {
+    fn call(
+        &self,
+        environment: &mut Environment,
+        _: Option<ExprId>,
+        _: &NamedFunctionKind,
+        _: Type,
+    ) -> Value {
+        let list = environment.get_arg_by_index(0);
+        let mut list_type_args = list.ty.get_type_args();
+        match list.core.as_list().first() {
+            Some(v) => {
+                return create_some(v.clone());
+            }
+            None => {
+                return create_none(list_type_args.remove(0));
+            }
+        }
+    }
+}
+
+pub struct Tail {}
+
+impl ExternFunction for Tail {
+    fn call(
+        &self,
+        environment: &mut Environment,
+        _: Option<ExprId>,
+        _: &NamedFunctionKind,
+        _: Type,
+    ) -> Value {
+        let list = environment.get_arg_by_index(0);
+        let ty = list.ty.clone();
+        let mut list_type_args = list.ty.get_type_args();
+        let mut list : Vec<_> = list.core.as_list();
+        if list.is_empty() {
+            return create_none(list_type_args.remove(0));
+        } else {
+            let _ = list.remove(0);
+            return create_some(Value::new(ValueCore::List(list), ty));
+        }
+    }
+}
+
 pub fn register_extern_functions(interpreter: &mut Interpreter) {
     interpreter.add_extern_function(LIST_MODULE_NAME, "show", Box::new(Show {}));
     interpreter.add_extern_function(LIST_MODULE_NAME, "iter", Box::new(Iter {}));
@@ -157,4 +205,6 @@ pub fn register_extern_functions(interpreter: &mut Interpreter) {
     interpreter.add_extern_function(LIST_MODULE_NAME, "atIndex", Box::new(AtIndex {}));
     interpreter.add_extern_function(LIST_MODULE_NAME, "getLength", Box::new(GetLength {}));
     interpreter.add_extern_function(LIST_MODULE_NAME, "isEmpty", Box::new(IsEmpty {}));
+    interpreter.add_extern_function(LIST_MODULE_NAME, "head", Box::new(Head {}));
+    interpreter.add_extern_function(LIST_MODULE_NAME, "tail", Box::new(Tail {}));
 }
