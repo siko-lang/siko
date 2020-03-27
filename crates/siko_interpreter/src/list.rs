@@ -186,7 +186,7 @@ impl ExternFunction for Tail {
         let list = environment.get_arg_by_index(0);
         let ty = list.ty.clone();
         let mut list_type_args = list.ty.get_type_args();
-        let mut list : Vec<_> = list.core.as_list();
+        let mut list: Vec<_> = list.core.as_list();
         if list.is_empty() {
             return create_none(list_type_args.remove(0));
         } else {

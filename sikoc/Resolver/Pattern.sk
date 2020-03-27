@@ -5,6 +5,7 @@ import Siko.HIR.Pattern as HP
 import Siko.HIR.Program as HPO
 import Siko.HIR.Data as HD
 import Siko.Resolver.Expr
+import Siko.Resolver.Environment
 import Siko.Resolver.Error
 import Siko.Resolver.Item as RI
 import Siko.Resolver.Module
@@ -24,26 +25,30 @@ resolveConstructor context name mustBeRecord = do
                     Err (addErrorToContext context err)
         Err err -> Err (addErrorToContext context err)
 
-processPatterns :: Context -> [SP.Pattern] -> (Context, [HP.Pattern])
-processPatterns context patterns = do
-    (context, hir_patterns) <- patterns |> List.iter |> fold (\(context, hir_patterns), pattern -> do
-                (context, hir_pattern) <- processPattern context pattern
+processPatterns :: Context -> PatternEnvironment -> Environment -> [SP.Pattern] -> (Context, PatternEnvironment, Environment, [HP.Pattern])
+processPatterns context pattern_env env patterns = do
+    (context, pattern_env, env, hir_patterns) <- patterns |> List.iter |> fold (\(context, pattern_env, env, hir_patterns), pattern -> do
+                (context, pattern_env, env, hir_pattern) <- processPattern context pattern_env env pattern
                 hir_patterns <- hir_patterns + [hir_pattern]
-                (context, hir_patterns)) (context, [])
-    (context, hir_patterns)
+                (context, pattern_env, env, hir_patterns)) (context, pattern_env, env, [])
+    (context, pattern_env, env, hir_patterns)
 
-processPattern :: Context -> SP.Pattern -> (Context, HP.Pattern)
-processPattern context (SP.Pattern pattern location) = do
-    (context, hir_pattern) <- case pattern of
-        SP.Binding name -> (context, HP.Tuple []) // TODO
+processPattern :: Context -> PatternEnvironment -> Environment -> SP.Pattern -> (Context, PatternEnvironment, Environment, HP.Pattern)
+processPattern context pattern_env env (SP.Pattern pattern location) = do
+    (context, pattern_env, env, hir_pattern) <- case pattern of
+        SP.Binding name -> do
+            (context, bind_ref) <- createBindRef context (getString name)
+            pattern_env <- addBindingToPatternEnv pattern_env name
+            env <- addBinding env bind_ref
+            (context, pattern_env, env, HP.Binding bind_ref)
         SP.Tuple items -> do
-            (context, hir_items) <- items |> List.iter |> fold (\(context, items), item -> do
-                (context, hir_item) <- processPattern context item
+            (context, pattern_env, env, hir_items) <- items |> List.iter |> fold (\(context, pattern_env, env, items), item -> do
+                (context, pattern_env, env, hir_item) <- processPattern context pattern_env env item
                 items <- items + [hir_item]
-                (context, items)) (context, [])
-            (context, HP.Tuple hir_items)
+                (context, pattern_env, env, items)) (context, pattern_env, env, [])
+            (context, pattern_env, env, HP.Tuple hir_items)
         SP.Constructor name args -> do
-            (context, hir_args) <- processPatterns context args
+            (context, pattern_env, env, hir_args) <- processPatterns context pattern_env env args
             case resolveConstructor context name False of
                 Ok (context, qn) -> do
                     context :: Context <- context // FIXME: type inference
@@ -56,9 +61,9 @@ processPattern context (SP.Pattern pattern location) = do
                                 then
                                     do
                                         context <- addErrorToContext context (InvalidVariantArgCountInPattern name expected found)
-                                        (context, HP.Tuple [])
+                                        (context, pattern_env, env, HP.Tuple [])
                                 else
-                                    (context, HP.Variant qn hir_args)
+                                    (context, pattern_env, env, HP.Variant qn hir_args)
                         HPO.Record record -> do
                             expected <- getLength record.fields
                             found <- getLength args
@@ -66,30 +71,30 @@ processPattern context (SP.Pattern pattern location) = do
                                 then
                                     do
                                         context <- addErrorToContext context (InvalidRecordArgCountInPattern name expected found)
-                                        (context, HP.Tuple [])
+                                        (context, pattern_env, env, HP.Tuple [])
                                 else
-                                    (context, HP.Record qn hir_args)
+                                    (context, pattern_env, env, HP.Record qn hir_args)
                         _ -> unreachable
                 Err context -> do
-                    (context, HP.Tuple [])
+                    (context, pattern_env, env, HP.Tuple [])
         SP.Guarded p e -> do
-            (context, hir_p) <- processPattern context p
-            (context, hir_e) <- processExpr context e
-            (context, HP.Guarded hir_p hir_e)
-        SP.Wildcard -> (context, HP.Wildcard)
-        SP.IntegerLiteral lit -> (context, HP.IntegerLiteral lit)
-        SP.StringLiteral lit -> (context, HP.StringLiteral lit)
-        SP.CharLiteral lit -> (context, HP.CharLiteral lit)
+            (context, pattern_env, env, hir_p) <- processPattern context pattern_env env p
+            (context, env, hir_e) <- processExpr context env e
+            (context, pattern_env, env, HP.Guarded hir_p hir_e)
+        SP.Wildcard -> (context, pattern_env, env, HP.Wildcard)
+        SP.IntegerLiteral lit -> (context, pattern_env, env, HP.IntegerLiteral lit)
+        SP.StringLiteral lit -> (context, pattern_env, env, HP.StringLiteral lit)
+        SP.CharLiteral lit -> (context, pattern_env, env, HP.CharLiteral lit)
         SP.CharRange c1 c2 kind -> do
             kind <- case kind of
                 SP.Exclusive -> HP.Exclusive
                 SP.Inclusive -> HP.Inclusive
-            (context, HP.CharRange c1 c2 kind)
+            (context, pattern_env, env, HP.CharRange c1 c2 kind)
         SP.Typed p t -> do
-            (context, hir_p) <- processPattern context p
+            (context, pattern_env, env, hir_p) <- processPattern context pattern_env env p
             (type_resolver, state, hir_type) <- processTypeSignature context.type_resolver context.state t
             context <- context { type_resolver = type_resolver, state = state }
-            (context, HP.Typed hir_p hir_type)
-        SP.Record _ _ -> (context, HP.Tuple [])  // TODO
-        SP.Or _ -> (context, HP.Tuple [])  // TODO
-    (context, HP.Pattern hir_pattern location)
+            (context, pattern_env, env, HP.Typed hir_p hir_type)
+        SP.Record _ _ -> (context, pattern_env, env, HP.Tuple [])  // TODO
+        SP.Or _ -> (context, pattern_env, env, HP.Tuple [])  // TODO
+    (context, pattern_env, env, HP.Pattern hir_pattern location)

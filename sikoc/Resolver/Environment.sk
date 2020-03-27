@@ -1,0 +1,42 @@
+module Siko.Resolver.Environment where
+
+import Siko.Resolver.Expr
+import Siko.HIR.Pattern
+import Siko.Syntax.Ident
+import Map
+
+data PatternEnvironment = { bindings :: Map String [Ident] }
+
+data Environment = { block_bindings :: Map String BindRef,
+                     parent :: Option Environment }
+
+createPatternEnvironment :: PatternEnvironment
+createPatternEnvironment = PatternEnvironment empty
+
+createEnvironment :: Option Environment -> Environment
+createEnvironment parent = Environment empty parent
+
+append :: Ident -> Option [Ident] -> Option [Ident]
+append name names = case names of
+    Some names -> Some (names + [name])
+    None -> Some [name]
+
+addBindingToPatternEnv :: PatternEnvironment -> Ident -> PatternEnvironment
+addBindingToPatternEnv env name = do
+    (bindings, _) <- alter (append name) (getString name) env.bindings
+    env <- env { bindings = bindings }
+    env
+
+addBinding :: Environment -> BindRef -> Environment
+addBinding env bind_ref = do
+    (BindRef s _) <- bind_ref
+    (block_bindings, _) <- insert env.block_bindings s bind_ref
+    env <- env { block_bindings = block_bindings }
+    env
+
+getBinding :: Environment -> Ident -> Option BindRef
+getBinding env name = do
+    s <- getString name
+    case get env.block_bindings s of
+        Some bind_ref -> Some bind_ref
+        None -> None
