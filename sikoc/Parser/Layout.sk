@@ -79,17 +79,21 @@ processBlock state = do
                  if not (isDone state)
                     then
                         do
-                        first <- peek state
-                        case first.token of
-                            KeywordModule -> break state
-                            _ -> do
+                            first <- peek state
                             if first.span.start.offset < blockStart.span.start.offset
                                 then
                                     break state
                                 else do
-                                    state <- advance state
-                                    state <- processItem state blockStartSpan
-                                    state
+                                    case first.token of
+                                        KeywordDo | KeywordWhere -> do
+                                            state <- processBlock state
+                                            state <- addToken state (TokenInfo EndOfItem (lastSpan state))
+                                            state
+                                        KeywordModule -> break state
+                                        _ -> do
+                                            state <- advance state
+                                            state <- processItem state blockStartSpan
+                                            state
                     else
                         break state
             state <- state

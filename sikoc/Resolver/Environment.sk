@@ -39,4 +39,6 @@ getBinding env name = do
     s <- getString name
     case get env.block_bindings s of
         Some bind_ref -> Some bind_ref
-        None -> None
+        None -> case env.parent of
+            Some env -> getBinding env name
+            None -> None
