@@ -25,6 +25,14 @@ resolveConstructor context name mustBeRecord = do
                     Err (addErrorToContext context err)
         Err err -> Err (addErrorToContext context err)
 
+processRecordFieldPattern :: [SP.RecordFieldPattern] -> (Context, PatternEnvironment, Environment, [HP.Pattern]) -> HD.RecordField -> (Context, PatternEnvironment, Environment, [HP.Pattern])
+processRecordFieldPattern field_patterns (context, pattern_env, env, args) (HD.RecordField field_name _) = do
+    field_pattern <- field_patterns |> List.iter |> filter (\(SP.RecordFieldPattern name _) -> getString name == field_name) |> toList
+    (SP.RecordFieldPattern name pattern) <- atIndex field_pattern 0
+    (context, pattern_env, env, hir_pattern) <- processPattern context  pattern_env env pattern
+    args <- args + [hir_pattern]
+    (context, pattern_env, env, args)
+
 processPatterns :: Context -> PatternEnvironment -> Environment -> [SP.Pattern] -> (Context, PatternEnvironment, Environment, [HP.Pattern])
 processPatterns context pattern_env env patterns = do
     (context, pattern_env, env, hir_patterns) <- patterns |> List.iter |> fold (\(context, pattern_env, env, hir_patterns), pattern -> do
@@ -95,6 +103,30 @@ processPattern context pattern_env env (SP.Pattern pattern location) = do
             (type_resolver, state, hir_type) <- processTypeSignature context.type_resolver context.state t
             context <- context { type_resolver = type_resolver, state = state }
             (context, pattern_env, env, HP.Typed hir_p hir_type)
-        SP.Record _ _ -> (context, pattern_env, env, HP.Tuple [])  // TODO
+        SP.Record name field_patterns -> do
+            case resolveConstructor context name True of
+                Ok (context, qn) -> do
+                    context :: Context <- context // FIXME: type inference
+                    case HPO.getItem context.program qn of
+                        HPO.Record record -> do
+                            used_fields <- field_patterns |> List.iter |> map (\(SP.RecordFieldPattern field _) -> field) |> toList
+                            case validateUsedFields used_fields record of
+                                Ok () -> do
+                                    (context, pattern_env, env, args) <- record.fields |> List.iter |> fold (processRecordFieldPattern field_patterns) (context, pattern_env, env, [])
+                                    (context, pattern_env, env, HP.Record qn args)
+                                Err (unused_fields, not_real_fields, multi_used) -> do
+                                    context <- if not (isEmpty unused_fields)
+                                        then addErrorToContext context (UnusedFields unused_fields)
+                                        else context
+                                    context <- if not (isEmpty not_real_fields)
+                                        then addErrorToContext context (UnknownUsedFields not_real_fields)
+                                        else context
+                                    context <- if not (isEmpty multi_used)
+                                        then addErrorToContext context (MultiUsedFields multi_used)
+                                        else context
+                                    (context, pattern_env, env, HP.Tuple [])
+                        _ -> unreachable
+                Err context -> do
+                    (context, pattern_env, env, HP.Tuple [])
         SP.Or _ -> (context, pattern_env, env, HP.Tuple [])  // TODO
     (context, pattern_env, env, HP.Pattern hir_pattern location)

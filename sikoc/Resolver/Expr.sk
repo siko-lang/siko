@@ -81,8 +81,9 @@ desugarFunctionArgsMulti arg_cases = do
 processCase :: Context -> Environment -> SE.Case -> (Context, HE.Case)
 processCase context env (SE.Case pattern body) = do
     pattern_env <- createPatternEnvironment
-    (context, pattern_env, env, p) <- processPattern context pattern_env env pattern
-    (context, env, b) <- processExpr context env body
+    block_env <- createEnvironment (Some env)
+    (context, pattern_env, block_env, p) <- processPattern context pattern_env block_env pattern
+    (context, _, b) <- processExpr context block_env body
     (context, HE.Case p b)
 
 data PathResolveResult = FunctionCall ([HE.Expr] -> HE.SimpleExpr)
