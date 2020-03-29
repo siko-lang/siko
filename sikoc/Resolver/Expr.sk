@@ -17,7 +17,7 @@ import Siko.Syntax.Location
 import Siko.Resolver.Environment
 import Map
 
-data LambdaHelper = { arg_offset :: Int, 
+data LambdaHelper = { arg_offset :: Int,
                       captured_values :: [HP.BindRef],
                     } deriving (Show)
 
@@ -217,7 +217,7 @@ processExpr context env (SE.Expr expr location) = do
             (context, _, final_lambda_body) <- processExpr context lambda_env desugared_body
             lambda_helper <- Option.unwrap context.lambda_helper
             context <- context { lambda_helper = parent_lambda_helper }
-            (context, args) <- lambda_helper.captured_values |> List.iter 
+            (context, args) <- lambda_helper.captured_values |> List.iter
                 |> fold (\(context, args), c -> do
                             HP.BindRef name _ <- c
                             case getBinding env name of
@@ -231,7 +231,7 @@ processExpr context env (SE.Expr expr location) = do
                                         (context, args)
                                 None -> panic "captured variable not found in parent scope"
                         ) (context, [])
-            (context, env, HE.StaticFunctionCall lambda_name args) // TODO
+            (context, env, HE.StaticFunctionCall lambda_name args)
         SE.Paren expr -> return processExpr context env expr
         SE.FunctionCall receiver args -> do
             case receiver of
@@ -342,10 +342,10 @@ processExpr context env (SE.Expr expr location) = do
                             (context, env, HE.Tuple [])
                 Err err -> do
                     context <- addErrorToContext context err
-                    (context, env, HE.Tuple []) // TODO
+                    (context, env, HE.Tuple [])
         SE.RecordUpdate path updates -> do
-            (context, env, updates) <- updates 
-                |> List.iter 
+            (context, env, updates) <- updates
+                |> List.iter
                 |> fold (\(context, env, updates), (SE.RecordConstructionItem field_name expr) -> do
                         (context, env, hir_expr) <- processExpr context env expr
                         update <- HE.RecordConstructionItem field_name hir_expr
@@ -361,14 +361,41 @@ processExpr context env (SE.Expr expr location) = do
             (context, env, hir_expr) <- processExpr context env expr
             (context, env, HE.Return hir_expr)
         SE.Try expr -> do
-            (context, env, hir_expr) <- processExpr context env expr
-            (context, env, HE.Try hir_expr)
+            SE.Expr _ location <- expr
+            ok <- Ident "ok" location
+            err <- Ident "err"  location
+            ok_body <- SE.Path ok
+            ok_body <- SE.Expr ok_body location
+            err_body <- SE.Return (SE.Expr (SE.Path err) location)
+            err_body <- SE.Expr err_body location
+            result_ok <- Ident "Result.Ok" location
+            result_err <- Ident "Result.Err" location
+            ok_bind <- SP.Binding ok
+            ok_bind <- SP.Pattern ok_bind location
+            err_bind <- SP.Binding err
+            err_bind <- SP.Pattern err_bind location
+            ok_pattern <- SP.Constructor result_ok [ok_bind]
+            ok_pattern <- SP.Pattern ok_pattern location
+            err_pattern <- SP.Constructor result_err [err_bind]
+            err_pattern <- SP.Pattern err_pattern location
+            ok_case <- SE.Case ok_pattern ok_body
+            err_case <- SE.Case err_pattern err_body
+            desugared_expr <- SE.CaseOf expr [ok_case, err_case]
+            desugared_expr <- SE.Expr desugared_expr location
+            (context, env, hir_expr) <- processExpr context env desugared_expr
+            return (context, env, hir_expr)
         SE.Continue expr -> do
             (context, env, hir_expr) <- processExpr context env expr
             (context, env, HE.Continue hir_expr)
         SE.Break expr -> do
             (context, env, hir_expr) <- processExpr context env expr
             (context, env, HE.Break hir_expr)
-        SE.Loop _ _ _ -> (context, env, HE.Tuple []) // TODO
+        SE.Loop pattern initializer items -> do
+            (context, env, hir_initializer) <- processExpr context env initializer
+            pattern_env <- createPatternEnvironment
+            block_env <- createEnvironment env.lambda_id (Some env)
+            (context, pattern_env, block_env, hir_pattern) <- processPattern context pattern_env block_env pattern
+            (context, hir_items) <- processExprs context block_env items
+            (context, env, HE.Loop hir_pattern hir_initializer hir_items)
         SE.ArgRef i -> (context, env, HE.ArgRef i)
     (context, env, HE.Expr hir_expr location)
