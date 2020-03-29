@@ -17,22 +17,54 @@ import Siko.Syntax.Location
 import Siko.Resolver.Environment
 import Map
 
+data LambdaHelper = { arg_offset :: Int, 
+                      captured_values :: [HP.BindRef],
+                    } deriving (Show)
+
 data Context = {
                     type_resolver :: TypeResolverState,
                     state :: ResolverState,
                     module_resolver :: ModuleResolver,
                     program :: HPO.Program,
                     next_binding_id :: Int,
+                    next_lambda_id :: Int,
+                    lambda_helper :: Option LambdaHelper,
                }
 
 createContext :: TypeResolverState -> ResolverState -> ModuleResolver -> HPO.Program -> Context
-createContext type_resolver state module_resolver program = Context type_resolver state module_resolver program 0
+createContext type_resolver state module_resolver program = Context {
+    type_resolver = type_resolver,
+    state = state,
+    module_resolver = module_resolver,
+    program = program,
+    next_binding_id = 0,
+    next_lambda_id = 1,
+    lambda_helper = None }
 
 createBindRef :: Context -> String -> (Context, HP.BindRef)
 createBindRef context name = do
     id <- context.next_binding_id
     context <- context { next_binding_id = id + 1 }
     (context, HP.BindRef name id)
+
+createLambdaName :: Context -> (Context, HPO.FullyQualifiedName)
+createLambdaName context = do
+    id <- context.next_lambda_id
+    context <- context { next_lambda_id = id + 1 }
+    (context,  HPO.FullyQualifiedName "lambda_{}" % id)
+
+captureValue :: Context -> HP.BindRef -> (Context, Int)
+captureValue context bind_ref = do
+    lambda_helper <- Option.unwrap context.lambda_helper
+    offset <- lambda_helper.arg_offset
+    case containsAtIndex lambda_helper.captured_values bind_ref of
+        Some index -> (context, offset + index)
+        None -> do
+            index <- getLength lambda_helper.captured_values
+            captured_values <- lambda_helper.captured_values + [bind_ref]
+            lambda_helper <- lambda_helper { captured_values = captured_values }
+            context <- context { lambda_helper = Some lambda_helper }
+            (context, offset + index)
 
 addErrorToContext :: Context -> ResolverError -> Context
 addErrorToContext context err = do
@@ -81,7 +113,7 @@ desugarFunctionArgsMulti arg_cases = do
 processCase :: Context -> Environment -> SE.Case -> (Context, HE.Case)
 processCase context env (SE.Case pattern body) = do
     pattern_env <- createPatternEnvironment
-    block_env <- createEnvironment (Some env)
+    block_env <- createEnvironment env.lambda_id (Some env)
     (context, pattern_env, block_env, p) <- processPattern context pattern_env block_env pattern
     (context, _, b) <- processExpr context block_env body
     (context, HE.Case p b)
@@ -175,7 +207,31 @@ processRecordFieldInit field_inits (context, env, args) (HD.RecordField field_na
 processExpr :: Context -> Environment -> SE.Expr -> (Context, Environment, HE.Expr)
 processExpr context env (SE.Expr expr location) = do
     (context, env, hir_expr) <- case expr of
-        SE.Lambda _ _ -> (context, env, HE.Tuple []) // TODO
+        SE.Lambda arg_patterns lambda_body -> do
+            desugared_body <- desugarFunctionArgs arg_patterns lambda_body
+            lambda_id <- context.next_lambda_id
+            lambda_env <- createEnvironment lambda_id (Some env)
+            (context, lambda_name) <- createLambdaName context
+            parent_lambda_helper <- context.lambda_helper
+            context <- context { lambda_helper = Some (LambdaHelper (getLength arg_patterns) []) }
+            (context, _, final_lambda_body) <- processExpr context lambda_env desugared_body
+            lambda_helper <- Option.unwrap context.lambda_helper
+            context <- context { lambda_helper = parent_lambda_helper }
+            (context, args) <- lambda_helper.captured_values |> List.iter 
+                |> fold (\(context, args), c -> do
+                            HP.BindRef name _ <- c
+                            case getBinding env name of
+                                Some (bind_ref, level) -> do
+                                        (context, arg) <- if level != env.lambda_id
+                                            then do
+                                                (context, index) <- captureValue context bind_ref
+                                                (context, HE.Expr (HE.ArgRef index) location)
+                                            else (context, HE.Expr (HE.ValueRef c) location)
+                                        args <- args + [arg]
+                                        (context, args)
+                                None -> panic "captured variable not found in parent scope"
+                        ) (context, [])
+            (context, env, HE.StaticFunctionCall lambda_name args) // TODO
         SE.Paren expr -> return processExpr context env expr
         SE.FunctionCall receiver args -> do
             case receiver of
@@ -195,10 +251,10 @@ processExpr context env (SE.Expr expr location) = do
             (context, env, hir_rhs) <- processExpr context env rhs
             (context, env, processBinaryOp context op hir_lhs hir_rhs)
         SE.If cond true_branch false_branch -> do
-            (context, env, hir_cond) <- processExpr context env cond
-            (context, env, hir_true_branch) <- processExpr context env true_branch
-            (context, env, hir_false_branch) <- processExpr context env false_branch
-            (context, env, HE.If hir_cond hir_true_branch hir_false_branch) // TODO: env in branches!
+            (context, _, hir_cond) <- processExpr context env cond
+            (context, _, hir_true_branch) <- processExpr context env true_branch
+            (context, _, hir_false_branch) <- processExpr context env false_branch
+            (context, env, HE.If hir_cond hir_true_branch hir_false_branch)
         SE.Tuple items -> do
             (context, hir_items) <- processExprs context env items
             (context, env, HE.Tuple hir_items)
@@ -206,8 +262,14 @@ processExpr context env (SE.Expr expr location) = do
             (context, hir_items) <- processExprs context env items
             (context, env, HE.List hir_items)
         SE.Path p -> do
-            case getBinding env p of
-                Some bind_ref -> (context, env, HE.ValueRef bind_ref)
+            case getBinding env (getString p) of
+                Some (bind_ref, level) -> do
+                    (context, e) <- if level != env.lambda_id
+                        then do
+                            (context, index) <- captureValue context bind_ref
+                            (context, HE.ArgRef index)
+                        else (context, HE.ValueRef bind_ref)
+                    (context, env, e)
                 None -> case resolvePath context p of
                             Ok (context, result) -> case result of
                                     FunctionCall fn -> do
@@ -217,7 +279,7 @@ processExpr context env (SE.Expr expr location) = do
         SE.FloatLiteral lit -> (context, env, HE.FloatLiteral lit)
         SE.StringLiteral lit -> (context, env, HE.StringLiteral lit)
         SE.Do items -> do
-            block_env <- createEnvironment (Some env)
+            block_env <- createEnvironment env.lambda_id (Some env)
             (context, hir_items) <- processDo context block_env items
             (context, env, HE.Do hir_items)
         SE.Bind p rhs -> do
@@ -281,7 +343,20 @@ processExpr context env (SE.Expr expr location) = do
                 Err err -> do
                     context <- addErrorToContext context err
                     (context, env, HE.Tuple []) // TODO
-        SE.RecordUpdate _ _ -> (context, env, HE.Tuple []) // TODO
+        SE.RecordUpdate path updates -> do
+            (context, env, updates) <- updates 
+                |> List.iter 
+                |> fold (\(context, env, updates), (SE.RecordConstructionItem field_name expr) -> do
+                        (context, env, hir_expr) <- processExpr context env expr
+                        update <- HE.RecordConstructionItem field_name hir_expr
+                        updates <- updates + [update]
+                        (context, env, updates)
+                    ) (context, env, [])
+            case getBinding env (getString path) of
+                Some (bind_ref, _) -> (context, env, HE.RecordUpdate bind_ref updates)
+                None -> do
+                    context <- addErrorToContext context (NotAVariable path)
+                    (context, env, HE.Tuple [])
         SE.Return expr -> do
             (context, env, hir_expr) <- processExpr context env expr
             (context, env, HE.Return hir_expr)

@@ -28,19 +28,23 @@ isEmpty l = extern
 
 contains a :: (PartialEq a) => [a] -> a -> Bool
 contains l i = do
+    isSome (containsAtIndex l i)
+
+containsAtIndex a :: (PartialEq a) => [a] -> a -> Option Int
+containsAtIndex l i = do
     loop index <- 0 do
         if index >= getLength l
             then
-                return False
+                return None
             else
                 do
                 e <- atIndex l index
                 if e == i
                     then
-                        return True
+                        return Some index
                     else
                         index + 1
-    False
+    None
 
 join a :: (Show a) => [a] -> String -> String
 join items separator = do

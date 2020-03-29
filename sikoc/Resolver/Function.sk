@@ -80,7 +80,7 @@ processFunction state hir_program module_resolver type_resolver function type = 
     (state, hir_body) <- case desugared_body of
                 Some expr -> do
                     context <- createContext type_resolver state module_resolver hir_program
-                    env <- createEnvironment None
+                    env <- createEnvironment 0 None
                     (context, env, expr) <- processExpr context env expr
                     (context.state, Some expr)
                 None -> (state, None)
@@ -111,7 +111,7 @@ processFunctionMulti state hir_program module_resolver type_resolver function_in
             desugared_body <- desugarFunctionArgsMulti arg_cases
             (state, hir_body) <- do
                 context <- createContext type_resolver state module_resolver hir_program
-                env <- createEnvironment None
+                env <- createEnvironment 0 None
                 (context, env, expr) <- processExpr context env desugared_body
                 (context.state, Some expr)
             name <- (atIndex function_info.functions 0).name
