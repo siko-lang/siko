@@ -74,6 +74,9 @@ impl ExternFunction for ListPartialEq {
     ) -> Value {
         let l = environment.get_arg_by_index(0).core.as_list();
         let r = environment.get_arg_by_index(1).core.as_list();
+        if l.len() != r.len() {
+            return Interpreter::get_bool_value(false);
+        }
         for (a, b) in l.iter().zip(r.iter()) {
             let r = Interpreter::call_op_eq(a.clone(), b.clone());
             if !r.core.as_bool() {

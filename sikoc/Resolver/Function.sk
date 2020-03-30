@@ -97,6 +97,11 @@ processFunctionMulti state hir_program module_resolver type_resolver function_in
                         state <- addError state (ExternFnWithMultiDef f.name)
                         (state, True)
                     else (state, err)
+                (state, err) <- if isEmpty f.arguments
+                    then do
+                        state <- addError state (MultiDefNoArg f.name)
+                        (state, True)
+                    else (state, err)
                 (arg_count_map, _) <- alter (addArgCount f.name) (getLength (f.arguments)) arg_count_map
                 (state, arg_count_map, err)) (state, empty, False)
     (state, err) <- if getSize arg_count_map != 1

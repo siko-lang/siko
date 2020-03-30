@@ -4,6 +4,7 @@ import Siko.Syntax.Pattern as SP
 import Siko.HIR.Pattern as HP
 import Siko.HIR.Program as HPO
 import Siko.HIR.Data as HD
+import Siko.Syntax.Location
 import Siko.Resolver.Expr
 import Siko.Resolver.Environment
 import Siko.Resolver.Error
@@ -40,6 +41,23 @@ processPatterns context pattern_env env patterns = do
                 hir_patterns <- hir_patterns + [hir_pattern]
                 (context, pattern_env, env, hir_patterns)) (context, pattern_env, env, [])
     (context, pattern_env, env, hir_patterns)
+
+processOrPatterns :: Context -> Environment -> [SP.Pattern] -> Location -> (Context, Environment, [HP.Pattern])
+processOrPatterns context env patterns location = do
+    (context, pattern_envs, env, hir_patterns) <- patterns |> List.iter |> fold (\(context, pattern_envs, env, hir_patterns), pattern -> do
+                pattern_env <- createPatternEnvironment
+                (context, pattern_env, env, hir_pattern) <- processPattern context pattern_env env pattern
+                context <- validatePatternEnv pattern_env context
+                hir_patterns <- hir_patterns + [hir_pattern]
+                pattern_envs <- pattern_envs + [pattern_env]
+                (context, pattern_envs, env, hir_patterns)) (context, [], env, [])
+    (_, full_match) <- pattern_envs |> List.iter |> map (\env -> getAllBindings env) |> fold (\(prev, result), l -> case prev of
+        Some p -> (Some l, l == p && result)
+        None -> (Some l, result)) (None, True)
+    context <- if not full_match
+        then addErrorToContext context (OrPatternMismatch location)
+        else context
+    (context, env, hir_patterns)
 
 processPattern :: Context -> PatternEnvironment -> Environment -> SP.Pattern -> (Context, PatternEnvironment, Environment, HP.Pattern)
 processPattern context pattern_env env (SP.Pattern pattern location) = do
@@ -128,5 +146,7 @@ processPattern context pattern_env env (SP.Pattern pattern location) = do
                         _ -> unreachable
                 Err context -> do
                     (context, pattern_env, env, HP.Tuple [])
-        SP.Or _ -> (context, pattern_env, env, HP.Tuple [])  // TODO
+        SP.Or patterns -> do
+            (context, env, hir_patterns) <- processOrPatterns context env patterns location
+            (context, pattern_env, env, HP.Or hir_patterns)
     (context, pattern_env, env, HP.Pattern hir_pattern location)

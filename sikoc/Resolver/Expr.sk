@@ -1,5 +1,6 @@
 module Siko.Resolver.Expr where
 
+import Siko.Constants
 import Siko.Syntax.Ident
 import Siko.Syntax.Expr as SE
 import Siko.Syntax.Pattern as SP
@@ -110,11 +111,21 @@ desugarFunctionArgsMulti arg_cases = do
     case_body <- createCaseBody first_patterns location
     SE.Expr (SE.CaseOf case_body cases) location
 
+validatePatternEnv :: PatternEnvironment -> Context -> Context
+validatePatternEnv pattern_env context = do
+    context <- pattern_env.bindings |> Map.iter
+                                   |> filter (\(name, positions) -> getLength positions != 1)
+                                   |> fold (\context, (name, positions) -> do
+                                      err <- BindNotUnique positions
+                                      addErrorToContext context err) context
+    context
+
 processCase :: Context -> Environment -> SE.Case -> (Context, HE.Case)
 processCase context env (SE.Case pattern body) = do
     pattern_env <- createPatternEnvironment
     block_env <- createEnvironment env.lambda_id (Some env)
     (context, pattern_env, block_env, p) <- processPattern context pattern_env block_env pattern
+    context <- validatePatternEnv pattern_env context
     (context, _, b) <- processExpr context block_env body
     (context, HE.Case p b)
 
@@ -285,6 +296,7 @@ processExpr context env (SE.Expr expr location) = do
         SE.Bind p rhs -> do
             pattern_env <- createPatternEnvironment
             (context, pattern_env, env, hir_p) <- processPattern context pattern_env env p
+            context <- validatePatternEnv pattern_env context
             (context, env, hir_rhs) <- processExpr context env rhs
             (context, env, HE.Bind hir_p hir_rhs)
         SE.FieldAccess field receiver -> do
@@ -368,8 +380,8 @@ processExpr context env (SE.Expr expr location) = do
             ok_body <- SE.Expr ok_body location
             err_body <- SE.Return (SE.Expr (SE.Path err) location)
             err_body <- SE.Expr err_body location
-            result_ok <- Ident "Result.Ok" location
-            result_err <- Ident "Result.Err" location
+            result_ok <- Ident getFullResultOkVariantName location
+            result_err <- Ident getFullResultErrVariantName location
             ok_bind <- SP.Binding ok
             ok_bind <- SP.Pattern ok_bind location
             err_bind <- SP.Binding err
