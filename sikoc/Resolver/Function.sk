@@ -9,6 +9,7 @@ import Siko.HIR.Function as HF
 import Siko.HIR.Program as HP
 import Siko.Resolver
 import Siko.Resolver.Module
+import Siko.Resolver.Import
 import Siko.Resolver.Error
 import Siko.HIR.Type as HT
 import Siko.Resolver.Expr
@@ -38,27 +39,9 @@ addFunctionSignature signature info = case info of
             Some info
         None -> Some (FunctionInfo [signature] [])
 
-processClassConstraint :: ResolverState -> TypeResolverState -> ModuleResolver -> SC.Constraint -> (ResolverState, TypeResolverState)
-processClassConstraint state type_resolver module_resolver c = do
-    (state, type_resolver) <- case resolveClass module_resolver c.class_name of
-        Ok class_name -> do
-            constraint <- HT.ClassConstraint class_name
-            type_arg <- getString c.argument
-            (success, type_resolver) <- addTypeArgumentConstraint type_resolver type_arg constraint
-            if success
-                then (state, type_resolver)
-                else do
-                    state <- addError state (UnknownTypeArg c.argument)
-                    (state, type_resolver)
-        Err err -> do
-            state <- addError state err
-            (state, type_resolver)
-    (state, type_resolver)
-
-processFunctionSignature :: ResolverState -> ModuleResolver -> SF.FunctionSignature -> (ResolverState, TypeResolverState, HT.Type)
-processFunctionSignature state module_resolver signature = do
-    type_arguments <- signature.type_arguments
-    type_resolver <- initTypeResolver module_resolver type_arguments
+processFunctionSignature :: ResolverState -> ModuleResolver -> TypeResolverState -> SF.FunctionSignature -> (ResolverState, TypeResolverState, HT.Type)
+processFunctionSignature state module_resolver type_resolver signature = do
+    type_resolver <- addTypeArguments type_resolver signature.type_arguments
     (state, type_resolver) <- signature.constraints |> List.iter |> fold (\(state, type_resolver), c ->
             processClassConstraint state type_resolver module_resolver c
         ) (state, type_resolver)
@@ -66,7 +49,7 @@ processFunctionSignature state module_resolver signature = do
     (state, type_args) <- processTypeArgs state type_resolver signature.type_arguments
     (state, type_resolver, type)
 
-processFunction :: ResolverState -> HP.Program -> ModuleResolver -> TypeResolverState -> SF.Function -> Option HT.Type -> (ResolverState, HP.Program)
+processFunction :: ResolverState -> HP.Program -> ModuleResolver -> TypeResolverState -> SF.Function -> Option HT.Type -> (ResolverState, HF.Function)
 processFunction state hir_program module_resolver type_resolver function type = do
     (state, desugared_body) <- case function.body of
         Some body if isEmpty function.arguments -> (state, Some body)
@@ -84,12 +67,10 @@ processFunction state hir_program module_resolver type_resolver function type = 
                     (context, env, expr) <- processExpr context env expr
                     (context.state, Some expr)
                 None -> (state, None)
-    println "body {}" % hir_body
-    println "Error {}" % state.errors
-    function <- HF.Function (getString function.name) type hir_body
-    (state, hir_program)
+    function <- HF.Function (getString function.name) module_resolver.module_name type hir_body
+    (state, function)
 
-processFunctionMulti :: ResolverState -> HP.Program -> ModuleResolver -> TypeResolverState -> FunctionInfo -> Option HT.Type -> (ResolverState, HP.Program)
+processFunctionMulti :: ResolverState -> HP.Program -> ModuleResolver -> TypeResolverState -> FunctionInfo -> Option HT.Type -> (ResolverState, HF.Function)
 processFunctionMulti state hir_program module_resolver type_resolver function_info type = do
     (state, arg_count_map, err) <- function_info.functions |> List.iter |> fold (\(state, arg_count_map, err), f -> do
                 (state, err) <- if isNone f.body
@@ -110,6 +91,7 @@ processFunctionMulti state hir_program module_resolver type_resolver function_in
             state <- addError state (MultiDefArgCountMismatch names)
             (state, True)
         else (state, err)
+    name <- (atIndex function_info.functions 0).name
     if not err
         then do
             arg_cases <- function_info.functions |> List.iter |> map (\f -> (f.arguments, Option.unwrap f.body)) |> toList
@@ -119,42 +101,42 @@ processFunctionMulti state hir_program module_resolver type_resolver function_in
                 env <- createEnvironment 0 None
                 (context, env, expr) <- processExpr context env desugared_body
                 (context.state, Some expr)
-            name <- (atIndex function_info.functions 0).name
-            function <- HF.Function (getString name) type hir_body
-            (state, hir_program)
-        else (state, hir_program)
+            function <- HF.Function (getString name) module_resolver.module_name type hir_body
+            (state, function)
+        else do
+            function <- HF.Function (getString name) module_resolver.module_name type None
+            (state, function)
 
 addArgCount :: Ident -> Option [Ident] -> Option [Ident]
 addArgCount name names = case names of
     Some names -> Some (names + [name])
     None -> Some [name]
 
-processFunctionInfo :: ResolverState -> HP.Program -> ModuleResolver -> String -> FunctionInfo -> Bool -> (ResolverState, HP.Program)
-processFunctionInfo state hir_program module_resolver name function_info allowMissingImpl = do
+processFunctionInfo :: ResolverState -> HP.Program -> ModuleResolver -> TypeResolverState -> String -> FunctionInfo -> (ResolverState, HF.Function)
+processFunctionInfo state hir_program module_resolver type_resolver name function_info = do
     (state, type, type_resolver) <- case getLength function_info.signatures of
-        0 -> (state, None, initTypeResolver module_resolver [])
+        0 -> (state, None, type_resolver)
         1 -> do
-            (state, type_resolver, type) <- processFunctionSignature state module_resolver (atIndex function_info.signatures 0)
+
+            (state, type_resolver, type) <- processFunctionSignature state module_resolver type_resolver (atIndex function_info.signatures 0)
             (state, Some type, type_resolver)
         _ ->
             do
             signatures <- function_info.signatures |> List.iter |> map (\s -> s.name) |> toList
             state <- addError state (ConflictingSignatures signatures)
-            (state, None, initTypeResolver module_resolver [])
-    (state, hir_program) <- case getLength function_info.functions of
-        0 if not allowMissingImpl -> do
+            (state, None, type_resolver)
+    (state, function) <- case getLength function_info.functions of
+        0 -> do
             first_signature <- atIndex function_info.signatures 0
             sig_name <- first_signature.name
-            (addError state (MissingImpl sig_name), hir_program)
-        0 if allowMissingImpl -> (state, hir_program)
-        1 -> do
-            (state, hir_program) <- processFunction state hir_program module_resolver type_resolver (atIndex function_info.functions 0) type
-            (state, hir_program)
+            function <- HF.Function (getString sig_name) module_resolver.module_name type None
+            (state, function)
+        1 -> processFunction state hir_program module_resolver type_resolver (atIndex function_info.functions 0) type
         _ -> processFunctionMulti state hir_program module_resolver type_resolver function_info type
-    (state, hir_program)
+    (state, function)
 
-processFunctionsAndSignatures :: ResolverState -> HP.Program -> ModuleResolver -> [SF.Function] -> [SF.FunctionSignature] -> (ResolverState, HP.Program)
-processFunctionsAndSignatures state hir_program module_resolver functions signatures = do
+processFunctionsAndSignatures :: ResolverState -> HP.Program -> ModuleResolver -> TypeResolverState -> [SF.Function] -> [SF.FunctionSignature] -> (ResolverState, [HF.Function])
+processFunctionsAndSignatures state hir_program module_resolver type_resolver functions signatures = do
     function_info_map <- empty
     function_info_map <- functions |> List.iter |> fold (\function_info_map, function -> do
                                     (function_info_map, _) <- alter (addFunction function) (getString function.name) function_info_map
@@ -162,10 +144,13 @@ processFunctionsAndSignatures state hir_program module_resolver functions signat
     function_info_map <- signatures |> List.iter |> fold (\function_info_map, signature -> do
                                     (function_info_map, _) <- alter (addFunctionSignature signature) (getString signature.name) function_info_map
                                     function_info_map) function_info_map
-    (state, hir_program) <- function_info_map
+    (state, functions) <- function_info_map
         |> Map.iter
-        |> fold (\(state, hir_program), (name, function_info) -> processFunctionInfo state hir_program module_resolver name function_info False) (state, hir_program)
-    (state, hir_program)
+        |> fold (\(state, functions), (name, function_info) -> do
+            (state, function) <- processFunctionInfo state hir_program module_resolver type_resolver name function_info
+            functions <- functions + [function]
+            (state, functions)) (state, [])
+    (state, functions)
 
 processFunctions :: ResolverState -> HP.Program -> ModuleResolver -> SM.Module -> (ResolverState, HP.Program)
 processFunctions state hir_program module_resolver mod = do
@@ -173,5 +158,10 @@ processFunctions state hir_program module_resolver mod = do
                                             SM.Function f -> (functions + [f], signatures)
                                             SM.FunctionSignature s -> (functions, signatures + [s])
                                             _ -> (functions, signatures)) ([], [])
-    (state, hir_program) <- processFunctionsAndSignatures state hir_program module_resolver functions signatures
+    type_resolver <- initTypeResolver module_resolver []
+    (state, functions) <- processFunctionsAndSignatures state hir_program module_resolver type_resolver functions signatures
+    hir_program <- functions |> List.iter |> fold (\hir_program, function -> do
+        qn <- fullyQualifiedName function.module_name function.name
+        f <- HP.Function function
+        HP.addItem hir_program qn f) hir_program
     (state, hir_program)

@@ -5,6 +5,14 @@ import Siko.HIR.Expr
 
 data Function = {
                     name :: String,
+                    module_name :: String,
                     type :: Option Type,
                     body :: Option Expr,
-                } deriving (Show)
+                }
+
+instance Show Function where
+    show f = do
+        ty <- case f.type of
+            Some t -> toString t
+            None -> "<unknown>"
+        "{}.{} - {} :: {}" % (f.module_name, f.name, ty, f.body)
