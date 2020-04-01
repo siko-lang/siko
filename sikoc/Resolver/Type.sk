@@ -99,6 +99,29 @@ addTypeArgumentConstraint state type_arg constraint = do
     state <- state { constraints = constraints }
     (True, state)
 
+updateTypeConstraints :: TypeResolverState -> Type -> Type
+updateTypeConstraints state type = case type of
+    TypeArg var constraints -> do
+        constraints <- Option.unwrap (get state.constraints var)
+        TypeArg var constraints
+    FixedTypeArg name var constraints -> do
+        constraints <- Option.unwrap (get state.constraints var)
+        FixedTypeArg name var constraints
+    Named qn items -> do
+        items <- items |> List.iter |> map (\t -> updateTypeConstraints state t) |> toList
+        Named qn items
+    Function from to -> do
+        from <- updateTypeConstraints state from
+        to <- updateTypeConstraints state to
+        Function from to
+    Never var -> Never var
+    Ref item -> do
+        item <- updateTypeConstraints state item
+        Ref item
+    Tuple items -> do
+        items <- items |> List.iter |> map (\t -> updateTypeConstraints state t) |> toList
+        Tuple items
+
 processArgs :: TypeResolverState -> ResolverState -> [ST.TypeSignature] -> (TypeResolverState, ResolverState, [Type])
 processArgs state resolver_state args = args |> List.iter |> fold (\(state, resolver_state, args), arg -> do
                         (state, resolver_state, arg) <- processTypeSignature state resolver_state arg
@@ -126,7 +149,8 @@ resolveTypeArg state resolver_state name = do
                         do
                         (state, var) <- getTypeVar state
                         (args, _) <- insert state.args n var
-                        state <- state { args  = args }
+                        (constraints, _) <- insert state.constraints var []
+                        state <- state { args  = args, constraints = constraints }
                         (state, resolver_state, var, [])
                     else
                         do

@@ -13,23 +13,7 @@ import Siko.Syntax.Module as SM
 import Siko.Syntax.TypeSignature as ST
 import Siko.Syntax.Class as SC
 import Siko.Syntax.Ident
-
-/*
-import Siko.Syntax.Function as SF
-
-import Siko.Syntax.Pattern as SP
-
-import Siko.HIR.Function as HF
-
-import Siko.Resolver.Import
-
-
-import Siko.Resolver.Expr
-import Siko.Resolver.Pattern
-import Siko.Resolver.Type
-import Siko.Resolver.Environment
 import Map
-*/
 
 processClassDependencies :: ResolverState -> ModuleResolver -> SC.Class -> String -> (ResolverState, [HP.FullyQualifiedName])
 processClassDependencies state module_resolver c type_arg = do
@@ -56,37 +40,56 @@ processClass state hir_program module_resolver c = do
     qn <- fullyQualifiedName module_name name
     ST.TypeSignature type location <- c.argument
     type_resolver <- createTypeResolverState module_resolver True
-    (state, type_resolver, class_constraints) <- case type of
+    (state, type_resolver, class_constraints, arg_type) <- case type of
         ST.TypeArg type_arg -> do
             type_arg_str <- getString type_arg
             self_constraint <- HT.ClassConstraint qn
-            (type_resolver, state, hir_type) <- processTypeSignature type_resolver state c.argument
+            type_resolver <- addTypeArgument type_resolver type_arg
             (_, type_resolver) <- addTypeArgumentConstraint type_resolver type_arg_str self_constraint
+            (type_resolver, state, arg_type) <- processTypeSignature type_resolver state c.argument
             (state, class_constraints) <- processClassDependencies state module_resolver c type_arg_str
-            (state, type_resolver, class_constraints)
+            (state, type_resolver, class_constraints, arg_type)
         _ -> do
             state <- addError state (InvalidClassArgument location)
-            (state, type_resolver, [])
+            (state, type_resolver, [], HT.Tuple [])
     type_resolver <- disableImplicitTypeArgs type_resolver
     (state, members) <- processFunctionsAndSignatures state hir_program module_resolver type_resolver c.member_functions c.member_function_type_signatures
-    println "Members: {}" % members
-    hir_class <- HC.Class name module_name class_constraints members
+    hir_class <- HC.Class name module_name arg_type class_constraints members
+    hir_program <- HP.addItem hir_program qn (HP.Class hir_class)
     (state, hir_program)
 
 processInstance :: ResolverState -> HP.Program -> ModuleResolver -> SC.Instance -> (ResolverState, HP.Program)
 processInstance state hir_program module_resolver i = do
+    (state, class_name) <- case resolveClass module_resolver i.class_name of
+        Ok class_name -> (state, class_name)
+        Err err -> (addError state err, fullyQualifiedName "" "")
     type_resolver <- createTypeResolverState module_resolver True
-    (type_resolver, state, hir_type) <- processTypeSignature type_resolver state i.type_signature
+    ST.TypeSignature type location <- i.type_signature
+    (state, type_resolver, hir_type) <- case type of
+        ST.TypeArg type_arg -> do
+            type_arg_str <- getString type_arg
+            self_constraint <- HT.ClassConstraint class_name
+            type_resolver <- addTypeArgument type_resolver type_arg
+            (_, type_resolver) <- addTypeArgumentConstraint type_resolver type_arg_str self_constraint
+            (type_resolver, state, hir_type) <- processTypeSignature type_resolver state i.type_signature
+            (state, type_resolver, hir_type)
+        _ -> do
+            (type_resolver, state, hir_type) <- processTypeSignature type_resolver state i.type_signature
+            state <- if getSize type_resolver.args > 1
+                then do
+                    args <- type_resolver.args |> Map.iter |> map (\(arg, _) -> arg) |> toList
+                    state <- addError state (MultiArgInstance args)
+                    state
+                else state
+            (state, type_resolver, hir_type)
     (state, type_resolver) <- i.constraints |> List.iter |> fold (\(state, type_resolver), c ->
             processClassConstraint state type_resolver module_resolver c
         ) (state, type_resolver)
+    hir_type <- updateTypeConstraints type_resolver hir_type
     type_resolver <- disableImplicitTypeArgs type_resolver
     (state, members) <- processFunctionsAndSignatures state hir_program module_resolver type_resolver i.member_functions i.member_function_type_signatures
-    println "class name {}" % i.class_name
-    (state, qn) <- case resolveClass module_resolver i.class_name of
-        Ok qn -> (state, qn)
-        Err err -> (addError state err, fullyQualifiedName "" "")
-    println "Members: {}" % members
+    hir_instance <- HC.Instance class_name hir_type members
+    hir_program <- HP.addInstance hir_program hir_instance
     (state, hir_program)
 
 processClassesAndInstances :: ResolverState -> HP.Program -> ModuleResolver -> SM.Module -> (ResolverState, HP.Program)

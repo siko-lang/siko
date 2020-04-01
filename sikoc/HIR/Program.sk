@@ -18,8 +18,15 @@ data Item = Function F.Function
             deriving (Show)
 
 data Program = {
-                  items :: Map FullyQualifiedName Item
+                  items :: Map FullyQualifiedName Item,
+                  instances :: [C.Instance],
                } deriving (Show)
+
+addInstance :: Program -> C.Instance -> Program
+addInstance program i = do
+    instances <- program.instances + [i]
+    program <- program { instances = instances }
+    program
 
 addItem :: Program -> FullyQualifiedName -> Item -> Program
 addItem program name item = do
