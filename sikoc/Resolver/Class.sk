@@ -13,6 +13,7 @@ import Siko.Syntax.Module as SM
 import Siko.Syntax.TypeSignature as ST
 import Siko.Syntax.Class as SC
 import Siko.Syntax.Ident
+import Siko.Syntax.Function
 import Map
 
 processClassDependencies :: ResolverState -> ModuleResolver -> SC.Class -> String -> (ResolverState, [HP.FullyQualifiedName])
@@ -48,6 +49,15 @@ processClass state hir_program module_resolver c = do
             (_, type_resolver) <- addTypeArgumentConstraint type_resolver type_arg_str self_constraint
             (type_resolver, state, arg_type) <- processTypeSignature type_resolver state c.argument
             (state, class_constraints) <- processClassDependencies state module_resolver c type_arg_str
+            state <- c.member_function_type_signatures |> List.iter |> fold (\state, s -> do
+                sig_type_args <- s.type_arguments |> List.iter |> map (\arg -> getString arg) |> toList
+                state <- if contains sig_type_args type_arg_str
+                    then state
+                    else do
+                        ST.TypeSignature _ location <- s.type_signature
+                        state <- addError state (UnusedClassArg type_arg location)
+                        state
+                state) state
             (state, type_resolver, class_constraints, arg_type)
         _ -> do
             state <- addError state (InvalidClassArgument location)
@@ -75,12 +85,13 @@ processInstance state hir_program module_resolver i = do
             (state, type_resolver, hir_type)
         _ -> do
             (type_resolver, state, hir_type) <- processTypeSignature type_resolver state i.type_signature
-            state <- if getSize type_resolver.args > 1
+            args <- type_resolver.args |> Map.iter |> map (\(arg, _) -> arg) |> toList
+            state <- if getLength args > 1
                 then do
-                    args <- type_resolver.args |> Map.iter |> map (\(arg, _) -> arg) |> toList
                     state <- addError state (MultiArgInstance args)
                     state
-                else state
+                else do
+                    state
             (state, type_resolver, hir_type)
     (state, type_resolver) <- i.constraints |> List.iter |> fold (\(state, type_resolver), c ->
             processClassConstraint state type_resolver module_resolver c
