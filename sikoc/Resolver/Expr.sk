@@ -289,6 +289,7 @@ processExpr context env (SE.Expr expr location) = do
         SE.IntegerLiteral lit -> (context, env, HE.IntegerLiteral lit)
         SE.FloatLiteral lit -> (context, env, HE.FloatLiteral lit)
         SE.StringLiteral lit -> (context, env, HE.StringLiteral lit)
+        SE.CharLiteral lit -> (context, env, HE.CharLiteral lit)
         SE.Do items -> do
             block_env <- createEnvironment env.lambda_id (Some env)
             (context, hir_items) <- processDo context block_env items
@@ -348,7 +349,7 @@ processExpr context env (SE.Expr expr location) = do
                                                 then addErrorToContext context (MultiInitFields multi_used)
                                                 else context
                                             (context, env, HE.Tuple [])
-                                _ -> unreachable
+                                _ -> panic "Resolved record is not a record"
                         _ -> do
                             context <- addErrorToContext context (NotARecord name)
                             (context, env, HE.Tuple [])

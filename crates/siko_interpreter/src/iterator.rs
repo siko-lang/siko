@@ -18,8 +18,8 @@ impl ExternFunction for Map {
         _: &NamedFunctionKind,
         ty: Type,
     ) -> Value {
-        let func = environment.get_arg_by_index(0);
-        let iterator = environment.get_arg_by_index(1);
+        let func = environment.get_arg_by_index(0).clone();
+        let iterator = environment.get_arg_by_index(1).clone();
         return Value::new(
             ValueCore::IteratorMap(Box::new(iterator), Box::new(func)),
             ty,
@@ -37,8 +37,8 @@ impl ExternFunction for Filter {
         _: &NamedFunctionKind,
         ty: Type,
     ) -> Value {
-        let func = environment.get_arg_by_index(0);
-        let iterator = environment.get_arg_by_index(1);
+        let func = environment.get_arg_by_index(0).clone();
+        let iterator = environment.get_arg_by_index(1).clone();
         return Value::new(
             ValueCore::IteratorFilter(Box::new(iterator), Box::new(func)),
             ty,
@@ -56,9 +56,9 @@ impl ExternFunction for Fold {
         _: &NamedFunctionKind,
         _: Type,
     ) -> Value {
-        let func = environment.get_arg_by_index(0);
-        let initial = environment.get_arg_by_index(1);
-        let iterator = environment.get_arg_by_index(2);
+        let func = environment.get_arg_by_index(0).clone();
+        let initial = environment.get_arg_by_index(1).clone();
+        let iterator = environment.get_arg_by_index(2).clone();
         let iterator = iterator.core.as_iterator();
         let value = iterator.fold(initial, move |acc, x| {
             Interpreter::call_func(func.clone(), vec![acc.clone(), x.clone()], None)

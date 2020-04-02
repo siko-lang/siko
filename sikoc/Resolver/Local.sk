@@ -19,7 +19,7 @@ getVariants adt =
                     _ -> False)
       |> fold (\variants, v -> case v of
                             T.TypeSignature (T.Variant v _) _ -> variants + [Variant (getString adt.name) (getString v)]
-                            _ -> unreachable) []
+                            _ -> panic "Variant is not a variant") []
 
 getMemberFunctions :: C.Class -> [Item]
 getMemberFunctions c =
@@ -33,7 +33,7 @@ processItem m_item = case m_item of
     M.Adt a -> [Adt (getString a.name)] + getVariants a
     M.Record r -> [Record (getString r.name)]
     M.Class c -> [Class (getString c.name)] + getMemberFunctions c
-    _ -> unreachable
+    _ -> panic "Unnamed item is exported"
 
 exportable :: M.Item -> Bool
 exportable m_item = case m_item of

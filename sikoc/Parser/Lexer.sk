@@ -15,7 +15,7 @@ data LexerState =
         errors :: [LexerError],
     }
 
-emptyState cs = LexerState cs 0 0 0 [] []
+emptyState cs = LexerState cs 0 0 1 [] []
 
 isDone :: LexerState -> Bool
 isDone state = state.index >= getLength state.chars
@@ -82,8 +82,9 @@ consumeSingle state token = do
 
 consumeString :: LexerState -> LexerState
 consumeString state = do
+    span <- startSpan state
     state <- step state
-    (state, (current, span)) <- loop (state, (current, span)) <- (state, ("", startSpan state))
+    (state, (current, span)) <- loop (state, (current, span)) <- (state, ("", span))
       do
         if not (isDone state)
             then
@@ -92,6 +93,7 @@ consumeString state = do
                     case c of
                         '"' -> do
                             state <- step state
+                            span <- updateSpan state span
                             break (state, (current, span))
                         '\\' -> do
                             state <- step state
@@ -100,6 +102,7 @@ consumeString state = do
                                 'n' -> Some '\n'
                                 't' -> Some '\t'
                                 'r' -> Some '\r'
+                                '\\' -> Some '\\'
                                 '"' -> Some '"'
                                 _ -> None
                             (current, state) <- case c of
@@ -119,6 +122,52 @@ consumeString state = do
             else
                 break (state, (current, span))
     addToken state (StringLiteral current) span
+
+consumeChar :: LexerState -> LexerState
+consumeChar state = do
+    span <- startSpan state
+    state <- step state
+    (state, (current, span)) <- loop (state, (current, span)) <- (state, ("", span))
+      do
+        if not (isDone state)
+            then
+                do
+                    c <- peek state
+                    case c of
+                        '\'' -> do
+                            state <- step state
+                            span <- updateSpan state span
+                            break (state, (current, span))
+                        '\\' -> do
+                            state <- step state
+                            c <- peek state
+                            c <- case c of
+                                'n' -> Some '\n'
+                                't' -> Some '\t'
+                                'r' -> Some '\r'
+                                '\\' -> Some '\\'
+                                '\'' -> Some '\''
+                                _ -> None
+                            (current, state) <- case c of
+                                Some c -> do
+                                    current <- current + "{}" % c
+                                    (current, state)
+                                None -> do
+                                    span <- startSpan state
+                                    state <- addError state (InvalidEscapeSequence span)
+                                    (current, state)
+                            span <- updateSpan state span
+                            (step state, (current, span))
+                        _  -> do
+                            current <- current + "{}" % c
+                            span <- updateSpan state span
+                            (step state, (current, span))
+            else
+                break (state, (current, span))
+    cs <- chars current
+    c <- atIndex cs 0
+    // TODO: check for invalid length
+    addToken state (CharLiteral c) span
 
 consumeIdentifier :: LexerState -> LexerState
 consumeIdentifier state = do
@@ -193,6 +242,9 @@ consumeOperator state = do
         "//" -> do
             (state, (comment, span)) <- consumeWhile state \c -> c != '\n'
             return state
+        "--" -> do
+            (state, (comment, span)) <- consumeWhile state \c -> c != '\n'
+            return state
         _ -> return addError state (InvalidOperator span)
     addToken state op span
 
@@ -210,6 +262,7 @@ lex input =
                         _ if isIdentifier c -> consumeIdentifier state
                         _ if isOperator c -> consumeOperator state
                         '"' -> consumeString state
+                        '\'' -> consumeChar state
                         '(' -> consumeSingle state LParen
                         ')' -> consumeSingle state RParen
                         '[' -> consumeSingle state LBracket

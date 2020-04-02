@@ -100,7 +100,7 @@ processPattern context pattern_env env (SP.Pattern pattern location) = do
                                         (context, pattern_env, env, HP.Tuple [])
                                 else
                                     (context, pattern_env, env, HP.Record qn hir_args)
-                        _ -> unreachable
+                        item -> panic "constructor name is not a variant or a record: {} {} {} " % (qn, location, item)
                 Err context -> do
                     (context, pattern_env, env, HP.Tuple [])
         SP.Guarded p e -> do
@@ -143,7 +143,7 @@ processPattern context pattern_env env (SP.Pattern pattern location) = do
                                         then addErrorToContext context (MultiUsedFields multi_used)
                                         else context
                                     (context, pattern_env, env, HP.Tuple [])
-                        _ -> unreachable
+                        _ -> panic "resolved record is not a record"
                 Err context -> do
                     (context, pattern_env, env, HP.Tuple [])
         SP.Or patterns -> do

@@ -60,7 +60,7 @@ impl<'a> Environment<'a> {
         }
     }
 
-    pub fn get_arg_by_index(&self, index: usize) -> Value {
-        return self.args[index].clone();
+    pub fn get_arg_by_index(&self, index: usize) -> &Value {
+        return &self.args[index];
     }
 }

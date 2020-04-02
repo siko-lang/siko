@@ -7,6 +7,7 @@ use siko_ir::unifier::Unifier;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::fmt;
+use std::rc::Rc;
 
 #[derive(Debug, Clone, Copy)]
 pub enum BuiltinCallable {
@@ -31,13 +32,13 @@ pub struct Callable {
 
 #[derive(Debug, Clone)]
 pub struct Value {
-    pub core: ValueCore,
+    pub core: Rc<ValueCore>,
     pub ty: Type,
 }
 
 impl Value {
     pub fn new(core: ValueCore, ty: Type) -> Value {
-        Value { core: core, ty: ty }
+        Value { core: Rc::new(core), ty: ty }
     }
 }
 
@@ -163,9 +164,9 @@ impl ValueCore {
         }
     }
 
-    pub fn as_list(&self) -> Vec<Value> {
+    pub fn as_list(&self) -> &Vec<Value> {
         match self {
-            ValueCore::List(l) => l.clone(),
+            ValueCore::List(l) => l,
             _ => unreachable!(),
         }
     }
@@ -213,7 +214,7 @@ impl ValueCore {
 
     pub fn as_iterator(&self) -> Box<dyn Iterator<Item = Value>> {
         match self {
-            ValueCore::Iterator(v) => match v.core.clone() {
+            ValueCore::Iterator(v) => match (*v.core).clone() {
                 ValueCore::List(v) => Box::new(v.into_iter()),
                 ValueCore::Map(v) => Box::new(v.into_iter().map(|(k, v)| {
                     Value::new(

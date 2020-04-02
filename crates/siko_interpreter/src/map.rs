@@ -10,6 +10,7 @@ use siko_ir::expr::ExprId;
 use siko_ir::function::NamedFunctionKind;
 use siko_ir::types::Type;
 use std::collections::BTreeMap;
+use std::rc::Rc;
 
 pub struct Empty {}
 
@@ -35,17 +36,17 @@ impl ExternFunction for Insert {
         _: &NamedFunctionKind,
         ty: Type,
     ) -> Value {
-        let mut first_arg = environment.get_arg_by_index(0);
+        let mut first_arg = environment.get_arg_by_index(0).clone();
         let mut map_type_args = first_arg.ty.get_type_args();
         let mut map = first_arg.core.as_map();
-        let key = environment.get_arg_by_index(1);
-        let value = environment.get_arg_by_index(2);
+        let key = environment.get_arg_by_index(1).clone();
+        let value = environment.get_arg_by_index(2).clone();
         let res = map.insert(key, value);
         let v = match res {
             Some(v) => create_some(v),
             None => create_none(map_type_args.remove(1)),
         };
-        first_arg.core = ValueCore::Map(map);
+        first_arg.core = Rc::new(ValueCore::Map(map));
         let tuple = Value::new(ValueCore::Tuple(vec![first_arg, v]), ty);
         return tuple;
     }
@@ -61,16 +62,16 @@ impl ExternFunction for Remove {
         _: &NamedFunctionKind,
         ty: Type,
     ) -> Value {
-        let mut first_arg = environment.get_arg_by_index(0);
+        let mut first_arg = environment.get_arg_by_index(0).clone();
         let mut map_type_args = first_arg.ty.get_type_args();
         let mut map = first_arg.core.as_map();
-        let key = environment.get_arg_by_index(1);
+        let key = environment.get_arg_by_index(1).clone();
         let res = map.remove(&key);
         let v = match res {
             Some(v) => create_some(v),
             None => create_none(map_type_args.remove(1)),
         };
-        first_arg.core = ValueCore::Map(map);
+        first_arg.core = Rc::new(ValueCore::Map(map));
         let tuple = Value::new(ValueCore::Tuple(vec![first_arg, v]), ty);
         return tuple;
     }
@@ -109,9 +110,9 @@ impl ExternFunction for Alter {
         _: &NamedFunctionKind,
         result_ty: Type,
     ) -> Value {
-        let func = environment.get_arg_by_index(0);
-        let key = environment.get_arg_by_index(1);
-        let map_arg = environment.get_arg_by_index(2);
+        let func = environment.get_arg_by_index(0).clone();
+        let key = environment.get_arg_by_index(1).clone();
+        let map_arg = environment.get_arg_by_index(2).clone();
         let map_ty = map_arg.ty.clone();
         let mut map_type_args = map_arg.ty.get_type_args();
         let value_type = map_type_args.remove(1);
@@ -192,7 +193,7 @@ impl ExternFunction for Iter {
         ty: Type,
     ) -> Value {
         let map = environment.get_arg_by_index(0);
-        return Value::new(ValueCore::Iterator(Box::new(map)), ty);
+        return Value::new(ValueCore::Iterator(Box::new(map.clone())), ty);
     }
 }
 

@@ -20,10 +20,11 @@ impl ExternFunction for Show {
         _: &NamedFunctionKind,
         ty: Type,
     ) -> Value {
-        let list = environment.get_arg_by_index(0).core.as_list();
+        let v = environment.get_arg_by_index(0);
+        let list = v.core.as_list();
         let mut subs = Vec::new();
         for item in list {
-            let s = Interpreter::call_show(item);
+            let s = Interpreter::call_show(item.clone());
             subs.push(s);
         }
         return Value::new(ValueCore::String(format!("[{}]", subs.join(", "))), ty);
@@ -41,7 +42,7 @@ impl ExternFunction for Iter {
         ty: Type,
     ) -> Value {
         let list = environment.get_arg_by_index(0);
-        return Value::new(ValueCore::Iterator(Box::new(list)), ty);
+        return Value::new(ValueCore::Iterator(Box::new(list.clone())), ty);
     }
 }
 
@@ -72,8 +73,10 @@ impl ExternFunction for ListPartialEq {
         _: &NamedFunctionKind,
         _: Type,
     ) -> Value {
-        let l = environment.get_arg_by_index(0).core.as_list();
-        let r = environment.get_arg_by_index(1).core.as_list();
+        let l = environment.get_arg_by_index(0);
+        let l = l.core.as_list();
+        let r = environment.get_arg_by_index(1);
+        let r = r.core.as_list();
         if l.len() != r.len() {
             return Interpreter::get_bool_value(false);
         }
@@ -97,8 +100,8 @@ impl ExternFunction for ListAdd {
         _: &NamedFunctionKind,
         ty: Type,
     ) -> Value {
-        let mut l = environment.get_arg_by_index(0).core.as_list();
-        let r = environment.get_arg_by_index(1).core.as_list();
+        let mut l = environment.get_arg_by_index(0).core.as_list().clone();
+        let r = environment.get_arg_by_index(1).core.as_list().clone();
         l.extend(r.into_iter());
         return Value::new(ValueCore::List(l), ty);
     }
@@ -189,7 +192,7 @@ impl ExternFunction for Tail {
         let list = environment.get_arg_by_index(0);
         let ty = list.ty.clone();
         let mut list_type_args = list.ty.get_type_args();
-        let mut list: Vec<_> = list.core.as_list();
+        let mut list: Vec<_> = list.core.as_list().clone();
         if list.is_empty() {
             return create_none(list_type_args.remove(0));
         } else {

@@ -64,6 +64,16 @@ processImport exported_items state i = case i of
             None -> do
                 state <- addError state (ModuleNotFound name)
                 (state, [])
+    Implicit module_name -> do
+        case get exported_items module_name of
+            Some exported_items -> do
+                imported_items <- exported_items
+                                   |> List.iter
+                                   |> map (importExportedItem None module_name)
+                                   |> fold (\total, items -> total + items) []
+                (state, imported_items)
+            None -> do
+                (state, [])
     ImportSpecific name filters alternative_name -> do
         module_name <- getString name
         case get exported_items module_name of

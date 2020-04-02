@@ -93,6 +93,9 @@ parseUnary state = do
                                     Ok (state, buildExpr (Formatter s [expr]) start_index state)
                 else
                     Ok (state, buildExpr (StringLiteral s) start_index state)
+        T.CharLiteral c -> do
+            state <- step state
+            Ok (state, buildExpr (CharLiteral c) start_index state)
         T.Sub -> do
             state <- step state
             (state, expr) <- try parseUnary state
@@ -234,7 +237,7 @@ createBinaryOpExpr left right matching_op = do
         Kind.Mul -> Mul
         Kind.Div -> Div
         Kind.PipeForward -> PipeForward
-        _ -> unreachable
+        _ -> panic "Unexpected binary op"
     BinaryOp op left right
 
 callNext :: ParserState -> Bool -> Int -> [[Kind.TokenKind]] -> Result (ParserState, Expr) (ParserState, ParserError)

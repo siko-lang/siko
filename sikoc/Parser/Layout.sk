@@ -42,27 +42,34 @@ advance state = do
 addError :: LayoutProcessorState -> LexerError -> LayoutProcessorState
 addError state error = state { errors = state.errors + [error] }
 
-processItem :: LayoutProcessorState -> Span -> LayoutProcessorState
+processItem :: LayoutProcessorState -> Span -> (LayoutProcessorState, Bool)
 processItem state firstSpan = do
-    state <- loop state <- state do
+    (state, _, end_of_block, _) <- loop (state, paren_level, end_of_block, first) <- (state, 0, False, True) do
       if not (isDone state)
         then
             do
                 token <- peek state
-                if token.span.start.offset <= firstSpan.start.offset
-                    then
-                        break state
+                if token.span.start.offset <= firstSpan.start.offset && not first
+                    then break (state, 0, token.span.start.offset < firstSpan.start.offset, False)
                     else
                         do
                             case token.token of
-                                KeywordDo | KeywordWhere | KeywordOf -> processBlock state
-                                KeywordModule -> break state
+                                KeywordDo | KeywordWhere | KeywordOf -> (processBlock state, paren_level, False, False)
+                                KeywordModule -> break (state, 0, True, False)
+                                LParen -> do
+                                    paren_level <- paren_level + 1
+                                    (advance state, paren_level, False, False)
+                                RParen -> do
+                                    paren_level <- paren_level - 1
+                                    if paren_level < 0
+                                        then break (state, 0, True, False)
+                                        else (advance state, paren_level, False, False)
                                 _ -> do
-                                    advance state
+                                    (advance state, paren_level, False, False)
         else
-            break state
+            break (state, 0, True, False)
     state <- addToken state (TokenInfo EndOfItem (lastSpan state))
-    state
+    (state, end_of_block)
 
 processBlock :: LayoutProcessorState -> LayoutProcessorState
 processBlock state = do
@@ -85,15 +92,16 @@ processBlock state = do
                                     break state
                                 else do
                                     case first.token of
-                                        KeywordDo | KeywordWhere -> do
+                                        KeywordDo | KeywordWhere | KeywordOf -> do
                                             state <- processBlock state
                                             state <- addToken state (TokenInfo EndOfItem (lastSpan state))
                                             state
                                         KeywordModule -> break state
                                         _ -> do
-                                            state <- advance state
-                                            state <- processItem state blockStartSpan
-                                            state
+                                            (state, end_of_block) <- processItem state blockStartSpan
+                                            if end_of_block
+                                                then break state
+                                                else state
                     else
                         break state
             state <- state

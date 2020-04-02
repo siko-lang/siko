@@ -101,7 +101,7 @@ impl Interpreter {
     }
 
     fn call(&self, callable_value: Value, args: Vec<Value>, expr_id: Option<ExprId>) -> ExprResult {
-        match callable_value.core {
+        match (*callable_value.core).clone() {
             ValueCore::Callable(mut callable) => {
                 let mut callable_func_ty = callable_value.ty;
                 callable.values.extend(args);
@@ -156,7 +156,7 @@ impl Interpreter {
                             }
                         };
                         if !rest.is_empty() {
-                            if let ValueCore::Callable(new_callable) = result.core {
+                            if let ValueCore::Callable(new_callable) = (*result.core).clone() {
                                 callable = new_callable;
                                 callable_func_ty = result.ty;
                                 callable.values.extend(rest);
@@ -186,7 +186,7 @@ impl Interpreter {
                 environment.add(*pattern_id, value.clone());
                 return true;
             }
-            Pattern::Tuple(ids) => match &value.core {
+            Pattern::Tuple(ids) => match &*value.core {
                 ValueCore::Tuple(vs) => {
                     for (index, id) in ids.iter().enumerate() {
                         let v = &vs[index];
@@ -200,7 +200,7 @@ impl Interpreter {
                     return false;
                 }
             },
-            Pattern::Record(p_type_id, p_ids) => match &value.core {
+            Pattern::Record(p_type_id, p_ids) => match &*value.core {
                 ValueCore::Record(type_id, vs) => {
                     if type_id == p_type_id {
                         for (index, p_id) in p_ids.iter().enumerate() {
@@ -217,7 +217,7 @@ impl Interpreter {
                     return false;
                 }
             },
-            Pattern::Variant(p_type_id, p_index, p_ids) => match &value.core {
+            Pattern::Variant(p_type_id, p_index, p_ids) => match &*value.core {
                 ValueCore::Variant(type_id, index, vs) => {
                     if type_id == p_type_id && index == p_index {
                         for (index, p_id) in p_ids.iter().enumerate() {
@@ -250,21 +250,21 @@ impl Interpreter {
                 return true;
             }
             Pattern::IntegerLiteral(p_v) => {
-                let r = match &value.core {
+                let r = match &*value.core {
                     ValueCore::Int(v) => p_v == v,
                     _ => false,
                 };
                 return r;
             }
             Pattern::CharLiteral(p_v) => {
-                let r = match &value.core {
+                let r = match &*value.core {
                     ValueCore::Char(v) => p_v == v,
                     _ => false,
                 };
                 return r;
             }
             Pattern::CharRange(start, end, kind) => {
-                let r = match &value.core {
+                let r = match &*value.core {
                     ValueCore::Char(v) => match kind {
                         RangeKind::Exclusive => {
                             let range = std::ops::Range { start, end };
@@ -280,7 +280,7 @@ impl Interpreter {
                 return r;
             }
             Pattern::StringLiteral(p_v) => {
-                let r = match &value.core {
+                let r = match &*value.core {
                     ValueCore::String(v) => p_v == v,
                     _ => false,
                 };
@@ -731,7 +731,7 @@ impl Interpreter {
                         return r;
                     }
                 };
-                if let ValueCore::Tuple(t) = &tuple_value.core {
+                if let ValueCore::Tuple(t) = &*tuple_value.core {
                     return ExprResult::Ok(t[*index].clone());
                 } else {
                     unreachable!()
@@ -767,7 +767,7 @@ impl Interpreter {
                         return r;
                     }
                 };
-                let (id, values) = if let ValueCore::Record(id, values) = &record.core {
+                let (id, values) = if let ValueCore::Record(id, values) = &*record.core {
                     (id, values)
                 } else {
                     unreachable!()
@@ -820,7 +820,7 @@ impl Interpreter {
                         return r;
                     }
                 };
-                if let ValueCore::Record(id, mut values) = value.core {
+                if let ValueCore::Record(id, mut values) = (*value.core).clone() {
                     for update in updates {
                         if id == update.record_id {
                             for item in &update.items {
@@ -951,8 +951,8 @@ impl Interpreter {
             BuiltinCallable::PartialEq => {
                 let lhs = environment.get_arg_by_index(0);
                 let rhs = environment.get_arg_by_index(1);
-                if let ValueCore::Variant(id1, index1, items1) = &lhs.core {
-                    if let ValueCore::Variant(id2, index2, items2) = &rhs.core {
+                if let ValueCore::Variant(id1, index1, items1) = &*lhs.core {
+                    if let ValueCore::Variant(id2, index2, items2) = &*rhs.core {
                         assert_eq!(id1, id2);
                         if index1 != index2 {
                             return Interpreter::get_bool_value(false);
@@ -969,8 +969,8 @@ impl Interpreter {
                         }
                     }
                 }
-                if let ValueCore::Record(id1, items1) = &lhs.core {
-                    if let ValueCore::Record(id2, items2) = &rhs.core {
+                if let ValueCore::Record(id1, items1) = &*lhs.core {
+                    if let ValueCore::Record(id2, items2) = &*rhs.core {
                         assert_eq!(id1, id2);
                         for (item1, item2) in items1.iter().zip(items2.iter()) {
                             let value =
@@ -988,8 +988,8 @@ impl Interpreter {
             BuiltinCallable::PartialOrd => {
                 let lhs = environment.get_arg_by_index(0);
                 let rhs = environment.get_arg_by_index(1);
-                if let ValueCore::Variant(id1, index1, items1) = &lhs.core {
-                    if let ValueCore::Variant(id2, index2, items2) = &rhs.core {
+                if let ValueCore::Variant(id1, index1, items1) = &*lhs.core {
+                    if let ValueCore::Variant(id2, index2, items2) = &*rhs.core {
                         assert_eq!(id1, id2);
                         if index1 < index2 {
                             return get_opt_ordering_value(Some(Ordering::Less));
@@ -1005,11 +1005,11 @@ impl Interpreter {
                                     .program
                                     .get_adt_by_name(ORDERING_MODULE_NAME, ORDERING_TYPE_NAME)
                                     .get_variant_index("Equal");
-                                if let ValueCore::Variant(_, index, items) = &value.core {
+                                if let ValueCore::Variant(_, index, items) = &*value.core {
                                     if *index == some_index {
                                         let ordering_value = &items[0];
                                         if let ValueCore::Variant(_, index, _) =
-                                            &ordering_value.core
+                                            &*ordering_value.core
                                         {
                                             if *index == equal_index {
                                                 continue;
@@ -1025,8 +1025,8 @@ impl Interpreter {
                         }
                     }
                 }
-                if let ValueCore::Record(id1, items1) = &lhs.core {
-                    if let ValueCore::Record(id2, items2) = &rhs.core {
+                if let ValueCore::Record(id1, items1) = &*lhs.core {
+                    if let ValueCore::Record(id2, items2) = &*rhs.core {
                         assert_eq!(id1, id2);
                         for (item1, item2) in items1.iter().zip(items2.iter()) {
                             let value =
@@ -1039,10 +1039,10 @@ impl Interpreter {
                                 .program
                                 .get_adt_by_name(ORDERING_MODULE_NAME, ORDERING_TYPE_NAME)
                                 .get_variant_index("Equal");
-                            if let ValueCore::Variant(_, index, items) = &value.core {
+                            if let ValueCore::Variant(_, index, items) = &*value.core {
                                 if *index == some_index {
                                     let ordering_value = &items[0];
-                                    if let ValueCore::Variant(_, index, _) = &ordering_value.core {
+                                    if let ValueCore::Variant(_, index, _) = &*ordering_value.core {
                                         if *index == equal_index {
                                             continue;
                                         }
@@ -1059,8 +1059,8 @@ impl Interpreter {
             BuiltinCallable::Ord => {
                 let lhs = environment.get_arg_by_index(0);
                 let rhs = environment.get_arg_by_index(1);
-                if let ValueCore::Variant(id1, index1, items1) = &lhs.core {
-                    if let ValueCore::Variant(id2, index2, items2) = &rhs.core {
+                if let ValueCore::Variant(id1, index1, items1) = &*lhs.core {
+                    if let ValueCore::Variant(id2, index2, items2) = &*rhs.core {
                         assert_eq!(id1, id2);
                         if index1 < index2 {
                             return get_ordering_value(Ordering::Less);
@@ -1071,7 +1071,7 @@ impl Interpreter {
                                     .program
                                     .get_adt_by_name(ORDERING_MODULE_NAME, ORDERING_TYPE_NAME)
                                     .get_variant_index("Equal");
-                                if let ValueCore::Variant(_, index, _) = &value.core {
+                                if let ValueCore::Variant(_, index, _) = &*value.core {
                                     if *index == equal_index {
                                         continue;
                                     }
@@ -1084,8 +1084,8 @@ impl Interpreter {
                         }
                     }
                 }
-                if let ValueCore::Record(id1, items1) = &lhs.core {
-                    if let ValueCore::Record(id2, items2) = &rhs.core {
+                if let ValueCore::Record(id1, items1) = &*lhs.core {
+                    if let ValueCore::Record(id2, items2) = &*rhs.core {
                         assert_eq!(id1, id2);
                         for (item1, item2) in items1.iter().zip(items2.iter()) {
                             let value = Interpreter::call_op_cmp(item1.clone(), item2.clone());
@@ -1093,7 +1093,7 @@ impl Interpreter {
                                 .program
                                 .get_adt_by_name(ORDERING_MODULE_NAME, ORDERING_TYPE_NAME)
                                 .get_variant_index("Equal");
-                            if let ValueCore::Variant(_, index, _) = &value.core {
+                            if let ValueCore::Variant(_, index, _) = &*value.core {
                                 if *index == equal_index {
                                     continue;
                                 }
@@ -1142,7 +1142,7 @@ impl Interpreter {
                 let variant = &adt.variants[info.index];
                 let mut values = Vec::new();
                 for index in 0..variant.items.len() {
-                    let v = environment.get_arg_by_index(index);
+                    let v = environment.get_arg_by_index(index).clone();
                     values.push(v);
                 }
                 return ExprResult::Ok(Value::new(
@@ -1154,7 +1154,7 @@ impl Interpreter {
                 let record = self.program.typedefs.get(&info.type_id).get_record();
                 let mut values = Vec::new();
                 for index in 0..record.fields.len() {
-                    let v = environment.get_arg_by_index(index);
+                    let v = environment.get_arg_by_index(index).clone();
                     values.push(v);
                 }
                 return ExprResult::Ok(Value::new(
