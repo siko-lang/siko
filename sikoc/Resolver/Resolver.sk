@@ -17,7 +17,7 @@ data ResolverState = {
 emptyState :: ResolverState
 emptyState = ResolverState []
 
-processProgram :: SP.Program -> Result HP.Program ResolverState
+processProgram :: SP.Program -> (HP.Program, [ResolverError])
 processProgram program = do
     state <- emptyState
     hir_program <- HP.Program empty []
@@ -31,5 +31,4 @@ processProgram program = do
     (state, hir_program) <- modules |> Map.iter |> fold (\(state, hir_program), (module_name, (mod, module_resolver)) -> do
                                     (state, hir_program) <- processClassesAndInstances state hir_program module_resolver mod
                                     (state, hir_program)) (state, hir_program)
-    println "Errors {}" % state.errors
-    Ok hir_program
+    (hir_program, state.errors)

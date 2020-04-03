@@ -4,33 +4,82 @@ import Siko.Parser.Lexer
 import Siko.Parser
 import Siko.Parser.Error
 import Siko.Syntax.Location
+import Siko.Syntax.Ident
 import Siko.Resolver
+import Siko.Resolver.Error
 import Hack
 
-printLexerErr :: LexerError -> String -> ()
-printLexerErr error source = do
-    println "Lex err {}" % error
-    case error of
-        UnsupportedCharacter (Span start end) -> do
-                                        lines <- split source "\n"
-                                        println lines
-                                        loop line <- start.line do
-                                            if line > end.line
-                                                then break line
-                                                else
-                                                    do
-                                                    l <- atIndex lines line
-                                                    println "[{}]" % l
-                                                    line + 1
-                                        ()
-        _ -> ()
+printSpan :: String -> Span -> ()
+printSpan msg span = println "{} at {}" % (msg, fmtSpan span)
+
+fmtSpan :: Span -> String
+fmtSpan span = "{}:{}" % (span.start.line, span.start.offset + 1)
+
+fmtLocation :: Location -> String
+fmtLocation location = "{}" % (fmtSpan location.span)
+
+fmtIdent :: Ident -> String
+fmtIdent (Ident s location) = "{} - ({})" % (s, fmtLocation location)
+
+fmtIdents :: [Ident] -> String
+fmtIdents idents = idents |> List.iter |> fold (\r, i -> do
+                                s <- fmtIdent i
+                                r <- "{} {}" % (r, s)
+                                r) ""
+
+printLexerError error = case error of
+    InvalidEscapeSequence span -> do
+        printSpan "InvalidEscapeSequence" span
+    UnsupportedCharacter span -> do
+        printSpan "UnsupportedCharacter" span
+    InvalidOperator span -> do
+        printSpan "InvalidOperator" span
+
+printParserError error = case error of
+    UnexpectedToken expected found span -> printSpan "Expected: {} found: {}" % (expected, found) span
+    InvalidTypeArgument span -> printSpan "InvalidTypeArgument" span
+
+printResolverError error = case error of
+    ModuleConflict name names -> println "ModuleConflict {}" % name
+    ModuleNotFound name -> println "ModuleNotFound {}" % (fmtIdent name)
+    UnknownType name -> println "UnknownType {}" % (fmtIdent name)
+    AmbiguousName name candidates -> println "AmbiguousName {} {}" % (fmtIdent name, candidates)
+    UnknownTypeArg name -> println "UnknownTypeArg {}" % (fmtIdent name)
+    InvalidVariant location -> println "InvalidVariant {}" % (fmtLocation location)
+    NotAClassName name -> println "NotAClassName {}" % (fmtIdent name)
+    UnusedTypeArg name -> println "UnusedTypeArg {}" % (fmtIdent name)
+    ConflictingSignatures names -> println "ConflictingSignatures {}" % (fmtIdents names)
+    MissingImpl name -> println "MissingImpl {}" % (fmtIdent name)
+    InvalidExternArg location -> println "InvalidExternArg {}" % (fmtLocation location)
+    ExternFnWithMultiDef name -> println "ExternFnWithMultiDef {}" % (fmtIdent name)
+    MultiDefArgCountMismatch counts -> println "MultiDefArgCountMismatch {}" % counts
+    MultiDefNoArg name -> println "MultiDefNoArg {}" % (fmtIdent name)
+    NotAFunction name -> println "NotAFunction {}" % (fmtIdent name)
+    UnknownFunction name -> println "UnknownFunction {}" % (fmtIdent name)
+    NotARecord name -> println "NotARecord {}" % (fmtIdent name)
+    NotAVariant name -> println "NotAVariant {}" % (fmtIdent name)
+    InvalidVariantArgCountInPattern name e f -> println "InvalidVariantArgCountInPattern {} {} {}" % (fmtIdent name, e, f)
+    InvalidRecordArgCountInPattern name e f -> println "InvalidRecordArgCountInPattern {} {} {}" % (fmtIdent name, e, f)
+    UninitalizedFields names -> println "UninitalizedFields {}" % names
+    MultiInitFields names -> println "MultiInitFields {}" % (fmtIdents names)
+    UnknownInitFields names -> println "UnknownInitFields {}" % (fmtIdents names)
+    UnusedFields names -> println "UnusedFields {}" % names
+    MultiUsedFields names -> println "MultiUsedFields {}" % (fmtIdents names)
+    UnknownUsedFields names -> println "UnknownUsedFields {}" % (fmtIdents names)
+    NotAVariable name -> println "NotAVariable {}" % (fmtIdent name)
+    BindNotUnique names -> println "BindNotUnique {}" % (fmtIdents names)
+    OrPatternMismatch location -> println "OrPatternMismatch {}" % (fmtLocation location)
+    InvalidClassArgument location -> println "InvalidClassArgument {}" % (fmtLocation location)
+    UnusedClassArg name location -> println "UnusedClassArg {} {}" % (fmtIdent name, fmtLocation location)
 
 main = do
     println "Reading input"
     source <- readTextFile "sikoc.sk"
     println "Parsing.."
     (program, lexer_errors, parser_errors) <- parse source
-    lexer_errors |> List.iter |> forEach \error -> printLexerErr error source
+    lexer_errors |> List.iter |> forEach \error -> printLexerError error
+    parser_errors |> List.iter |> forEach \error -> printParserError error
     println "Resolving names.."
-    processProgram program
+    (hir_program, resolver_errors) <- processProgram program
+    resolver_errors |> List.iter |> forEach \error -> printResolverError error
     ()

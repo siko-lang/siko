@@ -205,22 +205,11 @@ processTokens state = do
                 break state
     (Program state.modules, state.errors)
 
-printErr err = do
-            case err of
-            GeneralError -> println "General error"
-            UnexpectedToken expected found span -> println "Expected {}, found {} at {}" % (expected, found, span)
-            InvalidTypeArgument _ -> println "Invalid Type Argument"
-            Context err msg -> do
-                println msg
-                printErr err
-
 parse :: String -> (Program, [LexerError], [ParserError])
 parse input =
     do
         (tokens, lexer_errors) <- lex input
         //println "Tokens: {}" % tokens
-        println "Errors: {}" % lexer_errors
         state <- initState (FileId 0) tokens
         (program, parser_errors) <- processTokens state
-        parser_errors |> List.iter |> forEach \x -> printErr x
         (program, lexer_errors, parser_errors)
