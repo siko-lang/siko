@@ -38,7 +38,7 @@ processClass :: ResolverState -> HP.Program -> ModuleResolver -> SC.Class -> (Re
 processClass state hir_program module_resolver c = do
     module_name <- module_resolver.module_name
     name <- getString c.name
-    qn <- fullyQualifiedName module_name name
+    qn <- HP.FullPath module_name name
     ST.TypeSignature type location <- c.argument
     type_resolver <- createTypeResolverState module_resolver True
     (state, type_resolver, class_constraints, arg_type) <- case type of
@@ -72,7 +72,7 @@ processInstance :: ResolverState -> HP.Program -> ModuleResolver -> SC.Instance 
 processInstance state hir_program module_resolver i = do
     (state, class_name) <- case resolveClass module_resolver i.class_name of
         Ok class_name -> (state, class_name)
-        Err err -> (addError state err, fullyQualifiedName "" "")
+        Err err -> (addError state err, HP.FullPath "" "")
     type_resolver <- createTypeResolverState module_resolver True
     ST.TypeSignature type location <- i.type_signature
     (state, type_resolver, hir_type) <- case type of
@@ -85,13 +85,6 @@ processInstance state hir_program module_resolver i = do
             (state, type_resolver, hir_type)
         _ -> do
             (type_resolver, state, hir_type) <- processTypeSignature type_resolver state i.type_signature
-            args <- type_resolver.args |> Map.iter |> map (\(arg, _) -> arg) |> toList
-            state <- if getLength args > 1
-                then do
-                    state <- addError state (MultiArgInstance args)
-                    state
-                else do
-                    state
             (state, type_resolver, hir_type)
     (state, type_resolver) <- i.constraints |> List.iter |> fold (\(state, type_resolver), c ->
             processClassConstraint state type_resolver module_resolver c

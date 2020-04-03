@@ -67,7 +67,7 @@ impl VariantCache {
     }
 }
 
-enum ExprResult {
+pub enum ExprResult {
     Ok(Value),
     Return(Value),
     Continue(Value),
@@ -150,6 +150,8 @@ impl Interpreter {
                                     ExprResult::Ok(v) => v,
                                     ExprResult::Return(v) => v,
                                     r => {
+                                        let f = self.program.functions.get(id);
+                                        println!("Failed in {}", f.info);
                                         return r;
                                     }
                                 }
@@ -379,15 +381,11 @@ impl Interpreter {
         })
     }
 
-    pub fn call_func(callable: Value, args: Vec<Value>, expr_id: Option<ExprId>) -> Value {
+    pub fn call_func(callable: Value, args: Vec<Value>, expr_id: Option<ExprId>) -> ExprResult {
         INTERPRETER_CONTEXT.with(|i| {
             let b = i.borrow();
             let i = b.as_ref().expect("Interpreter not set");
-            if let ExprResult::Ok(v) = i.call(callable, args, expr_id) {
-                v
-            } else {
-                unreachable!()
-            }
+            i.call(callable, args, expr_id)
         })
     }
 

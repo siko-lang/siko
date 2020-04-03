@@ -1,5 +1,6 @@
 use crate::environment::Environment;
 use crate::extern_function::ExternFunction;
+use crate::interpreter::ExprResult;
 use crate::interpreter::Interpreter;
 use crate::util::create_none;
 use crate::util::create_some;
@@ -120,7 +121,12 @@ impl ExternFunction for Alter {
         match map.get(&key) {
             Some(v) => {
                 let item = create_some(v.clone());
-                let new = Interpreter::call_func(func, vec![item], None);
+                let new = if let ExprResult::Ok(v) = Interpreter::call_func(func, vec![item], None)
+                {
+                    v
+                } else {
+                    unreachable!()
+                };
                 match new.core.as_option(0, 1) {
                     Some(v) => {
                         let res = map.insert(key, v);
@@ -142,7 +148,12 @@ impl ExternFunction for Alter {
             }
             None => {
                 let empty = create_none(value_type.clone());
-                let new = Interpreter::call_func(func, vec![empty], None);
+                let new = if let ExprResult::Ok(v) = Interpreter::call_func(func, vec![empty], None)
+                {
+                    v
+                } else {
+                    unreachable!()
+                };
                 match new.core.as_option(0, 1) {
                     Some(v) => {
                         map.insert(key, v);

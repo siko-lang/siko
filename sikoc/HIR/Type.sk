@@ -42,14 +42,14 @@ addConstraint n constraints constraint_map = do
 
 collectConstraints :: [Constraint] -> [String]
 collectConstraints constraints = constraints |> List.iter |> map (\c -> case c of
-                ClassConstraint (HP.FullyQualifiedName s) -> s) |> toList
+                ClassConstraint s -> HP.getResolvableName s) |> toList
 
 collect :: Type -> Map String [Constraint] -> ([String], Map String [Constraint])
 collect type constraint_map = case type of
     TypeArg (TypeVar v)  constraints -> (collectConstraints constraints, addConstraint ("t{}" % v) constraints constraint_map)
     FixedTypeArg n _ constraints -> (collectConstraints constraints, addConstraint n constraints constraint_map)
     Named n args -> do
-                HP.FullyQualifiedName n <- n
+                n <- HP.getResolvableName n
                 args |> List.iter |> fold (\(all, constraint_map), arg -> do
                 (args, constraint_map) <- collect arg constraint_map
                 (all + args, constraint_map)) ([n], constraint_map)
@@ -83,7 +83,7 @@ toString type = do
     conflicting_names <- conflicting_names |> Map.iter |> map (\(short, names) -> if getLength names > 1 then (short, True) else (short, False)) |> toMap
     constraints <- constraint_map |> Map.iter |> map (\(name, constraints) -> do
                                 constraints <- constraints |> List.iter |> map (\c -> case c of
-                                                    ClassConstraint (HP.FullyQualifiedName s) -> "{} {}" % (getNiceName s conflicting_names, name)) |> toList
+                                                    ClassConstraint s -> "{} {}" % (getNiceName (HP.getResolvableName s) conflicting_names, name)) |> toList
                                 constraints) |> fold (\all, constraints -> all + constraints) []
     string_type <- convertType type conflicting_names
     if isEmpty constraints
@@ -104,7 +104,7 @@ convertType type names = case type of
         "t{}" % v
     FixedTypeArg n _ _ -> n
     Named n args -> do
-        HP.FullyQualifiedName n <- n
+        n <- HP.getResolvableName n
         if n == getFullListTypeName
             then "[{}]" % (convertType (atIndex args 0) names)
             else if isEmpty args

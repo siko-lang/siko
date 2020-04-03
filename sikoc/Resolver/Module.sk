@@ -13,7 +13,10 @@ import Siko.Resolver
 import Siko.HIR.Program as HP
 import Map
 
-data ResolvedItem = ResolvedItem HP.FullyQualifiedName Item
+data ResolvedItem = ResolvedItem HP.FullyQualifiedName Item Bool
+
+instance PartialEq ResolvedItem where
+    opEq (ResolvedItem qn1 _ _) (ResolvedItem qn2 _ _) = qn1 == qn2
 
 data ModuleResolver = {
                         module_name :: String,
@@ -22,14 +25,18 @@ data ModuleResolver = {
                       }
 
 getCandidates :: [ResolvedItem] -> [String]
-getCandidates resolved_items = resolved_items |> List.iter |> map (\ResolvedItem (HP.FullyQualifiedName name) _-> name) |> toList
+getCandidates resolved_items = resolved_items |> List.iter |> map (\(ResolvedItem name _ _) -> HP.getResolvableName name) |> toList
 
 resolveItem :: Map String [ResolvedItem] -> (Ident -> ResolverError) -> Ident -> Result ResolvedItem ResolverError
 resolveItem items err name = do
     n <- getString name
     case get items n of
         Some resolved_items -> if getLength resolved_items > 1
-                        then Err (AmbiguousType name (getCandidates resolved_items))
+                        then do
+                                resolved_items <- resolved_items |> List.iter |> filter (\(ResolvedItem _ _ implicit) -> not implicit) |> toList
+                                if getLength resolved_items > 1
+                                        then Err (AmbiguousName name (getCandidates resolved_items))
+                                        else Ok (atIndex resolved_items 0)
                         else Ok (atIndex resolved_items 0)
         None -> Err (err name)
 
@@ -53,13 +60,16 @@ getModuleImports mod = mod.items |> List.iter |> map processImport |> fold (\tot
 getImports :: Program -> Map String [Import]
 getImports program = do
         imports <- program.modules |> List.iter |> fold (\imports, mod -> do
-                                                         (imports, _) <- insert imports (getString mod.name) (getModuleImports mod)
+                                                         module_name <- getString mod.name
+                                                         (imports, _) <- insert imports module_name (getModuleImports mod)
                                                          imports) empty
         imports
 
 add :: ResolvedItem -> Option [ResolvedItem] -> Option [ResolvedItem]
-add resolved_item type_names = case type_names of
-        Some type_names -> Some (type_names + [resolved_item])
+add resolved_item items = case items of
+        Some items -> if contains items resolved_item
+                then Some items
+                else Some (items + [resolved_item])
         None -> Some [resolved_item]
 
 addTypeName :: ModuleResolver -> ItemRef -> ResolvedItem -> ModuleResolver
@@ -77,26 +87,26 @@ addTermName module_resolver item_ref resolved_item = do
         module_resolver
 
 addImportedItem :: ModuleResolver -> ImportedItem -> ModuleResolver
-addImportedItem module_resolver (ImportedItem visible_name source_module item) = case item of
+addImportedItem module_resolver (ImportedItem visible_name source_module item implicit) = case item of
         Adt name -> do
-                resolved_item <- ResolvedItem (fullyQualifiedName source_module name) item
+                resolved_item <- ResolvedItem (HP.FullPath source_module name) item implicit
                 addTypeName module_resolver visible_name resolved_item
-        Variant _ name -> do
-                resolved_item <- ResolvedItem (fullyQualifiedName source_module name) item
+        Variant adt name -> do
+                resolved_item <- ResolvedItem (HP.FullPathWithVariant source_module adt name) item implicit
                 addTermName module_resolver visible_name resolved_item
         Record name -> do
-                resolved_item <- ResolvedItem (fullyQualifiedName source_module name) item
+                resolved_item <- ResolvedItem (HP.FullPath source_module name) item implicit
                 module_resolver <- addTypeName module_resolver visible_name resolved_item
                 module_resolver <- addTermName module_resolver visible_name resolved_item
                 module_resolver
         Class name -> do
-                resolved_item <- ResolvedItem (fullyQualifiedName source_module name) item
+                resolved_item <- ResolvedItem (HP.FullPath source_module name) item implicit
                 addTypeName module_resolver visible_name resolved_item
         ClassMember _ name -> do
-                resolved_item <- ResolvedItem (fullyQualifiedName source_module name) item
+                resolved_item <- ResolvedItem (HP.FullPath source_module name) item implicit
                 addTermName module_resolver visible_name resolved_item
         Function name -> do
-                resolved_item <- ResolvedItem (fullyQualifiedName source_module name) item
+                resolved_item <- ResolvedItem (HP.FullPath source_module name) item implicit
                 addTermName module_resolver visible_name resolved_item
 
 createModuleResolver :: String -> [ImportedItem] -> ModuleResolver

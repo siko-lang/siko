@@ -1,5 +1,6 @@
 use crate::environment::Environment;
 use crate::extern_function::ExternFunction;
+use crate::interpreter::ExprResult;
 use crate::interpreter::Interpreter;
 use crate::value::Value;
 use crate::value::ValueCore;
@@ -61,7 +62,13 @@ impl ExternFunction for Fold {
         let iterator = environment.get_arg_by_index(2).clone();
         let iterator = iterator.core.as_iterator();
         let value = iterator.fold(initial, move |acc, x| {
-            Interpreter::call_func(func.clone(), vec![acc.clone(), x.clone()], None)
+            if let ExprResult::Ok(v) =
+                Interpreter::call_func(func.clone(), vec![acc.clone(), x.clone()], None)
+            {
+                v
+            } else {
+                unreachable!()
+            }
         });
         value
     }

@@ -41,14 +41,14 @@ processClassConstraint state type_resolver module_resolver c = do
 
 resolveClass :: ModuleResolver -> Ident -> Result HP.FullyQualifiedName ResolverError
 resolveClass module_resolver name = do
-    ResolvedItem n item <- try resolveItem module_resolver.type_names UnknownType name
+    ResolvedItem n item _ <- try resolveItem module_resolver.type_names UnknownType name
     case item of
         I.Class _ -> Ok (n)
         _ -> Err (NotAClassName name)
 
 resolveTypeName :: TypeResolverState -> Ident -> Result HP.FullyQualifiedName ResolverError
 resolveTypeName state name = do
-    ResolvedItem name _ <- try resolveItem state.module_resolver.type_names UnknownType name
+    ResolvedItem name _ _ <- try resolveItem state.module_resolver.type_names UnknownType name
     Ok name
 
 createTypeResolverState :: ModuleResolver -> Bool -> TypeResolverState
@@ -61,13 +61,15 @@ initTypeResolver module_resolver type_arguments = do
     type_resolver <- addTypeArguments type_resolver type_arguments
     type_resolver
 
-processTypeArgs :: ResolverState -> TypeResolverState -> [Ident] -> (ResolverState, [Type])
-processTypeArgs resolver_state state type_arguments = do
-    resolver_state <- type_arguments |> List.iter |> fold (\resolver_state, arg -> do
-        n <- getString arg
-        if not (contains state.used_type_args n)
-            then addError resolver_state (UnusedTypeArg arg)
-            else resolver_state) resolver_state
+processTypeArgs :: ResolverState -> TypeResolverState -> [Ident] -> Bool -> (ResolverState, [Type])
+processTypeArgs resolver_state state type_arguments do_check = do
+    resolver_state <- if do_check
+        then type_arguments |> List.iter |> fold (\resolver_state, arg -> do
+                n <- getString arg
+                if not (contains state.used_type_args n)
+                    then addError resolver_state (UnusedTypeArg arg)
+                    else resolver_state) resolver_state
+        else resolver_state
     type_args <- state.args |> Map.iter |> map (\(n, var) -> FixedTypeArg n var []) |> toList
     (resolver_state, type_args)
 
@@ -102,10 +104,14 @@ addTypeArgumentConstraint state type_arg constraint = do
 updateTypeConstraints :: TypeResolverState -> Type -> Type
 updateTypeConstraints state type = case type of
     TypeArg var constraints -> do
-        constraints <- Option.unwrap (get state.constraints var)
+        constraints <- case get state.constraints var of
+            Some constraints -> constraints
+            None -> constraints
         TypeArg var constraints
     FixedTypeArg name var constraints -> do
-        constraints <- Option.unwrap (get state.constraints var)
+        constraints <- case get state.constraints var of
+            Some constraints -> constraints
+            None -> constraints
         FixedTypeArg name var constraints
     Named qn items -> do
         items <- items |> List.iter |> map (\t -> updateTypeConstraints state t) |> toList
@@ -175,7 +181,7 @@ processTypeSignature state resolver_state (ST.TypeSignature type_signature locat
                 (state, resolver_state, TypeArg var [])
     ST.Variant _ _ -> panic "processTypeSignature called on a variant type"
     ST.List arg -> do
-        name <- HP.FullyQualifiedName getFullListTypeName
+        name <- HP.FullPath getListModuleName getListTypeName
         (state, resolver_state, arg) <- processTypeSignature state resolver_state arg
         (state, resolver_state, Named name [arg])
     ST.Tuple args -> do

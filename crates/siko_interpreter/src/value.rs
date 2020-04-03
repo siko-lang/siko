@@ -1,3 +1,4 @@
+use crate::interpreter::ExprResult;
 use crate::interpreter::Interpreter;
 use siko_ir::data::TypeDefId;
 use siko_ir::function::FunctionId;
@@ -38,7 +39,10 @@ pub struct Value {
 
 impl Value {
     pub fn new(core: ValueCore, ty: Type) -> Value {
-        Value { core: Rc::new(core), ty: ty }
+        Value {
+            core: Rc::new(core),
+            ty: ty,
+        }
     }
 }
 
@@ -227,17 +231,27 @@ impl ValueCore {
             ValueCore::IteratorMap(v, func) => {
                 let func = *func.clone();
                 let iterator = v.core.as_iterator();
-                let iterator =
-                    iterator.map(move |x| Interpreter::call_func(func.clone(), vec![x], None));
+                let iterator = iterator.map(move |x| {
+                    if let ExprResult::Ok(v) = Interpreter::call_func(func.clone(), vec![x], None) {
+                        v
+                    } else {
+                        unreachable!()
+                    }
+                });
+
                 Box::new(iterator)
             }
             ValueCore::IteratorFilter(v, func) => {
                 let func = *func.clone();
                 let iterator = v.core.as_iterator();
                 let iterator = iterator.filter(move |x| {
-                    Interpreter::call_func(func.clone(), vec![x.clone()], None)
-                        .core
-                        .as_bool()
+                    if let ExprResult::Ok(v) =
+                        Interpreter::call_func(func.clone(), vec![x.clone()], None)
+                    {
+                        v.core.as_bool()
+                    } else {
+                        unreachable!()
+                    }
                 });
                 Box::new(iterator)
             }

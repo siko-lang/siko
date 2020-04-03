@@ -5,10 +5,22 @@ import Siko.HIR.Data as D
 import Siko.HIR.Class as C
 import Map
 
-data FullyQualifiedName = FullyQualifiedName String deriving (PartialEq, Eq, PartialOrd, Ord)
+data FullyQualifiedName = FullPath String String
+                          | FullPathWithVariant String String String
+                          | FullPathWithLambda String String Int
+                          deriving (PartialEq, Eq, PartialOrd, Ord)
 
 instance Show FullyQualifiedName where
-    show (FullyQualifiedName s) = s
+    show f = case f of
+        FullPath m n -> "{}.{}" % (m, n)
+        FullPathWithVariant m n v -> "{}.{}/{}" % (m, n, v)
+        FullPathWithLambda m n i -> "{}.{}/{}" % (m, n, i)
+
+getResolvableName :: FullyQualifiedName -> String
+getResolvableName f = case f of
+        FullPath m n -> "{}.{}" % (m, n)
+        FullPathWithVariant m n v -> "{}.{}" % (m, v)
+        FullPathWithLambda m n i -> panic "getResolvableName called for a lambda"
 
 data Item = Function F.Function
             | Adt D.AbstractDataType

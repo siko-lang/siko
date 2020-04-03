@@ -23,6 +23,7 @@ data LambdaHelper = { arg_offset :: Int,
                     } deriving (Show)
 
 data Context = {
+                    function_name :: String,
                     type_resolver :: TypeResolverState,
                     state :: ResolverState,
                     module_resolver :: ModuleResolver,
@@ -32,8 +33,9 @@ data Context = {
                     lambda_helper :: Option LambdaHelper,
                }
 
-createContext :: TypeResolverState -> ResolverState -> ModuleResolver -> HPO.Program -> Context
-createContext type_resolver state module_resolver program = Context {
+createContext :: String -> TypeResolverState -> ResolverState -> ModuleResolver -> HPO.Program -> Context
+createContext function_name type_resolver state module_resolver program = Context {
+    function_name = function_name,
     type_resolver = type_resolver,
     state = state,
     module_resolver = module_resolver,
@@ -52,7 +54,7 @@ createLambdaName :: Context -> (Context, HPO.FullyQualifiedName)
 createLambdaName context = do
     id <- context.next_lambda_id
     context <- context { next_lambda_id = id + 1 }
-    (context,  HPO.FullyQualifiedName "lambda_{}" % id)
+    (context,  HPO.FullPathWithLambda context.module_resolver.module_name context.function_name id)
 
 captureValue :: Context -> HP.BindRef -> (Context, Int)
 captureValue context bind_ref = do
@@ -134,7 +136,7 @@ data PathResolveResult = FunctionCall ([HE.Expr] -> HE.SimpleExpr)
 resolvePath :: Context -> Ident -> Result (Context, PathResolveResult) (Context)
 resolvePath context path = do
     case resolveItem context.module_resolver.term_names UnknownFunction path of
-        Ok (ResolvedItem qn item) -> do
+        Ok (ResolvedItem qn item _) -> do
             case item of
                 RI.Record _ -> Ok (context, FunctionCall (HE.RecordConstructorCall qn))
                 RI.Variant _ _ -> Ok (context, FunctionCall (HE.VariantConstructorCall qn))
@@ -147,32 +149,24 @@ resolvePath context path = do
 
 processBinaryOp :: Context -> SE.Op -> HE.Expr -> HE.Expr -> HE.SimpleExpr
 processBinaryOp context op lhs rhs = do
-    op_name <- case op of
-            SE.Equal -> "Std.Ops.opEq"
-            SE.NotEqual -> "Std.Ops.opNotEq"
-            SE.And -> "Std.Ops.opAnd"
-            SE.Or -> "Std.Ops.opOr"
-            SE.LessThan -> "Std.Ops.opLessThan"
-            SE.GreaterThan -> "Std.Ops.opGreaterThan"
-            SE.LessOrEqualThan -> "Std.Ops.opLessEqual"
-            SE.GreaterOrEqualThan -> "Std.Ops.opGreaterEqual"
-            SE.Add -> "Std.Ops.opAdd"
-            SE.Sub -> "Std.Ops.opSub"
-            SE.Mul -> "Std.Ops.opMul"
-            SE.Div -> "Std.Ops.opDiv"
+    module_name <- getStdOpsModuleName
+    qn <- case op of
+            SE.Equal -> HPO.FullPath module_name "opEq"
+            SE.NotEqual -> HPO.FullPath module_name "opNotEq"
+            SE.And -> HPO.FullPath module_name "opAnd"
+            SE.Or -> HPO.FullPath module_name "opOr"
+            SE.LessThan -> HPO.FullPath module_name "opLessThan"
+            SE.GreaterThan -> HPO.FullPath module_name "opGreaterThan"
+            SE.LessOrEqualThan -> HPO.FullPath module_name "opLessEqual"
+            SE.GreaterOrEqualThan -> HPO.FullPath module_name "opGreaterEqual"
+            SE.Add -> HPO.FullPath module_name "opAdd"
+            SE.Sub -> HPO.FullPath module_name "opSub"
+            SE.Mul -> HPO.FullPath module_name "opMul"
+            SE.Div -> HPO.FullPath module_name "opDiv"
             SE.PipeForward -> return HE.DynamicFunctionCall rhs [lhs]
-    qn <- resolveOp context op_name
-    HE.ClassMemberCall qn [lhs, rhs]
-
-resolveOp :: Context -> String -> HPO.FullyQualifiedName
-resolveOp context op_name = do
-    case get context.module_resolver.term_names op_name of
-        Some items -> do
-            (ResolvedItem qn item) <- atIndex items 0
-            case item of
-                RI.ClassMember _ _ -> qn
-                _ -> panic "Op {} not a class member call" % op_name
-        None -> panic "Op {} not found" % op_name
+    if op == SE.And || op == SE.Or
+        then HE.StaticFunctionCall qn [lhs, rhs]
+        else HE.ClassMemberCall qn [lhs, rhs]
 
 processExprs :: Context -> Environment -> [SE.Expr] -> (Context, [HE.Expr])
 processExprs context env exprs = do
@@ -245,17 +239,20 @@ processExpr context env (SE.Expr expr location) = do
             (context, env, HE.StaticFunctionCall lambda_name args)
         SE.Paren expr -> return processExpr context env expr
         SE.FunctionCall receiver args -> do
+            (context, hir_args) <- processExprs context env args
             case receiver of
                 SE.Expr (SE.Path p) _ -> do
-                    case resolvePath context p of
-                        Ok (context, result) -> case result of
-                                FunctionCall fn -> do
-                                    (context, hir_args) <- processExprs context env args
-                                    (context, env, fn hir_args)
-                        Err context -> (context, env, HE.Tuple [])
+                    case getBinding env (getString p) of
+                        Some (bind_ref, level) -> do
+                            (context, _, hir_receiver) <- processExpr context env receiver
+                            (context, env, HE.DynamicFunctionCall hir_receiver hir_args)
+                        None -> case resolvePath context p of
+                                    Ok (context, result) -> case result of
+                                            FunctionCall fn -> do
+                                                (context, env, fn hir_args)
+                                    Err context -> (context, env, HE.Tuple [])
                 _ -> do
                     (context, _, hir_receiver) <- processExpr context env receiver
-                    (context, hir_args) <- processExprs context env args
                     (context, env, HE.DynamicFunctionCall hir_receiver hir_args)
         SE.BinaryOp op lhs rhs -> do
             (context, env, hir_lhs) <- processExpr context env lhs
@@ -319,16 +316,16 @@ processExpr context env (SE.Expr expr location) = do
                 (context, env, cases)) (context, env, [])
             (context, env, HE.CaseOf hir_body cases)
         SE.Not arg -> do
-            qn <- resolveOp context "Std.Ops.opNot"
+            qn <- HPO.FullPath getStdOpsModuleName "opNot"
             (context, env, hir_arg) <- processExpr context env arg
-            (context, env, HE.ClassMemberCall qn [hir_arg])
+            (context, env, HE.StaticFunctionCall qn [hir_arg])
         SE.Negative arg -> do
-            qn <- resolveOp context "Std.Ops.opNegative"
+            qn <- HPO.FullPath getStdOpsModuleName "opNegative"
             (context, env, hir_arg) <- processExpr context env arg
             (context, env, HE.ClassMemberCall qn [hir_arg])
         SE.RecordInitialization name field_inits -> do
             case resolveItem context.module_resolver.type_names NotARecord name of
-                Ok (ResolvedItem qn item) -> do
+                Ok (ResolvedItem qn item _) -> do
                     case item of
                         RI.Record _ -> do
                             case HPO.getItem context.program qn of
@@ -381,8 +378,10 @@ processExpr context env (SE.Expr expr location) = do
             ok_body <- SE.Expr ok_body location
             err_body <- SE.Return (SE.Expr (SE.Path err) location)
             err_body <- SE.Expr err_body location
-            result_ok <- Ident getFullResultOkVariantName location
-            result_err <- Ident getFullResultErrVariantName location
+            result_ok <- Ident (HPO.getResolvableName (HPO.FullPathWithVariant
+                           getResultModuleName getResultTypeName getResultOkVariantName)) location
+            result_err <- Ident (HPO.getResolvableName (HPO.FullPathWithVariant
+                           getResultModuleName getResultTypeName getResultErrVariantName)) location
             ok_bind <- SP.Binding ok
             ok_bind <- SP.Pattern ok_bind location
             err_bind <- SP.Binding err
@@ -408,7 +407,7 @@ processExpr context env (SE.Expr expr location) = do
             pattern_env <- createPatternEnvironment
             block_env <- createEnvironment env.lambda_id (Some env)
             (context, pattern_env, block_env, hir_pattern) <- processPattern context pattern_env block_env pattern
-            (context, hir_items) <- processExprs context block_env items
+            (context, hir_items) <- processDo context block_env items
             (context, env, HE.Loop hir_pattern hir_initializer hir_items)
         SE.ArgRef i -> (context, env, HE.ArgRef i)
     (context, env, HE.Expr hir_expr location)
