@@ -1,0 +1,21 @@
+module Main where
+
+import Hack
+import Siko.Parser
+import Siko.Resolver as R
+import Siko.Typechecker as TC
+import Siko.Diagnostics
+
+main = do
+    println "Reading input"
+    source <- readTextFile "sikoc.sk"
+    println "Parsing.."
+    (program, lexer_errors, parser_errors) <- parse source
+    lexer_errors |> List.iter |> forEach \error -> printLexerError error
+    parser_errors |> List.iter |> forEach \error -> printParserError error
+    println "Resolving names.."
+    (hir_program, resolver_errors) <- R.processProgram program
+    resolver_errors |> List.iter |> forEach \error -> printResolverError error
+    println "Typechecking.."
+    () <- TC.processProgram hir_program
+    ()

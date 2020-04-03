@@ -1,13 +1,10 @@
-module Main where
+module Siko.Diagnostics where
 
 import Siko.Parser.Lexer
-import Siko.Parser
 import Siko.Parser.Error
 import Siko.Syntax.Location
 import Siko.Syntax.Ident
-import Siko.Resolver
 import Siko.Resolver.Error
-import Hack
 
 printSpan :: String -> Span -> ()
 printSpan msg span = println "{} at {}" % (msg, fmtSpan span)
@@ -71,15 +68,3 @@ printResolverError error = case error of
     OrPatternMismatch location -> println "OrPatternMismatch {}" % (fmtLocation location)
     InvalidClassArgument location -> println "InvalidClassArgument {}" % (fmtLocation location)
     UnusedClassArg name location -> println "UnusedClassArg {} {}" % (fmtIdent name, fmtLocation location)
-
-main = do
-    println "Reading input"
-    source <- readTextFile "sikoc.sk"
-    println "Parsing.."
-    (program, lexer_errors, parser_errors) <- parse source
-    lexer_errors |> List.iter |> forEach \error -> printLexerError error
-    parser_errors |> List.iter |> forEach \error -> printParserError error
-    println "Resolving names.."
-    (hir_program, resolver_errors) <- processProgram program
-    resolver_errors |> List.iter |> forEach \error -> printResolverError error
-    ()
