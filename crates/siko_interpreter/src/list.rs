@@ -202,6 +202,40 @@ impl ExternFunction for Tail {
     }
 }
 
+pub struct Sort {}
+
+impl ExternFunction for Sort {
+    fn call(
+        &self,
+        environment: &mut Environment,
+        _: Option<ExprId>,
+        _: &NamedFunctionKind,
+        ty: Type,
+    ) -> Value {
+        let list = environment.get_arg_by_index(0);
+        let mut list: Vec<_> = list.core.as_list().clone();
+        list.sort();
+        return Value::new(ValueCore::List(list), ty);
+    }
+}
+
+pub struct Dedup {}
+
+impl ExternFunction for Dedup {
+    fn call(
+        &self,
+        environment: &mut Environment,
+        _: Option<ExprId>,
+        _: &NamedFunctionKind,
+        ty: Type,
+    ) -> Value {
+        let list = environment.get_arg_by_index(0);
+        let mut list: Vec<_> = list.core.as_list().clone();
+        list.dedup();
+        return Value::new(ValueCore::List(list), ty);
+    }
+}
+
 pub fn register_extern_functions(interpreter: &mut Interpreter) {
     interpreter.add_extern_function(LIST_MODULE_NAME, "show", Box::new(Show {}));
     interpreter.add_extern_function(LIST_MODULE_NAME, "iter", Box::new(Iter {}));
@@ -213,4 +247,6 @@ pub fn register_extern_functions(interpreter: &mut Interpreter) {
     interpreter.add_extern_function(LIST_MODULE_NAME, "isEmpty", Box::new(IsEmpty {}));
     interpreter.add_extern_function(LIST_MODULE_NAME, "head", Box::new(Head {}));
     interpreter.add_extern_function(LIST_MODULE_NAME, "tail", Box::new(Tail {}));
+    interpreter.add_extern_function(LIST_MODULE_NAME, "sort", Box::new(Sort {}));
+    interpreter.add_extern_function(LIST_MODULE_NAME, "dedup", Box::new(Dedup {}));
 }

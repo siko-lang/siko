@@ -269,8 +269,8 @@ impl<'a> Visitor for PatternChecker<'a> {
                 } else {
                     let location = self.program.patterns.get(&case.pattern_id).location_id;
                     if !choice_added {
-                        let err = TypecheckError::UnreachablePattern(location);
-                        self.errors.push(err);
+                        //let err = TypecheckError::UnreachablePattern(location);
+                        //self.errors.push(err);
                     }
                 }
             }

@@ -1,0 +1,141 @@
+module Siko.Typechecker.Unification where
+
+import Siko.HIR.Type
+import Siko.HIR.Program as P
+import Map
+import Std.Util
+
+data TypeVarGenerator = { next_type_id :: Int }
+
+createTypeVarGenerator = TypeVarGenerator 0
+
+getNewTypeVar :: TypeVarGenerator -> (TypeVarGenerator, TypeVar)
+getNewTypeVar gen = do
+    id <- gen.next_type_id
+    gen <- gen { next_type_id = id + 1 }
+    (gen, TypeVar id)
+
+data UnificationConstraint = UnificationConstraint P.FullyQualifiedName Type
+
+data Substitution = { vars :: Map TypeVar Type,
+                      constraints :: [UnificationConstraint]}
+
+createSubstitution = Substitution empty []
+
+apply :: Substitution -> Type -> Type
+apply sub type = panic "apply not implemented"
+
+containsVar :: Type -> TypeVar -> Bool
+containsVar type var = case type of
+    TypeArg v _ -> v == var
+    FixedTypeArg _ v _ -> v == var
+    Named _ args -> args |> List.iter |> fold (\contains, arg -> contains || containsVar arg var) False
+    Function from to -> containsVar from var || containsVar to var
+    Never v -> v == var
+    Ref t -> containsVar t var
+    Tuple args -> args |> List.iter |> fold (\contains, arg -> contains || containsVar arg var) False
+
+add :: Substitution -> TypeVar -> Type -> Result Substitution ()
+add sub var type = do
+    if containsVar type var
+        then return Err ()
+        else do
+            (vars, old) <- insert sub.vars var type
+            case old of
+                Some old -> if old == type then Ok sub else Err ()
+                None -> do
+                    sub <- sub { vars = vars }
+                    Ok sub
+
+addUnificationConstraint :: Substitution -> UnificationConstraint -> Substitution
+addUnificationConstraint sub c = do
+    cs <- sub.constraints + [c]
+    sub { constraints = cs }
+
+unifyArgs :: TypeVarGenerator -> Substitution -> [Type] -> [Type] -> Result (TypeVarGenerator, Substitution) ()
+unifyArgs gen sub args1 args2 = do
+    (gen, sub, _) <- loop (gen, sub, index) <- (gen, sub, 0) do
+        if index == getLength args1
+            then return Ok (gen, sub)
+            else do
+                arg1 <- atIndex args1 index
+                arg2 <- atIndex args2 index
+                (gen, sub) <- try unify gen sub arg1 arg2
+                (gen, sub, index + 1)
+    Ok (gen, sub)
+
+unify :: TypeVarGenerator -> Substitution -> Type -> Type -> Result (TypeVarGenerator, Substitution) ()
+unify gen sub type1 type2 = do
+    type1 <- apply sub type1
+    type2 <- apply sub type2
+    case (type1, type2) of
+        (Named qn1 args1, Named qn2 args2) -> do
+            if qn1 == qn2
+                then unifyArgs gen sub args1 args2
+                else Err ()
+        (TypeArg var1 constraints1, TypeArg var2 constraints2) ->
+            if var1 == var2
+                then do
+                    assert (constraints1 == constraints2)
+                    Ok (gen, sub)
+                else do
+                    constraints <- constraints1 + constraints2
+                    constraints <- constraints |> sort |> dedup
+                    (gen, new_type_var) <- getNewTypeVar gen
+                    new_type <- TypeArg new_type_var constraints
+                    sub <- try add sub var1 new_type
+                    sub <- try add sub var2 new_type
+                    Ok (gen, sub)
+        (FixedTypeArg _ var1 _, FixedTypeArg _ var2 _) -> do
+            if var1 == var2
+                then Ok (gen, sub)
+                else Err ()
+        (FixedTypeArg _ var1 constraints1, TypeArg var2 constraints2) -> do
+            assert (var1 != var2)
+            ok <- constraints2 |> List.iter |> fold (\ok, constraint -> ok && contains constraints1 constraint) True
+            if ok
+                then do
+                    sub <- try add sub var2 type1
+                    Ok (gen, sub)
+                else Err ()
+        (TypeArg var1 constraints1, FixedTypeArg _ var2 constraints2) -> do
+            assert (var1 != var2)
+            ok <- constraints1 |> List.iter |> fold (\ok, constraint -> ok && contains constraints2 constraint) True
+            if ok
+                then do
+                    sub <- try add sub var1 type2
+                    Ok (gen, sub)
+                else Err ()
+        (TypeArg var constraints, type2) -> do
+            sub <- constraints |> List.iter |> fold (\sub, constraint -> do
+                case constraint of
+                    ClassConstraint qn -> do
+                            c <- UnificationConstraint qn type2
+                            addUnificationConstraint sub c) sub
+            sub <- try add sub var type2
+            Ok (gen, sub)
+        (type1, TypeArg var constraints) -> do
+            sub <- constraints |> List.iter |> fold (\sub, constraint -> do
+                case constraint of
+                    ClassConstraint qn -> do
+                            c <- UnificationConstraint qn type1
+                            addUnificationConstraint sub c) sub
+            sub <- try add sub var type1
+            Ok (gen, sub)
+        (Tuple args1, Tuple args2) -> do
+            if getLength args1 != getLength args2
+                then Err ()
+                else unifyArgs gen sub args1 args2
+        (Function from1 to1, Function from2 to2) -> do
+            (gen, sub) <- try unify gen sub from1 from2
+            (gen, sub) <- try unify gen sub to1 to2
+            Ok (gen, sub)
+        (Never var, type2) -> do
+            sub <- try add sub var type2
+            Ok (gen, sub)
+        (type1, Never var) -> do
+            sub <- try add sub var type1
+            Ok (gen, sub)
+        (Ref type1, type2) -> unify gen sub type1 type2
+        (type1, Ref type2) -> unify gen sub type1 type2
+        _ -> Err ()
