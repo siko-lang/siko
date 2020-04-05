@@ -56,3 +56,11 @@ getVariant program name index = case get program.items name of
     Some (Adt adt) -> do
         atIndex adt.variants index
     _ -> panic "No adt found {}" % name
+
+getFunctions :: Program -> [F.Function]
+getFunctions program = do
+    program.items |> Map.iter |> filter (\(qn, item) -> case item of
+        Function _ -> True
+        _ -> False) |> map (\(qn, item) -> case item of
+            Function f -> f
+            _ -> panic "Function is not a function") |> toList

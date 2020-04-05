@@ -1,6 +1,19 @@
 module Siko.Typechecker where
 
+import Siko.Typechecker.FunctionDependency
+
 import Siko.HIR.Program
+import Siko.HIR.Function
+
+processFn :: Function -> ()
+processFn function = do
+    println "Processing {}" % function.name
+    deps <- getFunctionDependencies function
+    println "Deps {}" % deps
+    ()
 
 processProgram :: Program -> ()
-processProgram program = ()
+processProgram program = do
+    functions <- getFunctions program
+    functions |> List.iter |> map (\fn -> processFn fn) |> toList
+    ()

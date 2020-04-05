@@ -1,0 +1,76 @@
+module Siko.Util.DependencyProcessor where
+
+import Map
+import Set
+
+data DependencyGroup a = { items :: Set a }
+
+data DependencyBucket a = { items :: [a] }
+
+data GroupTable a = { table :: Map a Int }
+
+newGroup = DependencyGroup Set.empty
+
+addToDependencyGroup a :: (PartialEq a, Ord a) => a -> DependencyGroup a -> DependencyGroup a
+addToDependencyGroup item group = do
+    (items, _) <- Set.insert group.items item
+    group { items = items }
+
+mergeGroups a :: (Ord a) => a -> a -> GroupTable a -> GroupTable a
+mergeGroups id1 id2 table = do
+    group_id1 <- Option.unwrap (get table.table id1)
+    group_id2 <- Option.unwrap (get table.table id2)
+    t <- table.table |> Map.iter |> map (\(id, group_id) -> if group_id == group_id1 then (id, group_id2) else (id, group_id)) |> toMap
+    table { table = t }
+
+dependsOn a :: (PartialEq a, Ord a) => a -> a -> Set a -> Map a [a] -> (Set a, Bool)
+dependsOn item used_item visited all_dependencies = do
+    (visited, inserted) <- Set.insert visited item
+    if inserted
+        then do
+            deps <- Option.unwrap (get all_dependencies item)
+            if List.contains deps used_item
+                then (visited, True)
+                else do
+                    (depends, visited) <- deps |> List.iter |> fold (\(total_depends, visited), dep -> do
+                        (visited, depends) <- dependsOn dep used_item visited all_dependencies
+                        (total_depends || depends, visited)) (False, visited)
+                    (visited, depends)
+        else (visited, False)
+
+checkCircularDependency a :: (PartialEq a, Ord a) => a -> [a] -> Map a [a] -> GroupTable a -> GroupTable a
+checkCircularDependency item dependencies all_dependencies group_table = do
+    circular_deps <- dependencies |> List.iter |> filter (\dep -> do
+        (_, depends) <- dependsOn item dep (Set.empty) all_dependencies
+        depends) |> toList
+    group_table <- circular_deps |> List.iter |> fold (\group_table, id -> mergeGroups item id group_table) group_table
+    group_table
+
+processDependencies a :: (PartialEq a, Ord a) => Map a [a] -> ()
+processDependencies all_dependencies = do
+    group_table :: GroupTable a <- GroupTable Map.empty
+
+    // 1. create a dependency group in the table for every single item
+    (group_table, _) <- all_dependencies |> Map.iter |> fold (\(group_table, index), (id, dependencies) -> do
+        (table, _) <- Map.insert group_table.table id index
+        (group_table { table = table }, index + 1)) (group_table, 0)
+
+    // 2. merge the groups in case of circular dependencies
+    group_table <- all_dependencies |> Map.iter |> fold (\group_table, (id, dependencies) ->
+            checkCircularDependency id dependencies all_dependencies group_table) group_table
+
+    // 3. initialize group lookup table
+    group_lookup_table :: Map Int (DependencyGroup a) <- Map.empty // FIXME: type annotation should not be required here
+    unprocessed_groups <- Set.empty
+    (group_lookup_table, unprocessed_groups) <- group_table.table |> Map.iter |> fold (\(group_lookup_table, unprocessed_groups), (id, group_id) -> do
+            (group_lookup_table, _) <- alter (\group -> case group of
+                                                Some group -> do
+                                                    group <- addToDependencyGroup id group
+                                                    Some group
+                                                None -> do
+                                                    group <- addToDependencyGroup id newGroup
+                                                    Some group) group_id group_lookup_table
+            (unprocessed_groups, _) <- Set.insert unprocessed_groups group_id
+            (group_lookup_table, unprocessed_groups)
+        ) (group_lookup_table, unprocessed_groups)
+    ()
