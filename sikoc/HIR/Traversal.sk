@@ -1,0 +1,89 @@
+module Siko.HIR.Traversal where
+
+import Siko.HIR.Expr as E
+import Siko.HIR.Pattern as P
+
+processExprs a :: a -> (a -> E.Expr -> a) -> [E.Expr] -> a
+processExprs context expr_fn args = args |> List.iter |> fold (\context, arg -> expr_fn context arg) context
+
+processPatterns a :: a -> (a -> P.Pattern -> a) -> [P.Pattern] -> a
+processPatterns context pattern_fn args = args |> List.iter |> fold (\context, arg -> pattern_fn context arg) context
+
+traversePattern a :: a -> (a -> P.Pattern -> a) -> (a -> E.Expr -> a) -> P.Pattern -> a
+traversePattern context pattern_fn expr_fn pattern = do
+    (P.Pattern p _) <- pattern
+    context <- case p of
+        P.Binding _ -> context
+        P.Tuple args -> processPatterns context pattern_fn args
+        P.Guarded arg guard_expr -> do
+            context <- pattern_fn context arg
+            context <- expr_fn context guard_expr
+            context
+        P.Wildcard -> context
+        P.IntegerLiteral _ -> context
+        P.StringLiteral _ -> context
+        P.CharLiteral _ -> context
+        P.CharRange _ _ _ -> context
+        P.Typed arg _ -> pattern_fn context arg
+        P.Record qn args -> processPatterns context pattern_fn args
+        P.Variant qn args -> processPatterns context pattern_fn args
+        P.Or args -> processPatterns context pattern_fn args
+    context <- pattern_fn context pattern
+    context
+
+traverse a :: a -> (a -> E.Expr -> a) -> (a -> P.Pattern -> a) -> E.Expr -> a
+traverse context expr_fn pattern_fn expr = do
+    (E.Expr e _) <- expr
+    context <- case e of
+        E.StaticFunctionCall _ args -> processExprs context expr_fn args
+        E.DynamicFunctionCall receiver args -> do
+            context <- expr_fn context receiver
+            context <- processExprs context expr_fn args
+            context
+        E.ClassMemberCall _ args -> processExprs context expr_fn args
+        E.VariantConstructorCall _ args -> processExprs context expr_fn args
+        E.RecordConstructorCall _ args -> processExprs context expr_fn args
+        E.If cond true_branch false_branch -> do
+            context <- expr_fn context cond
+            context <- expr_fn context true_branch
+            context <- expr_fn context false_branch
+            context
+        E.Tuple args -> processExprs context expr_fn args
+        E.List args -> processExprs context expr_fn args
+        E.IntegerLiteral _ -> context
+        E.FloatLiteral _ -> context
+        E.StringLiteral _ -> context
+        E.CharLiteral _ -> context
+        E.Do args -> processExprs context expr_fn args
+        E.Bind pattern rhs -> do
+            context <- expr_fn context rhs
+            context <- traversePattern context pattern_fn expr_fn pattern
+            context
+        E.FieldAccess _ receiver -> expr_fn context receiver
+        E.TupleFieldAccess _ receiver -> expr_fn context receiver
+        E.Formatter _ args -> processExprs context expr_fn args
+        E.CaseOf body cases -> do
+            context <- expr_fn context body
+            context <- cases |> List.iter |> fold (\context, c -> do
+                context <- traversePattern context pattern_fn expr_fn c.pattern
+                context <- expr_fn context c.body
+                context) context
+            context
+        E.RecordUpdate _ args -> do
+            context <- args |> List.iter |> fold (\context, arg -> do
+                context <- expr_fn context arg.body
+                context) context
+            context
+        E.Return rhs -> expr_fn context rhs
+        E.Continue rhs -> expr_fn context rhs
+        E.Break rhs -> expr_fn context rhs
+        E.Loop pattern initializer args -> do
+            context <- expr_fn context initializer
+            context <- traversePattern context pattern_fn expr_fn pattern
+            context <- processExprs context expr_fn args
+            context
+        E.ArgRef _ -> context
+        E.ValueRef _ -> context
+        _ -> context
+    context <- expr_fn context expr
+    context

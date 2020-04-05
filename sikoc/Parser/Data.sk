@@ -20,7 +20,7 @@ parseDerivedClass state = do
     (state, derived_class) <- try expectTypeIdent state "class name"
     Ok (state, derived_class)
 
-parseAdt :: ParserState -> [Ident] -> Ident -> Result (ParserState, AbstractDataType) (ParserState, ParserError)
+parseAdt :: ParserState -> [Ident] -> Ident -> Result (ParserState, AlgebraicDataType) (ParserState, ParserError)
 parseAdt state args name = do
     (state, variants) <- loop (state, variants) <- (state, []) do
         (state, variant) <- try parseTypeSignature state True False
@@ -35,7 +35,7 @@ parseAdt state args name = do
                 (state, derived_classes) <- try parseList state parseDerivedClass Kind.LParen Kind.RParen
                 (state, derived_classes)
         else (state, [])
-    adt <- AbstractDataType { name = name, type_arguments = args, variants = variants, derived_classes = derived_classes }
+    adt <- AlgebraicDataType { name = name, type_arguments = args, variants = variants, derived_classes = derived_classes }
     Ok (state, adt)
 
 parseRecord :: ParserState -> [Ident] -> Ident -> Result (ParserState, Record) (ParserState, ParserError)
@@ -51,7 +51,7 @@ parseRecord state args name = do
     record <- Record { name = name, type_arguments = args, fields = fields, external = False, derived_classes = derived_classes }
     Ok (state, record)
 
-parseData :: ParserState -> Result (ParserState, Either AbstractDataType Record) (ParserState, ParserError)
+parseData :: ParserState -> Result (ParserState, Either AlgebraicDataType Record) (ParserState, ParserError)
 parseData state = do
     state <- try expect state Kind.KeywordData
     (state, name) <- try expectTypeIdent state "type identifier"
@@ -84,7 +84,7 @@ parseData state = do
                             (state, data_definition)
         else
             do
-                adt <- AbstractDataType { name = name, type_arguments = [], variants = [], derived_classes = [] }
+                adt <- AlgebraicDataType { name = name, type_arguments = [], variants = [], derived_classes = [] }
                 (state, Left adt)
     state <- try expect state Kind.EndOfItem
     Ok (state, data_definition)
