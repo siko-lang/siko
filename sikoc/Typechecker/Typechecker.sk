@@ -1,19 +1,23 @@
 module Siko.Typechecker where
 
 import Siko.Typechecker.FunctionDependency
-
-import Siko.HIR.Program
+import Siko.Util.DependencyProcessor
+import Siko.HIR.Program as P
 import Siko.HIR.Function
+import Map
 
-processFn :: Function -> ()
-processFn function = do
-    println "Processing {}" % function.name
-    deps <- getFunctionDependencies function
-    println "Deps {}" % deps
-    ()
-
-processProgram :: Program -> ()
+processProgram :: P.Program -> ()
 processProgram program = do
-    functions <- getFunctions program
-    functions |> List.iter |> map (\fn -> processFn fn) |> toList
+    functions <- P.getFunctions program
+    all_dependencies <- functions |> List.iter |> fold (\all_dependencies, fn -> do
+        deps <- getFunctionDependencies fn
+        untyped_deps <- deps |> List.iter |> filter (\qn -> do
+            case P.getItem program qn of
+                P.Function fn -> isNone fn.type
+                _ -> False) |> toList
+        qn <- P.FullPath fn.module_name fn.name
+        (all_dependencies, _) <- insert all_dependencies qn untyped_deps
+        all_dependencies) empty
+    groups <- processDependencies all_dependencies
+    println "Dep groups {}" % groups
     ()

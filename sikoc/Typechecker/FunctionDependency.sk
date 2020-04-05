@@ -16,12 +16,12 @@ processExpr context (Expr expr _) = do
             context { items = items }
         _ -> context
 
-getFunctionDependencies :: Function -> Option [FullyQualifiedName]
+getFunctionDependencies :: Function -> [FullyQualifiedName]
 getFunctionDependencies function = do
     case function.body of
         Some body -> do
             context <- Context empty
             context <- traverse context processExpr (\c, _ -> c) body
             deps <- context.items |> Set.iter |> toList
-            Some deps
-        None -> None
+            deps
+        None -> []
