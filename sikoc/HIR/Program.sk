@@ -7,20 +7,20 @@ import Map
 
 data FullyQualifiedName = FullPath String String
                           | FullPathWithVariant String String String
-                          | FullPathWithLambda String String Int
+                          | FullPathWithLambda FullyQualifiedName F.LambdaId
                           deriving (PartialEq, Eq, PartialOrd, Ord)
 
 instance Show FullyQualifiedName where
     show f = case f of
         FullPath m n -> "{}.{}" % (m, n)
         FullPathWithVariant m n v -> "{}.{}/{}" % (m, n, v)
-        FullPathWithLambda m n i -> "{}.{}/{}" % (m, n, i)
+        FullPathWithLambda n i -> "{}/{}" % (n, i)
 
 getResolvableName :: FullyQualifiedName -> String
 getResolvableName f = case f of
         FullPath m n -> "{}.{}" % (m, n)
         FullPathWithVariant m n v -> "{}.{}" % (m, v)
-        FullPathWithLambda m n i -> panic "getResolvableName called for a lambda"
+        FullPathWithLambda n i -> panic "getResolvableName called for a lambda"
 
 data Item = Function F.Function
             | Adt D.AlgebraicDataType
@@ -31,12 +31,12 @@ data Item = Function F.Function
 
 data Program = {
                   items :: Map FullyQualifiedName Item,
-                  instances :: [C.Instance],
+                  instances :: Map C.InstanceId C.Instance,
                } deriving (Show)
 
 addInstance :: Program -> C.Instance -> Program
 addInstance program i = do
-    instances <- program.instances + [i]
+    (instances, _) <- insert program.instances i.id i
     program <- program { instances = instances }
     program
 

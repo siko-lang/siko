@@ -15,9 +15,9 @@ processProgram program = do
             case P.getItem program qn of
                 P.Function fn -> isNone fn.type
                 _ -> False) |> toList
-        qn <- P.FullPath fn.module_name fn.name
-        (all_dependencies, _) <- insert all_dependencies qn untyped_deps
+        (all_dependencies, _) <- insert all_dependencies fn.name untyped_deps
         all_dependencies) empty
     groups <- processDependencies all_dependencies
-    println "Dep groups {}" % groups
+    groups |> List.iter |> forEach \x -> println x
+    println "Dep groups: {}" % getLength groups
     ()

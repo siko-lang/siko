@@ -8,6 +8,7 @@ import Siko.HIR.Expr as HE
 import Siko.HIR.Pattern as HP
 import Siko.HIR.Program as HPO
 import Siko.HIR.Data as HD
+import Siko.HIR.Function as HF
 import Siko.Resolver.Pattern
 import Siko.Resolver
 import Siko.Resolver.Module
@@ -23,7 +24,7 @@ data LambdaHelper = { arg_offset :: Int,
                     } deriving (Show)
 
 data Context = {
-                    function_name :: String,
+                    function_name :: HPO.FullyQualifiedName,
                     type_resolver :: TypeResolverState,
                     state :: ResolverState,
                     module_resolver :: ModuleResolver,
@@ -31,9 +32,10 @@ data Context = {
                     next_binding_id :: Int,
                     next_lambda_id :: Int,
                     lambda_helper :: Option LambdaHelper,
+                    lambdas :: [HF.LambdaInfo],
                }
 
-createContext :: String -> TypeResolverState -> ResolverState -> ModuleResolver -> HPO.Program -> Context
+createContext :: HPO.FullyQualifiedName -> TypeResolverState -> ResolverState -> ModuleResolver -> HPO.Program -> Context
 createContext function_name type_resolver state module_resolver program = Context {
     function_name = function_name,
     type_resolver = type_resolver,
@@ -42,7 +44,8 @@ createContext function_name type_resolver state module_resolver program = Contex
     program = program,
     next_binding_id = 0,
     next_lambda_id = 1,
-    lambda_helper = None }
+    lambda_helper = None,
+    lambdas = [] }
 
 createBindRef :: Context -> String -> (Context, HP.BindRef)
 createBindRef context name = do
@@ -50,11 +53,12 @@ createBindRef context name = do
     context <- context { next_binding_id = id + 1 }
     (context, HP.BindRef name id)
 
-createLambdaName :: Context -> (Context, HPO.FullyQualifiedName)
+createLambdaName :: Context -> (Context, HF.LambdaId, HPO.FullyQualifiedName)
 createLambdaName context = do
     id <- context.next_lambda_id
     context <- context { next_lambda_id = id + 1 }
-    (context,  HPO.FullPathWithLambda context.module_resolver.module_name context.function_name id)
+    id <- HF.LambdaId id
+    (context, id, HPO.FullPathWithLambda context.function_name id)
 
 captureValue :: Context -> HP.BindRef -> (Context, Int)
 captureValue context bind_ref = do
@@ -214,12 +218,14 @@ processExpr context env (SE.Expr expr location) = do
     (context, env, hir_expr) <- case expr of
         SE.Lambda arg_patterns lambda_body -> do
             desugared_body <- desugarFunctionArgs arg_patterns lambda_body
-            lambda_id <- context.next_lambda_id
+            (context, lambda_id, lambda_name) <- createLambdaName context
             lambda_env <- createEnvironment lambda_id (Some env)
-            (context, lambda_name) <- createLambdaName context
             parent_lambda_helper <- context.lambda_helper
             context <- context { lambda_helper = Some (LambdaHelper (getLength arg_patterns) []) }
             (context, _, final_lambda_body) <- processExpr context lambda_env desugared_body
+            lambda <- HF.LambdaInfo lambda_id context.function_name final_lambda_body
+            lambdas <- context.lambdas + [lambda]
+            context <- context { lambdas = lambdas }
             lambda_helper <- Option.unwrap context.lambda_helper
             context <- context { lambda_helper = parent_lambda_helper }
             (context, args) <- lambda_helper.captured_values |> List.iter

@@ -2,19 +2,20 @@ module Siko.Resolver.Environment where
 
 import Siko.Resolver.Expr
 import Siko.HIR.Pattern
+import Siko.HIR.Function
 import Siko.Syntax.Ident
 import Map
 
 data PatternEnvironment = { bindings :: Map String [Ident] }
 
-data Environment = { lambda_id :: Int,
+data Environment = { lambda_id :: LambdaId,
                      block_bindings :: Map String BindRef,
                      parent :: Option Environment }
 
 createPatternEnvironment :: PatternEnvironment
 createPatternEnvironment = PatternEnvironment empty
 
-createEnvironment :: Int -> Option Environment -> Environment
+createEnvironment :: LambdaId -> Option Environment -> Environment
 createEnvironment lambda_id parent = Environment lambda_id empty parent
 
 append :: Ident -> Option [Ident] -> Option [Ident]
@@ -35,7 +36,7 @@ addBinding env bind_ref = do
     env <- env { block_bindings = block_bindings }
     env
 
-getBinding :: Environment -> String -> Option (BindRef, Int)
+getBinding :: Environment -> String -> Option (BindRef, LambdaId)
 getBinding env name = do
     case get env.block_bindings name of
         Some bind_ref -> Some (bind_ref, env.lambda_id)

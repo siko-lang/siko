@@ -2,17 +2,31 @@ module Siko.HIR.Function where
 
 import Siko.HIR.Type
 import Siko.HIR.Expr
+import Siko.HIR.Program
+import Siko.HIR.Class
 
-data Function = {
-                    name :: String,
-                    module_name :: String,
-                    type :: Option Type,
-                    body :: Option Expr,
+data LambdaId = LambdaId Int deriving (Show, PartialEq, Eq, PartialOrd, Ord)
+
+data FunctionKind = Normal
+                    | ClassMember FullyQualifiedName
+                    | InstanceMember InstanceId
+                    | Lambda LambdaId
+                    deriving (Show)
+
+data Function = { name :: FullyQualifiedName,
+                  kind :: FunctionKind,
+                  type :: Option Type,
+                  body :: Option Expr,
                 }
+
+data LambdaInfo = { id :: LambdaId,
+                    host :: FullyQualifiedName,
+                    body :: Expr
+                  } deriving (Show)
 
 instance Show Function where
     show f = do
         ty <- case f.type of
             Some t -> toString t
             None -> "<unknown>"
-        "{}.{} - {} :: {}" % (f.module_name, f.name, ty, f.body)
+        "{} - {} :: {}" % (f.name, ty, f.body)
