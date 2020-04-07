@@ -4,16 +4,18 @@ import Siko.Syntax.Location
 import Siko.HIR.Expr as E
 import Siko.HIR.Type as T
 import Siko.HIR.Pattern as P
+import Siko.Typechecker
 import Siko.Typechecker.Util
 import Siko.Typechecker.Unification as U
 import Siko.Typechecker.TypeStore as TS
 import Siko.Typechecker.Error
 
 data Context = { store :: TS.TypeStore,
-                 var_gen :: U.TypeVarGenerator }
+                 var_gen :: U.TypeVarGenerator,
+                 state :: TypecheckerState }
 
-initializeContext :: Context
-initializeContext = Context TS.initializeTypeStore U.createTypeVarGenerator
+initializeContext :: TypecheckerState -> Context
+initializeContext state = Context TS.initializeTypeStore U.createTypeVarGenerator state
 
 addExprType :: Context -> E.ExprId -> TS.ExprType -> Context
 addExprType context expr_id expr_type = do
@@ -39,14 +41,15 @@ unify context ty1 ty2 location = do
             context { store = store }
         Err _ -> do
             err <- TypeMismatch (T.toString ty1) (T.toString ty2) location
-            println "Fuck {}" % err
+            state <- addError context.state err
+            context <- context { state = state }
             context
     context
 
 matchExprWith :: Context -> E.ExprId -> T.Type -> Location -> Context
 matchExprWith context expr_id type = do
     expr_type <- getExprType context expr_id
-    unify context expr_type type
+    unify context type expr_type
 
 matchExprs :: Context -> E.ExprId -> E.ExprId -> Location -> Context
 matchExprs context expr_id1 expr_id2 = do
@@ -58,8 +61,9 @@ initializeExprType :: Context -> E.Expr -> Context
 initializeExprType context (E.Expr expr id location) = do
     //println "Initializing expr {} {}" % (expr, id)
     context <- case expr of
-        E.IntegerLiteral _ -> do
-            context <- addExprType context id (TS.ExprType getIntType)
+        E.If cond true_branch false_branch -> do
+            (context, var) <- getNewVar context
+            context <- addExprType context id (TS.ExprType var)
             context
         E.Tuple args -> do
             (context, vars) <- args |> List.iter |> fold (\(context, vars), arg -> do
@@ -67,6 +71,18 @@ initializeExprType context (E.Expr expr id location) = do
                 vars <- vars + [var]
                 (context, vars)) (context, [])
             context <- addExprType context id (TS.ExprType (T.Tuple vars))
+            context
+        E.IntegerLiteral _ -> do
+            context <- addExprType context id (TS.ExprType getIntType)
+            context
+        E.FloatLiteral _ -> do
+            context <- addExprType context id (TS.ExprType getFloatType)
+            context
+        E.StringLiteral _ -> do
+            context <- addExprType context id (TS.ExprType getStringType)
+            context
+        E.CharLiteral _ -> do
+            context <- addExprType context id (TS.ExprType getCharType)
             context
         E.Do args -> do
             (context, var) <- getNewVar context
@@ -79,14 +95,23 @@ checkExprType :: Context -> E.Expr -> Context
 checkExprType context (E.Expr expr id location) = do
     //println "Checking expr {} {}" % (expr, id)
     context <- case expr of
-        E.IntegerLiteral _ -> context
+        E.If (E.Expr _ cond_id cond_location) (E.Expr _ true_id true_location) (E.Expr _ false_id false_location) -> do
+            context <- matchExprWith context cond_id getBoolType cond_location
+            context <- matchExprs context true_id false_id false_location
+            context <- matchExprs context id false_id false_location
+            context
         E.Tuple args -> do
             arg_types <- args |> List.iter |> map (\(E.Expr _ arg _) -> getExprType context arg) |> toList
             context <- matchExprWith context id (T.Tuple arg_types) location
             context
+        E.IntegerLiteral _ -> context
+        E.FloatLiteral _ -> context
+        E.StringLiteral _ -> context
+        E.CharLiteral _ -> context
         E.Do args -> do
             (E.Expr _ last_id _) <- atIndex args ((getLength args) - 1)
             context <- matchExprs context id last_id location
             context
         _ -> panic "Not yet implemented {}" % expr
     context
+

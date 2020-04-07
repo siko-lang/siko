@@ -5,6 +5,7 @@ import Siko.Parser.Error
 import Siko.Syntax.Location
 import Siko.Syntax.Ident
 import Siko.Resolver.Error
+import Siko.Typechecker.Error
 
 printSpan :: String -> Span -> ()
 printSpan msg span = println "{} at {}" % (msg, fmtSpan span)
@@ -69,3 +70,6 @@ printResolverError error = case error of
     InvalidClassArgument location -> println "InvalidClassArgument {}" % (fmtLocation location)
     UnusedClassArg name location -> println "UnusedClassArg {} {}" % (fmtIdent name, fmtLocation location)
     ExternFnWithoutType name -> println "ExternFnWithoutType {}" % (fmtIdent name)
+
+printTypecheckerError error = case error of
+    TypeMismatch expected found location -> println "TypeMismatch expected: {} found: {} {}" % (expected, found, fmtLocation location)

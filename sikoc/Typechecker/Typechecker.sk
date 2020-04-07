@@ -2,6 +2,7 @@ module Siko.Typechecker where
 
 import Siko.Typechecker.FunctionDependency
 import Siko.Typechecker.Expr
+import Siko.Typechecker.Error
 import Siko.Typechecker.Pattern
 import Siko.Typechecker.TypeStore
 import Siko.Util.DependencyProcessor
@@ -10,6 +11,17 @@ import Siko.HIR.Function
 import Siko.HIR.Traversal
 import Map
 import Set
+
+data TypecheckerState = { errors :: [TypecheckerError],
+                        } deriving (Show)
+
+emptyState :: TypecheckerState
+emptyState = TypecheckerState []
+
+addError :: TypecheckerState -> TypecheckerError -> TypecheckerState
+addError state error = do
+    errors <- state.errors + [error]
+    state { errors = errors }
 
 initializeFunctionType :: Context -> Function -> Context
 initializeFunctionType context fn = do
@@ -23,9 +35,9 @@ checkFunctionType context fn = do
         Some body -> traverse context checkExprType checkPatternType body
         None -> context
 
-processGroup :: DependencyGroup P.FullyQualifiedName -> P.Program -> ()
-processGroup group program = do
-    context <- initializeContext
+processGroup :: TypecheckerState -> DependencyGroup P.FullyQualifiedName -> P.Program -> TypecheckerState
+processGroup state group program = do
+    context <- initializeContext state
     context <- group.items |> Set.iter |> fold (\context, name -> do
                         fn <- P.getFunction program name
                         context <- initializeFunctionType context fn
@@ -38,10 +50,11 @@ processGroup group program = do
                         context) context
     println "After check"
     dump context.store
-    ()
+    context.state
 
-processProgram :: P.Program -> ()
+processProgram :: P.Program -> [TypecheckerError]
 processProgram program = do
+    state <- emptyState
     functions <- P.getFunctions program
     all_dependencies <- functions |> List.iter |> fold (\all_dependencies, fn -> do
         deps <- getFunctionDependencies fn
@@ -52,7 +65,7 @@ processProgram program = do
         (all_dependencies, _) <- Map.insert all_dependencies fn.name untyped_deps
         all_dependencies) Map.empty
     groups <- processDependencies all_dependencies
-    groups |> List.iter |> fold (\context, group -> do
-        processGroup group program
-        context) ()
-    ()
+    state <- groups |> List.iter |> fold (\state, group -> do
+        state <- processGroup state group program
+        state) state
+    state.errors
