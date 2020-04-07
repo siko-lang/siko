@@ -3,6 +3,7 @@ module Siko.HIR.Program where
 import Siko.HIR.Function as F
 import Siko.HIR.Data as D
 import Siko.HIR.Class as C
+import Siko.HIR.Type as T
 import Map
 
 data FullyQualifiedName = FullPath String String
@@ -62,6 +63,17 @@ getVariant program name index = case get program.items name of
     Some (Adt adt) -> do
         atIndex adt.variants index
     _ -> panic "No adt found {}" % name
+
+getVariantInfo :: Program -> FullyQualifiedName -> D.VariantInfo
+getVariantInfo program name = case get program.items name of
+    Some (Variant info) -> info
+    _ -> panic "No adt info found {}" % name
+
+getVariantCtor :: Program -> FullyQualifiedName -> Int -> T.Type
+getVariantCtor program name index = case get program.items name of
+    Some (Adt adt) -> do
+        atIndex adt.variant_ctors index
+    _ -> panic "Not adt found {}" % name
 
 getFunctions :: Program -> [F.Function]
 getFunctions program = do

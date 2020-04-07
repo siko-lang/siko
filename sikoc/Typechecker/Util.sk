@@ -1,20 +1,56 @@
 module Siko.Typechecker.Util where
 
 import Siko.HIR.Type
-import Siko.HIR.Program
+import Siko.HIR.Program as P
+import Siko.Typechecker.Unification
 import Siko.Constants
 
+import Map
+
 getIntType :: Type
-getIntType = Named (FullPath getIntModuleName getIntTypeName) []
+getIntType = Named (P.FullPath getIntModuleName getIntTypeName) []
 
 getFloatType :: Type
-getFloatType = Named (FullPath getFloatModuleName getFloatTypeName) []
+getFloatType = Named (P.FullPath getFloatModuleName getFloatTypeName) []
 
 getStringType :: Type
-getStringType = Named (FullPath getStringModuleName getStringTypeName) []
+getStringType = Named (P.FullPath getStringModuleName getStringTypeName) []
 
 getCharType :: Type
-getCharType = Named (FullPath getCharModuleName getCharTypeName) []
+getCharType = Named (P.FullPath getCharModuleName getCharTypeName) []
 
 getBoolType :: Type
-getBoolType = Named (FullPath getBoolModuleName getBoolTypeName) []
+getBoolType = Named (P.FullPath getBoolModuleName getBoolTypeName) []
+
+instantiateType :: Type -> TypeVarGenerator -> (Type, TypeVarGenerator)
+instantiateType type var_gen = do
+    vars <- collectVars type |> sort |> dedup
+    (vars, var_gen) <- vars |> List.iter |> fold (\(vars, var_gen), old_var -> do
+            (var_gen, new_var) <- getNewTypeVar var_gen
+            (vars, _) <- insert vars old_var new_var
+            (vars, var_gen)) (empty, var_gen)
+    type <- remap vars type
+    (type, var_gen)
+
+remap :: Map TypeVar TypeVar -> Type -> Type
+remap vars type = case type of
+    Var var constraints -> case get vars var of
+        Some new_var -> Var new_var constraints
+        None -> panic "old var {} not found" % var
+    FixedTypeArg _ var constraints -> case get vars var of
+        Some new_var -> Var new_var constraints
+        None -> panic "old var {} not found" % var
+    Named n args -> do
+        args <- args |> List.iter |> map (\arg -> remap vars arg) |> toList
+        Named n args
+    Function from to -> do
+        from <- remap vars from
+        to <- remap vars to
+        Function from to
+    Never var -> case get vars var of
+        Some new_var -> Never new_var
+        None -> panic "old var {} not found" % var
+    Ref t -> Ref (remap vars t)
+    Tuple args -> do
+        args <- args |> List.iter |> map (\arg -> remap vars arg) |> toList
+        Tuple args

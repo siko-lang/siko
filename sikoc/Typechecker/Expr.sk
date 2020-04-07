@@ -3,21 +3,24 @@ module Siko.Typechecker.Expr where
 import Siko.Syntax.Location
 import Siko.HIR.Expr as E
 import Siko.HIR.Type as T
+import Siko.HIR.Data as D
 import Siko.HIR.Pattern as P
+import Siko.HIR.Program as PO
 import Siko.Typechecker
-import Siko.Typechecker.Util
+import Siko.Typechecker.Util as UT
 import Siko.Typechecker.Unification as U
 import Siko.Typechecker.TypeStore as TS
 import Siko.Typechecker.Error
 
 data Context = { store :: TS.TypeStore,
                  var_gen :: U.TypeVarGenerator,
-                 state :: TypecheckerState }
+                 state :: TypecheckerState,
+                 program :: PO.Program }
 
-initializeContext :: TypecheckerState -> Context
-initializeContext state = Context TS.initializeTypeStore U.createTypeVarGenerator state
+initializeContext :: TypecheckerState -> PO.Program -> Context
+initializeContext state program = Context TS.initializeTypeStore U.createTypeVarGenerator state program
 
-addExprType :: Context -> E.ExprId -> TS.ExprType -> Context
+addExprType :: Context -> E.ExprId -> TS.ExprTypeState -> Context
 addExprType context expr_id expr_type = do
     store <- TS.addExprType context.store expr_id expr_type
     context { store = store }
@@ -25,42 +28,56 @@ addExprType context expr_id expr_type = do
 getExprType :: Context -> E.ExprId -> T.Type
 getExprType context expr_id = TS.getExprType context.store expr_id
 
+getExprAndFunctionCallType :: Context -> E.ExprId -> (T.Type, T.Type)
+getExprAndFunctionCallType context expr_id = TS.getExprAndFunctionCallType context.store expr_id
+
 getNewVar :: Context -> (Context, T.Type)
 getNewVar context = do
     (var_gen, type) <- U.getNewTypeVarType context.var_gen
     (context { var_gen = var_gen }, type)
 
-unify :: Context -> T.Type -> T.Type -> Location -> Context
+unify :: Context -> T.Type -> T.Type -> Location -> (Context, U.Substitution)
 unify context ty1 ty2 location = do
     //println "Unifying {} {}" % (T.toString ty1, T.toString ty2)
     sub <- U.createSubstitution
-    context <- case U.unify context.var_gen sub ty1 ty2 of
+    case U.unify context.var_gen sub ty1 ty2 of
         Ok (var_gen, sub) -> do
             //println "Ok! {}" % sub
             store <- TS.apply context.store sub
-            context { store = store }
+            (context { store = store }, sub)
         Err _ -> do
             err <- TypeMismatch (T.toString ty1) (T.toString ty2) location
             state <- addError context.state err
             context <- context { state = state }
-            context
-    context
+            (context, sub)
 
-matchExprWith :: Context -> E.ExprId -> T.Type -> Location -> Context
-matchExprWith context expr_id type = do
+matchExprWith :: Context -> E.ExprId -> T.Type -> Location -> (Context, U.Substitution)
+matchExprWith context expr_id type location = do
     expr_type <- getExprType context expr_id
-    unify context type expr_type
+    unify context type expr_type location
 
-matchExprs :: Context -> E.ExprId -> E.ExprId -> Location -> Context
-matchExprs context expr_id1 expr_id2 = do
+matchExprs :: Context -> E.ExprId -> E.ExprId -> Location -> (Context, U.Substitution)
+matchExprs context expr_id1 expr_id2 location = do
     expr_type1 <- getExprType context expr_id1
     expr_type2 <- getExprType context expr_id2
-    unify context expr_type1 expr_type2
+    unify context expr_type1 expr_type2 location
+
+instantiateType :: Context -> T.Type -> (Context, T.Type)
+instantiateType context type = do
+    (new_type, var_gen) <- UT.instantiateType type context.var_gen
+    (context { var_gen = var_gen }, new_type)
 
 initializeExprType :: Context -> E.Expr -> Context
 initializeExprType context (E.Expr expr id location) = do
     //println "Initializing expr {} {}" % (expr, id)
     context <- case expr of
+        E.VariantConstructorCall qn args -> do
+            D.VariantInfo qn index <- PO.getVariantInfo context.program qn
+            var_ctor <- PO.getVariantCtor context.program qn index
+            (context, new_ctor) <- instantiateType context var_ctor
+            (context, var) <- getNewVar context
+            context <- addExprType context id (TS.FunctionCall var new_ctor)
+            context
         E.If cond true_branch false_branch -> do
             (context, var) <- getNewVar context
             context <- addExprType context id (TS.ExprType var)
@@ -73,16 +90,16 @@ initializeExprType context (E.Expr expr id location) = do
             context <- addExprType context id (TS.ExprType (T.Tuple vars))
             context
         E.IntegerLiteral _ -> do
-            context <- addExprType context id (TS.ExprType getIntType)
+            context <- addExprType context id (TS.ExprType UT.getIntType)
             context
         E.FloatLiteral _ -> do
-            context <- addExprType context id (TS.ExprType getFloatType)
+            context <- addExprType context id (TS.ExprType UT.getFloatType)
             context
         E.StringLiteral _ -> do
-            context <- addExprType context id (TS.ExprType getStringType)
+            context <- addExprType context id (TS.ExprType UT.getStringType)
             context
         E.CharLiteral _ -> do
-            context <- addExprType context id (TS.ExprType getCharType)
+            context <- addExprType context id (TS.ExprType UT.getCharType)
             context
         E.Do args -> do
             (context, var) <- getNewVar context
@@ -91,18 +108,53 @@ initializeExprType context (E.Expr expr id location) = do
         _ -> panic "Not yet implemented {}" % expr
     context
 
+checkSingleArgCall :: Context -> E.Expr -> T.Type -> (Context, Option T.Type)
+checkSingleArgCall context (E.Expr _ id location) fn_ty = case fn_ty of
+    T.Function from to -> do
+        println "From {} " % (T.toString from)
+        (context, sub) <- matchExprWith context id from location
+        to <- U.apply sub to
+        (context, Some to)
+    _ -> (context, None)
+
+checkFunctionCall :: Context -> [E.Expr] -> T.Type -> Location -> (Context, Option T.Type)
+checkFunctionCall context args fn_ty call_location = do
+    (context, result_ty) <- args |> List.iter
+            |> fold (\(context, result_ty), arg -> case result_ty of
+                    Some result_ty -> checkSingleArgCall context arg result_ty
+                    None -> (context, None)
+                ) (context, Some fn_ty)
+    context <- case result_ty of
+        Some _ -> context
+        None -> do
+            arg_type_strings <- args |> List.iter
+                            |> map (\(E.Expr _ arg _) -> T.toString (getExprType context arg)) |> toList
+            arg_strings <- "{}" % (join arg_type_strings ", ")
+            err <- TooManyArguments arg_strings (T.toString fn_ty) call_location
+            state <- addError context.state err
+            context { state = state }
+    (context, result_ty)
+
 checkExprType :: Context -> E.Expr -> Context
 checkExprType context (E.Expr expr id location) = do
     //println "Checking expr {} {}" % (expr, id)
     context <- case expr of
+        E.VariantConstructorCall _ args -> do
+            (ty, fn_ty) <- getExprAndFunctionCallType context id
+            (context, result_ty) <- checkFunctionCall context args fn_ty location
+            case result_ty of
+                Some result_ty -> do
+                    (context, _) <- matchExprWith context id result_ty location
+                    context
+                None -> context
         E.If (E.Expr _ cond_id cond_location) (E.Expr _ true_id true_location) (E.Expr _ false_id false_location) -> do
-            context <- matchExprWith context cond_id getBoolType cond_location
-            context <- matchExprs context true_id false_id false_location
-            context <- matchExprs context id false_id false_location
+            (context, _) <- matchExprWith context cond_id UT.getBoolType cond_location
+            (context, _) <- matchExprs context true_id false_id false_location
+            (context, _) <- matchExprs context id false_id false_location
             context
         E.Tuple args -> do
             arg_types <- args |> List.iter |> map (\(E.Expr _ arg _) -> getExprType context arg) |> toList
-            context <- matchExprWith context id (T.Tuple arg_types) location
+            (context, _) <- matchExprWith context id (T.Tuple arg_types) location
             context
         E.IntegerLiteral _ -> context
         E.FloatLiteral _ -> context
@@ -110,7 +162,7 @@ checkExprType context (E.Expr expr id location) = do
         E.CharLiteral _ -> context
         E.Do args -> do
             (E.Expr _ last_id _) <- atIndex args ((getLength args) - 1)
-            context <- matchExprs context id last_id location
+            (context, _) <- matchExprs context id last_id location
             context
         _ -> panic "Not yet implemented {}" % expr
     context

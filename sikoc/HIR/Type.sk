@@ -1,4 +1,8 @@
-module Siko.HIR.Type(Type(..), TypeVar(..), Constraint(..), toString) where
+module Siko.HIR.Type(Type(..),
+                     TypeVar(..),
+                     Constraint(..),
+                     toString,
+                     collectVars) where
 
 import Siko.Constants
 import Siko.HIR.Program as HP
@@ -44,23 +48,37 @@ collectConstraints :: [Constraint] -> [String]
 collectConstraints constraints = constraints |> List.iter |> map (\c -> case c of
                 ClassConstraint s -> HP.getResolvableName s) |> toList
 
-collect :: Type -> Map String [Constraint] -> ([String], Map String [Constraint])
-collect type constraint_map = case type of
+collectVars :: Type -> [TypeVar]
+collectVars type = case type of
+    Var var _ -> [var]
+    FixedTypeArg _ var _ -> [var]
+    Named _ args -> args |> List.iter |> fold (\vars, arg -> do
+        vs <- collectVars arg
+        vars + vs) []
+    Function from to -> collectVars from + collectVars to
+    Never var -> [var]
+    Ref t -> collectVars t
+    Tuple args -> args |> List.iter |> fold (\vars, arg -> do
+        vs <- collectVars arg
+        vars + vs) []
+
+collectnames :: Type -> Map String [Constraint] -> ([String], Map String [Constraint])
+collectnames type constraint_map = case type of
     Var (TypeVar v)  constraints -> (collectConstraints constraints, addConstraint ("t{}" % v) constraints constraint_map)
     FixedTypeArg n _ constraints -> (collectConstraints constraints, addConstraint n constraints constraint_map)
     Named n args -> do
                 n <- HP.getResolvableName n
                 args |> List.iter |> fold (\(all, constraint_map), arg -> do
-                (args, constraint_map) <- collect arg constraint_map
+                (args, constraint_map) <- collectnames arg constraint_map
                 (all + args, constraint_map)) ([n], constraint_map)
     Function from to -> do
-        (args_from, constraint_map) <- collect from constraint_map
-        (args_to, constraint_map) <- collect to constraint_map
+        (args_from, constraint_map) <- collectnames from constraint_map
+        (args_to, constraint_map) <- collectnames to constraint_map
         (args_from + args_to, constraint_map)
     Never _ -> ([], constraint_map)
-    Ref t -> collect t constraint_map
+    Ref t -> collectnames t constraint_map
     Tuple args -> args |> List.iter |> fold (\(all, constraint_map), arg -> do
-                (args, constraint_map) <- collect arg constraint_map
+                (args, constraint_map) <- collectnames arg constraint_map
                 (all + args, constraint_map)) ([], constraint_map)
 
 getShortName :: String -> String
@@ -75,7 +93,7 @@ addShortName name names = case names of
 
 toString :: Type -> String
 toString type = do
-    (names, constraint_map) <- collect type empty
+    (names, constraint_map) <- collectnames type empty
     conflicting_names <- names |> List.iter |> fold (\short_names, name -> do
                 short <- getShortName name
                 (short_names, _) <- alter (addShortName name) short short_names
