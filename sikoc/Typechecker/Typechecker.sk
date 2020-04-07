@@ -1,10 +1,44 @@
 module Siko.Typechecker where
 
 import Siko.Typechecker.FunctionDependency
+import Siko.Typechecker.Expr
+import Siko.Typechecker.Pattern
+import Siko.Typechecker.TypeStore
 import Siko.Util.DependencyProcessor
 import Siko.HIR.Program as P
 import Siko.HIR.Function
+import Siko.HIR.Traversal
 import Map
+import Set
+
+initializeFunctionType :: Context -> Function -> Context
+initializeFunctionType context fn = do
+    case fn.body of
+        Some body -> traverse context initializeExprType initializePatternType body
+        None -> context
+
+checkFunctionType :: Context -> Function -> Context
+checkFunctionType context fn = do
+    case fn.body of
+        Some body -> traverse context checkExprType checkPatternType body
+        None -> context
+
+processGroup :: DependencyGroup P.FullyQualifiedName -> P.Program -> ()
+processGroup group program = do
+    context <- initializeContext
+    context <- group.items |> Set.iter |> fold (\context, name -> do
+                        fn <- P.getFunction program name
+                        context <- initializeFunctionType context fn
+                        context) context
+    println "After init"
+    dump context.store
+    context <- group.items |> Set.iter |> fold (\context, name -> do
+                        fn <- P.getFunction program name
+                        context <- checkFunctionType context fn
+                        context) context
+    println "After check"
+    dump context.store
+    ()
 
 processProgram :: P.Program -> ()
 processProgram program = do
@@ -15,9 +49,10 @@ processProgram program = do
             case P.getItem program qn of
                 P.Function fn -> isNone fn.type
                 _ -> False) |> toList
-        (all_dependencies, _) <- insert all_dependencies fn.name untyped_deps
-        all_dependencies) empty
+        (all_dependencies, _) <- Map.insert all_dependencies fn.name untyped_deps
+        all_dependencies) Map.empty
     groups <- processDependencies all_dependencies
-    groups |> List.iter |> forEach \x -> println x
-    println "Dep groups: {}" % getLength groups
+    groups |> List.iter |> fold (\context, group -> do
+        processGroup group program
+        context) ()
     ()

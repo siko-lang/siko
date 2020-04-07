@@ -68,7 +68,11 @@ processFunction state hir_program module_resolver type_resolver kind function ty
                     env <- createEnvironment (HF.LambdaId 0) None
                     (context, env, expr) <- processExpr context env expr
                     (context.state, Some expr, context.lambdas)
-                None -> (state, None, [])
+                None -> if isNone type
+                        then do
+                            state <- addError state (ExternFnWithoutType function.name)
+                            (state, None, [])
+                        else (state, None, [])
     function <- HF.Function qn kind type hir_body
     lambdas <- lambdas |> List.iter
                          |> map (\lambda -> do

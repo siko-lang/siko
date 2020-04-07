@@ -8,7 +8,7 @@ data TypeVar = TypeVar Int deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
 data Constraint = ClassConstraint HP.FullyQualifiedName deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
-data Type = TypeArg TypeVar [Constraint]
+data Type = Var TypeVar [Constraint]
             | FixedTypeArg String TypeVar [Constraint]
             | Named HP.FullyQualifiedName [Type]
             | Function Type Type
@@ -19,7 +19,7 @@ data Type = TypeArg TypeVar [Constraint]
 
 isSimple :: Type -> Bool
 isSimple type = case type of
-    TypeArg _  _ -> True
+    Var _  _ -> True
     FixedTypeArg _ _ _ -> True
     Named n args -> getLength args == 0
     Function _ _ -> False
@@ -46,7 +46,7 @@ collectConstraints constraints = constraints |> List.iter |> map (\c -> case c o
 
 collect :: Type -> Map String [Constraint] -> ([String], Map String [Constraint])
 collect type constraint_map = case type of
-    TypeArg (TypeVar v)  constraints -> (collectConstraints constraints, addConstraint ("t{}" % v) constraints constraint_map)
+    Var (TypeVar v)  constraints -> (collectConstraints constraints, addConstraint ("t{}" % v) constraints constraint_map)
     FixedTypeArg n _ constraints -> (collectConstraints constraints, addConstraint n constraints constraint_map)
     Named n args -> do
                 n <- HP.getResolvableName n
@@ -99,7 +99,7 @@ getNiceName full_name conflicting_names = do
 
 convertType :: Type -> Map String Bool -> String
 convertType type names = case type of
-    TypeArg var _ -> do
+    Var var _ -> do
         TypeVar v <- var
         "t{}" % v
     FixedTypeArg n _ _ -> n

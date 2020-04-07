@@ -5,20 +5,23 @@ import Siko.HIR.Pattern
 import Siko.HIR.Program (FullyQualifiedName)
 import Siko.Syntax.Location
 
-data Case = {
-              pattern :: Pattern,
+data Case = { pattern :: Pattern,
               body :: Expr,
             } deriving (Show)
 
-data RecordConstructionItem = {
-                                field_name :: Ident,
+data RecordConstructionItem = { field_name :: Ident,
                                 body :: Expr,
                               } deriving (Show)
 
-data Expr = Expr SimpleExpr Location
+data ExprId = ExprId Int deriving (PartialEq, Eq, PartialOrd, Ord)
+
+instance Show ExprId where
+  show (ExprId id) = "#{}" % id
+
+data Expr = Expr SimpleExpr ExprId Location
 
 instance Show Expr where
-  show (Expr e _) = show e
+  show (Expr e _ _) = show e
 
 data SimpleExpr = StaticFunctionCall FullyQualifiedName [Expr]
         | DynamicFunctionCall Expr [Expr]

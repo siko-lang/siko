@@ -15,19 +15,45 @@ getNewTypeVar gen = do
     gen <- gen { next_type_id = id + 1 }
     (gen, TypeVar id)
 
-data UnificationConstraint = UnificationConstraint P.FullyQualifiedName Type
+getNewTypeVarType :: TypeVarGenerator -> (TypeVarGenerator, Type)
+getNewTypeVarType gen = do
+    (gen, var) <- getNewTypeVar gen
+    (gen, Var var [])
+
+data UnificationConstraint = UnificationConstraint P.FullyQualifiedName Type deriving (Show)
 
 data Substitution = { vars :: Map TypeVar Type,
-                      constraints :: [UnificationConstraint]}
+                      constraints :: [UnificationConstraint]
+                    } deriving (Show)
 
 createSubstitution = Substitution empty []
 
 apply :: Substitution -> Type -> Type
-apply sub type = panic "apply not implemented"
+apply sub type = case type of
+    Var var _ -> case get sub.vars var of
+        Some t -> apply sub t
+        None -> type
+    FixedTypeArg _ var _ -> case get sub.vars var of
+        Some t -> apply sub t
+        None -> type
+    Named n args -> do
+        args <- args |> List.iter |> map (\arg -> apply sub arg) |> toList
+        Named n args
+    Function from to -> do
+        from <- apply sub from
+        to <- apply sub to
+        Function from to
+    Never var -> case get sub.vars var of
+        Some t -> apply sub t
+        None -> type
+    Ref t -> Ref (apply sub t)
+    Tuple args -> do
+        args <- args |> List.iter |> map (\arg -> apply sub arg) |> toList
+        Tuple args
 
 containsVar :: Type -> TypeVar -> Bool
 containsVar type var = case type of
-    TypeArg v _ -> v == var
+    Var v _ -> v == var
     FixedTypeArg _ v _ -> v == var
     Named _ args -> args |> List.iter |> fold (\contains, arg -> contains || containsVar arg var) False
     Function from to -> containsVar from var || containsVar to var
@@ -73,7 +99,7 @@ unify gen sub type1 type2 = do
             if qn1 == qn2
                 then unifyArgs gen sub args1 args2
                 else Err ()
-        (TypeArg var1 constraints1, TypeArg var2 constraints2) ->
+        (Var var1 constraints1, Var var2 constraints2) ->
             if var1 == var2
                 then do
                     assert (constraints1 == constraints2)
@@ -82,7 +108,7 @@ unify gen sub type1 type2 = do
                     constraints <- constraints1 + constraints2
                     constraints <- constraints |> sort |> dedup
                     (gen, new_type_var) <- getNewTypeVar gen
-                    new_type <- TypeArg new_type_var constraints
+                    new_type <- Var new_type_var constraints
                     sub <- try add sub var1 new_type
                     sub <- try add sub var2 new_type
                     Ok (gen, sub)
@@ -90,7 +116,7 @@ unify gen sub type1 type2 = do
             if var1 == var2
                 then Ok (gen, sub)
                 else Err ()
-        (FixedTypeArg _ var1 constraints1, TypeArg var2 constraints2) -> do
+        (FixedTypeArg _ var1 constraints1, Var var2 constraints2) -> do
             assert (var1 != var2)
             ok <- constraints2 |> List.iter |> fold (\ok, constraint -> ok && contains constraints1 constraint) True
             if ok
@@ -98,7 +124,7 @@ unify gen sub type1 type2 = do
                     sub <- try add sub var2 type1
                     Ok (gen, sub)
                 else Err ()
-        (TypeArg var1 constraints1, FixedTypeArg _ var2 constraints2) -> do
+        (Var var1 constraints1, FixedTypeArg _ var2 constraints2) -> do
             assert (var1 != var2)
             ok <- constraints1 |> List.iter |> fold (\ok, constraint -> ok && contains constraints2 constraint) True
             if ok
@@ -106,7 +132,7 @@ unify gen sub type1 type2 = do
                     sub <- try add sub var1 type2
                     Ok (gen, sub)
                 else Err ()
-        (TypeArg var constraints, type2) -> do
+        (Var var constraints, type2) -> do
             sub <- constraints |> List.iter |> fold (\sub, constraint -> do
                 case constraint of
                     ClassConstraint qn -> do
@@ -114,7 +140,7 @@ unify gen sub type1 type2 = do
                             addUnificationConstraint sub c) sub
             sub <- try add sub var type2
             Ok (gen, sub)
-        (type1, TypeArg var constraints) -> do
+        (type1, Var var constraints) -> do
             sub <- constraints |> List.iter |> fold (\sub, constraint -> do
                 case constraint of
                     ClassConstraint qn -> do

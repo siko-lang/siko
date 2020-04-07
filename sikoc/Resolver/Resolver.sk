@@ -3,6 +3,8 @@ module Siko.Resolver where
 import Siko.Syntax.Program as SP
 import Siko.Syntax.Module as SM
 import Siko.HIR.Program as HP
+import Siko.HIR.Expr as HE
+import Siko.HIR.Pattern as HP
 import Siko.Resolver.Error
 import Siko.Resolver.Module
 import Siko.Resolver.Data
@@ -12,10 +14,24 @@ import Map
 
 data ResolverState = {
                         errors :: [ResolverError],
+                        next_expr_id :: Int,
+                        next_pattern_id :: Int,
                      } deriving (Show)
 
 emptyState :: ResolverState
-emptyState = ResolverState []
+emptyState = ResolverState [] 0 0
+
+getNextExprId :: ResolverState -> (ResolverState, HE.ExprId)
+getNextExprId state = do
+    id <- state.next_expr_id
+    state <- state { next_expr_id = id + 1 }
+    (state, HE.ExprId id)
+
+getNextPatternId :: ResolverState -> (ResolverState, HP.PatternId)
+getNextPatternId state = do
+    id <- state.next_pattern_id
+    state <- state { next_pattern_id = id + 1 }
+    (state, HP.PatternId id)
 
 processProgram :: SP.Program -> (HP.Program, [ResolverError])
 processProgram program = do

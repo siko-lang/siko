@@ -149,4 +149,6 @@ processPattern context pattern_env env (SP.Pattern pattern location) = do
         SP.Or patterns -> do
             (context, env, hir_patterns) <- processOrPatterns context env patterns location
             (context, pattern_env, env, HP.Or hir_patterns)
-    (context, pattern_env, env, HP.Pattern hir_pattern location)
+    (state, pattern_id) <- getNextPatternId context.state
+    context <- context { state = state }
+    (context, pattern_env, env, HP.Pattern hir_pattern pattern_id location)

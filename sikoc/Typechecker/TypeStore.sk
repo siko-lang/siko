@@ -1,0 +1,46 @@
+module Siko.Typechecker.TypeStore where
+
+import Siko.HIR.Type as T
+import Siko.HIR.Expr as E
+import Siko.HIR.Pattern as P
+import Siko.Typechecker.Unification as U
+import Map
+
+data ExprType = ExprType T.Type deriving (Show)
+data PatternType = PatternType T.Type deriving (Show)
+
+data TypeStore = { expr_types :: Map E.ExprId ExprType,
+                   pattern_types :: Map P.PatternId PatternType,
+                 } deriving (Show)
+
+initializeTypeStore :: TypeStore
+initializeTypeStore = TypeStore empty empty
+
+addExprType :: TypeStore -> E.ExprId -> ExprType -> TypeStore
+addExprType store expr_id expr_type = do
+    (expr_types, _) <- insert store.expr_types expr_id expr_type
+    store { expr_types = expr_types }
+
+getExprType :: TypeStore -> E.ExprId -> T.Type
+getExprType store expr_id = do
+    case get store.expr_types expr_id of
+        Some (ExprType type) -> type
+        _ -> panic "No type found for {}" % expr_id
+
+apply :: TypeStore -> U.Substitution -> TypeStore
+apply store sub = do
+    expr_types <- store.expr_types |> Map.iter |> map (\(id, expr_ty) -> do
+                                expr_ty <- case expr_ty of
+                                    ExprType ty -> ExprType (U.apply sub ty)
+                                (id, expr_ty)) |> toMap
+    pattern_types <- store.pattern_types |> Map.iter |> map (\(id, pattern_ty) -> do
+                                pattern_ty <- case pattern_ty of
+                                    PatternType ty -> PatternType (U.apply sub ty)
+                                (id, pattern_ty)) |> toMap
+    store { expr_types = expr_types, pattern_types = pattern_types }
+
+
+dump :: TypeStore -> ()
+dump store = do
+    store.expr_types |> Map.iter |> forEach (\(expr_id, (ExprType ty)) -> println "E{}: {}" % (expr_id, T.toString ty))
+    store.pattern_types |> Map.iter |> forEach (\(pattern_id, (PatternType ty)) -> println "P{}: {}" % (pattern_id, T.toString ty))

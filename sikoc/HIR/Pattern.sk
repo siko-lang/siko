@@ -16,10 +16,15 @@ data RecordFieldPattern = {
                             pattern :: Pattern,
                           } deriving (Show)
 
-data Pattern = Pattern SimplePattern Location
+data PatternId = PatternId Int deriving (PartialEq, Eq, PartialOrd, Ord)
+
+instance Show PatternId where
+  show (PatternId id) = "#{}" % id
+
+data Pattern = Pattern SimplePattern PatternId Location
 
 instance Show Pattern where
-  show (Pattern p _) = show p
+  show (Pattern p _ _) = show p
 
 data SimplePattern = Binding BindRef
             | Tuple [Pattern]

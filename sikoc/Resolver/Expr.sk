@@ -47,6 +47,12 @@ createContext function_name type_resolver state module_resolver program = Contex
     lambda_helper = None,
     lambdas = [] }
 
+getExprId :: Context -> (Context, HE.ExprId)
+getExprId context = do
+    (state, expr_id) <- getNextExprId context.state
+    context <- context { state = state }
+    (context, expr_id)
+
 createBindRef :: Context -> String -> (Context, HP.BindRef)
 createBindRef context name = do
     id <- context.next_binding_id
@@ -215,6 +221,7 @@ processRecordFieldInit field_inits (context, env, args) (HD.RecordField field_na
 
 processExpr :: Context -> Environment -> SE.Expr -> (Context, Environment, HE.Expr)
 processExpr context env (SE.Expr expr location) = do
+
     (context, env, hir_expr) <- case expr of
         SE.Lambda arg_patterns lambda_body -> do
             desugared_body <- desugarFunctionArgs arg_patterns lambda_body
@@ -233,11 +240,12 @@ processExpr context env (SE.Expr expr location) = do
                             HP.BindRef name _ <- c
                             case getBinding env name of
                                 Some (bind_ref, level) -> do
+                                        (context, expr_id) <- getExprId context
                                         (context, arg) <- if level != env.lambda_id
                                             then do
                                                 (context, index) <- captureValue context bind_ref
-                                                (context, HE.Expr (HE.ArgRef index) location)
-                                            else (context, HE.Expr (HE.ValueRef c) location)
+                                                (context, HE.Expr (HE.ArgRef index) expr_id location)
+                                            else (context, HE.Expr (HE.ValueRef c) expr_id location)
                                         args <- args + [arg]
                                         (context, args)
                                 None -> panic "captured variable not found in parent scope"
@@ -416,4 +424,5 @@ processExpr context env (SE.Expr expr location) = do
             (context, hir_items) <- processDo context block_env items
             (context, env, HE.Loop hir_pattern hir_initializer hir_items)
         SE.ArgRef i -> (context, env, HE.ArgRef i)
-    (context, env, HE.Expr hir_expr location)
+    (context, expr_id) <- getExprId context
+    (context, env, HE.Expr hir_expr expr_id location)

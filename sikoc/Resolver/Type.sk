@@ -103,11 +103,11 @@ addTypeArgumentConstraint state type_arg constraint = do
 
 updateTypeConstraints :: TypeResolverState -> Type -> Type
 updateTypeConstraints state type = case type of
-    TypeArg var constraints -> do
+    Var var constraints -> do
         constraints <- case get state.constraints var of
             Some constraints -> constraints
             None -> constraints
-        TypeArg var constraints
+        Var var constraints
     FixedTypeArg name var constraints -> do
         constraints <- case get state.constraints var of
             Some constraints -> constraints
@@ -178,7 +178,7 @@ processTypeSignature state resolver_state (ST.TypeSignature type_signature locat
             Err error -> do
                 resolver_state <- addError resolver_state error
                 (state, var) <- getTypeVar state
-                (state, resolver_state, TypeArg var [])
+                (state, resolver_state, Var var [])
     ST.Variant _ _ -> panic "processTypeSignature called on a variant type"
     ST.List arg -> do
         name <- HP.FullPath getListModuleName getListTypeName
@@ -199,4 +199,4 @@ processTypeSignature state resolver_state (ST.TypeSignature type_signature locat
         (state, resolver_state, Ref arg)
     ST.Wildcard -> do
         (state, var) <- getTypeVar state
-        (state, resolver_state, TypeArg var [])
+        (state, resolver_state, Var var [])
