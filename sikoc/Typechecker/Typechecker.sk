@@ -6,6 +6,7 @@ import Siko.Typechecker.Error
 import Siko.Typechecker.Pattern
 import Siko.Typechecker.TypeStore
 import Siko.Typechecker.Class
+import Siko.Typechecker.Function
 import Siko.Util.DependencyProcessor
 import Siko.HIR.Program as P
 import Siko.HIR.Function as F
@@ -55,29 +56,13 @@ processGroup state group program = do
     //dump context.store
     context.state
 
-processFunction :: F.Function -> P.Program -> ()
-processFunction f program = do
-    type <- case f.type of
-            Some t -> (T.toString t)
-            None -> "None"
-    println "Processing f {} arg_count {}, type {}" % (f.name, f.arg_count, type)
-    ()
-
 processProgram :: P.Program -> [TypecheckerError]
 processProgram program = do
     state <- emptyState
-    classes <- P.getClasses program
-    (state, class_type_info_map) <- classes |> List.iter |> fold (\(state, class_type_info_map), c -> do
-        (state, class_member_info) <- processClass state c program
-        (class_type_info_map, _) <- Map.insert class_type_info_map c.name class_member_info
-        (state, class_type_info_map)) (state, Map.empty)
-    instances <- P.getInstances program
-    (state, inferred_types) <- instances |> List.iter |> fold (\(state, inferred_types), i -> do
-        (state, types) <- processInstance state i class_type_info_map program
-        (state, inferred_types + types)) (state, [])
-    inferred_types |> List.iter |> forEach (\(qn, type) -> println "Inferred types {} {}" % (qn, T.toString type))
+    (state, program) <- processClassesAndInstances state program
     functions <- P.getFunctions program
-    functions |> List.iter |> forEach (\f -> processFunction f program)
+    state <- functions |> List.iter |> fold (\state, f -> processFunction state f program) state
+
     all_dependencies <- functions |> List.iter |> fold (\all_dependencies, fn -> do
         deps <- getFunctionDependencies fn
         untyped_deps <- deps |> List.iter |> filter (\qn -> do
@@ -86,6 +71,7 @@ processProgram program = do
                 _ -> False) |> toList
         (all_dependencies, _) <- Map.insert all_dependencies fn.name untyped_deps
         all_dependencies) Map.empty
+
     groups <- processDependencies all_dependencies
     state <- groups |> List.iter |> fold (\state, group -> do
         state <- processGroup state group program

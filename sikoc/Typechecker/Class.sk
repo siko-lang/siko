@@ -96,3 +96,17 @@ processInstance state i class_type_info_map program = do
             (state, inferred_types)
         None -> (state, [])
     (state, inferred_types)
+
+processClassesAndInstances :: TypecheckerState -> P.Program -> (TypecheckerState, P.Program)
+processClassesAndInstances state program = do
+    classes <- P.getClasses program
+    (state, class_type_info_map) <- classes |> List.iter |> fold (\(state, class_type_info_map), c -> do
+        (state, class_member_info) <- processClass state c program
+        (class_type_info_map, _) <- Map.insert class_type_info_map c.name class_member_info
+        (state, class_type_info_map)) (state, Map.empty)
+    instances <- P.getInstances program
+    (state, inferred_types) <- instances |> List.iter |> fold (\(state, inferred_types), i -> do
+        (state, types) <- processInstance state i class_type_info_map program
+        (state, inferred_types + types)) (state, [])
+    program <- inferred_types |> List.iter |> fold (\program, (qn, type) -> P.updateInstanceMemberType program qn type) program
+    (state, program)

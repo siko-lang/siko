@@ -114,3 +114,9 @@ getInstances :: Program -> [C.Instance]
 getInstances program =
     program.instances |> Map.iter |> map (\(id, i) -> i) |> toList
 
+updateInstanceMemberType :: Program -> FullyQualifiedName -> T.Type -> Program
+updateInstanceMemberType program name type = do
+    (items, _) <- alter (\f -> case f of
+        Some (Function f) -> Some ( Function (f { type = Some type }))
+        _ -> panic "Instance member not found") name program.items
+    program { items = items }

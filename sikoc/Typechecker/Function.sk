@@ -1,0 +1,25 @@
+module Siko.Typechecker.Function where
+
+import Siko.Typechecker
+import Siko.Typechecker.Error
+import Siko.Typechecker.Class
+import Siko.HIR.Program as P
+import Siko.HIR.Type as T
+import Siko.HIR.Function as F
+
+processFunction :: TypecheckerState -> F.Function -> P.Program -> TypecheckerState
+processFunction state f program = do
+    ty <- case f.type of
+            Some t -> (T.toString t)
+            None -> "None"
+    state <- case f.type of
+        Some t -> do
+            type_arg_count <- T.getArgCount t
+            if type_arg_count < f.arg_count
+                then do
+                    err <- IncorrectArgCount type_arg_count f.arg_count f.location
+                    addError state err
+                else state
+        None -> state
+    println "Processing f {} arg_count {}, type {}" % (f.name, f.arg_count, ty)
+    state
