@@ -3,7 +3,8 @@ module Siko.HIR.Type(Type(..),
                      Constraint(..),
                      toString,
                      collectVars,
-                     getArgCount) where
+                     getArgCount,
+                     fixedType) where
 
 import Siko.Constants
 import Siko.HIR.Program as HP
@@ -152,3 +153,38 @@ getArgCount type = case type of
     Never _ -> 0
     Ref _ -> 0
     Tuple _ -> 0
+
+fixedType :: Type -> Type
+fixedType type = do
+    vars <- collectVars type |> sort |> dedup
+    (var_map, index) <- vars |> List.iter |> fold (\(var_map, index), v -> do
+                 new_var <- (("t{}" % index), v)
+                 (var_map, _) <- Map.insert var_map v new_var
+                 (var_map, index + 1)) (Map.empty, 0)
+    convertToFixed var_map type
+
+convertToFixed :: Map TypeVar (String, TypeVar) -> Type -> Type
+convertToFixed var_map type =
+    case type of
+        Var var constraints -> case get var_map var of
+            Some (name, new_var) -> FixedTypeArg name new_var constraints
+            None -> panic "old var {} not found" % var
+        FixedTypeArg _ var constraints -> case get var_map var of
+            Some (name, new_var) -> FixedTypeArg name new_var constraints
+            None -> panic "old var {} not found" % var
+        Named n args -> do
+            args <- args |> List.iter |> map (\arg -> convertToFixed var_map arg) |> toList
+            Named n args
+        Function from to -> do
+            from <- convertToFixed var_map from
+            to <- convertToFixed var_map to
+            Function from to
+        Never var -> case get var_map var of
+            Some (_, new_var) -> Never new_var
+            None -> panic "old var {} not found" % var
+        Ref t -> Ref (convertToFixed var_map t)
+        Tuple args -> do
+            args <- args |> List.iter |> map (\arg -> convertToFixed var_map arg) |> toList
+            Tuple args
+
+

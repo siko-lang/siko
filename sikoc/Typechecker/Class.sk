@@ -3,6 +3,8 @@ module Siko.Typechecker.Class where
 import Siko.Typechecker
 import Siko.Typechecker.Expr
 import Siko.Typechecker.Error
+import Siko.Typechecker.Unification as U
+import Siko.Typechecker.Util
 import Siko.HIR.Program as P
 import Siko.HIR.Function as F
 import Siko.HIR.Traversal
@@ -10,55 +12,87 @@ import Siko.HIR.Type as T
 import Siko.HIR.Class as C
 import Map
 
-data MemberInfo = { type :: T.Type,
-                    has_default_impl :: Bool }
+data ClassMemberInfo = { type :: T.Type,
+                         has_default_impl :: Bool }
 
-data ClassMemberInfo = { members :: Map String MemberInfo }
+data ClassTypeInfo = {  arg_type :: T.Type,
+                        members :: Map String ClassMemberInfo }
 
-addMemberInfo :: ClassMemberInfo -> String -> T.Type -> Bool -> ClassMemberInfo
-addMemberInfo class_member_info name type has_default_impl = do
-    (members, _) <- Map.insert class_member_info.members name (MemberInfo type has_default_impl)
-    class_member_info { members = members }
+addMemberInfo :: ClassTypeInfo -> String -> T.Type -> Bool -> ClassTypeInfo
+addMemberInfo class_type_info name type has_default_impl = do
+    (members, _) <- Map.insert class_type_info.members name (ClassMemberInfo type has_default_impl)
+    class_type_info { members = members }
 
-processClass :: TypecheckerState -> C.Class -> P.Program -> (TypecheckerState, ClassMemberInfo)
+processClass :: TypecheckerState -> C.Class -> P.Program -> (TypecheckerState, ClassTypeInfo)
 processClass state c program = do
-    (state, class_member_info) <- c.members |> List.iter |> fold (\(state, class_member_info), qn -> do
+    (state, class_type_info) <- c.members |> List.iter |> fold (\(state, class_type_info), qn -> do
             member <- P.getFunction program qn
             short_name <- (P.getShortName member.name)
-            (state, class_member_info) <- case member.type of
+            (state, class_type_info) <- case member.type of
                 Some type -> do
-                    class_member_info <- addMemberInfo class_member_info short_name type (isSome member.body)
-                    (state, class_member_info)
+                    class_type_info <- addMemberInfo class_type_info short_name type (isSome member.body)
+                    (state, class_type_info)
                 None -> do
                     state <- addError state (ClassMemberWithoutType short_name member.location)
-                    (state, class_member_info)
-            (state, class_member_info)
-        ) (state, ClassMemberInfo Map.empty)
-    (state, class_member_info)
+                    (state, class_type_info)
+            (state, class_type_info)
+        ) (state, ClassTypeInfo c.arg_type Map.empty)
+    (state, class_type_info)
 
-processInstance :: TypecheckerState -> C.Instance -> Map P.FullyQualifiedName ClassMemberInfo -> P.Program -> TypecheckerState
-processInstance state i class_member_info_map program = do
-    println "Processing instance, class name {}" % i.class_name
-    case get class_member_info_map i.class_name of
-        Some class_member_info -> do
-            (state, member_names) <- i.members |> List.iter |> fold (\(state, member_names), member -> do
-                short_name <- P.getShortName member
-                member_function <- P.getFunction program member
-                println "Checking member {} {}" % (member, short_name)
-                state <- case get class_member_info.members short_name of
+processInstance :: TypecheckerState -> C.Instance -> Map P.FullyQualifiedName ClassTypeInfo -> P.Program -> (TypecheckerState, [(P.FullyQualifiedName, T.Type)])
+processInstance state i class_type_info_map program = do
+    (state, inferred_types) <- case get class_type_info_map i.class_name of
+        Some class_type_info -> do
+            (state, member_names, inferred_types) <- i.members |> List.iter |> fold (\(state, member_names, inferred_types), instance_member_name -> do
+                short_name <- P.getShortName instance_member_name
+                instance_member <- P.getFunction program instance_member_name
+                (state, inferred_type) <- case get class_type_info.members short_name of
                     Some member_data -> do
-                        member_data :: MemberInfo <- member_data // FIXME: type inference
-                        println "Type {}" % (T.toString member_data.type)
-                        state
-                    None -> addError state (InstanceMemberNotClassMember short_name member_function.location)
-                (state, member_names + [short_name])) (state, [])
-            class_member_info :: ClassMemberInfo <- class_member_info // FIXME: type inference fix!
-            state <- class_member_info.members |> Map.iter |> fold (\state, (name, member_data) -> do
+                        member_data :: ClassMemberInfo <- member_data // FIXME: type inference
+                        sub <- U.createSubstitution
+                        var_gen <- U.createTypeVarGenerator
+                        class_vars <- collectVars [] class_type_info.arg_type
+                        class_vars <- collectVars class_vars member_data.type
+                        (class_mapper, var_gen) <- initMapper class_vars var_gen
+                        class_arg_type <- remap class_mapper class_type_info.arg_type
+                        class_member_type <- remap class_mapper member_data.type
+                        instance_vars <- collectVars [] i.type
+                        instance_vars <- case instance_member.type of
+                            Some instance_member_type -> collectVars instance_vars instance_member_type
+                            None -> instance_vars
+                        (instance_mapper, var_gen) <- initMapper instance_vars var_gen
+                        instance_type <- remap instance_mapper i.type
+                        sub <- case U.unify var_gen sub class_arg_type instance_type of
+                            Ok (_, sub) -> sub
+                            Err _ -> panic "Class arg unification failed!"
+                        inferred_instance_member_type <- U.apply sub class_member_type
+                        state <- case instance_member.type of
+                            Some instance_member_type -> do
+                                instance_member_type <- remap instance_mapper instance_member_type
+                                state <- if inferred_instance_member_type == instance_member_type
+                                    then state
+                                    else do
+                                        expected <- inferred_instance_member_type |> T.fixedType |> T.toString
+                                        found <- instance_member_type |> T.fixedType |> T.toString
+                                        addError state (InstanceMemberTypeMismatch expected found instance_member.location)
+                                state
+                            None -> state
+                        (state, Some (T.fixedType inferred_instance_member_type))
+                    None -> do
+                        state <- addError state (InstanceMemberNotClassMember short_name instance_member.location)
+                        (state, None)
+                inferred_types <- case inferred_type of
+                    Some inferred_type -> inferred_types + [(instance_member_name, inferred_type)]
+                    None -> inferred_types
+                (state, member_names + [short_name], inferred_types)) (state, [], [])
+            class_type_info :: ClassTypeInfo <- class_type_info // FIXME: type inference fix!
+            state <- class_type_info.members |> Map.iter |> fold (\state, (name, member_data) -> do
                     if member_data.has_default_impl
                         then state
                         else if List.contains member_names name
                             then state
                             else addError state (MissingInstanceMember name i.location)
                 ) state
-            state
-        None -> state
+            (state, inferred_types)
+        None -> (state, [])
+    (state, inferred_types)

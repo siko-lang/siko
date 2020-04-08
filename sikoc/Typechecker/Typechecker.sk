@@ -67,12 +67,15 @@ processProgram :: P.Program -> [TypecheckerError]
 processProgram program = do
     state <- emptyState
     classes <- P.getClasses program
-    (state, class_member_info_map) <- classes |> List.iter |> fold (\(state, class_member_info_map), c -> do
+    (state, class_type_info_map) <- classes |> List.iter |> fold (\(state, class_type_info_map), c -> do
         (state, class_member_info) <- processClass state c program
-        (class_member_info_map, _) <- Map.insert class_member_info_map c.name class_member_info
-        (state, class_member_info_map)) (state, Map.empty)
+        (class_type_info_map, _) <- Map.insert class_type_info_map c.name class_member_info
+        (state, class_type_info_map)) (state, Map.empty)
     instances <- P.getInstances program
-    state <- instances |> List.iter |> fold (\state, i -> processInstance state i class_member_info_map program) state
+    (state, inferred_types) <- instances |> List.iter |> fold (\(state, inferred_types), i -> do
+        (state, types) <- processInstance state i class_type_info_map program
+        (state, inferred_types + types)) (state, [])
+    inferred_types |> List.iter |> forEach (\(qn, type) -> println "Inferred types {} {}" % (qn, T.toString type))
     functions <- P.getFunctions program
     functions |> List.iter |> forEach (\f -> processFunction f program)
     all_dependencies <- functions |> List.iter |> fold (\all_dependencies, fn -> do
