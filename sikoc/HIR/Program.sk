@@ -9,6 +9,7 @@ import Map
 data FullyQualifiedName = FullPath String String
                           | FullPathWithVariant String String String
                           | FullPathWithLambda FullyQualifiedName F.LambdaId
+                          | FullPathWithInstanceId String String C.InstanceId
                           deriving (PartialEq, Eq, PartialOrd, Ord)
 
 instance Show FullyQualifiedName where
@@ -16,12 +17,21 @@ instance Show FullyQualifiedName where
         FullPath m n -> "{}.{}" % (m, n)
         FullPathWithVariant m n v -> "{}.{}/{}" % (m, n, v)
         FullPathWithLambda n i -> "{}/{}" % (n, i)
+        FullPathWithInstanceId m n i -> "{}.{}/#{}" % (m, n, i)
 
 getResolvableName :: FullyQualifiedName -> String
 getResolvableName f = case f of
         FullPath m n -> "{}.{}" % (m, n)
         FullPathWithVariant m n v -> "{}.{}" % (m, v)
         FullPathWithLambda n i -> panic "getResolvableName called for a lambda"
+        FullPathWithInstanceId m n i -> panic "getResolvableName called for a instance member"
+
+getShortName :: FullyQualifiedName -> String
+getShortName f = case f of
+        FullPath m n -> n
+        FullPathWithVariant m n v -> n
+        FullPathWithLambda n i -> panic "getShortName called for a lambda"
+        FullPathWithInstanceId m n i -> n
 
 data Item = Function F.Function
             | Adt D.AlgebraicDataType
@@ -53,32 +63,54 @@ getItem program name = case get program.items name of
     None -> panic "No item found {}" % name
 
 getFunction :: Program -> FullyQualifiedName -> F.Function
-getFunction program name = do
+getFunction program name =
     case get program.items name of
         Some (Function f) -> f
         _ -> panic "Function {} not found" % name
 
 getVariant :: Program -> FullyQualifiedName -> Int -> D.Variant
-getVariant program name index = case get program.items name of
-    Some (Adt adt) -> do
-        atIndex adt.variants index
-    _ -> panic "No adt found {}" % name
+getVariant program name index =
+    case get program.items name of
+        Some (Adt adt) -> do
+            atIndex adt.variants index
+        _ -> panic "No adt found {}" % name
 
 getVariantInfo :: Program -> FullyQualifiedName -> D.VariantInfo
-getVariantInfo program name = case get program.items name of
-    Some (Variant info) -> info
-    _ -> panic "No adt info found {}" % name
+getVariantInfo program name =
+    case get program.items name of
+        Some (Variant info) -> info
+        _ -> panic "No adt info found {}" % name
 
 getVariantCtor :: Program -> FullyQualifiedName -> Int -> T.Type
-getVariantCtor program name index = case get program.items name of
-    Some (Adt adt) -> do
-        atIndex adt.variant_ctors index
-    _ -> panic "Not adt found {}" % name
+getVariantCtor program name index =
+    case get program.items name of
+        Some (Adt adt) -> do
+            atIndex adt.variant_ctors index
+        _ -> panic "No adt found {}" % name
+
+getRecord :: Program -> FullyQualifiedName -> D.Record
+getRecord program name =
+    case get program.items name of
+        Some (Record record) -> record
+        _ -> panic "No record found {}" % name
 
 getFunctions :: Program -> [F.Function]
-getFunctions program = do
+getFunctions program =
     program.items |> Map.iter |> filter (\(qn, item) -> case item of
         Function _ -> True
         _ -> False) |> map (\(qn, item) -> case item of
             Function f -> f
             _ -> panic "Function is not a function") |> toList
+
+getClasses :: Program -> [C.Class]
+getClasses program =
+    program.items |> Map.iter |> filter (\(qn, item) -> case item of
+        Class _ -> True
+        _ -> False) |> map (\(qn, item) -> case item of
+            Class c -> c
+            _ -> panic "Class is not a Class") |> toList
+
+getInstances :: Program -> [C.Instance]
+getInstances program =
+    program.instances |> Map.iter |> map (\(id, i) -> i) |> toList
+

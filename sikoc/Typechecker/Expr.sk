@@ -78,6 +78,12 @@ initializeExprType context (E.Expr expr id location) = do
             (context, var) <- getNewVar context
             context <- addExprType context id (TS.FunctionCall var new_ctor)
             context
+        E.RecordConstructorCall qn args -> do
+            record <- PO.getRecord context.program qn
+            (context, new_ctor) <- instantiateType context record.record_ctor
+            (context, var) <- getNewVar context
+            context <- addExprType context id (TS.FunctionCall var new_ctor)
+            context
         E.If cond true_branch false_branch -> do
             (context, var) <- getNewVar context
             context <- addExprType context id (TS.ExprType var)
@@ -111,7 +117,6 @@ initializeExprType context (E.Expr expr id location) = do
 checkSingleArgCall :: Context -> E.Expr -> T.Type -> (Context, Option T.Type)
 checkSingleArgCall context (E.Expr _ id location) fn_ty = case fn_ty of
     T.Function from to -> do
-        println "From {} " % (T.toString from)
         (context, sub) <- matchExprWith context id from location
         to <- U.apply sub to
         (context, Some to)
@@ -140,6 +145,14 @@ checkExprType context (E.Expr expr id location) = do
     //println "Checking expr {} {}" % (expr, id)
     context <- case expr of
         E.VariantConstructorCall _ args -> do
+            (ty, fn_ty) <- getExprAndFunctionCallType context id
+            (context, result_ty) <- checkFunctionCall context args fn_ty location
+            case result_ty of
+                Some result_ty -> do
+                    (context, _) <- matchExprWith context id result_ty location
+                    context
+                None -> context
+        E.RecordConstructorCall _ args -> do
             (ty, fn_ty) <- getExprAndFunctionCallType context id
             (context, result_ty) <- checkFunctionCall context args fn_ty location
             case result_ty of

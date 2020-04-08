@@ -5,10 +5,13 @@ import Siko.Typechecker.Expr
 import Siko.Typechecker.Error
 import Siko.Typechecker.Pattern
 import Siko.Typechecker.TypeStore
+import Siko.Typechecker.Class
 import Siko.Util.DependencyProcessor
 import Siko.HIR.Program as P
-import Siko.HIR.Function
+import Siko.HIR.Function as F
 import Siko.HIR.Traversal
+import Siko.HIR.Type as T
+import Siko.HIR.Class as C
 import Map
 import Set
 
@@ -23,13 +26,13 @@ addError state error = do
     errors <- state.errors + [error]
     state { errors = errors }
 
-initializeFunctionType :: Context -> Function -> Context
+initializeFunctionType :: Context -> F.Function -> Context
 initializeFunctionType context fn = do
     case fn.body of
         Some body -> traverse context initializeExprType initializePatternType body
         None -> context
 
-checkFunctionType :: Context -> Function -> Context
+checkFunctionType :: Context -> F.Function -> Context
 checkFunctionType context fn = do
     case fn.body of
         Some body -> traverse context checkExprType checkPatternType body
@@ -42,20 +45,36 @@ processGroup state group program = do
                         fn <- P.getFunction program name
                         context <- initializeFunctionType context fn
                         context) context
-    println "After init"
-    dump context.store
+    //println "After init"
+    //dump context.store
     context <- group.items |> Set.iter |> fold (\context, name -> do
                         fn <- P.getFunction program name
                         context <- checkFunctionType context fn
                         context) context
-    println "After check"
-    dump context.store
+    //println "After check"
+    //dump context.store
     context.state
+
+processFunction :: F.Function -> P.Program -> ()
+processFunction f program = do
+    type <- case f.type of
+            Some t -> (T.toString t)
+            None -> "None"
+    println "Processing f {} arg_count {}, type {}" % (f.name, f.arg_count, type)
+    ()
 
 processProgram :: P.Program -> [TypecheckerError]
 processProgram program = do
     state <- emptyState
+    classes <- P.getClasses program
+    (state, class_member_info_map) <- classes |> List.iter |> fold (\(state, class_member_info_map), c -> do
+        (state, class_member_info) <- processClass state c program
+        (class_member_info_map, _) <- Map.insert class_member_info_map c.name class_member_info
+        (state, class_member_info_map)) (state, Map.empty)
+    instances <- P.getInstances program
+    state <- instances |> List.iter |> fold (\state, i -> processInstance state i class_member_info_map program) state
     functions <- P.getFunctions program
+    functions |> List.iter |> forEach (\f -> processFunction f program)
     all_dependencies <- functions |> List.iter |> fold (\all_dependencies, fn -> do
         deps <- getFunctionDependencies fn
         untyped_deps <- deps |> List.iter |> filter (\qn -> do

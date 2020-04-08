@@ -7,11 +7,12 @@ import Siko.Syntax.Class as SC
 import Siko.Syntax.Module as SM
 import Siko.HIR.Function as HF
 import Siko.HIR.Program as HP
+import Siko.HIR.Type as HT
+import Siko.HIR.Expr as HE
 import Siko.Resolver
 import Siko.Resolver.Module
 import Siko.Resolver.Import
 import Siko.Resolver.Error
-import Siko.HIR.Type as HT
 import Siko.Resolver.Expr
 import Siko.Resolver.Pattern
 import Siko.Resolver.Type
@@ -49,8 +50,25 @@ processFunctionSignature state module_resolver type_resolver signature = do
     (state, type_args) <- processTypeArgs state type_resolver signature.type_arguments True
     (state, type_resolver, type)
 
-processFunction :: ResolverState -> HP.Program -> ModuleResolver -> TypeResolverState -> HF.FunctionKind -> SF.Function -> Option HT.Type -> (ResolverState, [HF.Function])
-processFunction state hir_program module_resolver type_resolver kind function type = do
+processLambdas :: [HF.LambdaInfo] -> HP.FullyQualifiedName -> [HF.Function]
+processLambdas lambdas qn =
+    lambdas |> List.iter
+            |> map (\lambda -> do
+                    lambda_qn <- HP.FullPathWithLambda qn lambda.id
+                    kind <- (HF.Lambda lambda.id)
+                    arg_count <- lambda.arg_count
+                    (HE.Expr _ _ location) <- lambda.body
+                    HF.Function location lambda_qn arg_count kind None (Some lambda.body)) |> toList
+
+processFunction :: ResolverState ->
+                   HP.Program ->
+                   ModuleResolver ->
+                   TypeResolverState ->
+                   HF.FunctionKind ->
+                   SF.Function ->
+                   Option HT.Type ->
+                   (String -> String -> HP.FullyQualifiedName) -> (ResolverState, [HF.Function])
+processFunction state hir_program module_resolver type_resolver kind function type qn_creator = do
     (state, desugared_body) <- case function.body of
         Some body if isEmpty function.arguments -> (state, Some body)
         Some body -> (state, Some (desugarFunctionArgs function.arguments body))
@@ -60,8 +78,8 @@ processFunction state hir_program module_resolver type_resolver kind function ty
                 SP.Pattern _ location -> do
                     addError state (InvalidExternArg location)) state
             (state, None)
-    name <- getString function.name
-    qn <- HP.FullPath module_resolver.module_name name
+    (Ident name location) <- function.name
+    qn <- qn_creator module_resolver.module_name name
     (state, hir_body, lambdas) <- case desugared_body of
                 Some expr -> do
                     context <- createContext qn type_resolver state module_resolver hir_program
@@ -73,17 +91,20 @@ processFunction state hir_program module_resolver type_resolver kind function ty
                             state <- addError state (ExternFnWithoutType function.name)
                             (state, None, [])
                         else (state, None, [])
-    function <- HF.Function qn kind type hir_body
-    lambdas <- lambdas |> List.iter
-                         |> map (\lambda -> do
-                                kind <- HF.Lambda lambda.id
-                                lambda_qn <- HP.FullPathWithLambda qn lambda.id
-                                mod <- module_resolver.module_name
-                                HF.Function lambda_qn kind None (Some lambda.body)) |> toList
+    arg_count <- getLength function.arguments
+    function <- HF.Function location qn arg_count kind type hir_body
+    lambdas <- processLambdas lambdas qn
     (state, [function] + lambdas)
 
-processFunctionMulti :: ResolverState -> HP.Program -> ModuleResolver -> TypeResolverState -> HF.FunctionKind -> FunctionInfo -> Option HT.Type -> (ResolverState, [HF.Function])
-processFunctionMulti state hir_program module_resolver type_resolver kind function_info type = do
+processFunctionMulti :: ResolverState ->
+                        HP.Program ->
+                        ModuleResolver ->
+                        TypeResolverState ->
+                        HF.FunctionKind ->
+                        FunctionInfo ->
+                        Option HT.Type ->
+                        (String -> String -> HP.FullyQualifiedName) -> (ResolverState, [HF.Function])
+processFunctionMulti state hir_program module_resolver type_resolver kind function_info type qn_creator = do
     (state, arg_count_map, err) <- function_info.functions |> List.iter |> fold (\(state, arg_count_map, err), f -> do
                 (state, err) <- if isNone f.body
                     then do
@@ -103,9 +124,8 @@ processFunctionMulti state hir_program module_resolver type_resolver kind functi
             state <- addError state (MultiDefArgCountMismatch names)
             (state, True)
         else (state, err)
-    name <- (atIndex function_info.functions 0).name
-    name <- getString name
-    qn <- HP.FullPath module_resolver.module_name name
+    (Ident name location) <- (atIndex function_info.functions 0).name
+    qn <- qn_creator module_resolver.module_name name
     if not err
         then do
             arg_cases <- function_info.functions |> List.iter |> map (\f -> (f.arguments, Option.unwrap f.body)) |> toList
@@ -115,16 +135,12 @@ processFunctionMulti state hir_program module_resolver type_resolver kind functi
                 env <- createEnvironment (HF.LambdaId 0) None
                 (context, env, expr) <- processExpr context env desugared_body
                 (context.state, Some expr, context.lambdas)
-            function <- HF.Function qn kind type hir_body
-            lambdas <- lambdas |> List.iter
-                         |> map (\lambda -> do
-                                lambda_qn <- HP.FullPathWithLambda qn lambda.id
-                                kind <- (HF.Lambda lambda.id)
-                                mod <- module_resolver.module_name
-                                HF.Function lambda_qn kind None (Some lambda.body)) |> toList
+            arg_count <- getLength (atIndex function_info.functions 0).arguments
+            function <- HF.Function location qn arg_count kind type hir_body
+            lambdas <- processLambdas lambdas qn
             (state, [function] + lambdas)
         else do
-            function <- HF.Function qn kind type None
+            function <- HF.Function location qn 0 kind type None
             (state, [function])
 
 addArgCount :: Ident -> Option [Ident] -> Option [Ident]
@@ -132,8 +148,14 @@ addArgCount name names = case names of
     Some names -> Some (names + [name])
     None -> Some [name]
 
-processFunctionInfo :: ResolverState -> HP.Program -> ModuleResolver -> TypeResolverState -> HF.FunctionKind -> String -> FunctionInfo -> (ResolverState, [HF.Function])
-processFunctionInfo state hir_program module_resolver type_resolver kind name function_info = do
+processFunctionInfo :: ResolverState ->
+                       HP.Program ->
+                       ModuleResolver ->
+                       TypeResolverState ->
+                       HF.FunctionKind ->
+                       FunctionInfo ->
+                       (String -> String -> HP.FullyQualifiedName) -> (ResolverState, [HF.Function])
+processFunctionInfo state hir_program module_resolver type_resolver kind function_info qn_creator = do
     (state, type, type_resolver) <- case getLength function_info.signatures of
         0 -> (state, None, type_resolver)
         1 -> do
@@ -148,16 +170,26 @@ processFunctionInfo state hir_program module_resolver type_resolver kind name fu
     (state, functions) <- case getLength function_info.functions of
         0 -> do
             first_signature <- atIndex function_info.signatures 0
-            sig_name <- first_signature.name
-            qn <- HP.FullPath module_resolver.module_name (getString sig_name)
-            function <- HF.Function qn kind type None
+            (Ident name location) <- first_signature.name
+            qn <- qn_creator module_resolver.module_name name
+            arg_count <- case type of
+                Some t -> HT.getArgCount t
+                None -> 0
+            function <- HF.Function location qn arg_count kind type None
             (state, [function])
-        1 -> processFunction state hir_program module_resolver type_resolver kind (atIndex function_info.functions 0) type
-        _ -> processFunctionMulti state hir_program module_resolver type_resolver kind function_info type
+        1 -> processFunction state hir_program module_resolver type_resolver kind (atIndex function_info.functions 0) type qn_creator
+        _ -> processFunctionMulti state hir_program module_resolver type_resolver kind function_info type qn_creator
     (state, functions)
 
-processFunctionsAndSignatures :: ResolverState -> HP.Program -> ModuleResolver -> TypeResolverState -> HF.FunctionKind -> [SF.Function] -> [SF.FunctionSignature] -> (ResolverState, [HF.Function])
-processFunctionsAndSignatures state hir_program module_resolver type_resolver kind functions signatures = do
+processFunctionsAndSignatures :: ResolverState ->
+                                 HP.Program ->
+                                 ModuleResolver ->
+                                 TypeResolverState ->
+                                 HF.FunctionKind ->
+                                 [SF.Function] ->
+                                 [SF.FunctionSignature] ->
+                                 (String -> String -> HP.FullyQualifiedName) -> (ResolverState, [HF.Function])
+processFunctionsAndSignatures state hir_program module_resolver type_resolver kind functions signatures qn_creator = do
     function_info_map <- empty
     function_info_map <- functions |> List.iter |> fold (\function_info_map, function -> do
                                     (function_info_map, _) <- alter (addFunction function) (getString function.name) function_info_map
@@ -167,8 +199,8 @@ processFunctionsAndSignatures state hir_program module_resolver type_resolver ki
                                     function_info_map) function_info_map
     (state, functions) <- function_info_map
         |> Map.iter
-        |> fold (\(state, functions), (name, function_info) -> do
-            (state, fns) <- processFunctionInfo state hir_program module_resolver type_resolver kind name function_info
+        |> fold (\(state, functions), (_, function_info) -> do
+            (state, fns) <- processFunctionInfo state hir_program module_resolver type_resolver kind function_info qn_creator
             functions <- functions + fns
             (state, functions)) (state, [])
     (state, functions)
@@ -180,7 +212,7 @@ processFunctions state hir_program module_resolver mod = do
                                             SM.FunctionSignature s -> (functions, signatures + [s])
                                             _ -> (functions, signatures)) ([], [])
     type_resolver <- initTypeResolver module_resolver []
-    (state, functions) <- processFunctionsAndSignatures state hir_program module_resolver type_resolver HF.Normal functions signatures
+    (state, functions) <- processFunctionsAndSignatures state hir_program module_resolver type_resolver HF.Normal functions signatures HP.FullPath
     hir_program <- functions |> List.iter |> fold (\hir_program, function -> do
         qn <- function.name
         f <- HP.Function function

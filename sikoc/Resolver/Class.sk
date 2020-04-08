@@ -66,7 +66,7 @@ processClass state hir_program module_resolver c = do
     type_resolver <- disableImplicitTypeArgs type_resolver
     kind <- HF.ClassMember qn
     (state, members) <- processFunctionsAndSignatures state hir_program module_resolver type_resolver
-                            kind c.member_functions c.member_function_type_signatures
+                            kind c.member_functions c.member_function_type_signatures HP.FullPath
     (hir_program, class_members) <- members |> List.iter |> fold (\(hir_program, class_members), member -> case member.kind of
             HF.ClassMember _ -> do
                 hir_program <- HP.addItem hir_program member.name (HP.Function member)
@@ -76,17 +76,18 @@ processClass state hir_program module_resolver c = do
                 hir_program <- HP.addItem hir_program member.name (HP.Function member)
                 (hir_program, class_members)
         ) (hir_program, [])
-    hir_class <- HC.Class name module_name arg_type class_constraints class_members
+    hir_class <- HC.Class qn arg_type class_constraints class_members
     hir_program <- HP.addItem hir_program qn (HP.Class hir_class)
     (state, hir_program)
 
 processInstance :: ResolverState -> HP.Program -> ModuleResolver -> SC.Instance -> Int -> (ResolverState, HP.Program)
 processInstance state hir_program module_resolver i instance_id = do
+    (Ident _ class_location) <- i.class_name
     (state, class_name) <- case resolveClass module_resolver i.class_name of
         Ok class_name -> (state, class_name)
         Err err -> (addError state err, HP.FullPath "" "")
     type_resolver <- createTypeResolverState module_resolver True
-    ST.TypeSignature type location <- i.type_signature
+    ST.TypeSignature type _ <- i.type_signature
     (state, type_resolver, hir_type) <- case type of
         ST.TypeArg type_arg -> do
             type_arg_str <- getString type_arg
@@ -105,10 +106,11 @@ processInstance state hir_program module_resolver i instance_id = do
     type_resolver <- disableImplicitTypeArgs type_resolver
     instance_id <- HC.InstanceId instance_id
     kind <- HF.InstanceMember instance_id
+    qn_creator <- \m, n -> HP.FullPathWithInstanceId m n instance_id
     (state, members) <- processFunctionsAndSignatures state hir_program module_resolver type_resolver
-                            kind i.member_functions i.member_function_type_signatures
+                            kind i.member_functions i.member_function_type_signatures qn_creator
     (hir_program, instance_members) <- members |> List.iter |> fold (\(hir_program, instance_members), member -> case member.kind of
-            HF.ClassMember _ -> do
+            HF.InstanceMember _ -> do
                 hir_program <- HP.addItem hir_program member.name (HP.Function member)
                 instance_members <- instance_members + [member.name]
                 (hir_program, instance_members)
@@ -116,16 +118,20 @@ processInstance state hir_program module_resolver i instance_id = do
                 hir_program <- HP.addItem hir_program member.name (HP.Function member)
                 (hir_program, instance_members)
         ) (hir_program, [])
-    hir_instance <- HC.Instance instance_id class_name hir_type instance_members
+    hir_instance <- HC.Instance class_location instance_id class_name hir_type instance_members
     hir_program <- HP.addInstance hir_program hir_instance
     (state, hir_program)
 
 processClassesAndInstances :: ResolverState -> HP.Program -> ModuleResolver -> SM.Module -> (ResolverState, HP.Program)
 processClassesAndInstances state hir_program module_resolver mod = do
     (state, hir_program, _) <- mod.items |> List.iter |> fold (\(state, hir_program, instance_id), item -> do
-        (state, hir_program) <- case item of
-                SM.Class c -> processClass state hir_program module_resolver c
-                SM.Instance i -> processInstance state hir_program module_resolver i instance_id
-                _ -> (state, hir_program)
-        (state, hir_program, instance_id + 1)) (state, hir_program, 0)
+        (state, hir_program, instance_id) <- case item of
+                SM.Class c -> do
+                    (state, hir_program) <- processClass state hir_program module_resolver c
+                    (state, hir_program, instance_id)
+                SM.Instance i -> do
+                    (state, hir_program) <- processInstance state hir_program module_resolver i instance_id
+                    (state, hir_program, instance_id + 1)
+                _ -> (state, hir_program, instance_id)
+        (state, hir_program, instance_id)) (state, hir_program, 0)
     (state, hir_program)

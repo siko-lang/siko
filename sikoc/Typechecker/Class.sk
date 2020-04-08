@@ -1,0 +1,64 @@
+module Siko.Typechecker.Class where
+
+import Siko.Typechecker
+import Siko.Typechecker.Expr
+import Siko.Typechecker.Error
+import Siko.HIR.Program as P
+import Siko.HIR.Function as F
+import Siko.HIR.Traversal
+import Siko.HIR.Type as T
+import Siko.HIR.Class as C
+import Map
+
+data MemberInfo = { type :: T.Type,
+                    has_default_impl :: Bool }
+
+data ClassMemberInfo = { members :: Map String MemberInfo }
+
+addMemberInfo :: ClassMemberInfo -> String -> T.Type -> Bool -> ClassMemberInfo
+addMemberInfo class_member_info name type has_default_impl = do
+    (members, _) <- Map.insert class_member_info.members name (MemberInfo type has_default_impl)
+    class_member_info { members = members }
+
+processClass :: TypecheckerState -> C.Class -> P.Program -> (TypecheckerState, ClassMemberInfo)
+processClass state c program = do
+    (state, class_member_info) <- c.members |> List.iter |> fold (\(state, class_member_info), qn -> do
+            member <- P.getFunction program qn
+            short_name <- (P.getShortName member.name)
+            (state, class_member_info) <- case member.type of
+                Some type -> do
+                    class_member_info <- addMemberInfo class_member_info short_name type (isSome member.body)
+                    (state, class_member_info)
+                None -> do
+                    state <- addError state (ClassMemberWithoutType short_name member.location)
+                    (state, class_member_info)
+            (state, class_member_info)
+        ) (state, ClassMemberInfo Map.empty)
+    (state, class_member_info)
+
+processInstance :: TypecheckerState -> C.Instance -> Map P.FullyQualifiedName ClassMemberInfo -> P.Program -> TypecheckerState
+processInstance state i class_member_info_map program = do
+    println "Processing instance, class name {}" % i.class_name
+    case get class_member_info_map i.class_name of
+        Some class_member_info -> do
+            (state, member_names) <- i.members |> List.iter |> fold (\(state, member_names), member -> do
+                short_name <- P.getShortName member
+                member_function <- P.getFunction program member
+                println "Checking member {} {}" % (member, short_name)
+                state <- case get class_member_info.members short_name of
+                    Some member_data -> do
+                        member_data :: MemberInfo <- member_data // FIXME: type inference
+                        println "Type {}" % (T.toString member_data.type)
+                        state
+                    None -> addError state (InstanceMemberNotClassMember short_name member_function.location)
+                (state, member_names + [short_name])) (state, [])
+            class_member_info :: ClassMemberInfo <- class_member_info // FIXME: type inference fix!
+            state <- class_member_info.members |> Map.iter |> fold (\state, (name, member_data) -> do
+                    if member_data.has_default_impl
+                        then state
+                        else if List.contains member_names name
+                            then state
+                            else addError state (MissingInstanceMember name i.location)
+                ) state
+            state
+        None -> state

@@ -2,7 +2,8 @@ module Siko.HIR.Type(Type(..),
                      TypeVar(..),
                      Constraint(..),
                      toString,
-                     collectVars) where
+                     collectVars,
+                     getArgCount) where
 
 import Siko.Constants
 import Siko.HIR.Program as HP
@@ -131,8 +132,8 @@ convertType type names = case type of
                     args <- args |> List.iter |> map (\arg -> toStringComplex arg names) |> toList
                     "{} {}" % (getNiceName n names, join args " ")
     Function from to -> do
-        from <- convertType from names
-        to <- if isFunction to then "({})" % (convertType to names) else convertType to names
+        from <- if isFunction from then "({})" % (convertType from names) else convertType from names
+        to <- convertType to names
         "{} -> {}" % (from, to)
     Never _ -> "!"
     Ref t -> "&{}" % (toStringComplex t names)
@@ -141,3 +142,13 @@ convertType type names = case type of
         if getLength args == 1
             then "({},)" % (join args ", ")
             else "({})" % (join args ", ")
+
+getArgCount :: Type -> Int
+getArgCount type = case type of
+    Var _ _ -> 0
+    FixedTypeArg _ _ _ -> 0
+    Named _ _ -> 0
+    Function _ to -> 1 + getArgCount to
+    Never _ -> 0
+    Ref _ -> 0
+    Tuple _ -> 0
