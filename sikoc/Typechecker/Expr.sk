@@ -19,10 +19,11 @@ import Siko.Typechecker.Error
 data Context = { type_store :: TS.TypeStore,
                  function_store :: FS.FunctionStore,
                  state :: TypecheckerState,
-                 program :: PO.Program }
+                 program :: PO.Program,
+                 returns :: [(E.ExprId, Location)] }
 
 initializeContext :: TypecheckerState -> PO.Program -> FS.FunctionStore -> Context
-initializeContext state program function_store = Context TS.initializeTypeStore function_store state program
+initializeContext state program function_store = Context TS.initializeTypeStore function_store state program []
 
 addExprType :: Context -> E.ExprId -> TS.ExprTypeState -> Context
 addExprType context expr_id expr_type = do
@@ -58,7 +59,7 @@ unify context ty1 ty2 location = do
             state <- state { var_gen = var_gen }
             (context { type_store = type_store, function_store = function_store, state = state }, sub)
         Err _ -> do
-            //println "Not Ok"
+            println "Not Ok {} {}" % (ty1, ty2)
             err <- TypeMismatch (T.toString ty1) (T.toString ty2) location
             state <- addError context.state err
             context <- context { state = state }
@@ -164,6 +165,13 @@ initializeExprType group_items current_fn_name context (E.Expr expr id location)
         E.CaseOf _ _ -> do
             (context, var) <- getNewVar context
             context <- addExprType context id (TS.ExprType var)
+            context
+        E.Return _ -> do
+            (var_gen, var) <- U.getNewTypeVar context.state.var_gen
+            state <- context.state
+            state <- state { var_gen = var_gen }
+            context <- context { state = state }
+            context <- addExprType context id (TS.ExprType (T.Never var))
             context
         E.ArgRef index -> do
             func_type_info <- getFunctionTypeInfo context current_fn_name
@@ -289,6 +297,10 @@ checkExprType context (E.Expr expr id location) = do
                 (context, _) <- matchExprWithPattern context body_id pattern_id pattern_location
                 (context, _) <- matchExprs context id case_body_id case_body_location
                 context) context
+            context
+        E.Return (E.Expr _ arg_id arg_location) -> do
+            returns <- context.returns + [(arg_id, arg_location)]
+            context <- context { returns = returns }
             context
         E.ArgRef _ -> context
         E.ValueRef (P.BindRef _ pattern_id) -> do

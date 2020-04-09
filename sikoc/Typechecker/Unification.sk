@@ -157,6 +157,12 @@ unify gen sub type1 type2 = do
             (gen, sub) <- try unify gen sub from1 from2
             (gen, sub) <- try unify gen sub to1 to2
             Ok (gen, sub)
+        (Never var1, Never var2) -> do
+            if var1 == var2
+                then Ok (gen, sub)
+                else do
+                    sub <- try add sub var1 type2
+                    Ok (gen, sub)
         (Never var, type2) -> do
             sub <- try add sub var type2
             Ok (gen, sub)
