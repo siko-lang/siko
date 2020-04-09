@@ -2,12 +2,46 @@ module Siko.Typechecker.FunctionStore where
 
 import Siko.HIR.Type
 import Siko.HIR.Program
+import Siko.Typechecker.Unification as U
 import Map
 
 data FunctionTypeInfo = { name :: FullyQualifiedName,
                           args :: [Type],
                           function_type :: Type,
+                          result_type :: Type,
                         } deriving (Show)
 
 data FunctionStore = {  functions :: Map FullyQualifiedName FunctionTypeInfo,
                      } deriving (Show)
+
+createFunctionStore :: FunctionStore
+createFunctionStore = FunctionStore empty
+
+addFunctionTypeInfo :: FunctionStore -> FunctionTypeInfo -> FunctionStore
+addFunctionTypeInfo store func_type_info = do
+    (functions, _) <- insert store.functions func_type_info.name func_type_info
+    store { functions = functions }
+
+getFunctionTypeInfo :: FunctionStore -> FullyQualifiedName -> FunctionTypeInfo
+getFunctionTypeInfo store name =
+    case get store.functions name of
+        Some func_type_info -> func_type_info
+        None -> panic "FunctionTypeInfo for {} not found" % name
+
+applyTypeInfo :: FunctionTypeInfo -> U.Substitution -> FunctionTypeInfo
+applyTypeInfo func_type_info sub = do
+    args <- func_type_info.args |> List.iter |> map (\t -> U.apply sub t) |> toList
+    function_type <- U.apply sub func_type_info.function_type
+    result_type <- U.apply sub func_type_info.result_type
+    FunctionTypeInfo func_type_info.name args function_type result_type
+
+apply :: FunctionStore -> U.Substitution -> FunctionStore
+apply store sub = do
+    functions <- store.functions |> Map.iter |> map (\(name, func_type_info) -> do
+                                func_type_info <- applyTypeInfo func_type_info sub
+                                (name, func_type_info)) |> toMap
+    store { functions = functions }
+
+dump :: FunctionStore -> ()
+dump store = do
+    store.functions |> Map.iter |> forEach (\(name, func_type_info) -> println "F: {}: {}" % (name, toString func_type_info.function_type))

@@ -10,31 +10,36 @@ import Siko.Typechecker
 import Siko.Typechecker.Util as UT
 import Siko.Typechecker.Unification as U
 import Siko.Typechecker.TypeStore as TS
+import Siko.Typechecker.FunctionStore as FS
 import Siko.Typechecker.Error
 
-data Context = { store :: TS.TypeStore,
+data Context = { type_store :: TS.TypeStore,
+                 function_store :: FS.FunctionStore,
                  var_gen :: U.TypeVarGenerator,
                  state :: TypecheckerState,
                  program :: PO.Program }
 
-initializeContext :: TypecheckerState -> PO.Program -> Context
-initializeContext state program = Context TS.initializeTypeStore U.createTypeVarGenerator state program
+initializeContext :: TypecheckerState -> PO.Program -> FS.FunctionStore -> Context
+initializeContext state program function_store = Context TS.initializeTypeStore function_store U.createTypeVarGenerator state program
 
 addExprType :: Context -> E.ExprId -> TS.ExprTypeState -> Context
 addExprType context expr_id expr_type = do
-    store <- TS.addExprType context.store expr_id expr_type
-    context { store = store }
+    type_store <- TS.addExprType context.type_store expr_id expr_type
+    context { type_store = type_store }
 
 getExprType :: Context -> E.ExprId -> T.Type
-getExprType context expr_id = TS.getExprType context.store expr_id
+getExprType context expr_id = TS.getExprType context.type_store expr_id
 
 getExprAndFunctionCallType :: Context -> E.ExprId -> (T.Type, T.Type)
-getExprAndFunctionCallType context expr_id = TS.getExprAndFunctionCallType context.store expr_id
+getExprAndFunctionCallType context expr_id = TS.getExprAndFunctionCallType context.type_store expr_id
 
 getNewVar :: Context -> (Context, T.Type)
 getNewVar context = do
     (var_gen, type) <- U.getNewTypeVarType context.var_gen
     (context { var_gen = var_gen }, type)
+
+getFunctionTypeInfo :: Context -> PO.FullyQualifiedName -> FS.FunctionTypeInfo
+getFunctionTypeInfo context name = FS.getFunctionTypeInfo context.function_store name
 
 unify :: Context -> T.Type -> T.Type -> Location -> (Context, U.Substitution)
 unify context ty1 ty2 location = do
@@ -43,8 +48,9 @@ unify context ty1 ty2 location = do
     case U.unify context.var_gen sub ty1 ty2 of
         Ok (var_gen, sub) -> do
             //println "Ok! {}" % sub
-            store <- TS.apply context.store sub
-            (context { store = store }, sub)
+            type_store <- TS.apply context.type_store sub
+            function_store <- FS.apply context.function_store sub
+            (context { type_store = type_store, function_store = function_store }, sub)
         Err _ -> do
             err <- TypeMismatch (T.toString ty1) (T.toString ty2) location
             state <- addError context.state err
@@ -67,8 +73,8 @@ instantiateType context type = do
     (new_type, var_gen) <- UT.instantiateType type context.var_gen
     (context { var_gen = var_gen }, new_type)
 
-initializeExprType :: Context -> E.Expr -> Context
-initializeExprType context (E.Expr expr id location) = do
+initializeExprType :: PO.FullyQualifiedName -> Context -> E.Expr -> Context
+initializeExprType current_fn_name context (E.Expr expr id location) = do
     //println "Initializing expr {} {}" % (expr, id)
     context <- case expr of
         E.VariantConstructorCall qn args -> do
@@ -110,6 +116,11 @@ initializeExprType context (E.Expr expr id location) = do
         E.Do args -> do
             (context, var) <- getNewVar context
             context <- addExprType context id (TS.ExprType var)
+            context
+        E.ArgRef index -> do
+            func_type_info <- getFunctionTypeInfo context current_fn_name
+            arg_type <- atIndex func_type_info.args index
+            context <- addExprType context id (TS.ExprType arg_type)
             context
         _ -> panic "Not yet implemented {}" % expr
     context

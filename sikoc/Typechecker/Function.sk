@@ -3,23 +3,58 @@ module Siko.Typechecker.Function where
 import Siko.Typechecker
 import Siko.Typechecker.Error
 import Siko.Typechecker.Class
+import Siko.Typechecker.FunctionStore
+import Siko.Typechecker.Unification as U
+import Siko.Typechecker.FunctionDependency
 import Siko.HIR.Program as P
 import Siko.HIR.Type as T
 import Siko.HIR.Function as F
+import Siko.Util.DependencyProcessor
+import Map
 
-processFunction :: TypecheckerState -> F.Function -> P.Program -> TypecheckerState
+createGeneralFunction :: Int -> U.TypeVarGenerator -> (U.TypeVarGenerator, T.Type)
+createGeneralFunction arg_count var_gen =
+    if arg_count == 0
+    then U.getNewTypeVarType var_gen
+    else do
+        (var_gen, from) <- U.getNewTypeVarType var_gen
+        (var_gen, to) <- createGeneralFunction (arg_count - 1) var_gen
+        (var_gen, T.Function from to)
+
+processFunction :: TypecheckerState -> F.Function -> P.Program -> (TypecheckerState, FunctionTypeInfo)
 processFunction state f program = do
-    ty <- case f.type of
-            Some t -> (T.toString t)
-            None -> "None"
-    state <- case f.type of
-        Some t -> do
-            type_arg_count <- T.getArgCount t
-            if type_arg_count < f.arg_count
+    (state, ty) <- case f.type of
+        Some ty -> do
+            type_arg_count <- T.getArgCount ty
+            state <- if type_arg_count < f.arg_count
                 then do
                     err <- IncorrectArgCount type_arg_count f.arg_count f.location
                     addError state err
                 else state
-        None -> state
-    println "Processing f {} arg_count {}, type {}" % (f.name, f.arg_count, ty)
-    state
+            (state, ty)
+        None -> do
+            var_gen <- U.createTypeVarGenerator
+            (var_gen, generated_func_type) <- createGeneralFunction f.arg_count var_gen
+            (state, generated_func_type)
+    args <- T.getArgs ty
+    result_ty <- T.getResultType ty (getLength args)
+    func_type_info <- FunctionTypeInfo f.name args ty result_ty
+    (state, func_type_info)
+
+processFunctions :: TypecheckerState -> P.Program -> (TypecheckerState, FunctionStore, [DependencyGroup P.FullyQualifiedName])
+processFunctions state program = do
+    functions <- P.getFunctions program
+    (state, function_store) <- functions |> List.iter |> fold (\(state, function_store), f -> do
+        (state, func_type_info) <- processFunction state f program
+        function_store <- addFunctionTypeInfo function_store func_type_info
+        (state, function_store)) (state, createFunctionStore)
+    all_dependencies <- functions |> List.iter |> fold (\all_dependencies, fn -> do
+        deps <- getFunctionDependencies fn
+        untyped_deps <- deps |> List.iter |> filter (\qn -> do
+            case P.getItem program qn of
+                P.Function fn -> isNone fn.type
+                _ -> False) |> toList
+        (all_dependencies, _) <- Map.insert all_dependencies fn.name untyped_deps
+        all_dependencies) Map.empty
+    groups <- processDependencies all_dependencies
+    (state, function_store, groups)

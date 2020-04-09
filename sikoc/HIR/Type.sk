@@ -4,6 +4,8 @@ module Siko.HIR.Type(Type(..),
                      toString,
                      collectVars,
                      getArgCount,
+                     getArgs,
+                     getResultType,
                      fixedType) where
 
 import Siko.Constants
@@ -145,14 +147,22 @@ convertType type names = case type of
             else "({})" % (join args ", ")
 
 getArgCount :: Type -> Int
-getArgCount type = case type of
-    Var _ _ -> 0
-    FixedTypeArg _ _ _ -> 0
-    Named _ _ -> 0
-    Function _ to -> 1 + getArgCount to
-    Never _ -> 0
-    Ref _ -> 0
-    Tuple _ -> 0
+getArgCount type =
+    case type of
+        Function _ to -> 1 + getArgCount to
+        _ -> 0
+
+getArgs :: Type -> [Type]
+getArgs type =
+    case type of
+        Function from to -> [from] + getArgs to
+        _ -> []
+
+getResultType :: Type -> Int -> Type
+getResultType type arg_count =
+    case type of
+        Function from to -> if arg_count == 0 then type else getResultType to (arg_count - 1)
+        _ -> type
 
 fixedType :: Type -> Type
 fixedType type = do

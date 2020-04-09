@@ -1,18 +1,18 @@
 module Siko.Typechecker where
 
-import Siko.Typechecker.FunctionDependency
+
 import Siko.Typechecker.Expr
 import Siko.Typechecker.Error
 import Siko.Typechecker.Pattern
-import Siko.Typechecker.TypeStore
+import Siko.Typechecker.TypeStore as TS
+import Siko.Typechecker.FunctionStore as FS
 import Siko.Typechecker.Class
 import Siko.Typechecker.Function
 import Siko.Util.DependencyProcessor
 import Siko.HIR.Program as P
 import Siko.HIR.Function as F
 import Siko.HIR.Traversal
-import Siko.HIR.Type as T
-import Siko.HIR.Class as C
+import Siko.HIR.Expr
 import Map
 import Set
 
@@ -30,50 +30,45 @@ addError state error = do
 initializeFunctionType :: Context -> F.Function -> Context
 initializeFunctionType context fn = do
     case fn.body of
-        Some body -> traverse context initializeExprType initializePatternType body
+        Some body -> traverse context (initializeExprType fn.name) initializePatternType body
         None -> context
 
 checkFunctionType :: Context -> F.Function -> Context
 checkFunctionType context fn = do
     case fn.body of
-        Some body -> traverse context checkExprType checkPatternType body
+        Some body -> do
+            context <- traverse context checkExprType checkPatternType body
+            func_type_info <- getFunctionTypeInfo context fn.name
+            (Expr _ body_id location) <- body
+            body_type <- getExprType context body_id
+            (context, sub) <- unify context func_type_info.result_type body_type location
+            context
         None -> context
 
-processGroup :: TypecheckerState -> DependencyGroup P.FullyQualifiedName -> P.Program -> TypecheckerState
-processGroup state group program = do
-    context <- initializeContext state program
+processGroup :: TypecheckerState -> DependencyGroup P.FullyQualifiedName -> P.Program -> FS.FunctionStore -> (TypecheckerState, FS.FunctionStore)
+processGroup state group program function_store = do
+    context <- initializeContext state program function_store
     context <- group.items |> Set.iter |> fold (\context, name -> do
                         fn <- P.getFunction program name
                         context <- initializeFunctionType context fn
                         context) context
-    //println "After init"
-    //dump context.store
+    println "After init"
+    TS.dump context.type_store
     context <- group.items |> Set.iter |> fold (\context, name -> do
                         fn <- P.getFunction program name
                         context <- checkFunctionType context fn
                         context) context
-    //println "After check"
-    //dump context.store
-    context.state
+    println "After check"
+    TS.dump context.type_store
+    (context.state, context.function_store)
 
 processProgram :: P.Program -> [TypecheckerError]
 processProgram program = do
     state <- emptyState
     (state, program) <- processClassesAndInstances state program
-    functions <- P.getFunctions program
-    state <- functions |> List.iter |> fold (\state, f -> processFunction state f program) state
-
-    all_dependencies <- functions |> List.iter |> fold (\all_dependencies, fn -> do
-        deps <- getFunctionDependencies fn
-        untyped_deps <- deps |> List.iter |> filter (\qn -> do
-            case P.getItem program qn of
-                P.Function fn -> isNone fn.type
-                _ -> False) |> toList
-        (all_dependencies, _) <- Map.insert all_dependencies fn.name untyped_deps
-        all_dependencies) Map.empty
-
-    groups <- processDependencies all_dependencies
-    state <- groups |> List.iter |> fold (\state, group -> do
-        state <- processGroup state group program
-        state) state
+    (state, function_store, groups) <- processFunctions state program
+    (state, function_store) <- groups |> List.iter |> fold (\(state, function_store), group -> do
+        (state, function_store) <- processGroup state group program function_store
+        (state, function_store) ) (state, function_store)
+    FS.dump function_store
     state.errors
