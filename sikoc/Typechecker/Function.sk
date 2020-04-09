@@ -33,8 +33,9 @@ processFunction state f program = do
                 else state
             (state, ty, True)
         None -> do
-            var_gen <- U.createTypeVarGenerator
+            var_gen <- state.var_gen
             (var_gen, generated_func_type) <- createGeneralFunction f.arg_count var_gen
+            state <- state { var_gen = var_gen }
             (state, generated_func_type, False)
     args <- T.getArgs ty
     result_ty <- T.getResultType ty (getLength args)

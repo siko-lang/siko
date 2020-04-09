@@ -8,6 +8,7 @@ import Siko.Typechecker.TypeStore as TS
 import Siko.Typechecker.FunctionStore as FS
 import Siko.Typechecker.Class
 import Siko.Typechecker.Function
+import Siko.Typechecker.Unification as U
 import Siko.Util.DependencyProcessor
 import Siko.HIR.Program as P
 import Siko.HIR.Function as F
@@ -16,20 +17,21 @@ import Siko.HIR.Expr
 import Map
 
 data TypecheckerState = { errors :: [TypecheckerError],
-                        } deriving (Show)
+                          var_gen :: U.TypeVarGenerator,
+                        }
 
 emptyState :: TypecheckerState
-emptyState = TypecheckerState []
+emptyState = TypecheckerState [] U.createTypeVarGenerator
 
 addError :: TypecheckerState -> TypecheckerError -> TypecheckerState
 addError state error = do
     errors <- state.errors + [error]
     state { errors = errors }
 
-initializeFunctionType :: Context -> F.Function -> Context
-initializeFunctionType context fn = do
+initializeFunctionType :: [P.FullyQualifiedName] -> Context -> F.Function -> Context
+initializeFunctionType group_items context fn = do
     case fn.body of
-        Some body -> traverse context (initializeExprType fn.name) initializePatternType body
+        Some body -> traverse context (initializeExprType group_items fn.name) initializePatternType body
         None -> context
 
 checkFunctionType :: Context -> F.Function -> Context
@@ -47,10 +49,9 @@ checkFunctionType context fn = do
 processGroup :: TypecheckerState -> DependencyGroup P.FullyQualifiedName -> P.Program -> FS.FunctionStore -> (TypecheckerState, FS.FunctionStore)
 processGroup state group program function_store = do
     context <- initializeContext state program function_store
-    context <- refreshGroupFunctions context group.items
     context <- group.items |> List.iter |> fold (\context, name -> do
                         fn <- P.getFunction program name
-                        context <- initializeFunctionType context fn
+                        context <- initializeFunctionType group.items context fn
                         context) context
     //println "After init"
     //TS.dump context.type_store

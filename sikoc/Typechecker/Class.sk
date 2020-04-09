@@ -50,7 +50,7 @@ processInstance state i class_type_info_map program = do
                     Some member_data -> do
                         member_data :: ClassMemberInfo <- member_data // FIXME: type inference
                         sub <- U.createSubstitution
-                        var_gen <- U.createTypeVarGenerator
+                        var_gen <- state.var_gen
                         class_vars <- collectVars [] class_type_info.arg_type
                         class_vars <- collectVars class_vars member_data.type
                         (class_mapper, var_gen) <- initMapper class_vars var_gen
@@ -62,10 +62,11 @@ processInstance state i class_type_info_map program = do
                             None -> instance_vars
                         (instance_mapper, var_gen) <- initMapper instance_vars var_gen
                         instance_type <- remap instance_mapper i.type
-                        sub <- case U.unify var_gen sub class_arg_type instance_type of
-                            Ok (_, sub) -> sub
+                        (var_gen, sub) <- case U.unify var_gen sub class_arg_type instance_type of
+                            Ok (var_gen, sub) -> (var_gen, sub)
                             Err _ -> panic "Class arg unification failed!"
                         inferred_instance_member_type <- U.apply sub class_member_type
+                        state <- state { var_gen = var_gen }
                         state <- case instance_member.type of
                             Some instance_member_type -> do
                                 instance_member_type <- remap instance_mapper instance_member_type

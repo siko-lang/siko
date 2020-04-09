@@ -19,26 +19,6 @@ data FunctionStore = {  functions :: Map FullyQualifiedName FunctionTypeInfo,
 createFunctionStore :: FunctionStore
 createFunctionStore = FunctionStore empty
 
-// refresh all function types for untyped functions in the current group to make sure that their type vars do not collide
-// with the type vars generated from the type var generator of the current context
-refreshGroupFunctions :: FunctionStore -> U.TypeVarGenerator -> [FullyQualifiedName] -> (FunctionStore, U.TypeVarGenerator)
-refreshGroupFunctions store var_gen group_functions = do
-    (functions, var_gen) <- store.functions |> Map.iter |> fold (\(functions, var_gen), (name, func_type_info) -> do
-        (func_type_info, var_gen) <- if contains group_functions name && not func_type_info.defined
-            then do
-                vars <- Util.collectVars [] func_type_info.function_type
-                (mapper, var_gen) <- Util.initMapper vars var_gen
-                function_type <- Util.remap mapper func_type_info.function_type
-                result_type <- Util.remap mapper func_type_info.result_type
-                args <- func_type_info.args |> List.iter |> map (\arg -> Util.remap mapper arg) |> toList
-                func_type_info <- FunctionTypeInfo func_type_info.name args function_type result_type func_type_info.defined
-                (func_type_info, var_gen)
-            else (func_type_info, var_gen)
-        (functions, _) <- insert functions name func_type_info
-        (functions, var_gen)) (Map.empty, var_gen)
-    store <- store { functions = functions }
-    (store, var_gen)
-
 addFunctionTypeInfo :: FunctionStore -> FunctionTypeInfo -> FunctionStore
 addFunctionTypeInfo store func_type_info = do
     (functions, _) <- insert store.functions func_type_info.name func_type_info
