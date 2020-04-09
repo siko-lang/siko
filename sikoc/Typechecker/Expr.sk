@@ -137,6 +137,10 @@ initializeExprType group_items current_fn_name context (E.Expr expr id location)
                 (context, vars)) (context, [])
             context <- addExprType context id (TS.ExprType (T.Tuple vars))
             context
+        E.List args -> do
+            (context, var) <- getNewVar context
+            context <- addExprType context id (TS.ExprType (UT.getListType var))
+            context
         E.IntegerLiteral _ -> do
             context <- addExprType context id (TS.ExprType UT.getIntType)
             context
@@ -255,6 +259,17 @@ checkExprType context (E.Expr expr id location) = do
             arg_types <- args |> List.iter |> map (\(E.Expr _ arg _) -> getExprType context arg) |> toList
             (context, _) <- matchExprWith context id (T.Tuple arg_types) location
             context
+        E.List args -> if isEmpty args
+                then context
+                else do
+                    (E.Expr _ first_id location) <- atIndex args 0
+                    first_ty <- getExprType context first_id
+                    context <- args |> List.iter |> fold (\context, (E.Expr _ arg_id arg_location) -> do
+                        arg_ty <- getExprType context arg_id
+                        (context, _) <- matchExprWith context arg_id first_ty arg_location
+                        context) context
+                    (context, _) <- matchExprWith context id (UT.getListType first_ty) location
+                    context
         E.IntegerLiteral _ -> context
         E.FloatLiteral _ -> context
         E.StringLiteral _ -> context
