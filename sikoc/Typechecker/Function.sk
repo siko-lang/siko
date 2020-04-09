@@ -23,7 +23,7 @@ createGeneralFunction arg_count var_gen =
 
 processFunction :: TypecheckerState -> F.Function -> P.Program -> (TypecheckerState, FunctionTypeInfo)
 processFunction state f program = do
-    (state, ty) <- case f.type of
+    (state, ty, defined) <- case f.type of
         Some ty -> do
             type_arg_count <- T.getArgCount ty
             state <- if type_arg_count < f.arg_count
@@ -31,14 +31,14 @@ processFunction state f program = do
                     err <- IncorrectArgCount type_arg_count f.arg_count f.location
                     addError state err
                 else state
-            (state, ty)
+            (state, ty, True)
         None -> do
             var_gen <- U.createTypeVarGenerator
             (var_gen, generated_func_type) <- createGeneralFunction f.arg_count var_gen
-            (state, generated_func_type)
+            (state, generated_func_type, False)
     args <- T.getArgs ty
     result_ty <- T.getResultType ty (getLength args)
-    func_type_info <- FunctionTypeInfo f.name args ty result_ty
+    func_type_info <- FunctionTypeInfo f.name args ty result_ty defined
     (state, func_type_info)
 
 processFunctions :: TypecheckerState -> P.Program -> (TypecheckerState, FunctionStore, [DependencyGroup P.FullyQualifiedName])

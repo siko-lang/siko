@@ -61,9 +61,11 @@ processOrPatterns context env patterns location = do
 
 processPattern :: Context -> PatternEnvironment -> Environment -> SP.Pattern -> (Context, PatternEnvironment, Environment, HP.Pattern)
 processPattern context pattern_env env (SP.Pattern pattern location) = do
+    (state, pattern_id) <- getNextPatternId context.state
+    context <- context { state = state }
     (context, pattern_env, env, hir_pattern) <- case pattern of
         SP.Binding name -> do
-            (context, bind_ref) <- createBindRef context (getString name)
+            bind_ref <- HP.BindRef (getString name) pattern_id
             pattern_env <- addBindingToPatternEnv pattern_env name
             env <- addBinding env bind_ref
             (context, pattern_env, env, HP.Binding bind_ref)
@@ -149,6 +151,4 @@ processPattern context pattern_env env (SP.Pattern pattern location) = do
         SP.Or patterns -> do
             (context, env, hir_patterns) <- processOrPatterns context env patterns location
             (context, pattern_env, env, HP.Or hir_patterns)
-    (state, pattern_id) <- getNextPatternId context.state
-    context <- context { state = state }
     (context, pattern_env, env, HP.Pattern hir_pattern pattern_id location)

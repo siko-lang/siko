@@ -82,7 +82,7 @@ impl Error {
         let input = file_manager.content(file_path);
         let lines: Vec<_> = input.lines().collect();
         eprintln!(
-            "--{}:{}",
+            "-- {}:{}",
             file_path.path.green(),
             format!("{}", location.line + 1).green()
         );
@@ -102,8 +102,7 @@ impl Error {
         file_path: &FilePath,
         location: &Location,
     ) {
-        let error = "ERROR:";
-        eprintln!("{} {}", error.red(), msg);
+        eprintln!("{}", msg);
         Error::report_location(file_manager, file_path, location);
     }
 

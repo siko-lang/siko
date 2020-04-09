@@ -23,6 +23,11 @@ addExprType store expr_id expr_type = do
     (expr_types, _) <- insert store.expr_types expr_id expr_type
     store { expr_types = expr_types }
 
+addPatternType :: TypeStore -> P.PatternId -> PatternTypeState -> TypeStore
+addPatternType store pattern_id pattern_type = do
+    (pattern_types, _) <- insert store.pattern_types pattern_id pattern_type
+    store { pattern_types = pattern_types }
+
 getExprType :: TypeStore -> E.ExprId -> T.Type
 getExprType store expr_id = do
     case get store.expr_types expr_id of
@@ -35,6 +40,12 @@ getExprAndFunctionCallType store expr_id = do
     case get store.expr_types expr_id of
         Some (FunctionCall ty fn_ty) -> (ty, fn_ty)
         _ -> panic "No fn call type found for {}" % expr_id
+
+getPatternType :: TypeStore -> P.PatternId -> T.Type
+getPatternType store pattern_id = do
+    case get store.pattern_types pattern_id of
+        Some (PatternType type) -> type
+        _ -> panic "No type found for {}" % pattern_id
 
 apply :: TypeStore -> U.Substitution -> TypeStore
 apply store sub = do

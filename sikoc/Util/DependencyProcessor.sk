@@ -3,17 +3,17 @@ module Siko.Util.DependencyProcessor where
 import Map
 import Set
 
-data DependencyGroup a = { items :: Set a } deriving (Show)
+data DependencyGroup a = { items :: [a] } deriving (Show)
 
 data DependencyBucket a = { items :: [a] }
 
 data GroupTable a = { table :: Map a Int }
 
-newGroup = DependencyGroup Set.empty
+newGroup = DependencyGroup []
 
 addToDependencyGroup a :: (PartialEq a, Ord a) => a -> DependencyGroup a -> DependencyGroup a
 addToDependencyGroup item group = do
-    (items, _) <- Set.insert group.items item
+    items <- group.items + [item] |> sort |> dedup
     group { items = items }
 
 mergeGroups a :: (Ord a) => a -> a -> GroupTable a -> GroupTable a
@@ -49,11 +49,11 @@ checkCircularDependency item dependencies all_dependencies group_table = do
 checkGroup a :: (PartialEq a, Ord a) => Int -> Map Int (DependencyGroup a) -> Map a [a] -> Set a -> Bool
 checkGroup group_id group_lookup_table all_dependencies processed_items = do
     group <- Option.unwrap (get group_lookup_table group_id)
-    dep_missing <- group.items |> Set.iter |> fold (\total_dep_missing, item -> do
+    dep_missing <- group.items |> List.iter |> fold (\total_dep_missing, item -> do
             deps <- Option.unwrap (get all_dependencies item)
             some_dep_missing <- deps |> List.iter |> fold (\missing, item -> do
                 dep_missing <- not (Set.contains processed_items item) &&
-                            not (Set.contains group.items item)
+                            not (List.contains group.items item)
                 missing || dep_missing) False
             total_dep_missing || some_dep_missing
         ) False
@@ -104,7 +104,7 @@ processDependencies all_dependencies = do
                                      |> fold (\(unprocessed_groups, ordered_groups, processed_items), group_id -> do
                                                 unprocessed_groups <- Set.remove unprocessed_groups group_id
                                                 group <- Option.unwrap (get group_lookup_table group_id)
-                                                processed_items <- group.items |> Set.iter |> fold (\processed_items, item -> do
+                                                processed_items <- group.items |> List.iter |> fold (\processed_items, item -> do
                                                     (processed_items, _) <- Set.insert processed_items item
                                                     processed_items) processed_items
                                                 ordered_groups <- ordered_groups + [group]

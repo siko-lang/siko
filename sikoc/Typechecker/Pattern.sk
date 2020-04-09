@@ -1,14 +1,49 @@
 module Siko.Typechecker.Pattern where
 
+import Siko.Syntax.Location
 import Siko.Typechecker.Expr
-import Siko.HIR.Pattern
+import Siko.Typechecker.TypeStore as TS
+import Siko.Typechecker.Unification as U
+import Siko.HIR.Pattern as P
+import Siko.HIR.Type as T
 
-initializePatternType :: Context -> Pattern -> Context
-initializePatternType context (Pattern pattern id location) = do
-    println "Initializing pattern {} {}" % (pattern, id)
-    context
+addPatternType :: Context -> P.PatternId -> TS.PatternTypeState -> Context
+addPatternType context pattern_id pattern_type = do
+    type_store <- TS.addPatternType context.type_store pattern_id pattern_type
+    context { type_store = type_store }
 
-checkPatternType :: Context -> Pattern -> Context
-checkPatternType context (Pattern pattern id location) = do
-    println "Checking pattern {} {}" % (pattern, id)
-    context
+getPatternType :: Context -> P.PatternId -> T.Type
+getPatternType context pattern_id = TS.getPatternType context.type_store pattern_id
+
+matchPatternWith :: Context -> P.PatternId -> T.Type -> Location -> (Context, U.Substitution)
+matchPatternWith context pattern_id type location = do
+    pattern_type <- getPatternType context pattern_id
+    unify context type pattern_type location
+
+initializePatternType :: Context -> P.Pattern -> Context
+initializePatternType context (P.Pattern pattern id location) = do
+    //println "Initializing pattern {} {}" % (pattern, id)
+    case pattern of
+        P.Binding bind_ref -> do
+            (context, var) <- getNewVar context
+            context <- addPatternType context id (TS.PatternType var)
+            context
+        P.Tuple args -> do
+            (context, vars) <- args |> List.iter |> fold (\(context, vars), arg -> do
+                (context, var) <- getNewVar context
+                vars <- vars + [var]
+                (context, vars)) (context, [])
+            context <- addPatternType context id (TS.PatternType (T.Tuple vars))
+            context
+        _ -> panic "Not yet implemented {}" % pattern
+
+checkPatternType :: Context -> P.Pattern -> Context
+checkPatternType context (P.Pattern pattern id location) = do
+    //println "Checking pattern {} {}" % (pattern, id)
+    case pattern of
+        P.Binding _ -> context
+        P.Tuple args -> do
+            arg_types <- args |> List.iter |> map (\(P.Pattern _ arg _) -> getPatternType context arg) |> toList
+            (context, _) <- matchPatternWith context id (T.Tuple arg_types) location
+            context
+        _ -> panic "Not yet implemented {}" % pattern

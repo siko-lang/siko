@@ -29,7 +29,6 @@ data Context = {
                     state :: ResolverState,
                     module_resolver :: ModuleResolver,
                     program :: HPO.Program,
-                    next_binding_id :: Int,
                     next_lambda_id :: Int,
                     lambda_helper :: Option LambdaHelper,
                     lambdas :: [HF.LambdaInfo],
@@ -42,7 +41,6 @@ createContext function_name type_resolver state module_resolver program = Contex
     state = state,
     module_resolver = module_resolver,
     program = program,
-    next_binding_id = 0,
     next_lambda_id = 1,
     lambda_helper = None,
     lambdas = [] }
@@ -52,12 +50,6 @@ getExprId context = do
     (state, expr_id) <- getNextExprId context.state
     context <- context { state = state }
     (context, expr_id)
-
-createBindRef :: Context -> String -> (Context, HP.BindRef)
-createBindRef context name = do
-    id <- context.next_binding_id
-    context <- context { next_binding_id = id + 1 }
-    (context, HP.BindRef name id)
 
 createLambdaName :: Context -> (Context, HF.LambdaId, HPO.FullyQualifiedName)
 createLambdaName context = do

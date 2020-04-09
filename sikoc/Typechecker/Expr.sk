@@ -7,6 +7,7 @@ import Siko.HIR.Data as D
 import Siko.HIR.Pattern as P
 import Siko.HIR.Program as PO
 import Siko.Typechecker
+import Siko.Typechecker.Pattern
 import Siko.Typechecker.Util as UT
 import Siko.Typechecker.Unification as U
 import Siko.Typechecker.TypeStore as TS
@@ -21,6 +22,11 @@ data Context = { type_store :: TS.TypeStore,
 
 initializeContext :: TypecheckerState -> PO.Program -> FS.FunctionStore -> Context
 initializeContext state program function_store = Context TS.initializeTypeStore function_store U.createTypeVarGenerator state program
+
+refreshGroupFunctions :: Context -> [PO.FullyQualifiedName] -> Context
+refreshGroupFunctions context functions = do
+    (function_store, var_gen) <- FS.refreshGroupFunctions context.function_store context.var_gen functions
+    context { function_store = function_store, var_gen = var_gen }
 
 addExprType :: Context -> E.ExprId -> TS.ExprTypeState -> Context
 addExprType context expr_id expr_type = do
@@ -50,8 +56,9 @@ unify context ty1 ty2 location = do
             //println "Ok! {}" % sub
             type_store <- TS.apply context.type_store sub
             function_store <- FS.apply context.function_store sub
-            (context { type_store = type_store, function_store = function_store }, sub)
+            (context { type_store = type_store, function_store = function_store, var_gen = var_gen }, sub)
         Err _ -> do
+            //println "Not Ok"
             err <- TypeMismatch (T.toString ty1) (T.toString ty2) location
             state <- addError context.state err
             context <- context { state = state }
@@ -67,6 +74,12 @@ matchExprs context expr_id1 expr_id2 location = do
     expr_type1 <- getExprType context expr_id1
     expr_type2 <- getExprType context expr_id2
     unify context expr_type1 expr_type2 location
+
+matchExprWithPattern :: Context -> E.ExprId -> P.PatternId -> Location -> (Context, U.Substitution)
+matchExprWithPattern context expr_id pattern_id location = do
+    expr_type <- getExprType context expr_id
+    patter_type <- getPatternType context pattern_id
+    unify context patter_type expr_type location
 
 instantiateType :: Context -> T.Type -> (Context, T.Type)
 instantiateType context type = do
@@ -117,10 +130,18 @@ initializeExprType current_fn_name context (E.Expr expr id location) = do
             (context, var) <- getNewVar context
             context <- addExprType context id (TS.ExprType var)
             context
+        E.CaseOf _ _ -> do
+            (context, var) <- getNewVar context
+            context <- addExprType context id (TS.ExprType var)
+            context
         E.ArgRef index -> do
             func_type_info <- getFunctionTypeInfo context current_fn_name
             arg_type <- atIndex func_type_info.args index
             context <- addExprType context id (TS.ExprType arg_type)
+            context
+        E.ValueRef ref -> do
+            (context, var) <- getNewVar context
+            context <- addExprType context id (TS.ExprType var)
             context
         _ -> panic "Not yet implemented {}" % expr
     context
@@ -187,6 +208,18 @@ checkExprType context (E.Expr expr id location) = do
         E.Do args -> do
             (E.Expr _ last_id _) <- atIndex args ((getLength args) - 1)
             (context, _) <- matchExprs context id last_id location
+            context
+        E.CaseOf (E.Expr _ body_id body_location) cases -> do
+            (E.Case (P.Pattern _ pattern_id pattern_location) (E.Expr _ case_body_id case_body_location)) <- atIndex cases 0
+            (context, _) <- matchExprs context id case_body_id location
+            context <- cases |> List.iter |> fold (\context, (E.Case (P.Pattern _ pattern_id pattern_location) (E.Expr _ case_body_id case_body_location)) -> do
+                (context, _) <- matchExprWithPattern context body_id pattern_id pattern_location
+                (context, _) <- matchExprs context id case_body_id case_body_location
+                context) context
+            context
+        E.ArgRef _ -> context
+        E.ValueRef (P.BindRef _ pattern_id) -> do
+            (context, _) <- matchExprWithPattern context id pattern_id location
             context
         _ -> panic "Not yet implemented {}" % expr
     context
