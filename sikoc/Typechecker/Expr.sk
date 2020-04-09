@@ -89,6 +89,14 @@ instantiateType context type = do
     state <- state { var_gen = var_gen }
     (context { state = state }, new_type)
 
+getNeverType :: Context -> (Context, T.Type)
+getNeverType context = do
+    (var_gen, var) <- U.getNewTypeVar context.state.var_gen
+    state <- context.state
+    state <- state { var_gen = var_gen }
+    context <- context { state = state }
+    (context, T.Never var)
+
 initializeExprType :: [PO.FullyQualifiedName] -> PO.FullyQualifiedName -> Context -> E.Expr -> Context
 initializeExprType group_items current_fn_name context (E.Expr expr id location) = do
     //println "Initializing expr {} {}" % (expr, id)
@@ -167,11 +175,20 @@ initializeExprType group_items current_fn_name context (E.Expr expr id location)
             context <- addExprType context id (TS.ExprType var)
             context
         E.Return _ -> do
-            (var_gen, var) <- U.getNewTypeVar context.state.var_gen
-            state <- context.state
-            state <- state { var_gen = var_gen }
-            context <- context { state = state }
-            context <- addExprType context id (TS.ExprType (T.Never var))
+            (context, never_type) <- getNeverType context
+            context <- addExprType context id (TS.ExprType never_type)
+            context
+        E.Continue _ -> do
+            (context, never_type) <- getNeverType context
+            context <- addExprType context id (TS.ExprType never_type)
+            context
+        E.Break _ -> do
+            (context, never_type) <- getNeverType context
+            context <- addExprType context id (TS.ExprType never_type)
+            context
+        E.Loop _ _ _ _ _ -> do
+            (context, never_type) <- getNeverType context
+            context <- addExprType context id (TS.ExprType never_type)
             context
         E.ArgRef index -> do
             func_type_info <- getFunctionTypeInfo context current_fn_name
@@ -301,6 +318,17 @@ checkExprType context (E.Expr expr id location) = do
         E.Return (E.Expr _ arg_id arg_location) -> do
             returns <- context.returns + [(arg_id, arg_location)]
             context <- context { returns = returns }
+            context
+        E.Continue _ -> context
+        E.Break _ -> context
+        E.Loop (P.Pattern _ pattern_id pattern_location) (E.Expr _ initializer_id _) items continues breaks -> do
+            (context, _) <- matchExprWithPattern context initializer_id pattern_id pattern_location
+            context <- continues |> List.iter |> fold (\context, (E.ExprRef source ref_location) -> do
+                (context, sub) <- matchExprs context initializer_id source ref_location
+                context) context
+            context <- breaks |> List.iter |> fold (\context, (E.ExprRef source ref_location) -> do
+                (context, sub) <- matchExprs context id source ref_location
+                context) context
             context
         E.ArgRef _ -> context
         E.ValueRef (P.BindRef _ pattern_id) -> do

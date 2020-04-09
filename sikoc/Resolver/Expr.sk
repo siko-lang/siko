@@ -23,6 +23,10 @@ data LambdaHelper = { arg_offset :: Int,
                       captured_values :: [HP.BindRef],
                     } deriving (Show)
 
+data LoopHelper = { continues :: [HE.ExprRef],
+                    breaks :: [HE.ExprRef],
+                  } deriving (Show)
+
 data Context = {
                     function_name :: HPO.FullyQualifiedName,
                     type_resolver :: TypeResolverState,
@@ -32,6 +36,7 @@ data Context = {
                     next_lambda_id :: Int,
                     lambda_helper :: Option LambdaHelper,
                     lambdas :: [HF.LambdaInfo],
+                    loop_helper :: Option LoopHelper,
                }
 
 createContext :: HPO.FullyQualifiedName -> TypeResolverState -> ResolverState -> ModuleResolver -> HPO.Program -> Context
@@ -43,7 +48,8 @@ createContext function_name type_resolver state module_resolver program = Contex
     program = program,
     next_lambda_id = 1,
     lambda_helper = None,
-    lambdas = [] }
+    lambdas = [],
+    loop_helper = None }
 
 getExprId :: Context -> (Context, HE.ExprId)
 getExprId context = do
@@ -70,6 +76,28 @@ captureValue context bind_ref = do
             lambda_helper <- lambda_helper { captured_values = captured_values }
             context <- context { lambda_helper = Some lambda_helper }
             (context, offset + index)
+
+addContinue :: Context -> HE.ExprId -> Location -> Context
+addContinue context continue_expr location = do
+    case context.loop_helper of
+        Some loop_helper -> do
+            loop_helper :: LoopHelper <- loop_helper // FIXME: type inference
+            continues <- loop_helper.continues + [HE.ExprRef continue_expr location]
+            loop_helper <- Some (loop_helper { continues = continues })
+            context { loop_helper = loop_helper }
+        None -> do
+            addErrorToContext context (ContinueWithoutLoop location)
+
+addBreak :: Context -> HE.ExprId -> Location -> Context
+addBreak context break_expr location = do
+    case context.loop_helper of
+        Some loop_helper -> do
+            loop_helper :: LoopHelper <- loop_helper // FIXME: type inference
+            breaks <- loop_helper.breaks + [HE.ExprRef break_expr location]
+            loop_helper <- Some (loop_helper { breaks = breaks })
+            context { loop_helper = loop_helper }
+        None -> do
+            addErrorToContext context (BreakWithoutLoop location)
 
 addErrorToContext :: Context -> ResolverError -> Context
 addErrorToContext context err = do
@@ -405,17 +433,29 @@ processExpr context env (SE.Expr expr location) = do
             return (context, env, hir_expr)
         SE.Continue expr -> do
             (context, env, hir_expr) <- processExpr context env expr
+            (HE.Expr _ id location) <- hir_expr
+            context <- addContinue context id location
             (context, env, HE.Continue hir_expr)
         SE.Break expr -> do
             (context, env, hir_expr) <- processExpr context env expr
+            (HE.Expr _ id location) <- hir_expr
+            context <- addBreak context id location
             (context, env, HE.Break hir_expr)
         SE.Loop pattern initializer items -> do
             (context, env, hir_initializer) <- processExpr context env initializer
             pattern_env <- createPatternEnvironment
             block_env <- createEnvironment env.lambda_id (Some env)
             (context, pattern_env, block_env, hir_pattern) <- processPattern context pattern_env block_env pattern
+            context <- validatePatternEnv pattern_env context
+            prev_loop_helper <- context.loop_helper
+            loop_helper <- LoopHelper [] []
+            context <- context { loop_helper = Some loop_helper }
             (context, hir_items) <- processDo context block_env items
-            (context, env, HE.Loop hir_pattern hir_initializer hir_items)
+            loop_helper <- Option.unwrap context.loop_helper
+            context <- context { loop_helper = prev_loop_helper }
+            continues <- loop_helper.continues
+            breaks <- loop_helper.breaks
+            (context, env, HE.Loop hir_pattern hir_initializer hir_items continues breaks)
         SE.ArgRef i -> (context, env, HE.ArgRef i)
     (context, expr_id) <- getExprId context
     (context, env, HE.Expr hir_expr expr_id location)
