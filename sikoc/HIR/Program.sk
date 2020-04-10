@@ -11,6 +11,7 @@ data FullyQualifiedName = FullPath String String
                           | FullPathWithVariant String String String
                           | FullPathWithLambda FullyQualifiedName F.LambdaId
                           | FullPathWithInstanceId String String C.InstanceId
+                          | ModulePath String
                           deriving (PartialEq, Eq, PartialOrd, Ord)
 
 instance Show FullyQualifiedName where
@@ -19,6 +20,7 @@ instance Show FullyQualifiedName where
         FullPathWithVariant m n v -> "{}.{}/{}" % (m, n, v)
         FullPathWithLambda n i -> "{}/{}" % (n, i)
         FullPathWithInstanceId m n i -> "{}.{}/#{}" % (m, n, i)
+        ModulePath m -> "{}" % m
 
 getResolvableName :: FullyQualifiedName -> String
 getResolvableName f = case f of
@@ -26,6 +28,7 @@ getResolvableName f = case f of
         FullPathWithVariant m n v -> "{}.{}" % (m, v)
         FullPathWithLambda n i -> panic "getResolvableName called for a lambda"
         FullPathWithInstanceId m n i -> panic "getResolvableName called for a instance member"
+        ModulePath m -> panic "getResolvableName called for a module"
 
 getShortName :: FullyQualifiedName -> String
 getShortName f = case f of
@@ -33,12 +36,14 @@ getShortName f = case f of
         FullPathWithVariant m n v -> n
         FullPathWithLambda n i -> panic "getShortName called for a lambda"
         FullPathWithInstanceId m n i -> n
+        ModulePath m -> panic "getShortName called for a module"
 
 data Item = Function F.Function
             | Adt D.AlgebraicDataType
             | Record D.Record
             | Class C.Class
             | Variant D.VariantInfo
+            | Module Location // dummy item, just for detecting name conflicts
             deriving (Show)
 
 data Program = {
@@ -68,6 +73,7 @@ getLocation item = case item of
     Record record -> record.location
     Class c -> c.location
     Variant (D.VariantInfo _ _ location) -> location
+    Module location -> location
 
 getItem :: Program -> FullyQualifiedName -> Item
 getItem program name = case get program.items name of

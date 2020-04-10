@@ -40,12 +40,17 @@ resolveItem items err name = do
                         else Ok (atIndex resolved_items 0)
         None -> Err (err name)
 
-getModules :: Program -> Map String M.Module
-getModules program = do
-        modules <- program.modules |> List.iter |> fold (\modules, mod -> do
-                                                         (modules, _) <- insert modules (getString mod.name) mod
-                                                         modules) empty
-        modules
+getModules :: Program -> ResolverState -> HP.Program -> (ResolverState, HP.Program, Map String M.Module)
+getModules program state hir_program = do
+        (state, hir_program, modules) <- program.modules |> List.iter |> fold (\(state, hir_program, modules), mod -> do
+                                                        (Ident name location) <- mod.name
+                                                        (modules, _) <- insert modules (getString mod.name) mod
+                                                        qn <- HP.ModulePath name
+                                                        m <- HP.Module location
+                                                        (hir_program, other_item) <- HP.addItem hir_program qn m
+                                                        state <- handleItemConflict state other_item location
+                                                        (state, hir_program, modules)) (state, hir_program, empty)
+        (state, hir_program, modules)
 
 processImport :: M.Item -> Option Import
 processImport item = case item of
@@ -114,9 +119,9 @@ createModuleResolver module_name items = items
         |> List.iter
         |> fold (\module_resolver, item -> addImportedItem module_resolver item) (ModuleResolver module_name empty empty)
 
-processExportsImports :: Program -> ResolverState -> (ResolverState, Map String (M.Module, ModuleResolver))
-processExportsImports program state = do
-    modules <- getModules program
+processExportsImports :: Program -> ResolverState -> HP.Program -> (ResolverState, HP.Program, Map String (M.Module, ModuleResolver))
+processExportsImports program state hir_program = do
+    (state, hir_program, modules) <- getModules program state hir_program
     local_items <- processLocals modules
     //println "locals: {}" % local_items
     exported_items <- processExports local_items modules
@@ -130,4 +135,4 @@ processExportsImports program state = do
                 mod <- Option.unwrap (get modules module_name)
                 (module_name, (mod, module_resolver)))
                 |> toMap
-    (state, modules)
+    (state, hir_program, modules)

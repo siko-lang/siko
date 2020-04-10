@@ -47,7 +47,7 @@ processProgram :: SP.Program -> (HP.Program, TypeVarGenerator, [ResolverError])
 processProgram program = do
     state <- emptyState
     hir_program <- HP.Program empty empty
-    (state, modules) <- processExportsImports program state
+    (state, hir_program, modules) <- processExportsImports program state hir_program
     (state, hir_program) <- modules |> Map.iter |> fold (\(state, hir_program), (module_name, (mod, module_resolver)) -> do
                                     (state, hir_program) <- processData state hir_program module_resolver mod
                                     (state, hir_program)) (state, hir_program)

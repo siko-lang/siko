@@ -23,7 +23,9 @@ apply sub type = case type of
                 ClassConstraint s -> c
                 RowConstraint name ty -> RowConstraint name (apply sub ty)) |> toList
             (Var var constraints)
-    FixedTypeArg _ var _ -> panic "Trying to apply substitution on a fixed type arg"
+    FixedTypeArg _ var _ -> case get sub.vars var of
+        Some t -> panic "Trying to change fixed type arg!"
+        None -> type
     Named n args -> do
         args <- args |> List.iter |> map (\arg -> apply sub arg) |> toList
         Named n args

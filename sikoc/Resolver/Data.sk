@@ -28,10 +28,17 @@ processVariant state type_resolver (ST.TypeSignature type_signature location) = 
             state <- addError state (InvalidVariant location)
             (state, type_resolver, None)
 
-processRecordField :: ResolverState -> TypeResolverState -> SD.RecordField -> (ResolverState, TypeResolverState, HD.RecordField)
-processRecordField state type_resolver (SD.RecordField name type_signature) = do
+processRecordField :: ResolverState ->
+                      TypeResolverState ->
+                      SD.RecordField ->
+                      Map String [Ident] -> (ResolverState, TypeResolverState, HD.RecordField, Map String [Ident])
+processRecordField state type_resolver (SD.RecordField name type_signature) field_names = do
     (type_resolver, state, type) <- processTypeSignature type_resolver state type_signature
-    (state, type_resolver, HD.RecordField (getString name) type)
+    n <- getString name
+    (field_names, _) <- alter (\names -> case names of
+                    Some names -> Some (names + [name])
+                    None -> Some [name]) n field_names
+    (state, type_resolver, HD.RecordField n type, field_names)
 
 processDerivedClasses :: ResolverState -> ModuleResolver -> [Ident] -> (ResolverState, [HP.FullyQualifiedName])
 processDerivedClasses state module_resolver derived_classes = do
@@ -83,10 +90,13 @@ processAdt state hir_program module_resolver (SD.AlgebraicDataType name type_arg
 processRecord :: ResolverState -> HP.Program -> ModuleResolver -> SD.Record -> (ResolverState, HP.Program)
 processRecord state hir_program module_resolver (SD.Record name type_arguments fields external derived_classes) = do
     (type_resolver, state) <- initTypeResolver module_resolver state type_arguments
-    (state, type_resolver, fields) <- fields |> List.iter |> fold (\(state, type_resolver, fields), field -> do
-                (state, type_resolver, field) <- processRecordField state type_resolver field
+    (state, type_resolver, fields, field_names) <- fields |> List.iter |> fold (\(state, type_resolver, fields, field_names), field -> do
+                (state, type_resolver, field, field_names) <- processRecordField state type_resolver field field_names
                 fields <- fields + [field]
-                (state, type_resolver, fields)) (state, type_resolver, [])
+                (state, type_resolver, fields, field_names)) (state, type_resolver, [], empty)
+    state <- field_names |> Map.iter |> fold (\state, (name, instances) -> if getLength instances > 1
+                            then addError state (RecordFieldConflict instances)
+                            else state) state
     (state, type_args) <- processTypeArgs state type_resolver type_arguments (not external)
     (stat, derived_classes) <- processDerivedClasses state module_resolver derived_classes
     (Ident n location) <- name
