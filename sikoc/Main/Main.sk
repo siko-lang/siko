@@ -14,9 +14,9 @@ main = do
     lexer_errors |> List.iter |> forEach \error -> printLexerError error
     parser_errors |> List.iter |> forEach \error -> printParserError error
     println "Resolving names.."
-    (hir_program, resolver_errors) <- R.processProgram program
+    (hir_program, var_gen, resolver_errors) <- R.processProgram program
     resolver_errors |> List.iter |> forEach \error -> printResolverError error
     println "Typechecking.."
-    typechecker_errors <- TC.processProgram hir_program
+    typechecker_errors <- TC.processProgram hir_program var_gen
     typechecker_errors |> List.iter |> forEach \error -> printTypecheckerError error
     ()

@@ -7,6 +7,7 @@ import Siko.HIR.Data as D
 import Siko.HIR.Function
 import Siko.HIR.Pattern as P
 import Siko.HIR.Program as PO
+import Siko.HIR.TypeVarGenerator
 import Siko.Typechecker
 import Siko.Typechecker.Function
 import Siko.Typechecker.Pattern
@@ -38,7 +39,7 @@ getExprAndFunctionCallType context expr_id = TS.getExprAndFunctionCallType conte
 
 getNewVar :: Context -> (Context, T.Type)
 getNewVar context = do
-    (var_gen, type) <- U.getNewTypeVarType context.state.var_gen
+    (var_gen, type) <- getNewTypeVarType context.state.var_gen
     state <- context.state // FIXME: this is ugly
     state <- state { var_gen = var_gen }
     (context { state = state }, type)
@@ -91,7 +92,7 @@ instantiateType context type = do
 
 getNeverType :: Context -> (Context, T.Type)
 getNeverType context = do
-    (var_gen, var) <- U.getNewTypeVar context.state.var_gen
+    (var_gen, var) <- getNewTypeVar context.state.var_gen
     state <- context.state
     state <- state { var_gen = var_gen }
     context <- context { state = state }

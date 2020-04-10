@@ -46,7 +46,7 @@ processClass state hir_program module_resolver c = do
         ST.TypeArg type_arg -> do
             type_arg_str <- getString type_arg
             self_constraint <- HT.ClassConstraint qn
-            type_resolver <- addTypeArgument type_resolver type_arg
+            (type_resolver, state) <- addTypeArgument type_resolver state type_arg
             (_, type_resolver) <- addTypeArgumentConstraint type_resolver type_arg_str self_constraint
             (type_resolver, state, arg_type) <- processTypeSignature type_resolver state c.argument
             (state, class_constraints) <- processClassDependencies state module_resolver c type_arg_str
@@ -92,7 +92,7 @@ processInstance state hir_program module_resolver i instance_id = do
         ST.TypeArg type_arg -> do
             type_arg_str <- getString type_arg
             self_constraint <- HT.ClassConstraint class_name
-            type_resolver <- addTypeArgument type_resolver type_arg
+            (type_resolver, state) <- addTypeArgument type_resolver state type_arg
             (_, type_resolver) <- addTypeArgumentConstraint type_resolver type_arg_str self_constraint
             (type_resolver, state, hir_type) <- processTypeSignature type_resolver state i.type_signature
             (state, type_resolver, hir_type)

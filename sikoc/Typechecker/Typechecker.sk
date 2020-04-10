@@ -8,20 +8,20 @@ import Siko.Typechecker.TypeStore as TS
 import Siko.Typechecker.FunctionStore as FS
 import Siko.Typechecker.Class
 import Siko.Typechecker.Function
-import Siko.Typechecker.Unification as U
 import Siko.Util.DependencyProcessor
 import Siko.HIR.Program as P
 import Siko.HIR.Function as F
 import Siko.HIR.Traversal
+import Siko.HIR.TypeVarGenerator
 import Siko.HIR.Expr
 import Map
 
 data TypecheckerState = { errors :: [TypecheckerError],
-                          var_gen :: U.TypeVarGenerator,
+                          var_gen :: TypeVarGenerator,
                         }
 
-emptyState :: TypecheckerState
-emptyState = TypecheckerState [] U.createTypeVarGenerator
+emptyState :: TypeVarGenerator -> TypecheckerState
+emptyState var_gen = TypecheckerState [] var_gen
 
 addError :: TypecheckerState -> TypecheckerError -> TypecheckerState
 addError state error = do
@@ -66,9 +66,9 @@ processGroup state group program function_store = do
     //TS.dump context.type_store
     (context.state, context.function_store)
 
-processProgram :: P.Program -> [TypecheckerError]
-processProgram program = do
-    state <- emptyState
+processProgram :: P.Program -> TypeVarGenerator -> [TypecheckerError]
+processProgram program var_gen = do
+    state <- emptyState var_gen
     (state, program) <- processClassesAndInstances state program
     (state, function_store, groups) <- processFunctions state program
     (state, function_store) <- groups |> List.iter |> fold (\(state, function_store), group -> do

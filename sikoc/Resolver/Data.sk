@@ -53,7 +53,7 @@ createFunctionFromArgs args result_ty = do
 
 processAdt :: ResolverState -> HP.Program -> ModuleResolver -> SD.AlgebraicDataType -> (ResolverState, HP.Program)
 processAdt state hir_program module_resolver (SD.AlgebraicDataType name type_arguments variants derived_classes) = do
-    type_resolver <- initTypeResolver module_resolver type_arguments
+    (type_resolver, state) <- initTypeResolver module_resolver state type_arguments
     (state, type_resolver, variants) <- variants |> List.iter |> fold (\(state, type_resolver, variants), variant -> do
                 (state, type_resolver, variant) <- processVariant state type_resolver variant
                 variants <- case variant of
@@ -80,7 +80,7 @@ processAdt state hir_program module_resolver (SD.AlgebraicDataType name type_arg
 
 processRecord :: ResolverState -> ModuleResolver -> SD.Record -> (ResolverState, HD.Record, HP.FullyQualifiedName)
 processRecord state module_resolver (SD.Record name type_arguments fields external derived_classes) = do
-    type_resolver <- initTypeResolver module_resolver type_arguments
+    (type_resolver, state) <- initTypeResolver module_resolver state type_arguments
     (state, type_resolver, fields) <- fields |> List.iter |> fold (\(state, type_resolver, fields), field -> do
                 (state, type_resolver, field) <- processRecordField state type_resolver field
                 fields <- fields + [field]

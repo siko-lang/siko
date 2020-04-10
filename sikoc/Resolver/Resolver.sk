@@ -5,6 +5,7 @@ import Siko.Syntax.Module as SM
 import Siko.HIR.Program as HP
 import Siko.HIR.Expr as HE
 import Siko.HIR.Pattern as HP
+import Siko.HIR.TypeVarGenerator
 import Siko.Resolver.Error
 import Siko.Resolver.Module
 import Siko.Resolver.Data
@@ -12,14 +13,14 @@ import Siko.Resolver.Function
 import Siko.Resolver.Class
 import Map
 
-data ResolverState = {
-                        errors :: [ResolverError],
-                        next_expr_id :: Int,
-                        next_pattern_id :: Int,
-                     } deriving (Show)
+data ResolverState = { errors :: [ResolverError],
+                       next_expr_id :: Int,
+                       next_pattern_id :: Int,
+                       var_gen :: TypeVarGenerator,
+                     }
 
 emptyState :: ResolverState
-emptyState = ResolverState [] 0 0
+emptyState = ResolverState [] 0 0 createTypeVarGenerator
 
 getNextExprId :: ResolverState -> (ResolverState, HE.ExprId)
 getNextExprId state = do
@@ -33,7 +34,7 @@ getNextPatternId state = do
     state <- state { next_pattern_id = id + 1 }
     (state, HP.PatternId id)
 
-processProgram :: SP.Program -> (HP.Program, [ResolverError])
+processProgram :: SP.Program -> (HP.Program, TypeVarGenerator, [ResolverError])
 processProgram program = do
     state <- emptyState
     hir_program <- HP.Program empty empty
@@ -47,4 +48,4 @@ processProgram program = do
     (state, hir_program) <- modules |> Map.iter |> fold (\(state, hir_program), (module_name, (mod, module_resolver)) -> do
                                     (state, hir_program) <- processClassesAndInstances state hir_program module_resolver mod
                                     (state, hir_program)) (state, hir_program)
-    (hir_program, state.errors)
+    (hir_program, state.var_gen, state.errors)

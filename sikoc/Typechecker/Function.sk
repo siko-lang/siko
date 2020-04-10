@@ -4,20 +4,20 @@ import Siko.Typechecker
 import Siko.Typechecker.Error
 import Siko.Typechecker.Class
 import Siko.Typechecker.FunctionStore
-import Siko.Typechecker.Unification as U
 import Siko.Typechecker.FunctionDependency
 import Siko.HIR.Program as P
 import Siko.HIR.Type as T
 import Siko.HIR.Function as F
+import Siko.HIR.TypeVarGenerator
 import Siko.Util.DependencyProcessor
 import Map
 
-createGeneralFunction :: Int -> U.TypeVarGenerator -> (U.TypeVarGenerator, T.Type)
+createGeneralFunction :: Int -> TypeVarGenerator -> (TypeVarGenerator, T.Type)
 createGeneralFunction arg_count var_gen =
     if arg_count == 0
-    then U.getNewTypeVarType var_gen
+    then getNewTypeVarType var_gen
     else do
-        (var_gen, from) <- U.getNewTypeVarType var_gen
+        (var_gen, from) <- getNewTypeVarType var_gen
         (var_gen, to) <- createGeneralFunction (arg_count - 1) var_gen
         (var_gen, T.Function from to)
 

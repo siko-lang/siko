@@ -1,24 +1,10 @@
 module Siko.Typechecker.Unification where
 
 import Siko.HIR.Type
+import Siko.HIR.TypeVarGenerator
 import Siko.HIR.Program as P
 import Map
 import Std.Util
-
-data TypeVarGenerator = { next_type_id :: Int }
-
-createTypeVarGenerator = TypeVarGenerator 0
-
-getNewTypeVar :: TypeVarGenerator -> (TypeVarGenerator, TypeVar)
-getNewTypeVar gen = do
-    id <- gen.next_type_id
-    gen <- gen { next_type_id = id + 1 }
-    (gen, TypeVar id)
-
-getNewTypeVarType :: TypeVarGenerator -> (TypeVarGenerator, Type)
-getNewTypeVarType gen = do
-    (gen, var) <- getNewTypeVar gen
-    (gen, Var var [])
 
 data UnificationConstraint = UnificationConstraint P.FullyQualifiedName Type deriving (Show)
 
