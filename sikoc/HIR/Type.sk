@@ -14,7 +14,8 @@ import Map
 
 data TypeVar = TypeVar Int deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
-data Constraint = ClassConstraint HP.FullyQualifiedName deriving (Show, PartialEq, Eq, PartialOrd, Ord)
+data Constraint = ClassConstraint HP.FullyQualifiedName
+                  | RowConstraint String Type deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
 data Type = Var TypeVar [Constraint]
             | FixedTypeArg String TypeVar [Constraint]
@@ -23,7 +24,7 @@ data Type = Var TypeVar [Constraint]
             | Never TypeVar
             | Ref Type
             | Tuple [Type]
-            deriving (Show, PartialEq)
+            deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
 isSimple :: Type -> Bool
 isSimple type = case type of
@@ -48,14 +49,20 @@ addConstraint n constraints constraint_map = do
     (constraint_map, _) <- insert constraint_map n constraints
     constraint_map
 
-collectConstraints :: [Constraint] -> [String]
-collectConstraints constraints = constraints |> List.iter |> map (\c -> case c of
-                ClassConstraint s -> HP.getResolvableName s) |> toList
+collectNamesFromConstraints :: [Constraint] -> [String]
+collectNamesFromConstraints constraints = constraints |> List.iter |> map (\c -> case c of
+                ClassConstraint s -> HP.getResolvableName s
+                RowConstraint name row_type -> name) |> toList
+
+collectVarsFromConstraints :: [Constraint] -> [TypeVar]
+collectVarsFromConstraints constraints = constraints |> List.iter |> fold (\all, c -> case c of
+                ClassConstraint _ -> all
+                RowConstraint _ row_type -> all + collectVars row_type) []
 
 collectVars :: Type -> [TypeVar]
 collectVars type = case type of
-    Var var _ -> [var]
-    FixedTypeArg _ var _ -> [var]
+    Var var constraints -> [var] + collectVarsFromConstraints constraints
+    FixedTypeArg _ var constraints -> [var] + collectVarsFromConstraints constraints
     Named _ args -> args |> List.iter |> fold (\vars, arg -> do
         vs <- collectVars arg
         vars + vs) []
@@ -68,8 +75,8 @@ collectVars type = case type of
 
 collectnames :: Type -> Map String [Constraint] -> ([String], Map String [Constraint])
 collectnames type constraint_map = case type of
-    Var (TypeVar v)  constraints -> (collectConstraints constraints, addConstraint ("t{}" % v) constraints constraint_map)
-    FixedTypeArg n _ constraints -> (collectConstraints constraints, addConstraint n constraints constraint_map)
+    Var (TypeVar v)  constraints -> (collectNamesFromConstraints constraints, addConstraint ("t{}" % v) constraints constraint_map)
+    FixedTypeArg n _ constraints -> (collectNamesFromConstraints constraints, addConstraint n constraints constraint_map)
     Named n args -> do
                 n <- HP.getResolvableName n
                 args |> List.iter |> fold (\(all, constraint_map), arg -> do
@@ -105,7 +112,8 @@ toString type = do
     conflicting_names <- conflicting_names |> Map.iter |> map (\(short, names) -> if getLength names > 1 then (short, True) else (short, False)) |> toMap
     constraints <- constraint_map |> Map.iter |> map (\(name, constraints) -> do
                                 constraints <- constraints |> List.iter |> map (\c -> case c of
-                                                    ClassConstraint s -> "{} {}" % (getNiceName (HP.getResolvableName s) conflicting_names, name)) |> toList
+                                                    ClassConstraint s -> "{} {}" % (getNiceName (HP.getResolvableName s) conflicting_names, name)
+                                                    RowConstraint row_name row_type -> "#{} :: {} {}" % (row_name, toString row_type, name)) |> toList
                                 constraints) |> fold (\all, constraints -> all + constraints) []
     string_type <- convertType type conflicting_names
     if isEmpty constraints
@@ -173,14 +181,19 @@ fixedType type = do
                  (var_map, index + 1)) (Map.empty, 0)
     convertToFixed var_map type
 
+convertConstraintsToFixed :: [Constraint] -> Map TypeVar (String, TypeVar) -> [Constraint]
+convertConstraintsToFixed constraints var_map = constraints |> List.iter |> map (\c -> case c of
+    ClassConstraint s -> c
+    RowConstraint row_name row_type -> RowConstraint row_name (convertToFixed var_map row_type)) |> toList
+
 convertToFixed :: Map TypeVar (String, TypeVar) -> Type -> Type
 convertToFixed var_map type =
     case type of
         Var var constraints -> case get var_map var of
-            Some (name, new_var) -> FixedTypeArg name new_var constraints
+            Some (name, new_var) -> FixedTypeArg name new_var (convertConstraintsToFixed constraints var_map)
             None -> panic "old var {} not found" % var
         FixedTypeArg _ var constraints -> case get var_map var of
-            Some (name, new_var) -> FixedTypeArg name new_var constraints
+            Some (name, new_var) -> FixedTypeArg name new_var (convertConstraintsToFixed constraints var_map)
             None -> panic "old var {} not found" % var
         Named n args -> do
             args <- args |> List.iter |> map (\arg -> convertToFixed var_map arg) |> toList

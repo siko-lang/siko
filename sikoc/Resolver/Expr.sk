@@ -389,16 +389,27 @@ processExpr context env (SE.Expr expr location) = do
                     context <- addErrorToContext context err
                     (context, env, HE.Tuple [])
         SE.RecordUpdate path updates -> do
-            (context, env, updates) <- updates
+            (context, env, updates, fields) <- updates
                 |> List.iter
-                |> fold (\(context, env, updates), (SE.RecordConstructionItem field_name expr) -> do
+                |> fold (\(context, env, updates, fields), (SE.RecordConstructionItem field_name expr) -> do
+                        (Ident f_name _) <- field_name
                         (context, env, hir_expr) <- processExpr context env expr
                         update <- HE.RecordConstructionItem field_name hir_expr
                         updates <- updates + [update]
-                        (context, env, updates)
-                    ) (context, env, [])
+                        (fields, _) <- alter (\names -> case names of
+                                    Some names -> Some (names + [field_name])
+                                    None -> Some [field_name]) f_name fields
+                        (context, env, updates, fields)
+                    ) (context, env, [], empty)
             case getBinding env (getString path) of
-                Some (bind_ref, _) -> (context, env, HE.RecordUpdate bind_ref updates)
+                Some (bind_ref, _) -> do
+                    (context, err) <- fields |> Map.iter |> fold (\(context, err), (field_name, instances) -> do
+                        if getLength instances > 1
+                            then do
+                                context <- addErrorToContext context (MultiUsedFields instances)
+                                (context, True)
+                            else (context, err)) (context, False)
+                    (context, env, HE.RecordUpdate bind_ref updates)
                 None -> do
                     context <- addErrorToContext context (NotAVariable path)
                     (context, env, HE.Tuple [])

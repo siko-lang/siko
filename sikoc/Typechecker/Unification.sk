@@ -76,6 +76,26 @@ unifyArgs gen sub args1 args2 = do
                 (gen, sub, index + 1)
     Ok (gen, sub)
 
+getClassConstraints :: [Constraint] -> [P.FullyQualifiedName]
+getClassConstraints constraints = constraints |> List.iter |> fold (\class_constraints, c -> case c of
+    ClassConstraint s -> class_constraints + [s]
+    RowConstraint _ _ -> class_constraints) []
+
+getRowConstraints :: [Constraint] -> [(String, Type)]
+getRowConstraints constraints = constraints |> List.iter |> fold (\row_constraints, c -> case c of
+    ClassConstraint _ -> row_constraints
+    RowConstraint row_name row_type -> row_constraints + [(row_name, row_type)]) []
+
+unifyVarWithType :: TypeVarGenerator -> TypeVar -> [Constraint] -> Substitution -> Type -> Result (TypeVarGenerator, Substitution) ()
+unifyVarWithType gen var constraints sub type = do
+    class_constraints <- getClassConstraints constraints
+    row_constraints <- getRowConstraints constraints
+    sub <- class_constraints |> List.iter |> fold (\sub, class_name -> do
+                        c <- UnificationConstraint class_name type
+                        addUnificationConstraint sub c) sub
+    sub <- try add sub var type
+    Ok (gen, sub)
+
 unify :: TypeVarGenerator -> Substitution -> Type -> Type -> Result (TypeVarGenerator, Substitution) ()
 unify gen sub type1 type2 = do
     //println "UNIFICATION {} {}" % (toString type1, toString type2)
@@ -120,21 +140,9 @@ unify gen sub type1 type2 = do
                     Ok (gen, sub)
                 else Err ()
         (Var var constraints, type2) -> do
-            sub <- constraints |> List.iter |> fold (\sub, constraint -> do
-                case constraint of
-                    ClassConstraint qn -> do
-                            c <- UnificationConstraint qn type2
-                            addUnificationConstraint sub c) sub
-            sub <- try add sub var type2
-            Ok (gen, sub)
+            unifyVarWithType gen var constraints sub type2
         (type1, Var var constraints) -> do
-            sub <- constraints |> List.iter |> fold (\sub, constraint -> do
-                case constraint of
-                    ClassConstraint qn -> do
-                            c <- UnificationConstraint qn type1
-                            addUnificationConstraint sub c) sub
-            sub <- try add sub var type1
-            Ok (gen, sub)
+            unifyVarWithType gen var constraints sub type1
         (Tuple args1, Tuple args2) -> do
             if getLength args1 != getLength args2
                 then Err ()
