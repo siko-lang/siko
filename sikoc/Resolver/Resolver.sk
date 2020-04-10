@@ -1,5 +1,6 @@
 module Siko.Resolver where
 
+import Siko.Syntax.Location
 import Siko.Syntax.Program as SP
 import Siko.Syntax.Module as SM
 import Siko.HIR.Program as HP
@@ -33,6 +34,14 @@ getNextPatternId state = do
     id <- state.next_pattern_id
     state <- state { next_pattern_id = id + 1 }
     (state, HP.PatternId id)
+
+handleItemConflict :: ResolverState -> Option Location -> Location -> ResolverState
+handleItemConflict state l1 l2 = do
+    case l1 of
+        Some l1 -> do
+                err <- ItemConflict l1 l2
+                state { errors = state.errors + [err] }
+        None -> state
 
 processProgram :: SP.Program -> (HP.Program, TypeVarGenerator, [ResolverError])
 processProgram program = do

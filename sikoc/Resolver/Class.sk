@@ -38,7 +38,7 @@ processClassDependencies state module_resolver c type_arg = do
 processClass :: ResolverState -> HP.Program -> ModuleResolver -> SC.Class -> (ResolverState, HP.Program)
 processClass state hir_program module_resolver c = do
     module_name <- module_resolver.module_name
-    name <- getString c.name
+    (Ident name location) <- c.name
     qn <- HP.FullPath module_name name
     ST.TypeSignature type location <- c.argument
     type_resolver <- createTypeResolverState module_resolver True
@@ -67,17 +67,20 @@ processClass state hir_program module_resolver c = do
     kind <- HF.ClassMember qn
     (state, members) <- processFunctionsAndSignatures state hir_program module_resolver type_resolver
                             kind c.member_functions c.member_function_type_signatures HP.FullPath
-    (hir_program, class_members) <- members |> List.iter |> fold (\(hir_program, class_members), member -> case member.kind of
+    (state, hir_program, class_members) <- members |> List.iter |> fold (\(state, hir_program, class_members), member -> case member.kind of
             HF.ClassMember _ -> do
-                hir_program <- HP.addItem hir_program member.name (HP.Function member)
+                (hir_program, other_item) <- HP.addItem hir_program member.name (HP.Function member)
+                state <- handleItemConflict state other_item location
                 class_members <- class_members + [member.name]
-                (hir_program, class_members)
+                (state, hir_program, class_members)
             _ -> do
-                hir_program <- HP.addItem hir_program member.name (HP.Function member)
-                (hir_program, class_members)
-        ) (hir_program, [])
-    hir_class <- HC.Class qn arg_type class_constraints class_members
-    hir_program <- HP.addItem hir_program qn (HP.Class hir_class)
+                (hir_program, other_item) <- HP.addItem hir_program member.name (HP.Function member)
+                state <- handleItemConflict state other_item location
+                (state, hir_program, class_members)
+        ) (state, hir_program, [])
+    hir_class <- HC.Class qn location arg_type class_constraints class_members
+    (hir_program, other_item) <- HP.addItem hir_program qn (HP.Class hir_class)
+    state <- handleItemConflict state other_item location
     (state, hir_program)
 
 processInstance :: ResolverState -> HP.Program -> ModuleResolver -> SC.Instance -> Int -> (ResolverState, HP.Program)
@@ -109,15 +112,17 @@ processInstance state hir_program module_resolver i instance_id = do
     qn_creator <- \m, n -> HP.FullPathWithInstanceId m n instance_id
     (state, members) <- processFunctionsAndSignatures state hir_program module_resolver type_resolver
                             kind i.member_functions i.member_function_type_signatures qn_creator
-    (hir_program, instance_members) <- members |> List.iter |> fold (\(hir_program, instance_members), member -> case member.kind of
+    (state, hir_program, instance_members) <- members |> List.iter |> fold (\(state, hir_program, instance_members), member -> case member.kind of
             HF.InstanceMember _ -> do
-                hir_program <- HP.addItem hir_program member.name (HP.Function member)
+                (hir_program, other_item) <- HP.addItem hir_program member.name (HP.Function member)
+                state <- handleItemConflict state other_item class_location
                 instance_members <- instance_members + [member.name]
-                (hir_program, instance_members)
+                (state, hir_program, instance_members)
             _ -> do
-                hir_program <- HP.addItem hir_program member.name (HP.Function member)
-                (hir_program, instance_members)
-        ) (hir_program, [])
+                (hir_program, other_item) <- HP.addItem hir_program member.name (HP.Function member)
+                state <- handleItemConflict state other_item class_location
+                (state, hir_program, instance_members)
+        ) (state, hir_program, [])
     hir_instance <- HC.Instance class_location instance_id class_name hir_type instance_members
     hir_program <- HP.addInstance hir_program hir_instance
     (state, hir_program)

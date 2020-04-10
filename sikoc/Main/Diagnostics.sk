@@ -26,12 +26,10 @@ fmtIdents idents = idents |> List.iter |> fold (\r, i -> do
                                 r) ""
 
 printLexerError error = case error of
-    InvalidEscapeSequence span -> do
-        printSpan "InvalidEscapeSequence" span
-    UnsupportedCharacter span -> do
-        printSpan "UnsupportedCharacter" span
-    InvalidOperator span -> do
-        printSpan "InvalidOperator" span
+    InvalidEscapeSequence span -> printSpan "InvalidEscapeSequence" span
+    UnsupportedCharacter span -> printSpan "UnsupportedCharacter" span
+    InvalidOperator span -> printSpan "InvalidOperator" span
+    InvalidIdent span -> printSpan "InvalidIdent" span
 
 printParserError error = case error of
     UnexpectedToken expected found span -> printSpan "Expected: {} found: {}" % (expected, found) span
@@ -72,6 +70,7 @@ printResolverError error = case error of
     ExternFnWithoutType name -> println "ExternFnWithoutType {}" % (fmtIdent name)
     ContinueWithoutLoop location -> println "ContinueWithoutLoop {}" % (fmtLocation location)
     BreakWithoutLoop location -> println "BreakWithoutLoop {}" % (fmtLocation location)
+    ItemConflict l1 l2 -> println "ItemConflict {} {}" % (fmtLocation l1, fmtLocation l2)
 
 printTypecheckerError error = case error of
     TypeMismatch expected found location -> println "TypeMismatch expected: {} found: {} {}" % (expected, found, fmtLocation location)

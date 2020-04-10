@@ -1,5 +1,6 @@
 module Siko.HIR.Program where
 
+import Siko.Syntax.Location
 import Siko.HIR.Function as F
 import Siko.HIR.Data as D
 import Siko.HIR.Class as C
@@ -51,11 +52,22 @@ addInstance program i = do
     program <- program { instances = instances }
     program
 
-addItem :: Program -> FullyQualifiedName -> Item -> Program
+addItem :: Program -> FullyQualifiedName -> Item -> (Program, Option Location)
 addItem program name item = do
-    (items, _) <- insert program.items name item
+    (items, old) <- insert program.items name item
     program <- program { items = items }
-    program
+    location <- case old of
+        Some item -> Some (getLocation item)
+        None -> None
+    (program, location)
+
+getLocation :: Item -> Location
+getLocation item = case item of
+    Function f -> f.location
+    Adt adt -> adt.location
+    Record record -> record.location
+    Class c -> c.location
+    Variant (D.VariantInfo _ _ location) -> location
 
 getItem :: Program -> FullyQualifiedName -> Item
 getItem program name = case get program.items name of

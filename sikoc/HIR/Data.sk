@@ -1,25 +1,31 @@
 module Siko.HIR.Data where
 
+import Siko.Syntax.Location
 import Siko.HIR.Type
 import Siko.HIR.Program as HP
 
-data Variant = Variant String [Type] deriving (Show)
+data Variant = { name :: String,
+                 location :: Location,
+                 items :: [Type],
+               } deriving (Show)
 
-data VariantInfo = VariantInfo HP.FullyQualifiedName Int deriving (Show)
+data VariantInfo = VariantInfo HP.FullyQualifiedName Int Location deriving (Show)
 
 data AlgebraicDataType = { name :: String,
-                          module_name :: String,
-                          type_args :: [Type],
-                          variants :: [Variant],
-                          variant_ctors :: [Type],
-                          derived_classes :: [HP.FullyQualifiedName],
-                          type :: Type,
+                           module_name :: String,
+                           location :: Location,
+                           type_args :: [Type],
+                           variants :: [Variant],
+                           variant_ctors :: [Type],
+                           erived_classes :: [HP.FullyQualifiedName],
+                           type :: Type,
                         } deriving (Show)
 
 data RecordField = RecordField String Type deriving (Show)
 
 data Record = { name :: String,
                 module_name :: String,
+                location :: Location,
                 type_args :: [Type],
                 fields :: [RecordField],
                 external :: Bool,

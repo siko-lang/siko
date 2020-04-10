@@ -213,8 +213,11 @@ processFunctions state hir_program module_resolver mod = do
                                             _ -> (functions, signatures)) ([], [])
     (type_resolver, state) <- initTypeResolver module_resolver state []
     (state, functions) <- processFunctionsAndSignatures state hir_program module_resolver type_resolver HF.Normal functions signatures HP.FullPath
-    hir_program <- functions |> List.iter |> fold (\hir_program, function -> do
+    (state, hir_program) <- functions |> List.iter |> fold (\(state, hir_program), function -> do
         qn <- function.name
+        location <- function.location
         f <- HP.Function function
-        HP.addItem hir_program qn f) hir_program
+        (hir_program, other_item) <- HP.addItem hir_program qn f
+        state <- handleItemConflict state other_item location
+        (state, hir_program)) (state, hir_program)
     (state, hir_program)

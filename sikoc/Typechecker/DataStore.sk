@@ -1,0 +1,22 @@
+module Siko.Typechecker.DataStore where
+
+import Siko.HIR.Type
+import Siko.HIR.Program
+import Siko.Typechecker.Unification as U
+import Siko.Typechecker.Util as Util
+import Map
+
+data AdtTypeInfo = { name :: FullyQualifiedName,
+                     type :: Type,
+                     variant_types :: [Type],
+                   } deriving (Show)
+
+data RecordTypeInfo = { name :: FullyQualifiedName,
+                        type :: Type,
+                        fields :: Map String Type,
+                      } deriving (Show)
+
+data DataTypeInfo = Adt AdtTypeInfo
+                    | Record RecordTypeInfo
+
+data DataStore = { data_type_info_map :: Map FullyQualifiedName DataTypeInfo }
