@@ -1,6 +1,7 @@
 module Siko.HIR.Type(Type(..),
                      TypeVar(..),
                      Constraint(..),
+                     RowKind(..),
                      toString,
                      collectVars,
                      getArgCount,
@@ -14,8 +15,13 @@ import Map
 
 data TypeVar = TypeVar Int deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
+data RowKind = NamedRow String
+               | IndexedRow Int
+               deriving (Show, PartialEq, Eq, PartialOrd, Ord)
+
 data Constraint = ClassConstraint HP.FullyQualifiedName
-                  | RowConstraint String Type deriving (Show, PartialEq, Eq, PartialOrd, Ord)
+                  | RowConstraint RowKind Type
+                  deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
 data Type = Var TypeVar [Constraint]
             | FixedTypeArg String TypeVar [Constraint]
@@ -52,7 +58,8 @@ addConstraint n constraints constraint_map = do
 collectNamesFromConstraints :: [Constraint] -> [String]
 collectNamesFromConstraints constraints = constraints |> List.iter |> map (\c -> case c of
                 ClassConstraint s -> HP.getResolvableName s
-                RowConstraint name row_type -> name) |> toList
+                RowConstraint (NamedRow name) row_type -> name
+                RowConstraint (IndexedRow i) row_type -> "{}"  % i) |> toList
 
 collectVarsFromConstraints :: [Constraint] -> [TypeVar]
 collectVarsFromConstraints constraints = constraints |> List.iter |> fold (\all, c -> case c of
@@ -113,7 +120,8 @@ toString type = do
     constraints <- constraint_map |> Map.iter |> map (\(name, constraints) -> do
                                 constraints <- constraints |> List.iter |> map (\c -> case c of
                                                     ClassConstraint s -> "{} {}" % (getNiceName (HP.getResolvableName s) conflicting_names, name)
-                                                    RowConstraint row_name row_type -> "#{} :: {} {}" % (row_name, toString row_type, name)) |> toList
+                                                    RowConstraint (NamedRow row_name) row_type -> "#{} :: {} {}" % (row_name, toString row_type, name)
+                                                    RowConstraint (IndexedRow index) row_type -> "#{} :: {} {}" % (index, toString row_type, name)) |> toList
                                 constraints) |> fold (\all, constraints -> all + constraints) []
     string_type <- convertType type conflicting_names
     if isEmpty constraints

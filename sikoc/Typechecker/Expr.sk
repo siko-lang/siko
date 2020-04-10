@@ -68,8 +68,8 @@ unify context ty1 ty2 location = do
             state <- state { var_gen = var_gen }
             (context { type_store = type_store, function_store = function_store, state = state }, sub)
         Err _ -> do
-            println "Not Ok {} {}" % (ty1, ty2)
-            err <- TypeMismatch (T.toString ty1) (T.toString ty2) location
+            //println "Not Ok {} {}" % (ty1, ty2)
+            err <- TypeMismatch (ty1 |> T.fixedType |> T.toString) (ty2 |> T.fixedType |> T.toString) location
             state <- addError context.state err
             context <- context { state = state }
             (context, sub)
@@ -179,17 +179,29 @@ initializeExprType group_items current_fn_name context (E.Expr expr id location)
             (context, var) <- getNewVar context
             context <- addExprType context id (TS.ExprType var)
             context
+        E.FieldAccess _ _ -> do
+            (context, var) <- getNewVar context
+            context <- addExprType context id (TS.ExprType var)
+            context
+        E.TupleFieldAccess _ _ -> do
+            (context, var) <- getNewVar context
+            context <- addExprType context id (TS.ExprType var)
+            context
+        E.Formatter fmt args -> do
+            (context, var) <- getNewVar context
+            context <- addExprType context id (TS.ExprType var)
+            context
         E.CaseOf _ _ -> do
             (context, var) <- getNewVar context
             context <- addExprType context id (TS.ExprType var)
             context
         E.RecordUpdate ref updates -> do
             (context, constraints) <- updates |> List.iter |> fold (\(context, constraints), update -> do
-                (context, var) <- getNewVar context
-                constraints <- constraints + [T.RowConstraint (getString update.field_name) var]
+                (E.Expr _ field_expr_id _) <- update.body
+                field_expr_ty <- getExprType context field_expr_id
+                constraints <- constraints + [T.RowConstraint (T.NamedRow (getString update.field_name)) field_expr_ty]
                 (context, constraints)) (context, [])
             (context, var) <- getNewVarWithConstraints context constraints
-            println "Var {}" % (var |> T.fixedType |> T.toString)
             context <- addExprType context id (TS.ExprType var)
             context
         E.Return _ -> do
@@ -217,7 +229,6 @@ initializeExprType group_items current_fn_name context (E.Expr expr id location)
             (context, var) <- getNewVar context
             context <- addExprType context id (TS.ExprType var)
             context
-        _ -> panic "Not yet implemented {}" % expr
     context
 
 checkSingleArgCall :: Context -> E.Expr -> T.Type -> (Context, Option T.Type)
@@ -325,6 +336,19 @@ checkExprType context (E.Expr expr id location) = do
             (context, _) <- matchExprWithPattern context rhs_id pattern_id pattern_location
             (context, _) <- matchExprWith context id (T.Tuple []) location
             context
+        E.FieldAccess field_name (E.Expr _ receiver_id receiver_location) -> do
+            field_ty <- getExprType context id
+            constraints <- [T.RowConstraint (T.NamedRow (getString field_name)) field_ty]
+            (context, expected_receiver_ty) <- getNewVarWithConstraints context constraints
+            (context, _) <- matchExprWith context receiver_id expected_receiver_ty receiver_location
+            context
+        E.TupleFieldAccess index (E.Expr _ receiver_id receiver_location) -> do
+            field_ty <- getExprType context id
+            constraints <- [T.RowConstraint (T.IndexedRow index) field_ty]
+            (context, expected_receiver_ty) <- getNewVarWithConstraints context constraints
+            (context, _) <- matchExprWith context receiver_id expected_receiver_ty receiver_location
+            context
+        E.Formatter fmt args -> context // TODO
         E.CaseOf (E.Expr _ body_id body_location) cases -> do
             (E.Case (P.Pattern _ pattern_id pattern_location) (E.Expr _ case_body_id case_body_location)) <- atIndex cases 0
             (context, _) <- matchExprs context id case_body_id location
@@ -355,6 +379,5 @@ checkExprType context (E.Expr expr id location) = do
         E.ValueRef (P.BindRef _ pattern_id) -> do
             (context, _) <- matchExprWithPattern context id pattern_id location
             context
-        _ -> panic "Not yet implemented {}" % expr
     context
 

@@ -16,12 +16,14 @@ createSubstitution = Substitution empty []
 
 apply :: Substitution -> Type -> Type
 apply sub type = case type of
-    Var var _ -> case get sub.vars var of
+    Var var constraints -> case get sub.vars var of
         Some t -> apply sub t
-        None -> type
-    FixedTypeArg _ var _ -> case get sub.vars var of
-        Some t -> apply sub t
-        None -> type
+        None -> do
+            constraints <- constraints |> List.iter |> map (\c -> case c of
+                ClassConstraint s -> c
+                RowConstraint name ty -> RowConstraint name (apply sub ty)) |> toList
+            (Var var constraints)
+    FixedTypeArg _ var _ -> panic "Trying to apply substitution on a fixed type arg"
     Named n args -> do
         args <- args |> List.iter |> map (\arg -> apply sub arg) |> toList
         Named n args
@@ -37,10 +39,15 @@ apply sub type = case type of
         args <- args |> List.iter |> map (\arg -> apply sub arg) |> toList
         Tuple args
 
+constraintsContainsVar :: [Constraint] -> TypeVar -> Bool
+constraintsContainsVar constraints var = constraints |> List.iter |> fold (\contains, constraint -> contains || case constraint of
+    ClassConstraint _ -> False
+    RowConstraint _ row_type -> containsVar row_type var) False
+
 containsVar :: Type -> TypeVar -> Bool
 containsVar type var = case type of
-    Var v _ -> v == var
-    FixedTypeArg _ v _ -> v == var
+    Var v constraints -> v == var || constraintsContainsVar constraints var
+    FixedTypeArg _ v constraints -> v == var || constraintsContainsVar constraints var
     Named _ args -> args |> List.iter |> fold (\contains, arg -> contains || containsVar arg var) False
     Function from to -> containsVar from var || containsVar to var
     Never v -> v == var
@@ -81,20 +88,31 @@ getClassConstraints constraints = constraints |> List.iter |> fold (\class_const
     ClassConstraint s -> class_constraints + [s]
     RowConstraint _ _ -> class_constraints) []
 
-getRowConstraints :: [Constraint] -> [(String, Type)]
+getRowConstraints :: [Constraint] -> [(RowKind, Type)]
 getRowConstraints constraints = constraints |> List.iter |> fold (\row_constraints, c -> case c of
     ClassConstraint _ -> row_constraints
-    RowConstraint row_name row_type -> row_constraints + [(row_name, row_type)]) []
+    RowConstraint kind row_type -> row_constraints + [(kind, row_type)]) []
+
+checkRowConstraint :: RowKind -> Type -> Type -> Bool
+checkRowConstraint kind row_type other = case other of
+    Named qn args -> do
+        //println "Check that {} has field named {} with type {}" % (qn, kind, toString row_type)
+        True
+    _ -> False
 
 unifyVarWithType :: TypeVarGenerator -> TypeVar -> [Constraint] -> Substitution -> Type -> Result (TypeVarGenerator, Substitution) ()
 unifyVarWithType gen var constraints sub type = do
     class_constraints <- getClassConstraints constraints
     row_constraints <- getRowConstraints constraints
-    sub <- class_constraints |> List.iter |> fold (\sub, class_name -> do
+    success <- row_constraints |> List.iter |> fold (\success, (kind, row_type) -> success && checkRowConstraint kind row_type type) True
+    if success
+        then do
+            sub <- class_constraints |> List.iter |> fold (\sub, class_name -> do
                         c <- UnificationConstraint class_name type
                         addUnificationConstraint sub c) sub
-    sub <- try add sub var type
-    Ok (gen, sub)
+            sub <- try add sub var type
+            Ok (gen, sub)
+        else Err ()
 
 unify :: TypeVarGenerator -> Substitution -> Type -> Type -> Result (TypeVarGenerator, Substitution) ()
 unify gen sub type1 type2 = do

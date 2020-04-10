@@ -50,10 +50,18 @@ remap mapper type = do
     (Mapper vars) <- mapper
     case type of
         Var var constraints -> case get vars var of
-            Some new_var -> Var new_var constraints
+            Some new_var -> do
+                constraints <- constraints |> List.iter |> map (\c -> case c of
+                        ClassConstraint s -> c
+                        RowConstraint name ty -> RowConstraint name (remap mapper ty)) |> toList
+                Var new_var constraints
             None -> panic "old var {} not found" % var
         FixedTypeArg _ var constraints -> case get vars var of
-            Some new_var -> Var new_var constraints
+            Some new_var -> do
+                constraints <- constraints |> List.iter |> map (\c -> case c of
+                        ClassConstraint s -> c
+                        RowConstraint name ty -> RowConstraint name (remap mapper ty)) |> toList
+                Var new_var constraints
             None -> panic "old var {} not found" % var
         Named n args -> do
             args <- args |> List.iter |> map (\arg -> remap mapper arg) |> toList
