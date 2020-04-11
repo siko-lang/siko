@@ -154,7 +154,7 @@ validatePatternEnv pattern_env context = do
 
 processCase :: Context -> Environment -> SE.Case -> (Context, HE.Case)
 processCase context env (SE.Case pattern body) = do
-    pattern_env <- createPatternEnvironment
+    pattern_env <- createPatternEnvironment False
     block_env <- createEnvironment env.lambda_id (Some env)
     (context, pattern_env, block_env, p) <- processPattern context pattern_env block_env pattern
     context <- validatePatternEnv pattern_env context
@@ -328,7 +328,7 @@ processExpr context env (SE.Expr expr location) = do
             (context, env, HE.Do hir_items)
         SE.Bind p rhs -> do
             (context, env, hir_rhs) <- processExpr context env rhs
-            pattern_env <- createPatternEnvironment
+            pattern_env <- createPatternEnvironment True
             (context, pattern_env, env, hir_p) <- processPattern context pattern_env env p
             context <- validatePatternEnv pattern_env context
             (context, env, HE.Bind hir_p hir_rhs)
@@ -454,7 +454,7 @@ processExpr context env (SE.Expr expr location) = do
             (context, env, HE.Break hir_expr)
         SE.Loop pattern initializer items -> do
             (context, env, hir_initializer) <- processExpr context env initializer
-            pattern_env <- createPatternEnvironment
+            pattern_env <- createPatternEnvironment True
             block_env <- createEnvironment env.lambda_id (Some env)
             (context, pattern_env, block_env, hir_pattern) <- processPattern context pattern_env block_env pattern
             context <- validatePatternEnv pattern_env context

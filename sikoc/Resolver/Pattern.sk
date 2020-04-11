@@ -45,7 +45,7 @@ processPatterns context pattern_env env patterns = do
 processOrPatterns :: Context -> Environment -> [SP.Pattern] -> Location -> (Context, Environment, [HP.Pattern])
 processOrPatterns context env patterns location = do
     (context, pattern_envs, env, hir_patterns) <- patterns |> List.iter |> fold (\(context, pattern_envs, env, hir_patterns), pattern -> do
-                pattern_env <- createPatternEnvironment
+                pattern_env <- createPatternEnvironment False
                 (context, pattern_env, env, hir_pattern) <- processPattern context pattern_env env pattern
                 context <- validatePatternEnv pattern_env context
                 hir_patterns <- hir_patterns + [hir_pattern]
@@ -83,6 +83,10 @@ processPattern context pattern_env env (SP.Pattern pattern location) = do
                     case HPO.getItem context.program qn of
                         HPO.Variant (HD.VariantInfo adt_name index _) -> do
                             (HD.Variant _ _ items) <- HPO.getVariant context.program adt_name index
+                            adt <- HPO.getAdt context.program adt_name
+                            context <- if getLength adt.variants > 1 && pattern_env.irrefutable
+                                then addErrorToContext context (NotIrrefutablePattern location)
+                                else context
                             expected <- getLength items
                             found <- getLength args
                             if expected != found
@@ -110,10 +114,25 @@ processPattern context pattern_env env (SP.Pattern pattern location) = do
             (context, env, hir_e) <- processExpr context env e
             (context, pattern_env, env, HP.Guarded hir_p hir_e)
         SP.Wildcard -> (context, pattern_env, env, HP.Wildcard)
-        SP.IntegerLiteral lit -> (context, pattern_env, env, HP.IntegerLiteral lit)
-        SP.StringLiteral lit -> (context, pattern_env, env, HP.StringLiteral lit)
-        SP.CharLiteral lit -> (context, pattern_env, env, HP.CharLiteral lit)
+        SP.IntegerLiteral lit -> do
+            context <- if pattern_env.irrefutable
+                then addErrorToContext context (NotIrrefutablePattern location)
+                else context
+            (context, pattern_env, env, HP.IntegerLiteral lit)
+        SP.StringLiteral lit -> do
+            context <- if pattern_env.irrefutable
+                then addErrorToContext context (NotIrrefutablePattern location)
+                else context
+            (context, pattern_env, env, HP.StringLiteral lit)
+        SP.CharLiteral lit -> do
+            context <- if pattern_env.irrefutable
+                then addErrorToContext context (NotIrrefutablePattern location)
+                else context
+            (context, pattern_env, env, HP.CharLiteral lit)
         SP.CharRange c1 c2 kind -> do
+            context <- if pattern_env.irrefutable
+                then addErrorToContext context (NotIrrefutablePattern location)
+                else context
             kind <- case kind of
                 SP.Exclusive -> HP.Exclusive
                 SP.Inclusive -> HP.Inclusive

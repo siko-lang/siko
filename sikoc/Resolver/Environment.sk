@@ -6,14 +6,14 @@ import Siko.HIR.Function
 import Siko.Syntax.Ident
 import Map
 
-data PatternEnvironment = { bindings :: Map String [Ident] }
+data PatternEnvironment = { bindings :: Map String [Ident], irrefutable :: Bool }
 
 data Environment = { lambda_id :: LambdaId,
                      block_bindings :: Map String BindRef,
                      parent :: Option Environment }
 
-createPatternEnvironment :: PatternEnvironment
-createPatternEnvironment = PatternEnvironment empty
+createPatternEnvironment :: Bool -> PatternEnvironment
+createPatternEnvironment irrefutable = PatternEnvironment empty irrefutable
 
 createEnvironment :: LambdaId -> Option Environment -> Environment
 createEnvironment lambda_id parent = Environment lambda_id empty parent
