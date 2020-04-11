@@ -1,17 +1,18 @@
 module Siko.Typechecker.DataStore where
 
 import Siko.HIR.Type
-import Siko.HIR.Program
+import Siko.HIR.Program as P
+import Siko.HIR.TypeVarGenerator
 import Siko.Typechecker.Unification as U
 import Siko.Typechecker.Util as Util
 import Map
 
-data AdtTypeInfo = { name :: FullyQualifiedName,
+data AdtTypeInfo = { name :: P.FullyQualifiedName,
                      type :: Type,
-                     variant_types :: [Type],
+                     variant_types :: [[Type]],
                    } deriving (Show)
 
-data RecordTypeInfo = { name :: FullyQualifiedName,
+data RecordTypeInfo = { name :: P.FullyQualifiedName,
                         type :: Type,
                         fields :: Map String Type,
                       } deriving (Show)
@@ -19,4 +20,60 @@ data RecordTypeInfo = { name :: FullyQualifiedName,
 data DataTypeInfo = Adt AdtTypeInfo
                     | Record RecordTypeInfo
 
-data DataStore = { data_type_info_map :: Map FullyQualifiedName DataTypeInfo }
+getName :: DataTypeInfo -> P.FullyQualifiedName
+getName data_type_info = case data_type_info of
+    Adt adt -> adt.name
+    Record record -> record.name
+
+data DataStore = { data_type_info_map :: Map P.FullyQualifiedName DataTypeInfo }
+
+createDataStore :: DataStore
+createDataStore = DataStore empty
+
+addDataTypeInfo :: DataStore -> DataTypeInfo -> DataStore
+addDataTypeInfo store data_type_info = do
+    (data_type_info_map, _) <- insert store.data_type_info_map (getName data_type_info) data_type_info
+    store { data_type_info_map = data_type_info_map }
+
+getDataTypeInfo :: DataStore -> P.FullyQualifiedName -> DataTypeInfo
+getDataTypeInfo store name =
+    case get store.data_type_info_map name of
+        Some data_type_info -> data_type_info
+        None -> panic "DataTypeInfo for {} not found" % name
+
+applyAdtTypeInfo :: AdtTypeInfo -> U.Substitution -> AdtTypeInfo
+applyAdtTypeInfo adt sub = do
+    variant_types <- adt.variant_types |> List.iter
+                                |> map (\ts -> ts |> List.iter
+                                                |> map (\t -> U.apply sub t)
+                                                |> toList)
+                                |> toList
+    type <- U.apply sub adt.type
+    AdtTypeInfo adt.name type variant_types
+
+applyRecordTypeInfo :: RecordTypeInfo -> U.Substitution -> RecordTypeInfo
+applyRecordTypeInfo record sub = do
+    fields <- record.fields |> Map.iter |> map (\(name, t) -> (name, U.apply sub t)) |> toMap
+    type <- U.apply sub record.type
+    RecordTypeInfo record.name type fields
+
+remapDataTypeInfo :: DataTypeInfo -> TypeVarGenerator -> (DataTypeInfo, TypeVarGenerator)
+remapDataTypeInfo data_type_info var_gen = case data_type_info of
+    Adt adt -> do
+        vars <- Util.collectVars [] adt.type
+        (mapper, var_gen) <- Util.initMapper vars var_gen
+        type <- Util.remap mapper adt.type
+        variant_types <- adt.variant_types |> List.iter
+                            |> map (\ts -> ts |> List.iter
+                                              |> map (\t -> Util.remap mapper t)
+                                              |> toList)
+                            |> toList
+        adt <- Adt (AdtTypeInfo adt.name type variant_types)
+        (adt, var_gen)
+    Record record -> do
+        vars <- Util.collectVars [] record.type
+        (mapper, var_gen) <- Util.initMapper vars var_gen
+        type <- Util.remap mapper record.type
+        fields <- record.fields |> Map.iter |> map (\(name, t) -> (name, Util.remap mapper t)) |> toMap
+        record <- Record (RecordTypeInfo record.name type fields)
+        (record, var_gen)

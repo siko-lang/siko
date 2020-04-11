@@ -1,0 +1,29 @@
+module Siko.Typechecker.Data where
+
+import Siko.Typechecker.DataStore as DS
+import Siko.HIR.Data
+import Siko.HIR.Program
+import Map
+
+processRecord :: DS.DataStore -> Record -> DS.DataStore
+processRecord store record = do
+    fields <- record.fields |> List.iter |> map (\(RecordField name type) -> (name, type)) |> toMap
+    record_type_info <- DS.RecordTypeInfo record.name record.type fields
+    store <- DS.addDataTypeInfo store (DS.Record record_type_info)
+    store
+
+processAdt :: DS.DataStore -> AlgebraicDataType -> DS.DataStore
+processAdt store adt = do
+    variant_types <- adt.variants |> List.iter |> map (\variant -> variant.items) |> toList
+    adt_type_info <- DS.AdtTypeInfo adt.name adt.type variant_types
+    store <- DS.addDataTypeInfo store (DS.Adt adt_type_info)
+    store
+
+processData :: Program -> DS.DataStore
+processData program = do
+    store <- DS.createDataStore
+    records <- getRecords program
+    store <- records |> List.iter |> fold (\store, record -> processRecord store record) store
+    adts <- getAdts program
+    store <- adts |> List.iter |> fold (\store, adt -> processAdt store adt) store
+    store

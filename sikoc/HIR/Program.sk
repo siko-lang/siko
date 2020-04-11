@@ -126,6 +126,22 @@ getFunctions program =
             Function f -> f
             _ -> panic "Function is not a function") |> toList
 
+getAdts :: Program -> [D.AlgebraicDataType]
+getAdts program =
+    program.items |> Map.iter |> filter (\(qn, item) -> case item of
+        Adt adt -> True
+        _ -> False) |> map (\(qn, item) -> case item of
+            Adt adt -> adt
+            _ -> panic "Adt is not an adt") |> toList
+
+getRecords :: Program -> [D.Record]
+getRecords program =
+    program.items |> Map.iter |> filter (\(qn, item) -> case item of
+        Record record -> True
+        _ -> False) |> map (\(qn, item) -> case item of
+            Record record -> record
+            _ -> panic "Record is not a record") |> toList
+
 getClasses :: Program -> [C.Class]
 getClasses program =
     program.items |> Map.iter |> filter (\(qn, item) -> case item of

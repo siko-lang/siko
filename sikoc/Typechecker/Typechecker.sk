@@ -1,10 +1,11 @@
 module Siko.Typechecker where
 
-
+import Siko.Typechecker.Data
 import Siko.Typechecker.Expr
 import Siko.Typechecker.Error
 import Siko.Typechecker.Pattern
 import Siko.Typechecker.TypeStore as TS
+import Siko.Typechecker.DataStore as DS
 import Siko.Typechecker.FunctionStore as FS
 import Siko.Typechecker.Class
 import Siko.Typechecker.Function
@@ -18,10 +19,8 @@ import Map
 
 data TypecheckerState = { errors :: [TypecheckerError],
                           var_gen :: TypeVarGenerator,
+                          data_store :: DS.DataStore,
                         }
-
-emptyState :: TypeVarGenerator -> TypecheckerState
-emptyState var_gen = TypecheckerState [] var_gen
 
 addError :: TypecheckerState -> TypecheckerError -> TypecheckerState
 addError state error = do
@@ -68,7 +67,8 @@ processGroup state group program function_store = do
 
 processProgram :: P.Program -> TypeVarGenerator -> [TypecheckerError]
 processProgram program var_gen = do
-    state <- emptyState var_gen
+    data_store <- processData program
+    state <- TypecheckerState [] var_gen data_store
     (state, program) <- processClassesAndInstances state program
     (state, function_store, groups) <- processFunctions state program
     (state, function_store) <- groups |> List.iter |> fold (\(state, function_store), group -> do
