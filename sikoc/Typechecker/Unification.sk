@@ -96,17 +96,6 @@ getRowConstraints constraints = constraints |> List.iter |> fold (\row_constrain
     ClassConstraint _ -> row_constraints
     RowConstraint kind row_type -> row_constraints + [(kind, row_type)]) []
 
-checkRowConstraint :: DS.DataStore -> RowKind -> Type -> Type -> Bool
-checkRowConstraint data_store kind row_type other = case other of
-    Named qn args -> do
-        data_type_info <- DS.getDataTypeInfo data_store qn
-        case data_type_info of
-            DS.Adt adt -> False
-            DS.Record record -> do
-                //println "Check that {} has field named {} with type {}" % (qn, kind, toString row_type)
-                True
-    _ -> False
-
 unifyVarWithType :: DS.DataStore -> TypeVarGenerator -> TypeVar -> [Constraint] -> Substitution -> Type -> Result (TypeVarGenerator, Substitution) ()
 unifyVarWithType data_store gen var constraints sub type = do
     class_constraints <- getClassConstraints constraints
@@ -133,7 +122,22 @@ unifyVarWithType data_store gen var constraints sub type = do
                                             None -> (False, record, sub, gen)
                                     IndexedRow _ -> (False, record, sub, gen)
                             ) (True, record, sub, gen)
-                        (sub, gen)
+                        if success then (sub, gen) else return Err ()
+            Tuple args -> do
+                    (success, args, sub, gen) <- row_constraints |> List.iter |> fold (\(success, args, sub, gen), (kind, row_type) -> do
+                            case kind of
+                                NamedRow _ -> (False, args, sub, gen)
+                                IndexedRow index -> if index < getLength args
+                                    then do
+                                        item_type <- atIndex args index
+                                        case unify gen sub data_store item_type row_type of
+                                            Ok (gen, sub) -> do
+                                                args <- args |> List.iter |> map (\t -> apply sub t) |> toList
+                                                (success, args, sub, gen)
+                                            Err _ -> (False, args, sub, gen)
+                                    else (False, args, sub, gen)
+                        ) (True, args, sub, gen)
+                    if success then (sub, gen) else return Err ()
             _ -> return Err ()
     sub <- class_constraints |> List.iter |> fold (\sub, class_name -> do
                 c <- UnificationConstraint class_name type
