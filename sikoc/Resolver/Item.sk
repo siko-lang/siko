@@ -3,9 +3,9 @@ module Siko.Resolver.Item where
 import Siko.Syntax.Import as SI
 import Siko.Syntax.Ident
 
-data Item = Adt String
+data Item = Adt String Int
             | Variant String String
-            | Record String
+            | Record String Int
             | Class String
             | ClassMember String String
             | Function String
@@ -13,12 +13,21 @@ data Item = Adt String
 
 getItemName :: Item -> String
 getItemName item = case item of
-    Adt a -> a
+    Adt a _ -> a
     Variant a v -> v
-    Record r -> r
+    Record r _ -> r
     Class c -> c
     ClassMember c m -> m
     Function f -> f
+
+getItemArgCount :: Item -> Int
+getItemArgCount item = case item of
+    Adt _ c -> c
+    Variant _ _ -> 0
+    Record _ c -> c
+    Class _ -> 0
+    ClassMember _ _ -> 0
+    Function _ -> 0
 
 matchSpec :: SI.MemberSpecification -> String -> Bool
 matchSpec spec name = case spec of
@@ -33,18 +42,18 @@ matchFilter filter item = case filter of
     SI.Single name -> do
                     name <- getString name
                     case item of
-                        Adt a -> a == name
+                        Adt a _ -> a == name
                         Variant a v -> v == name
-                        Record r -> r == name
+                        Record r _ -> r == name
                         Class c -> c == name
                         ClassMember c m -> m == name
                         Function f -> f == name
     SI.Group name specs -> do
                     name <- getString name
                     case item of
-                        Adt a -> a == name
+                        Adt a _ -> a == name
                         Variant a v -> a == name && matchSpecs specs v
-                        Record r -> True // FIXME: this is kept for backward compatibility, fix this after bootstrapping!
+                        Record r _ -> True // FIXME: this is kept for backward compatibility, fix this after bootstrapping!
                         Class c -> c == name
                         ClassMember c m -> c == name && matchSpecs specs m
                         Function f -> False

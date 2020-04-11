@@ -46,10 +46,11 @@ resolveClass module_resolver name = do
         I.Class _ -> Ok (n)
         _ -> Err (NotAClassName name)
 
-resolveTypeName :: TypeResolverState -> Ident -> Result HP.FullyQualifiedName ResolverError
+resolveTypeName :: TypeResolverState -> Ident -> Result (HP.FullyQualifiedName, Int) ResolverError
 resolveTypeName state name = do
-    ResolvedItem name _ _ <- try resolveItem state.module_resolver.type_names UnknownType name
-    Ok name
+    ResolvedItem name item _ <- try resolveItem state.module_resolver.type_names UnknownType name
+    arg_count <- I.getItemArgCount item
+    Ok (name, arg_count)
 
 createTypeResolverState :: ModuleResolver -> Bool -> TypeResolverState
 createTypeResolverState module_resolver allow_implicit =
@@ -172,7 +173,10 @@ processTypeSignature state resolver_state (ST.TypeSignature type_signature locat
             (state, resolver_state, FixedTypeArg name var constraints)
     ST.Named name args -> do
         case resolveTypeName state name of
-            Ok resolved_name -> do
+            Ok (resolved_name, arg_count) -> do
+                resolver_state <- if arg_count != getLength args
+                    then addError resolver_state (InvalidTypeArgCount arg_count (getLength args) location)
+                    else resolver_state
                 (state, resolver_state, args) <- processArgs state resolver_state args
                 (state, resolver_state, Named resolved_name args)
             Err error -> do

@@ -93,13 +93,13 @@ addTermName module_resolver item_ref resolved_item = do
 
 addImportedItem :: ModuleResolver -> ImportedItem -> ModuleResolver
 addImportedItem module_resolver (ImportedItem visible_name source_module item implicit) = case item of
-        Adt name -> do
+        Adt name _ -> do
                 resolved_item <- ResolvedItem (HP.FullPath source_module name) item implicit
                 addTypeName module_resolver visible_name resolved_item
         Variant adt name -> do
                 resolved_item <- ResolvedItem (HP.FullPathWithVariant source_module adt name) item implicit
                 addTermName module_resolver visible_name resolved_item
-        Record name -> do
+        Record name _ -> do
                 resolved_item <- ResolvedItem (HP.FullPath source_module name) item implicit
                 module_resolver <- addTypeName module_resolver visible_name resolved_item
                 module_resolver <- addTermName module_resolver visible_name resolved_item

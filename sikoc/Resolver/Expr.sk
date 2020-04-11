@@ -168,7 +168,7 @@ resolvePath context path = do
     case resolveItem context.module_resolver.term_names UnknownFunction path of
         Ok (ResolvedItem qn item _) -> do
             case item of
-                RI.Record _ -> Ok (context, FunctionCall (HE.RecordConstructorCall qn))
+                RI.Record _ _ -> Ok (context, FunctionCall (HE.RecordConstructorCall qn))
                 RI.Variant _ _ -> Ok (context, FunctionCall (HE.VariantConstructorCall qn))
                 RI.Function _ -> Ok (context, FunctionCall (HE.StaticFunctionCall qn))
                 RI.ClassMember _ _ -> Ok (context, FunctionCall (HE.ClassMemberCall qn))
@@ -341,6 +341,10 @@ processExpr context env (SE.Expr expr location) = do
                 Some i -> (context, env, HE.TupleFieldAccess i hir_receiver)
                 None -> panic "TupleField index not a number {}" % index
         SE.Formatter fmt args -> do
+            subs <- split fmt "{}"
+            context <- if getLength subs != getLength args + 1
+                then addErrorToContext context (InvalidFormatString location)
+                else context
             (context, hir_args) <- processExprs context env args
             (context, env, HE.Formatter fmt hir_args)
         SE.CaseOf body cases -> do
@@ -362,7 +366,7 @@ processExpr context env (SE.Expr expr location) = do
             case resolveItem context.module_resolver.type_names NotARecord name of
                 Ok (ResolvedItem qn item _) -> do
                     case item of
-                        RI.Record _ -> do
+                        RI.Record _ _ -> do
                             case HPO.getItem context.program qn of
                                 HPO.Record record -> do
                                     used_fields <- field_inits |> List.iter |> map (\(SE.RecordConstructionItem field _) -> field) |> toList
