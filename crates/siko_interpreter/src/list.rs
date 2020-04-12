@@ -106,7 +106,7 @@ impl ExternFunction for ListPartialOrd {
         let r = environment.get_arg_by_index(1);
         let r = r.core.as_list();
         if l.len() != r.len() {
-            return Interpreter::get_bool_value(false);
+            return get_opt_ordering_value(l.len().partial_cmp(&r.len()));
         }
         for (a, b) in l.iter().zip(r.iter()) {
             let r = Interpreter::call_op_partial_cmp(a.clone(), b.clone());

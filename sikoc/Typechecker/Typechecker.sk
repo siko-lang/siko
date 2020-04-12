@@ -35,6 +35,7 @@ initializeFunctionType group_items context fn = do
 
 checkFunctionType :: Context -> F.Function -> Context
 checkFunctionType context fn = do
+    //println "Checking function {}" % fn.name
     case fn.body of
         Some body -> do
             context <- traverse context checkExprType checkPatternType body
@@ -72,8 +73,11 @@ processProgram program var_gen = do
     state <- TypecheckerState [] var_gen data_store
     (state, program) <- processClassesAndInstances state program
     (state, function_store, groups) <- processFunctions state program
+    println "Datadefs: {}" % (getSize data_store.data_type_info_map)
+    println "Functions: {}" % (getSize function_store.functions)
+    println "Groups: {}" % (getLength groups)
     (state, function_store) <- groups |> List.iter |> fold (\(state, function_store), group -> do
         (state, function_store) <- processGroup state group program function_store
         (state, function_store) ) (state, function_store)
-    FS.dump function_store
+    //FS.dump function_store
     state.errors
