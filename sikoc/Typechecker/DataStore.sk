@@ -14,7 +14,8 @@ data AdtTypeInfo = { name :: P.FullyQualifiedName,
 
 data RecordTypeInfo = { name :: P.FullyQualifiedName,
                         type :: Type,
-                        fields :: Map String Type,
+                        field_names :: Map String Int,
+                        fields :: [Type],
                       } deriving (Show)
 
 data DataTypeInfo = Adt AdtTypeInfo
@@ -53,9 +54,9 @@ applyAdtTypeInfo adt sub = do
 
 applyRecordTypeInfo :: RecordTypeInfo -> U.Substitution -> RecordTypeInfo
 applyRecordTypeInfo record sub = do
-    fields <- record.fields |> Map.iter |> map (\(name, t) -> (name, U.apply sub t)) |> toMap
+    fields <- record.fields |> List.iter |> map (\t -> U.apply sub t) |> toList
     type <- U.apply sub record.type
-    RecordTypeInfo record.name type fields
+    RecordTypeInfo record.name type record.field_names fields
 
 remapDataTypeInfo :: DataTypeInfo -> TypeVarGenerator -> (DataTypeInfo, TypeVarGenerator)
 remapDataTypeInfo data_type_info var_gen = case data_type_info of
@@ -74,6 +75,6 @@ remapDataTypeInfo data_type_info var_gen = case data_type_info of
         vars <- Util.collectVars [] record.type
         (mapper, var_gen) <- Util.initMapper vars var_gen
         type <- Util.remap mapper record.type
-        fields <- record.fields |> Map.iter |> map (\(name, t) -> (name, Util.remap mapper t)) |> toMap
-        record <- Record (RecordTypeInfo record.name type fields)
+        fields <- record.fields |> List.iter |> map (\t -> Util.remap mapper t) |> toList
+        record <- Record (RecordTypeInfo record.name type record.field_names fields)
         (record, var_gen)

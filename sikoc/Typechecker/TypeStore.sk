@@ -4,12 +4,17 @@ import Siko.HIR.Type as T
 import Siko.HIR.Expr as E
 import Siko.HIR.Pattern as P
 import Siko.Typechecker.Unification as U
+import Siko.Typechecker.DataStore as DS
 import Map
 
 data ExprTypeState = ExprType T.Type
                      | FunctionCall T.Type T.Type
                      deriving (Show)
-data PatternTypeState = PatternType T.Type deriving (Show)
+
+data PatternTypeState = PatternType T.Type
+                        | PatternWithRecordType DS.RecordTypeInfo
+                        | PatternWithAdtType DS.AdtTypeInfo
+                        deriving (Show)
 
 data TypeStore = { expr_types :: Map E.ExprId ExprTypeState,
                    pattern_types :: Map P.PatternId PatternTypeState,
@@ -45,7 +50,21 @@ getPatternType :: TypeStore -> P.PatternId -> T.Type
 getPatternType store pattern_id = do
     case get store.pattern_types pattern_id of
         Some (PatternType type) -> type
+        Some (PatternWithRecordType record_type_info) -> record_type_info.type
+        Some (PatternWithAdtType adt_type_info) -> adt_type_info.type
         _ -> panic "No type found for {}" % pattern_id
+
+getRecordTypeInfo :: TypeStore -> P.PatternId -> DS.RecordTypeInfo
+getRecordTypeInfo store pattern_id = do
+    case get store.pattern_types pattern_id of
+        Some (PatternWithRecordType record_type_info) -> record_type_info
+        _ -> panic "No record type info found for {}" % pattern_id
+
+getAdtTypeInfo :: TypeStore -> P.PatternId -> DS.AdtTypeInfo
+getAdtTypeInfo store pattern_id = do
+    case get store.pattern_types pattern_id of
+        Some (PatternWithAdtType adt_type_info) -> adt_type_info
+        _ -> panic "No adt type info found for {}" % pattern_id
 
 apply :: TypeStore -> U.Substitution -> TypeStore
 apply store sub = do
@@ -57,6 +76,8 @@ apply store sub = do
     pattern_types <- store.pattern_types |> Map.iter |> map (\(id, pattern_ty) -> do
                                 pattern_ty <- case pattern_ty of
                                     PatternType ty -> PatternType (U.apply sub ty)
+                                    PatternWithRecordType record_type_info -> PatternWithRecordType (DS.applyRecordTypeInfo record_type_info sub)
+                                    PatternWithAdtType adt_type_info -> PatternWithAdtType (DS.applyAdtTypeInfo adt_type_info sub)
                                 (id, pattern_ty)) |> toMap
     store { expr_types = expr_types, pattern_types = pattern_types }
 
@@ -65,4 +86,7 @@ dump store = do
     store.expr_types |> Map.iter |> forEach (\(expr_id, state) -> case state of
         ExprType ty -> println "E{}: {}" % (expr_id, T.toString ty)
         FunctionCall ty fn_type -> println "E{}: {}" % (expr_id, T.toString ty))
-    store.pattern_types |> Map.iter |> forEach (\(pattern_id, (PatternType ty)) -> println "P{}: {}" % (pattern_id, T.toString ty))
+    store.pattern_types |> Map.iter |> forEach (\(pattern_id, state) -> case state of
+        (PatternType ty) -> println "P{}: {}" % (pattern_id, T.toString ty)
+        (PatternWithRecordType record_type_info) -> println "P{}: {}" % (pattern_id, T.toString record_type_info.type)
+        (PatternWithAdtType adt_type_info) -> println "P{}: {}" % (pattern_id, T.toString adt_type_info.type))

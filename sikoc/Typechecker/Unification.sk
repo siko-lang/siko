@@ -112,8 +112,9 @@ unifyVarWithType data_store gen var constraints sub type = do
                         (success, record, sub, gen) <- row_constraints |> List.iter |> fold (\(success, record, sub, gen), (kind, row_type) -> do
                                 case kind of
                                     NamedRow row_name -> do
-                                        case get record.fields row_name of
-                                            Some field_type -> do
+                                        case get record.field_names row_name of
+                                            Some field_index -> do
+                                                field_type <- atIndex record.fields field_index
                                                 case unify gen sub data_store field_type row_type of
                                                     Ok (gen, sub) -> do
                                                         record <- DS.applyRecordTypeInfo record sub

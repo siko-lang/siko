@@ -7,8 +7,11 @@ import Map
 
 processRecord :: DS.DataStore -> Record -> DS.DataStore
 processRecord store record = do
-    fields <- record.fields |> List.iter |> map (\(RecordField name type) -> (name, type)) |> toMap
-    record_type_info <- DS.RecordTypeInfo record.name record.type fields
+    (field_names, fields, _) <- record.fields |> List.iter |> fold (\(field_names, fields, index), (RecordField name type) -> do
+        (field_names, _) <- insert field_names name index
+        fields <- fields + [type]
+        (field_names, fields, index + 1)) (empty, [], 0)
+    record_type_info <- DS.RecordTypeInfo record.name record.type field_names fields
     store <- DS.addDataTypeInfo store (DS.Record record_type_info)
     store
 
