@@ -12,6 +12,7 @@ import Siko.HIR.TypeVarGenerator
 import Siko.Typechecker
 import Siko.Typechecker.Function
 import Siko.Typechecker.Pattern
+import Siko.Typechecker.CaseChecker
 import Siko.Typechecker.Util as UT
 import Siko.Typechecker.Unification as U
 import Siko.Typechecker.TypeStore as TS
@@ -350,7 +351,9 @@ checkExprType context (E.Expr expr id location) = do
             (context, _) <- matchExprWith context receiver_id expected_receiver_ty receiver_location
             context
         E.Formatter fmt args -> context // TODO
-        E.CaseOf (E.Expr _ body_id body_location) cases -> do
+        E.CaseOf body cases -> do
+            (E.Expr _ body_id body_location) <- body
+            context <- checkCase context body cases
             (E.Case (P.Pattern _ pattern_id pattern_location) (E.Expr _ case_body_id case_body_location)) <- atIndex cases 0
             (context, _) <- matchExprs context id case_body_id location
             context <- cases |> List.iter |> fold (\context, (E.Case (P.Pattern _ pattern_id pattern_location) (E.Expr _ case_body_id case_body_location)) -> do
