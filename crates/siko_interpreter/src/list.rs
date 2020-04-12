@@ -3,6 +3,7 @@ use crate::extern_function::ExternFunction;
 use crate::interpreter::Interpreter;
 use crate::util::create_none;
 use crate::util::create_some;
+use crate::util::get_opt_ordering_value;
 use crate::value::Value;
 use crate::value::ValueCore;
 use siko_constants::LIST_MODULE_NAME;
@@ -87,6 +88,41 @@ impl ExternFunction for ListPartialEq {
             }
         }
         return Interpreter::get_bool_value(true);
+    }
+}
+
+pub struct ListPartialOrd {}
+
+impl ExternFunction for ListPartialOrd {
+    fn call(
+        &self,
+        environment: &mut Environment,
+        _: Option<ExprId>,
+        _: &NamedFunctionKind,
+        _: Type,
+    ) -> Value {
+        let l = environment.get_arg_by_index(0);
+        let l = l.core.as_list();
+        let r = environment.get_arg_by_index(1);
+        let r = r.core.as_list();
+        if l.len() != r.len() {
+            return Interpreter::get_bool_value(false);
+        }
+        for (a, b) in l.iter().zip(r.iter()) {
+            let r = Interpreter::call_op_partial_cmp(a.clone(), b.clone());
+            match r.core.as_option(0, 1) {
+                Some(v) => match v.core.as_ordering(0, 1, 2) {
+                    std::cmp::Ordering::Equal => continue,
+                    _ => {
+                        return r;
+                    }
+                },
+                None => {
+                    return r;
+                }
+            }
+        }
+        return get_opt_ordering_value(Some(std::cmp::Ordering::Equal));
     }
 }
 
@@ -249,4 +285,5 @@ pub fn register_extern_functions(interpreter: &mut Interpreter) {
     interpreter.add_extern_function(LIST_MODULE_NAME, "tail", Box::new(Tail {}));
     interpreter.add_extern_function(LIST_MODULE_NAME, "sort", Box::new(Sort {}));
     interpreter.add_extern_function(LIST_MODULE_NAME, "dedup", Box::new(Dedup {}));
+    interpreter.add_extern_function(LIST_MODULE_NAME, "partialCmp", Box::new(ListPartialOrd {}));
 }

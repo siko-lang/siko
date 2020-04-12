@@ -42,6 +42,7 @@ checkFunctionType context fn = do
             (Expr _ body_id location) <- body
             (context, _) <- matchExprWith context body_id func_type_info.result_type location
             context <- context.returns |> List.iter |> fold (\context, (arg_id, arg_location) -> do
+                    func_type_info <- getFunctionTypeInfo context fn.name
                     (context, _) <- matchExprWith context arg_id func_type_info.result_type arg_location
                     context) context
             context <- context { returns = [] }

@@ -18,9 +18,9 @@ import Siko.Resolver.Type
 import Siko.Syntax.Location
 import Siko.Resolver.Environment
 import Map
+import Std.Util
 
-data LambdaHelper = { arg_offset :: Int,
-                      captured_values :: [HP.BindRef],
+data LambdaHelper = { captured_values :: [HP.BindRef],
                     } deriving (Show)
 
 data LoopHelper = { continues :: [HE.ExprRef],
@@ -57,6 +57,12 @@ getExprId context = do
     context <- context { state = state }
     (context, expr_id)
 
+getPatternId :: Context -> (Context, HP.PatternId)
+getPatternId context = do
+    (state, pattern_id) <- getNextPatternId context.state
+    context <- context { state = state }
+    (context, pattern_id)
+
 createLambdaName :: Context -> (Context, HF.LambdaId, HPO.FullyQualifiedName)
 createLambdaName context = do
     id <- context.next_lambda_id
@@ -67,15 +73,14 @@ createLambdaName context = do
 captureValue :: Context -> HP.BindRef -> (Context, Int)
 captureValue context bind_ref = do
     lambda_helper <- Option.unwrap context.lambda_helper
-    offset <- lambda_helper.arg_offset
     case containsAtIndex lambda_helper.captured_values bind_ref of
-        Some index -> (context, offset + index)
+        Some index -> (context, index)
         None -> do
             index <- getLength lambda_helper.captured_values
             captured_values <- lambda_helper.captured_values + [bind_ref]
             lambda_helper <- lambda_helper { captured_values = captured_values }
             context <- context { lambda_helper = Some lambda_helper }
-            (context, offset + index)
+            (context, index)
 
 addContinue :: Context -> HE.ExprId -> Location -> Context
 addContinue context continue_expr location = do
@@ -239,16 +244,47 @@ processRecordFieldInit field_inits (context, env, args) (HD.RecordField field_na
     args <- args + [hir_expr]
     (context, env, args)
 
+shiftLambdaArgs :: Context -> HE.Expr -> Int -> (Context, HE.Expr)
+shiftLambdaArgs context (HE.Expr case_of case_of_id case_of_location) offset = case case_of of
+    HE.CaseOf (HE.Expr (HE.Tuple arg_refs) body_id body_location) cases -> do
+        (context, extra_arg_refs, extra_patterns) <- loop (context, extra_arg_refs, extra_patterns) <- (context, [], []) do
+                        len <- getLength extra_arg_refs
+                        if len == offset
+                            then break (context, extra_arg_refs, extra_patterns)
+                            else do
+                                (context, expr_id) <- getExprId context
+                                extra_arg_ref <- (HE.Expr (HE.ArgRef len) expr_id case_of_location)
+                                extra_arg_refs <- extra_arg_refs + [extra_arg_ref]
+                                (context, pattern_id) <- getPatternId context
+                                extra_pattern <- HP.Pattern (HP.Wildcard) pattern_id case_of_location
+                                extra_patterns <- extra_patterns + [extra_pattern]
+                                (context, extra_arg_refs, extra_patterns)
+        arg_refs <- arg_refs |> List.iter |> map (\e -> case e of
+            HE.Expr (HE.ArgRef index) arg_ref_id arg_ref_location -> HE.Expr (HE.ArgRef (index + offset)) arg_ref_id arg_ref_location
+            _ -> panic "Arg ref is not arg ref") |> toList
+        arg_refs <- extra_arg_refs + arg_refs
+        assert (getLength cases == 1)
+        only_case <- atIndex cases 0
+        pattern <- case only_case.pattern of
+            HP.Pattern (HP.Tuple args) pattern_id pattern_location -> do
+                args <- extra_patterns + args
+                HP.Pattern (HP.Tuple args) pattern_id pattern_location
+            _ -> panic "Case body is not tuple pattern"
+        cases <- [HE.Case pattern only_case.body]
+        case_of <- HE.CaseOf (HE.Expr (HE.Tuple arg_refs) body_id body_location) cases
+        expr <- HE.Expr case_of case_of_id case_of_location
+        (context, expr)
+    _ -> panic "Lambda body is not case with tuple"
+
 processExpr :: Context -> Environment -> SE.Expr -> (Context, Environment, HE.Expr)
 processExpr context env (SE.Expr expr location) = do
-
     (context, env, hir_expr) <- case expr of
         SE.Lambda arg_patterns lambda_body -> do
             desugared_body <- desugarFunctionArgs arg_patterns lambda_body
             (context, lambda_id, lambda_name) <- createLambdaName context
             lambda_env <- createEnvironment lambda_id (Some env)
             parent_lambda_helper <- context.lambda_helper
-            context <- context { lambda_helper = Some (LambdaHelper (getLength arg_patterns) []) }
+            context <- context { lambda_helper = Some (LambdaHelper []) }
             (context, _, final_lambda_body) <- processExpr context lambda_env desugared_body
             lambda_helper <- Option.unwrap context.lambda_helper
             context <- context { lambda_helper = parent_lambda_helper }
@@ -268,6 +304,7 @@ processExpr context env (SE.Expr expr location) = do
                                 None -> panic "captured variable not found in parent scope"
                         ) (context, [])
             total_arg_count <- getLength args + getLength arg_patterns
+            (context, final_lambda_body) <- shiftLambdaArgs context final_lambda_body (getLength args)
             lambda <- HF.LambdaInfo lambda_id total_arg_count context.function_name final_lambda_body
             lambdas <- context.lambdas + [lambda]
             context <- context { lambdas = lambdas }
