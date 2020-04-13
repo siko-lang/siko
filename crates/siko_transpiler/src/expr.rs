@@ -52,7 +52,7 @@ pub fn write_expr(
             write!(output_file, "{} {{", ir_type_to_rust_type(ty, program))?;
             for (item, index) in items {
                 let field = &record.fields[*index];
-                write!(output_file, "{}: ", field.name)?;
+                write!(output_file, "_siko_{}: ", field.name)?;
                 if field.ty.is_boxed() {
                     write!(output_file, "Box::new(")?;
                     write_expr(*item, output_file, program, indent)?;
@@ -74,7 +74,7 @@ pub fn write_expr(
             write!(output_file, ";\n")?;
             for (item, index) in items {
                 let field = &record.fields[*index];
-                write!(output_file, "{}value.{} = ", indent, field.name)?;
+                write!(output_file, "{}value._siko_{} = ", indent, field.name)?;
                 if field.ty.is_boxed() {
                     write!(output_file, "Box::new(")?;
                     write_expr(*item, output_file, program, indent)?;
@@ -98,7 +98,7 @@ pub fn write_expr(
         Expr::ExprValue(_, pattern_id) => {
             let pattern = &program.patterns.get(pattern_id).item;
             if let Pattern::Binding(n) = pattern {
-                write!(output_file, "{}", n)?;
+                write!(output_file, "_siko_{}", n)?;
             } else {
                 unreachable!();
             }
@@ -166,7 +166,26 @@ pub fn write_expr(
         Expr::CharLiteral(c) => {
             let ty = program.get_expr_type(&expr_id);
             let ty = ir_type_to_rust_type(ty, program);
-            write!(output_file, "{} {{ value: '{}' }}", ty, c)?;
+            match c {
+                '\n' => {
+                    write!(output_file, "{} {{ value: '\\n' }}", ty)?;
+                }
+                '\r' => {
+                    write!(output_file, "{} {{ value: '\\r' }}", ty)?;
+                }
+                '\t' => {
+                    write!(output_file, "{} {{ value: '\\t' }}", ty)?;
+                }
+                '\'' => {
+                    write!(output_file, "{} {{ value: '\\'' }}", ty)?;
+                }
+                '\\' => {
+                    write!(output_file, "{} {{ value: '\\\\' }}", ty)?;
+                }
+                _ => {
+                    write!(output_file, "{} {{ value: '{}' }}", ty, c)?;
+                }
+            }
         }
         Expr::Formatter(fmt, args) => {
             let ty = program.get_expr_type(&expr_id);
@@ -222,7 +241,7 @@ pub fn write_expr(
             let record = program.typedefs.get(&id).get_record();
             let field = &record.fields[*index];
             write_expr(*receiver, output_file, program, indent)?;
-            write!(output_file, ".{}", field.name)?;
+            write!(output_file, "._siko_{}", field.name)?;
         }
         Expr::List(items) => {
             let ty = program.get_expr_type(&expr_id);

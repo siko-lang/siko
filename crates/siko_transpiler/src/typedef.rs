@@ -154,7 +154,7 @@ pub fn write_typedef(
                     let field_type = ir_type_to_rust_type(&field.ty, program);
                     write!(
                         output_file,
-                        "{}pub {}: {},\n",
+                        "{}pub _siko_{}: {},\n",
                         indent, field.name, field_type
                     )?;
                 }
@@ -173,7 +173,7 @@ pub fn write_typedef(
                 for field in &record.fields {
                     write!(
                         output_file,
-                        "{}{}: self.{}.clone(),\n",
+                        "{}_siko_{}: self._siko_{}.clone(),\n",
                         indent, field.name, field.name
                     )?;
                 }

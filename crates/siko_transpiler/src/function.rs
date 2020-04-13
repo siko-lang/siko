@@ -244,7 +244,7 @@ pub fn write_function(
                     } else {
                         format!("{}", arg_name(index))
                     };
-                    let arg_str = format!("{}: {}", field.name, arg_str);
+                    let arg_str = format!("_siko_{}: {}", field.name, arg_str);
                     args.push(arg_str);
                 }
                 write!(output_file, "{{ {} }}", args.join(", "))?;

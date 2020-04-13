@@ -17,7 +17,7 @@ pub fn write_pattern(
     let pattern = &program.patterns.get(&pattern_id).item;
     match pattern {
         Pattern::Binding(name) => {
-            write!(output_file, "{}", name)?;
+            write!(output_file, "_siko_{}", name)?;
         }
         Pattern::Record(id, items) => {
             let ty = program.get_pattern_type(&pattern_id);
@@ -25,7 +25,7 @@ pub fn write_pattern(
             write!(output_file, "{} {{", ir_type_to_rust_type(ty, program))?;
             for (index, item) in items.iter().enumerate() {
                 let field = &record.fields[index];
-                write!(output_file, "{}: ", field.name)?;
+                write!(output_file, "_siko_{}: ", field.name)?;
                 write_pattern(*item, output_file, program, indent)?;
                 write!(output_file, ", ")?;
             }
@@ -75,7 +75,26 @@ pub fn write_pattern(
         Pattern::CharLiteral(i) => {
             let ty = program.get_pattern_type(&pattern_id);
             let ty = ir_type_to_rust_type(ty, program);
-            write!(output_file, "{} {{ value: '{}' }}", ty, i)?;
+            match i {
+                '\n' => {
+                    write!(output_file, "{} {{ value: '\\n' }}", ty)?;
+                }
+                '\r' => {
+                    write!(output_file, "{} {{ value: '\\r' }}", ty)?;
+                }
+                '\t' => {
+                    write!(output_file, "{} {{ value: '\\t' }}", ty)?;
+                }
+                '\'' => {
+                    write!(output_file, "{} {{ value: '\\'' }}", ty)?;
+                }
+                '\\' => {
+                    write!(output_file, "{} {{ value: '\\\\' }}", ty)?;
+                }
+                _ => {
+                    write!(output_file, "{} {{ value: '{}' }}", ty, i)?;
+                }
+            }
         }
         Pattern::CharRange(start, end, kind) => {
             match kind {
@@ -99,7 +118,8 @@ pub fn write_pattern(
         Pattern::StringLiteral(s) => {
             let ty = program.get_pattern_type(&pattern_id);
             let ty = ir_type_to_rust_type(ty, program);
-            write!(output_file, "{} {{ value: {} }}", ty, s)?;
+            let s = s.replace("\\", "\\\\");
+            write!(output_file, "{} {{ value: \"{}\" }}", ty, s)?;
         }
     }
     Ok(())

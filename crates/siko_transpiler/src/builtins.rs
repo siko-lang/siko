@@ -209,6 +209,7 @@ fn generate_string_builtins(
     original_name: &str,
     result_ty: &Type,
     result_ty_str: &str,
+    arg_types: Vec<String>,
 ) -> Result<()> {
     indent.inc();
     match original_name {
@@ -238,6 +239,30 @@ fn generate_string_builtins(
         }
         "cmp" => {
             generate_cmp_builtin_body(output_file, program, indent, result_ty_str)?;
+        }
+        "split" => {
+            write!(
+                output_file,
+                "{}let value: Vec<_> = arg0.value.split(&arg1.value).map(|s| {} {{ value : s.to_string() }} ).collect();\n",
+                indent, arg_types[0]
+            )?;
+            write!(
+                output_file,
+                "{}{} {{ value : value }}",
+                indent, result_ty_str
+            )?;
+        }
+        "chars" => {
+            write!(
+                output_file,
+                "{}let value: Vec<_> = arg0.value.chars().map(|c| crate::source::Char::Char {{ value : c }} ).collect();\n",
+                indent
+            )?;
+            write!(
+                output_file,
+                "{}{} {{ value : value }}",
+                indent, result_ty_str
+            )?;
         }
         _ => panic!("{}/{} not implemented", module, original_name),
     }
@@ -436,7 +461,7 @@ fn generate_map_builtins(
             let result_tuple_id = result_ty.get_typedef_id();
             let result_tuple_record = program.typedefs.get(&result_tuple_id).get_record();
             let result_option_type = result_tuple_record.fields[1].ty.clone();
-            let result_option_type_str = ir_type_to_rust_type(& result_option_type , program);
+            let result_option_type_str = ir_type_to_rust_type(&result_option_type, program);
 
             write!(output_file, "{}let mut func = arg0;\n", indent)?;
             write!(output_file, "{}let key = arg1;\n", indent)?;
@@ -445,18 +470,34 @@ fn generate_map_builtins(
             indent.inc();
             write!(output_file, "{}Some(v) => {{\n", indent)?;
             indent.inc();
-            write!(output_file, "{}let input = {}::Some(v.clone());\n", indent, option_type_str)?;
+            write!(
+                output_file,
+                "{}let input = {}::Some(v.clone());\n",
+                indent, option_type_str
+            )?;
             write!(output_file, "{}let result = func.call(input);\n", indent)?;
             write!(output_file, "{}match result {{\n", indent)?;
             indent.inc();
 
-            write!(output_file, "{}{}::Some(v) => {{\n", indent, option_type_str)?;
+            write!(
+                output_file,
+                "{}{}::Some(v) => {{\n",
+                indent, option_type_str
+            )?;
             indent.inc();
 
             write!(output_file, "{}match map.value.insert(key, v) {{\n", indent)?;
             indent.inc();
-            write!(output_file, "{}Some(v) => {} {{ field_0: map, field_1: {}::Some(v) }},\n", indent, result_ty_str, result_option_type_str)?;
-            write!(output_file, "{}None => {} {{ field_0: map, field_1: {}::None }},\n", indent, result_ty_str, result_option_type_str)?;
+            write!(
+                output_file,
+                "{}Some(v) => {} {{ field_0: map, field_1: {}::Some(v) }},\n",
+                indent, result_ty_str, result_option_type_str
+            )?;
+            write!(
+                output_file,
+                "{}None => {} {{ field_0: map, field_1: {}::None }},\n",
+                indent, result_ty_str, result_option_type_str
+            )?;
             indent.dec();
             write!(output_file, "{}}}\n", indent)?;
             indent.dec();
@@ -467,8 +508,16 @@ fn generate_map_builtins(
 
             write!(output_file, "{}match map.value.remove(&key) {{\n", indent)?;
             indent.inc();
-            write!(output_file, "{}Some(v) => {} {{ field_0: map, field_1: {}::Some(v) }},\n", indent, result_ty_str, result_option_type_str)?;
-            write!(output_file, "{}None => {} {{ field_0: map, field_1: {}::None }},\n", indent, result_ty_str, result_option_type_str)?;
+            write!(
+                output_file,
+                "{}Some(v) => {} {{ field_0: map, field_1: {}::Some(v) }},\n",
+                indent, result_ty_str, result_option_type_str
+            )?;
+            write!(
+                output_file,
+                "{}None => {} {{ field_0: map, field_1: {}::None }},\n",
+                indent, result_ty_str, result_option_type_str
+            )?;
             indent.dec();
             write!(output_file, "{}}}\n", indent)?;
             indent.dec();
@@ -477,24 +526,38 @@ fn generate_map_builtins(
             write!(output_file, "{}}}\n", indent)?;
             indent.dec();
             write!(output_file, "{}}}\n", indent)?;
-
-
 
             write!(output_file, "{}None => {{\n", indent)?;
             indent.inc();
 
-            write!(output_file, "{}let input = {}::None;\n", indent, option_type_str)?;
+            write!(
+                output_file,
+                "{}let input = {}::None;\n",
+                indent, option_type_str
+            )?;
             write!(output_file, "{}let result = func.call(input);\n", indent)?;
             write!(output_file, "{}match result {{\n", indent)?;
             indent.inc();
 
-            write!(output_file, "{}{}::Some(v) => {{\n", indent, option_type_str)?;
+            write!(
+                output_file,
+                "{}{}::Some(v) => {{\n",
+                indent, option_type_str
+            )?;
             indent.inc();
 
             write!(output_file, "{}match map.value.insert(key, v) {{\n", indent)?;
             indent.inc();
-            write!(output_file, "{}Some(v) => {} {{ field_0: map, field_1: {}::Some(v) }},\n", indent, result_ty_str, result_option_type_str)?;
-            write!(output_file, "{}None => {} {{ field_0: map, field_1: {}::None }},\n", indent, result_ty_str, result_option_type_str)?;
+            write!(
+                output_file,
+                "{}Some(v) => {} {{ field_0: map, field_1: {}::Some(v) }},\n",
+                indent, result_ty_str, result_option_type_str
+            )?;
+            write!(
+                output_file,
+                "{}None => {} {{ field_0: map, field_1: {}::None }},\n",
+                indent, result_ty_str, result_option_type_str
+            )?;
             indent.dec();
             write!(output_file, "{}}}\n", indent)?;
             indent.dec();
@@ -502,7 +565,11 @@ fn generate_map_builtins(
 
             write!(output_file, "{}{}::None => {{\n", indent, option_type_str)?;
             indent.inc();
-            write!(output_file, "{}{} {{ field_0: map, field_1: {}::None }}\n", indent, result_ty_str, result_option_type_str)?;
+            write!(
+                output_file,
+                "{}{} {{ field_0: map, field_1: {}::None }}\n",
+                indent, result_ty_str, result_option_type_str
+            )?;
             indent.dec();
             write!(output_file, "{}}}\n", indent)?;
             indent.dec();
@@ -510,6 +577,17 @@ fn generate_map_builtins(
 
             indent.dec();
             write!(output_file, "{}}}\n", indent)?;
+            indent.dec();
+            write!(output_file, "{}}}\n", indent)?;
+        }
+        "opEq" => {
+            write!(output_file, "{}if arg0.value.eq(&arg1.value) {{\n", indent)?;
+            indent.inc();
+            write!(output_file, "{}{}::True\n", indent, result_ty_str)?;
+            indent.dec();
+            write!(output_file, "{}}} else {{\n", indent)?;
+            indent.inc();
+            write!(output_file, "{}{}::False\n", indent, result_ty_str)?;
             indent.dec();
             write!(output_file, "{}}}\n", indent)?;
         }
@@ -837,6 +915,7 @@ pub fn generate_builtin(
                 original_name,
                 result_ty,
                 result_ty_str,
+                arg_types,
             );
         }
         "Float" => {
@@ -1185,6 +1264,9 @@ pub fn generate_builtin(
                         "let content = String::from_utf8_lossy(&content).to_string();"
                     )?;
                     write!(output_file, "{} {{ value : content }}", result_ty_str)?;
+                }
+                ("Std.Util.Basic", "abort") => {
+                    write!(output_file, "panic!(\"abort called\");")?;
                 }
                 _ => panic!("{}/{} not implemented", function.module, function.name),
             }
