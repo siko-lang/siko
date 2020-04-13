@@ -266,6 +266,29 @@ pub fn write_expr(
             write!(output_file, "return ")?;
             write_expr(*rhs, output_file, program, indent)?;
         }
+        Expr::Loop(pattern, initializer, items) => {
+            write!(output_file, "{{ let mut loop_state = ")?;
+            write_expr(*initializer, output_file, program, indent)?;
+            write!(output_file, "; loop {{")?;
+            write!(output_file, "let ")?;
+            write_pattern(*pattern, output_file, program, indent)?;
+            write!(output_file, " = loop_state;")?;
+            for item in items {
+                write_expr(*item, output_file, program, indent)?;
+                write!(output_file, ";")?;
+            }
+            write!(output_file, "}}; loop_state}}")?;
+        }
+        Expr::Continue(inner) => {
+            write!(output_file, "loop_state = ")?;
+            write_expr(*inner, output_file, program, indent)?;
+            write!(output_file, "; continue;")?;
+        }
+        Expr::Break(inner) => {
+            write!(output_file, "loop_state = ")?;
+            write_expr(*inner, output_file, program, indent)?;
+            write!(output_file, "; break;")?;
+        }
     }
     Ok(is_statement)
 }

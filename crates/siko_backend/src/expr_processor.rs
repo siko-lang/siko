@@ -405,9 +405,70 @@ pub fn process_expr(
             );
             MirExpr::Return(mir_inner_id)
         }
-        IrExpr::Loop(..) => unimplemented!(),
-        IrExpr::Break(..) => unimplemented!(),
-        IrExpr::Continue(..) => unimplemented!(),
+        IrExpr::Loop(pattern, initializer, items, _, _) => {
+            let mir_pattern_id = process_pattern(
+                pattern,
+                ir_program,
+                mir_program,
+                unifier,
+                function_queue,
+                typedef_store,
+                expr_id_map,
+                pattern_id_map,
+            );
+            let mir_initializer = process_expr(
+                initializer,
+                ir_program,
+                mir_program,
+                unifier,
+                function_queue,
+                typedef_store,
+                expr_id_map,
+                pattern_id_map,
+            );
+            let mir_items: Vec<_> = items
+                .iter()
+                .map(|item| {
+                    process_expr(
+                        item,
+                        ir_program,
+                        mir_program,
+                        unifier,
+                        function_queue,
+                        typedef_store,
+                        expr_id_map,
+                        pattern_id_map,
+                    )
+                })
+                .collect();
+            MirExpr::Loop(mir_pattern_id, mir_initializer, mir_items)
+        }
+        IrExpr::Break(inner_id) => {
+            let mir_inner_id = process_expr(
+                inner_id,
+                ir_program,
+                mir_program,
+                unifier,
+                function_queue,
+                typedef_store,
+                expr_id_map,
+                pattern_id_map,
+            );
+            MirExpr::Break(mir_inner_id)
+        }
+        IrExpr::Continue(inner_id) => {
+            let mir_inner_id = process_expr(
+                inner_id,
+                ir_program,
+                mir_program,
+                unifier,
+                function_queue,
+                typedef_store,
+                expr_id_map,
+                pattern_id_map,
+            );
+            MirExpr::Continue(mir_inner_id)
+        }
     };
     let mir_expr_id = mir_program.add_expr(mir_expr, item_info.location_id, mir_expr_ty);
     expr_id_map.insert(*ir_expr_id, mir_expr_id);

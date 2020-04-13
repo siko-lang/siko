@@ -8,6 +8,7 @@ use siko_constants::EQ_CLASS_NAME;
 use siko_mir::function::FunctionId;
 use siko_mir::function::FunctionInfo;
 use siko_mir::program::Program;
+use siko_mir::types::Type;
 use std::io::Result;
 use std::io::Write;
 
@@ -22,9 +23,11 @@ pub fn write_function(
     function.function_type.get_args(&mut fn_args);
     let mut args: Vec<String> = Vec::new();
     let mut arg_types: Vec<String> = Vec::new();
+    let mut arg_type_types: Vec<Type> = Vec::new();
     for i in 0..function.arg_count {
         let arg_ty = ir_type_to_rust_type(&fn_args[i], program);
         let arg_str = format!("{}: {}", arg_name(i), arg_ty);
+        arg_type_types.push(fn_args[i].clone());
         arg_types.push(arg_ty);
         args.push(arg_str);
     }
@@ -206,6 +209,7 @@ pub fn write_function(
                     original_name.as_ref(),
                     &result_type,
                     result_ty_str.as_ref(),
+                    arg_type_types,
                     arg_types,
                 )?;
             }

@@ -1,6 +1,7 @@
 use crate::types::ir_type_to_rust_type;
 use crate::util::get_ord_type_from_optional_ord;
 use crate::util::Indent;
+use siko_mir::data::RecordKind;
 use siko_mir::function::Function;
 use siko_mir::program::Program;
 use siko_mir::types::Type;
@@ -187,6 +188,13 @@ fn generate_num_builtins(
         "cmp" => {
             generate_cmp_builtin_body(output_file, program, indent, result_ty_str)?;
         }
+        "parse" => {
+            write!(
+                output_file,
+                "{}match arg0.value.parse::<i64>() {{ Ok(v) => {{ {}::Some ( crate::source::Int::Int {{ value : v }} ) }}, Err(_) => {{ {}::None }} }}\n",
+                indent, result_ty_str, result_ty_str
+            )?;
+        }
         _ => panic!("{}/{} not implemented", module, original_name),
     }
     indent.dec();
@@ -287,10 +295,11 @@ fn generate_map_builtins(
 fn generate_list_builtins(
     _function: &Function,
     output_file: &mut dyn Write,
-    _program: &Program,
+    program: &Program,
     indent: &mut Indent,
     original_name: &str,
     result_ty_str: &str,
+    arg_type_types: Vec<Type>,
     arg_types: Vec<String>,
 ) -> Result<()> {
     indent.inc();
@@ -335,6 +344,16 @@ fn generate_list_builtins(
         }
         "iter" => {
             let list_type = &arg_types[0];
+
+            let id = arg_type_types[0].get_typedef_id();
+            let list_record = program.typedefs.get(&id).get_record();
+            let list_arg_type = if let RecordKind::External(_, args) = &list_record.kind {
+                let value_ty = ir_type_to_rust_type(&args[0], program);
+                value_ty
+            } else {
+                unreachable!()
+            };
+
             let base_list_type: Vec<_> = list_type.split("::").collect();
             let list_iter_name = format!("{}_Iter", base_list_type[2]);
             let iter_trait_name = result_ty_str.replace(
@@ -347,8 +366,8 @@ fn generate_list_builtins(
             indent.inc();
             write!(
                 output_file,
-                "{}pub value: Vec<crate::source::Int::Int>,\n",
-                indent
+                "{}pub value: Vec<{}>,\n",
+                indent, list_arg_type
             )?;
             write!(output_file, "{}pub index: usize,\n", indent)?;
             indent.dec();
@@ -362,8 +381,8 @@ fn generate_list_builtins(
             indent.inc();
             write!(
                 output_file,
-                "{}fn next(&mut self) -> Option<crate::source::Int::Int> {{\n",
-                indent
+                "{}fn next(&mut self) -> Option<{}> {{\n",
+                indent, list_arg_type
             )?;
             indent.inc();
             write!(
@@ -432,6 +451,53 @@ fn generate_list_builtins(
     Ok(())
 }
 
+fn generate_char_builtins(
+    _function: &Function,
+    output_file: &mut dyn Write,
+    program: &Program,
+    indent: &mut Indent,
+    original_name: &str,
+    result_ty: &Type,
+    result_ty_str: &str,
+    _: Vec<String>,
+) -> Result<()> {
+    indent.inc();
+    match original_name {
+        "show" => {
+            write!(
+                output_file,
+                "{}{} {{ value : format!(\"{{}}\", arg0.value) }}",
+                indent, result_ty_str
+            )?;
+        }
+        "opEq" => {
+            generate_opeq_builtin_body(output_file, indent, result_ty_str)?;
+        }
+        "partialCmp" => {
+            generate_partial_cmp_builtin_body(
+                output_file,
+                program,
+                indent,
+                result_ty,
+                result_ty_str,
+            )?;
+        }
+        "cmp" => {
+            generate_cmp_builtin_body(output_file, program, indent, result_ty_str)?;
+        }
+        "isUppercase" => {
+            write!(
+                output_file,
+                "{} match (arg0.is_uppercase()) {{ true => {}::True, false => {}::False }}",
+                indent, result_ty_str, result_ty_str,
+            )?;
+        }
+        _ => panic!("Char/{} not implemented", original_name),
+    }
+    indent.dec();
+    Ok(())
+}
+
 pub fn generate_builtin(
     function: &Function,
     output_file: &mut dyn Write,
@@ -440,6 +506,7 @@ pub fn generate_builtin(
     original_name: &str,
     result_ty: &Type,
     result_ty_str: &str,
+    arg_type_types: Vec<Type>,
     arg_types: Vec<String>,
 ) -> Result<()> {
     match function.module.as_ref() {
@@ -494,6 +561,19 @@ pub fn generate_builtin(
                 program,
                 indent,
                 original_name,
+                result_ty_str,
+                arg_type_types,
+                arg_types,
+            );
+        }
+        "Char" => {
+            return generate_char_builtins(
+                function,
+                output_file,
+                program,
+                indent,
+                original_name,
+                result_ty,
                 result_ty_str,
                 arg_types,
             );
@@ -593,6 +673,13 @@ pub fn generate_builtin(
 
                     let iter_id = result_ty.get_typedef_id();
                     let iter = program.typedefs.get(&iter_id).get_record();
+                    let arg = if let RecordKind::External(_, args) = &iter.kind {
+                        let arg = &args[0];
+                        ir_type_to_rust_type(arg, program)
+                    } else {
+                        unreachable!();
+                    };
+
                     let iter_trait_name = format!("Trait_{}", iter.name);
 
                     write!(
@@ -603,8 +690,8 @@ pub fn generate_builtin(
                     indent.inc();
                     write!(
                         output_file,
-                        "{}fn next(&mut self) -> Option<crate::source::Int::Int> {{\n",
-                        indent
+                        "{}fn next(&mut self) -> Option<{}> {{\n",
+                        indent, arg
                     )?;
                     indent.inc();
                     write!(
@@ -650,7 +737,149 @@ pub fn generate_builtin(
                     write!(output_file, "{}}}", indent)?;
                 }
                 ("Iterator", "filter") => {
-                    write!(output_file, "{}{} }}\n", indent, result_ty_str)?;
+                    let struct_name = to_first_uppercase(function.name.clone());
+                    write!(output_file, "{}struct {} {{\n", indent, struct_name)?;
+                    indent.inc();
+                    for (index, arg_type) in arg_types.iter().enumerate() {
+                        write!(output_file, "{}pub arg{}: {},\n", indent, index, arg_type)?;
+                    }
+                    indent.dec();
+                    write!(output_file, "{}}}\n", indent)?;
+
+                    write!(output_file, "{}impl Clone for {} {{\n", indent, struct_name)?;
+                    indent.inc();
+                    write!(
+                        output_file,
+                        "{}fn clone(&self) -> {} {{\n",
+                        indent, struct_name
+                    )?;
+                    indent.inc();
+                    write!(output_file, "{}{} {{\n", indent, struct_name)?;
+                    indent.inc();
+                    write!(output_file, "{}arg0: self.arg0.clone(),\n", indent,)?;
+                    write!(output_file, "{}arg1: self.arg1.clone(),\n", indent,)?;
+                    indent.dec();
+                    write!(output_file, "{}}}\n", indent)?;
+                    indent.dec();
+                    write!(output_file, "{}}}\n", indent)?;
+                    indent.dec();
+                    write!(output_file, "{}}}\n", indent)?;
+
+                    let iter_id = result_ty.get_typedef_id();
+                    let iter = program.typedefs.get(&iter_id).get_record();
+                    let iter_trait_name = format!("Trait_{}", iter.name);
+                    let arg = if let RecordKind::External(_, args) = &iter.kind {
+                        let arg = &args[0];
+                        ir_type_to_rust_type(arg, program)
+                    } else {
+                        unreachable!();
+                    };
+
+                    let closure_return_ty = arg_type_types[0].get_result_type(1);
+                    let closure_return_ty = ir_type_to_rust_type(&closure_return_ty, program);
+                    write!(
+                        output_file,
+                        "{}impl {} for {} {{\n",
+                        indent, iter_trait_name, struct_name
+                    )?;
+                    indent.inc();
+                    write!(
+                        output_file,
+                        "{}fn next(&mut self) -> Option<{}> {{\n",
+                        indent, arg
+                    )?;
+                    indent.inc();
+                    write!(output_file, "{}loop {{\n", indent)?;
+                    indent.inc();
+                    write!(
+                        output_file,
+                        "{}if let Some(value) = self.arg1.value.next() {{\n",
+                        indent
+                    )?;
+                    indent.inc();
+                    write!(
+                        output_file,
+                        "{}match self.arg0.call(value.clone()) {{\n",
+                        indent,
+
+                    )?;
+                    indent.inc();
+                    write!(
+                        output_file,
+                        "{}{}::True => {{ return Some(value); }},\n",
+                        indent, closure_return_ty
+                    )?;
+                    write!(
+                        output_file,
+                        "{}{}::False => {{ continue; }},\n",
+                        indent, closure_return_ty
+                    )?;
+                    indent.dec();
+                    write!(
+                        output_file,
+                        "{}}}\n",
+                        indent
+                    )?;
+                    indent.dec();
+                    write!(output_file, "{}}} else {{\n", indent)?;
+                    indent.inc();
+                    write!(output_file, "{}return None;\n", indent)?;
+                    indent.dec();
+                    write!(output_file, "{}}}\n", indent)?;
+                    indent.dec();
+                    write!(output_file, "{}}}\n", indent)?;
+                    indent.dec();
+                    write!(output_file, "{}}}\n", indent)?;
+                    write!(
+                        output_file,
+                        "{}fn box_clone(&self) -> Box<dyn {}> {{\n",
+                        indent, iter_trait_name
+                    )?;
+                    indent.inc();
+                    write!(output_file, "{}Box::new(self.clone())\n", indent)?;
+                    indent.dec();
+                    write!(output_file, "{}}}\n", indent)?;
+                    indent.dec();
+                    write!(output_file, "{}}}\n", indent)?;
+
+                    write!(output_file, "{}{} {{\n", indent, result_ty_str)?;
+                    indent.inc();
+                    write!(
+                        output_file,
+                        "{}value: Box::new({} {{\n",
+                        indent, struct_name
+                    )?;
+                    indent.inc();
+                    write!(output_file, "{}arg0: arg0,\n", indent,)?;
+                    write!(output_file, "{}arg1: arg1,\n", indent,)?;
+                    indent.dec();
+                    write!(output_file, "{}}}),\n", indent,)?;
+                    indent.dec();
+                    write!(output_file, "{}}}", indent)?;
+                }
+                ("Iterator", "forEach") => {
+                    write!(output_file, "{}let mut arg0 = arg0;\n", indent)?;
+                    write!(output_file, "{}let mut arg1 = arg1;\n", indent)?;
+                    write!(output_file, "{}loop {{  match arg1.value.next() {{ Some(v) => {{ arg0.call(v); }}, None => {{ break; }}  }} }}\n", indent)?;
+                    write!(output_file, "{}{} {{ }}\n", indent, result_ty_str)?;
+                }
+                ("Iterator", "fold") => {
+                    write!(output_file, "{}let mut arg0 = arg0;\n", indent)?;
+                    write!(output_file, "{}let mut arg1 = arg1;\n", indent)?;
+                    write!(output_file, "{}let mut arg2 = arg2;\n", indent)?;
+                    write!(output_file, "{}loop {{  match arg2.value.next() {{ Some(v) => {{ let mut partial = arg0.call(arg1.clone()); arg1 = partial.call(v); }}, None => {{ break; }}  }} }}\n", indent)?;
+                    write!(output_file, "{}arg1\n", indent)?;
+                }
+                ("Hack", "readTextFile") => {
+                    write!(
+                        output_file,
+                        "let content = std::fs::read(&arg0.value).expect(\"ReadTextFile failed\");"
+                    )?;
+                    write!(
+                        output_file,
+                        "let content = String::from_utf8_lossy(&content).to_string();"
+                    )?;
+                    write!(output_file, "{} {{ value : content }}", result_ty_str)?;
                 }
                 _ => panic!("{}/{} not implemented", function.module, function.name),
             }

@@ -1,8 +1,11 @@
 #!/bin/bash
 
-set -e 
+set -e
 
 ./build.sh
 
-./siko -c simple.rs simple.sk 
-rustc --edition=2018 simple.rs
+./siko -c simplec/source.rs simple.sk
+cp rt/* simplec/
+cd simplec
+./build.sh
+./alma
