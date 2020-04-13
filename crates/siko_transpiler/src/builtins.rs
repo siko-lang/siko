@@ -253,6 +253,8 @@ fn generate_map_builtins(
     original_name: &str,
     result_ty: &Type,
     result_ty_str: &str,
+    arg_type_types: Vec<Type>,
+    arg_types: Vec<String>,
 ) -> Result<()> {
     indent.inc();
     match original_name {
@@ -286,6 +288,231 @@ fn generate_map_builtins(
                 indent, result_ty_str
             )?;
         }
+        "getSize" => {
+            indent.inc();
+            write!(
+                output_file,
+                "{}{} {{ value : arg0.value.len() as i64 }}\n",
+                indent, result_ty_str
+            )?;
+            indent.dec();
+        }
+        "iter" => {
+            let map_type = &arg_types[0];
+
+            let iter_id = result_ty.get_typedef_id();
+            let iter_record = program.typedefs.get(&iter_id).get_record();
+            let iter_arg = if let RecordKind::External(_, args) = &iter_record.kind {
+                ir_type_to_rust_type(&args[0], program)
+            } else {
+                unreachable!();
+            };
+
+            let base_map_type: Vec<_> = map_type.split("::").collect();
+            let map_iter_name = format!("{}_Iter", base_map_type[2]);
+            let iter_trait_name = result_ty_str.replace(
+                "crate::source::Iterator::",
+                "crate::source::Iterator::Trait_",
+            );
+
+            write!(output_file, "{}#[derive(Clone)]\n", indent)?;
+            write!(output_file, "{}pub struct {} {{\n", indent, map_iter_name)?;
+            indent.inc();
+            write!(output_file, "{}pub value: Vec<{}>,\n", indent, iter_arg)?;
+            write!(output_file, "{}pub index : usize,\n", indent)?;
+            indent.dec();
+            write!(output_file, "{}}}\n", indent)?;
+
+            write!(
+                output_file,
+                "{}impl {} for {} {{\n",
+                indent, iter_trait_name, map_iter_name
+            )?;
+            indent.inc();
+            write!(
+                output_file,
+                "{}fn next(&mut self) -> Option<{}> {{\n",
+                indent, iter_arg
+            )?;
+            indent.inc();
+            write!(
+                output_file,
+                "{}if self.index >= self.value.len() {{\n",
+                indent
+            )?;
+            indent.inc();
+            write!(output_file, "{}None\n", indent)?;
+            indent.dec();
+            write!(output_file, "{}}} else {{\n", indent)?;
+            indent.inc();
+            write!(
+                output_file,
+                "{}let v = self.value[self.index].clone();\n",
+                indent
+            )?;
+            write!(output_file, "{}self.index += 1;\n", indent)?;
+            write!(output_file, "{}Some(v)\n", indent)?;
+            indent.dec();
+            write!(output_file, "{}}}\n", indent)?;
+            indent.dec();
+            write!(output_file, "{}}}\n", indent)?;
+
+            write!(
+                output_file,
+                "{}fn box_clone(&self) -> Box<dyn {}> {{\n",
+                indent, iter_trait_name
+            )?;
+            indent.inc();
+            write!(output_file, "{}Box::new(self.clone())\n", indent)?;
+            indent.dec();
+            write!(output_file, "{}}}\n", indent)?;
+            indent.dec();
+            write!(output_file, "{}}}\n", indent)?;
+
+            write!(output_file, "{}{} {{\n", indent, result_ty_str)?;
+            indent.inc();
+            write!(
+                output_file,
+                "{}value: Box::new({} {{\n",
+                indent, map_iter_name
+            )?;
+            indent.inc();
+            write!(output_file, "{}value: arg0.value.clone().into_iter().map(|(k,v)|{{ {} {{ field_0: k, field_1: v }} }}).collect(),\n", indent, iter_arg)?;
+            write!(output_file, "{}index: 0,\n", indent)?;
+            indent.dec();
+            write!(output_file, "{}}}),\n", indent)?;
+            indent.dec();
+            write!(output_file, "{}}}\n", indent)?;
+        }
+        "toMap" => {
+            write!(output_file, "{}let mut arg0 = arg0;\n", indent)?;
+            write!(
+                output_file,
+                "{}let mut value = std::collections::BTreeMap::new();\n",
+                indent
+            )?;
+            write!(output_file, "{}loop {{\n", indent)?;
+            indent.inc();
+            write!(
+                output_file,
+                "{}if let Some(v) = arg0.value.next() {{\n",
+                indent
+            )?;
+            indent.inc();
+            write!(
+                output_file,
+                "{}value.insert(v.field_0, v.field_1);\n",
+                indent
+            )?;
+            indent.dec();
+            write!(output_file, "{}}} else {{\n", indent)?;
+            indent.inc();
+            write!(output_file, "{}break;\n", indent)?;
+            indent.dec();
+            write!(output_file, "{}}}\n", indent)?;
+            indent.dec();
+            write!(output_file, "{}}}\n", indent)?;
+            write!(
+                output_file,
+                "{}{} {{ value: value }}",
+                indent, result_ty_str
+            )?;
+        }
+        "show" => {
+            write!(
+                output_file,
+                "{}let subs: Vec<_> = arg0.value.iter().map(|(k, v)| format!(\"{{}}:{{}}\", k, v)).collect();\n",
+                indent
+            )?;
+            write!(
+                output_file,
+                "{}{} {{ value : format!(\"{{{{ {{}} }}}}\", subs.join(\", \")) }}",
+                indent, result_ty_str
+            )?;
+        }
+        "alter" => {
+            let option_type = arg_type_types[0].get_result_type(1);
+            let option_type_str = ir_type_to_rust_type(&option_type, program);
+            let result_tuple_id = result_ty.get_typedef_id();
+            let result_tuple_record = program.typedefs.get(&result_tuple_id).get_record();
+            let result_option_type = result_tuple_record.fields[1].ty.clone();
+            let result_option_type_str = ir_type_to_rust_type(& result_option_type , program);
+
+            write!(output_file, "{}let mut func = arg0;\n", indent)?;
+            write!(output_file, "{}let key = arg1;\n", indent)?;
+            write!(output_file, "{}let mut map = arg2;\n", indent)?;
+            write!(output_file, "{}match map.value.get(&key) {{\n", indent)?;
+            indent.inc();
+            write!(output_file, "{}Some(v) => {{\n", indent)?;
+            indent.inc();
+            write!(output_file, "{}let input = {}::Some(v.clone());\n", indent, option_type_str)?;
+            write!(output_file, "{}let result = func.call(input);\n", indent)?;
+            write!(output_file, "{}match result {{\n", indent)?;
+            indent.inc();
+
+            write!(output_file, "{}{}::Some(v) => {{\n", indent, option_type_str)?;
+            indent.inc();
+
+            write!(output_file, "{}match map.value.insert(key, v) {{\n", indent)?;
+            indent.inc();
+            write!(output_file, "{}Some(v) => {} {{ field_0: map, field_1: {}::Some(v) }},\n", indent, result_ty_str, result_option_type_str)?;
+            write!(output_file, "{}None => {} {{ field_0: map, field_1: {}::None }},\n", indent, result_ty_str, result_option_type_str)?;
+            indent.dec();
+            write!(output_file, "{}}}\n", indent)?;
+            indent.dec();
+            write!(output_file, "{}}}\n", indent)?;
+
+            write!(output_file, "{}{}::None => {{\n", indent, option_type_str)?;
+            indent.inc();
+
+            write!(output_file, "{}match map.value.remove(&key) {{\n", indent)?;
+            indent.inc();
+            write!(output_file, "{}Some(v) => {} {{ field_0: map, field_1: {}::Some(v) }},\n", indent, result_ty_str, result_option_type_str)?;
+            write!(output_file, "{}None => {} {{ field_0: map, field_1: {}::None }},\n", indent, result_ty_str, result_option_type_str)?;
+            indent.dec();
+            write!(output_file, "{}}}\n", indent)?;
+            indent.dec();
+            write!(output_file, "{}}}\n", indent)?;
+            indent.dec();
+            write!(output_file, "{}}}\n", indent)?;
+            indent.dec();
+            write!(output_file, "{}}}\n", indent)?;
+
+
+
+            write!(output_file, "{}None => {{\n", indent)?;
+            indent.inc();
+
+            write!(output_file, "{}let input = {}::None;\n", indent, option_type_str)?;
+            write!(output_file, "{}let result = func.call(input);\n", indent)?;
+            write!(output_file, "{}match result {{\n", indent)?;
+            indent.inc();
+
+            write!(output_file, "{}{}::Some(v) => {{\n", indent, option_type_str)?;
+            indent.inc();
+
+            write!(output_file, "{}match map.value.insert(key, v) {{\n", indent)?;
+            indent.inc();
+            write!(output_file, "{}Some(v) => {} {{ field_0: map, field_1: {}::Some(v) }},\n", indent, result_ty_str, result_option_type_str)?;
+            write!(output_file, "{}None => {} {{ field_0: map, field_1: {}::None }},\n", indent, result_ty_str, result_option_type_str)?;
+            indent.dec();
+            write!(output_file, "{}}}\n", indent)?;
+            indent.dec();
+            write!(output_file, "{}}}\n", indent)?;
+
+            write!(output_file, "{}{}::None => {{\n", indent, option_type_str)?;
+            indent.inc();
+            write!(output_file, "{}{} {{ field_0: map, field_1: {}::None }}\n", indent, result_ty_str, result_option_type_str)?;
+            indent.dec();
+            write!(output_file, "{}}}\n", indent)?;
+            indent.dec();
+            write!(output_file, "{}}}\n", indent)?;
+
+            indent.dec();
+            write!(output_file, "{}}}\n", indent)?;
+            indent.dec();
+            write!(output_file, "{}}}\n", indent)?;
+        }
         _ => panic!("Map/{} not implemented", original_name),
     }
     indent.dec();
@@ -298,6 +525,7 @@ fn generate_list_builtins(
     program: &Program,
     indent: &mut Indent,
     original_name: &str,
+    result_ty: &Type,
     result_ty_str: &str,
     arg_type_types: Vec<Type>,
     arg_types: Vec<String>,
@@ -445,6 +673,85 @@ fn generate_list_builtins(
             indent.dec();
             write!(output_file, "{}}}\n", indent)?;
         }
+        "cmp" => {
+            return generate_cmp_builtin_body(output_file, program, indent, result_ty_str);
+        }
+        "partialCmp" => {
+            return generate_partial_cmp_builtin_body(
+                output_file,
+                program,
+                indent,
+                result_ty,
+                result_ty_str,
+            );
+        }
+        "isEmpty" => {
+            write!(output_file, "{}if arg0.value.is_empty() {{\n", indent)?;
+            indent.inc();
+            write!(output_file, "{}{}::True\n", indent, result_ty_str)?;
+            indent.dec();
+            write!(output_file, "{}}} else {{\n", indent)?;
+            indent.inc();
+            write!(output_file, "{}{}::False\n", indent, result_ty_str)?;
+            indent.dec();
+            write!(output_file, "{}}}\n", indent)?;
+        }
+        "atIndex" => {
+            write!(output_file, "{}let index = arg1.value as usize;\n", indent)?;
+            write!(output_file, "{}arg0.value[index].clone()\n", indent)?;
+        }
+        "head" => {
+            write!(output_file, "{}match arg0.value.first() {{\n", indent)?;
+            write!(
+                output_file,
+                "{}Some(v) => {{ {}::Some(v.clone()) }}\n",
+                indent, result_ty_str
+            )?;
+            write!(
+                output_file,
+                "{}None => {{ {}::None }}\n",
+                indent, result_ty_str
+            )?;
+            write!(output_file, "{}}}\n", indent)?;
+        }
+        "tail" => {
+            write!(output_file, "{}match arg0.value.is_empty() {{\n", indent)?;
+            write!(
+                output_file,
+                "{}true => {{ {}::None }}\n",
+                indent, result_ty_str
+            )?;
+            write!(
+                output_file,
+                "{}false => {{ let mut v = arg0.clone(); v.value.remove(0); {}::Some(v) }}\n",
+                indent, result_ty_str
+            )?;
+            write!(output_file, "{}}}\n", indent)?;
+        }
+        "opAdd" => {
+            write!(output_file, "{}let mut r = arg0.clone();\n", indent)?;
+            write!(output_file, "{}r.value.extend(arg1.value);\n", indent)?;
+            write!(output_file, "{}r\n", indent)?;
+        }
+        "dedup" => {
+            write!(output_file, "{}let mut r = arg0.clone();\n", indent)?;
+            write!(output_file, "{}r.value.dedup();\n", indent)?;
+            write!(output_file, "{}r\n", indent)?;
+        }
+        "sort" => {
+            write!(output_file, "{}let mut r = arg0.clone();\n", indent)?;
+            write!(output_file, "{}r.value.sort();\n", indent)?;
+            write!(output_file, "{}r\n", indent)?;
+        }
+        "getLength" => {
+            indent.inc();
+            write!(
+                output_file,
+                "{}{} {{ value : arg0.value.len() as i64 }}\n",
+                indent, result_ty_str
+            )?;
+            indent.dec();
+        }
         _ => panic!("List/{} not implemented", original_name),
     }
     indent.dec();
@@ -552,6 +859,8 @@ pub fn generate_builtin(
                 original_name,
                 result_ty,
                 result_ty_str,
+                arg_type_types,
+                arg_types,
             );
         }
         "List" => {
@@ -561,6 +870,7 @@ pub fn generate_builtin(
                 program,
                 indent,
                 original_name,
+                result_ty,
                 result_ty_str,
                 arg_type_types,
                 arg_types,
@@ -801,7 +1111,6 @@ pub fn generate_builtin(
                         output_file,
                         "{}match self.arg0.call(value.clone()) {{\n",
                         indent,
-
                     )?;
                     indent.inc();
                     write!(
@@ -815,11 +1124,7 @@ pub fn generate_builtin(
                         indent, closure_return_ty
                     )?;
                     indent.dec();
-                    write!(
-                        output_file,
-                        "{}}}\n",
-                        indent
-                    )?;
+                    write!(output_file, "{}}}\n", indent)?;
                     indent.dec();
                     write!(output_file, "{}}} else {{\n", indent)?;
                     indent.inc();
