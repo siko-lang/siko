@@ -146,35 +146,26 @@ fn get_indirection_count(
 
 fn calculate_boxed_members(groups: &Vec<DependencyGroup<TypeDefId>>, program: &mut Program) {
     for group in groups {
-        let min = group
-            .items
-            .iter()
-            .min_by(|a, b| {
-                get_indirection_count(*a.clone(), program, group).cmp(&get_indirection_count(
-                    *b.clone(),
-                    program,
-                    group,
-                ))
-            })
-            .expect("empty group");
-        let typedef = program.typedefs.get_mut(&min);
-        match typedef {
-            TypeDef::Adt(adt) => {
-                for variant in &mut adt.variants {
-                    for item in &mut variant.items {
-                        if let Some(id) = item.ty.get_typedef_id_opt() {
-                            if group.items.contains(&id) {
-                                item.ty = Type::Named(Modifier::Boxed, id);
+        for item_id in &group.items {
+            let typedef = program.typedefs.get_mut(item_id);
+            match typedef {
+                TypeDef::Adt(adt) => {
+                    for variant in &mut adt.variants {
+                        for item in &mut variant.items {
+                            if let Some(id) = item.ty.get_typedef_id_opt() {
+                                if group.items.contains(&id)  {
+                                    item.ty = Type::Named(Modifier::Boxed, id);
+                                }
                             }
                         }
                     }
                 }
-            }
-            TypeDef::Record(record) => {
-                for field in &mut record.fields {
-                    if let Some(id) = field.ty.get_typedef_id_opt() {
-                        if group.items.contains(&id) {
-                            field.ty = Type::Named(Modifier::Boxed, id);
+                TypeDef::Record(record) => {
+                    for field in &mut record.fields {
+                        if let Some(id) = field.ty.get_typedef_id_opt() {
+                            if group.items.contains(&id)  {
+                                field.ty = Type::Named(Modifier::Boxed, id);
+                            }
                         }
                     }
                 }

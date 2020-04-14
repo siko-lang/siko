@@ -104,7 +104,9 @@ checkPatternType context (P.Pattern pattern id location) = do
             arg_types <- args |> List.iter |> map (\(P.Pattern _ arg _) -> getPatternType context arg) |> toList
             (context, _) <- matchPatternWith context id (T.Tuple arg_types) location
             context
-        P.Guarded (P.Pattern _ sub_pattern_id _) (E.Expr _ expr_id expr_location) -> do
+        P.Guarded p expr -> do
+            P.Pattern _ sub_pattern_id _ <- p
+            E.Expr _ expr_id expr_location <- expr
             bool_ty <- UT.getBoolType
             (context, _) <- matchExprWith context expr_id bool_ty expr_location
             (context, _) <- matchPatterns context id sub_pattern_id location
@@ -114,7 +116,8 @@ checkPatternType context (P.Pattern pattern id location) = do
         P.StringLiteral lit -> context
         P.CharLiteral lit -> context
         P.CharRange _ _ _ -> context
-        P.Typed (P.Pattern _ sub_pattern_id location) _ -> do
+        P.Typed p _ -> do
+            P.Pattern _ sub_pattern_id location <- p
             (context, _) <- matchPatterns context id sub_pattern_id location
             context
         P.Record _ args -> do

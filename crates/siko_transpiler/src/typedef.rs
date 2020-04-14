@@ -74,7 +74,7 @@ pub fn write_typedef(
                     ExternalDataKind::Map => {
                         write!(
                             output_file,
-                            "{}#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]\n",
+                            "{}#[derive(Clone)]\n",
                             indent
                         )?;
                         write!(output_file, "{}pub struct {} {{\n", indent, record.name)?;

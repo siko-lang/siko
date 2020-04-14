@@ -51,7 +51,9 @@ processPattern patterns prev_choice = do
     case first of
         P.Binding _ -> processPrevChoice prev_choice Bind rest
         P.Tuple args -> processPrevChoice prev_choice (Tuple (getLength args)) args
-        P.Guarded p (E.Expr _ expr_id _) -> processPrevChoice prev_choice (GuardExpr expr_id) [p]
+        P.Guarded p expr -> do
+            E.Expr _ expr_id _ <- expr
+            processPrevChoice prev_choice (GuardExpr expr_id) [p]
         P.Wildcard -> processPrevChoice prev_choice Bind rest
         P.IntegerLiteral lit -> processPrevChoice prev_choice (IntegerLiteral lit) rest
         P.StringLiteral lit -> processPrevChoice prev_choice (StringLiteral lit) rest

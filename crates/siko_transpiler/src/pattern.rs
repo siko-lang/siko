@@ -119,7 +119,7 @@ pub fn write_pattern(
             let ty = program.get_pattern_type(&pattern_id);
             let ty = ir_type_to_rust_type(ty, program);
             let s = s.replace("\\", "\\\\");
-            write!(output_file, "{} {{ value: \"{}\" }}", ty, s)?;
+            write!(output_file, "{} {{ value: q }} if q == \"{}\" ", ty, s)?;
         }
     }
     Ok(())

@@ -402,7 +402,7 @@ fn generate_map_builtins(
                 indent, map_iter_name
             )?;
             indent.inc();
-            write!(output_file, "{}value: arg0.value.clone().into_iter().map(|(k,v)|{{ {} {{ field_0: k, field_1: v }} }}).collect(),\n", indent, iter_arg)?;
+            write!(output_file, "{}value: arg0.value.clone().into_iter().map(|(k,v)|{{ {} {{ _siko_field_0: k, _siko_field_1: v }} }}).collect(),\n", indent, iter_arg)?;
             write!(output_file, "{}index: 0,\n", indent)?;
             indent.dec();
             write!(output_file, "{}}}),\n", indent)?;
@@ -426,7 +426,7 @@ fn generate_map_builtins(
             indent.inc();
             write!(
                 output_file,
-                "{}value.insert(v.field_0, v.field_1);\n",
+                "{}value.insert(v._siko_field_0, v._siko_field_1);\n",
                 indent
             )?;
             indent.dec();
@@ -490,12 +490,12 @@ fn generate_map_builtins(
             indent.inc();
             write!(
                 output_file,
-                "{}Some(v) => {} {{ field_0: map, field_1: {}::Some(v) }},\n",
+                "{}Some(v) => {} {{ _siko_field_0: map, _siko_field_1: {}::Some(v) }},\n",
                 indent, result_ty_str, result_option_type_str
             )?;
             write!(
                 output_file,
-                "{}None => {} {{ field_0: map, field_1: {}::None }},\n",
+                "{}None => {} {{ _siko_field_0: map, _siko_field_1: {}::None }},\n",
                 indent, result_ty_str, result_option_type_str
             )?;
             indent.dec();
@@ -510,12 +510,12 @@ fn generate_map_builtins(
             indent.inc();
             write!(
                 output_file,
-                "{}Some(v) => {} {{ field_0: map, field_1: {}::Some(v) }},\n",
+                "{}Some(v) => {} {{ _siko_field_0: map, _siko_field_1: {}::Some(v) }},\n",
                 indent, result_ty_str, result_option_type_str
             )?;
             write!(
                 output_file,
-                "{}None => {} {{ field_0: map, field_1: {}::None }},\n",
+                "{}None => {} {{ _siko_field_0: map, _siko_field_1: {}::None }},\n",
                 indent, result_ty_str, result_option_type_str
             )?;
             indent.dec();
@@ -550,12 +550,12 @@ fn generate_map_builtins(
             indent.inc();
             write!(
                 output_file,
-                "{}Some(v) => {} {{ field_0: map, field_1: {}::Some(v) }},\n",
+                "{}Some(v) => {} {{ _siko_field_0: map, _siko_field_1: {}::Some(v) }},\n",
                 indent, result_ty_str, result_option_type_str
             )?;
             write!(
                 output_file,
-                "{}None => {} {{ field_0: map, field_1: {}::None }},\n",
+                "{}None => {} {{ _siko_field_0: map, _siko_field_1: {}::None }},\n",
                 indent, result_ty_str, result_option_type_str
             )?;
             indent.dec();
@@ -567,7 +567,7 @@ fn generate_map_builtins(
             indent.inc();
             write!(
                 output_file,
-                "{}{} {{ field_0: map, field_1: {}::None }}\n",
+                "{}{} {{ _siko_field_0: map, _siko_field_1: {}::None }}\n",
                 indent, result_ty_str, result_option_type_str
             )?;
             indent.dec();

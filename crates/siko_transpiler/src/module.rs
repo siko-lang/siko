@@ -7,9 +7,9 @@ use siko_constants::MIR_INTERNAL_MODULE_NAME;
 use siko_mir::data::TypeDefId;
 use siko_mir::function::FunctionId;
 use siko_mir::program::Program;
+use std::collections::BTreeSet;
 use std::io::Result;
 use std::io::Write;
-use std::collections::BTreeSet;
 
 pub struct Module {
     name: String,

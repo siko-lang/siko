@@ -271,7 +271,8 @@ checkExprType context (E.Expr expr id location) = do
                     (context, _) <- matchExprWith context id result_ty location
                     context
                 None -> context
-        E.DynamicFunctionCall (E.Expr _ receiver_id receiver_location) args -> do
+        E.DynamicFunctionCall receiver args -> do
+            E.Expr _ receiver_id receiver_location <- receiver
             (ty, fn_ty) <- getExprAndFunctionCallType context id
             recv_ty <- getExprType context receiver_id
             (context, sub) <- matchExprWith context receiver_id fn_ty receiver_location
@@ -306,7 +307,10 @@ checkExprType context (E.Expr expr id location) = do
                     (context, _) <- matchExprWith context id result_ty location
                     context
                 None -> context
-        E.If (E.Expr _ cond_id cond_location) (E.Expr _ true_id true_location) (E.Expr _ false_id false_location) -> do
+        E.If cond true false -> do
+            E.Expr _ cond_id cond_location <- cond
+            E.Expr _ true_id true_location <- true
+            E.Expr _ false_id false_location <- false
             (context, _) <- matchExprWith context cond_id UT.getBoolType cond_location
             (context, _) <- matchExprs context true_id false_id false_location
             (context, _) <- matchExprs context id false_id false_location
@@ -334,17 +338,21 @@ checkExprType context (E.Expr expr id location) = do
             (E.Expr _ last_id _) <- atIndex args ((getLength args) - 1)
             (context, _) <- matchExprs context id last_id location
             context
-        E.Bind (P.Pattern _ pattern_id pattern_location) (E.Expr _ rhs_id _) -> do
+        E.Bind p rhs -> do
+            P.Pattern _ pattern_id pattern_location <- p
+            E.Expr _ rhs_id _ <- rhs
             (context, _) <- matchExprWithPattern context rhs_id pattern_id pattern_location
             (context, _) <- matchExprWith context id (T.Tuple []) location
             context
-        E.FieldAccess field_name (E.Expr _ receiver_id receiver_location) -> do
+        E.FieldAccess field_name receiver -> do
+            E.Expr _ receiver_id receiver_location <- receiver
             field_ty <- getExprType context id
             constraints <- [T.RowConstraint (T.NamedRow (getString field_name)) field_ty]
             (context, expected_receiver_ty) <- getNewVarWithConstraints context constraints
             (context, _) <- matchExprWith context receiver_id expected_receiver_ty receiver_location
             context
-        E.TupleFieldAccess index (E.Expr _ receiver_id receiver_location) -> do
+        E.TupleFieldAccess index receiver -> do
+            E.Expr _ receiver_id receiver_location <- receiver
             field_ty <- getExprType context id
             constraints <- [T.RowConstraint (T.IndexedRow index) field_ty]
             (context, expected_receiver_ty) <- getNewVarWithConstraints context constraints
@@ -364,13 +372,16 @@ checkExprType context (E.Expr expr id location) = do
         E.RecordUpdate (P.BindRef _ pattern_id) updates -> do
              (context, _) <- matchExprWithPattern context id pattern_id location
              context
-        E.Return (E.Expr _ arg_id arg_location) -> do
+        E.Return arg -> do
+            E.Expr _ arg_id arg_location <- arg
             returns <- context.returns + [(arg_id, arg_location)]
             context <- context { returns = returns }
             context
         E.Continue _ -> context
         E.Break _ -> context
-        E.Loop (P.Pattern _ pattern_id pattern_location) (E.Expr _ initializer_id _) items continues breaks -> do
+        E.Loop pattern initializer items continues breaks -> do
+            E.Expr _ initializer_id _ <- initializer
+            P.Pattern _ pattern_id pattern_location <- pattern
             (context, _) <- matchExprWithPattern context initializer_id pattern_id pattern_location
             context <- continues |> List.iter |> fold (\context, (E.ExprRef source ref_location) -> do
                 (context, sub) <- matchExprs context initializer_id source ref_location

@@ -185,7 +185,10 @@ pub fn process_function(
             let module = adt.module.clone();
             let result_ty = function_type.get_result_type(function.arg_count);
             let mir_typedef_id = typedef_store.add_type(result_ty, ir_program, mir_program);
-            let name = format!("{}_{}_ctor{}_{}", adt.name, variant.name, info.index, mir_function_id.id);
+            let name = format!(
+                "{}_{}_ctor{}_{}",
+                adt.name, variant.name, info.index, mir_function_id.id
+            );
             let mir_function = MirFunction {
                 name: name,
                 module: module,

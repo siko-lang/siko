@@ -43,8 +43,8 @@ pub mod siko_macros {
                 None => $option_crate::$option_source::$option_module::$option_name::None,
             };
             $tuple_crate::$tuple_source::$tuple_module::$tuple_name {
-                field_0: arg0,
-                field_1: value,
+                _siko_field_0: arg0,
+                _siko_field_1: value,
             }
         }};
     }
@@ -58,8 +58,8 @@ pub mod siko_macros {
                 None => $option_crate::$option_source::$option_module::$option_name::None,
             };
             $tuple_crate::$tuple_source::$tuple_module::$tuple_name {
-                field_0: arg0,
-                field_1: value,
+                _siko_field_0: arg0,
+                _siko_field_1: value,
             }
         }};
     }

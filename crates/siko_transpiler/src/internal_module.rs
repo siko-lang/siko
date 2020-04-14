@@ -193,7 +193,9 @@ fn write_dyn_trait_impl_real_call(
     write!(
         output_file,
         "{}crate::source::{}::{}(",
-        indent, get_module_name(&function.module), function.name
+        indent,
+        get_module_name(&function.module),
+        function.name
     )?;
     for index in 0..partial_function_call.fields.len() {
         write!(
