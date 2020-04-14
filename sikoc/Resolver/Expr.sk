@@ -246,34 +246,39 @@ processRecordFieldInit field_inits (context, env, args) (HD.RecordField field_na
 
 shiftLambdaArgs :: Context -> HE.Expr -> Int -> (Context, HE.Expr)
 shiftLambdaArgs context (HE.Expr case_of case_of_id case_of_location) offset = case case_of of
-    HE.CaseOf (HE.Expr (HE.Tuple arg_refs) body_id body_location) cases -> do
-        (context, extra_arg_refs, extra_patterns) <- loop (context, extra_arg_refs, extra_patterns) <- (context, [], []) do
-                        len <- getLength extra_arg_refs
-                        if len == offset
-                            then break (context, extra_arg_refs, extra_patterns)
-                            else do
-                                (context, expr_id) <- getExprId context
-                                extra_arg_ref <- (HE.Expr (HE.ArgRef len) expr_id case_of_location)
-                                extra_arg_refs <- extra_arg_refs + [extra_arg_ref]
-                                (context, pattern_id) <- getPatternId context
-                                extra_pattern <- HP.Pattern (HP.Wildcard) pattern_id case_of_location
-                                extra_patterns <- extra_patterns + [extra_pattern]
-                                (context, extra_arg_refs, extra_patterns)
-        arg_refs <- arg_refs |> List.iter |> map (\e -> case e of
-            HE.Expr (HE.ArgRef index) arg_ref_id arg_ref_location -> HE.Expr (HE.ArgRef (index + offset)) arg_ref_id arg_ref_location
-            _ -> panic "Arg ref is not arg ref") |> toList
-        arg_refs <- extra_arg_refs + arg_refs
-        assert (getLength cases == 1)
-        only_case <- atIndex cases 0
-        pattern <- case only_case.pattern of
-            HP.Pattern (HP.Tuple args) pattern_id pattern_location -> do
-                args <- extra_patterns + args
-                HP.Pattern (HP.Tuple args) pattern_id pattern_location
-            _ -> panic "Case body is not tuple pattern"
-        cases <- [HE.Case pattern only_case.body]
-        case_of <- HE.CaseOf (HE.Expr (HE.Tuple arg_refs) body_id body_location) cases
-        expr <- HE.Expr case_of case_of_id case_of_location
-        (context, expr)
+    HE.CaseOf (HE.Expr body_expr body_id body_location) cases -> case body_expr of
+        HE.Tuple arg_refs ->
+            do
+            (context, extra_arg_refs, extra_patterns) <- loop (context, extra_arg_refs, extra_patterns) <- (context, [], []) do
+                            len <- getLength extra_arg_refs
+                            if len == offset
+                                then break (context, extra_arg_refs, extra_patterns)
+                                else do
+                                    (context, expr_id) <- getExprId context
+                                    extra_arg_ref <- (HE.Expr (HE.ArgRef len) expr_id case_of_location)
+                                    extra_arg_refs <- extra_arg_refs + [extra_arg_ref]
+                                    (context, pattern_id) <- getPatternId context
+                                    extra_pattern <- HP.Pattern (HP.Wildcard) pattern_id case_of_location
+                                    extra_patterns <- extra_patterns + [extra_pattern]
+                                    (context, extra_arg_refs, extra_patterns)
+            arg_refs <- arg_refs |> List.iter |> map (\e -> case e of
+                HE.Expr arg_ref_expr arg_ref_id arg_ref_location -> case arg_ref_expr of
+                    HE.ArgRef index -> HE.Expr (HE.ArgRef (index + offset)) arg_ref_id arg_ref_location
+                    _ -> panic "Arg ref is not arg ref expr"
+                _ -> panic "Arg ref is not arg ref") |> toList
+            arg_refs <- extra_arg_refs + arg_refs
+            assert (getLength cases == 1)
+            only_case <- atIndex cases 0
+            pattern <- case only_case.pattern of
+                HP.Pattern (HP.Tuple args) pattern_id pattern_location -> do
+                    args <- extra_patterns + args
+                    HP.Pattern (HP.Tuple args) pattern_id pattern_location
+                _ -> panic "Case body is not tuple pattern"
+            cases <- [HE.Case pattern only_case.body]
+            case_of <- HE.CaseOf (HE.Expr (HE.Tuple arg_refs) body_id body_location) cases
+            expr <- HE.Expr case_of case_of_id case_of_location
+            (context, expr)
+        _ -> panic "Body is not a tuple"
     _ -> panic "Lambda body is not case with tuple"
 
 processExpr :: Context -> Environment -> SE.Expr -> (Context, Environment, HE.Expr)

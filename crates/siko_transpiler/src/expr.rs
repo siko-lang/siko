@@ -294,7 +294,6 @@ pub fn write_expr(
             write!(output_file, " = loop_state;")?;
             for item in items {
                 write_expr(*item, output_file, program, indent)?;
-                write!(output_file, ";")?;
             }
             write!(output_file, "}}; loop_state}}")?;
         }

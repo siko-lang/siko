@@ -58,17 +58,17 @@ impl Transpiler {
         rust_program.get_module(MIR_INTERNAL_MODULE_NAME.to_string());
         for (id, function) in program.functions.items.iter() {
             let module = rust_program.get_module(function.module.clone());
-            module.functions.push(*id);
+            module.functions.insert(*id);
         }
         for (id, typedef) in program.typedefs.items.iter() {
             match typedef {
                 TypeDef::Adt(adt) => {
                     let module = rust_program.get_module(adt.module.clone());
-                    module.typedefs.push(*id);
+                    module.typedefs.insert(*id);
                 }
                 TypeDef::Record(record) => {
                     let module = rust_program.get_module(record.module.clone());
-                    module.typedefs.push(*id);
+                    module.typedefs.insert(*id);
                 }
             }
         }

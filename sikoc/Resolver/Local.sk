@@ -15,10 +15,14 @@ getVariants adt =
     adt.variants
       |> List.iter
       |> filter (\v -> case v of
-                    T.TypeSignature (T.Variant _ _) _ -> True
+                    T.TypeSignature v _ -> case v of
+                        T.Variant _ _ -> True
+                        _ -> False
                     _ -> False)
       |> fold (\variants, v -> case v of
-                            T.TypeSignature (T.Variant v _) _ -> variants + [Variant (getString adt.name) (getString v)]
+                            T.TypeSignature v _ -> case v of
+                                T.Variant v _ -> variants + [Variant (getString adt.name) (getString v)]
+                                _ -> panic "Variant is not a variant"
                             _ -> panic "Variant is not a variant") []
 
 getMemberFunctions :: C.Class -> [Item]

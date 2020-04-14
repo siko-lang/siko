@@ -873,7 +873,7 @@ fn generate_char_builtins(
         "isUppercase" => {
             write!(
                 output_file,
-                "{} match (arg0.is_uppercase()) {{ true => {}::True, false => {}::False }}",
+                "{} match (arg0.value.is_uppercase()) {{ true => {}::True, false => {}::False }}",
                 indent, result_ty_str, result_ty_str,
             )?;
         }

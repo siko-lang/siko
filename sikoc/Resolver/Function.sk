@@ -74,9 +74,9 @@ processFunction state hir_program module_resolver type_resolver kind function ty
         Some body -> (state, Some (desugarFunctionArgs function.arguments body))
         None -> do
             state <- function.arguments |> List.iter |> fold (\state, p -> case p of
-                SP.Pattern (SP.Binding _) _ -> state
-                SP.Pattern _ location -> do
-                    addError state (InvalidExternArg location)) state
+                SP.Pattern binding location -> case binding of
+                    SP.Binding _ -> state
+                    _ -> addError state (InvalidExternArg location)) state
             (state, None)
     (Ident name location) <- function.name
     qn <- qn_creator module_resolver.module_name name

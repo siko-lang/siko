@@ -17,6 +17,7 @@ data ChoiceKind = IntegerLiteral String
                 | Bind
                 | Record PO.FullyQualifiedName
                 | Variant PO.FullyQualifiedName Int
+                | GuardExpr E.ExprId
                 deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
 data Choice = { choices :: Map ChoiceKind (Option Choice) } deriving (Show, PartialEq)
@@ -25,9 +26,9 @@ processPrevChoice :: Option Choice -> ChoiceKind -> [P.Pattern] -> Option Choice
 processPrevChoice prev_choice current_kind rest = do
     case prev_choice of
         Some (Choice sub_choices) -> do
-            case get sub_choices Bind of
-                Some _ -> return prev_choice
-                None -> ()
+            current_kind <- case get sub_choices Bind of
+                Some _ -> Bind
+                None -> current_kind
             prev_sub <- case get sub_choices current_kind of
                 Some p -> p
                 None -> None
@@ -50,19 +51,19 @@ processPattern patterns prev_choice = do
     case first of
         P.Binding _ -> processPrevChoice prev_choice Bind rest
         P.Tuple args -> processPrevChoice prev_choice (Tuple (getLength args)) args
-        P.Guarded _ _ -> panic "Guarded pattern in processPattern"
+        P.Guarded p (E.Expr _ expr_id _) -> processPrevChoice prev_choice (GuardExpr expr_id) [p]
         P.Wildcard -> processPrevChoice prev_choice Bind rest
         P.IntegerLiteral lit -> processPrevChoice prev_choice (IntegerLiteral lit) rest
         P.StringLiteral lit -> processPrevChoice prev_choice (StringLiteral lit) rest
         P.CharLiteral lit -> processPrevChoice prev_choice (CharLiteral lit) rest
         P.CharRange s e k -> processPrevChoice prev_choice (CharRange s e k) rest
-        P.Typed p _ -> panic "Typed pattern in processPattern"
+        P.Typed _ _ -> panic "Typed pattern in processPattern"
         P.Record qn args -> processPrevChoice prev_choice (Record qn) args
         P.Variant qn index args -> processPrevChoice prev_choice (Variant qn index) args
         P.Or _ -> panic "Or pattern in processPattern"
 
-addUnreachablePattern :: Context -> Location -> Context
-addUnreachablePattern context location = do
+addUnreachablePatternError :: Context -> Location -> Context
+addUnreachablePatternError context location = do
     state <- addError context.state (UnreachablePattern location)
     context <- context { state = state }
     context
@@ -80,14 +81,14 @@ checkCase context case_body cases = do
                     (P.Pattern _ _ location) <- p
                     new_tree <- processPattern [p] choice_tree
                     context <- if new_tree == choice_tree
-                        then addUnreachablePattern context location
+                        then addUnreachablePatternError context location
                         else context
                     (context, new_tree)) (context, choice_tree)
                 _ -> do
                     new_tree <- processPattern [c.pattern] choice_tree
                     (context, new_tree)
             context <- if new_tree == choice_tree
-                then addUnreachablePattern context location
+                then addUnreachablePatternError context location
                 else context
             (context, new_tree)
         ) (context, None)

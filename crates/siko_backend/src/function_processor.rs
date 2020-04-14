@@ -164,7 +164,7 @@ pub fn process_function(
                 &mut expr_id_map,
                 &mut pattern_id_map,
             );
-            let lambda_name = format!("{}", info);
+            let lambda_name = format!("{}{}", info, mir_function_id.id);
             let lambda_name = lambda_name.replace("/", "_");
             let lambda_name = lambda_name.replace(".", "_");
             let lambda_name = lambda_name.replace("#", "_");
@@ -185,14 +185,7 @@ pub fn process_function(
             let module = adt.module.clone();
             let result_ty = function_type.get_result_type(function.arg_count);
             let mir_typedef_id = typedef_store.add_type(result_ty, ir_program, mir_program);
-            let name = if adt.type_args.is_empty() {
-                format!("{}_{}_ctor{}", adt.name, variant.name, info.index)
-            } else {
-                format!(
-                    "{}_{}_ctor{}_{}",
-                    adt.name, variant.name, info.index, mir_typedef_id.id
-                )
-            };
+            let name = format!("{}_{}_ctor{}_{}", adt.name, variant.name, info.index, mir_function_id.id);
             let mir_function = MirFunction {
                 name: name,
                 module: module,

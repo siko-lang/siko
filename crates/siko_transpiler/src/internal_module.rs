@@ -1,5 +1,6 @@
 use crate::types::ir_type_to_rust_type;
 use crate::util::arg_name;
+use crate::util::get_module_name;
 use crate::util::Indent;
 use siko_constants::MIR_FUNCTION_TRAIT_NAME;
 use siko_mir::program::Program;
@@ -192,7 +193,7 @@ fn write_dyn_trait_impl_real_call(
     write!(
         output_file,
         "{}crate::source::{}::{}(",
-        indent, function.module, function.name
+        indent, get_module_name(&function.module), function.name
     )?;
     for index in 0..partial_function_call.fields.len() {
         write!(

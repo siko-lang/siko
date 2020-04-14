@@ -9,11 +9,12 @@ use siko_mir::function::FunctionId;
 use siko_mir::program::Program;
 use std::io::Result;
 use std::io::Write;
+use std::collections::BTreeSet;
 
 pub struct Module {
     name: String,
-    pub functions: Vec<FunctionId>,
-    pub typedefs: Vec<TypeDefId>,
+    pub functions: BTreeSet<FunctionId>,
+    pub typedefs: BTreeSet<TypeDefId>,
     pub internal: bool,
 }
 
@@ -22,8 +23,8 @@ impl Module {
         let internal = name == MIR_INTERNAL_MODULE_NAME;
         Module {
             name: name,
-            functions: Vec::new(),
-            typedefs: Vec::new(),
+            functions: BTreeSet::new(),
+            typedefs: BTreeSet::new(),
             internal: internal,
         }
     }
