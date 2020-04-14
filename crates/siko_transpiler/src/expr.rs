@@ -247,14 +247,14 @@ pub fn write_expr(
         Expr::List(items) => {
             let ty = program.get_expr_type(&expr_id);
             let ty = ir_type_to_rust_type(ty, program);
-            write!(output_file, "{} {{ value: vec![", ty)?;
+            write!(output_file, "{} {{ value: std::rc::Rc::new(vec![", ty)?;
             for (index, item) in items.iter().enumerate() {
                 write_expr(*item, output_file, program, indent)?;
                 if index != items.len() - 1 {
                     write!(output_file, ", ")?;
                 }
             }
-            write!(output_file, "] }}")?;
+            write!(output_file, "]) }}")?;
         }
         Expr::DynamicFunctionCall(receiver, args) => {
             indent.inc();

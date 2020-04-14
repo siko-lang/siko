@@ -248,7 +248,7 @@ fn generate_string_builtins(
             )?;
             write!(
                 output_file,
-                "{}{} {{ value : value }}",
+                "{}{} {{ value : std::rc::Rc::new(value) }}",
                 indent, result_ty_str
             )?;
         }
@@ -260,7 +260,7 @@ fn generate_string_builtins(
             )?;
             write!(
                 output_file,
-                "{}{} {{ value : value }}",
+                "{}{} {{ value : std::rc::Rc::new(value) }}",
                 indent, result_ty_str
             )?;
         }
@@ -644,7 +644,7 @@ fn generate_list_builtins(
             write!(output_file, "{}}}\n", indent)?;
             write!(
                 output_file,
-                "{}{} {{ value: value }}",
+                "{}{} {{ value: std::rc::Rc::new(value) }}",
                 indent, result_ty_str
             )?;
         }
@@ -672,7 +672,7 @@ fn generate_list_builtins(
             indent.inc();
             write!(
                 output_file,
-                "{}pub value: Vec<{}>,\n",
+                "{}pub value: std::rc::Rc<Vec<{}>>,\n",
                 indent, list_arg_type
             )?;
             write!(output_file, "{}pub index: usize,\n", indent)?;
@@ -793,6 +793,8 @@ fn generate_list_builtins(
             write!(output_file, "{}}}\n", indent)?;
         }
         "tail" => {
+            let list_type = ir_type_to_rust_type(&arg_type_types[0], program);
+
             write!(output_file, "{}match arg0.value.is_empty() {{\n", indent)?;
             write!(
                 output_file,
@@ -801,25 +803,28 @@ fn generate_list_builtins(
             )?;
             write!(
                 output_file,
-                "{}false => {{ let mut v = arg0.clone(); v.value.remove(0); {}::Some(v) }}\n",
-                indent, result_ty_str
+                "{}false => {{ let mut v = (*arg0.value).clone(); v.remove(0); {}::Some({} {{ value : std::rc::Rc::new(v) }}) }}\n",
+                indent, result_ty_str, list_type
             )?;
             write!(output_file, "{}}}\n", indent)?;
         }
         "opAdd" => {
-            write!(output_file, "{}let mut r = arg0.clone();\n", indent)?;
-            write!(output_file, "{}r.value.extend(arg1.value);\n", indent)?;
-            write!(output_file, "{}r\n", indent)?;
+            write!(output_file, "{}let mut r = Vec::new();\n", indent)?;
+            write!(output_file, "{}r.extend(arg0.value.iter().cloned());\n", indent)?;
+            write!(output_file, "{}r.extend(arg1.value.iter().cloned());\n", indent)?;
+            write!(output_file, "{} {} {{ value : std::rc::Rc::new(r) }}\n", indent, result_ty_str)?;
         }
         "dedup" => {
-            write!(output_file, "{}let mut r = arg0.clone();\n", indent)?;
-            write!(output_file, "{}r.value.dedup();\n", indent)?;
-            write!(output_file, "{}r\n", indent)?;
+            write!(output_file, "{}let mut r = Vec::new();\n", indent)?;
+            write!(output_file, "{}r.extend(arg0.value.iter().cloned());\n", indent)?;
+            write!(output_file, "{}r.dedup();\n", indent)?;
+            write!(output_file, "{} {} {{ value : std::rc::Rc::new(r) }}\n", indent, result_ty_str)?;
         }
         "sort" => {
-            write!(output_file, "{}let mut r = arg0.clone();\n", indent)?;
-            write!(output_file, "{}r.value.sort();\n", indent)?;
-            write!(output_file, "{}r\n", indent)?;
+            write!(output_file, "{}let mut r = Vec::new();\n", indent)?;
+            write!(output_file, "{}r.extend(arg0.value.iter().cloned());\n", indent)?;
+            write!(output_file, "{}r.sort();\n", indent)?;
+            write!(output_file, "{} {} {{ value : std::rc::Rc::new(r) }}\n", indent, result_ty_str)?;
         }
         "getLength" => {
             indent.inc();
@@ -1089,7 +1094,7 @@ pub fn generate_builtin(
                         indent
                     )?;
                     indent.inc();
-                    write!(output_file, "{}Some(self.arg0.call(value))\n", indent)?;
+                    write!(output_file, "{}Some(self.arg0.clone().call(value))\n", indent)?;
                     indent.dec();
                     write!(output_file, "{}}} else {{\n", indent)?;
                     indent.inc();
@@ -1188,7 +1193,7 @@ pub fn generate_builtin(
                     indent.inc();
                     write!(
                         output_file,
-                        "{}match self.arg0.call(value.clone()) {{\n",
+                        "{}match self.arg0.clone().call(value.clone()) {{\n",
                         indent,
                     )?;
                     indent.inc();
@@ -1244,14 +1249,14 @@ pub fn generate_builtin(
                 ("Iterator", "forEach") => {
                     write!(output_file, "{}let mut arg0 = arg0;\n", indent)?;
                     write!(output_file, "{}let mut arg1 = arg1;\n", indent)?;
-                    write!(output_file, "{}loop {{  match arg1.value.next() {{ Some(v) => {{ arg0.call(v); }}, None => {{ break; }}  }} }}\n", indent)?;
+                    write!(output_file, "{}loop {{  match arg1.value.next() {{ Some(v) => {{ arg0.clone().call(v); }}, None => {{ break; }}  }} }}\n", indent)?;
                     write!(output_file, "{}{} {{ }}\n", indent, result_ty_str)?;
                 }
                 ("Iterator", "fold") => {
                     write!(output_file, "{}let mut arg0 = arg0;\n", indent)?;
                     write!(output_file, "{}let mut arg1 = arg1;\n", indent)?;
                     write!(output_file, "{}let mut arg2 = arg2;\n", indent)?;
-                    write!(output_file, "{}loop {{  match arg2.value.next() {{ Some(v) => {{ let mut partial = arg0.call(arg1.clone()); arg1 = partial.call(v); }}, None => {{ break; }}  }} }}\n", indent)?;
+                    write!(output_file, "{}loop {{  match arg2.value.next() {{ Some(v) => {{ let mut partial = arg0.clone().call(arg1.clone()); arg1 = partial.call(v); }}, None => {{ break; }}  }} }}\n", indent)?;
                     write!(output_file, "{}arg1\n", indent)?;
                 }
                 ("Hack", "readTextFile") => {
