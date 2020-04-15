@@ -71,7 +71,9 @@ processTypeArgs resolver_state state type_arguments do_check = do
                     then addError resolver_state (UnusedTypeArg arg)
                     else resolver_state) resolver_state
         else resolver_state
-    type_args <- state.args |> Map.iter |> map (\(n, var) -> FixedTypeArg n var []) |> toList
+    type_args <- type_arguments |> List.iter |> map (\(Ident n _) -> do
+        var <- Option.unwrap (get state.args n)
+        FixedTypeArg n var []) |> toList
     (resolver_state, type_args)
 
 addTypeArguments :: TypeResolverState -> ResolverState -> [Ident] -> (TypeResolverState, ResolverState)

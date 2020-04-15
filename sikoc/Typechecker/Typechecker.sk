@@ -35,7 +35,7 @@ initializeFunctionType group_items context fn = do
 
 checkFunctionType :: Context -> F.Function -> Context
 checkFunctionType context fn = do
-    //println "Checking function {}" % fn.name
+    println "Checking function {}" % fn.name
     case fn.body of
         Some body -> do
             context <- traverse context checkExprType checkPatternType body
@@ -52,20 +52,23 @@ checkFunctionType context fn = do
 
 processGroup :: TypecheckerState -> DependencyGroup P.FullyQualifiedName -> P.Program -> FS.FunctionStore -> (TypecheckerState, FS.FunctionStore)
 processGroup state group program function_store = do
-    context <- initializeContext state program function_store
-    context <- group.items |> List.iter |> fold (\context, name -> do
-                        fn <- P.getFunction program name
-                        context <- initializeFunctionType group.items context fn
-                        context) context
-    //println "After init"
-    //TS.dump context.type_store
-    context <- group.items |> List.iter |> fold (\context, name -> do
-                        fn <- P.getFunction program name
-                        context <- checkFunctionType context fn
-                        context) context
-    //println "After check"
-    //TS.dump context.type_store
-    (context.state, context.function_store)
+    if isEmpty state.errors
+        then do
+            context <- initializeContext state program function_store
+            context <- group.items |> List.iter |> fold (\context, name -> do
+                                fn <- P.getFunction program name
+                                context <- initializeFunctionType group.items context fn
+                                context) context
+            //println "After init"
+            //TS.dump context.type_store
+            context <- group.items |> List.iter |> fold (\context, name -> do
+                                fn <- P.getFunction program name
+                                context <- checkFunctionType context fn
+                                context) context
+            //println "After check"
+            //TS.dump context.type_store
+            (context.state, context.function_store)
+        else (state, function_store)
 
 processProgram :: P.Program -> TypeVarGenerator -> [TypecheckerError]
 processProgram program var_gen = do
