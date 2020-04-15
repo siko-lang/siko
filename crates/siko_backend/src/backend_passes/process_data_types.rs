@@ -153,7 +153,7 @@ fn calculate_boxed_members(groups: &Vec<DependencyGroup<TypeDefId>>, program: &m
                     for variant in &mut adt.variants {
                         for item in &mut variant.items {
                             if let Some(id) = item.ty.get_typedef_id_opt() {
-                                if group.items.contains(&id)  {
+                                if group.items.contains(&id) {
                                     item.ty = Type::Named(Modifier::Boxed, id);
                                 }
                             }
@@ -163,7 +163,7 @@ fn calculate_boxed_members(groups: &Vec<DependencyGroup<TypeDefId>>, program: &m
                 TypeDef::Record(record) => {
                     for field in &mut record.fields {
                         if let Some(id) = field.ty.get_typedef_id_opt() {
-                            if group.items.contains(&id)  {
+                            if group.items.contains(&id) {
                                 field.ty = Type::Named(Modifier::Boxed, id);
                             }
                         }

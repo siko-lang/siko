@@ -142,7 +142,7 @@ pub fn write_expr(
             write!(output_file, "{} (", name)?;
             for (index, arg) in args.iter().enumerate() {
                 write_expr(*arg, output_file, program, indent)?;
-                write!(output_file, ".clone()")?;
+                //write!(output_file, ".clone()")?;
                 if index != args.len() - 1 {
                     write!(output_file, ", ")?;
                 }
@@ -260,7 +260,8 @@ pub fn write_expr(
             indent.inc();
             write!(output_file, "{{\n{}let mut dyn_fn = ", indent)?;
             write_expr(*receiver, output_file, program, indent)?;
-            write!(output_file, ".clone();\n")?;
+            //write!(output_file, ".clone()")?;
+            write!(output_file, ";\n")?;
             for (index, arg) in args.iter().enumerate() {
                 if index == args.len() - 1 {
                     write!(output_file, "{}let dyn_fn = dyn_fn.call(", indent)?;
@@ -294,7 +295,7 @@ pub fn write_expr(
             write_pattern(*pattern, output_file, program, indent)?;
             write!(output_file, " = loop_state;")?;
             for (index, item) in items.iter().enumerate() {
-                if index == items.len() -1 {
+                if index == items.len() - 1 {
                     write!(output_file, "{}let tmp{} = {{ ", indent, index)?;
                     write_expr(*item, output_file, program, indent)?;
                     write!(output_file, " }} ;")?;

@@ -81,7 +81,7 @@ pub fn box_convert_pass(expr_id: &ExprId, program: &mut Program) {
         program: program,
         patterns: Vec::new(),
     };
-    walk_expr(expr_id, &mut retype);
+    walk_expr(expr_id, &mut retype, false);
     let patterns = retype.patterns;
     for pattern in patterns {
         let ty = program
@@ -94,7 +94,7 @@ pub fn box_convert_pass(expr_id: &ExprId, program: &mut Program) {
         program: program,
         refs: Vec::new(),
     };
-    walk_expr(expr_id, &mut collector);
+    walk_expr(expr_id, &mut collector, false);
     let refs = collector.refs;
     for expr_id in refs {
         let location = program.exprs.get(&expr_id).location_id;

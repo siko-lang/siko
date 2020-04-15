@@ -72,11 +72,7 @@ pub fn write_typedef(
                         write!(output_file, "{}}}\n", indent)?;
                     }
                     ExternalDataKind::Map => {
-                        write!(
-                            output_file,
-                            "{}#[derive(Clone)]\n",
-                            indent
-                        )?;
+                        write!(output_file, "{}#[derive(Clone)]\n", indent)?;
                         write!(output_file, "{}pub struct {} {{\n", indent, record.name)?;
                         indent.inc();
                         let key_ty = ir_type_to_rust_type(&args[0], program);
@@ -142,7 +138,11 @@ pub fn write_typedef(
                         write!(output_file, "{}#[derive(Clone)]\n", indent)?;
                         write!(output_file, "{}pub struct {} {{\n", indent, record.name)?;
                         indent.inc();
-                        write!(output_file, "{}pub value: std::rc::Rc<Vec<{}>>,\n", indent, elem_ty)?;
+                        write!(
+                            output_file,
+                            "{}pub value: std::rc::Rc<Vec<{}>>,\n",
+                            indent, elem_ty
+                        )?;
                         indent.dec();
                         write!(output_file, "{}}}\n", indent)?;
                     }

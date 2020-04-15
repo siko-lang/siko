@@ -94,5 +94,5 @@ impl<'a> Visitor for ProcessStaticCalls<'a> {
 
 pub fn process_static_calls_pass(expr_id: &ExprId, program: &mut Program) {
     let mut processor = ProcessStaticCalls { program: program };
-    walk_expr(expr_id, &mut processor);
+    walk_expr(expr_id, &mut processor, false);
 }

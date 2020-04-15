@@ -52,7 +52,7 @@ pub fn insert_clone_pass(expr_id: &ExprId, program: &mut Program) {
         program: program,
         refs: BTreeMap::new(),
     };
-    walk_expr(expr_id, &mut collector);
+    walk_expr(expr_id, &mut collector, true);
     let refs = collector.refs;
     for (_, exprs) in refs {
         if exprs.len() == 1 {

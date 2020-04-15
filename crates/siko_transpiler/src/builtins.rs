@@ -810,21 +810,49 @@ fn generate_list_builtins(
         }
         "opAdd" => {
             write!(output_file, "{}let mut r = Vec::new();\n", indent)?;
-            write!(output_file, "{}r.extend(arg0.value.iter().cloned());\n", indent)?;
-            write!(output_file, "{}r.extend(arg1.value.iter().cloned());\n", indent)?;
-            write!(output_file, "{} {} {{ value : std::rc::Rc::new(r) }}\n", indent, result_ty_str)?;
+            write!(
+                output_file,
+                "{}r.extend(arg0.value.iter().cloned());\n",
+                indent
+            )?;
+            write!(
+                output_file,
+                "{}r.extend(arg1.value.iter().cloned());\n",
+                indent
+            )?;
+            write!(
+                output_file,
+                "{} {} {{ value : std::rc::Rc::new(r) }}\n",
+                indent, result_ty_str
+            )?;
         }
         "dedup" => {
             write!(output_file, "{}let mut r = Vec::new();\n", indent)?;
-            write!(output_file, "{}r.extend(arg0.value.iter().cloned());\n", indent)?;
+            write!(
+                output_file,
+                "{}r.extend(arg0.value.iter().cloned());\n",
+                indent
+            )?;
             write!(output_file, "{}r.dedup();\n", indent)?;
-            write!(output_file, "{} {} {{ value : std::rc::Rc::new(r) }}\n", indent, result_ty_str)?;
+            write!(
+                output_file,
+                "{} {} {{ value : std::rc::Rc::new(r) }}\n",
+                indent, result_ty_str
+            )?;
         }
         "sort" => {
             write!(output_file, "{}let mut r = Vec::new();\n", indent)?;
-            write!(output_file, "{}r.extend(arg0.value.iter().cloned());\n", indent)?;
+            write!(
+                output_file,
+                "{}r.extend(arg0.value.iter().cloned());\n",
+                indent
+            )?;
             write!(output_file, "{}r.sort();\n", indent)?;
-            write!(output_file, "{} {} {{ value : std::rc::Rc::new(r) }}\n", indent, result_ty_str)?;
+            write!(
+                output_file,
+                "{} {} {{ value : std::rc::Rc::new(r) }}\n",
+                indent, result_ty_str
+            )?;
         }
         "getLength" => {
             indent.inc();
@@ -1094,7 +1122,11 @@ pub fn generate_builtin(
                         indent
                     )?;
                     indent.inc();
-                    write!(output_file, "{}Some(self.arg0.clone().call(value))\n", indent)?;
+                    write!(
+                        output_file,
+                        "{}Some(self.arg0.clone().call(value))\n",
+                        indent
+                    )?;
                     indent.dec();
                     write!(output_file, "{}}} else {{\n", indent)?;
                     indent.inc();
