@@ -156,8 +156,14 @@ unifyVarWithFixedArg gen sub class_store var var_constraints fixed_arg_constrain
             _ -> panic "Cannot happen") |> toList
     ok <- var_constraints |> List.iter |> fold (\ok, constraint -> ok && case constraint of
         ClassConstraint class_name -> do
-            println "{} imply {}" % (fixed_classes, class_name)
-            True
+            if contains fixed_classes class_name
+                then True
+                else do
+                    all <- fixed_classes |> List.iter |> fold (\all, c -> do
+                        class_info <- Option.unwrap (get class_store.classes c)
+                        all <- all + class_info.dependencies
+                        all) []
+                    contains all class_name
         RowConstraint _ _ -> contains fixed_arg_constraints constraint) True
     if ok
         then do
