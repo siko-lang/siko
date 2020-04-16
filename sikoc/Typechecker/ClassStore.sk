@@ -1,0 +1,30 @@
+module Siko.Typechecker.ClassStore where
+
+import Siko.HIR.Program as P
+import Map
+
+data ClassInfo = { dependencies :: [P.FullyQualifiedName] } deriving (Show)
+
+data ClassStore = { classes :: Map P.FullyQualifiedName ClassInfo } deriving (Show)
+
+getAllDependencies :: Map P.FullyQualifiedName [P.FullyQualifiedName] -> P.FullyQualifiedName -> [P.FullyQualifiedName] -> [P.FullyQualifiedName]
+getAllDependencies direct_dependencies class_name deps = do
+    direct_deps <- case get direct_dependencies class_name of
+        Some direct_deps -> direct_deps
+        None -> panic "Class not found in dependency map"
+    deps <- direct_deps |> List.iter |> fold (\deps, dep -> do
+            deps <- getAllDependencies direct_dependencies dep deps
+            deps) direct_deps + deps
+    deps
+
+initializeClassStore :: Map P.FullyQualifiedName [P.FullyQualifiedName] -> Bool -> ClassStore
+initializeClassStore direct_dependencies is_circular = do
+    if is_circular
+        then do
+            classes <- direct_dependencies |> Map.iter |> map (\(class_name, direct_dependencies) -> do
+                (class_name, ClassInfo direct_dependencies)) |> toMap
+            ClassStore classes
+        else do
+            classes <- direct_dependencies |> Map.iter |> map (\(class_name, _) -> do
+                (class_name, ClassInfo (getAllDependencies direct_dependencies class_name []))) |> toMap
+            ClassStore classes

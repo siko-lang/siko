@@ -19,7 +19,7 @@ import Map
 
 processClassDependencies :: ResolverState -> ModuleResolver -> SC.Class -> String -> (ResolverState, [HP.FullyQualifiedName])
 processClassDependencies state module_resolver c type_arg = do
-    (state, class_constraints) <- c.constraints |> List.iter |> fold (\(state, constraints), constraint -> do
+    (state, dependencies) <- c.constraints |> List.iter |> fold (\(state, constraints), constraint -> do
                 state <- if (getString constraint.argument) != type_arg
                     then
                         addError state (UnknownTypeArg constraint.argument)
@@ -33,7 +33,7 @@ processClassDependencies state module_resolver c type_arg = do
                         state <- addError state err
                         (state, constraints)
                 (state, constraints)) (state, [])
-    (state, class_constraints)
+    (state, dependencies)
 
 processClass :: ResolverState -> HP.Program -> ModuleResolver -> SC.Class -> (ResolverState, HP.Program)
 processClass state hir_program module_resolver c = do
@@ -42,14 +42,14 @@ processClass state hir_program module_resolver c = do
     qn <- HP.FullPath module_name name
     ST.TypeSignature type location <- c.argument
     type_resolver <- createTypeResolverState module_resolver True
-    (state, type_resolver, class_constraints, arg_type) <- case type of
+    (state, type_resolver, dependencies, arg_type) <- case type of
         ST.TypeArg type_arg -> do
             type_arg_str <- getString type_arg
             self_constraint <- HT.ClassConstraint qn
             (type_resolver, state) <- addTypeArgument type_resolver state type_arg
             (_, type_resolver) <- addTypeArgumentConstraint type_resolver type_arg_str self_constraint
             (type_resolver, state, arg_type) <- processTypeSignature type_resolver state c.argument
-            (state, class_constraints) <- processClassDependencies state module_resolver c type_arg_str
+            (state, dependencies) <- processClassDependencies state module_resolver c type_arg_str
             state <- c.member_function_type_signatures |> List.iter |> fold (\state, s -> do
                 sig_type_args <- s.type_arguments |> List.iter |> map (\arg -> getString arg) |> toList
                 state <- if contains sig_type_args type_arg_str
@@ -59,7 +59,7 @@ processClass state hir_program module_resolver c = do
                         state <- addError state (UnusedClassArg type_arg location)
                         state
                 state) state
-            (state, type_resolver, class_constraints, arg_type)
+            (state, type_resolver, dependencies, arg_type)
         _ -> do
             state <- addError state (InvalidClassArgument location)
             (state, type_resolver, [], HT.Tuple [])
@@ -78,7 +78,7 @@ processClass state hir_program module_resolver c = do
                 state <- handleItemConflict state other_item location
                 (state, hir_program, class_members)
         ) (state, hir_program, [])
-    hir_class <- HC.Class qn location arg_type class_constraints class_members
+    hir_class <- HC.Class qn location arg_type dependencies class_members
     (hir_program, other_item) <- HP.addItem hir_program qn (HP.Class hir_class)
     state <- handleItemConflict state other_item location
     (state, hir_program)

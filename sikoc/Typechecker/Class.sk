@@ -5,12 +5,16 @@ import Siko.Typechecker.Expr
 import Siko.Typechecker.Error
 import Siko.Typechecker.Unification as U
 import Siko.Typechecker.Util
+import Siko.Typechecker.ClassStore
 import Siko.HIR.Program as P
 import Siko.HIR.Function as F
 import Siko.HIR.Traversal
 import Siko.HIR.Type as T
 import Siko.HIR.Class as C
+import Siko.Util.DependencyProcessor
 import Map
+
+data ClassDependencyMap = { direct_dependencies :: Map P.FullyQualifiedName [P.FullyQualifiedName] }
 
 data ClassMemberInfo = { type :: T.Type,
                          has_default_impl :: Bool }
@@ -23,8 +27,10 @@ addMemberInfo class_type_info name type has_default_impl = do
     (members, _) <- Map.insert class_type_info.members name (ClassMemberInfo type has_default_impl)
     class_type_info { members = members }
 
-processClass :: TypecheckerState -> C.Class -> P.Program -> (TypecheckerState, ClassTypeInfo)
-processClass state c program = do
+processClass :: TypecheckerState -> C.Class -> P.Program -> ClassDependencyMap -> (TypecheckerState, ClassTypeInfo, ClassDependencyMap)
+processClass state c program class_dependency_map = do
+    (direct_dependencies, _) <- insert class_dependency_map.direct_dependencies c.name c.dependencies
+    class_dependency_map <- class_dependency_map { direct_dependencies = direct_dependencies }
     (state, class_type_info) <- c.members |> List.iter |> fold (\(state, class_type_info), qn -> do
             member <- P.getFunction program qn
             short_name <- (P.getShortName member.name)
@@ -37,7 +43,7 @@ processClass state c program = do
                     (state, class_type_info)
             (state, class_type_info)
         ) (state, ClassTypeInfo c.arg_type Map.empty)
-    (state, class_type_info)
+    (state, class_type_info, class_dependency_map)
 
 processInstance :: TypecheckerState -> C.Instance -> Map P.FullyQualifiedName ClassTypeInfo -> P.Program -> (TypecheckerState, [(P.FullyQualifiedName, T.Type)])
 processInstance state i class_type_info_map program = do
@@ -101,10 +107,25 @@ processInstance state i class_type_info_map program = do
 processClassesAndInstances :: TypecheckerState -> P.Program -> (TypecheckerState, P.Program)
 processClassesAndInstances state program = do
     classes <- P.getClasses program
-    (state, class_type_info_map) <- classes |> List.iter |> fold (\(state, class_type_info_map), c -> do
-        (state, class_member_info) <- processClass state c program
+    class_dependency_map <- ClassDependencyMap empty
+    (state, class_type_info_map, class_dependency_map) <- classes |> List.iter |> fold (\(state, class_type_info_map, class_dependency_map), c -> do
+        (state, class_member_info, class_dependency_map) <- processClass state c program class_dependency_map
         (class_type_info_map, _) <- Map.insert class_type_info_map c.name class_member_info
-        (state, class_type_info_map)) (state, Map.empty)
+        (state, class_type_info_map, class_dependency_map)) (state, Map.empty, class_dependency_map)
+    groups <- processDependencies class_dependency_map.direct_dependencies
+    (state, circular) <- groups |> List.iter |> fold (\(state, circular), group -> do
+        if getLength group.items > 1
+            then do
+                (names, locations) <- group.items |> List.iter |> fold (\(names, locations), qn -> do
+                    c <- P.getClass program qn
+                    names <- names + [P.getResolvableName c.name]
+                    locations <- locations + [c.location]
+                    (names, locations)) ([], [])
+                err <- CircularClassDependency names locations
+                state <- addError state err
+                (state, True)
+            else (state, circular)) (state, False)
+    class_store <- initializeClassStore class_dependency_map.direct_dependencies circular
     instances <- P.getInstances program
     (state, inferred_types) <- instances |> List.iter |> fold (\(state, inferred_types), i -> do
         (state, types) <- processInstance state i class_type_info_map program
