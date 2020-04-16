@@ -23,10 +23,11 @@ data Context = { type_store :: TS.TypeStore,
                  function_store :: FS.FunctionStore,
                  state :: TypecheckerState,
                  program :: PO.Program,
-                 returns :: [(E.ExprId, Location)] }
+                 returns :: [(E.ExprId, Location)],
+                 group_items :: [PO.FullyQualifiedName] }
 
-initializeContext :: TypecheckerState -> PO.Program -> FS.FunctionStore -> Context
-initializeContext state program function_store = Context TS.initializeTypeStore function_store state program []
+initializeContext :: TypecheckerState -> PO.Program -> FS.FunctionStore -> [PO.FullyQualifiedName] -> Context
+initializeContext state program function_store group_items = Context TS.initializeTypeStore function_store state program [] group_items
 
 addExprType :: Context -> E.ExprId -> TS.ExprTypeState -> Context
 addExprType context expr_id expr_type = do
@@ -60,11 +61,11 @@ unify :: Context -> T.Type -> T.Type -> Location -> (Context, U.Substitution)
 unify context ty1 ty2 location = do
     //println "Unifying {} {}" % (T.toString ty1, T.toString ty2)
     sub <- U.createSubstitution
-    case U.unify context.state.var_gen sub context.state.data_store ty1 ty2 of
+    case U.unify context.state.var_gen sub context.state.data_store context.state.class_store ty1 ty2 of
         Ok (var_gen, sub) -> do
             //println "Ok! {}" % sub
             type_store <- TS.apply context.type_store sub
-            function_store <- FS.apply context.function_store sub
+            function_store <- FS.apply context.function_store context.group_items sub
             state <- context.state
             state <- state { var_gen = var_gen }
             (context { type_store = type_store, function_store = function_store, state = state }, sub)
@@ -107,13 +108,13 @@ getNeverType context = do
     context <- context { state = state }
     (context, T.Never var)
 
-initializeExprType :: [PO.FullyQualifiedName] -> PO.FullyQualifiedName -> Context -> E.Expr -> Context
-initializeExprType group_items current_fn_name context (E.Expr expr id location) = do
+initializeExprType :: PO.FullyQualifiedName -> Context -> E.Expr -> Context
+initializeExprType current_fn_name context (E.Expr expr id location) = do
     //println "Initializing expr {} {}" % (expr, id)
     context <- case expr of
         E.StaticFunctionCall qn args -> do
             func_type_info <- getFunctionTypeInfo context qn
-            (context, function_type) <- if contains group_items qn
+            (context, function_type) <- if contains context.group_items qn
                 then (context, func_type_info.function_type)
                 else instantiateType context func_type_info.function_type
             (context, var) <- getNewVar context

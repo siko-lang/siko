@@ -4,6 +4,7 @@ import Siko.Typechecker.Data
 import Siko.Typechecker.Expr
 import Siko.Typechecker.Error
 import Siko.Typechecker.Pattern
+import Siko.Typechecker.ClassStore as CS
 import Siko.Typechecker.TypeStore as TS
 import Siko.Typechecker.DataStore as DS
 import Siko.Typechecker.FunctionStore as FS
@@ -19,6 +20,7 @@ import Map
 
 data TypecheckerState = { errors :: [TypecheckerError],
                           var_gen :: TypeVarGenerator,
+                          class_store :: CS.ClassStore,
                           data_store :: DS.DataStore,
                         }
 
@@ -27,10 +29,10 @@ addError state error = do
     errors <- state.errors + [error]
     state { errors = errors }
 
-initializeFunctionType :: [P.FullyQualifiedName] -> Context -> F.Function -> Context
-initializeFunctionType group_items context fn = do
+initializeFunctionType :: Context -> F.Function -> Context
+initializeFunctionType context fn = do
     case fn.body of
-        Some body -> traverse context (initializeExprType group_items fn.name) initializePatternType body
+        Some body -> traverse context (initializeExprType fn.name) initializePatternType body
         None -> context
 
 checkFunctionType :: Context -> F.Function -> Context
@@ -54,10 +56,10 @@ processGroup :: TypecheckerState -> DependencyGroup P.FullyQualifiedName -> P.Pr
 processGroup state group program function_store = do
     if isEmpty state.errors
         then do
-            context <- initializeContext state program function_store
+            context <- initializeContext state program function_store group.items
             context <- group.items |> List.iter |> fold (\context, name -> do
                                 fn <- P.getFunction program name
-                                context <- initializeFunctionType group.items context fn
+                                context <- initializeFunctionType context fn
                                 context) context
             //println "After init"
             //TS.dump context.type_store
@@ -73,7 +75,7 @@ processGroup state group program function_store = do
 processProgram :: P.Program -> TypeVarGenerator -> [TypecheckerError]
 processProgram program var_gen = do
     data_store <- processData program
-    state <- TypecheckerState [] var_gen data_store
+    state <- TypecheckerState [] var_gen CS.initializeEmptyClassStore data_store
     (state, program) <- processClassesAndInstances state program
     (state, function_store, groups) <- processFunctions state program
     println "Datadefs: {}" % (getSize data_store.data_type_info_map)

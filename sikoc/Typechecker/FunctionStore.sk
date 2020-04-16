@@ -36,11 +36,13 @@ applyTypeInfo func_type_info sub = do
     result_type <- U.apply sub func_type_info.result_type
     FunctionTypeInfo func_type_info.name args function_type result_type func_type_info.defined
 
-apply :: FunctionStore -> U.Substitution -> FunctionStore
-apply store sub = do
-    functions <- store.functions |> Map.iter |> map (\(name, func_type_info) -> do
-                                func_type_info <- applyTypeInfo func_type_info sub
-                                (name, func_type_info)) |> toMap
+apply :: FunctionStore -> [FullyQualifiedName] -> U.Substitution -> FunctionStore
+apply store group_items sub = do
+    functions <- group_items |> List.iter |> fold (\functions, name -> do
+            (functions, _) <- alter (\func_type_info -> case func_type_info of
+                Some f -> Some (applyTypeInfo f sub)
+                None -> None) name functions
+            functions) store.functions
     store { functions = functions }
 
 dump :: FunctionStore -> ()

@@ -14,8 +14,11 @@ getAllDependencies direct_dependencies class_name deps = do
         None -> panic "Class not found in dependency map"
     deps <- direct_deps |> List.iter |> fold (\deps, dep -> do
             deps <- getAllDependencies direct_dependencies dep deps
-            deps) direct_deps + deps
+            deps) ((direct_deps + deps) |> sort |> dedup)
     deps
+
+initializeEmptyClassStore :: ClassStore
+initializeEmptyClassStore = ClassStore empty
 
 initializeClassStore :: Map P.FullyQualifiedName [P.FullyQualifiedName] -> Bool -> ClassStore
 initializeClassStore direct_dependencies is_circular = do
