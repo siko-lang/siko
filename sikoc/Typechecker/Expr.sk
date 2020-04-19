@@ -17,6 +17,7 @@ import Siko.Typechecker.Util as UT
 import Siko.Typechecker.Unification as U
 import Siko.Typechecker.TypeStore as TS
 import Siko.Typechecker.FunctionStore as FS
+import Siko.Typechecker.InstanceResolver as IR
 import Siko.Typechecker.Error
 
 data Context = { type_store :: TS.TypeStore,
@@ -57,6 +58,30 @@ getNewVarWithConstraints context constraints = do
 getFunctionTypeInfo :: Context -> PO.FullyQualifiedName -> FS.FunctionTypeInfo
 getFunctionTypeInfo context name = FS.getFunctionTypeInfo context.function_store name
 
+applyToContext :: Context -> U.Substitution -> Context
+applyToContext context sub = do
+    type_store <- TS.apply context.type_store sub
+    function_store <- FS.apply context.function_store context.group_items sub
+    context { type_store = type_store, function_store = function_store }
+
+processClassConstraints :: Context -> U.Substitution -> Result (Context, U.Substitution) (Context, U.Substitution)
+processClassConstraints context sub = do
+    constraints <- sub.constraints
+    sub <- sub { constraints = [] }
+    (context, sub, success) <- constraints |> List.iter |> fold (\(context, sub, success), U.UnificationConstraint class_name type -> do
+            state <- context.state
+            case IR.hasInstance state sub type class_name of
+                Ok (state, sub) -> do
+                    context <- context { state = state }
+                    context <- applyToContext context sub
+                    case processClassConstraints context sub of
+                        Ok (context, sub) -> (context, sub, success)
+                        Err (context, sub) -> (context, sub, False)
+                Err (state, sub) -> do
+                    (context, sub, False)
+        ) (context, sub, True)
+    if success then Ok (context, sub) else Err (context, sub)
+
 unify :: Context -> T.Type -> T.Type -> Location -> (Context, U.Substitution)
 unify context ty1 ty2 location = do
     //println "Unifying {} {}" % (T.toString ty1, T.toString ty2)
@@ -64,11 +89,18 @@ unify context ty1 ty2 location = do
     case U.unify context.state.var_gen sub context.state.data_store context.state.class_store ty1 ty2 of
         Ok (var_gen, sub) -> do
             //println "Ok! {}" % sub
-            type_store <- TS.apply context.type_store sub
-            function_store <- FS.apply context.function_store context.group_items sub
             state <- context.state
             state <- state { var_gen = var_gen }
-            (context { type_store = type_store, function_store = function_store, state = state }, sub)
+            context <- context { state = state }
+            context <- applyToContext context sub
+            case processClassConstraints context sub of
+                Ok (context, sub) -> (context, sub)
+                Err (context, sub) -> do
+                    context :: Context <- context // FIXME
+                    err <- TypeMismatch (ty1 |> T.fixedType |> T.toString) (ty2 |> T.fixedType |> T.toString) location
+                    state <- addError context.state err
+                    context <- context { state = state }
+                    (context, sub)
         Err _ -> do
             //println "Not Ok {} {}" % (ty1, ty2)
             err <- TypeMismatch (ty1 |> T.fixedType |> T.toString) (ty2 |> T.fixedType |> T.toString) location
@@ -385,10 +417,10 @@ checkExprType context (E.Expr expr id location) = do
             P.Pattern _ pattern_id pattern_location <- pattern
             (context, _) <- matchExprWithPattern context initializer_id pattern_id pattern_location
             context <- continues |> List.iter |> fold (\context, (E.ExprRef source ref_location) -> do
-                (context, sub) <- matchExprs context initializer_id source ref_location
+                (context, _) <- matchExprs context initializer_id source ref_location
                 context) context
             context <- breaks |> List.iter |> fold (\context, (E.ExprRef source ref_location) -> do
-                (context, sub) <- matchExprs context id source ref_location
+                (context, _) <- matchExprs context id source ref_location
                 context) context
             context
         E.ArgRef _ -> context
