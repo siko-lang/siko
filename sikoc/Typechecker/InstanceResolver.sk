@@ -5,6 +5,7 @@ import Siko.HIR.Type as T
 import Siko.HIR.Program as P
 import Siko.Syntax.Location
 import Siko.Typechecker
+import Siko.Typechecker.ClassStore
 import Siko.Typechecker.Error
 import Siko.Typechecker.Unification as U
 import Map
@@ -109,21 +110,29 @@ unifyTypes state type1 type2 err_result = do
         Err _ -> (state, err_result)
     (state, sub)
 
+checkInstancesForBaseType :: TypecheckerState -> T.Type -> BaseType -> Map BaseType [InstanceInfo] -> (TypecheckerState, Option U.Substitution)
+checkInstancesForBaseType state type base_type instance_info_map = do
+    case get instance_info_map base_type of
+        Some instances -> do
+            instances |> List.iter |> fold (\(state, result), instance_info -> do
+                    case instance_info of
+                        UserDefinedInstanceInfo instance_type _ _ -> unifyTypes state type instance_type result
+                        AutoDerivedInstanceInfo id -> do
+                            AutoDerivedInstanceId id <- id
+                            AutoDerivedInstance instance_type _ <- atIndex state.instance_resolver.auto_derived_instances id
+                            unifyTypes state type instance_type result
+                ) (state, None)
+        None -> (state, None)
+
 hasInstance :: TypecheckerState -> T.Type -> P.FullyQualifiedName -> (TypecheckerState, Option U.Substitution)
 hasInstance state type class_name = do
     base_type <- getBaseType type
     case get state.instance_resolver.instance_map class_name of
-        Some instance_info_map -> case get instance_info_map base_type of
-            Some instances -> do
-                instances |> List.iter |> fold (\(state, result), instance_info -> do
-                        case instance_info of
-                            UserDefinedInstanceInfo instance_type _ _ -> unifyTypes state type instance_type result
-                            AutoDerivedInstanceInfo id -> do
-                                AutoDerivedInstanceId id <- id
-                                AutoDerivedInstance instance_type _ <- atIndex state.instance_resolver.auto_derived_instances id
-                                unifyTypes state type instance_type result
-                    ) (state, None)
-            None -> (state, None)
+        Some instance_info_map -> do
+            (state, sub) <- checkInstancesForBaseType state type base_type instance_info_map
+            case sub of
+                Some _ -> (state, sub)
+                None -> checkInstancesForBaseType state type Generic instance_info_map
         None -> (state, None)
 
 checkConflicts :: TypecheckerState -> TypecheckerState
@@ -164,6 +173,54 @@ checkConflicts state = do
                                         (state, index2 + 1)) (state, 0)
                                     (state, index1 + 1)) (state, 0)
                         state
+            ) state
+        state) state
+    state
+
+checkInstance :: TypecheckerState -> T.Type -> P.FullyQualifiedName -> (TypecheckerState, Bool)
+checkInstance state type class_name = do
+    (state, sub) <- hasInstance state type class_name
+    case sub of
+        Some sub -> do
+            sub :: U.Substitution <- sub // FIXME
+            (state, result) <- sub.constraints |> List.iter |> fold (\(state, result), c -> do
+                U.UnificationConstraint c_name c_type <- c
+                if c_name == class_name && c_type == type
+                    then (state, result)
+                    else do
+                        checkInstance state c_type c_name) (state, True)
+            (state, result)
+        None -> (state, False)
+
+checkInstanceDependenciesForInstance :: TypecheckerState -> T.Type -> P.FullyQualifiedName -> Location -> TypecheckerState
+checkInstanceDependenciesForInstance state type class_name location = do
+    deps <- case get state.class_store.classes class_name of
+        Some class_info -> do
+            class_info :: ClassInfo <- class_info // FIXME:
+            class_info.direct_dependencies
+        None -> panic "Class {} not found in class store" % class_name
+    state <- deps |> List.iter |> fold (\state, dep -> do
+        (state, result) <- checkInstance state type dep
+        state <- if result
+            then state
+            else addError state (MissingInstance ("{}" % dep) location)
+        state) state
+    state
+
+checkInstanceDependencies :: TypecheckerState -> TypecheckerState
+checkInstanceDependencies state = do
+    instance_resolver <- state.instance_resolver
+    state <- instance_resolver.instance_map |> Map.iter |> fold (\state, (class_name, instance_info_map) -> do
+        state <- instance_info_map |> Map.iter |> fold (\state, (_, instances) -> do
+                state <- instances |> List.iter |> fold (\state, i -> do
+                        location <- getLocation i instance_resolver
+                        case i of
+                            UserDefinedInstanceInfo instance_type id location -> do
+                                checkInstanceDependenciesForInstance state instance_type class_name location
+                            AutoDerivedInstanceInfo _ -> do
+                                state
+                    ) state
+                state
             ) state
         state) state
     state

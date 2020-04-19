@@ -3,7 +3,9 @@ module Siko.Typechecker.ClassStore where
 import Siko.HIR.Program as P
 import Map
 
-data ClassInfo = { dependencies :: [P.FullyQualifiedName] } deriving (Show)
+data ClassInfo = { direct_dependencies :: [P.FullyQualifiedName],
+                   all_dependencies :: [P.FullyQualifiedName],
+                 } deriving (Show)
 
 data ClassStore = { classes :: Map P.FullyQualifiedName ClassInfo } deriving (Show)
 
@@ -25,9 +27,9 @@ initializeClassStore direct_dependencies is_circular = do
     if is_circular
         then do
             classes <- direct_dependencies |> Map.iter |> map (\(class_name, direct_dependencies) -> do
-                (class_name, ClassInfo direct_dependencies)) |> toMap
+                (class_name, ClassInfo direct_dependencies direct_dependencies)) |> toMap
             ClassStore classes
         else do
-            classes <- direct_dependencies |> Map.iter |> map (\(class_name, _) -> do
-                (class_name, ClassInfo (getAllDependencies direct_dependencies class_name []))) |> toMap
+            classes <- direct_dependencies |> Map.iter |> map (\(class_name, direct_class_dependencies) -> do
+                (class_name, ClassInfo direct_class_dependencies (getAllDependencies direct_dependencies class_name []))) |> toMap
             ClassStore classes
