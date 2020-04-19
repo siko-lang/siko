@@ -4,7 +4,8 @@ import Siko.Typechecker
 import Siko.Typechecker.Expr
 import Siko.Typechecker.Error
 import Siko.Typechecker.Unification as U
-import Siko.Typechecker.Util
+import Siko.Typechecker.InstanceResolver as IR
+import Siko.Typechecker.Util as Util
 import Siko.Typechecker.ClassStore
 import Siko.HIR.Program as P
 import Siko.HIR.Function as F
@@ -47,6 +48,9 @@ processClass state c program class_dependency_map = do
 
 processInstance :: TypecheckerState -> ClassStore -> C.Instance -> Map P.FullyQualifiedName ClassTypeInfo -> P.Program -> (TypecheckerState, [(P.FullyQualifiedName, T.Type)])
 processInstance state class_store i class_type_info_map program = do
+    (instantiated_instance_type, var_gen) <- Util.instantiateType i.type state.var_gen
+    instance_resolver <- IR.addUserDefinedInstance state.instance_resolver i.class_name instantiated_instance_type i.id i.location
+    state <- state { var_gen = var_gen, instance_resolver = instance_resolver }
     (state, inferred_types) <- case get class_type_info_map i.class_name of
         Some class_type_info -> do
             (state, member_names, inferred_types) <- i.members |> List.iter |> fold (\(state, member_names, inferred_types), instance_member_name -> do
@@ -57,17 +61,17 @@ processInstance state class_store i class_type_info_map program = do
                         member_data :: ClassMemberInfo <- member_data // FIXME: type inference
                         sub <- U.createSubstitution
                         var_gen <- state.var_gen
-                        class_vars <- collectVars [] class_type_info.arg_type
-                        class_vars <- collectVars class_vars member_data.type
-                        (class_mapper, var_gen) <- initMapper class_vars var_gen
-                        class_arg_type <- remap class_mapper class_type_info.arg_type
-                        class_member_type <- remap class_mapper member_data.type
-                        instance_vars <- collectVars [] i.type
+                        class_vars <- Util.collectVars [] class_type_info.arg_type
+                        class_vars <- Util.collectVars class_vars member_data.type
+                        (class_mapper, var_gen) <- Util.initMapper class_vars var_gen
+                        class_arg_type <- Util.remap class_mapper class_type_info.arg_type
+                        class_member_type <- Util.remap class_mapper member_data.type
+                        instance_vars <- Util.collectVars [] i.type
                         instance_vars <- case instance_member.type of
-                            Some instance_member_type -> collectVars instance_vars instance_member_type
+                            Some instance_member_type -> Util.collectVars instance_vars instance_member_type
                             None -> instance_vars
-                        (instance_mapper, var_gen) <- initMapper instance_vars var_gen
-                        instance_type <- remap instance_mapper i.type
+                        (instance_mapper, var_gen) <- Util.initMapper instance_vars var_gen
+                        instance_type <- Util.remap instance_mapper i.type
                         (var_gen, sub) <- case U.unify var_gen sub state.data_store class_store class_arg_type instance_type of
                             Ok (var_gen, sub) -> (var_gen, sub)
                             Err _ -> panic "Class arg unification failed!"
@@ -75,7 +79,7 @@ processInstance state class_store i class_type_info_map program = do
                         state <- state { var_gen = var_gen }
                         state <- case instance_member.type of
                             Some instance_member_type -> do
-                                instance_member_type <- remap instance_mapper instance_member_type
+                                instance_member_type <- Util.remap instance_mapper instance_member_type
                                 state <- if inferred_instance_member_type == instance_member_type
                                     then state
                                     else do
@@ -132,4 +136,5 @@ processClassesAndInstances state program = do
         (state, types) <- processInstance state class_store i class_type_info_map program
         (state, inferred_types + types)) (state, [])
     program <- inferred_types |> List.iter |> fold (\program, (qn, type) -> P.updateInstanceMemberType program qn type) program
+    state <- IR.checkConflicts state
     (state, program)

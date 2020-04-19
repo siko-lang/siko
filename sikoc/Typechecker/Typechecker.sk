@@ -8,6 +8,7 @@ import Siko.Typechecker.ClassStore as CS
 import Siko.Typechecker.TypeStore as TS
 import Siko.Typechecker.DataStore as DS
 import Siko.Typechecker.FunctionStore as FS
+import Siko.Typechecker.InstanceResolver as IR
 import Siko.Typechecker.Class
 import Siko.Typechecker.Function
 import Siko.Util.DependencyProcessor
@@ -22,6 +23,7 @@ data TypecheckerState = { errors :: [TypecheckerError],
                           var_gen :: TypeVarGenerator,
                           class_store :: CS.ClassStore,
                           data_store :: DS.DataStore,
+                          instance_resolver :: IR.InstanceResolver
                         }
 
 addError :: TypecheckerState -> TypecheckerError -> TypecheckerState
@@ -75,7 +77,7 @@ processGroup state group program function_store = do
 processProgram :: P.Program -> TypeVarGenerator -> [TypecheckerError]
 processProgram program var_gen = do
     data_store <- processData program
-    state <- TypecheckerState [] var_gen CS.initializeEmptyClassStore data_store
+    state <- TypecheckerState [] var_gen CS.initializeEmptyClassStore data_store IR.createInstanceResolver
     (state, program) <- processClassesAndInstances state program
     (state, function_store, groups) <- processFunctions state program
     println "Datadefs: {}" % (getSize data_store.data_type_info_map)
