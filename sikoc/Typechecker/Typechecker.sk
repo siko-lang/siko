@@ -76,9 +76,10 @@ processGroup state group program function_store = do
 
 processProgram :: P.Program -> TypeVarGenerator -> [TypecheckerError]
 processProgram program var_gen = do
-    data_store <- processData program
-    state <- TypecheckerState [] var_gen CS.initializeEmptyClassStore data_store IR.createInstanceResolver
+    state <- TypecheckerState [] var_gen CS.initializeEmptyClassStore DS.createDataStore IR.createInstanceResolver
+    state <- processData program state
     (state, program) <- processClassesAndInstances state program
+    state <- DS.processAutoDerivedInstances state
     (state, function_store, groups) <- processFunctions state program
     //println "Datadefs: {}" % (getSize data_store.data_type_info_map)
     //println "Functions: {}" % (getSize function_store.functions)

@@ -28,26 +28,27 @@ getBaseType type = case type of
 
 data InstanceInfo = UserDefinedInstanceInfo T.Type InstanceId Location
                     | AutoDerivedInstanceInfo AutoDerivedInstanceId
+                    deriving (Show)
 
-data AutoDerivedInstanceId = AutoDerivedInstanceId Int
+data AutoDerivedInstanceId = AutoDerivedInstanceId Int deriving (Show)
 
-data AutoDerivedInstance = AutoDerivedInstance T.Type Location
+data AutoDerivedInstance = AutoDerivedInstance T.Type Location P.FullyQualifiedName
 
 getType :: InstanceInfo -> InstanceResolver -> T.Type
 getType instance_info instance_resolver = case instance_info of
     UserDefinedInstanceInfo t _ _ -> t
     AutoDerivedInstanceInfo id -> do
-        AutoDerivedInstance t _ <- getAutoDerivedInstanceById instance_resolver id
+        AutoDerivedInstance t _ _ <- getAutoDerivedInstanceById instance_resolver id
         t
 
 getLocation :: InstanceInfo -> InstanceResolver -> Location
 getLocation instance_info instance_resolver = case instance_info of
     UserDefinedInstanceInfo _ _ l -> l
     AutoDerivedInstanceInfo id -> do
-        AutoDerivedInstance _ l <- getAutoDerivedInstanceById instance_resolver id
+        AutoDerivedInstance _ l _ <- getAutoDerivedInstanceById instance_resolver id
         l
 
-data InstanceResolver = { instance_map :: Map P.FullyQualifiedName (Map BaseType [InstanceInfo]),
+data InstanceResolver = { instance_map :: Map P.FullyQualifiedName (Map BaseType InstanceInfo),
                           auto_derived_instances :: [AutoDerivedInstance] }
 
 createInstanceResolver :: InstanceResolver
@@ -64,40 +65,39 @@ updateAutoDerivedInstance instance_resolver id auto_derived_instance = do
     auto_derived_instances <- List.write instance_resolver.auto_derived_instances id auto_derived_instance
     instance_resolver { auto_derived_instances = auto_derived_instances }
 
-addInstanceInfo :: Map BaseType [InstanceInfo] -> BaseType -> InstanceInfo -> Map BaseType [InstanceInfo]
-addInstanceInfo instance_info_map base_type instance_info = do
-    (instance_info_map, _) <- alter (\instance_info_list -> case instance_info_list of
-        Some instance_info_list -> Some (instance_info_list + [instance_info])
-        None -> Some [instance_info]) base_type instance_info_map
-    instance_info_map
-
-addInstanceInfoToResolver :: InstanceResolver -> P.FullyQualifiedName -> BaseType -> InstanceInfo -> InstanceResolver
+addInstanceInfoToResolver :: InstanceResolver -> P.FullyQualifiedName -> BaseType -> InstanceInfo -> Result InstanceResolver Location
 addInstanceInfoToResolver instance_resolver class_name base_type instance_info = do
+    case get instance_resolver.instance_map class_name of
+        Some instance_info_map -> case get instance_info_map base_type of
+            Some instance_info -> return Err (getLocation instance_info instance_resolver)
+            _ -> ()
+        _ -> ()
     (instance_map, _) <- alter (\instance_info_map -> case instance_info_map of
             Some instance_info_map -> do
-                instance_info_map <- addInstanceInfo instance_info_map base_type instance_info
+                (instance_info_map, _) <- insert instance_info_map base_type instance_info
                 Some instance_info_map
             None -> do
-                instance_info_map <- addInstanceInfo empty base_type instance_info
+                (instance_info_map, _) <- insert empty base_type instance_info
                 Some instance_info_map) class_name instance_resolver.instance_map
-    instance_resolver { instance_map = instance_map }
+    Ok (instance_resolver { instance_map = instance_map })
 
-addUserDefinedInstance :: InstanceResolver -> P.FullyQualifiedName -> T.Type -> InstanceId -> Location -> InstanceResolver
+addUserDefinedInstance :: InstanceResolver -> P.FullyQualifiedName -> T.Type -> InstanceId -> Location -> Result InstanceResolver Location
 addUserDefinedInstance instance_resolver class_name instance_type instance_id location = do
     //println "Added user defined instance for {} {}" % (class_name, T.toString instance_type)
     instance_info <- UserDefinedInstanceInfo instance_type instance_id location
     base_type <- getBaseType instance_type
     addInstanceInfoToResolver instance_resolver class_name base_type instance_info
 
-addAutoDerivedInstance :: InstanceResolver -> P.FullyQualifiedName -> T.Type -> Location -> (InstanceResolver, AutoDerivedInstanceId)
+addAutoDerivedInstance :: InstanceResolver -> P.FullyQualifiedName -> T.Type -> Location -> Result (InstanceResolver, AutoDerivedInstanceId) Location
 addAutoDerivedInstance instance_resolver class_name instance_type location = do
+    //println "Added auto derived instance for {} {}" % (class_name, T.toString instance_type)
     id <- AutoDerivedInstanceId (getLength instance_resolver.auto_derived_instances)
     instance_info <- AutoDerivedInstanceInfo id
     base_type <- getBaseType instance_type
-    addInstanceInfoToResolver instance_resolver class_name base_type instance_info
-    auto_derived_instances <- instance_resolver.auto_derived_instances + [AutoDerivedInstance instance_type location]
+    instance_resolver <- try addInstanceInfoToResolver instance_resolver class_name base_type instance_info
+    auto_derived_instances <- instance_resolver.auto_derived_instances + [AutoDerivedInstance instance_type location class_name]
     instance_resolver <- instance_resolver { auto_derived_instances = auto_derived_instances }
-    (instance_resolver, id)
+    Ok (instance_resolver, id)
 
 unifyTypes :: TypecheckerState -> U.Substitution -> T.Type -> T.Type -> (TypecheckerState, U.Substitution, Bool)
 unifyTypes state sub type1 type2 = do
@@ -109,25 +109,17 @@ unifyTypes state sub type1 type2 = do
         Err _ -> (state, sub, False)
     (state, sub, success)
 
-checkInstancesForBaseType :: TypecheckerState -> U.Substitution -> T.Type -> BaseType -> Map BaseType [InstanceInfo] -> (TypecheckerState, U.Substitution, Bool)
+checkInstancesForBaseType :: TypecheckerState -> U.Substitution -> T.Type -> BaseType -> Map BaseType InstanceInfo -> (TypecheckerState, U.Substitution, Bool)
 checkInstancesForBaseType state sub type base_type instance_info_map = do
     //println "checkInstancesForBaseType {} {}" % (T.toString type, base_type)
     case get instance_info_map base_type of
-        Some instances -> do
-            (state, subs) <- instances |> List.iter |> fold (\(state, subs), instance_info -> do
-                    case instance_info of
-                        UserDefinedInstanceInfo instance_type _ _ -> do
-                            (state, s, result) <- unifyTypes state sub type instance_type
-                            (state, if result then subs + [s] else subs)
+        Some instance_info -> do
+                case instance_info of
+                        UserDefinedInstanceInfo instance_type _ _ -> unifyTypes state sub type instance_type
                         AutoDerivedInstanceInfo id -> do
                             AutoDerivedInstanceId id <- id
-                            AutoDerivedInstance instance_type _ <- atIndex state.instance_resolver.auto_derived_instances id
-                            (state, s, result) <- unifyTypes state sub type instance_type
-                            (state, if result then subs + [s] else subs)
-                ) (state, [])
-            if getLength subs == 1
-                then (state, atIndex subs 0, True)
-                else (state, sub, False)
+                            AutoDerivedInstance instance_type _ _ <- atIndex state.instance_resolver.auto_derived_instances id
+                            unifyTypes state sub type instance_type
         None -> (state, sub, False)
 
 hasInstance :: TypecheckerState ->
@@ -151,41 +143,19 @@ checkConflicts :: TypecheckerState -> TypecheckerState
 checkConflicts state = do
     instance_resolver <- state.instance_resolver
     state <- instance_resolver.instance_map |> Map.iter |> fold (\state, (class_name, instance_info_map) -> do
-        first_generic_instance_location <- case get instance_info_map Generic of
-            Some instances -> do
-                first_instance <- atIndex instances 0
-                Some (getLocation first_instance instance_resolver)
+        generic_instance_location <- case get instance_info_map Generic of
+            Some i -> do
+                Some (getLocation i instance_resolver)
             None -> None
-        state <- instance_info_map |> Map.iter |> fold (\state, (_, instances) -> do
-                case first_generic_instance_location of
-                    Some first_generic_instance_location -> do
-                        state <- instances |> List.iter |> fold (\state, i -> do
-                                location <- getLocation i instance_resolver
-                                if first_generic_instance_location == location
-                                    then state
-                                    else addError state (ConflictingInstances ("{}" % class_name) first_generic_instance_location location)
-                            ) state
+        state <- instance_info_map |> Map.iter |> fold (\state, (_, i) -> do
+                case generic_instance_location of
+                    Some generic_instance_location -> do
+                        location <- getLocation i instance_resolver
+                        state <- if generic_instance_location == location
+                            then state
+                            else addError state (ConflictingInstances ("{}" % class_name) generic_instance_location location)
                         state
-                    None -> do
-                        (state, _) <- instances |> List.iter |> fold (\(state, index1), instance1 -> do
-                                    (state, _) <- instances |> List.iter |> fold (\(state, index2), instance2 -> do
-                                        state <- if index1 < index2
-                                            then do
-                                                type1 <- getType instance1 instance_resolver
-                                                type2 <- getType instance2 instance_resolver
-                                                sub <- U.createSubstitution
-                                                (state, sub, success) <- unifyTypes state sub type1 type2
-                                                state <- if success
-                                                    then do
-                                                        location1 <- getLocation instance1 instance_resolver
-                                                        location2 <- getLocation instance2 instance_resolver
-                                                        addError state (ConflictingInstances ("{}" % class_name) location1 location2)
-                                                    else state
-                                                state
-                                            else state
-                                        (state, index2 + 1)) (state, 0)
-                                    (state, index1 + 1)) (state, 0)
-                        state
+                    None -> state
             ) state
         state) state
     state
@@ -223,7 +193,13 @@ checkInstanceDependenciesForInstance state type class_name location = do
     state <- deps |> List.iter |> fold (\state, dep -> do
         sub <- U.createSubstitution
         state <- case checkInstance state sub type dep of
-            Ok (state, sub) -> state
+            Ok (state, sub) -> do
+                orig_type <- type |> T.fixedType |> T.toString
+                new_type <- U.apply sub type |> T.fixedType |> T.toString
+                if new_type != orig_type
+                    then do
+                        addError state (MissingInstance ("{}" % dep) location)
+                    else state
             Err (state, sub) -> do
                 addError state (MissingInstance ("{}" % dep) location)
         state) state
@@ -233,16 +209,13 @@ checkInstanceDependencies :: TypecheckerState -> TypecheckerState
 checkInstanceDependencies state = do
     instance_resolver <- state.instance_resolver
     state <- instance_resolver.instance_map |> Map.iter |> fold (\state, (class_name, instance_info_map) -> do
-        state <- instance_info_map |> Map.iter |> fold (\state, (_, instances) -> do
-                state <- instances |> List.iter |> fold (\state, i -> do
-                        location <- getLocation i instance_resolver
-                        case i of
-                            UserDefinedInstanceInfo instance_type id location -> do
-                                checkInstanceDependenciesForInstance state instance_type class_name location
-                            AutoDerivedInstanceInfo _ -> do
-                                state
-                    ) state
-                state
-            ) state
+        state <- instance_info_map |> Map.iter |> fold (\state, (_, i) -> do
+                    location <- getLocation i instance_resolver
+                    case i of
+                        UserDefinedInstanceInfo instance_type id location -> do
+                            checkInstanceDependenciesForInstance state instance_type class_name location
+                        AutoDerivedInstanceInfo _ -> do
+                            state
+                 ) state
         state) state
     state

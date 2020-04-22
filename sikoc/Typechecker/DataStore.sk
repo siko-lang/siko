@@ -1,21 +1,32 @@
 module Siko.Typechecker.DataStore where
 
+import Siko.Syntax.Location
 import Siko.HIR.Type
 import Siko.HIR.Program as P
 import Siko.HIR.TypeVarGenerator
+import Siko.Typechecker
+import Siko.Typechecker.Error
+import Siko.Typechecker.InstanceResolver as IR
 import Siko.Typechecker.Unification as U
 import Siko.Typechecker.Util as Util
 import Map
 
+data DeriveInfo = { class_name :: P.FullyQualifiedName,
+                    instance_id :: IR.AutoDerivedInstanceId,
+                    location :: Location
+                  } deriving (Show)
+
 data AdtTypeInfo = { name :: P.FullyQualifiedName,
                      type :: Type,
                      variant_types :: [[Type]],
+                     derived_classes :: [DeriveInfo],
                    } deriving (Show)
 
 data RecordTypeInfo = { name :: P.FullyQualifiedName,
                         type :: Type,
                         field_names :: Map String Int,
                         fields :: [Type],
+                        derived_classes :: [DeriveInfo],
                       } deriving (Show)
 
 data DataTypeInfo = Adt AdtTypeInfo
@@ -50,31 +61,115 @@ applyAdtTypeInfo adt sub = do
                                                 |> toList)
                                 |> toList
     type <- U.apply sub adt.type
-    AdtTypeInfo adt.name type variant_types
+    AdtTypeInfo adt.name type variant_types adt.derived_classes
 
 applyRecordTypeInfo :: RecordTypeInfo -> U.Substitution -> RecordTypeInfo
 applyRecordTypeInfo record sub = do
     fields <- record.fields |> List.iter |> map (\t -> U.apply sub t) |> toList
     type <- U.apply sub record.type
-    RecordTypeInfo record.name type record.field_names fields
+    RecordTypeInfo record.name type record.field_names fields record.derived_classes
+
+remapAdtTypeInfo :: AdtTypeInfo -> TypeVarGenerator -> (AdtTypeInfo , TypeVarGenerator)
+remapAdtTypeInfo adt var_gen = do
+    vars <- Util.collectVars [] adt.type
+    (mapper, var_gen) <- Util.initMapper vars var_gen
+    type <- Util.remap mapper adt.type
+    variant_types <- adt.variant_types |> List.iter
+                        |> map (\ts -> ts |> List.iter
+                                            |> map (\t -> Util.remap mapper t)
+                                            |> toList)
+                        |> toList
+    adt <- AdtTypeInfo adt.name type variant_types adt.derived_classes
+    (adt, var_gen)
+
+remapRecordTypeInfo :: RecordTypeInfo -> TypeVarGenerator -> (RecordTypeInfo, TypeVarGenerator)
+remapRecordTypeInfo record var_gen = do
+    vars <- Util.collectVars [] record.type
+    (mapper, var_gen) <- Util.initMapper vars var_gen
+    type <- Util.remap mapper record.type
+    fields <- record.fields |> List.iter |> map (\t -> Util.remap mapper t) |> toList
+    record <- RecordTypeInfo record.name type record.field_names fields record.derived_classes
+    (record, var_gen)
 
 remapDataTypeInfo :: DataTypeInfo -> TypeVarGenerator -> (DataTypeInfo, TypeVarGenerator)
 remapDataTypeInfo data_type_info var_gen = case data_type_info of
     Adt adt -> do
-        vars <- Util.collectVars [] adt.type
-        (mapper, var_gen) <- Util.initMapper vars var_gen
-        type <- Util.remap mapper adt.type
-        variant_types <- adt.variant_types |> List.iter
-                            |> map (\ts -> ts |> List.iter
-                                              |> map (\t -> Util.remap mapper t)
-                                              |> toList)
-                            |> toList
-        adt <- Adt (AdtTypeInfo adt.name type variant_types)
-        (adt, var_gen)
+        (adt, var_gen) <- remapAdtTypeInfo adt var_gen
+        (Adt adt, var_gen)
     Record record -> do
-        vars <- Util.collectVars [] record.type
-        (mapper, var_gen) <- Util.initMapper vars var_gen
-        type <- Util.remap mapper record.type
-        fields <- record.fields |> List.iter |> map (\t -> Util.remap mapper t) |> toList
-        record <- Record (RecordTypeInfo record.name type record.field_names fields)
-        (record, var_gen)
+        (record, var_gen) <- remapRecordTypeInfo record var_gen
+        (Record record, var_gen)
+
+applyToState :: TypecheckerState -> U.Substitution -> TypecheckerState
+applyToState state sub = do
+    instance_resolver <- state.instance_resolver
+    auto_derived_instances <- instance_resolver.auto_derived_instances
+    auto_derived_instances <- auto_derived_instances |> List.iter |> map (\IR.AutoDerivedInstance type location name -> do
+        IR.AutoDerivedInstance (U.apply sub type) location name) |> toList
+    instance_resolver <- instance_resolver { auto_derived_instances = auto_derived_instances }
+    state <- state { instance_resolver = instance_resolver }
+    state
+
+processClassConstraints :: TypecheckerState -> U.Substitution -> Result (TypecheckerState, U.Substitution) (TypecheckerState, U.Substitution)
+processClassConstraints state sub = do
+    constraints <- sub.constraints
+    sub <- sub { constraints = [] }
+    (state, sub, success) <- constraints |> List.iter |> fold (\(state, sub, success), U.UnificationConstraint class_name type -> do
+            case IR.hasInstance state sub type class_name of
+                Ok (state, sub) -> do
+                    //state <- applyToState state sub
+                    case processClassConstraints state sub of
+                        Ok (state, sub) -> (state, sub, success)
+                        Err (state, sub) -> (state, sub, False)
+                Err (state, sub) -> do
+                    (state, sub, False)
+        ) (state, sub, True)
+    if success then Ok (state, sub) else Err (state, sub)
+
+processMemberType :: TypecheckerState -> Type -> DeriveInfo -> String -> TypecheckerState
+processMemberType state type derived_class type_name = do
+    sub <- U.createSubstitution
+    (IR.AutoDerivedInstance instance_type location _) <- IR.getAutoDerivedInstanceById
+            state.instance_resolver derived_class.instance_id
+    state <- case type of
+        Var _ _ -> do
+            (var_gen, var) <- getNewTypeVar state.var_gen
+            state <- state { var_gen = var_gen }
+            new_type <- Var var [ClassConstraint derived_class.class_name]
+            case U.unify state.var_gen sub state.data_store state.class_store type new_type of
+                Ok (var_gen, sub) -> do
+                    state <- applyToState state sub
+                    state
+                Err _ -> panic "Failed to unify type variables!"
+        _ -> do
+            case IR.hasInstance state sub type derived_class.class_name of
+                Ok (state, sub) -> do
+                    state <- applyToState state sub
+                    case processClassConstraints state sub of
+                        Ok (state, _) -> state
+                        Err (state, _) -> state
+                Err (state, sub) -> do
+                    addError state (AutoDeriveError type_name
+                            (type |> fixedType |> toString) (show derived_class.class_name))
+    state
+
+processAutoDerivedInstances :: TypecheckerState -> TypecheckerState
+processAutoDerivedInstances state = do
+    state <- state.data_store.data_type_info_map |> Map.iter |> fold (\state, (name, data_type_info) -> do
+        state <- case data_type_info of
+            Adt adt -> do
+                state <- adt.derived_classes |> List.iter |> fold (\state, derived_class -> do
+                    state <- adt.variant_types |> List.iter |> fold (\state, types -> do
+                            state <- types |> List.iter |> fold (\state, type -> processMemberType state type derived_class (show adt.name)) state
+                            state) state
+                    state) state
+                state
+            Record record -> do
+                state <- record.derived_classes |> List.iter |> fold (\state, derived_class -> do
+                    state <- record.fields |> List.iter |> fold (\state, type -> processMemberType state type derived_class (show record.name)) state
+                    state) state
+                state
+        state) state
+    //state.instance_resolver.auto_derived_instances |> List.iter |> forEach (\IR.AutoDerivedInstance type location name -> do
+    //    println "instance {} {}" % (name, toString type))
+    state

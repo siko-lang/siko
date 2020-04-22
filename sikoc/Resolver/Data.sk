@@ -40,11 +40,13 @@ processRecordField state type_resolver (SD.RecordField name type_signature) fiel
                     None -> Some [name]) n field_names
     (state, type_resolver, HD.RecordField n type, field_names)
 
-processDerivedClasses :: ResolverState -> ModuleResolver -> [Ident] -> (ResolverState, [HP.FullyQualifiedName])
+processDerivedClasses :: ResolverState -> ModuleResolver -> [Ident] -> (ResolverState, [HD.DeriveInfo])
 processDerivedClasses state module_resolver derived_classes = do
     (state, derived_classes) <- derived_classes |> List.iter |> fold (\(state, derived_classes), derived_class -> do
             case resolveClass module_resolver derived_class of
-                Ok name -> (state, derived_classes + [name])
+                Ok name -> do
+                    (Ident _ location) <- derived_class
+                    (state, derived_classes + [HD.DeriveInfo name location])
                 Err err -> do
                     (addError state err, derived_classes)) (state, [])
     (state, derived_classes)
@@ -68,7 +70,7 @@ processAdt state hir_program module_resolver (SD.AlgebraicDataType name type_arg
                     None -> variants
                 (state, type_resolver, variants)) (state, type_resolver, [])
     (state, type_args) <- processTypeArgs state type_resolver type_arguments True
-    (stat, derived_classes) <- processDerivedClasses state module_resolver derived_classes
+    (state, derived_classes) <- processDerivedClasses state module_resolver derived_classes
     (Ident n location) <- name
     qn <- HP.FullPath module_resolver.module_name n
     type <- Named qn type_args
@@ -98,7 +100,7 @@ processRecord state hir_program module_resolver (SD.Record name type_arguments f
                             then addError state (RecordFieldConflict instances)
                             else state) state
     (state, type_args) <- processTypeArgs state type_resolver type_arguments (not external)
-    (stat, derived_classes) <- processDerivedClasses state module_resolver derived_classes
+    (state, derived_classes) <- processDerivedClasses state module_resolver derived_classes
     (Ident n location) <- name
     qn <- HP.FullPath module_resolver.module_name n
     type <- Named qn type_args
