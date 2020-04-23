@@ -449,6 +449,7 @@ checkUndefinedVars context undefined_vars type signature_vars location = do
             if row_typed
                 then addUndefinedVarToContext context undefined_vars v location
                 else (context, undefined_vars)
+        T.Never _ -> (context, undefined_vars)
         _ -> do
             type_vars <- UT.collectVars [] type
             type_vars |> List.iter
@@ -459,6 +460,6 @@ checkUndefinedVars context undefined_vars type signature_vars location = do
 
 checkMissingTypeInExpr :: [T.TypeVar] -> (Context, [T.TypeVar]) -> E.Expr -> (Context, [T.TypeVar])
 checkMissingTypeInExpr signature_vars (context, undefined_vars) (E.Expr expr id location) = do
-    //println "Checking expr {} {}" % (expr, id)
     type <- getExprType context id
+    //println "Checking expr {} {} {}" % (expr, id, T.toString type)
     checkUndefinedVars context undefined_vars type signature_vars location

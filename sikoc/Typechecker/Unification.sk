@@ -110,6 +110,11 @@ unifyVarWithType data_store class_store gen var constraints sub type = do
                 case data_type_info of
                     DS.Adt adt -> return Err ()
                     DS.Record record -> do
+                        (record, gen) <- case unify gen createSubstitution data_store class_store type record.type of
+                            Ok (gen, sub) -> do
+                                record <- DS.applyRecordTypeInfo record sub
+                                (record, gen)
+                            Err _ -> return Err ()
                         (success, record, sub, gen) <- row_constraints |> List.iter |> fold (\(success, record, sub, gen), (kind, row_type) -> do
                                 case kind of
                                     NamedRow row_name -> do
