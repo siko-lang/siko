@@ -149,11 +149,7 @@ unifyVarWithType data_store class_store gen var constraints sub type = do
 
 unifyVarWithFixedArg :: TypeVarGenerator -> Substitution -> CS.ClassStore -> TypeVar -> [Constraint] -> [Constraint] -> Type -> Result (TypeVarGenerator, Substitution) ()
 unifyVarWithFixedArg gen sub class_store var var_constraints fixed_arg_constraints fixed_arg_type = do
-    fixed_classes <- fixed_arg_constraints |> List.iter |> filter (\c -> case c of
-        ClassConstraint _ -> True
-        _ -> False) |> map (\c -> case c of
-            ClassConstraint n -> n
-            _ -> panic "Cannot happen") |> toList
+    fixed_classes <- collectClassesFromClassConstraints fixed_arg_constraints
     ok <- var_constraints |> List.iter |> fold (\ok, constraint -> ok && case constraint of
         ClassConstraint class_name -> do
             if contains fixed_classes class_name

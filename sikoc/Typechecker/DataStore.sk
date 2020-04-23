@@ -131,18 +131,7 @@ processMemberType state type derived_class type_name = do
     sub <- U.createSubstitution
     (IR.AutoDerivedInstance instance_type location _) <- IR.getAutoDerivedInstanceById
             state.instance_resolver derived_class.instance_id
-    state <- case type of
-        Var _ _ -> do
-            (var_gen, var) <- getNewTypeVar state.var_gen
-            state <- state { var_gen = var_gen }
-            new_type <- Var var [ClassConstraint derived_class.class_name]
-            case U.unify state.var_gen sub state.data_store state.class_store type new_type of
-                Ok (var_gen, sub) -> do
-                    state <- applyToState state sub
-                    state
-                Err _ -> panic "Failed to unify type variables!"
-        _ -> do
-            case IR.hasInstance state sub type derived_class.class_name of
+    state <- case IR.hasInstance state sub type derived_class.class_name of
                 Ok (state, sub) -> do
                     state <- applyToState state sub
                     case processClassConstraints state sub of
@@ -150,7 +139,7 @@ processMemberType state type derived_class type_name = do
                         Err (state, _) -> state
                 Err (state, sub) -> do
                     addError state (AutoDeriveError type_name
-                            (type |> fixedType |> toString) (show derived_class.class_name))
+                            (type |> fixedType |> toString) (show derived_class.class_name) derived_class.location)
     state
 
 processAutoDerivedInstances :: TypecheckerState -> TypecheckerState
