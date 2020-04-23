@@ -77,7 +77,7 @@ addUnificationConstraint sub c = do
 
 unifyArgs :: TypeVarGenerator -> Substitution -> DS.DataStore -> CS.ClassStore -> [Type] -> [Type] -> Result (TypeVarGenerator, Substitution) ()
 unifyArgs gen sub data_store class_store args1 args2 = do
-    (gen, sub, _) <- loop (gen, sub, index) <- (gen, sub, 0) do
+    loop (gen, sub, index) <- (gen, sub, 0) do
         if index == getLength args1
             then return Ok (gen, sub)
             else do
@@ -85,7 +85,6 @@ unifyArgs gen sub data_store class_store args1 args2 = do
                 arg2 <- atIndex args2 index
                 (gen, sub) <- try unify gen sub data_store class_store arg1 arg2
                 (gen, sub, index + 1)
-    Ok (gen, sub)
 
 getClassConstraints :: [Constraint] -> [P.FullyQualifiedName]
 getClassConstraints constraints = constraints |> List.iter |> fold (\class_constraints, c -> case c of

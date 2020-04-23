@@ -90,7 +90,7 @@ pub fn walk_expr(expr_id: &ExprId, visitor: &mut dyn Visitor, for_twice: bool) {
         Expr::Return(inner) => {
             walk_expr(inner, visitor, for_twice);
         }
-        Expr::Loop(pattern, initializer, items) => {
+        Expr::Loop(pattern, initializer, items, _) => {
             walk_expr(initializer, visitor, for_twice);
             walk_pattern(pattern, visitor, for_twice);
             let count = if for_twice { 2 } else { 1 };

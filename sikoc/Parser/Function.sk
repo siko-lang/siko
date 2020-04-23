@@ -25,7 +25,7 @@ parseFunction state = do
     case ti.token of
         VarIdentifier id -> do
             (state, name) <- try expectVarIdent state "function name"
-            (state, args, sep) <- loop (state, args, sep) <- (state, [], None) do
+            (state, args, sep) <- loop (state, args) <- (state, []) do
                 ti <- peek state
                 case ti.token of
                     Equal -> break (state, args, Some Equal)
@@ -33,7 +33,7 @@ parseFunction state = do
                     _ -> do
                         (state, arg) <- try parsePattern state
                         args <- args + [arg]
-                        (state, args, None)
+                        (state, args)
             case sep of
                 Some Equal -> do
                     state <- try expect state Kind.Equal

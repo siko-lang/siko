@@ -50,7 +50,7 @@ pub enum Expr {
     PartialFunctionCall(PartialFunctionCallId, Vec<ExprId>),
     StringLiteral(String),
     Return(ExprId),
-    Loop(PatternId, ExprId, Vec<ExprId>),
+    Loop(PatternId, ExprId, Vec<ExprId>, bool),
     Continue(ExprId),
     Break(ExprId),
 }

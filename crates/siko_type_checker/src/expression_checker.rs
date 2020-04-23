@@ -344,10 +344,9 @@ impl<'a> Visitor for ExpressionChecker<'a> {
                     self.match_exprs(*initializer, *continue_expr);
                 }
                 for break_expr in breaks {
-                    self.match_exprs(*initializer, *break_expr);
+                    self.match_exprs(expr_id, *break_expr);
                 }
                 let last_expr_id = items[items.len() - 1];
-                self.match_exprs(expr_id, last_expr_id);
                 self.match_exprs(*initializer, last_expr_id);
             }
             Expr::Break(..) => {}

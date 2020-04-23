@@ -405,7 +405,7 @@ pub fn process_expr(
             );
             MirExpr::Return(mir_inner_id)
         }
-        IrExpr::Loop(pattern, initializer, items, _, _) => {
+        IrExpr::Loop(pattern, initializer, items, _, breaks) => {
             let mir_pattern_id = process_pattern(
                 pattern,
                 ir_program,
@@ -441,7 +441,12 @@ pub fn process_expr(
                     )
                 })
                 .collect();
-            MirExpr::Loop(mir_pattern_id, mir_initializer, mir_items)
+            MirExpr::Loop(
+                mir_pattern_id,
+                mir_initializer,
+                mir_items,
+                !breaks.is_empty(),
+            )
         }
         IrExpr::Break(inner_id) => {
             let mir_inner_id = process_expr(
