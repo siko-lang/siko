@@ -429,3 +429,36 @@ checkExprType context (E.Expr expr id location) = do
             context
     context
 
+addUndefinedVarToContext :: Context -> [T.TypeVar] -> T.TypeVar -> Location -> (Context, [T.TypeVar])
+addUndefinedVarToContext context undefined_vars var location =
+    if contains undefined_vars var
+        then (context, undefined_vars)
+        else do
+            state <- addError context.state (TypeAnnotationNeeded location)
+            context <- context { state = state }
+            undefined_vars <- undefined_vars + [var]
+            (context, undefined_vars)
+
+checkUndefinedVars :: Context -> [T.TypeVar] -> T.Type -> [T.TypeVar] -> Location -> (Context, [T.TypeVar])
+checkUndefinedVars context undefined_vars type signature_vars location = do
+    case type of
+        T.Var v constraints -> do
+            row_typed <- constraints |> List.iter |> fold (\row_typed, c -> case c of
+                T.ClassConstraint _ -> row_typed
+                T.RowConstraint _ _ -> True) False
+            if row_typed
+                then addUndefinedVarToContext context undefined_vars v location
+                else (context, undefined_vars)
+        _ -> do
+            type_vars <- UT.collectVars [] type
+            type_vars |> List.iter
+                    |> fold (\(context, undefined_vars), v -> do
+                        if contains signature_vars v
+                            then (context, undefined_vars)
+                            else addUndefinedVarToContext context undefined_vars v location) (context, undefined_vars)
+
+checkMissingTypeInExpr :: [T.TypeVar] -> (Context, [T.TypeVar]) -> E.Expr -> (Context, [T.TypeVar])
+checkMissingTypeInExpr signature_vars (context, undefined_vars) (E.Expr expr id location) = do
+    //println "Checking expr {} {}" % (expr, id)
+    type <- getExprType context id
+    checkUndefinedVars context undefined_vars type signature_vars location

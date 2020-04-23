@@ -145,3 +145,9 @@ checkPatternType context (P.Pattern pattern id location) = do
                 (context, _) <- matchPatterns context first_id sub_pattern_id sub_pattern_location
                 context) context
             context
+
+checkMissingTypeInPattern :: [T.TypeVar] -> (Context, [T.TypeVar]) -> P.Pattern -> (Context, [T.TypeVar])
+checkMissingTypeInPattern signature_vars (context, undefined_vars) (P.Pattern pattern id location) = do
+    //println "Checking pattern {} {}" % (pattern, id)
+    type <- getPatternType context id
+    checkUndefinedVars context undefined_vars type signature_vars location

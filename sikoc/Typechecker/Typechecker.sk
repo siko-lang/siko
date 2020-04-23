@@ -10,6 +10,7 @@ import Siko.Typechecker.DataStore as DS
 import Siko.Typechecker.FunctionStore as FS
 import Siko.Typechecker.InstanceResolver as IR
 import Siko.Typechecker.Class
+import Siko.Typechecker.Util
 import Siko.Typechecker.Function
 import Siko.Util.DependencyProcessor
 import Siko.HIR.Program as P
@@ -54,25 +55,37 @@ checkFunctionType context fn = do
             context
         None -> context
 
+checkMissingTypes :: Context -> F.Function -> Context
+checkMissingTypes context fn = do
+    //println "Checking missing types {}" % fn.name
+    case fn.body of
+        Some body -> do
+            func_type_info <- getFunctionTypeInfo context fn.name
+            vars <- collectVars [] func_type_info.function_type
+            (context, _) <- traverse (context, []) (checkMissingTypeInExpr vars) (checkMissingTypeInPattern vars) body
+            context
+        None -> context
+
 processGroup :: TypecheckerState -> DependencyGroup P.FullyQualifiedName -> P.Program -> FS.FunctionStore -> (TypecheckerState, FS.FunctionStore)
 processGroup state group program function_store = do
-    if isEmpty state.errors
-        then do
-            context <- initializeContext state program function_store group.items
-            context <- group.items |> List.iter |> fold (\context, name -> do
-                                fn <- P.getFunction program name
-                                context <- initializeFunctionType context fn
-                                context) context
-            //println "After init"
-            //TS.dump context.type_store
-            context <- group.items |> List.iter |> fold (\context, name -> do
-                                fn <- P.getFunction program name
-                                context <- checkFunctionType context fn
-                                context) context
-            //println "After check"
-            //TS.dump context.type_store
-            (context.state, context.function_store)
-        else (state, function_store)
+    context <- initializeContext state program function_store group.items
+    context <- group.items |> List.iter |> fold (\context, name -> do
+                        fn <- P.getFunction program name
+                        context <- initializeFunctionType context fn
+                        context) context
+    //println "After init"
+    //TS.dump context.type_store
+    context <- group.items |> List.iter |> fold (\context, name -> do
+                        fn <- P.getFunction program name
+                        context <- checkFunctionType context fn
+                        context) context
+    //println "After check"
+    //TS.dump context.type_store
+    context <- group.items |> List.iter |> fold (\context, name -> do
+                        fn <- P.getFunction program name
+                        context <- checkMissingTypes context fn
+                        context) context
+    (context.state, context.function_store)
 
 processProgram :: P.Program -> TypeVarGenerator -> [TypecheckerError]
 processProgram program var_gen = do
