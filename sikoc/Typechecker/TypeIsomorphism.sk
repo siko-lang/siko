@@ -1,0 +1,110 @@
+module Siko.Typechecker.TypeIsomorphism(checkIsomorphicType) where
+
+import Siko.HIR.Type as T
+import Siko.HIR.Program as P
+import Siko.Typechecker.ClassStore
+import Map
+
+data IsomorphicTestFailure = Reshape T.TypeVar T.TypeVar
+                             | Mismatch
+
+checkClassConstraintIsomorphism :: [P.FullyQualifiedName] -> [P.FullyQualifiedName] -> ClassStore -> Bool
+checkClassConstraintIsomorphism classes1 classes2 class_store = do
+    classes1 |> List.iter |> fold (\ok, class_name -> ok &&
+        if contains classes2 class_name
+            then True
+            else do
+                all <- classes2 |> List.iter |> fold (\all, c -> do
+                    class_info <- Option.unwrap (get class_store.classes c)
+                    all <- all + class_info.all_dependencies
+                    all) []
+                contains all class_name) True
+
+checkIsomorphicConstraints :: [T.Constraint] -> [T.Constraint] -> ClassStore -> Result () IsomorphicTestFailure
+checkIsomorphicConstraints cs1 cs2 class_store = do
+    classes1 <- T.collectClassesFromClassConstraints cs1
+    classes2 <- T.collectClassesFromClassConstraints cs2
+    if checkClassConstraintIsomorphism classes1 classes2 class_store && checkClassConstraintIsomorphism classes2 classes1 class_store
+        then Ok ()
+        else Err Mismatch
+
+reshape :: T.TypeVar -> T.TypeVar -> T.Type -> T.Type
+reshape var1 var2 type = case type of
+    T.Var v constraints -> do
+        if v == var1
+            then T.Var var2 constraints
+            else type
+    T.FixedTypeArg n v constraints -> do
+        if v == var1
+            then T.FixedTypeArg n var2 constraints
+            else type
+    T.Named n args -> T.Named n (args |> List.iter |> map (\t -> reshape var1 var2 t) |> toList)
+    T.Function from to -> T.Function (reshape var1 var2 from) (reshape var1 var2 to)
+    T.Never v -> do
+        if v == var1
+            then T.Never var2
+            else type
+    T.Ref t -> T.Ref (reshape var1 var2 t)
+    T.Tuple args -> T.Tuple (args |> List.iter |> map (\t -> reshape var1 var2 t) |> toList)
+
+checkIsomorphicType :: T.Type -> T.Type -> ClassStore -> Bool
+checkIsomorphicType type1 type2 class_store = do
+    case isIsomorphicType type1 type2 class_store of
+        Ok _ -> return True
+        Err err -> case err of
+                Reshape var1 var2 -> do
+                    new_type1 <- reshape var1 var2 type1
+                    checkIsomorphicType new_type1 type2 class_store
+                Mismatch -> return False
+
+isIsomorphicType :: T.Type -> T.Type -> ClassStore -> Result () IsomorphicTestFailure
+isIsomorphicType type1 type2 class_store = do
+    case (type1, type2) of
+        (T.Var var1 cs1, T.Var var2 cs2) -> do
+            if var1 == var2
+                then checkIsomorphicConstraints cs1 cs2 class_store
+                else Err (Reshape var1 var2)
+        (T.FixedTypeArg _ var1 cs1, T.FixedTypeArg _ var2 cs2) -> do
+            if var1 == var2
+                then checkIsomorphicConstraints cs1 cs2 class_store
+                else Err (Reshape var1 var2)
+        (T.Named qn1 args1, T.Named qn2 args2) -> do
+            if qn1 == qn2
+                then
+                    if getLength args1 != getLength args2
+                        then Err Mismatch
+                        else do
+                            _ <- loop index <- 0 do
+                                if index >= getLength args1
+                                    then return Ok ()
+                                    else do
+                                        arg1 <- atIndex args1 index
+                                        arg2 <- atIndex args2 index
+                                        try isIsomorphicType arg1 arg2 class_store
+                                        index + 1
+                            Ok ()
+                else Err Mismatch
+        (T.Function from1 to1, T.Function from2 to2) -> do
+            try isIsomorphicType from1 from2 class_store
+            try isIsomorphicType to1 to2 class_store
+            Ok ()
+        (T.Never var1, T.Never var2) -> do
+            if var1 == var2
+                then Ok ()
+                else Err (Reshape var1 var2)
+        (T.Ref t1, T.Ref t2) -> isIsomorphicType t1 t2 class_store
+        (T.Tuple args1, T.Tuple args2) -> do
+            if getLength args1 != getLength args2
+                        then Err Mismatch
+                        else do
+                            _ <- loop index <- 0 do
+                                if index >= getLength args1
+                                    then return Ok ()
+                                    else do
+                                        arg1 <- atIndex args1 index
+                                        arg2 <- atIndex args2 index
+                                        try isIsomorphicType arg1 arg2 class_store
+                                        index + 1
+                            Ok ()
+        (_, _) -> Err Mismatch
+

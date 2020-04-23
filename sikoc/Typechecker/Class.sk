@@ -7,6 +7,7 @@ import Siko.Typechecker.Unification as U
 import Siko.Typechecker.InstanceResolver as IR
 import Siko.Typechecker.Util as Util
 import Siko.Typechecker.ClassStore
+import Siko.Typechecker.TypeIsomorphism
 import Siko.HIR.Program as P
 import Siko.HIR.Function as F
 import Siko.HIR.Traversal
@@ -103,7 +104,7 @@ processInstance state i class_type_info_map program = do
                         state <- case instance_member.type of
                             Some instance_member_type -> do
                                 instance_member_type <- Util.remap instance_mapper instance_member_type
-                                state <- if inferred_instance_member_type == instance_member_type
+                                state <- if checkIsomorphicType inferred_instance_member_type instance_member_type state.class_store
                                     then state
                                     else do
                                         expected <- inferred_instance_member_type |> T.fixedType |> T.toString
