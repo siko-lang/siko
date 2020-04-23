@@ -70,14 +70,14 @@ processClassConstraints context sub = do
     sub <- sub { constraints = [] }
     (context, sub, success) <- constraints |> List.iter |> fold (\(context, sub, success), U.UnificationConstraint class_name type -> do
             state <- context.state
-            case IR.hasInstance state sub type class_name of
-                Ok (state, sub) -> do
+            case IR.checkInstance state type class_name of
+                Ok (state, cs) -> do
+                    (state, sub) <- IR.mergeResolverConstraintsIntoSubstitution state cs sub
                     context <- context { state = state }
                     context <- applyToContext context sub
-                    case processClassConstraints context sub of
-                        Ok (context, sub) -> (context, sub, success)
-                        Err (context, sub) -> (context, sub, False)
-                Err (state, sub) -> do
+                    (context, sub, success)
+                Err state -> do
+                    context <- context { state = state }
                     (context, sub, False)
         ) (context, sub, True)
     if success then Ok (context, sub) else Err (context, sub)

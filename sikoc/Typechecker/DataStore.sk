@@ -110,34 +110,16 @@ applyToState state sub = do
     state <- state { instance_resolver = instance_resolver }
     state
 
-processClassConstraints :: TypecheckerState -> U.Substitution -> Result (TypecheckerState, U.Substitution) (TypecheckerState, U.Substitution)
-processClassConstraints state sub = do
-    constraints <- sub.constraints
-    sub <- sub { constraints = [] }
-    (state, sub, success) <- constraints |> List.iter |> fold (\(state, sub, success), U.UnificationConstraint class_name type -> do
-            case IR.hasInstance state sub type class_name of
-                Ok (state, sub) -> do
-                    //state <- applyToState state sub
-                    case processClassConstraints state sub of
-                        Ok (state, sub) -> (state, sub, success)
-                        Err (state, sub) -> (state, sub, False)
-                Err (state, sub) -> do
-                    (state, sub, False)
-        ) (state, sub, True)
-    if success then Ok (state, sub) else Err (state, sub)
-
 processMemberType :: TypecheckerState -> Type -> DeriveInfo -> String -> TypecheckerState
 processMemberType state type derived_class type_name = do
-    sub <- U.createSubstitution
     (IR.AutoDerivedInstance instance_type location _) <- IR.getAutoDerivedInstanceById
             state.instance_resolver derived_class.instance_id
-    state <- case IR.hasInstance state sub type derived_class.class_name of
-                Ok (state, sub) -> do
+    state <- case IR.checkInstance state type derived_class.class_name of
+                Ok (state, cs) -> do
+                    (state, sub) <- IR.mergeResolverConstraintsIntoSubstitution state cs (U.createSubstitution)
                     state <- applyToState state sub
-                    case processClassConstraints state sub of
-                        Ok (state, _) -> state
-                        Err (state, _) -> state
-                Err (state, sub) -> do
+                    state
+                Err state -> do
                     addError state (AutoDeriveError type_name
                             (type |> fixedType |> toString) (show derived_class.class_name) derived_class.location)
     state
