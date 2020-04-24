@@ -12,7 +12,6 @@ import Siko.HIR.TypeVarGenerator
 import Siko.Typechecker
 import Siko.Typechecker.Function
 import Siko.Typechecker.Pattern
-import Siko.Typechecker.CaseChecker
 import Siko.Typechecker.Util as UT
 import Siko.Typechecker.Unification as U
 import Siko.Typechecker.TypeStore as TS
@@ -78,6 +77,7 @@ processClassConstraints context sub = do
                     context <- applyToContext context sub
                     (context, sub, success)
                 Err state -> do
+                    //println "processClassConstraints failed: {} {}" % (T.toString type, class_name)
                     context <- context { state = state }
                     (context, sub, False)
         ) (context, sub, True)
@@ -89,7 +89,7 @@ unify context ty1 ty2 location = do
     sub <- U.createSubstitution
     case U.unify context.state.var_gen sub context.state.data_store context.state.class_store ty1 ty2 of
         Ok (var_gen, sub) -> do
-            //println "Ok! {}" % sub
+            //println "Ok! Sub: {}" % sub
             state <- context.state
             state <- state { var_gen = var_gen }
             context <- context { state = state }
@@ -103,7 +103,7 @@ unify context ty1 ty2 location = do
                     context <- context { state = state }
                     (context, sub)
         Err _ -> do
-            //println "Not Ok {} {}" % (ty1, ty2)
+            //println "Not Ok! {}, {}" % (T.toString ty1, T.toString ty2)
             err <- TypeMismatch (ty1 |> T.fixedType |> T.toString) (ty2 |> T.fixedType |> T.toString) location
             state <- addError context.state err
             context <- context { state = state }
@@ -143,7 +143,7 @@ getNeverType context = do
 
 initializeExprType :: PO.FullyQualifiedName -> Context -> E.Expr -> Context
 initializeExprType current_fn_name context (E.Expr expr id location) = do
-    //println "Initializing expr {} {}" % (expr, id)
+    //println "initializeExprType: expr {} {}" % (expr, id)
     context <- case expr of
         E.StaticFunctionCall qn args -> do
             func_type_info <- getFunctionTypeInfo context qn
@@ -294,7 +294,7 @@ checkFunctionCall context args fn_ty call_location = do
 
 checkExprType :: Context -> E.Expr -> Context
 checkExprType context (E.Expr expr id location) = do
-    //println "Checking expr {} {}" % (expr, id)
+    //println "checkExprType: expr {} {} {}" % (expr, id, T.toString (getExprType context id))
     context <- case expr of
         E.StaticFunctionCall _ args -> do
             (ty, fn_ty) <- getExprAndFunctionCallType context id
@@ -402,7 +402,6 @@ checkExprType context (E.Expr expr id location) = do
             context
         E.CaseOf body cases -> do
             (E.Expr _ body_id body_location) <- body
-            context <- checkCase context body cases
             (E.Case (P.Pattern _ pattern_id pattern_location) (E.Expr _ case_body_id case_body_location)) <- atIndex cases 0
             (context, _) <- matchExprs context id case_body_id location
             context <- cases |> List.iter |> fold (\context, (E.Case (P.Pattern _ pattern_id pattern_location) (E.Expr _ case_body_id case_body_location)) -> do

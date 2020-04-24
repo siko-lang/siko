@@ -100,6 +100,9 @@ unifyVarWithType :: DS.DataStore -> CS.ClassStore -> TypeVarGenerator -> TypeVar
 unifyVarWithType data_store class_store gen var constraints sub type = do
     class_constraints <- getClassConstraints constraints
     row_constraints <- getRowConstraints constraints
+    //println "Row constraints before unification"
+    //row_constraints |> List.iter |> forEach (\(k, t) -> println "{} {}" % (k, toString t))
+    //println "Row constraints before unification -- END"
     (sub, gen) <- if isEmpty row_constraints
         then (sub, gen)
         else case type of
@@ -111,6 +114,7 @@ unifyVarWithType data_store class_store gen var constraints sub type = do
                     DS.Record record -> do
                         (record, gen) <- case unify gen createSubstitution data_store class_store type record.type of
                             Ok (gen, sub) -> do
+                                //println "Merging {} with {} using {}" % (toString type, toString record.type, sub)
                                 record <- DS.applyRecordTypeInfo record sub
                                 (record, gen)
                             Err _ -> return Err ()
@@ -119,14 +123,23 @@ unifyVarWithType data_store class_store gen var constraints sub type = do
                                     NamedRow row_name -> do
                                         case get record.field_names row_name of
                                             Some field_index -> do
+                                                //println "Row_name {} field_index {}" % (row_name, field_index)
                                                 field_type <- atIndex record.fields field_index
+                                                //println "Field type {} row type {}" % (toString field_type, toString row_type)
                                                 case unify gen sub data_store class_store field_type row_type of
                                                     Ok (gen, sub) -> do
+                                                        //println "After field unification, sub: {}" % sub
                                                         record <- DS.applyRecordTypeInfo record sub
                                                         (success, record, sub, gen)
-                                                    Err _ -> (False, record, sub, gen)
-                                            None -> (False, record, sub, gen)
-                                    IndexedRow _ -> (False, record, sub, gen)
+                                                    Err _ -> do
+                                                        //println "Field unification failed {} {}" % (toString field_type, toString row_type)
+                                                        (False, record, sub, gen)
+                                            None -> do
+                                                //println "Row name not found {}" % row_name
+                                                (False, record, sub, gen)
+                                    IndexedRow _ -> do
+                                                //println "Indexed row for a record!"
+                                                (False, record, sub, gen)
                             ) (True, record, sub, gen)
                         if success then (sub, gen) else return Err ()
             Tuple args -> do

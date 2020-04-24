@@ -9,60 +9,66 @@ import Siko.Typechecker.Error
 import Siko.Typechecker.Expr
 import Map
 
-data ChoiceKind = IntegerLiteral String
-                | StringLiteral String
-                | CharLiteral Char
-                | CharRange Char Char P.RangeKind
-                | Tuple Int
-                | Bind
-                | Record PO.FullyQualifiedName
-                | Variant PO.FullyQualifiedName Int
-                | GuardExpr E.ExprId
-                deriving (Show, PartialEq, Eq, PartialOrd, Ord)
+data ValuePath = ItemIndex ValuePath Int
+                 | VariantPath ValuePath String Int Int
+                 | Root
+                 deriving (PartialEq, Eq, PartialOrd, Ord)
 
-data Choice = { choices :: Map ChoiceKind (Option Choice) } deriving (Show, PartialEq)
+instance Show ValuePath where
+    show a = case a of
+        Root -> "p"
+        ItemIndex p i -> "{}.{}" % (p, i)
+        VariantPath p n vi i -> "{}.{}/{}.{}" % (p, n, vi, i)
 
-processPrevChoice :: Option Choice -> ChoiceKind -> [P.Pattern] -> Option Choice
-processPrevChoice prev_choice current_kind rest = do
-    case prev_choice of
-        Some (Choice sub_choices) -> do
-            current_kind <- case get sub_choices Bind of
-                Some _ -> Bind
-                None -> current_kind
-            prev_sub <- case get sub_choices current_kind of
-                Some p -> p
-                None -> None
-            sub <- processPattern rest prev_sub
-            (sub_choices, _) <- insert sub_choices current_kind sub
-            Some (Choice sub_choices)
-        None -> do
-            sub <- processPattern rest None
-            (sub_choices, _) <- insert empty current_kind sub
-            Some (Choice sub_choices)
+data PendingPattern = { path :: ValuePath,
+                        pattern :: P.Pattern
+                      }
 
-processPattern :: [P.Pattern] -> Option Choice -> Option Choice
-processPattern patterns prev_choice = do
-    (P.Pattern first _ _) <- case head patterns of
+data Check = Check ValuePath Condition deriving (Show, PartialEq, Eq, PartialOrd, Ord)
+
+data Condition = IntegerCondition String
+                 | VariantCondition Int
+                 | WildcardCondition
+                 deriving (Show, PartialEq, Eq, PartialOrd, Ord)
+
+processPattern :: [PendingPattern] -> [Check]
+processPattern pendingPatterns = do
+    pending_pattern <- case head pendingPatterns of
         Some first -> first
-        None -> return None
-    rest <- case tail patterns of
-        Some rest -> rest
+        None -> return []
+    pendingPatterns <- case tail pendingPatterns of
+        Some p -> p
         None -> []
-    case first of
-        P.Binding _ -> processPrevChoice prev_choice Bind rest
-        P.Tuple args -> processPrevChoice prev_choice (Tuple (getLength args)) args
-        P.Guarded p expr -> do
-            E.Expr _ expr_id _ <- expr
-            processPrevChoice prev_choice (GuardExpr expr_id) [p]
-        P.Wildcard -> processPrevChoice prev_choice Bind rest
-        P.IntegerLiteral lit -> processPrevChoice prev_choice (IntegerLiteral lit) rest
-        P.StringLiteral lit -> processPrevChoice prev_choice (StringLiteral lit) rest
-        P.CharLiteral lit -> processPrevChoice prev_choice (CharLiteral lit) rest
-        P.CharRange s e k -> processPrevChoice prev_choice (CharRange s e k) rest
-        P.Typed _ _ -> panic "Typed pattern in processPattern"
-        P.Record qn args -> processPrevChoice prev_choice (Record qn) args
-        P.Variant qn index args -> processPrevChoice prev_choice (Variant qn index) args
-        P.Or _ -> panic "Or pattern in processPattern"
+    path <- pending_pattern.path
+    (P.Pattern pattern _ _) <- pending_pattern.pattern
+    checks <- case pattern of
+        P.Tuple args -> do
+            (args, _) <- args |> List.iter |> fold (\(args, index), arg -> do
+                    p <- ItemIndex path index
+                    arg <- PendingPattern p arg
+                    args <- args + [arg]
+                    (args, index + 1)) ([], 0)
+            checks <- processPattern (args + pendingPatterns)
+            [Check path WildcardCondition] + checks
+        P.Wildcard -> do
+            checks <- processPattern pendingPatterns
+            [Check path WildcardCondition] + checks
+        P.IntegerLiteral lit -> do
+            checks <- processPattern pendingPatterns
+            [Check path (IntegerCondition lit)] + checks
+        P.Binding _ -> do
+            checks <- processPattern pendingPatterns
+            [Check path (WildcardCondition)] + checks
+        P.Variant qn variant_index args -> do
+            (args, _) <- args |> List.iter |> fold (\(args, index), arg -> do
+                    p <- VariantPath path (show qn) variant_index index
+                    arg <- PendingPattern p arg
+                    args <- args + [arg]
+                    (args, index + 1)) ([], 0)
+            checks <- processPattern (args + pendingPatterns)
+            [Check path (VariantCondition variant_index)] + checks
+        _ -> panic "Unimplemented"
+    checks
 
 addUnreachablePatternError :: Context -> Location -> Context
 addUnreachablePatternError context location = do
@@ -70,29 +76,39 @@ addUnreachablePatternError context location = do
     //context <- context { state = state }
     context
 
+data Choice = Choice ValuePath (Map Condition Choice)
+              | CaseEnd Int
+
+mergeChecks :: [Check] -> Int -> Option Choice
+mergeChecks checks case_index = do
+    (first, rest) <- case head checks of
+        Some first -> do
+            rest <- Option.unwrap (tail checks)
+            (first, rest)
+        None -> return None
+    Check path condition <- first
+    next <- case mergeChecks rest case_index of
+        Some next -> next
+        None -> CaseEnd case_index
+    (branches, _) <- Map.insert Map.empty condition next
+    choice <- Choice path branches
+    Some choice
+
 checkCase :: Context -> E.Expr -> [E.Case] -> Context
 checkCase context case_body cases = do
-    (context, choice_tree) <- cases |> List.iter |> fold (\(context, choice_tree), c -> do
+    (context, _) <- cases |> List.iter |> fold (\(context, index), c -> do
             (P.Pattern p _ location) <- c.pattern
-            (context, new_tree) <- case p of
-                P.Guarded _ _ -> (context, choice_tree) // skip guarded patterns, assume that the guard failed
-                P.Typed p _ -> do
-                    new_tree <- processPattern [p] choice_tree
-                    (context, new_tree)
-                P.Or subs -> subs |> List.iter |> fold (\(context, choice_tree), p -> do
-                    (P.Pattern _ _ location) <- p
-                    new_tree <- processPattern [p] choice_tree
-                    context <- if new_tree == choice_tree
-                        then addUnreachablePatternError context location
-                        else context
-                    (context, new_tree)) (context, choice_tree)
-                _ -> do
-                    new_tree <- processPattern [c.pattern] choice_tree
-                    (context, new_tree)
-            context <- if new_tree == choice_tree
-                then addUnreachablePatternError context location
-                else context
-            (context, new_tree)
-        ) (context, None)
-    //println "Choice {}" % choice_tree
+            //println "Processing case {}" % index
+            checks <- processPattern [PendingPattern Root c.pattern]
+            //println "Checks {}" % checks
+            (context, index + 1)
+        ) (context, 0)
+    context
+
+checkCases :: Context -> E.Expr -> Context
+checkCases context (E.Expr expr _ _) = do
+    context <- case expr of
+        E.CaseOf body cases -> do
+            checkCase context body cases
+        _ -> context
     context

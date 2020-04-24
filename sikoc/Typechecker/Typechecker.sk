@@ -4,6 +4,7 @@ import Siko.Typechecker.Data
 import Siko.Typechecker.Expr
 import Siko.Typechecker.Error
 import Siko.Typechecker.Pattern
+import Siko.Typechecker.CaseChecker
 import Siko.Typechecker.ClassStore as CS
 import Siko.Typechecker.TypeStore as TS
 import Siko.Typechecker.DataStore as DS
@@ -66,8 +67,17 @@ checkMissingTypes context fn = do
             context
         None -> context
 
-processGroup :: TypecheckerState -> DependencyGroup P.FullyQualifiedName -> P.Program -> FS.FunctionStore -> (TypecheckerState, FS.FunctionStore)
-processGroup state group program function_store = do
+checkCasePatterns :: Context -> F.Function -> Context
+checkCasePatterns context fn = do
+    case fn.body of
+        Some body -> do
+            context <- traverse context checkCases (\c, _ -> c) body
+            context
+        None -> context
+
+processGroup :: TypecheckerState -> DependencyGroup P.FullyQualifiedName -> P.Program -> FS.FunctionStore -> Int -> (TypecheckerState, FS.FunctionStore)
+processGroup state group program function_store index = do
+    //println "{}. Group items: {}" % (index, group.items)
     context <- initializeContext state program function_store group.items
     context <- group.items |> List.iter |> fold (\context, name -> do
                         fn <- P.getFunction program name
@@ -85,6 +95,10 @@ processGroup state group program function_store = do
                         fn <- P.getFunction program name
                         context <- checkMissingTypes context fn
                         context) context
+    context <- group.items |> List.iter |> fold (\context, name -> do
+                        fn <- P.getFunction program name
+                        context <- checkCasePatterns context fn
+                        context) context
     (context.state, context.function_store)
 
 processProgram :: P.Program -> TypeVarGenerator -> [TypecheckerError]
@@ -97,8 +111,8 @@ processProgram program var_gen = do
     //println "Datadefs: {}" % (getSize data_store.data_type_info_map)
     //println "Functions: {}" % (getSize function_store.functions)
     //println "Groups: {}" % (getLength groups)
-    (state, function_store) <- groups |> List.iter |> fold (\(state, function_store), group -> do
-        (state, function_store) <- processGroup state group program function_store
-        (state, function_store) ) (state, function_store)
+    (state, function_store, _) <- groups |> List.iter |> fold (\(state, function_store, index), group -> do
+        (state, function_store) <- processGroup state group program function_store index
+        (state, function_store, index + 1) ) (state, function_store, 0)
     //FS.dump function_store
     state.errors
