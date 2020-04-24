@@ -19,6 +19,7 @@ import Siko.Typechecker.TypeStore as TS
 import Siko.Typechecker.FunctionStore as FS
 import Siko.Typechecker.InstanceResolver as IR
 import Siko.Typechecker.Error
+import Siko.Constants
 
 data Context = { type_store :: TS.TypeStore,
                  function_store :: FS.FunctionStore,
@@ -390,7 +391,15 @@ checkExprType context (E.Expr expr id location) = do
             (context, expected_receiver_ty) <- getNewVarWithConstraints context constraints
             (context, _) <- matchExprWith context receiver_id expected_receiver_ty receiver_location
             context
-        E.Formatter fmt args -> context // TODO
+        E.Formatter fmt args -> do
+            show_class <- PO.FullPath getStdOpsModuleName getShowClassName
+            constraints <- [T.ClassConstraint show_class]
+            context <- args |> List.iter |> fold (\context, arg -> do
+                (E.Expr _ arg_id arg_location) <- arg
+                (context, expected_arg_ty) <- getNewVarWithConstraints context constraints
+                (context, _) <- matchExprWith context arg_id expected_arg_ty arg_location
+                context) context
+            context
         E.CaseOf body cases -> do
             (E.Expr _ body_id body_location) <- body
             context <- checkCase context body cases
