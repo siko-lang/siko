@@ -50,12 +50,12 @@ processFunctions state program = do
         function_store <- addFunctionTypeInfo function_store func_type_info
         (state, function_store)) (state, createFunctionStore)
     all_dependencies <- functions |> List.iter |> fold (\all_dependencies, fn -> do
-        deps <- getFunctionDependencies fn
+        (deps, forced_deps) <- getFunctionDependencies fn
         untyped_deps <- deps |> List.iter |> filter (\qn -> do
             case P.getItem program qn of
                 P.Function fn -> isNone fn.type
                 _ -> False) |> toList
-        (all_dependencies, _) <- Map.insert all_dependencies fn.name untyped_deps
+        (all_dependencies, _) <- Map.insert all_dependencies fn.name (untyped_deps + forced_deps)
         all_dependencies) Map.empty
     groups <- processDependencies all_dependencies
     (state, function_store, groups)
