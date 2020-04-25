@@ -840,6 +840,20 @@ fn generate_list_builtins(
                 indent, result_ty_str
             )?;
         }
+        "write" => {
+            write!(output_file, "{}let mut r = Vec::new();\n", indent)?;
+            write!(
+                output_file,
+                "{}r.extend(arg0.value.iter().cloned());\n",
+                indent
+            )?;
+            write!(output_file, "{}r[arg1.value as usize] = arg2.clone();\n", indent)?;
+            write!(
+                output_file,
+                "{} {} {{ value : std::rc::Rc::new(r) }}\n",
+                indent, result_ty_str
+            )?;
+        }
         "sort" => {
             write!(output_file, "{}let mut r = Vec::new();\n", indent)?;
             write!(

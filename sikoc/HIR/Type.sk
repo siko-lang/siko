@@ -3,6 +3,7 @@ module Siko.HIR.Type(Type(..),
                      Constraint(..),
                      RowKind(..),
                      toString,
+                     toLongString,
                      collectVars,
                      getArgCount,
                      getArgs,
@@ -110,14 +111,15 @@ addShortName name names = case names of
     Some names -> if contains names name then Some names else Some (names + [name])
     None -> Some [name]
 
-toString :: Type -> String
-toString type = do
+formatType :: Type -> Bool -> String
+formatType type short = do
+    limit <- if short then 1 else 0
     (names, constraint_map) <- collectnames type empty
     conflicting_names <- names |> List.iter |> fold (\short_names, name -> do
                 short <- getShortName name
                 (short_names, _) <- alter (addShortName name) short short_names
                 short_names) empty
-    conflicting_names <- conflicting_names |> Map.iter |> map (\(short, names) -> if getLength names > 1 then (short, True) else (short, False)) |> toMap
+    conflicting_names <- conflicting_names |> Map.iter |> map (\(short, names) -> if getLength names > limit then (short, True) else (short, False)) |> toMap
     constraints <- constraint_map |> Map.iter |> map (\(name, constraints) -> do
                                 constraints <- constraints |> List.iter |> map (\c -> case c of
                                                     ClassConstraint s -> "{} {}" % (getNiceName (HP.getResolvableName s) conflicting_names, name)
@@ -128,6 +130,12 @@ toString type = do
     if isEmpty constraints
         then string_type
         else "({}) => {}" % (join constraints ", ", string_type)
+
+toString :: Type -> String
+toString type = formatType type True
+
+toLongString :: Type -> String
+toLongString type = formatType type False
 
 getNiceName :: String -> Map String Bool -> String
 getNiceName full_name conflicting_names = do

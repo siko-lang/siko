@@ -100,25 +100,17 @@ remapDataTypeInfo data_type_info var_gen = case data_type_info of
         (record, var_gen) <- remapRecordTypeInfo record var_gen
         (Record record, var_gen)
 
-applyToState :: TypecheckerState -> U.Substitution -> TypecheckerState
-applyToState state sub = do
-    instance_resolver <- state.instance_resolver
-    auto_derived_instances <- instance_resolver.auto_derived_instances
-    auto_derived_instances <- auto_derived_instances |> List.iter |> map (\IR.AutoDerivedInstance type location name -> do
-        IR.AutoDerivedInstance (U.apply sub type) location name) |> toList
-    instance_resolver <- instance_resolver { auto_derived_instances = auto_derived_instances }
-    state <- state { instance_resolver = instance_resolver }
-    state
-
 processMemberType :: TypecheckerState -> Type -> DeriveInfo -> String -> TypecheckerState
 processMemberType state type derived_class type_name = do
-    (IR.AutoDerivedInstance instance_type location _) <- IR.getAutoDerivedInstanceById
+    (IR.AutoDerivedInstance instance_type location name) <- IR.getAutoDerivedInstanceById
             state.instance_resolver derived_class.instance_id
     state <- case IR.checkInstance state type derived_class.class_name of
                 Ok (state, cs) -> do
                     (state, sub) <- IR.mergeResolverConstraintsIntoSubstitution state cs (U.createSubstitution)
-                    state <- applyToState state sub
-                    state
+                    instance_type <- U.apply sub instance_type
+                    i <- IR.AutoDerivedInstance instance_type location name
+                    instance_resolver <- IR.updateAutoDerivedInstance state.instance_resolver derived_class.instance_id i
+                    state { instance_resolver = instance_resolver }
                 Err state -> do
                     addError state (AutoDeriveError type_name
                             (type |> fixedType |> toString) (show derived_class.class_name) derived_class.location)
@@ -141,6 +133,8 @@ processAutoDerivedInstances state = do
                     state) state
                 state
         state) state
+    //println "All auto derived instances"
     //state.instance_resolver.auto_derived_instances |> List.iter |> forEach (\IR.AutoDerivedInstance type location name -> do
     //    println "instance {} {}" % (name, toString type))
+    //println "All auto derived instances ------END"
     state

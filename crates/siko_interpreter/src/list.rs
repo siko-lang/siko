@@ -272,6 +272,25 @@ impl ExternFunction for Dedup {
     }
 }
 
+pub struct Write {}
+
+impl ExternFunction for Write {
+    fn call(
+        &self,
+        environment: &mut Environment,
+        _: Option<ExprId>,
+        _: &NamedFunctionKind,
+        ty: Type,
+    ) -> Value {
+        let list = environment.get_arg_by_index(0);
+        let index = environment.get_arg_by_index(1).core.as_int();
+        let item = environment.get_arg_by_index(2).clone();
+        let mut list: Vec<_> = list.core.as_list().clone();
+        list[index as usize] = item;
+        return Value::new(ValueCore::List(list), ty);
+    }
+}
+
 pub fn register_extern_functions(interpreter: &mut Interpreter) {
     interpreter.add_extern_function(LIST_MODULE_NAME, "show", Box::new(Show {}));
     interpreter.add_extern_function(LIST_MODULE_NAME, "iter", Box::new(Iter {}));
@@ -286,4 +305,5 @@ pub fn register_extern_functions(interpreter: &mut Interpreter) {
     interpreter.add_extern_function(LIST_MODULE_NAME, "sort", Box::new(Sort {}));
     interpreter.add_extern_function(LIST_MODULE_NAME, "dedup", Box::new(Dedup {}));
     interpreter.add_extern_function(LIST_MODULE_NAME, "partialCmp", Box::new(ListPartialOrd {}));
+    interpreter.add_extern_function(LIST_MODULE_NAME, "write", Box::new(Write {}));
 }
