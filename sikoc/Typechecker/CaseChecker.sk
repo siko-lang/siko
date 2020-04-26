@@ -35,7 +35,16 @@ data Condition = IntegerCondition String
                  | CharRangeCondition Char Char P.RangeKind
                  | VariantCondition Int
                  | WildcardCondition
-                 deriving (Show, PartialEq, Eq, PartialOrd, Ord)
+                 deriving (PartialEq, Eq, PartialOrd, Ord)
+
+instance Show Condition where
+    show c = case c of
+        IntegerCondition lit -> "i:{}" % lit
+        StringCondition lit -> "s:{}" % lit
+        CharCondition lit -> "c:{}" % lit
+        CharRangeCondition start end kind -> "cr:{}:{}:{}" % (start, end, kind)
+        VariantCondition i -> "v:{}" % i
+        WildcardCondition -> "w"
 
 data AdditionalInfo = Guarded
                     | Bind ValuePath String
@@ -155,6 +164,26 @@ mergeChoices choices = do
         None -> panic "mergeChoices called with empty list of choices"
     m
 
+addEmptyWildcards :: Choice -> Choice
+addEmptyWildcards choice = do
+    case choice of
+        Choice path subchoices -> do
+            (found, subchoices) <- subchoices |> Map.iter |> fold (\(found, subchoices), (cond, choices) -> do
+                    is_wildcard <- case cond of
+                        WildcardCondition -> True
+                        _ -> False
+                    choices <- choices |> List.iter |> map (\w -> addEmptyWildcards w) |> toList
+                    (subchoices, _) <- Map.insert subchoices cond choices
+                    (found || is_wildcard, subchoices)
+                ) (False, Map.empty)
+            subchoices <- if found
+                then subchoices
+                else do
+                    (subchoices, _) <- Map.insert subchoices WildcardCondition [CaseEnd []]
+                    subchoices
+            Choice path subchoices
+        CaseEnd _ -> choice
+
 mergeRoots :: Choice -> Choice -> Choice
 mergeRoots choice1 choice2 = do
     case (choice1, choice2) of
@@ -200,7 +229,7 @@ choiceToNode g choice = case choice of
     CaseEnd indices -> do
         names <- indices |> List.iter |> map (\(case_index, additional_info) -> do
             "{}:{}" % (case_index, additional_info)) |> toList
-        node_name <- join names ","
+        node_name <- "[{}]" % join names ","
         (g, id) <- D.addNode g node_name
         (g, id)
 
@@ -220,9 +249,10 @@ checkCase context case_body cases = do
                 _ -> processSinglePattern c.pattern index choices
         ) ([], 0)
     m <- mergeChoices choices
+    m <- addEmptyWildcards m
     g <- D.createGraph "Choice tree"
     (g, _) <- choiceToNode g m
-    //writeTextFile "case.dot" ("{}" % D.generateDot g)
+    writeTextFile "case.dot" ("{}" % D.generateDot g)
     context
 
 checkCases :: Context -> E.Expr -> Context

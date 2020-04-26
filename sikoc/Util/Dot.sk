@@ -52,8 +52,11 @@ generateDot graph = do
     s <- "digraph D {\n"
     s <- s + "node [shape=record fontname=Arial splines=ortho];\n"
     s <- graph.nodes |> List.iter |> fold (\s, node -> do
-            elements <- join node.elements "|"
-            s <- s + "node{} [label=\"{{{}|{}}}\"]\n" % (node.id, node.name, elements)
+            s <- if isEmpty node.elements
+                then s + "node{} [label=\"{}\"]\n" % (node.id, node.name)
+                else do
+                    elements <- join node.elements "|"
+                    s + "node{} [label=\"{{{}|{}}}\"]\n" % (node.id, node.name, elements)
             s) s
     s <- graph.edges |> List.iter |> fold (\s, edge -> do
             e <- case edge.name of
