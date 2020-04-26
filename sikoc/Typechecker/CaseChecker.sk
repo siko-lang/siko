@@ -7,7 +7,10 @@ import Siko.HIR.Program as PO
 import Siko.Typechecker
 import Siko.Typechecker.Error
 import Siko.Typechecker.Expr
+import Siko.Dot as D
+import Std.Util
 import Map
+import Hack
 
 data ValuePath = ItemIndex ValuePath Int
                  | VariantPath ValuePath String Int Int
@@ -27,47 +30,91 @@ data PendingPattern = { path :: ValuePath,
 data Check = Check ValuePath Condition deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
 data Condition = IntegerCondition String
+                 | StringCondition String
+                 | CharCondition Char
+                 | CharRangeCondition Char Char P.RangeKind
                  | VariantCondition Int
                  | WildcardCondition
                  deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
-processPattern :: [PendingPattern] -> [Check]
+data AdditionalInfo = Guarded
+                    | Bind ValuePath String
+                    deriving (Show)
+
+processPattern :: [PendingPattern] -> ([AdditionalInfo], [Check])
 processPattern pendingPatterns = do
     pending_pattern <- case head pendingPatterns of
         Some first -> first
-        None -> return []
+        None -> return ([], [])
     pendingPatterns <- case tail pendingPatterns of
         Some p -> p
         None -> []
     path <- pending_pattern.path
     (P.Pattern pattern _ _) <- pending_pattern.pattern
     checks <- case pattern of
+        P.Binding ref -> do
+            (P.BindRef s _) <- ref
+            (additional_info, checks) <- processPattern pendingPatterns
+            checks <- [Check path (WildcardCondition)] + checks
+            additional_info <- additional_info + [Bind path s]
+            (additional_info, checks)
         P.Tuple args -> do
             (args, _) <- args |> List.iter |> fold (\(args, index), arg -> do
                     p <- ItemIndex path index
                     arg <- PendingPattern p arg
                     args <- args + [arg]
                     (args, index + 1)) ([], 0)
-            checks <- processPattern (args + pendingPatterns)
-            [Check path WildcardCondition] + checks
+            (additional_info, checks) <- processPattern (args + pendingPatterns)
+            checks <- [Check path WildcardCondition] + checks
+            (additional_info, checks)
+        P.Guarded p expr -> do
+            arg <- pending_pattern { pattern = p }
+            (additional_info, checks) <- processPattern ([arg] + pendingPatterns)
+            additional_info <- additional_info + [Guarded]
+            (additional_info, checks)
         P.Wildcard -> do
-            checks <- processPattern pendingPatterns
-            [Check path WildcardCondition] + checks
+            (additional_info, checks) <- processPattern pendingPatterns
+            checks <- [Check path WildcardCondition] + checks
+            (additional_info, checks)
         P.IntegerLiteral lit -> do
-            checks <- processPattern pendingPatterns
-            [Check path (IntegerCondition lit)] + checks
-        P.Binding _ -> do
-            checks <- processPattern pendingPatterns
-            [Check path (WildcardCondition)] + checks
+            (additional_info, checks) <- processPattern pendingPatterns
+            checks <- [Check path (IntegerCondition lit)] + checks
+            (additional_info, checks)
+        P.StringLiteral lit -> do
+            (additional_info, checks) <- processPattern pendingPatterns
+            checks <- [Check path (StringCondition lit)] + checks
+            (additional_info, checks)
+        P.CharLiteral lit -> do
+            (additional_info, checks) <- processPattern pendingPatterns
+            checks <- [Check path (CharCondition lit)] + checks
+            (additional_info, checks)
+        P.CharRange start end kind -> do
+            (additional_info, checks) <- processPattern pendingPatterns
+            checks <- [Check path (CharRangeCondition start end kind)] + checks
+            (additional_info, checks)
+        P.Typed p _ -> do
+            arg <- pending_pattern { pattern = p }
+            (additional_info, checks) <- processPattern ([arg] + pendingPatterns)
+            (additional_info, checks)
+        P.Record _ args -> do
+            (args, _) <- args |> List.iter |> fold (\(args, index), arg -> do
+                    p <- ItemIndex path index
+                    arg <- PendingPattern p arg
+                    args <- args + [arg]
+                    (args, index + 1)) ([], 0)
+            (additional_info, checks) <- processPattern (args + pendingPatterns)
+            checks <- [Check path WildcardCondition] + checks
+            (additional_info, checks)
         P.Variant qn variant_index args -> do
             (args, _) <- args |> List.iter |> fold (\(args, index), arg -> do
                     p <- VariantPath path (show qn) variant_index index
                     arg <- PendingPattern p arg
                     args <- args + [arg]
                     (args, index + 1)) ([], 0)
-            checks <- processPattern (args + pendingPatterns)
-            [Check path (VariantCondition variant_index)] + checks
-        _ -> panic "Unimplemented"
+            (additional_info, checks) <- processPattern (args + pendingPatterns)
+            checks <- [Check path (VariantCondition variant_index)] + checks
+            (additional_info, checks)
+        P.Or _ -> panic "Or pattern in processPattern!"
     checks
 
 addUnreachablePatternError :: Context -> Location -> Context
@@ -76,33 +123,106 @@ addUnreachablePatternError context location = do
     //context <- context { state = state }
     context
 
-data Choice = Choice ValuePath (Map Condition Choice)
-              | CaseEnd Int
+data Choice = Choice ValuePath (Map Condition [Choice])
+              | CaseEnd [(Int, [AdditionalInfo])]
 
-mergeChecks :: [Check] -> Int -> Option Choice
-mergeChecks checks case_index = do
+getValuePath :: Choice -> Option ValuePath
+getValuePath choice = case choice of
+    Choice path _ -> Some path
+    CaseEnd _ -> None
+
+checkToChoice :: [Check] -> [AdditionalInfo] -> Int -> Choice
+checkToChoice checks additional_info case_index = do
     (first, rest) <- case head checks of
         Some first -> do
             rest <- Option.unwrap (tail checks)
             (first, rest)
-        None -> return None
+        None -> return (CaseEnd [(case_index, additional_info)])
     Check path condition <- first
-    next <- case mergeChecks rest case_index of
-        Some next -> next
-        None -> CaseEnd case_index
-    (branches, _) <- Map.insert Map.empty condition next
+    next <- checkToChoice rest additional_info case_index
+    (branches, _) <- Map.insert Map.empty condition [next]
     choice <- Choice path branches
-    Some choice
+    choice
+
+mergeChoices :: [Choice] -> Choice
+mergeChoices choices = do
+    m <- choices |> List.iter |> fold (\m, choice -> case m of
+                Some m -> Some (mergeRoots m choice)
+                None -> Some choice
+            ) None
+    m <- case m of
+        Some m -> m
+        None -> panic "mergeChoices called with empty list of choices"
+    m
+
+mergeRoots :: Choice -> Choice -> Choice
+mergeRoots choice1 choice2 = do
+    case (choice1, choice2) of
+        (Choice path1 subchoices1, Choice path2 subchoices2) -> do
+            assert (path1 == path2)
+            subchoices <- subchoices2 |> Map.iter |> fold (\subchoices, (path, choices) -> do
+                assert (getLength choices == 1)
+                (subchoices, _) <- alter (\cs -> case cs of
+                    Some cs -> do
+                        Some (cs + choices)
+                    None -> Some choices) path subchoices
+                subchoices) subchoices1
+            subchoices <- subchoices |> Map.iter |> map (\(path, choices) -> do
+                    path_map <- choices |> List.iter |> fold (\path_map, choice -> do
+                            (path_map, _) <- alter (\cs -> case cs of
+                                    Some cs -> Some (cs + [choice])
+                                    None -> Some ([choice])
+                                ) (getValuePath choice) path_map
+                            path_map
+                        ) Map.empty
+                    choices <- path_map |> Map.iter |> map (\(_, choices) -> mergeChoices choices) |> toList
+                    (path, choices)
+                ) |> toMap
+            Choice path1 subchoices
+        (CaseEnd indices1, CaseEnd indices2) -> do
+            indices <- indices1 + indices2
+            CaseEnd indices
+        _ -> panic "Missing root choice"
+
+choiceToNode :: D.Graph -> Choice -> (D.Graph, D.NodeId)
+choiceToNode g choice = case choice of
+    Choice path subchoices -> do
+        node_name <- "{}" % path
+        (g, id) <- D.addNode g node_name
+        g <- subchoices |> Map.iter |> fold (\g, (cond, choices) -> do
+                g <- choices |> List.iter |> fold (\g, choice -> do
+                    (g, child_id) <- choiceToNode g choice
+                    edge_name <- "{}" % cond
+                    g <- D.addEdge g (Some edge_name) id child_id
+                    g) g
+                g) g
+        (g, id)
+    CaseEnd indices -> do
+        names <- indices |> List.iter |> map (\(case_index, additional_info) -> do
+            "{}:{}" % (case_index, additional_info)) |> toList
+        node_name <- join names ","
+        (g, id) <- D.addNode g node_name
+        (g, id)
+
+processSinglePattern :: P.Pattern -> Int -> [Choice] -> ([Choice], Int)
+processSinglePattern pattern index choices = do
+    (additional_info, checks) <- processPattern [PendingPattern Root pattern]
+    choice <- checkToChoice checks additional_info index
+    choices <- choices + [choice]
+    (choices, index + 1)
 
 checkCase :: Context -> E.Expr -> [E.Case] -> Context
 checkCase context case_body cases = do
-    (context, _) <- cases |> List.iter |> fold (\(context, index), c -> do
+    (choices, _) <- cases |> List.iter |> fold (\(choices, index), c -> do
             (P.Pattern p _ location) <- c.pattern
-            //println "Processing case {}" % index
-            //checks <- processPattern [PendingPattern Root c.pattern]
-            //println "Checks {}" % checks
-            (context, index + 1)
-        ) (context, 0)
+            case p of
+                P.Or args -> args |> List.iter |> fold (\(choices, index), arg -> processSinglePattern arg index choices) (choices, index)
+                _ -> processSinglePattern c.pattern index choices
+        ) ([], 0)
+    m <- mergeChoices choices
+    g <- D.createGraph "Choice tree"
+    (g, _) <- choiceToNode g m
+    //writeTextFile "case.dot" ("{}" % D.generateDot g)
     context
 
 checkCases :: Context -> E.Expr -> Context

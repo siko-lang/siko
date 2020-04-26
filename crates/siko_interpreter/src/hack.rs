@@ -24,6 +24,24 @@ impl ExternFunction for ReadTextFile {
     }
 }
 
+pub struct WriteTextFile {}
+
+impl ExternFunction for WriteTextFile {
+    fn call(
+        &self,
+        environment: &mut Environment,
+        _: Option<ExprId>,
+        _: &NamedFunctionKind,
+        ty: Type,
+    ) -> Value {
+        let path = environment.get_arg_by_index(0).core.as_string();
+        let content = environment.get_arg_by_index(1).core.as_string();
+        std::fs::write(&path, content).expect("WriteTextFile failed");
+        return Value::new(ValueCore::Tuple(vec![]), ty);
+    }
+}
+
 pub fn register_extern_functions(interpreter: &mut Interpreter) {
     interpreter.add_extern_function("Hack", "readTextFile", Box::new(ReadTextFile {}));
+    interpreter.add_extern_function("Hack", "writeTextFile", Box::new(WriteTextFile {}));
 }

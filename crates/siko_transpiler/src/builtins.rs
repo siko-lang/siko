@@ -1316,6 +1316,13 @@ pub fn generate_builtin(
                     )?;
                     write!(output_file, "{} {{ value : content }}", result_ty_str)?;
                 }
+                ("Hack", "writeTextFile") => {
+                    write!(
+                        output_file,
+                        "let content = std::fs::write(&arg0.value, &arg1.value).expect(\"WriteTextFile failed\");"
+                    )?;
+                    write!(output_file, "{} {{ }}", result_ty_str)?;
+                }
                 ("Std.Util.Basic", "abort") => {
                     write!(output_file, "panic!(\"abort called\");")?;
                 }
