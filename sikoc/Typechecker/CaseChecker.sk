@@ -57,7 +57,7 @@ instance Show Condition where
 
 data AdditionalInfo = Guarded
                     | Bind ValuePath String
-                    deriving (Show)
+                    deriving (Show, PartialEq)
 
 processPattern :: Context -> [PendingPattern] -> ([AdditionalInfo], [Check])
 processPattern context pendingPatterns = do
@@ -147,8 +147,10 @@ addUnreachablePatternError context location = do
     //context <- context { state = state }
     context
 
+data MatchInfo = MatchInfo Int [AdditionalInfo] deriving (PartialEq)
+
 data Choice = Choice ValuePath (Map Condition [Choice])
-              | CaseEnd [(Int, [AdditionalInfo])]
+              | CaseEnd [MatchInfo]
 
 getValuePath :: Choice -> Option ValuePath
 getValuePath choice = case choice of
@@ -161,7 +163,7 @@ checkToChoice checks additional_info case_index = do
         Some first -> do
             rest <- Option.unwrap (tail checks)
             (first, rest)
-        None -> return (CaseEnd [(case_index, additional_info)])
+        None -> return (CaseEnd [MatchInfo case_index additional_info])
     Check path condition <- first
     next <- checkToChoice rest additional_info case_index
     (branches, _) <- Map.insert Map.empty condition [next]
@@ -264,7 +266,7 @@ choiceToNode g choice = case choice of
                 g) g
         (g, id)
     CaseEnd indices -> do
-        names <- indices |> List.iter |> map (\(case_index, additional_info) -> do
+        names <- indices |> List.iter |> map (\MatchInfo case_index additional_info -> do
             "{}:{}" % (case_index, additional_info)) |> toList
         node_name <- "[{}]" % join names ","
         (g, id) <- D.addNode g node_name
@@ -298,6 +300,50 @@ pruneLeafWildCardsFromTree choice = do
             Choice path subchoices
         CaseEnd _ -> choice
 
+data PatternInfo = { checks :: [Check],
+                     end :: MatchInfo,
+                   }
+
+collectAllChecks :: Choice -> PatternInfo
+collectAllChecks choice =
+    case choice of
+        Choice path subchoices -> do
+            assert (getSize subchoices == 1)
+            checks <- subchoices |> Map.iter |> map (\(cond, choices) -> do
+                assert (getLength choices == 1)
+                (cond, atIndex choices 0)) |> toList
+            (cond, subchoice) <- atIndex checks 0
+            PatternInfo checks end <- collectAllChecks subchoice
+            checks <- [Check path cond] + checks
+            PatternInfo checks end
+        CaseEnd indices -> do
+            assert (getLength indices == 1)
+            PatternInfo [] (atIndex indices 0)
+
+walkChoiceTree :: Choice -> [Check] -> PatternInfo -> Choice
+walkChoiceTree choice checks pattern_info = do
+    case choice of
+        Choice path subchoices -> do
+            subchoices <- subchoices |> Map.iter |> map (\(cond, choices) -> do
+                assert (getLength choices == 1)
+                checks <- checks + [Check path cond]
+                choices <- choices |> List.iter |> map (\choice -> walkChoiceTree choice checks pattern_info) |> toList
+                (cond, choices)) |> toMap
+            Choice path subchoices
+        CaseEnd indices -> do
+            match <- pattern_info.checks |> List.iter |> fold (\match, check -> match && contains checks check) True
+            if match
+                then do
+                    if contains indices pattern_info.end
+                        then choice
+                        else CaseEnd (indices + [pattern_info.end])
+                else choice
+
+remergeChoices :: Choice -> [Choice] -> Choice
+remergeChoices tree pattern_choices = do
+    pattern_checks <- pattern_choices |> List.iter |> map (\c -> collectAllChecks c) |> toList
+    pattern_checks |> List.iter |> fold (\tree, pattern_info -> walkChoiceTree tree [] pattern_info) tree
+
 checkCase :: Context -> E.Expr -> [E.Case] -> Context
 checkCase context case_body cases = do
     (E.Expr _ body_id _) <- case_body
@@ -310,10 +356,11 @@ checkCase context case_body cases = do
     m <- mergeChoices choices
     m <- pruneLeafWildCardsFromTree m
     m <- addEmptyWildcards context m
-    g <- D.createGraph "Choice tree"
-    (g, _) <- choiceToNode g m
-    name <- "case_{}.dot" % (body_id)
-    writeTextFile name ("{}" % D.generateDot g)
+    m <- remergeChoices m choices
+    //g <- D.createGraph "Choice tree"
+    //(g, _) <- choiceToNode g m
+    //name <- "case_{}.dot" % (body_id)
+    //writeTextFile name ("{}" % D.generateDot g)
     context
 
 checkCases :: Context -> E.Expr -> Context
