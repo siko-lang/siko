@@ -279,8 +279,28 @@ processSinglePattern context pattern index choices = do
     choices <- choices + [choice]
     (choices, index + 1)
 
+pruneLeafWildCardsFromTree :: Choice -> Choice
+pruneLeafWildCardsFromTree choice = do
+    case choice of
+        Choice path subchoices -> do
+            (subchoices, _) <- alter (\choices -> case choices of
+                    Some choices -> do
+                            pruned <- choices |> List.iter |> filter (\c -> case c of
+                                Choice _ _ -> True
+                                CaseEnd _ -> False) |> toList
+                            if isEmpty pruned
+                                then None
+                                else Some pruned
+                    None -> None) WildcardCondition subchoices
+            subchoices <- subchoices |> Map.iter |> map (\(k, choices) -> do
+                choices <- choices |> List.iter |> map (\c -> pruneLeafWildCardsFromTree c) |> toList
+                (k, choices)) |> toMap
+            Choice path subchoices
+        CaseEnd _ -> choice
+
 checkCase :: Context -> E.Expr -> [E.Case] -> Context
 checkCase context case_body cases = do
+    (E.Expr _ body_id _) <- case_body
     (choices, _) <- cases |> List.iter |> fold (\(choices, index), c -> do
             (P.Pattern p _ location) <- c.pattern
             case p of
@@ -288,10 +308,12 @@ checkCase context case_body cases = do
                 _ -> processSinglePattern context c.pattern index choices
         ) ([], 0)
     m <- mergeChoices choices
+    m <- pruneLeafWildCardsFromTree m
     m <- addEmptyWildcards context m
     g <- D.createGraph "Choice tree"
     (g, _) <- choiceToNode g m
-    writeTextFile "case.dot" ("{}" % D.generateDot g)
+    name <- "case_{}.dot" % (body_id)
+    writeTextFile name ("{}" % D.generateDot g)
     context
 
 checkCases :: Context -> E.Expr -> Context
