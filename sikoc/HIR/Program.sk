@@ -12,6 +12,7 @@ data FullyQualifiedName = FullPath String String
                           | FullPathWithLambda FullyQualifiedName F.LambdaId
                           | FullPathWithInstanceId String String C.InstanceId
                           | ModulePath String
+                          | SubItem FullyQualifiedName String
                           deriving (PartialEq, Eq, PartialOrd, Ord)
 
 instance Show FullyQualifiedName where
@@ -21,6 +22,7 @@ instance Show FullyQualifiedName where
         FullPathWithLambda n i -> "{}/{}" % (n, i)
         FullPathWithInstanceId m n i -> "{}.{}/#{}" % (m, n, i)
         ModulePath m -> "{}" % m
+        SubItem p n -> "{}/{}" % (p, n)
 
 getResolvableName :: FullyQualifiedName -> String
 getResolvableName f = case f of
@@ -29,6 +31,7 @@ getResolvableName f = case f of
         FullPathWithLambda n i -> panic "getResolvableName called for a lambda"
         FullPathWithInstanceId m n i -> panic "getResolvableName called for a instance member"
         ModulePath m -> panic "getResolvableName called for a module"
+        SubItem p n -> panic "getResolvableName called for a sub item"
 
 getShortName :: FullyQualifiedName -> String
 getShortName f = case f of
@@ -37,6 +40,7 @@ getShortName f = case f of
         FullPathWithLambda n i -> panic "getShortName called for a lambda"
         FullPathWithInstanceId m n i -> n
         ModulePath m -> panic "getShortName called for a module"
+        SubItem p n -> n
 
 data Item = Function F.Function
             | Adt D.AlgebraicDataType

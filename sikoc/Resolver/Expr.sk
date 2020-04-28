@@ -14,6 +14,7 @@ import Siko.Resolver
 import Siko.Resolver.Module
 import Siko.Resolver.Item as RI
 import Siko.Resolver.Error
+import Siko.Resolver.Function as F
 import Siko.Resolver.Type
 import Siko.Syntax.Location
 import Siko.Resolver.Environment
@@ -37,10 +38,17 @@ data Context = {
                     lambda_helper :: Option LambdaHelper,
                     lambdas :: [HF.LambdaInfo],
                     loop_helper :: Option LoopHelper,
+                    function_scope_resolver :: F.FunctionScopeResolver
                }
 
-createContext :: HPO.FullyQualifiedName -> TypeResolverState -> ResolverState -> ModuleResolver -> HPO.Program -> Context
-createContext function_name type_resolver state module_resolver program = Context {
+createContext :: HPO.FullyQualifiedName ->
+                 TypeResolverState ->
+                 ResolverState ->
+                 ModuleResolver ->
+                 HPO.Program ->
+                 F.FunctionScopeResolver ->
+                 Context
+createContext function_name type_resolver state module_resolver program function_scope_resolver = Context {
     function_name = function_name,
     type_resolver = type_resolver,
     state = state,
@@ -49,7 +57,8 @@ createContext function_name type_resolver state module_resolver program = Contex
     next_lambda_id = 1,
     lambda_helper = None,
     lambdas = [],
-    loop_helper = None }
+    loop_helper = None,
+    function_scope_resolver = function_scope_resolver }
 
 getExprId :: Context -> (Context, HE.ExprId)
 getExprId context = do
@@ -170,17 +179,20 @@ data PathResolveResult = FunctionCall ([HE.Expr] -> HE.SimpleExpr)
 
 resolvePath :: Context -> Ident -> Result (Context, PathResolveResult) (Context)
 resolvePath context path = do
-    case resolveItem context.module_resolver.term_names UnknownFunction path of
-        Ok (ResolvedItem qn item _) -> do
-            case item of
-                RI.Record _ _ -> Ok (context, FunctionCall (HE.RecordConstructorCall qn))
-                RI.Variant _ _ -> Ok (context, FunctionCall (HE.VariantConstructorCall qn))
-                RI.Function _ -> Ok (context, FunctionCall (HE.StaticFunctionCall qn))
-                RI.ClassMember _ _ -> Ok (context, FunctionCall (HE.ClassMemberCall qn))
-                _ -> do
-                    err <- NotAFunction path
-                    Err (addErrorToContext context err)
-        Err err -> Err (addErrorToContext context err)
+    Ident name _ <- path
+    case F.resolveLocalFunction context.function_scope_resolver name of
+        Some qn -> Ok (context, FunctionCall (HE.StaticFunctionCall qn))
+        None -> case resolveItem context.module_resolver.term_names UnknownFunction path of
+            Ok (ResolvedItem qn item _) -> do
+                case item of
+                    RI.Record _ _ -> Ok (context, FunctionCall (HE.RecordConstructorCall qn))
+                    RI.Variant _ _ -> Ok (context, FunctionCall (HE.VariantConstructorCall qn))
+                    RI.Function _ -> Ok (context, FunctionCall (HE.StaticFunctionCall qn))
+                    RI.ClassMember _ _ -> Ok (context, FunctionCall (HE.ClassMemberCall qn))
+                    _ -> do
+                        err <- NotAFunction path
+                        Err (addErrorToContext context err)
+            Err err -> Err (addErrorToContext context err)
 
 processBinaryOp :: Context -> SE.Op -> HE.Expr -> HE.Expr -> HE.SimpleExpr
 processBinaryOp context op lhs rhs = do
