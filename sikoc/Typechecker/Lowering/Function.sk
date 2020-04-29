@@ -1,0 +1,21 @@
+module Siko.Typechecker.Lowering.Function where
+
+import Siko.Typechecker.Lowering
+import Siko.Typechecker.FunctionStore
+import Siko.Typechecker.Unification as U
+import Siko.Typechecker.Lowering.FunctionQueue
+import Siko.Typechecker.Lowering.Util
+import Siko.HIR.Program as HP
+import Siko.HIR.Type as HT
+import Siko.HIR.Function as HF
+import Siko.MIR.Function as MF
+
+processFunction :: LoweringContext -> HP.FullyQualifiedName -> CallContext -> ()
+processFunction context qn call_context = do
+    hir_function <- HP.getFunction context.hir_program qn
+    function_type_info <- getFunctionTypeInfo context.function_store qn
+    (state, sub) <- getCallSubstitution context.state call_context.args call_context.result function_type_info
+    context <- context { state = state }
+    mir_function_type_info <- applyTypeInfo function_type_info sub
+    println "Processing {} {}" % (hir_function.name, HT.toString function_type_info.function_type)
+    ()

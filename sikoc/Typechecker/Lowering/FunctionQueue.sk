@@ -1,0 +1,62 @@
+module Siko.Typechecker.Lowering.FunctionQueue where
+
+import Siko.HIR.Type as HT
+import Siko.HIR.Program as HP
+import Siko.MIR.Function as MF
+import Siko.Typechecker.Lowering
+import Siko.Typechecker.Lowering.Function
+import Map
+
+data CallContext = { args :: [HT.Type],
+                     result :: HT.Type
+                   } deriving (Show, PartialEq, Eq, PartialOrd, Ord)
+
+data FunctionQueueItem = Normal HP.FullyQualifiedName CallContext
+                         | AutoDerive HT.Type HP.FullyQualifiedName String CallContext
+                         | ExternalCallImpl HP.FullyQualifiedName HT.Type String
+                         deriving (Show, PartialEq, Eq, PartialOrd, Ord)
+
+data FunctionQueue = { pending :: [(FunctionQueueItem, MF.FunctionId)],
+                       processed :: Map FunctionQueueItem MF.FunctionId,
+                       next_id :: Int,
+                     }
+
+createFunctionQueue :: FunctionQueue
+createFunctionQueue = FunctionQueue [] Map.empty 0
+
+getItemName :: FunctionQueueItem -> String
+getItemName item = case item of
+    Normal n _ -> "{}" % n
+    AutoDerive _ _ n _ -> "{}" % n
+    ExternalCallImpl _ _ n -> "{}" % n
+
+insert :: FunctionQueue -> FunctionQueueItem -> FunctionQueue
+insert queue item = do
+    case get queue.processed item of
+        Some _ -> queue
+        None -> do
+            id <- queue.next_id
+            name <- getItemName item
+            function_id <- MF.FunctionId name id
+            (processed, _) <- Map.insert queue.processed item function_id
+            pending <- queue.pending + [(item, function_id)]
+            queue <- queue { processed = processed, pending = pending, next_id = id + 1 }
+            queue
+
+processItem :: FunctionQueue -> FunctionQueueItem -> LoweringContext -> FunctionQueue
+processItem queue item context = do
+    case item of
+        Normal qn call_context -> processFunction context qn call_context
+        _ -> panic "processItem: not yet implemented for {}" % item
+    queue
+
+processItems :: FunctionQueue -> LoweringContext -> ()
+processItems queue context = do
+    loop queue <- queue do
+        queue :: FunctionQueue <- queue // FIXME
+        case pop queue.pending of
+            Some (first, pending) -> do
+                (item, id) <- first
+                queue <- queue { pending = pending }
+                processItem queue item context
+            None -> break ()

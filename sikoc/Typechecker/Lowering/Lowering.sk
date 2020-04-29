@@ -1,0 +1,29 @@
+module Siko.Typechecker.Lowering where
+
+import Siko.HIR.Function as F
+import Siko.HIR.Program as P
+import Siko.HIR.Type as T
+import Siko.Typechecker.Lowering.FunctionQueue as FQ
+import Siko.Typechecker.FunctionStore
+import Siko.Typechecker
+import Siko.Constants
+
+data LoweringContext = { hir_program :: P.Program,
+                         function_store :: FunctionStore,
+                         state :: TypecheckerState,
+                       }
+
+lowerProgram :: TypecheckerState -> P.Program -> FunctionStore -> ()
+lowerProgram state program function_store = do
+    println "Lowering to MIR.."
+    main_qn <- P.FullPath getMainModuleName getMainFunctionName
+    context <- LoweringContext program function_store state
+    case P.getFunctionOpt program main_qn of
+        Some main -> do
+            call_context <- FQ.CallContext [] (T.Tuple [])
+            function_queue <- FQ.createFunctionQueue
+            item <- FQ.Normal main_qn call_context
+            queue <- FQ.insert function_queue item
+            FQ.processItems queue context
+        None -> println "{} not found" % (P.getResolvableName main_qn)
+    ()
