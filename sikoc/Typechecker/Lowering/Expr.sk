@@ -13,6 +13,11 @@ processExpr context sub hir_expr queue = do
     HE.Expr expr expr_id _ <- hir_expr
     expr_type <- getExprType context.type_store expr_id
     case expr of
+        HE.Do args -> do
+            (queue, mir_args) <- args |> List.iter |> fold (\(queue, mir_args), e -> do
+                (queue, mir_arg) <- processExpr context sub e queue
+                (queue, mir_args + [mir_arg])) (queue, [])
+            (queue, ME.Do mir_args)
         HE.StaticFunctionCall qn args -> do
             arg_types <- args |> List.iter |> map (\(HE.Expr _ id _) -> do
                 type <- getExprType context.type_store id

@@ -191,6 +191,7 @@ pub fn write_expr(
         Expr::Formatter(fmt, args) => {
             let ty = program.get_expr_type(&expr_id);
             let ty = ir_type_to_rust_type(ty, program);
+            let fmt = fmt.replace("\"", "\\\"");
             write!(output_file, "{} {{ value : format!(\"{}\"", ty, fmt)?;
             if !args.is_empty() {
                 write!(output_file, ",")?;

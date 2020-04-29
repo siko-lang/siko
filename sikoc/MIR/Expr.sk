@@ -2,13 +2,27 @@ module Siko.MIR.Expr where
 
 import Siko.MIR.Function
 
-data Expr = StaticFunctionCall FunctionId [Expr]
+data Indent = Indent Int
+
+instance Show Indent where
+    show (Indent i) = join (repeat " " i) ""
+
+inc :: Indent -> Indent
+inc (Indent i) = Indent (i + 2)
+
+data Expr = Do [Expr]
+            | StaticFunctionCall FunctionId [Expr]
             | StringLiteral String
 
-prettyPrint :: Expr -> String
-prettyPrint expr =
+prettyPrint :: Expr -> Indent -> String
+prettyPrint expr ind =
     case expr of
+        Do args -> do
+            inner <- inc ind
+            args <- args |> List.iter |> map (\arg -> do
+                "{}{}" % (inner, (prettyPrint arg inner))) |> toList
+            "{}do\n{}" % (ind, join args "\n")
         StaticFunctionCall id args -> do
-            args <- args |> List.iter |> map (\arg -> prettyPrint arg) |> toList
+            args <- args |> List.iter |> map (\arg -> prettyPrint arg ind) |> toList
             "{} {}" % (id, join args " ")
         StringLiteral lit -> "\"{}\"" % lit
