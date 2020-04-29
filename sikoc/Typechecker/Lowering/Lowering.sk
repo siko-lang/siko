@@ -1,29 +1,37 @@
 module Siko.Typechecker.Lowering where
 
 import Siko.HIR.Function as F
-import Siko.HIR.Program as P
+import Siko.HIR.Program as HP
 import Siko.HIR.Type as T
+import Siko.MIR.Program as MP
 import Siko.Typechecker.Lowering.FunctionQueue as FQ
+import Siko.Typechecker.Lowering.TypeStore
 import Siko.Typechecker.FunctionStore
 import Siko.Typechecker
 import Siko.Constants
 
-data LoweringContext = { hir_program :: P.Program,
-                         function_store :: FunctionStore,
-                         state :: TypecheckerState,
-                       }
+data Context = { hir_program :: HP.Program,
+                 mir_program :: MP.Program,
+                 function_store :: FunctionStore,
+                 type_store :: TypeStore,
+                 state :: TypecheckerState,
+               }
 
-lowerProgram :: TypecheckerState -> P.Program -> FunctionStore -> ()
-lowerProgram state program function_store = do
+lowerProgram :: TypecheckerState -> HP.Program -> FunctionStore -> TypeStore -> ()
+lowerProgram state hir_program function_store type_store = do
     println "Lowering to MIR.."
-    main_qn <- P.FullPath getMainModuleName getMainFunctionName
-    context <- LoweringContext program function_store state
-    case P.getFunctionOpt program main_qn of
+    main_qn <- HP.FullPath getMainModuleName getMainFunctionName
+    mir_program <- MP.createProgram
+    context <- Context hir_program mir_program function_store type_store state
+    context <- case HP.getFunctionOpt hir_program main_qn of
         Some main -> do
             call_context <- FQ.CallContext [] (T.Tuple [])
             function_queue <- FQ.createFunctionQueue
             item <- FQ.Normal main_qn call_context
-            queue <- FQ.insert function_queue item
+            (queue, _) <- FQ.insert function_queue item
             FQ.processItems queue context
-        None -> println "{} not found" % (P.getResolvableName main_qn)
+        None -> do
+            println "{} not found" % (HP.getResolvableName main_qn)
+            context
+    MP.dump context.mir_program
     ()

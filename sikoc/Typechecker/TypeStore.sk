@@ -33,11 +33,16 @@ addPatternType store pattern_id pattern_type = do
     (pattern_types, _) <- insert store.pattern_types pattern_id pattern_type
     store { pattern_types = pattern_types }
 
+getTypeFromExprTypeState :: ExprTypeState -> T.Type
+getTypeFromExprTypeState expr_type =
+    case expr_type of
+        ExprType type -> type
+        FunctionCall type _ -> type
+
 getExprType :: TypeStore -> E.ExprId -> T.Type
 getExprType store expr_id = do
     case get store.expr_types expr_id of
-        Some (ExprType type) -> type
-        Some (FunctionCall type _) -> type
+        Some type -> getTypeFromExprTypeState type
         _ -> panic "No type found for {}" % expr_id
 
 getExprAndFunctionCallType :: TypeStore -> E.ExprId -> (T.Type, T.Type)

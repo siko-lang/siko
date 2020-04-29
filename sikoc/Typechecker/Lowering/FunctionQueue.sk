@@ -30,10 +30,10 @@ getItemName item = case item of
     AutoDerive _ _ n _ -> "{}" % n
     ExternalCallImpl _ _ n -> "{}" % n
 
-insert :: FunctionQueue -> FunctionQueueItem -> FunctionQueue
+insert :: FunctionQueue -> FunctionQueueItem -> (FunctionQueue, MF.FunctionId)
 insert queue item = do
     case get queue.processed item of
-        Some _ -> queue
+        Some function_id -> (queue, function_id)
         None -> do
             id <- queue.next_id
             name <- getItemName item
@@ -41,22 +41,21 @@ insert queue item = do
             (processed, _) <- Map.insert queue.processed item function_id
             pending <- queue.pending + [(item, function_id)]
             queue <- queue { processed = processed, pending = pending, next_id = id + 1 }
-            queue
+            (queue, function_id)
 
-processItem :: FunctionQueue -> FunctionQueueItem -> LoweringContext -> FunctionQueue
-processItem queue item context = do
+processItem :: FunctionQueue -> FunctionQueueItem -> MF.FunctionId -> Context -> (Context, FunctionQueue)
+processItem queue item id context = do
     case item of
-        Normal qn call_context -> processFunction context qn call_context
+        Normal qn call_context -> processFunction context qn call_context id queue
         _ -> panic "processItem: not yet implemented for {}" % item
-    queue
 
-processItems :: FunctionQueue -> LoweringContext -> ()
+processItems :: FunctionQueue -> Context -> Context
 processItems queue context = do
-    loop queue <- queue do
+    loop (context, queue) <- (context, queue) do
         queue :: FunctionQueue <- queue // FIXME
         case pop queue.pending of
             Some (first, pending) -> do
                 (item, id) <- first
                 queue <- queue { pending = pending }
-                processItem queue item context
-            None -> break ()
+                processItem queue item id context
+            None -> break context

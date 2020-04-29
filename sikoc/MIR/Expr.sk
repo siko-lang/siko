@@ -1,0 +1,14 @@
+module Siko.MIR.Expr where
+
+import Siko.MIR.Function
+
+data Expr = StaticFunctionCall FunctionId [Expr]
+            | StringLiteral String
+
+prettyPrint :: Expr -> String
+prettyPrint expr =
+    case expr of
+        StaticFunctionCall id args -> do
+            args <- args |> List.iter |> map (\arg -> prettyPrint arg) |> toList
+            "{} {}" % (id, join args " ")
+        StringLiteral lit -> "\"{}\"" % lit

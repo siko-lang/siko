@@ -1,0 +1,19 @@
+module Siko.MIR.Program where
+
+import Siko.MIR.Function as F
+import Map
+
+data Program = { functions :: Map F.FunctionId F.Function }
+
+createProgram :: Program
+createProgram = Program empty
+
+addFunction :: Program -> F.FunctionId -> F.Function -> Program
+addFunction program function_id function = do
+    (functions, _) <- insert program.functions function_id function
+    program { functions = functions }
+
+dump :: Program -> ()
+dump program = do
+    println "{}. functions" % (getSize program.functions)
+    program.functions |> Map.iter |> forEach (\(id, f) -> F.dump f)

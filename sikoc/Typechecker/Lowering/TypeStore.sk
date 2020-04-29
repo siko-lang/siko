@@ -1,0 +1,21 @@
+module Siko.Typechecker.Lowering.TypeStore where
+
+import Siko.HIR.Expr as E
+import Siko.HIR.Type as T
+import Map
+
+data TypeStore = { expr_types :: Map E.ExprId T.Type }
+
+createTypeStore :: TypeStore
+createTypeStore = TypeStore empty
+
+addType :: TypeStore -> E.ExprId -> T.Type -> TypeStore
+addType store expr type = do
+    (expr_types, _) <- insert store.expr_types expr type
+    store { expr_types = expr_types }
+
+getExprType :: TypeStore -> E.ExprId -> T.Type
+getExprType store expr =
+    case get store.expr_types expr of
+        Some t -> t
+        None -> panic "Expr {} not found in type store" % expr

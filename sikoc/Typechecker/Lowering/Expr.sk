@@ -1,0 +1,28 @@
+module Siko.Typechecker.Lowering.Expr where
+
+import Siko.Typechecker.Lowering
+import Siko.Typechecker.Lowering.FunctionQueue as FQ
+import Siko.Typechecker.Lowering.TypeStore
+import Siko.Typechecker.Unification as U
+import Siko.HIR.Expr as HE
+import Siko.HIR.Type as HT
+import Siko.MIR.Expr as ME
+
+processExpr :: Context -> U.Substitution -> HE.Expr -> FQ.FunctionQueue -> (FQ.FunctionQueue, ME.Expr)
+processExpr context sub hir_expr queue = do
+    HE.Expr expr expr_id _ <- hir_expr
+    expr_type <- getExprType context.type_store expr_id
+    case expr of
+        HE.StaticFunctionCall qn args -> do
+            arg_types <- args |> List.iter |> map (\(HE.Expr _ id _) -> do
+                type <- getExprType context.type_store id
+                U.apply sub type) |> toList
+            (queue, mir_args) <- args |> List.iter |> fold (\(queue, mir_args), e -> do
+                (queue, mir_arg) <- processExpr context sub e queue
+                (queue, mir_args + [mir_arg])) (queue, [])
+            call_context <- FQ.CallContext arg_types expr_type
+            queue_item <- FQ.Normal qn call_context
+            (queue, function_id) <- FQ.insert queue queue_item
+            (queue, ME.StaticFunctionCall function_id mir_args)
+        HE.StringLiteral lit -> (queue, ME.StringLiteral lit)
+        _ -> panic "Lowering of expr {} NYI" % expr

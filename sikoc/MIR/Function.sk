@@ -1,3 +1,19 @@
 module Siko.MIR.Function where
 
-data FunctionId = FunctionId String Int
+import Siko.MIR.Expr as E
+
+data FunctionId = FunctionId String Int deriving (PartialEq, Eq, PartialOrd, Ord)
+
+instance Show FunctionId where
+    show (FunctionId n i) = "{}_{}" % (n, i)
+
+data FunctionKind = Normal E.Expr
+                | Extern
+
+data Function = { id :: FunctionId,
+                  kind :: FunctionKind }
+
+dump :: Function -> ()
+dump function = case function.kind of
+    Normal body -> println "{} = {}" % (function.id, E.prettyPrint body)
+    Extern -> println "{} = extern" % (function.id)

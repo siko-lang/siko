@@ -13,7 +13,8 @@ import Siko.Typechecker.InstanceResolver as IR
 import Siko.Typechecker.Class
 import Siko.Typechecker.Util
 import Siko.Typechecker.Function
-import Siko.Typechecker.Lowering
+import Siko.Typechecker.Lowering as L
+import Siko.Typechecker.Lowering.TypeStore as LTS
 import Siko.Util.DependencyProcessor
 import Siko.HIR.Program as P
 import Siko.HIR.Function as F
@@ -76,9 +77,14 @@ checkCasePatterns context fn = do
             context
         None -> context
 
-processGroup :: TypecheckerState -> DependencyGroup P.FullyQualifiedName -> P.Program -> FS.FunctionStore -> Int -> (TypecheckerState, FS.FunctionStore)
-processGroup state group program function_store index = do
-    //println "{}. Group items: {}" % (index, group.items)
+processGroup :: TypecheckerState ->
+                DependencyGroup P.FullyQualifiedName ->
+                P.Program ->
+                FS.FunctionStore ->
+                LTS.TypeStore ->
+                (TypecheckerState, FS.FunctionStore, LTS.TypeStore)
+processGroup state group program function_store lowering_type_store = do
+    //println "Group items: {}" % (group.items)
     context <- initializeContext state program function_store group.items
     context <- group.items |> List.iter |> fold (\context, name -> do
                         fn <- P.getFunction program name
@@ -100,21 +106,26 @@ processGroup state group program function_store index = do
                         fn <- P.getFunction program name
                         context <- checkCasePatterns context fn
                         context) context
-    (context.state, context.function_store)
+    lowering_type_store <- context.type_store.expr_types |> Map.iter |> fold (\lowering_type_store, (id, expr_type) -> do
+        type <- TS.getTypeFromExprTypeState expr_type
+        LTS.addType lowering_type_store id type) lowering_type_store
+    (context.state, context.function_store, lowering_type_store)
 
 processProgram :: P.Program -> TypeVarGenerator -> [TypecheckerError]
 processProgram program var_gen = do
     state <- TypecheckerState [] var_gen CS.initializeEmptyClassStore DS.createDataStore IR.createInstanceResolver
     state <- processData program state
+    lowering_type_store <- LTS.createTypeStore
     (state, program) <- processClassesAndInstances state program
     state <- DS.processAutoDerivedInstances state
     (state, function_store, groups) <- processFunctions state program
     //println "Datadefs: {}" % (getSize data_store.data_type_info_map)
     //println "Functions: {}" % (getSize function_store.functions)
     //println "Groups: {}" % (getLength groups)
-    (state, function_store, _) <- groups |> List.iter |> fold (\(state, function_store, index), group -> do
-        (state, function_store) <- processGroup state group program function_store index
-        (state, function_store, index + 1) ) (state, function_store, 0)
+    (state, function_store, lowering_type_store) <- groups |> List.iter
+            |> fold (\(state, function_store, lowering_type_store), group -> do
+        (state, function_store, lowering_type_store) <- processGroup state group program function_store lowering_type_store
+        (state, function_store, lowering_type_store) ) (state, function_store, lowering_type_store)
     //FS.dump function_store
-    lowerProgram state program function_store
+    L.lowerProgram state program function_store lowering_type_store
     state.errors
