@@ -17,7 +17,9 @@ data Function = { id :: FunctionId,
                   type :: T.Type }
 
 dump :: Function -> ()
-dump function = case function.kind of
-    Normal body -> println "{} = {}" % (function.id, E.prettyPrint body (E.Indent 0))
-    VariantCtor -> println "{} = <variant_ctor>" % (function.id)
-    Extern -> println "{} = extern" % (function.id)
+dump function = do
+    println "{} :: {}" % (function.id, function.type)
+    case function.kind of
+        Normal body -> println "{} = {}" % (function.id, E.prettyPrint body (E.Indent 0))
+        VariantCtor -> println "{} = <variant_ctor>" % (function.id)
+        Extern -> println "{} = extern" % (function.id)

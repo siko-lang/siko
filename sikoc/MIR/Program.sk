@@ -1,12 +1,16 @@
 module Siko.MIR.Program where
 
 import Siko.MIR.Function as F
+import Siko.MIR.Data as D
 import Map
 
-data Program = { functions :: Map F.FunctionId F.Function }
+data Program = { functions :: Map F.FunctionId F.Function,
+                 adts :: Map String D.AlgebraicDataType,
+                   records :: Map String D.Record,
+               }
 
 createProgram :: Program
-createProgram = Program empty
+createProgram = Program empty empty empty
 
 addFunction :: Program -> F.FunctionId -> F.Function -> Program
 addFunction program function_id function = do
@@ -15,7 +19,15 @@ addFunction program function_id function = do
 
 dump :: Program -> ()
 dump program = do
-    println "{}. functions:\n" % (getSize program.functions)
+    println "{}. adts" % (getSize program.adts)
+    println "{}. records" % (getSize program.records)
+    println "{}. functions" % (getSize program.functions)
+    program.adts |> Map.iter |> forEach (\(id, adt) -> do
+        D.dumpAdt adt)
+    println ""
+    program.records |> Map.iter |> forEach (\(id, record) -> do
+        D.dumpRecord record)
+    println ""
     program.functions |> Map.iter |> forEach (\(id, f) -> do
         F.dump f
         println "")
