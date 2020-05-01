@@ -12,6 +12,8 @@ inc (Indent i) = Indent (i + 2)
 
 data Expr = Do [Expr]
             | StaticFunctionCall FunctionId [Expr]
+            | VariantConstructorCall FunctionId [Expr]
+            | IntegerLiteral String
             | StringLiteral String
 
 prettyPrint :: Expr -> Indent -> String
@@ -25,4 +27,8 @@ prettyPrint expr ind =
         StaticFunctionCall id args -> do
             args <- args |> List.iter |> map (\arg -> prettyPrint arg ind) |> toList
             "{} {}" % (id, join args " ")
+        VariantConstructorCall id args -> do
+            args <- args |> List.iter |> map (\arg -> prettyPrint arg ind) |> toList
+            "{} {}" % (id, join args " ")
+        IntegerLiteral lit -> "{}" % lit
         StringLiteral lit -> "\"{}\"" % lit

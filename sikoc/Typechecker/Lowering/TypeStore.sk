@@ -1,21 +1,105 @@
 module Siko.Typechecker.Lowering.TypeStore where
 
 import Siko.HIR.Expr as E
-import Siko.HIR.Type as T
+import Siko.HIR.Type as HT
+import Siko.HIR.Data as HD
+import Siko.HIR.Program as HP
+import Siko.MIR.Type as MT
+import Siko.MIR.Data as MD
 import Map
 
-data TypeStore = { expr_types :: Map E.ExprId T.Type }
+data TypeStore = { expr_types :: Map E.ExprId HT.Type,
+                   all_types :: Map HT.Type MT.Type,
+                   adts :: Map String MD.AlgebraicDataType,
+                   records :: Map String MD.Record,
+                   next_id :: Int,
+                 }
 
 createTypeStore :: TypeStore
-createTypeStore = TypeStore empty
+createTypeStore = TypeStore empty empty empty empty 0
 
-addType :: TypeStore -> E.ExprId -> T.Type -> TypeStore
-addType store expr type = do
+addExprType :: TypeStore -> E.ExprId -> HT.Type -> TypeStore
+addExprType store expr type = do
     (expr_types, _) <- insert store.expr_types expr type
     store { expr_types = expr_types }
 
-getExprType :: TypeStore -> E.ExprId -> T.Type
+getExprType :: TypeStore -> E.ExprId -> HT.Type
 getExprType store expr =
     case get store.expr_types expr of
         Some t -> t
         None -> panic "Expr {} not found in type store" % expr
+
+getNextId :: TypeStore -> (TypeStore, Int)
+getNextId store = do
+    id <- store.next_id
+    (store { next_id = id + 1 }, id)
+
+processType :: TypeStore -> HP.Program -> HT.Type -> (TypeStore, MT.Type)
+processType store hir_program hir_type = case hir_type of
+    HT.Var _ _ -> panic "Type variable in MIR type"
+    HT.FixedTypeArg _ _ _ -> panic "Type variable in MIR type"
+    HT.Named qn args -> do
+        case get store.all_types hir_type of
+            Some mir_type -> (store, mir_type)
+            None -> do
+            item <- HP.getItem hir_program qn
+            case item of
+                HP.Adt adt -> do
+                    (store, id) <- getNextId store
+                    name <- "{}_{}" % (qn, id)
+                    (store, mir_variants) <- adt.variants |> List.iter |> fold (\(store, mir_variants), variant -> do
+                        (store, mir_fields) <- variant.items |> List.iter |> fold (\(store, mir_fields), type -> do
+                            (store, mir_type) <- processType store hir_program type
+                            name <- "field{}" % (getLength mir_fields)
+                            mir_field <- MD.RecordField name mir_type
+                            mir_fields <- mir_fields + [mir_field]
+                            (store, mir_fields)) (store, [])
+                        (store, id) <- getNextId store
+                        record_name <- "{}_{}" % (qn, id)
+                        mir_record <- MD.Record record_name mir_fields
+                        (records, _) <- insert store.records name mir_record
+                        store <- store { records = records }
+                        mir_variant <- MD.Variant variant.name record_name
+                        mir_variants <- mir_variants + [mir_variant]
+                        (store, mir_variants)) (store, [])
+                    mir_adt <- MD.AlgebraicDataType name mir_variants
+                    (adts, _) <- insert store.adts name mir_adt
+                    store <- store { adts = adts }
+                    (store, MT.Adt name)
+                HP.Record record -> do
+                    (store, mir_fields) <- record.fields |> List.iter |> fold (\(store, mir_fields), (HD.RecordField name type) -> do
+                        (store, mir_type) <- processType store hir_program type
+                        mir_field <- MD.RecordField name mir_type
+                        mir_fields <- mir_fields + [mir_field]
+                        (store, mir_fields)) (store, [])
+                    (store, id) <- getNextId store
+                    name <- "{}_{}" % (qn, id)
+                    mir_record <- MD.Record name mir_fields
+                    (records, _) <- insert store.records name mir_record
+                    store <- store { records = records }
+                    (store, MT.Record name)
+                _ -> panic "Named type is not adt or record: {}" % item
+    HT.Function from to -> do
+        (store, from) <- processType store hir_program from
+        (store, to) <- processType store hir_program to
+        (store, MT.Function from to)
+    HT.Never _ -> (store, MT.Never)
+    HT.Ref t -> do
+        (store, t) <- processType store hir_program t
+        (store, MT.Ref t)
+    HT.Tuple args -> do
+        case get store.all_types hir_type of
+            Some mir_type -> (store, mir_type)
+            None -> do
+        (store, mir_fields) <- args |> List.iter |> fold (\(store, mir_fields), type -> do
+            name <- "field{}" % (getLength mir_fields)
+            (store, mir_type) <- processType store hir_program type
+            mir_field <- MD.RecordField name mir_type
+            mir_fields <- mir_fields + [mir_field]
+            (store, mir_fields)) (store, [])
+        (store, id) <- getNextId store
+        name <- "Tuple_{}" % id
+        mir_record <- MD.Record name mir_fields
+        (records, _) <- insert store.records name mir_record
+        store <- store { records = records }
+        (store, MT.Record name)

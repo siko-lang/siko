@@ -5,23 +5,23 @@ import Siko.Typechecker.Unification as U
 import Siko.Typechecker.FunctionStore
 import Siko.HIR.Type as T
 
-getCallSubstitution :: TypecheckerState -> [T.Type] -> T.Type -> FunctionTypeInfo -> (TypecheckerState, U.Substitution)
-getCallSubstitution state arg_types expected_result_type function_type_info = do
-    (state, function_type_info, sub) <- loop (state, function_type_info, sub, index) <- (state, function_type_info, U.createSubstitution, 0) do
+getFunctionType :: TypecheckerState -> [T.Type] -> T.Type -> T.Type -> (TypecheckerState, T.Type)
+getFunctionType state arg_types expected_result_type function_type = do
+    (state, function_type, sub) <- loop (state, function_type, sub, index) <- (state, function_type, U.createSubstitution, 0) do
         if index >= getLength arg_types
-            then break (state, function_type_info, sub)
+            then break (state, function_type, sub)
             else do
                 arg_type <- atIndex arg_types index
                 state :: TypecheckerState <- state // FIXME
-                function_type_info :: FunctionTypeInfo <- function_type_info // FIXME
-                fn_arg_type <- atIndex function_type_info.args index
+                fn_arg_types <- T.getArgs function_type
+                fn_arg_type <- atIndex fn_arg_types index
                 (state, sub) <- case U.unify state.var_gen sub state.data_store state.class_store arg_type fn_arg_type of
                     Ok (var_gen, sub) -> (state { var_gen = var_gen}, sub)
                     Err _ -> panic "getCallSubstitution: failed to unify {} {}" % (T.toString arg_type, T.toString fn_arg_type)
-                function_type_info <- applyTypeInfo function_type_info sub
-                (state, function_type_info, sub, index + 1)
-    result_type <- T.getResultType function_type_info.function_type (getLength arg_types)
+                function_type <- U.apply sub function_type
+                (state, function_type, sub, index + 1)
+    result_type <- T.getResultType function_type (getLength arg_types)
     (state, sub) <- case U.unify state.var_gen sub state.data_store state.class_store result_type expected_result_type of
                     Ok (var_gen, sub) -> (state { var_gen = var_gen}, sub)
                     Err _ -> panic "getCallSubstitution: failed to unify {} {}" % (T.toString result_type, T.toString expected_result_type)
-    (state, sub)
+    (state, U.apply sub function_type)

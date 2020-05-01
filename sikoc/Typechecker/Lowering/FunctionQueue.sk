@@ -2,16 +2,24 @@ module Siko.Typechecker.Lowering.FunctionQueue where
 
 import Siko.HIR.Type as HT
 import Siko.HIR.Program as HP
+import Siko.HIR.Function as HF
+import Siko.MIR.Type as MT
 import Siko.MIR.Function as MF
+import Siko.MIR.Program as MP
+import Siko.Typechecker
+import Siko.Typechecker.Unification as U
 import Siko.Typechecker.Lowering
-import Siko.Typechecker.Lowering.Function
+import Siko.Typechecker.FunctionStore
+import Siko.Typechecker.Lowering.Expr
+import Siko.Typechecker.Lowering.TypeStore as TS
 import Map
 
 data CallContext = { args :: [HT.Type],
                      result :: HT.Type
                    } deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
-data FunctionQueueItem = Normal HP.FullyQualifiedName CallContext
+data FunctionQueueItem = Normal HP.FullyQualifiedName HT.Type
+                         | VariantCtor HP.FullyQualifiedName HT.Type
                          | AutoDerive HT.Type HP.FullyQualifiedName String CallContext
                          | ExternalCallImpl HP.FullyQualifiedName HT.Type String
                          deriving (Show, PartialEq, Eq, PartialOrd, Ord)
@@ -27,6 +35,7 @@ createFunctionQueue = FunctionQueue [] Map.empty 0
 getItemName :: FunctionQueueItem -> String
 getItemName item = case item of
     Normal n _ -> "{}" % n
+    VariantCtor n _ -> "{}" % n
     AutoDerive _ _ n _ -> "{}" % n
     ExternalCallImpl _ _ n -> "{}" % n
 
@@ -44,10 +53,48 @@ insert queue item = do
             (queue, function_id)
 
 processItem :: FunctionQueue -> FunctionQueueItem -> MF.FunctionId -> Context -> (Context, FunctionQueue)
-processItem queue item id context = do
+processItem queue item mir_function_id context = do
     case item of
-        Normal qn call_context -> processFunction context qn call_context id queue
+        Normal qn hir_type -> do
+            hir_function <- HP.getFunction context.hir_program qn
+            case hir_function.kind of
+                HF.Normal -> do
+                    case hir_function.body of
+                        Some hir_body -> do
+                            state <- context.state
+                            function_type_info <- getFunctionTypeInfo context.function_store qn
+                            sub <- U.createSubstitution
+                            (state, sub) <- case U.unify state.var_gen sub state.data_store state.class_store
+                                                hir_type function_type_info.function_type of
+                                Ok (var_gen, sub) -> (state { var_gen = var_gen}, sub)
+                                Err _ -> panic "Failed to unify {} {} for normal function in MIR lowering" %
+                                            (HT.toString hir_type, HT.toString function_type_info.function_type)
+                            context <- context { state = state }
+                            (context, queue, mir_body) <- processExpr context queue sub hir_body
+                            (type_store, mir_type) <- TS.processType context.type_store context.hir_program hir_type
+                            context <- context { type_store = type_store }
+                            mir_function <- MF.Function mir_function_id (MF.Normal mir_body) mir_type
+                            mir_program <- MP.addFunction context.mir_program mir_function_id mir_function
+                            context <- context { mir_program = mir_program }
+                            (context, queue)
+                        None -> do
+                            //println "Processing extern {}" % (hir_function.name)
+                            (type_store, mir_type) <- TS.processType context.type_store context.hir_program hir_type
+                            context <- context { type_store = type_store }
+                            mir_function <- MF.Function mir_function_id MF.Extern mir_type
+                            mir_program <- MP.addFunction context.mir_program mir_function_id mir_function
+                            context <- context { mir_program = mir_program }
+                            (context, queue)
+                _ -> panic "processing of function kind {} is not implemented" % hir_function.kind
+        VariantCtor qn hir_type -> do
+                    (type_store, mir_type) <- TS.processType context.type_store context.hir_program hir_type
+                    context <- context { type_store = type_store }
+                    mir_function <- MF.Function mir_function_id MF.VariantCtor mir_type
+                    mir_program <- MP.addFunction context.mir_program mir_function_id mir_function
+                    context <- context { mir_program = mir_program }
+                    (context, queue)
         _ -> panic "processItem: not yet implemented for {}" % item
+
 
 processItems :: FunctionQueue -> Context -> Context
 processItems queue context = do

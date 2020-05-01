@@ -1,33 +1,60 @@
 module Siko.Typechecker.Lowering.Expr where
 
+import Siko.Typechecker
 import Siko.Typechecker.Lowering
 import Siko.Typechecker.Lowering.FunctionQueue as FQ
 import Siko.Typechecker.Lowering.TypeStore
+import Siko.Typechecker.Lowering.Util
 import Siko.Typechecker.Unification as U
+import Siko.Typechecker.Util as TUtil
+import Siko.Typechecker.FunctionStore as FS
+import Siko.HIR.Program as HP
 import Siko.HIR.Expr as HE
+import Siko.HIR.Data as HD
 import Siko.HIR.Type as HT
 import Siko.MIR.Expr as ME
 
-processExpr :: Context -> U.Substitution -> HE.Expr -> FQ.FunctionQueue -> (FQ.FunctionQueue, ME.Expr)
-processExpr context sub hir_expr queue = do
+processArgs :: Context -> FQ.FunctionQueue -> U.Substitution -> [HE.Expr] -> (Context, FQ.FunctionQueue, [ME.Expr])
+processArgs context queue sub args = do
+    (context, queue, mir_args) <- args |> List.iter |> fold (\(context, queue, mir_args), e -> do
+                (context, queue, mir_arg) <- processExpr context queue sub e
+                (context, queue, mir_args + [mir_arg])) (context, queue, [])
+    (context, queue, mir_args)
+
+processExpr :: Context -> FQ.FunctionQueue -> U.Substitution -> HE.Expr -> (Context, FQ.FunctionQueue, ME.Expr)
+processExpr context queue sub hir_expr = do
     HE.Expr expr expr_id _ <- hir_expr
     expr_type <- getExprType context.type_store expr_id
     case expr of
         HE.Do args -> do
-            (queue, mir_args) <- args |> List.iter |> fold (\(queue, mir_args), e -> do
-                (queue, mir_arg) <- processExpr context sub e queue
-                (queue, mir_args + [mir_arg])) (queue, [])
-            (queue, ME.Do mir_args)
+            (context, queue, mir_args) <- processArgs context queue sub args
+            (context, queue, ME.Do mir_args)
         HE.StaticFunctionCall qn args -> do
             arg_types <- args |> List.iter |> map (\(HE.Expr _ id _) -> do
                 type <- getExprType context.type_store id
                 U.apply sub type) |> toList
-            (queue, mir_args) <- args |> List.iter |> fold (\(queue, mir_args), e -> do
-                (queue, mir_arg) <- processExpr context sub e queue
-                (queue, mir_args + [mir_arg])) (queue, [])
-            call_context <- FQ.CallContext arg_types expr_type
-            queue_item <- FQ.Normal qn call_context
+            (context, queue, mir_args) <- processArgs context queue sub args
+            function_type_info <- FS.getFunctionTypeInfo context.function_store qn
+            (state, function_type) <- getFunctionType context.state arg_types expr_type function_type_info.function_type
+            queue_item <- FQ.Normal qn function_type
+            context <- context { state = state }
             (queue, function_id) <- FQ.insert queue queue_item
-            (queue, ME.StaticFunctionCall function_id mir_args)
-        HE.StringLiteral lit -> (queue, ME.StringLiteral lit)
+            (context, queue, ME.StaticFunctionCall function_id mir_args)
+        HE.VariantConstructorCall qn args -> do
+            arg_types <- args |> List.iter |> map (\(HE.Expr _ id _) -> do
+                type <- getExprType context.type_store id
+                U.apply sub type) |> toList
+            (context, queue, mir_args) <- processArgs context queue sub args
+            HD.VariantInfo qn index _ <- HP.getVariantInfo context.hir_program qn
+            function_type <- HP.getVariantCtor context.hir_program qn index
+            (function_type, var_gen) <- TUtil.instantiateType function_type context.state.var_gen
+            state <- context.state // FIXME
+            state <- state { var_gen = var_gen }
+            (state, function_type) <- getFunctionType state arg_types expr_type function_type
+            context <- context { state = state }
+            queue_item <- FQ.VariantCtor qn function_type
+            (queue, function_id) <- FQ.insert queue queue_item
+            (context, queue, ME.VariantConstructorCall function_id mir_args)
+        HE.IntegerLiteral lit -> (context, queue, ME.IntegerLiteral lit)
+        HE.StringLiteral lit -> (context, queue, ME.StringLiteral lit)
         _ -> panic "Lowering of expr {} NYI" % expr
