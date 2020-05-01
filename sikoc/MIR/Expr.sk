@@ -10,11 +10,23 @@ instance Show Indent where
 inc :: Indent -> Indent
 inc (Indent i) = Indent (i + 2)
 
+data Var = Var Int
+
+instance Show Var where
+    show (Var v) = "${}" % v
+
 data Expr = Do [Expr]
+            | Multi [Expr]
             | StaticFunctionCall FunctionId [Expr]
             | VariantConstructorCall FunctionId [Expr]
+            | RecordConstructorCall FunctionId [Expr]
             | IntegerLiteral String
             | StringLiteral String
+            | FloatLiteral String
+            | CharLiteral Char
+            | VarDecl Var Expr
+            | VarRef Var
+            | FieldAccess String Expr
 
 prettyPrint :: Expr -> Indent -> String
 prettyPrint expr ind =
@@ -24,11 +36,23 @@ prettyPrint expr ind =
             args <- args |> List.iter |> map (\arg -> do
                 "{}{}" % (inner, (prettyPrint arg inner))) |> toList
             "{}do\n{}" % (ind, join args "\n")
+        Multi args -> do
+            args <- args |> List.iter |> map (\arg -> do
+                "{}" % (prettyPrint arg ind)) |> toList
+            "Multi: {}" % (join args ";")
         StaticFunctionCall id args -> do
             args <- args |> List.iter |> map (\arg -> prettyPrint arg ind) |> toList
             "{} {}" % (id, join args " ")
         VariantConstructorCall id args -> do
             args <- args |> List.iter |> map (\arg -> prettyPrint arg ind) |> toList
             "{} {}" % (id, join args " ")
+        RecordConstructorCall id args -> do
+            args <- args |> List.iter |> map (\arg -> prettyPrint arg ind) |> toList
+            "{} {}" % (id, join args " ")
         IntegerLiteral lit -> "{}" % lit
         StringLiteral lit -> "\"{}\"" % lit
+        FloatLiteral lit -> "{}" % lit
+        CharLiteral lit -> "'{}'" % lit
+        VarDecl v arg -> "{} <- {}" % (v, prettyPrint arg ind)
+        VarRef v -> show v
+        FieldAccess n rhs -> "{}.{}" % (prettyPrint rhs ind, n)

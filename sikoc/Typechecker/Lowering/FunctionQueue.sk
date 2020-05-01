@@ -20,6 +20,7 @@ data CallContext = { args :: [HT.Type],
 
 data FunctionQueueItem = Normal HP.FullyQualifiedName HT.Type
                          | VariantCtor HP.FullyQualifiedName HT.Type
+                         | RecordCtor HP.FullyQualifiedName HT.Type
                          | AutoDerive HT.Type HP.FullyQualifiedName String CallContext
                          | ExternalCallImpl HP.FullyQualifiedName HT.Type String
                          deriving (Show, PartialEq, Eq, PartialOrd, Ord)
@@ -36,6 +37,7 @@ getItemName :: FunctionQueueItem -> String
 getItemName item = case item of
     Normal n _ -> "{}" % n
     VariantCtor n _ -> "{}" % n
+    RecordCtor n _ -> "{}" % n
     AutoDerive _ _ n _ -> "{}" % n
     ExternalCallImpl _ _ n -> "{}" % n
 
@@ -90,6 +92,13 @@ processItem queue item mir_function_id context = do
                     (type_store, mir_type) <- TS.processType context.type_store context.hir_program hir_type
                     context <- context { type_store = type_store }
                     mir_function <- MF.Function mir_function_id MF.VariantCtor mir_type
+                    mir_program <- MP.addFunction context.mir_program mir_function_id mir_function
+                    context <- context { mir_program = mir_program }
+                    (context, queue)
+        RecordCtor qn hir_type -> do
+                    (type_store, mir_type) <- TS.processType context.type_store context.hir_program hir_type
+                    context <- context { type_store = type_store }
+                    mir_function <- MF.Function mir_function_id MF.RecordCtor mir_type
                     mir_program <- MP.addFunction context.mir_program mir_function_id mir_function
                     context <- context { mir_program = mir_program }
                     (context, queue)

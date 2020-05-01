@@ -8,8 +8,9 @@ import Siko.Typechecker.Lowering.Util
 import Siko.Typechecker.Unification as U
 import Siko.Typechecker.Util as TUtil
 import Siko.Typechecker.FunctionStore as FS
-import Siko.HIR.Program as HP
+import Siko.HIR.Program as HPO
 import Siko.HIR.Expr as HE
+import Siko.HIR.Pattern as HP
 import Siko.HIR.Data as HD
 import Siko.HIR.Type as HT
 import Siko.MIR.Expr as ME
@@ -21,6 +22,28 @@ processArgs context queue sub args = do
                 (context, queue, mir_args + [mir_arg])) (context, queue, [])
     (context, queue, mir_args)
 
+processBind :: HPO.Program -> HP.Pattern -> ME.Expr -> [ME.Expr]
+processBind hir_program (HP.Pattern p id _) rhs = do
+    case p of
+        HP.Record qn args -> do
+            HP.PatternId id <- id
+            var <- ME.Var id
+            record <- HPO.getRecord hir_program qn
+            arg_exprs <- args |> List.iter |> fold (\arg_exprs, arg -> do
+                index <- getLength arg_exprs
+                HD.RecordField field_name _ <- atIndex record.fields index
+                expr <- ME.FieldAccess field_name (ME.VarRef (ME.Var id))
+                exprs <- processBind hir_program arg expr
+                arg_exprs <- arg_exprs + exprs
+                arg_exprs) []
+            [ME.VarDecl var rhs] + arg_exprs
+        HP.Binding ref -> do
+            HP.BindRef _ pattern_id <- ref
+            HP.PatternId id <- pattern_id
+            var <- ME.Var id
+            [ME.VarDecl var rhs]
+        _ -> panic "processBind P NYI"
+
 processExpr :: Context -> FQ.FunctionQueue -> U.Substitution -> HE.Expr -> (Context, FQ.FunctionQueue, ME.Expr)
 processExpr context queue sub hir_expr = do
     HE.Expr expr expr_id _ <- hir_expr
@@ -28,7 +51,20 @@ processExpr context queue sub hir_expr = do
     case expr of
         HE.Do args -> do
             (context, queue, mir_args) <- processArgs context queue sub args
+            mir_args <- mir_args |> List.iter |> fold (\mir_args, arg -> do
+                case arg of
+                    ME.Multi args -> mir_args + args
+                    _ -> mir_args + [arg]) []
             (context, queue, ME.Do mir_args)
+        HE.Bind p arg -> do
+            (context, queue, mir_arg) <- processExpr context queue sub arg
+            exprs <- processBind context.hir_program p mir_arg
+            (context, queue, ME.Multi exprs)
+        HE.ValueRef ref -> do
+            HP.BindRef _ pattern_id <- ref
+            HP.PatternId id <- pattern_id
+            var <- ME.Var id
+            (context, queue, ME.VarRef var)
         HE.StaticFunctionCall qn args -> do
             arg_types <- args |> List.iter |> map (\(HE.Expr _ id _) -> do
                 type <- getExprType context.type_store id
@@ -45,8 +81,8 @@ processExpr context queue sub hir_expr = do
                 type <- getExprType context.type_store id
                 U.apply sub type) |> toList
             (context, queue, mir_args) <- processArgs context queue sub args
-            HD.VariantInfo qn index _ <- HP.getVariantInfo context.hir_program qn
-            function_type <- HP.getVariantCtor context.hir_program qn index
+            HD.VariantInfo qn index _ <- HPO.getVariantInfo context.hir_program qn
+            function_type <- HPO.getVariantCtor context.hir_program qn index
             (function_type, var_gen) <- TUtil.instantiateType function_type context.state.var_gen
             state <- context.state // FIXME
             state <- state { var_gen = var_gen }
@@ -55,6 +91,22 @@ processExpr context queue sub hir_expr = do
             queue_item <- FQ.VariantCtor qn function_type
             (queue, function_id) <- FQ.insert queue queue_item
             (context, queue, ME.VariantConstructorCall function_id mir_args)
+        HE.RecordConstructorCall qn args -> do
+            arg_types <- args |> List.iter |> map (\(HE.Expr _ id _) -> do
+                type <- getExprType context.type_store id
+                U.apply sub type) |> toList
+            (context, queue, mir_args) <- processArgs context queue sub args
+            record <- HPO.getRecord context.hir_program qn
+            (function_type, var_gen) <- TUtil.instantiateType record.record_ctor context.state.var_gen
+            state <- context.state // FIXME
+            state <- state { var_gen = var_gen }
+            (state, function_type) <- getFunctionType state arg_types expr_type function_type
+            context <- context { state = state }
+            queue_item <- FQ.RecordCtor qn function_type
+            (queue, function_id) <- FQ.insert queue queue_item
+            (context, queue, ME.RecordConstructorCall function_id mir_args)
         HE.IntegerLiteral lit -> (context, queue, ME.IntegerLiteral lit)
         HE.StringLiteral lit -> (context, queue, ME.StringLiteral lit)
+        HE.FloatLiteral lit -> (context, queue, ME.FloatLiteral lit)
+        HE.CharLiteral lit -> (context, queue, ME.CharLiteral lit)
         _ -> panic "Lowering of expr {} NYI" % expr
