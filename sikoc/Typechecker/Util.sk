@@ -25,6 +25,15 @@ getBoolType = Named (P.FullPath getBoolModuleName getBoolTypeName) []
 getListType :: Type -> Type
 getListType arg = Named (P.FullPath getListModuleName getListTypeName) [arg]
 
+createGeneralFunction :: Int -> TypeVarGenerator -> (TypeVarGenerator, Type)
+createGeneralFunction arg_count var_gen =
+    if arg_count == 0
+    then getNewTypeVarType var_gen
+    else do
+        (var_gen, from) <- getNewTypeVarType var_gen
+        (var_gen, to) <- createGeneralFunction (arg_count - 1) var_gen
+        (var_gen, Function from to)
+
 collectVars :: [TypeVar] -> Type -> [TypeVar]
 collectVars vars type = Siko.HIR.Type.collectVars type + vars |> sort |> dedup
 

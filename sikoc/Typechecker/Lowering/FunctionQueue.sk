@@ -1,6 +1,7 @@
 module Siko.Typechecker.Lowering.FunctionQueue where
 
 import Siko.HIR.Type as HT
+import Siko.HIR.Data as HD
 import Siko.HIR.Program as HP
 import Siko.HIR.Function as HF
 import Siko.MIR.Type as MT
@@ -21,6 +22,7 @@ data CallContext = { args :: [HT.Type],
 data FunctionQueueItem = Normal HP.FullyQualifiedName HT.Type
                          | VariantCtor HP.FullyQualifiedName HT.Type
                          | RecordCtor HP.FullyQualifiedName HT.Type
+                         | TupleCtor HT.Type
                          | AutoDerive HT.Type HP.FullyQualifiedName String CallContext
                          | ExternalCallImpl HP.FullyQualifiedName HT.Type String
                          deriving (Show, PartialEq, Eq, PartialOrd, Ord)
@@ -38,6 +40,7 @@ getItemName item = case item of
     Normal n _ -> "{}" % n
     VariantCtor n _ -> "{}" % n
     RecordCtor n _ -> "{}" % n
+    TupleCtor _ -> "TupleCtor"
     AutoDerive _ _ n _ -> "{}" % n
     ExternalCallImpl _ _ n -> "{}" % n
 
@@ -91,11 +94,21 @@ processItem queue item mir_function_id context = do
         VariantCtor qn hir_type -> do
                     (type_store, mir_type) <- TS.processType context.type_store context.hir_program hir_type
                     context <- context { type_store = type_store }
-                    mir_function <- MF.Function mir_function_id MF.VariantCtor mir_type
+                    adt <- HP.getAdt context.hir_program qn
+                    mir_function <- if getLength adt.variants == 1
+                        then MF.Function mir_function_id MF.RecordCtor mir_type
+                        else MF.Function mir_function_id MF.VariantCtor mir_type
                     mir_program <- MP.addFunction context.mir_program mir_function_id mir_function
                     context <- context { mir_program = mir_program }
                     (context, queue)
         RecordCtor qn hir_type -> do
+                    (type_store, mir_type) <- TS.processType context.type_store context.hir_program hir_type
+                    context <- context { type_store = type_store }
+                    mir_function <- MF.Function mir_function_id MF.RecordCtor mir_type
+                    mir_program <- MP.addFunction context.mir_program mir_function_id mir_function
+                    context <- context { mir_program = mir_program }
+                    (context, queue)
+        TupleCtor hir_type -> do
                     (type_store, mir_type) <- TS.processType context.type_store context.hir_program hir_type
                     context <- context { type_store = type_store }
                     mir_function <- MF.Function mir_function_id MF.RecordCtor mir_type

@@ -28,31 +28,46 @@ data Expr = Do [Expr]
             | VarRef Var
             | FieldAccess String Expr
 
-prettyPrint :: Expr -> Indent -> String
+prettyPrint :: Expr -> Indent -> (String, Bool)
 prettyPrint expr ind =
     case expr of
         Do args -> do
             inner <- inc ind
             args <- args |> List.iter |> map (\arg -> do
-                "{}{}" % (inner, (prettyPrint arg inner))) |> toList
-            "{}do\n{}" % (ind, join args "\n")
+                "{}{}" % (inner, (prettyPrint arg inner).0)) |> toList
+            s <- "{}do\n{}" % (ind, join args "\n")
+            (s, False)
         Multi args -> do
             args <- args |> List.iter |> map (\arg -> do
-                "{}" % (prettyPrint arg ind)) |> toList
-            "Multi: {}" % (join args ";")
+                "{}" % ((prettyPrint arg ind).0)) |> toList
+            s <- "Multi: {}" % (join args ";")
+            (s, False)
         StaticFunctionCall id args -> do
-            args <- args |> List.iter |> map (\arg -> prettyPrint arg ind) |> toList
-            "{} {}" % (id, join args " ")
+            args <- args |> List.iter |> map (\arg -> do
+                (s, simple) <- prettyPrint arg ind
+                if simple then s else "({})" % s) |> toList
+            s <- "{} {}" % (id, join args " ")
+            (s, isEmpty args)
         VariantConstructorCall id args -> do
-            args <- args |> List.iter |> map (\arg -> prettyPrint arg ind) |> toList
-            "{} {}" % (id, join args " ")
+            args <- args |> List.iter |> map (\arg -> do
+                (s, simple) <- prettyPrint arg ind
+                if simple then s else "({})" % s) |> toList
+            s <- "{} {}" % (id, join args " ")
+            (s, isEmpty args)
         RecordConstructorCall id args -> do
-            args <- args |> List.iter |> map (\arg -> prettyPrint arg ind) |> toList
-            "{} {}" % (id, join args " ")
-        IntegerLiteral lit -> "{}" % lit
-        StringLiteral lit -> "\"{}\"" % lit
-        FloatLiteral lit -> "{}" % lit
-        CharLiteral lit -> "'{}'" % lit
-        VarDecl v arg -> "{} <- {}" % (v, prettyPrint arg ind)
-        VarRef v -> show v
-        FieldAccess n rhs -> "{}.{}" % (prettyPrint rhs ind, n)
+            args <- args |> List.iter |> map (\arg -> do
+                (s, simple) <- prettyPrint arg ind
+                if simple then s else "({})" % s) |> toList
+            s <- "{} {}" % (id, join args " ")
+            (s, isEmpty args)
+        IntegerLiteral lit -> ("{}" % lit, True)
+        StringLiteral lit -> ("\"{}\"" % lit, True)
+        FloatLiteral lit -> ("{}" % lit, True)
+        CharLiteral lit -> ("'{}'" % lit, True)
+        VarDecl v arg -> do
+            s <- "{} <- {}" % (v, (prettyPrint arg ind).0)
+            (s, False)
+        VarRef v -> (show v, True)
+        FieldAccess n rhs -> do
+            s <- "{}.{}" % ((prettyPrint rhs ind).0, n)
+            (s, True)
