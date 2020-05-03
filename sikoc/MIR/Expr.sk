@@ -15,6 +15,9 @@ data Var = Var Int
 instance Show Var where
     show (Var v) = "${}" % v
 
+data RecordUpdateItem = { field_name :: String,
+                          body :: Expr }
+
 data Expr = Do [Expr]
             | Multi [Expr]
             | StaticFunctionCall FunctionId [Expr]
@@ -27,6 +30,14 @@ data Expr = Do [Expr]
             | VarDecl Var Expr
             | VarRef Var
             | FieldAccess String Expr
+            | If Expr Expr Expr
+            | List [Expr]
+            | Formatter String [Expr]
+            | Return Expr
+            | Continue Expr
+            | Break Expr
+            | ArgRef Int
+            | RecordUpdate Var [RecordUpdateItem]
 
 prettyPrint :: Expr -> Indent -> (String, Bool)
 prettyPrint expr ind =
@@ -69,5 +80,43 @@ prettyPrint expr ind =
             (s, False)
         VarRef v -> (show v, True)
         FieldAccess n rhs -> do
-            s <- "{}.{}" % ((prettyPrint rhs ind).0, n)
+            (s, simple) <- prettyPrint rhs ind
+            s <- if simple
+                then "{}.{}" % (s, n)
+                else "({}).{}" % (s, n)
+            (s, True)
+        If cond true_branch false_branch -> do
+            s <- "if {} then {} else {}" % ((prettyPrint cond ind).0, (prettyPrint true_branch ind).0, (prettyPrint false_branch ind).0)
+            (s, True)
+        List args -> do
+            args <- args |> List.iter |> map (\arg -> do
+                (s, simple) <- prettyPrint arg ind
+                s) |> toList
+            s <- "[{}]" % (join args ", ")
+            (s, True)
+        Formatter fmt args -> do
+            args <- args |> List.iter |> map (\arg -> do
+                (s, simple) <- prettyPrint arg ind
+                s) |> toList
+            s <- "({} % ({}))" % (fmt, join args ", ")
+            (s, True)
+        Return arg -> do
+            (s, simple) <- prettyPrint arg ind
+            s <- "return {}" % (s)
+            (s, simple)
+        Continue arg -> do
+            (s, simple) <- prettyPrint arg ind
+            s <- "continue {}" % (s)
+            (s, simple)
+        Break arg -> do
+            (s, simple) <- prettyPrint arg ind
+            s <- "break {}" % (s)
+            (s, simple)
+        ArgRef index -> do
+            ("@{}" % index, True)
+        RecordUpdate var updates -> do
+            args <- updates |> List.iter |> map (\update -> do
+                (s, simple) <- prettyPrint update.body ind
+                ("{} : {}" % (update.field_name, s))) |> toList
+            s <- "({} {{ {} }})" % (var, join args ", ")
             (s, True)

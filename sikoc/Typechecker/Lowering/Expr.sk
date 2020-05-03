@@ -14,6 +14,7 @@ import Siko.HIR.Pattern as HP
 import Siko.HIR.Data as HD
 import Siko.HIR.Type as HT
 import Siko.MIR.Expr as ME
+import Siko.Syntax.Ident
 
 processArgs :: Context -> FQ.FunctionQueue -> U.Substitution -> [HE.Expr] -> (Context, FQ.FunctionQueue, [ME.Expr])
 processArgs context queue sub args = do
@@ -85,22 +86,6 @@ processExpr context queue sub hir_expr = do
     HE.Expr expr expr_id _ <- hir_expr
     expr_type <- getExprType context.type_store expr_id
     case expr of
-        HE.Do args -> do
-            (context, queue, mir_args) <- processArgs context queue sub args
-            mir_args <- mir_args |> List.iter |> fold (\mir_args, arg -> do
-                case arg of
-                    ME.Multi args -> mir_args + args
-                    _ -> mir_args + [arg]) []
-            (context, queue, ME.Do mir_args)
-        HE.Bind p arg -> do
-            (context, queue, mir_arg) <- processExpr context queue sub arg
-            exprs <- processBind context.hir_program p mir_arg
-            (context, queue, ME.Multi exprs)
-        HE.ValueRef ref -> do
-            HP.BindRef _ pattern_id <- ref
-            HP.PatternId id <- pattern_id
-            var <- ME.Var id
-            (context, queue, ME.VarRef var)
         HE.StaticFunctionCall qn args -> do
             arg_types <- processArgTypes context sub args
             (context, queue, mir_args) <- processArgs context queue sub args
@@ -110,6 +95,8 @@ processExpr context queue sub hir_expr = do
             context <- context { state = state }
             (queue, function_id) <- FQ.insert queue queue_item
             (context, queue, ME.StaticFunctionCall function_id mir_args)
+        HE.DynamicFunctionCall receiver args -> panic "{} NYI" % expr // TODO
+        HE.ClassMemberCall qn args -> panic "{} NYI" % expr // TODO
         HE.VariantConstructorCall qn args -> do
             arg_types <- processArgTypes context sub args
             (context, queue, mir_args) <- processArgs context queue sub args
@@ -135,6 +122,11 @@ processExpr context queue sub hir_expr = do
             queue_item <- FQ.RecordCtor qn function_type
             (queue, function_id) <- FQ.insert queue queue_item
             (context, queue, ME.RecordConstructorCall function_id mir_args)
+        HE.If cond true_branch false_branch -> do
+            (context, queue, mir_cond) <- processExpr context queue sub cond
+            (context, queue, mir_true_branch) <- processExpr context queue sub true_branch
+            (context, queue, mir_false_branch) <- processExpr context queue sub false_branch
+            (context, queue, ME.If mir_cond mir_true_branch mir_false_branch)
         HE.Tuple args -> do
             arg_types <- processArgTypes context sub args
             (var_gen, function_type) <- TUtil.createGeneralFunction (getLength args) context.state.var_gen
@@ -146,8 +138,61 @@ processExpr context queue sub hir_expr = do
             queue_item <- FQ.TupleCtor function_type
             (queue, function_id) <- FQ.insert queue queue_item
             (context, queue, ME.RecordConstructorCall function_id mir_args)
+        HE.List args -> do
+            (context, queue, mir_args) <- processArgs context queue sub args
+            (context, queue, ME.List mir_args)
         HE.IntegerLiteral lit -> (context, queue, ME.IntegerLiteral lit)
-        HE.StringLiteral lit -> (context, queue, ME.StringLiteral lit)
         HE.FloatLiteral lit -> (context, queue, ME.FloatLiteral lit)
+        HE.StringLiteral lit -> (context, queue, ME.StringLiteral lit)
         HE.CharLiteral lit -> (context, queue, ME.CharLiteral lit)
-        _ -> panic "Lowering of expr {} NYI" % expr
+        HE.Do args -> do
+            (context, queue, mir_args) <- processArgs context queue sub args
+            mir_args <- mir_args |> List.iter |> fold (\mir_args, arg -> do
+                case arg of
+                    ME.Multi args -> mir_args + args
+                    _ -> mir_args + [arg]) []
+            (context, queue, ME.Do mir_args)
+        HE.Bind p arg -> do
+            (context, queue, mir_arg) <- processExpr context queue sub arg
+            exprs <- processBind context.hir_program p mir_arg
+            (context, queue, ME.Multi exprs)
+        HE.FieldAccess name receiver -> do
+            Ident name _ <- name
+            (context, queue, mir_receiver) <- processExpr context queue sub receiver
+            (context, queue, ME.FieldAccess name mir_receiver)
+        HE.TupleFieldAccess index receiver -> do
+            name <- getFieldName index
+            (context, queue, mir_receiver) <- processExpr context queue sub receiver
+            (context, queue, ME.FieldAccess name mir_receiver)
+        HE.Formatter fmt args -> do
+            (context, queue, mir_args) <- processArgs context queue sub args
+            (context, queue, ME.Formatter fmt mir_args)
+        HE.CaseOf _ _ -> panic "{} NYI" % expr // TODO
+        HE.RecordUpdate ref updates -> do
+            HP.BindRef _ pattern_id <- ref
+            HP.PatternId id <- pattern_id
+            var <- ME.Var id
+            (context, queue, mir_updates) <- updates |> List.iter
+                    |> fold (\(context, queue, mir_updates), update -> do
+                        (context, queue, mir_update_body) <- processExpr context queue sub update.body
+                        Ident name _ <- update.field_name
+                        mir_update <- ME.RecordUpdateItem name mir_update_body
+                        mir_updates <- mir_updates + [mir_update]
+                        (context, queue, mir_updates)) (context, queue, [])
+            (context, queue, ME.RecordUpdate var mir_updates)
+        HE.Return arg -> do
+            (context, queue, mir_arg) <- processExpr context queue sub arg
+            (context, queue, ME.Return mir_arg)
+        HE.Continue arg -> do
+            (context, queue, mir_arg) <- processExpr context queue sub arg
+            (context, queue, ME.Continue mir_arg)
+        HE.Break arg -> do
+            (context, queue, mir_arg) <- processExpr context queue sub arg
+            (context, queue, ME.Break mir_arg)
+        HE.Loop _ _ _ _ _ -> panic "{} NYI" % expr // TODO
+        HE.ArgRef index -> (context, queue, ME.ArgRef index)
+        HE.ValueRef ref -> do
+            HP.BindRef _ pattern_id <- ref
+            HP.PatternId id <- pattern_id
+            var <- ME.Var id
+            (context, queue, ME.VarRef var)
