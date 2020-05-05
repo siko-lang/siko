@@ -236,7 +236,19 @@ processExpr context queue sub hir_expr = do
         HE.Break arg -> do
             (context, queue, mir_arg) <- processExpr context queue sub arg
             (context, queue, ME.Break mir_arg)
-        HE.Loop _ _ _ _ _ -> panic "{} NYI" % expr // TODO
+        HE.Loop p initializer args _ _ -> do
+            HP.Pattern _ pattern_id _ <- p
+            HP.PatternId id <- pattern_id
+            var <- ME.Var id
+            (context, queue, mir_initializer) <- processExpr context queue sub initializer
+            exprs <- processBind context.hir_program p mir_initializer
+            exprs <- Option.unwrap (tail exprs)
+            (context, queue, mir_args) <- processArgs context queue sub args
+            mir_args <- mir_args |> List.iter |> fold (\mir_args, arg -> do
+                case arg of
+                    ME.Multi args -> mir_args + args
+                    _ -> mir_args + [arg]) exprs
+            (context, queue, ME.Loop var mir_initializer mir_args)
         HE.ArgRef index -> (context, queue, ME.ArgRef index)
         HE.ValueRef ref -> do
             HP.BindRef _ pattern_id <- ref

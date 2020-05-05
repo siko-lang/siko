@@ -38,6 +38,7 @@ data Expr = Do [Expr]
             | Break Expr
             | ArgRef Int
             | RecordUpdate Var [RecordUpdateItem]
+            | Loop Var Expr [Expr]
 
 prettyPrint :: Expr -> Indent -> (String, Bool)
 prettyPrint expr ind =
@@ -102,15 +103,18 @@ prettyPrint expr ind =
             (s, True)
         Return arg -> do
             (s, simple) <- prettyPrint arg ind
-            s <- "return {}" % (s)
+            s <- if simple then s else "({})" % s
+            s <- "return {}" % s
             (s, simple)
         Continue arg -> do
             (s, simple) <- prettyPrint arg ind
-            s <- "continue {}" % (s)
+            s <- if simple then s else "({})" % s
+            s <- "continue {}" % s
             (s, simple)
         Break arg -> do
             (s, simple) <- prettyPrint arg ind
-            s <- "break {}" % (s)
+            s <- if simple then s else "({})" % s
+            s <- "break {}" % s
             (s, simple)
         ArgRef index -> do
             ("@{}" % index, True)
@@ -120,3 +124,11 @@ prettyPrint expr ind =
                 ("{} : {}" % (update.field_name, s))) |> toList
             s <- "({} {{ {} }})" % (var, join args ", ")
             (s, True)
+        Loop var initializer args -> do
+            (initializer, simple) <- prettyPrint initializer ind
+            initializer <- if simple then initializer else "({})" % initializer
+            inner <- inc ind
+            args <- args |> List.iter |> map (\arg -> do
+                "{}{}" % (inner, (prettyPrint arg inner).0)) |> toList
+            s <- "loop {} <- {} do\n{}" % (var, initializer, join args "\n")
+            (s, False)
