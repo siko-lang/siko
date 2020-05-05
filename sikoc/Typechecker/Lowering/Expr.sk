@@ -1,20 +1,26 @@
 module Siko.Typechecker.Lowering.Expr where
 
 import Siko.Typechecker
+import Siko.Typechecker.Class
+import Siko.Typechecker.ClassStore
 import Siko.Typechecker.Lowering
 import Siko.Typechecker.Lowering.FunctionQueue as FQ
 import Siko.Typechecker.Lowering.TypeStore
 import Siko.Typechecker.Lowering.Util
 import Siko.Typechecker.Unification as U
 import Siko.Typechecker.Util as TUtil
+import Siko.Typechecker.InstanceResolver as IR
 import Siko.Typechecker.FunctionStore as FS
 import Siko.HIR.Program as HPO
+import Siko.HIR.Function as HF
 import Siko.HIR.Expr as HE
+import Siko.HIR.Class as HC
 import Siko.HIR.Pattern as HP
 import Siko.HIR.Data as HD
 import Siko.HIR.Type as HT
 import Siko.MIR.Expr as ME
 import Siko.Syntax.Ident
+import Map
 
 processArgs :: Context -> FQ.FunctionQueue -> U.Substitution -> [HE.Expr] -> (Context, FQ.FunctionQueue, [ME.Expr])
 processArgs context queue sub args = do
@@ -90,13 +96,53 @@ processExpr context queue sub hir_expr = do
             arg_types <- processArgTypes context sub args
             (context, queue, mir_args) <- processArgs context queue sub args
             function_type_info <- FS.getFunctionTypeInfo context.function_store qn
-            (state, function_type) <- getFunctionType context.state arg_types expr_type function_type_info.function_type
+            (state, function_type, _) <- getFunctionType context.state arg_types expr_type function_type_info.function_type
             queue_item <- FQ.Normal qn function_type
             context <- context { state = state }
             (queue, function_id) <- FQ.insert queue queue_item
             (context, queue, ME.StaticFunctionCall function_id mir_args)
         HE.DynamicFunctionCall receiver args -> panic "{} NYI" % expr // TODO
-        HE.ClassMemberCall qn args -> panic "{} NYI" % expr // TODO
+        HE.ClassMemberCall qn args -> do
+            arg_types <- processArgTypes context sub args
+            (context, queue, mir_args) <- processArgs context queue sub args
+            fn <- HPO.getFunction context.hir_program qn
+            case fn.kind of
+                HF.ClassMember class_name -> do
+                    member_name <- HPO.getShortName qn
+                    class_type_info <- get context.state.class_store.class_type_info_map class_name
+                    class_type_info <- Option.unwrap class_type_info // FIXME
+                    class_type_info :: ClassTypeInfo <- class_type_info // FIXME
+                    case get class_type_info.members member_name of
+                        Some member -> do
+                            member :: ClassMemberInfo <- member
+                            state <- context.state
+                            vars <- TUtil.collectVars [] member.type
+                            (mapper, var_gen) <- TUtil.initMapper vars state.var_gen
+                            state <- state { var_gen = var_gen }
+                            member_type <- TUtil.remap mapper member.type
+                            arg_type <- TUtil.remap mapper class_type_info.arg_type
+                            (state, function_type, sub) <- getFunctionType state arg_types expr_type member_type
+                            arg <- U.apply sub arg_type
+                            entry <- IR.CacheEntry arg class_name
+                            instance_info <- case get state.instance_resolver.cache entry of
+                                Some instance_info -> instance_info
+                                None -> panic "{}/{} not found in instance resolution cache" % (HT.toString arg, class_name)
+                            case instance_info of
+                                IR.UserDefinedInstanceInfo type instance_id _ -> do
+                                    user_instance<- HPO.getInstance context.hir_program instance_id
+                                    selected_member_name <- user_instance.members |> List.iter |> fold (\selected_member_name, member -> do
+                                        name <- HPO.getShortName member
+                                        if name == member_name
+                                            then Some member
+                                            else selected_member_name) None
+                                    selected_member_name <- Option.unwrap selected_member_name
+                                    queue_item <- FQ.Normal selected_member_name function_type
+                                    context <- context { state = state }
+                                    (queue, function_id) <- FQ.insert queue queue_item
+                                    (context, queue, ME.StaticFunctionCall function_id mir_args)
+                                _ -> panic "Auto generated instances are not yet implemented"
+                        None -> panic "class member {} not found" % member_name
+                _ -> panic "ClassMember calls non class member"
         HE.VariantConstructorCall qn args -> do
             arg_types <- processArgTypes context sub args
             (context, queue, mir_args) <- processArgs context queue sub args
@@ -105,7 +151,7 @@ processExpr context queue sub hir_expr = do
             (function_type, var_gen) <- TUtil.instantiateType function_type context.state.var_gen
             state <- context.state // FIXME
             state <- state { var_gen = var_gen }
-            (state, function_type) <- getFunctionType state arg_types expr_type function_type
+            (state, function_type, _) <- getFunctionType state arg_types expr_type function_type
             context <- context { state = state }
             queue_item <- FQ.VariantCtor qn function_type
             (queue, function_id) <- FQ.insert queue queue_item
@@ -117,7 +163,7 @@ processExpr context queue sub hir_expr = do
             (function_type, var_gen) <- TUtil.instantiateType record.record_ctor context.state.var_gen
             state <- context.state // FIXME
             state <- state { var_gen = var_gen }
-            (state, function_type) <- getFunctionType state arg_types expr_type function_type
+            (state, function_type, _) <- getFunctionType state arg_types expr_type function_type
             context <- context { state = state }
             queue_item <- FQ.RecordCtor qn function_type
             (queue, function_id) <- FQ.insert queue queue_item
@@ -133,7 +179,7 @@ processExpr context queue sub hir_expr = do
             (context, queue, mir_args) <- processArgs context queue sub args
             state <- context.state // FIXME
             state <- state { var_gen = var_gen }
-            (state, function_type) <- getFunctionType state arg_types expr_type function_type
+            (state, function_type, _) <- getFunctionType state arg_types expr_type function_type
             context <- context { state = state }
             queue_item <- FQ.TupleCtor function_type
             (queue, function_id) <- FQ.insert queue queue_item
@@ -167,7 +213,8 @@ processExpr context queue sub hir_expr = do
         HE.Formatter fmt args -> do
             (context, queue, mir_args) <- processArgs context queue sub args
             (context, queue, ME.Formatter fmt mir_args)
-        HE.CaseOf _ _ -> panic "{} NYI" % expr // TODO
+        HE.CaseOf _ _ -> do // TODO
+            (context, queue, ME.Do [])
         HE.RecordUpdate ref updates -> do
             HP.BindRef _ pattern_id <- ref
             HP.PatternId id <- pattern_id

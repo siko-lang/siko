@@ -9,7 +9,8 @@ module Siko.HIR.Type(Type(..),
                      getArgs,
                      getResultType,
                      fixedType,
-                     collectClassesFromClassConstraints) where
+                     collectClassesFromClassConstraints,
+                     isConcreteType) where
 
 import Siko.Constants
 import Siko.HIR.Program as HP
@@ -233,3 +234,15 @@ collectClassesFromClassConstraints constraints = constraints |> List.iter |> fil
         _ -> False) |> map (\c -> case c of
             ClassConstraint n -> n
             _ -> panic "RowConstraint found while collecting classes") |> toList
+
+isConcreteType :: Type -> Bool
+isConcreteType type = case type of
+    Var _ _ -> False
+    FixedTypeArg _ _ _ -> False
+    Named _ args -> args |> List.iter |> fold (\concrete, arg -> do
+        concrete && isConcreteType arg) True
+    Function from to -> isConcreteType from && isConcreteType to
+    Never var -> True
+    Ref t -> isConcreteType t
+    Tuple args -> args |> List.iter |> fold (\concrete, arg -> do
+        concrete && isConcreteType arg) True

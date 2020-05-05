@@ -50,11 +50,14 @@ getLocation instance_info instance_resolver = case instance_info of
         AutoDerivedInstance _ l _ <- getAutoDerivedInstanceById instance_resolver id
         l
 
+data CacheEntry = CacheEntry T.Type P.FullyQualifiedName deriving (PartialEq, Eq, PartialOrd, Ord)
+
 data InstanceResolver = { instance_map :: Map P.FullyQualifiedName (Map BaseType InstanceInfo),
-                          auto_derived_instances :: [AutoDerivedInstance] }
+                          auto_derived_instances :: [AutoDerivedInstance],
+                          cache :: Map CacheEntry InstanceInfo, }
 
 createInstanceResolver :: InstanceResolver
-createInstanceResolver = InstanceResolver empty []
+createInstanceResolver = InstanceResolver empty [] empty
 
 getAutoDerivedInstanceById :: InstanceResolver -> AutoDerivedInstanceId -> AutoDerivedInstance
 getAutoDerivedInstanceById instance_resolver id = do
@@ -113,17 +116,31 @@ unifyTypes state sub type1 type2 = do
             (state, sub, False)
     (state, sub, success)
 
-checkInstancesForBaseType :: TypecheckerState -> U.Substitution -> T.Type -> BaseType -> Map BaseType InstanceInfo -> (TypecheckerState, U.Substitution, Bool)
-checkInstancesForBaseType state sub type base_type instance_info_map = do
+checkInstancesForBaseType :: TypecheckerState ->
+                             U.Substitution ->
+                             T.Type ->
+                             BaseType ->
+                             Map BaseType InstanceInfo ->
+                             P.FullyQualifiedName -> (TypecheckerState, U.Substitution, Bool)
+checkInstancesForBaseType state sub type base_type instance_info_map class_name = do
     //println "checkInstancesForBaseType {} {}" % (T.toLongString type, base_type)
     case get instance_info_map base_type of
         Some instance_info -> do
-                case instance_info of
+                (state, sub, success) <- case instance_info of
                         UserDefinedInstanceInfo instance_type _ _ -> unifyTypes state sub type instance_type
                         AutoDerivedInstanceInfo id -> do
                             AutoDerivedInstanceId id <- id
                             AutoDerivedInstance instance_type _ _ <- atIndex state.instance_resolver.auto_derived_instances id
                             unifyTypes state sub type instance_type
+                state <- if success && T.isConcreteType type
+                    then do
+                        entry <- CacheEntry type class_name
+                        instance_resolver <- state.instance_resolver
+                        (cache, _) <- insert instance_resolver.cache entry instance_info
+                        instance_resolver <- instance_resolver { cache = cache }
+                        state { instance_resolver = instance_resolver }
+                    else state
+                (state, sub, success)
         None -> do
             //println "checkInstancesForBaseType: not found"
             (state, sub, False)
@@ -137,11 +154,11 @@ hasInstance state sub type class_name = do
     base_type <- getBaseType type
     case get state.instance_resolver.instance_map class_name of
         Some instance_info_map -> do
-            (state, sub, success) <- checkInstancesForBaseType state sub type base_type instance_info_map
+            (state, sub, success) <- checkInstancesForBaseType state sub type base_type instance_info_map class_name
             if success
                 then Ok (state, sub)
                 else do
-                    (state, sub, success) <- checkInstancesForBaseType state sub type Generic instance_info_map
+                    (state, sub, success) <- checkInstancesForBaseType state sub type Generic instance_info_map class_name
                     if success then Ok (state, sub) else Err state
         None -> do
             //println "Class {} has no instances, at all" % (class_name)

@@ -61,8 +61,8 @@ isSpecializedType type = case type of
     T.Tuple args -> args |> List.iter |> fold (\specialized, arg -> specialized || not (isVar arg)) False
     _ -> True
 
-processInstance :: TypecheckerState -> C.Instance -> Map P.FullyQualifiedName ClassTypeInfo -> P.Program -> (TypecheckerState, [(P.FullyQualifiedName, T.Type)])
-processInstance state i class_type_info_map program = do
+processInstance :: TypecheckerState -> C.Instance -> P.Program -> (TypecheckerState, [(P.FullyQualifiedName, T.Type)])
+processInstance state i program = do
     if isSpecializedType i.type
         then do
             state <- addError state (SpecializedInstance i.location)
@@ -75,7 +75,7 @@ processInstance state i class_type_info_map program = do
             state <- addError state (ConflictingInstances ("{}" % i.class_name) i.location location)
             return (state, [])
     state <- state { var_gen = var_gen, instance_resolver = instance_resolver }
-    (state, inferred_types) <- case get class_type_info_map i.class_name of
+    (state, inferred_types) <- case get state.class_store.class_type_info_map i.class_name of
         Some class_type_info -> do
             (state, member_names, inferred_types) <- i.members |> List.iter |> fold (\(state, member_names, inferred_types), instance_member_name -> do
                 short_name <- P.getShortName instance_member_name
@@ -153,11 +153,11 @@ processClassesAndInstances state program = do
                 state <- addError state err
                 (state, True)
             else (state, circular)) (state, False)
-    class_store <- initializeClassStore class_dependency_map.direct_dependencies circular
+    class_store <- initializeClassStore class_dependency_map.direct_dependencies circular class_type_info_map
     state <- state { class_store = class_store }
     instances <- P.getInstances program
     (state, inferred_types) <- instances |> List.iter |> fold (\(state, inferred_types), i -> do
-        (state, types) <- processInstance state i class_type_info_map program
+        (state, types) <- processInstance state i program
         (state, inferred_types + types)) (state, [])
     program <- inferred_types |> List.iter |> fold (\program, (qn, type) -> P.updateInstanceMemberType program qn type) program
     state <- IR.checkConflicts state
