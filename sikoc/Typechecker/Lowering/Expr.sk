@@ -2,6 +2,7 @@ module Siko.Typechecker.Lowering.Expr where
 
 import Siko.Typechecker
 import Siko.Typechecker.Class
+import Siko.Typechecker.CaseChecker
 import Siko.Typechecker.ClassStore
 import Siko.Typechecker.Lowering
 import Siko.Typechecker.Lowering.FunctionQueue as FQ
@@ -19,6 +20,8 @@ import Siko.HIR.Pattern as HP
 import Siko.HIR.Data as HD
 import Siko.HIR.Type as HT
 import Siko.MIR.Expr as ME
+import Siko.MIR.Type as MT
+import Siko.MIR.Data as MD
 import Siko.Syntax.Ident
 import Map
 
@@ -40,16 +43,14 @@ processBind hir_program (HP.Pattern p id _) rhs = do
     case p of
         HP.Binding ref -> do
             HP.BindRef _ pattern_id <- ref
-            HP.PatternId id <- pattern_id
-            var <- ME.Var id
+            var <- patternToVar pattern_id
             [ME.VarDecl var rhs]
         HP.Tuple args -> do
-            HP.PatternId id <- id
-            var <- ME.Var id
+            var <- patternToVar id
             arg_exprs <- args |> List.iter |> fold (\arg_exprs, arg -> do
                 index <- getLength arg_exprs
                 field_name <- getFieldName index
-                expr <- ME.FieldAccess field_name (ME.VarRef (ME.Var id))
+                expr <- ME.FieldAccess field_name (ME.VarRef var)
                 exprs <- processBind hir_program arg expr
                 arg_exprs <- arg_exprs + exprs
                 arg_exprs) []
@@ -62,30 +63,86 @@ processBind hir_program (HP.Pattern p id _) rhs = do
         HP.CharRange _ _ _ -> panic "Range pattern in bind lhs in lowering"
         HP.Typed p _ -> processBind hir_program p rhs
         HP.Record qn args -> do
-            HP.PatternId id <- id
-            var <- ME.Var id
+            var <- patternToVar id
             record <- HPO.getRecord hir_program qn
             arg_exprs <- args |> List.iter |> fold (\arg_exprs, arg -> do
                 index <- getLength arg_exprs
                 HD.RecordField field_name _ <- atIndex record.fields index
-                expr <- ME.FieldAccess field_name (ME.VarRef (ME.Var id))
+                expr <- ME.FieldAccess field_name (ME.VarRef var)
                 exprs <- processBind hir_program arg expr
                 arg_exprs <- arg_exprs + exprs
                 arg_exprs) []
             [ME.VarDecl var rhs] + arg_exprs
         HP.Variant qn index args -> do
-            HP.PatternId id <- id
-            var <- ME.Var id
+            var <- patternToVar id
             variant <- HPO.getVariant hir_program qn index
             arg_exprs <- args |> List.iter |> fold (\arg_exprs, arg -> do
                 index <- getLength arg_exprs
                 field_name <- getFieldName index
-                expr <- ME.FieldAccess field_name (ME.VarRef (ME.Var id))
+                expr <- ME.FieldAccess field_name (ME.VarRef var)
                 exprs <- processBind hir_program arg expr
                 arg_exprs <- arg_exprs + exprs
                 arg_exprs) []
             [ME.VarDecl var rhs] + arg_exprs
         HP.Or _ -> panic "Or pattern in bind lhs in lowering"
+
+processChoiceTree :: Context -> Choice -> ME.Expr -> Map String MT.Type -> ME.Expr
+processChoiceTree context choice parent_expr path_types = do
+    case choice of
+        Choice path subchoices -> do
+            parent_path <- getParentPath path
+            parent_path_str <- "{}" % parent_path
+            parent_type <- case get path_types parent_path_str of
+                Some parent_type -> parent_type
+                None -> panic "Parent path {} not found in path types" % parent_path_str
+            (body_expr, body_type) <- case path of
+                ItemIndex _ index _ -> do
+                    record <- case parent_type of
+                        MT.Record name -> getRecord context.type_store name
+                        _ -> panic "Indexed type is not a record!"
+                    field <- atIndex record.fields index
+                    (ME.FieldAccess field.name parent_expr, field.type)
+                VariantPath _ _ variant_index index _ -> do
+                    adt <- case parent_type of
+                        MT.Adt name -> getAdt context.type_store name
+                        _ -> panic "Indexed type is not an adt!"
+                    variant <- atIndex adt.variants variant_index
+                    variant_type <- getRecord context.type_store variant.type
+                    field <- atIndex variant_type.fields index
+                    (ME.FieldAccess field.name parent_expr, field.type)
+                _ -> (parent_expr, parent_type)
+            (path_types, _) <- insert path_types ("{}" % path) body_type
+            cases <- subchoices |> Map.iter |> fold (\cases, (cond, subchoices) -> do
+                choice <- atIndex subchoices 0
+                choice_expr <- processChoiceTree context choice parent_expr path_types
+                (cond, expr) <- case cond of
+                    IntegerCondition literal -> do
+                        (ME.IntegerChecker literal, choice_expr)
+                    StringCondition literal -> do
+                        (ME.StringChecker literal, choice_expr)
+                    CharCondition literal -> do
+                        (ME.CharChecker literal, choice_expr)
+                    CharRangeCondition s e kind -> do
+                        (ME.CharRangeChecker s e (case kind of
+                                                    HP.Inclusive -> ME.Inclusive
+                                                    HP.Exclusive -> ME.Exclusive), choice_expr)
+                    VariantCondition index -> do
+                        (ME.VariantChecker index, choice_expr)
+                    WildcardCondition -> do
+                        (ME.WildcardChecker, choice_expr)
+                c <- ME.MatchCase cond expr
+                cases <- cases + [c]
+                cases) []
+            ME.Match body_expr cases
+        CaseEnd cs -> do
+            match_info <- atIndex cs 0
+            MatchInfo index add <- match_info
+            ME.MatchEnd "end {}" % index
+
+patternToVar :: HP.PatternId -> ME.Var
+patternToVar pattern_id = do
+    HP.PatternId id <- pattern_id
+    ME.Var (show id)
 
 processExpr :: Context -> FQ.FunctionQueue -> U.Substitution -> HE.Expr -> (Context, FQ.FunctionQueue, ME.Expr)
 processExpr context queue sub hir_expr = do
@@ -213,12 +270,26 @@ processExpr context queue sub hir_expr = do
         HE.Formatter fmt args -> do
             (context, queue, mir_args) <- processArgs context queue sub args
             (context, queue, ME.Formatter fmt mir_args)
-        HE.CaseOf _ _ -> do // TODO
-            (context, queue, ME.Do [])
+        HE.CaseOf body cases -> do // TODO
+            (context, queue, mir_body) <- processExpr context queue sub body
+            HE.Expr _ body_id _ <- body
+            hir_body_type <- getExprType context.type_store body_id
+            parent_var <- ME.Var "p"
+            parent_expr <- ME.VarRef parent_var
+            (type_store, mir_body_type) <- processType context.type_store context.hir_program hir_body_type
+            context <- context { type_store = type_store }
+            (path_types, _) <- insert empty "p" mir_body_type // FIXME: this is really really ugly..
+            match_expr <- case get context.state.choice_tree_store.choice_trees expr_id of
+                Some choice_tree -> do
+                    processChoiceTree context choice_tree parent_expr path_types
+                None -> panic "Choice tree not found"
+            decl <- ME.VarDecl parent_var mir_body
+            match_var <- ME.Var "m"
+            match_decl <- ME.VarDecl match_var match_expr
+            (context, queue, ME.Do [decl, match_decl])
         HE.RecordUpdate ref updates -> do
             HP.BindRef _ pattern_id <- ref
-            HP.PatternId id <- pattern_id
-            var <- ME.Var id
+            var <- patternToVar pattern_id
             (context, queue, mir_updates) <- updates |> List.iter
                     |> fold (\(context, queue, mir_updates), update -> do
                         (context, queue, mir_update_body) <- processExpr context queue sub update.body
@@ -238,8 +309,7 @@ processExpr context queue sub hir_expr = do
             (context, queue, ME.Break mir_arg)
         HE.Loop p initializer args _ _ -> do
             HP.Pattern _ pattern_id _ <- p
-            HP.PatternId id <- pattern_id
-            var <- ME.Var id
+            var <- patternToVar pattern_id
             (context, queue, mir_initializer) <- processExpr context queue sub initializer
             exprs <- processBind context.hir_program p mir_initializer
             exprs <- Option.unwrap (tail exprs)
@@ -252,6 +322,5 @@ processExpr context queue sub hir_expr = do
         HE.ArgRef index -> (context, queue, ME.ArgRef index)
         HE.ValueRef ref -> do
             HP.BindRef _ pattern_id <- ref
-            HP.PatternId id <- pattern_id
-            var <- ME.Var id
+            var <- patternToVar pattern_id
             (context, queue, ME.VarRef var)

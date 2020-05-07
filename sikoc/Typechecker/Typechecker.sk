@@ -27,7 +27,8 @@ data TypecheckerState = { errors :: [TypecheckerError],
                           var_gen :: TypeVarGenerator,
                           class_store :: CS.ClassStore,
                           data_store :: DS.DataStore,
-                          instance_resolver :: IR.InstanceResolver
+                          instance_resolver :: IR.InstanceResolver,
+                          choice_tree_store :: ChoiceTreeStore,
                         }
 
 addError :: TypecheckerState -> TypecheckerError -> TypecheckerState
@@ -113,7 +114,8 @@ processGroup state group program function_store lowering_type_store = do
 
 processProgram :: P.Program -> TypeVarGenerator -> [TypecheckerError]
 processProgram program var_gen = do
-    state <- TypecheckerState [] var_gen CS.initializeEmptyClassStore DS.createDataStore IR.createInstanceResolver
+    state <- TypecheckerState [] var_gen CS.initializeEmptyClassStore
+             DS.createDataStore IR.createInstanceResolver createChoiceTreeStore
     state <- processData program state
     lowering_type_store <- LTS.createTypeStore
     (state, program) <- processClassesAndInstances state program

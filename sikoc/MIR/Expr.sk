@@ -10,13 +10,33 @@ instance Show Indent where
 inc :: Indent -> Indent
 inc (Indent i) = Indent (i + 2)
 
-data Var = Var Int
+data Var = Var String
 
 instance Show Var where
     show (Var v) = "${}" % v
 
 data RecordUpdateItem = { field_name :: String,
                           body :: Expr }
+
+data RangeKind = Inclusive | Exclusive deriving (Show)
+
+data Checker = IntegerChecker String
+               | StringChecker String
+               | CharChecker Char
+               | CharRangeChecker Char Char RangeKind
+               | VariantChecker Int
+               | WildcardChecker
+
+instance Show Checker where
+    show checker = case checker of
+        IntegerChecker lit -> "i:{}" % lit
+        StringChecker lit -> "s:{}" % lit
+        CharChecker lit -> "c:{}" % lit
+        CharRangeChecker s e kind -> "{}:{}:{}" % (s, e, kind)
+        VariantChecker i -> "v:{}" % i
+        WildcardChecker -> "w"
+
+data MatchCase = { checker :: Checker, body :: Expr }
 
 data Expr = Do [Expr]
             | Multi [Expr]
@@ -39,6 +59,8 @@ data Expr = Do [Expr]
             | ArgRef Int
             | RecordUpdate Var [RecordUpdateItem]
             | Loop Var Expr [Expr]
+            | Match Expr [MatchCase]
+            | MatchEnd String
 
 prettyPrint :: Expr -> Indent -> (String, Bool)
 prettyPrint expr ind =
@@ -47,7 +69,7 @@ prettyPrint expr ind =
             inner <- inc ind
             args <- args |> List.iter |> map (\arg -> do
                 "{}{}" % (inner, (prettyPrint arg inner).0)) |> toList
-            s <- "{}do\n{}" % (ind, join args "\n")
+            s <- "do\n{}" % (join args "\n")
             (s, False)
         Multi args -> do
             args <- args |> List.iter |> map (\arg -> do
@@ -132,3 +154,10 @@ prettyPrint expr ind =
                 "{}{}" % (inner, (prettyPrint arg inner).0)) |> toList
             s <- "loop {} <- {} do\n{}" % (var, initializer, join args "\n")
             (s, False)
+        Match body cases -> do
+            inner <- inc ind
+            args <- cases |> List.iter |> map (\match_case -> do
+                "{}{} -> {}" % (inner, match_case.checker, (prettyPrint match_case.body inner).0)) |> toList
+            s <- "match ({})\n{}" % ((prettyPrint body inner).0, join args "\n")
+            (s, False)
+        MatchEnd s -> (s, False)

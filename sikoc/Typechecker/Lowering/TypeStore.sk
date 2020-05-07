@@ -35,6 +35,16 @@ getNextId store = do
     id <- store.next_id
     (store { next_id = id + 1 }, id)
 
+getRecord :: TypeStore -> String -> MD.Record
+getRecord store name = case get store.records name of
+    Some r -> r
+    None -> panic "Record named {} is not found in lowering type store" % name
+
+getAdt :: TypeStore -> String -> MD.AlgebraicDataType
+getAdt store name = case get store.adts name of
+    Some r -> r
+    None -> panic "Adt named {} is not found in lowering type store" % name
+
 processType :: TypeStore -> HP.Program -> HT.Type -> (TypeStore, MT.Type)
 processType store hir_program hir_type = case hir_type of
     HT.Var _ _ -> panic "Type variable in MIR type"

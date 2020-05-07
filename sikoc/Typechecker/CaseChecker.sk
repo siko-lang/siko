@@ -15,6 +15,11 @@ import Std.Util
 import Map
 import Hack
 
+data ChoiceTreeStore = { choice_trees :: Map E.ExprId Choice }
+
+createChoiceTreeStore :: ChoiceTreeStore
+createChoiceTreeStore = ChoiceTreeStore empty
+
 data ValuePath = ItemIndex ValuePath Int T.Type
                  | VariantPath ValuePath PO.FullyQualifiedName Int Int T.Type
                  | Root T.Type
@@ -31,6 +36,12 @@ getPathType path = case path of
     Root t -> t
     ItemIndex _ _ t -> t
     VariantPath _ _ _ _ t -> t
+
+getParentPath :: ValuePath -> ValuePath
+getParentPath path = case path of
+    Root _ -> path
+    ItemIndex p _ _ -> p
+    VariantPath p _ _ _ _ -> p
 
 data PendingPattern = { path :: ValuePath,
                         pattern :: P.Pattern
@@ -344,8 +355,8 @@ remergeChoices tree pattern_choices = do
     pattern_checks <- pattern_choices |> List.iter |> map (\c -> collectAllChecks c) |> toList
     pattern_checks |> List.iter |> fold (\tree, pattern_info -> walkChoiceTree tree [] pattern_info) tree
 
-checkCase :: Context -> E.Expr -> [E.Case] -> Context
-checkCase context case_body cases = do
+checkCase :: Context -> E.ExprId -> E.Expr -> [E.Case] -> Context
+checkCase context expr_id case_body cases = do
     (E.Expr _ body_id _) <- case_body
     (choices, _) <- cases |> List.iter |> fold (\(choices, index), c -> do
             (P.Pattern p _ location) <- c.pattern
@@ -357,16 +368,17 @@ checkCase context case_body cases = do
     m <- pruneLeafWildCardsFromTree m
     m <- addEmptyWildcards context m
     m <- remergeChoices m choices
-    //g <- D.createGraph "Choice tree"
-    //(g, _) <- choiceToNode g m
-    //name <- "case_{}.dot" % (body_id)
-    //writeTextFile name ("{}" % D.generateDot g)
-    context
+    state <- context.state // FIXME
+    choice_tree_store <- state.choice_tree_store
+    (choice_trees, _) <- insert choice_tree_store.choice_trees expr_id m
+    choice_tree_store <- choice_tree_store { choice_trees = choice_trees }
+    state <- state { choice_tree_store = choice_tree_store }
+    context { state = state }
 
 checkCases :: Context -> E.Expr -> Context
-checkCases context (E.Expr expr _ _) = do
+checkCases context (E.Expr expr id _) = do
     context <- case expr of
         E.CaseOf body cases -> do
-            checkCase context body cases
+            checkCase context id body cases
         _ -> context
     context
