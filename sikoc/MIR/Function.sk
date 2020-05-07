@@ -17,11 +17,11 @@ data Function = { id :: FunctionId,
                   kind :: FunctionKind,
                   type :: T.Type }
 
-dump :: Function -> ()
+dump :: Function -> String
 dump function = do
-    println "{} :: {}" % (function.id, function.type)
+    s <- "{} :: {}" % (function.id, function.type)
     case function.kind of
-        Normal body -> println "{} = {}" % (function.id, (E.prettyPrint body (E.Indent 0)).0)
-        VariantCtor -> println "{} = <variant_ctor>" % (function.id)
-        RecordCtor -> println "{} = <record_ctor>" % (function.id)
-        Extern -> println "{} = extern" % (function.id)
+        Normal body -> s + "{} = {}" % (function.id, (E.prettyPrint body (E.Indent 0)).0)
+        VariantCtor -> s + "{} = <variant_ctor>" % (function.id)
+        RecordCtor -> s + "{} = <record_ctor>" % (function.id)
+        Extern -> s + "{} = extern" % (function.id)

@@ -9,6 +9,7 @@ import Siko.Typechecker.Lowering.TypeStore
 import Siko.Typechecker.FunctionStore
 import Siko.Typechecker
 import Siko.Constants
+import Hack
 
 data Context = { hir_program :: HP.Program,
                  mir_program :: MP.Program,
@@ -34,5 +35,6 @@ lowerProgram state hir_program function_store type_store = do
             context
     mir_program <- context.mir_program
     mir_program <- mir_program { adts = context.type_store.adts, records = context.type_store.records }
-    MP.dump mir_program
+    s <- MP.dump mir_program
+    writeTextFile "mir_dump" s
     ()

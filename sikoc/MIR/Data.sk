@@ -19,16 +19,16 @@ data Record = { name :: String,
                 external :: Bool,
               }
 
-dumpAdt :: AlgebraicDataType -> ()
+dumpAdt :: AlgebraicDataType -> String
 dumpAdt adt = do
     variants <- adt.variants |> List.iter |> map (\v -> "{} {}" % (v.name, v.type)) |> toList
-    println "adt {} = {}" % (adt.name, join variants " | ")
+    "adt {} = {}" % (adt.name, join variants " | ")
 
-dumpRecord :: Record -> ()
+dumpRecord :: Record -> String
 dumpRecord record = do
     fields <- record.fields |> List.iter |> map (\field -> "{} :: {}" % (field.name, field.type)) |> toList
     if isEmpty fields
         then if record.external
-            then println "record {} = extern" % record.name
-            else println "record {}" % record.name
-        else println "record {} = {{ {} }}" % (record.name, join fields ", ")
+            then "record {} = extern" % record.name
+            else "record {}" % record.name
+        else "record {} = {{ {} }}" % (record.name, join fields ", ")

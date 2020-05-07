@@ -17,17 +17,15 @@ addFunction program function_id function = do
     (functions, _) <- insert program.functions function_id function
     program { functions = functions }
 
-dump :: Program -> ()
+dump :: Program -> String
 dump program = do
-    println "{}. adts" % (getSize program.adts)
-    println "{}. records" % (getSize program.records)
-    println "{}. functions" % (getSize program.functions)
-    program.adts |> Map.iter |> forEach (\(id, adt) -> do
-        D.dumpAdt adt)
-    println ""
-    program.records |> Map.iter |> forEach (\(id, record) -> do
-        D.dumpRecord record)
-    println ""
-    program.functions |> Map.iter |> forEach (\(id, f) -> do
-        F.dump f
-        println "")
+    s <- "{}. adts\n" % (getSize program.adts)
+    s <- s + "{}. records\n" % (getSize program.records)
+    s <- s + "{}. functions\n\n" % (getSize program.functions)
+    s <- program.adts |> Map.iter |> fold (\s, (id, adt) -> do
+        s + D.dumpAdt adt + "\n\n") s
+    s <- program.records |> Map.iter |> fold (\s, (id, record) -> do
+        s + D.dumpRecord record + "\n\n") s
+    s <- program.functions |> Map.iter |> fold (\s, (id, f) -> do
+        s + F.dump f + "\n\n") s
+    s
