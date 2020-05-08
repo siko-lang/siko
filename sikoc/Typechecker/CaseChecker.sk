@@ -149,7 +149,6 @@ processPattern context pendingPatterns = do
             (additional_info, checks) <- processPattern context (args + pendingPatterns)
             checks <- [Check path (VariantCondition variant_index)] + checks
             (additional_info, checks)
-        P.Or _ -> panic "Or pattern in processPattern!"
     checks
 
 addUnreachablePatternError :: Context -> Location -> Context
@@ -283,15 +282,6 @@ choiceToNode g choice = case choice of
         (g, id) <- D.addNode g node_name
         (g, id)
 
-processSinglePattern :: Context -> P.Pattern -> Int -> [Choice] -> ([Choice], Int)
-processSinglePattern context pattern index choices = do
-    P.Pattern _ id _ <- pattern
-    root_type <- getPatternType context id
-    (additional_info, checks) <- processPattern context [PendingPattern (Root root_type) pattern]
-    choice <- checkToChoice checks additional_info index
-    choices <- choices + [choice]
-    (choices, index + 1)
-
 pruneLeafWildCardsFromTree :: Choice -> Choice
 pruneLeafWildCardsFromTree choice = do
     case choice of
@@ -355,14 +345,22 @@ remergeChoices tree pattern_choices = do
     pattern_checks <- pattern_choices |> List.iter |> map (\c -> collectAllChecks c) |> toList
     pattern_checks |> List.iter |> fold (\tree, pattern_info -> walkChoiceTree tree [] pattern_info) tree
 
+processSinglePattern :: Context -> P.Pattern -> Int -> [Choice] -> ([Choice], Int)
+processSinglePattern context pattern case_index choices = do
+    P.Pattern _ id _ <- pattern
+    root_type <- getPatternType context id
+    (additional_info, checks) <- processPattern context [PendingPattern (Root root_type) pattern]
+    choice <- checkToChoice checks additional_info case_index
+    choices <- choices + [choice]
+    (choices, case_index + 1)
+
 checkCase :: Context -> E.ExprId -> E.Expr -> [E.Case] -> Context
 checkCase context expr_id case_body cases = do
     (E.Expr _ body_id _) <- case_body
-    (choices, _) <- cases |> List.iter |> fold (\(choices, index), c -> do
+    (choices, _) <- cases |> List.iter |> fold (\(choices, case_index), c -> do
             (P.Pattern p _ location) <- c.pattern
-            case p of
-                P.Or args -> args |> List.iter |> fold (\(choices, index), arg -> processSinglePattern context arg index choices) (choices, index)
-                _ -> processSinglePattern context c.pattern index choices
+            (choices, case_index) <- processSinglePattern context c.pattern case_index choices
+            (choices, case_index)
         ) ([], 0)
     m <- mergeChoices choices
     m <- pruneLeafWildCardsFromTree m
@@ -378,7 +376,7 @@ checkCase context expr_id case_body cases = do
 checkCases :: Context -> E.Expr -> Context
 checkCases context (E.Expr expr id _) = do
     context <- case expr of
-        E.CaseOf body cases -> do
+        E.CaseOf body cases _ -> do
             checkCase context id body cases
         _ -> context
     context

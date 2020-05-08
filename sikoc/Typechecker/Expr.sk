@@ -19,6 +19,7 @@ import Siko.Typechecker.FunctionStore as FS
 import Siko.Typechecker.InstanceResolver as IR
 import Siko.Typechecker.Error
 import Siko.Constants
+import Map
 
 data Context = { type_store :: TS.TypeStore,
                  function_store :: FS.FunctionStore,
@@ -226,7 +227,7 @@ initializeExprType current_fn_name context (E.Expr expr id location) = do
         E.Formatter fmt args -> do
             context <- addExprType context id (TS.ExprType UT.getStringType)
             context
-        E.CaseOf _ _ -> do
+        E.CaseOf _ _ _ -> do
             (context, var) <- getNewVar context
             context <- addExprType context id (TS.ExprType var)
             context
@@ -400,7 +401,7 @@ checkExprType context (E.Expr expr id location) = do
                 (context, _) <- matchExprWith context arg_id expected_arg_ty arg_location
                 context) context
             context
-        E.CaseOf body cases -> do
+        E.CaseOf body cases bind_groups -> do
             (E.Expr _ body_id body_location) <- body
             (E.Case (P.Pattern _ pattern_id pattern_location) (E.Expr _ case_body_id case_body_location)) <- atIndex cases 0
             (context, _) <- matchExprs context id case_body_id location
@@ -408,6 +409,16 @@ checkExprType context (E.Expr expr id location) = do
                 (context, _) <- matchExprWithPattern context body_id pattern_id pattern_location
                 (context, _) <- matchExprs context id case_body_id case_body_location
                 context) context
+            context <- bind_groups |> List.iter |> fold (\context, bind_group -> do
+                    bind_group.bindings |> Map.iter |> fold (\context, (name, instances) -> do
+                            P.BindRef _ first_pattern_id <- atIndex instances 0
+                            instances |> List.iter |> fold (\context, P.BindRef _ pattern_id -> do
+                                    pattern_location <- TS.getPatternLocation context.type_store pattern_id
+                                    (context, _) <- matchPatterns context pattern_id first_pattern_id pattern_location
+                                    context
+                                ) context
+                        ) context
+                ) context
             context
         E.RecordUpdate (P.BindRef _ pattern_id) updates -> do
              (context, _) <- matchExprWithPattern context id pattern_id location

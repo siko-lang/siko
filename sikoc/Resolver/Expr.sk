@@ -166,14 +166,34 @@ validatePatternEnv pattern_env context = do
                                       addErrorToContext context err) context
     context
 
-processCase :: Context -> Environment -> SE.Case -> (Context, HE.Case)
+processCase :: Context -> Environment -> SE.Case -> (Context, [HE.Case], Option HP.BindGroup)
 processCase context env (SE.Case pattern body) = do
-    pattern_env <- createPatternEnvironment False
     block_env <- createEnvironment env.lambda_id (Some env)
-    (context, pattern_env, block_env, p) <- processPattern context pattern_env block_env pattern
-    context <- validatePatternEnv pattern_env context
-    (context, _, b) <- processExpr context block_env body
-    (context, HE.Case p b)
+    SP.Pattern p location <- pattern
+    (context, cases, bind_group) <- case p of
+        SP.Or patterns -> do
+            (context, cases, bind_group) <- patterns |> List.iter |> fold (\(context, cases, bind_group), pattern -> do
+                    pattern_env <- createPatternEnvironment False
+                    (context, pattern_env, block_env, p) <- processPattern context pattern_env block_env pattern
+                    context <- validatePatternEnv pattern_env context
+                    bind_group <- envToBindGroup pattern_env block_env bind_group
+                    (context, _, b) <- processExpr context block_env body
+                    cases <- cases + [HE.Case p b]
+                    (context, cases, bind_group)
+                ) (context, [], HP.BindGroup empty)
+            context <- bind_group.bindings |> Map.iter |> fold (\context, (name, instances) -> do
+                    if getLength instances != getLength patterns
+                        then addErrorToContext context (OrPatternMismatch name location)
+                        else context
+                ) context
+            (context, cases, Some bind_group)
+        _ -> do
+            pattern_env <- createPatternEnvironment False
+            (context, pattern_env, block_env, p) <- processPattern context pattern_env block_env pattern
+            context <- validatePatternEnv pattern_env context
+            (context, _, b) <- processExpr context block_env body
+            (context, [HE.Case p b], None)
+    (context, cases, bind_group)
 
 data PathResolveResult = FunctionCall ([HE.Expr] -> HE.SimpleExpr)
 
@@ -258,7 +278,7 @@ processRecordFieldInit field_inits (context, env, args) (HD.RecordField field_na
 
 shiftLambdaArgs :: Context -> HE.Expr -> Int -> (Context, HE.Expr)
 shiftLambdaArgs context (HE.Expr case_of case_of_id case_of_location) offset = case case_of of
-    HE.CaseOf body_expr cases -> do
+    HE.CaseOf body_expr cases _ -> do
         (HE.Expr body_expr body_id body_location) <- body_expr
         case body_expr of
             HE.Tuple arg_refs ->
@@ -291,7 +311,7 @@ shiftLambdaArgs context (HE.Expr case_of case_of_id case_of_location) offset = c
                         _ -> panic "Case body is not a tuple"
                     _ -> panic "Case body is not tuple pattern"
                 cases <- [HE.Case pattern only_case.body]
-                case_of <- HE.CaseOf (HE.Expr (HE.Tuple arg_refs) body_id body_location) cases
+                case_of <- HE.CaseOf (HE.Expr (HE.Tuple arg_refs) body_id body_location) cases []
                 expr <- HE.Expr case_of case_of_id case_of_location
                 (context, expr)
             _ -> panic "Body is not a tuple"
@@ -430,11 +450,14 @@ processExpr context env (SE.Expr expr location) = do
             (context, env, HE.Formatter fmt hir_args)
         SE.CaseOf body cases -> do
             (context, env, hir_body) <- processExpr context env body
-            (context, env, cases) <- cases |> List.iter |> fold (\(context, env, cases), c -> do
-                (context, hir_case) <- processCase context env c
-                cases <- cases + [hir_case]
-                (context, env, cases)) (context, env, [])
-            (context, env, HE.CaseOf hir_body cases)
+            (context, env, cases, bind_groups) <- cases |> List.iter |> fold (\(context, env, cases, bind_groups), c -> do
+                (context, hir_cases, bind_group) <- processCase context env c
+                cases <- cases + hir_cases
+                bind_groups <- case bind_group of
+                    Some bind_group -> bind_groups + [bind_group]
+                    None -> bind_groups
+                (context, env, cases, bind_groups)) (context, env, [], [])
+            (context, env, HE.CaseOf hir_body cases bind_groups)
         SE.Not arg -> do
             qn <- HPO.FullPath getStdOpsModuleName "opNot"
             (context, env, hir_arg) <- processExpr context env arg

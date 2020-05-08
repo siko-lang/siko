@@ -46,3 +46,14 @@ getBinding env name = do
 
 getAllBindings :: PatternEnvironment -> [String]
 getAllBindings env = env.bindings |> Map.iter |> fold (\names, (name, _) -> names + [name]) []
+
+envToBindGroup :: PatternEnvironment -> Environment -> BindGroup -> BindGroup
+envToBindGroup pattern_env block_env bind_group = pattern_env.bindings |> Map.iter |> fold (\bind_group, (name, _) -> do
+            bind_ref <- case getBinding block_env name of
+                Some (bind_ref, _) -> bind_ref
+                None -> panic "Bind {} not found in block env" % name
+            (bindings, _) <- alter (\instances -> case instances of
+                    Some instances -> Some (instances + [bind_ref])
+                    None -> Some [bind_ref]) name bind_group.bindings
+            bind_group { bindings = bindings }
+        ) bind_group

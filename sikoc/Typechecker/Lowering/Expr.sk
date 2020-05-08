@@ -84,7 +84,6 @@ processBind hir_program (HP.Pattern p id _) rhs = do
                 arg_exprs <- arg_exprs + exprs
                 arg_exprs) []
             [ME.VarDecl var rhs] + arg_exprs
-        HP.Or _ -> panic "Or pattern in bind lhs in lowering"
 
 processChoiceTree :: Context -> Choice -> ME.Expr -> Map String MT.Type -> ME.Expr
 processChoiceTree context choice parent_expr path_types = do
@@ -270,7 +269,7 @@ processExpr context queue sub hir_expr = do
         HE.Formatter fmt args -> do
             (context, queue, mir_args) <- processArgs context queue sub args
             (context, queue, ME.Formatter fmt mir_args)
-        HE.CaseOf body cases -> do // TODO
+        HE.CaseOf body cases bind_groups -> do // TODO
             (context, queue, mir_body) <- processExpr context queue sub body
             HE.Expr _ body_id _ <- body
             hir_body_type <- getExprType context.type_store body_id
@@ -281,7 +280,8 @@ processExpr context queue sub hir_expr = do
             (path_types, _) <- insert empty "p" mir_body_type // FIXME: this is really really ugly..
             match_expr <- case get context.state.choice_tree_store.choice_trees expr_id of
                 Some choice_tree -> do
-                    processChoiceTree context choice_tree parent_expr path_types
+                    r <- processChoiceTree context choice_tree parent_expr path_types
+                    r
                 None -> panic "Choice tree not found"
             decl <- ME.VarDecl parent_var mir_body
             match_var <- ME.Var "m"

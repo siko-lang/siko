@@ -33,6 +33,8 @@ matchPatterns context pattern_id1 pattern_id2 location = do
 initializePatternType :: Context -> P.Pattern -> Context
 initializePatternType context (P.Pattern pattern id location) = do
     //println "InitializePatternType: pattern {} {}" % (pattern, id)
+    type_store <- TS.addPatternLocation context.type_store id location
+    context <- context { type_store = type_store }
     case pattern of
         P.Binding bind_ref -> do
             (context, var) <- getNewVar context
@@ -90,10 +92,6 @@ initializePatternType context (P.Pattern pattern id location) = do
                 _ -> panic "Adt_type_info is not an adt_type_info!"
             context <- addPatternType context id (TS.PatternWithAdtType adt_type_info)
             context
-        P.Or patterns -> do
-            (context, var) <- getNewVar context
-            context <- addPatternType context id (TS.PatternType var)
-            context
 
 checkPatternType :: Context -> P.Pattern -> Context
 checkPatternType context (P.Pattern pattern id location) = do
@@ -138,12 +136,6 @@ checkPatternType context (P.Pattern pattern id location) = do
                     adt_type_info <- DS.applyAdtTypeInfo adt_type_info sub
                     (context, adt_type_info, arg_index + 1)
                 ) (context, adt_type_info, 0)
-            context
-        P.Or sub_patterns -> do
-            (P.Pattern _ first_id _) <- atIndex sub_patterns 0
-            context <- sub_patterns |> List.iter |> fold (\context, (P.Pattern _ sub_pattern_id sub_pattern_location) -> do
-                (context, _) <- matchPatterns context first_id sub_pattern_id sub_pattern_location
-                context) context
             context
 
 checkMissingTypeInPattern :: [T.TypeVar] -> (Context, [T.TypeVar]) -> P.Pattern -> (Context, [T.TypeVar])

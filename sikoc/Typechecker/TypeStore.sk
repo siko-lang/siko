@@ -1,5 +1,6 @@
 module Siko.Typechecker.TypeStore where
 
+import Siko.Syntax.Location
 import Siko.HIR.Type as T
 import Siko.HIR.Expr as E
 import Siko.HIR.Pattern as P
@@ -18,10 +19,11 @@ data PatternTypeState = PatternType T.Type
 
 data TypeStore = { expr_types :: Map E.ExprId ExprTypeState,
                    pattern_types :: Map P.PatternId PatternTypeState,
+                   pattern_locations :: Map P.PatternId Location
                  } deriving (Show)
 
 initializeTypeStore :: TypeStore
-initializeTypeStore = TypeStore empty empty
+initializeTypeStore = TypeStore empty empty empty
 
 addExprType :: TypeStore -> E.ExprId -> ExprTypeState -> TypeStore
 addExprType store expr_id expr_type = do
@@ -32,6 +34,17 @@ addPatternType :: TypeStore -> P.PatternId -> PatternTypeState -> TypeStore
 addPatternType store pattern_id pattern_type = do
     (pattern_types, _) <- insert store.pattern_types pattern_id pattern_type
     store { pattern_types = pattern_types }
+
+addPatternLocation :: TypeStore -> P.PatternId -> Location -> TypeStore
+addPatternLocation store pattern_id location = do
+    (pattern_locations, _) <- insert store.pattern_locations pattern_id location
+    store { pattern_locations = pattern_locations }
+
+getPatternLocation :: TypeStore -> P.PatternId -> Location
+getPatternLocation store pattern_id =
+    case get store.pattern_locations pattern_id of
+        Some l -> l
+        None -> panic "Pattern not found in pattern locatios map"
 
 getTypeFromExprTypeState :: ExprTypeState -> T.Type
 getTypeFromExprTypeState expr_type =

@@ -42,23 +42,6 @@ processPatterns context pattern_env env patterns = do
                 (context, pattern_env, env, hir_patterns)) (context, pattern_env, env, [])
     (context, pattern_env, env, hir_patterns)
 
-processOrPatterns :: Context -> Environment -> [SP.Pattern] -> Location -> (Context, Environment, [HP.Pattern])
-processOrPatterns context env patterns location = do
-    (context, pattern_envs, env, hir_patterns) <- patterns |> List.iter |> fold (\(context, pattern_envs, env, hir_patterns), pattern -> do
-                pattern_env <- createPatternEnvironment False
-                (context, pattern_env, env, hir_pattern) <- processPattern context pattern_env env pattern
-                context <- validatePatternEnv pattern_env context
-                hir_patterns <- hir_patterns + [hir_pattern]
-                pattern_envs <- pattern_envs + [pattern_env]
-                (context, pattern_envs, env, hir_patterns)) (context, [], env, [])
-    (_, full_match) <- pattern_envs |> List.iter |> map (\env -> getAllBindings env) |> fold (\(prev, result), l -> case prev of
-        Some p -> (Some l, l == p && result)
-        None -> (Some l, result)) (None, True)
-    context <- if not full_match
-        then addErrorToContext context (OrPatternMismatch location)
-        else context
-    (context, env, hir_patterns)
-
 processPattern :: Context -> PatternEnvironment -> Environment -> SP.Pattern -> (Context, PatternEnvironment, Environment, HP.Pattern)
 processPattern context pattern_env env (SP.Pattern pattern location) = do
     (state, pattern_id) <- getNextPatternId context.state
@@ -167,7 +150,5 @@ processPattern context pattern_env env (SP.Pattern pattern location) = do
                         _ -> panic "resolved record is not a record"
                 Err context -> do
                     (context, pattern_env, env, HP.Tuple [])
-        SP.Or patterns -> do
-            (context, env, hir_patterns) <- processOrPatterns context env patterns location
-            (context, pattern_env, env, HP.Or hir_patterns)
+        SP.Or _ -> panic "Or pattern in processPattern"
     (context, pattern_env, env, HP.Pattern hir_pattern pattern_id location)

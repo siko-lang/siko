@@ -31,7 +31,6 @@ traversePattern context pattern_fn expr_fn pattern = do
         P.Typed arg _ -> traversePattern context pattern_fn expr_fn arg
         P.Record qn args -> processPatterns context pattern_fn expr_fn args
         P.Variant qn _ args -> processPatterns context pattern_fn expr_fn args
-        P.Or args -> processPatterns context pattern_fn expr_fn args
     context <- pattern_fn context pattern
     context
 
@@ -66,7 +65,7 @@ traverse context expr_fn pattern_fn expr = do
         E.FieldAccess _ receiver -> traverse context expr_fn pattern_fn receiver
         E.TupleFieldAccess _ receiver -> traverse context expr_fn pattern_fn receiver
         E.Formatter _ args -> processExprs context expr_fn pattern_fn args
-        E.CaseOf body cases -> do
+        E.CaseOf body cases _ -> do
             context <- traverse context expr_fn pattern_fn body
             context <- cases |> List.iter |> fold (\context, c -> do
                 context <- traversePattern context pattern_fn expr_fn c.pattern
