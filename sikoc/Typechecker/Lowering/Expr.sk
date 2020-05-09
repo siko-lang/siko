@@ -85,8 +85,26 @@ processBind hir_program (HP.Pattern p id _) rhs = do
                 arg_exprs) []
             [ME.VarDecl var rhs] + arg_exprs
 
-processChoiceTree :: Context -> Choice -> ME.Expr -> Map String MT.Type -> ME.Expr
-processChoiceTree context choice parent_expr path_types = do
+processCaseEnds :: [MatchInfo] -> [ME.Expr] -> [Option ME.Expr] -> ME.Expr
+processCaseEnds match_infos mir_case_bodies mir_guards = do
+    if getLength match_infos == 1
+        then do
+            MatchInfo index add <- atIndex match_infos 0
+            mir_case_body <- atIndex mir_case_bodies index
+            mir_case_body
+        else case pop match_infos of
+        Some (match_info, match_infos) -> do
+            MatchInfo index add <- match_info
+            cond_expr <- case atIndex mir_guards index of
+                Some g -> g
+                None -> panic "guard expr not found"
+            then_expr <- atIndex mir_case_bodies index
+            else_expr <- processCaseEnds match_infos mir_case_bodies mir_guards
+            ME.If cond_expr then_expr else_expr
+        None -> panic "Matchinfos ran out!"
+
+processChoiceTree :: Context -> Choice -> ME.Expr -> Map String MT.Type -> [ME.Expr] -> [Option ME.Expr] -> ME.Expr
+processChoiceTree context choice parent_expr path_types mir_case_bodies mir_guards = do
     case choice of
         Choice path subchoices -> do
             parent_path <- getParentPath path
@@ -113,7 +131,7 @@ processChoiceTree context choice parent_expr path_types = do
             (path_types, _) <- insert path_types ("{}" % path) body_type
             cases <- subchoices |> Map.iter |> fold (\cases, (cond, subchoices) -> do
                 choice <- atIndex subchoices 0
-                choice_expr <- processChoiceTree context choice parent_expr path_types
+                choice_expr <- processChoiceTree context choice parent_expr path_types mir_case_bodies mir_guards
                 (cond, expr) <- case cond of
                     IntegerCondition literal -> do
                         (ME.IntegerChecker literal, choice_expr)
@@ -134,9 +152,7 @@ processChoiceTree context choice parent_expr path_types = do
                 cases) []
             ME.Match body_expr cases
         CaseEnd cs -> do
-            match_info <- atIndex cs 0
-            MatchInfo index add <- match_info
-            ME.MatchEnd "end {}" % index
+            processCaseEnds cs mir_case_bodies mir_guards
 
 patternToVar :: HP.PatternId -> ME.Var
 patternToVar pattern_id = do
@@ -269,7 +285,22 @@ processExpr context queue sub hir_expr = do
         HE.Formatter fmt args -> do
             (context, queue, mir_args) <- processArgs context queue sub args
             (context, queue, ME.Formatter fmt mir_args)
-        HE.CaseOf body cases bind_groups -> do // TODO
+        HE.CaseOf body hir_cases bind_groups -> do // TODO
+            hir_case_bodies <- hir_cases |> List.iter |> map (\HE.Case _ body -> body) |> toList
+            hir_guards <- hir_cases |> List.iter |> map (\HE.Case p _ -> do
+                HP.Pattern p _ _ <- p
+                case p of
+                    HP.Guarded _ expr -> Some expr
+                    _ -> None) |> toList
+            (context, queue, mir_case_bodies) <- processArgs context queue sub hir_case_bodies
+            (context, queue, mir_guards) <- hir_guards |> List.iter |> fold (\(context, queue, mir_guards), guard_expr -> do
+                (context, queue, mir_guard_expr) <- case guard_expr of
+                    Some expr -> do
+                        (context, queue, mir_guard_expr) <- processExpr context queue sub expr
+                        (context, queue, Some mir_guard_expr)
+                    None -> (context, queue, None)
+                mir_guards <- mir_guards + [mir_guard_expr]
+                (context, queue, mir_guards)) (context, queue, [])
             (context, queue, mir_body) <- processExpr context queue sub body
             HE.Expr _ body_id _ <- body
             hir_body_type <- getExprType context.type_store body_id
@@ -280,8 +311,7 @@ processExpr context queue sub hir_expr = do
             (path_types, _) <- insert empty "p" mir_body_type // FIXME: this is really really ugly..
             match_expr <- case get context.state.choice_tree_store.choice_trees expr_id of
                 Some choice_tree -> do
-                    r <- processChoiceTree context choice_tree parent_expr path_types
-                    r
+                    processChoiceTree context choice_tree parent_expr path_types mir_case_bodies mir_guards
                 None -> panic "Choice tree not found"
             decl <- ME.VarDecl parent_var mir_body
             match_var <- ME.Var "m"

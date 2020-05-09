@@ -66,15 +66,19 @@ instance Show Condition where
         VariantCondition i -> "v:{}" % i
         WildcardCondition -> "w"
 
-data AdditionalInfo = Guarded
-                    | Bind ValuePath String
-                    deriving (Show, PartialEq)
+data CaseBind = { path :: ValuePath,
+                  bind_ref :: P.BindRef
+                } deriving (Show)
 
-processPattern :: Context -> [PendingPattern] -> ([AdditionalInfo], [Check])
+data AdditionalInfo = { guarded :: Bool,
+                        binds :: [CaseBind],
+                      } deriving (Show)
+
+processPattern :: Context -> [PendingPattern] -> (AdditionalInfo, [Check])
 processPattern context pendingPatterns = do
     pending_pattern <- case head pendingPatterns of
         Some first -> first
-        None -> return ([], [])
+        None -> return (AdditionalInfo False [], [])
     pendingPatterns <- case tail pendingPatterns of
         Some p -> p
         None -> []
@@ -85,8 +89,8 @@ processPattern context pendingPatterns = do
             (P.BindRef s _) <- ref
             (additional_info, checks) <- processPattern context pendingPatterns
             checks <- [Check path (WildcardCondition)] + checks
-            additional_info <- additional_info + [Bind path s]
-            (additional_info, checks)
+            binds <- additional_info.binds + [CaseBind path ref]
+            (additional_info { binds = binds }, checks)
         P.Tuple args -> do
             (args, _) <- args |> List.iter |> fold (\(args, index), arg -> do
                     P.Pattern _ arg_id _ <- arg
@@ -101,8 +105,7 @@ processPattern context pendingPatterns = do
         P.Guarded p expr -> do
             arg <- pending_pattern { pattern = p }
             (additional_info, checks) <- processPattern context ([arg] + pendingPatterns)
-            additional_info <- additional_info + [Guarded]
-            (additional_info, checks)
+            (additional_info { guarded = True }, checks)
         P.Wildcard -> do
             (additional_info, checks) <- processPattern context pendingPatterns
             checks <- [Check path WildcardCondition] + checks
@@ -157,7 +160,7 @@ addUnreachablePatternError context location = do
     //context <- context { state = state }
     context
 
-data MatchInfo = MatchInfo Int [AdditionalInfo] deriving (PartialEq)
+data MatchInfo = MatchInfo Int AdditionalInfo
 
 data Choice = Choice ValuePath (Map Condition [Choice])
               | CaseEnd [MatchInfo]
@@ -167,7 +170,7 @@ getValuePath choice = case choice of
     Choice path _ -> Some path
     CaseEnd _ -> None
 
-checkToChoice :: [Check] -> [AdditionalInfo] -> Int -> Choice
+checkToChoice :: [Check] -> AdditionalInfo -> Int -> Choice
 checkToChoice checks additional_info case_index = do
     (first, rest) <- case head checks of
         Some first -> do
@@ -257,9 +260,12 @@ mergeRoots choice1 choice2 = do
                     (path, choices)
                 ) |> toMap
             Choice path1 subchoices
-        (CaseEnd indices1, CaseEnd indices2) -> do
-            indices <- indices1 + indices2
-            CaseEnd indices
+        (CaseEnd matches1, CaseEnd matches2) -> do
+            MatchInfo _ additional_info <- atIndex matches2 0
+            matches <- if additional_info.guarded
+                then matches1 + matches2
+                else matches1
+            CaseEnd matches
         _ -> panic "Missing root choice"
 
 choiceToNode :: D.Graph -> Choice -> (D.Graph, D.NodeId)
@@ -275,9 +281,9 @@ choiceToNode g choice = case choice of
                     g) g
                 g) g
         (g, id)
-    CaseEnd indices -> do
-        names <- indices |> List.iter |> map (\MatchInfo case_index additional_info -> do
-            "{}:{}" % (case_index, additional_info)) |> toList
+    CaseEnd matches -> do
+        names <- matches |> List.iter |> map (\MatchInfo case_index additional_info -> do
+            "{}" % (case_index)) |> toList
         node_name <- "[{}]" % join names ","
         (g, id) <- D.addNode g node_name
         (g, id)
@@ -331,13 +337,18 @@ walkChoiceTree choice checks pattern_info = do
                 choices <- choices |> List.iter |> map (\choice -> walkChoiceTree choice checks pattern_info) |> toList
                 (cond, choices)) |> toMap
             Choice path subchoices
-        CaseEnd indices -> do
+        CaseEnd matches -> do
             match <- pattern_info.checks |> List.iter |> fold (\match, check -> match && contains checks check) True
             if match
                 then do
-                    if contains indices pattern_info.end
-                        then choice
-                        else CaseEnd (indices + [pattern_info.end])
+                    MatchInfo current add <- pattern_info.end
+                    if isEmpty matches || add.guarded
+                        then do
+                            prevs <- matches |> List.iter |> map (\MatchInfo id _ -> id) |> toList
+                            if contains prevs current
+                                then choice
+                                else CaseEnd (matches + [pattern_info.end])
+                        else choice
                 else choice
 
 remergeChoices :: Choice -> [Choice] -> Choice
@@ -354,11 +365,63 @@ processSinglePattern context pattern case_index choices = do
     choices <- choices + [choice]
     (choices, case_index + 1)
 
+dumpChoiceTree :: Choice -> E.ExprId -> ()
+dumpChoiceTree choice id = do
+    g <- D.createGraph "choice_tree"
+    (g, _) <- choiceToNode g choice
+    s <- D.generateDot g
+    writeTextFile ("choice_tree_{}.dot" % id) s
+
+data MissingCase = MissingCase // TODO: fill with actual info about missing case
+
+checkBranches :: Choice -> ([MissingCase], [Int])
+checkBranches choice =
+    case choice of
+        Choice _ subchoices -> subchoices |> Map.iter |> fold (\(missing_cases, found_cases), (cond, subchoices) -> do
+                (m, f) <- subchoices |> List.iter |> fold (\(missing_cases, found_cases), choice -> do
+                        (m, f) <- checkBranches choice
+                        missing_cases <- missing_cases + m
+                        found_cases <- found_cases + f
+                        (missing_cases, found_cases)) ([], [])
+                missing_cases <- missing_cases + m
+                found_cases <- found_cases + f
+                (missing_cases, found_cases)
+            ) ([], [])
+        CaseEnd matches -> do
+            (guarded_only, found_cases) <- matches |> List.iter |> fold (\(guarded_only, found_cases), MatchInfo id additional_info -> do
+                guarded_only <- guarded_only && additional_info.guarded
+                (guarded_only, found_cases + [id])) (True, [])
+            if guarded_only || isEmpty matches
+                then ([MissingCase], found_cases)
+                else ([], found_cases)
+
+validateChoiceTree :: Context -> Choice -> Location -> [E.Case] -> Context
+validateChoiceTree context choice location cases = do
+    (missing_cases, found_cases) <- checkBranches choice
+    (context, _) <- cases |> List.iter |> fold (\(context, case_index), c -> do
+            P.Pattern p _ location <- c.pattern
+            context <- if contains found_cases case_index
+                then context
+                else do
+                    err <- UnreachableCase location
+                    state <- addError context.state err
+                    context <- context { state = state }
+                    context
+            (context, case_index + 1)
+        ) (context, 0)
+    if isEmpty missing_cases
+        then context
+        else do
+            err <- NonExhaustiveCase location
+            state <- addError context.state err
+            context <- context { state = state }
+            context
+
 checkCase :: Context -> E.ExprId -> E.Expr -> [E.Case] -> Context
 checkCase context expr_id case_body cases = do
-    (E.Expr _ body_id _) <- case_body
+    (E.Expr _ body_id location) <- case_body
     (choices, _) <- cases |> List.iter |> fold (\(choices, case_index), c -> do
-            (P.Pattern p _ location) <- c.pattern
+            P.Pattern p _ location <- c.pattern
             (choices, case_index) <- processSinglePattern context c.pattern case_index choices
             (choices, case_index)
         ) ([], 0)
@@ -366,6 +429,8 @@ checkCase context expr_id case_body cases = do
     m <- pruneLeafWildCardsFromTree m
     m <- addEmptyWildcards context m
     m <- remergeChoices m choices
+    //dumpChoiceTree m expr_id
+    context <- validateChoiceTree context m location cases
     state <- context.state // FIXME
     choice_tree_store <- state.choice_tree_store
     (choice_trees, _) <- insert choice_tree_store.choice_trees expr_id m
