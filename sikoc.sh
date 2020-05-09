@@ -2,4 +2,4 @@
 
 ./siko sikoc
 
- #dot *.dot -Tpng -O
+#dot *.dot -Tpng -O
