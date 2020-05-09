@@ -261,11 +261,7 @@ mergeRoots choice1 choice2 = do
                 ) |> toMap
             Choice path1 subchoices
         (CaseEnd matches1, CaseEnd matches2) -> do
-            MatchInfo _ additional_info <- atIndex matches2 0
-            matches <- if additional_info.guarded
-                then matches1 + matches2
-                else matches1
-            CaseEnd matches
+            CaseEnd (matches1 + matches2)
         _ -> panic "Missing root choice"
 
 choiceToNode :: D.Graph -> Choice -> (D.Graph, D.NodeId)
@@ -341,14 +337,16 @@ walkChoiceTree choice checks pattern_info = do
             match <- pattern_info.checks |> List.iter |> fold (\match, check -> match && contains checks check) True
             if match
                 then do
-                    MatchInfo current add <- pattern_info.end
-                    if isEmpty matches || add.guarded
-                        then do
-                            prevs <- matches |> List.iter |> map (\MatchInfo id _ -> id) |> toList
-                            if contains prevs current
-                                then choice
-                                else CaseEnd (matches + [pattern_info.end])
-                        else choice
+                    merged <- matches + [pattern_info.end]
+                    (merged, _, _) <- merged |> List.iter |> fold (\(merged, found, prev_guarded), match -> do
+                            MatchInfo end additional_info <- match
+                            if prev_guarded
+                                then if contains found end
+                                    then (merged, found, prev_guarded)
+                                    else (merged + [match], found + [end], additional_info.guarded)
+                                else (merged, found, prev_guarded)
+                        ) ([], [], True)
+                    CaseEnd merged
                 else choice
 
 remergeChoices :: Choice -> [Choice] -> Choice

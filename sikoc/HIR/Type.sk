@@ -10,7 +10,8 @@ module Siko.HIR.Type(Type(..),
                      getResultType,
                      fixedType,
                      collectClassesFromClassConstraints,
-                     isConcreteType) where
+                     isConcreteType,
+                     removeFixed) where
 
 import Siko.Constants
 import Siko.HIR.Program as HP
@@ -246,3 +247,20 @@ isConcreteType type = case type of
     Ref t -> isConcreteType t
     Tuple args -> args |> List.iter |> fold (\concrete, arg -> do
         concrete && isConcreteType arg) True
+
+removeFixed :: Type -> Type
+removeFixed type = case type of
+    Var _ _ -> type
+    FixedTypeArg _ var constraints -> Var var constraints
+    Named qn args -> do
+        args <- args |> List.iter |> map (\arg -> removeFixed arg) |> toList
+        Named qn args
+    Function from to -> do
+        from <- removeFixed from
+        to <- removeFixed to
+        Function from to
+    Never var -> type
+    Ref t -> Ref (removeFixed t)
+    Tuple args -> do
+        args <- args |> List.iter |> map (\arg -> removeFixed arg) |> toList
+        Tuple args

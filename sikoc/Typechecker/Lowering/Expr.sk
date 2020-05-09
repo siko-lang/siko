@@ -32,11 +32,16 @@ processArgs context queue sub args = do
                 (context, queue, mir_args + [mir_arg])) (context, queue, [])
     (context, queue, mir_args)
 
+getMonomorphizedExprType :: Context -> U.Substitution -> HE.ExprId -> HT.Type
+getMonomorphizedExprType context sub id = do
+    type <- getExprType context.type_store id
+    type <- HT.removeFixed type
+    U.apply sub type
+
 processArgTypes :: Context -> U.Substitution -> [HE.Expr] -> [HT.Type]
 processArgTypes context sub args =
     args |> List.iter |> map (\(HE.Expr _ id _) -> do
-                type <- getExprType context.type_store id
-                U.apply sub type) |> toList
+                getMonomorphizedExprType context sub id) |> toList
 
 processBind :: HPO.Program -> HP.Pattern -> ME.Expr -> [ME.Expr]
 processBind hir_program (HP.Pattern p id _) rhs = do
@@ -118,8 +123,8 @@ processCaseEnds match_infos mir_case_bodies mir_guards path_info_map = do
             ME.If cond_expr then_expr else_expr
         None -> panic "Matchinfos ran out!"
 
-processChoiceTree :: Context -> Choice -> Int -> Map ValuePath ValuePathInfo -> [ME.Expr] -> [Option ME.Expr] -> ME.Expr
-processChoiceTree context choice index path_info_map mir_case_bodies mir_guards = do
+processChoiceTree :: Context -> Choice -> Map ValuePath ValuePathInfo -> [ME.Expr] -> [Option ME.Expr] -> (Context, ME.Expr)
+processChoiceTree context choice path_info_map mir_case_bodies mir_guards = do
     case choice of
         Choice path subchoices -> do
             parent_path <- getParentPath path
@@ -142,11 +147,12 @@ processChoiceTree context choice index path_info_map mir_case_bodies mir_guards 
                     field <- atIndex variant_type.fields index
                     (ME.FieldAccess field.name parent_info.parent_expr, field.type)
                 _ -> (parent_info.parent_expr, parent_info.type)
-            pattern_var <- ME.Var "m{}" % index + 1
+            (context, id) <- getNextMatchVarId context
+            pattern_var <- ME.Var "m{}" % id
             (path_info_map, _) <- insert path_info_map path (ValuePathInfo body_type (ME.VarRef pattern_var))
-            cases <- subchoices |> Map.iter |> fold (\cases, (cond, subchoices) -> do
+            (context, cases) <- subchoices |> Map.iter |> fold (\(context, cases), (cond, subchoices) -> do
                 choice <- atIndex subchoices 0
-                choice_expr <- processChoiceTree context choice (index + 1) path_info_map mir_case_bodies mir_guards
+                (context, choice_expr) <- processChoiceTree context choice path_info_map mir_case_bodies mir_guards
                 (cond, expr) <- case cond of
                     IntegerCondition literal -> do
                         (ME.IntegerChecker literal, choice_expr)
@@ -164,13 +170,14 @@ processChoiceTree context choice index path_info_map mir_case_bodies mir_guards 
                         (ME.WildcardChecker, choice_expr)
                 c <- ME.MatchCase cond expr
                 cases <- cases + [c]
-                cases) []
+                (context, cases)) (context, [])
             var_decl <- ME.VarDecl pattern_var body_expr
             var_ref <- ME.VarRef pattern_var
             match <- ME.Match var_ref cases
-            ME.Do [var_decl, match]
+            (context, ME.Do [var_decl, match])
         CaseEnd cs -> do
-            processCaseEnds cs mir_case_bodies mir_guards path_info_map
+            expr <- processCaseEnds cs mir_case_bodies mir_guards path_info_map
+            (context, expr)
 
 patternToVar :: HP.PatternId -> ME.Var
 patternToVar pattern_id = do
@@ -180,13 +187,16 @@ patternToVar pattern_id = do
 processExpr :: Context -> FQ.FunctionQueue -> U.Substitution -> HE.Expr -> (Context, FQ.FunctionQueue, ME.Expr)
 processExpr context queue sub hir_expr = do
     HE.Expr expr expr_id _ <- hir_expr
-    expr_type <- getExprType context.type_store expr_id
+    expr_type <- getMonomorphizedExprType context sub expr_id
     case expr of
         HE.StaticFunctionCall qn args -> do
             arg_types <- processArgTypes context sub args
             (context, queue, mir_args) <- processArgs context queue sub args
             function_type_info <- FS.getFunctionTypeInfo context.function_store qn
-            (state, function_type, _) <- getFunctionType context.state arg_types expr_type function_type_info.function_type
+            (function_type, var_gen) <- TUtil.instantiateType function_type_info.function_type context.state.var_gen
+            state <- context.state // FIXME
+            state <- state { var_gen = var_gen }
+            (state, function_type, _) <- getFunctionType context.state arg_types expr_type function_type
             queue_item <- FQ.Normal qn function_type
             context <- context { state = state }
             (queue, function_id) <- FQ.insert queue queue_item
@@ -303,7 +313,7 @@ processExpr context queue sub hir_expr = do
         HE.Formatter fmt args -> do
             (context, queue, mir_args) <- processArgs context queue sub args
             (context, queue, ME.Formatter fmt mir_args)
-        HE.CaseOf body hir_cases bind_groups -> do // TODO
+        HE.CaseOf body hir_cases bind_groups -> do
             hir_case_bodies <- hir_cases |> List.iter |> map (\HE.Case _ body -> body) |> toList
             hir_guards <- hir_cases |> List.iter |> map (\HE.Case p _ -> do
                 HP.Pattern p _ _ <- p
@@ -321,14 +331,14 @@ processExpr context queue sub hir_expr = do
                 (context, queue, mir_guards)) (context, queue, [])
             (context, queue, mir_body) <- processExpr context queue sub body
             HE.Expr _ body_id _ <- body
-            hir_body_type <- getExprType context.type_store body_id
+            hir_body_type <- getMonomorphizedExprType context sub body_id
             (type_store, mir_body_type) <- processType context.type_store context.hir_program hir_body_type
             context <- context { type_store = type_store }
-            match_expr <- case get context.state.choice_tree_store.choice_trees expr_id of
+            (context, match_expr) <- case get context.state.choice_tree_store.choice_trees expr_id of
                 Some choice_tree -> do
                     p <- Option.unwrap (getValuePath choice_tree)
                     (path_info_map, _) <- insert empty p (ValuePathInfo mir_body_type mir_body)
-                    processChoiceTree context choice_tree 0 path_info_map mir_case_bodies mir_guards
+                    processChoiceTree context choice_tree path_info_map mir_case_bodies mir_guards
                 None -> panic "Choice tree not found"
             (context, queue, match_expr)
         HE.RecordUpdate ref updates -> do
