@@ -9,7 +9,7 @@ instance Show FunctionId where
     show (FunctionId n i) = "{}_{}" % (n, i)
 
 data FunctionKind = Normal E.Expr
-                    | VariantCtor
+                    | VariantCtor Int
                     | RecordCtor
                     | Extern
 
@@ -19,9 +19,9 @@ data Function = { id :: FunctionId,
 
 dump :: Function -> String
 dump function = do
-    s <- "{} :: {}" % (function.id, function.type)
+    s <- "{} :: {}\n" % (function.id, function.type)
     case function.kind of
         Normal body -> s + "{} = {}" % (function.id, (E.prettyPrint body (E.Indent 0)).0)
-        VariantCtor -> s + "{} = <variant_ctor>" % (function.id)
+        VariantCtor index -> s + "{} = <variant_ctor:{}>" % (function.id, index)
         RecordCtor -> s + "{} = <record_ctor>" % (function.id)
         Extern -> s + "{} = extern" % (function.id)

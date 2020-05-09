@@ -20,7 +20,7 @@ data CallContext = { args :: [HT.Type],
                    } deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
 data FunctionQueueItem = Normal HP.FullyQualifiedName HT.Type
-                         | VariantCtor HP.FullyQualifiedName HT.Type
+                         | VariantCtor HP.FullyQualifiedName Int HT.Type
                          | RecordCtor HP.FullyQualifiedName HT.Type
                          | TupleCtor HT.Type
                          | AutoDerive HT.Type HP.FullyQualifiedName String CallContext
@@ -38,7 +38,7 @@ createFunctionQueue = FunctionQueue [] Map.empty 0
 getItemName :: FunctionQueueItem -> String
 getItemName item = case item of
     Normal n _ -> "{}" % n
-    VariantCtor n _ -> "{}" % n
+    VariantCtor n _ _ -> "{}" % n
     RecordCtor n _ -> "{}" % n
     TupleCtor _ -> "TupleCtor"
     AutoDerive _ _ n _ -> "{}" % n
@@ -96,13 +96,13 @@ processItem queue item mir_function_id context = do
                 HF.Normal -> processNormalFunction queue context mir_function_id hir_type qn hir_function
                 HF.InstanceMember _ -> processNormalFunction queue context mir_function_id hir_type qn hir_function
                 _ -> panic "processing of function kind {} is not implemented" % hir_function.kind
-        VariantCtor qn hir_type -> do
+        VariantCtor qn index hir_type -> do
                     (type_store, mir_type) <- TS.processType context.type_store context.hir_program hir_type
                     context <- context { type_store = type_store }
                     adt <- HP.getAdt context.hir_program qn
                     mir_function <- if getLength adt.variants == 1
                         then MF.Function mir_function_id MF.RecordCtor mir_type
-                        else MF.Function mir_function_id MF.VariantCtor mir_type
+                        else MF.Function mir_function_id (MF.VariantCtor index) mir_type
                     mir_program <- MP.addFunction context.mir_program mir_function_id mir_function
                     context <- context { mir_program = mir_program }
                     (context, queue)
