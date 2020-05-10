@@ -7,6 +7,7 @@ import Siko.Typechecker.ClassStore
 import Siko.Typechecker.Lowering
 import Siko.Typechecker.Lowering.FunctionQueue as FQ
 import Siko.Typechecker.Lowering.TypeStore
+import Siko.Typechecker.Lowering.ClosureStore as CS
 import Siko.Typechecker.Lowering.Util
 import Siko.Typechecker.Unification as U
 import Siko.Typechecker.Util as TUtil
@@ -147,7 +148,7 @@ processChoiceTree context choice path_info_map mir_case_bodies mir_guards = do
                     field <- atIndex variant_type.fields index
                     (ME.FieldAccess field.name parent_info.parent_expr, field.type)
                 _ -> (parent_info.parent_expr, parent_info.type)
-            (context, id) <- getNextMatchVarId context
+            (context, id) <- getNextVarId context
             pattern_var <- ME.Var "m{}" % id
             (path_info_map, _) <- insert path_info_map path (ValuePathInfo body_type (ME.VarRef pattern_var))
             (context, cases) <- subchoices |> Map.iter |> fold (\(context, cases), (cond, subchoices) -> do
@@ -197,11 +198,51 @@ processExpr context queue sub hir_expr = do
             state <- context.state // FIXME
             state <- state { var_gen = var_gen }
             (state, function_type, _) <- getFunctionType context.state arg_types expr_type function_type
-            queue_item <- FQ.Normal qn function_type
             context <- context { state = state }
+            queue_item <- FQ.Normal qn function_type
             (queue, function_id) <- FQ.insert queue queue_item
-            (context, queue, ME.StaticFunctionCall function_id mir_args)
-        HE.DynamicFunctionCall receiver args -> panic "{} NYI" % expr // TODO
+            current_arg_count <- getLength mir_args
+            arg_count <- getLength function_type_info.args
+            if arg_count == current_arg_count
+                then (context, queue, ME.StaticFunctionCall function_id mir_args)
+                else if arg_count > current_arg_count // partial application
+                    then do
+                        result_type <- HT.getResultType function_type current_arg_count
+                        (closure_store, name) <- CS.addClosure context.closure_store result_type
+                        closure_store <- CS.addClosureInstance closure_store result_type arg_types
+                        context <- context { closure_store = closure_store }
+                        queue_item <- FQ.ClosureCtor name function_type
+                        (queue, function_id) <- FQ.insert queue queue_item
+                        (context, queue, ME.StaticFunctionCall function_id mir_args)
+                    else (context, queue, ME.Do [])
+        HE.DynamicFunctionCall receiver args -> do
+            HE.Expr _ receiver_id _ <- receiver
+            receiver_type <- getMonomorphizedExprType context sub receiver_id
+            (context, queue, mir_receiver) <- processExpr context queue sub receiver
+            (context, queue, mir_args) <- processArgs context queue sub args
+            arg_types <- processArgTypes context sub args
+            (context, queue, calls) <- loop (context, queue, receiver_type, args, receiver, calls)
+                                  <- (context, queue, receiver_type, mir_args, mir_receiver, []) do
+                context :: Context <- context // FIXME
+                (closure_store, name) <- CS.addClosure context.closure_store receiver_type
+                context <- context { closure_store = closure_store }
+                result_type <- HT.getResultType receiver_type 1
+                case pop args of
+                    Some (arg, rest) -> do
+                        (context, id) <- getNextVarId context
+                        var <- ME.Var "closure{}" % id
+                        function_type <- HT.Function receiver_type result_type
+                        queue_item <- FQ.ClosureCall name function_type
+                        (queue, function_id) <- FQ.insert queue queue_item
+                        call <- ME.StaticFunctionCall function_id [receiver, arg]
+                        decl <- ME.VarDecl var call
+                        receiver <- ME.VarRef var
+                        calls <- calls + [decl]
+                        (context, queue, result_type, rest, receiver, calls)
+                    None -> do
+                        calls <- calls + [receiver]
+                        break (context, queue, calls)
+            (context, queue, ME.Do calls)
         HE.ClassMemberCall qn args -> do
             arg_types <- processArgTypes context sub args
             (context, queue, mir_args) <- processArgs context queue sub args
@@ -240,7 +281,7 @@ processExpr context queue sub hir_expr = do
                                     context <- context { state = state }
                                     (queue, function_id) <- FQ.insert queue queue_item
                                     (context, queue, ME.StaticFunctionCall function_id mir_args)
-                                _ -> panic "Auto generated instances are not yet implemented"
+                                _ -> panic "Auto generated instances are not yet implemented" // TODO
                         None -> panic "class member {} not found" % member_name
                 _ -> panic "ClassMember calls non class member"
         HE.VariantConstructorCall qn args -> do

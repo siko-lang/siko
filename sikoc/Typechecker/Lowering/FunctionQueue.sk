@@ -23,6 +23,8 @@ data FunctionQueueItem = Normal HP.FullyQualifiedName HT.Type
                          | VariantCtor HP.FullyQualifiedName Int HT.Type
                          | RecordCtor HP.FullyQualifiedName HT.Type
                          | TupleCtor HT.Type
+                         | ClosureCtor String HT.Type
+                         | ClosureCall String HT.Type
                          | AutoDerive HT.Type HP.FullyQualifiedName String CallContext
                          | ExternalCallImpl HP.FullyQualifiedName HT.Type String
                          deriving (Show, PartialEq, Eq, PartialOrd, Ord)
@@ -41,6 +43,8 @@ getItemName item = case item of
     VariantCtor n _ _ -> "{}" % n
     RecordCtor n _ -> "{}" % n
     TupleCtor _ -> "TupleCtor"
+    ClosureCtor n _ -> "ClosureCtor{}" % n
+    ClosureCall n _ -> "ClosureCall{}" % n
     AutoDerive _ _ n _ -> "{}" % n
     ExternalCallImpl _ _ n -> "{}" % n
 
@@ -118,6 +122,20 @@ processItem queue item mir_function_id context = do
                     (type_store, mir_type) <- TS.processType context.type_store context.hir_program hir_type
                     context <- context { type_store = type_store }
                     mir_function <- MF.Function mir_function_id MF.RecordCtor mir_type
+                    mir_program <- MP.addFunction context.mir_program mir_function_id mir_function
+                    context <- context { mir_program = mir_program }
+                    (context, queue)
+        ClosureCtor name hir_type -> do
+                    (type_store, mir_type) <- TS.processType context.type_store context.hir_program hir_type
+                    context <- context { type_store = type_store }
+                    mir_function <- MF.Function mir_function_id (MF.ClosureCtor name) mir_type
+                    mir_program <- MP.addFunction context.mir_program mir_function_id mir_function
+                    context <- context { mir_program = mir_program }
+                    (context, queue)
+        ClosureCall name hir_type -> do
+                    (type_store, mir_type) <- TS.processType context.type_store context.hir_program hir_type
+                    context <- context { type_store = type_store }
+                    mir_function <- MF.Function mir_function_id (MF.ClosureCall name) mir_type
                     mir_program <- MP.addFunction context.mir_program mir_function_id mir_function
                     context <- context { mir_program = mir_program }
                     (context, queue)
