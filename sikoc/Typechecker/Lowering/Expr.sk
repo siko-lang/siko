@@ -185,6 +185,31 @@ patternToVar pattern_id = do
     HP.PatternId id <- pattern_id
     ME.Var (show id)
 
+processDynamicFunctionCall :: Context -> FQ.FunctionQueue -> HT.Type -> [ME.Expr] -> ME.Expr -> (Context, FQ.FunctionQueue, [ME.Expr])
+processDynamicFunctionCall context queue receiver_type mir_args mir_receiver = do
+    (context, queue, calls) <- loop (context, queue, receiver_type, args, receiver, calls)
+                                  <- (context, queue, receiver_type, mir_args, mir_receiver, []) do
+                context :: Context <- context // FIXME
+                (closure_store, name) <- CS.addClosure context.closure_store receiver_type
+                context <- context { closure_store = closure_store }
+                result_type <- HT.getResultType receiver_type 1
+                case pop args of
+                    Some (arg, rest) -> do
+                        (context, id) <- getNextVarId context
+                        var <- ME.Var "closure{}" % id
+                        function_type <- HT.Function receiver_type result_type
+                        queue_item <- FQ.ClosureCall name function_type
+                        (queue, function_id) <- FQ.insert queue queue_item
+                        call <- ME.StaticFunctionCall function_id [receiver, arg]
+                        decl <- ME.VarDecl var call
+                        receiver <- ME.VarRef var
+                        calls <- calls + [decl]
+                        (context, queue, result_type, rest, receiver, calls)
+                    None -> do
+                        calls <- calls + [receiver]
+                        break (context, queue, calls)
+    (context, queue, calls)
+
 processExpr :: Context -> FQ.FunctionQueue -> U.Substitution -> HE.Expr -> (Context, FQ.FunctionQueue, ME.Expr)
 processExpr context queue sub hir_expr = do
     HE.Expr expr expr_id _ <- hir_expr
@@ -214,34 +239,22 @@ processExpr context queue sub hir_expr = do
                         queue_item <- FQ.ClosureCtor name function_type
                         (queue, function_id) <- FQ.insert queue queue_item
                         (context, queue, ME.StaticFunctionCall function_id mir_args)
-                    else (context, queue, ME.Do [])
+                    else do
+                        (static_args, dynamic_args) <- List.split mir_args arg_count
+                        call <- ME.StaticFunctionCall function_id static_args
+                        (context, id) <- getNextVarId context
+                        var <- ME.Var "closure{}" % id
+                        decl <- ME.VarDecl var call
+                        receiver_type <- HT.getResultType function_type (getLength static_args)
+                        (context, queue, calls) <- processDynamicFunctionCall context queue receiver_type dynamic_args (ME.VarRef var)
+                        (context, queue, ME.Do ([call] + calls))
         HE.DynamicFunctionCall receiver args -> do
             HE.Expr _ receiver_id _ <- receiver
             receiver_type <- getMonomorphizedExprType context sub receiver_id
             (context, queue, mir_receiver) <- processExpr context queue sub receiver
             (context, queue, mir_args) <- processArgs context queue sub args
             arg_types <- processArgTypes context sub args
-            (context, queue, calls) <- loop (context, queue, receiver_type, args, receiver, calls)
-                                  <- (context, queue, receiver_type, mir_args, mir_receiver, []) do
-                context :: Context <- context // FIXME
-                (closure_store, name) <- CS.addClosure context.closure_store receiver_type
-                context <- context { closure_store = closure_store }
-                result_type <- HT.getResultType receiver_type 1
-                case pop args of
-                    Some (arg, rest) -> do
-                        (context, id) <- getNextVarId context
-                        var <- ME.Var "closure{}" % id
-                        function_type <- HT.Function receiver_type result_type
-                        queue_item <- FQ.ClosureCall name function_type
-                        (queue, function_id) <- FQ.insert queue queue_item
-                        call <- ME.StaticFunctionCall function_id [receiver, arg]
-                        decl <- ME.VarDecl var call
-                        receiver <- ME.VarRef var
-                        calls <- calls + [decl]
-                        (context, queue, result_type, rest, receiver, calls)
-                    None -> do
-                        calls <- calls + [receiver]
-                        break (context, queue, calls)
+            (context, queue, calls) <- processDynamicFunctionCall context queue receiver_type mir_args mir_receiver
             (context, queue, ME.Do calls)
         HE.ClassMemberCall qn args -> do
             arg_types <- processArgTypes context sub args
@@ -288,13 +301,14 @@ processExpr context queue sub hir_expr = do
             arg_types <- processArgTypes context sub args
             (context, queue, mir_args) <- processArgs context queue sub args
             HD.VariantInfo qn index _ <- HPO.getVariantInfo context.hir_program qn
+            variant <- HPO.getVariant context.hir_program qn index
             function_type <- HPO.getVariantCtor context.hir_program qn index
             (function_type, var_gen) <- TUtil.instantiateType function_type context.state.var_gen
             state <- context.state // FIXME
             state <- state { var_gen = var_gen }
             (state, function_type, _) <- getFunctionType state arg_types expr_type function_type
             context <- context { state = state }
-            queue_item <- FQ.VariantCtor qn index function_type
+            queue_item <- FQ.VariantCtor qn index variant.name function_type
             (queue, function_id) <- FQ.insert queue queue_item
             (context, queue, ME.VariantConstructorCall function_id mir_args)
         HE.RecordConstructorCall qn args -> do
