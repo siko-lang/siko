@@ -190,7 +190,7 @@ processDynamicFunctionCall context queue receiver_type mir_args mir_receiver = d
     (context, queue, calls) <- loop (context, queue, receiver_type, args, receiver, calls)
                                   <- (context, queue, receiver_type, mir_args, mir_receiver, []) do
                 context :: Context <- context // FIXME
-                (closure_store, name) <- CS.addClosure context.closure_store receiver_type
+                (closure_store, name) <- CS.getClosureName context.closure_store receiver_type
                 context <- context { closure_store = closure_store }
                 result_type <- HT.getResultType receiver_type 1
                 case pop args of
@@ -214,6 +214,8 @@ processExpr :: Context -> FQ.FunctionQueue -> U.Substitution -> HE.Expr -> (Cont
 processExpr context queue sub hir_expr = do
     HE.Expr expr expr_id _ <- hir_expr
     expr_type <- getMonomorphizedExprType context sub expr_id
+    (type_store, closure_store, _) <- processType context.type_store context.closure_store context.hir_program expr_type
+    context <- context { type_store = type_store, closure_store = closure_store }
     case expr of
         HE.StaticFunctionCall qn args -> do
             arg_types <- processArgTypes context sub args
@@ -233,10 +235,9 @@ processExpr context queue sub hir_expr = do
                 else if arg_count > current_arg_count // partial application
                     then do
                         result_type <- HT.getResultType function_type current_arg_count
-                        (closure_store, name) <- CS.addClosure context.closure_store result_type
-                        closure_store <- CS.addClosureInstance closure_store result_type arg_types
+                        (closure_store, name) <- CS.addClosureInstance context.closure_store result_type arg_types
                         context <- context { closure_store = closure_store }
-                        queue_item <- FQ.ClosureCtor name function_type
+                        queue_item <- FQ.ClosureCtor name current_arg_count function_type
                         (queue, function_id) <- FQ.insert queue queue_item
                         (context, queue, ME.StaticFunctionCall function_id mir_args)
                     else do
@@ -387,8 +388,8 @@ processExpr context queue sub hir_expr = do
             (context, queue, mir_body) <- processExpr context queue sub body
             HE.Expr _ body_id _ <- body
             hir_body_type <- getMonomorphizedExprType context sub body_id
-            (type_store, mir_body_type) <- processType context.type_store context.hir_program hir_body_type
-            context <- context { type_store = type_store }
+            (type_store, closure_store, mir_body_type) <- processType context.type_store context.closure_store context.hir_program hir_body_type
+            context <- context { type_store = type_store, closure_store = closure_store }
             (context, match_expr) <- case get context.state.choice_tree_store.choice_trees expr_id of
                 Some choice_tree -> do
                     p <- Option.unwrap (getValuePath choice_tree)

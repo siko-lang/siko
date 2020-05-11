@@ -23,7 +23,7 @@ data FunctionQueueItem = Normal HP.FullyQualifiedName HT.Type
                          | VariantCtor HP.FullyQualifiedName Int String HT.Type
                          | RecordCtor HP.FullyQualifiedName HT.Type
                          | TupleCtor HT.Type
-                         | ClosureCtor String HT.Type
+                         | ClosureCtor String Int HT.Type
                          | ClosureCall String HT.Type
                          | AutoDerive HT.Type HP.FullyQualifiedName String CallContext
                          | ExternalCallImpl HP.FullyQualifiedName HT.Type String
@@ -43,7 +43,7 @@ getItemName item = case item of
     VariantCtor n _ vn _ -> "{}_{}" % (n, vn)
     RecordCtor n _ -> "{}" % n
     TupleCtor _ -> "TupleCtor"
-    ClosureCtor n _ -> "ClosureCtor{}" % n
+    ClosureCtor n _ _ -> "ClosureCtor{}" % n
     ClosureCall n _ -> "ClosureCall{}" % n
     AutoDerive _ _ n _ -> "{}" % n
     ExternalCallImpl _ _ n -> "{}" % n
@@ -61,6 +61,21 @@ insert queue item = do
             queue <- queue { processed = processed, pending = pending, next_id = id + 1 }
             (queue, function_id)
 
+getFunctionType :: Context -> HT.Type -> Int -> (Context, MT.Type)
+getFunctionType context hir_type arg_count = do
+    hir_args <- HT.getArgs hir_type
+    arg_count <- getLength hir_args
+    hir_result_type <- HT.getResultType hir_type arg_count
+    (type_store, closure_store, mir_args) <- hir_args |> List.iter |> fold (\(type_store, closure_store, mir_args), hir_arg -> do
+                    (type_store, closure_store, mir_arg) <- TS.processType context.type_store context.closure_store context.hir_program hir_arg
+                    mir_args <- mir_args + [mir_arg]
+                    (type_store, closure_store, mir_args)
+                ) (context.type_store, context.closure_store, [])
+    (type_store, closure_store, mir_result_type) <- TS.processType type_store closure_store context.hir_program hir_result_type
+    mir_type <- MT.Function mir_args mir_result_type
+    context <- context { type_store = type_store, closure_store = closure_store }
+    (context, mir_type)
+
 processNormalFunction :: FunctionQueue -> Context -> MF.FunctionId -> HT.Type -> HP.FullyQualifiedName -> HF.Function -> (Context, FunctionQueue)
 processNormalFunction queue context mir_function_id hir_type qn hir_function =
     case hir_function.body of
@@ -76,16 +91,14 @@ processNormalFunction queue context mir_function_id hir_type qn hir_function =
                             (HT.toString hir_type, HT.toString function_type)
             context <- context { state = state }
             (context, queue, mir_body) <- processExpr context queue sub hir_body
-            (type_store, mir_type) <- TS.processType context.type_store context.hir_program hir_type
-            context <- context { type_store = type_store }
+            (context, mir_type) <- getFunctionType context hir_type hir_function.arg_count
             mir_function <- MF.Function mir_function_id (MF.Normal mir_body) mir_type
             mir_program <- MP.addFunction context.mir_program mir_function_id mir_function
             context <- context { mir_program = mir_program }
             (context, queue)
         None -> do
             //println "Processing extern {}" % (hir_function.name)
-            (type_store, mir_type) <- TS.processType context.type_store context.hir_program hir_type
-            context <- context { type_store = type_store }
+            (context, mir_type) <- getFunctionType context hir_type hir_function.arg_count
             mir_function <- MF.Function mir_function_id MF.Extern mir_type
             mir_program <- MP.addFunction context.mir_program mir_function_id mir_function
             context <- context { mir_program = mir_program }
@@ -101,9 +114,9 @@ processItem queue item mir_function_id context = do
                 HF.InstanceMember _ -> processNormalFunction queue context mir_function_id hir_type qn hir_function
                 _ -> panic "processing of function kind {} is not implemented" % hir_function.kind
         VariantCtor qn index _ hir_type -> do
-                    (type_store, mir_type) <- TS.processType context.type_store context.hir_program hir_type
-                    context <- context { type_store = type_store }
                     adt <- HP.getAdt context.hir_program qn
+                    variant <- atIndex adt.variants index
+                    (context, mir_type) <- getFunctionType context hir_type (getLength variant.items)
                     mir_function <- if getLength adt.variants == 1
                         then MF.Function mir_function_id MF.RecordCtor mir_type
                         else MF.Function mir_function_id (MF.VariantCtor index) mir_type
@@ -111,29 +124,28 @@ processItem queue item mir_function_id context = do
                     context <- context { mir_program = mir_program }
                     (context, queue)
         RecordCtor qn hir_type -> do
-                    (type_store, mir_type) <- TS.processType context.type_store context.hir_program hir_type
-                    context <- context { type_store = type_store }
+                    record <- HP.getRecord context.hir_program qn
+                    (context, mir_type) <- getFunctionType context hir_type (getLength record.fields)
                     mir_function <- MF.Function mir_function_id MF.RecordCtor mir_type
                     mir_program <- MP.addFunction context.mir_program mir_function_id mir_function
                     context <- context { mir_program = mir_program }
                     (context, queue)
         TupleCtor hir_type -> do
-                    (type_store, mir_type) <- TS.processType context.type_store context.hir_program hir_type
-                    context <- context { type_store = type_store }
+                    arg_count <- getLength (HT.getArgs hir_type)
+                    (context, mir_type) <- getFunctionType context hir_type arg_count
                     mir_function <- MF.Function mir_function_id MF.RecordCtor mir_type
                     mir_program <- MP.addFunction context.mir_program mir_function_id mir_function
                     context <- context { mir_program = mir_program }
                     (context, queue)
-        ClosureCtor name hir_type -> do
-                    (type_store, mir_type) <- TS.processType context.type_store context.hir_program hir_type
-                    context <- context { type_store = type_store }
+        ClosureCtor name arg_count hir_type -> do
+                    (context, mir_type) <- getFunctionType context hir_type arg_count
                     mir_function <- MF.Function mir_function_id (MF.ClosureCtor name) mir_type
                     mir_program <- MP.addFunction context.mir_program mir_function_id mir_function
                     context <- context { mir_program = mir_program }
                     (context, queue)
         ClosureCall name hir_type -> do
-                    (type_store, mir_type) <- TS.processType context.type_store context.hir_program hir_type
-                    context <- context { type_store = type_store }
+                    arg_count <- getLength (HT.getArgs hir_type)
+                    (context, mir_type) <- getFunctionType context hir_type arg_count
                     mir_function <- MF.Function mir_function_id (MF.ClosureCall name) mir_type
                     mir_program <- MP.addFunction context.mir_program mir_function_id mir_function
                     context <- context { mir_program = mir_program }

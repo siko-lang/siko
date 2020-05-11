@@ -8,34 +8,34 @@ data ClosureInstance = { args :: [HT.Type] }
 data Closure = { name :: String,
                  instances :: [ClosureInstance] }
 
-data ClosureStore = { closures :: Map HT.Type Closure }
+data ClosureStore = { closures :: Map String Closure,
+                      closure_type_map :: Map HT.Type String }
 
 createClosureStore :: ClosureStore
-createClosureStore = ClosureStore empty
+createClosureStore = ClosureStore empty empty
 
-addClosureInstance :: ClosureStore -> HT.Type -> [HT.Type] -> ClosureStore
+addClosureInstance :: ClosureStore -> HT.Type -> [HT.Type] -> (ClosureStore, String)
 addClosureInstance store closure_type args = do
+    (store, name) <- getClosureName store closure_type
     closure_instance <- ClosureInstance args
     (closures, _) <- alter (\closure -> case closure of
         Some closure -> do
             closure :: Closure <- closure
             instances <- closure.instances + [closure_instance]
             Some closure { instances = instances }
-        None -> panic "Closure does not exist") closure_type store.closures
-    store { closures = closures }
+        None -> Some (Closure name [closure_instance])) name store.closures
+    (store { closures = closures }, name)
 
-addClosure :: ClosureStore -> HT.Type -> (ClosureStore, String)
-addClosure store closure_type = do
-    name <- "Closure_{}" % getSize store.closures
+getClosureName :: ClosureStore -> HT.Type -> (ClosureStore, String)
+getClosureName store closure_type = do
+    name <- "Closure_{}" % getSize store.closure_type_map
     // FIXME make this nicer
-    (closures, _) <- alter (\closure -> case closure of
+    (closure_type_map, _) <- alter (\closure -> case closure of
         Some closure -> Some closure
-        None -> Some (Closure name [])) closure_type store.closures
-    store <- store { closures = closures }
-    name <- case get store.closures closure_type of
-        Some closure -> do
-            closure :: Closure <- closure // FIXME
-            closure.name
+        None -> Some name) closure_type store.closure_type_map
+    store <- store { closure_type_map = closure_type_map }
+    name <- case get store.closure_type_map closure_type of
+        Some name -> name
         None -> panic "Closure not found after creation"
     (store, name)
 
