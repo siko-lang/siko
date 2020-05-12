@@ -63,18 +63,24 @@ insert queue item = do
 
 getFunctionType :: Context -> HT.Type -> Int -> (Context, MT.Type)
 getFunctionType context hir_type arg_count = do
-    hir_args <- HT.getArgs hir_type
-    arg_count <- getLength hir_args
-    hir_result_type <- HT.getResultType hir_type arg_count
-    (type_store, closure_store, mir_args) <- hir_args |> List.iter |> fold (\(type_store, closure_store, mir_args), hir_arg -> do
-                    (type_store, closure_store, mir_arg) <- TS.processType context.type_store context.closure_store context.hir_program hir_arg
-                    mir_args <- mir_args + [mir_arg]
-                    (type_store, closure_store, mir_args)
-                ) (context.type_store, context.closure_store, [])
-    (type_store, closure_store, mir_result_type) <- TS.processType type_store closure_store context.hir_program hir_result_type
-    mir_type <- MT.Function mir_args mir_result_type
-    context <- context { type_store = type_store, closure_store = closure_store }
-    (context, mir_type)
+    if arg_count == 0
+        then do
+            (type_store, closure_store, mir_result_type) <- TS.processType context.type_store context.closure_store context.hir_program hir_type
+            context <- context { type_store = type_store, closure_store = closure_store }
+            (context, mir_result_type)
+        else do
+            hir_args <- HT.getArgs hir_type
+            (hir_args, _) <- List.split hir_args arg_count
+            hir_result_type <- HT.getResultType hir_type arg_count
+            (type_store, closure_store, mir_args) <- hir_args |> List.iter |> fold (\(type_store, closure_store, mir_args), hir_arg -> do
+                            (type_store, closure_store, mir_arg) <- TS.processType context.type_store context.closure_store context.hir_program hir_arg
+                            mir_args <- mir_args + [mir_arg]
+                            (type_store, closure_store, mir_args)
+                        ) (context.type_store, context.closure_store, [])
+            (type_store, closure_store, mir_result_type) <- TS.processType type_store closure_store context.hir_program hir_result_type
+            mir_type <- MT.Function mir_args mir_result_type
+            context <- context { type_store = type_store, closure_store = closure_store }
+            (context, mir_type)
 
 processNormalFunction :: FunctionQueue -> Context -> MF.FunctionId -> HT.Type -> HP.FullyQualifiedName -> HF.Function -> (Context, FunctionQueue)
 processNormalFunction queue context mir_function_id hir_type qn hir_function =
@@ -145,7 +151,7 @@ processItem queue item mir_function_id context = do
                     (context, queue)
         ClosureCall name hir_type -> do
                     arg_count <- getLength (HT.getArgs hir_type)
-                    (context, mir_type) <- getFunctionType context hir_type arg_count
+                    (context, mir_type) <- getFunctionType context hir_type 2
                     mir_function <- MF.Function mir_function_id (MF.ClosureCall name) mir_type
                     mir_program <- MP.addFunction context.mir_program mir_function_id mir_function
                     context <- context { mir_program = mir_program }

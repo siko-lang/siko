@@ -197,7 +197,7 @@ processDynamicFunctionCall context queue receiver_type mir_args mir_receiver = d
                     Some (arg, rest) -> do
                         (context, id) <- getNextVarId context
                         var <- ME.Var "closure{}" % id
-                        function_type <- HT.Function receiver_type result_type
+                        function_type <- HT.Function receiver_type receiver_type
                         queue_item <- FQ.ClosureCall name function_type
                         (queue, function_id) <- FQ.insert queue queue_item
                         call <- ME.StaticFunctionCall function_id [receiver, arg]
@@ -248,7 +248,7 @@ processExpr context queue sub hir_expr = do
                         decl <- ME.VarDecl var call
                         receiver_type <- HT.getResultType function_type (getLength static_args)
                         (context, queue, calls) <- processDynamicFunctionCall context queue receiver_type dynamic_args (ME.VarRef var)
-                        (context, queue, ME.Do ([call] + calls))
+                        (context, queue, ME.Do ([decl] + calls))
         HE.DynamicFunctionCall receiver args -> do
             HE.Expr _ receiver_id _ <- receiver
             receiver_type <- getMonomorphizedExprType context sub receiver_id

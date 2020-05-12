@@ -12,6 +12,7 @@ import Siko.Typechecker.FunctionStore as FS
 import Siko.Typechecker.InstanceResolver as IR
 import Siko.Typechecker.Class
 import Siko.Typechecker.Util
+import Siko.Typechecker.TypeIsomorphism
 import Siko.Typechecker.Function
 import Siko.Typechecker.Lowering as L
 import Siko.Typechecker.Lowering.TypeStore as LTS
@@ -19,8 +20,10 @@ import Siko.Util.DependencyProcessor
 import Siko.HIR.Program as P
 import Siko.HIR.Function as F
 import Siko.HIR.Traversal
+import Siko.HIR.Type as T
 import Siko.HIR.TypeVarGenerator
 import Siko.HIR.Expr
+import Siko.Constants
 import Map
 
 data TypecheckerState = { errors :: [TypecheckerError],
@@ -55,6 +58,17 @@ checkFunctionType context fn = do
                     func_type_info <- getFunctionTypeInfo context fn.name
                     (context, _) <- matchExprWith context arg_id func_type_info.result_type arg_location
                     context) context
+            main <- P.FullPath getMainModuleName getMainFunctionName
+            context <- if fn.name == main
+                then do
+                    func_type_info <- getFunctionTypeInfo context fn.name
+                    if checkIsomorphicType func_type_info.function_type (T.Tuple []) context.state.class_store
+                        then context
+                        else do
+                            err <- IncorrectMainType ("{}" % T.toString func_type_info.function_type) fn.location
+                            state <- addError context.state err
+                            context { state = state }
+                else context
             context <- context { returns = [] }
             context
         None -> context
