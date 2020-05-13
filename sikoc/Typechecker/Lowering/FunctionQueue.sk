@@ -11,6 +11,7 @@ import Siko.Typechecker
 import Siko.Typechecker.Unification as U
 import Siko.Typechecker.Lowering
 import Siko.Typechecker.FunctionStore
+import Siko.Typechecker.Lowering.ClosureStore
 import Siko.Typechecker.Lowering.Expr
 import Siko.Typechecker.Lowering.TypeStore as TS
 import Map
@@ -23,7 +24,7 @@ data FunctionQueueItem = Normal HP.FullyQualifiedName HT.Type
                          | VariantCtor HP.FullyQualifiedName Int String HT.Type
                          | RecordCtor HP.FullyQualifiedName HT.Type
                          | TupleCtor HT.Type
-                         | ClosureCtor String Int HT.Type
+                         | ClosureCtor String Int HT.Type ClosureInstanceId
                          | ClosureCall String HT.Type
                          | AutoDerive HT.Type HP.FullyQualifiedName String CallContext
                          | ExternalCallImpl HP.FullyQualifiedName HT.Type String
@@ -43,7 +44,7 @@ getItemName item = case item of
     VariantCtor n _ vn _ -> "{}_{}" % (n, vn)
     RecordCtor n _ -> "{}" % n
     TupleCtor _ -> "TupleCtor"
-    ClosureCtor n _ _ -> "ClosureCtor{}" % n
+    ClosureCtor n _ _ (ClosureInstanceId id) -> "{}_I{}" % (n, id)
     ClosureCall n _ -> "ClosureCall{}" % n
     AutoDerive _ _ n _ -> "{}" % n
     ExternalCallImpl _ _ n -> "{}" % n
@@ -143,9 +144,10 @@ processItem queue item mir_function_id context = do
                     mir_program <- MP.addFunction context.mir_program mir_function_id mir_function
                     context <- context { mir_program = mir_program }
                     (context, queue)
-        ClosureCtor name arg_count hir_type -> do
+        ClosureCtor name arg_count hir_type closure_instance_id -> do
                     (context, mir_type) <- getFunctionType context hir_type arg_count
-                    mir_function <- MF.Function mir_function_id (MF.ClosureCtor name) mir_type
+                    ClosureInstanceId id <- closure_instance_id
+                    mir_function <- MF.Function mir_function_id (MF.VariantCtor id) mir_type
                     mir_program <- MP.addFunction context.mir_program mir_function_id mir_function
                     context <- context { mir_program = mir_program }
                     (context, queue)

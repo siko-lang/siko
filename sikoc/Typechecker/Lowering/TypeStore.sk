@@ -20,6 +20,17 @@ data TypeStore = { expr_types :: Map E.ExprId HT.Type,
 createTypeStore :: TypeStore
 createTypeStore = TypeStore empty empty empty empty 0
 
+addVariant :: TypeStore -> String -> MD.Variant -> TypeStore
+addVariant type_store name variant = do
+    (adts, _) <- alter (\adt -> case adt of
+        Some adt -> do
+            adt :: MD.AlgebraicDataType <- adt // FIXME
+            variants <- adt.variants + [variant]
+            adt <- adt { variants = variants }
+            Some adt
+        None -> Some (MD.AlgebraicDataType name [variant]))  name type_store.adts
+    type_store { adts = adts }
+
 addExprType :: TypeStore -> E.ExprId -> HT.Type -> TypeStore
 addExprType type_store expr type = do
     (expr_types, _) <- insert type_store.expr_types expr type
@@ -87,7 +98,7 @@ processType type_store closure_store hir_program hir_type = case hir_type of
                                     mir_fields <- mir_fields + [mir_field]
                                     (type_store, closure_store, mir_fields)) (type_store, closure_store, [])
                                 (type_store, id) <- getNextId type_store
-                                record_name <- "{}_{}" % (qn, id)
+                                record_name <- "{}_{}{}" % (qn, variant.name, id)
                                 mir_record <- MD.Record record_name mir_fields False
                                 (records, _) <- insert type_store.records record_name mir_record
                                 type_store <- type_store { records = records }

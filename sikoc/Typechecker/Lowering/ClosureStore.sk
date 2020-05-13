@@ -1,7 +1,13 @@
 module Siko.Typechecker.Lowering.ClosureStore where
 
+import Siko.Typechecker.Lowering
+import Siko.Typechecker.Lowering.TypeStore
+import Siko.Typechecker.Lowering.Util
 import Siko.HIR.Type as HT
+import Siko.MIR.Data as MD
 import Map
+
+data ClosureInstanceId = ClosureInstanceId Int deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
 data ClosureInstance = { args :: [HT.Type] }
 
@@ -14,22 +20,28 @@ data ClosureStore = { closures :: Map String Closure,
 createClosureStore :: ClosureStore
 createClosureStore = ClosureStore empty empty
 
-addClosureInstance :: ClosureStore -> HT.Type -> [HT.Type] -> (ClosureStore, String)
+addClosureInstance :: ClosureStore -> HT.Type -> [HT.Type] -> (ClosureStore, String, ClosureInstanceId)
 addClosureInstance store closure_type args = do
     (store, name) <- getClosureName store closure_type
     closure_instance <- ClosureInstance args
+    // FIXME: use a stateful alter here
+    next_id <- case get store.closures name of
+        Some closure -> do
+            closure :: Closure <- closure
+            getLength closure.instances
+        None -> 0
     (closures, _) <- alter (\closure -> case closure of
         Some closure -> do
             closure :: Closure <- closure
             instances <- closure.instances + [closure_instance]
             Some closure { instances = instances }
         None -> Some (Closure name [closure_instance])) name store.closures
-    (store { closures = closures }, name)
+    (store { closures = closures }, name, ClosureInstanceId next_id)
 
 getClosureName :: ClosureStore -> HT.Type -> (ClosureStore, String)
 getClosureName store closure_type = do
     name <- "Closure_{}" % getSize store.closure_type_map
-    // FIXME make this nicer
+    // FIXME use a stateful alter here
     (closure_type_map, _) <- alter (\closure -> case closure of
         Some closure -> Some closure
         None -> Some name) closure_type store.closure_type_map
@@ -39,3 +51,30 @@ getClosureName store closure_type = do
         None -> panic "Closure not found after creation"
     (store, name)
 
+createClosures :: Context -> Context
+createClosures context = do
+    context.closure_store.closures |> Map.iter |> fold (\context, (name, closure) -> do
+        (context, _) <- closure.instances |> List.iter |> fold (\(context, instance_id), closure_instance -> do
+            (context, mir_args) <- closure_instance.args |> List.iter |> fold (\(context, mir_args), arg -> do
+                    (type_store, closure_store, mir_arg) <- processType context.type_store context.closure_store context.hir_program arg
+                    context <- context { type_store = type_store, closure_store = closure_store }
+                    mir_args <- mir_args + [mir_arg]
+                    (context, mir_args)
+                ) (context, [])
+            variant_name <- "I{}" % instance_id
+            record_name <- "{}_{}" % (name, variant_name)
+            (mir_fields, _) <- mir_args |> List.iter |> fold (\(mir_fields, index), mir_arg -> do
+                    field_name <- getFieldName index
+                    mir_field <- MD.RecordField field_name mir_arg
+                    mir_fields <- mir_fields + [mir_field]
+                    (mir_fields, index + 1)
+                ) ([], 0)
+            type_store <- context.type_store
+            mir_variant_record <- MD.Record record_name mir_fields False
+            (records, _) <- insert type_store.records record_name mir_variant_record
+            type_store <- type_store { records = records }
+            mir_variant <- MD.Variant variant_name record_name
+            type_store <- addVariant type_store name mir_variant
+            context <- context { type_store = type_store }
+            (context, instance_id + 1)) (context, 0)
+        context) context
