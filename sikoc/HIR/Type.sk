@@ -7,10 +7,12 @@ module Siko.HIR.Type(Type(..),
                      collectVars,
                      getArgCount,
                      getArgs,
+                     getArgsLimited,
                      getResultType,
                      fixedType,
                      collectClassesFromClassConstraints,
                      isConcreteType,
+                     isFunction,
                      removeFixed) where
 
 import Siko.Constants
@@ -183,6 +185,12 @@ getArgs :: Type -> [Type]
 getArgs type =
     case type of
         Function from to -> [from] + getArgs to
+        _ -> []
+
+getArgsLimited :: Type -> Int -> [Type]
+getArgsLimited type limit = if limit == 0 then []
+    else case type of
+        Function from to -> [from] + getArgsLimited to (limit - 1)
         _ -> []
 
 getResultType :: Type -> Int -> Type

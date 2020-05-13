@@ -11,7 +11,6 @@ instance Show FunctionId where
 data FunctionKind = Normal E.Expr
                     | VariantCtor Int
                     | RecordCtor
-                    | ClosureCall String
                     | Extern
 
 data Function = { id :: FunctionId,
@@ -25,5 +24,4 @@ dump function = do
         Normal body -> s + "{} = {}" % (function.id, (E.prettyPrint body (E.Indent 0)).0)
         VariantCtor index -> s + "{} = <variant_ctor:{}>" % (function.id, index)
         RecordCtor -> s + "{} = <record_ctor>" % function.id
-        ClosureCall name -> s + "{} = <closure call>" % function.id
         Extern -> s + "{} = extern" % function.id

@@ -235,10 +235,32 @@ processExpr context queue sub hir_expr = do
                 else if arg_count > current_arg_count // partial application
                     then do
                         result_type <- HT.getResultType function_type current_arg_count
-                        (closure_store, name, instance_id) <- CS.addClosureInstance context.closure_store result_type arg_types
-                        context <- context { closure_store = closure_store }
-                        queue_item <- FQ.ClosureCtor name current_arg_count function_type instance_id
-                        (queue, function_id) <- FQ.insert queue queue_item
+                        (context, queue, closures, functions) <- loop (context, queue, closure_type, arg_types, closures, functions)
+                                                        <- (context, queue, result_type, arg_types, [], []) do
+                            context :: Context <- context // FIXME
+                            args <- arg_types |> List.iter |> map (\t -> HT.toString t) |> toList
+                            (closure_store, closure_instance) <- CS.addClosureInstance context.closure_store closure_type arg_types
+                            queue_item <- FQ.ClosureCtor (getLength args) function_type closure_instance
+                            (queue, function_id) <- FQ.insert queue queue_item
+                            functions <- functions + [function_id]
+                            //println "closure_type {} {} {} args {}" % (HT.toString closure_type, closure_instance.name, closure_instance.id, args)
+                            if isEmpty closures
+                                then ()
+                                else do
+                                    prev <- atIndex closures (getLength closures - 1)
+                                    prev :: CS.ClosureInstance <- prev // FIXME
+                                    prev_args <- prev.args |> List.iter |> map (\_ -> "alma.stuff") |> toList
+                                    println "Calling at {} {} with {}" % (prev.id, function_id, prev_args + ["current"])
+                                    //println "prev {} -> {}" % (CS.getVariantRecordName prev, CS.getVariantRecordName closure_instance)
+                            closures <- closures + [closure_instance]
+                            context <- context { closure_store = closure_store }
+                            if HT.isFunction closure_type
+                                then do
+                                    first_arg <- HT.getArgsLimited closure_type 1
+                                    closure_type <- HT.getResultType closure_type 1
+                                    (context, queue, closure_type, arg_types + first_arg, closures, functions)
+                                else break (context, queue, closures, functions)
+                        function_id <- atIndex functions 0
                         (context, queue, ME.StaticFunctionCall function_id mir_args)
                     else do
                         (static_args, dynamic_args) <- List.split mir_args arg_count

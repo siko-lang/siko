@@ -4,39 +4,49 @@ import Siko.Typechecker.Lowering
 import Siko.Typechecker.Lowering.TypeStore
 import Siko.Typechecker.Lowering.Util
 import Siko.HIR.Type as HT
+import Siko.MIR.Expr as ME
+import Siko.MIR.Function as MF
+import Siko.MIR.Program
 import Siko.MIR.Data as MD
 import Map
 
 data ClosureInstanceId = ClosureInstanceId Int deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
-data ClosureInstance = { args :: [HT.Type] }
+data ClosureInstance = { id :: ClosureInstanceId,
+                         name :: String,
+                         args :: [HT.Type] } deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
 data Closure = { name :: String,
                  instances :: [ClosureInstance] }
 
+data ClosureCall = { function_id :: MF.FunctionId,
+                     name :: String }
+
 data ClosureStore = { closures :: Map String Closure,
-                      closure_type_map :: Map HT.Type String }
+                      closure_type_map :: Map HT.Type String,
+                      closure_calls :: [ClosureCall] }
 
 createClosureStore :: ClosureStore
-createClosureStore = ClosureStore empty empty
+createClosureStore = ClosureStore empty empty []
 
-addClosureInstance :: ClosureStore -> HT.Type -> [HT.Type] -> (ClosureStore, String, ClosureInstanceId)
+addClosureInstance :: ClosureStore -> HT.Type -> [HT.Type] -> (ClosureStore, ClosureInstance)
 addClosureInstance store closure_type args = do
     (store, name) <- getClosureName store closure_type
-    closure_instance <- ClosureInstance args
     // FIXME: use a stateful alter here
     next_id <- case get store.closures name of
         Some closure -> do
             closure :: Closure <- closure
             getLength closure.instances
         None -> 0
+    instance_id <- ClosureInstanceId next_id
+    closure_instance <- ClosureInstance instance_id name args
     (closures, _) <- alter (\closure -> case closure of
         Some closure -> do
             closure :: Closure <- closure
             instances <- closure.instances + [closure_instance]
             Some closure { instances = instances }
         None -> Some (Closure name [closure_instance])) name store.closures
-    (store { closures = closures }, name, ClosureInstanceId next_id)
+    (store { closures = closures }, closure_instance)
 
 getClosureName :: ClosureStore -> HT.Type -> (ClosureStore, String)
 getClosureName store closure_type = do
@@ -51,18 +61,35 @@ getClosureName store closure_type = do
         None -> panic "Closure not found after creation"
     (store, name)
 
+addClosureCall :: ClosureStore -> String -> MF.FunctionId -> ClosureStore
+addClosureCall store name function_id = do
+    call <- ClosureCall function_id name
+    closure_calls <- store.closure_calls + [call]
+    store { closure_calls = closure_calls }
+
+getVariantName :: ClosureInstance -> String
+getVariantName closure_instance = do
+    ClosureInstanceId id <- closure_instance.id
+    "I{}" % id
+
+getVariantRecordName :: ClosureInstance -> String
+getVariantRecordName closure_instance = "{}_{}" % (closure_instance.name, getVariantName closure_instance)
+
+getVariantCtorName :: ClosureInstance -> String
+getVariantCtorName closure_instance = "{}_{}" % (closure_instance.name, getVariantName closure_instance)
+
 createClosures :: Context -> Context
 createClosures context = do
-    context.closure_store.closures |> Map.iter |> fold (\context, (name, closure) -> do
-        (context, _) <- closure.instances |> List.iter |> fold (\(context, instance_id), closure_instance -> do
+    context <- context.closure_store.closures |> Map.iter |> fold (\context, (name, closure) -> do
+        context <- closure.instances |> List.iter |> fold (\context, closure_instance -> do
             (context, mir_args) <- closure_instance.args |> List.iter |> fold (\(context, mir_args), arg -> do
                     (type_store, closure_store, mir_arg) <- processType context.type_store context.closure_store context.hir_program arg
                     context <- context { type_store = type_store, closure_store = closure_store }
                     mir_args <- mir_args + [mir_arg]
                     (context, mir_args)
                 ) (context, [])
-            variant_name <- "I{}" % instance_id
-            record_name <- "{}_{}" % (name, variant_name)
+            variant_name <- getVariantName closure_instance
+            record_name <- getVariantRecordName closure_instance
             (mir_fields, _) <- mir_args |> List.iter |> fold (\(mir_fields, index), mir_arg -> do
                     field_name <- getFieldName index
                     mir_field <- MD.RecordField field_name mir_arg
@@ -76,5 +103,25 @@ createClosures context = do
             mir_variant <- MD.Variant variant_name record_name
             type_store <- addVariant type_store name mir_variant
             context <- context { type_store = type_store }
-            (context, instance_id + 1)) (context, 0)
+            context) context
+        context) context
+    context.closure_store.closure_calls |> List.iter |> fold (\context, closure_call -> do
+        println "Generating closure call {} {}" % (closure_call.name, closure_call.function_id)
+        closure <- case get context.closure_store.closures closure_call.name of
+            Some closure -> closure
+            None -> panic "Closure not found {}" % closure_call.name
+        cases <- closure.instances |> List.iter |> map (\closure_instance -> do
+            ClosureInstanceId id <- closure_instance.id
+            checker <- ME.VariantChecker id
+            body <- ME.Do []
+            ME.MatchCase checker body) |> toList
+        new_body <- ME.Match (ME.ArgRef 0) cases
+        new_kind <- MF.Normal new_body
+        mir_program <- context.mir_program
+        (functions, _) <- alter (\f -> case f of
+                Some f -> Some f { kind = new_kind }
+                None -> panic "Closure call function not found"
+            ) closure_call.function_id mir_program.functions
+        mir_program <- mir_program { functions = functions }
+        context <- context { mir_program = mir_program}
         context) context
