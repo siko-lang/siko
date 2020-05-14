@@ -24,7 +24,7 @@ data Checker = IntegerChecker String
                | StringChecker String
                | CharChecker Char
                | CharRangeChecker Char Char RangeKind
-               | VariantChecker Int
+               | VariantChecker Int Var
                | WildcardChecker
 
 instance Show Checker where
@@ -33,7 +33,7 @@ instance Show Checker where
         StringChecker lit -> "s:{}" % lit
         CharChecker lit -> "c:{}" % lit
         CharRangeChecker s e kind -> "{}:{}:{}" % (s, e, kind)
-        VariantChecker i -> "v:{}" % i
+        VariantChecker i v -> "v:{} {}" % (i, v)
         WildcardChecker -> "w"
 
 data MatchCase = { checker :: Checker, body :: Expr }
@@ -41,8 +41,6 @@ data MatchCase = { checker :: Checker, body :: Expr }
 data Expr = Do [Expr]
             | Multi [Expr]
             | StaticFunctionCall FunctionId [Expr]
-            | VariantConstructorCall FunctionId [Expr]
-            | RecordConstructorCall FunctionId [Expr]
             | IntegerLiteral String
             | StringLiteral String
             | FloatLiteral String
@@ -76,18 +74,6 @@ prettyPrint expr ind =
             s <- "Multi: {}" % (join args ";")
             (s, False)
         StaticFunctionCall id args -> do
-            args <- args |> List.iter |> map (\arg -> do
-                (s, simple) <- prettyPrint arg ind
-                if simple then s else "({})" % s) |> toList
-            s <- "{} {}" % (id, join args " ")
-            (s, isEmpty args)
-        VariantConstructorCall id args -> do
-            args <- args |> List.iter |> map (\arg -> do
-                (s, simple) <- prettyPrint arg ind
-                if simple then s else "({})" % s) |> toList
-            s <- "{} {}" % (id, join args " ")
-            (s, isEmpty args)
-        RecordConstructorCall id args -> do
             args <- args |> List.iter |> map (\arg -> do
                 (s, simple) <- prettyPrint arg ind
                 if simple then s else "({})" % s) |> toList

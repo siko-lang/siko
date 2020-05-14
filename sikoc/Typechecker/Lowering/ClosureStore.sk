@@ -22,12 +22,21 @@ data Closure = { name :: String,
 data ClosureCall = { function_id :: MF.FunctionId,
                      name :: String }
 
+data ClosureInstanceSuccessor = NextClosureInstance MF.FunctionId
+                                | RealFunctionCall MF.FunctionId
+
+instance Show ClosureInstanceSuccessor where
+    show c = case c of
+        NextClosureInstance f -> show f
+        RealFunctionCall f -> show f
+
 data ClosureStore = { closures :: Map String Closure,
                       closure_type_map :: Map HT.Type String,
-                      closure_calls :: [ClosureCall] }
+                      closure_calls :: [ClosureCall],
+                      successors :: Map ClosureInstance ClosureInstanceSuccessor }
 
 createClosureStore :: ClosureStore
-createClosureStore = ClosureStore empty empty []
+createClosureStore = ClosureStore empty empty [] empty
 
 addClosureInstance :: ClosureStore -> HT.Type -> [HT.Type] -> (ClosureStore, ClosureInstance)
 addClosureInstance store closure_type args = do
@@ -66,6 +75,11 @@ addClosureCall store name function_id = do
     call <- ClosureCall function_id name
     closure_calls <- store.closure_calls + [call]
     store { closure_calls = closure_calls }
+
+addClosureInstanceSuccessor :: ClosureStore -> ClosureInstance -> ClosureInstanceSuccessor -> ClosureStore
+addClosureInstanceSuccessor store closure_instance closure_instance_successor = do
+    (successors, _) <- insert store.successors closure_instance closure_instance_successor
+    store { successors = successors }
 
 getVariantName :: ClosureInstance -> String
 getVariantName closure_instance = do
@@ -106,14 +120,21 @@ createClosures context = do
             context) context
         context) context
     context.closure_store.closure_calls |> List.iter |> fold (\context, closure_call -> do
-        println "Generating closure call {} {}" % (closure_call.name, closure_call.function_id)
         closure <- case get context.closure_store.closures closure_call.name of
             Some closure -> closure
             None -> panic "Closure not found {}" % closure_call.name
         cases <- closure.instances |> List.iter |> map (\closure_instance -> do
             ClosureInstanceId id <- closure_instance.id
-            checker <- ME.VariantChecker id
-            body <- ME.Do []
+            prev_var <- ME.Var "prev"
+            args <- closure_instance.args |> List.iter |> fold (\arg_refs, arg -> do
+                field_name <- getFieldName (getLength arg_refs)
+                arg_ref <- ME.FieldAccess field_name (ME.VarRef prev_var)
+                arg_refs + [arg_ref]) []
+            args <- args + [ME.ArgRef 1]
+            body <- case Option.unwrap (get context.closure_store.successors closure_instance) of
+                NextClosureInstance fn -> ME.StaticFunctionCall fn args
+                RealFunctionCall fn -> ME.StaticFunctionCall fn args
+            checker <- ME.VariantChecker id prev_var
             ME.MatchCase checker body) |> toList
         new_body <- ME.Match (ME.ArgRef 0) cases
         new_kind <- MF.Normal new_body

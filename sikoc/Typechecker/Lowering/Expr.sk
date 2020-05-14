@@ -166,7 +166,7 @@ processChoiceTree context choice path_info_map mir_case_bodies mir_guards = do
                                                     HP.Inclusive -> ME.Inclusive
                                                     HP.Exclusive -> ME.Exclusive), choice_expr)
                     VariantCondition index -> do
-                        (ME.VariantChecker index, choice_expr)
+                        (ME.VariantChecker index pattern_var, choice_expr)
                     WildcardCondition -> do
                         (ME.WildcardChecker, choice_expr)
                 c <- ME.MatchCase cond expr
@@ -238,30 +238,29 @@ processExpr context queue sub hir_expr = do
                         (context, queue, closures, functions) <- loop (context, queue, closure_type, arg_types, closures, functions)
                                                         <- (context, queue, result_type, arg_types, [], []) do
                             context :: Context <- context // FIXME
-                            args <- arg_types |> List.iter |> map (\t -> HT.toString t) |> toList
-                            (closure_store, closure_instance) <- CS.addClosureInstance context.closure_store closure_type arg_types
-                            queue_item <- FQ.ClosureCtor (getLength args) function_type closure_instance
-                            (queue, function_id) <- FQ.insert queue queue_item
-                            functions <- functions + [function_id]
-                            //println "closure_type {} {} {} args {}" % (HT.toString closure_type, closure_instance.name, closure_instance.id, args)
-                            if isEmpty closures
-                                then ()
-                                else do
-                                    prev <- atIndex closures (getLength closures - 1)
-                                    prev :: CS.ClosureInstance <- prev // FIXME
-                                    prev_args <- prev.args |> List.iter |> map (\_ -> "alma.stuff") |> toList
-                                    println "Calling at {} {} with {}" % (prev.id, function_id, prev_args + ["current"])
-                                    //println "prev {} -> {}" % (CS.getVariantRecordName prev, CS.getVariantRecordName closure_instance)
-                            closures <- closures + [closure_instance]
-                            context <- context { closure_store = closure_store }
                             if HT.isFunction closure_type
                                 then do
+                                    (closure_store, closure_instance) <- CS.addClosureInstance context.closure_store closure_type arg_types
+                                    closures <- closures + [closure_instance]
+                                    context <- context { closure_store = closure_store }
+                                    queue_item <- FQ.ClosureCtor (getLength arg_types) function_type closure_instance
+                                    (queue, function_id) <- FQ.insert queue queue_item
+                                    functions <- functions + [function_id]
                                     first_arg <- HT.getArgsLimited closure_type 1
                                     closure_type <- HT.getResultType closure_type 1
                                     (context, queue, closure_type, arg_types + first_arg, closures, functions)
                                 else break (context, queue, closures, functions)
-                        function_id <- atIndex functions 0
-                        (context, queue, ME.StaticFunctionCall function_id mir_args)
+                        first_closure_fn <- atIndex functions 0
+                        (closure_store, _) <- closures |> List.iter |> fold (\(closure_store, index), closure -> do
+                            closure_store <- if index + 1 == getLength closures
+                                then do
+                                    CS.addClosureInstanceSuccessor closure_store closure (CS.RealFunctionCall function_id)
+                                else do
+                                    next <- atIndex functions (index + 1)
+                                    CS.addClosureInstanceSuccessor closure_store closure (CS.NextClosureInstance next)
+                            (closure_store, index + 1)) (context.closure_store, 0)
+                        context <- context { closure_store = closure_store }
+                        (context, queue, ME.StaticFunctionCall first_closure_fn mir_args)
                     else do
                         (static_args, dynamic_args) <- List.split mir_args arg_count
                         call <- ME.StaticFunctionCall function_id static_args
@@ -333,7 +332,7 @@ processExpr context queue sub hir_expr = do
             context <- context { state = state }
             queue_item <- FQ.VariantCtor qn index variant.name function_type
             (queue, function_id) <- FQ.insert queue queue_item
-            (context, queue, ME.VariantConstructorCall function_id mir_args)
+            (context, queue, ME.StaticFunctionCall function_id mir_args)
         HE.RecordConstructorCall qn args -> do
             arg_types <- processArgTypes context sub args
             (context, queue, mir_args) <- processArgs context queue sub args
@@ -345,7 +344,7 @@ processExpr context queue sub hir_expr = do
             context <- context { state = state }
             queue_item <- FQ.RecordCtor qn function_type
             (queue, function_id) <- FQ.insert queue queue_item
-            (context, queue, ME.RecordConstructorCall function_id mir_args)
+            (context, queue, ME.StaticFunctionCall function_id mir_args)
         HE.If cond true_branch false_branch -> do
             (context, queue, mir_cond) <- processExpr context queue sub cond
             (context, queue, mir_true_branch) <- processExpr context queue sub true_branch
@@ -361,7 +360,7 @@ processExpr context queue sub hir_expr = do
             context <- context { state = state }
             queue_item <- FQ.TupleCtor function_type
             (queue, function_id) <- FQ.insert queue queue_item
-            (context, queue, ME.RecordConstructorCall function_id mir_args)
+            (context, queue, ME.StaticFunctionCall function_id mir_args)
         HE.List args -> do
             (context, queue, mir_args) <- processArgs context queue sub args
             (context, queue, ME.List mir_args)
