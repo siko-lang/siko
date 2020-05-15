@@ -130,8 +130,8 @@ checkPatternType context (P.Pattern pattern id location) = do
         P.Variant _ index args -> do
             adt_type_info <- TS.getAdtTypeInfo context.type_store id
             (context, adt_type_info, _) <- args |> List.iter |> fold (\(context, adt_type_info, arg_index), (P.Pattern _ arg_id arg_location) -> do
-                    item_types <- atIndex adt_type_info.variant_types index
-                    item_type <- atIndex item_types arg_index
+                    variant <- atIndex adt_type_info.variants index
+                    item_type <- atIndex variant.items arg_index
                     (context, sub) <- matchPatternWith context arg_id item_type arg_location
                     adt_type_info <- DS.applyAdtTypeInfo adt_type_info sub
                     (context, adt_type_info, arg_index + 1)

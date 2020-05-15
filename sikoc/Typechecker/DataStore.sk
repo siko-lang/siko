@@ -16,9 +16,11 @@ data DeriveInfo = { class_name :: P.FullyQualifiedName,
                     location :: Location
                   } deriving (Show)
 
+data Variant = { name :: String, items :: [Type] } deriving (Show)
+
 data AdtTypeInfo = { name :: P.FullyQualifiedName,
                      type :: Type,
-                     variant_types :: [[Type]],
+                     variants :: [Variant],
                      derived_classes :: [DeriveInfo],
                    } deriving (Show)
 
@@ -27,6 +29,7 @@ data RecordTypeInfo = { name :: P.FullyQualifiedName,
                         field_names :: Map String Int,
                         fields :: [Type],
                         derived_classes :: [DeriveInfo],
+                        external :: Bool,
                       } deriving (Show)
 
 data DataTypeInfo = Adt AdtTypeInfo
@@ -55,31 +58,35 @@ getDataTypeInfo store name =
 
 applyAdtTypeInfo :: AdtTypeInfo -> U.Substitution -> AdtTypeInfo
 applyAdtTypeInfo adt sub = do
-    variant_types <- adt.variant_types |> List.iter
-                                |> map (\ts -> ts |> List.iter
-                                                |> map (\t -> U.apply sub t)
-                                                |> toList)
+    variants <- adt.variants |> List.iter
+                                |> map (\variant -> do
+                                    items <- variant.items |> List.iter
+                                                            |> map (\t -> U.apply sub t)
+                                                            |> toList
+                                    Variant variant.name items)
                                 |> toList
     type <- U.apply sub adt.type
-    AdtTypeInfo adt.name type variant_types adt.derived_classes
+    AdtTypeInfo adt.name type variants adt.derived_classes
 
 applyRecordTypeInfo :: RecordTypeInfo -> U.Substitution -> RecordTypeInfo
 applyRecordTypeInfo record sub = do
     fields <- record.fields |> List.iter |> map (\t -> U.apply sub t) |> toList
     type <- U.apply sub record.type
-    RecordTypeInfo record.name type record.field_names fields record.derived_classes
+    RecordTypeInfo record.name type record.field_names fields record.derived_classes record.external
 
 remapAdtTypeInfo :: AdtTypeInfo -> TypeVarGenerator -> (AdtTypeInfo , TypeVarGenerator)
 remapAdtTypeInfo adt var_gen = do
     vars <- Util.collectVars [] adt.type
     (mapper, var_gen) <- Util.initMapper vars var_gen
     type <- Util.remap mapper adt.type
-    variant_types <- adt.variant_types |> List.iter
-                        |> map (\ts -> ts |> List.iter
-                                            |> map (\t -> Util.remap mapper t)
-                                            |> toList)
-                        |> toList
-    adt <- AdtTypeInfo adt.name type variant_types adt.derived_classes
+    variants <- adt.variants |> List.iter
+                                |> map (\variant -> do
+                                    items <- variant.items |> List.iter
+                                                            |> map (\t -> Util.remap mapper t)
+                                                            |> toList
+                                    Variant variant.name items)
+                                |> toList
+    adt <- AdtTypeInfo adt.name type variants adt.derived_classes
     (adt, var_gen)
 
 remapRecordTypeInfo :: RecordTypeInfo -> TypeVarGenerator -> (RecordTypeInfo, TypeVarGenerator)
@@ -88,7 +95,7 @@ remapRecordTypeInfo record var_gen = do
     (mapper, var_gen) <- Util.initMapper vars var_gen
     type <- Util.remap mapper record.type
     fields <- record.fields |> List.iter |> map (\t -> Util.remap mapper t) |> toList
-    record <- RecordTypeInfo record.name type record.field_names fields record.derived_classes
+    record <- RecordTypeInfo record.name type record.field_names fields record.derived_classes record.external
     (record, var_gen)
 
 remapDataTypeInfo :: DataTypeInfo -> TypeVarGenerator -> (DataTypeInfo, TypeVarGenerator)
@@ -122,8 +129,8 @@ processAutoDerivedInstances state = do
         state <- case data_type_info of
             Adt adt -> do
                 state <- adt.derived_classes |> List.iter |> fold (\state, derived_class -> do
-                    state <- adt.variant_types |> List.iter |> fold (\state, types -> do
-                            state <- types |> List.iter |> fold (\state, type -> processMemberType state type derived_class (show adt.name)) state
+                    state <- adt.variants |> List.iter |> fold (\state, variant -> do
+                            state <- variant.items |> List.iter |> fold (\state, type -> processMemberType state type derived_class (show adt.name)) state
                             state) state
                     state) state
                 state

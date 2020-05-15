@@ -97,8 +97,7 @@ createClosures context = do
     context <- context.closure_store.closures |> Map.iter |> fold (\context, (name, closure) -> do
         context <- closure.instances |> List.iter |> fold (\context, closure_instance -> do
             (context, mir_args) <- closure_instance.args |> List.iter |> fold (\(context, mir_args), arg -> do
-                    (type_store, closure_store, mir_arg) <- processType context.type_store context.closure_store context.hir_program arg
-                    context <- context { type_store = type_store, closure_store = closure_store }
+                    (context, mir_arg) <- processType context arg
                     mir_args <- mir_args + [mir_arg]
                     (context, mir_args)
                 ) (context, [])

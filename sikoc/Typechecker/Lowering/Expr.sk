@@ -214,8 +214,7 @@ processExpr :: Context -> FQ.FunctionQueue -> U.Substitution -> HE.Expr -> (Cont
 processExpr context queue sub hir_expr = do
     HE.Expr expr expr_id _ <- hir_expr
     expr_type <- getMonomorphizedExprType context sub expr_id
-    (type_store, closure_store, _) <- processType context.type_store context.closure_store context.hir_program expr_type
-    context <- context { type_store = type_store, closure_store = closure_store }
+    (context, _) <- processType context expr_type
     case expr of
         HE.StaticFunctionCall qn args -> do
             arg_types <- processArgTypes context sub args
@@ -409,8 +408,7 @@ processExpr context queue sub hir_expr = do
             (context, queue, mir_body) <- processExpr context queue sub body
             HE.Expr _ body_id _ <- body
             hir_body_type <- getMonomorphizedExprType context sub body_id
-            (type_store, closure_store, mir_body_type) <- processType context.type_store context.closure_store context.hir_program hir_body_type
-            context <- context { type_store = type_store, closure_store = closure_store }
+            (context, mir_body_type) <- processType context hir_body_type
             (context, match_expr) <- case get context.state.choice_tree_store.choice_trees expr_id of
                 Some choice_tree -> do
                     p <- Option.unwrap (getValuePath choice_tree)

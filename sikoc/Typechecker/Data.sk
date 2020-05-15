@@ -30,7 +30,7 @@ processRecord state record= do
         (field_names, _) <- insert field_names name index
         fields <- fields + [type]
         (field_names, fields, index + 1)) (empty, [], 0)
-    record_type_info <- DS.RecordTypeInfo record.name record.type field_names fields []
+    record_type_info <- DS.RecordTypeInfo record.name record.type field_names fields [] record.external
     (record_type_info, var_gen) <- DS.remapRecordTypeInfo record_type_info state.var_gen
     state <- state { var_gen = var_gen }
     (derived_classes, state) <- addDerivedClasses state record.derived_classes record_type_info.type
@@ -41,8 +41,8 @@ processRecord state record= do
 
 processAdt :: TypecheckerState -> AlgebraicDataType -> TypecheckerState
 processAdt state adt = do
-    variant_types <- adt.variants |> List.iter |> map (\variant -> variant.items) |> toList
-    adt_type_info <- DS.AdtTypeInfo adt.name adt.type variant_types []
+    variants <- adt.variants |> List.iter |> map (\variant -> DS.Variant variant.name variant.items) |> toList
+    adt_type_info <- DS.AdtTypeInfo adt.name adt.type variants []
     (adt_type_info, var_gen) <- DS.remapAdtTypeInfo adt_type_info state.var_gen
     state <- state { var_gen = var_gen }
     (derived_classes, state) <- addDerivedClasses state adt.derived_classes adt_type_info.type
