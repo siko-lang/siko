@@ -28,7 +28,7 @@ processRecord :: TypecheckerState -> Record -> TypecheckerState
 processRecord state record= do
     (field_names, fields, _) <- record.fields |> List.iter |> fold (\(field_names, fields, index), (RecordField name type) -> do
         (field_names, _) <- insert field_names name index
-        fields <- fields + [type]
+        fields <- fields + [DS.RecordField name type]
         (field_names, fields, index + 1)) (empty, [], 0)
     record_type_info <- DS.RecordTypeInfo record.name record.type field_names fields [] record.external
     (record_type_info, var_gen) <- DS.remapRecordTypeInfo record_type_info state.var_gen

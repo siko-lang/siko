@@ -89,6 +89,32 @@ addAdt context adt_name mir_adt = do
     type_store <- type_store { adts = adts }
     context { type_store = type_store }
 
+instantiateAdt :: Context -> DS.AdtTypeInfo -> HT.Type -> (Context, DS.AdtTypeInfo)
+instantiateAdt context adt_type_info adt_type = do
+    sub <- U.createSubstitution
+    state <- context.state
+    (context, adt_type_info) <- case U.unify state.var_gen sub state.data_store state.class_store adt_type_info.type adt_type of
+        Ok (var_gen, sub) -> do
+            state <- state { var_gen = var_gen }
+            context <- context { state = state }
+            adt_type_info <- DS.applyAdtTypeInfo adt_type_info sub
+            (context, adt_type_info)
+        Err _ -> panic "processType, unification failed, Adt type {} hir_type {}" % (HT.toString adt_type_info.type, HT.toString adt_type)
+    (context, adt_type_info)
+
+instantiateRecord :: Context -> DS.RecordTypeInfo -> HT.Type -> (Context, DS.RecordTypeInfo)
+instantiateRecord context record_type_info record_type = do
+    sub <- U.createSubstitution
+    state <- context.state
+    (context, record_type_info) <- case U.unify state.var_gen sub state.data_store state.class_store record_type_info.type record_type of
+        Ok (var_gen, sub) -> do
+            state <- state { var_gen = var_gen }
+            context <- context { state = state }
+            record_type_info <- DS.applyRecordTypeInfo record_type_info sub
+            (context, record_type_info)
+        Err _ -> panic "processType, unification failed, Record type {} hir_type {}" % (HT.toString record_type_info.type, HT.toString record_type)
+    (context, record_type_info)
+
 processType :: Context -> HT.Type -> (Context, MT.Type)
 processType context hir_type = case hir_type of
     HT.Var _ _ -> panic "Type variable in MIR type"
@@ -99,15 +125,7 @@ processType context hir_type = case hir_type of
             None -> do
             case DS.getDataTypeInfo context.state.data_store qn of
                 DS.Adt adt_type_info -> do
-                    sub <- U.createSubstitution
-                    state <- context.state
-                    (context, adt_type_info) <- case U.unify state.var_gen sub state.data_store state.class_store adt_type_info.type hir_type of
-                        Ok (var_gen, sub) -> do
-                            state <- state { var_gen = var_gen }
-                            context <- context { state = state }
-                            adt_type_info <- DS.applyAdtTypeInfo adt_type_info sub
-                            (context, adt_type_info)
-                        Err _ -> panic "processType, unification failed, Adt type {} hir_type {}" % (HT.toString adt_type_info.type, HT.toString hir_type)
+                    (context, adt_type_info) <- instantiateAdt context adt_type_info hir_type
                     (context, name) <- getName context (show qn)
                     mir_type <- MT.Adt name
                     context <- addNamedType context hir_type mir_type
@@ -143,21 +161,12 @@ processType context hir_type = case hir_type of
                             context <- addAdt context name mir_adt
                             (context, mir_type)
                 DS.Record record_type_info -> do
-                    sub <- U.createSubstitution
-                    state <- context.state
-                    (context, record_type_info) <- case U.unify state.var_gen sub state.data_store state.class_store record_type_info.type hir_type of
-                        Ok (var_gen, sub) -> do
-                            state <- state { var_gen = var_gen }
-                            context <- context { state = state }
-                            record_type_info <- DS.applyRecordTypeInfo record_type_info sub
-                            (context, record_type_info)
-                        Err _ -> panic "processType, unification failed, Record type {} hir_type {}" % (HT.toString record_type_info.type, HT.toString hir_type)
+                    (context, record_type_info) <- instantiateRecord context record_type_info hir_type
                     (context, name) <- getName context (show qn)
                     mir_type <- MT.Record name
                     context <- addNamedType context hir_type mir_type
-                    (context, mir_fields) <- record_type_info.field_names |> Map.iter |> fold (\(context, mir_fields), (name, index) -> do
-                        type <- atIndex record_type_info.fields index
-                        (context, mir_type) <- processType context type
+                    (context, mir_fields) <- record_type_info.fields |> List.iter |> fold (\(context, mir_fields), field -> do
+                        (context, mir_type) <- processType context field.type
                         mir_field <- MD.RecordField name mir_type
                         mir_fields <- mir_fields + [mir_field]
                         (context, mir_fields)) (context, [])

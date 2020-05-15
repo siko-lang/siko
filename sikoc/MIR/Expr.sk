@@ -106,7 +106,9 @@ prettyPrint expr ind =
             args <- args |> List.iter |> map (\arg -> do
                 (s, simple) <- prettyPrint arg ind
                 s) |> toList
-            s <- "({} % ({}))" % (fmt, join args ", ")
+            s <- if isEmpty args
+                then "\"{}\"" % fmt
+                else "(\"{}\" % ({}))" % (fmt, join args ", ")
             (s, True)
         Return arg -> do
             (s, simple) <- prettyPrint arg ind

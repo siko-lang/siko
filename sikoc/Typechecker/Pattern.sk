@@ -121,8 +121,8 @@ checkPatternType context (P.Pattern pattern id location) = do
         P.Record _ args -> do
             record_type_info <- TS.getRecordTypeInfo context.type_store id
             (context, record_type_info, _) <- args |> List.iter |> fold (\(context, record_type_info, index), (P.Pattern _ arg_id arg_location) -> do
-                    field_ty <- atIndex record_type_info.fields index
-                    (context, sub) <- matchPatternWith context arg_id field_ty arg_location
+                    field <- atIndex record_type_info.fields index
+                    (context, sub) <- matchPatternWith context arg_id field.type arg_location
                     record_type_info <- DS.applyRecordTypeInfo record_type_info sub
                     (context, record_type_info, index + 1)
                 ) (context, record_type_info, 0)

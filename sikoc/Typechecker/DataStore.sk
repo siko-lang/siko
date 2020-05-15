@@ -24,10 +24,12 @@ data AdtTypeInfo = { name :: P.FullyQualifiedName,
                      derived_classes :: [DeriveInfo],
                    } deriving (Show)
 
+data RecordField = { name :: String, type :: Type } deriving (Show)
+
 data RecordTypeInfo = { name :: P.FullyQualifiedName,
                         type :: Type,
                         field_names :: Map String Int,
-                        fields :: [Type],
+                        fields :: [RecordField],
                         derived_classes :: [DeriveInfo],
                         external :: Bool,
                       } deriving (Show)
@@ -70,7 +72,7 @@ applyAdtTypeInfo adt sub = do
 
 applyRecordTypeInfo :: RecordTypeInfo -> U.Substitution -> RecordTypeInfo
 applyRecordTypeInfo record sub = do
-    fields <- record.fields |> List.iter |> map (\t -> U.apply sub t) |> toList
+    fields <- record.fields |> List.iter |> map (\f -> RecordField f.name (U.apply sub f.type)) |> toList
     type <- U.apply sub record.type
     RecordTypeInfo record.name type record.field_names fields record.derived_classes record.external
 
@@ -94,7 +96,7 @@ remapRecordTypeInfo record var_gen = do
     vars <- Util.collectVars [] record.type
     (mapper, var_gen) <- Util.initMapper vars var_gen
     type <- Util.remap mapper record.type
-    fields <- record.fields |> List.iter |> map (\t -> Util.remap mapper t) |> toList
+    fields <- record.fields |> List.iter |> map (\f -> RecordField f.name (Util.remap mapper f.type)) |> toList
     record <- RecordTypeInfo record.name type record.field_names fields record.derived_classes record.external
     (record, var_gen)
 
@@ -136,7 +138,7 @@ processAutoDerivedInstances state = do
                 state
             Record record -> do
                 state <- record.derived_classes |> List.iter |> fold (\state, derived_class -> do
-                    state <- record.fields |> List.iter |> fold (\state, type -> processMemberType state type derived_class (show record.name)) state
+                    state <- record.fields |> List.iter |> fold (\state, field -> processMemberType state field.type derived_class (show record.name)) state
                     state) state
                 state
         state) state

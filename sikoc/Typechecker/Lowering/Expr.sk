@@ -210,6 +210,46 @@ processDynamicFunctionCall context queue receiver_type mir_args mir_receiver = d
                         break (context, queue, calls)
     (context, queue, calls)
 
+processClassMemberCall :: Context ->
+                         FQ.FunctionQueue ->
+                         HT.Type ->
+                         HT.Type ->
+                         HPO.FullyQualifiedName ->
+                         HPO.FullyQualifiedName ->
+                         [ME.Expr] ->
+                         Bool ->
+                         (Context, FQ.FunctionQueue, ME.Expr)
+processClassMemberCall context queue function_type arg class_name qn mir_args has_default_impl = do
+    member_name <- HPO.getShortName qn
+    entry <- IR.CacheEntry arg class_name
+    instance_info <- case get context.state.instance_resolver.cache entry of
+        Some instance_info -> instance_info
+        None -> panic "{}/{} not found in instance resolution cache" % (HT.toString arg, class_name)
+    case instance_info of
+        IR.UserDefinedInstanceInfo type instance_id _ -> do
+            user_instance <- HPO.getInstance context.hir_program instance_id
+            selected_member_name <- user_instance.members |> List.iter |> fold (\selected_member_name, member -> do
+                name <- HPO.getShortName member
+                if name == member_name
+                    then Some member
+                    else selected_member_name) None
+            selected_member_name <- case selected_member_name of
+                Some selected_member_name -> selected_member_name
+                None -> qn
+            queue_item <- FQ.Normal selected_member_name function_type
+            (queue, function_id) <- FQ.insert queue queue_item
+            (context, queue, ME.StaticFunctionCall function_id mir_args)
+        IR.AutoDerivedInstanceInfo instance_id -> do
+            if has_default_impl
+                then do
+                    queue_item <- FQ.Normal qn function_type
+                    (queue, function_id) <- FQ.insert queue queue_item
+                    (context, queue, ME.StaticFunctionCall function_id mir_args)
+                else do
+                    queue_item <- FQ.AutoDerive arg function_type class_name member_name
+                    (queue, function_id) <- FQ.insert queue queue_item
+                    (context, queue, ME.StaticFunctionCall function_id mir_args)
+
 processExpr :: Context -> FQ.FunctionQueue -> U.Substitution -> HE.Expr -> (Context, FQ.FunctionQueue, ME.Expr)
 processExpr context queue sub hir_expr = do
     HE.Expr expr expr_id _ <- hir_expr
@@ -298,24 +338,7 @@ processExpr context queue sub hir_expr = do
                             arg_type <- TUtil.remap mapper class_type_info.arg_type
                             (state, function_type, sub) <- getFunctionType state arg_types expr_type member_type
                             arg <- U.apply sub arg_type
-                            entry <- IR.CacheEntry arg class_name
-                            instance_info <- case get state.instance_resolver.cache entry of
-                                Some instance_info -> instance_info
-                                None -> panic "{}/{} not found in instance resolution cache" % (HT.toString arg, class_name)
-                            case instance_info of
-                                IR.UserDefinedInstanceInfo type instance_id _ -> do
-                                    user_instance<- HPO.getInstance context.hir_program instance_id
-                                    selected_member_name <- user_instance.members |> List.iter |> fold (\selected_member_name, member -> do
-                                        name <- HPO.getShortName member
-                                        if name == member_name
-                                            then Some member
-                                            else selected_member_name) None
-                                    selected_member_name <- Option.unwrap selected_member_name
-                                    queue_item <- FQ.Normal selected_member_name function_type
-                                    context <- context { state = state }
-                                    (queue, function_id) <- FQ.insert queue queue_item
-                                    (context, queue, ME.StaticFunctionCall function_id mir_args)
-                                _ -> panic "Auto generated instances are not yet implemented" // TODO
+                            processClassMemberCall context queue function_type arg class_name qn mir_args member.has_default_impl
                         None -> panic "class member {} not found" % member_name
                 _ -> panic "ClassMember calls non class member"
         HE.VariantConstructorCall qn args -> do

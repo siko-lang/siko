@@ -1,3 +1,10 @@
+module Std.Ops where
+
+class Show a where
+    show a :: a -> String
+    bla a :: a -> String
+    bla a = show a
+
 module Int where
 
 data Int = extern
@@ -6,20 +13,30 @@ module String where
 
 data String = extern
 
+instance Show String where
+    show a = a
+
 module Main where
 
-add1 :: Int -> Int -> (Int, Int)
-add1 a b = (a, b)
+data Complex a = Complex a deriving (Show)
 
-add2 :: Int -> Int -> Int -> (Int, Int)
-add2 a b c = (a, b)
+data Color = Red | Blue String | Green String (Complex String) deriving (Show)
 
-fn :: (Int -> (Int, Int)) -> (Int, Int)
-fn f = f 2
+data Color2 = Red2 | Blue2 | Green2
+
+instance Show Color2 where
+    show :: Color2 -> String
+    show c = "Color2"
+
+data Color3 = Red3 | Blue3 | Green3
+
+instance Show Color3 where
+    show :: Color3 -> String
+    show c = "Color3"
+
+data Record a = { b :: a , f :: String, c :: Complex String } deriving (Show)
 
 main = do
-    a <- add1 1
-    b <- add2 1 2
-    fn a
-    fn b
+    a <- bla Red
+    b <- show (Record "a" "b" (Complex "A"))
     ()
