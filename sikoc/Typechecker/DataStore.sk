@@ -113,17 +113,20 @@ processMemberType :: TypecheckerState -> Type -> DeriveInfo -> String -> Typeche
 processMemberType state type derived_class type_name = do
     (IR.AutoDerivedInstance instance_type location name) <- IR.getAutoDerivedInstanceById
             state.instance_resolver derived_class.instance_id
-    state <- case IR.checkInstance state type derived_class.class_name of
-                Ok (state, cs) -> do
-                    (state, sub) <- IR.mergeResolverConstraintsIntoSubstitution state cs (U.createSubstitution)
-                    instance_type <- U.apply sub instance_type
-                    i <- IR.AutoDerivedInstance instance_type location name
-                    instance_resolver <- IR.updateAutoDerivedInstance state.instance_resolver derived_class.instance_id i
-                    state { instance_resolver = instance_resolver }
-                Err state -> do
-                    addError state (AutoDeriveError type_name
-                            (type |> fixedType |> toString) (show derived_class.class_name) derived_class.location)
-    state
+    case type of
+        Tuple items -> do
+            items |> List.iter |> fold (\state, item -> processMemberType state item derived_class type_name) state
+        _ -> do
+                case IR.checkInstance state type derived_class.class_name of
+                    Ok (state, cs) -> do
+                        (state, sub) <- IR.mergeResolverConstraintsIntoSubstitution state cs (U.createSubstitution)
+                        instance_type <- U.apply sub instance_type
+                        i <- IR.AutoDerivedInstance instance_type location name
+                        instance_resolver <- IR.updateAutoDerivedInstance state.instance_resolver derived_class.instance_id i
+                        state { instance_resolver = instance_resolver }
+                    Err state -> do
+                        addError state (AutoDeriveError type_name
+                                (type |> fixedType |> toString) (show derived_class.class_name) derived_class.location)
 
 processAutoDerivedInstances :: TypecheckerState -> TypecheckerState
 processAutoDerivedInstances state = do

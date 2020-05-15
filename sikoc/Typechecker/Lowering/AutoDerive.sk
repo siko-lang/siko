@@ -1,0 +1,96 @@
+module Siko.Typechecker.Lowering.AutoDerive where
+
+import Siko.HIR.Type as HT
+import Siko.HIR.Data as HD
+import Siko.HIR.Program as HP
+import Siko.HIR.Function as HF
+import Siko.MIR.Type as MT
+import Siko.MIR.Expr as ME
+import Siko.MIR.Function as MF
+import Siko.MIR.Program as MP
+import Siko.Typechecker
+import Siko.Typechecker.DataStore as DS
+import Siko.Typechecker.Unification as U
+import Siko.Typechecker.Lowering
+import Siko.Typechecker.FunctionStore
+import Siko.Typechecker.Lowering.ClosureStore as CS
+import Siko.Typechecker.Lowering.Expr
+import Siko.Typechecker.Lowering.FunctionQueue
+import Siko.Typechecker.Lowering.Util as Util
+import Siko.Typechecker.Lowering.TypeStore as TS
+import Siko.Typechecker.Util as TUtil
+import Siko.Constants
+import Map
+
+processMember :: Context -> FunctionQueue -> HT.Type -> ME.Expr -> HP.FullyQualifiedName -> (Context, FunctionQueue, String, [ME.Expr])
+processMember context queue member parent_expr class_name = do
+    case member of
+        HT.Tuple tuple_members -> do
+            (context, queue, fmt_args, items, _) <- tuple_members |> List.iter
+                |> fold (\(context, queue, fmt_args, tuple_items, index), tuple_member -> do
+                    tuple_expr <- ME.FieldAccess (Util.getFieldName index) parent_expr
+                    (context, queue, fmt_arg, items) <- processMember context queue tuple_member tuple_expr class_name
+                    fmt_args <- fmt_args + [fmt_arg]
+                    tuple_items <- tuple_items + items
+                    (context, queue, fmt_args, tuple_items, index + 1)) (context, queue, [], [], 0)
+            fmt_arg <- if getLength fmt_args == 1
+                then "({},)" % atIndex fmt_args 0
+                else "({})" % (join fmt_args ", ")
+            (context, queue, fmt_arg, items)
+        _ -> do
+            function_type <- HT.Function member (TUtil.getStringType)
+            show_qn <- HP.FullPath getStdOpsModuleName getShowClassMemberName
+            (context, queue, mir_member) <- processClassMemberCall context queue function_type
+                                            member class_name show_qn [parent_expr] False
+            fmt_arg <- if HT.isSimple member then "{}" else "({})"
+            (context, queue, fmt_arg, [mir_member])
+
+generateShowInstance :: Context -> FunctionQueue -> HT.Type -> HT.Type -> HP.FullyQualifiedName -> (Context, FunctionQueue, ME.Expr)
+generateShowInstance context queue hir_type hir_function_type class_name = do
+    (context, queue, body) <- case hir_type of
+        HT.Named qn _ -> do
+            case DS.getDataTypeInfo context.state.data_store qn of
+                DS.Adt adt -> do
+                    (context, adt) <- TS.instantiateAdt context adt hir_type
+                    (context, id) <- getNextVarId context
+                    var <- ME.Var "m{}" % id
+                    decl <- ME.VarDecl var (ME.ArgRef 0)
+                    (context, queue, cases) <- adt.variants |> List.iter |> fold (\(context, queue, cases), variant -> do
+                        checker <- ME.VariantChecker (getLength cases) var
+                        (context, queue, fmt_args, mir_items) <- variant.items |> List.iter
+                                    |> fold (\(context, queue, fmt_args, mir_items), item -> do
+                                        field_name <- Util.getFieldName (getLength mir_items)
+                                        field_access <- ME.FieldAccess field_name (ME.VarRef var)
+                                        (context, queue, fmt_arg, items) <- processMember context queue item (field_access) class_name
+                                        fmt_args <- fmt_args + [fmt_arg]
+                                        mir_items <- mir_items + items
+                                        (context, queue, fmt_args, mir_items)) (context, queue, [], [])
+                        fmt <- if isEmpty fmt_args
+                            then "{}" % variant.name
+                            else "{} {}" % (variant.name, (join fmt_args " "))
+                        body <- ME.Formatter fmt mir_items
+                        c <- ME.MatchCase checker body
+                        cases <- cases + [c]
+                        (context, queue, cases)) (context, queue, [])
+                    body <- ME.Match (ME.VarRef var) cases
+                    (context, queue, ME.Do [decl, body])
+                DS.Record record -> do
+                    (context, record) <- TS.instantiateRecord context record hir_type
+                    (context, id) <- getNextVarId context
+                    var <- ME.Var "m{}" % id
+                    decl <- ME.VarDecl var (ME.ArgRef 0)
+                    (context, queue, fmt_args, mir_items) <- record.fields |> List.iter
+                            |> fold (\(context, queue, fmt_args, mir_items), field -> do
+                        show_qn <- HP.FullPath getStdOpsModuleName getShowClassMemberName
+                        field_access <- ME.FieldAccess field.name (ME.VarRef var)
+                        (context, queue, fmt_arg, items) <- processMember context queue field.type field_access class_name
+                        fmt_args <- fmt_args + [fmt_arg]
+                        mir_items <- mir_items + items
+                        (context, queue, fmt_args, mir_items)) (context, queue, [], [])
+                    fmt <- if isEmpty fmt_args
+                            then "{}" % record.name
+                            else "{} {}" % (record.name, (join fmt_args " "))
+                    body <- ME.Formatter fmt mir_items
+                    (context, queue, ME.Do [decl, body])
+        _ -> panic "Cannot auto derive show for type {}" % HT.toString hir_type
+    (context, queue, body)
