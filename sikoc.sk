@@ -1,64 +1,196 @@
+module Int where
+
+data Int = extern
+
+instance Add Int where
+    opAdd a b = extern
+
+instance Sub Int where
+    opSub a b = extern
+
+instance Mul Int where
+    opMul a b = extern
+
+instance Div Int where
+    opDiv a b = extern
+
+instance PartialOrd Int where
+    partialCmp a b = extern
+
+instance Ord Int where
+    cmp a b = extern
+
+instance Eq Int
+
+instance PartialEq Int where
+    opEq a b = extern
+
+instance Show Int where
+    show a = extern
+
+parse :: String -> Option Int
+parse s = extern
+
 module Bool where
 
-data Bool = True | False deriving (PartialEq)
+data Bool = True | False deriving (PartialEq, Eq, PartialOrd, Ord, Show)
+
+module Ordering where
+
+data Ordering = Less | Equal | Greater deriving (PartialEq, Eq, PartialOrd, Ord, Show)
+
+module Std.Util.Basic where
 
 not :: Bool -> Bool
 not a = if a then False
              else True
 
+print a :: (Show a) => &a -> ()
+print msg = extern
+
+println a :: (Show a) => &a -> ()
+println msg = extern
+
+abort :: !
+abort = extern
+
+unimplemented :: !
+unimplemented = panic "unimplemented code called"
+
+unreachable :: !
+unreachable = panic "unreachable code called"
+
+panic a :: (Show a) => a -> !
+panic msg = do
+    println msg
+    abort
+
+module Option where
+
+data Option a = Some a | None deriving (PartialEq, Eq, PartialOrd, Ord, Show)
+
+isSome a :: Option a -> Bool
+isSome o = case o of
+    Some _ -> True
+    None -> False
+
+isNone a :: Option a -> Bool
+isNone o = case o of
+    Some _ -> False
+    None -> True
+
+unwrap a :: Option a -> a
+unwrap o = case o of
+    Some a -> a
+    None -> panic "Option unwrap called on None"
+
 module Std.Ops where
 
-class Show a where
-    show a :: a -> String
-    bla a :: a -> String
-    bla a = show a
+class Add a where
+    opAdd a :: a -> a -> a
+
+class Sub a where
+    opSub a :: a -> a -> a
+
+class Mul a where
+    opMul a :: a -> a -> a
+
+class Div a where
+    opDiv a :: a -> a -> a
+
+class PartialOrd a where
+    partialCmp a :: a -> a -> Option Ordering
+
+    opLessThan a :: a -> a -> Bool
+    opLessThan a b = case partialCmp a b of
+                        Some Less -> True
+                        _ -> False
+
+    opLessEqual a :: a -> a -> Bool
+    opLessEqual a b = case partialCmp a b of
+                         Some Less -> True
+                         Some Equal -> True
+                         _ -> False
+
+    opGreaterThan a :: a -> a -> Bool
+    opGreaterThan a b = case partialCmp a b of
+                         Some Greater -> True
+                         _ -> False
+
+    opGreaterEqual a :: a -> a -> Bool
+    opGreaterEqual a b = case partialCmp a b of
+                         Some Greater -> True
+                         Some Equal -> True
+                         _ -> False
 
 class PartialEq a where
     opEq a :: a -> a -> Bool
     opNotEq a :: a -> a -> Bool
     opNotEq a b = not (opEq a b)
 
-module Int where
+class (PartialEq a) => Eq a
 
-data Int = extern
+class (PartialOrd a, Eq a) => Ord a where
+    cmp a :: a -> a -> Ordering
+
+    max a :: a -> a -> a
+    max a b = if a >= b then a else b
+
+    min a :: a -> a -> a
+    min a b = if a <= b then a else b
+
+class Show a where
+    show a :: a -> String
+
+class Negative a where
+    opNegative a :: a -> a
+
+opAnd :: Bool -> Bool -> Bool
+opAnd a b = extern
+
+opOr :: Bool -> Bool -> Bool
+opOr a b = extern
+
+opNot :: Bool -> Bool
+opNot a  = not a
+
+getDiscriminant a :: a -> Int
+getDiscriminant a = extern
 
 module String where
 
 data String = extern
 
+split :: String -> String -> [String]
+split input sep = extern
+
+instance Add String where
+    opAdd a b = extern
+
+instance PartialOrd String where
+    partialCmp a b = extern
+
+instance Ord String where
+    cmp a b = extern
+
+instance PartialEq String where
+    opEq a b = extern
+
+instance Eq String
+
 instance Show String where
     show a = a
 
-instance PartialEq String where
-    opEq a b = False
-
 module Main where
 
-data Complex a = Complex a deriving (Show)
+data Stuff = { a :: String, b :: String } deriving (PartialOrd)
 
-data Color = Red | Blue String | Green String (Complex String) (String, String) deriving (Show)
-
-data Color2 = Red2 | Blue2 | Green2
-
-instance Show Color2 where
-    show :: Color2 -> String
-    show c = "Color2"
-
-data Color3 = Red3 | Blue3 | Green3
-
-instance Show Color3 where
-    show :: Color3 -> String
-    show c = "Color3"
-
-data Record a = { b :: a , f :: String, c :: Complex String, i :: (String, (String, )) } deriving (Show)
-
-data PEQ = PEQ1 | PEQ2 String Bool deriving (PartialEq)
-
-data REQ = { a :: String , b :: String } deriving (PartialEq)
+data Stuff2 = S1 | S2 String deriving (PartialOrd)
 
 main = do
-    a <- bla Red
-    b <- show (Record "a" "b" (Complex "A") ("a", ("b",)))
-    c <- PEQ1 == PEQ2 "a" False
-    d <- REQ "a" "d" == REQ "b" "c"
+    a <- Stuff "a" "d"
+    b <- Stuff "b" "f"
+    partialCmp a b
+    partialCmp S1 (S2 "a")
+    c <- Some Equal
     ()

@@ -160,7 +160,7 @@ addUnreachablePatternError context location = do
     //context <- context { state = state }
     context
 
-data MatchInfo = MatchInfo Int AdditionalInfo
+data MatchInfo = MatchInfo Int AdditionalInfo deriving (Show)
 
 data Choice = Choice ValuePath (Map Condition [Choice])
               | CaseEnd [MatchInfo]
@@ -323,6 +323,24 @@ collectAllChecks choice =
             assert (getLength indices == 1)
             PatternInfo [] (atIndex indices 0)
 
+compareChecks :: [Check] -> Check -> Bool
+compareChecks checks check2 = do
+    checks |> List.iter |> fold (\match, check1 -> do
+        (Check p1 c1, Check p2 c2) <- (check1, check2)
+        if p1 == p2
+            then do
+                case (c1, c2) of
+                    (IntegerCondition lit1, IntegerCondition lit2) -> match && lit1 == lit2
+                    (StringCondition lit1, StringCondition lit2) -> match && lit1 == lit2
+                    (CharCondition lit1, CharCondition lit2) -> match && lit1 == lit2
+                    (CharRangeCondition _ _ _, CharRangeCondition _ _ _) -> False // FIXME! this is incorrect!
+                    (CharRangeCondition _ _ _, CharCondition _) -> False
+                    (CharCondition _ , CharRangeCondition _ _ _) -> False
+                    (VariantCondition v1, VariantCondition v2) -> match && v1 == v2
+                    (_, WildcardCondition) -> match
+                    _ -> False
+            else match) True
+
 walkChoiceTree :: Choice -> [Check] -> PatternInfo -> Choice
 walkChoiceTree choice checks pattern_info = do
     case choice of
@@ -334,7 +352,7 @@ walkChoiceTree choice checks pattern_info = do
                 (cond, choices)) |> toMap
             Choice path subchoices
         CaseEnd matches -> do
-            match <- pattern_info.checks |> List.iter |> fold (\match, check -> match && contains checks check) True
+            match <- pattern_info.checks |> List.iter |> fold (\match, check -> match && compareChecks checks check) True
             if match
                 then do
                     merged <- matches + [pattern_info.end]
