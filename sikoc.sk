@@ -1,9 +1,22 @@
+module Bool where
+
+data Bool = True | False deriving (PartialEq)
+
+not :: Bool -> Bool
+not a = if a then False
+             else True
+
 module Std.Ops where
 
 class Show a where
     show a :: a -> String
     bla a :: a -> String
     bla a = show a
+
+class PartialEq a where
+    opEq a :: a -> a -> Bool
+    opNotEq a :: a -> a -> Bool
+    opNotEq a b = not (opEq a b)
 
 module Int where
 
@@ -15,6 +28,9 @@ data String = extern
 
 instance Show String where
     show a = a
+
+instance PartialEq String where
+    opEq a b = False
 
 module Main where
 
@@ -36,7 +52,13 @@ instance Show Color3 where
 
 data Record a = { b :: a , f :: String, c :: Complex String, i :: (String, (String, )) } deriving (Show)
 
+data PEQ = PEQ1 | PEQ2 String Bool deriving (PartialEq)
+
+data REQ = { a :: String , b :: String } deriving (PartialEq)
+
 main = do
     a <- bla Red
     b <- show (Record "a" "b" (Complex "A") ("a", ("b",)))
+    c <- PEQ1 == PEQ2 "a" False
+    d <- REQ "a" "d" == REQ "b" "c"
     ()

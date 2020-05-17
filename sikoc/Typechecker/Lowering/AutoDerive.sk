@@ -159,21 +159,10 @@ generatePartialEqInstance context queue hir_type hir_function_type class_name = 
                     (context, queue, ME.Do [decl, body])
                 DS.Record record -> do
                     (context, record) <- TS.instantiateRecord context record hir_type
-                    (context, id) <- getNextVarId context
-                    var <- ME.Var "m{}" % id
-                    decl <- ME.VarDecl var (ME.ArgRef 0)
-                    (context, queue, fmt_args, mir_items) <- record.fields |> List.iter
-                            |> fold (\(context, queue, fmt_args, mir_items), field -> do
-                        show_qn <- HP.FullPath getStdOpsModuleName getShowClassMemberName
-                        field_access <- ME.FieldAccess field.name (ME.VarRef var)
-                        (context, queue, fmt_arg, items) <- processMemberForShow context queue field.type field_access class_name
-                        fmt_args <- fmt_args + [fmt_arg]
-                        mir_items <- mir_items + items
-                        (context, queue, fmt_args, mir_items)) (context, queue, [], [])
-                    fmt <- if isEmpty fmt_args
-                            then "{}" % record.name
-                            else "{} {}" % (record.name, (join fmt_args " "))
-                    body <- ME.Formatter fmt mir_items
-                    (context, queue, ME.Do [decl, body])
+                    var_ref0 <- ME.ArgRef 0
+                    var_ref1 <- ME.ArgRef 1
+                    record_items <- record.fields |> List.iter |> map (\DS.RecordField name type -> (name, type)) |> toList
+                    (context, queue, call_eq) <- processMemberForPartialEq context queue record_items var_ref0 var_ref1
+                    (context, queue, call_eq)
         _ -> panic "Cannot auto derive show for type {}" % HT.toString hir_type
     (context, queue, body)
