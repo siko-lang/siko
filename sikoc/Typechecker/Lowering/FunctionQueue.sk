@@ -183,6 +183,13 @@ processItem queue item mir_function_id context = do
                     mir_program <- MP.addFunction context.mir_program mir_function_id mir_function
                     context <- context { mir_program = mir_program }
                     (context, queue)
+                ("Std.Ops.Ord", "cmp") -> do
+                    (context, mir_type) <- getFunctionType context hir_function_type 2
+                    (context, queue, body) <- generateOrdInstance context queue hir_type hir_function_type class_name
+                    mir_function <- MF.Function mir_function_id (MF.Normal body) mir_type
+                    mir_program <- MP.addFunction context.mir_program mir_function_id mir_function
+                    context <- context { mir_program = mir_program }
+                    (context, queue)
                 _ -> panic "Auto derive not implemented for {} / {} / {}" % (class_name, member_name, HT.toString hir_type)
         _ -> panic "processItem: not yet implemented for {}" % item
 
