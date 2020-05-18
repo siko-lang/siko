@@ -161,36 +161,19 @@ processItem queue item mir_function_id context = do
                     context <- context { mir_program = mir_program }
                     (context, queue)
         AutoDerive hir_type hir_function_type class_name member_name -> do
-            case (show class_name, member_name) of
-                ("Std.Ops.Show", "show") -> do
-                    (context, mir_type) <- getFunctionType context hir_function_type 1
-                    (context, queue, body) <- generateShowInstance context queue hir_type hir_function_type class_name
-                    mir_function <- MF.Function mir_function_id (MF.Normal body) mir_type
-                    mir_program <- MP.addFunction context.mir_program mir_function_id mir_function
-                    context <- context { mir_program = mir_program }
-                    (context, queue)
-                ("Std.Ops.PartialEq", "opEq") -> do
-                    (context, mir_type) <- getFunctionType context hir_function_type 2
-                    (context, queue, body) <- generatePartialEqInstance context queue hir_type hir_function_type class_name
-                    mir_function <- MF.Function mir_function_id (MF.Normal body) mir_type
-                    mir_program <- MP.addFunction context.mir_program mir_function_id mir_function
-                    context <- context { mir_program = mir_program }
-                    (context, queue)
-                ("Std.Ops.PartialOrd", "partialCmp") -> do
-                    (context, mir_type) <- getFunctionType context hir_function_type 2
-                    (context, queue, body) <- generatePartialOrdInstance context queue hir_type hir_function_type class_name
-                    mir_function <- MF.Function mir_function_id (MF.Normal body) mir_type
-                    mir_program <- MP.addFunction context.mir_program mir_function_id mir_function
-                    context <- context { mir_program = mir_program }
-                    (context, queue)
-                ("Std.Ops.Ord", "cmp") -> do
-                    (context, mir_type) <- getFunctionType context hir_function_type 2
-                    (context, queue, body) <- generateOrdInstance context queue hir_type hir_function_type class_name
-                    mir_function <- MF.Function mir_function_id (MF.Normal body) mir_type
-                    mir_program <- MP.addFunction context.mir_program mir_function_id mir_function
-                    context <- context { mir_program = mir_program }
-                    (context, queue)
+            // FIXME: avoid hardcoded names somehow
+            (fn, arg_count) <- case (show class_name, member_name) of
+                ("Std.Ops.Show", "show") -> (generateShowInstance, 1)
+                ("Std.Ops.PartialEq", "opEq") -> (generatePartialEqInstance, 2)
+                ("Std.Ops.PartialOrd", "partialCmp") -> (generatePartialOrdInstance, 2)
+                ("Std.Ops.Ord", "cmp") -> (generateOrdInstance, 2)
                 _ -> panic "Auto derive not implemented for {} / {} / {}" % (class_name, member_name, HT.toString hir_type)
+            (context, mir_type) <- getFunctionType context hir_function_type arg_count
+            (context, queue, body) <- fn context queue hir_type hir_function_type class_name
+            mir_function <- MF.Function mir_function_id (MF.Normal body) mir_type
+            mir_program <- MP.addFunction context.mir_program mir_function_id mir_function
+            context <- context { mir_program = mir_program }
+            (context, queue)
         _ -> panic "processItem: not yet implemented for {}" % item
 
 processItems :: FunctionQueue -> Context -> Context

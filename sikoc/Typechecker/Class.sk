@@ -160,6 +160,10 @@ processClassesAndInstances state program = do
         (state, types) <- processInstance state i program
         (state, inferred_types + types)) (state, [])
     program <- inferred_types |> List.iter |> fold (\program, (qn, type) -> P.updateInstanceMemberType program qn type) program
+    (state, program)
+
+checkInstanceConflictsAndDependencies :: TypecheckerState -> TypecheckerState
+checkInstanceConflictsAndDependencies state = do
     state <- IR.checkConflicts state
     state <- IR.checkInstanceDependencies state
-    (state, program)
+    state
