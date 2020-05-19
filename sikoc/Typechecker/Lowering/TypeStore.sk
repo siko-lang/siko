@@ -16,31 +16,14 @@ import Siko.Typechecker.DataStore as DS
 import Siko.Constants
 import Map
 
-data Key = { module_name :: String, name :: String } deriving (PartialEq, Eq, PartialOrd, Ord)
-
 data TypeStore = { expr_types :: Map E.ExprId HT.Type,
                    named_types :: Map HT.Type MT.Type,
                    adts :: Map MP.Identity MD.AlgebraicDataType,
                    records :: Map MP.Identity MD.Record,
-                   keys :: Map Key Int
                  }
 
 createTypeStore :: TypeStore
-createTypeStore = TypeStore empty empty empty empty empty
-
-getIdentity :: Context -> String -> String -> (Context, MP.Identity)
-getIdentity context module_name name = do
-    key <- Key module_name name
-    type_store <- context.type_store
-    (keys, prev) <- alter (\index -> case index of
-                            Some index -> Some (index + 1)
-                            None -> Some 1) key type_store.keys
-    name <- case prev of
-        Some i -> "{}_{}" % (name, i + 1)
-        None -> name
-    type_store <- type_store { keys = keys }
-    context <- context { type_store = type_store }
-    (context, MP.Identity module_name name)
+createTypeStore = TypeStore empty empty empty empty
 
 addVariant :: TypeStore -> MP.Identity -> MD.Variant -> TypeStore
 addVariant type_store identity variant = do

@@ -11,6 +11,9 @@ import Siko.Typechecker.FunctionStore
 import Siko.Typechecker
 import Siko.Constants
 import Hack
+import Map
+
+data Key = { module_name :: String, name :: String } deriving (PartialEq, Eq, PartialOrd, Ord)
 
 data Context = { hir_program :: HP.Program,
                  mir_program :: MP.Program,
@@ -18,7 +21,8 @@ data Context = { hir_program :: HP.Program,
                  type_store :: TypeStore,
                  closure_store :: CS.ClosureStore,
                  state :: TypecheckerState,
-                 var_id :: Int
+                 var_id :: Int,
+                 keys :: Map Key Int
                }
 
 getNextVarId :: Context -> (Context, Int)
@@ -27,12 +31,24 @@ getNextVarId context = do
     context <- context { var_id = id + 1 }
     (context, id)
 
+getIdentity :: Context -> String -> String -> (Context, MP.Identity)
+getIdentity context module_name name = do
+    key <- Key module_name name
+    (keys, prev) <- alter (\index -> case index of
+                            Some index -> Some (index + 1)
+                            None -> Some 1) key context.keys
+    name <- case prev of
+        Some i -> "{}_{}" % (name, i + 1)
+        None -> name
+    context <- context { keys = keys }
+    (context, MP.Identity module_name name)
+
 lowerProgram :: TypecheckerState -> HP.Program -> FunctionStore -> TypeStore -> ()
 lowerProgram state hir_program function_store type_store = do
     println "Lowering to MIR.."
     main_qn <- HP.FullPath getMainModuleName getMainFunctionName
     mir_program <- MP.createProgram
-    context <- Context hir_program mir_program function_store type_store CS.createClosureStore state 0
+    context <- Context hir_program mir_program function_store type_store CS.createClosureStore state 0 empty
     context <- case HP.getFunctionOpt hir_program main_qn of
         Some main -> do
             function_queue <- FQ.createFunctionQueue

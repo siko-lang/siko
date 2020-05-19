@@ -56,7 +56,7 @@ insert context queue item = do
         Some function_id -> (context, queue, function_id)
         None -> do
             (module_name, name) <- getItemName item
-            (context, function_id) <- TS.getIdentity context module_name  name
+            (context, function_id) <- getIdentity context module_name  name
             (processed, _) <- Map.insert queue.processed item function_id
             pending <- queue.pending + [(item, function_id)]
             queue <- queue { processed = processed, pending = pending }
@@ -112,11 +112,7 @@ processItem queue item mir_function_id context = do
     case item of
         Normal qn hir_type -> do
             hir_function <- HP.getFunction context.hir_program qn
-            case hir_function.kind of
-                HF.Normal -> processNormalFunction queue context mir_function_id hir_type qn hir_function
-                HF.InstanceMember _ -> processNormalFunction queue context mir_function_id hir_type qn hir_function
-                HF.ClassMember _ -> processNormalFunction queue context mir_function_id hir_type qn hir_function
-                _ -> panic "processing of function kind {} is not implemented" % hir_function.kind
+            processNormalFunction queue context mir_function_id hir_type qn hir_function
         VariantCtor qn index _ hir_type -> do
                     adt <- HP.getAdt context.hir_program qn
                     variant <- atIndex adt.variants index
