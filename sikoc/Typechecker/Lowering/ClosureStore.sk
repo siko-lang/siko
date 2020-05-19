@@ -8,6 +8,7 @@ import Siko.MIR.Expr as ME
 import Siko.MIR.Function as MF
 import Siko.MIR.Program
 import Siko.MIR.Data as MD
+import Siko.Constants
 import Map
 
 data ClosureInstanceId = ClosureInstanceId Int deriving (Show, PartialEq, Eq, PartialOrd, Ord)
@@ -19,11 +20,11 @@ data ClosureInstance = { id :: ClosureInstanceId,
 data Closure = { name :: String,
                  instances :: [ClosureInstance] }
 
-data ClosureCall = { function_id :: MF.FunctionId,
+data ClosureCall = { function_id :: Identity,
                      name :: String }
 
-data ClosureInstanceSuccessor = NextClosureInstance MF.FunctionId
-                                | RealFunctionCall MF.FunctionId
+data ClosureInstanceSuccessor = NextClosureInstance Identity
+                                | RealFunctionCall Identity
 
 instance Show ClosureInstanceSuccessor where
     show c = case c of
@@ -70,7 +71,7 @@ getClosureName store closure_type = do
         None -> panic "Closure not found after creation"
     (store, name)
 
-addClosureCall :: ClosureStore -> String -> MF.FunctionId -> ClosureStore
+addClosureCall :: ClosureStore -> String -> Identity -> ClosureStore
 addClosureCall store name function_id = do
     call <- ClosureCall function_id name
     closure_calls <- store.closure_calls + [call]
@@ -86,8 +87,8 @@ getVariantName closure_instance = do
     ClosureInstanceId id <- closure_instance.id
     "I{}" % id
 
-getVariantRecordName :: ClosureInstance -> String
-getVariantRecordName closure_instance = "{}_{}" % (closure_instance.name, getVariantName closure_instance)
+getVariantRecordIdentity :: ClosureInstance -> Identity
+getVariantRecordIdentity closure_instance = Identity getInternalModuleName ("{}_{}" % (closure_instance.name, getVariantName closure_instance))
 
 getVariantCtorName :: ClosureInstance -> String
 getVariantCtorName closure_instance = "{}_{}" % (closure_instance.name, getVariantName closure_instance)
@@ -102,7 +103,7 @@ createClosures context = do
                     (context, mir_args)
                 ) (context, [])
             variant_name <- getVariantName closure_instance
-            record_name <- getVariantRecordName closure_instance
+            record_identity <- getVariantRecordIdentity closure_instance
             (mir_fields, _) <- mir_args |> List.iter |> fold (\(mir_fields, index), mir_arg -> do
                     field_name <- getFieldName index
                     mir_field <- MD.RecordField field_name mir_arg
@@ -110,11 +111,12 @@ createClosures context = do
                     (mir_fields, index + 1)
                 ) ([], 0)
             type_store <- context.type_store
-            mir_variant_record <- MD.Record record_name mir_fields False
-            (records, _) <- insert type_store.records record_name mir_variant_record
+            mir_variant_record <- MD.Record record_identity mir_fields False
+            (records, _) <- insert type_store.records record_identity mir_variant_record
             type_store <- type_store { records = records }
-            mir_variant <- MD.Variant variant_name record_name
-            type_store <- addVariant type_store name mir_variant
+            mir_variant <- MD.Variant variant_name record_identity
+            identity <- Identity getInternalModuleName name
+            type_store <- addVariant type_store identity mir_variant
             context <- context { type_store = type_store }
             context) context
         context) context

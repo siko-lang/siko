@@ -199,7 +199,7 @@ processDynamicFunctionCall context queue receiver_type mir_args mir_receiver = d
                         var <- ME.Var "closure{}" % id
                         function_type <- HT.Function receiver_type receiver_type
                         queue_item <- FQ.ClosureCall name function_type
-                        (queue, function_id) <- FQ.insert queue queue_item
+                        (context, queue, function_id) <- FQ.insert context queue queue_item
                         call <- ME.StaticFunctionCall function_id [receiver, arg]
                         decl <- ME.VarDecl var call
                         receiver <- ME.VarRef var
@@ -250,17 +250,17 @@ processClassMemberCall context queue function_type arg class_name qn mir_args ha
                 Some selected_member_name -> selected_member_name
                 None -> qn
             queue_item <- FQ.Normal selected_member_name function_type
-            (queue, function_id) <- FQ.insert queue queue_item
+            (context, queue, function_id) <- FQ.insert context queue queue_item
             (context, queue, ME.StaticFunctionCall function_id mir_args)
         IR.AutoDerivedInstanceInfo instance_id -> do
             if has_default_impl
                 then do
                     queue_item <- FQ.Normal qn function_type
-                    (queue, function_id) <- FQ.insert queue queue_item
+                    (context, queue, function_id) <- FQ.insert context queue queue_item
                     (context, queue, ME.StaticFunctionCall function_id mir_args)
                 else do
                     queue_item <- FQ.AutoDerive arg function_type class_name member_name
-                    (queue, function_id) <- FQ.insert queue queue_item
+                    (context, queue, function_id) <- FQ.insert context queue queue_item
                     (context, queue, ME.StaticFunctionCall function_id mir_args)
 
 processExpr :: Context -> FQ.FunctionQueue -> U.Substitution -> HE.Expr -> (Context, FQ.FunctionQueue, ME.Expr)
@@ -279,7 +279,7 @@ processExpr context queue sub hir_expr = do
             (state, function_type, _) <- getFunctionType context.state arg_types expr_type function_type
             context <- context { state = state }
             queue_item <- FQ.Normal qn function_type
-            (queue, function_id) <- FQ.insert queue queue_item
+            (context, queue, function_id) <- FQ.insert context queue queue_item
             current_arg_count <- getLength mir_args
             arg_count <- getLength function_type_info.args
             if arg_count == current_arg_count
@@ -296,7 +296,7 @@ processExpr context queue sub hir_expr = do
                                     closures <- closures + [closure_instance]
                                     context <- context { closure_store = closure_store }
                                     queue_item <- FQ.ClosureCtor (getLength arg_types) function_type closure_instance
-                                    (queue, function_id) <- FQ.insert queue queue_item
+                                    (context, queue, function_id) <- FQ.insert context queue queue_item
                                     functions <- functions + [function_id]
                                     first_arg <- HT.getArgsLimited closure_type 1
                                     closure_type <- HT.getResultType closure_type 1
@@ -366,7 +366,7 @@ processExpr context queue sub hir_expr = do
             (state, function_type, _) <- getFunctionType state arg_types expr_type function_type
             context <- context { state = state }
             queue_item <- FQ.VariantCtor qn index variant.name function_type
-            (queue, function_id) <- FQ.insert queue queue_item
+            (context, queue, function_id) <- FQ.insert context queue queue_item
             (context, queue, ME.StaticFunctionCall function_id mir_args)
         HE.RecordConstructorCall qn args -> do
             arg_types <- processArgTypes context sub args
@@ -378,7 +378,7 @@ processExpr context queue sub hir_expr = do
             (state, function_type, _) <- getFunctionType state arg_types expr_type function_type
             context <- context { state = state }
             queue_item <- FQ.RecordCtor qn function_type
-            (queue, function_id) <- FQ.insert queue queue_item
+            (context, queue, function_id) <- FQ.insert context queue queue_item
             (context, queue, ME.StaticFunctionCall function_id mir_args)
         HE.If cond true_branch false_branch -> do
             (context, queue, mir_cond) <- processExpr context queue sub cond
@@ -394,7 +394,7 @@ processExpr context queue sub hir_expr = do
             (state, function_type, _) <- getFunctionType state arg_types expr_type function_type
             context <- context { state = state }
             queue_item <- FQ.TupleCtor function_type
-            (queue, function_id) <- FQ.insert queue queue_item
+            (context, queue, function_id) <- FQ.insert context queue queue_item
             (context, queue, ME.StaticFunctionCall function_id mir_args)
         HE.List args -> do
             (context, queue, mir_args) <- processArgs context queue sub args

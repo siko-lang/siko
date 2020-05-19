@@ -37,10 +37,19 @@ getShortName :: FullyQualifiedName -> String
 getShortName f = case f of
         FullPath m n -> n
         FullPathWithVariant m n v -> n
-        FullPathWithLambda n i -> panic "getShortName called for a lambda"
+        FullPathWithLambda n i -> "{}_lambda" % getShortName n
         FullPathWithInstanceId m n i -> n
-        ModulePath m -> panic "getShortName called for a module"
+        ModulePath m -> m
         SubItem p n -> n
+
+getModuleName :: FullyQualifiedName -> String
+getModuleName f = case f of
+        FullPath m n -> m
+        FullPathWithVariant m n v -> m
+        FullPathWithLambda n i -> getModuleName n
+        FullPathWithInstanceId m n i -> m
+        ModulePath m -> m
+        SubItem p n -> getModuleName p
 
 data Item = Function F.Function
             | Adt D.AlgebraicDataType

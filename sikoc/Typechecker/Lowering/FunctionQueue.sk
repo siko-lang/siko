@@ -32,37 +32,35 @@ data FunctionQueueItem = Normal HP.FullyQualifiedName HT.Type
                          | ExternalCallImpl HP.FullyQualifiedName HT.Type String
                          deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
-data FunctionQueue = { pending :: [(FunctionQueueItem, MF.FunctionId)],
-                       processed :: Map FunctionQueueItem MF.FunctionId,
-                       next_id :: Int,
+data FunctionQueue = { pending :: [(FunctionQueueItem, MP.Identity)],
+                       processed :: Map FunctionQueueItem MP.Identity,
                      }
 
 createFunctionQueue :: FunctionQueue
-createFunctionQueue = FunctionQueue [] Map.empty 0
+createFunctionQueue = FunctionQueue [] Map.empty
 
-getItemName :: FunctionQueueItem -> String
+getItemName :: FunctionQueueItem -> (String, String)
 getItemName item = case item of
-    Normal n _ -> "{}" % n
-    VariantCtor n _ vn _ -> "{}_{}" % (n, vn)
-    RecordCtor n _ -> "{}" % n
-    TupleCtor _ -> "TupleCtor"
-    ClosureCtor _ _ closure_instance -> CS.getVariantCtorName closure_instance
-    ClosureCall n _ -> "ClosureCall{}" % n
-    AutoDerive _ _ qn n -> "{}/{}" % (qn, n)
-    ExternalCallImpl _ _ n -> "{}" % n
+    Normal n _ -> (HP.getModuleName n, HP.getShortName n)
+    VariantCtor n _ vn _ -> (HP.getModuleName n, vn)
+    RecordCtor n _ -> (HP.getModuleName n, HP.getShortName n)
+    TupleCtor _ -> (getInternalModuleName, "TupleCtor")
+    ClosureCtor _ _ closure_instance ->  (getInternalModuleName, CS.getVariantCtorName closure_instance)
+    ClosureCall n _ -> (getInternalModuleName, "ClosureCall{}" % n)
+    AutoDerive _ _ qn n -> (HP.getModuleName qn, n)
+    ExternalCallImpl _ _ n -> (getInternalModuleName, n)
 
-insert :: FunctionQueue -> FunctionQueueItem -> (FunctionQueue, MF.FunctionId)
-insert queue item = do
+insert :: Context -> FunctionQueue -> FunctionQueueItem -> (Context, FunctionQueue, MP.Identity)
+insert context queue item = do
     case get queue.processed item of
-        Some function_id -> (queue, function_id)
+        Some function_id -> (context, queue, function_id)
         None -> do
-            id <- queue.next_id
-            name <- getItemName item
-            function_id <- MF.FunctionId name id
+            (module_name, name) <- getItemName item
+            (context, function_id) <- TS.getIdentity context module_name  name
             (processed, _) <- Map.insert queue.processed item function_id
             pending <- queue.pending + [(item, function_id)]
-            queue <- queue { processed = processed, pending = pending, next_id = id + 1 }
-            (queue, function_id)
+            queue <- queue { processed = processed, pending = pending }
+            (context, queue, function_id)
 
 getFunctionType :: Context -> HT.Type -> Int -> (Context, MT.Type)
 getFunctionType context hir_type arg_count = do
@@ -81,7 +79,7 @@ getFunctionType context hir_type arg_count = do
             mir_type <- MT.Function mir_args mir_result_type
             (context, mir_type)
 
-processNormalFunction :: FunctionQueue -> Context -> MF.FunctionId -> HT.Type -> HP.FullyQualifiedName -> HF.Function -> (Context, FunctionQueue)
+processNormalFunction :: FunctionQueue -> Context -> MP.Identity -> HT.Type -> HP.FullyQualifiedName -> HF.Function -> (Context, FunctionQueue)
 processNormalFunction queue context mir_function_id hir_type qn hir_function =
     case hir_function.body of
         Some hir_body -> do
@@ -109,7 +107,7 @@ processNormalFunction queue context mir_function_id hir_type qn hir_function =
             context <- context { mir_program = mir_program }
             (context, queue)
 
-processItem :: FunctionQueue -> FunctionQueueItem -> MF.FunctionId -> Context -> (Context, FunctionQueue)
+processItem :: FunctionQueue -> FunctionQueueItem -> MP.Identity -> Context -> (Context, FunctionQueue)
 processItem queue item mir_function_id context = do
     case item of
         Normal qn hir_type -> do

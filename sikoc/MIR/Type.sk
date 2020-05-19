@@ -1,15 +1,17 @@
 module Siko.MIR.Type where
 
-data Type = Adt String
-            | Record String
+import Siko.MIR.Program
+
+data Type = Adt Identity
+            | Record Identity
             | Function [Type] Type
             | Ref Type
             | Never
 
 instance Show Type where
     show t = case t of
-        Adt n -> n
-        Record n -> n
+        Adt id -> show id
+        Record id -> show id
         Function args result -> "{} -> {}" % (args, result)
         Ref t -> "&{}" % t
         Never -> "!"

@@ -6,33 +6,51 @@ import Siko.HIR.Data as HD
 import Siko.HIR.Program as HP
 import Siko.MIR.Type as MT
 import Siko.MIR.Data as MD
+import Siko.MIR.Program as MP
 import Siko.Typechecker.Lowering.Util
 import Siko.Typechecker.Lowering.ClosureStore
 import Siko.Typechecker.Lowering
 import Siko.Typechecker
 import Siko.Typechecker.Unification as U
 import Siko.Typechecker.DataStore as DS
+import Siko.Constants
 import Map
+
+data Key = { module_name :: String, name :: String } deriving (PartialEq, Eq, PartialOrd, Ord)
 
 data TypeStore = { expr_types :: Map E.ExprId HT.Type,
                    named_types :: Map HT.Type MT.Type,
-                   adts :: Map String MD.AlgebraicDataType,
-                   records :: Map String MD.Record,
-                   next_id :: Int,
+                   adts :: Map MP.Identity MD.AlgebraicDataType,
+                   records :: Map MP.Identity MD.Record,
+                   keys :: Map Key Int
                  }
 
 createTypeStore :: TypeStore
-createTypeStore = TypeStore empty empty empty empty 0
+createTypeStore = TypeStore empty empty empty empty empty
 
-addVariant :: TypeStore -> String -> MD.Variant -> TypeStore
-addVariant type_store name variant = do
+getIdentity :: Context -> String -> String -> (Context, MP.Identity)
+getIdentity context module_name name = do
+    key <- Key module_name name
+    type_store <- context.type_store
+    (keys, prev) <- alter (\index -> case index of
+                            Some index -> Some (index + 1)
+                            None -> Some 1) key type_store.keys
+    name <- case prev of
+        Some i -> "{}_{}" % (name, i + 1)
+        None -> name
+    type_store <- type_store { keys = keys }
+    context <- context { type_store = type_store }
+    (context, MP.Identity module_name name)
+
+addVariant :: TypeStore -> MP.Identity -> MD.Variant -> TypeStore
+addVariant type_store identity variant = do
     (adts, _) <- alter (\adt -> case adt of
         Some adt -> do
             adt :: MD.AlgebraicDataType <- adt // FIXME
             variants <- adt.variants + [variant]
             adt <- adt { variants = variants }
             Some adt
-        None -> Some (MD.AlgebraicDataType name [variant]))  name type_store.adts
+        None -> Some (MD.AlgebraicDataType identity [variant])) identity type_store.adts
     type_store { adts = adts }
 
 addExprType :: TypeStore -> E.ExprId -> HT.Type -> TypeStore
@@ -46,27 +64,15 @@ getExprType type_store expr =
         Some t -> t
         None -> panic "Expr {} not found in type type_store" % expr
 
-getNextId :: TypeStore -> (TypeStore, Int)
-getNextId type_store = do
-    id <- type_store.next_id
-    (type_store { next_id = id + 1 }, id)
-
-getRecord :: TypeStore -> String -> MD.Record
-getRecord type_store name = case get type_store.records name of
+getRecord :: TypeStore -> MP.Identity -> MD.Record
+getRecord type_store identity = case get type_store.records identity of
     Some r -> r
-    None -> panic "Record named {} is not found in lowering type type_store" % name
+    None -> panic "Record named {} is not found in lowering type type_store" % identity
 
-getAdt :: TypeStore -> String -> MD.AlgebraicDataType
-getAdt type_store name = case get type_store.adts name of
+getAdt :: TypeStore -> MP.Identity -> MD.AlgebraicDataType
+getAdt type_store identity = case get type_store.adts identity of
     Some r -> r
-    None -> panic "Adt named {} is not found in lowering type type_store" % name
-
-getName :: Context -> String -> (Context, String)
-getName context name = do
-    (type_store, id) <- getNextId context.type_store
-    name <- "{}_{}" % (name, id)
-    context <- context { type_store = type_store }
-    (context, name)
+    None -> panic "Adt named {} is not found in lowering type type_store" % identity
 
 addNamedType :: Context -> HT.Type -> MT.Type -> Context
 addNamedType context hir_type mir_type = do
@@ -75,17 +81,17 @@ addNamedType context hir_type mir_type = do
     type_store <- type_store { named_types = named_types }
     context { type_store = type_store }
 
-addRecord :: Context -> String -> MD.Record -> Context
-addRecord context record_name mir_record = do
+addRecord :: Context -> MP.Identity -> MD.Record -> Context
+addRecord context identity mir_record = do
     type_store <- context.type_store
-    (records, _) <- insert type_store.records record_name mir_record
+    (records, _) <- insert type_store.records identity mir_record
     type_store <- type_store { records = records }
     context { type_store = type_store }
 
-addAdt :: Context -> String -> MD.AlgebraicDataType -> Context
-addAdt context adt_name mir_adt = do
+addAdt :: Context -> MP.Identity -> MD.AlgebraicDataType -> Context
+addAdt context identity mir_adt = do
     type_store <- context.type_store
-    (adts, _) <- insert type_store.adts adt_name mir_adt
+    (adts, _) <- insert type_store.adts identity mir_adt
     type_store <- type_store { adts = adts }
     context { type_store = type_store }
 
@@ -126,8 +132,9 @@ processType context hir_type = case hir_type of
             case DS.getDataTypeInfo context.state.data_store qn of
                 DS.Adt adt_type_info -> do
                     (context, adt_type_info) <- instantiateAdt context adt_type_info hir_type
-                    (context, name) <- getName context (show qn)
-                    mir_type <- MT.Adt name
+                    module_name <- HP.getModuleName qn
+                    (context, identity) <- getIdentity context module_name (HP.getShortName qn)
+                    mir_type <- MT.Adt identity
                     context <- addNamedType context hir_type mir_type
                     if getLength adt_type_info.variants == 1
                         then do
@@ -138,10 +145,10 @@ processType context hir_type = case hir_type of
                                     mir_field <- MD.RecordField name mir_type
                                     mir_fields <- mir_fields + [mir_field]
                                     (context, mir_fields)) (context, [])
-                            (context, record_name) <- getName context (show qn)
-                            mir_record <- MD.Record record_name mir_fields False
-                            context <- addRecord context record_name mir_record
-                            mir_type <- MT.Record record_name
+                            (context, identity) <- getIdentity context module_name variant.name
+                            mir_record <- MD.Record identity mir_fields False
+                            context <- addRecord context identity mir_record
+                            mir_type <- MT.Record identity
                             (context, mir_type)
                         else do
                             (context, mir_variants) <- adt_type_info.variants |> List.iter |> fold (\(context, mir_variants), variant -> do
@@ -151,27 +158,28 @@ processType context hir_type = case hir_type of
                                     mir_field <- MD.RecordField name mir_type
                                     mir_fields <- mir_fields + [mir_field]
                                     (context, mir_fields)) (context, [])
-                                (context, record_name) <- getName context ("{}_{}" % (qn, variant.name))
-                                mir_record <- MD.Record record_name mir_fields False
-                                context <- addRecord context record_name mir_record
-                                mir_variant <- MD.Variant variant.name record_name
+                                (context, identity) <- getIdentity context module_name variant.name
+                                mir_record <- MD.Record identity mir_fields False
+                                context <- addRecord context identity mir_record
+                                mir_variant <- MD.Variant variant.name identity
                                 mir_variants <- mir_variants + [mir_variant]
                                 (context, mir_variants)) (context, [])
-                            mir_adt <- MD.AlgebraicDataType name mir_variants
-                            context <- addAdt context name mir_adt
+                            mir_adt <- MD.AlgebraicDataType identity mir_variants
+                            context <- addAdt context identity mir_adt
                             (context, mir_type)
                 DS.Record record_type_info -> do
                     (context, record_type_info) <- instantiateRecord context record_type_info hir_type
-                    (context, name) <- getName context (show qn)
-                    mir_type <- MT.Record name
+                    module_name <- HP.getModuleName qn
+                    (context, identity) <- getIdentity context module_name (HP.getShortName qn)
+                    mir_type <- MT.Record identity
                     context <- addNamedType context hir_type mir_type
                     (context, mir_fields) <- record_type_info.fields |> List.iter |> fold (\(context, mir_fields), field -> do
                         (context, mir_type) <- processType context field.type
-                        mir_field <- MD.RecordField name mir_type
+                        mir_field <- MD.RecordField field.name mir_type
                         mir_fields <- mir_fields + [mir_field]
                         (context, mir_fields)) (context, [])
-                    mir_record <- MD.Record name mir_fields record_type_info.external
-                    context <- addRecord context name mir_record
+                    mir_record <- MD.Record identity mir_fields record_type_info.external
+                    context <- addRecord context identity mir_record
                     (context, mir_type)
     HT.Function from to -> do
         (closure_store, name) <- getClosureName context.closure_store hir_type
@@ -179,9 +187,10 @@ processType context hir_type = case hir_type of
         case get context.type_store.named_types hir_type of
             Some mir_type -> (context, mir_type)
             None -> do
-                mir_adt <- MD.AlgebraicDataType name []
-                mir_type <- MT.Adt name
-                context <- addAdt context name mir_adt
+                identity <- MP.Identity getInternalModuleName name
+                mir_adt <- MD.AlgebraicDataType identity []
+                mir_type <- MT.Adt identity
+                context <- addAdt context identity mir_adt
                 (context, mir_type)
     HT.Never _ -> (context, MT.Never)
     HT.Ref t -> do
@@ -191,8 +200,8 @@ processType context hir_type = case hir_type of
         case get context.type_store.named_types hir_type of
             Some mir_type -> (context, mir_type)
             None -> do
-        (context, name) <- getName context ("Tuple")
-        mir_type <- MT.Record name
+        (context, identity) <- getIdentity context getInternalModuleName "Tuple"
+        mir_type <- MT.Record identity
         context <- addNamedType context hir_type mir_type
         (context, mir_fields) <- args |> List.iter |> fold (\(context, mir_fields), type -> do
             name <- getFieldName (getLength mir_fields)
@@ -200,6 +209,6 @@ processType context hir_type = case hir_type of
             mir_field <- MD.RecordField name mir_type
             mir_fields <- mir_fields + [mir_field]
             (context, mir_fields)) (context, [])
-        mir_record <- MD.Record name mir_fields False
-        context <- addRecord context name mir_record
-        (context, MT.Record name)
+        mir_record <- MD.Record identity mir_fields False
+        context <- addRecord context identity mir_record
+        (context, MT.Record identity)
