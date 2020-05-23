@@ -3,20 +3,51 @@ module Siko.Typechecker.Lowering.IteratorStore where
 import Siko.HIR.Type as HT
 import Map
 
-data IteratorStore = { iterators :: Map HT.Type String }
+data IteratorInstanceId = IteratorInstanceId Int deriving (Show, PartialEq, Eq, PartialOrd, Ord)
+
+data IteratorInstance = { id :: IteratorInstanceId,
+                          name :: String,
+                          state_type :: HT.Type,
+                          closure_type :: HT.Type,
+                          iterator_type :: HT.Type, }
+
+data IteratorInfo = { name :: String,
+                      instances :: [IteratorInstance] }
+
+data IteratorStore = { iterators :: Map String IteratorInfo,
+                       iterator_type_map :: Map HT.Type String }
 
 createIteratorStore :: IteratorStore
-createIteratorStore = IteratorStore empty
+createIteratorStore = IteratorStore empty empty
+
+addIteratorInstance :: IteratorStore -> HT.Type -> HT.Type -> HT.Type -> (IteratorStore, IteratorInstance)
+addIteratorInstance store state_type closure_type iterator_type = do
+    (store, name) <- getIteratorName store iterator_type
+    // FIXME: use a stateful alter here
+    next_id <- case get store.iterators name of
+        Some iterator -> do
+            iterator :: IteratorInfo <- iterator
+            getLength iterator.instances
+        None -> 0
+    instance_id <- IteratorInstanceId next_id
+    iterator_instance <- IteratorInstance instance_id name state_type closure_type iterator_type
+    (iterators, _) <- alter (\iterator -> case iterator of
+        Some iterator -> do
+            iterator :: IteratorInfo <- iterator
+            instances <- iterator.instances + [iterator_instance]
+            Some iterator { instances = instances }
+        None -> Some (IteratorInfo name [iterator_instance])) name store.iterators
+    (store { iterators = iterators }, iterator_instance)
 
 getIteratorName :: IteratorStore -> HT.Type -> (IteratorStore, String)
 getIteratorName store iterator_type = do
-    name <- "Iterator_{}" % getSize store.iterators
+    name <- "Iterator_{}" % getSize store.iterator_type_map
     // FIXME use a stateful alter here
-    (iterators, _) <- alter (\iterator -> case iterator of
+    (iterator_type_map, _) <- alter (\iterator -> case iterator of
         Some iterator -> Some iterator
-        None -> Some name) iterator_type store.iterators
-    store <- store { iterators = iterators }
-    name <- case get store.iterators iterator_type of
+        None -> Some name) iterator_type store.iterator_type_map
+    store <- store { iterator_type_map = iterator_type_map }
+    name <- case get store.iterator_type_map iterator_type of
         Some name -> name
         None -> panic "Iterator not found after creation"
     (store, name)

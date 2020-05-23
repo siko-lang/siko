@@ -298,6 +298,8 @@ processExpr context queue sub hir_expr = do
                                     queue_item <- FQ.ClosureCtor (getLength arg_types) function_type closure_instance
                                     (context, queue, function_id) <- FQ.insert context queue queue_item
                                     functions <- functions + [function_id]
+                                    queue_item <- FQ.ClosureCall closure_instance.name (HT.Function closure_type closure_type)
+                                    (context, queue, _) <- FQ.insert context queue queue_item
                                     first_arg <- HT.getArgsLimited closure_type 1
                                     closure_type <- HT.getResultType closure_type 1
                                     (context, queue, closure_type, arg_types + first_arg, closures, functions)

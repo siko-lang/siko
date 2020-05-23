@@ -14,6 +14,7 @@ import Siko.Typechecker.Unification as U
 import Siko.Typechecker.Lowering
 import Siko.Typechecker.FunctionStore
 import Siko.Typechecker.Lowering.ClosureStore as CS
+import Siko.Typechecker.Lowering.IteratorStore as IS
 import Siko.Typechecker.Lowering.Expr
 import Siko.Typechecker.Lowering.AutoDerive
 import Siko.Typechecker.Lowering.Util as Util
@@ -101,11 +102,30 @@ processNormalFunction queue context mir_function_id hir_type qn hir_function =
             (context, queue)
         None -> do
             //println "Processing extern {}" % (hir_function.name)
-            (context, mir_type) <- getFunctionType context hir_type hir_function.arg_count
-            mir_function <- MF.Function mir_function_id MF.Extern mir_type
-            mir_program <- MP.addFunction context.mir_program mir_function_id mir_function
-            context <- context { mir_program = mir_program }
-            (context, queue)
+            if HP.getModuleName hir_function.name == getIteratorModuleName &&
+                HP.getShortName hir_function.name == getCreateIteratorName
+                then do
+                    (context, mir_type) <- getFunctionType context hir_type hir_function.arg_count
+                    args <- HT.getArgs hir_type
+                    result <- HT.getResultType hir_type 2
+                    iterator_type <- case result of
+                        HT.Named _ args -> atIndex args 0
+                        _ -> panic "Result type of createIterator is not named!"
+                    state_type <- atIndex args 0
+                    closure_type <- atIndex args 1
+                    (iterator_store, iterator_instance) <- IS.addIteratorInstance context.iterator_store state_type closure_type iterator_type
+                    context <- context { iterator_store = iterator_store }
+                    mir_body <- ME.Do []
+                    mir_function <- MF.Function mir_function_id (MF.Normal mir_body) mir_type
+                    mir_program <- MP.addFunction context.mir_program mir_function_id mir_function
+                    context <- context { mir_program = mir_program }
+                    (context, queue)
+                else do
+                    (context, mir_type) <- getFunctionType context hir_type hir_function.arg_count
+                    mir_function <- MF.Function mir_function_id MF.Extern mir_type
+                    mir_program <- MP.addFunction context.mir_program mir_function_id mir_function
+                    context <- context { mir_program = mir_program }
+                    (context, queue)
 
 processItem :: FunctionQueue -> FunctionQueueItem -> MP.Identity -> Context -> (Context, FunctionQueue)
 processItem queue item mir_function_id context = do
