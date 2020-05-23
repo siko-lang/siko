@@ -1,0 +1,32 @@
+module Set where
+
+data Set a = { items :: [a] } deriving (Show)
+
+empty a :: Set a
+empty = Set []
+
+contains a :: (PartialEq a) => Set a -> a -> Bool
+contains set item = List.contains set.items item
+
+// FIXME: Ord should imply PartialEq!
+insert a :: (PartialEq a, Ord a) => Set a -> a -> (Set a, Bool)
+insert set item = do
+    len <- getLength set.items
+    items <- set.items + [item]
+    items <- items |> sort |> dedup
+    inserted <- len != getLength items
+    (set { items = items }, inserted)
+
+remove a :: (PartialEq a) => Set a -> a -> Set a
+remove set item = do
+    items <- set.items |> List.iter |> filter (\i -> i != item) |> toList
+    set { items = items }
+
+iter a :: Set a -> Iterator a
+iter set = set.items |> List.iter
+
+toSet a :: (Ord a) => Iterator a -> Set a
+toSet items = Set (toList items)
+
+isEmpty a :: Set a -> Bool
+isEmpty set = List.isEmpty set.items

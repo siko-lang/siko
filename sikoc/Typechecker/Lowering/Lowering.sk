@@ -7,6 +7,7 @@ import Siko.MIR.Program as MP
 import Siko.Typechecker.Lowering.FunctionQueue as FQ
 import Siko.Typechecker.Lowering.TypeStore
 import Siko.Typechecker.Lowering.ClosureStore as CS
+import Siko.Typechecker.Lowering.IteratorStore as IS
 import Siko.Typechecker.FunctionStore
 import Siko.Typechecker
 import Siko.Constants
@@ -20,6 +21,7 @@ data Context = { hir_program :: HP.Program,
                  function_store :: FunctionStore,
                  type_store :: TypeStore,
                  closure_store :: CS.ClosureStore,
+                 iterator_store :: IS.IteratorStore,
                  state :: TypecheckerState,
                  var_id :: Int,
                  keys :: Map Key Int
@@ -48,7 +50,8 @@ lowerProgram state hir_program function_store type_store = do
     println "Lowering to MIR.."
     main_qn <- HP.FullPath getMainModuleName getMainFunctionName
     mir_program <- MP.createProgram
-    context <- Context hir_program mir_program function_store type_store CS.createClosureStore state 0 empty
+    context <- Context hir_program mir_program function_store
+               type_store CS.createClosureStore IS.createIteratorStore state 0 empty
     context <- case HP.getFunctionOpt hir_program main_qn of
         Some main -> do
             function_queue <- FQ.createFunctionQueue

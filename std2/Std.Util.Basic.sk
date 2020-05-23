@@ -1,0 +1,37 @@
+module Std.Util.Basic where
+
+not :: Bool -> Bool
+not a = if a then False
+             else True
+
+print a :: (Show a) => &a -> ()
+print msg = extern
+
+println a :: (Show a) => &a -> ()
+println msg = extern
+
+abort :: !
+abort = extern
+
+unimplemented :: !
+unimplemented = panic "unimplemented code called"
+
+unreachable :: !
+unreachable = panic "unreachable code called"
+
+unwrap a b :: Result a b -> a
+unwrap a = case a of
+            Ok a -> a
+            Err _ -> abort
+
+panic a :: (Show a) => a -> !
+panic msg = do
+    println msg
+    abort
+
+repeat a :: a -> Int -> [a]
+repeat item count = do
+    (items, _) <- loop (items, c) <- ([], 0) do
+                if c < count
+                    then (items + [item], c + 1) else break (items, 0)
+    items

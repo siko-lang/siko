@@ -1,0 +1,22 @@
+module Siko.Typechecker.Lowering.IteratorStore where
+
+import Siko.HIR.Type as HT
+import Map
+
+data IteratorStore = { iterators :: Map HT.Type String }
+
+createIteratorStore :: IteratorStore
+createIteratorStore = IteratorStore empty
+
+getIteratorName :: IteratorStore -> HT.Type -> (IteratorStore, String)
+getIteratorName store iterator_type = do
+    name <- "Iterator_{}" % getSize store.iterators
+    // FIXME use a stateful alter here
+    (iterators, _) <- alter (\iterator -> case iterator of
+        Some iterator -> Some iterator
+        None -> Some name) iterator_type store.iterators
+    store <- store { iterators = iterators }
+    name <- case get store.iterators iterator_type of
+        Some name -> name
+        None -> panic "Iterator not found after creation"
+    (store, name)

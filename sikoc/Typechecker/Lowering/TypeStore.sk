@@ -9,6 +9,7 @@ import Siko.MIR.Data as MD
 import Siko.MIR.Program as MP
 import Siko.Typechecker.Lowering.Util
 import Siko.Typechecker.Lowering.ClosureStore
+import Siko.Typechecker.Lowering.IteratorStore as IS
 import Siko.Typechecker.Lowering
 import Siko.Typechecker
 import Siko.Typechecker.Unification as U
@@ -109,14 +110,31 @@ processType context hir_type = case hir_type of
     HT.Var _ _ -> panic "Type variable in MIR type"
     HT.FixedTypeArg _ _ _ -> panic "Type variable in MIR type"
     HT.Named qn args -> do
-        case get context.type_store.named_types hir_type of
+        module_name <- HP.getModuleName qn
+        short_name <- HP.getShortName qn
+        if module_name == getIteratorModuleName &&
+            short_name == getIteratorTypeName
+            then do
+                iterator_type <- case head args of
+                    Some t -> t
+                    None -> panic "Iterator without type arg!"
+                (iterator_store, iterator_name) <- IS.getIteratorName context.iterator_store iterator_type
+                context <- context { iterator_store = iterator_store }
+                case get context.type_store.named_types hir_type of
+                    Some mir_type -> (context, mir_type)
+                    None -> do
+                        identity <- MP.Identity getInternalModuleName iterator_name
+                        mir_adt <- MD.AlgebraicDataType identity []
+                        mir_type <- MT.Adt identity
+                        context <- addAdt context identity mir_adt
+                        (context, mir_type)
+            else case get context.type_store.named_types hir_type of
             Some mir_type -> (context, mir_type)
             None -> do
             case DS.getDataTypeInfo context.state.data_store qn of
                 DS.Adt adt_type_info -> do
                     (context, adt_type_info) <- instantiateAdt context adt_type_info hir_type
-                    module_name <- HP.getModuleName qn
-                    (context, identity) <- getIdentity context module_name (HP.getShortName qn)
+                    (context, identity) <- getIdentity context module_name short_name
                     mir_type <- MT.Adt identity
                     context <- addNamedType context hir_type mir_type
                     if getLength adt_type_info.variants == 1
@@ -152,8 +170,7 @@ processType context hir_type = case hir_type of
                             (context, mir_type)
                 DS.Record record_type_info -> do
                     (context, record_type_info) <- instantiateRecord context record_type_info hir_type
-                    module_name <- HP.getModuleName qn
-                    (context, identity) <- getIdentity context module_name (HP.getShortName qn)
+                    (context, identity) <- getIdentity context module_name short_name
                     mir_type <- MT.Record identity
                     context <- addNamedType context hir_type mir_type
                     (context, mir_fields) <- record_type_info.fields |> List.iter |> fold (\(context, mir_fields), field -> do

@@ -1,0 +1,72 @@
+module Std.Ops where
+
+class Add a where
+    opAdd a :: a -> a -> a
+
+class Sub a where
+    opSub a :: a -> a -> a
+
+class Mul a where
+    opMul a :: a -> a -> a
+
+class Div a where
+    opDiv a :: a -> a -> a
+
+class PartialOrd a where
+    partialCmp a :: a -> a -> Option Ordering
+
+    opLessThan a :: a -> a -> Bool
+    opLessThan a b = case partialCmp a b of
+                        Some Less -> True
+                        _ -> False
+
+    opLessEqual a :: a -> a -> Bool
+    opLessEqual a b = case partialCmp a b of
+                         Some Less -> True
+                         Some Equal -> True
+                         _ -> False
+
+    opGreaterThan a :: a -> a -> Bool
+    opGreaterThan a b = case partialCmp a b of
+                         Some Greater -> True
+                         _ -> False
+
+    opGreaterEqual a :: a -> a -> Bool
+    opGreaterEqual a b = case partialCmp a b of
+                         Some Greater -> True
+                         Some Equal -> True
+                         _ -> False
+
+class PartialEq a where
+    opEq a :: a -> a -> Bool
+    opNotEq a :: a -> a -> Bool
+    opNotEq a b = not (opEq a b)
+
+class (PartialEq a) => Eq a
+
+class (PartialOrd a, Eq a) => Ord a where
+    cmp a :: a -> a -> Ordering
+
+    max a :: a -> a -> a
+    max a b = if a >= b then a else b
+
+    min a :: a -> a -> a
+    min a b = if a <= b then a else b
+
+class Show a where
+    show a :: a -> String
+
+class Negative a where
+    opNegative a :: a -> a
+
+opAnd :: Bool -> Bool -> Bool
+opAnd a b = extern
+
+opOr :: Bool -> Bool -> Bool
+opOr a b = extern
+
+opNot :: Bool -> Bool
+opNot a  = not a
+
+getDiscriminant a :: a -> Int
+getDiscriminant a = extern

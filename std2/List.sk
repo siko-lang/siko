@@ -1,0 +1,100 @@
+module List where
+
+data List a = extern
+
+instance (Show a) => Show [a] where
+    show a = extern
+
+instance (PartialEq a) => PartialEq [a] where
+    opEq a b = extern
+
+instance (Eq a) => Eq [a]
+
+instance (PartialOrd a) => PartialOrd [a] where
+    partialCmp a b = extern
+
+instance (Ord a) => Ord [a] where
+    cmp a b = extern
+
+instance Add [a] where
+    opAdd a b = extern
+
+atIndex a :: [a] -> Int -> a
+atIndex index l = extern
+
+iter a :: [a] -> Iterator a
+iter l = extern
+
+toList a :: Iterator a -> [a]
+toList i = extern
+
+getLength a :: [a] -> Int
+getLength l = extern
+
+isEmpty a :: [a] -> Bool
+isEmpty l = extern
+
+contains a :: (PartialEq a) => [a] -> a -> Bool
+contains l i = do
+    isSome (containsAtIndex l i)
+
+containsAtIndex a :: (PartialEq a) => [a] -> a -> Option Int
+containsAtIndex l i = do
+    loop index <- 0 do
+        if index >= getLength l
+            then
+                return None
+            else
+                do
+                e <- atIndex l index
+                if e == i
+                    then
+                        return Some index
+                    else
+                        index + 1
+    None
+
+join a :: (Show a) => [a] -> String -> String
+join items separator = do
+    len <- getLength items
+    (s, _) <- items |> List.iter
+         |> map (\item -> "{}" % item)
+         |> fold (\(total, index), s -> do
+            total <- case index of
+                    0 -> s
+                    _  -> "{}{}{}" % (total, separator, s)
+            (total, index + 1)) ("", 0)
+    s
+
+head a :: [a] -> Option a
+head l = extern
+
+tail a :: [a] -> Option [a]
+tail l = extern
+
+// FIXME: pop should be a primitive?
+pop a :: [a] -> Option (a, [a])
+pop l = case head l of
+    Some a -> do
+        Some ((a, Option.unwrap (tail l)))
+    None -> None
+
+sort a :: (Ord a) => [a] -> [a]
+sort l = extern
+
+dedup a :: (PartialEq a) => [a] -> [a]
+dedup l = extern
+
+write a :: [a] -> Int -> a -> [a]
+write l index item = extern
+
+split a :: [a] -> Int -> ([a], [a])
+split l n = do
+    loop (left, right, index) <- ([], [], 0) do
+        if index >= getLength l
+            then return (left, right)
+            else do
+                item <- atIndex l index
+                if index < n
+                    then (left + [item], right, index + 1)
+                    else (left, right + [item], index + 1)
