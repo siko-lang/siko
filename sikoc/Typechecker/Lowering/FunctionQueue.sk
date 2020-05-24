@@ -21,7 +21,7 @@ import Siko.Typechecker.Lowering.Util as Util
 import Siko.Typechecker.Lowering.TypeStore as TS
 import Siko.Typechecker.Util as TUtil
 import Siko.Constants
-import Map
+import Map as M
 
 data FunctionQueueItem = Normal HP.FullyQualifiedName HT.Type
                          | VariantCtor HP.FullyQualifiedName Int String HT.Type
@@ -29,16 +29,17 @@ data FunctionQueueItem = Normal HP.FullyQualifiedName HT.Type
                          | TupleCtor HT.Type
                          | ClosureCtor Int HT.Type CS.ClosureInstance
                          | ClosureCall String HT.Type
+                         | IteratorCtor IS.IteratorInstance
                          | AutoDerive HT.Type HT.Type HP.FullyQualifiedName String
                          | ExternalCallImpl HP.FullyQualifiedName HT.Type String
                          deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
 data FunctionQueue = { pending :: [(FunctionQueueItem, MP.Identity)],
-                       processed :: Map FunctionQueueItem MP.Identity,
+                       processed :: M.Map FunctionQueueItem MP.Identity,
                      }
 
 createFunctionQueue :: FunctionQueue
-createFunctionQueue = FunctionQueue [] Map.empty
+createFunctionQueue = FunctionQueue [] M.empty
 
 getItemName :: FunctionQueueItem -> (String, String)
 getItemName item = case item of
@@ -48,17 +49,18 @@ getItemName item = case item of
     TupleCtor _ -> (getInternalModuleName, "TupleCtor")
     ClosureCtor _ _ closure_instance ->  (getInternalModuleName, CS.getVariantCtorName closure_instance)
     ClosureCall n _ -> (getInternalModuleName, "ClosureCall{}" % n)
+    IteratorCtor iterator_instance -> (getInternalModuleName, IS.getVariantCtorName iterator_instance)
     AutoDerive _ _ qn n -> (HP.getModuleName qn, n)
     ExternalCallImpl _ _ n -> (getInternalModuleName, n)
 
 insert :: Context -> FunctionQueue -> FunctionQueueItem -> (Context, FunctionQueue, MP.Identity)
 insert context queue item = do
-    case get queue.processed item of
+    case M.get queue.processed item of
         Some function_id -> (context, queue, function_id)
         None -> do
             (module_name, name) <- getItemName item
             (context, function_id) <- getIdentity context module_name  name
-            (processed, _) <- Map.insert queue.processed item function_id
+            (processed, _) <- M.insert queue.processed item function_id
             pending <- queue.pending + [(item, function_id)]
             queue <- queue { processed = processed, pending = pending }
             (context, queue, function_id)
@@ -107,15 +109,14 @@ processNormalFunction queue context mir_function_id hir_type qn hir_function =
                 then do
                     (context, mir_type) <- getFunctionType context hir_type hir_function.arg_count
                     args <- HT.getArgs hir_type
-                    result <- HT.getResultType hir_type 2
-                    iterator_type <- case result of
-                        HT.Named _ args -> atIndex args 0
-                        _ -> panic "Result type of createIterator is not named!"
+                    iterator_type <- HT.getResultType hir_type 2
                     state_type <- atIndex args 0
                     closure_type <- atIndex args 1
                     (iterator_store, iterator_instance) <- IS.addIteratorInstance context.iterator_store state_type closure_type iterator_type
                     context <- context { iterator_store = iterator_store }
-                    mir_body <- ME.Do []
+                    queue_item <- IteratorCtor iterator_instance
+                    (context, queue, ctor_function_id) <- insert context queue queue_item
+                    mir_body <- ME.StaticFunctionCall ctor_function_id [ME.ArgRef 0, ME.ArgRef 1]
                     mir_function <- MF.Function mir_function_id (MF.Normal mir_body) mir_type
                     mir_program <- MP.addFunction context.mir_program mir_function_id mir_function
                     context <- context { mir_program = mir_program }
@@ -171,6 +172,14 @@ processItem queue item mir_function_id context = do
                     (context, mir_type) <- getFunctionType context hir_type 2
                     body <- ME.Do []
                     mir_function <- MF.Function mir_function_id (MF.Normal body) mir_type
+                    mir_program <- MP.addFunction context.mir_program mir_function_id mir_function
+                    context <- context { mir_program = mir_program }
+                    (context, queue)
+        IteratorCtor iterator_instance -> do
+                    ctor_hir_type <- HT.Function iterator_instance.state_type (HT.Function iterator_instance.closure_type iterator_instance.iterator_type)
+                    (context, mir_ctor_type) <- getFunctionType context ctor_hir_type 2
+                    IS.IteratorInstanceId id <- iterator_instance.id
+                    mir_function <- MF.Function mir_function_id (MF.VariantCtor id) mir_ctor_type
                     mir_program <- MP.addFunction context.mir_program mir_function_id mir_function
                     context <- context { mir_program = mir_program }
                     (context, queue)
