@@ -3,16 +3,53 @@ module Iterator where
 data Iterator a = extern
 
 map a b :: (a -> b) -> Iterator a -> Iterator b
-map f i = extern
+map f iter = createIterator iter (\iter -> do
+    case getNext iter of
+        Some (iter, n) -> do
+            n <- f n
+            Some (iter, n)
+        None -> None)
 
 filter a :: (a -> Bool) -> Iterator a -> Iterator a
-filter f i = extern
+filter f iter = createIterator iter (\iter -> do
+    loop iter <- iter do
+        case getNext iter of
+            Some (iter, n) -> do
+                if f n
+                    then break Some (iter, n)
+                    else iter
+            None -> break None)
+
+filterMap a b :: (a -> Option b) -> Iterator a -> Iterator b
+filterMap f iter = createIterator iter (\iter -> do
+    loop iter <- iter do
+        case getNext iter of
+            Some (iter, n) -> do
+                case f n of
+                    Some n -> break Some (iter, n)
+                    None -> iter
+            None -> break None)
 
 fold a b :: (a -> b -> a) -> a -> Iterator b -> a
-fold f init iter = extern
+fold f s iter = do
+    loop (s, iter) <- (s, iter) do
+        case getNext iter of
+            Some (iter, n) -> do
+                s <- f s n
+                (s, iter)
+            None -> break s
 
 forEach a :: (a -> ()) -> Iterator a -> ()
-forEach f i = extern
+forEach f iter = do
+    loop iter <- iter do
+        case getNext iter of
+            Some (iter, n) -> do
+                f n
+                iter
+            None -> break ()
 
 createIterator s a :: s -> (s -> Option (s, a)) -> Iterator a
 createIterator s f = extern
+
+getNext a :: Iterator a -> Option (Iterator a, a)
+getNext iterator = extern

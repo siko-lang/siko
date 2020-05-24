@@ -117,10 +117,12 @@ processGroup state group program function_store lowering_type_store = do
                         fn <- P.getFunction program name
                         context <- checkMissingTypes context fn
                         context) context
-    context <- group.items |> List.iter |> fold (\context, name -> do
+    context <- if isEmpty context.state.errors
+        then group.items |> List.iter |> fold (\context, name -> do
                         fn <- P.getFunction program name
                         context <- checkCasePatterns context fn
                         context) context
+        else context
     lowering_type_store <- context.type_store.expr_types |> Map.iter |> fold (\lowering_type_store, (id, expr_type) -> do
         type <- TS.getTypeFromExprTypeState expr_type
         LTS.addExprType lowering_type_store id type) lowering_type_store
