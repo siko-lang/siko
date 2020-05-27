@@ -13,7 +13,7 @@ data Type = Type String
 instance Show Type where
     show (Type t) = t
 
-data Function = { name :: String, args :: [Type], result :: Type }
+data Function = { name :: String, args :: [Type], result :: Type, body :: Expr }
 
 data RecordUpdateItem = { field_name :: String,
                           body :: Expr }
@@ -60,6 +60,12 @@ data Expr = Do [Expr]
 
 data Program = { functions :: [Function] }
 
+generateExpr :: Expr -> String
+generateExpr expr = case expr of
+    Do args -> "Do"
+    StringLiteral n -> n
+    _ -> "NYI"
+
 generateFunction :: Function -> String
 generateFunction function = do
     (args, _) <- function.args |> List.iter |> fold (\(args, index), arg -> do
@@ -67,7 +73,7 @@ generateFunction function = do
         args <- args + [s]
         (args, index + 1)) ([], 0)
     signature <- "fn {}({}) -> {}" % (function.name, join args ", ", function.result)
-    body <- "{}"
+    body <- generateExpr function.body
     signature + "\n" + body
 
 generateProgram :: Program -> String

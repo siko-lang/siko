@@ -91,7 +91,7 @@ getVariantName closure_instance = do
     "I{}" % id
 
 getVariantRecordIdentity :: ClosureInstance -> Identity
-getVariantRecordIdentity closure_instance = Identity getInternalModuleName ("{}_{}" % (closure_instance.name, getVariantName closure_instance))
+getVariantRecordIdentity closure_instance = Identity getInternalModuleName ("{}_{}" % (closure_instance.name, getVariantName closure_instance)) 0
 
 getVariantCtorName :: ClosureInstance -> String
 getVariantCtorName closure_instance = "{}_{}" % (closure_instance.name, getVariantName closure_instance)
@@ -118,7 +118,7 @@ createClosures context = do
             (records, _) <- insert type_store.records record_identity mir_variant_record
             type_store <- type_store { records = records }
             mir_variant <- MD.Variant variant_name record_identity
-            adt_identity <- Identity getInternalModuleName name
+            adt_identity <- Identity getInternalModuleName name 0
             type_store <- addVariant type_store adt_identity mir_variant
             context <- context { type_store = type_store }
             context) context
