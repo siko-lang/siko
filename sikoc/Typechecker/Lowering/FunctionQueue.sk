@@ -103,12 +103,12 @@ processNormalFunction queue context mir_function_id hir_type qn hir_function =
             context <- context { mir_program = mir_program }
             (context, queue)
         None -> do
+            // FIXME: make this name check nicer
             //println "Processing extern {}" % (hir_function.name)
             if HP.getModuleName hir_function.name == getIteratorModuleName
                 then do
                     short_name <- HP.getShortName hir_function.name
-                    case short_name of
-                        a if a == getCreateIteratorName -> do
+                    if short_name == getCreateIteratorName then do
                             (context, mir_type) <- getFunctionType context hir_type hir_function.arg_count
                             args <- HT.getArgs hir_type
                             iterator_type <- HT.getResultType hir_type 2
@@ -123,18 +123,20 @@ processNormalFunction queue context mir_function_id hir_type qn hir_function =
                             mir_program <- MP.addFunction context.mir_program mir_function_id mir_function
                             context <- context { mir_program = mir_program }
                             (context, queue)
-                        a if a == getGetNextName -> do
-                            (context, mir_type) <- getFunctionType context hir_type hir_function.arg_count
-                            args <- HT.getArgs hir_type
-                            iterator_type <- atIndex args 0
-                            (iterator_store, iterator_name) <- IS.getIteratorName context.iterator_store iterator_type
-                            iterator_store <- IS.setIteratorGetNext iterator_store iterator_name mir_function_id
-                            context <- context { iterator_store = iterator_store }
-                            mir_body <- ME.Do []
-                            mir_function <- MF.Function mir_function_id (MF.Normal mir_body) mir_type
-                            mir_program <- MP.addFunction context.mir_program mir_function_id mir_function
-                            context <- context { mir_program = mir_program }
-                            (context, queue)
+                        else if short_name == getGetNextName
+                            then do
+                                (context, mir_type) <- getFunctionType context hir_type hir_function.arg_count
+                                args <- HT.getArgs hir_type
+                                iterator_type <- atIndex args 0
+                                (iterator_store, iterator_name) <- IS.getIteratorName context.iterator_store iterator_type
+                                iterator_store <- IS.setIteratorGetNext iterator_store iterator_name mir_function_id
+                                context <- context { iterator_store = iterator_store }
+                                mir_body <- ME.Do []
+                                mir_function <- MF.Function mir_function_id (MF.Normal mir_body) mir_type
+                                mir_program <- MP.addFunction context.mir_program mir_function_id mir_function
+                                context <- context { mir_program = mir_program }
+                                (context, queue)
+                            else panic "NYI"
                 else do
                     (context, mir_type) <- getFunctionType context hir_type hir_function.arg_count
                     mir_function <- MF.Function mir_function_id MF.Extern mir_type
@@ -201,11 +203,17 @@ processItem queue item mir_function_id context = do
                     (context, queue)
         AutoDerive hir_type hir_function_type class_name member_name -> do
             // FIXME: avoid hardcoded names somehow
-            (fn, arg_count) <- case (show class_name, member_name) of
-                ("Std.Ops.Show", "show") -> (generateShowInstance, 1)
-                ("Std.Ops.PartialEq", "opEq") -> (generatePartialEqInstance, 2)
-                ("Std.Ops.PartialOrd", "partialCmp") -> (generatePartialOrdInstance, 2)
-                ("Std.Ops.Ord", "cmp") -> (generateOrdInstance, 2)
+            //(fn, arg_count) <- case (show class_name, member_name) of
+            //    ("Std.Ops.Show", "show") -> (generateShowInstance, 1)
+            //    ("Std.Ops.PartialEq", "opEq") -> (generatePartialEqInstance, 2)
+            //    ("Std.Ops.PartialOrd", "partialCmp") -> (generatePartialOrdInstance, 2)
+            //    ("Std.Ops.Ord", "cmp") -> (generateOrdInstance, 2)
+            //    _ -> panic "Auto derive not implemented for {} / {} / {}" % (class_name, member_name, HT.toString hir_type)
+            (fn, arg_count) <- case member_name of
+                "show" -> (generateShowInstance, 1)
+                "opEq" -> (generatePartialEqInstance, 2)
+                "partialCmp" -> (generatePartialOrdInstance, 2)
+                "cmp" -> (generateOrdInstance, 2)
                 _ -> panic "Auto derive not implemented for {} / {} / {}" % (class_name, member_name, HT.toString hir_type)
             (context, mir_type) <- getFunctionType context hir_function_type arg_count
             (context, queue, body) <- fn context queue hir_type hir_function_type class_name
