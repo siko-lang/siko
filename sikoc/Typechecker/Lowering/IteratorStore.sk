@@ -1,11 +1,18 @@
 module Siko.Typechecker.Lowering.IteratorStore where
 
+import Siko.Typechecker.Util as TUtil
 import Siko.Typechecker.Lowering
 import Siko.Typechecker.Lowering.Util
 import Siko.Typechecker.Lowering.TypeStore
+import Siko.Typechecker.Lowering.ClosureStore as CS
+import Siko.Typechecker.Lowering.FunctionQueue as FQ
 import Siko.HIR.Type as HT
-import Siko.MIR.Program
+import Siko.HIR.Program as HP
+import Siko.MIR.Program as MP
 import Siko.MIR.Data as MD
+import Siko.MIR.Expr as ME
+import Siko.MIR.Function as MF
+import Siko.MIR.Type as MT
 import Siko.Constants
 import Map
 
@@ -19,7 +26,8 @@ data IteratorInstance = { id :: IteratorInstanceId,
                         } deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
 data IteratorInfo = { name :: String,
-                      instances :: [IteratorInstance] }
+                      instances :: [IteratorInstance],
+                      get_next_id :: Option MP.Identity }
 
 data IteratorStore = { iterators :: Map String IteratorInfo,
                        iterator_type_map :: Map HT.Type String }
@@ -43,8 +51,17 @@ addIteratorInstance store state_type closure_type iterator_type = do
             iterator :: IteratorInfo <- iterator
             instances <- iterator.instances + [iterator_instance]
             Some iterator { instances = instances }
-        None -> Some (IteratorInfo name [iterator_instance])) name store.iterators
+        None -> Some (IteratorInfo name [iterator_instance] None)) name store.iterators
     (store { iterators = iterators }, iterator_instance)
+
+setIteratorGetNext :: IteratorStore -> String -> MP.Identity -> IteratorStore
+setIteratorGetNext store name get_next_id = do
+    (iterators, _) <- alter (\iterator -> case iterator of
+        Some iterator -> do
+            iterator :: IteratorInfo <- iterator
+            Some iterator { get_next_id = Some get_next_id }
+        None -> Some (IteratorInfo name [] (Some get_next_id))) name store.iterators
+    store { iterators = iterators }
 
 getIteratorName :: IteratorStore -> HT.Type -> (IteratorStore, String)
 getIteratorName store iterator_type = do
@@ -64,35 +81,98 @@ getVariantName iterator_instance = do
     IteratorInstanceId id <- iterator_instance.id
     "I{}" % id
 
-getVariantRecordIdentity :: IteratorInstance -> Identity
-getVariantRecordIdentity iterator_instance = Identity getInternalModuleName ("{}_{}" % (iterator_instance.name, getVariantName iterator_instance))
+getVariantRecordIdentity :: IteratorInstance -> MP.Identity
+getVariantRecordIdentity iterator_instance = MP.Identity getInternalModuleName ("{}_{}" % (iterator_instance.name, getVariantName iterator_instance))
 
 getVariantCtorName :: IteratorInstance -> String
 getVariantCtorName iterator_instance = "{}_{}" % (iterator_instance.name, getVariantName iterator_instance)
 
-createIterators :: Context -> Context
-createIterators context = do
-    context <- context.iterator_store.iterators |> Map.iter |> fold (\context, (name, iterator) -> do
-        context <- iterator.instances |> List.iter |> fold (\context, iterator_instance -> do
-            (context, mir_state_type) <- processType context iterator_instance.state_type
-            (context, mir_closure_type) <- processType context iterator_instance.closure_type
-            mir_args <- [mir_state_type, mir_closure_type]
-            variant_name <- getVariantName iterator_instance
-            record_identity <- getVariantRecordIdentity iterator_instance
-            (mir_fields, _) <- mir_args |> List.iter |> fold (\(mir_fields, index), mir_arg -> do
-                    field_name <- getFieldName index
-                    mir_field <- MD.RecordField field_name mir_arg
-                    mir_fields <- mir_fields + [mir_field]
-                    (mir_fields, index + 1)
-                ) ([], 0)
-            type_store <- context.type_store
-            mir_variant_record <- MD.Record record_identity mir_fields False
-            (records, _) <- insert type_store.records record_identity mir_variant_record
-            type_store <- type_store { records = records }
-            mir_variant <- MD.Variant variant_name record_identity
-            identity <- Identity getInternalModuleName name
-            type_store <- addVariant type_store identity mir_variant
-            context <- context { type_store = type_store }
-            context) context
-        context) context
+createIteratorVariant :: Context -> String -> IteratorInstance -> Context
+createIteratorVariant context name iterator_instance = do
+    (context, mir_state_type) <- processType context iterator_instance.state_type
+    (context, mir_closure_type) <- processType context iterator_instance.closure_type
+    mir_args <- [mir_state_type, mir_closure_type]
+    variant_name <- getVariantName iterator_instance
+    record_identity <- getVariantRecordIdentity iterator_instance
+    (mir_fields, _) <- mir_args |> List.iter |> fold (\(mir_fields, index), mir_arg -> do
+            field_name <- getFieldName index
+            mir_field <- MD.RecordField field_name mir_arg
+            mir_fields <- mir_fields + [mir_field]
+            (mir_fields, index + 1)
+        ) ([], 0)
+    type_store <- context.type_store
+    mir_variant_record <- MD.Record record_identity mir_fields False
+    (records, _) <- insert type_store.records record_identity mir_variant_record
+    type_store <- type_store { records = records }
+    mir_variant <- MD.Variant variant_name record_identity
+    identity <- MP.Identity getInternalModuleName name
+    type_store <- addVariant type_store identity mir_variant
+    context <- context { type_store = type_store }
     context
+
+createGetNextFunctionBody :: Context -> FQ.FunctionQueue -> IteratorInfo -> MP.Identity -> (Context, FQ.FunctionQueue)
+createGetNextFunctionBody context queue iterator function_id = do
+    mir_get_next_function <- MP.getFunction context.mir_program function_id
+    (context, queue, cases) <- iterator.instances |> List.iter |> fold (\(context, queue, cases), iterator_instance -> do
+        IteratorInstanceId id <- iterator_instance.id
+        iter_var <- ME.Var "iter"
+        closure_call_id <- CS.getClosureCall context.closure_store iterator_instance.closure_type
+        state_field_name <- getFieldName 0
+        closure_field_name <- getFieldName 1
+        state_field_access <- ME.FieldAccess state_field_name (ME.VarRef iter_var)
+        closure_field_access <- ME.FieldAccess closure_field_name (ME.VarRef iter_var)
+        closure_call <- ME.StaticFunctionCall closure_call_id [closure_field_access, state_field_access]
+        next_var <- ME.Var "next"
+        var_decl <- ME.VarDecl next_var closure_call
+        closure_call_function <- MP.getFunction context.mir_program closure_call_id
+        closure_call_function_result <- MT.getResultType closure_call_function.type
+        mir_option_type <- case closure_call_function_result of
+            MT.Adt id -> getAdt context.type_store id
+            _ -> panic "getNext Closuer call function result is not an adt"
+        first <- atIndex mir_option_type.variants 0
+        (some_index, none_index) <- if first.name == getOptionSomeVariantName
+            then (0, 1)
+            else (1, 0)
+        none_checker <- ME.VariantChecker none_index next_var
+        some_checker <- ME.VariantChecker some_index next_var
+        mir_get_next_function_result_type <- MT.getResultType mir_get_next_function.type
+        iterator_type <- case iterator_instance.iterator_type of
+            HT.Named _ args -> Option.unwrap (head args)
+            _ -> panic "Iterator type is not a named type"
+        hir_get_next_result <- TUtil.getOptionType (HT.Tuple [iterator_instance.iterator_type, iterator_type])
+        qn <- HP.FullPath getOptionModuleName getOptionTypeName
+        some_queue_item <- FQ.VariantCtor qn some_index getOptionSomeVariantName (HT.Function (HT.Tuple [iterator_instance.iterator_type, iterator_type]) hir_get_next_result)
+        (context, queue, some_function_id) <- FQ.insert context queue some_queue_item
+        none_queue_item <- FQ.VariantCtor qn none_index getOptionNoneVariantName hir_get_next_result
+        (context, queue, none_function_id) <- FQ.insert context queue none_queue_item
+        none_body <- ME.StaticFunctionCall none_function_id []
+        none_case <- ME.MatchCase none_checker none_body
+        some_body <- ME.StaticFunctionCall some_function_id []
+        some_case <- ME.MatchCase some_checker some_body
+        match_next_cases <- [some_case, none_case]
+        match_next <- ME.Match (ME.VarRef next_var) match_next_cases
+        body <- ME.Do [var_decl, match_next]
+        checker <- ME.VariantChecker id iter_var
+        mir_case <- ME.MatchCase checker body
+        cases <- cases + [mir_case]
+        (context, queue, cases)) (context, queue, [])
+    new_body <- ME.Match (ME.ArgRef 0) cases
+    new_kind <- MF.Normal new_body
+    mir_program <- context.mir_program
+    mir_program <- MP.updateFunctionKind context.mir_program function_id new_kind
+    context <- context { mir_program = mir_program }
+    (context, queue)
+
+createIterators :: Context -> FQ.FunctionQueue -> (Context, FQ.FunctionQueue)
+createIterators context queue = do
+    (context, queue) <- context.iterator_store.iterators |> Map.iter |> fold (\(context, queue), (name, iterator) -> do
+        context <- iterator.instances |> List.iter |> fold (\context, iterator_instance -> do
+            context <- createIteratorVariant context name iterator_instance
+            context) context
+        (context, queue) <- case iterator.get_next_id of
+            Some function_id -> do
+                (context, queue) <- createGetNextFunctionBody context queue iterator function_id
+                (context, queue)
+            None -> (context, queue)
+        (context, queue)) (context, queue)
+    (context, queue)

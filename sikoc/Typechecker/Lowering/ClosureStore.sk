@@ -20,9 +20,6 @@ data ClosureInstance = { id :: ClosureInstanceId,
 data Closure = { name :: String,
                  instances :: [ClosureInstance] }
 
-data ClosureCall = { function_id :: Identity,
-                     name :: String }
-
 data ClosureInstanceSuccessor = NextClosureInstance Identity
                                 | RealFunctionCall Identity
 
@@ -33,11 +30,11 @@ instance Show ClosureInstanceSuccessor where
 
 data ClosureStore = { closures :: Map String Closure,
                       closure_type_map :: Map HT.Type String,
-                      closure_calls :: [ClosureCall],
+                      closure_calls :: Map String Identity,
                       successors :: Map ClosureInstance ClosureInstanceSuccessor }
 
 createClosureStore :: ClosureStore
-createClosureStore = ClosureStore empty empty [] empty
+createClosureStore = ClosureStore empty empty empty empty
 
 addClosureInstance :: ClosureStore -> HT.Type -> [HT.Type] -> (ClosureStore, ClosureInstance)
 addClosureInstance store closure_type args = do
@@ -73,9 +70,15 @@ getClosureName store closure_type = do
 
 addClosureCall :: ClosureStore -> String -> Identity -> ClosureStore
 addClosureCall store name function_id = do
-    call <- ClosureCall function_id name
-    closure_calls <- store.closure_calls + [call]
+    (closure_calls, _) <- insert store.closure_calls name function_id
     store { closure_calls = closure_calls }
+
+getClosureCall :: ClosureStore -> HT.Type -> Identity
+getClosureCall store closure_type = case get store.closure_type_map closure_type of
+    Some closure_name -> case get store.closure_calls closure_name of
+        Some function_id -> function_id
+        None -> panic "Closure call for closure {} not found" % closure_name
+    None -> panic "Closure name for closure type {} not found" % (HT.toString closure_type)
 
 addClosureInstanceSuccessor :: ClosureStore -> ClosureInstance -> ClosureInstanceSuccessor -> ClosureStore
 addClosureInstanceSuccessor store closure_instance closure_instance_successor = do
@@ -120,10 +123,10 @@ createClosures context = do
             context <- context { type_store = type_store }
             context) context
         context) context
-    context.closure_store.closure_calls |> List.iter |> fold (\context, closure_call -> do
-        closure <- case get context.closure_store.closures closure_call.name of
+    context.closure_store.closure_calls |> Map.iter |> fold (\context, (closure_call_name, closure_call_identity) -> do
+        closure <- case get context.closure_store.closures closure_call_name of
             Some closure -> closure
-            None -> panic "Closure not found {}" % closure_call.name
+            None -> panic "Closure not found {}" % closure_call_name
         cases <- closure.instances |> List.iter |> map (\closure_instance -> do
             ClosureInstanceId id <- closure_instance.id
             prev_var <- ME.Var "prev"
@@ -140,10 +143,6 @@ createClosures context = do
         new_body <- ME.Match (ME.ArgRef 0) cases
         new_kind <- MF.Normal new_body
         mir_program <- context.mir_program
-        (functions, _) <- alter (\f -> case f of
-                Some f -> Some f { kind = new_kind }
-                None -> panic "Closure call function not found"
-            ) closure_call.function_id mir_program.functions
-        mir_program <- mir_program { functions = functions }
-        context <- context { mir_program = mir_program}
+        mir_program <- updateFunctionKind context.mir_program closure_call_identity new_kind
+        context <- context { mir_program = mir_program }
         context) context

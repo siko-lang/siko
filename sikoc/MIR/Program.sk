@@ -19,6 +19,24 @@ addFunction program function_id function = do
     (functions, _) <- insert program.functions function_id function
     program { functions = functions }
 
+getFunction :: Program -> Identity -> F.Function
+getFunction program function_id = case get program.functions function_id of
+    Some function -> function
+    None -> panic "MIR Function not found {}" % function_id
+
+getAdt :: Program -> Identity -> D.AlgebraicDataType
+getAdt program adt_id = case get program.adts adt_id of
+    Some adt -> adt
+    None -> panic "MIR Adt not found {}" % adt_id
+
+updateFunctionKind :: Program -> Identity -> F.FunctionKind -> Program
+updateFunctionKind program function_id kind = do
+    (functions, _) <- alter (\f -> case f of
+                Some f -> Some f { kind = kind }
+                None -> panic "Function not found during kind update"
+            ) function_id program.functions
+    program { functions = functions }
+
 dump :: Program -> String
 dump program = do
     s <- "{}. adts\n" % (getSize program.adts)
