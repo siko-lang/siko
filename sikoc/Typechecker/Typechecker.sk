@@ -23,6 +23,7 @@ import Siko.HIR.Traversal
 import Siko.HIR.Type as T
 import Siko.HIR.TypeVarGenerator
 import Siko.HIR.Expr
+import Siko.MIR.Program as MP
 import Siko.Constants
 import Map
 
@@ -128,7 +129,7 @@ processGroup state group program function_store lowering_type_store = do
         LTS.addExprType lowering_type_store id type) lowering_type_store
     (context.state, context.function_store, lowering_type_store)
 
-processProgram :: P.Program -> TypeVarGenerator -> [TypecheckerError]
+processProgram :: P.Program -> TypeVarGenerator -> Result MP.Program [TypecheckerError]
 processProgram program var_gen = do
     state <- TypecheckerState [] var_gen CS.initializeEmptyClassStore
              DS.createDataStore IR.createInstanceResolver createChoiceTreeStore
@@ -147,6 +148,7 @@ processProgram program var_gen = do
         (state, function_store, lowering_type_store) ) (state, function_store, lowering_type_store)
     //FS.dump function_store
     if isEmpty state.errors
-        then L.lowerProgram state program function_store lowering_type_store
-        else ()
-    state.errors
+        then do
+            mir_program <- L.lowerProgram state program function_store lowering_type_store
+            Ok mir_program
+        else Err state.errors

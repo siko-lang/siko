@@ -1,0 +1,16 @@
+module Siko.Transpiler where
+
+import Siko.MIR.Function
+import Siko.MIR.Program
+import Siko.Transpiler.Rust as R
+import Map
+
+transpile :: Program -> String
+transpile program = do
+    rust_program <- R.Program []
+    rust_program <- program.functions |> Map.iter |> fold (\rust_program, (_, mir_function) -> do
+        rust_function_name <- "{}" % mir_function.id
+        rust_function <- R.Function rust_function_name
+        functions <- rust_program.functions + [rust_function]
+        rust_program { functions = functions }) rust_program
+    R.generateProgram rust_program

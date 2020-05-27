@@ -4,6 +4,7 @@ import Hack
 import Siko.Parser
 import Siko.Resolver as R
 import Siko.Typechecker as TC
+import Siko.Transpiler
 import Siko.Diagnostics
 
 main = do
@@ -17,6 +18,10 @@ main = do
     (hir_program, var_gen, resolver_errors) <- R.processProgram program
     resolver_errors |> List.iter |> forEach \error -> printResolverError error
     println "Typechecking.."
-    typechecker_errors <- TC.processProgram hir_program var_gen
-    typechecker_errors |> List.iter |> forEach \error -> printTypecheckerError error
+    case TC.processProgram hir_program var_gen of
+        Ok mir_program -> do
+            println "Transpiling.."
+            rust_output <- transpile mir_program
+            writeTextFile "sikoc_output.rs" rust_output
+        Err typechecker_errors -> typechecker_errors |> List.iter |> forEach \error -> printTypecheckerError error
     ()

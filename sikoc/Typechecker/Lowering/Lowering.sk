@@ -45,7 +45,7 @@ getIdentity context module_name name = do
     context <- context { keys = keys }
     (context, MP.Identity module_name name)
 
-lowerProgram :: TypecheckerState -> HP.Program -> FunctionStore -> TypeStore -> ()
+lowerProgram :: TypecheckerState -> HP.Program -> FunctionStore -> TypeStore -> MP.Program
 lowerProgram state hir_program function_store type_store = do
     println "Lowering to MIR.."
     main_qn <- HP.FullPath getMainModuleName getMainFunctionName
@@ -68,4 +68,4 @@ lowerProgram state hir_program function_store type_store = do
     mir_program <- mir_program { adts = context.type_store.adts, records = context.type_store.records }
     s <- MP.dump mir_program
     writeTextFile "sikoc.mir" s
-    ()
+    mir_program

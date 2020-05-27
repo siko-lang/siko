@@ -1,0 +1,17 @@
+module Siko.Transpiler.Rust where
+
+data Function = { name :: String }
+
+data Program = { functions :: [Function] }
+
+generateFunction :: Function -> String
+generateFunction function = do
+    signature <- "fn {}() -> ()" % function.name
+    body <- "{}"
+    signature + "\n" + body
+
+generateProgram :: Program -> String
+generateProgram program = do
+    content <- ""
+    content <- program.functions |> List.iter |> fold (\content, f -> content + "\n" + generateFunction f) content
+    content
