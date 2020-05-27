@@ -1,12 +1,72 @@
 module Siko.Transpiler.Rust where
 
-data Function = { name :: String }
+data Variant = { name :: String, type :: Type }
+
+data EnumInfo = { name :: String, variants :: [Variant] }
+
+data StructField = { name :: String, type :: Type }
+
+data StructInfo = { name :: String, fields :: [StructField] }
+
+data Type = Type String
+
+instance Show Type where
+    show (Type t) = t
+
+data Function = { name :: String, args :: [Type], result :: Type }
+
+data RecordUpdateItem = { field_name :: String,
+                          body :: Expr }
+
+data RangeKind = Inclusive | Exclusive deriving (Show)
+
+data Checker = IntegerChecker String
+               | StringChecker String
+               | CharChecker Char
+               | CharRangeChecker Char Char RangeKind
+               | VariantChecker Int String
+               | WildcardChecker
+
+instance Show Checker where
+    show checker = case checker of
+        IntegerChecker lit -> "i:{}" % lit
+        StringChecker lit -> "s:{}" % lit
+        CharChecker lit -> "c:{}" % lit
+        CharRangeChecker s e kind -> "{}:{}:{}" % (s, e, kind)
+        VariantChecker i v -> "v:{} {}" % (i, v)
+        WildcardChecker -> "w"
+
+data MatchCase = { checker :: Checker, body :: Expr }
+
+data Expr = Do [Expr]
+            | FunctionCall String [Expr]
+            | IntegerLiteral String
+            | StringLiteral String
+            | FloatLiteral String
+            | CharLiteral Char
+            | VarDecl String Expr
+            | VarRef String
+            | FieldAccess String Expr
+            | If Expr Expr Expr
+            | List [Expr]
+            | Formatter String [Expr]
+            | Return Expr
+            | Continue Expr
+            | Break Expr
+            | ArgRef Int
+            | RecordUpdate String [RecordUpdateItem]
+            | Loop Expr Expr [Expr]
+            | Match Expr [MatchCase]
 
 data Program = { functions :: [Function] }
 
 generateFunction :: Function -> String
 generateFunction function = do
-    signature <- "fn {}() -> ()" % function.name
+    (args, _) <- function.args |> List.iter |> fold (\(args, index), arg -> do
+        s <- "arg{}: {}" % (index, arg)
+        args <- args + [s]
+        (args, index + 1)) ([], 0)
+    signature <- "fn {}({}) -> {}" % (function.name, join args ", ", function.result)
     body <- "{}"
     signature + "\n" + body
 

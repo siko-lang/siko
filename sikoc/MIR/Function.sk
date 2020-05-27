@@ -11,11 +11,12 @@ data FunctionKind = Normal E.Expr
 
 data Function = { id :: Identity,
                   kind :: FunctionKind,
-                  type :: T.Type }
+                  args :: [T.Type],
+                  result :: T.Type }
 
 dump :: Function -> String
 dump function = do
-    s <- "{} :: {}\n" % (function.id, function.type)
+    s <- "{} :: {} -> {}\n" % (function.id, function.args, function.result)
     case function.kind of
         Normal body -> s + "{} = {}" % (function.id, (E.prettyPrint body (E.Indent 0)).0)
         VariantCtor index -> s + "{} = <variant_ctor:{}>" % (function.id, index)

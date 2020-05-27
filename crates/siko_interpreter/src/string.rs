@@ -135,6 +135,25 @@ impl ExternFunction for StringSplit {
     }
 }
 
+
+pub struct StringReplace {}
+
+impl ExternFunction for StringReplace {
+    fn call(
+        &self,
+        environment: &mut Environment,
+        _: Option<ExprId>,
+        _: &NamedFunctionKind,
+        ty: Type,
+    ) -> Value {
+        let input = environment.get_arg_by_index(0).core.as_string();
+        let from = environment.get_arg_by_index(1).core.as_string();
+        let to = environment.get_arg_by_index(2).core.as_string();
+        let output = input.replace(&from, &to);
+        return Value::new(ValueCore::String(output), ty);
+    }
+}
+
 pub fn register_extern_functions(interpreter: &mut Interpreter) {
     interpreter.add_extern_function(STRING_MODULE_NAME, "opAdd", Box::new(StringAdd {}));
     interpreter.add_extern_function(STRING_MODULE_NAME, "opEq", Box::new(StringPartialEq {}));
@@ -147,4 +166,5 @@ pub fn register_extern_functions(interpreter: &mut Interpreter) {
     interpreter.add_extern_function(STRING_MODULE_NAME, "show", Box::new(StringShow {}));
     interpreter.add_extern_function(STRING_MODULE_NAME, "chars", Box::new(StringChars {}));
     interpreter.add_extern_function(STRING_MODULE_NAME, "split", Box::new(StringSplit {}));
+    interpreter.add_extern_function(STRING_MODULE_NAME, "replace", Box::new(StringReplace {}));
 }

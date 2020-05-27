@@ -131,7 +131,7 @@ createGetNextFunctionBody context queue iterator function_id = do
         next_var <- ME.Var "next"
         var_decl <- ME.VarDecl next_var closure_call
         closure_call_function <- MP.getFunction context.mir_program closure_call_id
-        closure_call_function_result <- MT.getResultType closure_call_function.type
+        closure_call_function_result <- closure_call_function.result
         mir_option_type <- case closure_call_function_result of
             MT.Adt id -> getAdt context.type_store id
             _ -> panic "getNext Closuer call function result is not an adt"
@@ -141,7 +141,7 @@ createGetNextFunctionBody context queue iterator function_id = do
             else (1, 0)
         none_checker <- ME.VariantChecker none_index next_var
         some_checker <- ME.VariantChecker some_index next_var
-        mir_get_next_function_result_type <- MT.getResultType mir_get_next_function.type
+        mir_get_next_function_result_type <- mir_get_next_function.result
         iterator_type <- case iterator_instance.iterator_type of
             HT.Named _ args -> Option.unwrap (head args)
             _ -> panic "Iterator type is not a named type"

@@ -252,6 +252,18 @@ fn generate_string_builtins(
                 indent, result_ty_str
             )?;
         }
+        "replace" => {
+            write!(
+                output_file,
+                "{}let value = arg0.replace(&arg1, &arg2);\n",
+                indent
+            )?;
+            write!(
+                output_file,
+                "{}{} {{ value : std::rc::Rc::new(value) }}",
+                indent, result_ty_str
+            )?;
+        }
         "chars" => {
             write!(
                 output_file,

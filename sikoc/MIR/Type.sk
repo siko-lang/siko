@@ -4,7 +4,6 @@ import Siko.MIR.Program
 
 data Type = Adt Identity
             | Record Identity
-            | Function [Type] Type
             | Ref Type
             | Never
 
@@ -12,11 +11,5 @@ instance Show Type where
     show t = case t of
         Adt id -> show id
         Record id -> show id
-        Function args result -> "{} -> {}" % (args, result)
         Ref t -> "&{}" % t
         Never -> "!"
-
-getResultType :: Type -> Type
-getResultType type = case type of
-    Function _ t -> t
-    _ -> type
