@@ -192,6 +192,8 @@ processItem queue item mir_function_id context = do
         IteratorCtor iterator_instance -> do
                     ctor_hir_type <- HT.Function iterator_instance.state_type (HT.Function iterator_instance.closure_type iterator_instance.iterator_type)
                     (context, mir_ctor_type) <- getFunctionType context ctor_hir_type 2
+                    iterator_store <- IS.addIteratorInstanceCtorIdentity context.iterator_store iterator_instance mir_function_id
+                    context <- context { iterator_store = iterator_store }
                     IS.IteratorInstanceId id <- iterator_instance.id
                     mir_function <- MF.Function mir_function_id (MF.VariantCtor id) mir_ctor_type
                     mir_program <- MP.addFunction context.mir_program mir_function_id mir_function

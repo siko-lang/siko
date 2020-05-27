@@ -30,10 +30,11 @@ data IteratorInfo = { name :: String,
                       get_next_id :: Option MP.Identity }
 
 data IteratorStore = { iterators :: Map String IteratorInfo,
-                       iterator_type_map :: Map HT.Type String }
+                       iterator_type_map :: Map HT.Type String,
+                       iterator_instance_ctors :: Map IteratorInstance MP.Identity }
 
 createIteratorStore :: IteratorStore
-createIteratorStore = IteratorStore empty empty
+createIteratorStore = IteratorStore empty empty empty
 
 addIteratorInstance :: IteratorStore -> HT.Type -> HT.Type -> HT.Type -> (IteratorStore, IteratorInstance)
 addIteratorInstance store state_type closure_type iterator_type = do
@@ -87,6 +88,11 @@ getVariantRecordIdentity iterator_instance = MP.Identity getInternalModuleName (
 getVariantCtorName :: IteratorInstance -> String
 getVariantCtorName iterator_instance = "{}_{}" % (iterator_instance.name, getVariantName iterator_instance)
 
+addIteratorInstanceCtorIdentity :: IteratorStore -> IteratorInstance -> MP.Identity -> IteratorStore
+addIteratorInstanceCtorIdentity store iterator_instance identity = do
+    (iterator_instance_ctors, _) <- insert store.iterator_instance_ctors iterator_instance identity
+    store { iterator_instance_ctors = iterator_instance_ctors }
+
 createIteratorVariant :: Context -> String -> IteratorInstance -> Context
 createIteratorVariant context name iterator_instance = do
     (context, mir_state_type) <- processType context iterator_instance.state_type
@@ -139,15 +145,39 @@ createGetNextFunctionBody context queue iterator function_id = do
         iterator_type <- case iterator_instance.iterator_type of
             HT.Named _ args -> Option.unwrap (head args)
             _ -> panic "Iterator type is not a named type"
-        hir_get_next_result <- TUtil.getOptionType (HT.Tuple [iterator_instance.iterator_type, iterator_type])
+        hir_result_tuple_type <- HT.Tuple [iterator_instance.iterator_type, iterator_type]
+        hir_get_next_result <- TUtil.getOptionType (hir_result_tuple_type)
         qn <- HP.FullPath getOptionModuleName getOptionTypeName
-        some_queue_item <- FQ.VariantCtor qn some_index getOptionSomeVariantName (HT.Function (HT.Tuple [iterator_instance.iterator_type, iterator_type]) hir_get_next_result)
+        some_queue_item <- FQ.VariantCtor qn some_index getOptionSomeVariantName (HT.Function hir_result_tuple_type hir_get_next_result)
         (context, queue, some_function_id) <- FQ.insert context queue some_queue_item
         none_queue_item <- FQ.VariantCtor qn none_index getOptionNoneVariantName hir_get_next_result
         (context, queue, none_function_id) <- FQ.insert context queue none_queue_item
+        result_tuple_type_ctor_item <- FQ.TupleCtor (HT.Function iterator_instance.iterator_type (HT.Function iterator_type hir_result_tuple_type))
+        (context, queue, result_tuple_type_ctor_id) <- FQ.insert context queue result_tuple_type_ctor_item
         none_body <- ME.StaticFunctionCall none_function_id []
         none_case <- ME.MatchCase none_checker none_body
-        some_body <- ME.StaticFunctionCall some_function_id []
+        tuple_var <- ME.Var "tuple"
+        tuple_var_decl <- ME.VarDecl tuple_var (ME.FieldAccess (getFieldName 0) (ME.VarRef next_var))
+        new_stat_var <- ME.Var "new_state"
+        new_stat_var_decl <- ME.VarDecl new_stat_var (ME.FieldAccess (getFieldName 0) (ME.VarRef tuple_var))
+        next_value_var <-  ME.Var "next_value"
+        next_value_var_decl <- ME.VarDecl next_value_var (ME.FieldAccess (getFieldName 1) (ME.VarRef tuple_var))
+        instance_ctor <- case get context.iterator_store.iterator_instance_ctors iterator_instance of
+            Some instance_ctor -> instance_ctor
+            None -> panic "iterator instance has no variant ctor"
+        instance_ctor_call <- ME.StaticFunctionCall instance_ctor [ME.VarRef new_stat_var, closure_field_access]
+        new_instance_var <- ME.Var "new_instance"
+        new_instance_var_decl <- ME.VarDecl new_instance_var instance_ctor_call
+        result_tuple_ctor_call <- ME.StaticFunctionCall result_tuple_type_ctor_id [ME.VarRef new_instance_var, ME.VarRef next_value_var]
+        result_tuple_var <- ME.Var "result_tuple"
+        result_tuple_var_decl <- ME.VarDecl result_tuple_var result_tuple_ctor_call
+        some_ctor_call <- ME.StaticFunctionCall some_function_id [ME.VarRef result_tuple_var]
+        some_body <- ME.Do [tuple_var_decl,
+                            new_stat_var_decl,
+                            next_value_var_decl,
+                            new_instance_var_decl,
+                            result_tuple_var_decl,
+                            some_ctor_call]
         some_case <- ME.MatchCase some_checker some_body
         match_next_cases <- [some_case, none_case]
         match_next <- ME.Match (ME.VarRef next_var) match_next_cases
