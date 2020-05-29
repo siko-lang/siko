@@ -1,12 +1,14 @@
 module Siko.Transpiler.Rust where
 
+import Siko.Util.Format
+
 data Variant = { name :: String, type :: Type }
 
 data EnumInfo = { name :: String, variants :: [Variant] }
 
 data StructField = { name :: String, type :: Type }
 
-data StructInfo = { name :: String, fields :: [StructField] }
+data Struct = { name :: String, fields :: [StructField] }
 
 data Type = Type String
 
@@ -15,33 +17,25 @@ instance Show Type where
 
 data Function = { name :: String, args :: [Type], result :: Type, body :: Expr }
 
-data RecordUpdateItem = { field_name :: String,
-                          body :: Expr }
+data FieldInitItem = { name :: String,
+                       body :: Expr }
 
 data RangeKind = Inclusive | Exclusive deriving (Show)
 
-data Checker = IntegerChecker String
-               | StringChecker String
-               | CharChecker Char
-               | CharRangeChecker Char Char RangeKind
-               | VariantChecker Int String
-               | WildcardChecker
+data Pattern = IntegerPattern String
+               | StringPattern String
+               | CharPattern Char
+               | CharRangePattern Char Char RangeKind
+               | VariantPattern Int String
+               | WildcardPattern
 
-instance Show Checker where
-    show checker = case checker of
-        IntegerChecker lit -> "i:{}" % lit
-        StringChecker lit -> "s:{}" % lit
-        CharChecker lit -> "c:{}" % lit
-        CharRangeChecker s e kind -> "{}:{}:{}" % (s, e, kind)
-        VariantChecker i v -> "v:{} {}" % (i, v)
-        WildcardChecker -> "w"
+data MatchCase = { pattern :: Pattern, body :: Expr }
 
-data MatchCase = { checker :: Checker, body :: Expr }
-
-data Expr = Do [Expr]
+data Expr = Block [Expr]
             | FunctionCall String [Expr]
             | IntegerLiteral String
             | StringLiteral String
+            | MethodCall Expr String [Expr]
             | FloatLiteral String
             | CharLiteral Char
             | VarDecl String Expr
@@ -49,22 +43,70 @@ data Expr = Do [Expr]
             | FieldAccess String Expr
             | If Expr Expr Expr
             | List [Expr]
-            | Formatter String [Expr]
             | Return Expr
             | Continue Expr
             | Break Expr
-            | ArgRef Int
-            | RecordUpdate String [RecordUpdateItem]
+            | Ref Expr
+            | RecordUpdate String [FieldInitItem]
             | Loop Expr Expr [Expr]
             | Match Expr [MatchCase]
+            | StructCtor String [FieldInitItem]
 
-data Program = { functions :: [Function] }
+data Program = { structs :: [Struct], functions :: [Function] }
 
-generateExpr :: Expr -> String
-generateExpr expr = case expr of
-    Do args -> "Do"
-    StringLiteral n -> n
+generatePattern :: Pattern -> String
+generatePattern pattern = case pattern of
+    IntegerPattern lit -> "a if a.value == {}" % lit
+    StringPattern lit -> "a if a.value == {}" % lit
+    CharPattern lit -> "a if a.value == {}" % lit
+    CharRangePattern _ _ _ -> "NYI"
+    VariantPattern _ _ -> "NYI"
+    WildcardPattern -> "_"
+
+generateExpr :: Expr -> Indent -> String
+generateExpr expr indent = case expr of
+    Block args -> do
+            inner <- inc indent
+            args <- args |> List.iter |> map (\arg -> do
+                "{}{}" % (inner, generateExpr arg inner)) |> toList
+            s <- "{\n{}\n{}}" % (join args ";\n", indent)
+            s
+    FunctionCall name args -> do
+        args <- args |> List.iter |> map (\arg -> generateExpr arg (Indent 0)) |> toList
+        "{}({})" % (name, join args ", ")
+    StructCtor name fields -> do
+        fields <- fields |> List.iter |> map (\field -> do
+            "{}: {}" % (field.name, generateExpr field.body (Indent 0))) |> toList
+        "{} { {} }" % (name, join fields ", ")
+    MethodCall receiver name args -> do
+        args <- args |> List.iter |> map (\arg -> generateExpr arg (Indent 0)) |> toList
+        receiver <- generateExpr receiver (Indent 0)
+        "{}.{}({})" % (receiver, name, join args ", ")
+    StringLiteral lit -> do
+        lit <- replace lit "\n" "\\n"
+        "\"{}\"" % lit
+    VarDecl n rhs -> "let {} = {}" % (n, generateExpr rhs (Indent 0))
+    VarRef n -> n
+    Match body cases -> do
+        body <- generateExpr body (Indent 0)
+        inner <- inc indent
+        cases <- cases |> List.iter |> map (\c -> do
+            "{}{} => {}" % (inner, generatePattern c.pattern, generateExpr c.body inner)) |> toList
+        "match {} {\n{}\n{}}" % (body, join cases "\n", indent)
+    FieldAccess name receiver -> do
+        receiver <- generateExpr receiver (Indent 0)
+        "{}.{}" % (receiver, name)
+    Ref rhs -> "&{}" % generateExpr rhs (Indent 0)
     _ -> "NYI"
+
+generateStruct :: Struct -> String
+generateStruct struct = do
+    indent <- Indent 2
+    fields <- struct.fields |> List.iter |> fold (\fields, field -> do
+        f <- "{}{}: {}," % (indent, field.name, field.type)
+        fields <- fields + [f]
+        fields) []
+    "struct {} {\n{}\n}" % (struct.name, join fields "\n")
 
 generateFunction :: Function -> String
 generateFunction function = do
@@ -73,11 +115,19 @@ generateFunction function = do
         args <- args + [s]
         (args, index + 1)) ([], 0)
     signature <- "fn {}({}) -> {}" % (function.name, join args ", ", function.result)
-    body <- generateExpr function.body
-    signature + "\n" + body
+    indent <- Indent 0
+    body <- generateExpr function.body indent
+    signature + " " + body
 
 generateProgram :: Program -> String
 generateProgram program = do
     content <- ""
-    content <- program.functions |> List.iter |> fold (\content, f -> content + "\n" + generateFunction f) content
+    content <- content + "#![allow(non_snake_case)]\n"
+    content <- content + "#![allow(non_camel_case_types)]\n"
+    content <- content + "#![allow(unused_variables)]\n"
+    content <- content + "#![allow(dead_code)]\n"
+    content <- content + "#![allow(unused_parens)]\n"
+    content <- program.structs |> List.iter |> fold (\content, s -> content + "\n\n" + generateStruct s) content
+    content <- program.functions |> List.iter |> fold (\content, f -> content + "\n\n" + generateFunction f) content
+    content <- content + "\n\nfn main() {\n{}Main_main_0();\n}" % (Indent 2)
     content

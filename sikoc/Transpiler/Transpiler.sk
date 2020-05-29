@@ -1,5 +1,7 @@
 module Siko.Transpiler where
 
+import Siko.MIR.Expr as ME
+import Siko.MIR.Data
 import Siko.MIR.Function
 import Siko.MIR.Program
 import Siko.MIR.Type as MT
@@ -8,43 +10,138 @@ import Map
 
 data BuiltinId = BuiltinId String String deriving (PartialEq, Eq, PartialOrd, Ord)
 
+getArgName :: Int -> String
+getArgName index = "arg{}" % index
+
+innerValueField = "value"
+
 getRustFriendlyName :: String -> String
 getRustFriendlyName input = do
     output <- replace input "." "_"
     output
+
+getRustIdentity :: Identity -> String
+getRustIdentity id = getRustFriendlyName (show id)
 
 convertType :: MT.Type -> R.Type
 convertType mir_type = do
     t <- case mir_type of
         MT.Adt id -> getRustFriendlyName (show id)
         MT.Record id -> getRustFriendlyName (show id)
-        MT.Ref t -> "&{}" % convertType t
+        MT.Ref t -> return convertType t // FIXME: ignore refs for now
         MT.Never ->  getRustFriendlyName "!"
     R.Type t
 
-initializeBuiltins :: Map BuiltinId R.Expr
-initializeBuiltins = do
+generatePrintStr :: [MT.Type] -> MT.Type -> R.Expr
+generatePrintStr arg_types result_type = do
+    R.Type t <- convertType result_type
+    field_access <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
+    print_call <- R.FunctionCall "println!" [R.StringLiteral "{}", field_access]
+    unit <- R.StructCtor t []
+    R.Block [print_call, unit]
+
+generateStringAdd :: [MT.Type] -> MT.Type -> R.Expr
+generateStringAdd arg_types result_type = do
+    R.Type t <- convertType result_type
+    field_access <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
+    extend_call <- R.MethodCall (R.VarRef (getArgName 0)) "extend" [R.Ref field_access]
+    result <- R.StructCtor t [R.FieldInitItem innerValueField extend_call]
+    R.Block [result]
+
+initializeBuiltinFunctions :: Map BuiltinId ([MT.Type] -> MT.Type -> R.Expr)
+initializeBuiltinFunctions = do
     builtins <- Map.empty
-    (builtins, _) <- insert builtins (BuiltinId "Std.Util.Basic" "println") (R.StringLiteral "alma")
+    (builtins, _) <- insert builtins (BuiltinId "Std.Util.Basic" "printStr") generatePrintStr
+    (builtins, _) <- insert builtins (BuiltinId "String" "opAdd") generateStringAdd
     builtins
+
+initializeBuiltinStructs :: Map BuiltinId [R.StructField]
+initializeBuiltinStructs = do
+    builtins <- Map.empty
+    (builtins, _) <- insert builtins (BuiltinId "String" "String") ( [R.StructField innerValueField (R.Type "std::string::String")])
+    builtins
+
+convertPattern :: ME.Checker -> R.Pattern
+convertPattern checker = case checker of
+    ME.IntegerChecker lit -> R.IntegerPattern lit
+    ME.StringChecker lit -> R.StringPattern lit
+    ME.CharChecker lit -> R.CharPattern lit
+    ME.CharRangeChecker s e kind -> do
+        kind <- case kind of
+            ME.Inclusive -> R.Inclusive
+            ME.Exclusive -> R.Exclusive
+        R.CharRangePattern s e kind
+    ME.VariantChecker i (ME.Var v) -> R.VariantPattern i v
+    ME.WildcardChecker -> R.WildcardPattern
+
+convertExpr :: ME.Expr -> R.Expr
+convertExpr mir_expr = case mir_expr of
+    ME.Do args -> do
+        args <- args |> List.iter |> map (\arg -> convertExpr arg) |> toList
+        R.Block args
+    ME.StaticFunctionCall id args -> do
+        rust_function_name <- getRustIdentity id
+        args <- args |> List.iter |> map (\arg -> convertExpr arg) |> toList
+        R.FunctionCall rust_function_name args
+    ME.StringLiteral lit -> do
+        literal <- R.StringLiteral lit
+        to_string_call <- R.MethodCall literal "to_string" []
+        R.StructCtor "String_String_0" [R.FieldInitItem innerValueField to_string_call]
+    ME.VarDecl (ME.Var n) rhs -> R.VarDecl n (convertExpr rhs)
+    ME.VarRef (ME.Var n) -> R.VarRef n
+    ME.ArgRef index -> R.VarRef (getArgName index)
+    ME.Match body cases -> do
+        cases <- cases |> List.iter |> map (\c -> do
+            case_pattern <- convertPattern c.checker
+            case_body <- convertExpr c.body
+            R.MatchCase case_pattern case_body) |> toList
+        R.Match (convertExpr body) cases
+    ME.FieldAccess name receiver -> R.FieldAccess name (convertExpr receiver)
+    _ -> R.VarRef "NYI"
+
+convertRecord :: Record -> Map BuiltinId [R.StructField] -> R.Struct
+convertRecord record builtin_structs = do
+    name <- getRustIdentity record.id
+    rust_fields <- if record.external
+        then do
+            Identity mod name _ <- record.id
+            id <- BuiltinId mod name
+            case get builtin_structs id of
+                Some fields -> fields
+                None -> panic "Extern struct {}/{} is not implemented" % (mod, name)
+        else do
+            record.fields |> List.iter |> map (\field -> do
+                R.StructField (getRustFriendlyName field.name) (convertType field.type)) |> toList
+    R.Struct name rust_fields
 
 transpile :: Program -> String
 transpile program = do
-    builtins <- initializeBuiltins
-    rust_program <- R.Program []
+    builtin_functions <- initializeBuiltinFunctions
+    builtin_structs <- initializeBuiltinStructs
+    rust_program <- R.Program [] []
+    rust_program <- program.adts |> Map.iter |> fold (\rust_program, (_, adt) -> do
+        rust_program) rust_program
+    rust_program <- program.records |> Map.iter |> fold (\rust_program, (_, record) -> do
+        struct <- convertRecord record builtin_structs
+        structs <- rust_program.structs + [struct]
+        rust_program { structs = structs }) rust_program
     rust_program <- program.functions |> Map.iter |> fold (\rust_program, (_, mir_function) -> do
-        rust_function_name <- getRustFriendlyName (show mir_function.id)
+        rust_function_name <- getRustIdentity mir_function.id
         rust_args <- mir_function.args |> List.iter |> map (\arg -> convertType arg) |> toList
         rust_result <- convertType mir_function.result
         rust_body <- case mir_function.kind of
-            Normal mir_body -> R.Do []
+            Normal mir_body -> case mir_body of
+                    ME.Do _ -> convertExpr mir_body
+                    _ -> R.Block [convertExpr mir_body]
             Extern -> do
                     Identity mod name _ <- mir_function.id
                     id <- BuiltinId mod name
-                    case get builtins id of
-                        Some builtin -> builtin
-                        None -> panic "Extern builtin {}/{} is not implemented" % (mod, name)
-            _ -> panic "Kind not yet implemented"
+                    case get builtin_functions id of
+                        Some builtin_gen -> builtin_gen mir_function.args mir_function.result
+                        None -> panic "Extern function {}/{} is not implemented" % (mod, name)
+            VariantCtor index -> R.Block []
+            RecordCtor -> do
+                R.Block [ R.StructCtor ("{}" % rust_result) [] ]
         rust_function <- R.Function rust_function_name rust_args rust_result rust_body
         functions <- rust_program.functions + [rust_function]
         rust_program { functions = functions }) rust_program

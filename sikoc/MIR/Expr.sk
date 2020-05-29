@@ -1,14 +1,7 @@
 module Siko.MIR.Expr where
 
 import Siko.MIR.Program
-
-data Indent = Indent Int
-
-instance Show Indent where
-    show (Indent i) = join (repeat " " i) ""
-
-inc :: Indent -> Indent
-inc (Indent i) = Indent (i + 2)
+import Siko.Util.Format
 
 data Var = Var String
 
@@ -50,7 +43,6 @@ data Expr = Do [Expr]
             | FieldAccess String Expr
             | If Expr Expr Expr
             | List [Expr]
-            | Formatter String [Expr]
             | Return Expr
             | Continue Expr
             | Break Expr
@@ -101,14 +93,6 @@ prettyPrint expr ind =
                 (s, simple) <- prettyPrint arg ind
                 s) |> toList
             s <- "[{}]" % (join args ", ")
-            (s, True)
-        Formatter fmt args -> do
-            args <- args |> List.iter |> map (\arg -> do
-                (s, simple) <- prettyPrint arg ind
-                s) |> toList
-            s <- if isEmpty args
-                then "\"{}\"" % fmt
-                else "(\"{}\" % ({}))" % (fmt, join args ", ")
             (s, True)
         Return arg -> do
             (s, simple) <- prettyPrint arg ind

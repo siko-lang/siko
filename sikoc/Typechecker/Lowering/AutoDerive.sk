@@ -110,10 +110,7 @@ processMemberForShow context queue member parent_expr class_name = do
                 else "({})" % (join fmt_args ", ")
             (context, queue, fmt_arg, items)
         _ -> do
-            function_type <- HT.Function member (TUtil.getStringType)
-            show_qn <- HP.FullPath getStdOpsModuleName getShowClassMemberName
-            (context, queue, mir_member) <- processClassMemberCall context queue function_type
-                                            member class_name show_qn [parent_expr] False
+            (context, queue, mir_member) <- callOpShow context queue member parent_expr
             fmt_arg <- if HT.isSimple member then "{}" else "({})"
             (context, queue, fmt_arg, [mir_member])
 
@@ -194,7 +191,7 @@ generateShowInstance context queue hir_type hir_function_type class_name = do
                         fmt <- if isEmpty fmt_args
                             then "{}" % variant.name
                             else "{} {}" % (variant.name, (join fmt_args " "))
-                        body <- ME.Formatter fmt mir_items
+                        (context, queue, body) <- processFormatExpr context queue fmt [] mir_items
                         c <- ME.MatchCase checker body
                         cases <- cases + [c]
                         (context, queue, cases)) (context, queue, [])
@@ -216,7 +213,7 @@ generateShowInstance context queue hir_type hir_function_type class_name = do
                     fmt <- if isEmpty fmt_args
                             then "{}" % record.name
                             else "{} {}" % (record.name, (join fmt_args " "))
-                    body <- ME.Formatter fmt mir_items
+                    (context, queue, body) <- processFormatExpr context queue fmt [] mir_items
                     (context, queue, ME.Do [decl, body])
         _ -> panic "Cannot auto derive show for type {}" % HT.toString hir_type
     (context, queue, body)

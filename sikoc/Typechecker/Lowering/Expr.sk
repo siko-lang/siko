@@ -24,7 +24,24 @@ import Siko.MIR.Expr as ME
 import Siko.MIR.Type as MT
 import Siko.MIR.Data as MD
 import Siko.Syntax.Ident
+import Siko.Constants
 import Map
+
+callOpAdd :: Context -> FQ.FunctionQueue -> HT.Type -> ME.Expr -> ME.Expr -> (Context, FQ.FunctionQueue, ME.Expr)
+callOpAdd context queue item_type arg0 arg1 = do
+    function_type <- HT.Function item_type (HT.Function item_type item_type)
+    class_name <- HPO.FullPath getStdOpsModuleName getAddClassName
+    member_name <- HPO.FullPath getStdOpsModuleName getAddClassMemberName
+    processClassMemberCall context queue function_type
+                              item_type class_name member_name [arg0, arg1] False
+
+callOpShow :: Context -> FQ.FunctionQueue -> HT.Type -> ME.Expr  -> (Context, FQ.FunctionQueue, ME.Expr)
+callOpShow context queue item_type arg0 = do
+    function_type <- HT.Function item_type TUtil.getStringType
+    class_name <- HPO.FullPath getStdOpsModuleName getShowClassName
+    member_name <- HPO.FullPath getStdOpsModuleName getShowClassMemberName
+    processClassMemberCall context queue function_type
+                              item_type class_name member_name [arg0] False
 
 processArgs :: Context -> FQ.FunctionQueue -> U.Substitution -> [HE.Expr] -> (Context, FQ.FunctionQueue, [ME.Expr])
 processArgs context queue sub args = do
@@ -183,7 +200,7 @@ processChoiceTree context choice path_info_map mir_case_bodies mir_guards = do
 patternToVar :: HP.PatternId -> ME.Var
 patternToVar pattern_id = do
     HP.PatternId id <- pattern_id
-    ME.Var (show id)
+    ME.Var ("p_" + show id)
 
 processDynamicFunctionCall :: Context -> FQ.FunctionQueue -> HT.Type -> [ME.Expr] -> ME.Expr -> (Context, FQ.FunctionQueue, [ME.Expr])
 processDynamicFunctionCall context queue receiver_type mir_args mir_receiver = do
@@ -262,6 +279,46 @@ processClassMemberCall context queue function_type arg class_name qn mir_args ha
                     queue_item <- FQ.AutoDerive arg function_type class_name member_name
                     (context, queue, function_id) <- FQ.insert context queue queue_item
                     (context, queue, ME.StaticFunctionCall function_id mir_args)
+
+processFormatExpr :: Context -> FQ.FunctionQueue -> String -> [ME.Expr] -> [ME.Expr] -> (Context, FQ.FunctionQueue, ME.Expr)
+processFormatExpr  context queue fmt exprs args = do
+    subs <- String.split fmt "{}"
+    string_type <- TUtil.getStringType
+    (context, queue, exprs) <- loop (context, queue, subs, args, exprs, prev) <- (context, queue, subs, args, exprs, None) do
+        (context, subs, exprs, sub_var) <- case pop subs of
+            Some (head, rest) -> do
+                (context, id) <- getNextVarId context
+                var <- ME.Var "fmt{}" % id
+                expr <- ME.VarDecl var (ME.StringLiteral head)
+                exprs <- exprs + [expr]
+                (context, rest, exprs, ME.VarRef var)
+            None -> panic "Subs ran out!"
+        (context, queue, exprs, prev) <- case prev of
+            Some prev -> do
+                (context, queue, prev) <- callOpAdd context queue string_type prev sub_var
+                (context, id) <- getNextVarId context
+                var <- ME.Var "fmt{}" % id
+                expr <- ME.VarDecl var prev
+                exprs <- exprs + [expr]
+                (context, queue, exprs, ME.VarRef var)
+            None -> (context, queue, exprs, sub_var)
+        (context, queue, args, exprs, arg_var) <- case pop args of
+            Some (head, rest) -> do
+                (context, id) <- getNextVarId context
+                var <- ME.Var "fmt{}" % id
+                expr <- ME.VarDecl var head
+                exprs <- exprs + [expr]
+                (context, queue, rest, exprs, ME.VarRef var)
+            None -> do
+                exprs <- exprs + [prev]
+                break (context, queue, exprs)
+        (context, queue, prev) <- callOpAdd context queue string_type prev arg_var
+        (context, id) <- getNextVarId context
+        var <- ME.Var "fmt{}" % id
+        expr <- ME.VarDecl var prev
+        exprs <- exprs + [expr]
+        (context, queue, subs, args, exprs, Some (ME.VarRef var))
+    (context, queue, ME.Do exprs)
 
 processExpr :: Context -> FQ.FunctionQueue -> U.Substitution -> HE.Expr -> (Context, FQ.FunctionQueue, ME.Expr)
 processExpr context queue sub hir_expr = do
@@ -425,8 +482,18 @@ processExpr context queue sub hir_expr = do
             (context, queue, mir_receiver) <- processExpr context queue sub receiver
             (context, queue, ME.FieldAccess name mir_receiver)
         HE.Formatter fmt args -> do
-            (context, queue, mir_args) <- processArgs context queue sub args
-            (context, queue, ME.Formatter fmt mir_args)
+            (context, queue, exprs, mir_args) <- args |> List.iter |> fold (\(context, queue, exprs, mir_args), arg -> do
+                (HE.Expr _ id _) <- arg
+                arg_type <- getMonomorphizedExprType context sub id
+                (context, id) <- getNextVarId context
+                var <- ME.Var "fmt{}" % id
+                (context, queue, mir_arg) <- processExpr context queue sub arg
+                (context, queue, show_result) <- callOpShow context queue arg_type mir_arg
+                expr <- ME.VarDecl var show_result
+                exprs <- exprs + [expr]
+                mir_args <- mir_args + [ME.VarRef var]
+                (context, queue, exprs, mir_args)) (context, queue, [], [])
+            processFormatExpr context queue fmt exprs mir_args
         HE.CaseOf body hir_cases bind_groups -> do
             hir_case_bodies <- hir_cases |> List.iter |> map (\HE.Case _ body -> body) |> toList
             hir_guards <- hir_cases |> List.iter |> map (\HE.Case p _ -> do
