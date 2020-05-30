@@ -2,15 +2,17 @@ module Siko.Transpiler.Rust where
 
 import Siko.Util.Format
 
+data Attribute = Clone
+
 data Variant = { name :: String, type :: Type }
 
-data EnumInfo = { name :: String, variants :: [Variant] }
+data Enum = { name :: String, variants :: [Variant], attributes :: [Attribute] }
 
 data StructField = { name :: String, type :: Type }
 
-data Struct = { name :: String, fields :: [StructField] }
+data Struct = { name :: String, fields :: [StructField], attributes :: [Attribute] }
 
-data Type = Type String
+data Type = Type String deriving (PartialEq, Eq, PartialOrd, Ord)
 
 instance Show Type where
     show (Type t) = t
@@ -38,7 +40,7 @@ data Expr = Block [Expr]
             | MethodCall Expr String [Expr]
             | FloatLiteral String
             | CharLiteral Char
-            | VarDecl String Expr
+            | VarDecl Bool String Expr
             | VarRef String
             | FieldAccess String Expr
             | If Expr Expr Expr
@@ -52,7 +54,7 @@ data Expr = Block [Expr]
             | Match Expr [MatchCase]
             | StructCtor String [FieldInitItem]
 
-data Program = { structs :: [Struct], functions :: [Function] }
+data Program = { structs :: [Struct], enums :: [Enum], functions :: [Function] }
 
 generatePattern :: Pattern -> String
 generatePattern pattern = case pattern of
@@ -85,7 +87,9 @@ generateExpr expr indent = case expr of
     StringLiteral lit -> do
         lit <- replace lit "\n" "\\n"
         "\"{}\"" % lit
-    VarDecl n rhs -> "let {} = {}" % (n, generateExpr rhs (Indent 0))
+    VarDecl mutable n rhs -> if mutable
+        then "let mut {} = {}" % (n, generateExpr rhs (Indent 0))
+        else "let {} = {}" % (n, generateExpr rhs (Indent 0))
     VarRef n -> n
     Match body cases -> do
         body <- generateExpr body (Indent 0)
@@ -106,7 +110,24 @@ generateStruct struct = do
         f <- "{}{}: {}," % (indent, field.name, field.type)
         fields <- fields + [f]
         fields) []
-    "struct {} {\n{}\n}" % (struct.name, join fields "\n")
+    content <- ""
+    content <- struct.attributes |> List.iter |> fold (\content, attribute -> do
+        case attribute of
+            Clone -> content + "#[derive(Clone)]\n") content
+    content + "struct {} {\n{}\n}" % (struct.name, join fields "\n")
+
+generateEnum :: Enum -> String
+generateEnum enum = do
+    indent <- Indent 2
+    variants <- enum.variants |> List.iter |> fold (\variants, variant -> do
+        v <- "{}{}({})," % (indent, variant.name, variant.type)
+        variants <- variants + [v]
+        variants) []
+    content <- ""
+    content <- enum.attributes |> List.iter |> fold (\content, attribute -> do
+        case attribute of
+            Clone -> content + "#[derive(Clone)]\n") content
+    content + "enum {} {\n{}\n}" % (enum.name, join variants "\n")
 
 generateFunction :: Function -> String
 generateFunction function = do
@@ -128,6 +149,7 @@ generateProgram program = do
     content <- content + "#![allow(dead_code)]\n"
     content <- content + "#![allow(unused_parens)]\n"
     content <- program.structs |> List.iter |> fold (\content, s -> content + "\n\n" + generateStruct s) content
+    content <- program.enums |> List.iter |> fold (\content, e -> content + "\n\n" + generateEnum e) content
     content <- program.functions |> List.iter |> fold (\content, f -> content + "\n\n" + generateFunction f) content
     content <- content + "\n\nfn main() {\n{}Main_main_0();\n}" % (Indent 2)
     content

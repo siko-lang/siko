@@ -10,10 +10,37 @@ import Map
 
 data BuiltinId = BuiltinId String String deriving (PartialEq, Eq, PartialOrd, Ord)
 
+data TypeStore = { structs :: Map R.Type R.Struct,
+                   enums :: Map R.Type R.Enum  }
+
+createTypeStore :: TypeStore
+createTypeStore = TypeStore empty empty
+
+addStruct :: TypeStore -> R.Type -> R.Struct -> TypeStore
+addStruct type_store type struct = do
+    (structs, _) <- insert type_store.structs type struct
+    type_store { structs = structs }
+
+getStruct :: TypeStore -> R.Type -> R.Struct
+getStruct type_store type = case get type_store.structs type of
+    Some struct -> struct
+    None -> panic "Struct {} not found" % type
+
+addEnum :: TypeStore -> R.Type -> R.Enum -> TypeStore
+addEnum type_store type enum = do
+    (enums, _) <- insert type_store.enums type enum
+    type_store { enums = enums }
+
+getEnum :: TypeStore -> R.Type -> R.Enum
+getEnum type_store type = case get type_store.enums type of
+    Some enum -> enum
+    None -> panic "Enum {} not found" % type
+
 getArgName :: Int -> String
 getArgName index = "arg{}" % index
 
 innerValueField = "value"
+cloneName = "clone"
 
 getRustFriendlyName :: String -> String
 getRustFriendlyName input = do
@@ -36,17 +63,19 @@ generatePrintStr :: [MT.Type] -> MT.Type -> R.Expr
 generatePrintStr arg_types result_type = do
     R.Type t <- convertType result_type
     field_access <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
-    print_call <- R.FunctionCall "println!" [R.StringLiteral "{}", field_access]
+    print_call <- R.FunctionCall "print!" [R.StringLiteral "{}", field_access]
     unit <- R.StructCtor t []
     R.Block [print_call, unit]
 
 generateStringAdd :: [MT.Type] -> MT.Type -> R.Expr
 generateStringAdd arg_types result_type = do
     R.Type t <- convertType result_type
-    field_access <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
-    extend_call <- R.MethodCall (R.VarRef (getArgName 0)) "extend" [R.Ref field_access]
-    result <- R.StructCtor t [R.FieldInitItem innerValueField extend_call]
-    R.Block [result]
+    new <- "new"
+    new_decl <- R.VarDecl True new (R.MethodCall (R.VarRef (getArgName 0)) cloneName [])
+    field_access0 <- R.FieldAccess innerValueField (R.VarRef new)
+    field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
+    extend_call <- R.MethodCall field_access0 "push_str" [R.Ref field_access1]
+    R.Block [new_decl, extend_call, R.VarRef new]
 
 initializeBuiltinFunctions :: Map BuiltinId ([MT.Type] -> MT.Type -> R.Expr)
 initializeBuiltinFunctions = do
@@ -87,7 +116,7 @@ convertExpr mir_expr = case mir_expr of
         literal <- R.StringLiteral lit
         to_string_call <- R.MethodCall literal "to_string" []
         R.StructCtor "String_String_0" [R.FieldInitItem innerValueField to_string_call]
-    ME.VarDecl (ME.Var n) rhs -> R.VarDecl n (convertExpr rhs)
+    ME.VarDecl (ME.Var n) rhs -> R.VarDecl False n (convertExpr rhs)
     ME.VarRef (ME.Var n) -> R.VarRef n
     ME.ArgRef index -> R.VarRef (getArgName index)
     ME.Match body cases -> do
@@ -112,19 +141,35 @@ convertRecord record builtin_structs = do
         else do
             record.fields |> List.iter |> map (\field -> do
                 R.StructField (getRustFriendlyName field.name) (convertType field.type)) |> toList
-    R.Struct name rust_fields
+    R.Struct name rust_fields [R.Clone]
+
+convertAdt :: AlgebraicDataType -> R.Enum
+convertAdt adt = do
+    name <- getRustIdentity adt.id
+    rust_variants <- adt.variants |> List.iter |> map (\variant -> do
+                R.Variant (getRustFriendlyName variant.name) (R.Type (getRustIdentity variant.type))) |> toList
+    R.Enum name rust_variants [R.Clone]
 
 transpile :: Program -> String
 transpile program = do
     builtin_functions <- initializeBuiltinFunctions
     builtin_structs <- initializeBuiltinStructs
-    rust_program <- R.Program [] []
-    rust_program <- program.adts |> Map.iter |> fold (\rust_program, (_, adt) -> do
-        rust_program) rust_program
-    rust_program <- program.records |> Map.iter |> fold (\rust_program, (_, record) -> do
+    type_store <- createTypeStore
+    rust_program <- R.Program [] [] []
+    (type_store, rust_program) <- program.adts |> Map.iter |> fold (\(type_store, rust_program), (_, adt) -> do
+        enum <- convertAdt adt
+        enum_type <- R.Type enum.name
+        type_store <- addEnum type_store enum_type enum
+        enums <- rust_program.enums + [enum]
+        rust_program <- rust_program { enums = enums }
+        (type_store, rust_program)) (type_store, rust_program)
+    (type_store, rust_program) <- program.records |> Map.iter |> fold (\(type_store, rust_program), (_, record) -> do
         struct <- convertRecord record builtin_structs
+        struct_type <- R.Type struct.name
+        type_store <- addStruct type_store struct_type struct
         structs <- rust_program.structs + [struct]
-        rust_program { structs = structs }) rust_program
+        rust_program <- rust_program { structs = structs }
+        (type_store, rust_program)) (type_store, rust_program)
     rust_program <- program.functions |> Map.iter |> fold (\rust_program, (_, mir_function) -> do
         rust_function_name <- getRustIdentity mir_function.id
         rust_args <- mir_function.args |> List.iter |> map (\arg -> convertType arg) |> toList
@@ -139,9 +184,26 @@ transpile program = do
                     case get builtin_functions id of
                         Some builtin_gen -> builtin_gen mir_function.args mir_function.result
                         None -> panic "Extern function {}/{} is not implemented" % (mod, name)
-            VariantCtor index -> R.Block []
+            VariantCtor index ->
+                do
+                enum <- getEnum type_store rust_result
+                variant <- atIndex enum.variants index
+                struct <- getStruct type_store variant.type
+                fields <- struct.fields |> List.iter |> fold (\fields, field -> do
+                    arg <- getArgName (getLength fields)
+                    field_init_item <- R.FieldInitItem field.name (R.VarRef arg)
+                    fields <- fields + [field_init_item]
+                    fields) []
+                name <- "{}::{}" % (enum.name, variant.name)
+                R.Block [R.FunctionCall name [R.StructCtor struct.name fields]]
             RecordCtor -> do
-                R.Block [ R.StructCtor ("{}" % rust_result) [] ]
+                struct <- getStruct type_store rust_result
+                fields <- struct.fields |> List.iter |> fold (\fields, field -> do
+                    arg <- getArgName (getLength fields)
+                    field_init_item <- R.FieldInitItem field.name (R.VarRef arg)
+                    fields <- fields + [field_init_item]
+                    fields) []
+                R.Block [R.StructCtor struct.name fields]
         rust_function <- R.Function rust_function_name rust_args rust_result rust_body
         functions <- rust_program.functions + [rust_function]
         rust_program { functions = functions }) rust_program
