@@ -41,6 +41,8 @@ getArgName index = "arg{}" % index
 
 innerValueField = "value"
 cloneName = "clone"
+stringTypeName = "String_String_0"
+boolTypeName = "Bool_Bool_0"
 
 getRustFriendlyName :: String -> String
 getRustFriendlyName input = do
@@ -77,17 +79,26 @@ generateStringAdd arg_types result_type = do
     extend_call <- R.MethodCall field_access0 "push_str" [R.Ref field_access1]
     R.Block [new_decl, extend_call, R.VarRef new]
 
+generateIntPartialCmp :: [MT.Type] -> MT.Type -> R.Expr
+generateIntPartialCmp arg_types result_type = do
+    field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
+    field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
+    partial_cmp_call <- R.MethodCall field_access0 "partial_cmp" [R.Ref field_access1]
+    R.Block [partial_cmp_call]
+
 initializeBuiltinFunctions :: Map BuiltinId ([MT.Type] -> MT.Type -> R.Expr)
 initializeBuiltinFunctions = do
     builtins <- Map.empty
     (builtins, _) <- insert builtins (BuiltinId "Std.Util.Basic" "printStr") generatePrintStr
     (builtins, _) <- insert builtins (BuiltinId "String" "opAdd") generateStringAdd
+    (builtins, _) <- insert builtins (BuiltinId "Int" "partialCmp") generateIntPartialCmp
     builtins
 
 initializeBuiltinStructs :: Map BuiltinId [R.StructField]
 initializeBuiltinStructs = do
     builtins <- Map.empty
     (builtins, _) <- insert builtins (BuiltinId "String" "String") ( [R.StructField innerValueField (R.Type "std::string::String")])
+    (builtins, _) <- insert builtins (BuiltinId "Int" "Int") ( [R.StructField innerValueField (R.Type "i64")])
     builtins
 
 convertPattern :: ME.Checker -> R.Pattern
@@ -115,7 +126,7 @@ convertExpr mir_expr = case mir_expr of
     ME.StringLiteral lit -> do
         literal <- R.StringLiteral lit
         to_string_call <- R.MethodCall literal "to_string" []
-        R.StructCtor "String_String_0" [R.FieldInitItem innerValueField to_string_call]
+        R.StructCtor stringTypeName [R.FieldInitItem innerValueField to_string_call]
     ME.VarDecl (ME.Var n) rhs -> R.VarDecl False n (convertExpr rhs)
     ME.VarRef (ME.Var n) -> R.VarRef n
     ME.ArgRef index -> R.VarRef (getArgName index)

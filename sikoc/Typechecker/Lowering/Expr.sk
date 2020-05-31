@@ -9,6 +9,7 @@ import Siko.Typechecker.Lowering.FunctionQueue as FQ
 import Siko.Typechecker.Lowering.TypeStore
 import Siko.Typechecker.Lowering.ClosureStore as CS
 import Siko.Typechecker.Lowering.Util
+import Siko.Typechecker.Lowering.ClassMemberCalls
 import Siko.Typechecker.Unification as U
 import Siko.Typechecker.Util as TUtil
 import Siko.Typechecker.InstanceResolver as IR
@@ -23,25 +24,10 @@ import Siko.HIR.Type as HT
 import Siko.MIR.Expr as ME
 import Siko.MIR.Type as MT
 import Siko.MIR.Data as MD
+import Siko.MIR.Program as MP
 import Siko.Syntax.Ident
 import Siko.Constants
 import Map
-
-callOpAdd :: Context -> FQ.FunctionQueue -> HT.Type -> ME.Expr -> ME.Expr -> (Context, FQ.FunctionQueue, ME.Expr)
-callOpAdd context queue item_type arg0 arg1 = do
-    function_type <- HT.Function item_type (HT.Function item_type item_type)
-    class_name <- HPO.FullPath getStdOpsModuleName getAddClassName
-    member_name <- HPO.FullPath getStdOpsModuleName getAddClassMemberName
-    processClassMemberCall context queue function_type
-                              item_type class_name member_name [arg0, arg1] False
-
-callOpShow :: Context -> FQ.FunctionQueue -> HT.Type -> ME.Expr  -> (Context, FQ.FunctionQueue, ME.Expr)
-callOpShow context queue item_type arg0 = do
-    function_type <- HT.Function item_type TUtil.getStringType
-    class_name <- HPO.FullPath getStdOpsModuleName getShowClassName
-    member_name <- HPO.FullPath getStdOpsModuleName getShowClassMemberName
-    processClassMemberCall context queue function_type
-                              item_type class_name member_name [arg0] False
 
 processArgs :: Context -> FQ.FunctionQueue -> U.Substitution -> [HE.Expr] -> (Context, FQ.FunctionQueue, [ME.Expr])
 processArgs context queue sub args = do
@@ -56,57 +42,90 @@ getMonomorphizedExprType context sub id = do
     type <- HT.removeFixed type
     U.apply sub type
 
+getMonomorphizedPatternType :: Context -> U.Substitution -> HP.PatternId -> HT.Type
+getMonomorphizedPatternType context sub id = do
+    type <- getPatternType context.type_store id
+    type <- HT.removeFixed type
+    U.apply sub type
+
 processArgTypes :: Context -> U.Substitution -> [HE.Expr] -> [HT.Type]
 processArgTypes context sub args =
     args |> List.iter |> map (\(HE.Expr _ id _) -> do
                 getMonomorphizedExprType context sub id) |> toList
 
-processBind :: HPO.Program -> HP.Pattern -> ME.Expr -> [ME.Expr]
-processBind hir_program (HP.Pattern p id _) rhs = do
+getFieldType :: MD.Record -> String -> MT.Type
+getFieldType mir_record field_name = do
+    loop index <- 0 do
+        field <- atIndex mir_record.fields index
+        if field.name == field_name then return field.type else index + 1
+
+processBind :: Context -> U.Substitution -> HP.Pattern -> ME.Expr -> (Context, [ME.Expr])
+processBind context sub (HP.Pattern p id _) rhs = do
     case p of
         HP.Binding ref -> do
             HP.BindRef _ pattern_id <- ref
             var <- patternToVar pattern_id
-            [ME.VarDecl var rhs]
+            (context, unit_type) <- processType context (HT.Tuple [])
+            // has unit_type
+            (context, [ME.VarDecl var rhs])
         HP.Tuple args -> do
             var <- patternToVar id
-            arg_exprs <- args |> List.iter |> fold (\arg_exprs, arg -> do
+            tuple_type <- getMonomorphizedPatternType context sub id
+            (context, mir_tuple_type) <- processType context tuple_type
+            //println "Mir {}" % mir_tuple_type
+            (context, arg_exprs) <- args |> List.iter |> fold (\(context, arg_exprs), arg -> do
                 index <- getLength arg_exprs
                 field_name <- getFieldName index
                 expr <- ME.FieldAccess field_name (ME.VarRef var)
-                exprs <- processBind hir_program arg expr
+                (context, exprs) <- processBind context sub arg expr
                 arg_exprs <- arg_exprs + exprs
-                arg_exprs) []
-            [ME.VarDecl var rhs] + arg_exprs
+                (context, arg_exprs)) (context, [])
+            (context, unit_type) <- processType context (HT.Tuple [])
+            (context, [ME.VarDecl var rhs] + arg_exprs)
         HP.Guarded _ _ -> panic "Guarded pattern in bind lhs in lowering"
-        HP.Wildcard -> []
+        HP.Wildcard -> (context, [])
         HP.IntegerLiteral _ -> panic "Literal pattern in bind lhs in lowering"
         HP.StringLiteral _ -> panic "Literal pattern in bind lhs in lowering"
         HP.CharLiteral _ -> panic "Literal pattern in bind lhs in lowering"
         HP.CharRange _ _ _ -> panic "Range pattern in bind lhs in lowering"
-        HP.Typed p _ -> processBind hir_program p rhs
+        HP.Typed p _ -> processBind context sub p rhs
         HP.Record qn args -> do
             var <- patternToVar id
-            record <- HPO.getRecord hir_program qn
-            arg_exprs <- args |> List.iter |> fold (\arg_exprs, arg -> do
+            record <- HPO.getRecord context.hir_program qn
+            record_type <- getMonomorphizedPatternType context sub id
+            (context, mir_record_type) <- processType context record_type
+            //println "Mir {}" % mir_record_type
+            mir_record <- case mir_record_type of
+                MT.Record record_id -> getRecord context.type_store record_id
+                _ -> panic "Record in a bind expr is not a record type!"
+            (context, arg_exprs) <- args |> List.iter |> fold (\(context, arg_exprs), arg -> do
                 index <- getLength arg_exprs
                 HD.RecordField field_name _ <- atIndex record.fields index
+                field <- atIndex mir_record.fields index
+                //println "Field type {}" % field.type
                 expr <- ME.FieldAccess field_name (ME.VarRef var)
-                exprs <- processBind hir_program arg expr
+                (context, exprs) <- processBind context sub arg expr
                 arg_exprs <- arg_exprs + exprs
-                arg_exprs) []
-            [ME.VarDecl var rhs] + arg_exprs
+                (context, arg_exprs)) (context, [])
+            (context, [ME.VarDecl var rhs] + arg_exprs)
         HP.Variant qn index args -> do
             var <- patternToVar id
-            variant <- HPO.getVariant hir_program qn index
-            arg_exprs <- args |> List.iter |> fold (\arg_exprs, arg -> do
+            adt_type <- getMonomorphizedPatternType context sub id
+            (context, mir_adt_type) <- processType context adt_type
+            //println "Mir {}" % mir_adt_type
+            mir_record <- case mir_adt_type of
+                MT.Record record_id -> getRecord context.type_store record_id
+                _ -> panic "Adt in a bind expr is not a record type!"
+            (context, arg_exprs) <- args |> List.iter |> fold (\(context, arg_exprs), arg -> do
                 index <- getLength arg_exprs
                 field_name <- getFieldName index
+                field <- atIndex mir_record.fields index
+                //println "Adt Field type {}" % field.type
                 expr <- ME.FieldAccess field_name (ME.VarRef var)
-                exprs <- processBind hir_program arg expr
+                (context, exprs) <- processBind context sub arg expr
                 arg_exprs <- arg_exprs + exprs
-                arg_exprs) []
-            [ME.VarDecl var rhs] + arg_exprs
+                (context, arg_exprs)) (context, [])
+            (context, [ME.VarDecl var rhs] + arg_exprs)
 
 data ValuePathInfo = { type :: MT.Type,
                        parent_expr :: ME.Expr
@@ -217,8 +236,13 @@ processDynamicFunctionCall context queue receiver_type mir_args mir_receiver = d
                         function_type <- HT.Function receiver_type receiver_type
                         queue_item <- FQ.ClosureCall name function_type
                         (context, queue, function_id) <- FQ.insert context queue queue_item
+                        (context, mir_expr_type) <- processType context result_type
+                        //println "{} -> {}" % (function_id, mir_expr_type)
                         call <- ME.StaticFunctionCall function_id [receiver, arg]
+                        (context, unit_type) <- processType context (HT.Tuple [])
+                        // has unit_type
                         decl <- ME.VarDecl var call
+                        // has the same typ as var/function call
                         receiver <- ME.VarRef var
                         calls <- calls + [decl]
                         (context, queue, result_type, rest, receiver, calls)
@@ -236,9 +260,9 @@ processClassMemberCall :: Context ->
                          [ME.Expr] ->
                          Bool ->
                          (Context, FQ.FunctionQueue, ME.Expr)
-processClassMemberCall context queue function_type arg class_name qn mir_args has_default_impl = do
+processClassMemberCall context queue function_type arg_type class_name qn mir_args has_default_impl = do
     member_name <- HPO.getShortName qn
-    entry <- IR.CacheEntry arg class_name
+    entry <- IR.CacheEntry arg_type class_name
     (context, instance_info) <- case get context.state.instance_resolver.cache entry of
         Some instance_info -> (context, instance_info)
         None -> do
@@ -246,16 +270,16 @@ processClassMemberCall context queue function_type arg class_name qn mir_args ha
             // code generated by lowering is not typechecked
             // some instance may not be in cache
             state <- context.state
-            case IR.checkInstance state arg class_name of
+            case IR.checkInstance state arg_type class_name of
                 Ok (state, _) -> do
                     state :: TypecheckerState <- state
                     case get state.instance_resolver.cache entry of
                         Some instance_info -> do
                             context <- context { state = state }
                             (context, instance_info)
-                        None -> panic "{}/{} not found in instance resolution cache" % (HT.toString arg, class_name)
-                Err _ -> panic "{}/{} not found in instance resolution cache and no instance found" % (HT.toString arg, class_name)
-    case instance_info of
+                        None -> panic "{}/{} not found in instance resolution cache" % (HT.toString arg_type, class_name)
+                Err _ -> panic "{}/{} not found in instance resolution cache and no instance found" % (HT.toString arg_type, class_name)
+    (context, queue, function_id, arg_count) <- case instance_info of
         IR.UserDefinedInstanceInfo type instance_id _ -> do
             user_instance <- HPO.getInstance context.hir_program instance_id
             selected_member_name <- user_instance.members |> List.iter |> fold (\selected_member_name, member -> do
@@ -266,31 +290,41 @@ processClassMemberCall context queue function_type arg class_name qn mir_args ha
             selected_member_name <- case selected_member_name of
                 Some selected_member_name -> selected_member_name
                 None -> qn
+            function_type_info <- FS.getFunctionTypeInfo context.function_store selected_member_name
+            arg_count <- getLength function_type_info.args
             queue_item <- FQ.Normal selected_member_name function_type
             (context, queue, function_id) <- FQ.insert context queue queue_item
-            (context, queue, ME.StaticFunctionCall function_id mir_args)
+            (context, queue, function_id, arg_count)
         IR.AutoDerivedInstanceInfo instance_id -> do
             if has_default_impl
                 then do
                     queue_item <- FQ.Normal qn function_type
+                    function_type_info <- FS.getFunctionTypeInfo context.function_store qn
+                    arg_count <- getLength function_type_info.args
                     (context, queue, function_id) <- FQ.insert context queue queue_item
-                    (context, queue, ME.StaticFunctionCall function_id mir_args)
+                    (context, queue, function_id, arg_count)
                 else do
-                    queue_item <- FQ.AutoDerive arg function_type class_name member_name
+                    queue_item <- FQ.AutoDerive arg_type function_type class_name member_name
+                    arg_count <- HT.getArgCount function_type
                     (context, queue, function_id) <- FQ.insert context queue queue_item
-                    (context, queue, ME.StaticFunctionCall function_id mir_args)
+                    (context, queue, function_id, arg_count)
+    processStaticFunctionCall context queue mir_args function_type function_id arg_count
 
 processFormatExpr :: Context -> FQ.FunctionQueue -> String -> [ME.Expr] -> [ME.Expr] -> (Context, FQ.FunctionQueue, ME.Expr)
 processFormatExpr  context queue fmt exprs args = do
     subs <- String.split fmt "{}"
     string_type <- TUtil.getStringType
+    (context, unit_type) <- processType context (HT.Tuple [])
+    (context, mir_string_type) <- processType context string_type
     (context, queue, exprs) <- loop (context, queue, subs, args, exprs, prev) <- (context, queue, subs, args, exprs, None) do
         (context, subs, exprs, sub_var) <- case pop subs of
             Some (head, rest) -> do
                 (context, id) <- getNextVarId context
                 var <- ME.Var "fmt{}" % id
+                // unit_type
                 expr <- ME.VarDecl var (ME.StringLiteral head)
                 exprs <- exprs + [expr]
+                // string_type
                 (context, rest, exprs, ME.VarRef var)
             None -> panic "Subs ran out!"
         (context, queue, exprs, prev) <- case prev of
@@ -298,16 +332,20 @@ processFormatExpr  context queue fmt exprs args = do
                 (context, queue, prev) <- callOpAdd context queue string_type prev sub_var
                 (context, id) <- getNextVarId context
                 var <- ME.Var "fmt{}" % id
+                // unit_type
                 expr <- ME.VarDecl var prev
                 exprs <- exprs + [expr]
+                // string_type
                 (context, queue, exprs, ME.VarRef var)
             None -> (context, queue, exprs, sub_var)
         (context, queue, args, exprs, arg_var) <- case pop args of
             Some (head, rest) -> do
                 (context, id) <- getNextVarId context
                 var <- ME.Var "fmt{}" % id
+                // unit_type
                 expr <- ME.VarDecl var head
                 exprs <- exprs + [expr]
+                // type of head
                 (context, queue, rest, exprs, ME.VarRef var)
             None -> do
                 exprs <- exprs + [prev]
@@ -315,72 +353,93 @@ processFormatExpr  context queue fmt exprs args = do
         (context, queue, prev) <- callOpAdd context queue string_type prev arg_var
         (context, id) <- getNextVarId context
         var <- ME.Var "fmt{}" % id
+        // unit
         expr <- ME.VarDecl var prev
         exprs <- exprs + [expr]
+        // type of prev
         (context, queue, subs, args, exprs, Some (ME.VarRef var))
+    // string_type
     (context, queue, ME.Do exprs)
+
+processStaticFunctionCall :: Context -> FQ.FunctionQueue -> [ME.Expr] -> HT.Type -> MP.Identity -> Int -> (Context, FQ.FunctionQueue, ME.Expr)
+processStaticFunctionCall context queue mir_args function_type function_id arg_count = do
+    arg_types <- HT.getArgsLimited function_type (getLength mir_args)
+    current_arg_count <- getLength mir_args
+    if arg_count == current_arg_count
+        then do
+            result_type <- HT.getResultType function_type current_arg_count
+            (context, mir_result_type) <- processType context result_type
+            (context, queue, ME.StaticFunctionCall function_id mir_args)
+        else if arg_count > current_arg_count // partial application
+            then do
+                result_type <- HT.getResultType function_type current_arg_count
+                (context, queue, closures, functions) <- loop (context, queue, closure_type, arg_types, closures, functions)
+                                                <- (context, queue, result_type, arg_types, [], []) do
+                    context :: Context <- context // FIXME
+                    if HT.isFunction closure_type
+                        then do
+                            (closure_store, closure_instance) <- CS.addClosureInstance context.closure_store closure_type arg_types
+                            closures <- closures + [closure_instance]
+                            context <- context { closure_store = closure_store }
+                            queue_item <- FQ.ClosureCtor (getLength arg_types) function_type closure_instance
+                            (context, queue, function_id) <- FQ.insert context queue queue_item
+                            functions <- functions + [function_id]
+                            queue_item <- FQ.ClosureCall closure_instance.name (HT.Function closure_type closure_type)
+                            (context, queue, _) <- FQ.insert context queue queue_item
+                            first_arg <- HT.getArgsLimited closure_type 1
+                            closure_type <- HT.getResultType closure_type 1
+                            (context, queue, closure_type, arg_types + first_arg, closures, functions)
+                        else break (context, queue, closures, functions)
+                first_closure_fn <- atIndex functions 0
+                (closure_store, _) <- closures |> List.iter |> fold (\(closure_store, index), closure -> do
+                    closure_store <- if index + 1 == getLength closures
+                        then do
+                            CS.addClosureInstanceSuccessor closure_store closure (CS.RealFunctionCall function_id)
+                        else do
+                            next <- atIndex functions (index + 1)
+                            CS.addClosureInstanceSuccessor closure_store closure (CS.NextClosureInstance next)
+                    (closure_store, index + 1)) (context.closure_store, 0)
+                context <- context { closure_store = closure_store }
+                result_type <- HT.getResultType function_type current_arg_count
+                (context, mir_result_type) <- processType context result_type
+                (context, queue, ME.StaticFunctionCall first_closure_fn mir_args)
+            else do
+                (static_args, dynamic_args) <- List.split mir_args arg_count
+                receiver_type <- HT.getResultType function_type (getLength static_args)
+                (context, mir_static_call_expr_type) <- processType context receiver_type
+                static_call <- ME.StaticFunctionCall function_id static_args
+                (context, id) <- getNextVarId context
+                var <- ME.Var "closure{}" % id
+                // has unit type
+                (context, unit_type) <- processType context (HT.Tuple [])
+                //println "Unit type {}" % unit_type
+                decl <- ME.VarDecl var static_call
+                // same type as the static_call
+                var_ref <- ME.VarRef var
+                (context, queue, calls) <- processDynamicFunctionCall context queue receiver_type dynamic_args var_ref
+                result_type <- HT.getResultType function_type current_arg_count
+                (context, mir_result_type) <- processType context result_type
+                (context, queue, ME.Do ([decl] + calls))
 
 processExpr :: Context -> FQ.FunctionQueue -> U.Substitution -> HE.Expr -> (Context, FQ.FunctionQueue, ME.Expr)
 processExpr context queue sub hir_expr = do
     HE.Expr expr expr_id _ <- hir_expr
     expr_type <- getMonomorphizedExprType context sub expr_id
-    (context, _) <- processType context expr_type
+    (context, mir_expr_type) <- processType context expr_type
     case expr of
         HE.StaticFunctionCall qn args -> do
             arg_types <- processArgTypes context sub args
-            (context, queue, mir_args) <- processArgs context queue sub args
             function_type_info <- FS.getFunctionTypeInfo context.function_store qn
             (function_type, var_gen) <- TUtil.instantiateType function_type_info.function_type context.state.var_gen
             state <- context.state // FIXME
             state <- state { var_gen = var_gen }
-            (state, function_type, _) <- getFunctionType context.state arg_types expr_type function_type
+            (state, function_type, _) <- getFunctionType state arg_types expr_type function_type
             context <- context { state = state }
             queue_item <- FQ.Normal qn function_type
             (context, queue, function_id) <- FQ.insert context queue queue_item
-            current_arg_count <- getLength mir_args
             arg_count <- getLength function_type_info.args
-            if arg_count == current_arg_count
-                then (context, queue, ME.StaticFunctionCall function_id mir_args)
-                else if arg_count > current_arg_count // partial application
-                    then do
-                        result_type <- HT.getResultType function_type current_arg_count
-                        (context, queue, closures, functions) <- loop (context, queue, closure_type, arg_types, closures, functions)
-                                                        <- (context, queue, result_type, arg_types, [], []) do
-                            context :: Context <- context // FIXME
-                            if HT.isFunction closure_type
-                                then do
-                                    (closure_store, closure_instance) <- CS.addClosureInstance context.closure_store closure_type arg_types
-                                    closures <- closures + [closure_instance]
-                                    context <- context { closure_store = closure_store }
-                                    queue_item <- FQ.ClosureCtor (getLength arg_types) function_type closure_instance
-                                    (context, queue, function_id) <- FQ.insert context queue queue_item
-                                    functions <- functions + [function_id]
-                                    queue_item <- FQ.ClosureCall closure_instance.name (HT.Function closure_type closure_type)
-                                    (context, queue, _) <- FQ.insert context queue queue_item
-                                    first_arg <- HT.getArgsLimited closure_type 1
-                                    closure_type <- HT.getResultType closure_type 1
-                                    (context, queue, closure_type, arg_types + first_arg, closures, functions)
-                                else break (context, queue, closures, functions)
-                        first_closure_fn <- atIndex functions 0
-                        (closure_store, _) <- closures |> List.iter |> fold (\(closure_store, index), closure -> do
-                            closure_store <- if index + 1 == getLength closures
-                                then do
-                                    CS.addClosureInstanceSuccessor closure_store closure (CS.RealFunctionCall function_id)
-                                else do
-                                    next <- atIndex functions (index + 1)
-                                    CS.addClosureInstanceSuccessor closure_store closure (CS.NextClosureInstance next)
-                            (closure_store, index + 1)) (context.closure_store, 0)
-                        context <- context { closure_store = closure_store }
-                        (context, queue, ME.StaticFunctionCall first_closure_fn mir_args)
-                    else do
-                        (static_args, dynamic_args) <- List.split mir_args arg_count
-                        call <- ME.StaticFunctionCall function_id static_args
-                        (context, id) <- getNextVarId context
-                        var <- ME.Var "closure{}" % id
-                        decl <- ME.VarDecl var call
-                        receiver_type <- HT.getResultType function_type (getLength static_args)
-                        (context, queue, calls) <- processDynamicFunctionCall context queue receiver_type dynamic_args (ME.VarRef var)
-                        (context, queue, ME.Do ([decl] + calls))
+            (context, queue, mir_args) <- processArgs context queue sub args
+            processStaticFunctionCall context queue mir_args function_type function_id arg_count
         HE.DynamicFunctionCall receiver args -> do
             HE.Expr _ receiver_id _ <- receiver
             receiver_type <- getMonomorphizedExprType context sub receiver_id
@@ -388,6 +447,7 @@ processExpr context queue sub hir_expr = do
             (context, queue, mir_args) <- processArgs context queue sub args
             arg_types <- processArgTypes context sub args
             (context, queue, calls) <- processDynamicFunctionCall context queue receiver_type mir_args mir_receiver
+            //println "final {}" % mir_expr_type
             (context, queue, ME.Do calls)
         HE.ClassMemberCall qn args -> do
             arg_types <- processArgTypes context sub args
@@ -426,7 +486,8 @@ processExpr context queue sub hir_expr = do
             context <- context { state = state }
             queue_item <- FQ.VariantCtor qn index variant.name function_type
             (context, queue, function_id) <- FQ.insert context queue queue_item
-            (context, queue, ME.StaticFunctionCall function_id mir_args)
+            arg_count <- getLength variant.items
+            processStaticFunctionCall context queue mir_args function_type function_id arg_count
         HE.RecordConstructorCall qn args -> do
             arg_types <- processArgTypes context sub args
             (context, queue, mir_args) <- processArgs context queue sub args
@@ -438,11 +499,13 @@ processExpr context queue sub hir_expr = do
             context <- context { state = state }
             queue_item <- FQ.RecordCtor qn function_type
             (context, queue, function_id) <- FQ.insert context queue queue_item
-            (context, queue, ME.StaticFunctionCall function_id mir_args)
+            arg_count <- getLength record.fields
+            processStaticFunctionCall context queue mir_args function_type function_id arg_count
         HE.If cond true_branch false_branch -> do
             (context, queue, mir_cond) <- processExpr context queue sub cond
             (context, queue, mir_true_branch) <- processExpr context queue sub true_branch
             (context, queue, mir_false_branch) <- processExpr context queue sub false_branch
+            //println "final {}" % mir_expr_type
             (context, queue, ME.If mir_cond mir_true_branch mir_false_branch)
         HE.Tuple args -> do
             arg_types <- processArgTypes context sub args
@@ -454,32 +517,46 @@ processExpr context queue sub hir_expr = do
             context <- context { state = state }
             queue_item <- FQ.TupleCtor function_type
             (context, queue, function_id) <- FQ.insert context queue queue_item
+            //println "final {}" % mir_expr_type
             (context, queue, ME.StaticFunctionCall function_id mir_args)
         HE.List args -> do
             (context, queue, mir_args) <- processArgs context queue sub args
+            //println "final {}" % mir_expr_type
             (context, queue, ME.List mir_args)
-        HE.IntegerLiteral lit -> (context, queue, ME.IntegerLiteral lit)
-        HE.FloatLiteral lit -> (context, queue, ME.FloatLiteral lit)
-        HE.StringLiteral lit -> (context, queue, ME.StringLiteral lit)
-        HE.CharLiteral lit -> (context, queue, ME.CharLiteral lit)
+        HE.IntegerLiteral lit -> do
+            //println "final {}" % mir_expr_type
+            (context, queue, ME.IntegerLiteral lit)
+        HE.FloatLiteral lit -> do
+            //println "final {}" % mir_expr_type
+            (context, queue, ME.FloatLiteral lit)
+        HE.StringLiteral lit -> do
+            //println "final {}" % mir_expr_type
+            (context, queue, ME.StringLiteral lit)
+        HE.CharLiteral lit -> do
+            //println "final {}" % mir_expr_type
+            (context, queue, ME.CharLiteral lit)
         HE.Do args -> do
             (context, queue, mir_args) <- processArgs context queue sub args
             mir_args <- mir_args |> List.iter |> fold (\mir_args, arg -> do
                 case arg of
                     ME.Multi args -> mir_args + args
                     _ -> mir_args + [arg]) []
+            //println "final {}" % mir_expr_type
             (context, queue, ME.Do mir_args)
         HE.Bind p arg -> do
             (context, queue, mir_arg) <- processExpr context queue sub arg
-            exprs <- processBind context.hir_program p mir_arg
+            (context, exprs) <- processBind context sub p mir_arg
+            //println "final {}" % mir_expr_type
             (context, queue, ME.Multi exprs)
         HE.FieldAccess name receiver -> do
             Ident name _ <- name
             (context, queue, mir_receiver) <- processExpr context queue sub receiver
+            //println "final {}" % mir_expr_type
             (context, queue, ME.FieldAccess name mir_receiver)
         HE.TupleFieldAccess index receiver -> do
             name <- getFieldName index
             (context, queue, mir_receiver) <- processExpr context queue sub receiver
+            //println "final {}" % mir_expr_type
             (context, queue, ME.FieldAccess name mir_receiver)
         HE.Formatter fmt args -> do
             (context, queue, exprs, mir_args) <- args |> List.iter |> fold (\(context, queue, exprs, mir_args), arg -> do
@@ -489,6 +566,7 @@ processExpr context queue sub hir_expr = do
                 var <- ME.Var "fmt{}" % id
                 (context, queue, mir_arg) <- processExpr context queue sub arg
                 (context, queue, show_result) <- callOpShow context queue arg_type mir_arg
+                (context, unit_type) <- processType context (HT.Tuple [])
                 expr <- ME.VarDecl var show_result
                 exprs <- exprs + [expr]
                 mir_args <- mir_args + [ME.VarRef var]
@@ -545,7 +623,7 @@ processExpr context queue sub hir_expr = do
             HP.Pattern _ pattern_id _ <- p
             var <- patternToVar pattern_id
             (context, queue, mir_initializer) <- processExpr context queue sub initializer
-            exprs <- processBind context.hir_program p mir_initializer
+            (context, exprs) <- processBind context sub p mir_initializer
             exprs <- Option.unwrap (tail exprs)
             (context, queue, mir_args) <- processArgs context queue sub args
             mir_args <- mir_args |> List.iter |> fold (\mir_args, arg -> do

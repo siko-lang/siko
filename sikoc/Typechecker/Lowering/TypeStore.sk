@@ -4,6 +4,7 @@ import Siko.HIR.Expr as E
 import Siko.HIR.Type as HT
 import Siko.HIR.Data as HD
 import Siko.HIR.Program as HP
+import Siko.HIR.Pattern as HPat
 import Siko.MIR.Type as MT
 import Siko.MIR.Data as MD
 import Siko.MIR.Program as MP
@@ -18,13 +19,14 @@ import Siko.Constants
 import Map
 
 data TypeStore = { expr_types :: Map E.ExprId HT.Type,
+                   pattern_types :: Map HPat.PatternId HT.Type,
                    named_types :: Map HT.Type MT.Type,
                    adts :: Map MP.Identity MD.AlgebraicDataType,
                    records :: Map MP.Identity MD.Record,
                  }
 
 createTypeStore :: TypeStore
-createTypeStore = TypeStore empty empty empty empty
+createTypeStore = TypeStore empty empty empty empty empty
 
 addVariant :: TypeStore -> MP.Identity -> MD.Variant -> TypeStore
 addVariant type_store identity variant = do
@@ -47,6 +49,17 @@ getExprType type_store expr =
     case get type_store.expr_types expr of
         Some t -> t
         None -> panic "Expr {} not found in type type_store" % expr
+
+addPatternType :: TypeStore -> HPat.PatternId -> HT.Type -> TypeStore
+addPatternType type_store pattern type = do
+    (pattern_types, _) <- insert type_store.pattern_types pattern type
+    type_store { pattern_types = pattern_types }
+
+getPatternType :: TypeStore -> HPat.PatternId -> HT.Type
+getPatternType type_store pattern =
+    case get type_store.pattern_types pattern of
+        Some t -> t
+        None -> panic "Pattern {} not found in type type_store" % pattern
 
 getRecord :: TypeStore -> MP.Identity -> MD.Record
 getRecord type_store identity = case get type_store.records identity of
@@ -133,8 +146,6 @@ processType context hir_type = case hir_type of
                 DS.Adt adt_type_info -> do
                     (context, adt_type_info) <- instantiateAdt context adt_type_info hir_type
                     (context, identity) <- getIdentity context module_name short_name
-                    mir_type <- MT.Adt identity
-                    context <- addNamedType context hir_type mir_type
                     if getLength adt_type_info.variants == 1
                         then do
                             variant <- atIndex adt_type_info.variants 0
@@ -144,12 +155,14 @@ processType context hir_type = case hir_type of
                                     mir_field <- MD.RecordField name mir_type
                                     mir_fields <- mir_fields + [mir_field]
                                     (context, mir_fields)) (context, [])
-                            (context, identity) <- getIdentity context module_name variant.name
                             mir_record <- MD.Record identity mir_fields False
                             context <- addRecord context identity mir_record
                             mir_type <- MT.Record identity
+                            context <- addNamedType context hir_type mir_type
                             (context, mir_type)
                         else do
+                            mir_type <- MT.Adt identity
+                            context <- addNamedType context hir_type mir_type
                             (context, mir_variants) <- adt_type_info.variants |> List.iter |> fold (\(context, mir_variants), variant -> do
                                 (context, mir_fields) <- variant.items |> List.iter |> fold (\(context, mir_fields), type -> do
                                     (context, mir_type) <- processType context type

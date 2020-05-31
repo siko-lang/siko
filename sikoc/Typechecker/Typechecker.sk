@@ -127,6 +127,9 @@ processGroup state group program function_store lowering_type_store = do
     lowering_type_store <- context.type_store.expr_types |> Map.iter |> fold (\lowering_type_store, (id, expr_type) -> do
         type <- TS.getTypeFromExprTypeState expr_type
         LTS.addExprType lowering_type_store id type) lowering_type_store
+    lowering_type_store <- context.type_store.pattern_types |> Map.iter |> fold (\lowering_type_store, (id, pattern_type) -> do
+        type <- TS.getTypeFromPatternTypeState pattern_type
+        LTS.addPatternType lowering_type_store id type) lowering_type_store
     (context.state, context.function_store, lowering_type_store)
 
 processProgram :: P.Program -> TypeVarGenerator -> Result MP.Program [TypecheckerError]

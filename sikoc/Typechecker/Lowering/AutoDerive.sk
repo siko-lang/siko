@@ -18,33 +18,10 @@ import Siko.Typechecker.Lowering.Expr
 import Siko.Typechecker.Lowering.FunctionQueue as FQ
 import Siko.Typechecker.Lowering.Util as Util
 import Siko.Typechecker.Lowering.TypeStore as TS
+import Siko.Typechecker.Lowering.ClassMemberCalls
 import Siko.Typechecker.Util as TUtil
 import Siko.Constants
 import Map
-
-callOpEq :: Context -> FQ.FunctionQueue -> HT.Type -> ME.Expr -> ME.Expr -> (Context, FQ.FunctionQueue, ME.Expr)
-callOpEq context queue item_type arg0 arg1 = do
-    function_type <- HT.Function item_type (HT.Function item_type TUtil.getBoolType)
-    class_name <- HP.FullPath getStdOpsModuleName getPartialEqClassName
-    member_name <- HP.FullPath getStdOpsModuleName getPartialEqClassMemberName
-    processClassMemberCall context queue function_type
-                              item_type class_name member_name [arg0, arg1] False
-
-callPartialCmp :: Context -> FQ.FunctionQueue -> HT.Type -> ME.Expr -> ME.Expr -> (Context, FQ.FunctionQueue, ME.Expr)
-callPartialCmp context queue item_type arg0 arg1 = do
-    function_type <- HT.Function item_type (HT.Function item_type TUtil.getOptionalOrderingType)
-    class_name <- HP.FullPath getStdOpsModuleName getPartialOrdClassName
-    member_name <- HP.FullPath getStdOpsModuleName getPartialOrdClassMemberName
-    processClassMemberCall context queue function_type
-                              item_type class_name member_name [arg0, arg1] False
-
-callCmp :: Context -> FQ.FunctionQueue -> HT.Type -> ME.Expr -> ME.Expr -> (Context, FQ.FunctionQueue, ME.Expr)
-callCmp context queue item_type arg0 arg1 = do
-    function_type <- HT.Function item_type (HT.Function item_type TUtil.getOrderingType)
-    class_name <- HP.FullPath getStdOpsModuleName getOrdClassName
-    member_name <- HP.FullPath getStdOpsModuleName getOrdClassMemberName
-    processClassMemberCall context queue function_type
-                              item_type class_name member_name [arg0, arg1] False
 
 callSomeEqualCtor :: Context -> FQ.FunctionQueue -> (Context, FQ.FunctionQueue, ME.Expr)
 callSomeEqualCtor context queue = do

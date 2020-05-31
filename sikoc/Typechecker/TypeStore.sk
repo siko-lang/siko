@@ -52,6 +52,13 @@ getTypeFromExprTypeState expr_type =
         ExprType type -> type
         FunctionCall type _ -> type
 
+getTypeFromPatternTypeState :: PatternTypeState -> T.Type
+getTypeFromPatternTypeState pattern_type =
+    case pattern_type of
+        PatternType type -> type
+        PatternWithRecordType record_type_info -> record_type_info.type
+        PatternWithAdtType adt_type_info -> adt_type_info.type
+
 getExprType :: TypeStore -> E.ExprId -> T.Type
 getExprType store expr_id = do
     case get store.expr_types expr_id of
