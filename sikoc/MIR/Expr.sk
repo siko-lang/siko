@@ -32,7 +32,9 @@ instance Show Checker where
 
 data MatchCase = { checker :: Checker, body :: Expr }
 
-data Expr = Do [Expr]
+data Expr = Expr SimpleExpr T.Type
+
+data SimpleExpr = Do [Expr]
             | Multi [Expr]
             | StaticFunctionCall Identity [Expr]
             | IntegerLiteral String
@@ -53,7 +55,8 @@ data Expr = Do [Expr]
             | Match Expr [MatchCase]
 
 prettyPrint :: Expr -> Indent -> (String, Bool)
-prettyPrint expr ind =
+prettyPrint expr ind = do
+    Expr expr _ <- expr
     case expr of
         Do args -> do
             inner <- inc ind

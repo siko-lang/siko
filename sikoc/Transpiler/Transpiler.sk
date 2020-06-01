@@ -115,29 +115,31 @@ convertPattern checker = case checker of
     ME.WildcardChecker -> R.WildcardPattern
 
 convertExpr :: ME.Expr -> R.Expr
-convertExpr mir_expr = case mir_expr of
-    ME.Do args -> do
-        args <- args |> List.iter |> map (\arg -> convertExpr arg) |> toList
-        R.Block args
-    ME.StaticFunctionCall id args -> do
-        rust_function_name <- getRustIdentity id
-        args <- args |> List.iter |> map (\arg -> convertExpr arg) |> toList
-        R.FunctionCall rust_function_name args
-    ME.StringLiteral lit -> do
-        literal <- R.StringLiteral lit
-        to_string_call <- R.MethodCall literal "to_string" []
-        R.StructCtor stringTypeName [R.FieldInitItem innerValueField to_string_call]
-    ME.VarDecl (ME.Var n) rhs -> R.VarDecl False n (convertExpr rhs)
-    ME.VarRef (ME.Var n) -> R.VarRef n
-    ME.ArgRef index -> R.VarRef (getArgName index)
-    ME.Match body cases -> do
-        cases <- cases |> List.iter |> map (\c -> do
-            case_pattern <- convertPattern c.checker
-            case_body <- convertExpr c.body
-            R.MatchCase case_pattern case_body) |> toList
-        R.Match (convertExpr body) cases
-    ME.FieldAccess name receiver -> R.FieldAccess name (convertExpr receiver)
-    _ -> R.VarRef "NYI"
+convertExpr mir_expr = do
+    ME.Expr expr _ <- mir_expr
+    case expr of
+        ME.Do args -> do
+            args <- args |> List.iter |> map (\arg -> convertExpr arg) |> toList
+            R.Block args
+        ME.StaticFunctionCall id args -> do
+            rust_function_name <- getRustIdentity id
+            args <- args |> List.iter |> map (\arg -> convertExpr arg) |> toList
+            R.FunctionCall rust_function_name args
+        ME.StringLiteral lit -> do
+            literal <- R.StringLiteral lit
+            to_string_call <- R.MethodCall literal "to_string" []
+            R.StructCtor stringTypeName [R.FieldInitItem innerValueField to_string_call]
+        ME.VarDecl (ME.Var n) rhs -> R.VarDecl False n (convertExpr rhs)
+        ME.VarRef (ME.Var n) -> R.VarRef n
+        ME.ArgRef index -> R.VarRef (getArgName index)
+        ME.Match body cases -> do
+            cases <- cases |> List.iter |> map (\c -> do
+                case_pattern <- convertPattern c.checker
+                case_body <- convertExpr c.body
+                R.MatchCase case_pattern case_body) |> toList
+            R.Match (convertExpr body) cases
+        ME.FieldAccess name receiver -> R.FieldAccess name (convertExpr receiver)
+        _ -> R.VarRef "NYI"
 
 convertRecord :: Record -> Map BuiltinId [R.StructField] -> R.Struct
 convertRecord record builtin_structs = do
@@ -186,9 +188,11 @@ transpile program = do
         rust_args <- mir_function.args |> List.iter |> map (\arg -> convertType arg) |> toList
         rust_result <- convertType mir_function.result
         rust_body <- case mir_function.kind of
-            Normal mir_body -> case mir_body of
-                    ME.Do _ -> convertExpr mir_body
-                    _ -> R.Block [convertExpr mir_body]
+            Normal mir_body -> do
+                    ME.Expr b _ <- mir_body
+                    case b of
+                        ME.Do _ -> convertExpr mir_body
+                        _ -> R.Block [convertExpr mir_body]
             Extern -> do
                     Identity mod name _ <- mir_function.id
                     id <- BuiltinId mod name

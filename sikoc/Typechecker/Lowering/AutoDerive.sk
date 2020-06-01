@@ -39,37 +39,49 @@ callBoolCtor context queue variant = do
     qn <- HP.FullPath getBoolModuleName getBoolTypeName
     qnv <- HP.FullPathWithVariant getBoolModuleName getBoolTypeName variant
     HD.VariantInfo _ index _ <- HP.getVariantInfo context.hir_program qnv
-    queue_item <- FQ.VariantCtor qn index variant (HT.Named qn [])
+    hir_bool_type <- HT.Named qn []
+    (context, mir_bool_type) <- TS.processType context hir_bool_type
+    queue_item <- FQ.VariantCtor qn index variant hir_bool_type
     (context, queue, function_id) <- FQ.insert context queue queue_item
-    (context, queue, ME.StaticFunctionCall function_id [])
+    call_expr <- ME.Expr (ME.StaticFunctionCall function_id []) mir_bool_type
+    (context, queue, call_expr)
 
 callOrderingCtor :: Context -> FQ.FunctionQueue -> String -> (Context, FQ.FunctionQueue, ME.Expr)
 callOrderingCtor context queue variant = do
     qn <- HP.FullPath getOrderingModuleName getOrderingTypeName
     qnv <- HP.FullPathWithVariant getOrderingModuleName getOrderingTypeName variant
     HD.VariantInfo _ index _ <- HP.getVariantInfo context.hir_program qnv
-    queue_item <- FQ.VariantCtor qn index variant (HT.Named qn [])
+    hir_ordering_type <- HT.Named qn []
+    (context, mir_ordering_type) <- TS.processType context hir_ordering_type
+    queue_item <- FQ.VariantCtor qn index variant hir_ordering_type
     (context, queue, function_id) <- FQ.insert context queue queue_item
-    (context, queue, ME.StaticFunctionCall function_id [])
+    call_expr <- ME.Expr (ME.StaticFunctionCall function_id []) mir_ordering_type
+    (context, queue, call_expr)
 
 callOptionCtor :: Context -> FQ.FunctionQueue -> String -> HT.Type -> [ME.Expr] -> (Context, FQ.FunctionQueue, ME.Expr)
 callOptionCtor context queue variant arg_type args = do
     qn <- HP.FullPath getOptionModuleName getOptionTypeName
     qnv <- HP.FullPathWithVariant getOptionModuleName getOptionTypeName variant
     HD.VariantInfo _ index _ <- HP.getVariantInfo context.hir_program qnv
+    hir_option_type <- HT.Named qn [arg_type]
+    (context, mir_option_type) <- TS.processType context hir_option_type
     function_type <- if variant == getOptionSomeVariantName
-        then HT.Function arg_type (HT.Named qn [arg_type])
-        else HT.Named qn [arg_type]
+        then HT.Function arg_type hir_option_type
+        else hir_option_type
     queue_item <- FQ.VariantCtor qn index variant function_type
     (context, queue, function_id) <- FQ.insert context queue queue_item
-    (context, queue, ME.StaticFunctionCall function_id args)
+    call_expr <- ME.Expr (ME.StaticFunctionCall function_id args) mir_option_type
+    (context, queue, call_expr)
 
 callGetDiscriminant :: Context -> FQ.FunctionQueue -> HT.Type -> [ME.Expr] -> (Context, FQ.FunctionQueue, ME.Expr)
 callGetDiscriminant context queue arg_type args = do
     qn <- HP.FullPath getStdOpsModuleName getFnGetDiscriminantName
-    queue_item <- FQ.Normal qn (HT.Function arg_type TUtil.getIntType)
+    hir_int_type <- TUtil.getIntType
+    (context, mir_int_type) <- TS.processType context hir_int_type
+    queue_item <- FQ.Normal qn (HT.Function arg_type hir_int_type)
     (context, queue, function_id) <- FQ.insert context queue queue_item
-    (context, queue, ME.StaticFunctionCall function_id args)
+    call_expr <- ME.Expr (ME.StaticFunctionCall function_id args) mir_int_type
+    (context, queue, call_expr)
 
 processMemberForShow :: Context -> FQ.FunctionQueue -> HT.Type -> ME.Expr -> HP.FullyQualifiedName -> (Context, FQ.FunctionQueue, String, [ME.Expr])
 processMemberForShow context queue member parent_expr class_name = do
@@ -77,8 +89,10 @@ processMemberForShow context queue member parent_expr class_name = do
         HT.Tuple tuple_members -> do
             (context, queue, fmt_args, items, _) <- tuple_members |> List.iter
                 |> fold (\(context, queue, fmt_args, tuple_items, index), tuple_member -> do
-                    tuple_expr <- ME.FieldAccess (Util.getFieldName index) parent_expr
-                    (context, queue, fmt_arg, items) <- processMemberForShow context queue tuple_member tuple_expr class_name
+                    (context, mir_tuple_member) <- TS.processType context tuple_member
+                    tuple_field_access <- ME.FieldAccess (Util.getFieldName index) parent_expr
+                    tuple_field_access_expr <- ME.Expr tuple_field_access mir_tuple_member
+                    (context, queue, fmt_arg, items) <- processMemberForShow context queue tuple_member tuple_field_access_expr class_name
                     fmt_args <- fmt_args + [fmt_arg]
                     tuple_items <- tuple_items + items
                     (context, queue, fmt_args, tuple_items, index + 1)) (context, queue, [], [], 0)
@@ -96,12 +110,17 @@ processMemberForPartialEq context queue items var_ref0 var_ref1 = do
     case pop items of
         Some (first, rest) -> do
             (name, item_type) <- first
+            (context, mir_item_type) <- TS.processType context item_type
             field_access0 <- ME.FieldAccess name var_ref0
             field_access1 <- ME.FieldAccess name var_ref1
-            (context, queue, call_eq) <- callOpEq context queue item_type field_access0 field_access1
+            field_access0_expr <- ME.Expr field_access0 mir_item_type
+            field_access1_expr <- ME.Expr field_access1 mir_item_type
+            (context, queue, call_eq) <- callOpEq context queue item_type field_access0_expr field_access1_expr
             (context, queue, true_branch) <- processMemberForPartialEq context queue rest var_ref0 var_ref1
             (context, queue, call_false_ctor) <- callBoolCtor context queue getBoolFalseVariantName
+            ME.Expr _ if_type <- call_false_ctor
             if_expr <- ME.If call_eq true_branch call_false_ctor
+            if_expr <- ME.Expr if_expr if_type
             (context, queue, if_expr)
         None -> do
             (context, queue, call_true_ctor) <- callBoolCtor context queue getBoolTrueVariantName
@@ -112,18 +131,29 @@ processMemberForPartialOrd context queue items var_ref0 var_ref1 = do
     case pop items of
         Some (first, rest) -> do
             (name, item_type) <- first
+            (context, mir_item_type) <- TS.processType context item_type
             field_access0 <- ME.FieldAccess name var_ref0
             field_access1 <- ME.FieldAccess name var_ref1
-            (context, queue, call_partial_cmp) <- callPartialCmp context queue item_type field_access0 field_access1
+            field_access0_expr <- ME.Expr field_access0 mir_item_type
+            field_access1_expr <- ME.Expr field_access1 mir_item_type
+            (context, queue, call_partial_cmp) <- callPartialCmp context queue item_type field_access0_expr field_access1_expr
             (context, id) <- getNextVarId context
             var_res <- ME.Var "m{}" % id
+            (context, unit_type) <- TS.processType context (HT.Tuple [])
             decl <- ME.VarDecl var_res call_partial_cmp
+            decl_expr <- ME.Expr decl unit_type
+            hir_optional_ordering_type <- TUtil.getOptionalOrderingType
+            (context, mir_optional_ordering_type) <- TS.processType context hir_optional_ordering_type
+            var_res_ref <- ME.VarRef var_res
+            var_res_ref_expr <- ME.Expr var_res_ref mir_optional_ordering_type
             (context, queue, call_some_equal_ctor) <- callSomeEqualCtor context queue
-            (context, queue, call_partial_eq) <- callOpEq context queue TUtil.getOptionalOrderingType (ME.VarRef var_res) (call_some_equal_ctor)
+            (context, queue, call_partial_eq) <- callOpEq context queue hir_optional_ordering_type var_res_ref_expr call_some_equal_ctor
             (context, queue, true_branch) <- processMemberForPartialOrd context queue rest var_ref1 var_ref1
-            if_expr <- ME.If call_partial_eq true_branch (ME.VarRef var_res)
-            if_expr <- ME.Do [decl, if_expr]
-            (context, queue, if_expr)
+            if_expr <- ME.If call_partial_eq true_branch var_res_ref_expr
+            if_expr <- ME.Expr if_expr mir_optional_ordering_type
+            do_expr <- ME.Do [decl_expr, if_expr]
+            do_expr <- ME.Expr do_expr mir_optional_ordering_type
+            (context, queue, do_expr)
         None -> callSomeEqualCtor context queue
 
 processMemberForOrd :: Context -> FQ.FunctionQueue -> [(String, HT.Type)] -> ME.Expr -> ME.Expr -> (Context, FQ.FunctionQueue, ME.Expr)
@@ -131,37 +161,56 @@ processMemberForOrd context queue items var_ref0 var_ref1 = do
     case pop items of
         Some (first, rest) -> do
             (name, item_type) <- first
+            (context, mir_item_type) <- TS.processType context item_type
             field_access0 <- ME.FieldAccess name var_ref0
             field_access1 <- ME.FieldAccess name var_ref1
-            (context, queue, call_cmp) <- callCmp context queue item_type field_access0 field_access1
+            field_access0_expr <- ME.Expr field_access0 mir_item_type
+            field_access1_expr <- ME.Expr field_access1 mir_item_type
+            (context, queue, call_cmp) <- callCmp context queue item_type field_access0_expr field_access1_expr
             (context, id) <- getNextVarId context
             var_res <- ME.Var "m{}" % id
+            (context, unit_type) <- TS.processType context (HT.Tuple [])
             decl <- ME.VarDecl var_res call_cmp
+            decl_expr <- ME.Expr decl unit_type
+            hir_ordering_type <- TUtil.getOrderingType
+            (context, mir_ordering_type) <- TS.processType context hir_ordering_type
+            var_res_ref <- ME.VarRef var_res
+            var_res_ref_expr <- ME.Expr var_res_ref mir_ordering_type
             (context, queue, call_equal_ctor) <- callEqualCtor context queue
-            (context, queue, call_partial_eq) <- callOpEq context queue TUtil.getOrderingType (ME.VarRef var_res) (call_equal_ctor)
+            (context, queue, call_partial_eq) <- callOpEq context queue hir_ordering_type var_res_ref_expr call_equal_ctor
             (context, queue, true_branch) <- processMemberForOrd context queue rest var_ref1 var_ref1
-            if_expr <- ME.If call_partial_eq true_branch (ME.VarRef var_res)
-            if_expr <- ME.Do [decl, if_expr]
-            (context, queue, if_expr)
+            if_expr <- ME.If call_partial_eq true_branch var_res_ref_expr
+            if_expr <- ME.Expr if_expr mir_ordering_type
+            do_expr <- ME.Do [decl_expr, if_expr]
+            do_expr <- ME.Expr do_expr mir_ordering_type
+            (context, queue, do_expr)
         None -> callEqualCtor context queue
 
-generateShowInstance :: Context -> FQ.FunctionQueue -> HT.Type -> HT.Type -> HP.FullyQualifiedName -> (Context, FQ.FunctionQueue, ME.Expr)
-generateShowInstance context queue hir_type hir_function_type class_name = do
+generateShowInstance :: Context -> FQ.FunctionQueue -> HT.Type -> HP.FullyQualifiedName -> (Context, FQ.FunctionQueue, ME.Expr)
+generateShowInstance context queue hir_type class_name = do
+    (context, mir_string_type) <- TS.processType context TUtil.getStringType
     (context, queue, body) <- case hir_type of
         HT.Named qn _ -> do
             case DS.getDataTypeInfo context.state.data_store qn of
                 DS.Adt adt -> do
                     (context, adt) <- TS.instantiateAdt context adt hir_type
+                    (context, mir_adt_type) <- TS.processType context hir_type
+                    (context, unit_type) <- TS.processType context (HT.Tuple [])
                     (context, id) <- getNextVarId context
                     var <- ME.Var "m{}" % id
-                    decl <- ME.VarDecl var (ME.ArgRef 0)
+                    var_ref_expr <- ME.Expr (ME.VarRef var) mir_adt_type
+                    arg_ref_expr <- ME.Expr (ME.ArgRef 0) mir_adt_type
+                    decl <- ME.VarDecl var arg_ref_expr
+                    decl_expr <- ME.Expr decl unit_type
                     (context, queue, cases) <- adt.variants |> List.iter |> fold (\(context, queue, cases), variant -> do
                         checker <- ME.VariantChecker (getLength cases) var
                         (context, queue, fmt_args, mir_items) <- variant.items |> List.iter
                                     |> fold (\(context, queue, fmt_args, mir_items), item -> do
                                         field_name <- Util.getFieldName (getLength mir_items)
-                                        field_access <- ME.FieldAccess field_name (ME.VarRef var)
-                                        (context, queue, fmt_arg, items) <- processMemberForShow context queue item (field_access) class_name
+                                        (context, mir_item_type) <- TS.processType context item
+                                        field_access <- ME.FieldAccess field_name var_ref_expr
+                                        field_access_expr <- ME.Expr field_access mir_item_type
+                                        (context, queue, fmt_arg, items) <- processMemberForShow context queue item field_access_expr class_name
                                         fmt_args <- fmt_args + [fmt_arg]
                                         mir_items <- mir_items + items
                                         (context, queue, fmt_args, mir_items)) (context, queue, [], [])
@@ -172,18 +221,27 @@ generateShowInstance context queue hir_type hir_function_type class_name = do
                         c <- ME.MatchCase checker body
                         cases <- cases + [c]
                         (context, queue, cases)) (context, queue, [])
-                    body <- ME.Match (ME.VarRef var) cases
-                    (context, queue, ME.Do [decl, body])
+                    match <- ME.Match var_ref_expr cases
+                    match_expr <- ME.Expr match mir_string_type
+                    body <- ME.Do [decl_expr, match_expr]
+                    body_expr <- ME.Expr body mir_string_type
+                    (context, queue, body_expr)
                 DS.Record record -> do
                     (context, record) <- TS.instantiateRecord context record hir_type
+                    (context, mir_record_type) <- TS.processType context hir_type
+                    (context, unit_type) <- TS.processType context (HT.Tuple [])
                     (context, id) <- getNextVarId context
                     var <- ME.Var "m{}" % id
-                    decl <- ME.VarDecl var (ME.ArgRef 0)
+                    var_ref_expr <- ME.Expr (ME.VarRef var) mir_record_type
+                    arg_ref_expr <- ME.Expr (ME.ArgRef 0) mir_record_type
+                    decl <- ME.VarDecl var arg_ref_expr
+                    decl_expr <- ME.Expr decl unit_type
                     (context, queue, fmt_args, mir_items) <- record.fields |> List.iter
                             |> fold (\(context, queue, fmt_args, mir_items), field -> do
-                        show_qn <- HP.FullPath getStdOpsModuleName getShowClassMemberName
-                        field_access <- ME.FieldAccess field.name (ME.VarRef var)
-                        (context, queue, fmt_arg, items) <- processMemberForShow context queue field.type field_access class_name
+                        field_access <- ME.FieldAccess field.name var_ref_expr
+                        (context, mir_field_type) <- TS.processType context field.type
+                        field_access_expr <- ME.Expr field_access mir_field_type
+                        (context, queue, fmt_arg, items) <- processMemberForShow context queue field.type field_access_expr class_name
                         fmt_args <- fmt_args + [fmt_arg]
                         mir_items <- mir_items + items
                         (context, queue, fmt_args, mir_items)) (context, queue, [], [])
@@ -191,143 +249,93 @@ generateShowInstance context queue hir_type hir_function_type class_name = do
                             then "{}" % record.name
                             else "{} {}" % (record.name, (join fmt_args " "))
                     (context, queue, body) <- processFormatExpr context queue fmt [] mir_items
-                    (context, queue, ME.Do [decl, body])
+                    body <- ME.Do [decl_expr, body]
+                    body_expr <- ME.Expr body mir_string_type
+                    (context, queue, body_expr)
         _ -> panic "Cannot auto derive show for type {}" % HT.toString hir_type
     (context, queue, body)
 
-generatePartialEqInstance :: Context -> FQ.FunctionQueue -> HT.Type -> HT.Type -> HP.FullyQualifiedName -> (Context, FQ.FunctionQueue, ME.Expr)
-generatePartialEqInstance context queue hir_type hir_function_type class_name = do
-    (context, queue, body) <- case hir_type of
-        HT.Named qn _ -> do
-            case DS.getDataTypeInfo context.state.data_store qn of
-                DS.Adt adt -> do
-                    (context, adt) <- TS.instantiateAdt context adt hir_type
-                    (context, id) <- getNextVarId context
-                    var0 <- ME.Var "m{}" % id
-                    decl <- ME.VarDecl var0 (ME.ArgRef 0)
-                    var_ref0 <- ME.VarRef var0
-                    (context, queue, cases) <- adt.variants |> List.iter |> fold (\(context, queue, cases), variant -> do
-                        variant_index <- getLength cases
-                        checker <- ME.VariantChecker variant_index var0
-                        (context, id) <- getNextVarId context
-                        var1 <- ME.Var "m{}" % id
-                        decl <- ME.VarDecl var1 (ME.ArgRef 1)
-                        (context, queue, call_false_ctor) <- callBoolCtor context queue getBoolFalseVariantName
-                        (variant_items, _) <- variant.items |> List.iter |> fold (\(items, index), item -> do
-                            item <- (Util.getFieldName index, item)
-                            items <- items + [item]
-                            (items, index + 1)) ([], 0)
-                        var_ref1 <- ME.VarRef var1
-                        (context, queue, call_eq) <- processMemberForPartialEq context queue variant_items var_ref0 var_ref1
-                        case_eq <- ME.MatchCase (ME.VariantChecker variant_index var1) call_eq
-                        case_noteq <- ME.MatchCase ME.WildcardChecker call_false_ctor
-                        match <- ME.Match var_ref1 [case_eq, case_noteq]
-                        body <- ME.Do [decl, match]
-                        c <- ME.MatchCase checker body
-                        cases <- cases + [c]
-                        (context, queue, cases)) (context, queue, [])
-                    body <- ME.Match var_ref0 cases
-                    (context, queue, ME.Do [decl, body])
-                DS.Record record -> do
-                    (context, record) <- TS.instantiateRecord context record hir_type
-                    var_ref0 <- ME.ArgRef 0
-                    var_ref1 <- ME.ArgRef 1
-                    record_items <- record.fields |> List.iter |> map (\DS.RecordField name type -> (name, type)) |> toList
-                    (context, queue, call_eq) <- processMemberForPartialEq context queue record_items var_ref0 var_ref1
-                    (context, queue, call_eq)
-        _ -> panic "Cannot auto derive partial eq for type {}" % HT.toString hir_type
-    (context, queue, body)
+generatePartialEqInstance :: Context -> FQ.FunctionQueue -> HT.Type -> HP.FullyQualifiedName -> (Context, FQ.FunctionQueue, ME.Expr)
+generatePartialEqInstance context queue hir_type class_name = do
+    generateTwoArgsInstance context queue hir_type class_name callOpEq processMemberForPartialEq
 
-generatePartialOrdInstance :: Context -> FQ.FunctionQueue -> HT.Type -> HT.Type -> HP.FullyQualifiedName -> (Context, FQ.FunctionQueue, ME.Expr)
-generatePartialOrdInstance context queue hir_type hir_function_type class_name = do
-    (context, queue, body) <- case hir_type of
-        HT.Named qn _ -> do
-            case DS.getDataTypeInfo context.state.data_store qn of
-                DS.Adt adt -> do
-                    (context, adt) <- TS.instantiateAdt context adt hir_type
-                    (context, id) <- getNextVarId context
-                    var0 <- ME.Var "m{}" % id
-                    decl <- ME.VarDecl var0 (ME.ArgRef 0)
-                    var_ref0 <- ME.VarRef var0
-                    (context, queue, cases) <- adt.variants |> List.iter |> fold (\(context, queue, cases), variant -> do
-                        variant_index <- getLength cases
-                        checker <- ME.VariantChecker variant_index var0
-                        (context, id) <- getNextVarId context
-                        var1 <- ME.Var "m{}" % id
-                        decl <- ME.VarDecl var1 (ME.ArgRef 1)
-                        var_ref1 <- ME.VarRef var1
-                        get_discriminant_qn <- HP.FullPath getStdOpsModuleName getFnGetDiscriminantName
-                        (context, queue, call_get_discriminant0) <- callGetDiscriminant context queue hir_type [var_ref0]
-                        (context, queue, call_get_discriminant1) <- callGetDiscriminant context queue hir_type [var_ref1]
-                        (context, queue, compare_discriminants) <- callPartialCmp context queue TUtil.getIntType call_get_discriminant0 call_get_discriminant1
-                        (variant_items, _) <- variant.items |> List.iter |> fold (\(items, index), item -> do
-                            item <- (Util.getFieldName index, item)
-                            items <- items + [item]
-                            (items, index + 1)) ([], 0)
-                        var_ref1 <- ME.VarRef var1
-                        (context, queue, call_eq) <- processMemberForPartialOrd context queue variant_items var_ref0 var_ref1
-                        case_eq <- ME.MatchCase (ME.VariantChecker variant_index var1) call_eq
-                        case_noteq <- ME.MatchCase ME.WildcardChecker compare_discriminants
-                        match <- ME.Match var_ref1 [case_eq, case_noteq]
-                        body <- ME.Do [decl, match]
-                        c <- ME.MatchCase checker body
-                        cases <- cases + [c]
-                        (context, queue, cases)) (context, queue, [])
-                    body <- ME.Match var_ref0 cases
-                    (context, queue, ME.Do [decl, body])
-                DS.Record record -> do
-                    (context, record) <- TS.instantiateRecord context record hir_type
-                    var_ref0 <- ME.ArgRef 0
-                    var_ref1 <- ME.ArgRef 1
-                    record_items <- record.fields |> List.iter |> map (\DS.RecordField name type -> (name, type)) |> toList
-                    (context, queue, call_eq) <- processMemberForPartialOrd context queue record_items var_ref0 var_ref1
-                    (context, queue, call_eq)
-        _ -> panic "Cannot auto derive partial ord for type {}" % HT.toString hir_type
-    (context, queue, body)
+generatePartialOrdInstance :: Context -> FQ.FunctionQueue -> HT.Type -> HP.FullyQualifiedName -> (Context, FQ.FunctionQueue, ME.Expr)
+generatePartialOrdInstance context queue hir_type class_name = do
+    generateTwoArgsInstance context queue hir_type class_name callPartialCmp processMemberForPartialOrd
 
-generateOrdInstance :: Context -> FQ.FunctionQueue -> HT.Type -> HT.Type -> HP.FullyQualifiedName -> (Context, FQ.FunctionQueue, ME.Expr)
-generateOrdInstance context queue hir_type hir_function_type class_name = do
+generateOrdInstance :: Context -> FQ.FunctionQueue -> HT.Type -> HP.FullyQualifiedName -> (Context, FQ.FunctionQueue, ME.Expr)
+generateOrdInstance context queue hir_type class_name = do
+    generateTwoArgsInstance context queue hir_type class_name callCmp processMemberForOrd
+
+generateTwoArgsInstance :: Context ->
+                           FQ.FunctionQueue ->
+                           HT.Type ->
+                           HP.FullyQualifiedName ->
+                           (Context -> FQ.FunctionQueue -> HT.Type -> ME.Expr -> ME.Expr -> (Context, FQ.FunctionQueue, ME.Expr)) ->
+                           (Context -> FQ.FunctionQueue -> [(String, HT.Type)] -> ME.Expr -> ME.Expr -> (Context, FQ.FunctionQueue, ME.Expr)) ->
+                           (Context, FQ.FunctionQueue, ME.Expr)
+generateTwoArgsInstance context queue hir_type class_name call_compare_discriminants process_member_fn = do
     (context, queue, body) <- case hir_type of
         HT.Named qn _ -> do
             case DS.getDataTypeInfo context.state.data_store qn of
                 DS.Adt adt -> do
                     (context, adt) <- TS.instantiateAdt context adt hir_type
+                    (context, mir_adt_type) <- TS.processType context hir_type
+                    (context, unit_type) <- TS.processType context (HT.Tuple [])
                     (context, id) <- getNextVarId context
                     var0 <- ME.Var "m{}" % id
-                    decl <- ME.VarDecl var0 (ME.ArgRef 0)
+                    arg_ref0 <- ME.ArgRef 0
+                    arg_ref0_expr <- ME.Expr arg_ref0 mir_adt_type
+                    var0_decl <- ME.VarDecl var0 arg_ref0_expr
+                    var0_decl_expr <- ME.Expr var0_decl unit_type
                     var_ref0 <- ME.VarRef var0
+                    var_ref0_expr <- ME.Expr var_ref0 mir_adt_type
                     (context, queue, cases) <- adt.variants |> List.iter |> fold (\(context, queue, cases), variant -> do
                         variant_index <- getLength cases
                         checker <- ME.VariantChecker variant_index var0
                         (context, id) <- getNextVarId context
                         var1 <- ME.Var "m{}" % id
-                        decl <- ME.VarDecl var1 (ME.ArgRef 1)
+                        arg_ref1 <- ME.ArgRef 1
+                        arg_ref1_expr <- ME.Expr arg_ref0 mir_adt_type
+                        var1_decl <- ME.VarDecl var1 arg_ref1_expr
+                        var1_decl_expr <- ME.Expr var1_decl unit_type
                         var_ref1 <- ME.VarRef var1
+                        var_ref1_expr <- ME.Expr var_ref1 mir_adt_type
                         get_discriminant_qn <- HP.FullPath getStdOpsModuleName getFnGetDiscriminantName
-                        (context, queue, call_get_discriminant0) <- callGetDiscriminant context queue hir_type [var_ref0]
-                        (context, queue, call_get_discriminant1) <- callGetDiscriminant context queue hir_type [var_ref1]
-                        (context, queue, compare_discriminants) <- callCmp context queue TUtil.getIntType call_get_discriminant0 call_get_discriminant1
+                        (context, queue, call_get_discriminant0) <- callGetDiscriminant context queue hir_type [var_ref0_expr]
+                        (context, queue, call_get_discriminant1) <- callGetDiscriminant context queue hir_type [var_ref1_expr]
+                        (context, queue, compare_discriminants) <- call_compare_discriminants context queue TUtil.getIntType call_get_discriminant0 call_get_discriminant1
                         (variant_items, _) <- variant.items |> List.iter |> fold (\(items, index), item -> do
                             item <- (Util.getFieldName index, item)
                             items <- items + [item]
                             (items, index + 1)) ([], 0)
-                        var_ref1 <- ME.VarRef var1
-                        (context, queue, call_eq) <- processMemberForOrd context queue variant_items var_ref0 var_ref1
-                        case_eq <- ME.MatchCase (ME.VariantChecker variant_index var1) call_eq
-                        case_noteq <- ME.MatchCase ME.WildcardChecker compare_discriminants
-                        match <- ME.Match var_ref1 [case_eq, case_noteq]
-                        body <- ME.Do [decl, match]
-                        c <- ME.MatchCase checker body
+                        (context, queue, call_expr) <- process_member_fn context queue variant_items var_ref0_expr var_ref1_expr
+                        case_ok <- ME.MatchCase (ME.VariantChecker variant_index var1) call_expr
+                        ME.Expr _ case_type <- compare_discriminants
+                        case_not_ok <- ME.MatchCase ME.WildcardChecker compare_discriminants
+                        match <- ME.Match var_ref1_expr [case_ok, case_not_ok]
+                        match_expr <- ME.Expr match case_type
+                        body <- ME.Do [var0_decl_expr, match_expr]
+                        body_expr <- ME.Expr body case_type
+                        c <- ME.MatchCase checker body_expr
                         cases <- cases + [c]
                         (context, queue, cases)) (context, queue, [])
-                    body <- ME.Match var_ref0 cases
-                    (context, queue, ME.Do [decl, body])
+                    ME.MatchCase _ first_case_expr <- atIndex cases 0
+                    ME.Expr _ case_type <- first_case_expr
+                    match <- ME.Match var_ref0_expr cases
+                    match_expr <- ME.Expr match case_type
+                    body <- ME.Do [var0_decl_expr, match_expr]
+                    body_expr <- ME.Expr body case_type
+                    (context, queue, body_expr)
                 DS.Record record -> do
                     (context, record) <- TS.instantiateRecord context record hir_type
+                    (context, mir_record_type) <- TS.processType context hir_type
                     var_ref0 <- ME.ArgRef 0
+                    var_ref0_expr <- ME.Expr var_ref0 mir_record_type
                     var_ref1 <- ME.ArgRef 1
+                    var_ref1_expr <- ME.Expr var_ref1 mir_record_type
                     record_items <- record.fields |> List.iter |> map (\DS.RecordField name type -> (name, type)) |> toList
-                    (context, queue, call_eq) <- processMemberForOrd context queue record_items var_ref0 var_ref1
-                    (context, queue, call_eq)
-        _ -> panic "Cannot auto derive ord for type {}" % HT.toString hir_type
+                    (context, queue, call_expr) <- process_member_fn context queue record_items var_ref0_expr var_ref1_expr
+                    (context, queue, call_expr)
+        _ -> panic "Cannot auto derive {} for type {}" % (class_name, HT.toString hir_type)
     (context, queue, body)

@@ -61,27 +61,34 @@ getFieldType mir_record field_name = do
 
 processBind :: Context -> U.Substitution -> HP.Pattern -> ME.Expr -> (Context, [ME.Expr])
 processBind context sub (HP.Pattern p id _) rhs = do
+    (context, unit_type) <- processType context (HT.Tuple [])
     case p of
         HP.Binding ref -> do
             HP.BindRef _ pattern_id <- ref
             var <- patternToVar pattern_id
-            (context, unit_type) <- processType context (HT.Tuple [])
-            // has unit_type
-            (context, [ME.VarDecl var rhs])
+            var_decl <- ME.VarDecl var rhs
+            var_decl_expr <- ME.Expr var_decl unit_type
+            (context, [var_decl_expr])
         HP.Tuple args -> do
             var <- patternToVar id
             tuple_type <- getMonomorphizedPatternType context sub id
             (context, mir_tuple_type) <- processType context tuple_type
-            //println "Mir {}" % mir_tuple_type
+            var_ref <- ME.VarRef var
+            var_ref_expr <- ME.Expr var_ref mir_tuple_type
+            mir_record <- case mir_tuple_type of
+                MT.Record record_id -> getRecord context.type_store record_id
+                _ -> panic "Tuple in a bind expr is not a record type!"
             (context, arg_exprs) <- args |> List.iter |> fold (\(context, arg_exprs), arg -> do
                 index <- getLength arg_exprs
-                field_name <- getFieldName index
-                expr <- ME.FieldAccess field_name (ME.VarRef var)
-                (context, exprs) <- processBind context sub arg expr
+                field <- atIndex mir_record.fields index
+                field_access <- ME.FieldAccess field.name var_ref_expr
+                field_access_expr <- ME.Expr field_access field.type
+                (context, exprs) <- processBind context sub arg field_access_expr
                 arg_exprs <- arg_exprs + exprs
                 (context, arg_exprs)) (context, [])
-            (context, unit_type) <- processType context (HT.Tuple [])
-            (context, [ME.VarDecl var rhs] + arg_exprs)
+            var_decl <- ME.VarDecl var rhs
+            var_decl_expr <- ME.Expr var_decl unit_type
+            (context, [var_decl_expr] + arg_exprs)
         HP.Guarded _ _ -> panic "Guarded pattern in bind lhs in lowering"
         HP.Wildcard -> (context, [])
         HP.IntegerLiteral _ -> panic "Literal pattern in bind lhs in lowering"
@@ -91,28 +98,30 @@ processBind context sub (HP.Pattern p id _) rhs = do
         HP.Typed p _ -> processBind context sub p rhs
         HP.Record qn args -> do
             var <- patternToVar id
-            record <- HPO.getRecord context.hir_program qn
             record_type <- getMonomorphizedPatternType context sub id
             (context, mir_record_type) <- processType context record_type
-            //println "Mir {}" % mir_record_type
+            var_ref <- ME.VarRef var
+            var_ref_expr <- ME.Expr var_ref mir_record_type
             mir_record <- case mir_record_type of
                 MT.Record record_id -> getRecord context.type_store record_id
                 _ -> panic "Record in a bind expr is not a record type!"
             (context, arg_exprs) <- args |> List.iter |> fold (\(context, arg_exprs), arg -> do
                 index <- getLength arg_exprs
-                HD.RecordField field_name _ <- atIndex record.fields index
                 field <- atIndex mir_record.fields index
-                //println "Field type {}" % field.type
-                expr <- ME.FieldAccess field_name (ME.VarRef var)
-                (context, exprs) <- processBind context sub arg expr
+                field_access <- ME.FieldAccess field.name var_ref_expr
+                field_access_expr <- ME.Expr field_access field.type
+                (context, exprs) <- processBind context sub arg field_access_expr
                 arg_exprs <- arg_exprs + exprs
                 (context, arg_exprs)) (context, [])
-            (context, [ME.VarDecl var rhs] + arg_exprs)
+            var_decl <- ME.VarDecl var rhs
+            var_decl_expr <- ME.Expr var_decl unit_type
+            (context, [var_decl_expr] + arg_exprs)
         HP.Variant qn index args -> do
             var <- patternToVar id
             adt_type <- getMonomorphizedPatternType context sub id
             (context, mir_adt_type) <- processType context adt_type
-            //println "Mir {}" % mir_adt_type
+            var_ref <- ME.VarRef var
+            var_ref_expr <- ME.Expr var_ref mir_adt_type
             mir_record <- case mir_adt_type of
                 MT.Record record_id -> getRecord context.type_store record_id
                 _ -> panic "Adt in a bind expr is not a record type!"
@@ -120,19 +129,22 @@ processBind context sub (HP.Pattern p id _) rhs = do
                 index <- getLength arg_exprs
                 field_name <- getFieldName index
                 field <- atIndex mir_record.fields index
-                //println "Adt Field type {}" % field.type
-                expr <- ME.FieldAccess field_name (ME.VarRef var)
-                (context, exprs) <- processBind context sub arg expr
+                field_access <- ME.FieldAccess field_name var_ref_expr
+                field_access_expr <- ME.Expr field_access field.type
+                (context, exprs) <- processBind context sub arg field_access_expr
                 arg_exprs <- arg_exprs + exprs
                 (context, arg_exprs)) (context, [])
-            (context, [ME.VarDecl var rhs] + arg_exprs)
+            var_decl <- ME.VarDecl var rhs
+            var_decl_expr <- ME.Expr var_decl unit_type
+            (context, [var_decl_expr] + arg_exprs)
 
+// FIXME: remove this stuff now that exprs are typed
 data ValuePathInfo = { type :: MT.Type,
                        parent_expr :: ME.Expr
                      }
 
-processCaseEnds :: [MatchInfo] -> [ME.Expr] -> [Option ME.Expr] -> Map ValuePath ValuePathInfo -> ME.Expr
-processCaseEnds match_infos mir_case_bodies mir_guards path_info_map = do
+processCaseEnds :: [MatchInfo] -> [ME.Expr] -> [Option ME.Expr] -> Map ValuePath ValuePathInfo -> MT.Type -> ME.Expr
+processCaseEnds match_infos mir_case_bodies mir_guards path_info_map unit_type = do
     if getLength match_infos == 1
         then do
             MatchInfo index additional_info <- atIndex match_infos 0
@@ -145,10 +157,13 @@ processCaseEnds match_infos mir_case_bodies mir_guards path_info_map = do
                         path_info :: ValuePathInfo <- path_info // FIXME
                         path_info.parent_expr
                     None -> panic "Path {} not found in path_info_map" % path
-                ME.VarDecl var ref_expr) |> toList
+                var_decl <- ME.VarDecl var ref_expr
+                ME.Expr var_decl unit_type) |> toList
             if isEmpty var_decls
                 then mir_case_body
-                else ME.Do (var_decls + [mir_case_body])
+                else do
+                    ME.Expr _ case_type <- mir_case_body
+                    ME.Expr (ME.Do (var_decls + [mir_case_body])) case_type
         else case pop match_infos of
         Some (match_info, match_infos) -> do
             MatchInfo index add <- match_info
@@ -156,12 +171,14 @@ processCaseEnds match_infos mir_case_bodies mir_guards path_info_map = do
                 Some g -> g
                 None -> panic "guard expr not found"
             then_expr <- atIndex mir_case_bodies index
-            else_expr <- processCaseEnds match_infos mir_case_bodies mir_guards path_info_map
-            ME.If cond_expr then_expr else_expr
+            else_expr <- processCaseEnds match_infos mir_case_bodies mir_guards path_info_map unit_type
+            ME.Expr _ then_type <- then_expr
+            ME.Expr (ME.If cond_expr then_expr else_expr) then_type
         None -> panic "Matchinfos ran out!"
 
 processChoiceTree :: Context -> Choice -> Map ValuePath ValuePathInfo -> [ME.Expr] -> [Option ME.Expr] -> (Context, ME.Expr)
 processChoiceTree context choice path_info_map mir_case_bodies mir_guards = do
+    (context, unit_type) <- processType context (HT.Tuple [])
     case choice of
         Choice path subchoices -> do
             parent_path <- getParentPath path
@@ -174,19 +191,30 @@ processChoiceTree context choice path_info_map mir_case_bodies mir_guards = do
                         MT.Record name -> getRecord context.type_store name
                         _ -> panic "Indexed type is not a record!"
                     field <- atIndex record.fields index
-                    (ME.FieldAccess field.name parent_info.parent_expr, field.type)
+                    body <- ME.FieldAccess field.name parent_info.parent_expr
+                    (ME.Expr body field.type, field.type)
                 VariantPath _ _ variant_index index _ -> do
-                    adt <- case parent_info.type of
-                        MT.Adt name -> getAdt context.type_store name
-                        _ -> panic "Indexed type is not an adt!"
-                    variant <- atIndex adt.variants variant_index
-                    variant_type <- getRecord context.type_store variant.type
-                    field <- atIndex variant_type.fields index
-                    (ME.FieldAccess field.name parent_info.parent_expr, field.type)
+                    (field_name, field_type) <- case parent_info.type of
+                        MT.Adt name -> do
+                            adt <- getAdt context.type_store name
+                            variant <- atIndex adt.variants variant_index
+                            variant_type <- getRecord context.type_store variant.type
+                            field <- atIndex variant_type.fields index
+                            (field.name, field.type)
+                        MT.Record name -> do
+                            record <- getRecord context.type_store name
+                            field <- atIndex record.fields index
+                            (field.name, field.type)
+                        _ -> panic "Indexed adt is not a record nor an adt"
+                    body <- ME.FieldAccess field_name parent_info.parent_expr
+                    (ME.Expr body field_type, field_type)
                 _ -> (parent_info.parent_expr, parent_info.type)
             (context, id) <- getNextVarId context
             pattern_var <- ME.Var "m{}" % id
-            (path_info_map, _) <- insert path_info_map path (ValuePathInfo body_type (ME.VarRef pattern_var))
+            //println "Parent var {} {} {}" % (id, parent_info.type, body_type)
+            pattern_var_ref <- ME.VarRef pattern_var
+            pattern_var_ref_expr <- ME.Expr pattern_var_ref body_type
+            (path_info_map, _) <- insert path_info_map path (ValuePathInfo body_type pattern_var_ref_expr)
             (context, cases) <- subchoices |> Map.iter |> fold (\(context, cases), (cond, subchoices) -> do
                 choice <- atIndex subchoices 0
                 (context, choice_expr) <- processChoiceTree context choice path_info_map mir_case_bodies mir_guards
@@ -202,6 +230,14 @@ processChoiceTree context choice path_info_map mir_case_bodies mir_guards = do
                                                     HP.Inclusive -> ME.Inclusive
                                                     HP.Exclusive -> ME.Exclusive), choice_expr)
                     VariantCondition index -> do
+                        (variant_record_type) <- case parent_info.type of
+                            MT.Adt name -> do
+                                adt <- getAdt context.type_store name
+                                variant <- atIndex adt.variants index
+                                (MT.Record variant.type)
+                            MT.Record _ -> parent_info.type
+                            _ -> panic "Indexed adt is not a record nor an adt"
+                        //println "VariantCond {} {}" % (index, variant_record_type)
                         (ME.VariantChecker index pattern_var, choice_expr)
                     WildcardCondition -> do
                         (ME.WildcardChecker, choice_expr)
@@ -209,11 +245,16 @@ processChoiceTree context choice path_info_map mir_case_bodies mir_guards = do
                 cases <- cases + [c]
                 (context, cases)) (context, [])
             var_decl <- ME.VarDecl pattern_var body_expr
+            var_decl_expr <- ME.Expr var_decl unit_type
             var_ref <- ME.VarRef pattern_var
-            match <- ME.Match var_ref cases
-            (context, ME.Do [var_decl, match])
+            var_ref_expr <- ME.Expr var_ref body_type
+            ME.MatchCase _ (ME.Expr _ first_case_type) <- atIndex cases 0
+            match <- ME.Match var_ref_expr cases
+            match_expr <- ME.Expr match first_case_type
+            do_expr <- ME.Expr (ME.Do [var_decl_expr, match_expr]) first_case_type
+            (context, do_expr)
         CaseEnd cs -> do
-            expr <- processCaseEnds cs mir_case_bodies mir_guards path_info_map
+            expr <- processCaseEnds cs mir_case_bodies mir_guards path_info_map unit_type
             (context, expr)
 
 patternToVar :: HP.PatternId -> ME.Var
@@ -237,15 +278,15 @@ processDynamicFunctionCall context queue receiver_type mir_args mir_receiver = d
                         queue_item <- FQ.ClosureCall name function_type
                         (context, queue, function_id) <- FQ.insert context queue queue_item
                         (context, mir_expr_type) <- processType context result_type
-                        //println "{} -> {}" % (function_id, mir_expr_type)
                         call <- ME.StaticFunctionCall function_id [receiver, arg]
+                        call_expr <- ME.Expr call mir_expr_type
                         (context, unit_type) <- processType context (HT.Tuple [])
-                        // has unit_type
-                        decl <- ME.VarDecl var call
-                        // has the same typ as var/function call
+                        decl <- ME.VarDecl var call_expr
+                        decl_expr <- ME.Expr decl unit_type
                         receiver <- ME.VarRef var
-                        calls <- calls + [decl]
-                        (context, queue, result_type, rest, receiver, calls)
+                        receiver_expr <- ME.Expr receiver mir_expr_type
+                        calls <- calls + [decl_expr]
+                        (context, queue, result_type, rest, receiver_expr, calls)
                     None -> do
                         calls <- calls + [receiver]
                         break (context, queue, calls)
@@ -321,45 +362,48 @@ processFormatExpr  context queue fmt exprs args = do
             Some (head, rest) -> do
                 (context, id) <- getNextVarId context
                 var <- ME.Var "fmt{}" % id
-                // unit_type
-                expr <- ME.VarDecl var (ME.StringLiteral head)
-                exprs <- exprs + [expr]
-                // string_type
-                (context, rest, exprs, ME.VarRef var)
+                head_expr <- ME.Expr (ME.StringLiteral head) mir_string_type
+                var_decl <- ME.VarDecl var head_expr
+                var_decl_expr <- ME.Expr var_decl unit_type
+                exprs <- exprs + [var_decl_expr]
+                var_ref_expr <- ME.Expr (ME.VarRef var) mir_string_type
+                (context, rest, exprs, var_ref_expr)
             None -> panic "Subs ran out!"
         (context, queue, exprs, prev) <- case prev of
             Some prev -> do
                 (context, queue, prev) <- callOpAdd context queue string_type prev sub_var
                 (context, id) <- getNextVarId context
                 var <- ME.Var "fmt{}" % id
-                // unit_type
-                expr <- ME.VarDecl var prev
-                exprs <- exprs + [expr]
-                // string_type
-                (context, queue, exprs, ME.VarRef var)
+                var_decl <- ME.VarDecl var prev
+                var_decl_expr <- ME.Expr var_decl unit_type
+                exprs <- exprs + [var_decl_expr]
+                var_ref_expr <- ME.Expr (ME.VarRef var) mir_string_type
+                (context, queue, exprs, var_ref_expr)
             None -> (context, queue, exprs, sub_var)
         (context, queue, args, exprs, arg_var) <- case pop args of
             Some (head, rest) -> do
                 (context, id) <- getNextVarId context
                 var <- ME.Var "fmt{}" % id
-                // unit_type
-                expr <- ME.VarDecl var head
-                exprs <- exprs + [expr]
-                // type of head
-                (context, queue, rest, exprs, ME.VarRef var)
+                ME.Expr _ head_type <- head
+                var_decl <- ME.VarDecl var head
+                var_decl_expr <- ME.Expr var_decl unit_type
+                exprs <- exprs + [var_decl_expr]
+                var_ref_expr <- ME.Expr (ME.VarRef var) head_type
+                (context, queue, rest, exprs, var_ref_expr)
             None -> do
                 exprs <- exprs + [prev]
                 break (context, queue, exprs)
         (context, queue, prev) <- callOpAdd context queue string_type prev arg_var
         (context, id) <- getNextVarId context
         var <- ME.Var "fmt{}" % id
-        // unit
-        expr <- ME.VarDecl var prev
-        exprs <- exprs + [expr]
-        // type of prev
-        (context, queue, subs, args, exprs, Some (ME.VarRef var))
-    // string_type
-    (context, queue, ME.Do exprs)
+        ME.Expr _ prev_type <- prev
+        var_decl <- ME.VarDecl var prev
+        var_decl_expr <- ME.Expr var_decl unit_type
+        exprs <- exprs + [var_decl_expr]
+        var_ref_expr <- ME.Expr (ME.VarRef var) prev_type
+        (context, queue, subs, args, exprs, Some (var_ref_expr))
+    do_expr <- ME.Expr (ME.Do exprs) mir_string_type
+    (context, queue, do_expr)
 
 processStaticFunctionCall :: Context -> FQ.FunctionQueue -> [ME.Expr] -> HT.Type -> MP.Identity -> Int -> (Context, FQ.FunctionQueue, ME.Expr)
 processStaticFunctionCall context queue mir_args function_type function_id arg_count = do
@@ -369,7 +413,8 @@ processStaticFunctionCall context queue mir_args function_type function_id arg_c
         then do
             result_type <- HT.getResultType function_type current_arg_count
             (context, mir_result_type) <- processType context result_type
-            (context, queue, ME.StaticFunctionCall function_id mir_args)
+            call_expr <- ME.Expr (ME.StaticFunctionCall function_id mir_args) mir_result_type
+            (context, queue, call_expr)
         else if arg_count > current_arg_count // partial application
             then do
                 result_type <- HT.getResultType function_type current_arg_count
@@ -400,26 +445,34 @@ processStaticFunctionCall context queue mir_args function_type function_id arg_c
                             CS.addClosureInstanceSuccessor closure_store closure (CS.NextClosureInstance next)
                     (closure_store, index + 1)) (context.closure_store, 0)
                 context <- context { closure_store = closure_store }
-                result_type <- HT.getResultType function_type current_arg_count
                 (context, mir_result_type) <- processType context result_type
-                (context, queue, ME.StaticFunctionCall first_closure_fn mir_args)
+                call_expr <- ME.Expr (ME.StaticFunctionCall first_closure_fn mir_args) mir_result_type
+                (context, queue, call_expr)
             else do
                 (static_args, dynamic_args) <- List.split mir_args arg_count
                 receiver_type <- HT.getResultType function_type (getLength static_args)
                 (context, mir_static_call_expr_type) <- processType context receiver_type
                 static_call <- ME.StaticFunctionCall function_id static_args
+                static_call_expr <- ME.Expr static_call mir_static_call_expr_type
                 (context, id) <- getNextVarId context
                 var <- ME.Var "closure{}" % id
-                // has unit type
                 (context, unit_type) <- processType context (HT.Tuple [])
-                //println "Unit type {}" % unit_type
-                decl <- ME.VarDecl var static_call
-                // same type as the static_call
+                decl <- ME.VarDecl var static_call_expr
+                decl_expr <- ME.Expr decl unit_type
                 var_ref <- ME.VarRef var
-                (context, queue, calls) <- processDynamicFunctionCall context queue receiver_type dynamic_args var_ref
+                var_ref_expr <- ME.Expr var_ref mir_static_call_expr_type
+                (context, queue, calls) <- processDynamicFunctionCall context queue receiver_type dynamic_args var_ref_expr
                 result_type <- HT.getResultType function_type current_arg_count
                 (context, mir_result_type) <- processType context result_type
-                (context, queue, ME.Do ([decl] + calls))
+                do_expr <- ME.Expr (ME.Do ([decl_expr] + calls)) mir_result_type
+                (context, queue, do_expr)
+
+removeMulti :: [ME.Expr] -> [ME.Expr]
+removeMulti exprs = exprs |> List.iter |> fold (\exprs, expr -> do
+                ME.Expr s_expr s_type <- expr
+                case s_expr of
+                    ME.Multi args -> exprs + args
+                    _ -> exprs + [ME.Expr s_expr s_type]) exprs
 
 processExpr :: Context -> FQ.FunctionQueue -> U.Substitution -> HE.Expr -> (Context, FQ.FunctionQueue, ME.Expr)
 processExpr context queue sub hir_expr = do
@@ -447,8 +500,8 @@ processExpr context queue sub hir_expr = do
             (context, queue, mir_args) <- processArgs context queue sub args
             arg_types <- processArgTypes context sub args
             (context, queue, calls) <- processDynamicFunctionCall context queue receiver_type mir_args mir_receiver
-            //println "final {}" % mir_expr_type
-            (context, queue, ME.Do calls)
+            do_expr <- ME.Expr (ME.Do calls) mir_expr_type
+            (context, queue, do_expr)
         HE.ClassMemberCall qn args -> do
             arg_types <- processArgTypes context sub args
             (context, queue, mir_args) <- processArgs context queue sub args
@@ -505,8 +558,8 @@ processExpr context queue sub hir_expr = do
             (context, queue, mir_cond) <- processExpr context queue sub cond
             (context, queue, mir_true_branch) <- processExpr context queue sub true_branch
             (context, queue, mir_false_branch) <- processExpr context queue sub false_branch
-            //println "final {}" % mir_expr_type
-            (context, queue, ME.If mir_cond mir_true_branch mir_false_branch)
+            if_expr <- ME.Expr (ME.If mir_cond mir_true_branch mir_false_branch) mir_expr_type
+            (context, queue, if_expr)
         HE.Tuple args -> do
             arg_types <- processArgTypes context sub args
             (var_gen, function_type) <- TUtil.createGeneralFunction (getLength args) context.state.var_gen
@@ -517,47 +570,44 @@ processExpr context queue sub hir_expr = do
             context <- context { state = state }
             queue_item <- FQ.TupleCtor function_type
             (context, queue, function_id) <- FQ.insert context queue queue_item
-            //println "final {}" % mir_expr_type
-            (context, queue, ME.StaticFunctionCall function_id mir_args)
+            tuple_ctor_call_expr <- ME.Expr (ME.StaticFunctionCall function_id mir_args) mir_expr_type
+            (context, queue, tuple_ctor_call_expr)
         HE.List args -> do
             (context, queue, mir_args) <- processArgs context queue sub args
-            //println "final {}" % mir_expr_type
-            (context, queue, ME.List mir_args)
+            list_expr <- ME.Expr (ME.List mir_args) mir_expr_type
+            (context, queue, list_expr)
         HE.IntegerLiteral lit -> do
-            //println "final {}" % mir_expr_type
-            (context, queue, ME.IntegerLiteral lit)
+            lit_expr <- ME.Expr (ME.IntegerLiteral lit) mir_expr_type
+            (context, queue, lit_expr)
         HE.FloatLiteral lit -> do
-            //println "final {}" % mir_expr_type
-            (context, queue, ME.FloatLiteral lit)
+            lit_expr <- ME.Expr (ME.FloatLiteral lit) mir_expr_type
+            (context, queue, lit_expr)
         HE.StringLiteral lit -> do
-            //println "final {}" % mir_expr_type
-            (context, queue, ME.StringLiteral lit)
+            lit_expr <- ME.Expr (ME.StringLiteral lit) mir_expr_type
+            (context, queue, lit_expr)
         HE.CharLiteral lit -> do
-            //println "final {}" % mir_expr_type
-            (context, queue, ME.CharLiteral lit)
+            lit_expr <- ME.Expr (ME.CharLiteral lit) mir_expr_type
+            (context, queue, lit_expr)
         HE.Do args -> do
             (context, queue, mir_args) <- processArgs context queue sub args
-            mir_args <- mir_args |> List.iter |> fold (\mir_args, arg -> do
-                case arg of
-                    ME.Multi args -> mir_args + args
-                    _ -> mir_args + [arg]) []
-            //println "final {}" % mir_expr_type
-            (context, queue, ME.Do mir_args)
+            mir_args <- removeMulti mir_args
+            do_expr <- ME.Expr (ME.Do mir_args) mir_expr_type
+            (context, queue, do_expr)
         HE.Bind p arg -> do
             (context, queue, mir_arg) <- processExpr context queue sub arg
             (context, exprs) <- processBind context sub p mir_arg
-            //println "final {}" % mir_expr_type
-            (context, queue, ME.Multi exprs)
+            multi_expr <- ME.Expr (ME.Multi exprs) mir_expr_type
+            (context, queue, multi_expr)
         HE.FieldAccess name receiver -> do
             Ident name _ <- name
             (context, queue, mir_receiver) <- processExpr context queue sub receiver
-            //println "final {}" % mir_expr_type
-            (context, queue, ME.FieldAccess name mir_receiver)
+            field_access_expr <- ME.Expr (ME.FieldAccess name mir_receiver) mir_expr_type
+            (context, queue, field_access_expr)
         HE.TupleFieldAccess index receiver -> do
             name <- getFieldName index
             (context, queue, mir_receiver) <- processExpr context queue sub receiver
-            //println "final {}" % mir_expr_type
-            (context, queue, ME.FieldAccess name mir_receiver)
+            field_access_expr <- ME.Expr (ME.FieldAccess name mir_receiver) mir_expr_type
+            (context, queue, field_access_expr)
         HE.Formatter fmt args -> do
             (context, queue, exprs, mir_args) <- args |> List.iter |> fold (\(context, queue, exprs, mir_args), arg -> do
                 (HE.Expr _ id _) <- arg
@@ -567,9 +617,12 @@ processExpr context queue sub hir_expr = do
                 (context, queue, mir_arg) <- processExpr context queue sub arg
                 (context, queue, show_result) <- callOpShow context queue arg_type mir_arg
                 (context, unit_type) <- processType context (HT.Tuple [])
-                expr <- ME.VarDecl var show_result
-                exprs <- exprs + [expr]
-                mir_args <- mir_args + [ME.VarRef var]
+                ME.Expr _ show_result_type <- show_result
+                var_decl <- ME.VarDecl var show_result
+                var_decl_expr <- ME.Expr var_decl unit_type
+                exprs <- exprs + [var_decl_expr]
+                var_ref_expr <- ME.Expr (ME.VarRef var) show_result_type
+                mir_args <- mir_args + [var_ref_expr]
                 (context, queue, exprs, mir_args)) (context, queue, [], [])
             processFormatExpr context queue fmt exprs mir_args
         HE.CaseOf body hir_cases bind_groups -> do
@@ -609,16 +662,20 @@ processExpr context queue sub hir_expr = do
                         mir_update <- ME.RecordUpdateItem name mir_update_body
                         mir_updates <- mir_updates + [mir_update]
                         (context, queue, mir_updates)) (context, queue, [])
-            (context, queue, ME.RecordUpdate var mir_updates)
+            record_update_expr <- ME.Expr (ME.RecordUpdate var mir_updates) mir_expr_type
+            (context, queue, record_update_expr)
         HE.Return arg -> do
             (context, queue, mir_arg) <- processExpr context queue sub arg
-            (context, queue, ME.Return mir_arg)
+            return_expr <- ME.Expr (ME.Return mir_arg) mir_expr_type
+            (context, queue, return_expr)
         HE.Continue arg -> do
             (context, queue, mir_arg) <- processExpr context queue sub arg
-            (context, queue, ME.Continue mir_arg)
+            continue_expr <- ME.Expr (ME.Continue mir_arg) mir_expr_type
+            (context, queue, continue_expr)
         HE.Break arg -> do
             (context, queue, mir_arg) <- processExpr context queue sub arg
-            (context, queue, ME.Break mir_arg)
+            break_expr <- ME.Expr (ME.Break mir_arg) mir_expr_type
+            (context, queue, break_expr)
         HE.Loop p initializer args _ _ -> do
             HP.Pattern _ pattern_id _ <- p
             var <- patternToVar pattern_id
@@ -626,13 +683,14 @@ processExpr context queue sub hir_expr = do
             (context, exprs) <- processBind context sub p mir_initializer
             exprs <- Option.unwrap (tail exprs)
             (context, queue, mir_args) <- processArgs context queue sub args
-            mir_args <- mir_args |> List.iter |> fold (\mir_args, arg -> do
-                case arg of
-                    ME.Multi args -> mir_args + args
-                    _ -> mir_args + [arg]) exprs
-            (context, queue, ME.Loop var mir_initializer mir_args)
-        HE.ArgRef index -> (context, queue, ME.ArgRef index)
+            mir_args <- removeMulti mir_args
+            loop_expr <- ME.Expr (ME.Loop var mir_initializer mir_args) mir_expr_type
+            (context, queue, loop_expr)
+        HE.ArgRef index -> do
+            arg_ref_expr <- ME.Expr (ME.ArgRef index) mir_expr_type
+            (context, queue, arg_ref_expr)
         HE.ValueRef ref -> do
             HP.BindRef _ pattern_id <- ref
             var <- patternToVar pattern_id
-            (context, queue, ME.VarRef var)
+            var_ref_expr <- ME.Expr (ME.VarRef var) mir_expr_type
+            (context, queue, var_ref_expr)

@@ -119,8 +119,11 @@ processNormalFunction queue context mir_function_id hir_type qn hir_function =
                             context <- context { iterator_store = iterator_store }
                             queue_item <- IteratorCtor iterator_instance
                             (context, queue, ctor_function_id) <- insert context queue queue_item
-                            mir_body <- ME.StaticFunctionCall ctor_function_id [ME.ArgRef 0, ME.ArgRef 1]
-                            mir_function <- MF.Function mir_function_id (MF.Normal mir_body) mir_arg_types mir_result_type
+                            arg_ref0_expr <- ME.Expr (ME.ArgRef 0) (atIndex mir_arg_types 0)
+                            arg_ref1_expr <- ME.Expr (ME.ArgRef 1) (atIndex mir_arg_types 1)
+                            mir_body <- ME.StaticFunctionCall ctor_function_id [arg_ref0_expr, arg_ref1_expr]
+                            mir_body_expr <- ME.Expr mir_body mir_result_type
+                            mir_function <- MF.Function mir_function_id (MF.Normal mir_body_expr) mir_arg_types mir_result_type
                             mir_program <- MP.addFunction context.mir_program mir_function_id mir_function
                             context <- context { mir_program = mir_program }
                             (context, queue)
@@ -132,7 +135,7 @@ processNormalFunction queue context mir_function_id hir_type qn hir_function =
                                 (iterator_store, iterator_name) <- IS.getIteratorName context.iterator_store iterator_type
                                 iterator_store <- IS.setIteratorGetNext iterator_store iterator_name mir_function_id
                                 context <- context { iterator_store = iterator_store }
-                                mir_body <- ME.Do []
+                                mir_body <- ME.Expr (ME.Do []) mir_result_type
                                 mir_function <- MF.Function mir_function_id (MF.Normal mir_body) mir_arg_types mir_result_type
                                 mir_program <- MP.addFunction context.mir_program mir_function_id mir_function
                                 context <- context { mir_program = mir_program }
@@ -187,8 +190,8 @@ processItem queue item mir_function_id context = do
                     context <- context { closure_store = closure_store }
                     arg_count <- getLength (HT.getArgs hir_type)
                     (context, mir_arg_types, mir_result_type) <- getFunctionType context hir_type 2
-                    body <- ME.Do []
-                    mir_function <- MF.Function mir_function_id (MF.Normal body) mir_arg_types mir_result_type
+                    mir_body <- ME.Expr (ME.Do []) mir_result_type
+                    mir_function <- MF.Function mir_function_id (MF.Normal mir_body) mir_arg_types mir_result_type
                     mir_program <- MP.addFunction context.mir_program mir_function_id mir_function
                     context <- context { mir_program = mir_program }
                     (context, queue)
@@ -217,7 +220,7 @@ processItem queue item mir_function_id context = do
                 "cmp" -> (generateOrdInstance, 2)
                 _ -> panic "Auto derive not implemented for {} / {} / {}" % (class_name, member_name, HT.toString hir_type)
             (context, mir_arg_types, mir_result_type) <- getFunctionType context hir_function_type arg_count
-            (context, queue, body) <- fn context queue hir_type hir_function_type class_name
+            (context, queue, body) <- fn context queue hir_type class_name
             mir_function <- MF.Function mir_function_id (MF.Normal body) mir_arg_types mir_result_type
             mir_program <- MP.addFunction context.mir_program mir_function_id mir_function
             context <- context { mir_program = mir_program }
