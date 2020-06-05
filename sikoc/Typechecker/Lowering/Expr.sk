@@ -194,20 +194,17 @@ processChoiceTree context choice path_info_map mir_case_bodies mir_guards = do
                     body <- ME.FieldAccess field.name parent_info.parent_expr
                     (ME.Expr body field.type, field.type)
                 VariantPath _ _ variant_index index _ -> do
-                    (field_name, field_type) <- case parent_info.type of
+                    case parent_info.type of
                         MT.Adt name -> do
                             adt <- getAdt context.type_store name
                             variant <- atIndex adt.variants variant_index
                             variant_type <- getRecord context.type_store variant.type
                             field <- atIndex variant_type.fields index
-                            (field.name, field.type)
+                            body <- ME.FieldAccess field.name parent_info.parent_expr
+                            (ME.Expr body field.type, field.type)
                         MT.Record name -> do
-                            record <- getRecord context.type_store name
-                            field <- atIndex record.fields index
-                            (field.name, field.type)
+                            (parent_info.parent_expr, parent_info.type)
                         _ -> panic "Indexed adt is not a record nor an adt"
-                    body <- ME.FieldAccess field_name parent_info.parent_expr
-                    (ME.Expr body field_type, field_type)
                 _ -> (parent_info.parent_expr, parent_info.type)
             (context, id) <- getNextVarId context
             pattern_var <- ME.Var "m{}" % id
@@ -230,15 +227,7 @@ processChoiceTree context choice path_info_map mir_case_bodies mir_guards = do
                                                     HP.Inclusive -> ME.Inclusive
                                                     HP.Exclusive -> ME.Exclusive), choice_expr)
                     VariantCondition index -> do
-                        (variant_record_type) <- case parent_info.type of
-                            MT.Adt name -> do
-                                adt <- getAdt context.type_store name
-                                variant <- atIndex adt.variants index
-                                (MT.Record variant.type)
-                            MT.Record _ -> parent_info.type
-                            _ -> panic "Indexed adt is not a record nor an adt"
-                        //println "VariantCond {} {}" % (index, variant_record_type)
-                        (ME.VariantChecker index pattern_var, choice_expr)
+                        (ME.VariantChecker index pattern_var parent_info.type, choice_expr)
                     WildcardCondition -> do
                         (ME.WildcardChecker, choice_expr)
                 c <- ME.MatchCase cond expr
@@ -472,7 +461,7 @@ removeMulti exprs = exprs |> List.iter |> fold (\exprs, expr -> do
                 ME.Expr s_expr s_type <- expr
                 case s_expr of
                     ME.Multi args -> exprs + args
-                    _ -> exprs + [ME.Expr s_expr s_type]) exprs
+                    _ -> exprs + [ME.Expr s_expr s_type]) []
 
 processExpr :: Context -> FQ.FunctionQueue -> U.Substitution -> HE.Expr -> (Context, FQ.FunctionQueue, ME.Expr)
 processExpr context queue sub hir_expr = do

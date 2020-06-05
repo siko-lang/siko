@@ -203,7 +203,7 @@ generateShowInstance context queue hir_type class_name = do
                     decl <- ME.VarDecl var arg_ref_expr
                     decl_expr <- ME.Expr decl unit_type
                     (context, queue, cases) <- adt.variants |> List.iter |> fold (\(context, queue, cases), variant -> do
-                        checker <- ME.VariantChecker (getLength cases) var
+                        checker <- ME.VariantChecker (getLength cases) var unit_type // TODO
                         (context, queue, fmt_args, mir_items) <- variant.items |> List.iter
                                     |> fold (\(context, queue, fmt_args, mir_items), item -> do
                                         field_name <- Util.getFieldName (getLength mir_items)
@@ -292,7 +292,7 @@ generateTwoArgsInstance context queue hir_type class_name call_compare_discrimin
                     var_ref0_expr <- ME.Expr var_ref0 mir_adt_type
                     (context, queue, cases) <- adt.variants |> List.iter |> fold (\(context, queue, cases), variant -> do
                         variant_index <- getLength cases
-                        checker <- ME.VariantChecker variant_index var0
+                        checker <- ME.VariantChecker variant_index var0 unit_type // TODO
                         (context, id) <- getNextVarId context
                         var1 <- ME.Var "m{}" % id
                         arg_ref1 <- ME.ArgRef 1
@@ -310,7 +310,7 @@ generateTwoArgsInstance context queue hir_type class_name call_compare_discrimin
                             items <- items + [item]
                             (items, index + 1)) ([], 0)
                         (context, queue, call_expr) <- process_member_fn context queue variant_items var_ref0_expr var_ref1_expr
-                        case_ok <- ME.MatchCase (ME.VariantChecker variant_index var1) call_expr
+                        case_ok <- ME.MatchCase (ME.VariantChecker variant_index var1 unit_type) call_expr // TODO
                         ME.Expr _ case_type <- compare_discriminants
                         case_not_ok <- ME.MatchCase ME.WildcardChecker compare_discriminants
                         match <- ME.Match var_ref1_expr [case_ok, case_not_ok]

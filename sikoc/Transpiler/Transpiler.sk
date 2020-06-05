@@ -42,6 +42,7 @@ getArgName index = "arg{}" % index
 innerValueField = "value"
 cloneName = "clone"
 stringTypeName = "String_String_0"
+intTypeName = "Int_Int_0"
 boolTypeName = "Bool_Bool_0"
 
 getRustFriendlyName :: String -> String
@@ -71,9 +72,9 @@ generatePrintStr arg_types result_type = do
 
 generateStringAdd :: [MT.Type] -> MT.Type -> R.Expr
 generateStringAdd arg_types result_type = do
-    R.Type t <- convertType result_type
+    rust_type <- convertType result_type
     new <- "new"
-    new_decl <- R.VarDecl True new (R.MethodCall (R.VarRef (getArgName 0)) cloneName [])
+    new_decl <- R.VarDecl True new (R.MethodCall (R.VarRef (getArgName 0)) cloneName []) (Some rust_type)
     field_access0 <- R.FieldAccess innerValueField (R.VarRef new)
     field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
     extend_call <- R.MethodCall field_access0 "push_str" [R.Ref field_access1]
@@ -101,8 +102,8 @@ initializeBuiltinStructs = do
     (builtins, _) <- insert builtins (BuiltinId "Int" "Int") ( [R.StructField innerValueField (R.Type "i64")])
     builtins
 
-convertPattern :: ME.Checker -> R.Pattern
-convertPattern checker = case checker of
+convertPattern :: TypeStore -> ME.Checker -> R.Pattern
+convertPattern type_store checker = case checker of
     ME.IntegerChecker lit -> R.IntegerPattern lit
     ME.StringChecker lit -> R.StringPattern lit
     ME.CharChecker lit -> R.CharPattern lit
@@ -111,34 +112,51 @@ convertPattern checker = case checker of
             ME.Inclusive -> R.Inclusive
             ME.Exclusive -> R.Exclusive
         R.CharRangePattern s e kind
-    ME.VariantChecker i (ME.Var v) -> R.VariantPattern i v
+    ME.VariantChecker index (ME.Var v) type -> do
+        case type of
+            MT.Adt _ -> do
+                rust_type <- convertType type
+                enum <- getEnum type_store rust_type
+                variant <- atIndex enum.variants index
+                variant_name <- "{}::{}" % (rust_type, variant.name)
+                R.VariantPattern variant_name v
+            MT.Record _ -> do
+                rust_type <- convertType type
+                record_name <- "{}" % (rust_type)
+                R.RecordPattern record_name
+            _ -> panic "Variant is not a record nor an adt"
     ME.WildcardChecker -> R.WildcardPattern
 
-convertExpr :: ME.Expr -> R.Expr
-convertExpr mir_expr = do
+convertExpr :: TypeStore -> ME.Expr -> R.Expr
+convertExpr type_store mir_expr = do
     ME.Expr expr _ <- mir_expr
     case expr of
         ME.Do args -> do
-            args <- args |> List.iter |> map (\arg -> convertExpr arg) |> toList
+            args <- args |> List.iter |> map (\arg -> convertExpr type_store arg) |> toList
             R.Block args
         ME.StaticFunctionCall id args -> do
             rust_function_name <- getRustIdentity id
-            args <- args |> List.iter |> map (\arg -> convertExpr arg) |> toList
+            args <- args |> List.iter |> map (\arg -> convertExpr type_store arg) |> toList
             R.FunctionCall rust_function_name args
+        ME.IntegerLiteral lit -> do
+            literal <- R.IntegerLiteral lit
+            R.StructCtor intTypeName [R.FieldInitItem innerValueField literal]
         ME.StringLiteral lit -> do
             literal <- R.StringLiteral lit
             to_string_call <- R.MethodCall literal "to_string" []
             R.StructCtor stringTypeName [R.FieldInitItem innerValueField to_string_call]
-        ME.VarDecl (ME.Var n) rhs -> R.VarDecl False n (convertExpr rhs)
+        ME.VarDecl (ME.Var n) rhs -> do
+            ME.Expr _ rhs_type <- rhs
+            R.VarDecl False n (convertExpr type_store rhs) (Some (convertType rhs_type))
         ME.VarRef (ME.Var n) -> R.VarRef n
         ME.ArgRef index -> R.VarRef (getArgName index)
         ME.Match body cases -> do
             cases <- cases |> List.iter |> map (\c -> do
-                case_pattern <- convertPattern c.checker
-                case_body <- convertExpr c.body
+                case_pattern <- convertPattern type_store c.checker
+                case_body <- convertExpr type_store c.body
                 R.MatchCase case_pattern case_body) |> toList
-            R.Match (convertExpr body) cases
-        ME.FieldAccess name receiver -> R.FieldAccess name (convertExpr receiver)
+            R.Match (convertExpr type_store body) cases
+        ME.FieldAccess name receiver -> R.FieldAccess name (convertExpr type_store receiver)
         _ -> R.VarRef "NYI"
 
 convertRecord :: Record -> Map BuiltinId [R.StructField] -> R.Struct
@@ -191,8 +209,8 @@ transpile program = do
             Normal mir_body -> do
                     ME.Expr b _ <- mir_body
                     case b of
-                        ME.Do _ -> convertExpr mir_body
-                        _ -> R.Block [convertExpr mir_body]
+                        ME.Do _ -> convertExpr type_store mir_body
+                        _ -> R.Block [convertExpr type_store mir_body]
             Extern -> do
                     Identity mod name _ <- mir_function.id
                     id <- BuiltinId mod name

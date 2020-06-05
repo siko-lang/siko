@@ -28,7 +28,8 @@ data Pattern = IntegerPattern String
                | StringPattern String
                | CharPattern Char
                | CharRangePattern Char Char RangeKind
-               | VariantPattern Int String
+               | VariantPattern String String
+               | RecordPattern String
                | WildcardPattern
 
 data MatchCase = { pattern :: Pattern, body :: Expr }
@@ -40,7 +41,7 @@ data Expr = Block [Expr]
             | MethodCall Expr String [Expr]
             | FloatLiteral String
             | CharLiteral Char
-            | VarDecl Bool String Expr
+            | VarDecl Bool String Expr (Option Type)
             | VarRef String
             | FieldAccess String Expr
             | If Expr Expr Expr
@@ -62,7 +63,8 @@ generatePattern pattern = case pattern of
     StringPattern lit -> "a if a.value == {}" % lit
     CharPattern lit -> "a if a.value == {}" % lit
     CharRangePattern _ _ _ -> "NYI"
-    VariantPattern _ _ -> "NYI"
+    VariantPattern variant_name var_name -> "{}({})" % (variant_name, var_name)
+    RecordPattern record_name -> "{}{..}" % (record_name)
     WildcardPattern -> "_"
 
 generateExpr :: Expr -> Indent -> String
@@ -84,12 +86,17 @@ generateExpr expr indent = case expr of
         args <- args |> List.iter |> map (\arg -> generateExpr arg (Indent 0)) |> toList
         receiver <- generateExpr receiver (Indent 0)
         "{}.{}({})" % (receiver, name, join args ", ")
+    IntegerLiteral lit -> lit
     StringLiteral lit -> do
         lit <- replace lit "\n" "\\n"
         "\"{}\"" % lit
-    VarDecl mutable n rhs -> if mutable
-        then "let mut {} = {}" % (n, generateExpr rhs (Indent 0))
-        else "let {} = {}" % (n, generateExpr rhs (Indent 0))
+    VarDecl mutable n rhs type -> case type of
+        Some type -> if mutable
+                then "let mut {}: {} = {}" % (n, type, generateExpr rhs (Indent 0))
+                else "let {}: {} = {}" % (n, type, generateExpr rhs (Indent 0))
+        None -> if mutable
+                then "let mut {} = {}" % (n, generateExpr rhs (Indent 0))
+                else "let {} = {}" % (n, generateExpr rhs (Indent 0))
     VarRef n -> n
     Match body cases -> do
         body <- generateExpr body (Indent 0)
