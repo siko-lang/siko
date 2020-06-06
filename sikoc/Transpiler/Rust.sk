@@ -50,9 +50,10 @@ data Expr = Block [Expr]
             | Break Expr
             | Ref Expr
             | RecordUpdate String [FieldInitItem]
-            | Loop Expr Expr [Expr]
+            | Loop [Expr]
             | Match Expr [MatchCase]
             | StructCtor String [FieldInitItem]
+            | Assign String Expr
 
 data Program = { structs :: [Struct], enums :: [Enum], functions :: [Function] }
 
@@ -109,6 +110,23 @@ generateExpr expr indent = case expr of
         receiver <- generateExpr receiver (Indent 0)
         "{}.{}" % (receiver, name)
     Ref rhs -> "&{}" % generateExpr rhs (Indent 0)
+    Loop args -> do
+            inner <- inc indent
+            args <- args |> List.iter |> map (\arg -> do
+                "{}{}" % (inner, generateExpr arg inner)) |> toList
+            s <- "loop {\n{}\n{}}" % (join args ";\n", indent)
+            s
+    Break expr -> do
+        body <- generateExpr expr (Indent 0)
+        "break {}" % body
+    Continue expr -> do
+        body <- generateExpr expr (Indent 0)
+        "continue {}" % body
+    Return expr -> do
+        body <- generateExpr expr (Indent 0)
+        "return {}" % body
+    Assign v expr -> do
+        "{} = {}" % (v, generateExpr expr (Indent 0))
     _ -> "NYI"
 
 generateStruct :: Struct -> String

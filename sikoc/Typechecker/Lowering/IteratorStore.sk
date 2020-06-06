@@ -127,9 +127,6 @@ createGetNextFunctionBody context queue iterator function_id = do
         (context, mir_closure_type) <- processType context iterator_instance.closure_type
         (context, mir_iterator_type) <- processType context iterator_instance.iterator_type
         IteratorInstanceId id <- iterator_instance.id
-        println "state type {}" % mir_state_type
-        println "closure type {}" % mir_closure_type
-        println "iterator type {}" % mir_iterator_type
         iter_var <- ME.Var "iter"
         iter_var_ref_expr <- ME.Expr (ME.VarRef iter_var) mir_iterator_type
         closure_call_id <- CS.getClosureCall context.closure_store iterator_instance.closure_type
@@ -188,14 +185,14 @@ createGetNextFunctionBody context queue iterator function_id = do
                     (tuple_var_decl_expr, tuple_var_ref_expr)
                 (new_state_var_decl_expr, new_state_var_ref_expr) <- do
                     new_state_var <- ME.Var "new_state"
-                    field_access_expr <- ME.Expr (ME.FieldAccess (getFieldName 1) tuple_var_ref_expr) mir_state_type
+                    field_access_expr <- ME.Expr (ME.FieldAccess (getFieldName 0) tuple_var_ref_expr) mir_state_type
                     new_state_var_decl <- ME.VarDecl new_state_var field_access_expr
                     new_state_var_decl_expr <- ME.Expr new_state_var_decl unit_type
                     new_state_var_ref_expr <- ME.Expr (ME.VarRef new_state_var) mir_state_type
                     (new_state_var_decl_expr, new_state_var_ref_expr)
                 (next_value_var_decl_expr, next_value_var_ref_expr) <- do
                     next_value_var <-  ME.Var "next_value"
-                    field_access_expr <- ME.Expr (ME.FieldAccess (getFieldName 0) tuple_var_ref_expr) mir_iterator_elem_type
+                    field_access_expr <- ME.Expr (ME.FieldAccess (getFieldName 1) tuple_var_ref_expr) mir_iterator_elem_type
                     next_value_var_decl <- ME.VarDecl next_value_var field_access_expr
                     next_value_var_decl_expr <- ME.Expr next_value_var_decl unit_type
                     next_value_var_ref_expr <- ME.Expr (ME.VarRef next_value_var) mir_iterator_elem_type

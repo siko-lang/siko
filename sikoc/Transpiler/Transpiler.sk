@@ -45,6 +45,7 @@ stringTypeName = "String_String_0"
 intTypeName = "Int_Int_0"
 boolTypeName = "Bool_Bool_0"
 stdOpsAdd = "std::ops::Add::add"
+stdOpsMul = "std::ops::Mul::mul"
 rcNew = "std::rc::Rc::new"
 derefName = "std::ops::Deref::deref"
 
@@ -79,12 +80,15 @@ generatePrintStr program type_store arg_types result_type = do
 generateStringAdd :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
 generateStringAdd program type_store arg_types result_type = do
     rust_type <- convertType result_type
+    field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
+    deref0 <- R.FunctionCall derefName [R.Ref field_access0]
+    clone_call <- R.MethodCall deref0 cloneName []
     new <- "new"
-    new_decl <- R.VarDecl True new (R.MethodCall (R.VarRef (getArgName 0)) cloneName []) (Some rust_type)
-    field_access0 <- R.FieldAccess innerValueField (R.VarRef new)
+    new_decl <- R.VarDecl True new clone_call None
     field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
-    extend_call <- R.MethodCall field_access0 "push_str" [R.Ref field_access1]
-    R.Block [new_decl, extend_call, R.VarRef new]
+    extend_call <- R.MethodCall (R.VarRef new) "push_str" [R.Ref field_access1]
+    struct_ctor <- R.StructCtor (show rust_type) [R.FieldInitItem innerValueField (R.FunctionCall rcNew [R.VarRef new])]
+    R.Block [new_decl, extend_call, struct_ctor]
 
 generateIntAdd :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
 generateIntAdd program type_store arg_types result_type = do
@@ -99,11 +103,25 @@ generateIntAdd program type_store arg_types result_type = do
     struct_ctor <- R.StructCtor (show rust_type) [R.FieldInitItem innerValueField (R.FunctionCall rcNew [R.VarRef new])]
     R.Block [new_decl, struct_ctor]
 
+generateIntMul :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
+generateIntMul program type_store arg_types result_type = do
+    rust_type <- convertType result_type
+    field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
+    field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
+    deref0 <- R.FunctionCall derefName [R.Ref field_access0]
+    deref1 <- R.FunctionCall derefName [R.Ref field_access1]
+    mul_call <- R.FunctionCall stdOpsMul  [deref0, deref1]
+    new <- "new"
+    new_decl <- R.VarDecl False new mul_call None
+    struct_ctor <- R.StructCtor (show rust_type) [R.FieldInitItem innerValueField (R.FunctionCall rcNew [R.VarRef new])]
+    R.Block [new_decl, struct_ctor]
+
 generateIntShow :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
 generateIntShow program type_store arg_types result_type = do
     rust_type <- convertType result_type
     field_access <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
-    struct_ctor <- R.StructCtor (show rust_type) [R.FieldInitItem innerValueField (R.FunctionCall "format!" [field_access])]
+    format <- R.FunctionCall "format!" [(R.StringLiteral "{}"), field_access]
+    struct_ctor <- R.StructCtor (show rust_type) [R.FieldInitItem innerValueField (R.FunctionCall rcNew [format])]
     R.Block [struct_ctor]
 
 generateIntPartialCmp :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
@@ -157,6 +175,7 @@ initializeBuiltinFunctions = do
     (builtins, _) <- insert builtins (BuiltinId "Std.Util.Basic" "printStr") generatePrintStr
     (builtins, _) <- insert builtins (BuiltinId "String" "opAdd") generateStringAdd
     (builtins, _) <- insert builtins (BuiltinId "Int" "opAdd") generateIntAdd
+    (builtins, _) <- insert builtins (BuiltinId "Int" "opMul") generateIntMul
     (builtins, _) <- insert builtins (BuiltinId "Int" "show") generateIntShow
     (builtins, _) <- insert builtins (BuiltinId "Int" "partialCmp") generateIntPartialCmp
     builtins
@@ -233,6 +252,15 @@ convertExpr type_store mir_expr = do
             false_case <- R.MatchCase false_pattern (convertExpr type_store false_branch)
             cases <- [true_case, false_case]
             R.Match (convertExpr type_store cond) cases
+        ME.Loop (ME.Var n) initializer args -> do
+            var_decl <- R.VarDecl True n (convertExpr type_store initializer) None
+            args <- args |> List.iter |> map (\arg -> convertExpr type_store arg) |> toList
+            loop_body <- R.Assign n (R.Block args)
+            loop_expr <- R.Loop [loop_body]
+            R.Block [var_decl, loop_expr]
+        ME.Break e -> R.Break (convertExpr type_store e)
+        ME.Continue e -> R.Continue (convertExpr type_store e)
+        ME.Return e -> R.Return (convertExpr type_store e)
         _ -> R.VarRef "NYI"
 
 convertRecord :: Record -> Map BuiltinId [R.StructField] -> R.Struct
