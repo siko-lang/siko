@@ -28,7 +28,7 @@ data Pattern = IntegerPattern String
                | StringPattern String
                | CharPattern Char
                | CharRangePattern Char Char RangeKind
-               | VariantPattern String String
+               | VariantPattern String (Option String)
                | RecordPattern String
                | WildcardPattern
 
@@ -44,7 +44,6 @@ data Expr = Block [Expr]
             | VarDecl Bool String Expr (Option Type)
             | VarRef String
             | FieldAccess String Expr
-            | If Expr Expr Expr
             | List [Expr]
             | Return Expr
             | Continue Expr
@@ -63,7 +62,9 @@ generatePattern pattern = case pattern of
     StringPattern lit -> "a if a.value == {}" % lit
     CharPattern lit -> "a if a.value == {}" % lit
     CharRangePattern _ _ _ -> "NYI"
-    VariantPattern variant_name var_name -> "{}({})" % (variant_name, var_name)
+    VariantPattern variant_name var_name -> case var_name of
+        Some var_name -> "{}({})" % (variant_name, var_name)
+        None -> "{}" % variant_name
     RecordPattern record_name -> "{}{..}" % (record_name)
     WildcardPattern -> "_"
 
@@ -102,7 +103,7 @@ generateExpr expr indent = case expr of
         body <- generateExpr body (Indent 0)
         inner <- inc indent
         cases <- cases |> List.iter |> map (\c -> do
-            "{}{} => {}" % (inner, generatePattern c.pattern, generateExpr c.body inner)) |> toList
+            "{}{} => {{}}" % (inner, generatePattern c.pattern, generateExpr c.body inner)) |> toList
         "match {} {\n{}\n{}}" % (body, join cases "\n", indent)
     FieldAccess name receiver -> do
         receiver <- generateExpr receiver (Indent 0)
