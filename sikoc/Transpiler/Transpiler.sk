@@ -43,6 +43,7 @@ innerValueField = "value"
 cloneName = "clone"
 stringTypeName = "String_String_0"
 intTypeName = "Int_Int_0"
+floatTypeName = "Float_Float_0"
 boolTypeName = "Bool_Bool_0"
 stdOpsAdd = "std::ops::Add::add"
 stdOpsMul = "std::ops::Mul::mul"
@@ -124,8 +125,8 @@ generateIntShow program type_store arg_types result_type = do
     struct_ctor <- R.StructCtor (show rust_type) [R.FieldInitItem innerValueField (R.FunctionCall rcNew [format])]
     R.Block [struct_ctor]
 
-generateIntPartialCmp :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
-generateIntPartialCmp program type_store arg_types result_type = do
+generatePartialCmp :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
+generatePartialCmp program type_store arg_types result_type = do
     field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
     field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
     partial_cmp_call <- R.MethodCall field_access0 "partial_cmp" [R.Ref field_access1]
@@ -141,9 +142,9 @@ generateIntPartialCmp program type_store arg_types result_type = do
             field0 <- atIndex some_struct.fields 0
             ordering_type <- case field0.type of
                 MT.Adt i -> i
-                _ -> panic "generateIntPartialCmp ordering type is not adt"
+                _ -> panic "generatePartialCmp ordering type is not adt"
             (field0.name, ordering_type)
-        _ -> panic "generateIntPartialCmp result is not an adt"
+        _ -> panic "generatePartialCmp result is not an adt"
     rust_ordering_type <- convertType (MT.Adt ordering_type)
     ordering_adt <- getAdt program ordering_type
     greater_variant <- atIndex ordering_adt.variants 2
@@ -167,6 +168,31 @@ generateIntPartialCmp program type_store arg_types result_type = do
     some_case <- R.MatchCase (R.VariantPattern "std::option::Option::Some" (Some ordering_var)) result_some_ctor
     none_case <- R.MatchCase (R.VariantPattern "std::option::Option::None" None) result_none_ctor
     match <- R.Match partial_cmp_call [some_case, none_case]
+    R.Block [match]
+
+generateCmp :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
+generateCmp program type_store arg_types result_type = do
+    field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
+    field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
+    cmp_call <- R.MethodCall field_access0 "cmp" [R.Ref field_access1]
+    ordering_type <- case result_type of
+        MT.Adt adt_id -> adt_id
+        _ -> panic "generateCmp result is not an adt"
+    rust_ordering_type <- convertType result_type
+    ordering_adt <- getAdt program ordering_type
+    greater_variant <- atIndex ordering_adt.variants 2
+    equal_variant <- atIndex ordering_adt.variants 1
+    less_variant <- atIndex ordering_adt.variants 0
+    greater_ctor <- R.StructCtor (show (convertType (MT.Record greater_variant.type))) []
+    equal_ctor <- R.StructCtor (show (convertType (MT.Record equal_variant.type))) []
+    less_ctor <- R.StructCtor (show (convertType (MT.Record less_variant.type))) []
+    greater_ctor <- R.FunctionCall ("{}::Greater" % rust_ordering_type) [greater_ctor]
+    equal_ctor <- R.FunctionCall ("{}::Equal" % rust_ordering_type) [equal_ctor]
+    less_ctor <- R.FunctionCall ("{}::Less" % rust_ordering_type) [less_ctor]
+    greater_case <- R.MatchCase (R.VariantPattern "std::cmp::Ordering::Greater" None) greater_ctor
+    equal_case <- R.MatchCase (R.VariantPattern "std::cmp::Ordering::Equal" None) equal_ctor
+    less_case <- R.MatchCase (R.VariantPattern "std::cmp::Ordering::Less" None) less_ctor
+    match <- R.Match cmp_call [greater_case, equal_case, less_case]
     R.Block [match]
 
 generateIntEq :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
@@ -244,13 +270,18 @@ initializeBuiltinFunctions = do
     builtins <- Map.empty
     (builtins, _) <- insert builtins (BuiltinId "Std.Util.Basic" "printStr") generatePrintStr
     (builtins, _) <- insert builtins (BuiltinId "String" "opAdd") generateStringAdd
+    (builtins, _) <- insert builtins (BuiltinId "String" "partialCmp") generatePartialCmp
+    (builtins, _) <- insert builtins (BuiltinId "String" "cmp") generateCmp
     (builtins, _) <- insert builtins (BuiltinId "Int" "opAdd") generateIntAdd
     (builtins, _) <- insert builtins (BuiltinId "Int" "opMul") generateIntMul
     (builtins, _) <- insert builtins (BuiltinId "Int" "show") generateIntShow
-    (builtins, _) <- insert builtins (BuiltinId "Int" "partialCmp") generateIntPartialCmp
+    (builtins, _) <- insert builtins (BuiltinId "Int" "partialCmp") generatePartialCmp
+    (builtins, _) <- insert builtins (BuiltinId "Int" "cmp") generateCmp
     (builtins, _) <- insert builtins (BuiltinId "Int" "opEq") generateIntEq
     (builtins, _) <- insert builtins (BuiltinId "Std.Ops" "getDiscriminant") generateGetDiscriminant
     (builtins, _) <- insert builtins (BuiltinId "Std.Util" "assert") generateAssert
+    (builtins, _) <- insert builtins (BuiltinId "Float" "partialCmp") generatePartialCmp
+    (builtins, _) <- insert builtins (BuiltinId "Float" "cmp") generateCmp
     builtins
 
 initializeBuiltinStructs :: Map BuiltinId [R.StructField]
@@ -258,6 +289,7 @@ initializeBuiltinStructs = do
     builtins <- Map.empty
     (builtins, _) <- insert builtins (BuiltinId "String" "String") ( [R.StructField innerValueField (typeToRcType (R.Type "std::string::String"))])
     (builtins, _) <- insert builtins (BuiltinId "Int" "Int") ( [R.StructField innerValueField (typeToRcType (R.Type "i64"))])
+    (builtins, _) <- insert builtins (BuiltinId "Float" "Float") ( [R.StructField innerValueField (typeToRcType (R.Type "f64"))])
     builtins
 
 convertPattern :: TypeStore -> ME.Checker -> R.Pattern
@@ -299,6 +331,9 @@ convertExpr type_store mir_expr = do
         ME.IntegerLiteral lit -> do
             literal <- R.IntegerLiteral lit
             R.StructCtor intTypeName [R.FieldInitItem innerValueField (R.FunctionCall rcNew [literal])]
+        ME.FloatLiteral lit -> do
+            literal <- R.FloatLiteral lit
+            R.StructCtor floatTypeName [R.FieldInitItem innerValueField (R.FunctionCall rcNew [literal])]
         ME.StringLiteral lit -> do
             literal <- R.StringLiteral lit
             to_string_call <- R.MethodCall literal "to_string" []

@@ -9,3 +9,7 @@ mkdir -p rust_comp
 
 cd siko_tester
 cargo run -- ../siko ../std ../comp ../rust_comp ../tests/success/ ../tests/fail/ ../rt/
+
+cd ..
+
+./sikoc.py sikoc_cmp_test std2 sikoc_tests/success/cmp/main.sk
