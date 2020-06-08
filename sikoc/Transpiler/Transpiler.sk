@@ -1,5 +1,7 @@
 module Siko.Transpiler where
 
+import Siko.Transpiler.Externals
+
 import Siko.MIR.Expr as ME
 import Siko.MIR.Data
 import Siko.MIR.Function
@@ -8,7 +10,7 @@ import Siko.MIR.Type as MT
 import Siko.Transpiler.Rust as R
 import Map
 
-data BuiltinId = BuiltinId String String deriving (PartialEq, Eq, PartialOrd, Ord)
+data ExternalId = ExternalId String String deriving (PartialEq, Eq, PartialOrd, Ord)
 
 data TypeStore = { structs :: Map R.Type R.Struct,
                    enums :: Map R.Type R.Enum  }
@@ -46,7 +48,9 @@ intTypeName = "Int_Int_0"
 floatTypeName = "Float_Float_0"
 boolTypeName = "Bool_Bool_0"
 stdOpsAdd = "std::ops::Add::add"
+stdOpsSub = "std::ops::Sub::sub"
 stdOpsMul = "std::ops::Mul::mul"
+stdOpsDiv = "std::ops::Div::div"
 rcNew = "std::rc::Rc::new"
 derefName = "std::ops::Deref::deref"
 
@@ -70,311 +74,13 @@ convertType mir_type = do
 typeToRcType :: R.Type -> R.Type
 typeToRcType type = R.Type ("std::rc::Rc<{}>" % type)
 
-generatePrintStr :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
-generatePrintStr program type_store arg_types result_type = do
-    R.Type t <- convertType result_type
-    field_access <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
-    print_call <- R.FunctionCall "print!" [R.StringLiteral "{}", field_access]
-    unit <- R.StructCtor t []
-    R.Block [print_call, unit]
-
-generateStringAdd :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
-generateStringAdd program type_store arg_types result_type = do
-    rust_type <- convertType result_type
-    field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
-    deref0 <- R.FunctionCall derefName [R.Ref field_access0]
-    clone_call <- R.MethodCall deref0 cloneName []
-    new <- "new"
-    new_decl <- R.VarDecl True new clone_call None
-    field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
-    extend_call <- R.MethodCall (R.VarRef new) "push_str" [R.Ref field_access1]
-    struct_ctor <- R.StructCtor (show rust_type) [R.FieldInitItem innerValueField (R.FunctionCall rcNew [R.VarRef new])]
-    R.Block [new_decl, extend_call, struct_ctor]
-
-generateIntAdd :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
-generateIntAdd program type_store arg_types result_type = do
-    rust_type <- convertType result_type
-    field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
-    field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
-    deref0 <- R.FunctionCall derefName [R.Ref field_access0]
-    deref1 <- R.FunctionCall derefName [R.Ref field_access1]
-    add_call <- R.FunctionCall stdOpsAdd  [deref0, deref1]
-    new <- "new"
-    new_decl <- R.VarDecl False new add_call None
-    struct_ctor <- R.StructCtor (show rust_type) [R.FieldInitItem innerValueField (R.FunctionCall rcNew [R.VarRef new])]
-    R.Block [new_decl, struct_ctor]
-
-generateIntMul :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
-generateIntMul program type_store arg_types result_type = do
-    rust_type <- convertType result_type
-    field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
-    field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
-    deref0 <- R.FunctionCall derefName [R.Ref field_access0]
-    deref1 <- R.FunctionCall derefName [R.Ref field_access1]
-    mul_call <- R.FunctionCall stdOpsMul  [deref0, deref1]
-    new <- "new"
-    new_decl <- R.VarDecl False new mul_call None
-    struct_ctor <- R.StructCtor (show rust_type) [R.FieldInitItem innerValueField (R.FunctionCall rcNew [R.VarRef new])]
-    R.Block [new_decl, struct_ctor]
-
-generateIntShow :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
-generateIntShow program type_store arg_types result_type = do
-    rust_type <- convertType result_type
-    field_access <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
-    format <- R.FunctionCall "format!" [(R.StringLiteral "{}"), field_access]
-    struct_ctor <- R.StructCtor (show rust_type) [R.FieldInitItem innerValueField (R.FunctionCall rcNew [format])]
-    R.Block [struct_ctor]
-
-generatePartialCmp :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
-generatePartialCmp program type_store arg_types result_type = do
-    field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
-    field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
-    partial_cmp_call <- R.MethodCall field_access0 "partial_cmp" [R.Ref field_access1]
-    rust_result_type <- convertType result_type
-    result_option <- getEnum type_store rust_result_type
-    some_variant <- atIndex result_option.variants 0
-    none_variant <- atIndex result_option.variants 1
-    (ordering_name, ordering_type) <- case result_type of
-        MT.Adt mir_option_adt -> do
-            adt <- getAdt program mir_option_adt
-            mir_some_variant <- atIndex adt.variants 0
-            some_struct <- getRecord program mir_some_variant.type
-            field0 <- atIndex some_struct.fields 0
-            ordering_type <- case field0.type of
-                MT.Adt i -> i
-                _ -> panic "generatePartialCmp ordering type is not adt"
-            (field0.name, ordering_type)
-        _ -> panic "generatePartialCmp result is not an adt"
-    rust_ordering_type <- convertType (MT.Adt ordering_type)
-    ordering_adt <- getAdt program ordering_type
-    greater_variant <- atIndex ordering_adt.variants 2
-    equal_variant <- atIndex ordering_adt.variants 1
-    less_variant <- atIndex ordering_adt.variants 0
-    ordering_var <- "o"
-    greater_ctor <- R.StructCtor (show (convertType (MT.Record greater_variant.type))) []
-    equal_ctor <- R.StructCtor (show (convertType (MT.Record equal_variant.type))) []
-    less_ctor <- R.StructCtor (show (convertType (MT.Record less_variant.type))) []
-    greater_ctor <- R.FunctionCall ("{}::Greater" % rust_ordering_type) [greater_ctor]
-    equal_ctor <- R.FunctionCall ("{}::Equal" % rust_ordering_type) [equal_ctor]
-    less_ctor <- R.FunctionCall ("{}::Less" % rust_ordering_type) [less_ctor]
-    greater_case <- R.MatchCase (R.VariantPattern "std::cmp::Ordering::Greater" None) (R.FunctionCall rcNew [greater_ctor])
-    equal_case <- R.MatchCase (R.VariantPattern "std::cmp::Ordering::Equal" None) (R.FunctionCall rcNew [equal_ctor])
-    less_case <- R.MatchCase (R.VariantPattern "std::cmp::Ordering::Less" None) (R.FunctionCall rcNew [less_ctor])
-    init <- R.FieldInitItem ordering_name (R.Match (R.VarRef ordering_var) [greater_case, equal_case, less_case])
-    some_struct_ctor <- R.StructCtor (show some_variant.type) [init]
-    none_struct_ctor <- R.StructCtor (show none_variant.type) []
-    result_some_ctor <- R.FunctionCall ("{}::Some" % rust_result_type) [some_struct_ctor]
-    result_none_ctor <- R.FunctionCall ("{}::None" % rust_result_type) [none_struct_ctor]
-    some_case <- R.MatchCase (R.VariantPattern "std::option::Option::Some" (Some ordering_var)) result_some_ctor
-    none_case <- R.MatchCase (R.VariantPattern "std::option::Option::None" None) result_none_ctor
-    match <- R.Match partial_cmp_call [some_case, none_case]
-    R.Block [match]
-
-generateCmp :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
-generateCmp program type_store arg_types result_type = do
-    field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
-    field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
-    cmp_call <- R.MethodCall field_access0 "cmp" [R.Ref field_access1]
-    ordering_type <- case result_type of
-        MT.Adt adt_id -> adt_id
-        _ -> panic "generateCmp result is not an adt"
-    rust_ordering_type <- convertType result_type
-    ordering_adt <- getAdt program ordering_type
-    greater_variant <- atIndex ordering_adt.variants 2
-    equal_variant <- atIndex ordering_adt.variants 1
-    less_variant <- atIndex ordering_adt.variants 0
-    greater_ctor <- R.StructCtor (show (convertType (MT.Record greater_variant.type))) []
-    equal_ctor <- R.StructCtor (show (convertType (MT.Record equal_variant.type))) []
-    less_ctor <- R.StructCtor (show (convertType (MT.Record less_variant.type))) []
-    greater_ctor <- R.FunctionCall ("{}::Greater" % rust_ordering_type) [greater_ctor]
-    equal_ctor <- R.FunctionCall ("{}::Equal" % rust_ordering_type) [equal_ctor]
-    less_ctor <- R.FunctionCall ("{}::Less" % rust_ordering_type) [less_ctor]
-    greater_case <- R.MatchCase (R.VariantPattern "std::cmp::Ordering::Greater" None) greater_ctor
-    equal_case <- R.MatchCase (R.VariantPattern "std::cmp::Ordering::Equal" None) equal_ctor
-    less_case <- R.MatchCase (R.VariantPattern "std::cmp::Ordering::Less" None) less_ctor
-    match <- R.Match cmp_call [greater_case, equal_case, less_case]
-    R.Block [match]
-
-generateIntEq :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
-generateIntEq program type_store arg_types result_type = do
-    rust_result_type <- convertType result_type
-    field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
-    field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
-    eq_call <- R.MethodCall field_access0 "eq" [R.Ref field_access1]
-    bool_type_id <- case result_type of
-                MT.Adt i -> i
-                _ -> panic "generateIntPartialCmp ordering type is not adt"
-    bool_adt <- getAdt program bool_type_id
-    true_variant <- atIndex bool_adt.variants 0
-    false_variant <- atIndex bool_adt.variants 1
-    true_pattern <- R.VariantPattern "true" None
-    false_pattern <- R.VariantPattern "false" None
-    true_record_type <- MT.Record true_variant.type
-    rust_true_record_type <- convertType true_record_type
-    false_record_type <- MT.Record false_variant.type
-    rust_false_record_type <- convertType false_record_type
-    true_ctor <- R.StructCtor (show (rust_true_record_type)) []
-    false_ctor <- R.StructCtor (show (rust_false_record_type)) []
-    true_case <- R.MatchCase true_pattern (R.FunctionCall ("{}::True" % rust_result_type) [true_ctor])
-    false_case <- R.MatchCase false_pattern (R.FunctionCall ("{}::False" % rust_result_type) [false_ctor])
-    cases <- [true_case, false_case]
-    match <- R.Match eq_call cases
-    R.Block [match]
-
-generateOpAnd :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
-generateOpAnd program type_store arg_types result_type = do
-    rust_result_type <- convertType result_type
-    field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
-    field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
-    rust_result_type <- convertType result_type
-    arg_type <- atIndex arg_types 0
-    adt_id <- case arg_type of
-        MT.Adt adt_id -> adt_id
-        _ -> panic "Unexpected assert arg"
-    bool_adt <- getAdt program adt_id
-    true_variant <- atIndex bool_adt.variants 0
-    false_variant <- atIndex bool_adt.variants 1
-    true_pattern <- R.VariantPattern "true" None
-    false_pattern <- R.VariantPattern "false" None
-    true_record_type <- MT.Record true_variant.type
-    rust_true_record_type <- convertType true_record_type
-    false_record_type <- MT.Record false_variant.type
-    rust_false_record_type <- convertType false_record_type
-    true_ctor <- R.StructCtor (show (rust_true_record_type)) []
-    false_ctor <- R.StructCtor (show (rust_false_record_type)) []
-
-    true_pattern <- R.VariantPattern ("{}::True" % rust_result_type) (Some "_")
-    false_pattern <- R.VariantPattern ("{}::False" % rust_result_type) (Some "_")
-
-    true_case <- R.MatchCase true_pattern (R.FunctionCall ("{}::True" % rust_result_type) [true_ctor])
-    false_case <- R.MatchCase false_pattern (R.FunctionCall ("{}::False" % rust_result_type) [false_ctor])
-    cases <- [true_case, false_case]
-    match_true <- R.Match (R.VarRef (getArgName 1)) cases
-
-    true_case <- R.MatchCase true_pattern (R.FunctionCall ("{}::False" % rust_result_type) [false_ctor])
-    false_case <- R.MatchCase false_pattern (R.FunctionCall ("{}::False" % rust_result_type) [false_ctor])
-    cases <- [true_case, false_case]
-    match_false <- R.Match (R.VarRef (getArgName 1)) cases
-
-    true_case <- R.MatchCase true_pattern match_true
-    false_case <- R.MatchCase false_pattern match_false
-    cases <- [true_case, false_case]
-    match <- R.Match (R.VarRef (getArgName 0)) cases
-
-    R.Block [match]
-
-generateOpOr :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
-generateOpOr program type_store arg_types result_type = do
-    rust_result_type <- convertType result_type
-    field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
-    field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
-    rust_result_type <- convertType result_type
-    arg_type <- atIndex arg_types 0
-    adt_id <- case arg_type of
-        MT.Adt adt_id -> adt_id
-        _ -> panic "Unexpected assert arg"
-    bool_adt <- getAdt program adt_id
-    true_variant <- atIndex bool_adt.variants 0
-    false_variant <- atIndex bool_adt.variants 1
-    true_pattern <- R.VariantPattern "true" None
-    false_pattern <- R.VariantPattern "false" None
-    true_record_type <- MT.Record true_variant.type
-    rust_true_record_type <- convertType true_record_type
-    false_record_type <- MT.Record false_variant.type
-    rust_false_record_type <- convertType false_record_type
-    true_ctor <- R.StructCtor (show (rust_true_record_type)) []
-    false_ctor <- R.StructCtor (show (rust_false_record_type)) []
-
-    true_pattern <- R.VariantPattern ("{}::True" % rust_result_type) (Some "_")
-    false_pattern <- R.VariantPattern ("{}::False" % rust_result_type) (Some "_")
-
-    true_case <- R.MatchCase true_pattern (R.FunctionCall ("{}::True" % rust_result_type) [true_ctor])
-    false_case <- R.MatchCase false_pattern (R.FunctionCall ("{}::True" % rust_result_type) [true_ctor])
-    cases <- [true_case, false_case]
-    match_true <- R.Match (R.VarRef (getArgName 1)) cases
-
-    true_case <- R.MatchCase true_pattern (R.FunctionCall ("{}::True" % rust_result_type) [true_ctor])
-    false_case <- R.MatchCase false_pattern (R.FunctionCall ("{}::False" % rust_result_type) [false_ctor])
-    cases <- [true_case, false_case]
-    match_false <- R.Match (R.VarRef (getArgName 1)) cases
-
-    true_case <- R.MatchCase true_pattern match_true
-    false_case <- R.MatchCase false_pattern match_false
-    cases <- [true_case, false_case]
-    match <- R.Match (R.VarRef (getArgName 0)) cases
-
-    R.Block [match]
-
-generateGetDiscriminant :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
-generateGetDiscriminant program type_store arg_types result_type = do
-    arg_type <- atIndex arg_types 0
-    case arg_type of
-        MT.Adt adt_id -> do
-            adt <- getAdt program adt_id
-            var_ref <- R.VarRef (getArgName 0)
-            rust_type <- convertType arg_type
-            rust_result_type <- convertType result_type
-            cases <- adt.variants |> List.iter |> fold (\cases, variant -> do
-                index <- getLength cases
-                name <- "{}::{}" % (rust_type, variant.name)
-                pattern <- R.VariantPattern name (Some "_")
-                struct_ctor <- R.StructCtor (show rust_result_type) [R.FieldInitItem innerValueField (R.FunctionCall rcNew [R.IntegerLiteral "{}" % index])]
-                c <- R.MatchCase pattern struct_ctor
-                cases <- cases + [c]
-                cases) []
-            R.Block [R.Match var_ref cases]
-        MT.Record _ -> do
-            rust_result_type <- convertType result_type
-            struct_ctor <- R.StructCtor (show rust_result_type) [R.FieldInitItem innerValueField (R.FunctionCall rcNew [R.IntegerLiteral "0"])]
-            R.Block [struct_ctor]
-        _ -> panic "getDiscriminant not implemented for special types"
-
-generateAssert :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
-generateAssert program type_store arg_types result_type = do
-    rust_result_type <- convertType result_type
-    arg_type <- atIndex arg_types 0
-    adt_id <- case arg_type of
-        MT.Adt adt_id -> adt_id
-        _ -> panic "Unexpected assert arg"
-    bool_adt <- getAdt program adt_id
-    rust_type <- convertType arg_type
-    rust_result_type <- convertType result_type
-    true_pattern <- R.VariantPattern ("{}::True" % rust_type) (Some "_")
-    false_pattern <- R.VariantPattern ("{}::False" % rust_type) (Some "_")
-    true_case <- R.MatchCase true_pattern (R.StructCtor (show rust_result_type) [])
-    false_case <- R.MatchCase false_pattern (R.Block [R.FunctionCall "panic!" [R.StringLiteral "Assertion failed"]])
-    cases <- [true_case, false_case]
-    match <- R.Match (R.VarRef (getArgName 0)) cases
-    R.Block [match]
-
-initializeBuiltinFunctions :: Map BuiltinId (Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr)
-initializeBuiltinFunctions = do
-    builtins <- Map.empty
-    (builtins, _) <- insert builtins (BuiltinId "Std.Util.Basic" "printStr") generatePrintStr
-    (builtins, _) <- insert builtins (BuiltinId "String" "opAdd") generateStringAdd
-    (builtins, _) <- insert builtins (BuiltinId "String" "partialCmp") generatePartialCmp
-    (builtins, _) <- insert builtins (BuiltinId "String" "cmp") generateCmp
-    (builtins, _) <- insert builtins (BuiltinId "Int" "opAdd") generateIntAdd
-    (builtins, _) <- insert builtins (BuiltinId "Int" "opMul") generateIntMul
-    (builtins, _) <- insert builtins (BuiltinId "Int" "show") generateIntShow
-    (builtins, _) <- insert builtins (BuiltinId "Int" "partialCmp") generatePartialCmp
-    (builtins, _) <- insert builtins (BuiltinId "Int" "cmp") generateCmp
-    (builtins, _) <- insert builtins (BuiltinId "Int" "opEq") generateIntEq
-    (builtins, _) <- insert builtins (BuiltinId "Std.Ops" "getDiscriminant") generateGetDiscriminant
-    (builtins, _) <- insert builtins (BuiltinId "Std.Ops" "opAnd") generateOpAnd
-    (builtins, _) <- insert builtins (BuiltinId "Std.Ops" "opOr") generateOpOr
-    (builtins, _) <- insert builtins (BuiltinId "Std.Util" "assert") generateAssert
-    (builtins, _) <- insert builtins (BuiltinId "Float" "partialCmp") generatePartialCmp
-    (builtins, _) <- insert builtins (BuiltinId "Float" "cmp") generateCmp
-    builtins
-
-initializeBuiltinStructs :: Map BuiltinId [R.StructField]
-initializeBuiltinStructs = do
-    builtins <- Map.empty
-    (builtins, _) <- insert builtins (BuiltinId "String" "String") ( [R.StructField innerValueField (typeToRcType (R.Type "std::string::String"))])
-    (builtins, _) <- insert builtins (BuiltinId "Int" "Int") ( [R.StructField innerValueField (typeToRcType (R.Type "i64"))])
-    (builtins, _) <- insert builtins (BuiltinId "Float" "Float") ( [R.StructField innerValueField (typeToRcType (R.Type "f64"))])
-    builtins
+initializeExternalStructs :: Map ExternalId [R.StructField]
+initializeExternalStructs = do
+    externals <- Map.empty
+    (externals, _) <- insert externals (ExternalId "String" "String") ( [R.StructField innerValueField (typeToRcType (R.Type "std::string::String"))])
+    (externals, _) <- insert externals (ExternalId "Int" "Int") ( [R.StructField innerValueField (typeToRcType (R.Type "i64"))])
+    (externals, _) <- insert externals (ExternalId "Float" "Float") ( [R.StructField innerValueField (typeToRcType (R.Type "f64"))])
+    externals
 
 convertPattern :: TypeStore -> ME.Checker -> R.Pattern
 convertPattern type_store checker = case checker of
@@ -455,14 +161,14 @@ convertExpr type_store mir_expr = do
         ME.Return e -> R.Return (convertExpr type_store e)
         _ -> R.VarRef "NYI"
 
-convertRecord :: Record -> Map BuiltinId [R.StructField] -> R.Struct
-convertRecord record builtin_structs = do
+convertRecord :: Record -> Map ExternalId [R.StructField] -> R.Struct
+convertRecord record external_structs = do
     name <- getRustIdentity record.id
     rust_fields <- if record.external
         then do
             Identity mod name _ <- record.id
-            id <- BuiltinId mod name
-            case get builtin_structs id of
+            id <- ExternalId mod name
+            case get external_structs id of
                 Some fields -> fields
                 None -> panic "Extern struct {}/{} is not implemented" % (mod, name)
         else do
@@ -479,8 +185,8 @@ convertAdt adt = do
 
 transpile :: Program -> String
 transpile program = do
-    builtin_functions <- initializeBuiltinFunctions
-    builtin_structs <- initializeBuiltinStructs
+    external_functions <- initializeExternalFunctions
+    external_structs <- initializeExternalStructs
     type_store <- createTypeStore
     rust_program <- R.Program [] [] []
     (type_store, rust_program) <- program.adts |> Map.iter |> fold (\(type_store, rust_program), (_, adt) -> do
@@ -491,7 +197,7 @@ transpile program = do
         rust_program <- rust_program { enums = enums }
         (type_store, rust_program)) (type_store, rust_program)
     (type_store, rust_program) <- program.records |> Map.iter |> fold (\(type_store, rust_program), (_, record) -> do
-        struct <- convertRecord record builtin_structs
+        struct <- convertRecord record external_structs
         struct_type <- R.Type struct.name
         type_store <- addStruct type_store struct_type struct
         structs <- rust_program.structs + [struct]
@@ -509,10 +215,12 @@ transpile program = do
                         _ -> R.Block [convertExpr type_store mir_body]
             Extern -> do
                     Identity mod name _ <- mir_function.id
-                    id <- BuiltinId mod name
-                    case get builtin_functions id of
-                        Some builtin_gen -> builtin_gen program type_store mir_function.args mir_function.result
-                        None -> panic "Extern function {}/{} is not implemented" % (mod, name)
+                    id <- ExternalId mod name
+                    case get external_functions id of
+                        Some external_gen -> external_gen program type_store mir_function.args mir_function.result
+                        None -> do
+                            println "Extern function {}/{} is not implemented" % (mod, name)
+                            R.Block [R.FunctionCall "unimplemented!" []]
             VariantCtor index ->
                 do
                 enum <- getEnum type_store rust_result
