@@ -18,25 +18,16 @@ def processFile(file):
         content += "\n"
     return content
 
-def processDir(path):
-    source = ""
+def collect_tests(path, tests, parent):
     if os.path.isdir(path):
         files = os.listdir(path)
         for f in files:
             full_path = os.path.join(path, f)
             if os.path.isdir(full_path):
-                source += processDir(full_path)
+                collect_tests(full_path, tests, f)
             else:
-                source += processFile(full_path)
-    else:
-        source += processFile(path)
-    return source
-
-def processSources(args):
-    source = ""
-    for arg in args:
-        source += processDir(arg)
-    return source
+                if f == "main.sk":
+                    tests.append((parent, path))
 
 def prepare(folder_name):
     try:
@@ -48,17 +39,21 @@ def prepare(folder_name):
         if e.errno != errno.EEXIST:
             raise
 
-def compile_and_run(folder_name):
-    source = processSources(sys.argv[2:])
-    prepare(folder_name)
-    os.chdir(folder_name)
-    f = open("sikoc.sk", "w")
-    f.write(source)
-    f.close()
+def run(test_name, source_folder):
+    print "--- Running %s" % test_name
+    target_folder = os.path.join("sikoc_test_runs", test_name)
+    subprocess.call(["./siko.py", target_folder, "std2", source_folder])
 
-    subprocess.call(["./siko", "sikoc"])
-    subprocess.call(["rustc", "sikoc_output.rs", "-o", "rust_program"])
-    subprocess.call(["./rust_program"])
-
-folder_name = sys.argv[1]
-compile_and_run(folder_name)
+test_source_name = sys.argv[1]
+tests = []
+collect_tests(test_source_name, tests, None)
+if len(sys.argv) == 2:
+    for (name, path) in tests:
+        run(name, path)
+else:
+    selected = set()
+    for t in sys.argv[2:]:
+        selected.add(t)
+    for (name, path) in tests:
+        if name in selected:
+            run(name, path)
