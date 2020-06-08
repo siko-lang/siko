@@ -221,6 +221,90 @@ generateIntEq program type_store arg_types result_type = do
     match <- R.Match eq_call cases
     R.Block [match]
 
+generateOpAnd :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
+generateOpAnd program type_store arg_types result_type = do
+    rust_result_type <- convertType result_type
+    field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
+    field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
+    rust_result_type <- convertType result_type
+    arg_type <- atIndex arg_types 0
+    adt_id <- case arg_type of
+        MT.Adt adt_id -> adt_id
+        _ -> panic "Unexpected assert arg"
+    bool_adt <- getAdt program adt_id
+    true_variant <- atIndex bool_adt.variants 0
+    false_variant <- atIndex bool_adt.variants 1
+    true_pattern <- R.VariantPattern "true" None
+    false_pattern <- R.VariantPattern "false" None
+    true_record_type <- MT.Record true_variant.type
+    rust_true_record_type <- convertType true_record_type
+    false_record_type <- MT.Record false_variant.type
+    rust_false_record_type <- convertType false_record_type
+    true_ctor <- R.StructCtor (show (rust_true_record_type)) []
+    false_ctor <- R.StructCtor (show (rust_false_record_type)) []
+
+    true_pattern <- R.VariantPattern ("{}::True" % rust_result_type) (Some "_")
+    false_pattern <- R.VariantPattern ("{}::False" % rust_result_type) (Some "_")
+
+    true_case <- R.MatchCase true_pattern (R.FunctionCall ("{}::True" % rust_result_type) [true_ctor])
+    false_case <- R.MatchCase false_pattern (R.FunctionCall ("{}::False" % rust_result_type) [false_ctor])
+    cases <- [true_case, false_case]
+    match_true <- R.Match (R.VarRef (getArgName 1)) cases
+
+    true_case <- R.MatchCase true_pattern (R.FunctionCall ("{}::False" % rust_result_type) [false_ctor])
+    false_case <- R.MatchCase false_pattern (R.FunctionCall ("{}::False" % rust_result_type) [false_ctor])
+    cases <- [true_case, false_case]
+    match_false <- R.Match (R.VarRef (getArgName 1)) cases
+
+    true_case <- R.MatchCase true_pattern match_true
+    false_case <- R.MatchCase false_pattern match_false
+    cases <- [true_case, false_case]
+    match <- R.Match (R.VarRef (getArgName 0)) cases
+
+    R.Block [match]
+
+generateOpOr :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
+generateOpOr program type_store arg_types result_type = do
+    rust_result_type <- convertType result_type
+    field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
+    field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
+    rust_result_type <- convertType result_type
+    arg_type <- atIndex arg_types 0
+    adt_id <- case arg_type of
+        MT.Adt adt_id -> adt_id
+        _ -> panic "Unexpected assert arg"
+    bool_adt <- getAdt program adt_id
+    true_variant <- atIndex bool_adt.variants 0
+    false_variant <- atIndex bool_adt.variants 1
+    true_pattern <- R.VariantPattern "true" None
+    false_pattern <- R.VariantPattern "false" None
+    true_record_type <- MT.Record true_variant.type
+    rust_true_record_type <- convertType true_record_type
+    false_record_type <- MT.Record false_variant.type
+    rust_false_record_type <- convertType false_record_type
+    true_ctor <- R.StructCtor (show (rust_true_record_type)) []
+    false_ctor <- R.StructCtor (show (rust_false_record_type)) []
+
+    true_pattern <- R.VariantPattern ("{}::True" % rust_result_type) (Some "_")
+    false_pattern <- R.VariantPattern ("{}::False" % rust_result_type) (Some "_")
+
+    true_case <- R.MatchCase true_pattern (R.FunctionCall ("{}::True" % rust_result_type) [true_ctor])
+    false_case <- R.MatchCase false_pattern (R.FunctionCall ("{}::True" % rust_result_type) [true_ctor])
+    cases <- [true_case, false_case]
+    match_true <- R.Match (R.VarRef (getArgName 1)) cases
+
+    true_case <- R.MatchCase true_pattern (R.FunctionCall ("{}::True" % rust_result_type) [true_ctor])
+    false_case <- R.MatchCase false_pattern (R.FunctionCall ("{}::False" % rust_result_type) [false_ctor])
+    cases <- [true_case, false_case]
+    match_false <- R.Match (R.VarRef (getArgName 1)) cases
+
+    true_case <- R.MatchCase true_pattern match_true
+    false_case <- R.MatchCase false_pattern match_false
+    cases <- [true_case, false_case]
+    match <- R.Match (R.VarRef (getArgName 0)) cases
+
+    R.Block [match]
+
 generateGetDiscriminant :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
 generateGetDiscriminant program type_store arg_types result_type = do
     arg_type <- atIndex arg_types 0
@@ -255,8 +339,6 @@ generateAssert program type_store arg_types result_type = do
     bool_adt <- getAdt program adt_id
     rust_type <- convertType arg_type
     rust_result_type <- convertType result_type
-    true_variant <- atIndex bool_adt.variants 0
-    false_variant <- atIndex bool_adt.variants 1
     true_pattern <- R.VariantPattern ("{}::True" % rust_type) (Some "_")
     false_pattern <- R.VariantPattern ("{}::False" % rust_type) (Some "_")
     true_case <- R.MatchCase true_pattern (R.StructCtor (show rust_result_type) [])
@@ -279,6 +361,8 @@ initializeBuiltinFunctions = do
     (builtins, _) <- insert builtins (BuiltinId "Int" "cmp") generateCmp
     (builtins, _) <- insert builtins (BuiltinId "Int" "opEq") generateIntEq
     (builtins, _) <- insert builtins (BuiltinId "Std.Ops" "getDiscriminant") generateGetDiscriminant
+    (builtins, _) <- insert builtins (BuiltinId "Std.Ops" "opAnd") generateOpAnd
+    (builtins, _) <- insert builtins (BuiltinId "Std.Ops" "opOr") generateOpOr
     (builtins, _) <- insert builtins (BuiltinId "Std.Util" "assert") generateAssert
     (builtins, _) <- insert builtins (BuiltinId "Float" "partialCmp") generatePartialCmp
     (builtins, _) <- insert builtins (BuiltinId "Float" "cmp") generateCmp
