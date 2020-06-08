@@ -21,3 +21,5 @@ mkdir -p sikoc_test_runs
 ./siko.py sikoc_test_runs/adt std2 sikoc_tests/success/syntax/adt/main.sk
 ./siko.py sikoc_test_runs/caseof std2 sikoc_tests/success/syntax/caseof/main.sk
 ./siko.py sikoc_test_runs/deriving std2 sikoc_tests/success/syntax/deriving/main.sk
+./siko.py sikoc_test_runs/literals std2 sikoc_tests/success/syntax/literals/main.sk
+./siko.py sikoc_test_runs/pattern_guard std2 sikoc_tests/success/syntax/pattern_guard/main.sk

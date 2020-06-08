@@ -9,10 +9,10 @@ import Map
 
 generatePrintStr :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
 generatePrintStr program type_store arg_types result_type = do
-    R.Type t <- convertType result_type
+    rust_type <- convertType result_type
     field_access <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
     print_call <- R.FunctionCall "print!" [R.StringLiteral "{}", field_access]
-    unit <- R.StructCtor t []
+    unit <- R.StructCtor (show rust_type) []
     R.Block [print_call, unit]
 
 generateStringAdd :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
@@ -353,5 +353,9 @@ initializeExternalFunctions = do
     (externals, _) <- insert externals (ExternalId "Float" "partialCmp") generatePartialCmp
     (externals, _) <- insert externals (ExternalId "Float" "opEq") generateEq
     (externals, _) <- insert externals (ExternalId "Float" "opNegative") generateNegative
+
+    (externals, _) <- insert externals (ExternalId "Char" "partialCmp") generatePartialCmp
+    (externals, _) <- insert externals (ExternalId "Char" "cmp") generateCmp
+    (externals, _) <- insert externals (ExternalId "Char" "opEq") generateEq
 
     externals

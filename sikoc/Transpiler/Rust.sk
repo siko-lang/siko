@@ -59,9 +59,9 @@ data Program = { structs :: [Struct], enums :: [Enum], functions :: [Function] }
 
 generatePattern :: Pattern -> String
 generatePattern pattern = case pattern of
-    IntegerPattern lit -> "a if a.value == {}" % lit
-    StringPattern lit -> "a if a.value == {}" % lit
-    CharPattern lit -> "a if a.value == {}" % lit
+    IntegerPattern lit -> "a if *a.value == {}" % lit
+    StringPattern lit -> "a if *a.value == \"{}\"" % lit
+    CharPattern lit -> "a if *a.value == '{}'" % lit
     CharRangePattern _ _ _ -> "NYI"
     VariantPattern variant_name var_name -> case var_name of
         Some var_name -> "{}({})" % (variant_name, var_name)
@@ -93,6 +93,8 @@ generateExpr expr indent = case expr of
     StringLiteral lit -> do
         lit <- replace lit "\n" "\\n"
         "\"{}\"" % lit
+    CharLiteral lit -> do
+        "'{}'" % lit
     VarDecl mutable n rhs type -> case type of
         Some type -> if mutable
                 then "let mut {}: {} = {}" % (n, type, generateExpr rhs (Indent 0))

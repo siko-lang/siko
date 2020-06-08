@@ -47,6 +47,7 @@ stringTypeName = "String_String_0"
 intTypeName = "Int_Int_0"
 floatTypeName = "Float_Float_0"
 boolTypeName = "Bool_Bool_0"
+charTypeName = "Char_Char_0"
 stdOpsAdd = "std::ops::Add::add"
 stdOpsSub = "std::ops::Sub::sub"
 stdOpsMul = "std::ops::Mul::mul"
@@ -80,6 +81,7 @@ initializeExternalStructs = do
     (externals, _) <- insert externals (ExternalId "String" "String") ( [R.StructField innerValueField (typeToRcType (R.Type "std::string::String"))])
     (externals, _) <- insert externals (ExternalId "Int" "Int") ( [R.StructField innerValueField (typeToRcType (R.Type "i64"))])
     (externals, _) <- insert externals (ExternalId "Float" "Float") ( [R.StructField innerValueField (typeToRcType (R.Type "f64"))])
+    (externals, _) <- insert externals (ExternalId "Char" "Char") ( [R.StructField innerValueField (typeToRcType (R.Type "char"))])
     externals
 
 convertPattern :: TypeStore -> ME.Checker -> R.Pattern
@@ -109,11 +111,20 @@ convertPattern type_store checker = case checker of
 
 convertExpr :: TypeStore -> ME.Expr -> R.Expr
 convertExpr type_store mir_expr = do
-    ME.Expr expr _ <- mir_expr
+    ME.Expr expr expr_type <- mir_expr
     case expr of
         ME.Do args -> do
             args <- args |> List.iter |> map (\arg -> convertExpr type_store arg) |> toList
-            R.Block args
+            last <- atIndex args (getLength args - 1)
+            is_var_decl <- case last of
+                R.VarDecl _ _ _ _ -> True
+                _ -> False
+            if is_var_decl
+                then do
+                    rust_type <- convertType expr_type
+                    unit <- R.StructCtor (show rust_type) []
+                    R.Block (args + [unit])
+                else R.Block args
         ME.StaticFunctionCall id args -> do
             rust_function_name <- getRustIdentity id
             args <- args |> List.iter |> map (\arg -> R.MethodCall (convertExpr type_store arg) cloneName []) |> toList
@@ -128,6 +139,9 @@ convertExpr type_store mir_expr = do
             literal <- R.StringLiteral lit
             to_string_call <- R.MethodCall literal "to_string" []
             R.StructCtor stringTypeName [R.FieldInitItem innerValueField (R.FunctionCall rcNew [to_string_call])]
+        ME.CharLiteral lit -> do
+            literal <- R.CharLiteral lit
+            R.StructCtor charTypeName [R.FieldInitItem innerValueField (R.FunctionCall rcNew [literal])]
         ME.VarDecl (ME.Var n) rhs -> do
             ME.Expr _ rhs_type <- rhs
             R.VarDecl False n (convertExpr type_store rhs) (Some (convertType rhs_type))
