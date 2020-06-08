@@ -60,6 +60,7 @@ parseData state = do
         case ti.token of
             Equal -> break (state, args)
             EndOfItem -> break (state, args)
+            KeywordDeriving -> break (state, args)
             _ -> do
                 (state, arg) <- try expectVarIdent state "type argument"
                 args <- args + [arg]
@@ -84,7 +85,14 @@ parseData state = do
                             (state, data_definition)
         else
             do
-                adt <- AlgebraicDataType { name = name, type_arguments = [], variants = [], derived_classes = [] }
+                (state, derived_classes) <- if check state Kind.KeywordDeriving
+                    then
+                        do
+                            state <- try expect state Kind.KeywordDeriving
+                            try parseList state parseDerivedClass Kind.LParen Kind.RParen
+                    else
+                        (state, [])
+                adt <- AlgebraicDataType { name = name, type_arguments = [], variants = [], derived_classes = derived_classes }
                 (state, Left adt)
     state <- try expect state Kind.EndOfItem
     Ok (state, data_definition)
