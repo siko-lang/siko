@@ -33,20 +33,31 @@ def processDir(path):
 
 def processSources(args):
     source = ""
-    for arg in sys.argv[1:]:
+    for arg in args:
         source += processDir(arg)
     return source
 
-source = processSources(sys.argv[1:])
+def prepare(folder_name):
+    try:
+        os.mkdir(folder_name)
+        os.symlink(os.path.join(os.getcwd(), "siko"), os.path.join(folder_name, "siko"))
+        os.symlink(os.path.join(os.getcwd(), "sikoc"), os.path.join(folder_name, "sikoc"))
+        os.symlink(os.path.join(os.getcwd(), "std"), os.path.join(folder_name, "std"))
+    except OSError as e:
+        if e.errno != errno.EEXIST:
+            raise
 
-try:
-    os.mkdir("sikocwd")
-except OSError as e:
-    if e.errno != errno.EEXIST:
-        raise
-os.chdir("sikocwd")
-f = open("sikoc.sk", "w")
-f.write(source)
-f.close()
+def compile_and_run(folder_name):
+    source = processSources(sys.argv[2:])
+    prepare(folder_name)
+    os.chdir(folder_name)
+    f = open("sikoc.sk", "w")
+    f.write(source)
+    f.close()
 
-subprocess.call(["./siko", "sikoc"])
+    subprocess.call(["./siko", "sikoc"])
+    subprocess.call(["rustc", "sikoc_output.rs", "-o", "rust_program"])
+    subprocess.call(["./rust_program"])
+
+folder_name = sys.argv[1]
+compile_and_run(folder_name)
