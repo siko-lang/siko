@@ -167,12 +167,20 @@ convertExpr type_store mir_expr = do
         ME.Loop (ME.Var n) initializer args -> do
             var_decl <- R.VarDecl True n (convertExpr type_store initializer) None
             args <- args |> List.iter |> map (\arg -> convertExpr type_store arg) |> toList
-            loop_body <- R.Assign n (R.Block args)
+            loop_body <- R.Assign (R.VarRef n) (R.Block args)
             loop_expr <- R.Loop [loop_body]
             R.Block [var_decl, loop_expr]
         ME.Break e -> R.Break (convertExpr type_store e)
         ME.Continue e -> R.Continue (convertExpr type_store e)
         ME.Return e -> R.Return (convertExpr type_store e)
+        ME.RecordUpdate (ME.Var n) items -> do
+            new <- "new"
+            var_decl <- R.VarDecl True new (R.MethodCall (R.VarRef n) cloneName []) None
+            assignments <- items |> List.iter |> map (\update -> do
+            lhs <- (R.FieldAccess update.field_name (R.VarRef new))
+            rhs <- (convertExpr type_store update.body)
+            R.Assign lhs (R.FunctionCall rcNew [rhs])) |> toList
+            R.Block ([var_decl] + assignments + [R.VarRef new])
         _ -> R.VarRef "NYI"
 
 convertRecord :: Record -> Map ExternalId [R.StructField] -> R.Struct

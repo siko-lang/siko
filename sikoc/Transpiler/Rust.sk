@@ -53,7 +53,7 @@ data Expr = Block [Expr]
             | Loop [Expr]
             | Match Expr [MatchCase]
             | StructCtor String [FieldInitItem]
-            | Assign String Expr
+            | Assign Expr Expr
 
 data Program = { structs :: [Struct], enums :: [Enum], functions :: [Function] }
 
@@ -128,8 +128,8 @@ generateExpr expr indent = case expr of
     Return expr -> do
         body <- generateExpr expr (Indent 0)
         "return {}" % body
-    Assign v expr -> do
-        "{} = {}" % (v, generateExpr expr (Indent 0))
+    Assign lhs rhs -> do
+        "{} = {}" % (generateExpr lhs (Indent 0), generateExpr rhs (Indent 0))
     _ -> "NYI"
 
 generateStruct :: Struct -> String
