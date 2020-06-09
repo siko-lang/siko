@@ -1,0 +1,28 @@
+module Main where
+
+import Std.Util
+
+lambdaCreate = do
+                a <- 1
+                \x, y -> x + y + a
+
+lambdaCreate2 a = do
+                \x, y -> x + y + a
+
+fn1 a x y = fn2 a x y
+fn2 a x y z = x + y + a + z
+
+lambdaCreate4 a = fn1 a
+
+lambdaCreate3 a = do
+                \x, y ->
+                   \z -> x +
+                       y + a + z
+
+main = do
+        assert (lambdaCreate 2 3 == 6)
+        assert ((lambdaCreate) 2 3 == 6)
+        assert ((do lambdaCreate) 2 3 == 6)
+        assert ((lambdaCreate2 1) 2 3 == 6)
+        assert (lambdaCreate3 1 1 2 2 == 6)
+        assert (lambdaCreate4 1 1 2 2 == 6)

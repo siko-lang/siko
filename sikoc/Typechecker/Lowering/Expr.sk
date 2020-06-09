@@ -406,11 +406,12 @@ processStaticFunctionCall context queue mir_args function_type function_id arg_c
             (context, queue, call_expr)
         else if arg_count > current_arg_count // partial application
             then do
+                diff <- arg_count - current_arg_count
                 result_type <- HT.getResultType function_type current_arg_count
                 (context, queue, closures, functions) <- loop (context, queue, closure_type, arg_types, closures, functions)
                                                 <- (context, queue, result_type, arg_types, [], []) do
                     context :: Context <- context // FIXME
-                    if HT.isFunction closure_type
+                    if getLength functions < diff
                         then do
                             (closure_store, closure_instance) <- CS.addClosureInstance context.closure_store closure_type arg_types
                             closures <- closures + [closure_instance]
