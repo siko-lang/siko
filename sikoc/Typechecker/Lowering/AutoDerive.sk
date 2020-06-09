@@ -149,7 +149,7 @@ processMemberForPartialOrd context queue items var_ref0 var_ref1 = do
             var_res_ref_expr <- ME.Expr var_res_ref mir_optional_ordering_type
             (context, queue, call_some_equal_ctor) <- callSomeEqualCtor context queue
             (context, queue, call_partial_eq) <- callOpEq context queue hir_optional_ordering_type var_res_ref_expr call_some_equal_ctor
-            (context, queue, true_branch) <- processMemberForPartialOrd context queue rest var_ref1 var_ref1
+            (context, queue, true_branch) <- processMemberForPartialOrd context queue rest var_ref0 var_ref1
             if_expr <- ME.If call_partial_eq true_branch var_res_ref_expr
             if_expr <- ME.Expr if_expr mir_optional_ordering_type
             do_expr <- ME.Do [decl_expr, if_expr]
@@ -179,7 +179,7 @@ processMemberForOrd context queue items var_ref0 var_ref1 = do
             var_res_ref_expr <- ME.Expr var_res_ref mir_ordering_type
             (context, queue, call_equal_ctor) <- callEqualCtor context queue
             (context, queue, call_partial_eq) <- callOpEq context queue hir_ordering_type var_res_ref_expr call_equal_ctor
-            (context, queue, true_branch) <- processMemberForOrd context queue rest var_ref1 var_ref1
+            (context, queue, true_branch) <- processMemberForOrd context queue rest var_ref0 var_ref1
             if_expr <- ME.If call_partial_eq true_branch var_res_ref_expr
             if_expr <- ME.Expr if_expr mir_ordering_type
             do_expr <- ME.Do [decl_expr, if_expr]
@@ -247,9 +247,10 @@ generateShowInstance context queue hir_type class_name = do
                         fmt_args <- fmt_args + [fmt_arg]
                         mir_items <- mir_items + items
                         (context, queue, fmt_args, mir_items)) (context, queue, [], [])
+                    name <- HP.getShortName record.name
                     fmt <- if isEmpty fmt_args
-                            then "{}" % record.name
-                            else "{} {}" % (record.name, (join fmt_args " "))
+                            then "{}" % name
+                            else "{} {}" % (name, (join fmt_args " "))
                     (context, queue, body) <- processFormatExpr context queue fmt [] mir_items
                     body <- ME.Do [decl_expr, body]
                     body_expr <- ME.Expr body mir_string_type
