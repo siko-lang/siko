@@ -75,15 +75,6 @@ convertType mir_type = do
 typeToRcType :: R.Type -> R.Type
 typeToRcType type = R.Type ("std::rc::Rc<{}>" % type)
 
-initializeExternalStructs :: Map ExternalId [R.StructField]
-initializeExternalStructs = do
-    externals <- Map.empty
-    (externals, _) <- insert externals (ExternalId "String" "String") ( [R.StructField innerValueField (typeToRcType (R.Type "std::string::String"))])
-    (externals, _) <- insert externals (ExternalId "Int" "Int") ( [R.StructField innerValueField (typeToRcType (R.Type "i64"))])
-    (externals, _) <- insert externals (ExternalId "Float" "Float") ( [R.StructField innerValueField (typeToRcType (R.Type "f64"))])
-    (externals, _) <- insert externals (ExternalId "Char" "Char") ( [R.StructField innerValueField (typeToRcType (R.Type "char"))])
-    externals
-
 convertPattern :: TypeStore -> ME.Checker -> R.Pattern
 convertPattern type_store checker = case checker of
     ME.IntegerChecker lit -> R.IntegerPattern lit
@@ -181,19 +172,24 @@ convertExpr type_store mir_expr = do
             rhs <- (convertExpr type_store update.body)
             R.Assign lhs (R.FunctionCall rcNew [rhs])) |> toList
             R.Block ([var_decl] + assignments + [R.VarRef new])
+        ME.List args -> do
+            rust_type <- convertType expr_type
+            args <- args |> List.iter |> map (\arg -> convertExpr type_store arg) |> toList
+            R.StructCtor (show rust_type) [R.FieldInitItem innerValueField (R.FunctionCall rcNew [R.List args])]
         _ -> R.VarRef "NYI"
 
-convertRecord :: Record -> Map ExternalId [R.StructField] -> R.Struct
-convertRecord record external_structs = do
+convertRecord :: Record -> Map ExternalId ([MT.Type] -> [R.StructField]) -> R.Struct
+convertRecord record external_struct_gens = do
     name <- getRustIdentity record.id
-    rust_fields <- if record.external
-        then do
+    rust_fields <- case record.external_info of
+        Some info -> do
+            info :: ExternalRecordInfo <- info
             Identity mod name _ <- record.id
             id <- ExternalId mod name
-            case get external_structs id of
-                Some fields -> fields
+            case get external_struct_gens id of
+                Some struct_gen -> struct_gen info.type_args
                 None -> panic "Extern struct {}/{} is not implemented" % (mod, name)
-        else do
+        None ->
             record.fields |> List.iter |> map (\field -> do
                 R.StructField (getRustFriendlyName field.name) (typeToRcType (convertType field.type))) |> toList
     R.Struct name rust_fields [R.Clone]
@@ -208,7 +204,7 @@ convertAdt adt = do
 transpile :: Program -> String
 transpile program = do
     external_functions <- initializeExternalFunctions
-    external_structs <- initializeExternalStructs
+    external_structs <- initializeExternalStructFields
     type_store <- createTypeStore
     rust_program <- R.Program [] [] []
     (type_store, rust_program) <- program.adts |> Map.iter |> fold (\(type_store, rust_program), (_, adt) -> do

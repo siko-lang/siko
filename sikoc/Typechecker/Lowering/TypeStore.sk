@@ -156,7 +156,7 @@ processType context hir_type = case hir_type of
                                     mir_field <- MD.RecordField name mir_type
                                     mir_fields <- mir_fields + [mir_field]
                                     (context, mir_fields)) (context, [])
-                            mir_record <- MD.Record identity mir_fields False
+                            mir_record <- MD.Record identity mir_fields None
                             context <- addRecord context identity mir_record
                             mir_type <- MT.Record identity
                             context <- addNamedType context hir_type mir_type
@@ -172,7 +172,7 @@ processType context hir_type = case hir_type of
                                     mir_fields <- mir_fields + [mir_field]
                                     (context, mir_fields)) (context, [])
                                 (context, identity) <- getIdentity context module_name variant.name
-                                mir_record <- MD.Record identity mir_fields False
+                                mir_record <- MD.Record identity mir_fields None
                                 context <- addRecord context identity mir_record
                                 mir_variant <- MD.Variant variant.name identity
                                 mir_variants <- mir_variants + [mir_variant]
@@ -190,7 +190,14 @@ processType context hir_type = case hir_type of
                         mir_field <- MD.RecordField field.name mir_type
                         mir_fields <- mir_fields + [mir_field]
                         (context, mir_fields)) (context, [])
-                    mir_record <- MD.Record identity mir_fields record_type_info.external
+                    (context, external_record_info) <- if record_type_info.external
+                        then do
+                            (context, mir_args) <- args |> List.iter |> fold (\(context, mir_args), arg -> do
+                                (context, mir_arg) <- processType context arg
+                                (context, mir_args + [mir_arg])) (context, [])
+                            (context, Some (MD.ExternalRecordInfo mir_args))
+                        else (context, None)
+                    mir_record <- MD.Record identity mir_fields external_record_info
                     context <- addRecord context identity mir_record
                     (context, mir_type)
     HT.Function from to -> do
@@ -222,6 +229,6 @@ processType context hir_type = case hir_type of
             mir_field <- MD.RecordField name mir_type
             mir_fields <- mir_fields + [mir_field]
             (context, mir_fields)) (context, [])
-        mir_record <- MD.Record identity mir_fields False
+        mir_record <- MD.Record identity mir_fields None
         context <- addRecord context identity mir_record
         (context, MT.Record identity)

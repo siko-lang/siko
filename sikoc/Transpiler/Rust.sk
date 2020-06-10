@@ -132,6 +132,10 @@ generateExpr expr indent = case expr of
         "return {}" % body
     Assign lhs rhs -> do
         "{} = {}" % (generateExpr lhs (Indent 0), generateExpr rhs (Indent 0))
+    List args -> do
+        args <- args |> List.iter |> map (\arg -> do
+                "{}" % generateExpr arg (Indent 0)) |> toList
+        "vec![{}]" % (join args ", ")
     _ -> "NYI"
 
 generateStruct :: Struct -> String

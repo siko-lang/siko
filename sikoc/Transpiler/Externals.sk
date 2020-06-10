@@ -359,3 +359,31 @@ initializeExternalFunctions = do
     (externals, _) <- insert externals (ExternalId "Char" "opEq") generateEq
 
     externals
+
+generateStringFields :: [MT.Type] -> [R.StructField]
+generateStringFields args = [R.StructField innerValueField (typeToRcType (R.Type "std::string::String"))]
+
+generateIntFields :: [MT.Type] -> [R.StructField]
+generateIntFields args = [R.StructField innerValueField (typeToRcType (R.Type "i64"))]
+
+generateFloatFields :: [MT.Type] -> [R.StructField]
+generateFloatFields args = [R.StructField innerValueField (typeToRcType (R.Type "f64"))]
+
+generateCharFields :: [MT.Type] -> [R.StructField]
+generateCharFields args = [R.StructField innerValueField (typeToRcType (R.Type "char"))]
+
+generateListFields :: [MT.Type] -> [R.StructField]
+generateListFields args = do
+    first <- atIndex args 0
+    rust_type_arg <- convertType first
+    [R.StructField innerValueField (typeToRcType (R.Type "std::vec::Vec<{}>" % rust_type_arg))]
+
+initializeExternalStructFields :: Map ExternalId ([MT.Type] -> [R.StructField])
+initializeExternalStructFields = do
+    externals <- Map.empty
+    (externals, _) <- insert externals (ExternalId "String" "String") generateStringFields
+    (externals, _) <- insert externals (ExternalId "Int" "Int") generateIntFields
+    (externals, _) <- insert externals (ExternalId "Float" "Float") generateFloatFields
+    (externals, _) <- insert externals (ExternalId "Char" "Char") generateCharFields
+    (externals, _) <- insert externals (ExternalId "List" "List") generateListFields
+    externals

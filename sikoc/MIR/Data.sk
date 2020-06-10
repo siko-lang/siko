@@ -18,9 +18,11 @@ data RecordField = { name :: String,
                      type :: Type,
                    }
 
+data ExternalRecordInfo = { type_args :: [Type] }
+
 data Record = { id :: Identity,
                 fields :: [RecordField],
-                external :: Bool,
+                external_info :: Option ExternalRecordInfo,
               }
 
 dumpAdt :: AlgebraicDataType -> String
@@ -32,7 +34,7 @@ dumpRecord :: Record -> String
 dumpRecord record = do
     fields <- record.fields |> List.iter |> map (\field -> "{} :: {}" % (field.name, field.type)) |> toList
     if isEmpty fields
-        then if record.external
+        then if isSome record.external_info
             then "record {} = extern" % record.id
             else "record {}" % record.id
         else "record {} = {{ {} }}" % (record.id, join fields ", ")
