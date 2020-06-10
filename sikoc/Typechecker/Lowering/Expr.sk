@@ -203,7 +203,12 @@ processChoiceTree context choice path_info_map mir_case_bodies mir_guards = do
                             body <- ME.FieldAccess field.name parent_info.parent_expr
                             (ME.Expr body field.type, field.type)
                         MT.Record name -> do
-                            (parent_info.parent_expr, parent_info.type)
+                            record <- case parent_info.type of
+                                MT.Record name -> getRecord context.type_store name
+                                _ -> panic "Record is not a record!"
+                            field <- atIndex record.fields index
+                            body <- ME.FieldAccess field.name parent_info.parent_expr
+                            (ME.Expr body field.type, field.type)
                         _ -> panic "Indexed adt is not a record nor an adt"
                 _ -> (parent_info.parent_expr, parent_info.type)
             (context, id) <- getNextVarId context

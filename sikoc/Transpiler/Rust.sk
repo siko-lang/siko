@@ -62,7 +62,9 @@ generatePattern pattern = case pattern of
     IntegerPattern lit -> "a if *a.value == {}" % lit
     StringPattern lit -> "a if *a.value == \"{}\"" % lit
     CharPattern lit -> "a if *a.value == '{}'" % lit
-    CharRangePattern _ _ _ -> "NYI"
+    CharRangePattern start end kind -> case kind of
+        Exclusive -> "a if std::ops::Range{ start: '{}', end: '{}' }.contains(&a.value)" % (start, end)
+        Inclusive -> "a if std::ops::RangeInclusive::new('{}', '{}').contains(&a.value)" % (start, end)
     VariantPattern variant_name var_name -> case var_name of
         Some var_name -> "{}({})" % (variant_name, var_name)
         None -> "{}" % variant_name

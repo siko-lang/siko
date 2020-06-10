@@ -39,21 +39,19 @@ def prepare(folder_name):
         if e.errno != errno.EEXIST:
             raise
 
-def run(test_name, source_folder):
-    print "--- Running %s" % test_name
+def run(test_name, source_folder, index, total):
+    print("--- Running %s - %d/%d" % (test_name, total, index))
     target_folder = os.path.join("sikoc_test_runs", test_name)
     subprocess.call(["./siko.py", target_folder, "std2", source_folder])
 
 test_source_name = sys.argv[1]
 tests = []
 collect_tests(test_source_name, tests, None)
-if len(sys.argv) == 2:
-    for (name, path) in tests:
-        run(name, path)
-else:
+if len(sys.argv) != 2:
     selected = set()
     for t in sys.argv[2:]:
         selected.add(t)
-    for (name, path) in tests:
-        if name in selected:
-            run(name, path)
+    tests = filter(lambda test: test[0] in selected, tests)
+total = len(tests)
+for (index, (name, path)) in enumerate(tests):
+    run(name, path, index + 1, total)
