@@ -90,11 +90,20 @@ generateNegative program type_store arg_types result_type = do
     struct_ctor <- R.StructCtor (show rust_type) [R.FieldInitItem innerValueField (R.FunctionCall rcNew [R.VarRef new])]
     R.Block [new_decl, struct_ctor]
 
-generateIntShow :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
-generateIntShow program type_store arg_types result_type = do
+generateShow :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
+generateShow program type_store arg_types result_type = do
     rust_type <- convertType result_type
     field_access <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
     format <- R.FunctionCall "format!" [(R.StringLiteral "{}"), field_access]
+    struct_ctor <- R.StructCtor (show rust_type) [R.FieldInitItem innerValueField (R.FunctionCall rcNew [format])]
+    R.Block [struct_ctor]
+
+generateListShow :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
+generateListShow program type_store arg_types result_type = do
+    rust_type <- convertType result_type
+    field_access <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
+    //format <- R.FunctionCall "format!" [(R.StringLiteral ""), field_access]
+    format <- R.StringLiteral "[]"
     struct_ctor <- R.StructCtor (show rust_type) [R.FieldInitItem innerValueField (R.FunctionCall rcNew [format])]
     R.Block [struct_ctor]
 
@@ -334,7 +343,7 @@ initializeExternalFunctions = do
     (externals, _) <- insert externals (ExternalId "Int" "opSub") generateSub
     (externals, _) <- insert externals (ExternalId "Int" "opMul") generateMul
     (externals, _) <- insert externals (ExternalId "Int" "opDiv") generateDiv
-    (externals, _) <- insert externals (ExternalId "Int" "show") generateIntShow
+    (externals, _) <- insert externals (ExternalId "Int" "show") generateShow
     (externals, _) <- insert externals (ExternalId "Int" "partialCmp") generatePartialCmp
     (externals, _) <- insert externals (ExternalId "Int" "cmp") generateCmp
     (externals, _) <- insert externals (ExternalId "Int" "opEq") generateEq
@@ -350,6 +359,7 @@ initializeExternalFunctions = do
     (externals, _) <- insert externals (ExternalId "Float" "opSub") generateSub
     (externals, _) <- insert externals (ExternalId "Float" "opMul") generateMul
     (externals, _) <- insert externals (ExternalId "Float" "opDiv") generateDiv
+    (externals, _) <- insert externals (ExternalId "Float" "show") generateShow
     (externals, _) <- insert externals (ExternalId "Float" "partialCmp") generatePartialCmp
     (externals, _) <- insert externals (ExternalId "Float" "opEq") generateEq
     (externals, _) <- insert externals (ExternalId "Float" "opNegative") generateNegative
@@ -357,6 +367,8 @@ initializeExternalFunctions = do
     (externals, _) <- insert externals (ExternalId "Char" "partialCmp") generatePartialCmp
     (externals, _) <- insert externals (ExternalId "Char" "cmp") generateCmp
     (externals, _) <- insert externals (ExternalId "Char" "opEq") generateEq
+
+    (externals, _) <- insert externals (ExternalId "List" "show") generateListShow
 
     externals
 

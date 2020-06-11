@@ -24,7 +24,8 @@ data Context = { hir_program :: HP.Program,
                  iterator_store :: IS.IteratorStore,
                  state :: TypecheckerState,
                  var_id :: Int,
-                 keys :: Map Key Int
+                 keys :: Map Key Int,
+                 function_queue :: FQ.FunctionQueue
                }
 
 getNextVarId :: Context -> (Context, Int)
@@ -52,18 +53,18 @@ lowerProgram state hir_program function_store type_store = do
     mir_program <- MP.createProgram
     context <- Context hir_program mir_program function_store
                type_store CS.createClosureStore IS.createIteratorStore state 0 empty
-    function_queue <- FQ.createFunctionQueue
-    (context, function_queue) <- case HP.getFunctionOpt hir_program main_qn of
+               FQ.createFunctionQueue
+    context <- case HP.getFunctionOpt hir_program main_qn of
         Some main -> do
             item <- FQ.Normal main_qn (T.Tuple [])
-            (context, function_queue, _) <- FQ.insert context function_queue item
-            FQ.processItems function_queue context
+            (context, _) <- FQ.insert context item
+            FQ.processItems context
         None -> do
             println "{} not found" % (HP.getResolvableName main_qn)
-            (context, function_queue)
+            context
     context <- CS.createClosures context
-    (context, function_queue) <- IS.createIterators context function_queue
-    (context, function_queue) <- FQ.processItems function_queue context
+    context <- IS.createIterators context
+    context <- FQ.processItems context
     mir_program <- context.mir_program
     mir_program <- mir_program { adts = context.type_store.adts, records = context.type_store.records }
     s <- MP.dump mir_program

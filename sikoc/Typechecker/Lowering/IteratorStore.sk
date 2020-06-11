@@ -118,11 +118,11 @@ createIteratorVariant context name iterator_instance = do
     context <- addNamedType context iterator_instance.iterator_type mir_iterator_type
     context
 
-createGetNextFunctionBody :: Context -> FQ.FunctionQueue -> IteratorInfo -> MP.Identity -> (Context, FQ.FunctionQueue)
-createGetNextFunctionBody context queue iterator function_id = do
+createGetNextFunctionBody :: Context -> IteratorInfo -> MP.Identity -> Context
+createGetNextFunctionBody context iterator function_id = do
     mir_get_next_function <- MP.getFunction context.mir_program function_id
     (context, unit_type) <- processType context (HT.Tuple [])
-    (context, queue, cases) <- iterator.instances |> List.iter |> fold (\(context, queue, cases), iterator_instance -> do
+    (context, cases) <- iterator.instances |> List.iter |> fold (\(context, cases), iterator_instance -> do
         (context, mir_state_type) <- processType context iterator_instance.state_type
         (context, mir_closure_type) <- processType context iterator_instance.closure_type
         (context, mir_iterator_type) <- processType context iterator_instance.iterator_type
@@ -163,11 +163,11 @@ createGetNextFunctionBody context queue iterator function_id = do
         hir_get_next_result <- TUtil.getOptionType (hir_result_tuple_type)
         qn <- HP.FullPath getOptionModuleName getOptionTypeName
         some_queue_item <- FQ.VariantCtor qn some_index getOptionSomeVariantName (HT.Function hir_result_tuple_type hir_get_next_result)
-        (context, queue, some_function_id) <- FQ.insert context queue some_queue_item
+        (context, some_function_id) <- FQ.insert context some_queue_item
         none_queue_item <- FQ.VariantCtor qn none_index getOptionNoneVariantName hir_get_next_result
-        (context, queue, none_function_id) <- FQ.insert context queue none_queue_item
+        (context, none_function_id) <- FQ.insert context none_queue_item
         result_tuple_type_ctor_item <- FQ.TupleCtor (HT.Function iterator_instance.iterator_type (HT.Function hir_iterator_elem_type hir_result_tuple_type))
-        (context, queue, result_tuple_type_ctor_id) <- FQ.insert context queue result_tuple_type_ctor_item
+        (context, result_tuple_type_ctor_id) <- FQ.insert context result_tuple_type_ctor_item
         hir_closure_result_tuple_type <- HT.Tuple [iterator_instance.state_type, hir_iterator_elem_type]
         (context, mir_closure_result_tuple_type) <- processType context hir_closure_result_tuple_type
         none_case <- do
@@ -234,7 +234,7 @@ createGetNextFunctionBody context queue iterator function_id = do
         checker <- ME.VariantChecker id iter_var mir_iterator_type
         mir_case <- ME.MatchCase checker body_expr
         cases <- cases + [mir_case]
-        (context, queue, cases)) (context, queue, [])
+        (context, cases)) (context, [])
     arg_ref_expr <- ME.Expr (ME.ArgRef 0) (atIndex mir_get_next_function.args 0)
     new_body <- ME.Match arg_ref_expr cases
     new_body_expr <- ME.Expr new_body mir_get_next_function.result
@@ -242,18 +242,18 @@ createGetNextFunctionBody context queue iterator function_id = do
     mir_program <- context.mir_program
     mir_program <- MP.updateFunctionKind context.mir_program function_id new_kind
     context <- context { mir_program = mir_program }
-    (context, queue)
+    context
 
-createIterators :: Context -> FQ.FunctionQueue -> (Context, FQ.FunctionQueue)
-createIterators context queue = do
-    (context, queue) <- context.iterator_store.iterators |> Map.iter |> fold (\(context, queue), (name, iterator) -> do
+createIterators :: Context -> Context
+createIterators context = do
+    context <- context.iterator_store.iterators |> Map.iter |> fold (\context, (name, iterator) -> do
         context <- iterator.instances |> List.iter |> fold (\context, iterator_instance -> do
             context <- createIteratorVariant context name iterator_instance
             context) context
-        (context, queue) <- case iterator.get_next_id of
+        context <- case iterator.get_next_id of
             Some function_id -> do
-                (context, queue) <- createGetNextFunctionBody context queue iterator function_id
-                (context, queue)
-            None -> (context, queue)
-        (context, queue)) (context, queue)
-    (context, queue)
+                context <- createGetNextFunctionBody context iterator function_id
+                context
+            None -> context
+        context) context
+    context

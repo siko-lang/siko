@@ -28,42 +28,42 @@ import Siko.Syntax.Ident
 import Siko.Constants
 import Map
 
-callOpAdd :: Context -> FQ.FunctionQueue -> HT.Type -> ME.Expr -> ME.Expr -> (Context, FQ.FunctionQueue, ME.Expr)
-callOpAdd context queue item_type arg0 arg1 = do
+callOpAdd :: Context -> HT.Type -> ME.Expr -> ME.Expr -> (Context, ME.Expr)
+callOpAdd context item_type arg0 arg1 = do
     function_type <- HT.Function item_type (HT.Function item_type item_type)
     class_name <- HP.FullPath getStdOpsModuleName getAddClassName
     member_name <- HP.FullPath getStdOpsModuleName getAddClassMemberName
-    processClassMemberCall context queue function_type
+    processClassMemberCall context function_type
                               item_type class_name member_name [arg0, arg1] False
 
-callOpShow :: Context -> FQ.FunctionQueue -> HT.Type -> ME.Expr  -> (Context, FQ.FunctionQueue, ME.Expr)
-callOpShow context queue item_type arg0 = do
+callOpShow :: Context -> HT.Type -> ME.Expr  -> (Context, ME.Expr)
+callOpShow context item_type arg0 = do
     function_type <- HT.Function item_type TUtil.getStringType
     class_name <- HP.FullPath getStdOpsModuleName getShowClassName
     member_name <- HP.FullPath getStdOpsModuleName getShowClassMemberName
-    processClassMemberCall context queue function_type
+    processClassMemberCall context function_type
                               item_type class_name member_name [arg0] False
 
-callOpEq :: Context -> FQ.FunctionQueue -> HT.Type -> ME.Expr -> ME.Expr -> (Context, FQ.FunctionQueue, ME.Expr)
-callOpEq context queue item_type arg0 arg1 = do
+callOpEq :: Context -> HT.Type -> ME.Expr -> ME.Expr -> (Context, ME.Expr)
+callOpEq context item_type arg0 arg1 = do
     function_type <- HT.Function item_type (HT.Function item_type TUtil.getBoolType)
     class_name <- HP.FullPath getStdOpsModuleName getPartialEqClassName
     member_name <- HP.FullPath getStdOpsModuleName getPartialEqClassMemberName
-    processClassMemberCall context queue function_type
+    processClassMemberCall context function_type
                               item_type class_name member_name [arg0, arg1] False
 
-callPartialCmp :: Context -> FQ.FunctionQueue -> HT.Type -> ME.Expr -> ME.Expr -> (Context, FQ.FunctionQueue, ME.Expr)
-callPartialCmp context queue item_type arg0 arg1 = do
+callPartialCmp :: Context -> HT.Type -> ME.Expr -> ME.Expr -> (Context, ME.Expr)
+callPartialCmp context item_type arg0 arg1 = do
     function_type <- HT.Function item_type (HT.Function item_type TUtil.getOptionalOrderingType)
     class_name <- HP.FullPath getStdOpsModuleName getPartialOrdClassName
     member_name <- HP.FullPath getStdOpsModuleName getPartialOrdClassMemberName
-    processClassMemberCall context queue function_type
+    processClassMemberCall context function_type
                               item_type class_name member_name [arg0, arg1] False
 
-callCmp :: Context -> FQ.FunctionQueue -> HT.Type -> ME.Expr -> ME.Expr -> (Context, FQ.FunctionQueue, ME.Expr)
-callCmp context queue item_type arg0 arg1 = do
+callCmp :: Context -> HT.Type -> ME.Expr -> ME.Expr -> (Context, ME.Expr)
+callCmp context item_type arg0 arg1 = do
     function_type <- HT.Function item_type (HT.Function item_type TUtil.getOrderingType)
     class_name <- HP.FullPath getStdOpsModuleName getOrdClassName
     member_name <- HP.FullPath getStdOpsModuleName getOrdClassMemberName
-    processClassMemberCall context queue function_type
+    processClassMemberCall context function_type
                               item_type class_name member_name [arg0, arg1] False

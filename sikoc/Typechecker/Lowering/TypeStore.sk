@@ -6,15 +6,19 @@ import Siko.HIR.Data as HD
 import Siko.HIR.Program as HP
 import Siko.HIR.Pattern as HPat
 import Siko.MIR.Type as MT
+import Siko.MIR.Expr as ME
 import Siko.MIR.Data as MD
 import Siko.MIR.Program as MP
 import Siko.Typechecker.Lowering.Util
 import Siko.Typechecker.Lowering.ClosureStore
+import Siko.Typechecker.Lowering.FunctionQueue as FQ
 import Siko.Typechecker.Lowering.IteratorStore as IS
 import Siko.Typechecker.Lowering
+import Siko.Typechecker.Lowering.ClassMemberCalls
 import Siko.Typechecker
 import Siko.Typechecker.Unification as U
 import Siko.Typechecker.DataStore as DS
+import Siko.Typechecker.InstanceResolver as IR
 import Siko.Constants
 import Map
 
@@ -73,10 +77,19 @@ getAdt type_store identity = case get type_store.adts identity of
 
 addNamedType :: Context -> HT.Type -> MT.Type -> Context
 addNamedType context hir_type mir_type = do
+    class_name <- HP.FullPath getStdOpsModuleName getShowClassName
+    entry <- IR.CacheEntry hir_type class_name
+    context <- case get context.state.instance_resolver.cache entry of
+        Some instance_info -> do
+            //println "{} impls {}" % (HT.toString hir_type, class_name)
+            //callOpShow context hir_type (ME.)
+            context
+        None -> context
     type_store <- context.type_store
     (named_types, _) <- insert type_store.named_types hir_type mir_type
     type_store <- type_store { named_types = named_types }
-    context { type_store = type_store }
+    context <- context { type_store = type_store }
+    context
 
 addRecord :: Context -> MP.Identity -> MD.Record -> Context
 addRecord context identity mir_record = do
@@ -102,7 +115,7 @@ instantiateAdt context adt_type_info adt_type = do
             context <- context { state = state }
             adt_type_info <- DS.applyAdtTypeInfo adt_type_info sub
             (context, adt_type_info)
-        Err _ -> panic "processType, unification failed, Adt type {} hir_type {}" % (HT.toString adt_type_info.type, HT.toString adt_type)
+        Err _ -> panic "instantiateAdt: unification failed, Adt type {} hir_type {}" % (HT.toString adt_type_info.type, HT.toString adt_type)
     (context, adt_type_info)
 
 instantiateRecord :: Context -> DS.RecordTypeInfo -> HT.Type -> (Context, DS.RecordTypeInfo)
@@ -115,7 +128,7 @@ instantiateRecord context record_type_info record_type = do
             context <- context { state = state }
             record_type_info <- DS.applyRecordTypeInfo record_type_info sub
             (context, record_type_info)
-        Err _ -> panic "processType, unification failed, Record type {} hir_type {}" % (HT.toString record_type_info.type, HT.toString record_type)
+        Err _ -> panic "instantiateRecord: unification failed, Record type {} hir_type {}" % (HT.toString record_type_info.type, HT.toString record_type)
     (context, record_type_info)
 
 processType :: Context -> HT.Type -> (Context, MT.Type)
@@ -201,11 +214,11 @@ processType context hir_type = case hir_type of
                     context <- addRecord context identity mir_record
                     (context, mir_type)
     HT.Function from to -> do
-        (closure_store, name) <- getClosureName context.closure_store hir_type
-        context <- context { closure_store = closure_store }
         case get context.type_store.named_types hir_type of
             Some mir_type -> (context, mir_type)
             None -> do
+                (closure_store, name) <- getClosureName context.closure_store hir_type
+                context <- context { closure_store = closure_store }
                 identity <- getClosureIdentity name
                 mir_adt <- MD.AlgebraicDataType identity []
                 mir_type <- MT.Adt identity
