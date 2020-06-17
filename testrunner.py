@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 
 import sys
 import os
@@ -29,19 +29,18 @@ def collect_tests(path, tests, parent):
                 if f == "main.sk":
                     tests.append((parent, path))
 
-def prepare(folder_name):
+def mkdir_safe(folder_name):
     try:
         os.mkdir(folder_name)
-        os.symlink(os.path.join(os.getcwd(), "siko"), os.path.join(folder_name, "siko"))
-        os.symlink(os.path.join(os.getcwd(), "sikoc"), os.path.join(folder_name, "sikoc"))
-        os.symlink(os.path.join(os.getcwd(), "std"), os.path.join(folder_name, "std"))
     except OSError as e:
         if e.errno != errno.EEXIST:
             raise
 
 def run(test_name, source_folder, index, total):
     print("--- Running %s - %d/%d" % (test_name, total, index))
+    mkdir_safe("sikoc_test_runs")
     target_folder = os.path.join("sikoc_test_runs", test_name)
+    mkdir_safe(target_folder)
     subprocess.call(["./siko.py", target_folder, "std2", source_folder])
 
 test_source_name = sys.argv[1]
@@ -51,7 +50,7 @@ if len(sys.argv) != 2:
     selected = set()
     for t in sys.argv[2:]:
         selected.add(t)
-    tests = filter(lambda test: test[0] in selected, tests)
+    tests = list(filter(lambda test: test[0] in selected, tests))
 total = len(tests)
 for (index, (name, path)) in enumerate(tests):
     run(name, path, index + 1, total)

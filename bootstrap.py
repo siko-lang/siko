@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 
 import sys
 import os
@@ -53,7 +53,7 @@ def link_safe(src, dst):
             raise
 
 def compile_and_run(folder_name):
-    source = processSources(sys.argv[1:])
+    source = processSources(["std2", "sikoc"])
     os.chdir(folder_name)
     f = open("sikoc.sk", "w")
     f.write(source)
