@@ -38,39 +38,36 @@ def processSources(args):
         source += processDir(arg)
     return source
 
-def prepare(folder_name):
+def mkdir_safe(folder_name):
     try:
         os.mkdir(folder_name)
     except OSError as e:
         if e.errno != errno.EEXIST:
             raise
+
+def link_safe(src, dst):
     try:
-        os.symlink(os.path.join(os.getcwd(), "siko"), os.path.join(folder_name, "siko"))
-    except OSError as e:
-        if e.errno != errno.EEXIST:
-            raise
-    try:
-        os.symlink(os.path.join(os.getcwd(), "sikoc"), os.path.join(folder_name, "sikoc"))
-    except OSError as e:
-        if e.errno != errno.EEXIST:
-            raise
-    try:
-        os.symlink(os.path.join(os.getcwd(), "std"), os.path.join(folder_name, "std"))
+        os.symlink(src, dst)
     except OSError as e:
         if e.errno != errno.EEXIST:
             raise
 
 def compile_and_run(folder_name):
-    source = processSources(sys.argv[2:])
-    prepare(folder_name)
+    source = processSources(sys.argv[1:])
     os.chdir(folder_name)
     f = open("sikoc.sk", "w")
     f.write(source)
     f.close()
 
-    subprocess.check_call(["./siko", "sikoc"])
-    subprocess.check_call(["rustc", "sikoc_output.rs", "-o", "rust_program"])
-    subprocess.check_call(["./rust_program"])
+    subprocess.call(["date"])
+    subprocess.call(["./sikoc_rust"])
+    subprocess.call(["date"])
+    subprocess.call(["rustc", "sikoc_output.rs", "-o", "rust_program"])
+    subprocess.call(["./rust_program"])
 
-folder_name = sys.argv[1]
+folder_name = "bootstrap"
+mkdir_safe(folder_name)
+subprocess.call(["./siko", "-s", "std", "sikoc", "-c", os.path.join(folder_name, "source.rs")])
+link_safe(os.path.join(os.getcwd(), "rt", "main.rs"), os.path.join(folder_name, "main.rs"))
+subprocess.call(["rustc", "--edition=2018", os.path.join(folder_name, "main.rs"), "-o", os.path.join(folder_name, "sikoc_rust"), "--crate-name", "sikoc_rust", "-O"])
 compile_and_run(folder_name)

@@ -4,9 +4,9 @@ set -e -u
 
 mkdir -p bootstrap
 
-find std sikoc -name '*.sk' | xargs ./merger.py > bootstrap/sikoc.sk
-
 cd bootstrap
 date
-../siko -s ../std ../sikoc
+../siko -s ../std ../sikoc -c source.rs
+cp ../rt/main.rs .
+rustc --edition=2018 main.rs -o sikoc_rust --crate-name sikoc_rust -O
 date

@@ -54,6 +54,13 @@ impl Transpiler {
         write!(output_file, "#![allow(unused_variables)]\n")?;
         write!(output_file, "#![allow(dead_code)]\n")?;
         write!(output_file, "#![allow(unused_parens)]\n\n")?;
+        write!(output_file, "#![allow(unused_macros)]\n\n")?;
+        write!(output_file, "#![allow(redundant_semicolon)]\n\n")?;
+        write!(output_file, "#![allow(unreachable_code)]\n\n")?;
+        write!(output_file, "#![allow(non_shorthand_field_patterns)]\n\n")?;
+        write!(output_file, "#![allow(unused_mut)]\n\n")?;
+        write!(output_file, "#![allow(unused_assignments)]\n\n")?;
+        write!(output_file, "#![allow(unreachable_patterns)]\n\n")?;
         let mut rust_program = RustProgram::new();
         rust_program.get_module(MIR_INTERNAL_MODULE_NAME.to_string());
         for (id, function) in program.functions.items.iter() {

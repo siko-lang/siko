@@ -1,3 +1,12 @@
+#![allow(non_snake_case)]
+#![allow(non_camel_case_types)]
+#![allow(unused_variables)]
+#![allow(dead_code)]
+#![allow(unused_parens)]
+#![allow(unused_macros)]
+#![allow(redundant_semicolon)]
+#![allow(unreachable_code)]
+
 #[macro_use]
 pub mod siko_macros {
     macro_rules! partial_cmp_body {

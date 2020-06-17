@@ -2,21 +2,17 @@ module Main where
 
 import Std.Util
 
-data Color = Blue Int | Red deriving (Show, PartialOrd)
+data Color = Color
 
-data Color2 = Blue2 Int
+instance PartialEq Color where
+    opEq a b = True
 
-foo :: Int -> String -> (Int, String)
-foo a b = (a, b)
+instance Eq Color
 
-nextInt :: Int -> Option (Int, Int)
-nextInt s = if s < 10 then Some (s + 1, s) else None
+instance PartialOrd Color where
+    partialCmp a b = Some Equal
 
-main = do
-    it <- createIterator 0 nextInt
-    it |> map (\x -> x * 2) |> forEach \x -> println x
-    color1 <- Blue 3
-    color2 <- Blue 4
-    println (color1 < color2)
-    assert False
-    ()
+instance Ord Color where
+    cmp a b = Equal
+
+main = ()

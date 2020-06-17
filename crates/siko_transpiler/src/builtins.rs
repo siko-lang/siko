@@ -255,12 +255,12 @@ fn generate_string_builtins(
         "replace" => {
             write!(
                 output_file,
-                "{}let value = arg0.replace(&arg1, &arg2);\n",
+                "{}let value = arg0.value.replace(&arg1.value, &arg2.value);\n",
                 indent
             )?;
             write!(
                 output_file,
-                "{}{} {{ value : std::rc::Rc::new(value) }}",
+                "{}{} {{ value : value }}",
                 indent, result_ty_str
             )?;
         }

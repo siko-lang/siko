@@ -101,11 +101,19 @@ generateShow program type_store arg_types result_type = do
 generateListShow :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
 generateListShow program type_store arg_types result_type = do
     rust_type <- convertType result_type
-    field_access <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
-    //format <- R.FunctionCall "format!" [(R.StringLiteral ""), field_access]
-    format <- R.StringLiteral "[]"
-    struct_ctor <- R.StructCtor (show rust_type) [R.FieldInitItem innerValueField (R.FunctionCall rcNew [format])]
-    R.Block [struct_ctor]
+    arg0 <- R.VarRef (getArgName 0)
+    inner <- R.FieldAccess innerValueField arg0
+    iter <- R.MethodCall inner "iter" []
+    map_body <- R.Lambda "|item|" (R.FunctionCall "format!" [R.StringLiteral "{}", R.VarRef "item"])
+    map <- R.MethodCall iter "map" [map_body]
+    collect <- R.MethodCall map "collect" []
+    subs <- "subs"
+    subs_decl <- R.VarDecl False subs collect (Some (R.Type "Vec<_>"))
+    fmt_arg <- R.StringLiteral "[{}]"
+    join_call <- R.MethodCall (R.VarRef subs) "join" [R.StringLiteral (", ")]
+    value_decl <- R.VarDecl False innerValueField (R.FunctionCall "format!" [fmt_arg, join_call]) None
+    struct_ctor <- R.StructCtor (show rust_type) [R.FieldInitItem innerValueField (R.FunctionCall rcNew [R.VarRef innerValueField])]
+    R.Block [subs_decl, value_decl, struct_ctor]
 
 generatePartialCmp :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
 generatePartialCmp program type_store arg_types result_type = do
@@ -177,15 +185,12 @@ generateCmp program type_store arg_types result_type = do
     match <- R.Match cmp_call [greater_case, equal_case, less_case]
     R.Block [match]
 
-generateEq :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
-generateEq program type_store arg_types result_type = do
-    rust_result_type <- convertType result_type
-    field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
-    field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
-    eq_call <- R.MethodCall field_access0 "eq" [R.Ref field_access1]
-    bool_type_id <- case result_type of
+rustBoolToSikoBool :: Program -> R.Expr -> MT.Type -> R.Expr
+rustBoolToSikoBool program bool_expr bool_type = do
+    rust_bool_type <- convertType bool_type
+    bool_type_id <- case bool_type of
                 MT.Adt i -> i
-                _ -> panic "generateIntPartialCmp ordering type is not adt"
+                _ -> panic "rustBoolToSikoBool: bool is not ADT"
     bool_adt <- getAdt program bool_type_id
     true_variant <- atIndex bool_adt.variants 0
     false_variant <- atIndex bool_adt.variants 1
@@ -197,10 +202,60 @@ generateEq program type_store arg_types result_type = do
     rust_false_record_type <- convertType false_record_type
     true_ctor <- R.StructCtor (show (rust_true_record_type)) []
     false_ctor <- R.StructCtor (show (rust_false_record_type)) []
-    true_case <- R.MatchCase true_pattern (R.FunctionCall ("{}::True" % rust_result_type) [true_ctor])
-    false_case <- R.MatchCase false_pattern (R.FunctionCall ("{}::False" % rust_result_type) [false_ctor])
+    true_case <- R.MatchCase true_pattern (R.FunctionCall ("{}::True" % rust_bool_type) [true_ctor])
+    false_case <- R.MatchCase false_pattern (R.FunctionCall ("{}::False" % rust_bool_type) [false_ctor])
     cases <- [true_case, false_case]
-    match <- R.Match eq_call cases
+    R.Match bool_expr cases
+
+sikoBoolToRustBool :: R.Expr -> R.Type -> R.Expr
+sikoBoolToRustBool bool_expr bool_type = do
+    true_pattern <- R.VariantPattern ("{}::True" % bool_type) (Some "_")
+    false_pattern <- R.VariantPattern ("{}::False" % bool_type) (Some "_")
+    true_case <- R.MatchCase true_pattern (R.BoolLiteral True)
+    false_case <- R.MatchCase false_pattern (R.BoolLiteral False)
+    cases <- [true_case, false_case]
+    R.Match bool_expr cases
+
+sikoOrderingToRustOrdering :: R.Expr -> R.Type -> R.Expr
+sikoOrderingToRustOrdering ord_expr ordering_type = do
+    greater_pattern <- R.VariantPattern ("{}::Greater" % ordering_type) (Some "_")
+    equal_pattern <- R.VariantPattern ("{}::Equal" % ordering_type) (Some "_")
+    less_pattern <- R.VariantPattern ("{}::Less" % ordering_type) (Some "_")
+    greater_case <- R.MatchCase greater_pattern (R.EnumCtor "std::cmp::Ordering::Greater")
+    equal_case <- R.MatchCase equal_pattern (R.EnumCtor "std::cmp::Ordering::Equal")
+    less_case <- R.MatchCase less_pattern (R.EnumCtor "std::cmp::Ordering::Less")
+    cases <- [greater_case, equal_case, less_case]
+    R.Match ord_expr cases
+
+sikoOptionalOrderingToRustOptionalOrdering :: Program -> R.Expr -> MT.Type -> R.Expr
+sikoOptionalOrderingToRustOptionalOrdering program partial_ord_expr optional_ordering_type = do
+    rust_optional_ordering_type <- convertType optional_ordering_type
+    some_ordering <- "some_ordering"
+    some_pattern <- R.VariantPattern ("{}::Some" % rust_optional_ordering_type) (Some some_ordering)
+    none_pattern <- R.VariantPattern ("{}::None" % rust_optional_ordering_type) (Some "_")
+    option_type_id <- case optional_ordering_type of
+                MT.Adt i -> i
+                _ -> panic "sikoOptionalOrderingToRustOptionalOrdering: option is not ADT"
+    option_adt <- getAdt program option_type_id
+    some_variant <- atIndex option_adt.variants 0
+    some_record <- getRecord program some_variant.type
+    ordering_type_field <- atIndex some_record.fields 0
+    rust_some_record_type <- convertType ordering_type_field.type
+    field_access <- R.FieldAccess ordering_type_field.name (R.VarRef some_ordering)
+    deref <- R.FunctionCall derefName [R.Ref field_access]
+    some_match <- sikoOrderingToRustOrdering (R.MethodCall deref cloneName []) rust_some_record_type
+    some_case <- R.MatchCase some_pattern (R.FunctionCall "Some" [some_match])
+    none_case <- R.MatchCase none_pattern (R.EnumCtor "None")
+    cases <- [some_case, none_case]
+    R.Match partial_ord_expr cases
+
+generateEq :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
+generateEq program type_store arg_types result_type = do
+    rust_result_type <- convertType result_type
+    field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
+    field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
+    eq_call <- R.MethodCall field_access0 "eq" [R.Ref field_access1]
+    match <- rustBoolToSikoBool program eq_call result_type
     R.Block [match]
 
 generateOpAnd :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
@@ -329,46 +384,46 @@ generateAssert program type_store arg_types result_type = do
     match <- R.Match (R.VarRef (getArgName 0)) cases
     R.Block [match]
 
-initializeExternalFunctions :: Map ExternalId (Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr)
+initializeExternalFunctions :: Map ExternalId ExternFnBuilder
 initializeExternalFunctions = do
     externals <- Map.empty
-    (externals, _) <- insert externals (ExternalId "Std.Util.Basic" "printStr") generatePrintStr
+    (externals, _) <- insert externals (ExternalId "Std.Util.Basic" "printStr") (ExternFnBuilder generatePrintStr)
 
-    (externals, _) <- insert externals (ExternalId "String" "opAdd") generateStringAdd
-    (externals, _) <- insert externals (ExternalId "String" "partialCmp") generatePartialCmp
-    (externals, _) <- insert externals (ExternalId "String" "cmp") generateCmp
-    (externals, _) <- insert externals (ExternalId "String" "opEq") generateEq
+    (externals, _) <- insert externals (ExternalId "String" "opAdd") (ExternFnBuilder generateStringAdd)
+    (externals, _) <- insert externals (ExternalId "String" "partialCmp") (ExternFnBuilder generatePartialCmp)
+    (externals, _) <- insert externals (ExternalId "String" "cmp") (ExternFnBuilder generateCmp)
+    (externals, _) <- insert externals (ExternalId "String" "opEq") (ExternFnBuilder generateEq)
 
-    (externals, _) <- insert externals (ExternalId "Int" "opAdd") generateAdd
-    (externals, _) <- insert externals (ExternalId "Int" "opSub") generateSub
-    (externals, _) <- insert externals (ExternalId "Int" "opMul") generateMul
-    (externals, _) <- insert externals (ExternalId "Int" "opDiv") generateDiv
-    (externals, _) <- insert externals (ExternalId "Int" "show") generateShow
-    (externals, _) <- insert externals (ExternalId "Int" "partialCmp") generatePartialCmp
-    (externals, _) <- insert externals (ExternalId "Int" "cmp") generateCmp
-    (externals, _) <- insert externals (ExternalId "Int" "opEq") generateEq
-    (externals, _) <- insert externals (ExternalId "Int" "opNegative") generateNegative
+    (externals, _) <- insert externals (ExternalId "Int" "opAdd") (ExternFnBuilder generateAdd)
+    (externals, _) <- insert externals (ExternalId "Int" "opSub") (ExternFnBuilder generateSub)
+    (externals, _) <- insert externals (ExternalId "Int" "opMul") (ExternFnBuilder generateMul)
+    (externals, _) <- insert externals (ExternalId "Int" "opDiv") (ExternFnBuilder generateDiv)
+    (externals, _) <- insert externals (ExternalId "Int" "show") (ExternFnBuilder generateShow)
+    (externals, _) <- insert externals (ExternalId "Int" "partialCmp") (ExternFnBuilder generatePartialCmp)
+    (externals, _) <- insert externals (ExternalId "Int" "cmp") (ExternFnBuilder generateCmp)
+    (externals, _) <- insert externals (ExternalId "Int" "opEq") (ExternFnBuilder generateEq)
+    (externals, _) <- insert externals (ExternalId "Int" "opNegative") (ExternFnBuilder generateNegative)
 
-    (externals, _) <- insert externals (ExternalId "Std.Ops" "getDiscriminant") generateGetDiscriminant
-    (externals, _) <- insert externals (ExternalId "Std.Ops" "opAnd") generateOpAnd
-    (externals, _) <- insert externals (ExternalId "Std.Ops" "opOr") generateOpOr
+    (externals, _) <- insert externals (ExternalId "Std.Ops" "getDiscriminant") (ExternFnBuilder generateGetDiscriminant)
+    (externals, _) <- insert externals (ExternalId "Std.Ops" "opAnd") (ExternFnBuilder generateOpAnd)
+    (externals, _) <- insert externals (ExternalId "Std.Ops" "opOr") (ExternFnBuilder generateOpOr)
 
-    (externals, _) <- insert externals (ExternalId "Std.Util" "assert") generateAssert
+    (externals, _) <- insert externals (ExternalId "Std.Util" "assert") (ExternFnBuilder generateAssert)
 
-    (externals, _) <- insert externals (ExternalId "Float" "opAdd") generateAdd
-    (externals, _) <- insert externals (ExternalId "Float" "opSub") generateSub
-    (externals, _) <- insert externals (ExternalId "Float" "opMul") generateMul
-    (externals, _) <- insert externals (ExternalId "Float" "opDiv") generateDiv
-    (externals, _) <- insert externals (ExternalId "Float" "show") generateShow
-    (externals, _) <- insert externals (ExternalId "Float" "partialCmp") generatePartialCmp
-    (externals, _) <- insert externals (ExternalId "Float" "opEq") generateEq
-    (externals, _) <- insert externals (ExternalId "Float" "opNegative") generateNegative
+    (externals, _) <- insert externals (ExternalId "Float" "opAdd") (ExternFnBuilder generateAdd)
+    (externals, _) <- insert externals (ExternalId "Float" "opSub") (ExternFnBuilder generateSub)
+    (externals, _) <- insert externals (ExternalId "Float" "opMul") (ExternFnBuilder generateMul)
+    (externals, _) <- insert externals (ExternalId "Float" "opDiv") (ExternFnBuilder generateDiv)
+    (externals, _) <- insert externals (ExternalId "Float" "show") (ExternFnBuilder generateShow)
+    (externals, _) <- insert externals (ExternalId "Float" "partialCmp") (ExternFnBuilder generatePartialCmp)
+    (externals, _) <- insert externals (ExternalId "Float" "opEq") (ExternFnBuilder generateEq)
+    (externals, _) <- insert externals (ExternalId "Float" "opNegative") (ExternFnBuilder generateNegative)
 
-    (externals, _) <- insert externals (ExternalId "Char" "partialCmp") generatePartialCmp
-    (externals, _) <- insert externals (ExternalId "Char" "cmp") generateCmp
-    (externals, _) <- insert externals (ExternalId "Char" "opEq") generateEq
+    (externals, _) <- insert externals (ExternalId "Char" "partialCmp") (ExternFnBuilder generatePartialCmp)
+    (externals, _) <- insert externals (ExternalId "Char" "cmp") (ExternFnBuilder generateCmp)
+    (externals, _) <- insert externals (ExternalId "Char" "opEq") (ExternFnBuilder generateEq)
 
-    (externals, _) <- insert externals (ExternalId "List" "show") generateListShow
+    (externals, _) <- insert externals (ExternalId "List" "show") (ExternFnBuilder generateListShow)
 
     externals
 
@@ -390,12 +445,12 @@ generateListFields args = do
     rust_type_arg <- convertType first
     [R.StructField innerValueField (typeToRcType (R.Type "std::vec::Vec<{}>" % rust_type_arg))]
 
-initializeExternalStructFields :: Map ExternalId ([MT.Type] -> [R.StructField])
+initializeExternalStructFields :: Map ExternalId ExternStructBuilder
 initializeExternalStructFields = do
     externals <- Map.empty
-    (externals, _) <- insert externals (ExternalId "String" "String") generateStringFields
-    (externals, _) <- insert externals (ExternalId "Int" "Int") generateIntFields
-    (externals, _) <- insert externals (ExternalId "Float" "Float") generateFloatFields
-    (externals, _) <- insert externals (ExternalId "Char" "Char") generateCharFields
-    (externals, _) <- insert externals (ExternalId "List" "List") generateListFields
+    (externals, _) <- insert externals (ExternalId "String" "String") (ExternStructBuilder generateStringFields)
+    (externals, _) <- insert externals (ExternalId "Int" "Int") (ExternStructBuilder generateIntFields)
+    (externals, _) <- insert externals (ExternalId "Float" "Float") (ExternStructBuilder generateFloatFields)
+    (externals, _) <- insert externals (ExternalId "Char" "Char") (ExternStructBuilder generateCharFields)
+    (externals, _) <- insert externals (ExternalId "List" "List") (ExternStructBuilder generateListFields)
     externals

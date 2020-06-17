@@ -2,10 +2,14 @@ module Siko.Typechecker.Lowering where
 
 import Siko.HIR.Function as F
 import Siko.HIR.Program as HP
-import Siko.HIR.Type as T
+import Siko.HIR.Type as HT
 import Siko.MIR.Program as MP
+import Siko.MIR.Data as MD
+import Siko.MIR.Type as MT
+import Siko.MIR.Expr as ME
 import Siko.Typechecker.Lowering.FunctionQueue as FQ
 import Siko.Typechecker.Lowering.TypeStore
+import Siko.Typechecker.Lowering.ClassMemberCalls
 import Siko.Typechecker.Lowering.ClosureStore as CS
 import Siko.Typechecker.Lowering.IteratorStore as IS
 import Siko.Typechecker.FunctionStore
@@ -25,7 +29,9 @@ data Context = { hir_program :: HP.Program,
                  state :: TypecheckerState,
                  var_id :: Int,
                  keys :: Map Key Int,
-                 function_queue :: FQ.FunctionQueue
+                 function_queue :: FQ.FunctionQueue,
+                 external_class_names :: [(HP.FullyQualifiedName, MD.ExternalClassImpl)],
+                 external_class_impls :: [(HT.Type, MD.ExternalClassImpl)],
                }
 
 getNextVarId :: Context -> (Context, Int)
@@ -46,6 +52,93 @@ getIdentity context module_name name = do
     context <- context { keys = keys }
     (context, MP.Identity module_name name index)
 
+getExternalClassNames :: [(HP.FullyQualifiedName, MD.ExternalClassImpl)]
+getExternalClassNames = do
+    show <- HP.FullPath getStdOpsModuleName getShowClassName
+    partial_eq <- HP.FullPath getStdOpsModuleName getPartialEqClassName
+    eq <- HP.FullPath getStdOpsModuleName getEqClassName
+    partial_ord <- HP.FullPath getStdOpsModuleName getPartialOrdClassName
+    ord <- HP.FullPath getStdOpsModuleName getOrdClassName
+    [(show, MD.Show),
+     (partial_eq, MD.PartialEq),
+     (eq, MD.Eq),
+     (partial_ord, MD.PartialOrd),
+     (ord, MD.Ord)]
+
+generateExternalImpls :: Context -> Context
+generateExternalImpls context = do
+    context.external_class_impls |> List.iter |> fold (\context, (hir_type, impl) -> do
+            case impl of
+                MD.Show -> do
+                    (context, mir_type) <- processType context hir_type
+                    arg_ref <- ME.ArgRef 0
+                    arg_ref_expr <- ME.Expr (arg_ref) mir_type
+                    (context, call_expr) <- callOpShow context hir_type arg_ref_expr
+                    case mir_type of
+                        MT.Adt adt_id -> do
+                            type_store <- addExternalClassImplForAdt context.type_store adt_id (impl, Some call_expr)
+                            context { type_store = type_store }
+                        MT.Record record_id -> do
+                            type_store <- addExternalClassImplForRecord context.type_store record_id (impl, Some call_expr)
+                            context { type_store = type_store }
+                        _ -> panic "Not yet implemented"
+                MD.PartialEq -> do
+                    (context, mir_type) <- processType context hir_type
+                    arg_ref0 <- ME.ArgRef 0
+                    arg_ref1 <- ME.ArgRef 1
+                    arg_ref0_expr <- ME.Expr (arg_ref0) mir_type
+                    arg_ref1_expr <- ME.Expr (arg_ref1) mir_type
+                    (context, call_expr) <- callOpEq context hir_type arg_ref0_expr arg_ref1_expr
+                    case mir_type of
+                        MT.Adt adt_id -> do
+                            type_store <- addExternalClassImplForAdt context.type_store adt_id (impl, Some call_expr)
+                            context { type_store = type_store }
+                        MT.Record record_id -> do
+                            type_store <- addExternalClassImplForRecord context.type_store record_id (impl, Some call_expr)
+                            context { type_store = type_store }
+                        _ -> panic "Not yet implemented"
+                MD.Eq -> do
+                    (context, mir_type) <- processType context hir_type
+                    case mir_type of
+                        MT.Adt adt_id -> do
+                            type_store <- addExternalClassImplForAdt context.type_store adt_id (impl, None)
+                            context { type_store = type_store }
+                        MT.Record record_id -> do
+                            type_store <- addExternalClassImplForRecord context.type_store record_id (impl, None)
+                            context { type_store = type_store }
+                        _ -> panic "Not yet implemented"
+                MD.PartialOrd -> do
+                    (context, mir_type) <- processType context hir_type
+                    arg_ref0 <- ME.ArgRef 0
+                    arg_ref1 <- ME.ArgRef 1
+                    arg_ref0_expr <- ME.Expr (arg_ref0) mir_type
+                    arg_ref1_expr <- ME.Expr (arg_ref1) mir_type
+                    (context, call_expr) <- callOpPartialCmp context hir_type arg_ref0_expr arg_ref1_expr
+                    case mir_type of
+                        MT.Adt adt_id -> do
+                            type_store <- addExternalClassImplForAdt context.type_store adt_id (impl, Some call_expr)
+                            context { type_store = type_store }
+                        MT.Record record_id -> do
+                            type_store <- addExternalClassImplForRecord context.type_store record_id (impl, Some call_expr)
+                            context { type_store = type_store }
+                        _ -> panic "Not yet implemented"
+                MD.Ord -> do
+                    (context, mir_type) <- processType context hir_type
+                    arg_ref0 <- ME.ArgRef 0
+                    arg_ref1 <- ME.ArgRef 1
+                    arg_ref0_expr <- ME.Expr (arg_ref0) mir_type
+                    arg_ref1_expr <- ME.Expr (arg_ref1) mir_type
+                    (context, call_expr) <- callOpCmp context hir_type arg_ref0_expr arg_ref1_expr
+                    case mir_type of
+                        MT.Adt adt_id -> do
+                            type_store <- addExternalClassImplForAdt context.type_store adt_id (impl, Some call_expr)
+                            context { type_store = type_store }
+                        MT.Record record_id -> do
+                            type_store <- addExternalClassImplForRecord context.type_store record_id (impl, Some call_expr)
+                            context { type_store = type_store }
+                        _ -> panic "Not yet implemented"
+        ) context
+
 lowerProgram :: TypecheckerState -> HP.Program -> FunctionStore -> TypeStore -> MP.Program
 lowerProgram state hir_program function_store type_store = do
     println "Lowering to MIR.."
@@ -53,17 +146,20 @@ lowerProgram state hir_program function_store type_store = do
     mir_program <- MP.createProgram
     context <- Context hir_program mir_program function_store
                type_store CS.createClosureStore IS.createIteratorStore state 0 empty
-               FQ.createFunctionQueue
+               FQ.createFunctionQueue getExternalClassNames []
     context <- case HP.getFunctionOpt hir_program main_qn of
         Some main -> do
-            item <- FQ.Normal main_qn (T.Tuple [])
+            item <- FQ.Normal main_qn (HT.Tuple [])
             (context, _) <- FQ.insert context item
             FQ.processItems context
         None -> do
             println "{} not found" % (HP.getResolvableName main_qn)
             context
     context <- CS.createClosures context
+    context <- FQ.processItems context
     context <- IS.createIterators context
+    context <- FQ.processItems context
+    context <- generateExternalImpls context
     context <- FQ.processItems context
     mir_program <- context.mir_program
     mir_program <- mir_program { adts = context.type_store.adts, records = context.type_store.records }

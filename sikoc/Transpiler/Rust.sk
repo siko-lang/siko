@@ -17,12 +17,14 @@ data Type = Type String deriving (PartialEq, Eq, PartialOrd, Ord)
 instance Show Type where
     show (Type t) = t
 
-data Function = { name :: String, args :: [Type], result :: Type, body :: Expr }
+data Function = { name :: String, self :: Bool, args :: [(String, Type)], result :: Type, body :: Expr }
 
 data FieldInitItem = { name :: String,
                        body :: Expr }
 
 data RangeKind = Inclusive | Exclusive deriving (Show)
+
+data TraitImpl = { trait_name :: String, type :: Type, methods :: [Function] }
 
 data Pattern = IntegerPattern String
                | StringPattern String
@@ -40,6 +42,7 @@ data Expr = Block [Expr]
             | StringLiteral String
             | MethodCall Expr String [Expr]
             | FloatLiteral String
+            | BoolLiteral Bool
             | CharLiteral Char
             | VarDecl Bool String Expr (Option Type)
             | VarRef String
@@ -54,8 +57,10 @@ data Expr = Block [Expr]
             | Match Expr [MatchCase]
             | StructCtor String [FieldInitItem]
             | Assign Expr Expr
+            | Lambda String Expr
+            | EnumCtor String
 
-data Program = { structs :: [Struct], enums :: [Enum], functions :: [Function] }
+data Program = { structs :: [Struct], enums :: [Enum], functions :: [Function], impls :: [TraitImpl] }
 
 generatePattern :: Pattern -> String
 generatePattern pattern = case pattern of
@@ -63,12 +68,12 @@ generatePattern pattern = case pattern of
     StringPattern lit -> "a if *a.value == \"{}\"" % lit
     CharPattern lit -> "a if *a.value == '{}'" % lit
     CharRangePattern start end kind -> case kind of
-        Exclusive -> "a if std::ops::Range{ start: '{}', end: '{}' }.contains(&a.value)" % (start, end)
-        Inclusive -> "a if std::ops::RangeInclusive::new('{}', '{}').contains(&a.value)" % (start, end)
+        Exclusive -> "a if std::ops::Range{ start: '" + (show start) + "', end: '" + (show end) + "' }.contains(&a.value)"
+        Inclusive -> "a if std::ops::RangeInclusive::new('" + (show start) + "', '" + (show end) + "').contains(&a.value)"
     VariantPattern variant_name var_name -> case var_name of
         Some var_name -> "{}({})" % (variant_name, var_name)
         None -> "{}" % variant_name
-    RecordPattern record_name -> "{}{..}" % (record_name)
+    RecordPattern record_name -> record_name + "{..}"
     WildcardPattern -> "_"
 
 generateExpr :: Expr -> Indent -> String
@@ -77,7 +82,7 @@ generateExpr expr indent = case expr of
             inner <- inc indent
             args <- args |> List.iter |> map (\arg -> do
                 "{}{}" % (inner, generateExpr arg inner)) |> toList
-            s <- "{\n{}\n{}}" % (join args ";\n", indent)
+            s <- "{" + "\n{}\n{}" % (join args ";\n", indent) + "}"
             s
     FunctionCall name args -> do
         args <- args |> List.iter |> map (\arg -> generateExpr arg (Indent 0)) |> toList
@@ -85,13 +90,16 @@ generateExpr expr indent = case expr of
     StructCtor name fields -> do
         fields <- fields |> List.iter |> map (\field -> do
             "{}: {}" % (field.name, generateExpr field.body (Indent 0))) |> toList
-        "{} { {} }" % (name, join fields ", ")
+        name + " { " + (join fields ", ") + " }"
     MethodCall receiver name args -> do
         args <- args |> List.iter |> map (\arg -> generateExpr arg (Indent 0)) |> toList
         receiver <- generateExpr receiver (Indent 0)
         "{}.{}({})" % (receiver, name, join args ", ")
     IntegerLiteral lit -> lit
     FloatLiteral lit -> lit
+    BoolLiteral bool -> case bool of
+        True -> "true"
+        False -> "false"
     StringLiteral lit -> do
         lit <- replace lit "\n" "\\n"
         "\"{}\"" % lit
@@ -109,8 +117,8 @@ generateExpr expr indent = case expr of
         body <- generateExpr body (Indent 0)
         inner <- inc indent
         cases <- cases |> List.iter |> map (\c -> do
-            "{}{} => {{}}" % (inner, generatePattern c.pattern, generateExpr c.body inner)) |> toList
-        "match {} {\n{}\n{}}" % (body, join cases "\n", indent)
+            (show inner ) + "{} => " % (generatePattern c.pattern) + "{" +  "{}" % (generateExpr c.body inner) + "}") |> toList
+        ("match {} " % body) + "{" + "\n{}\n{}" % (join cases "\n", indent) + "}"
     FieldAccess name receiver -> do
         receiver <- generateExpr receiver (Indent 0)
         "{}.{}" % (receiver, name)
@@ -119,7 +127,7 @@ generateExpr expr indent = case expr of
             inner <- inc indent
             args <- args |> List.iter |> map (\arg -> do
                 "{}{}" % (inner, generateExpr arg inner)) |> toList
-            s <- "loop {\n{}\n{}}" % (join args ";\n", indent)
+            s <- "loop {" + "\n{}\n{}" % (join args ";\n", indent) + "}"
             s
     Break expr -> do
         body <- generateExpr expr (Indent 0)
@@ -136,6 +144,8 @@ generateExpr expr indent = case expr of
         args <- args |> List.iter |> map (\arg -> do
                 "{}" % generateExpr arg (Indent 0)) |> toList
         "vec![{}]" % (join args ", ")
+    Lambda args body -> "{} {}" % (args, generateExpr body (Indent 0))
+    EnumCtor name -> name
     _ -> "NYI"
 
 generateStruct :: Struct -> String
@@ -149,7 +159,8 @@ generateStruct struct = do
     content <- struct.attributes |> List.iter |> fold (\content, attribute -> do
         case attribute of
             Clone -> content + "#[derive(Clone)]\n") content
-    content + "struct {} {\n{}\n}" % (struct.name, join fields "\n")
+    content <- content + "struct " + struct.name + " {\n" + (join fields "\n") + "\n}"
+    content
 
 generateEnum :: Enum -> String
 generateEnum enum = do
@@ -162,18 +173,27 @@ generateEnum enum = do
     content <- enum.attributes |> List.iter |> fold (\content, attribute -> do
         case attribute of
             Clone -> content + "#[derive(Clone)]\n") content
-    content + "enum {} {\n{}\n}" % (enum.name, join variants "\n")
+    content <- content + "enum " + enum.name + " {\n" + (join variants "\n") + "\n}"
+    content
 
-generateFunction :: Function -> String
-generateFunction function = do
-    (args, _) <- function.args |> List.iter |> fold (\(args, index), arg -> do
-        s <- "arg{}: {}" % (index, arg)
-        args <- args + [s]
-        (args, index + 1)) ([], 0)
-    signature <- "fn {}({}) -> {}" % (function.name, join args ", ", function.result)
-    indent <- Indent 0
+generateFunction :: Function -> Indent -> String
+generateFunction function indent = do
+    args <- function.args |> List.iter |> map (\(arg_name, type) -> "{}: {}" % (arg_name, type)) |> toList
+    args <- if function.self
+        then ["&self"] + args
+        else args
+    signature <- "{}fn {}({}) -> {}" % (indent, function.name, join args ", ", function.result)
     body <- generateExpr function.body indent
     signature + " " + body
+
+generateTraitImpl :: TraitImpl -> String
+generateTraitImpl impl = do
+    signature <- "impl {} for {}" % (impl.trait_name, impl.type) + " {"
+    indent <- Indent 2
+    body <- impl.methods |> List.iter |> fold (\body, method -> do
+        m <- generateFunction method indent
+        body + "\n" + m) ""
+    signature + body + "\n}"
 
 generateProgram :: Program -> String
 generateProgram program = do
@@ -185,6 +205,7 @@ generateProgram program = do
     content <- content + "#![allow(unused_parens)]\n"
     content <- program.structs |> List.iter |> fold (\content, s -> content + "\n\n" + generateStruct s) content
     content <- program.enums |> List.iter |> fold (\content, e -> content + "\n\n" + generateEnum e) content
-    content <- program.functions |> List.iter |> fold (\content, f -> content + "\n\n" + generateFunction f) content
-    content <- content + "\n\nfn main() {\n{}Main_main_0();\n}" % (Indent 2)
+    content <- program.functions |> List.iter |> fold (\content, f -> content + "\n\n" + generateFunction f (Indent 0)) content
+    content <- program.impls |> List.iter |> fold (\content, i -> content + "\n\n" + generateTraitImpl i) content
+    content <- content + "\n\nfn main() {\n" + (show (Indent 2)) + "Main_main_0();\n}"
     content
