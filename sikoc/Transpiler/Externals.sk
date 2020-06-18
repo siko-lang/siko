@@ -384,10 +384,50 @@ generateAssert program type_store arg_types result_type = do
     match <- R.Match (R.VarRef (getArgName 0)) cases
     R.Block [match]
 
+generateIsUppercase :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
+generateIsUppercase program type_store arg_types result_type = do
+    field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
+    call <- R.MethodCall field_access0 "is_uppercase" []
+    match <- rustBoolToSikoBool program call result_type
+    R.Block [match]
+
+generateReadTextFile :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
+generateReadTextFile program type_store arg_types result_type = do
+    rust_result_type <- convertType result_type
+    field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
+    deref0 <- R.FunctionCall derefName [R.Ref field_access0]
+    read_call <- R.FunctionCall "std::fs::read" [deref0]
+    read_call <- R.MethodCall read_call "expect" [R.StringLiteral "ReadTextFile failed"]
+    convert <- R.FunctionCall "String::from_utf8_lossy" [R.Ref read_call]
+    to_string_call <- R.MethodCall convert "to_string" []
+    struct_ctor <- R.StructCtor (show rust_result_type) [R.FieldInitItem innerValueField (R.FunctionCall rcNew [to_string_call])]
+    R.Block [struct_ctor]
+
+generateWriteTextFile :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
+generateWriteTextFile program type_store arg_types result_type = do
+    rust_result_type <- convertType result_type
+    field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
+    deref0 <- R.FunctionCall derefName [R.Ref field_access0]
+    field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
+    deref1 <- R.FunctionCall derefName [R.Ref field_access1]
+    write_call <- R.FunctionCall "std::fs::write" [deref0, deref1]
+    write_call <- R.MethodCall write_call "expect" [R.StringLiteral "WriteTextFile failed"]
+    struct_ctor <- R.StructCtor (show rust_result_type) []
+    R.Block [write_call, struct_ctor]
+
 initializeExternalFunctions :: Map ExternalId ExternFnBuilder
 initializeExternalFunctions = do
     externals <- Map.empty
     (externals, _) <- insert externals (ExternalId "Std.Util.Basic" "printStr") (ExternFnBuilder generatePrintStr)
+
+    (externals, _) <- insert externals (ExternalId "Std.Ops" "getDiscriminant") (ExternFnBuilder generateGetDiscriminant)
+    (externals, _) <- insert externals (ExternalId "Std.Ops" "opAnd") (ExternFnBuilder generateOpAnd)
+    (externals, _) <- insert externals (ExternalId "Std.Ops" "opOr") (ExternFnBuilder generateOpOr)
+
+    (externals, _) <- insert externals (ExternalId "Std.Util" "assert") (ExternFnBuilder generateAssert)
+
+    (externals, _) <- insert externals (ExternalId "Hack" "readTextFile") (ExternFnBuilder generateReadTextFile)
+    (externals, _) <- insert externals (ExternalId "Hack" "writeTextFile") (ExternFnBuilder generateWriteTextFile)
 
     (externals, _) <- insert externals (ExternalId "String" "opAdd") (ExternFnBuilder generateStringAdd)
     (externals, _) <- insert externals (ExternalId "String" "partialCmp") (ExternFnBuilder generatePartialCmp)
@@ -404,12 +444,6 @@ initializeExternalFunctions = do
     (externals, _) <- insert externals (ExternalId "Int" "opEq") (ExternFnBuilder generateEq)
     (externals, _) <- insert externals (ExternalId "Int" "opNegative") (ExternFnBuilder generateNegative)
 
-    (externals, _) <- insert externals (ExternalId "Std.Ops" "getDiscriminant") (ExternFnBuilder generateGetDiscriminant)
-    (externals, _) <- insert externals (ExternalId "Std.Ops" "opAnd") (ExternFnBuilder generateOpAnd)
-    (externals, _) <- insert externals (ExternalId "Std.Ops" "opOr") (ExternFnBuilder generateOpOr)
-
-    (externals, _) <- insert externals (ExternalId "Std.Util" "assert") (ExternFnBuilder generateAssert)
-
     (externals, _) <- insert externals (ExternalId "Float" "opAdd") (ExternFnBuilder generateAdd)
     (externals, _) <- insert externals (ExternalId "Float" "opSub") (ExternFnBuilder generateSub)
     (externals, _) <- insert externals (ExternalId "Float" "opMul") (ExternFnBuilder generateMul)
@@ -422,6 +456,7 @@ initializeExternalFunctions = do
     (externals, _) <- insert externals (ExternalId "Char" "partialCmp") (ExternFnBuilder generatePartialCmp)
     (externals, _) <- insert externals (ExternalId "Char" "cmp") (ExternFnBuilder generateCmp)
     (externals, _) <- insert externals (ExternalId "Char" "opEq") (ExternFnBuilder generateEq)
+    (externals, _) <- insert externals (ExternalId "Char" "isUppercase") (ExternFnBuilder generateIsUppercase)
 
     (externals, _) <- insert externals (ExternalId "List" "show") (ExternFnBuilder generateListShow)
 
