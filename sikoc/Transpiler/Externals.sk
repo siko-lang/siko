@@ -7,6 +7,18 @@ import Siko.Transpiler.Rust as R
 import Siko.Transpiler
 import Map
 
+getVariantRecordType :: Program -> MT.Type -> String -> Identity
+getVariantRecordType program mir_type name = do
+    adt_id <- case mir_type of
+        MT.Adt adt_id -> adt_id
+        _ -> panic "Not an ADT"
+    adt <- getAdt program adt_id
+    loop index <- 0 do
+        variant <- atIndex adt.variants index
+        if variant.name == name
+            then return variant.type
+            else index + 1
+
 generatePrintStr :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
 generatePrintStr program type_store arg_types result_type = do
     rust_type <- convertType result_type
@@ -121,38 +133,30 @@ generatePartialCmp program type_store arg_types result_type = do
     field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
     partial_cmp_call <- R.MethodCall field_access0 "partial_cmp" [R.Ref field_access1]
     rust_result_type <- convertType result_type
-    result_option <- getEnum type_store rust_result_type
-    some_variant <- atIndex result_option.variants 0
-    none_variant <- atIndex result_option.variants 1
-    (ordering_name, ordering_type) <- case result_type of
-        MT.Adt mir_option_adt -> do
-            adt <- getAdt program mir_option_adt
-            mir_some_variant <- atIndex adt.variants 0
-            some_struct <- getRecord program mir_some_variant.type
-            field0 <- atIndex some_struct.fields 0
-            ordering_type <- case field0.type of
-                MT.Adt i -> i
-                _ -> panic "generatePartialCmp ordering type is not adt"
-            (field0.name, ordering_type)
-        _ -> panic "generatePartialCmp result is not an adt"
-    rust_ordering_type <- convertType (MT.Adt ordering_type)
-    ordering_adt <- getAdt program ordering_type
-    greater_variant <- atIndex ordering_adt.variants 2
-    equal_variant <- atIndex ordering_adt.variants 1
-    less_variant <- atIndex ordering_adt.variants 0
+    some_record_type <- getVariantRecordType program result_type "Some"
+    none_record_type <- getVariantRecordType program result_type "None"
+    rust_some_record_type <- convertType (MT.Record some_record_type)
+    rust_none_record_type <- convertType (MT.Record none_record_type)
+    some_record <- getRecord program some_record_type
+    ordering_field <- atIndex some_record.fields 0
+    ordering_type <- ordering_field.type
+    greater_record_type <- getVariantRecordType program ordering_type "Greater"
+    equal_record_type <- getVariantRecordType program ordering_type "Equal"
+    less_record_type <- getVariantRecordType program ordering_type "Less"
+    rust_ordering_type <- convertType ordering_type
     ordering_var <- "o"
-    greater_ctor <- R.StructCtor (show (convertType (MT.Record greater_variant.type))) []
-    equal_ctor <- R.StructCtor (show (convertType (MT.Record equal_variant.type))) []
-    less_ctor <- R.StructCtor (show (convertType (MT.Record less_variant.type))) []
+    greater_ctor <- R.StructCtor (show (convertType (MT.Record greater_record_type))) []
+    equal_ctor <- R.StructCtor (show (convertType (MT.Record equal_record_type))) []
+    less_ctor <- R.StructCtor (show (convertType (MT.Record less_record_type))) []
     greater_ctor <- R.FunctionCall ("{}::Greater" % rust_ordering_type) [greater_ctor]
     equal_ctor <- R.FunctionCall ("{}::Equal" % rust_ordering_type) [equal_ctor]
     less_ctor <- R.FunctionCall ("{}::Less" % rust_ordering_type) [less_ctor]
     greater_case <- R.MatchCase (R.VariantPattern "std::cmp::Ordering::Greater" None) (R.FunctionCall rcNew [greater_ctor])
     equal_case <- R.MatchCase (R.VariantPattern "std::cmp::Ordering::Equal" None) (R.FunctionCall rcNew [equal_ctor])
     less_case <- R.MatchCase (R.VariantPattern "std::cmp::Ordering::Less" None) (R.FunctionCall rcNew [less_ctor])
-    init <- R.FieldInitItem ordering_name (R.Match (R.VarRef ordering_var) [greater_case, equal_case, less_case])
-    some_struct_ctor <- R.StructCtor (show some_variant.type) [init]
-    none_struct_ctor <- R.StructCtor (show none_variant.type) []
+    init <- R.FieldInitItem ordering_field.name (R.Match (R.VarRef ordering_var) [greater_case, equal_case, less_case])
+    some_struct_ctor <- R.StructCtor (show rust_some_record_type) [init]
+    none_struct_ctor <- R.StructCtor (show rust_none_record_type) []
     result_some_ctor <- R.FunctionCall ("{}::Some" % rust_result_type) [some_struct_ctor]
     result_none_ctor <- R.FunctionCall ("{}::None" % rust_result_type) [none_struct_ctor]
     some_case <- R.MatchCase (R.VariantPattern "std::option::Option::Some" (Some ordering_var)) result_some_ctor
@@ -165,17 +169,13 @@ generateCmp program type_store arg_types result_type = do
     field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
     field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
     cmp_call <- R.MethodCall field_access0 "cmp" [R.Ref field_access1]
-    ordering_type <- case result_type of
-        MT.Adt adt_id -> adt_id
-        _ -> panic "generateCmp result is not an adt"
     rust_ordering_type <- convertType result_type
-    ordering_adt <- getAdt program ordering_type
-    greater_variant <- atIndex ordering_adt.variants 2
-    equal_variant <- atIndex ordering_adt.variants 1
-    less_variant <- atIndex ordering_adt.variants 0
-    greater_ctor <- R.StructCtor (show (convertType (MT.Record greater_variant.type))) []
-    equal_ctor <- R.StructCtor (show (convertType (MT.Record equal_variant.type))) []
-    less_ctor <- R.StructCtor (show (convertType (MT.Record less_variant.type))) []
+    greater_record_type <- getVariantRecordType program result_type "Greater"
+    equal_record_type <- getVariantRecordType program result_type "Equal"
+    less_record_type <- getVariantRecordType program result_type "Less"
+    greater_ctor <- R.StructCtor (show (convertType (MT.Record greater_record_type))) []
+    equal_ctor <- R.StructCtor (show (convertType (MT.Record equal_record_type))) []
+    less_ctor <- R.StructCtor (show (convertType (MT.Record less_record_type))) []
     greater_ctor <- R.FunctionCall ("{}::Greater" % rust_ordering_type) [greater_ctor]
     equal_ctor <- R.FunctionCall ("{}::Equal" % rust_ordering_type) [equal_ctor]
     less_ctor <- R.FunctionCall ("{}::Less" % rust_ordering_type) [less_ctor]
@@ -188,18 +188,12 @@ generateCmp program type_store arg_types result_type = do
 rustBoolToSikoBool :: Program -> R.Expr -> MT.Type -> R.Expr
 rustBoolToSikoBool program bool_expr bool_type = do
     rust_bool_type <- convertType bool_type
-    bool_type_id <- case bool_type of
-                MT.Adt i -> i
-                _ -> panic "rustBoolToSikoBool: bool is not ADT"
-    bool_adt <- getAdt program bool_type_id
-    true_variant <- atIndex bool_adt.variants 0
-    false_variant <- atIndex bool_adt.variants 1
+    true_record_type <- getVariantRecordType program bool_type "True"
+    false_record_type <- getVariantRecordType program bool_type "False"
     true_pattern <- R.VariantPattern "true" None
     false_pattern <- R.VariantPattern "false" None
-    true_record_type <- MT.Record true_variant.type
-    rust_true_record_type <- convertType true_record_type
-    false_record_type <- MT.Record false_variant.type
-    rust_false_record_type <- convertType false_record_type
+    rust_true_record_type <- convertType (MT.Record true_record_type)
+    rust_false_record_type <- convertType (MT.Record false_record_type)
     true_ctor <- R.StructCtor (show (rust_true_record_type)) []
     false_ctor <- R.StructCtor (show (rust_false_record_type)) []
     true_case <- R.MatchCase true_pattern (R.FunctionCall ("{}::True" % rust_bool_type) [true_ctor])
@@ -233,12 +227,8 @@ sikoOptionalOrderingToRustOptionalOrdering program partial_ord_expr optional_ord
     some_ordering <- "some_ordering"
     some_pattern <- R.VariantPattern ("{}::Some" % rust_optional_ordering_type) (Some some_ordering)
     none_pattern <- R.VariantPattern ("{}::None" % rust_optional_ordering_type) (Some "_")
-    option_type_id <- case optional_ordering_type of
-                MT.Adt i -> i
-                _ -> panic "sikoOptionalOrderingToRustOptionalOrdering: option is not ADT"
-    option_adt <- getAdt program option_type_id
-    some_variant <- atIndex option_adt.variants 0
-    some_record <- getRecord program some_variant.type
+    some_record_type <- getVariantRecordType program optional_ordering_type "Some"
+    some_record <- getRecord program some_record_type
     ordering_type_field <- atIndex some_record.fields 0
     rust_some_record_type <- convertType ordering_type_field.type
     field_access <- R.FieldAccess ordering_type_field.name (R.VarRef some_ordering)
@@ -265,18 +255,12 @@ generateOpAnd program type_store arg_types result_type = do
     field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
     rust_result_type <- convertType result_type
     arg_type <- atIndex arg_types 0
-    adt_id <- case arg_type of
-        MT.Adt adt_id -> adt_id
-        _ -> panic "Unexpected assert arg"
-    bool_adt <- getAdt program adt_id
-    true_variant <- atIndex bool_adt.variants 0
-    false_variant <- atIndex bool_adt.variants 1
+    true_record_type <- getVariantRecordType program arg_type "True"
+    false_record_type <- getVariantRecordType program arg_type "False"
     true_pattern <- R.VariantPattern "true" None
     false_pattern <- R.VariantPattern "false" None
-    true_record_type <- MT.Record true_variant.type
-    rust_true_record_type <- convertType true_record_type
-    false_record_type <- MT.Record false_variant.type
-    rust_false_record_type <- convertType false_record_type
+    rust_true_record_type <- convertType (MT.Record true_record_type)
+    rust_false_record_type <- convertType (MT.Record false_record_type)
     true_ctor <- R.StructCtor (show (rust_true_record_type)) []
     false_ctor <- R.StructCtor (show (rust_false_record_type)) []
 
@@ -307,18 +291,12 @@ generateOpOr program type_store arg_types result_type = do
     field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
     rust_result_type <- convertType result_type
     arg_type <- atIndex arg_types 0
-    adt_id <- case arg_type of
-        MT.Adt adt_id -> adt_id
-        _ -> panic "Unexpected assert arg"
-    bool_adt <- getAdt program adt_id
-    true_variant <- atIndex bool_adt.variants 0
-    false_variant <- atIndex bool_adt.variants 1
+    true_record_type <- getVariantRecordType program arg_type "True"
+    false_record_type <- getVariantRecordType program arg_type "False"
     true_pattern <- R.VariantPattern "true" None
     false_pattern <- R.VariantPattern "false" None
-    true_record_type <- MT.Record true_variant.type
-    rust_true_record_type <- convertType true_record_type
-    false_record_type <- MT.Record false_variant.type
-    rust_false_record_type <- convertType false_record_type
+    rust_true_record_type <- convertType (MT.Record true_record_type)
+    rust_false_record_type <- convertType (MT.Record false_record_type)
     true_ctor <- R.StructCtor (show (rust_true_record_type)) []
     false_ctor <- R.StructCtor (show (rust_false_record_type)) []
 
@@ -370,10 +348,6 @@ generateAssert :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
 generateAssert program type_store arg_types result_type = do
     rust_result_type <- convertType result_type
     arg_type <- atIndex arg_types 0
-    adt_id <- case arg_type of
-        MT.Adt adt_id -> adt_id
-        _ -> panic "Unexpected assert arg"
-    bool_adt <- getAdt program adt_id
     rust_type <- convertType arg_type
     rust_result_type <- convertType result_type
     true_pattern <- R.VariantPattern ("{}::True" % rust_type) (Some "_")
@@ -415,6 +389,31 @@ generateWriteTextFile program type_store arg_types result_type = do
     struct_ctor <- R.StructCtor (show rust_result_type) []
     R.Block [write_call, struct_ctor]
 
+generateIntParse :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
+generateIntParse program type_store arg_types result_type = do
+    rust_result_type <- convertType result_type
+    field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
+    deref0 <- R.FunctionCall derefName [R.Ref field_access0]
+    parse_call <- R.MethodCall deref0 "parse::<i64>" []
+    rust_result_type <- convertType result_type
+    some_record_type <- getVariantRecordType program result_type "Some"
+    none_record_type <- getVariantRecordType program result_type "None"
+    rust_some_record_type <- convertType (MT.Record some_record_type)
+    rust_none_record_type <- convertType (MT.Record none_record_type)
+    some_record <- getRecord program some_record_type
+    int_field <- atIndex some_record.fields 0
+    rust_int_type <- convertType int_field.type
+    int_ctor <- R.StructCtor (show rust_int_type) [R.FieldInitItem innerValueField (R.FunctionCall rcNew [R.VarRef "v"])]
+    some_ctor <- R.StructCtor (show rust_some_record_type) [R.FieldInitItem int_field.name (R.FunctionCall rcNew [int_ctor])]
+    none_ctor <- R.StructCtor (show rust_none_record_type) []
+    ok_pattern <- R.VariantPattern ("Ok") (Some "v")
+    err_pattern <- R.VariantPattern ("Err") (Some "_")
+    ok_case <- R.MatchCase ok_pattern (R.FunctionCall ("{}::Some" % rust_result_type) [some_ctor])
+    err_case <- R.MatchCase err_pattern (R.FunctionCall ("{}::None" % rust_result_type) [none_ctor])
+    cases <- [ok_case, err_case]
+    match <- R.Match parse_call cases
+    R.Block [match]
+
 initializeExternalFunctions :: Map ExternalId ExternFnBuilder
 initializeExternalFunctions = do
     externals <- Map.empty
@@ -443,6 +442,7 @@ initializeExternalFunctions = do
     (externals, _) <- insert externals (ExternalId "Int" "cmp") (ExternFnBuilder generateCmp)
     (externals, _) <- insert externals (ExternalId "Int" "opEq") (ExternFnBuilder generateEq)
     (externals, _) <- insert externals (ExternalId "Int" "opNegative") (ExternFnBuilder generateNegative)
+    (externals, _) <- insert externals (ExternalId "Int" "parse") (ExternFnBuilder generateIntParse)
 
     (externals, _) <- insert externals (ExternalId "Float" "opAdd") (ExternFnBuilder generateAdd)
     (externals, _) <- insert externals (ExternalId "Float" "opSub") (ExternFnBuilder generateSub)
