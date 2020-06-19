@@ -52,6 +52,7 @@ data Expr = Block [Expr]
             | Continue Expr
             | Break Expr
             | Ref Expr
+            | Deref Expr
             | RecordUpdate String [FieldInitItem]
             | Loop [Expr]
             | Match Expr [MatchCase]
@@ -59,6 +60,7 @@ data Expr = Block [Expr]
             | Assign Expr Expr
             | Lambda String Expr
             | EnumCtor String
+            | As Expr String
 
 data Program = { structs :: [Struct], enums :: [Enum], functions :: [Function], impls :: [TraitImpl] }
 
@@ -123,6 +125,7 @@ generateExpr expr indent = case expr of
         receiver <- generateExpr receiver (Indent 0)
         "{}.{}" % (receiver, name)
     Ref rhs -> "&{}" % generateExpr rhs (Indent 0)
+    Deref rhs -> "*{}" % generateExpr rhs (Indent 0)
     Loop args -> do
             inner <- inc indent
             args <- args |> List.iter |> map (\arg -> do
@@ -146,6 +149,7 @@ generateExpr expr indent = case expr of
         "vec![{}]" % (join args ", ")
     Lambda args body -> "{} {}" % (args, generateExpr body (Indent 0))
     EnumCtor name -> name
+    As expr target -> "{} as {}" % (generateExpr expr (Indent 0), target)
     _ -> "NYI"
 
 generateStruct :: Struct -> String
