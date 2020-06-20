@@ -23,10 +23,18 @@ atIndex a :: [a] -> Int -> a
 atIndex index l = extern
 
 iter a :: [a] -> Iterator a
-iter l = extern
+iter l = createIterator (intoIter l) nextItem
+
+data ListIterator a = extern
+
+intoIter a :: [a] -> ListIterator a
+intoIter list = extern
+
+nextItem a :: ListIterator a -> Option (ListIterator a, a)
+nextItem iter = extern
 
 toList a :: Iterator a -> [a]
-toList i = extern
+toList iter = fold (\list, item -> list + [item]) [] iter
 
 getLength a :: [a] -> Int
 getLength l = extern
