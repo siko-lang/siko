@@ -489,6 +489,33 @@ generateListHead program type_store arg_types result_type = do
     match <- R.Match first_call cases
     R.Block [match]
 
+generateListTail :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
+generateListTail program type_store arg_types result_type = do
+    arg_type <- atIndex arg_types 0
+    rust_arg_type <- convertType arg_type
+    arg0 <- R.VarRef (getArgName 0)
+    inner0 <- R.FieldAccess innerValueField arg0
+    is_empty_call <- R.MethodCall inner0 "is_empty" []
+    rust_result_type <- convertType result_type
+    some_record_type <- getVariantRecordType program result_type "Some"
+    none_record_type <- getVariantRecordType program result_type "None"
+    rust_some_record_type <- convertType (MT.Record some_record_type)
+    rust_none_record_type <- convertType (MT.Record none_record_type)
+    clone_call <- R.MethodCall arg0 cloneName []
+    none_ctor <- R.StructCtor (show rust_none_record_type) []
+    non_empty_branch <- do
+        deref0 <- R.FunctionCall derefName [R.Ref inner0]
+        new <- "new"
+        new_decl <- R.VarDecl True new (R.MethodCall deref0 cloneName []) None
+        remove_call <- R.MethodCall (R.VarRef new) "remove" [R.IntegerLiteral "0"]
+        list_ctor <- R.StructCtor (show rust_arg_type) [R.FieldInitItem innerValueField (R.FunctionCall rcNew [R.VarRef new])]
+        some_ctor <- R.StructCtor (show rust_some_record_type) [R.FieldInitItem "field0" (R.FunctionCall rcNew [list_ctor])]
+        some_ctor <- R.FunctionCall ("{}::Some" % rust_result_type) [some_ctor]
+        R.Block [new_decl, remove_call, some_ctor]
+    empty_branch <- R.FunctionCall ("{}::None" % rust_result_type) [none_ctor]
+    if_expr <- R.If is_empty_call empty_branch non_empty_branch
+    R.Block [if_expr]
+
 generateListAdd :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
 generateListAdd program type_store arg_types result_type = do
     rust_type <- convertType result_type
@@ -605,6 +632,7 @@ initializeExternalFunctions = do
     (externals, _) <- insert externals (ExternalId "List" "isEmpty") (ExternFnBuilder generateListIsEmpty)
     (externals, _) <- insert externals (ExternalId "List" "sort") (ExternFnBuilder generateListSort)
     (externals, _) <- insert externals (ExternalId "List" "head") (ExternFnBuilder generateListHead)
+    (externals, _) <- insert externals (ExternalId "List" "tail") (ExternFnBuilder generateListTail)
     (externals, _) <- insert externals (ExternalId "List" "opAdd") (ExternFnBuilder generateListAdd)
     (externals, _) <- insert externals (ExternalId "List" "intoIter") (ExternFnBuilder generateListIntoIter)
     (externals, _) <- insert externals (ExternalId "List" "nextItem") (ExternFnBuilder generateListNextItem)

@@ -61,6 +61,7 @@ data Expr = Block [Expr]
             | Lambda String Expr
             | EnumCtor String
             | As Expr String
+            | If Expr Expr Expr
 
 data Program = { structs :: [Struct], enums :: [Enum], functions :: [Function], impls :: [TraitImpl] }
 
@@ -150,6 +151,7 @@ generateExpr expr indent = case expr of
     Lambda args body -> "{} {}" % (args, generateExpr body (Indent 0))
     EnumCtor name -> name
     As expr target -> "{} as {}" % (generateExpr expr (Indent 0), target)
+    If cond true_branch false_branch -> "if " + (generateExpr cond (Indent 0)) + " { " + (generateExpr true_branch (Indent 0)) + " } else {" + (generateExpr false_branch (Indent 0)) + " }"
     _ -> "NYI"
 
 generateStruct :: Struct -> String
