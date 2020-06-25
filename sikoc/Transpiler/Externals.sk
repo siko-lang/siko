@@ -580,6 +580,21 @@ generateListNextItem program type_store arg_types result_type = do
     match <- R.Match (R.VarRef value) cases
     R.Block [state_decl, value_decl, match]
 
+generateListWrite :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
+generateListWrite program type_store arg_types result_type = do
+    rust_type <- convertType result_type
+    arg0 <- R.VarRef (getArgName 0)
+    inner0 <- R.FieldAccess innerValueField arg0
+    arg1 <- R.VarRef (getArgName 1)
+    inner1 <- R.FieldAccess innerValueField arg1
+    deref1 <- R.FunctionCall derefName [R.Ref inner1]
+    arg2 <- R.VarRef (getArgName 2)
+    deref0 <- R.FunctionCall derefName [R.Ref inner0]
+    new <- "new"
+    new_decl <- R.VarDecl True new (R.MethodCall deref0 cloneName []) None
+    assign0 <- R.Assign (R.Deref (R.FunctionCall "std::ops::IndexMut::index_mut" [R.MutRef (R.VarRef new), R.As (R.Deref deref1) "usize"])) arg2
+    R.Block [new_decl, assign0, R.StructCtor (show rust_type) [R.FieldInitItem innerValueField (R.FunctionCall rcNew [R.VarRef new])]]
+
 initializeExternalFunctions :: Map ExternalId ExternFnBuilder
 initializeExternalFunctions = do
     externals <- Map.empty
@@ -633,6 +648,7 @@ initializeExternalFunctions = do
     (externals, _) <- insert externals (ExternalId "List" "sort") (ExternFnBuilder generateListSort)
     (externals, _) <- insert externals (ExternalId "List" "head") (ExternFnBuilder generateListHead)
     (externals, _) <- insert externals (ExternalId "List" "tail") (ExternFnBuilder generateListTail)
+    (externals, _) <- insert externals (ExternalId "List" "write") (ExternFnBuilder generateListWrite)
     (externals, _) <- insert externals (ExternalId "List" "opAdd") (ExternFnBuilder generateListAdd)
     (externals, _) <- insert externals (ExternalId "List" "intoIter") (ExternFnBuilder generateListIntoIter)
     (externals, _) <- insert externals (ExternalId "List" "nextItem") (ExternFnBuilder generateListNextItem)

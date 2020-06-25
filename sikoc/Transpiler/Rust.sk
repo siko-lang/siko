@@ -52,6 +52,7 @@ data Expr = Block [Expr]
             | Continue Expr
             | Break Expr
             | Ref Expr
+            | MutRef Expr
             | Deref Expr
             | RecordUpdate String [FieldInitItem]
             | Loop [Expr]
@@ -126,6 +127,7 @@ generateExpr expr indent = case expr of
         receiver <- generateExpr receiver (Indent 0)
         "{}.{}" % (receiver, name)
     Ref rhs -> "&{}" % generateExpr rhs (Indent 0)
+    MutRef rhs -> "&mut {}" % generateExpr rhs (Indent 0)
     Deref rhs -> "*{}" % generateExpr rhs (Indent 0)
     Loop args -> do
             inner <- inc indent
