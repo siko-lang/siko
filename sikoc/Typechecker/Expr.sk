@@ -460,7 +460,7 @@ addUndefinedVarToContext context undefined_vars var location =
 checkUndefinedVars :: Context -> [T.TypeVar] -> T.Type -> [T.TypeVar] -> Location -> (Context, [T.TypeVar])
 checkUndefinedVars context undefined_vars type signature_vars location = do
     case type of
-        T.Var v constraints -> do
+        T.Var v constraints if not (isEmpty constraints) -> do
             row_typed <- constraints |> List.iter |> fold (\row_typed, c -> case c of
                 T.ClassConstraint _ -> row_typed
                 T.RowConstraint _ _ -> True) False

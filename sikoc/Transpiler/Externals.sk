@@ -638,10 +638,15 @@ generateStringSplit program type_store arg_types result_type = do
     new_decl <- R.VarDecl False new collect_call (Some (R.Type "Vec<_>"))
     R.Block [new_decl, R.StructCtor (show rust_type) [R.FieldInitItem innerValueField (R.FunctionCall rcNew [R.VarRef new])]]
 
+generateAbort :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
+generateAbort program type_store arg_types result_type = do
+    R.Block [R.FunctionCall "panic!" [R.StringLiteral "Abort called"]]
+
 initializeExternalFunctions :: Map ExternalId ExternFnBuilder
 initializeExternalFunctions = do
     externals <- Map.empty
     (externals, _) <- insert externals (ExternalId "Std.Util.Basic" "printStr") (ExternFnBuilder generatePrintStr)
+    (externals, _) <- insert externals (ExternalId "Std.Util.Basic" "abort") (ExternFnBuilder generateAbort)
 
     (externals, _) <- insert externals (ExternalId "Std.Ops" "getDiscriminant") (ExternFnBuilder generateGetDiscriminant)
     (externals, _) <- insert externals (ExternalId "Std.Ops" "opAnd") (ExternFnBuilder generateOpAnd)
