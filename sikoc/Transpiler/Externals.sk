@@ -595,6 +595,49 @@ generateListWrite program type_store arg_types result_type = do
     assign0 <- R.Assign (R.Deref (R.FunctionCall "std::ops::IndexMut::index_mut" [R.MutRef (R.VarRef new), R.As (R.Deref deref1) "usize"])) arg2
     R.Block [new_decl, assign0, R.StructCtor (show rust_type) [R.FieldInitItem innerValueField (R.FunctionCall rcNew [R.VarRef new])]]
 
+generateStringChars :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
+generateStringChars program type_store arg_types result_type = do
+    rust_type <- convertType result_type
+    arg0 <- R.VarRef (getArgName 0)
+    inner0 <- R.FieldAccess innerValueField arg0
+    chars_call <- R.MethodCall inner0 "chars" []
+    map_body <- R.Lambda "|item|" (R.StructCtor charTypeName [R.FieldInitItem innerValueField (R.FunctionCall rcNew [R.VarRef "item"])])
+    map <- R.MethodCall chars_call "map" [map_body]
+    collect_call <- R.MethodCall map "collect" []
+    new <- "new"
+    new_decl <- R.VarDecl False new collect_call (Some (R.Type "Vec<_>"))
+    R.Block [new_decl, R.StructCtor (show rust_type) [R.FieldInitItem innerValueField (R.FunctionCall rcNew [R.VarRef new])]]
+
+generateStringReplace :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
+generateStringReplace program type_store arg_types result_type = do
+    rust_type <- convertType result_type
+    arg0 <- R.VarRef (getArgName 0)
+    inner0 <- R.FieldAccess innerValueField arg0
+    arg1 <- R.VarRef (getArgName 1)
+    inner1 <- R.FieldAccess innerValueField arg1
+    arg2 <- R.VarRef (getArgName 2)
+    inner2 <- R.FieldAccess innerValueField arg2
+    new <- "new"
+    new_decl <- R.VarDecl False new (R.MethodCall inner0 "replace" [R.MethodCall inner1 "as_ref" [], R.MethodCall inner2 "as_ref" []]) None
+    R.Block [new_decl, R.StructCtor (show rust_type) [R.FieldInitItem innerValueField (R.FunctionCall rcNew [R.VarRef new])]]
+
+generateStringSplit :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
+generateStringSplit program type_store arg_types result_type = do
+    rust_type <- convertType result_type
+    arg0 <- R.VarRef (getArgName 0)
+    inner0 <- R.FieldAccess innerValueField arg0
+    arg1 <- R.VarRef (getArgName 1)
+    inner1 <- R.FieldAccess innerValueField arg1
+    new <- "new"
+    split_call <- R.MethodCall inner0 "split" [R.MethodCall inner1 "as_ref" []]
+    to_string_call <- R.MethodCall (R.VarRef "item") "to_string" []
+    map_body <- R.Lambda "|item|" (R.StructCtor stringTypeName [R.FieldInitItem innerValueField (R.FunctionCall rcNew [to_string_call])])
+    map <- R.MethodCall split_call "map" [map_body]
+    collect_call <- R.MethodCall map "collect" []
+    new <- "new"
+    new_decl <- R.VarDecl False new collect_call (Some (R.Type "Vec<_>"))
+    R.Block [new_decl, R.StructCtor (show rust_type) [R.FieldInitItem innerValueField (R.FunctionCall rcNew [R.VarRef new])]]
+
 initializeExternalFunctions :: Map ExternalId ExternFnBuilder
 initializeExternalFunctions = do
     externals <- Map.empty
@@ -613,6 +656,9 @@ initializeExternalFunctions = do
     (externals, _) <- insert externals (ExternalId "String" "partialCmp") (ExternFnBuilder generatePartialCmp)
     (externals, _) <- insert externals (ExternalId "String" "cmp") (ExternFnBuilder generateCmp)
     (externals, _) <- insert externals (ExternalId "String" "opEq") (ExternFnBuilder generateEq)
+    (externals, _) <- insert externals (ExternalId "String" "chars") (ExternFnBuilder generateStringChars)
+    (externals, _) <- insert externals (ExternalId "String" "replace") (ExternFnBuilder generateStringReplace)
+    (externals, _) <- insert externals (ExternalId "String" "split") (ExternFnBuilder generateStringSplit)
 
     (externals, _) <- insert externals (ExternalId "Int" "opAdd") (ExternFnBuilder generateAdd)
     (externals, _) <- insert externals (ExternalId "Int" "opSub") (ExternFnBuilder generateSub)
