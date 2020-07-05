@@ -642,6 +642,11 @@ generateAbort :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
 generateAbort program type_store arg_types result_type = do
     R.Block [R.FunctionCall "panic!" [R.StringLiteral "Abort called"]]
 
+generateMapEmpty :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
+generateMapEmpty program type_store arg_types result_type = do
+    rust_type <- convertType result_type
+    R.Block [R.StructCtor (show rust_type) [R.FieldInitItem innerValueField (R.FunctionCall rcNew [R.FunctionCall "std::collections::BTreeMap::new" []])]]
+
 initializeExternalFunctions :: Map ExternalId ExternFnBuilder
 initializeExternalFunctions = do
     externals <- Map.empty
@@ -704,6 +709,8 @@ initializeExternalFunctions = do
     (externals, _) <- insert externals (ExternalId "List" "intoIter") (ExternFnBuilder generateListIntoIter)
     (externals, _) <- insert externals (ExternalId "List" "nextItem") (ExternFnBuilder generateListNextItem)
 
+    (externals, _) <- insert externals (ExternalId "Map" "empty") (ExternFnBuilder generateMapEmpty)
+
     externals
 
 generateStringFields :: [MT.Type] -> [R.StructField]
@@ -730,6 +737,14 @@ generateListIteratorFields args = do
     rust_type_arg <- convertType first
     [R.StructField innerValueField (typeToRcType (R.Type "std::vec::IntoIter<{}>" % rust_type_arg))]
 
+generateMapFields :: [MT.Type] -> [R.StructField]
+generateMapFields args = do
+    first <- atIndex args 0
+    second <- atIndex args 1
+    rust_type_arg1 <- convertType first
+    rust_type_arg2 <- convertType second
+    [R.StructField innerValueField (typeToRcType (R.Type "std::collections::BTreeMap<{},{}>" % (rust_type_arg1, rust_type_arg2)))]
+
 initializeExternalStructFields :: Map ExternalId ExternStructBuilder
 initializeExternalStructFields = do
     externals <- Map.empty
@@ -739,4 +754,5 @@ initializeExternalStructFields = do
     (externals, _) <- insert externals (ExternalId "Char" "Char") (ExternStructBuilder generateCharFields)
     (externals, _) <- insert externals (ExternalId "List" "List") (ExternStructBuilder generateListFields)
     (externals, _) <- insert externals (ExternalId "List" "ListIterator") (ExternStructBuilder generateListIteratorFields)
+    (externals, _) <- insert externals (ExternalId "Map" "Map") (ExternStructBuilder generateMapFields)
     externals

@@ -295,21 +295,21 @@ shiftLambdaArgs context (HE.Expr case_of case_of_id case_of_location) offset = c
                                         extra_pattern <- HP.Pattern (HP.Wildcard) pattern_id case_of_location
                                         extra_patterns <- extra_patterns + [extra_pattern]
                                         (context, extra_arg_refs, extra_patterns)
-                arg_refs <- arg_refs |> List.iter |> map (\e -> case e of
-                    HE.Expr arg_ref_expr arg_ref_id arg_ref_location -> case arg_ref_expr of
-                        HE.ArgRef index -> HE.Expr (HE.ArgRef (index + offset)) arg_ref_id arg_ref_location
-                        _ -> panic "Arg ref is not arg ref expr"
-                    _ -> panic "Arg ref is not arg ref") |> toList
+                arg_refs <- arg_refs |> List.iter |> map (\e -> do
+                        HE.Expr arg_ref_expr arg_ref_id arg_ref_location <- e
+                        case arg_ref_expr of
+                            HE.ArgRef index -> HE.Expr (HE.ArgRef (index + offset)) arg_ref_id arg_ref_location
+                            _ -> panic "Arg ref is not arg ref expr"
+                    ) |> toList
                 arg_refs <- extra_arg_refs + arg_refs
                 assert (getLength cases == 1)
                 only_case <- atIndex cases 0
-                pattern <- case only_case.pattern of
-                    HP.Pattern p pattern_id pattern_location -> case p of
-                        (HP.Tuple args) -> do
-                            args <- extra_patterns + args
-                            HP.Pattern (HP.Tuple args) pattern_id pattern_location
-                        _ -> panic "Case body is not a tuple"
-                    _ -> panic "Case body is not tuple pattern"
+                HP.Pattern p pattern_id pattern_location <- only_case.pattern
+                pattern <- case p of
+                    (HP.Tuple args) -> do
+                        args <- extra_patterns + args
+                        HP.Pattern (HP.Tuple args) pattern_id pattern_location
+                    _ -> panic "Case body is not a tuple"
                 cases <- [HE.Case pattern only_case.body]
                 case_of <- HE.CaseOf (HE.Expr (HE.Tuple arg_refs) body_id body_location) cases []
                 expr <- HE.Expr case_of case_of_id case_of_location
