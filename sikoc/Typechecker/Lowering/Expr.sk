@@ -59,6 +59,17 @@ getFieldType mir_record field_name = do
         field <- atIndex mir_record.fields index
         if field.name == field_name then return field.type else index + 1
 
+processBindArgs :: Context -> U.Substitution -> [HP.Pattern] -> ME.Expr -> MD.Record -> (Context, [ME.Expr])
+processBindArgs context sub args var_ref_expr mir_record = do
+    (context, arg_exprs, _) <- args |> List.iter |> fold (\(context, arg_exprs, index), arg -> do
+        field <- atIndex mir_record.fields index
+        field_access <- ME.FieldAccess field.name var_ref_expr
+        field_access_expr <- ME.Expr field_access field.type
+        (context, exprs) <- processBind context sub arg field_access_expr
+        arg_exprs <- arg_exprs + exprs
+        (context, arg_exprs, index + 1)) (context, [], 0)
+    (context, arg_exprs)
+
 processBind :: Context -> U.Substitution -> HP.Pattern -> ME.Expr -> (Context, [ME.Expr])
 processBind context sub (HP.Pattern p id _) rhs = do
     (context, unit_type) <- processType context (HT.Tuple [])
@@ -78,14 +89,7 @@ processBind context sub (HP.Pattern p id _) rhs = do
             mir_record <- case mir_tuple_type of
                 MT.Record record_id -> getRecord context.type_store record_id
                 _ -> panic "Tuple in a bind expr is not a record type!"
-            (context, arg_exprs) <- args |> List.iter |> fold (\(context, arg_exprs), arg -> do
-                index <- getLength arg_exprs
-                field <- atIndex mir_record.fields index
-                field_access <- ME.FieldAccess field.name var_ref_expr
-                field_access_expr <- ME.Expr field_access field.type
-                (context, exprs) <- processBind context sub arg field_access_expr
-                arg_exprs <- arg_exprs + exprs
-                (context, arg_exprs)) (context, [])
+            (context, arg_exprs) <- processBindArgs context sub args var_ref_expr mir_record
             var_decl <- ME.VarDecl var rhs
             var_decl_expr <- ME.Expr var_decl unit_type
             (context, [var_decl_expr] + arg_exprs)
@@ -105,14 +109,7 @@ processBind context sub (HP.Pattern p id _) rhs = do
             mir_record <- case mir_record_type of
                 MT.Record record_id -> getRecord context.type_store record_id
                 _ -> panic "Record in a bind expr is not a record type!"
-            (context, arg_exprs) <- args |> List.iter |> fold (\(context, arg_exprs), arg -> do
-                index <- getLength arg_exprs
-                field <- atIndex mir_record.fields index
-                field_access <- ME.FieldAccess field.name var_ref_expr
-                field_access_expr <- ME.Expr field_access field.type
-                (context, exprs) <- processBind context sub arg field_access_expr
-                arg_exprs <- arg_exprs + exprs
-                (context, arg_exprs)) (context, [])
+            (context, arg_exprs) <- processBindArgs context sub args var_ref_expr mir_record
             var_decl <- ME.VarDecl var rhs
             var_decl_expr <- ME.Expr var_decl unit_type
             (context, [var_decl_expr] + arg_exprs)
@@ -125,15 +122,7 @@ processBind context sub (HP.Pattern p id _) rhs = do
             mir_record <- case mir_adt_type of
                 MT.Record record_id -> getRecord context.type_store record_id
                 _ -> panic "Adt in a bind expr is not a record type!"
-            (context, arg_exprs) <- args |> List.iter |> fold (\(context, arg_exprs), arg -> do
-                index <- getLength arg_exprs
-                field_name <- getFieldName index
-                field <- atIndex mir_record.fields index
-                field_access <- ME.FieldAccess field_name var_ref_expr
-                field_access_expr <- ME.Expr field_access field.type
-                (context, exprs) <- processBind context sub arg field_access_expr
-                arg_exprs <- arg_exprs + exprs
-                (context, arg_exprs)) (context, [])
+            (context, arg_exprs) <- processBindArgs context sub args var_ref_expr mir_record
             var_decl <- ME.VarDecl var rhs
             var_decl_expr <- ME.Expr var_decl unit_type
             (context, [var_decl_expr] + arg_exprs)

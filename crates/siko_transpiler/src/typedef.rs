@@ -51,7 +51,7 @@ pub fn write_typedef(
                         write!(output_file, "{}#[derive(Clone)]\n", indent)?;
                         write!(output_file, "{}pub struct String {{\n", indent)?;
                         indent.inc();
-                        write!(output_file, "{}pub value: std::string::String,\n", indent,)?;
+                        write!(output_file, "{}pub value: std::rc::Rc<std::string::String>,\n", indent,)?;
                         indent.dec();
                         write!(output_file, "{}}}\n", indent)?;
                     }
@@ -79,7 +79,7 @@ pub fn write_typedef(
                         let value_ty = ir_type_to_rust_type(&args[1], program);
                         write!(
                             output_file,
-                            "{}pub value: std::collections::BTreeMap<{}, {}>,\n",
+                            "{}pub value: std::rc::Rc<std::collections::BTreeMap<{}, {}>>,\n",
                             indent, key_ty, value_ty
                         )?;
                         indent.dec();

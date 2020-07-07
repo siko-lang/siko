@@ -51,7 +51,7 @@ fn generate_show_builtin_body(
     )?;
     write!(
         output_file,
-        "{}{} {{ value : value }}",
+        "{}{} {{ value : std::rc::Rc::new(value) }}",
         indent, result_ty_str
     )?;
     Ok(())
@@ -216,12 +216,12 @@ fn generate_string_builtins(
         "opAdd" => {
             write!(
                 output_file,
-                "{}let value = format!(\"{{}}{{}}\", arg0.value, arg1.value);\n",
+                "{}let value = format!(\"{{}}{{}}\", *arg0.value, *arg1.value);\n",
                 indent
             )?;
             write!(
                 output_file,
-                "{}{} {{ value : value }}",
+                "{}{} {{ value : std::rc::Rc::new(value) }}",
                 indent, result_ty_str
             )?;
         }
@@ -243,7 +243,7 @@ fn generate_string_builtins(
         "split" => {
             write!(
                 output_file,
-                "{}let value: Vec<_> = arg0.value.split(&arg1.value).map(|s| {} {{ value : s.to_string() }} ).collect();\n",
+                "{}let value: Vec<_> = arg0.value.split(&*arg1.value).map(|s| {} {{ value : std::rc::Rc::new(s.to_string()) }} ).collect();\n",
                 indent, arg_types[0]
             )?;
             write!(
@@ -255,12 +255,12 @@ fn generate_string_builtins(
         "replace" => {
             write!(
                 output_file,
-                "{}let value = arg0.value.replace(&arg1.value, &arg2.value);\n",
+                "{}let value = arg0.value.replace(&*arg1.value, &*arg2.value);\n",
                 indent
             )?;
             write!(
                 output_file,
-                "{}{} {{ value : value }}",
+                "{}{} {{ value : std::rc::Rc::new(value) }}",
                 indent, result_ty_str
             )?;
         }
@@ -302,20 +302,22 @@ fn generate_map_builtins(
             let result_id = result_ty.get_typedef_id();
             let tuple_record = program.typedefs.get(&result_id).get_record();
             let option_ty = ir_type_to_rust_type(&tuple_record.fields[1].ty, program);
+            let arg0_type: &String = &arg_types[0];
             write!(
                 output_file,
-                "{}map_insert!(arg0, arg1, arg2, {}, {})",
-                indent, option_ty, result_ty_str
+                "{}map_insert!(arg0, arg1, arg2, {}, {}, {})",
+                indent, option_ty, result_ty_str, arg0_type
             )?;
         }
         "remove" => {
             let result_id = result_ty.get_typedef_id();
             let tuple_record = program.typedefs.get(&result_id).get_record();
             let option_ty = ir_type_to_rust_type(&tuple_record.fields[1].ty, program);
+            let arg0_type: &String = &arg_types[0];
             write!(
                 output_file,
-                "{}map_remove!(arg0, arg1, {}, {})",
-                indent, option_ty, result_ty_str
+                "{}map_remove!(arg0, arg1, {}, {}, {})",
+                indent, option_ty, result_ty_str, arg0_type
             )?;
         }
         "get" => {
@@ -414,7 +416,7 @@ fn generate_map_builtins(
                 indent, map_iter_name
             )?;
             indent.inc();
-            write!(output_file, "{}value: arg0.value.clone().into_iter().map(|(k,v)|{{ {} {{ _siko_field_0: k, _siko_field_1: v }} }}).collect(),\n", indent, iter_arg)?;
+            write!(output_file, "{}value: (*arg0.value).clone().into_iter().map(|(k,v)|{{ {} {{ _siko_field_0: k, _siko_field_1: v }} }}).collect(),\n", indent, iter_arg)?;
             write!(output_file, "{}index: 0,\n", indent)?;
             indent.dec();
             write!(output_file, "{}}}),\n", indent)?;
@@ -451,7 +453,7 @@ fn generate_map_builtins(
             write!(output_file, "{}}}\n", indent)?;
             write!(
                 output_file,
-                "{}{} {{ value: value }}",
+                "{}{} {{ value: std::rc::Rc::new(value) }}",
                 indent, result_ty_str
             )?;
         }
@@ -463,7 +465,7 @@ fn generate_map_builtins(
             )?;
             write!(
                 output_file,
-                "{}{} {{ value : format!(\"{{{{ {{}} }}}}\", subs.join(\", \")) }}",
+                "{}{} {{ value : std::rc::Rc::new(format!(\"{{{{ {{}} }}}}\", subs.join(\", \"))) }}",
                 indent, result_ty_str
             )?;
         }
@@ -474,7 +476,7 @@ fn generate_map_builtins(
             let result_tuple_record = program.typedefs.get(&result_tuple_id).get_record();
             let result_option_type = result_tuple_record.fields[1].ty.clone();
             let result_option_type_str = ir_type_to_rust_type(&result_option_type, program);
-
+            let map_type: &String = &arg_types[2];
             write!(output_file, "{}let mut func = arg0;\n", indent)?;
             write!(output_file, "{}let key = arg1;\n", indent)?;
             write!(output_file, "{}let mut map = arg2;\n", indent)?;
@@ -497,18 +499,18 @@ fn generate_map_builtins(
                 indent, option_type_str
             )?;
             indent.inc();
-
-            write!(output_file, "{}match map.value.insert(key, v) {{\n", indent)?;
+            write!(output_file, "{}let mut map = (*map.value).clone(); \n", indent)?;
+            write!(output_file, "{}match map.insert(key, v) {{\n", indent)?;
             indent.inc();
             write!(
                 output_file,
-                "{}Some(v) => {} {{ _siko_field_0: map, _siko_field_1: {}::Some(v) }},\n",
-                indent, result_ty_str, result_option_type_str
+                "{}Some(v) => {} {{ _siko_field_0: {} {{ value: std::rc::Rc::new(map) }} , _siko_field_1: {}::Some(v) }},\n",
+                indent,  result_ty_str, map_type, result_option_type_str
             )?;
             write!(
                 output_file,
-                "{}None => {} {{ _siko_field_0: map, _siko_field_1: {}::None }},\n",
-                indent, result_ty_str, result_option_type_str
+                "{}None => {} {{ _siko_field_0: {} {{ value: std::rc::Rc::new(map) }} , _siko_field_1: {}::None }},\n",
+                indent, result_ty_str, map_type, result_option_type_str
             )?;
             indent.dec();
             write!(output_file, "{}}}\n", indent)?;
@@ -517,18 +519,18 @@ fn generate_map_builtins(
 
             write!(output_file, "{}{}::None => {{\n", indent, option_type_str)?;
             indent.inc();
-
-            write!(output_file, "{}match map.value.remove(&key) {{\n", indent)?;
+            write!(output_file, "{}let mut map = (*map.value).clone(); \n", indent)?;
+            write!(output_file, "{}match map.remove(&key) {{\n", indent)?;
             indent.inc();
             write!(
                 output_file,
-                "{}Some(v) => {} {{ _siko_field_0: map, _siko_field_1: {}::Some(v) }},\n",
-                indent, result_ty_str, result_option_type_str
+                "{}Some(v) => {} {{ _siko_field_0: {} {{ value: std::rc::Rc::new(map) }}, _siko_field_1: {}::Some(v) }},\n",
+                indent, result_ty_str, map_type,  result_option_type_str
             )?;
             write!(
                 output_file,
-                "{}None => {} {{ _siko_field_0: map, _siko_field_1: {}::None }},\n",
-                indent, result_ty_str, result_option_type_str
+                "{}None => {} {{ _siko_field_0: {} {{ value: std::rc::Rc::new(map) }}, _siko_field_1: {}::None }},\n",
+                indent, result_ty_str, map_type, result_option_type_str
             )?;
             indent.dec();
             write!(output_file, "{}}}\n", indent)?;
@@ -557,18 +559,18 @@ fn generate_map_builtins(
                 indent, option_type_str
             )?;
             indent.inc();
-
-            write!(output_file, "{}match map.value.insert(key, v) {{\n", indent)?;
+            write!(output_file, "{}let mut map = (*map.value).clone(); \n", indent)?;
+            write!(output_file, "{}match map.insert(key, v) {{\n", indent)?;
             indent.inc();
             write!(
                 output_file,
-                "{}Some(v) => {} {{ _siko_field_0: map, _siko_field_1: {}::Some(v) }},\n",
-                indent, result_ty_str, result_option_type_str
+                "{}Some(v) => {} {{ _siko_field_0: {} {{ value: std::rc::Rc::new(map) }}, _siko_field_1: {}::Some(v) }},\n",
+                indent, result_ty_str, map_type, result_option_type_str
             )?;
             write!(
                 output_file,
-                "{}None => {} {{ _siko_field_0: map, _siko_field_1: {}::None }},\n",
-                indent, result_ty_str, result_option_type_str
+                "{}None => {} {{ _siko_field_0: {} {{ value: std::rc::Rc::new(map) }}, _siko_field_1: {}::None }},\n",
+                indent, result_ty_str, map_type, result_option_type_str
             )?;
             indent.dec();
             write!(output_file, "{}}}\n", indent)?;
@@ -630,7 +632,7 @@ fn generate_list_builtins(
             )?;
             write!(
                 output_file,
-                "{}{} {{ value : format!(\"[{{}}]\", subs.join(\", \")) }}",
+                "{}{} {{ value : std::rc::Rc::new(format!(\"[{{}}]\", subs.join(\", \"))) }}",
                 indent, result_ty_str
             )?;
         }
@@ -910,7 +912,7 @@ fn generate_char_builtins(
         "show" => {
             write!(
                 output_file,
-                "{}{} {{ value : format!(\"{{}}\", arg0.value) }}",
+                "{}{} {{ value : std::rc::Rc::new(format!(\"{{}}\", arg0.value)) }}",
                 indent, result_ty_str
             )?;
         }
@@ -1320,18 +1322,18 @@ pub fn generate_builtin(
                 ("Hack", "readTextFile") => {
                     write!(
                         output_file,
-                        "let content = std::fs::read(&arg0.value).expect(\"ReadTextFile failed\");"
+                        "let content = std::fs::read(&*arg0.value).expect(\"ReadTextFile failed\");"
                     )?;
                     write!(
                         output_file,
                         "let content = String::from_utf8_lossy(&content).to_string();"
                     )?;
-                    write!(output_file, "{} {{ value : content }}", result_ty_str)?;
+                    write!(output_file, "{} {{ value : std::rc::Rc::new(content) }}", result_ty_str)?;
                 }
                 ("Hack", "writeTextFile") => {
                     write!(
                         output_file,
-                        "let content = std::fs::write(&arg0.value, &arg1.value).expect(\"WriteTextFile failed\");"
+                        "let content = std::fs::write(&*arg0.value, &*arg1.value).expect(\"WriteTextFile failed\");"
                     )?;
                     write!(output_file, "{} {{ }}", result_ty_str)?;
                 }

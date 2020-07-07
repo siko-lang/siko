@@ -156,8 +156,13 @@ pub fn write_expr(
         }
         Expr::StringLiteral(s) => {
             let ty = program.get_expr_type(&expr_id);
+            let s: String = s.replace("\\", "\\\\");
+            let s = s.replace("\n", "\\n");
+            let s = s.replace("\r", "\\r");
+            let s = s.replace("\t", "\\t");
+            let s = s.replace("\"", "\\\"");
             let ty = ir_type_to_rust_type(ty, program);
-            write!(output_file, "{} {{ value: \"{}\".to_string() }}", ty, s)?;
+            write!(output_file, "{} {{ value: std::rc::Rc::new(\"{}\".to_string()) }}", ty, s)?;
         }
         Expr::FloatLiteral(f) => {
             let ty = program.get_expr_type(&expr_id);
@@ -192,7 +197,7 @@ pub fn write_expr(
             let ty = program.get_expr_type(&expr_id);
             let ty = ir_type_to_rust_type(ty, program);
             let fmt = fmt.replace("\"", "\\\"");
-            write!(output_file, "{} {{ value : format!(\"{}\"", ty, fmt)?;
+            write!(output_file, "{} {{ value : std::rc::Rc::new(format!(\"{}\"", ty, fmt)?;
             if !args.is_empty() {
                 write!(output_file, ",")?;
             }
@@ -203,7 +208,7 @@ pub fn write_expr(
                     write!(output_file, ",")?;
                 }
             }
-            write!(output_file, ")}}")?;
+            write!(output_file, "))}}")?;
         }
         Expr::CaseOf(body, cases) => {
             write!(output_file, "match (")?;

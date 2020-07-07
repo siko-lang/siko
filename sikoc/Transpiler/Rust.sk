@@ -66,11 +66,26 @@ data Expr = Block [Expr]
 
 data Program = { structs :: [Struct], enums :: [Enum], functions :: [Function], impls :: [TraitImpl] }
 
+escapeString :: String -> String
+escapeString lit = do
+    lit <- replace lit "\\" "\\\\"
+    lit <- replace lit "\n"  "\\n"
+    lit <- replace lit "\r" "\\r"
+    lit <- replace lit "\t" "\\t"
+    lit <- replace lit "\"" "\\\""
+    lit
+
 generatePattern :: Pattern -> String
 generatePattern pattern = case pattern of
     IntegerPattern lit -> "a if *a.value == {}" % lit
-    StringPattern lit -> "a if *a.value == \"{}\"" % lit
-    CharPattern lit -> "a if *a.value == '{}'" % lit
+    StringPattern lit -> "a if *a.value == \"{}\"" % (escapeString lit)
+    CharPattern lit -> case lit of
+        '\'' -> "a if *a.value == '\\''"
+        '\r' -> "a if *a.value == '\\r'"
+        '\n' -> "a if *a.value == '\\n'"
+        '\t' -> "a if *a.value == '\\t'"
+        '\\' -> "a if *a.value == '\\\\'"
+        _ -> "a if *a.value == '{}'" % lit
     CharRangePattern start end kind -> case kind of
         Exclusive -> "a if std::ops::Range{ start: '" + (show start) + "', end: '" + (show end) + "' }.contains(&a.value)"
         Inclusive -> "a if std::ops::RangeInclusive::new('" + (show start) + "', '" + (show end) + "').contains(&a.value)"
@@ -104,11 +119,15 @@ generateExpr expr indent = case expr of
     BoolLiteral bool -> case bool of
         True -> "true"
         False -> "false"
-    StringLiteral lit -> do
-        lit <- replace lit "\n" "\\n"
-        "\"{}\"" % lit
-    CharLiteral lit -> do
-        "'{}'" % lit
+    StringLiteral lit -> "\"{}\"" % (escapeString lit)
+    CharLiteral lit -> case lit of
+        '\n' -> "'\\n'"
+        '\r' -> "'\\r'"
+        '\t' -> "'\\t'"
+        '"' -> "'\\\"'"
+        '\'' -> "'\\''"
+        '\\' -> "'\\\\'"
+        _ -> "'{}'" % lit
     VarDecl mutable n rhs type -> case type of
         Some type -> if mutable
                 then "let mut {}: {} = {}" % (n, type, generateExpr rhs (Indent 0))
