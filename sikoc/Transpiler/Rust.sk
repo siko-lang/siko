@@ -17,7 +17,7 @@ data Type = Type String deriving (PartialEq, Eq, PartialOrd, Ord)
 instance Show Type where
     show (Type t) = t
 
-data Function = { name :: String, self :: Bool, args :: [(String, Type)], result :: Type, body :: Expr }
+data Function = { name :: String, is_method :: Bool, args :: [(String, Type)], result :: Type, body :: Expr }
 
 data FieldInitItem = { name :: String,
                        body :: Expr }
@@ -206,7 +206,7 @@ generateEnum enum = do
 generateFunction :: Function -> Indent -> String
 generateFunction function indent = do
     args <- function.args |> List.iter |> map (\(arg_name, type) -> "{}: {}" % (arg_name, type)) |> toList
-    args <- if function.self
+    args <- if function.is_method
         then ["&self"] + args
         else args
     signature <- "{}fn {}({}) -> {}" % (indent, function.name, join args ", ", function.result)

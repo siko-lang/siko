@@ -59,9 +59,11 @@ rcNew = "std::rc::Rc::new"
 derefName = "std::ops::Deref::deref"
 
 getRustFriendlyName :: String -> String
-getRustFriendlyName input = do
-    output <- replace input "." "_"
-    output
+getRustFriendlyName input = case input of
+    "type" -> "_type"
+    _ -> do
+        output <- replace input "." "_"
+        output
 
 getRustIdentity :: Identity -> String
 getRustIdentity id = getRustFriendlyName (show id)
@@ -148,7 +150,7 @@ convertExpr type_store mir_expr = do
                 R.MatchCase case_pattern case_body) |> toList
             R.Match (convertExpr type_store body) cases
         ME.FieldAccess name receiver -> do
-            field_access <- R.FieldAccess name (convertExpr type_store receiver)
+            field_access <- R.FieldAccess (getRustFriendlyName name) (convertExpr type_store receiver)
             deref <- R.FunctionCall derefName [R.Ref field_access]
             R.MethodCall deref cloneName []
         ME.If cond true_branch false_branch -> do
@@ -171,7 +173,7 @@ convertExpr type_store mir_expr = do
             new <- "new"
             var_decl <- R.VarDecl True new (R.MethodCall (R.VarRef n) cloneName []) None
             assignments <- items |> List.iter |> map (\update -> do
-            lhs <- (R.FieldAccess update.field_name (R.VarRef new))
+            lhs <- (R.FieldAccess (getRustFriendlyName update.field_name) (R.VarRef new))
             rhs <- (convertExpr type_store update.body)
             R.Assign lhs (R.FunctionCall rcNew [rhs])) |> toList
             R.Block ([var_decl] + assignments + [R.VarRef new])
@@ -255,6 +257,7 @@ processImpl mir_program program type_store type_name impl impl_body_fragment = d
                 body <- R.Block [var0_decl, var1_decl, sikoOrderingToRustOrdering op_call rust_ordering_type]
                 method <- R.Function "cmp" True args result body
                 ("std::cmp::Ord", [method])
+    //println "processImpl: {} {}" % (name, rust_type_name)
     trait_impl <- R.TraitImpl name rust_type_name methods
     impls <- program.impls + [trait_impl]
     program { impls = impls }
