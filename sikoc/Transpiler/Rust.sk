@@ -49,7 +49,7 @@ data Expr = Block [Expr]
             | FieldAccess String Expr
             | List [Expr]
             | Return Expr
-            | Continue Expr
+            | Continue
             | Break Expr
             | Ref Expr
             | MutRef Expr
@@ -157,9 +157,8 @@ generateExpr expr indent = case expr of
     Break expr -> do
         body <- generateExpr expr (Indent 0)
         "break {}" % body
-    Continue expr -> do
-        body <- generateExpr expr (Indent 0)
-        "continue {}" % body
+    Continue -> do
+        "continue"
     Return expr -> do
         body <- generateExpr expr (Indent 0)
         "return {}" % body
@@ -230,6 +229,7 @@ generateProgram program = do
     content <- content + "#![allow(unused_variables)]\n"
     content <- content + "#![allow(dead_code)]\n"
     content <- content + "#![allow(unused_parens)]\n"
+    content <- content + "#![allow(unreachable_code)]\n"
     content <- program.structs |> List.iter |> fold (\content, s -> content + "\n\n" + generateStruct s) content
     content <- program.enums |> List.iter |> fold (\content, e -> content + "\n\n" + generateEnum e) content
     content <- program.functions |> List.iter |> fold (\content, f -> content + "\n\n" + generateFunction f (Indent 0)) content

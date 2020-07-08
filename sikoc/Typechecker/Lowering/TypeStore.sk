@@ -122,13 +122,26 @@ getAdt type_store identity = case get type_store.adts identity of
     Some r -> r
     None -> panic "Adt named {} is not found in lowering type type_store" % identity
 
+getDependencies :: MD.ExternalClassImpl -> [MD.ExternalClassImpl]
+getDependencies impl = case impl of
+    MD.Show -> []
+    MD.PartialEq -> []
+    MD.Eq -> [MD.PartialEq]
+    MD.PartialOrd -> [MD.PartialEq]
+    MD.Ord -> [MD.PartialEq, MD.Eq, MD.PartialOrd]
+
 checkExternalImpl :: Context -> HT.Type -> HP.FullyQualifiedName -> MD.ExternalClassImpl -> Context
 checkExternalImpl context hir_type class_name external_class_impl = do
     entry <- IR.CacheEntry hir_type class_name
     context <- case get context.state.instance_resolver.cache entry of
         Some instance_info -> do
             //println "checkExternalImpl: {}/{}" % (HT.toString hir_type, external_class_impl)
-            external_class_impls <- context.external_class_impls + [(hir_type, external_class_impl)]
+            added_impls <- [external_class_impl] + (getDependencies external_class_impl)
+            (external_class_impls, _) <- alter (\external_class_impls -> case external_class_impls of
+                Some external_class_impls -> do
+                    impls <- (external_class_impls + added_impls) |> sort |> dedup
+                    Some impls
+                None -> Some added_impls) hir_type context.external_class_impls
             context { external_class_impls = external_class_impls }
         None -> context
     context
