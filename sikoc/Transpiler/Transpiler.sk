@@ -142,7 +142,9 @@ convertExpr context mir_expr = do
             R.StructCtor charTypeName [R.FieldInitItem innerValueField (R.FunctionCall rcNew [literal])]
         ME.VarDecl (ME.Var n) rhs -> do
             ME.Expr _ rhs_type <- rhs
-            R.VarDecl False n (convertExpr context rhs) (Some (convertType rhs_type))
+            rhs_expr <- convertExpr context rhs
+            rhs_expr <- R.MethodCall rhs_expr cloneName []
+            R.VarDecl False n rhs_expr (Some (convertType rhs_type))
         ME.VarRef (ME.Var n) -> R.VarRef n
         ME.ArgRef index -> R.MethodCall (R.VarRef (getArgName index)) cloneName []
         ME.Match body cases -> do
@@ -187,7 +189,9 @@ convertExpr context mir_expr = do
             R.Block ([var_decl] + assignments + [R.VarRef new])
         ME.List args -> do
             rust_type <- convertType expr_type
-            args <- args |> List.iter |> map (\arg -> convertExpr context arg) |> toList
+            args <- args |> List.iter |> map (\arg -> do
+                item_expr <- convertExpr context arg
+                R.MethodCall item_expr cloneName []) |> toList
             R.StructCtor (show rust_type) [R.FieldInitItem innerValueField (R.FunctionCall rcNew [R.List args])]
         _ -> R.VarRef "NYI"
 

@@ -132,38 +132,45 @@ data ValuePathInfo = { type :: MT.Type,
                        parent_expr :: ME.Expr
                      }
 
+processBindVars :: AdditionalInfo -> Map ValuePath ValuePathInfo -> MT.Type -> [ME.Expr]
+processBindVars additional_info path_info_map unit_type = do
+    var_decls <- additional_info.binds |> List.iter |> map (\CaseBind path bind_ref -> do
+        HP.BindRef _ pattern_id <- bind_ref
+        var <- patternToVar pattern_id
+        ref_expr <- case get path_info_map path of
+            Some path_info -> do
+                path_info :: ValuePathInfo <- path_info // FIXME
+                path_info.parent_expr
+            None -> panic "Path {} not found in path_info_map" % path
+        var_decl <- ME.VarDecl var ref_expr
+        ME.Expr var_decl unit_type) |> toList
+    var_decls
+
 processCaseEnds :: [MatchInfo] -> [ME.Expr] -> [Option ME.Expr] -> Map ValuePath ValuePathInfo -> MT.Type -> ME.Expr
 processCaseEnds match_infos mir_case_bodies mir_guards path_info_map unit_type = do
     if getLength match_infos == 1
         then do
             MatchInfo index additional_info <- atIndex match_infos 0
             mir_case_body <- atIndex mir_case_bodies index
-            var_decls <- additional_info.binds |> List.iter |> map (\CaseBind path bind_ref -> do
-                HP.BindRef _ pattern_id <- bind_ref
-                var <- patternToVar pattern_id
-                ref_expr <- case get path_info_map path of
-                    Some path_info -> do
-                        path_info :: ValuePathInfo <- path_info // FIXME
-                        path_info.parent_expr
-                    None -> panic "Path {} not found in path_info_map" % path
-                var_decl <- ME.VarDecl var ref_expr
-                ME.Expr var_decl unit_type) |> toList
+            var_decls <- processBindVars additional_info path_info_map unit_type
             if isEmpty var_decls
                 then mir_case_body
                 else do
                     ME.Expr _ case_type <- mir_case_body
                     ME.Expr (ME.Do (var_decls + [mir_case_body])) case_type
         else case pop match_infos of
-        Some (match_info, match_infos) -> do
-            MatchInfo index add <- match_info
-            cond_expr <- case atIndex mir_guards index of
-                Some g -> g
-                None -> panic "guard expr not found"
-            then_expr <- atIndex mir_case_bodies index
-            else_expr <- processCaseEnds match_infos mir_case_bodies mir_guards path_info_map unit_type
-            ME.Expr _ then_type <- then_expr
-            ME.Expr (ME.If cond_expr then_expr else_expr) then_type
-        None -> panic "Matchinfos ran out!"
+            Some (match_info, match_infos) -> do
+                MatchInfo index additional_info <- match_info
+                cond_expr <- case atIndex mir_guards index of
+                    Some g -> g
+                    None -> panic "guard expr not found"
+                var_decls <- processBindVars additional_info path_info_map unit_type
+                then_expr <- atIndex mir_case_bodies index
+                else_expr <- processCaseEnds match_infos mir_case_bodies mir_guards path_info_map unit_type
+                ME.Expr _ then_type <- then_expr
+                if_expr <- ME.Expr (ME.If cond_expr then_expr else_expr) then_type
+                ME.Expr (ME.Do (var_decls + [if_expr])) then_type
+            None -> panic "Matchinfos ran out!"
 
 processChoiceTree :: Context -> Choice -> Map ValuePath ValuePathInfo -> [ME.Expr] -> [Option ME.Expr] -> (Context, ME.Expr)
 processChoiceTree context choice path_info_map mir_case_bodies mir_guards = do
