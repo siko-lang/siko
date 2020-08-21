@@ -213,8 +213,7 @@ processChoiceTree context choice path_info_map mir_case_bodies mir_guards = do
             pattern_var_ref <- ME.VarRef pattern_var
             pattern_var_ref_expr <- ME.Expr pattern_var_ref body_type
             (path_info_map, _) <- insert path_info_map path (ValuePathInfo body_type pattern_var_ref_expr)
-            (context, cases) <- subchoices |> Map.iter |> fold (\(context, cases), (cond, subchoices) -> do
-                choice <- atIndex subchoices 0
+            (context, cases) <- subchoices |> Map.iter |> fold (\(context, cases), (cond, choice) -> do
                 (context, choice_expr) <- processChoiceTree context choice path_info_map mir_case_bodies mir_guards
                 (cond, expr) <- case cond of
                     IntegerCondition literal -> do
@@ -231,6 +230,7 @@ processChoiceTree context choice path_info_map mir_case_bodies mir_guards = do
                         (ME.VariantChecker index pattern_var body_type, choice_expr)
                     WildcardCondition -> do
                         (ME.WildcardChecker, choice_expr)
+                    Else -> panic "Else found"
                 c <- ME.MatchCase cond expr
                 cases <- cases + [c]
                 (context, cases)) (context, [])
@@ -246,6 +246,7 @@ processChoiceTree context choice path_info_map mir_case_bodies mir_guards = do
         CaseEnd cs -> do
             expr <- processCaseEnds cs mir_case_bodies mir_guards path_info_map unit_type
             (context, expr)
+        ElseNode -> panic "ElseNode found"
 
 patternToVar :: HP.PatternId -> ME.Var
 patternToVar pattern_id = do

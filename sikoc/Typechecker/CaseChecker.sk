@@ -55,6 +55,7 @@ data Condition = IntegerCondition String
                  | CharRangeCondition Char Char P.RangeKind
                  | VariantCondition Int
                  | WildcardCondition
+                 | Else
                  deriving (PartialEq, Eq, PartialOrd, Ord)
 
 instance Show Condition where
@@ -65,14 +66,15 @@ instance Show Condition where
         CharRangeCondition start end kind -> "cr:{}:{}:{}" % (start, end, kind)
         VariantCondition i -> "v:{}" % i
         WildcardCondition -> "w"
+        Else -> "else"
 
 data CaseBind = { path :: ValuePath,
                   bind_ref :: P.BindRef
-                } deriving (Show)
+                } deriving (Show, PartialEq)
 
 data AdditionalInfo = { guarded :: Bool,
                         binds :: [CaseBind],
-                      } deriving (Show)
+                      } deriving (Show, PartialEq)
 
 processPattern :: Context -> [PendingPattern] -> (AdditionalInfo, [Check])
 processPattern context pendingPatterns = do
@@ -154,45 +156,21 @@ processPattern context pendingPatterns = do
             (additional_info, checks)
     checks
 
-addUnreachablePatternError :: Context -> Location -> Context
-addUnreachablePatternError context location = do
-    //state <- addError context.state (UnreachablePattern location)
-    //context <- context { state = state }
-    context
+data MatchInfo = MatchInfo Int AdditionalInfo
 
-data MatchInfo = MatchInfo Int AdditionalInfo deriving (Show)
+instance PartialEq MatchInfo where
+    opEq (MatchInfo a _) (MatchInfo b _) = opEq a b
 
-data Choice = Choice ValuePath (Map Condition [Choice])
-              | CaseEnd [MatchInfo]
+instance Eq MatchInfo
 
-getValuePath :: Choice -> Option ValuePath
-getValuePath choice = case choice of
-    Choice path _ -> Some path
-    CaseEnd _ -> None
+instance PartialOrd MatchInfo where
+    partialCmp (MatchInfo a _) (MatchInfo b _) = partialCmp a b
 
-checkToChoice :: [Check] -> AdditionalInfo -> Int -> Choice
-checkToChoice checks additional_info case_index = do
-    (first, rest) <- case head checks of
-        Some first -> do
-            rest <- Option.unwrap (tail checks)
-            (first, rest)
-        None -> return (CaseEnd [MatchInfo case_index additional_info])
-    Check path condition <- first
-    next <- checkToChoice rest additional_info case_index
-    (branches, _) <- Map.insert Map.empty condition [next]
-    choice <- Choice path branches
-    choice
+instance Ord MatchInfo where
+    cmp (MatchInfo a _) (MatchInfo b _) = cmp a b
 
-mergeChoices :: [Choice] -> Choice
-mergeChoices choices = do
-    m <- choices |> List.iter |> fold (\m, choice -> case m of
-                Some m -> Some (mergeRoots m choice)
-                None -> Some choice
-            ) None
-    m <- case m of
-        Some m -> m
-        None -> panic "mergeChoices called with empty list of choices"
-    m
+instance Show MatchInfo where
+    show (MatchInfo index additional_info) = "[{}]" % (index)
 
 getAdtVariantCount :: Context -> T.Type -> Option Int
 getAdtVariantCount context type = do
@@ -206,75 +184,61 @@ getAdtVariantCount context type = do
                 _ -> None
         _ -> None
 
-addEmptyWildcards :: Context -> Choice -> Choice
-addEmptyWildcards context choice = do
-    case choice of
-        Choice path subchoices -> do
-            path_type <- getPathType path
-            variant_count <- getAdtVariantCount context path_type
-            //println "{} -> {} variant count {}" % (path, T.toString path_type, variant_count)
-            wildcard_found <- isSome (get subchoices WildcardCondition)
-            total_count <- getSize subchoices
-            needs_wildcard <- case variant_count of
-                Some variant_count -> do
-                    if wildcard_found
-                        then
-                            False
-                        else do
-                            total_count < variant_count
-                None -> not wildcard_found
-            subchoices <- if needs_wildcard
-                then do
-                    (subchoices, _) <- Map.insert subchoices WildcardCondition [CaseEnd []]
-                    subchoices
-                else subchoices
-            subchoices <- subchoices |> Map.iter |> fold (\subchoices, (cond, choices) -> do
-                    choices <- choices |> List.iter |> map (\w -> addEmptyWildcards context w) |> toList
-                    (subchoices, _) <- Map.insert subchoices cond choices
-                    subchoices
-                ) Map.empty
-            Choice path subchoices
-        CaseEnd _ -> choice
+data PatternInfo = { checks :: [Check],
+                     end :: MatchInfo,
+                   }
 
-mergeRoots :: Choice -> Choice -> Choice
-mergeRoots choice1 choice2 = do
-    case (choice1, choice2) of
-        (Choice path1 subchoices1, Choice path2 subchoices2) -> do
-            assert (path1 == path2)
-            subchoices <- subchoices2 |> Map.iter |> fold (\subchoices, (path, choices) -> do
-                assert (getLength choices == 1)
-                (subchoices, _) <- alter (\cs -> case cs of
-                    Some cs -> do
-                        Some (cs + choices)
-                    None -> Some choices) path subchoices
-                subchoices) subchoices1
-            subchoices <- subchoices |> Map.iter |> map (\(path, choices) -> do
-                    path_map <- choices |> List.iter |> fold (\path_map, choice -> do
-                            (path_map, _) <- alter (\cs -> case cs of
-                                    Some cs -> Some (cs + [choice])
-                                    None -> Some ([choice])
-                                ) (getValuePath choice) path_map
-                            path_map
-                        ) Map.empty
-                    choices <- path_map |> Map.iter |> map (\(_, choices) -> mergeChoices choices) |> toList
-                    (path, choices)
-                ) |> toMap
-            Choice path1 subchoices
-        (CaseEnd matches1, CaseEnd matches2) -> do
-            CaseEnd (matches1 + matches2)
-        _ -> panic "Missing root choice"
+processSinglePattern :: Context -> P.Pattern -> Int -> (Int, CaseInfo)
+processSinglePattern context pattern case_index = do
+    P.Pattern _ id _ <- pattern
+    root_type <- getPatternType context id
+    (additional_info, checks) <- processPattern context [PendingPattern (Root root_type) pattern]
+    (rule_set, _) <- checksToRules checks
+    match_info <- MatchInfo case_index additional_info
+    case_info <- CaseInfo rule_set match_info
+    (case_index + 1, case_info)
+
+data MissingCase = MissingCase // TODO: fill with actual info about missing case
+
+data Edge = Internal Condition ValuePath
+          | End Condition
+
+getCondition :: Edge -> Condition
+getCondition edge = case edge of
+    Internal c _ -> c
+    End c -> c
+
+data Choice = Choice ValuePath (Map Condition Choice)
+            | CaseEnd [MatchInfo]
+            | ElseNode
+
+getValuePath :: Choice -> Option ValuePath
+getValuePath choice = case choice of
+    Choice path _ -> Some path
+    CaseEnd _ -> None
+    ElseNode -> None
+
+instance Show Edge where
+    show edge = case edge of
+        Internal c v -> "Internal {} {}" % (c, v)
+        End c -> "End {}" % (c)
+
+dumpChoiceTree :: Choice -> String -> ()
+dumpChoiceTree choice id = do
+    g <- D.createGraph "choice_tree"
+    (g, _) <- choiceToNode g choice
+    s <- D.generateDot g
+    writeTextFile ("choice_tree_{}.dot" % id) s
 
 choiceToNode :: D.Graph -> Choice -> (D.Graph, D.NodeId)
 choiceToNode g choice = case choice of
-    Choice path subchoices -> do
+    Choice path choices -> do
         node_name <- "{}" % path
         (g, id) <- D.addNode g node_name
-        g <- subchoices |> Map.iter |> fold (\g, (cond, choices) -> do
-                g <- choices |> List.iter |> fold (\g, choice -> do
-                    (g, child_id) <- choiceToNode g choice
-                    edge_name <- "{}" % cond
-                    g <- D.addEdge g (Some edge_name) id child_id
-                    g) g
+        g <- choices |> Map.iter |> fold (\g, (cond, choice) -> do
+                (g, child_id) <- choiceToNode g choice
+                edge_name <- "{}" % cond
+                g <- D.addEdge g (Some edge_name) id child_id
                 g) g
         (g, id)
     CaseEnd matches -> do
@@ -283,122 +247,158 @@ choiceToNode g choice = case choice of
         node_name <- "[{}]" % join names ","
         (g, id) <- D.addNode g node_name
         (g, id)
+    ElseNode -> do
+        (g, id) <- D.addNode g "[else]"
+        (g, id)
 
-pruneLeafWildCardsFromTree :: Choice -> Choice
-pruneLeafWildCardsFromTree choice = do
-    case choice of
-        Choice path subchoices -> do
-            (subchoices, _) <- alter (\choices -> case choices of
-                    Some choices -> do
-                            pruned <- choices |> List.iter |> filter (\c -> case c of
-                                Choice _ _ -> True
-                                CaseEnd _ -> False) |> toList
-                            if isEmpty pruned
-                                then None
-                                else Some pruned
-                    None -> None) WildcardCondition subchoices
-            subchoices <- subchoices |> Map.iter |> map (\(k, choices) -> do
-                choices <- choices |> List.iter |> map (\c -> pruneLeafWildCardsFromTree c) |> toList
-                (k, choices)) |> toMap
-            Choice path subchoices
-        CaseEnd _ -> choice
+checksToRules :: [Check] -> (Map ValuePath Edge, Option ValuePath)
+checksToRules checks = do
+    (first, rest) <- case head checks of
+        Some first -> do
+            rest <- Option.unwrap (tail checks)
+            (first, rest)
+        None -> return (empty, None)
+    Check path condition <- first
+    (rule_set, next) <- checksToRules rest
+    edge <- case next of
+        Some p -> Internal condition p
+        None -> End condition
+    //println "Path {} {}" % (path, edge)
+    (rule_set, _) <- insert rule_set path edge
+    (rule_set, Some path)
 
-data PatternInfo = { checks :: [Check],
-                     end :: MatchInfo,
-                   }
+matchCondition :: Condition -> Condition -> Bool
+matchCondition c1 c2 = case (c1, c2) of
+    (IntegerCondition lit1, IntegerCondition lit2) -> lit1 == lit2
+    (StringCondition lit1, StringCondition lit2) -> lit1 == lit2
+    (CharCondition lit1, CharCondition lit2) -> lit1 == lit2
+    (CharRangeCondition _ _ _, CharRangeCondition _ _ _) -> False // FIXME! this is incorrect!
+    (CharRangeCondition _ _ _, CharCondition _) -> False
+    (CharCondition _ , CharRangeCondition _ _ _) -> False
+    (VariantCondition v1, VariantCondition v2) -> v1 == v2
+    (_, WildcardCondition) -> True
+    _ -> False
 
-collectAllChecks :: Choice -> PatternInfo
-collectAllChecks choice =
-    case choice of
-        Choice path subchoices -> do
-            assert (getSize subchoices == 1)
-            checks <- subchoices |> Map.iter |> map (\(cond, choices) -> do
-                assert (getLength choices == 1)
-                (cond, atIndex choices 0)) |> toList
-            (cond, subchoice) <- atIndex checks 0
-            PatternInfo checks end <- collectAllChecks subchoice
-            checks <- [Check path cond] + checks
-            PatternInfo checks end
-        CaseEnd indices -> do
-            assert (getLength indices == 1)
-            PatternInfo [] (atIndex indices 0)
+isMatch :: Map ValuePath Condition -> Map ValuePath Edge -> Bool -> Bool
+isMatch context rule_set partial = rule_set |> Map.iter |> fold (\match, (path, edge) -> do
+    case get context path of
+        Some condition -> (matchCondition condition (getCondition edge)) && match
+        None -> partial && match) True
 
-compareChecks :: [Check] -> Check -> Bool
-compareChecks checks check2 = do
-    checks |> List.iter |> fold (\match, check1 -> do
-        (Check p1 c1, Check p2 c2) <- (check1, check2)
-        if p1 == p2
-            then do
-                case (c1, c2) of
-                    (IntegerCondition lit1, IntegerCondition lit2) -> match && lit1 == lit2
-                    (StringCondition lit1, StringCondition lit2) -> match && lit1 == lit2
-                    (CharCondition lit1, CharCondition lit2) -> match && lit1 == lit2
-                    (CharRangeCondition _ _ _, CharRangeCondition _ _ _) -> False // FIXME! this is incorrect!
-                    (CharRangeCondition _ _ _, CharCondition _) -> False
-                    (CharCondition _ , CharRangeCondition _ _ _) -> False
-                    (VariantCondition v1, VariantCondition v2) -> match && v1 == v2
-                    (_, WildcardCondition) -> match
-                    _ -> False
-            else match) True
+data CaseInfo = { rule_set :: Map ValuePath Edge,
+                  match_info :: MatchInfo }
+                deriving (Show)
 
-walkChoiceTree :: Choice -> [Check] -> PatternInfo -> Choice
-walkChoiceTree choice checks pattern_info = do
-    case choice of
-        Choice path subchoices -> do
-            subchoices <- subchoices |> Map.iter |> map (\(cond, choices) -> do
-                assert (getLength choices == 1)
-                checks <- checks + [Check path cond]
-                choices <- choices |> List.iter |> map (\choice -> walkChoiceTree choice checks pattern_info) |> toList
-                (cond, choices)) |> toMap
-            Choice path subchoices
-        CaseEnd matches -> do
-            match <- pattern_info.checks |> List.iter |> fold (\match, check -> match && compareChecks checks check) True
-            if match
-                then do
-                    merged <- matches + [pattern_info.end]
-                    (merged, _, _) <- merged |> List.iter |> fold (\(merged, found, prev_guarded), match -> do
-                            MatchInfo end additional_info <- match
+buildBranch :: ValuePath -> CaseInfo -> (Condition, Choice)
+buildBranch start case_info =
+    case get case_info.rule_set start of
+        Some edge -> case edge of
+            Internal condition p -> do
+                (c, node) <- buildBranch p case_info
+                (choices, _) <- insert empty c node
+                (choices, _) <- insert choices Else ElseNode
+                (condition, Choice p choices)
+            End c -> (c, CaseEnd [case_info.match_info])
+        None -> panic "Rule not found while building choice tree branch {} {}" % (start, case_info.rule_set)
+
+finalizeCaseEnd :: [MatchInfo] -> [MatchInfo]
+finalizeCaseEnd match_infos = do
+    (match_infos, _) <- match_infos |> List.iter |> fold (\(match_infos, prev_guarded), match -> do
+                            MatchInfo _ additional_info <- match
                             if prev_guarded
-                                then if contains found end
-                                    then (merged, found, prev_guarded)
-                                    else (merged + [match], found + [end], additional_info.guarded)
-                                else (merged, found, prev_guarded)
-                        ) ([], [], True)
-                    CaseEnd merged
-                else choice
+                                then (match_infos + [match], additional_info.guarded)
+                                else (match_infos, prev_guarded)
+                        ) ([], True)
+    match_infos
 
-remergeChoices :: Choice -> [Choice] -> Choice
-remergeChoices tree pattern_choices = do
-    pattern_checks <- pattern_choices |> List.iter |> map (\c -> collectAllChecks c) |> toList
-    pattern_checks |> List.iter |> fold (\tree, pattern_info -> walkChoiceTree tree [] pattern_info) tree
+processTree :: Choice -> Map ValuePath Condition -> CaseInfo -> Bool -> (Choice, Bool)
+processTree choice context case_info finalize = case choice of
+    Choice path choices -> do
+        (choices, news, modified) <- choices |> Map.iter |> fold (\(choices, news, modified), (condition, choice) -> do
+                case condition of
+                    Else -> do
+                        if isMatch context case_info.rule_set True
+                            then case get case_info.rule_set path of
+                                    Some _ -> do
+                                        (condition, node) <- buildBranch path case_info
+                                        news <- news + [(condition, node)]
+                                        (choices, news, modified)
+                                    None -> (choices, news, modified)
+                            else (choices, news, modified)
+                    _ -> do
+                        (context, _) <- insert context path condition
+                        (choice, mod) <- processTree choice context case_info finalize
+                        (choices, _) <- insert choices condition choice
+                        (choices, news, modified || mod)
+            ) (empty, [], False)
+        choices <- if finalize
+                then choices
+                else do
+                    (choices, _) <- insert choices Else ElseNode
+                    choices
+        (choices, modified) <- news |> List.iter |> fold (\(choices, modified), (condition, node) ->
+            case get choices condition of
+                Some _ -> (choices, modified)
+                None -> do
+                    (choices, _) <- insert choices condition node
+                    (choices, True)) (choices, modified)
+        (Choice path choices, modified)
+    CaseEnd match_infos -> if isMatch context case_info.rule_set False
+        then do
+            //MatchInfo index _ <- case_info.match_info
+            //println "{}. context {}, rs: {}" % (index, context, case_info.rule_set)
+            orig_len <- getLength match_infos
+            merged <- match_infos + [case_info.match_info]
+            merged <- merged |> sort |> dedup
+            modified <- orig_len != getLength merged
+            merged <- if finalize
+                then finalizeCaseEnd merged
+                else merged
+            (CaseEnd merged, modified)
+        else (CaseEnd match_infos, False)
+    ElseNode -> panic "ElseNode reached"
 
-processSinglePattern :: Context -> P.Pattern -> Int -> [Choice] -> ([Choice], Int)
-processSinglePattern context pattern case_index choices = do
-    P.Pattern _ id _ <- pattern
-    root_type <- getPatternType context id
-    (additional_info, checks) <- processPattern context [PendingPattern (Root root_type) pattern]
-    choice <- checkToChoice checks additional_info case_index
-    choices <- choices + [choice]
-    (choices, case_index + 1)
-
-dumpChoiceTree :: Choice -> E.ExprId -> ()
-dumpChoiceTree choice id = do
-    g <- D.createGraph "choice_tree"
-    (g, _) <- choiceToNode g choice
-    s <- D.generateDot g
-    writeTextFile ("choice_tree_{}.dot" % id) s
-
-data MissingCase = MissingCase // TODO: fill with actual info about missing case
+removeElse :: Context -> Choice -> Choice
+removeElse context choice = case choice of
+    Choice path choices -> do
+        choices <- choices |> Map.iter |> fold (\choices, (condition, choice) -> do
+            case condition of
+                Else -> choices
+                _ -> do
+                    choice <- removeElse context choice
+                    (choices, _) <- insert choices condition choice
+                    choices) empty
+        path_type <- getPathType path
+        variant_count <- getAdtVariantCount context path_type
+        wildcard_found <- isSome (get choices WildcardCondition)
+        total_count <- getSize choices
+        (needs_wildcard, remove_wildcard) <- case variant_count of
+            Some variant_count -> do
+                if wildcard_found
+                    then
+                        (False, total_count == variant_count + 1)
+                    else do
+                        (total_count < variant_count, False)
+            None -> (not wildcard_found, False)
+        choices <- if needs_wildcard
+            then do
+                (choices, _) <- insert choices WildcardCondition (CaseEnd [])
+                choices
+            else choices
+        choices <- if remove_wildcard
+            then do
+                (choices, _) <- remove choices WildcardCondition
+                choices
+            else choices
+        Choice path choices
+    CaseEnd _ -> choice
+    ElseNode -> panic "ElseNode reached"
 
 checkBranches :: Choice -> ([MissingCase], [Int])
 checkBranches choice =
     case choice of
-        Choice _ subchoices -> subchoices |> Map.iter |> fold (\(missing_cases, found_cases), (cond, subchoices) -> do
-                (m, f) <- subchoices |> List.iter |> fold (\(missing_cases, found_cases), choice -> do
-                        (m, f) <- checkBranches choice
-                        missing_cases <- missing_cases + m
-                        found_cases <- found_cases + f
-                        (missing_cases, found_cases)) ([], [])
+        Choice _ subchoices -> subchoices |> Map.iter |> fold (\(missing_cases, found_cases), (cond, choice) -> do
+                (m, f) <- checkBranches choice
                 missing_cases <- missing_cases + m
                 found_cases <- found_cases + f
                 (missing_cases, found_cases)
@@ -410,6 +410,7 @@ checkBranches choice =
             if guarded_only || isEmpty matches
                 then ([MissingCase], found_cases)
                 else ([], found_cases)
+        ElseNode -> panic "ElseNode reached"
 
 validateChoiceTree :: Context -> Choice -> Location -> [E.Case] -> Context
 validateChoiceTree context choice location cases = do
@@ -436,20 +437,30 @@ validateChoiceTree context choice location cases = do
 checkCase :: Context -> E.ExprId -> E.Expr -> [E.Case] -> Context
 checkCase context expr_id case_body cases = do
     (E.Expr _ body_id location) <- case_body
-    (choices, _) <- cases |> List.iter |> fold (\(choices, case_index), c -> do
+    root_type <- getExprType context body_id
+    (case_infos, _) <- cases |> List.iter |> fold (\(case_infos, case_index), c -> do
             P.Pattern p _ location <- c.pattern
-            (choices, case_index) <- processSinglePattern context c.pattern case_index choices
-            (choices, case_index)
+            (case_index, case_info) <- processSinglePattern context c.pattern case_index
+            case_infos <- case_infos + [case_info]
+            (case_infos, case_index)
         ) ([], 0)
-    m <- mergeChoices choices
-    m <- pruneLeafWildCardsFromTree m
-    m <- addEmptyWildcards context m
-    m <- remergeChoices m choices
-    //dumpChoiceTree m expr_id
-    context <- validateChoiceTree context m location cases
+    init <- empty
+    (init, _) <- insert init Else ElseNode
+    choice <- (Choice (Root root_type) init)
+    choice <- loop (choice, modified) <- (choice, True) do
+        (choice, modified) <- case_infos |> List.iter |> fold (\(choice, modified), case_info ->
+                              processTree choice empty case_info False) (choice, False)
+        if modified
+            then (choice, modified)
+            else break choice
+    choice <- removeElse context choice
+    (choice, modified) <- case_infos |> List.iter |> fold (\(choice, modified), case_info ->
+                              processTree choice empty case_info True) (choice, False)
+    dumpChoiceTree choice "{}" % expr_id
+    context <- validateChoiceTree context choice location cases
     state <- context.state // FIXME
     choice_tree_store <- state.choice_tree_store
-    (choice_trees, _) <- insert choice_tree_store.choice_trees expr_id m
+    (choice_trees, _) <- insert choice_tree_store.choice_trees expr_id choice
     choice_tree_store <- choice_tree_store { choice_trees = choice_trees }
     state <- state { choice_tree_store = choice_tree_store }
     context { state = state }
