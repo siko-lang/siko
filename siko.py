@@ -32,6 +32,13 @@ def processDir(path):
         source += processFile(path)
     return source
 
+def link_safe(src, dst):
+    try:
+        os.symlink(src, dst)
+    except OSError as e:
+        if e.errno != errno.EEXIST:
+            raise
+
 def processSources(args):
     source = ""
     for arg in args:
@@ -61,14 +68,25 @@ def prepare(folder_name):
             raise
 
 def compile_and_run(folder_name):
-    source = processSources(sys.argv[2:])
     prepare(folder_name)
-    os.chdir(folder_name)
-    f = open("sikoc.sk", "w")
+    source = processSources(sys.argv[2:])
+    f = open(os.path.join(folder_name, "sikoc.sk"), "w")
     f.write(source)
     f.close()
 
-    subprocess.check_call(["./siko", "sikoc"])
+    compiled = os.path.join("compiled_sikoc", "sikoc_rust")
+    if os.path.exists(compiled):
+        cc = os.path.join(folder_name, "sikoc_rust")
+        link_safe(os.path.join("..", "..", compiled), cc)
+        os.chdir(folder_name)
+        print("Running compiled")
+        subprocess.call(["./sikoc_rust"])
+    else:
+        os.chdir(folder_name)
+        print("Running interpreter")
+        subprocess.check_call(["./siko", "sikoc"])
+
+    subprocess.check_call(["rustfmt", "sikoc_output.rs"])
     subprocess.check_call(["rustc", "sikoc_output.rs", "-o", "rust_program"])
     subprocess.check_call(["./rust_program"])
 
