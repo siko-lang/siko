@@ -415,6 +415,23 @@ generateListShow program type_store arg_types result_type = do
     struct_ctor <- R.StructCtor (show rust_type) [R.FieldInitItem innerValueField (R.FunctionCall rcNew [R.VarRef innerValueField])]
     R.Block [subs_decl, value_decl, struct_ctor]
 
+generateMapShow :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
+generateMapShow program type_store arg_types result_type = do
+    rust_type <- convertType result_type
+    arg0 <- R.VarRef (getArgName 0)
+    inner <- R.FieldAccess innerValueField arg0
+    iter <- R.MethodCall inner "iter" []
+    map_body <- R.Lambda "|(key, value)|" (R.FunctionCall "format!" [R.StringLiteral "{}, {}", R.VarRef "key", R.VarRef "value"])
+    map <- R.MethodCall iter "map" [map_body]
+    collect <- R.MethodCall map "collect" []
+    subs <- "subs"
+    subs_decl <- R.VarDecl False subs collect (Some (R.Type "Vec<_>"))
+    fmt_arg <- R.StringLiteral "{{{}}}"
+    join_call <- R.MethodCall (R.VarRef subs) "join" [R.StringLiteral (", ")]
+    value_decl <- R.VarDecl False innerValueField (R.FunctionCall "format!" [fmt_arg, join_call]) None
+    struct_ctor <- R.StructCtor (show rust_type) [R.FieldInitItem innerValueField (R.FunctionCall rcNew [R.VarRef innerValueField])]
+    R.Block [subs_decl, value_decl, struct_ctor]
+
 generateListAtIndex :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
 generateListAtIndex program type_store arg_types result_type = do
     rust_type <- convertType result_type
@@ -694,9 +711,12 @@ initializeExternalFunctions = do
     (externals, _) <- insert externals (ExternalId "Char" "cmp") (ExternFnBuilder generateCmp)
     (externals, _) <- insert externals (ExternalId "Char" "opEq") (ExternFnBuilder generateEq)
     (externals, _) <- insert externals (ExternalId "Char" "isUppercase") (ExternFnBuilder generateIsUppercase)
+    (externals, _) <- insert externals (ExternalId "Char" "show") (ExternFnBuilder generateShow)
 
     (externals, _) <- insert externals (ExternalId "List" "show") (ExternFnBuilder generateListShow)
     (externals, _) <- insert externals (ExternalId "List" "opEq") (ExternFnBuilder generateEq)
+    (externals, _) <- insert externals (ExternalId "List" "partialCmp") (ExternFnBuilder generatePartialCmp)
+    (externals, _) <- insert externals (ExternalId "List" "cmp") (ExternFnBuilder generateCmp)
     (externals, _) <- insert externals (ExternalId "List" "atIndex") (ExternFnBuilder generateListAtIndex)
     (externals, _) <- insert externals (ExternalId "List" "getLength") (ExternFnBuilder generateListGetLength)
     (externals, _) <- insert externals (ExternalId "List" "dedup") (ExternFnBuilder generateListDedup)
@@ -710,6 +730,7 @@ initializeExternalFunctions = do
     (externals, _) <- insert externals (ExternalId "List" "nextItem") (ExternFnBuilder generateListNextItem)
 
     (externals, _) <- insert externals (ExternalId "Map" "empty") (ExternFnBuilder generateMapEmpty)
+    (externals, _) <- insert externals (ExternalId "Map" "show") (ExternFnBuilder generateMapShow)
 
     externals
 
