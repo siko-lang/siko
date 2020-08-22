@@ -152,7 +152,8 @@ convertExpr context mir_expr = do
                 case_pattern <- convertPattern context.type_store c.checker
                 case_body <- convertExpr context c.body
                 R.MatchCase case_pattern case_body) |> toList
-            R.Match (convertExpr context body) cases
+            clone_call <- R.MethodCall (convertExpr context body) cloneName []
+            R.Match clone_call cases
         ME.FieldAccess name receiver -> do
             field_access <- R.FieldAccess (getRustFriendlyName name) (convertExpr context receiver)
             deref <- R.FunctionCall derefName [R.Ref field_access]

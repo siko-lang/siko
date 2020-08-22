@@ -1,0 +1,41 @@
+module Main where
+
+data String = String
+
+data Result ok err = Ok ok | Err err
+
+data Constraint = Constraint
+data TypeVar = TypeVar
+
+data Type = Var TypeVar [Constraint]
+            | FixedTypeArg String TypeVar [Constraint]
+            | Named String [Type]
+            | Function Type Type
+            | Never TypeVar
+            | Ref Type
+            | Tuple [Type]
+
+unify :: Type -> Type -> Result () ()
+unify type1 type2 = do
+    case (type1, type2) of
+        (Named qn1 args1, Named qn2 args2) -> Ok ()
+        (Var var1 constraints1, Var var2 constraints2) -> Ok ()
+        (FixedTypeArg _ var1 _, FixedTypeArg _ var2 _) -> Ok ()
+        (FixedTypeArg _ var1 constraints1, Var var2 constraints2) -> Ok ()
+        (Var var1 constraints1, FixedTypeArg _ var2 constraints2) -> Ok ()
+        (Var var1 _, Never var2) -> Ok ()
+        (Never var1, Var var2 _) -> Ok ()
+        (Var var constraints, type2) -> Ok ()
+        (type1, Var var constraints) -> Ok ()
+        (Tuple args1, Tuple args2) -> Ok ()
+        (Function from1 to1, Function from2 to2) -> Ok ()
+        (Never var1, Never var2) -> Ok ()
+        (Never var, type2) -> Ok ()
+        (type1, Never var) -> Ok ()
+        (Ref type1, type2) -> Ok ()
+        (type1, Ref type2) -> Ok ()
+        _ -> Err ()
+
+main = do
+    unify (Tuple []) (Tuple [])
+    ()
