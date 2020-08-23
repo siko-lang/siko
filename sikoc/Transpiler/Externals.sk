@@ -421,7 +421,7 @@ generateMapShow program type_store arg_types result_type = do
     arg0 <- R.VarRef (getArgName 0)
     inner <- R.FieldAccess innerValueField arg0
     iter <- R.MethodCall inner "iter" []
-    map_body <- R.Lambda "|(key, value)|" (R.FunctionCall "format!" [R.StringLiteral "{}, {}", R.VarRef "key", R.VarRef "value"])
+    map_body <- R.Lambda "|(key, value)|" (R.FunctionCall "format!" [R.StringLiteral "{}: {}", R.VarRef "key", R.VarRef "value"])
     map <- R.MethodCall iter "map" [map_body]
     collect <- R.MethodCall map "collect" []
     subs <- "subs"
@@ -664,6 +664,42 @@ generateMapEmpty program type_store arg_types result_type = do
     rust_type <- convertType result_type
     R.Block [R.StructCtor (show rust_type) [R.FieldInitItem innerValueField (R.FunctionCall rcNew [R.FunctionCall "std::collections::BTreeMap::new" []])]]
 
+generateMapInsert :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
+generateMapInsert program type_store arg_types result_type = do
+    rust_type <- convertType result_type
+    result_record <- case result_type of
+        MT.Record i -> getRecord program i
+        _ -> panic "Result is not a record in generateMapInsert"
+    map_field <- atIndex result_record.fields 0
+    value_field <- atIndex result_record.fields 1
+    rust_map_type <- convertType map_field.type
+    rust_value_type <- convertType value_field.type
+    field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
+    deref0 <- R.FunctionCall derefName [R.Ref field_access0]
+    map <- "map"
+    value <- "value"
+    map_decl <- R.VarDecl True map (R.MethodCall deref0 cloneName []) None
+    insert_call <- R.MethodCall (R.VarRef map) "insert" [R.VarRef (getArgName 1), R.VarRef (getArgName 2)]
+    some_pattern <- R.VariantPattern "Some" (Some value)
+    none_pattern <- R.VariantPattern "None" None
+    some_record_type <- getVariantRecordType program value_field.type "Some"
+    none_record_type <- getVariantRecordType program value_field.type "None"
+    rust_some_record_type <- convertType (MT.Record some_record_type)
+    rust_none_record_type <- convertType (MT.Record none_record_type)
+    some_record <- getRecord program some_record_type
+    item_field <- atIndex some_record.fields 0
+    some_ctor <- R.StructCtor (show rust_some_record_type) [R.FieldInitItem item_field.name (R.FunctionCall rcNew [R.VarRef value])]
+    none_ctor <- R.StructCtor (show rust_none_record_type) []
+    some_case <- R.MatchCase some_pattern (R.FunctionCall ("{}::Some" % rust_value_type) [some_ctor])
+    none_case <- R.MatchCase none_pattern (R.FunctionCall ("{}::None" % rust_value_type) [none_ctor])
+    match <- R.Match insert_call [some_case, none_case]
+    value_decl <- R.VarDecl False value match None
+    map_ctor <- R.Block [R.StructCtor (show rust_map_type) [R.FieldInitItem innerValueField (R.FunctionCall rcNew [R.VarRef map])]]
+    field0_init <- R.FieldInitItem map_field.name (R.FunctionCall rcNew [map_ctor])
+    field1_init <- R.FieldInitItem value_field.name (R.FunctionCall rcNew [R.VarRef value])
+    result_ctor <- R.StructCtor (show rust_type) [field0_init, field1_init]
+    R.Block [map_decl, value_decl, result_ctor]
+
 initializeExternalFunctions :: Map ExternalId ExternFnBuilder
 initializeExternalFunctions = do
     externals <- Map.empty
@@ -731,6 +767,7 @@ initializeExternalFunctions = do
 
     (externals, _) <- insert externals (ExternalId "Map" "empty") (ExternFnBuilder generateMapEmpty)
     (externals, _) <- insert externals (ExternalId "Map" "show") (ExternFnBuilder generateMapShow)
+    (externals, _) <- insert externals (ExternalId "Map" "insert") (ExternFnBuilder generateMapInsert)
 
     externals
 
