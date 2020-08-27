@@ -127,19 +127,13 @@ convertExpr context mir_expr = do
             rust_function_name <- getRustIdentity id
             args <- args |> List.iter |> map (\arg -> R.MethodCall (convertExpr context arg) cloneName []) |> toList
             R.FunctionCall rust_function_name args
-        ME.IntegerLiteral lit -> do
-            literal <- R.IntegerLiteral lit
-            R.StructCtor intTypeName [R.FieldInitItem innerValueField (R.FunctionCall rcNew [literal])]
-        ME.FloatLiteral lit -> do
-            literal <- R.FloatLiteral lit
-            R.StructCtor floatTypeName [R.FieldInitItem innerValueField (R.FunctionCall rcNew [literal])]
+        ME.IntegerLiteral lit -> R.StructCtor intTypeName [R.FieldInitItem innerValueField (R.IntegerLiteral lit)]
+        ME.FloatLiteral lit -> R.StructCtor floatTypeName [R.FieldInitItem innerValueField (R.FloatLiteral lit)]
         ME.StringLiteral lit -> do
             literal <- R.StringLiteral lit
             to_string_call <- R.MethodCall literal "to_string" []
             R.StructCtor stringTypeName [R.FieldInitItem innerValueField (R.FunctionCall rcNew [to_string_call])]
-        ME.CharLiteral lit -> do
-            literal <- R.CharLiteral lit
-            R.StructCtor charTypeName [R.FieldInitItem innerValueField (R.FunctionCall rcNew [literal])]
+        ME.CharLiteral lit -> R.StructCtor charTypeName [R.FieldInitItem innerValueField (R.CharLiteral lit)]
         ME.VarDecl (ME.Var n) rhs -> do
             ME.Expr _ rhs_type <- rhs
             rhs_expr <- convertExpr context rhs

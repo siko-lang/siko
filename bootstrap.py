@@ -62,7 +62,8 @@ def compile_and_run(folder_name):
     subprocess.call(["date"])
     subprocess.call(["./sikoc_rust"])
     subprocess.call(["date"])
-    subprocess.call(["rustc", "sikoc_output.rs", "-o", "rust_program"])
+    subprocess.call(["rustc", "sikoc_output.rs", "-o", "rust_program", "-O"])
+    subprocess.call(["date"])
     subprocess.call(["./rust_program"])
 
 folder_name = "bootstrap"

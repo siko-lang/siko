@@ -77,15 +77,15 @@ escapeString lit = do
 
 generatePattern :: Pattern -> String
 generatePattern pattern = case pattern of
-    IntegerPattern lit -> "a if *a.value == {}" % lit
+    IntegerPattern lit -> "a if a.value == {}" % lit
     StringPattern lit -> "a if *a.value == \"{}\"" % (escapeString lit)
     CharPattern lit -> case lit of
-        '\'' -> "a if *a.value == '\\''"
-        '\r' -> "a if *a.value == '\\r'"
-        '\n' -> "a if *a.value == '\\n'"
-        '\t' -> "a if *a.value == '\\t'"
-        '\\' -> "a if *a.value == '\\\\'"
-        _ -> "a if *a.value == '{}'" % lit
+        '\'' -> "a if a.value == '\\''"
+        '\r' -> "a if a.value == '\\r'"
+        '\n' -> "a if a.value == '\\n'"
+        '\t' -> "a if a.value == '\\t'"
+        '\\' -> "a if a.value == '\\\\'"
+        _ -> "a if a.value == '{}'" % lit
     CharRangePattern start end kind -> case kind of
         Exclusive -> "a if std::ops::Range{ start: '" + (show start) + "', end: '" + (show end) + "' }.contains(&a.value)"
         Inclusive -> "a if std::ops::RangeInclusive::new('" + (show start) + "', '" + (show end) + "').contains(&a.value)"

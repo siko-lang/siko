@@ -26,10 +26,20 @@ alter k v :: (Ord k) => (Option v -> Option v) -> k -> Map k v -> (Map k v, Opti
 alter f k m = extern
 
 iter k v :: Map k v -> Iterator (k, v)
-iter m = extern
+iter m = createIterator (intoIter m) nextItem
 
-toMap k v :: Iterator (k, v) -> Map k v
-toMap i = extern
+data MapIterator k v = extern
+
+intoIter k v :: Map k v -> MapIterator k v
+intoIter m = extern
+
+nextItem k v :: MapIterator k v -> Option (MapIterator k v, (k, v))
+nextItem iter = extern
+
+toMap k v :: (Ord k) => Iterator (k, v) -> Map k v
+toMap iter = fold (\m, (k, v) -> do
+    (m, _) <- insert m k v
+    m) empty iter
 
 getSize k v :: Map k v -> Int
 getSize m = extern

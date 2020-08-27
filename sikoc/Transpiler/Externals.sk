@@ -45,12 +45,10 @@ generateAdd program type_store arg_types result_type = do
     rust_type <- convertType result_type
     field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
     field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
-    deref0 <- R.FunctionCall derefName [R.Ref field_access0]
-    deref1 <- R.FunctionCall derefName [R.Ref field_access1]
-    add_call <- R.FunctionCall stdOpsAdd [deref0, deref1]
+    add_call <- R.FunctionCall stdOpsAdd [R.Ref field_access0, R.Ref field_access1]
     new <- "new"
     new_decl <- R.VarDecl False new add_call None
-    struct_ctor <- R.StructCtor (show rust_type) [R.FieldInitItem innerValueField (R.FunctionCall rcNew [R.VarRef new])]
+    struct_ctor <- R.StructCtor (show rust_type) [R.FieldInitItem innerValueField (R.VarRef new)]
     R.Block [new_decl, struct_ctor]
 
 generateSub :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
@@ -58,12 +56,10 @@ generateSub program type_store arg_types result_type = do
     rust_type <- convertType result_type
     field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
     field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
-    deref0 <- R.FunctionCall derefName [R.Ref field_access0]
-    deref1 <- R.FunctionCall derefName [R.Ref field_access1]
-    sub_call <- R.FunctionCall stdOpsSub [deref0, deref1]
+    sub_call <- R.FunctionCall stdOpsSub [R.Ref field_access0, R.Ref field_access1]
     new <- "new"
     new_decl <- R.VarDecl False new sub_call None
-    struct_ctor <- R.StructCtor (show rust_type) [R.FieldInitItem innerValueField (R.FunctionCall rcNew [R.VarRef new])]
+    struct_ctor <- R.StructCtor (show rust_type) [R.FieldInitItem innerValueField (R.VarRef new)]
     R.Block [new_decl, struct_ctor]
 
 generateMul :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
@@ -71,12 +67,10 @@ generateMul program type_store arg_types result_type = do
     rust_type <- convertType result_type
     field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
     field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
-    deref0 <- R.FunctionCall derefName [R.Ref field_access0]
-    deref1 <- R.FunctionCall derefName [R.Ref field_access1]
-    mul_call <- R.FunctionCall stdOpsMul [deref0, deref1]
+    mul_call <- R.FunctionCall stdOpsMul [R.Ref field_access0, R.Ref field_access1]
     new <- "new"
     new_decl <- R.VarDecl False new mul_call None
-    struct_ctor <- R.StructCtor (show rust_type) [R.FieldInitItem innerValueField (R.FunctionCall rcNew [R.VarRef new])]
+    struct_ctor <- R.StructCtor (show rust_type) [R.FieldInitItem innerValueField (R.VarRef new)]
     R.Block [new_decl, struct_ctor]
 
 generateDiv :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
@@ -84,22 +78,19 @@ generateDiv program type_store arg_types result_type = do
     rust_type <- convertType result_type
     field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
     field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
-    deref0 <- R.FunctionCall derefName [R.Ref field_access0]
-    deref1 <- R.FunctionCall derefName [R.Ref field_access1]
-    div_call <- R.FunctionCall stdOpsDiv [deref0, deref1]
+    div_call <- R.FunctionCall stdOpsDiv [R.Ref field_access0, R.Ref field_access1]
     new <- "new"
     new_decl <- R.VarDecl False new div_call None
-    struct_ctor <- R.StructCtor (show rust_type) [R.FieldInitItem innerValueField (R.FunctionCall rcNew [R.VarRef new])]
+    struct_ctor <- R.StructCtor (show rust_type) [R.FieldInitItem innerValueField (R.VarRef new)]
     R.Block [new_decl, struct_ctor]
 
 generateNegative :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
 generateNegative program type_store arg_types result_type = do
     rust_type <- convertType result_type
     field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
-    deref0 <- R.FunctionCall derefName [R.Ref field_access0]
     new <- "new"
-    new_decl <- R.VarDecl False new (R.FunctionCall "-" [deref0]) None
-    struct_ctor <- R.StructCtor (show rust_type) [R.FieldInitItem innerValueField (R.FunctionCall rcNew [R.VarRef new])]
+    new_decl <- R.VarDecl False new (R.FunctionCall "-" [field_access0]) None
+    struct_ctor <- R.StructCtor (show rust_type) [R.FieldInitItem innerValueField (R.VarRef new)]
     R.Block [new_decl, struct_ctor]
 
 generateShow :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
@@ -109,7 +100,6 @@ generateShow program type_store arg_types result_type = do
     format <- R.FunctionCall "format!" [(R.StringLiteral "{}"), field_access]
     struct_ctor <- R.StructCtor (show rust_type) [R.FieldInitItem innerValueField (R.FunctionCall rcNew [format])]
     R.Block [struct_ctor]
-
 
 generatePartialCmp :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
 generatePartialCmp program type_store arg_types result_type = do
@@ -317,14 +307,14 @@ generateGetDiscriminant program type_store arg_types result_type = do
                 index <- getLength cases
                 name <- "{}::{}" % (rust_type, variant.name)
                 pattern <- R.VariantPattern name (Some "_")
-                struct_ctor <- R.StructCtor (show rust_result_type) [R.FieldInitItem innerValueField (R.FunctionCall rcNew [R.IntegerLiteral "{}" % index])]
+                struct_ctor <- R.StructCtor (show rust_result_type) [R.FieldInitItem innerValueField (R.IntegerLiteral "{}" % index)]
                 c <- R.MatchCase pattern struct_ctor
                 cases <- cases + [c]
                 cases) []
             R.Block [R.Match var_ref cases]
         MT.Record _ -> do
             rust_result_type <- convertType result_type
-            struct_ctor <- R.StructCtor (show rust_result_type) [R.FieldInitItem innerValueField (R.FunctionCall rcNew [R.IntegerLiteral "0"])]
+            struct_ctor <- R.StructCtor (show rust_result_type) [R.FieldInitItem innerValueField (R.IntegerLiteral "0")]
             R.Block [struct_ctor]
         _ -> panic "getDiscriminant not implemented for special types"
 
@@ -387,7 +377,7 @@ generateIntParse program type_store arg_types result_type = do
     some_record <- getRecord program some_record_type
     int_field <- atIndex some_record.fields 0
     rust_int_type <- convertType int_field.type
-    int_ctor <- R.StructCtor (show rust_int_type) [R.FieldInitItem innerValueField (R.FunctionCall rcNew [R.VarRef "v"])]
+    int_ctor <- R.StructCtor (show rust_int_type) [R.FieldInitItem innerValueField (R.VarRef "v")]
     some_ctor <- R.StructCtor (show rust_some_record_type) [R.FieldInitItem int_field.name (R.FunctionCall rcNew [int_ctor])]
     none_ctor <- R.StructCtor (show rust_none_record_type) []
     ok_pattern <- R.VariantPattern ("Ok") (Some "v")
@@ -439,8 +429,7 @@ generateListAtIndex program type_store arg_types result_type = do
     arg1 <- R.VarRef (getArgName 1)
     inner0 <- R.FieldAccess innerValueField arg0
     inner1 <- R.FieldAccess innerValueField arg1
-    deref1 <- R.FunctionCall derefName [R.Ref inner1]
-    index <- R.FunctionCall "std::ops::Index::index" [R.Ref (R.Deref (inner0)), R.As (R.Deref deref1) "usize"]
+    index <- R.FunctionCall "std::ops::Index::index" [R.Ref (R.Deref (inner0)), R.As inner1 "usize"]
     R.Block [R.MethodCall index cloneName []]
 
 generateListGetLength :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
@@ -449,7 +438,7 @@ generateListGetLength program type_store arg_types result_type = do
     arg0 <- R.VarRef (getArgName 0)
     inner0 <- R.FieldAccess innerValueField arg0
     len_call <- R.MethodCall inner0 "len" []
-    R.Block [R.StructCtor (show rust_type) [R.FieldInitItem innerValueField (R.FunctionCall rcNew [R.As len_call "i64"])]]
+    R.Block [R.StructCtor (show rust_type) [R.FieldInitItem innerValueField (R.As len_call "i64")]]
 
 generateListDedup :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
 generateListDedup program type_store arg_types result_type = do
@@ -604,12 +593,11 @@ generateListWrite program type_store arg_types result_type = do
     inner0 <- R.FieldAccess innerValueField arg0
     arg1 <- R.VarRef (getArgName 1)
     inner1 <- R.FieldAccess innerValueField arg1
-    deref1 <- R.FunctionCall derefName [R.Ref inner1]
     arg2 <- R.VarRef (getArgName 2)
     deref0 <- R.FunctionCall derefName [R.Ref inner0]
     new <- "new"
     new_decl <- R.VarDecl True new (R.MethodCall deref0 cloneName []) None
-    assign0 <- R.Assign (R.Deref (R.FunctionCall "std::ops::IndexMut::index_mut" [R.MutRef (R.VarRef new), R.As (R.Deref deref1) "usize"])) arg2
+    assign0 <- R.Assign (R.Deref (R.FunctionCall "std::ops::IndexMut::index_mut" [R.MutRef (R.VarRef new), R.As inner1 "usize"])) arg2
     R.Block [new_decl, assign0, R.StructCtor (show rust_type) [R.FieldInitItem innerValueField (R.FunctionCall rcNew [R.VarRef new])]]
 
 generateStringChars :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
@@ -618,7 +606,7 @@ generateStringChars program type_store arg_types result_type = do
     arg0 <- R.VarRef (getArgName 0)
     inner0 <- R.FieldAccess innerValueField arg0
     chars_call <- R.MethodCall inner0 "chars" []
-    map_body <- R.Lambda "|item|" (R.StructCtor charTypeName [R.FieldInitItem innerValueField (R.FunctionCall rcNew [R.VarRef "item"])])
+    map_body <- R.Lambda "|item|" (R.StructCtor charTypeName [R.FieldInitItem innerValueField (R.VarRef "item")])
     map <- R.MethodCall chars_call "map" [map_body]
     collect_call <- R.MethodCall map "collect" []
     new <- "new"
@@ -730,7 +718,7 @@ generateMapGetSize program type_store arg_types result_type = do
     rust_type <- convertType result_type
     arg0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
     len_call <- R.MethodCall arg0 "len" []
-    R.Block [R.StructCtor (show rust_type) [R.FieldInitItem innerValueField (R.FunctionCall rcNew [R.As len_call "i64"])]]
+    R.Block [R.StructCtor (show rust_type) [R.FieldInitItem innerValueField (R.As len_call "i64")]]
 
 generateMapRemove :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
 generateMapRemove program type_store arg_types result_type = do
@@ -767,6 +755,69 @@ generateMapRemove program type_store arg_types result_type = do
     field1_init <- R.FieldInitItem value_field.name (R.FunctionCall rcNew [R.VarRef value])
     result_ctor <- R.StructCtor (show rust_type) [field0_init, field1_init]
     R.Block [map_decl, value_decl, result_ctor]
+
+generateMapIntoIter :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
+generateMapIntoIter program type_store arg_types result_type = do
+    rust_type <- convertType result_type
+    field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
+    deref0 <- R.FunctionCall derefName [R.Ref field_access0]
+    new0 <- "new0"
+    new0_decl <- R.VarDecl False new0 (R.MethodCall deref0 cloneName []) None
+    into_iter_call <- R.MethodCall (R.VarRef new0) "into_iter" []
+    collect <- R.MethodCall into_iter_call "collect" []
+    v <- "v"
+    v_decl <- R.VarDecl False v collect (Some (R.Type "Vec<_>"))
+    v_into_iter_call <- R.MethodCall (R.VarRef v) "into_iter" []
+    struct_ctor <- R.StructCtor (show rust_type) [R.FieldInitItem innerValueField (R.FunctionCall rcNew [v_into_iter_call])]
+    R.Block [new0_decl, v_decl, struct_ctor]
+
+generateMapNextItem :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
+generateMapNextItem program type_store arg_types result_type = do
+    rust_type <- convertType result_type
+    field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
+    deref0 <- R.FunctionCall derefName [R.Ref field_access0]
+    state <- "state"
+    state_decl <- R.VarDecl True state (R.MethodCall deref0 cloneName []) None
+    value <- "value"
+    value_decl <- R.VarDecl False value (R.MethodCall (R.VarRef state) "next" []) None
+    item <- "item"
+    some_pattern <- R.VariantPattern "Some" (Some item)
+    none_pattern <- R.VariantPattern "None" None
+    rust_result_type <- convertType result_type
+    some_record_type <- getVariantRecordType program result_type "Some"
+    none_record_type <- getVariantRecordType program result_type "None"
+    rust_some_record_type <- convertType (MT.Record some_record_type)
+    rust_none_record_type <- convertType (MT.Record none_record_type)
+    some_record <- getRecord program some_record_type
+    item_field <- atIndex some_record.fields 0
+    rust_item_type <- convertType item_field.type
+    tuple_record <- case item_field.type of
+        MT.Record record_id -> getRecord program record_id
+        _ -> panic "Tuple is not a record"
+    state_field <- atIndex tuple_record.fields 0
+    value_field <- atIndex tuple_record.fields 1
+    rust_state_type <- convertType state_field.type
+    rust_value_type <- convertType value_field.type
+    clone_call <- R.MethodCall (R.VarRef item) cloneName []
+    value_tuple_record <- case value_field.type of
+        MT.Record record_id -> getRecord program record_id
+        _ -> panic "Item tuple is not a record"
+    value_field0 <- atIndex value_tuple_record.fields 0
+    value_field1 <- atIndex value_tuple_record.fields 1
+    key_ctor <- R.FunctionCall rcNew [R.FieldAccess "0" (R.VarRef item)]
+    value_ctor <- R.FunctionCall rcNew [R.FieldAccess "1" (R.VarRef item)]
+    value_tuple_ctor <- R.StructCtor (show rust_value_type) [R.FieldInitItem value_field0.name key_ctor,
+                                                           R.FieldInitItem value_field1.name value_ctor]
+    state_ctor <- R.StructCtor (show rust_state_type) [R.FieldInitItem innerValueField (R.FunctionCall rcNew [R.VarRef state])]
+    tuple_ctor <- R.StructCtor (show rust_item_type) [R.FieldInitItem state_field.name (R.FunctionCall rcNew [state_ctor]),
+                                                      R.FieldInitItem value_field.name (R.FunctionCall rcNew [value_tuple_ctor])]
+    some_ctor <- R.StructCtor (show rust_some_record_type) [R.FieldInitItem item_field.name (R.FunctionCall rcNew [tuple_ctor])]
+    none_ctor <- R.StructCtor (show rust_none_record_type) []
+    some_case <- R.MatchCase some_pattern (R.FunctionCall ("{}::Some" % rust_result_type) [some_ctor])
+    none_case <- R.MatchCase none_pattern (R.FunctionCall ("{}::None" % rust_result_type) [none_ctor])
+    cases <- [some_case, none_case]
+    match <- R.Match (R.VarRef value) cases
+    R.Block [state_decl, value_decl, match]
 
 initializeExternalFunctions :: Map ExternalId ExternFnBuilder
 initializeExternalFunctions = do
@@ -839,6 +890,8 @@ initializeExternalFunctions = do
     (externals, _) <- insert externals (ExternalId "Map" "getSize") (ExternFnBuilder generateMapGetSize)
     (externals, _) <- insert externals (ExternalId "Map" "get") (ExternFnBuilder generateMapGet)
     (externals, _) <- insert externals (ExternalId "Map" "remove") (ExternFnBuilder generateMapRemove)
+    (externals, _) <- insert externals (ExternalId "Map" "intoIter") (ExternFnBuilder generateMapIntoIter)
+    (externals, _) <- insert externals (ExternalId "Map" "nextItem") (ExternFnBuilder generateMapNextItem)
 
     externals
 
@@ -846,13 +899,13 @@ generateStringFields :: [MT.Type] -> [R.StructField]
 generateStringFields args = [R.StructField innerValueField (typeToRcType (R.Type "std::string::String"))]
 
 generateIntFields :: [MT.Type] -> [R.StructField]
-generateIntFields args = [R.StructField innerValueField (typeToRcType (R.Type "i64"))]
+generateIntFields args = [R.StructField innerValueField (R.Type "i64")]
 
 generateFloatFields :: [MT.Type] -> [R.StructField]
-generateFloatFields args = [R.StructField innerValueField (typeToRcType (R.Type "f64"))]
+generateFloatFields args = [R.StructField innerValueField (R.Type "f64")]
 
 generateCharFields :: [MT.Type] -> [R.StructField]
-generateCharFields args = [R.StructField innerValueField (typeToRcType (R.Type "char"))]
+generateCharFields args = [R.StructField innerValueField (R.Type "char")]
 
 generateListFields :: [MT.Type] -> [R.StructField]
 generateListFields args = do
@@ -872,7 +925,15 @@ generateMapFields args = do
     second <- atIndex args 1
     rust_type_arg1 <- convertType first
     rust_type_arg2 <- convertType second
-    [R.StructField innerValueField (typeToRcType (R.Type "std::collections::BTreeMap<{},{}>" % (rust_type_arg1, rust_type_arg2)))]
+    [R.StructField innerValueField (typeToRcType (R.Type "std::collections::BTreeMap<{}, {}>" % (rust_type_arg1, rust_type_arg2)))]
+
+generateMapIteratorFields :: [MT.Type] -> [R.StructField]
+generateMapIteratorFields args = do
+    first <- atIndex args 0
+    second <- atIndex args 1
+    rust_type_arg1 <- convertType first
+    rust_type_arg2 <- convertType second
+    [R.StructField innerValueField (typeToRcType (R.Type "std::vec::IntoIter<({}, {})>" % (rust_type_arg1, rust_type_arg2)))]
 
 initializeExternalStructFields :: Map ExternalId ExternStructBuilder
 initializeExternalStructFields = do
@@ -884,4 +945,5 @@ initializeExternalStructFields = do
     (externals, _) <- insert externals (ExternalId "List" "List") (ExternStructBuilder generateListFields)
     (externals, _) <- insert externals (ExternalId "List" "ListIterator") (ExternStructBuilder generateListIteratorFields)
     (externals, _) <- insert externals (ExternalId "Map" "Map") (ExternStructBuilder generateMapFields)
+    (externals, _) <- insert externals (ExternalId "Map" "MapIterator") (ExternStructBuilder generateMapIteratorFields)
     externals
