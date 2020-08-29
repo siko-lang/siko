@@ -669,8 +669,10 @@ processExpr context sub hir_expr = do
             break_expr <- ME.Expr (ME.Break mir_arg) mir_expr_type
             (context, break_expr)
         HE.Loop p initializer args _ _ -> do
-            HP.Pattern _ id _ <- p
-            (context, var) <- patternToVar context id
+            HP.Pattern pat id _ <- p
+            (context, var) <- case pat of
+                HP.Binding ref -> (context, bindRefToVar ref)
+                _ -> patternToVar context id
             (context, mir_initializer) <- processExpr context sub initializer
             (context, exprs) <- processBind context sub p mir_initializer
             exprs <- Option.unwrap (tail exprs)
