@@ -138,8 +138,7 @@ processMemberForPartialOrd context items var_ref0 var_ref1 = do
             field_access0_expr <- ME.Expr field_access0 mir_item_type
             field_access1_expr <- ME.Expr field_access1 mir_item_type
             (context, call_partial_cmp) <- callOpPartialCmp context item_type field_access0_expr field_access1_expr
-            (context, id) <- getNextVarId context
-            var_res <- ME.Var "m{}" % id
+            (context, var_res) <- getNextTempVar context
             (context, unit_type) <- TS.processType context (HT.Tuple [])
             decl <- ME.VarDecl var_res call_partial_cmp
             decl_expr <- ME.Expr decl unit_type
@@ -168,8 +167,7 @@ processMemberForOrd context items var_ref0 var_ref1 = do
             field_access0_expr <- ME.Expr field_access0 mir_item_type
             field_access1_expr <- ME.Expr field_access1 mir_item_type
             (context, call_cmp) <- callOpCmp context item_type field_access0_expr field_access1_expr
-            (context, id) <- getNextVarId context
-            var_res <- ME.Var "m{}" % id
+            (context, var_res) <- getNextTempVar context
             (context, unit_type) <- TS.processType context (HT.Tuple [])
             decl <- ME.VarDecl var_res call_cmp
             decl_expr <- ME.Expr decl unit_type
@@ -197,8 +195,7 @@ generateShowInstance context hir_type class_name = do
                     (context, adt) <- TS.instantiateAdt context adt hir_type
                     (context, mir_adt_type) <- TS.processType context hir_type
                     (context, unit_type) <- TS.processType context (HT.Tuple [])
-                    (context, id) <- getNextVarId context
-                    var <- ME.Var "m{}" % id
+                    (context, var) <- getNextTempVar context
                     var_ref_expr <- ME.Expr (ME.VarRef var) mir_adt_type
                     arg_ref_expr <- ME.Expr (ME.ArgRef 0) mir_adt_type
                     decl <- ME.VarDecl var arg_ref_expr
@@ -220,20 +217,19 @@ generateShowInstance context hir_type class_name = do
                             then "{}" % variant.name
                             else "{} {}" % (variant.name, (join fmt_args " "))
                         (context, body) <- processFormatExpr context fmt [] mir_items
-                        c <- ME.MatchCase checker body
+                        c <- ME.Case checker body
                         cases <- cases + [c]
                         (context, cases)) (context, [])
-                    match <- ME.Match var_ref_expr cases
-                    match_expr <- ME.Expr match mir_string_type
-                    body <- ME.Do [decl_expr, match_expr]
+                    case_of <- ME.CaseOf var_ref_expr cases
+                    case_of_expr <- ME.Expr case_of mir_string_type
+                    body <- ME.Do [decl_expr, case_of_expr]
                     body_expr <- ME.Expr body mir_string_type
                     (context, body_expr)
                 DS.Record record -> do
                     (context, record) <- TS.instantiateRecord context record hir_type
                     (context, mir_record_type) <- TS.processType context hir_type
                     (context, unit_type) <- TS.processType context (HT.Tuple [])
-                    (context, id) <- getNextVarId context
-                    var <- ME.Var "m{}" % id
+                    (context, var) <- getNextTempVar context
                     var_ref_expr <- ME.Expr (ME.VarRef var) mir_record_type
                     arg_ref_expr <- ME.Expr (ME.ArgRef 0) mir_record_type
                     decl <- ME.VarDecl var arg_ref_expr
@@ -284,8 +280,7 @@ generateTwoArgsInstance context hir_type class_name call_compare_discriminants p
                     (context, adt) <- TS.instantiateAdt context adt hir_type
                     (context, mir_adt_type) <- TS.processType context hir_type
                     (context, unit_type) <- TS.processType context (HT.Tuple [])
-                    (context, id) <- getNextVarId context
-                    var0 <- ME.Var "m{}" % id
+                    (context, var0) <- getNextTempVar context
                     arg_ref0 <- ME.ArgRef 0
                     arg_ref0_expr <- ME.Expr arg_ref0 mir_adt_type
                     var0_decl <- ME.VarDecl var0 arg_ref0_expr
@@ -295,8 +290,7 @@ generateTwoArgsInstance context hir_type class_name call_compare_discriminants p
                     (context, cases) <- adt.variants |> List.iter |> fold (\(context, cases), variant -> do
                         variant_index <- getLength cases
                         checker <- ME.VariantChecker variant_index var0 mir_adt_type
-                        (context, id) <- getNextVarId context
-                        var1 <- ME.Var "m{}" % id
+                        (context, var1) <- getNextTempVar context
                         arg_ref1 <- ME.ArgRef 1
                         arg_ref1_expr <- ME.Expr arg_ref1 mir_adt_type
                         var1_decl <- ME.VarDecl var1 arg_ref1_expr
@@ -308,29 +302,29 @@ generateTwoArgsInstance context hir_type class_name call_compare_discriminants p
                             items <- items + [item]
                             (items, index + 1)) ([], 0)
                         (context, call_expr) <- process_member_fn context variant_items var_ref0_expr var_ref1_expr
-                        case_ok <- ME.MatchCase (ME.VariantChecker variant_index var1 mir_adt_type) call_expr
+                        case_ok <- ME.Case (ME.VariantChecker variant_index var1 mir_adt_type) call_expr
                         ME.Expr _ case_type <- call_expr
-                        (context, match) <- if getLength adt.variants == 1
+                        (context, case_of) <- if getLength adt.variants == 1
                             then do
-                                (context, ME.Match var_ref1_expr [case_ok])
+                                (context, ME.CaseOf var_ref1_expr [case_ok])
                             else do
                                 get_discriminant_qn <- HP.FullPath getStdOpsModuleName getFnGetDiscriminantName
                                 (context, call_get_discriminant0) <- callGetDiscriminant context hir_type [arg_ref0_expr]
                                 (context, call_get_discriminant1) <- callGetDiscriminant context hir_type [arg_ref1_expr]
                                 (context, compare_discriminants) <- call_compare_discriminants context TUtil.getIntType call_get_discriminant0 call_get_discriminant1
-                                case_not_ok <- ME.MatchCase ME.WildcardChecker compare_discriminants
-                                (context, ME.Match var_ref1_expr [case_ok, case_not_ok])
-                        match_expr <- ME.Expr match case_type
-                        body <- ME.Do [var1_decl_expr, match_expr]
+                                case_not_ok <- ME.Case ME.WildcardChecker compare_discriminants
+                                (context, ME.CaseOf var_ref1_expr [case_ok, case_not_ok])
+                        case_of_expr <- ME.Expr case_of case_type
+                        body <- ME.Do [var1_decl_expr, case_of_expr]
                         body_expr <- ME.Expr body case_type
-                        c <- ME.MatchCase checker body_expr
+                        c <- ME.Case checker body_expr
                         cases <- cases + [c]
                         (context, cases)) (context, [])
-                    ME.MatchCase _ first_case_expr <- atIndex cases 0
+                    ME.Case _ first_case_expr <- atIndex cases 0
                     ME.Expr _ case_type <- first_case_expr
-                    match <- ME.Match var_ref0_expr cases
-                    match_expr <- ME.Expr match case_type
-                    body <- ME.Do [var0_decl_expr, match_expr]
+                    case_of <- ME.CaseOf var_ref0_expr cases
+                    case_of_expr <- ME.Expr case_of case_type
+                    body <- ME.Do [var0_decl_expr, case_of_expr]
                     body_expr <- ME.Expr body case_type
                     (context, body_expr)
                 DS.Record record -> do

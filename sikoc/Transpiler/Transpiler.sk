@@ -90,14 +90,14 @@ convertPattern type_store checker = case checker of
             ME.Inclusive -> R.Inclusive
             ME.Exclusive -> R.Exclusive
         R.CharRangePattern s e kind
-    ME.VariantChecker index (ME.Var v) type -> do
+    ME.VariantChecker index v type -> do
         case type of
             MT.Adt _ -> do
                 rust_type <- convertType type
                 enum <- getEnum type_store rust_type
                 variant <- atIndex enum.variants index
                 variant_name <- "{}::{}" % (rust_type, variant.name)
-                R.VariantPattern variant_name (Some v)
+                R.VariantPattern variant_name (Some (show v))
             MT.Record _ -> do
                 rust_type <- convertType type
                 record_name <- "{}" % (rust_type)
@@ -134,14 +134,15 @@ convertExpr context mir_expr = do
             to_string_call <- R.MethodCall literal "to_string" []
             R.StructCtor stringTypeName [R.FieldInitItem innerValueField (R.FunctionCall rcNew [to_string_call])]
         ME.CharLiteral lit -> R.StructCtor charTypeName [R.FieldInitItem innerValueField (R.CharLiteral lit)]
-        ME.VarDecl (ME.Var n) rhs -> do
+        ME.VarDecl v rhs -> do
+            n <- show v
             ME.Expr _ rhs_type <- rhs
             rhs_expr <- convertExpr context rhs
             rhs_expr <- R.MethodCall rhs_expr cloneName []
             R.VarDecl False n rhs_expr (Some (convertType rhs_type))
-        ME.VarRef (ME.Var n) -> R.VarRef n
+        ME.VarRef v -> R.VarRef (show v)
         ME.ArgRef index -> R.MethodCall (R.VarRef (getArgName index)) cloneName []
-        ME.Match body cases -> do
+        ME.CaseOf body cases -> do
             cases <- cases |> List.iter |> map (\c -> do
                 case_pattern <- convertPattern context.type_store c.checker
                 case_body <- convertExpr context c.body
@@ -159,7 +160,8 @@ convertExpr context mir_expr = do
             false_case <- R.MatchCase false_pattern (convertExpr context false_branch)
             cases <- [true_case, false_case]
             R.Match (convertExpr context cond) cases
-        ME.Loop (ME.Var n) initializer args -> do
+        ME.Loop v initializer args -> do
+            n <- show v
             var_decl <- R.VarDecl True n (convertExpr context initializer) None
             inner_context <- Context context.type_store (Some n)
             args <- args |> List.iter |> map (\arg -> convertExpr inner_context arg) |> toList
@@ -174,7 +176,8 @@ convertExpr context mir_expr = do
                     R.Block [assign, R.Continue]
                 None -> panic "No loop var found for continue"
         ME.Return e -> R.Return (convertExpr context e)
-        ME.RecordUpdate (ME.Var n) items -> do
+        ME.RecordUpdate v items -> do
+            n <- show v
             new <- "new"
             var_decl <- R.VarDecl True new (R.MethodCall (R.VarRef n) cloneName []) None
             assignments <- items |> List.iter |> map (\update -> do

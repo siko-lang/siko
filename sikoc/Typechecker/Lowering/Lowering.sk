@@ -2,6 +2,7 @@ module Siko.Typechecker.Lowering where
 
 import Siko.HIR.Function as F
 import Siko.HIR.Program as HP
+import Siko.HIR.Pattern as HPat
 import Siko.HIR.Type as HT
 import Siko.MIR.Program as MP
 import Siko.MIR.Data as MD
@@ -32,13 +33,14 @@ data Context = { hir_program :: HP.Program,
                  function_queue :: FQ.FunctionQueue,
                  external_class_names :: [(HP.FullyQualifiedName, MD.ExternalClassImpl)],
                  external_class_impls :: Map HT.Type [MD.ExternalClassImpl],
+                 pattern_vars :: Map HPat.PatternId ME.Var,
                }
 
-getNextVarId :: Context -> (Context, Int)
-getNextVarId context = do
+getNextTempVar :: Context -> (Context, ME.Var)
+getNextTempVar context = do
     id <- context.var_id
     context <- context { var_id = id + 1 }
-    (context, id)
+    (context, ME.Temp id)
 
 getIdentity :: Context -> String -> String -> (Context, MP.Identity)
 getIdentity context module_name name = do
@@ -149,7 +151,7 @@ lowerProgram state hir_program function_store type_store = do
     mir_program <- MP.createProgram
     context <- Context hir_program mir_program function_store
                type_store CS.createClosureStore IS.createIteratorStore state 0 empty
-               FQ.createFunctionQueue getExternalClassNames empty
+               FQ.createFunctionQueue getExternalClassNames empty empty
     context <- case HP.getFunctionOpt hir_program main_qn of
         Some main -> do
             item <- FQ.Normal main_qn (HT.Tuple [])

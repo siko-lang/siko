@@ -4,10 +4,13 @@ import Siko.MIR.Program
 import Siko.Util.Format
 import Siko.MIR.Type as T
 
-data Var = Var String
+data Var = Named String
+         | Temp Int
 
 instance Show Var where
-    show (Var v) = "${}" % v
+    show v = case v of
+        Named v -> "{}" % v
+        Temp v -> "tmp_{}" % v
 
 data RecordUpdateItem = { field_name :: String,
                           body :: Expr }
@@ -30,7 +33,7 @@ instance Show Checker where
         VariantChecker i v _ -> "v:{} {}" % (i, v)
         WildcardChecker -> "w"
 
-data MatchCase = { checker :: Checker, body :: Expr }
+data Case = { checker :: Checker, body :: Expr }
 
 data Expr = Expr SimpleExpr T.Type
 
@@ -52,7 +55,7 @@ data SimpleExpr = Do [Expr]
             | ArgRef Int
             | RecordUpdate Var [RecordUpdateItem]
             | Loop Var Expr [Expr]
-            | Match Expr [MatchCase]
+            | CaseOf Expr [Case]
 
 prettyPrint :: Expr -> Indent -> (String, Bool)
 prettyPrint expr ind = do
@@ -129,9 +132,9 @@ prettyPrint expr ind = do
                 "{}{}" % (inner, (prettyPrint arg inner).0)) |> toList
             s <- "loop {} <- {} do\n{}" % (var, initializer, join args "\n")
             (s, False)
-        Match body cases -> do
+        CaseOf body cases -> do
             inner <- inc ind
-            args <- cases |> List.iter |> map (\match_case -> do
-                "{}{} -> {}" % (inner, match_case.checker, (prettyPrint match_case.body inner).0)) |> toList
+            args <- cases |> List.iter |> map (\case_branch -> do
+                "{}{} -> {}" % (inner, case_branch.checker, (prettyPrint case_branch.body inner).0)) |> toList
             s <- "case ({}) of\n{}" % ((prettyPrint body inner).0, join args "\n")
             (s, False)
