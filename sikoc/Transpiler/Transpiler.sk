@@ -99,9 +99,7 @@ convertPattern type_store checker = case checker of
                 variant_name <- "{}::{}" % (rust_type, variant.name)
                 R.VariantPattern variant_name (Some (show v))
             MT.Record _ -> do
-                rust_type <- convertType type
-                record_name <- "{}" % (rust_type)
-                R.RecordPattern record_name
+                R.VariantPattern (show v) None
             _ -> panic "Variant is not a record nor an adt"
     ME.WildcardChecker -> R.WildcardPattern
 
@@ -115,7 +113,8 @@ convertExpr context mir_expr = do
             args <- args |> List.iter |> map (\arg -> convertExpr context arg) |> toList
             last <- atIndex args (getLength args - 1)
             is_var_decl <- case last of
-                R.VarDecl _ _ _ _ -> True
+                R.VarDecl _ _ _ -> True
+                R.VarDeclMut _ _ _ -> True
                 _ -> False
             if is_var_decl
                 then do
@@ -139,7 +138,7 @@ convertExpr context mir_expr = do
             ME.Expr _ rhs_type <- rhs
             rhs_expr <- convertExpr context rhs
             rhs_expr <- R.MethodCall rhs_expr cloneName []
-            R.VarDecl False n rhs_expr (Some (convertType rhs_type))
+            R.VarDecl n rhs_expr (Some (convertType rhs_type))
         ME.VarRef v -> R.VarRef (show v)
         ME.ArgRef index -> R.MethodCall (R.VarRef (getArgName index)) cloneName []
         ME.CaseOf body cases -> do
@@ -162,7 +161,7 @@ convertExpr context mir_expr = do
             R.Match (convertExpr context cond) cases
         ME.Loop v initializer args -> do
             n <- show v
-            var_decl <- R.VarDecl True n (convertExpr context initializer) None
+            var_decl <- R.VarDeclMut n (convertExpr context initializer) None
             inner_context <- Context context.type_store (Some n)
             args <- args |> List.iter |> map (\arg -> convertExpr inner_context arg) |> toList
             loop_body <- R.Assign (R.VarRef n) (R.Block args)
@@ -179,7 +178,7 @@ convertExpr context mir_expr = do
         ME.RecordUpdate v items -> do
             n <- show v
             new <- "new"
-            var_decl <- R.VarDecl True new (R.MethodCall (R.VarRef n) cloneName []) None
+            var_decl <- R.VarDeclMut new (R.MethodCall (R.VarRef n) cloneName []) None
             assignments <- items |> List.iter |> map (\update -> do
             lhs <- (R.FieldAccess (getRustFriendlyName update.field_name) (R.VarRef new))
             rhs <- (convertExpr context update.body)
@@ -191,7 +190,10 @@ convertExpr context mir_expr = do
                 item_expr <- convertExpr context arg
                 R.MethodCall item_expr cloneName []) |> toList
             R.StructCtor (show rust_type) [R.FieldInitItem innerValueField (R.FunctionCall rcNew [R.List args])]
-        _ -> R.VarRef "NYI"
+        ME.Clone v -> do
+            n <- show v
+            R.MethodCall (R.VarRef n) cloneName []
+        ME.Multi _ -> panic "Multi in transpiler"
 
 convertRecord :: MD.Record -> Map ExternalId ExternStructBuilder -> R.Struct
 convertRecord record external_struct_gens = do
@@ -226,7 +228,7 @@ processImpl mir_program program context type_name impl impl_body_fragment = do
                 impl_body_fragment <- Option.unwrap impl_body_fragment
                 args <- [("fmt", R.Type "&mut std::fmt::Formatter")]
                 result <- R.Type "std::fmt::Result"
-                var_decl <- R.VarDecl False (getArgName 0) (R.MethodCall (R.VarRef "self") cloneName []) None
+                var_decl <- R.VarDecl (getArgName 0) (R.MethodCall (R.VarRef "self") cloneName []) None
                 show_call <- convertExpr context impl_body_fragment
                 fmt_call <- R.FunctionCall "write!" [R.VarRef "fmt", R.StringLiteral "{}", R.FieldAccess innerValueField show_call]
                 body <- R.Block [var_decl, fmt_call]
@@ -236,8 +238,8 @@ processImpl mir_program program context type_name impl impl_body_fragment = do
                 impl_body_fragment <- Option.unwrap impl_body_fragment
                 args <- [(getArgName 1, R.Type "&{}" % type_name)]
                 result <- R.Type "bool"
-                var0_decl <- R.VarDecl False (getArgName 0) (R.MethodCall (R.VarRef "self") cloneName []) (Some rust_type_name)
-                var1_decl <- R.VarDecl False (getArgName 1) (R.MethodCall (R.VarRef (getArgName 1)) cloneName []) (Some rust_type_name)
+                var0_decl <- R.VarDecl (getArgName 0) (R.MethodCall (R.VarRef "self") cloneName []) (Some rust_type_name)
+                var1_decl <- R.VarDecl (getArgName 1) (R.MethodCall (R.VarRef (getArgName 1)) cloneName []) (Some rust_type_name)
                 op_call <- convertExpr context impl_body_fragment
                 body <- R.Block [var0_decl, var1_decl, sikoBoolToRustBool op_call (R.Type boolTypeName)]
                 method <- R.Function "eq" True args result body
@@ -248,8 +250,8 @@ processImpl mir_program program context type_name impl impl_body_fragment = do
                 impl_body_fragment <- Option.unwrap impl_body_fragment
                 args <- [(getArgName 1, R.Type "&{}" % type_name)]
                 result <- R.Type "Option<std::cmp::Ordering>"
-                var0_decl <- R.VarDecl False (getArgName 0) (R.MethodCall (R.VarRef "self") cloneName []) (Some rust_type_name)
-                var1_decl <- R.VarDecl False (getArgName 1) (R.MethodCall (R.VarRef (getArgName 1)) cloneName []) (Some rust_type_name)
+                var0_decl <- R.VarDecl (getArgName 0) (R.MethodCall (R.VarRef "self") cloneName []) (Some rust_type_name)
+                var1_decl <- R.VarDecl (getArgName 1) (R.MethodCall (R.VarRef (getArgName 1)) cloneName []) (Some rust_type_name)
                 ME.Expr _ optional_ordering_type <- impl_body_fragment
                 op_call <- convertExpr context impl_body_fragment
                 body <- R.Block [var0_decl, var1_decl, sikoOptionalOrderingToRustOptionalOrdering mir_program op_call optional_ordering_type]
@@ -259,8 +261,8 @@ processImpl mir_program program context type_name impl impl_body_fragment = do
                 impl_body_fragment <- Option.unwrap impl_body_fragment
                 args <- [(getArgName 1, R.Type "&{}" % type_name)]
                 result <- R.Type "std::cmp::Ordering"
-                var0_decl <- R.VarDecl False (getArgName 0) (R.MethodCall (R.VarRef "self") cloneName []) (Some rust_type_name)
-                var1_decl <- R.VarDecl False (getArgName 1) (R.MethodCall (R.VarRef (getArgName 1)) cloneName []) (Some rust_type_name)
+                var0_decl <- R.VarDecl (getArgName 0) (R.MethodCall (R.VarRef "self") cloneName []) (Some rust_type_name)
+                var1_decl <- R.VarDecl (getArgName 1) (R.MethodCall (R.VarRef (getArgName 1)) cloneName []) (Some rust_type_name)
                 ME.Expr _ ordering_type <- impl_body_fragment
                 op_call <- convertExpr context impl_body_fragment
                 rust_ordering_type <- convertType ordering_type

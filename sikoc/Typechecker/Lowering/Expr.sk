@@ -144,37 +144,37 @@ processBindVars context additional_info path_info_map unit_type = do
         (context, var_decls)) (context, [])
     (context, var_decls)
 
-processCaseEnds :: Context -> [MatchInfo] -> [ME.Expr] -> [Option ME.Expr] -> Map ValuePath ValuePathAccessor -> MT.Type -> (Context, ME.Expr)
-processCaseEnds context match_infos mir_case_bodies mir_guards path_info_map unit_type = do
+processCaseEnds :: Context -> U.Substitution -> [MatchInfo] -> [HE.Expr] -> [Option HE.Expr] -> Map ValuePath ValuePathAccessor -> MT.Type -> (Context, ME.Expr)
+processCaseEnds context sub match_infos hir_case_bodies hir_guards path_info_map unit_type = do
     if getLength match_infos == 1
         then do
             MatchInfo index additional_info <- atIndex match_infos 0
-            mir_case_body <- atIndex mir_case_bodies index
+            hir_case_body <- atIndex hir_case_bodies index
+            (context, mir_case_body) <- processExpr context sub hir_case_body
             (context, var_decls) <- processBindVars context additional_info path_info_map unit_type
-            result <- if isEmpty var_decls
-                then mir_case_body
-                else do
-                    ME.Expr _ case_type <- mir_case_body
-                    ME.Expr (ME.Do (var_decls + [mir_case_body])) case_type
+            ME.Expr _ case_type <- mir_case_body
+            result <- ME.Expr (ME.Do (var_decls + [mir_case_body])) case_type
             (context, result)
         else do
             case pop match_infos of
                 Some (match_info, match_infos) -> do
                     MatchInfo index additional_info <- match_info
-                    cond_expr <- case atIndex mir_guards index of
+                    cond_expr <- case atIndex hir_guards index of
                         Some g -> g
                         None -> panic "guard expr not found"
+                    (context, cond_expr) <- processExpr context sub cond_expr
                     (context, var_decls) <- processBindVars context additional_info path_info_map unit_type
-                    then_expr <- atIndex mir_case_bodies index
-                    (context, else_expr) <- processCaseEnds context match_infos mir_case_bodies mir_guards path_info_map unit_type
-                    ME.Expr _ then_type <- then_expr
-                    if_expr <- ME.Expr (ME.If cond_expr then_expr else_expr) then_type
+                    hir_case_body <- atIndex hir_case_bodies index
+                    (context, mir_case_body) <- processExpr context sub hir_case_body
+                    (context, else_expr) <- processCaseEnds context sub match_infos hir_case_bodies hir_guards path_info_map unit_type
+                    ME.Expr _ then_type <- mir_case_body
+                    if_expr <- ME.Expr (ME.If cond_expr mir_case_body else_expr) then_type
                     result <- ME.Expr (ME.Do (var_decls + [if_expr])) then_type
                     (context, result)
                 None -> panic "Matchinfos ran out!"
 
-processChoiceTree :: Context -> Choice -> Map ValuePath ValuePathAccessor -> [ME.Expr] -> [Option ME.Expr] -> (Context, ME.Expr)
-processChoiceTree context choice path_info_map mir_case_bodies mir_guards = do
+processChoiceTree :: Context -> U.Substitution -> Choice -> Map ValuePath ValuePathAccessor -> [HE.Expr] -> [Option HE.Expr] -> (Context, ME.Expr)
+processChoiceTree context sub choice path_info_map hir_case_bodies hir_guards = do
     (context, unit_type) <- processType context (HT.Tuple [])
     case choice of
         Choice path subchoices -> do
@@ -203,20 +203,31 @@ processChoiceTree context choice path_info_map mir_case_bodies mir_guards = do
                         MT.Record name -> do
                             record <- getRecord context.type_store name
                             field <- atIndex record.fields index
-                            body <- ME.FieldAccess field.name parent_expr.normal
+                            body <- ME.FieldAccess field.name parent_expr.internal
                             ME.Expr body field.type
                         _ -> panic "Indexed adt is not a record nor an adt"
                 _ -> parent_expr.internal
             (context, pattern_var) <- getNextTempVar context
-            (context, pattern_var_int) <- getNextTempVar context
             ME.Expr _ body_type <- body_expr
             pattern_var_ref <- ME.VarRef pattern_var
             pattern_var_ref_expr <- ME.Expr pattern_var_ref body_type
-            pattern_var_int_ref <- ME.VarRef pattern_var_int
-            pattern_var_int_ref_expr <- ME.Expr pattern_var_int_ref body_type
-            (path_info_map, _) <- insert path_info_map path (ValuePathAccessor pattern_var_ref_expr pattern_var_int_ref_expr)
             (context, cases) <- subchoices |> Map.iter |> fold (\(context, cases), (cond, choice) -> do
-                (context, choice_expr) <- processChoiceTree context choice path_info_map mir_case_bodies mir_guards
+                (context, pattern_var_int) <- getNextTempVar context
+                var_type <- case cond of
+                    VariantCondition index -> do
+                        case body_type of
+                        MT.Adt name -> do
+                            adt <- getAdt context.type_store name
+                            variant <- atIndex adt.variants index
+                            MT.Record variant.type
+                        MT.Record name -> do
+                            body_type
+                        _ -> panic "Indexed adt is not a record nor an adt"
+                    _ -> body_type
+                pattern_var_int_ref <- ME.VarRef pattern_var_int
+                pattern_var_int_ref_expr <- ME.Expr pattern_var_int_ref var_type
+                (path_info_map, _) <- insert path_info_map path (ValuePathAccessor pattern_var_ref_expr pattern_var_int_ref_expr)
+                (context, choice_expr) <- processChoiceTree context sub choice path_info_map hir_case_bodies hir_guards
                 (cond, expr) <- case cond of
                     IntegerCondition literal -> do
                         (ME.IntegerChecker literal, choice_expr)
@@ -246,7 +257,7 @@ processChoiceTree context choice path_info_map mir_case_bodies mir_guards = do
             do_expr <- ME.Expr (ME.Do [var_decl_expr, case_of_expr]) first_case_type
             (context, do_expr)
         CaseEnd cs -> do
-            (context, expr) <- processCaseEnds context cs mir_case_bodies mir_guards path_info_map unit_type
+            (context, expr) <- processCaseEnds context sub cs hir_case_bodies hir_guards path_info_map unit_type
             (context, expr)
         ElseNode -> panic "ElseNode found"
 
@@ -626,15 +637,6 @@ processExpr context sub hir_expr = do
                 case p of
                     HP.Guarded _ expr -> Some expr
                     _ -> None) |> toList
-            (context, mir_case_bodies) <- processArgs context sub hir_case_bodies
-            (context, mir_guards) <- hir_guards |> List.iter |> fold (\(context, mir_guards), guard_expr -> do
-                (context, mir_guard_expr) <- case guard_expr of
-                    Some expr -> do
-                        (context, mir_guard_expr) <- processExpr context sub expr
-                        (context, Some mir_guard_expr)
-                    None -> (context, None)
-                mir_guards <- mir_guards + [mir_guard_expr]
-                (context, mir_guards)) (context, [])
             (context, mir_body) <- processExpr context sub body
             HE.Expr _ body_id _ <- body
             hir_body_type <- getMonomorphizedExprType context sub body_id
@@ -642,7 +644,7 @@ processExpr context sub hir_expr = do
                 Some choice_tree -> do
                     p <- Option.unwrap (getValuePath choice_tree)
                     (path_info_map, _) <- insert empty p (ValuePathAccessor mir_body mir_body)
-                    processChoiceTree context choice_tree path_info_map mir_case_bodies mir_guards
+                    processChoiceTree context sub choice_tree path_info_map hir_case_bodies hir_guards
                 None -> panic "Choice tree not found"
             (context, case_of_expr)
         HE.RecordUpdate ref updates -> do

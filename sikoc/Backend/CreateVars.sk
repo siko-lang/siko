@@ -1,0 +1,145 @@
+module Siko.Backend.Passes.CreateVars where
+
+import Siko.MIR.Expr
+import Siko.MIR.Function
+import Siko.MIR.Program as P
+import Siko.MIR.Type as T
+import Map
+
+data Context = { used_var_index :: Int,
+                 unit_type :: T.Type }
+
+getNextUsedVar :: Context -> (Context, Var)
+getNextUsedVar context = do
+    index <- context.used_var_index
+    (context { used_var_index = index + 1}, UsedVar index)
+
+convertArgsToTempVars :: Context -> [Expr] -> (Context, [Expr], [Expr])
+convertArgsToTempVars context args = do
+    args |> List.iter |> fold (\(context, extras, args), arg -> do
+        (context, exs, arg) <- processExpr context arg
+        args <- args + [arg]
+        extras <- extras + exs
+        (context, extras, args)) (context, [], [])
+
+createTempVar :: Context -> [Expr] -> Expr -> T.Type -> (Context, [Expr], Expr)
+createTempVar context extras expr type = do
+    (context, var) <- getNextUsedVar context
+    decl <- VarDecl var expr
+    decl <- Expr decl context.unit_type
+    var_ref <- VarRef var
+    var_ref <- Expr var_ref type
+    (context, extras + [decl], var_ref)
+
+processBlock :: Context -> [Expr] -> (Context, [Expr])
+processBlock context exprs =
+    exprs |> List.iter |> fold (\(context, exprs), expr -> do
+        (context, extras, expr) <- processExpr context expr
+        Expr inner _ <- expr
+        exprs <- exprs + extras
+        exprs <- case inner of
+            Multi items -> exprs + items
+            _ -> exprs + [expr]
+        (context, exprs)) (context, [])
+
+createBlock :: [Expr] -> Expr -> Expr
+createBlock extras expr = if isEmpty extras
+                            then expr
+                            else do
+                                Expr _ type <- expr
+                                do_expr <- Do (extras + [expr])
+                                Expr do_expr type
+
+processExpr :: Context -> Expr -> (Context, [Expr], Expr)
+processExpr context expr = do
+    Expr s_expr type <- expr
+    case s_expr of
+        Do items -> do
+            (context, items) <- processBlock context items
+            (context, [], Expr (Do items) type)
+        Multi _ -> panic "Multi expr found in processExpr"
+        StaticFunctionCall id args -> do
+            (context, extras, args) <- convertArgsToTempVars context args
+            expr <- Expr (StaticFunctionCall id args) type
+            (context, extras, expr)
+        IntegerLiteral lit -> (context, [], expr)
+        StringLiteral lit -> (context, [], expr)
+        FloatLiteral lit -> (context, [], expr)
+        CharLiteral lit -> (context, [], expr)
+        VarDecl v arg -> do
+            (context, extras, arg) <- processExpr context arg
+            (context, extras, Expr (VarDecl v arg) type)
+        VarRef v -> createTempVar context [] expr type
+        FieldAccess name arg -> do
+            (context, extras, arg) <- processExpr context arg
+            (context, extras, Expr (FieldAccess name arg) type)
+        If cond true_branch false_branch -> do
+            (context, cond_extras, cond) <- processExpr context cond
+            (context, true_extras, true_branch) <- processExpr context true_branch
+            true_branch <- createBlock true_extras true_branch
+            (context, false_extras, false_branch) <- processExpr context false_branch
+            false_branch <- createBlock false_extras false_branch
+            (context, cond_extras, Expr (If cond true_branch false_branch) type)
+        List args -> do
+            (context, extras, args) <- convertArgsToTempVars context args
+            expr <- Expr (List args) type
+            (context, extras, expr)
+        Return arg -> do
+            (context, extras, arg) <- processExpr context arg
+            (context, extras, Expr (Return arg) type)
+        Continue arg -> do
+            (context, extras, arg) <- processExpr context arg
+            (context, extras, Expr (Continue arg) type)
+        Break arg -> do
+            (context, extras, arg) <- processExpr context arg
+            (context, extras, Expr (Break arg) type)
+        ArgRef _ -> createTempVar context [] expr type
+        RecordUpdate v updates -> do
+            var_ref <- VarRef v
+            var_ref <- Expr var_ref type
+            (context, var) <- getNextUsedVar context
+            decl <- VarDecl var var_ref
+            decl <- Expr decl context.unit_type
+            extras <- [decl]
+            (context, extras, updates) <- updates |> List.iter |> fold (\(context, extras, updates), update -> do
+                (context, exs, updated_body) <- processExpr context update.body
+                update <- update { body = updated_body }
+                updates <- updates + [update]
+                extras <- extras + exs
+                (context, extras, updates)) (context, extras, [])
+            (context, extras, Expr (RecordUpdate var updates) type)
+        Loop v initializer items -> do
+            (context, extras, initializer) <- processExpr context initializer
+            (context, items) <- processBlock context items
+            (context, extras, Expr (Loop v initializer items) type)
+        CaseOf body cases -> do
+            (context, extras, body) <- processExpr context body
+            (context, cases) <- cases |> List.iter |> fold (\(context, cases), case_branch -> do
+                (context, extras, updated_body) <- processExpr context case_branch.body
+                updated_body <- createBlock extras updated_body
+                case_branch <- case_branch { body = updated_body }
+                cases <- cases + [case_branch]
+                (context, cases)) (context, [])
+            (context, extras, Expr (CaseOf body cases) type)
+        Clone _ -> panic "Clone expr found in processExpr"
+
+initContext :: T.Type -> Context
+initContext unit_type = Context 0 unit_type
+
+processFunction :: Function -> T.Type -> Function
+processFunction function unit_type = case function.kind of
+    Normal body -> do
+        context <- initContext unit_type
+        (context, extras, updated_body) <- processExpr context body
+        updated_body <- createBlock extras updated_body
+        function { kind = Normal updated_body }
+    _ -> function
+
+processProgram :: P.Program -> P.Program
+processProgram program = do
+    unit_type <- Option.unwrap (program.unit_type)
+    functions <- program.functions |> Map.iter |> map (\(id, function) -> do
+        function <- processFunction function unit_type
+        (id, function)) |> toMap
+    program <- program { functions = functions }
+    program

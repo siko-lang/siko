@@ -44,7 +44,8 @@ data Expr = Block [Expr]
             | FloatLiteral String
             | BoolLiteral Bool
             | CharLiteral Char
-            | VarDecl Bool String Expr (Option Type)
+            | VarDecl String Expr (Option Type)
+            | VarDeclMut String Expr (Option Type)
             | VarRef String
             | FieldAccess String Expr
             | List [Expr]
@@ -128,13 +129,12 @@ generateExpr expr indent = case expr of
         '\'' -> "'\\''"
         '\\' -> "'\\\\'"
         _ -> "'{}'" % lit
-    VarDecl mutable n rhs type -> case type of
-        Some type -> if mutable
-                then "let mut {}: {} = {}" % (n, type, generateExpr rhs (Indent 0))
-                else "let {}: {} = {}" % (n, type, generateExpr rhs (Indent 0))
-        None -> if mutable
-                then "let mut {} = {}" % (n, generateExpr rhs (Indent 0))
-                else "let {} = {}" % (n, generateExpr rhs (Indent 0))
+    VarDecl n rhs type -> case type of
+        Some type -> "let {}: {} = {}" % (n, type, generateExpr rhs (Indent 0))
+        None -> "let {} = {}" % (n, generateExpr rhs (Indent 0))
+    VarDeclMut n rhs type -> case type of
+        Some type -> "let mut {}: {} = {}" % (n, type, generateExpr rhs (Indent 0))
+        None -> "let mut {} = {}" % (n, generateExpr rhs (Indent 0))
     VarRef n -> n
     Match body cases -> do
         body <- generateExpr body (Indent 0)

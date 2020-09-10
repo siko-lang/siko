@@ -2,6 +2,7 @@ module Siko.MIR.Program where
 
 import Siko.MIR.Function as F
 import Siko.MIR.Data as D
+import Siko.MIR.Type
 import Map
 
 data Identity = { module_name :: String, name :: String, index :: Int } deriving (PartialEq, Eq, PartialOrd, Ord)
@@ -9,10 +10,11 @@ data Identity = { module_name :: String, name :: String, index :: Int } deriving
 data Program = { functions :: Map Identity F.Function,
                  adts :: Map Identity D.AlgebraicDataType,
                  records :: Map Identity D.Record,
+                 unit_type :: Option Type,
                }
 
 createProgram :: Program
-createProgram = Program empty empty empty
+createProgram = Program empty empty empty None
 
 addFunction :: Program -> Identity -> F.Function -> Program
 addFunction program function_id function = do

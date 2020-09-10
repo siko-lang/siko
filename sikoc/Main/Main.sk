@@ -6,6 +6,7 @@ import Siko.Resolver as R
 import Siko.Typechecker as TC
 import Siko.Transpiler
 import Siko.Diagnostics
+import Siko.Backend as B
 
 main = do
     println "Reading input.."
@@ -20,6 +21,8 @@ main = do
     println "Typechecking.."
     case TC.processProgram hir_program var_gen of
         Ok mir_program -> do
+            println "Optimizing.."
+            mir_program <- B.processProgram mir_program
             println "Transpiling.."
             rust_output <- transpile mir_program
             writeTextFile "sikoc_output.rs" rust_output

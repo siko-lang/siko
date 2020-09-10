@@ -1,0 +1,105 @@
+module Siko.MIR.Traversal where
+
+import Siko.MIR.Expr
+import Std.Util
+
+traverseExprs a :: a -> [Expr] -> (a -> Expr -> Option (a, [Expr], Expr)) -> (a, [Expr], [Expr])
+traverseExprs context exprs process_expr =
+    exprs |> List.iter |> fold (\(context, extras, exprs), expr -> do
+        (context, exs, expr) <- traverse context expr process_expr
+        Expr inner _ <- expr
+        extras <- extras + exs
+        exprs <- case inner of
+            Multi items -> exprs + items
+            _ -> exprs + [expr]
+        (context, extras, exprs)) (context, [], [])
+
+traverseExprsMerged a :: a -> [Expr] -> (a -> Expr -> Option (a, [Expr], Expr)) -> (a, [Expr])
+traverseExprsMerged context exprs process_expr =
+    exprs |> List.iter |> fold (\(context, exprs), expr -> do
+        (context, extras, expr) <- traverse context expr process_expr
+        Expr inner _ <- expr
+        exprs <- exprs + extras
+        exprs <- case inner of
+            Multi items -> exprs + items
+            _ -> exprs + [expr]
+        (context, exprs)) (context, [])
+
+convertToDo :: [Expr] -> Expr -> Expr
+convertToDo extras expr = if isEmpty extras
+                            then expr
+                            else do
+                                Expr _ type <- expr
+                                do_expr <- Do (extras + [expr])
+                                Expr do_expr type
+
+traverse a :: a -> Expr -> (a -> Expr -> Option (a, [Expr], Expr)) -> (a, [Expr], Expr)
+traverse context expr process_expr =
+    case process_expr context expr of
+        Some r -> return r
+        None -> do
+            Expr s_expr type <- expr
+            (context, extras, s_expr) <- case s_expr of
+                Do items -> do
+                    (context, items) <- traverseExprsMerged context items process_expr
+                    (context, [], Do items)
+                Multi items -> do
+                    (context, extras, items) <- traverseExprs context items process_expr
+                    (context, extras, Multi items)
+                StaticFunctionCall id args -> do
+                    (context, extras, args) <- traverseExprs context args process_expr
+                    (context, extras, StaticFunctionCall id args)
+                IntegerLiteral lit -> return (context, [], expr)
+                StringLiteral lit -> return (context, [], expr)
+                FloatLiteral lit -> return (context, [], expr)
+                CharLiteral lit -> return (context, [], expr)
+                VarDecl v rhs -> do
+                    (context, extras, rhs) <- traverse context rhs process_expr
+                    (context, extras, VarDecl v rhs)
+                VarRef v -> return (context, [], expr)
+                FieldAccess n receiver -> do
+                    (context, extras, receiver) <- traverse context receiver process_expr
+                    (context, extras, FieldAccess n receiver)
+                If cond true_branch false_branch -> do
+                    (context, exs1, cond) <- traverse context cond process_expr
+                    (context, extras, true_branch) <- traverse context true_branch process_expr
+                    true_branch <- convertToDo extras true_branch
+                    (context, extras, false_branch) <- traverse context false_branch process_expr
+                    false_branch <- convertToDo extras false_branch
+                    (context, exs1, If cond true_branch false_branch)
+                List items -> do
+                    (context, extras, items) <- traverseExprs context items process_expr
+                    (context, extras, List items)
+                Return arg -> do
+                    (context, extras, arg) <- traverse context arg process_expr
+                    (context, extras, Return arg)
+                Continue arg -> do
+                    (context, extras, arg) <- traverse context arg process_expr
+                    (context, extras, Continue arg)
+                Break arg -> do
+                    (context, extras, arg) <- traverse context arg process_expr
+                    (context, extras, Break arg)
+                ArgRef index -> return (context, [], expr)
+                RecordUpdate v items -> do
+                    (context, extras, items) <- items |> List.iter |> fold (\(context, extras, items), item -> do
+                        (context, exs, body) <- traverse context item.body process_expr
+                        extras <- extras + exs
+                        item <- item { body = body}
+                        items <- items + [item]
+                        (context, extras, items)) (context,  [], [])
+                    (context, extras, RecordUpdate v items)
+                Loop v initializer args -> do
+                    (context, exs1, initializer) <- traverse context initializer process_expr
+                    (context, args) <- traverseExprsMerged context args process_expr
+                    (context, exs1, Loop v initializer args)
+                CaseOf body cases -> do
+                    (context, extras, body) <- traverse context body process_expr
+                    (context, cases) <- cases |> List.iter |> fold (\(context, cases), c -> do
+                        (context, extras, case_body) <- traverse context c.body process_expr
+                        case_body <- convertToDo extras case_body
+                        c <- c { body = case_body}
+                        cases <- cases + [c]
+                        (context, cases)) (context, [])
+                    (context, extras, CaseOf body cases)
+                Clone v -> return (context, [], expr)
+            (context, extras, Expr s_expr type)

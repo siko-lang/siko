@@ -6,14 +6,20 @@ import Siko.MIR.Type as T
 
 data Var = Named String
          | Temp Int
+         | Cloned Int
+         | UsedVar Int
+         deriving (PartialEq, Eq, PartialOrd, Ord)
 
 instance Show Var where
     show v = case v of
         Named v -> "{}" % v
         Temp v -> "tmp_{}" % v
+        Cloned v -> "cloned_{}" % v
+        UsedVar v -> "var_{}" % v
 
 data RecordUpdateItem = { field_name :: String,
                           body :: Expr }
+                        deriving (Show)
 
 data RangeKind = Inclusive | Exclusive deriving (Show)
 
@@ -33,9 +39,9 @@ instance Show Checker where
         VariantChecker i v _ -> "v:{} {}" % (i, v)
         WildcardChecker -> "w"
 
-data Case = { checker :: Checker, body :: Expr }
+data Case = { checker :: Checker, body :: Expr } deriving (Show)
 
-data Expr = Expr SimpleExpr T.Type
+data Expr = Expr SimpleExpr T.Type deriving (Show)
 
 data SimpleExpr = Do [Expr]
             | Multi [Expr]
@@ -56,6 +62,8 @@ data SimpleExpr = Do [Expr]
             | RecordUpdate Var [RecordUpdateItem]
             | Loop Var Expr [Expr]
             | CaseOf Expr [Case]
+            | Clone Var
+            deriving (Show)
 
 prettyPrint :: Expr -> Indent -> (String, Bool)
 prettyPrint expr ind = do
@@ -138,3 +146,4 @@ prettyPrint expr ind = do
                 "{}{} -> {}" % (inner, case_branch.checker, (prettyPrint case_branch.body inner).0)) |> toList
             s <- "case ({}) of\n{}" % ((prettyPrint body inner).0, join args "\n")
             (s, False)
+        Clone v -> ("clone({})" % v, False)

@@ -34,7 +34,7 @@ generateStringAdd program type_store arg_types result_type = do
     deref0 <- R.FunctionCall derefName [R.Ref field_access0]
     clone_call <- R.MethodCall deref0 cloneName []
     new <- "new"
-    new_decl <- R.VarDecl True new clone_call None
+    new_decl <- R.VarDeclMut new clone_call None
     field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
     extend_call <- R.MethodCall (R.VarRef new) "push_str" [R.Ref field_access1]
     struct_ctor <- R.StructCtor (show rust_type) [R.FieldInitItem innerValueField (R.FunctionCall rcNew [R.VarRef new])]
@@ -47,7 +47,7 @@ generateAdd program type_store arg_types result_type = do
     field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
     add_call <- R.FunctionCall stdOpsAdd [R.Ref field_access0, R.Ref field_access1]
     new <- "new"
-    new_decl <- R.VarDecl False new add_call None
+    new_decl <- R.VarDecl new add_call None
     struct_ctor <- R.StructCtor (show rust_type) [R.FieldInitItem innerValueField (R.VarRef new)]
     R.Block [new_decl, struct_ctor]
 
@@ -58,7 +58,7 @@ generateSub program type_store arg_types result_type = do
     field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
     sub_call <- R.FunctionCall stdOpsSub [R.Ref field_access0, R.Ref field_access1]
     new <- "new"
-    new_decl <- R.VarDecl False new sub_call None
+    new_decl <- R.VarDecl new sub_call None
     struct_ctor <- R.StructCtor (show rust_type) [R.FieldInitItem innerValueField (R.VarRef new)]
     R.Block [new_decl, struct_ctor]
 
@@ -69,7 +69,7 @@ generateMul program type_store arg_types result_type = do
     field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
     mul_call <- R.FunctionCall stdOpsMul [R.Ref field_access0, R.Ref field_access1]
     new <- "new"
-    new_decl <- R.VarDecl False new mul_call None
+    new_decl <- R.VarDecl new mul_call None
     struct_ctor <- R.StructCtor (show rust_type) [R.FieldInitItem innerValueField (R.VarRef new)]
     R.Block [new_decl, struct_ctor]
 
@@ -80,7 +80,7 @@ generateDiv program type_store arg_types result_type = do
     field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
     div_call <- R.FunctionCall stdOpsDiv [R.Ref field_access0, R.Ref field_access1]
     new <- "new"
-    new_decl <- R.VarDecl False new div_call None
+    new_decl <- R.VarDecl new div_call None
     struct_ctor <- R.StructCtor (show rust_type) [R.FieldInitItem innerValueField (R.VarRef new)]
     R.Block [new_decl, struct_ctor]
 
@@ -89,7 +89,7 @@ generateNegative program type_store arg_types result_type = do
     rust_type <- convertType result_type
     field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
     new <- "new"
-    new_decl <- R.VarDecl False new (R.FunctionCall "-" [field_access0]) None
+    new_decl <- R.VarDecl new (R.FunctionCall "-" [field_access0]) None
     struct_ctor <- R.StructCtor (show rust_type) [R.FieldInitItem innerValueField (R.VarRef new)]
     R.Block [new_decl, struct_ctor]
 
@@ -398,10 +398,10 @@ generateListShow program type_store arg_types result_type = do
     map <- R.MethodCall iter "map" [map_body]
     collect <- R.MethodCall map "collect" []
     subs <- "subs"
-    subs_decl <- R.VarDecl False subs collect (Some (R.Type "Vec<_>"))
+    subs_decl <- R.VarDecl subs collect (Some (R.Type "Vec<_>"))
     fmt_arg <- R.StringLiteral "[{}]"
     join_call <- R.MethodCall (R.VarRef subs) "join" [R.StringLiteral (", ")]
-    value_decl <- R.VarDecl False innerValueField (R.FunctionCall "format!" [fmt_arg, join_call]) None
+    value_decl <- R.VarDecl innerValueField (R.FunctionCall "format!" [fmt_arg, join_call]) None
     struct_ctor <- R.StructCtor (show rust_type) [R.FieldInitItem innerValueField (R.FunctionCall rcNew [R.VarRef innerValueField])]
     R.Block [subs_decl, value_decl, struct_ctor]
 
@@ -415,10 +415,10 @@ generateMapShow program type_store arg_types result_type = do
     map <- R.MethodCall iter "map" [map_body]
     collect <- R.MethodCall map "collect" []
     subs <- "subs"
-    subs_decl <- R.VarDecl False subs collect (Some (R.Type "Vec<_>"))
+    subs_decl <- R.VarDecl subs collect (Some (R.Type "Vec<_>"))
     fmt_arg <- R.StringLiteral "{{{}}}"
     join_call <- R.MethodCall (R.VarRef subs) "join" [R.StringLiteral (", ")]
-    value_decl <- R.VarDecl False innerValueField (R.FunctionCall "format!" [fmt_arg, join_call]) None
+    value_decl <- R.VarDecl innerValueField (R.FunctionCall "format!" [fmt_arg, join_call]) None
     struct_ctor <- R.StructCtor (show rust_type) [R.FieldInitItem innerValueField (R.FunctionCall rcNew [R.VarRef innerValueField])]
     R.Block [subs_decl, value_decl, struct_ctor]
 
@@ -447,7 +447,7 @@ generateListDedup program type_store arg_types result_type = do
     inner0 <- R.FieldAccess innerValueField arg0
     deref0 <- R.FunctionCall derefName [R.Ref inner0]
     new <- "new"
-    new_decl <- R.VarDecl True new (R.MethodCall deref0 cloneName []) None
+    new_decl <- R.VarDeclMut new (R.MethodCall deref0 cloneName []) None
     dedup_call <- R.MethodCall (R.VarRef new) "dedup" []
     R.Block [new_decl, dedup_call, R.StructCtor (show rust_type) [R.FieldInitItem innerValueField (R.FunctionCall rcNew [R.VarRef new])]]
 
@@ -466,7 +466,7 @@ generateListSort program type_store arg_types result_type = do
     inner0 <- R.FieldAccess innerValueField arg0
     deref0 <- R.FunctionCall derefName [R.Ref inner0]
     new <- "new"
-    new_decl <- R.VarDecl True new (R.MethodCall deref0 cloneName []) None
+    new_decl <- R.VarDeclMut new (R.MethodCall deref0 cloneName []) None
     sort_call <- R.MethodCall (R.VarRef new) "sort" []
     R.Block [new_decl, sort_call, R.StructCtor (show rust_type) [R.FieldInitItem innerValueField (R.FunctionCall rcNew [R.VarRef new])]]
 
@@ -512,7 +512,7 @@ generateListTail program type_store arg_types result_type = do
     non_empty_branch <- do
         deref0 <- R.FunctionCall derefName [R.Ref inner0]
         new <- "new"
-        new_decl <- R.VarDecl True new (R.MethodCall deref0 cloneName []) None
+        new_decl <- R.VarDeclMut new (R.MethodCall deref0 cloneName []) None
         remove_call <- R.MethodCall (R.VarRef new) "remove" [R.IntegerLiteral "0"]
         list_ctor <- R.StructCtor (show rust_arg_type) [R.FieldInitItem innerValueField (R.FunctionCall rcNew [R.VarRef new])]
         some_ctor <- R.StructCtor (show rust_some_record_type) [R.FieldInitItem "field0" (R.FunctionCall rcNew [list_ctor])]
@@ -530,9 +530,9 @@ generateListAdd program type_store arg_types result_type = do
     deref0 <- R.FunctionCall derefName [R.Ref field_access0]
     deref1 <- R.FunctionCall derefName [R.Ref field_access1]
     new0 <- "new0"
-    new0_decl <- R.VarDecl True new0 (R.MethodCall deref0 cloneName []) None
+    new0_decl <- R.VarDeclMut new0 (R.MethodCall deref0 cloneName []) None
     new1 <- "new1"
-    new1_decl <- R.VarDecl False new1 (R.MethodCall deref1 cloneName []) None
+    new1_decl <- R.VarDecl new1 (R.MethodCall deref1 cloneName []) None
     add_call <- R.MethodCall (R.VarRef new0) "extend" [R.VarRef new1]
     struct_ctor <- R.StructCtor (show rust_type) [R.FieldInitItem innerValueField (R.FunctionCall rcNew [R.VarRef new0])]
     R.Block [new0_decl, new1_decl, add_call, struct_ctor]
@@ -543,7 +543,7 @@ generateListIntoIter program type_store arg_types result_type = do
     field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
     deref0 <- R.FunctionCall derefName [R.Ref field_access0]
     new0 <- "new0"
-    new0_decl <- R.VarDecl False new0 (R.MethodCall deref0 cloneName []) None
+    new0_decl <- R.VarDecl new0 (R.MethodCall deref0 cloneName []) None
     into_iter_call <- R.MethodCall (R.VarRef new0) "into_iter" []
     struct_ctor <- R.StructCtor (show rust_type) [R.FieldInitItem innerValueField (R.FunctionCall rcNew [into_iter_call])]
     R.Block [new0_decl, struct_ctor]
@@ -554,9 +554,9 @@ generateListNextItem program type_store arg_types result_type = do
     field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
     deref0 <- R.FunctionCall derefName [R.Ref field_access0]
     state <- "state"
-    state_decl <- R.VarDecl True state (R.MethodCall deref0 cloneName []) None
+    state_decl <- R.VarDeclMut state (R.MethodCall deref0 cloneName []) None
     value <- "value"
-    value_decl <- R.VarDecl False value (R.MethodCall (R.VarRef state) "next" []) None
+    value_decl <- R.VarDecl value (R.MethodCall (R.VarRef state) "next" []) None
     item <- "item"
     some_pattern <- R.VariantPattern "Some" (Some item)
     none_pattern <- R.VariantPattern "None" None
@@ -596,7 +596,7 @@ generateListWrite program type_store arg_types result_type = do
     arg2 <- R.VarRef (getArgName 2)
     deref0 <- R.FunctionCall derefName [R.Ref inner0]
     new <- "new"
-    new_decl <- R.VarDecl True new (R.MethodCall deref0 cloneName []) None
+    new_decl <- R.VarDeclMut new (R.MethodCall deref0 cloneName []) None
     assign0 <- R.Assign (R.Deref (R.FunctionCall "std::ops::IndexMut::index_mut" [R.MutRef (R.VarRef new), R.As inner1 "usize"])) arg2
     R.Block [new_decl, assign0, R.StructCtor (show rust_type) [R.FieldInitItem innerValueField (R.FunctionCall rcNew [R.VarRef new])]]
 
@@ -610,7 +610,7 @@ generateStringChars program type_store arg_types result_type = do
     map <- R.MethodCall chars_call "map" [map_body]
     collect_call <- R.MethodCall map "collect" []
     new <- "new"
-    new_decl <- R.VarDecl False new collect_call (Some (R.Type "Vec<_>"))
+    new_decl <- R.VarDecl new collect_call (Some (R.Type "Vec<_>"))
     R.Block [new_decl, R.StructCtor (show rust_type) [R.FieldInitItem innerValueField (R.FunctionCall rcNew [R.VarRef new])]]
 
 generateStringReplace :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
@@ -623,7 +623,7 @@ generateStringReplace program type_store arg_types result_type = do
     arg2 <- R.VarRef (getArgName 2)
     inner2 <- R.FieldAccess innerValueField arg2
     new <- "new"
-    new_decl <- R.VarDecl False new (R.MethodCall inner0 "replace" [R.MethodCall inner1 "as_ref" [], R.MethodCall inner2 "as_ref" []]) None
+    new_decl <- R.VarDecl new (R.MethodCall inner0 "replace" [R.MethodCall inner1 "as_ref" [], R.MethodCall inner2 "as_ref" []]) None
     R.Block [new_decl, R.StructCtor (show rust_type) [R.FieldInitItem innerValueField (R.FunctionCall rcNew [R.VarRef new])]]
 
 generateStringSplit :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
@@ -640,7 +640,7 @@ generateStringSplit program type_store arg_types result_type = do
     map <- R.MethodCall split_call "map" [map_body]
     collect_call <- R.MethodCall map "collect" []
     new <- "new"
-    new_decl <- R.VarDecl False new collect_call (Some (R.Type "Vec<_>"))
+    new_decl <- R.VarDecl new collect_call (Some (R.Type "Vec<_>"))
     R.Block [new_decl, R.StructCtor (show rust_type) [R.FieldInitItem innerValueField (R.FunctionCall rcNew [R.VarRef new])]]
 
 generateAbort :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
@@ -666,7 +666,7 @@ generateMapInsert program type_store arg_types result_type = do
     deref0 <- R.FunctionCall derefName [R.Ref field_access0]
     map <- "map"
     value <- "value"
-    map_decl <- R.VarDecl True map (R.MethodCall deref0 cloneName []) None
+    map_decl <- R.VarDeclMut map (R.MethodCall deref0 cloneName []) None
     insert_call <- R.MethodCall (R.VarRef map) "insert" [R.VarRef (getArgName 1), R.VarRef (getArgName 2)]
     some_pattern <- R.VariantPattern "Some" (Some value)
     none_pattern <- R.VariantPattern "None" None
@@ -681,7 +681,7 @@ generateMapInsert program type_store arg_types result_type = do
     some_case <- R.MatchCase some_pattern (R.FunctionCall ("{}::Some" % rust_value_type) [some_ctor])
     none_case <- R.MatchCase none_pattern (R.FunctionCall ("{}::None" % rust_value_type) [none_ctor])
     match <- R.Match insert_call [some_case, none_case]
-    value_decl <- R.VarDecl False value match None
+    value_decl <- R.VarDecl value match None
     map_ctor <- R.Block [R.StructCtor (show rust_map_type) [R.FieldInitItem innerValueField (R.FunctionCall rcNew [R.VarRef map])]]
     field0_init <- R.FieldInitItem map_field.name (R.FunctionCall rcNew [map_ctor])
     field1_init <- R.FieldInitItem value_field.name (R.FunctionCall rcNew [R.VarRef value])
@@ -695,7 +695,7 @@ generateMapGet program type_store arg_types result_type = do
     deref0 <- R.FunctionCall derefName [R.Ref field_access0]
     map <- "map"
     value <- "value"
-    map_decl <- R.VarDecl False map (R.MethodCall deref0 cloneName []) None
+    map_decl <- R.VarDecl map (R.MethodCall deref0 cloneName []) None
     get_call <- R.MethodCall (R.VarRef map) "get" [R.Ref (R.VarRef (getArgName 1))]
     some_pattern <- R.VariantPattern "Some" (Some value)
     none_pattern <- R.VariantPattern "None" None
@@ -734,7 +734,7 @@ generateMapRemove program type_store arg_types result_type = do
     deref0 <- R.FunctionCall derefName [R.Ref field_access0]
     map <- "map"
     value <- "value"
-    map_decl <- R.VarDecl True map (R.MethodCall deref0 cloneName []) None
+    map_decl <- R.VarDeclMut map (R.MethodCall deref0 cloneName []) None
     remove_call <- R.MethodCall (R.VarRef map) "remove" [R.Ref (R.VarRef (getArgName 1))]
     some_pattern <- R.VariantPattern "Some" (Some value)
     none_pattern <- R.VariantPattern "None" None
@@ -749,7 +749,7 @@ generateMapRemove program type_store arg_types result_type = do
     some_case <- R.MatchCase some_pattern (R.FunctionCall ("{}::Some" % rust_value_type) [some_ctor])
     none_case <- R.MatchCase none_pattern (R.FunctionCall ("{}::None" % rust_value_type) [none_ctor])
     match <- R.Match remove_call [some_case, none_case]
-    value_decl <- R.VarDecl False value match None
+    value_decl <- R.VarDecl value match None
     map_ctor <- R.Block [R.StructCtor (show rust_map_type) [R.FieldInitItem innerValueField (R.FunctionCall rcNew [R.VarRef map])]]
     field0_init <- R.FieldInitItem map_field.name (R.FunctionCall rcNew [map_ctor])
     field1_init <- R.FieldInitItem value_field.name (R.FunctionCall rcNew [R.VarRef value])
@@ -762,11 +762,11 @@ generateMapIntoIter program type_store arg_types result_type = do
     field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
     deref0 <- R.FunctionCall derefName [R.Ref field_access0]
     new0 <- "new0"
-    new0_decl <- R.VarDecl False new0 (R.MethodCall deref0 cloneName []) None
+    new0_decl <- R.VarDecl new0 (R.MethodCall deref0 cloneName []) None
     into_iter_call <- R.MethodCall (R.VarRef new0) "into_iter" []
     collect <- R.MethodCall into_iter_call "collect" []
     v <- "v"
-    v_decl <- R.VarDecl False v collect (Some (R.Type "Vec<_>"))
+    v_decl <- R.VarDecl v collect (Some (R.Type "Vec<_>"))
     v_into_iter_call <- R.MethodCall (R.VarRef v) "into_iter" []
     struct_ctor <- R.StructCtor (show rust_type) [R.FieldInitItem innerValueField (R.FunctionCall rcNew [v_into_iter_call])]
     R.Block [new0_decl, v_decl, struct_ctor]
@@ -777,9 +777,9 @@ generateMapNextItem program type_store arg_types result_type = do
     field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
     deref0 <- R.FunctionCall derefName [R.Ref field_access0]
     state <- "state"
-    state_decl <- R.VarDecl True state (R.MethodCall deref0 cloneName []) None
+    state_decl <- R.VarDeclMut state (R.MethodCall deref0 cloneName []) None
     value <- "value"
-    value_decl <- R.VarDecl False value (R.MethodCall (R.VarRef state) "next" []) None
+    value_decl <- R.VarDecl value (R.MethodCall (R.VarRef state) "next" []) None
     item <- "item"
     some_pattern <- R.VariantPattern "Some" (Some item)
     none_pattern <- R.VariantPattern "None" None

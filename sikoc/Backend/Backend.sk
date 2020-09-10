@@ -1,0 +1,12 @@
+module Siko.Backend where
+
+import Siko.Backend.Passes.CreateVars as CreateVars
+import Siko.MIR.Program as P
+import Hack
+
+processProgram :: P.Program -> P.Program
+processProgram program = do
+    program <- CreateVars.processProgram program
+    s <- P.dump program
+    writeTextFile "sikoc_2.mir" s
+    program

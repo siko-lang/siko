@@ -200,31 +200,58 @@ generateShowInstance context hir_type class_name = do
                     arg_ref_expr <- ME.Expr (ME.ArgRef 0) mir_adt_type
                     decl <- ME.VarDecl var arg_ref_expr
                     decl_expr <- ME.Expr decl unit_type
-                    (context, cases) <- adt.variants |> List.iter |> fold (\(context, cases), variant -> do
-                        index <- (getLength cases)
-                        checker <- ME.VariantChecker index var mir_adt_type
-                        (context, fmt_args, mir_items) <- variant.items |> List.iter
-                                    |> fold (\(context, fmt_args, mir_items), item -> do
-                                        field_name <- Util.getFieldName (getLength mir_items)
-                                        (context, mir_item_type) <- TS.processType context item
-                                        field_access <- ME.FieldAccess field_name var_ref_expr
-                                        field_access_expr <- ME.Expr field_access mir_item_type
-                                        (context, fmt_arg, items) <- processMemberForShow context item field_access_expr class_name
-                                        fmt_args <- fmt_args + [fmt_arg]
-                                        mir_items <- mir_items + items
-                                        (context, fmt_args, mir_items)) (context, [], [])
-                        fmt <- if isEmpty fmt_args
-                            then "{}" % variant.name
-                            else "{} {}" % (variant.name, (join fmt_args " "))
-                        (context, body) <- processFormatExpr context fmt [] mir_items
-                        c <- ME.Case checker body
-                        cases <- cases + [c]
-                        (context, cases)) (context, [])
-                    case_of <- ME.CaseOf var_ref_expr cases
-                    case_of_expr <- ME.Expr case_of mir_string_type
-                    body <- ME.Do [decl_expr, case_of_expr]
-                    body_expr <- ME.Expr body mir_string_type
-                    (context, body_expr)
+                    if getLength adt.variants == 1
+                        then do
+                            (context, cases) <- adt.variants |> List.iter |> fold (\(context, cases), variant -> do
+                                (context, fmt_args, mir_items) <- variant.items |> List.iter
+                                            |> fold (\(context, fmt_args, mir_items), item -> do
+                                                field_name <- Util.getFieldName (getLength mir_items)
+                                                (context, mir_item_type) <- TS.processType context item
+                                                field_access <- ME.FieldAccess field_name var_ref_expr
+                                                field_access_expr <- ME.Expr field_access mir_item_type
+                                                (context, fmt_arg, items) <- processMemberForShow context item field_access_expr class_name
+                                                fmt_args <- fmt_args + [fmt_arg]
+                                                mir_items <- mir_items + items
+                                                (context, fmt_args, mir_items)) (context, [], [])
+                                fmt <- if isEmpty fmt_args
+                                    then "{}" % variant.name
+                                    else "{} {}" % (variant.name, (join fmt_args " "))
+                                (context, body) <- processFormatExpr context fmt [] mir_items
+                                cases <- cases + [body]
+                                (context, cases)) (context, [])
+                            case_body <- atIndex cases 0
+                            body <- ME.Do [decl_expr, case_body]
+                            body_expr <- ME.Expr body mir_string_type
+                            (context, body_expr)
+                        else do
+                            (context, cases) <- adt.variants |> List.iter |> fold (\(context, cases), variant -> do
+                                index <- (getLength cases)
+                                (context, var_in) <- getNextTempVar context
+                                variant_type <- getVariantType context index mir_adt_type
+                                var_in_ref_expr <- ME.Expr (ME.VarRef var_in) variant_type
+                                checker <- ME.VariantChecker index var_in mir_adt_type
+                                (context, fmt_args, mir_items) <- variant.items |> List.iter
+                                            |> fold (\(context, fmt_args, mir_items), item -> do
+                                                field_name <- Util.getFieldName (getLength mir_items)
+                                                (context, mir_item_type) <- TS.processType context item
+                                                field_access <- ME.FieldAccess field_name var_in_ref_expr
+                                                field_access_expr <- ME.Expr field_access mir_item_type
+                                                (context, fmt_arg, items) <- processMemberForShow context item field_access_expr class_name
+                                                fmt_args <- fmt_args + [fmt_arg]
+                                                mir_items <- mir_items + items
+                                                (context, fmt_args, mir_items)) (context, [], [])
+                                fmt <- if isEmpty fmt_args
+                                    then "{}" % variant.name
+                                    else "{} {}" % (variant.name, (join fmt_args " "))
+                                (context, body) <- processFormatExpr context fmt [] mir_items
+                                c <- ME.Case checker body
+                                cases <- cases + [c]
+                                (context, cases)) (context, [])
+                            case_of <- ME.CaseOf var_ref_expr cases
+                            case_of_expr <- ME.Expr case_of mir_string_type
+                            body <- ME.Do [decl_expr, case_of_expr]
+                            body_expr <- ME.Expr body mir_string_type
+                            (context, body_expr)
                 DS.Record record -> do
                     (context, record) <- TS.instantiateRecord context record hir_type
                     (context, mir_record_type) <- TS.processType context hir_type
@@ -266,6 +293,14 @@ generateOrdInstance :: Context -> HT.Type -> HP.FullyQualifiedName -> (Context, 
 generateOrdInstance context hir_type class_name = do
     generateTwoArgsInstance context hir_type class_name callOpCmp processMemberForOrd
 
+getVariantType :: Context -> Int -> MT.Type -> MT.Type
+getVariantType context index adt_type = do
+    adt <- case adt_type of
+            MT.Adt adt_id -> TS.getAdt context.type_store adt_id
+            _ -> panic "Adt is not an adt"
+    variant <- atIndex adt.variants index
+    MT.Record variant.type
+
 generateTwoArgsInstance :: Context ->
                            HT.Type ->
                            HP.FullyQualifiedName ->
@@ -287,46 +322,76 @@ generateTwoArgsInstance context hir_type class_name call_compare_discriminants p
                     var0_decl_expr <- ME.Expr var0_decl unit_type
                     var_ref0 <- ME.VarRef var0
                     var_ref0_expr <- ME.Expr var_ref0 mir_adt_type
-                    (context, cases) <- adt.variants |> List.iter |> fold (\(context, cases), variant -> do
-                        variant_index <- getLength cases
-                        checker <- ME.VariantChecker variant_index var0 mir_adt_type
-                        (context, var1) <- getNextTempVar context
-                        arg_ref1 <- ME.ArgRef 1
-                        arg_ref1_expr <- ME.Expr arg_ref1 mir_adt_type
-                        var1_decl <- ME.VarDecl var1 arg_ref1_expr
-                        var1_decl_expr <- ME.Expr var1_decl unit_type
-                        var_ref1 <- ME.VarRef var1
-                        var_ref1_expr <- ME.Expr var_ref1 mir_adt_type
-                        (variant_items, _) <- variant.items |> List.iter |> fold (\(items, index), item -> do
-                            item <- (Util.getFieldName index, item)
-                            items <- items + [item]
-                            (items, index + 1)) ([], 0)
-                        (context, call_expr) <- process_member_fn context variant_items var_ref0_expr var_ref1_expr
-                        case_ok <- ME.Case (ME.VariantChecker variant_index var1 mir_adt_type) call_expr
-                        ME.Expr _ case_type <- call_expr
-                        (context, case_of) <- if getLength adt.variants == 1
-                            then do
-                                (context, ME.CaseOf var_ref1_expr [case_ok])
-                            else do
-                                get_discriminant_qn <- HP.FullPath getStdOpsModuleName getFnGetDiscriminantName
-                                (context, call_get_discriminant0) <- callGetDiscriminant context hir_type [arg_ref0_expr]
-                                (context, call_get_discriminant1) <- callGetDiscriminant context hir_type [arg_ref1_expr]
-                                (context, compare_discriminants) <- call_compare_discriminants context TUtil.getIntType call_get_discriminant0 call_get_discriminant1
-                                case_not_ok <- ME.Case ME.WildcardChecker compare_discriminants
-                                (context, ME.CaseOf var_ref1_expr [case_ok, case_not_ok])
-                        case_of_expr <- ME.Expr case_of case_type
-                        body <- ME.Do [var1_decl_expr, case_of_expr]
-                        body_expr <- ME.Expr body case_type
-                        c <- ME.Case checker body_expr
-                        cases <- cases + [c]
-                        (context, cases)) (context, [])
-                    ME.Case _ first_case_expr <- atIndex cases 0
-                    ME.Expr _ case_type <- first_case_expr
-                    case_of <- ME.CaseOf var_ref0_expr cases
-                    case_of_expr <- ME.Expr case_of case_type
-                    body <- ME.Do [var0_decl_expr, case_of_expr]
-                    body_expr <- ME.Expr body case_type
-                    (context, body_expr)
+                    if getLength adt.variants == 1
+                        then do
+                            (context, var1) <- getNextTempVar context
+                            var_ref1 <- ME.VarRef var1
+                            var_ref1_expr <- ME.Expr var_ref1 mir_adt_type
+                            arg_ref1 <- ME.ArgRef 1
+                            arg_ref1_expr <- ME.Expr arg_ref1 mir_adt_type
+                            var1_decl <- ME.VarDecl var1 arg_ref1_expr
+                            var1_decl_expr <- ME.Expr var1_decl unit_type
+                            variant <- atIndex adt.variants 0
+                            (variant_items, _) <- variant.items |> List.iter |> fold (\(items, index), item -> do
+                                    item <- (Util.getFieldName index, item)
+                                    items <- items + [item]
+                                    (items, index + 1)) ([], 0)
+                            (context, call_expr) <- process_member_fn context variant_items var_ref0_expr var_ref1_expr
+                            ME.Expr _ call_type <- call_expr
+                            body <- ME.Do [var0_decl_expr, var1_decl_expr, call_expr]
+                            body_expr <- ME.Expr body call_type
+                            (context, body_expr)
+                        else do
+                            (context, cases) <- adt.variants |> List.iter |> fold (\(context, cases), variant -> do
+                                (context, var0_in) <- getNextTempVar context
+                                variant_index <- getLength cases
+                                checker <- ME.VariantChecker variant_index var0_in mir_adt_type
+                                (context, var1) <- getNextTempVar context
+                                (context, var1_in) <- getNextTempVar context
+                                variant_type <- getVariantType context variant_index mir_adt_type
+                                arg_ref1 <- ME.ArgRef 1
+                                arg_ref1_expr <- ME.Expr arg_ref1 mir_adt_type
+                                var1_decl <- ME.VarDecl var1 arg_ref1_expr
+                                var1_decl_expr <- ME.Expr var1_decl unit_type
+                                var_ref1 <- ME.VarRef var1
+                                var_ref1_expr <- ME.Expr var_ref1 mir_adt_type
+                                var_ref1_in <- ME.VarRef var1_in
+                                var_ref1_in_expr <- ME.Expr var_ref1_in variant_type
+                                (variant_items, _) <- variant.items |> List.iter |> fold (\(items, index), item -> do
+                                    item <- (Util.getFieldName index, item)
+                                    items <- items + [item]
+                                    (items, index + 1)) ([], 0)
+                                var_ref0_in <- ME.VarRef var0_in
+                                var_ref0_in_expr <- ME.Expr var_ref0_in variant_type
+                                (context, call_expr) <- process_member_fn context variant_items var_ref0_in_expr var_ref1_in_expr
+                                ME.Expr _ case_type <- call_expr
+                                case_body <- ME.Expr (ME.Do [call_expr]) case_type
+                                case_ok <- ME.Case (ME.VariantChecker variant_index var1_in mir_adt_type) case_body
+                                (context, case_of) <- if getLength adt.variants == 1
+                                    then do
+                                        (context, ME.CaseOf var_ref1_expr [case_ok])
+                                    else do
+                                        get_discriminant_qn <- HP.FullPath getStdOpsModuleName getFnGetDiscriminantName
+                                        (context, call_get_discriminant0) <- callGetDiscriminant context hir_type [arg_ref0_expr]
+                                        (context, call_get_discriminant1) <- callGetDiscriminant context hir_type [arg_ref1_expr]
+                                        (context, compare_discriminants) <- call_compare_discriminants context TUtil.getIntType call_get_discriminant0 call_get_discriminant1
+                                        ME.Expr _ case_type <- compare_discriminants
+                                        case_body <- ME.Expr (ME.Do [compare_discriminants]) case_type
+                                        case_not_ok <- ME.Case ME.WildcardChecker case_body
+                                        (context, ME.CaseOf var_ref1_expr [case_ok, case_not_ok])
+                                case_of_expr <- ME.Expr case_of case_type
+                                body <- ME.Do [var1_decl_expr, case_of_expr]
+                                body_expr <- ME.Expr body case_type
+                                c <- ME.Case checker body_expr
+                                cases <- cases + [c]
+                                (context, cases)) (context, [])
+                            ME.Case _ first_case_expr <- atIndex cases 0
+                            ME.Expr _ case_type <- first_case_expr
+                            case_of <- ME.CaseOf var_ref0_expr cases
+                            case_of_expr <- ME.Expr case_of case_type
+                            body <- ME.Do [var0_decl_expr, case_of_expr]
+                            body_expr <- ME.Expr body case_type
+                            (context, body_expr)
                 DS.Record record -> do
                     (context, record) <- TS.instantiateRecord context record hir_type
                     (context, mir_record_type) <- TS.processType context hir_type

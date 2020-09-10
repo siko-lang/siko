@@ -120,6 +120,14 @@ createIteratorVariant context name iterator_instance = do
         None -> addNamedType context iterator_instance.iterator_type mir_iterator_type
     context
 
+getVariantType :: Context -> Int -> MT.Type -> MT.Type
+getVariantType context index adt_type = do
+    adt <- case adt_type of
+            MT.Adt adt_id -> getAdt context.type_store adt_id
+            _ -> panic "Adt is not an adt"
+    variant <- atIndex adt.variants index
+    MT.Record variant.type
+
 createGetNextFunctionBody :: Context -> IteratorInfo -> MP.Identity -> Context
 createGetNextFunctionBody context iterator function_id = do
     mir_get_next_function <- MP.getFunction context.mir_program function_id
@@ -129,8 +137,8 @@ createGetNextFunctionBody context iterator function_id = do
         (context, mir_closure_type) <- processType context iterator_instance.closure_type
         (context, mir_iterator_type) <- processType context iterator_instance.iterator_type
         IteratorInstanceId id <- iterator_instance.id
-        iter_var <- ME.Named "iter"
-        iter_var_ref_expr <- ME.Expr (ME.VarRef iter_var) mir_iterator_type
+        (context, iter_var) <- getNextTempVar context
+        iter_var_ref_expr <- ME.Expr (ME.VarRef iter_var) (getVariantType context id mir_iterator_type)
         closure_call_id <- CS.getClosureCall context.closure_store iterator_instance.closure_type
         state_field_name <- getFieldName 0
         closure_field_name <- getFieldName 1
@@ -145,16 +153,19 @@ createGetNextFunctionBody context iterator function_id = do
             _ -> panic "getNext Closure call function result is not an adt"
         closure_call <- ME.StaticFunctionCall closure_call_id [closure_field_access_expr, state_field_access_expr]
         closure_call_expr <- ME.Expr closure_call closure_call_function_result
-        next_var <- ME.Named "next"
-        next_var_decl <- ME.VarDecl next_var closure_call_expr
-        next_var_decl_expr <- ME.Expr next_var_decl unit_type
-        next_var_ref_expr <- ME.Expr (ME.VarRef next_var) closure_call_function_result
+        (context, next_var) <- getNextTempVar context
+        (context, next_some_var) <- getNextTempVar context
+        (context, next_none_var) <- getNextTempVar context
         first <- atIndex mir_option_type.variants 0
         (some_index, none_index) <- if first.name == getOptionSomeVariantName
             then (0, 1)
             else (1, 0)
-        none_checker <- ME.VariantChecker none_index next_var closure_call_function_result
-        some_checker <- ME.VariantChecker some_index next_var closure_call_function_result
+        next_var_decl <- ME.VarDecl next_var closure_call_expr
+        next_var_decl_expr <- ME.Expr next_var_decl unit_type
+        next_var_ref_expr <- ME.Expr (ME.VarRef next_var) closure_call_function_result
+        next_some_var_ref_expr <- ME.Expr (ME.VarRef next_some_var) (getVariantType context some_index closure_call_function_result)
+        some_checker <- ME.VariantChecker some_index next_some_var closure_call_function_result
+        none_checker <- ME.VariantChecker none_index next_none_var closure_call_function_result
         mir_get_next_function_result_type <- mir_get_next_function.result
         hir_iterator_elem_type <- case iterator_instance.iterator_type of
             HT.Named _ args -> Option.unwrap (head args)
@@ -175,59 +186,62 @@ createGetNextFunctionBody context iterator function_id = do
         none_case <- do
             none_body <- ME.StaticFunctionCall none_function_id []
             none_body_expr <- ME.Expr none_body mir_get_next_function_result_type
+            none_body_expr <- ME.Expr (ME.Do [none_body_expr]) mir_get_next_function_result_type
             ME.Case none_checker none_body_expr
-        some_case <- do
-            some_body <- do
-                (tuple_var_decl_expr, tuple_var_ref_expr) <- do
-                    tuple_var <- ME.Named "tuple"
-                    field_access_expr <- ME.Expr (ME.FieldAccess (getFieldName 0) next_var_ref_expr) mir_closure_result_tuple_type
+        (context, some_case) <- do
+            (context, some_body) <- do
+                (context, tuple_var_decl_expr, tuple_var_ref_expr) <- do
+                    (context, tuple_var) <- getNextTempVar context
+                    field_access_expr <- ME.Expr (ME.FieldAccess (getFieldName 0) next_some_var_ref_expr) mir_closure_result_tuple_type
                     tuple_var_decl <- ME.VarDecl tuple_var field_access_expr
                     tuple_var_decl_expr <- ME.Expr tuple_var_decl unit_type
                     tuple_var_ref_expr <- ME.Expr (ME.VarRef tuple_var) mir_closure_result_tuple_type
-                    (tuple_var_decl_expr, tuple_var_ref_expr)
-                (new_state_var_decl_expr, new_state_var_ref_expr) <- do
-                    new_state_var <- ME.Named "new_state"
+                    (context, tuple_var_decl_expr, tuple_var_ref_expr)
+                (context, new_state_var_decl_expr, new_state_var_ref_expr) <- do
+                    (context, new_state_var) <- getNextTempVar context
                     field_access_expr <- ME.Expr (ME.FieldAccess (getFieldName 0) tuple_var_ref_expr) mir_state_type
                     new_state_var_decl <- ME.VarDecl new_state_var field_access_expr
                     new_state_var_decl_expr <- ME.Expr new_state_var_decl unit_type
                     new_state_var_ref_expr <- ME.Expr (ME.VarRef new_state_var) mir_state_type
-                    (new_state_var_decl_expr, new_state_var_ref_expr)
-                (next_value_var_decl_expr, next_value_var_ref_expr) <- do
-                    next_value_var <-  ME.Named "next_value"
+                    (context, new_state_var_decl_expr, new_state_var_ref_expr)
+                (context, next_value_var_decl_expr, next_value_var_ref_expr) <- do
+                    (context, next_value_var) <- getNextTempVar context
                     field_access_expr <- ME.Expr (ME.FieldAccess (getFieldName 1) tuple_var_ref_expr) mir_iterator_elem_type
                     next_value_var_decl <- ME.VarDecl next_value_var field_access_expr
                     next_value_var_decl_expr <- ME.Expr next_value_var_decl unit_type
                     next_value_var_ref_expr <- ME.Expr (ME.VarRef next_value_var) mir_iterator_elem_type
-                    (next_value_var_decl_expr, next_value_var_ref_expr)
-                (new_instance_var_decl_expr, new_instance_var_ref_expr) <- do
+                    (context, next_value_var_decl_expr, next_value_var_ref_expr)
+                (context, new_instance_var_decl_expr, new_instance_var_ref_expr) <- do
                     instance_ctor <- case get context.iterator_store.iterator_instance_ctors iterator_instance of
                         Some instance_ctor -> instance_ctor
                         None -> panic "iterator instance has no variant ctor"
                     instance_ctor_call <- ME.StaticFunctionCall instance_ctor [new_state_var_ref_expr, closure_field_access_expr]
                     instance_ctor_call_expr <- ME.Expr instance_ctor_call mir_iterator_type
-                    new_instance_var <- ME.Named "new_instance"
+                    (context, new_instance_var) <- getNextTempVar context
                     new_instance_var_decl <- ME.VarDecl new_instance_var instance_ctor_call_expr
                     new_instance_var_decl_expr <- ME.Expr new_instance_var_decl unit_type
                     new_instance_var_ref_expr <- ME.Expr (ME.VarRef new_instance_var) mir_iterator_type
-                    (new_instance_var_decl_expr, new_instance_var_ref_expr)
-                (result_tuple_var_decl_expr, some_ctor_call_expr) <- do
+                    (context, new_instance_var_decl_expr, new_instance_var_ref_expr)
+                (context, result_tuple_var_decl_expr, some_ctor_call_expr) <- do
                     result_tuple_ctor_call <- ME.StaticFunctionCall result_tuple_type_ctor_id [new_instance_var_ref_expr, next_value_var_ref_expr]
                     result_tuple_ctor_call_expr <- ME.Expr result_tuple_ctor_call mir_result_tuple_type
-                    result_tuple_var <- ME.Named "result_tuple"
+                    (context, result_tuple_var) <- getNextTempVar context
                     result_tuple_var_decl <- ME.VarDecl result_tuple_var result_tuple_ctor_call_expr
                     result_tuple_var_decl_expr <- ME.Expr result_tuple_var_decl unit_type
                     result_tuple_var_ref_expr <- ME.Expr (ME.VarRef result_tuple_var) mir_result_tuple_type
                     some_ctor_call <- ME.StaticFunctionCall some_function_id [result_tuple_var_ref_expr]
                     some_ctor_call_expr <- ME.Expr some_ctor_call mir_get_next_function_result_type
-                    (result_tuple_var_decl_expr, some_ctor_call_expr)
-                ME.Do [tuple_var_decl_expr,
+                    (context, result_tuple_var_decl_expr, some_ctor_call_expr)
+                body <- ME.Do [tuple_var_decl_expr,
                        new_state_var_decl_expr,
                        next_value_var_decl_expr,
                        new_instance_var_decl_expr,
                        result_tuple_var_decl_expr,
                        some_ctor_call_expr]
+                (context, body)
             some_body_expr <- ME.Expr some_body mir_get_next_function_result_type
-            ME.Case some_checker some_body_expr
+            some_body_expr <- ME.Expr (ME.Do [some_body_expr]) mir_get_next_function_result_type
+            (context, ME.Case some_checker some_body_expr)
         case_next_cases <- [some_case, none_case]
         case_next <- ME.CaseOf next_var_ref_expr case_next_cases
         case_next_expr <- ME.Expr case_next mir_get_next_function_result_type
