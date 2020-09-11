@@ -124,7 +124,7 @@ convertExpr context mir_expr = do
                 else R.Block args
         ME.StaticFunctionCall id args -> do
             rust_function_name <- getRustIdentity id
-            args <- args |> List.iter |> map (\arg -> R.MethodCall (convertExpr context arg) cloneName []) |> toList
+            args <- args |> List.iter |> map (\arg -> convertExpr context arg) |> toList
             R.FunctionCall rust_function_name args
         ME.IntegerLiteral lit -> R.StructCtor intTypeName [R.FieldInitItem innerValueField (R.IntegerLiteral lit)]
         ME.FloatLiteral lit -> R.StructCtor floatTypeName [R.FieldInitItem innerValueField (R.FloatLiteral lit)]
@@ -137,17 +137,19 @@ convertExpr context mir_expr = do
             n <- show v
             ME.Expr _ rhs_type <- rhs
             rhs_expr <- convertExpr context rhs
-            rhs_expr <- R.MethodCall rhs_expr cloneName []
-            R.VarDecl n rhs_expr (Some (convertType rhs_type))
+            t <- case rhs_type of
+                MT.Never -> None
+                _ -> Some (convertType rhs_type)
+            R.VarDecl n rhs_expr t
         ME.VarRef v -> R.VarRef (show v)
-        ME.ArgRef index -> R.MethodCall (R.VarRef (getArgName index)) cloneName []
+        ME.ArgRef index -> R.VarRef (getArgName index)
         ME.CaseOf body cases -> do
             cases <- cases |> List.iter |> map (\c -> do
                 case_pattern <- convertPattern context.type_store c.checker
                 case_body <- convertExpr context c.body
                 R.MatchCase case_pattern case_body) |> toList
-            clone_call <- R.MethodCall (convertExpr context body) cloneName []
-            R.Match clone_call cases
+            body <- convertExpr context body
+            R.Match body cases
         ME.FieldAccess name receiver -> do
             field_access <- R.FieldAccess (getRustFriendlyName name) (convertExpr context receiver)
             deref <- R.FunctionCall derefName [R.Ref field_access]
@@ -178,7 +180,7 @@ convertExpr context mir_expr = do
         ME.RecordUpdate v items -> do
             n <- show v
             new <- "new"
-            var_decl <- R.VarDeclMut new (R.MethodCall (R.VarRef n) cloneName []) None
+            var_decl <- R.VarDeclMut new (R.VarRef n) None
             assignments <- items |> List.iter |> map (\update -> do
             lhs <- (R.FieldAccess (getRustFriendlyName update.field_name) (R.VarRef new))
             rhs <- (convertExpr context update.body)
@@ -186,13 +188,11 @@ convertExpr context mir_expr = do
             R.Block ([var_decl] + assignments + [R.VarRef new])
         ME.List args -> do
             rust_type <- convertType expr_type
-            args <- args |> List.iter |> map (\arg -> do
-                item_expr <- convertExpr context arg
-                R.MethodCall item_expr cloneName []) |> toList
+            args <- args |> List.iter |> map (\arg -> convertExpr context arg) |> toList
             R.StructCtor (show rust_type) [R.FieldInitItem innerValueField (R.FunctionCall rcNew [R.List args])]
-        ME.Clone v -> do
-            n <- show v
-            R.MethodCall (R.VarRef n) cloneName []
+        ME.Clone expr -> do
+            expr <- convertExpr context expr
+            R.MethodCall expr cloneName []
         ME.Multi _ -> panic "Multi in transpiler"
 
 convertRecord :: MD.Record -> Map ExternalId ExternStructBuilder -> R.Struct

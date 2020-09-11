@@ -1,0 +1,121 @@
+module Siko.Backend.Passes.Copy where
+
+import Siko.MIR.Expr
+import Siko.MIR.Function
+import Siko.MIR.Program as P
+import Map
+
+data Context = { used_var_index :: Int }
+
+processArgs :: Context -> [Expr] -> (Context, [Expr])
+processArgs context args = do
+    args |> List.iter |> fold (\(context, args), arg -> do
+        (context, arg) <- processExpr context arg
+        args <- args + [arg]
+        (context, args)) (context, [])
+
+processBlock :: Context -> [Expr] -> (Context, [Expr])
+processBlock context exprs =
+    exprs |> List.iter |> fold (\(context, exprs), expr -> do
+        (context, expr) <- processExpr context expr
+        Expr inner _ <- expr
+        exprs <- case inner of
+            Multi items -> exprs + items
+            _ -> exprs + [expr]
+        (context, exprs)) (context, [])
+
+processExpr :: Context -> Expr -> (Context, Expr)
+processExpr context expr = do
+    Expr s_expr type <- expr
+    case s_expr of
+        Do items -> do
+            (context, items) <- processBlock context items
+            (context, Expr (Do items) type)
+        Multi _ -> panic "Multi expr found in processExpr"
+        StaticFunctionCall id args -> do
+            (context, args) <- processArgs context args
+            expr <- Expr (StaticFunctionCall id args) type
+            (context, expr)
+        IntegerLiteral lit -> (context, expr)
+        StringLiteral lit -> (context, expr)
+        FloatLiteral lit -> (context, expr)
+        CharLiteral lit -> (context, expr)
+        VarDecl v arg -> do
+            case v of
+                BackendVar i -> do
+                    Expr arg_ref arg_type <- arg
+                    case arg_ref of
+                        VarRef ref -> do
+                            clone <- Expr (Clone arg) arg_type
+                            (context, Expr (VarDecl v clone) type)
+                        ArgRef i -> do
+                            clone <- Expr (Clone arg) arg_type
+                            (context, Expr (VarDecl v clone) type)
+                        _ -> do
+                            (context, arg) <- processExpr context arg
+                            (context, Expr (VarDecl v arg) type)
+                _ -> do
+                    (context, arg) <- processExpr context arg
+                    (context, Expr (VarDecl v arg) type)
+        VarRef v -> (context, expr)
+        FieldAccess name arg -> do
+            (context, arg) <- processExpr context arg
+            (context, Expr (FieldAccess name arg) type)
+        If cond true_branch false_branch -> do
+            (context, cond) <- processExpr context cond
+            (context, true_branch) <- processExpr context true_branch
+            (context, false_branch) <- processExpr context false_branch
+            (context, Expr (If cond true_branch false_branch) type)
+        List args -> do
+            (context, args) <- processArgs context args
+            expr <- Expr (List args) type
+            (context, expr)
+        Return arg -> do
+            (context, arg) <- processExpr context arg
+            (context, Expr (Return arg) type)
+        Continue arg -> do
+            (context, arg) <- processExpr context arg
+            (context, Expr (Continue arg) type)
+        Break arg -> do
+            (context, arg) <- processExpr context arg
+            (context, Expr (Break arg) type)
+        ArgRef _ -> (context, expr)
+        RecordUpdate v updates -> do
+            (context, updates) <- updates |> List.iter |> fold (\(context, updates), update -> do
+                (context, updated_body) <- processExpr context update.body
+                update <- update { body = updated_body }
+                updates <- updates + [update]
+                (context, updates)) (context, [])
+            (context, Expr (RecordUpdate v updates) type)
+        Loop v initializer items -> do
+            (context, initializer) <- processExpr context initializer
+            (context, items) <- processBlock context items
+            (context, Expr (Loop v initializer items) type)
+        CaseOf body cases -> do
+            (context, body) <- processExpr context body
+            (context, cases) <- cases |> List.iter |> fold (\(context, cases), case_branch -> do
+                (context, updated_body) <- processExpr context case_branch.body
+                case_branch <- case_branch { body = updated_body }
+                cases <- cases + [case_branch]
+                (context, cases)) (context, [])
+            (context, Expr (CaseOf body cases) type)
+        Clone _ -> panic "Clone expr found in processExpr"
+
+initContext :: Context
+initContext = Context 0
+
+processFunction :: Function -> Function
+processFunction function = case function.kind of
+    Normal body -> do
+        context <- initContext
+        (context, updated_body) <- processExpr context body
+        function { kind = Normal updated_body }
+    _ -> function
+
+processProgram :: P.Program -> P.Program
+processProgram program = do
+    functions <- program.functions |> Map.iter |> map (\(id, function) -> do
+        function <- processFunction function
+        (id, function)) |> toMap
+    program <- program { functions = functions }
+    program

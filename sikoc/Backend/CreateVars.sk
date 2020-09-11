@@ -12,7 +12,7 @@ data Context = { used_var_index :: Int,
 getNextUsedVar :: Context -> (Context, Var)
 getNextUsedVar context = do
     index <- context.used_var_index
-    (context { used_var_index = index + 1}, UsedVar index)
+    (context { used_var_index = index + 1}, BackendVar index)
 
 convertArgsToTempVars :: Context -> [Expr] -> (Context, [Expr], [Expr])
 convertArgsToTempVars context args = do
@@ -22,9 +22,10 @@ convertArgsToTempVars context args = do
         extras <- extras + exs
         (context, extras, args)) (context, [], [])
 
-createTempVar :: Context -> [Expr] -> Expr -> T.Type -> (Context, [Expr], Expr)
-createTempVar context extras expr type = do
+createTempVar :: Context -> [Expr] -> Expr -> (Context, [Expr], Expr)
+createTempVar context extras expr = do
     (context, var) <- getNextUsedVar context
+    Expr _ type <- expr
     decl <- VarDecl var expr
     decl <- Expr decl context.unit_type
     var_ref <- VarRef var
@@ -56,44 +57,51 @@ processExpr context expr = do
     case s_expr of
         Do items -> do
             (context, items) <- processBlock context items
-            (context, [], Expr (Do items) type)
+            expr <- Expr (Do items) type
+            createTempVar context [] expr
         Multi _ -> panic "Multi expr found in processExpr"
         StaticFunctionCall id args -> do
             (context, extras, args) <- convertArgsToTempVars context args
             expr <- Expr (StaticFunctionCall id args) type
+            (context, extras, expr) <- createTempVar context extras expr
             (context, extras, expr)
-        IntegerLiteral lit -> (context, [], expr)
-        StringLiteral lit -> (context, [], expr)
-        FloatLiteral lit -> (context, [], expr)
-        CharLiteral lit -> (context, [], expr)
+        IntegerLiteral lit -> createTempVar context [] expr
+        StringLiteral lit -> createTempVar context [] expr
+        FloatLiteral lit -> createTempVar context [] expr
+        CharLiteral lit -> createTempVar context [] expr
         VarDecl v arg -> do
             (context, extras, arg) <- processExpr context arg
             (context, extras, Expr (VarDecl v arg) type)
-        VarRef v -> createTempVar context [] expr type
+        VarRef v -> createTempVar context [] expr
         FieldAccess name arg -> do
             (context, extras, arg) <- processExpr context arg
-            (context, extras, Expr (FieldAccess name arg) type)
+            expr <- Expr (FieldAccess name arg) type
+            createTempVar context extras expr
         If cond true_branch false_branch -> do
             (context, cond_extras, cond) <- processExpr context cond
             (context, true_extras, true_branch) <- processExpr context true_branch
             true_branch <- createBlock true_extras true_branch
             (context, false_extras, false_branch) <- processExpr context false_branch
             false_branch <- createBlock false_extras false_branch
-            (context, cond_extras, Expr (If cond true_branch false_branch) type)
+            expr <- Expr (If cond true_branch false_branch) type
+            createTempVar context cond_extras expr
         List args -> do
             (context, extras, args) <- convertArgsToTempVars context args
             expr <- Expr (List args) type
-            (context, extras, expr)
+            createTempVar context extras expr
         Return arg -> do
             (context, extras, arg) <- processExpr context arg
-            (context, extras, Expr (Return arg) type)
+            expr <- Expr (Return arg) type
+            (context, extras, expr)
         Continue arg -> do
             (context, extras, arg) <- processExpr context arg
-            (context, extras, Expr (Continue arg) type)
+            expr <- Expr (Continue arg) type
+            (context, extras, expr)
         Break arg -> do
             (context, extras, arg) <- processExpr context arg
-            (context, extras, Expr (Break arg) type)
-        ArgRef _ -> createTempVar context [] expr type
+            expr <- Expr (Break arg) type
+            (context, extras, expr)
+        ArgRef _ -> createTempVar context [] expr
         RecordUpdate v updates -> do
             var_ref <- VarRef v
             var_ref <- Expr var_ref type
@@ -107,11 +115,13 @@ processExpr context expr = do
                 updates <- updates + [update]
                 extras <- extras + exs
                 (context, extras, updates)) (context, extras, [])
-            (context, extras, Expr (RecordUpdate var updates) type)
+            expr <- Expr (RecordUpdate var updates) type
+            createTempVar context extras expr
         Loop v initializer items -> do
             (context, extras, initializer) <- processExpr context initializer
             (context, items) <- processBlock context items
-            (context, extras, Expr (Loop v initializer items) type)
+            expr <- Expr (Loop v initializer items) type
+            createTempVar context extras expr
         CaseOf body cases -> do
             (context, extras, body) <- processExpr context body
             (context, cases) <- cases |> List.iter |> fold (\(context, cases), case_branch -> do
@@ -120,7 +130,8 @@ processExpr context expr = do
                 case_branch <- case_branch { body = updated_body }
                 cases <- cases + [case_branch]
                 (context, cases)) (context, [])
-            (context, extras, Expr (CaseOf body cases) type)
+            expr <- Expr (CaseOf body cases) type
+            createTempVar context extras expr
         Clone _ -> panic "Clone expr found in processExpr"
 
 initContext :: T.Type -> Context
