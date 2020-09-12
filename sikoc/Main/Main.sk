@@ -4,27 +4,31 @@ import Hack
 import Siko.Parser
 import Siko.Resolver as R
 import Siko.Typechecker as TC
-import Siko.Transpiler
+import Siko.Transpiler.TranspilerRc as TRC
+import Siko.Transpiler.TranspilerNormal as TN
 import Siko.Diagnostics
 import Siko.Backend as B
 
 main = do
-    println "Reading input.."
+    //println "Reading input.."
     source <- readTextFile "sikoc.sk"
-    println "Parsing.."
+    //println "Parsing.."
     (program, lexer_errors, parser_errors) <- parse source
     lexer_errors |> List.iter |> forEach \error -> printLexerError error
     parser_errors |> List.iter |> forEach \error -> printParserError error
-    println "Resolving names.."
+    //println "Resolving names.."
     (hir_program, var_gen, resolver_errors) <- R.processProgram program
     resolver_errors |> List.iter |> forEach \error -> printResolverError error
-    println "Typechecking.."
+    //println "Typechecking.."
     case TC.processProgram hir_program var_gen of
         Ok mir_program -> do
-            println "Optimizing.."
+            //println "Optimizing.."
             mir_program <- B.processProgram mir_program
-            println "Transpiling.."
-            rust_output <- transpile mir_program
+            //println "Transpiling RC.."
+            rust_output <- TRC.transpile mir_program
             writeTextFile "sikoc_output.rs" rust_output
+            //println "Transpiling Normal.."
+            rust_output <- TN.transpile mir_program
+            writeTextFile "sikoc_output_normal.rs" rust_output
         Err typechecker_errors -> typechecker_errors |> List.iter |> forEach \error -> printTypecheckerError error
     ()

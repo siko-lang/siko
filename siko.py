@@ -79,14 +79,16 @@ def compile_and_run(folder_name):
         cc = os.path.join(folder_name, "sikoc_rust")
         link_safe(os.path.join("..", "..", compiled), cc)
         os.chdir(folder_name)
-        print("Running compiled in %s" % folder_name)
+        #print("Running compiled in %s" % folder_name)
         subprocess.call(["./sikoc_rust"])
     else:
         os.chdir(folder_name)
-        print("Running interpreter")
+        #print("Running interpreter")
         subprocess.check_call(["./siko", "sikoc"])
 
     subprocess.check_call(["rustfmt", "sikoc_output.rs"])
+    #if os.path.exists("./sikoc_output_normal.rs"):
+    #    subprocess.call(["rustc", "sikoc_output_normal.rs", "-o", "rust_program_normal"])
     subprocess.check_call(["rustc", "sikoc_output.rs", "-o", "rust_program"])
     subprocess.check_call(["./rust_program"])
 
