@@ -1,6 +1,12 @@
 module Set where
 
-data Set a = { items :: [a] } deriving (Show)
+data Set a = { items :: [a] }
+
+instance (Show a) => Show Set a where
+    show a = show a.items
+
+instance (PartialEq a, Ord a) => Add Set a where
+    opAdd a b = Set ((a.items + b.items) |> sort |> dedup)
 
 empty a :: Set a
 empty = Set []

@@ -7,6 +7,7 @@ import Siko.MIR.Type as T
 data Var = Named String
          | Temp Int
          | BackendVar Int
+         | Arg Int
          deriving (PartialEq, Eq, PartialOrd, Ord)
 
 instance Show Var where
@@ -14,6 +15,7 @@ instance Show Var where
         Named v -> "{}" % v
         Temp v -> "tmp_{}" % v
         BackendVar v -> "var_{}" % v
+        Arg i -> "@{}" % i
 
 data RecordUpdateItem = { field_name :: String,
                           body :: Expr }
@@ -56,7 +58,6 @@ data SimpleExpr = Do [Expr]
             | Return Expr
             | Continue Expr
             | Break Expr
-            | ArgRef Int
             | RecordUpdate Var [RecordUpdateItem]
             | Loop Var Expr [Expr]
             | CaseOf Expr [Case]
@@ -122,8 +123,6 @@ prettyPrint expr ind = do
             s <- if simple then s else "({})" % s
             s <- "break {}" % s
             (s, simple)
-        ArgRef index -> do
-            ("@{}" % index, True)
         RecordUpdate var updates -> do
             args <- updates |> List.iter |> map (\update -> do
                 (s, simple) <- prettyPrint update.body ind

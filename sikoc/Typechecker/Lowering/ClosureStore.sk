@@ -152,7 +152,7 @@ createClosures context = do
             next_fn <- case Option.unwrap (get context.closure_store.successors closure_instance) of
                 NextClosureInstance fn -> fn
                 RealFunctionCall fn -> fn
-            arg_ref1 <- ME.ArgRef 1
+            arg_ref1 <- ME.VarRef (ME.Arg 1)
             arg_ref1_type <- atIndex closure_call_function.args 1
             arg_ref1_expr <- ME.Expr arg_ref1 arg_ref1_type
             args <- args + [arg_ref1_expr]
@@ -165,7 +165,7 @@ createClosures context = do
             c <- ME.Case checker body_expr
             cases <- cases + [c]
             (context, cases, index + 1)) (context, [], 0)
-        arg_ref0 <- ME.ArgRef 0
+        arg_ref0 <- ME.VarRef (ME.Arg 0)
         arg_ref0_type <- atIndex closure_call_function.args 0
         arg_ref0_expr <- ME.Expr arg_ref0 arg_ref0_type
         new_body <- ME.CaseOf arg_ref0_expr cases

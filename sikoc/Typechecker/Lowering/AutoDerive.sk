@@ -197,7 +197,7 @@ generateShowInstance context hir_type class_name = do
                     (context, unit_type) <- TS.processType context (HT.Tuple [])
                     (context, var) <- getNextTempVar context
                     var_ref_expr <- ME.Expr (ME.VarRef var) mir_adt_type
-                    arg_ref_expr <- ME.Expr (ME.ArgRef 0) mir_adt_type
+                    arg_ref_expr <- ME.Expr (ME.VarRef (ME.Arg 0)) mir_adt_type
                     decl <- ME.VarDecl var arg_ref_expr
                     decl_expr <- ME.Expr decl unit_type
                     if getLength adt.variants == 1
@@ -258,7 +258,7 @@ generateShowInstance context hir_type class_name = do
                     (context, unit_type) <- TS.processType context (HT.Tuple [])
                     (context, var) <- getNextTempVar context
                     var_ref_expr <- ME.Expr (ME.VarRef var) mir_record_type
-                    arg_ref_expr <- ME.Expr (ME.ArgRef 0) mir_record_type
+                    arg_ref_expr <- ME.Expr (ME.VarRef (ME.Arg 0)) mir_record_type
                     decl <- ME.VarDecl var arg_ref_expr
                     decl_expr <- ME.Expr decl unit_type
                     (context, fmt_args, mir_items) <- record.fields |> List.iter
@@ -316,7 +316,7 @@ generateTwoArgsInstance context hir_type class_name call_compare_discriminants p
                     (context, mir_adt_type) <- TS.processType context hir_type
                     (context, unit_type) <- TS.processType context (HT.Tuple [])
                     (context, var0) <- getNextTempVar context
-                    arg_ref0 <- ME.ArgRef 0
+                    arg_ref0 <- ME.VarRef (ME.Arg 0)
                     arg_ref0_expr <- ME.Expr arg_ref0 mir_adt_type
                     var0_decl <- ME.VarDecl var0 arg_ref0_expr
                     var0_decl_expr <- ME.Expr var0_decl unit_type
@@ -327,7 +327,7 @@ generateTwoArgsInstance context hir_type class_name call_compare_discriminants p
                             (context, var1) <- getNextTempVar context
                             var_ref1 <- ME.VarRef var1
                             var_ref1_expr <- ME.Expr var_ref1 mir_adt_type
-                            arg_ref1 <- ME.ArgRef 1
+                            arg_ref1 <- ME.VarRef (ME.Arg 1)
                             arg_ref1_expr <- ME.Expr arg_ref1 mir_adt_type
                             var1_decl <- ME.VarDecl var1 arg_ref1_expr
                             var1_decl_expr <- ME.Expr var1_decl unit_type
@@ -349,7 +349,7 @@ generateTwoArgsInstance context hir_type class_name call_compare_discriminants p
                                 (context, var1) <- getNextTempVar context
                                 (context, var1_in) <- getNextTempVar context
                                 variant_type <- getVariantType context variant_index mir_adt_type
-                                arg_ref1 <- ME.ArgRef 1
+                                arg_ref1 <- ME.VarRef (ME.Arg 1)
                                 arg_ref1_expr <- ME.Expr arg_ref1 mir_adt_type
                                 var1_decl <- ME.VarDecl var1 arg_ref1_expr
                                 var1_decl_expr <- ME.Expr var1_decl unit_type
@@ -395,9 +395,9 @@ generateTwoArgsInstance context hir_type class_name call_compare_discriminants p
                 DS.Record record -> do
                     (context, record) <- TS.instantiateRecord context record hir_type
                     (context, mir_record_type) <- TS.processType context hir_type
-                    var_ref0 <- ME.ArgRef 0
+                    var_ref0 <- ME.VarRef (ME.Arg 0)
                     var_ref0_expr <- ME.Expr var_ref0 mir_record_type
-                    var_ref1 <- ME.ArgRef 1
+                    var_ref1 <- ME.VarRef (ME.Arg 1)
                     var_ref1_expr <- ME.Expr var_ref1 mir_record_type
                     record_items <- record.fields |> List.iter |> map (\DS.RecordField name type -> (name, type)) |> toList
                     (context, call_expr) <- process_member_fn context record_items var_ref0_expr var_ref1_expr

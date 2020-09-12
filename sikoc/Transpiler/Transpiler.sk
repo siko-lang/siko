@@ -141,8 +141,9 @@ convertExpr context mir_expr = do
                 MT.Never -> None
                 _ -> Some (convertType rhs_type)
             R.VarDecl n rhs_expr t
-        ME.VarRef v -> R.VarRef (show v)
-        ME.ArgRef index -> R.VarRef (getArgName index)
+        ME.VarRef v -> case v of
+            ME.Arg index -> R.VarRef (getArgName index)
+            _ -> R.VarRef (show v)
         ME.CaseOf body cases -> do
             cases <- cases |> List.iter |> map (\c -> do
                 case_pattern <- convertPattern context.type_store c.checker

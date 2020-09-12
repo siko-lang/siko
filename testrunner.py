@@ -43,12 +43,12 @@ def run(test_name, source_folder, index, total):
     mkdir_safe(target_folder)
     subprocess.call(["./siko.py", target_folder, "std2", source_folder])
 
-test_source_name = sys.argv[1]
+test_source_name = "sikoc_tests"
 tests = []
 collect_tests(test_source_name, tests, None)
-if len(sys.argv) != 2:
+if len(sys.argv) != 1:
     selected = set()
-    for t in sys.argv[2:]:
+    for t in sys.argv[1:]:
         selected.add(t)
     tests = list(filter(lambda test: test[0] in selected, tests))
 total = len(tests)

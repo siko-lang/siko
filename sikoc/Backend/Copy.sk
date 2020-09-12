@@ -4,36 +4,75 @@ import Siko.MIR.Expr
 import Siko.MIR.Function
 import Siko.MIR.Program as P
 import Map
+import Set
 
-data Context = { used_var_index :: Int }
+data Use = { ref :: Var,
+             var :: Var }
+             deriving (PartialEq, Eq, PartialOrd, Ord, Show)
 
-processArgs :: Context -> [Expr] -> (Context, [Expr])
-processArgs context args = do
+data Context = { used_var_index :: Int,
+                 last_use_map :: Map Var (Set Use),
+                 prevs :: Set Use }
+
+// FIXME: !!!
+mergeSets :: Set Use -> Set Use -> Set Use
+mergeSets set1 set2 = set1 |> Set.iter |> fold (\result, p -> do
+                (result, _) <- Set.insert result p
+                result) set2
+
+mergeLastUseMaps :: Map Var (Set Use) -> Map Var (Set Use) -> Map Var (Set Use)
+mergeLastUseMaps map1 map2 = map2 |> Map.iter |> fold (\result, (var, uses) -> do
+    (result, _) <- alter (\old_uses -> case old_uses of
+        Some old_uses -> Some (mergeSets old_uses uses)
+        None -> Some uses) var result
+    result) map1
+
+addLastUse :: Context -> Var -> Var -> Context
+addLastUse context ref var = do
+    use <- Use ref var
+    (last_use_map, prev) <- alter (\last_use -> case last_use of
+                    Some last_use -> do
+                        (last_use, _) <- Set.insert last_use use
+                        Some last_use
+                    None -> do
+                        last_use <- Set.empty
+                        (last_use, _) <- Set.insert last_use use
+                        Some last_use
+                ) ref context.last_use_map
+    context <- case prev of
+        Some p -> do
+            prevs <- mergeSets p context.prevs
+            context { prevs = prevs }
+        None -> context
+    context { last_use_map = last_use_map }
+
+processArgs :: Context -> [Expr] -> (Context -> Expr -> (Context, Expr)) -> (Context, [Expr])
+processArgs context args process_fn = do
     args |> List.iter |> fold (\(context, args), arg -> do
-        (context, arg) <- processExpr context arg
+        (context, arg) <- process_fn context arg
         args <- args + [arg]
         (context, args)) (context, [])
 
-processBlock :: Context -> [Expr] -> (Context, [Expr])
-processBlock context exprs =
+processBlock :: Context -> [Expr] -> (Context -> Expr -> (Context, Expr)) -> (Context, [Expr])
+processBlock context exprs process_fn =
     exprs |> List.iter |> fold (\(context, exprs), expr -> do
-        (context, expr) <- processExpr context expr
+        (context, expr) <- process_fn context expr
         Expr inner _ <- expr
         exprs <- case inner of
             Multi items -> exprs + items
             _ -> exprs + [expr]
         (context, exprs)) (context, [])
 
-processExpr :: Context -> Expr -> (Context, Expr)
-processExpr context expr = do
+collectUses :: Context -> Expr -> (Context, Expr)
+collectUses context expr = do
     Expr s_expr type <- expr
     case s_expr of
         Do items -> do
-            (context, items) <- processBlock context items
+            (context, items) <- processBlock context items collectUses
             (context, Expr (Do items) type)
-        Multi _ -> panic "Multi expr found in processExpr"
+        Multi _ -> panic "Multi expr found in collectUses"
         StaticFunctionCall id args -> do
-            (context, args) <- processArgs context args
+            (context, args) <- processArgs context args collectUses
             expr <- Expr (StaticFunctionCall id args) type
             (context, expr)
         IntegerLiteral lit -> (context, expr)
@@ -47,68 +86,153 @@ processExpr context expr = do
                     case arg_ref of
                         VarRef ref -> do
                             clone <- Expr (Clone arg) arg_type
-                            (context, Expr (VarDecl v clone) type)
-                        ArgRef i -> do
-                            clone <- Expr (Clone arg) arg_type
-                            (context, Expr (VarDecl v clone) type)
+                            context <- addLastUse context ref v
+                            (context, Expr (VarDecl v arg) type)
                         _ -> do
-                            (context, arg) <- processExpr context arg
+                            (context, arg) <- collectUses context arg
                             (context, Expr (VarDecl v arg) type)
                 _ -> do
-                    (context, arg) <- processExpr context arg
+                    (context, arg) <- collectUses context arg
                     (context, Expr (VarDecl v arg) type)
         VarRef v -> (context, expr)
         FieldAccess name arg -> do
-            (context, arg) <- processExpr context arg
+            (context, arg) <- collectUses context arg
             (context, Expr (FieldAccess name arg) type)
         If cond true_branch false_branch -> do
-            (context, cond) <- processExpr context cond
-            (context, true_branch) <- processExpr context true_branch
-            (context, false_branch) <- processExpr context false_branch
+            (context, cond) <- collectUses context cond
+            saved_last_uses <- context.last_use_map
+            (context, true_branch) <- collectUses context true_branch
+            prev <- context.last_use_map
+            context <- context { last_use_map = saved_last_uses }
+            (context, false_branch) <- collectUses context false_branch
+            merged <- mergeLastUseMaps context.last_use_map prev
+            context <- context { last_use_map = merged }
             (context, Expr (If cond true_branch false_branch) type)
         List args -> do
-            (context, args) <- processArgs context args
+            (context, args) <- processArgs context args collectUses
             expr <- Expr (List args) type
             (context, expr)
         Return arg -> do
-            (context, arg) <- processExpr context arg
+            (context, arg) <- collectUses context arg
             (context, Expr (Return arg) type)
         Continue arg -> do
-            (context, arg) <- processExpr context arg
+            (context, arg) <- collectUses context arg
             (context, Expr (Continue arg) type)
         Break arg -> do
-            (context, arg) <- processExpr context arg
+            (context, arg) <- collectUses context arg
             (context, Expr (Break arg) type)
-        ArgRef _ -> (context, expr)
         RecordUpdate v updates -> do
             (context, updates) <- updates |> List.iter |> fold (\(context, updates), update -> do
-                (context, updated_body) <- processExpr context update.body
+                (context, updated_body) <- collectUses context update.body
                 update <- update { body = updated_body }
                 updates <- updates + [update]
                 (context, updates)) (context, [])
             (context, Expr (RecordUpdate v updates) type)
         Loop v initializer items -> do
-            (context, initializer) <- processExpr context initializer
-            (context, items) <- processBlock context items
+            (context, initializer) <- collectUses context initializer
+            // FIXME: make this smarter, loops could never return or never repeat..
+            (context, items) <- processBlock context items collectUses
+            (context, items) <- processBlock context items collectUses
             (context, Expr (Loop v initializer items) type)
         CaseOf body cases -> do
-            (context, body) <- processExpr context body
+            (context, body) <- collectUses context body
+            saved_last_uses <- context.last_use_map
+            (context, cases, merged) <- cases |> List.iter |> fold (\(context, cases, merged), case_branch -> do
+                context <- context { last_use_map = saved_last_uses }
+                (context, updated_body) <- collectUses context case_branch.body
+                case_branch <- case_branch { body = updated_body }
+                cases <- cases + [case_branch]
+                merged <- mergeLastUseMaps merged context.last_use_map
+                (context, cases, merged)) (context, [], Map.empty)
+            context <- context { last_use_map = merged }
+            (context, Expr (CaseOf body cases) type)
+        Clone _ -> panic "Clone expr found in collectUses"
+
+addCopies :: Context -> Expr -> (Context, Expr)
+addCopies context expr = do
+    Expr s_expr type <- expr
+    case s_expr of
+        Do items -> do
+            (context, items) <- processBlock context items addCopies
+            (context, Expr (Do items) type)
+        Multi _ -> panic "Multi expr found in addCopies"
+        StaticFunctionCall id args -> do
+            (context, args) <- processArgs context args addCopies
+            expr <- Expr (StaticFunctionCall id args) type
+            (context, expr)
+        IntegerLiteral lit -> (context, expr)
+        StringLiteral lit -> (context, expr)
+        FloatLiteral lit -> (context, expr)
+        CharLiteral lit -> (context, expr)
+        VarDecl v arg -> do
+            case v of
+                BackendVar i -> do
+                    Expr arg_ref arg_type <- arg
+                    case arg_ref of
+                        VarRef ref -> do
+                            use <- Use ref v
+                            arg <- if contains context.prevs use
+                                then Expr (Clone arg) arg_type
+                                else arg
+                            (context, Expr (VarDecl v arg) type)
+                        _ -> do
+                            (context, arg) <- addCopies context arg
+                            (context, Expr (VarDecl v arg) type)
+                _ -> do
+                    (context, arg) <- addCopies context arg
+                    (context, Expr (VarDecl v arg) type)
+        VarRef v -> (context, expr)
+        FieldAccess name arg -> do
+            (context, arg) <- addCopies context arg
+            (context, Expr (FieldAccess name arg) type)
+        If cond true_branch false_branch -> do
+            (context, cond) <- addCopies context cond
+            (context, true_branch) <- addCopies context true_branch
+            (context, false_branch) <- addCopies context false_branch
+            (context, Expr (If cond true_branch false_branch) type)
+        List args -> do
+            (context, args) <- processArgs context args addCopies
+            expr <- Expr (List args) type
+            (context, expr)
+        Return arg -> do
+            (context, arg) <- addCopies context arg
+            (context, Expr (Return arg) type)
+        Continue arg -> do
+            (context, arg) <- addCopies context arg
+            (context, Expr (Continue arg) type)
+        Break arg -> do
+            (context, arg) <- addCopies context arg
+            (context, Expr (Break arg) type)
+        RecordUpdate v updates -> do
+            (context, updates) <- updates |> List.iter |> fold (\(context, updates), update -> do
+                (context, updated_body) <- addCopies context update.body
+                update <- update { body = updated_body }
+                updates <- updates + [update]
+                (context, updates)) (context, [])
+            (context, Expr (RecordUpdate v updates) type)
+        Loop v initializer items -> do
+            (context, initializer) <- addCopies context initializer
+            (context, items) <- processBlock context items addCopies
+            (context, Expr (Loop v initializer items) type)
+        CaseOf body cases -> do
+            (context, body) <- addCopies context body
             (context, cases) <- cases |> List.iter |> fold (\(context, cases), case_branch -> do
-                (context, updated_body) <- processExpr context case_branch.body
+                (context, updated_body) <- addCopies context case_branch.body
                 case_branch <- case_branch { body = updated_body }
                 cases <- cases + [case_branch]
                 (context, cases)) (context, [])
             (context, Expr (CaseOf body cases) type)
-        Clone _ -> panic "Clone expr found in processExpr"
+        Clone _ -> panic "Clone expr found in addCopies"
 
 initContext :: Context
-initContext = Context 0
+initContext = Context 0 Map.empty Set.empty
 
 processFunction :: Function -> Function
 processFunction function = case function.kind of
     Normal body -> do
         context <- initContext
-        (context, updated_body) <- processExpr context body
+        (context, updated_body) <- collectUses context body
+        (context, updated_body) <- addCopies context body
         function { kind = Normal updated_body }
     _ -> function
 
