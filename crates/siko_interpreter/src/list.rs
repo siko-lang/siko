@@ -127,7 +127,6 @@ impl ExternFunction for ListPartialOrd {
     }
 }
 
-
 pub struct ListOrd {}
 
 impl ExternFunction for ListOrd {

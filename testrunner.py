@@ -36,12 +36,30 @@ def mkdir_safe(folder_name):
         if e.errno != errno.EEXIST:
             raise
 
+def run_command(args, name):
+    try:
+        subprocess.run(args, check=True, stderr=subprocess.DEVNULL)
+    except subprocess.CalledProcessError as e:
+        print("%s failed" % name)
+    except:
+        print("%s failed" % name)
+
 def run(test_name, source_folder, index, total):
     print("--- Running %s - %d/%d" % (test_name, total, index))
     mkdir_safe("sikoc_test_runs")
     target_folder = os.path.join("sikoc_test_runs", test_name)
     mkdir_safe(target_folder)
-    subprocess.call(["./siko.py", target_folder, "std2", source_folder])
+    compiled_sikoc = os.path.join("compiled_sikoc","sikoc")
+    if os.path.exists(compiled_sikoc):
+        subprocess.call(["./compiled_sikoc.sh", "std2/*.sk", "%s/*.sk" % source_folder, "-o", os.path.join(target_folder, test_name)])
+    else:
+        subprocess.call(["./sikoc.sh", "std2/*.sk", "%s/*.sk" % source_folder, "-o", os.path.join(target_folder, test_name)])
+    normal_output = os.path.join(target_folder, "normal")
+    rc_output = os.path.join(target_folder, "rc")
+    run_command(["rustc", "--edition=2018", os.path.join(target_folder, "%s_normal.rs" % test_name), "-o", normal_output], "normal rustc")
+    run_command([normal_output], "normal build")
+    run_command(["rustc", "--edition=2018", os.path.join(target_folder, "%s_rc.rs" % test_name), "-o", rc_output], "rc rustc")
+    run_command([rc_output], "rc build")
 
 test_source_name = "sikoc_tests"
 tests = []

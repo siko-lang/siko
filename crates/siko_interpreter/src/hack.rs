@@ -41,7 +41,38 @@ impl ExternFunction for WriteTextFile {
     }
 }
 
+
+pub struct GetArgs {}
+
+impl ExternFunction for GetArgs {
+    fn call(
+        &self,
+        environment: &mut Environment,
+        current_expr: Option<ExprId>,
+        _: &NamedFunctionKind,
+        ty: Type,
+    ) -> Value {
+        let string_ty = Interpreter::get_string_type();
+        let mut args = vec![Value::new(ValueCore::String("siko".to_string()), string_ty.clone())];
+        let mut after = false;
+        for arg in std::env::args() {
+            if after {
+                let v = Value::new(ValueCore::String(arg), string_ty.clone());
+                args.push(v);
+            } else {
+                if arg == "--"
+                {
+                    after = true;
+                }
+            }
+        }
+        return Value::new(ValueCore::List(args), ty);
+    }
+}
+
 pub fn register_extern_functions(interpreter: &mut Interpreter) {
     interpreter.add_extern_function("Hack", "readTextFile", Box::new(ReadTextFile {}));
     interpreter.add_extern_function("Hack", "writeTextFile", Box::new(WriteTextFile {}));
+    interpreter.add_extern_function("Hack", "getArgs", Box::new(GetArgs {}));
 }
+

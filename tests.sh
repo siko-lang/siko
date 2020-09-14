@@ -13,6 +13,6 @@ cargo run -- ../siko ../std ../comp ../rust_comp ../tests/success/ ../tests/fail
 cd ..
 
 mkdir -p sikoc_test_runs
-./compile_sikoc.py
+./compile_sikoc.sh
 ./testrunner.py
 rm -rf compiled_sikoc

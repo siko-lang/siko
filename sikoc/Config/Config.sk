@@ -1,0 +1,21 @@
+module Siko.Config where
+
+data Config = { input_files :: [String],
+                output_file_name :: Option String,
+                verbose :: Bool }
+
+data OutputFileType = Rc | Normal | MIR | OptMIR
+
+getDefaultConfig :: Config
+getDefaultConfig = Config [] None False
+
+getOutputFileName :: Config -> OutputFileType -> String
+getOutputFileName config type = do
+    output_file <- case config.output_file_name of
+        Some output_file -> output_file
+        None -> "sikoc_output"
+    case type of
+        Rc -> "{}_rc.rs" % output_file
+        Normal -> "{}_normal.rs" % output_file
+        MIR -> "{}.mir" % output_file
+        OptMIR -> "{}_opt.mir" % output_file

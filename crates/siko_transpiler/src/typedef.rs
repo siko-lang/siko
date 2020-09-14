@@ -51,7 +51,11 @@ pub fn write_typedef(
                         write!(output_file, "{}#[derive(Clone)]\n", indent)?;
                         write!(output_file, "{}pub struct String {{\n", indent)?;
                         indent.inc();
-                        write!(output_file, "{}pub value: std::rc::Rc<std::string::String>,\n", indent,)?;
+                        write!(
+                            output_file,
+                            "{}pub value: std::rc::Rc<std::string::String>,\n",
+                            indent,
+                        )?;
                         indent.dec();
                         write!(output_file, "{}}}\n", indent)?;
                     }

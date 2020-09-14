@@ -3,12 +3,13 @@ module Siko.Backend where
 import Siko.Backend.Passes.CreateVars as CreateVars
 import Siko.Backend.Passes.Copy as Copy
 import Siko.MIR.Program as P
+import Siko.Config
 import Hack
 
-processProgram :: P.Program -> P.Program
-processProgram program = do
+processProgram :: Config -> P.Program -> P.Program
+processProgram config program = do
     program <- CreateVars.processProgram program
     program <- Copy.processProgram program
     s <- P.dump program
-    writeTextFile "sikoc_2.mir" s
+    writeTextFile (getOutputFileName config OptMIR) s
     program

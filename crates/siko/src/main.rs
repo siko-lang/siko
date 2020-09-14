@@ -86,6 +86,9 @@ fn process_args(args: Vec<String>) -> (Config, Vec<CompilerInput>, bool) {
             "-h" => {
                 success = false;
             }
+            "--" => {
+                break;
+            }
             _ => {
                 file_given = true;
                 if !process_dir(arg.to_string(), &mut inputs) {

@@ -363,6 +363,20 @@ generateWriteTextFile program type_store arg_types result_type = do
     struct_ctor <- R.StructCtor (show rust_result_type) []
     R.Block [write_call, struct_ctor]
 
+generateGetArgs :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
+generateGetArgs program type_store arg_types result_type = do
+    rust_result_type <- convertType result_type
+    args_call <- R.FunctionCall "std::env::args" []
+    arg <- "arg"
+    string_ctor <- R.StructCtor stringTypeName [R.FieldInitItem innerValueField (R.FunctionCall rcNew [R.VarRef arg])]
+    map_body <- R.Lambda ("|{}|" % arg) string_ctor
+    map <- R.MethodCall args_call "map" [map_body]
+    collect <- R.MethodCall map "collect" []
+    args <- "args"
+    args_decl <- R.VarDecl args collect (Some (R.Type "Vec<_>"))
+    struct_ctor <- R.StructCtor (show rust_result_type) [R.FieldInitItem innerValueField (R.FunctionCall rcNew [R.VarRef args])]
+    R.Block [args_decl, struct_ctor]
+
 generateIntParse :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
 generateIntParse program type_store arg_types result_type = do
     rust_result_type <- convertType result_type
@@ -833,6 +847,7 @@ initializeExternalFunctions = do
 
     (externals, _) <- insert externals (ExternalId "Hack" "readTextFile") (ExternFnBuilder generateReadTextFile)
     (externals, _) <- insert externals (ExternalId "Hack" "writeTextFile") (ExternFnBuilder generateWriteTextFile)
+    (externals, _) <- insert externals (ExternalId "Hack" "getArgs") (ExternFnBuilder generateGetArgs)
 
     (externals, _) <- insert externals (ExternalId "String" "opAdd") (ExternFnBuilder generateStringAdd)
     (externals, _) <- insert externals (ExternalId "String" "partialCmp") (ExternFnBuilder generatePartialCmp)

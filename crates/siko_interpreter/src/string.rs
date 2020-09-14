@@ -135,7 +135,6 @@ impl ExternFunction for StringSplit {
     }
 }
 
-
 pub struct StringReplace {}
 
 impl ExternFunction for StringReplace {

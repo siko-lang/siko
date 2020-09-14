@@ -8,27 +8,53 @@ import Siko.Transpiler.TranspilerRc as TRC
 import Siko.Transpiler.TranspilerNormal as TN
 import Siko.Diagnostics
 import Siko.Backend as B
+import Siko.Config
+import Siko.Trace
+
+processArgs :: [String] -> Config
+processArgs args = loop (config, args) <- (getDefaultConfig, args) do
+    case pop args of
+        Some (arg, rest) -> do
+            case arg of
+                "-o" -> do
+                    case pop rest of
+                        Some (arg, rest) -> do
+                            config <- config { output_file_name = Some arg }
+                            (config, rest)
+                        None -> do
+                            panic "Missing output_file"
+                "-v" -> (config { verbose = True }, rest)
+                _ -> do
+                        config :: Config <- config // FIXME: type inference
+                        input_files <- config.input_files + [arg]
+                        config <- config { input_files = input_files }
+                        (config, rest)
+        None -> break config
 
 main = do
-    //println "Reading input.."
-    source <- readTextFile "sikoc.sk"
-    //println "Parsing.."
+    args <- Option.unwrap (tail getArgs)
+    config <- processArgs args
+    trace config "Reading inputs.."
+    source <- config.input_files |> List.iter |> fold (\source, arg -> do
+        s <- readTextFile arg
+        source + "\n" + s) ""
+    trace config "Parsing.."
     (program, lexer_errors, parser_errors) <- parse source
     lexer_errors |> List.iter |> forEach \error -> printLexerError error
     parser_errors |> List.iter |> forEach \error -> printParserError error
-    //println "Resolving names.."
+    trace config "Resolving names.."
     (hir_program, var_gen, resolver_errors) <- R.processProgram program
     resolver_errors |> List.iter |> forEach \error -> printResolverError error
-    //println "Typechecking.."
-    case TC.processProgram hir_program var_gen of
+    trace config "Typechecking.."
+    case TC.processProgram config hir_program var_gen of
         Ok mir_program -> do
-            //println "Optimizing.."
-            mir_program <- B.processProgram mir_program
-            //println "Transpiling RC.."
+            trace config "Optimizing.."
+            mir_program <- B.processProgram config mir_program
+            trace config "Transpiling RC.."
             rust_output <- TRC.transpile mir_program
-            writeTextFile "sikoc_output.rs" rust_output
-            //println "Transpiling Normal.."
+            writeTextFile (getOutputFileName config Rc) rust_output
+            trace config "Transpiling Normal.."
             rust_output <- TN.transpile mir_program
-            writeTextFile "sikoc_output_normal.rs" rust_output
+            writeTextFile (getOutputFileName config Normal) rust_output
         Err typechecker_errors -> typechecker_errors |> List.iter |> forEach \error -> printTypecheckerError error
     ()

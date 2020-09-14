@@ -16,6 +16,8 @@ import Siko.Typechecker.Lowering.IteratorStore as IS
 import Siko.Typechecker.FunctionStore
 import Siko.Typechecker
 import Siko.Constants
+import Siko.Config
+import Siko.Trace
 import Hack
 import Map
 
@@ -144,9 +146,9 @@ generateExternalImpls context = do
             impls |> List.iter |> fold (\context, impl -> generateExternalImpl context hir_type impl) context
         ) context
 
-lowerProgram :: TypecheckerState -> HP.Program -> FunctionStore -> TypeStore -> MP.Program
-lowerProgram state hir_program function_store type_store = do
-    //println "Lowering to MIR.."
+lowerProgram :: Config -> TypecheckerState -> HP.Program -> FunctionStore -> TypeStore -> MP.Program
+lowerProgram config state hir_program function_store type_store = do
+    trace config "Lowering to MIR.."
     main_qn <- HP.FullPath getMainModuleName getMainFunctionName
     mir_program <- MP.createProgram
     context <- Context hir_program mir_program function_store
@@ -170,5 +172,5 @@ lowerProgram state hir_program function_store type_store = do
     mir_program <- context.mir_program
     mir_program <- mir_program { adts = context.type_store.adts, records = context.type_store.records, unit_type = Some unit_type }
     s <- MP.dump mir_program
-    writeTextFile "sikoc.mir" s
+    writeTextFile (getOutputFileName config MIR) s
     mir_program

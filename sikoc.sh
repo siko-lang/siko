@@ -1,5 +1,4 @@
 #!/bin/bash
 
-./siko.py sikocwd std2 sikoc.sk
+./siko -s std sikoc -- $@
 
-dot *.dot -Tpng -O > /dev/null 2>&1

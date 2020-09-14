@@ -499,7 +499,11 @@ fn generate_map_builtins(
                 indent, option_type_str
             )?;
             indent.inc();
-            write!(output_file, "{}let mut map = (*map.value).clone(); \n", indent)?;
+            write!(
+                output_file,
+                "{}let mut map = (*map.value).clone(); \n",
+                indent
+            )?;
             write!(output_file, "{}match map.insert(key, v) {{\n", indent)?;
             indent.inc();
             write!(
@@ -519,7 +523,11 @@ fn generate_map_builtins(
 
             write!(output_file, "{}{}::None => {{\n", indent, option_type_str)?;
             indent.inc();
-            write!(output_file, "{}let mut map = (*map.value).clone(); \n", indent)?;
+            write!(
+                output_file,
+                "{}let mut map = (*map.value).clone(); \n",
+                indent
+            )?;
             write!(output_file, "{}match map.remove(&key) {{\n", indent)?;
             indent.inc();
             write!(
@@ -559,7 +567,11 @@ fn generate_map_builtins(
                 indent, option_type_str
             )?;
             indent.inc();
-            write!(output_file, "{}let mut map = (*map.value).clone(); \n", indent)?;
+            write!(
+                output_file,
+                "{}let mut map = (*map.value).clone(); \n",
+                indent
+            )?;
             write!(output_file, "{}match map.insert(key, v) {{\n", indent)?;
             indent.inc();
             write!(
@@ -861,7 +873,11 @@ fn generate_list_builtins(
                 "{}r.extend(arg0.value.iter().cloned());\n",
                 indent
             )?;
-            write!(output_file, "{}r[arg1.value as usize] = arg2.clone();\n", indent)?;
+            write!(
+                output_file,
+                "{}r[arg1.value as usize] = arg2.clone();\n",
+                indent
+            )?;
             write!(
                 output_file,
                 "{} {} {{ value : std::rc::Rc::new(r) }}\n",
@@ -1328,7 +1344,11 @@ pub fn generate_builtin(
                         output_file,
                         "let content = String::from_utf8_lossy(&content).to_string();"
                     )?;
-                    write!(output_file, "{} {{ value : std::rc::Rc::new(content) }}", result_ty_str)?;
+                    write!(
+                        output_file,
+                        "{} {{ value : std::rc::Rc::new(content) }}",
+                        result_ty_str
+                    )?;
                 }
                 ("Hack", "writeTextFile") => {
                     write!(
@@ -1336,6 +1356,11 @@ pub fn generate_builtin(
                         "let content = std::fs::write(&*arg0.value, &*arg1.value).expect(\"WriteTextFile failed\");"
                     )?;
                     write!(output_file, "{} {{ }}", result_ty_str)?;
+                }
+                ("Hack", "getArgs") => {
+                    write!(output_file, "let args: Vec<String> = std::env::args().collect();")?;
+                    write!(output_file, "let args: Vec<_> = args.into_iter().map(|arg| {} {{ value : std::rc::Rc::new(arg) }}).collect();", "crate::source::String::String")?;
+                    write!(output_file, "{} {{ value : std::rc::Rc::new(args) }}", result_ty_str)?;
                 }
                 ("Std.Util.Basic", "abort") => {
                     write!(output_file, "panic!(\"abort called\");")?;
