@@ -3,6 +3,8 @@ module Siko.Backend.Passes.Copy where
 import Siko.MIR.Expr
 import Siko.MIR.Function
 import Siko.MIR.Program as P
+import Siko.MIR.Data as D
+import Siko.MIR.Type as T
 import Map
 import Set
 
@@ -12,7 +14,8 @@ data Use = { ref :: Var,
 
 data Context = { used_var_index :: Int,
                  last_use_map :: Map Var (Set Use),
-                 prevs :: Set Use }
+                 prevs :: Set Use,
+                 records :: Map P.Identity D.Record }
 
 // FIXME: !!!
 mergeSets :: Set Use -> Set Use -> Set Use
@@ -147,6 +150,19 @@ collectUses context expr = do
             context <- context { last_use_map = merged }
             (context, Expr (CaseOf body cases) type)
         Clone _ -> panic "Clone expr found in collectUses"
+        Deref _ -> panic "Deref expr found in collectUses"
+        Box _ -> panic "Box expr found in collectUses"
+
+findFieldTypeByName :: Context -> T.Type -> String -> T.Type
+findFieldTypeByName context type name = do
+    record_id <- T.getIdentity type
+    case get context.records record_id of
+        Some record -> do
+            record :: D.Record <- record // FIXME
+            fields <- record.fields |> List.iter |> filter (\f -> f.name == name) |> toList
+            field <- atIndex fields 0
+            field.type
+        None -> panic "Record {} not found" % record_id
 
 addCopies :: Context -> Expr -> (Context, Expr)
 addCopies context expr = do
@@ -184,7 +200,15 @@ addCopies context expr = do
         VarRef v -> (context, expr)
         FieldAccess name arg -> do
             (context, arg) <- addCopies context arg
-            (context, Expr (FieldAccess name arg) type)
+            Expr _ arg_type <- arg
+            field_type <- findFieldTypeByName context arg_type name
+            case field_type of
+                T.Box t -> do
+                    expr <- Expr (FieldAccess name arg) field_type
+                    expr <- Expr (Deref expr) t
+                    expr <- Expr (Clone expr) t
+                    (context, expr)
+                _ -> (context, Expr (FieldAccess name arg) type)
         If cond true_branch false_branch -> do
             (context, cond) <- addCopies context cond
             (context, true_branch) <- addCopies context true_branch
@@ -206,6 +230,10 @@ addCopies context expr = do
         RecordUpdate v updates -> do
             (context, updates) <- updates |> List.iter |> fold (\(context, updates), update -> do
                 (context, updated_body) <- addCopies context update.body
+                field_type <- findFieldTypeByName context type update.field_name
+                updated_body <- case field_type of
+                    T.Box t -> Expr (Box updated_body) field_type
+                    _ -> updated_body
                 update <- update { body = updated_body }
                 updates <- updates + [update]
                 (context, updates)) (context, [])
@@ -223,14 +251,16 @@ addCopies context expr = do
                 (context, cases)) (context, [])
             (context, Expr (CaseOf body cases) type)
         Clone _ -> panic "Clone expr found in addCopies"
+        Deref _ -> panic "Deref expr found in addCopies"
+        Box _ -> panic "Box expr found in addCopies"
 
-initContext :: Context
-initContext = Context 0 Map.empty Set.empty
+initContext :: Map P.Identity D.Record -> Context
+initContext records = Context 0 Map.empty Set.empty records
 
-processFunction :: Function -> Function
-processFunction function = case function.kind of
+processFunction :: Map P.Identity D.Record -> Function -> Function
+processFunction records function = case function.kind of
     Normal body -> do
-        context <- initContext
+        context <- initContext records
         (context, updated_body) <- collectUses context body
         (context, updated_body) <- addCopies context body
         function { kind = Normal updated_body }
@@ -239,7 +269,7 @@ processFunction function = case function.kind of
 processProgram :: P.Program -> P.Program
 processProgram program = do
     functions <- program.functions |> Map.iter |> map (\(id, function) -> do
-        function <- processFunction function
+        function <- processFunction program.records function
         (id, function)) |> toMap
     program <- program { functions = functions }
     program

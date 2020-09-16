@@ -196,7 +196,7 @@ processChoiceTree context sub choice path_info_map hir_case_bodies hir_guards = 
                         MT.Adt name -> do
                             adt <- getAdt context.type_store name
                             variant <- atIndex adt.variants variant_index
-                            variant_type <- getRecord context.type_store variant.type
+                            variant_type <- getRecord context.type_store (MT.getIdentity variant.type)
                             field <- atIndex variant_type.fields index
                             body <- ME.FieldAccess field.name parent_expr.internal
                             ME.Expr body field.type
@@ -219,7 +219,7 @@ processChoiceTree context sub choice path_info_map hir_case_bodies hir_guards = 
                         MT.Adt name -> do
                             adt <- getAdt context.type_store name
                             variant <- atIndex adt.variants index
-                            MT.Record variant.type
+                            variant.type
                         MT.Record name -> do
                             body_type
                         _ -> panic "Indexed adt is not a record nor an adt"

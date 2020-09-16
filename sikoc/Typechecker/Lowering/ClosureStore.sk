@@ -122,7 +122,7 @@ createClosures context = do
             mir_variant_record <- MD.Record record_identity mir_fields None []
             (records, _) <- insert type_store.records record_identity mir_variant_record
             type_store <- type_store { records = records }
-            mir_variant <- MD.Variant variant_name record_identity
+            mir_variant <- MD.Variant variant_name (MT.Record record_identity)
             adt_identity <- Identity getInternalModuleName name 0
             type_store <- TS.addVariant type_store adt_identity mir_variant
             context <- context { type_store = type_store }
@@ -138,11 +138,11 @@ createClosures context = do
         adt <- TS.getAdt context.type_store adt_identity
         (context, cases, _) <- closure.instances |> List.iter |> fold (\(context, cases, index), closure_instance -> do
             variant <- atIndex adt.variants index
-            variant_type <- TS.getRecord context.type_store variant.type
+            variant_type <- TS.getRecord context.type_store (MT.getIdentity variant.type)
             ClosureInstanceId id <- closure_instance.id
             (context, prev_var) <- getNextTempVar context
             prev_var_ref <- ME.VarRef prev_var
-            prev_var_ref_expr <- ME.Expr prev_var_ref (MT.Record variant.type)
+            prev_var_ref_expr <- ME.Expr prev_var_ref variant.type
             args <- closure_instance.args |> List.iter |> fold (\arg_refs, arg -> do
                 field_index <- getLength arg_refs
                 field <- atIndex variant_type.fields field_index

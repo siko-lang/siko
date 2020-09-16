@@ -2,12 +2,14 @@ module Siko.Backend where
 
 import Siko.Backend.Passes.CreateVars as CreateVars
 import Siko.Backend.Passes.Copy as Copy
+import Siko.Backend.Passes.Indirection as Indirection
 import Siko.MIR.Program as P
 import Siko.Config
 import Hack
 
 processProgram :: Config -> P.Program -> P.Program
 processProgram config program = do
+    program <- Indirection.processProgram program
     program <- CreateVars.processProgram program
     program <- Copy.processProgram program
     s <- P.dump program

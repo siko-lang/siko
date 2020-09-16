@@ -16,7 +16,7 @@ getVariantRecordType program mir_type name = do
     loop index <- 0 do
         variant <- atIndex adt.variants index
         if variant.name == name
-            then return variant.type
+            then return (MT.getIdentity variant.type)
             else index + 1
 
 generatePrintStr :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
@@ -369,7 +369,7 @@ generateGetArgs program type_store arg_types result_type = do
     map <- R.MethodCall args_call "map" [map_body]
     collect <- R.MethodCall map "collect" []
     args <- "args"
-    args_decl <- R.VarDecl args collect (Some (R.Type "Vec<_>"))
+    args_decl <- R.VarDecl args collect (Some (R.Normal "Vec<_>"))
     struct_ctor <- R.StructCtor (show rust_result_type) [R.FieldInitItem innerValueField (R.VarRef args)]
     R.Block [args_decl, struct_ctor]
 
@@ -408,7 +408,7 @@ generateListShow program type_store arg_types result_type = do
     map <- R.MethodCall iter "map" [map_body]
     collect <- R.MethodCall map "collect" []
     subs <- "subs"
-    subs_decl <- R.VarDecl subs collect (Some (R.Type "Vec<_>"))
+    subs_decl <- R.VarDecl subs collect (Some (R.Normal "Vec<_>"))
     fmt_arg <- R.StringLiteral "[{}]"
     join_call <- R.MethodCall (R.VarRef subs) "join" [R.StringLiteral (", ")]
     value_decl <- R.VarDecl innerValueField (R.FunctionCall "format!" [fmt_arg, join_call]) None
@@ -425,7 +425,7 @@ generateMapShow program type_store arg_types result_type = do
     map <- R.MethodCall iter "map" [map_body]
     collect <- R.MethodCall map "collect" []
     subs <- "subs"
-    subs_decl <- R.VarDecl subs collect (Some (R.Type "Vec<_>"))
+    subs_decl <- R.VarDecl subs collect (Some (R.Normal "Vec<_>"))
     fmt_arg <- R.StringLiteral "{{{}}}"
     join_call <- R.MethodCall (R.VarRef subs) "join" [R.StringLiteral (", ")]
     value_decl <- R.VarDecl innerValueField (R.FunctionCall "format!" [fmt_arg, join_call]) None
@@ -620,7 +620,7 @@ generateStringChars program type_store arg_types result_type = do
     map <- R.MethodCall chars_call "map" [map_body]
     collect_call <- R.MethodCall map "collect" []
     new <- "new"
-    new_decl <- R.VarDecl new collect_call (Some (R.Type "Vec<_>"))
+    new_decl <- R.VarDecl new collect_call (Some (R.Normal "Vec<_>"))
     R.Block [new_decl, R.StructCtor (show rust_type) [R.FieldInitItem innerValueField (R.VarRef new)]]
 
 generateStringReplace :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
@@ -650,7 +650,7 @@ generateStringSplit program type_store arg_types result_type = do
     map <- R.MethodCall split_call "map" [map_body]
     collect_call <- R.MethodCall map "collect" []
     new <- "new"
-    new_decl <- R.VarDecl new collect_call (Some (R.Type "Vec<_>"))
+    new_decl <- R.VarDecl new collect_call (Some (R.Normal "Vec<_>"))
     R.Block [new_decl, R.StructCtor (show rust_type) [R.FieldInitItem innerValueField (R.VarRef new)]]
 
 generateAbort :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
@@ -776,7 +776,7 @@ generateMapIntoIter program type_store arg_types result_type = do
     into_iter_call <- R.MethodCall (R.VarRef new0) "into_iter" []
     collect <- R.MethodCall into_iter_call "collect" []
     v <- "v"
-    v_decl <- R.VarDecl v collect (Some (R.Type "Vec<_>"))
+    v_decl <- R.VarDecl v collect (Some (R.Normal "Vec<_>"))
     v_into_iter_call <- R.MethodCall (R.VarRef v) "into_iter" []
     struct_ctor <- R.StructCtor (show rust_type) [R.FieldInitItem innerValueField v_into_iter_call]
     R.Block [new0_decl, v_decl, struct_ctor]
@@ -907,28 +907,28 @@ initializeExternalFunctions = do
     externals
 
 generateStringFields :: [MT.Type] -> [R.StructField]
-generateStringFields args = [R.StructField innerValueField (R.Type "std::string::String")]
+generateStringFields args = [R.StructField innerValueField (R.Normal "std::string::String")]
 
 generateIntFields :: [MT.Type] -> [R.StructField]
-generateIntFields args = [R.StructField innerValueField (R.Type "i64")]
+generateIntFields args = [R.StructField innerValueField (R.Normal "i64")]
 
 generateFloatFields :: [MT.Type] -> [R.StructField]
-generateFloatFields args = [R.StructField innerValueField (R.Type "f64")]
+generateFloatFields args = [R.StructField innerValueField (R.Normal "f64")]
 
 generateCharFields :: [MT.Type] -> [R.StructField]
-generateCharFields args = [R.StructField innerValueField (R.Type "char")]
+generateCharFields args = [R.StructField innerValueField (R.Normal "char")]
 
 generateListFields :: [MT.Type] -> [R.StructField]
 generateListFields args = do
     first <- atIndex args 0
     rust_type_arg <- convertType first
-    [R.StructField innerValueField (R.Type "std::vec::Vec<{}>" % rust_type_arg)]
+    [R.StructField innerValueField (R.Normal "std::vec::Vec<{}>" % rust_type_arg)]
 
 generateListIteratorFields :: [MT.Type] -> [R.StructField]
 generateListIteratorFields args = do
     first <- atIndex args 0
     rust_type_arg <- convertType first
-    [R.StructField innerValueField (typeToRcType (R.Type "std::vec::IntoIter<{}>" % rust_type_arg))]
+    [R.StructField innerValueField (typeToRcType (R.Normal "std::vec::IntoIter<{}>" % rust_type_arg))]
 
 generateMapFields :: [MT.Type] -> [R.StructField]
 generateMapFields args = do
@@ -936,7 +936,7 @@ generateMapFields args = do
     second <- atIndex args 1
     rust_type_arg1 <- convertType first
     rust_type_arg2 <- convertType second
-    [R.StructField innerValueField (typeToRcType (R.Type "std::collections::BTreeMap<{}, {}>" % (rust_type_arg1, rust_type_arg2)))]
+    [R.StructField innerValueField (typeToRcType (R.Normal "std::collections::BTreeMap<{}, {}>" % (rust_type_arg1, rust_type_arg2)))]
 
 generateMapIteratorFields :: [MT.Type] -> [R.StructField]
 generateMapIteratorFields args = do
@@ -944,7 +944,7 @@ generateMapIteratorFields args = do
     second <- atIndex args 1
     rust_type_arg1 <- convertType first
     rust_type_arg2 <- convertType second
-    [R.StructField innerValueField (typeToRcType (R.Type "std::vec::IntoIter<({}, {})>" % (rust_type_arg1, rust_type_arg2)))]
+    [R.StructField innerValueField (typeToRcType (R.Normal "std::vec::IntoIter<({}, {})>" % (rust_type_arg1, rust_type_arg2)))]
 
 initializeExternalStructFields :: Map ExternalId ExternStructBuilder
 initializeExternalStructFields = do

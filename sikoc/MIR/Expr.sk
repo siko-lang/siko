@@ -62,6 +62,8 @@ data SimpleExpr = Do [Expr]
             | Loop Var Expr [Expr]
             | CaseOf Expr [Case]
             | Clone Expr
+            | Deref Expr
+            | Box Expr
             deriving (Show)
 
 prettyPrint :: Expr -> Indent -> (String, Bool)
@@ -146,3 +148,9 @@ prettyPrint expr ind = do
         Clone expr -> do
             (s, simple) <- prettyPrint expr ind
             ("clone({})" % s, False)
+        Deref expr -> do
+            (s, simple) <- prettyPrint expr ind
+            ("deref({})" % s, False)
+        Box expr -> do
+            (s, simple) <- prettyPrint expr ind
+            ("box({})" % s, False)
