@@ -87,16 +87,20 @@ typeToRcType type = R.Rc type
 boxExpr :: R.Expr -> R.Expr
 boxExpr expr = R.FunctionCall "std::boxed::Box::new" [expr]
 
-convertPattern :: TypeStore -> ME.Checker -> R.Pattern
+convertPattern :: TypeStore -> ME.Checker -> (R.Pattern, Option R.Expr)
 convertPattern type_store checker = case checker of
-    ME.IntegerChecker lit -> R.IntegerPattern lit
-    ME.StringChecker lit -> R.StringPattern lit
-    ME.CharChecker lit -> R.CharPattern lit
+    ME.IntegerChecker lit -> (R.IntegerPattern lit, None)
+    ME.StringChecker lit -> do
+        guard <- R.VarRef "a"
+        guard <- R.FieldAccess "value" guard
+        guard <- R.MethodCall guard "eq" [R.StringLiteral (R.escapeString lit)]
+        (R.StringPattern lit, Some guard)
+    ME.CharChecker lit -> (R.CharPattern lit, None)
     ME.CharRangeChecker s e kind -> do
         kind <- case kind of
             ME.Inclusive -> R.Inclusive
             ME.Exclusive -> R.Exclusive
-        R.CharRangePattern s e kind
+        (R.CharRangePattern s e kind, None)
     ME.VariantChecker index v type -> do
         case type of
             MT.Adt _ -> do
@@ -104,11 +108,11 @@ convertPattern type_store checker = case checker of
                 enum <- getEnum type_store rust_type
                 variant <- atIndex enum.variants index
                 variant_name <- "{}::{}" % (rust_type, variant.name)
-                R.VariantPattern variant_name (Some (show v))
+                (R.VariantPattern variant_name (Some (show v)), None)
             MT.Record _ -> do
-                R.VariantPattern (show v) None
+                (R.VariantPattern (show v) None, None)
             _ -> panic "Variant is not a record nor an adt"
-    ME.WildcardChecker -> R.WildcardPattern
+    ME.WildcardChecker -> (R.WildcardPattern, None)
 
 data Context = { type_store :: TypeStore, loop_var :: Option String }
 
@@ -153,17 +157,17 @@ convertExpr context mir_expr = do
             _ -> R.VarRef (show v)
         ME.CaseOf body cases -> do
             cases <- cases |> List.iter |> map (\c -> do
-                case_pattern <- convertPattern context.type_store c.checker
+                (case_pattern, case_guard) <- convertPattern context.type_store c.checker
                 case_body <- convertExpr context c.body
-                R.MatchCase case_pattern case_body) |> toList
+                R.MatchCase case_pattern case_body case_guard) |> toList
             body <- convertExpr context body
             R.Match body cases
         ME.FieldAccess name receiver -> R.FieldAccess (getRustFriendlyName name) (convertExpr context receiver)
         ME.If cond true_branch false_branch -> do
             true_pattern <- R.VariantPattern ("{}::True" % boolTypeName) (Some "_")
             false_pattern <- R.VariantPattern ("{}::False" % boolTypeName) (Some "_")
-            true_case <- R.MatchCase true_pattern (convertExpr context true_branch)
-            false_case <- R.MatchCase false_pattern (convertExpr context false_branch)
+            true_case <- R.MatchCase true_pattern (convertExpr context true_branch) None
+            false_case <- R.MatchCase false_pattern (convertExpr context false_branch) None
             cases <- [true_case, false_case]
             R.Match (convertExpr context cond) cases
         ME.Loop v initializer args -> do

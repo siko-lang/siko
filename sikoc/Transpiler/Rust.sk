@@ -50,7 +50,7 @@ data Pattern = IntegerPattern String
                | RecordPattern String
                | WildcardPattern
 
-data MatchCase = { pattern :: Pattern, body :: Expr }
+data MatchCase = { pattern :: Pattern, body :: Expr, guard :: Option Expr }
 
 data Expr = Block [Expr]
             | FunctionCall String [Expr]
@@ -92,10 +92,16 @@ escapeString lit = do
     lit <- replace lit "\"" "\\\""
     lit
 
-generatePattern :: Pattern -> String
-generatePattern pattern = case pattern of
-    IntegerPattern lit -> "a if a.value == {}" % lit
-    StringPattern lit -> "a if *a.value == \"{}\"" % (escapeString lit)
+generatePattern :: Pattern -> Option Expr -> String
+generatePattern pattern guard = case pattern of
+    IntegerPattern lit -> do
+                        case guard of
+                            Some guard -> "a if " + generateExpr guard (Indent 0)
+                            None -> "a if a.value == {}" % lit
+    StringPattern lit -> do
+                        case guard of
+                            Some guard -> "a if " + generateExpr guard (Indent 0)
+                            None -> "a if *a.value == \"{}\"" % (escapeString lit)
     CharPattern lit -> case lit of
         '\'' -> "a if a.value == '\\''"
         '\r' -> "a if a.value == '\\r'"
@@ -156,7 +162,7 @@ generateExpr expr indent = case expr of
         body <- generateExpr body (Indent 0)
         inner <- inc indent
         cases <- cases |> List.iter |> map (\c -> do
-            (show inner ) + "{} => " % (generatePattern c.pattern) + "{" +  "{}" % (generateExpr c.body inner) + "}") |> toList
+            (show inner ) + "{} => " % (generatePattern c.pattern c.guard) + "{" +  "{}" % (generateExpr c.body inner) + "}") |> toList
         ("match {} " % body) + "{" + "\n{}\n{}" % (join cases "\n", indent) + "}"
     FieldAccess name receiver -> do
         receiver <- generateExpr receiver (Indent 0)
