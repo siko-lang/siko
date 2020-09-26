@@ -8,6 +8,7 @@ import Siko.MIR.Function
 import Siko.MIR.Program
 import Siko.MIR.Type as MT
 import Siko.Transpiler.Rust as R
+import Siko.Util.Format
 import Map
 
 data ExternalId = ExternalId String String deriving (PartialEq, Eq, PartialOrd, Ord)
@@ -71,11 +72,12 @@ getRustIdentity id = getRustFriendlyName (show id)
 convertType :: MT.Type -> R.Type
 convertType mir_type = do
     t <- case mir_type of
-        MT.Adt id -> getRustFriendlyName (show id)
-        MT.Record id -> getRustFriendlyName (show id)
+        MT.Adt id _ -> getRustFriendlyName (show id)
+        MT.Record id _ -> getRustFriendlyName (show id)
         MT.Ref t -> return convertType t // FIXME: ignore refs for now
-        MT.Never ->  getRustFriendlyName "!"
+        MT.Never ->  return R.Never
         MT.Box t -> return typeToBoxedType (convertType t)
+        MT.Var _ t -> return (convertType t)
     R.Normal t
 
 typeToBoxedType :: R.Type -> R.Type
@@ -93,7 +95,7 @@ convertPattern type_store checker = case checker of
     ME.StringChecker lit -> do
         guard <- R.VarRef "a"
         guard <- R.FieldAccess "value" guard
-        guard <- R.MethodCall guard "eq" [R.StringLiteral (R.escapeString lit)]
+        guard <- R.MethodCall guard "eq" [R.StringLiteral (escapeString lit)]
         (R.StringPattern lit, Some guard)
     ME.CharChecker lit -> (R.CharPattern lit, None)
     ME.CharRangeChecker s e kind -> do
@@ -103,13 +105,13 @@ convertPattern type_store checker = case checker of
         (R.CharRangePattern s e kind, None)
     ME.VariantChecker index v type -> do
         case type of
-            MT.Adt _ -> do
+            MT.Adt _ _ -> do
                 rust_type <- convertType type
                 enum <- getEnum type_store rust_type
                 variant <- atIndex enum.variants index
                 variant_name <- "{}::{}" % (rust_type, variant.name)
                 (R.VariantPattern variant_name (Some (show v)), None)
-            MT.Record _ -> do
+            MT.Record _ _ -> do
                 (R.VariantPattern (show v) None, None)
             _ -> panic "Variant is not a record nor an adt"
     ME.WildcardChecker -> (R.WildcardPattern, None)
@@ -148,9 +150,7 @@ convertExpr context mir_expr = do
             n <- show v
             ME.Expr _ rhs_type <- rhs
             rhs_expr <- convertExpr context rhs
-            t <- case rhs_type of
-                MT.Never -> None
-                _ -> Some (convertType rhs_type)
+            t <- Some (convertType rhs_type)
             R.VarDecl n rhs_expr t
         ME.VarRef v -> case v of
             ME.Arg index -> R.VarRef (getArgName index)

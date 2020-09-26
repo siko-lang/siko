@@ -12,10 +12,10 @@ data Var = Named String
 
 instance Show Var where
     show v = case v of
-        Named v -> "{}" % v
+        Named v -> "_{}" % v
         Temp v -> "tmp_{}" % v
         BackendVar v -> "var_{}" % v
-        Arg i -> "@{}" % i
+        Arg i -> "arg{}" % i
 
 data RecordUpdateItem = { field_name :: String,
                           body :: Expr }
@@ -88,11 +88,12 @@ prettyPrint expr ind = do
             s <- "{} {}" % (id, join args " ")
             (s, isEmpty args)
         IntegerLiteral lit -> ("{}" % lit, True)
-        StringLiteral lit -> ("\"{}\"" % lit, True)
+        StringLiteral lit -> ("\"{}\"" % escapeString lit, True)
         FloatLiteral lit -> ("{}" % lit, True)
         CharLiteral lit -> ("'{}'" % lit, True)
         VarDecl v arg -> do
-            s <- "{} <- {}" % (v, (prettyPrint arg ind).0)
+            Expr _ arg_type <- arg
+            s <- "{} :: {} <- {}" % (v, arg_type, (prettyPrint arg ind).0)
             (s, False)
         VarRef v -> (show v, True)
         FieldAccess n rhs -> do

@@ -119,10 +119,10 @@ createClosures context = do
                     (mir_fields, index + 1)
                 ) ([], 0)
             type_store <- context.type_store
-            mir_variant_record <- MD.Record record_identity mir_fields None []
+            mir_variant_record <- MD.Record record_identity mir_fields None [] 0
             (records, _) <- insert type_store.records record_identity mir_variant_record
             type_store <- type_store { records = records }
-            mir_variant <- MD.Variant variant_name (MT.Record record_identity)
+            mir_variant <- MD.Variant variant_name (MT.Record record_identity [])
             adt_identity <- Identity getInternalModuleName name 0
             type_store <- TS.addVariant type_store adt_identity mir_variant
             context <- context { type_store = type_store }
@@ -134,7 +134,7 @@ createClosures context = do
             None -> panic "Closure not found {}" % closure_call_name
         adt_identity <- (getClosureIdentity closure.name)
         closure_call_function <- getFunction context.mir_program closure_call_identity
-        mir_closure_type <- MT.Adt adt_identity
+        mir_closure_type <- MT.Adt adt_identity []
         adt <- TS.getAdt context.type_store adt_identity
         (context, cases, _) <- closure.instances |> List.iter |> fold (\(context, cases, index), closure_instance -> do
             variant <- atIndex adt.variants index

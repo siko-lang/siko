@@ -86,7 +86,7 @@ processBind context sub (HP.Pattern p id _) rhs = do
             var_ref <- ME.VarRef var
             var_ref_expr <- ME.Expr var_ref mir_tuple_type
             mir_record <- case mir_tuple_type of
-                MT.Record record_id -> getRecord context.type_store record_id
+                MT.Record record_id _ -> getRecord context.type_store record_id
                 _ -> panic "Tuple in a bind expr is not a record type!"
             (context, arg_exprs) <- processBindArgs context sub args var_ref_expr mir_record
             var_decl <- ME.VarDecl var rhs
@@ -106,7 +106,7 @@ processBind context sub (HP.Pattern p id _) rhs = do
             var_ref <- ME.VarRef var
             var_ref_expr <- ME.Expr var_ref mir_record_type
             mir_record <- case mir_record_type of
-                MT.Record record_id -> getRecord context.type_store record_id
+                MT.Record record_id _ -> getRecord context.type_store record_id
                 _ -> panic "Record in a bind expr is not a record type!"
             (context, arg_exprs) <- processBindArgs context sub args var_ref_expr mir_record
             var_decl <- ME.VarDecl var rhs
@@ -119,7 +119,7 @@ processBind context sub (HP.Pattern p id _) rhs = do
             var_ref <- ME.VarRef var
             var_ref_expr <- ME.Expr var_ref mir_adt_type
             mir_record <- case mir_adt_type of
-                MT.Record record_id -> getRecord context.type_store record_id
+                MT.Record record_id _ -> getRecord context.type_store record_id
                 _ -> panic "Adt in a bind expr is not a record type!"
             (context, arg_exprs) <- processBindArgs context sub args var_ref_expr mir_record
             var_decl <- ME.VarDecl var rhs
@@ -186,21 +186,21 @@ processChoiceTree context sub choice path_info_map hir_case_bodies hir_guards = 
             body_expr <- case path of
                 ItemIndex _ index _ -> do
                     record <- case parent_type of
-                        MT.Record name -> getRecord context.type_store name
+                        MT.Record name _ -> getRecord context.type_store name
                         _ -> panic "Indexed type is not a record!"
                     field <- atIndex record.fields index
                     body <- ME.FieldAccess field.name parent_expr.normal
                     ME.Expr body field.type
                 VariantPath _ _ variant_index index _ -> do
                     case parent_type of
-                        MT.Adt name -> do
+                        MT.Adt name _ -> do
                             adt <- getAdt context.type_store name
                             variant <- atIndex adt.variants variant_index
                             variant_type <- getRecord context.type_store (MT.getIdentity variant.type)
                             field <- atIndex variant_type.fields index
                             body <- ME.FieldAccess field.name parent_expr.internal
                             ME.Expr body field.type
-                        MT.Record name -> do
+                        MT.Record name _ -> do
                             record <- getRecord context.type_store name
                             field <- atIndex record.fields index
                             body <- ME.FieldAccess field.name parent_expr.internal
@@ -216,11 +216,11 @@ processChoiceTree context sub choice path_info_map hir_case_bodies hir_guards = 
                 var_type <- case cond of
                     VariantCondition index -> do
                         case body_type of
-                        MT.Adt name -> do
+                        MT.Adt name _ -> do
                             adt <- getAdt context.type_store name
                             variant <- atIndex adt.variants index
                             variant.type
-                        MT.Record name -> do
+                        MT.Record name _ -> do
                             body_type
                         _ -> panic "Indexed adt is not a record nor an adt"
                     _ -> body_type

@@ -25,8 +25,12 @@ data Function = { id :: Identity,
 dump :: Function -> String
 dump function = do
     s <- "{} :: {} -> {}\n" % (function.id, function.args, function.result)
+    args <- function.args |> List.iter |> fold (\args, arg -> do
+        index <- getLength args
+        args + ["arg{}" % index]) []
+    args <- join args " "
     case function.kind of
-        Normal body -> s + "{} = {}" % (function.id, (E.prettyPrint body (Indent 0)).0)
-        VariantCtor index -> s + "{} = <variant_ctor:{}>" % (function.id, index)
-        RecordCtor -> s + "{} = <record_ctor>" % function.id
-        Extern -> s + "{} = extern" % function.id
+        Normal body -> s + "{} {} = {}" % (function.id, args, (E.prettyPrint body (Indent 0)).0)
+        VariantCtor index -> s + "{} {} = <variant_ctor:{}>" % (function.id, args, index)
+        RecordCtor -> s + "{} {} = <record_ctor>" % (function.id, args)
+        Extern -> s + "{} {} = extern" % (function.id, args)

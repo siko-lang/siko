@@ -9,9 +9,7 @@ import Map
 
 getVariantRecordType :: Program -> MT.Type -> String -> Identity
 getVariantRecordType program mir_type name = do
-    adt_id <- case mir_type of
-        MT.Adt adt_id -> adt_id
-        _ -> panic "Not an ADT"
+    adt_id <- MT.getIdentity mir_type
     adt <- getAdt program adt_id
     loop index <- 0 do
         variant <- atIndex adt.variants index
@@ -109,8 +107,8 @@ generatePartialCmp program type_store arg_types result_type = do
     rust_result_type <- convertType result_type
     some_record_type <- getVariantRecordType program result_type "Some"
     none_record_type <- getVariantRecordType program result_type "None"
-    rust_some_record_type <- convertType (MT.Record some_record_type)
-    rust_none_record_type <- convertType (MT.Record none_record_type)
+    rust_some_record_type <- convertType (MT.Record some_record_type [])
+    rust_none_record_type <- convertType (MT.Record none_record_type [])
     some_record <- getRecord program some_record_type
     ordering_field <- atIndex some_record.fields 0
     ordering_type <- ordering_field.type
@@ -119,9 +117,9 @@ generatePartialCmp program type_store arg_types result_type = do
     less_record_type <- getVariantRecordType program ordering_type "Less"
     rust_ordering_type <- convertType ordering_type
     ordering_var <- "o"
-    greater_ctor <- R.StructCtor (show (convertType (MT.Record greater_record_type))) []
-    equal_ctor <- R.StructCtor (show (convertType (MT.Record equal_record_type))) []
-    less_ctor <- R.StructCtor (show (convertType (MT.Record less_record_type))) []
+    greater_ctor <- R.StructCtor (show (convertType (MT.Record greater_record_type []))) []
+    equal_ctor <- R.StructCtor (show (convertType (MT.Record equal_record_type []))) []
+    less_ctor <- R.StructCtor (show (convertType (MT.Record less_record_type []))) []
     greater_ctor <- R.FunctionCall ("{}::Greater" % rust_ordering_type) [greater_ctor]
     equal_ctor <- R.FunctionCall ("{}::Equal" % rust_ordering_type) [equal_ctor]
     less_ctor <- R.FunctionCall ("{}::Less" % rust_ordering_type) [less_ctor]
@@ -147,9 +145,9 @@ generateCmp program type_store arg_types result_type = do
     greater_record_type <- getVariantRecordType program result_type "Greater"
     equal_record_type <- getVariantRecordType program result_type "Equal"
     less_record_type <- getVariantRecordType program result_type "Less"
-    greater_ctor <- R.StructCtor (show (convertType (MT.Record greater_record_type))) []
-    equal_ctor <- R.StructCtor (show (convertType (MT.Record equal_record_type))) []
-    less_ctor <- R.StructCtor (show (convertType (MT.Record less_record_type))) []
+    greater_ctor <- R.StructCtor (show (convertType (MT.Record greater_record_type []))) []
+    equal_ctor <- R.StructCtor (show (convertType (MT.Record equal_record_type []))) []
+    less_ctor <- R.StructCtor (show (convertType (MT.Record less_record_type []))) []
     greater_ctor <- R.FunctionCall ("{}::Greater" % rust_ordering_type) [greater_ctor]
     equal_ctor <- R.FunctionCall ("{}::Equal" % rust_ordering_type) [equal_ctor]
     less_ctor <- R.FunctionCall ("{}::Less" % rust_ordering_type) [less_ctor]
@@ -166,8 +164,8 @@ rustBoolToSikoBool program bool_expr bool_type = do
     false_record_type <- getVariantRecordType program bool_type "False"
     true_pattern <- R.VariantPattern "true" None
     false_pattern <- R.VariantPattern "false" None
-    rust_true_record_type <- convertType (MT.Record true_record_type)
-    rust_false_record_type <- convertType (MT.Record false_record_type)
+    rust_true_record_type <- convertType (MT.Record true_record_type [])
+    rust_false_record_type <- convertType (MT.Record false_record_type [])
     true_ctor <- R.StructCtor (show (rust_true_record_type)) []
     false_ctor <- R.StructCtor (show (rust_false_record_type)) []
     true_case <- R.MatchCase true_pattern (R.FunctionCall ("{}::True" % rust_bool_type) [true_ctor]) None
@@ -233,8 +231,8 @@ generateOpAnd program type_store arg_types result_type = do
     false_record_type <- getVariantRecordType program arg_type "False"
     true_pattern <- R.VariantPattern "true" None
     false_pattern <- R.VariantPattern "false" None
-    rust_true_record_type <- convertType (MT.Record true_record_type)
-    rust_false_record_type <- convertType (MT.Record false_record_type)
+    rust_true_record_type <- convertType (MT.Record true_record_type [])
+    rust_false_record_type <- convertType (MT.Record false_record_type [])
     true_ctor <- R.StructCtor (show (rust_true_record_type)) []
     false_ctor <- R.StructCtor (show (rust_false_record_type)) []
 
@@ -269,8 +267,8 @@ generateOpOr program type_store arg_types result_type = do
     false_record_type <- getVariantRecordType program arg_type "False"
     true_pattern <- R.VariantPattern "true" None
     false_pattern <- R.VariantPattern "false" None
-    rust_true_record_type <- convertType (MT.Record true_record_type)
-    rust_false_record_type <- convertType (MT.Record false_record_type)
+    rust_true_record_type <- convertType (MT.Record true_record_type [])
+    rust_false_record_type <- convertType (MT.Record false_record_type [])
     true_ctor <- R.StructCtor (show (rust_true_record_type)) []
     false_ctor <- R.StructCtor (show (rust_false_record_type)) []
 
@@ -298,7 +296,7 @@ generateGetDiscriminant :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Exp
 generateGetDiscriminant program type_store arg_types result_type = do
     arg_type <- atIndex arg_types 0
     case arg_type of
-        MT.Adt adt_id -> do
+        MT.Adt adt_id _ -> do
             adt <- getAdt program adt_id
             var_ref <- R.VarRef (getArgName 0)
             rust_type <- convertType arg_type
@@ -312,7 +310,7 @@ generateGetDiscriminant program type_store arg_types result_type = do
                 cases <- cases + [c]
                 cases) []
             R.Block [R.Match var_ref cases]
-        MT.Record _ -> do
+        MT.Record _ _ -> do
             rust_result_type <- convertType result_type
             struct_ctor <- R.StructCtor (show rust_result_type) [R.FieldInitItem innerValueField (R.IntegerLiteral "0")]
             R.Block [struct_ctor]
@@ -386,8 +384,8 @@ generateIntParse program type_store arg_types result_type = do
     rust_result_type <- convertType result_type
     some_record_type <- getVariantRecordType program result_type "Some"
     none_record_type <- getVariantRecordType program result_type "None"
-    rust_some_record_type <- convertType (MT.Record some_record_type)
-    rust_none_record_type <- convertType (MT.Record none_record_type)
+    rust_some_record_type <- convertType (MT.Record some_record_type [])
+    rust_none_record_type <- convertType (MT.Record none_record_type [])
     some_record <- getRecord program some_record_type
     int_field <- atIndex some_record.fields 0
     rust_int_type <- convertType int_field.type
@@ -495,8 +493,8 @@ generateListHead program type_store arg_types result_type = do
     rust_result_type <- convertType result_type
     some_record_type <- getVariantRecordType program result_type "Some"
     none_record_type <- getVariantRecordType program result_type "None"
-    rust_some_record_type <- convertType (MT.Record some_record_type)
-    rust_none_record_type <- convertType (MT.Record none_record_type)
+    rust_some_record_type <- convertType (MT.Record some_record_type [])
+    rust_none_record_type <- convertType (MT.Record none_record_type [])
     some_record <- getRecord program some_record_type
     item_field <- atIndex some_record.fields 0
     rust_item_type <- convertType item_field.type
@@ -519,8 +517,8 @@ generateListTail program type_store arg_types result_type = do
     rust_result_type <- convertType result_type
     some_record_type <- getVariantRecordType program result_type "Some"
     none_record_type <- getVariantRecordType program result_type "None"
-    rust_some_record_type <- convertType (MT.Record some_record_type)
-    rust_none_record_type <- convertType (MT.Record none_record_type)
+    rust_some_record_type <- convertType (MT.Record some_record_type [])
+    rust_none_record_type <- convertType (MT.Record none_record_type [])
     clone_call <- R.MethodCall arg0 cloneName []
     none_ctor <- R.StructCtor (show rust_none_record_type) []
     non_empty_branch <- do
@@ -577,13 +575,13 @@ generateListNextItem program type_store arg_types result_type = do
     rust_result_type <- convertType result_type
     some_record_type <- getVariantRecordType program result_type "Some"
     none_record_type <- getVariantRecordType program result_type "None"
-    rust_some_record_type <- convertType (MT.Record some_record_type)
-    rust_none_record_type <- convertType (MT.Record none_record_type)
+    rust_some_record_type <- convertType (MT.Record some_record_type [])
+    rust_none_record_type <- convertType (MT.Record none_record_type [])
     some_record <- getRecord program some_record_type
     item_field <- atIndex some_record.fields 0
     rust_item_type <- convertType item_field.type
     tuple_record <- case item_field.type of
-        MT.Record record_id -> getRecord program record_id
+        MT.Record record_id _ -> getRecord program record_id
         _ -> panic "Tuple is not a record"
     state_field <- atIndex tuple_record.fields 0
     value_field <- atIndex tuple_record.fields 1
@@ -670,7 +668,7 @@ generateMapInsert :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
 generateMapInsert program type_store arg_types result_type = do
     rust_type <- convertType result_type
     result_record <- case result_type of
-        MT.Record i -> getRecord program i
+        MT.Record i _ -> getRecord program i
         _ -> panic "Result is not a record in generateMapInsert"
     map_field <- atIndex result_record.fields 0
     value_field <- atIndex result_record.fields 1
@@ -686,8 +684,8 @@ generateMapInsert program type_store arg_types result_type = do
     none_pattern <- R.VariantPattern "None" None
     some_record_type <- getVariantRecordType program value_field.type "Some"
     none_record_type <- getVariantRecordType program value_field.type "None"
-    rust_some_record_type <- convertType (MT.Record some_record_type)
-    rust_none_record_type <- convertType (MT.Record none_record_type)
+    rust_some_record_type <- convertType (MT.Record some_record_type [])
+    rust_none_record_type <- convertType (MT.Record none_record_type [])
     some_record <- getRecord program some_record_type
     item_field <- atIndex some_record.fields 0
     some_ctor <- R.StructCtor (show rust_some_record_type) [R.FieldInitItem item_field.name (R.FunctionCall rcNew [R.VarRef value])]
@@ -715,8 +713,8 @@ generateMapGet program type_store arg_types result_type = do
     none_pattern <- R.VariantPattern "None" None
     some_record_type <- getVariantRecordType program result_type "Some"
     none_record_type <- getVariantRecordType program result_type "None"
-    rust_some_record_type <- convertType (MT.Record some_record_type)
-    rust_none_record_type <- convertType (MT.Record none_record_type)
+    rust_some_record_type <- convertType (MT.Record some_record_type [])
+    rust_none_record_type <- convertType (MT.Record none_record_type [])
     some_record <- getRecord program some_record_type
     item_field <- atIndex some_record.fields 0
     value_clone <- R.MethodCall (R.VarRef value) cloneName []
@@ -738,7 +736,7 @@ generateMapRemove :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
 generateMapRemove program type_store arg_types result_type = do
     rust_type <- convertType result_type
     result_record <- case result_type of
-        MT.Record i -> getRecord program i
+        MT.Record i _ -> getRecord program i
         _ -> panic "Result is not a record in generateMapInsert"
     map_field <- atIndex result_record.fields 0
     value_field <- atIndex result_record.fields 1
@@ -754,8 +752,8 @@ generateMapRemove program type_store arg_types result_type = do
     none_pattern <- R.VariantPattern "None" None
     some_record_type <- getVariantRecordType program value_field.type "Some"
     none_record_type <- getVariantRecordType program value_field.type "None"
-    rust_some_record_type <- convertType (MT.Record some_record_type)
-    rust_none_record_type <- convertType (MT.Record none_record_type)
+    rust_some_record_type <- convertType (MT.Record some_record_type [])
+    rust_none_record_type <- convertType (MT.Record none_record_type [])
     some_record <- getRecord program some_record_type
     item_field <- atIndex some_record.fields 0
     some_ctor <- R.StructCtor (show rust_some_record_type) [R.FieldInitItem item_field.name (R.FunctionCall rcNew [R.VarRef value])]
@@ -800,13 +798,13 @@ generateMapNextItem program type_store arg_types result_type = do
     rust_result_type <- convertType result_type
     some_record_type <- getVariantRecordType program result_type "Some"
     none_record_type <- getVariantRecordType program result_type "None"
-    rust_some_record_type <- convertType (MT.Record some_record_type)
-    rust_none_record_type <- convertType (MT.Record none_record_type)
+    rust_some_record_type <- convertType (MT.Record some_record_type [])
+    rust_none_record_type <- convertType (MT.Record none_record_type [])
     some_record <- getRecord program some_record_type
     item_field <- atIndex some_record.fields 0
     rust_item_type <- convertType item_field.type
     tuple_record <- case item_field.type of
-        MT.Record record_id -> getRecord program record_id
+        MT.Record record_id _ -> getRecord program record_id
         _ -> panic "Tuple is not a record"
     state_field <- atIndex tuple_record.fields 0
     value_field <- atIndex tuple_record.fields 1
@@ -814,7 +812,7 @@ generateMapNextItem program type_store arg_types result_type = do
     rust_value_type <- convertType value_field.type
     clone_call <- R.MethodCall (R.VarRef item) cloneName []
     value_tuple_record <- case value_field.type of
-        MT.Record record_id -> getRecord program record_id
+        MT.Record record_id _ -> getRecord program record_id
         _ -> panic "Item tuple is not a record"
     value_field0 <- atIndex value_tuple_record.fields 0
     value_field1 <- atIndex value_tuple_record.fields 1

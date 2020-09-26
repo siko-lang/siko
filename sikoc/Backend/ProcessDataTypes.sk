@@ -1,0 +1,289 @@
+module Siko.Backend.Passes.ProcessDataTypes where
+
+import Siko.MIR.Program as P
+import Siko.MIR.Type as T
+import Siko.MIR.Data
+import Siko.MIR.Expr
+import Siko.MIR.Function
+import Siko.Util.DependencyProcessor
+import Map
+
+data Context = { adts :: Map P.Identity AlgebraicDataType,
+                 records :: Map P.Identity Record,
+                 next_var :: Int }
+
+getNextOwnershipVar :: Context -> (Context, T.OwnershipVar)
+getNextOwnershipVar context = do
+    v <- context.next_var
+    o <- T.OwnershipVar v
+    context <- context { next_var = v + 1}
+    (context, o)
+
+addIndirectionsToRecord :: [P.Identity] -> Option Record -> Option Record
+addIndirectionsToRecord group record = case record of
+    Some record -> do
+        record :: Record <- record
+        fields <- record.fields |> List.iter |> map (\field -> do
+            id <- T.getIdentity field.type
+            if contains group id
+                then field { type = T.Box field.type }
+                else field) |> toList
+        record <- record { fields = fields }
+        Some record
+    None -> None
+
+addOwnershipVarsToRecord :: Int -> Option Record -> Option Record
+addOwnershipVarsToRecord arg_count record = case record of
+    Some record -> do
+        record :: Record <- record
+        record <- record { arg_count = arg_count }
+        Some record
+    None -> None
+
+addOwnershipVarsToAdt :: Int -> Option AlgebraicDataType -> Option AlgebraicDataType
+addOwnershipVarsToAdt arg_count adt = case adt of
+    Some adt -> do
+        adt :: AlgebraicDataType <- adt
+        adt <- adt { arg_count = arg_count }
+        Some adt
+    None -> None
+
+addIndirectionsToGroup :: [P.Identity] -> P.Program -> P.Program
+addIndirectionsToGroup group program = do
+    group |> List.iter |> fold (\program, id -> do
+        (records, _) <- alter (addIndirectionsToRecord group) id program.records
+        program <- program { records = records }
+        program) program
+
+collectDeps :: P.Program -> Map P.Identity [P.Identity]
+collectDeps program = do
+    dependencies <- empty
+    dependencies <- program.adts |> Map.iter |> fold (\dependencies, (id, adt) -> do
+            deps <- adt.variants |> List.iter |> fold (\deps, variant -> do
+                deps + [T.getIdentity variant.type]) []
+            (dependencies, _) <- insert dependencies id deps
+            dependencies
+        ) dependencies
+    dependencies <- program.records |> Map.iter |> fold (\dependencies, (id, record) -> do
+            deps <- record.fields |> List.iter |> fold (\deps, field -> do
+                deps + [T.getIdentity field.type]) []
+            deps <- case record.external_info of
+                Some external_info -> do
+                    external_info :: ExternalRecordInfo <- external_info // FIXME
+                    external_info.type_args |> List.iter |> fold (\deps, type_arg -> do
+                        deps + [T.getIdentity type_arg]) deps
+                None -> deps
+            (dependencies, _) <- insert dependencies id deps
+            dependencies
+        ) dependencies
+    dependencies
+
+addIndirections :: P.Program -> [DependencyGroup P.Identity] -> P.Program
+addIndirections program groups = do
+    program <- groups |> List.iter |> fold (\program, group -> do
+            if getLength group.items == 1
+                then program
+                else addIndirectionsToGroup group.items program
+        ) program
+    program
+
+getArgCount :: Context -> P.Identity -> Int
+getArgCount context id = do
+    case get context.records id of
+        Some record -> do
+                    record :: Record <- record // FIXME:
+                    record.arg_count
+        None -> case get context.adts id of
+            Some adt -> do
+                    adt :: AlgebraicDataType <- adt // FIXME:
+                    adt.arg_count
+            None -> panic "Could not find data def {}" % id
+
+calculateArgCountForAdt :: Context -> [P.Identity] -> AlgebraicDataType -> Int
+calculateArgCountForAdt context group adt = do
+    adt.variants |> List.iter |> fold (\arg_count, variant -> do
+        record_id <- T.getIdentity variant.type
+        variant_arg_count <- if contains group record_id
+            then 0
+            else getArgCount context record_id
+        arg_count + 1 + variant_arg_count) 0
+
+calculateArgCountForRecord :: Context -> [P.Identity] -> Record -> Int
+calculateArgCountForRecord context group record = do
+    arg_count <- record.fields |> List.iter |> fold (\arg_count, field -> do
+        id <- T.getIdentity field.type
+        field_arg_count <- if contains group id
+            then 0
+            else getArgCount context id
+        arg_count + 1 + field_arg_count) 0
+    case record.external_info of
+        Some external_info -> do
+            external_info :: ExternalRecordInfo <- external_info // FIXME
+            arg_count <- arg_count + getLength external_info.type_args
+            external_info.type_args |> List.iter |> fold (\arg_count, type_arg -> do
+                id <- T.getIdentity type_arg
+                c <- calculateArgCount context group id
+                arg_count + c) arg_count
+        None -> arg_count
+
+calculateArgCount :: Context -> [P.Identity] -> P.Identity -> Int
+calculateArgCount context group id = do
+    case get context.records id of
+            Some record -> calculateArgCountForRecord context group record
+            None -> case get context.adts id of
+                Some adt -> calculateArgCountForAdt context group adt
+                None -> panic "Could not find data def {}" % id
+
+addOwnershipVarsToGroup :: [P.Identity] -> P.Program -> P.Program
+addOwnershipVarsToGroup group program = do
+    arg_count <- group |> List.iter |> fold (\arg_count, id -> do
+        context <- Context program.adts program.records 0
+        c <- calculateArgCount context group id
+        arg_count + c) 0
+    program <- group |> List.iter |> fold (\program, id -> do
+        (records, _) <- alter (addOwnershipVarsToRecord arg_count) id program.records
+        (adts, _) <- alter (addOwnershipVarsToAdt arg_count) id program.adts
+        program <- program { records = records, adts = adts }
+        program) program
+    program
+
+addOwnershipVarsToDataTypes :: P.Program -> [DependencyGroup P.Identity] -> P.Program
+addOwnershipVarsToDataTypes program groups = do
+    program <- groups |> List.iter |> fold (\program, group -> addOwnershipVarsToGroup group.items program
+        ) program
+    program
+
+processArgs :: Context -> [Expr] -> (Context -> Expr -> (Context, Expr)) -> (Context, [Expr])
+processArgs context args process_fn = do
+    args |> List.iter |> fold (\(context, args), arg -> do
+        (context, arg) <- process_fn context arg
+        args <- args + [arg]
+        (context, args)) (context, [])
+
+processBlock :: Context -> [Expr] -> (Context -> Expr -> (Context, Expr)) -> (Context, [Expr])
+processBlock context exprs process_fn =
+    exprs |> List.iter |> fold (\(context, exprs), expr -> do
+        (context, expr) <- process_fn context expr
+        Expr inner _ <- expr
+        exprs <- case inner of
+            Multi items -> exprs + items
+            _ -> exprs + [expr]
+        (context, exprs)) (context, [])
+
+getNextOwnershipVars :: Context -> Int -> (Context, [T.OwnershipVar])
+getNextOwnershipVars context count = loop (context, vars) <- (context, []) do
+    if getLength vars == count
+        then break (context, vars)
+        else do
+            (context, o) <- getNextOwnershipVar context
+            (context, vars + [o])
+
+addOwnershipVarsToType :: Context -> T.Type -> (Context, T.Type)
+addOwnershipVarsToType context type = case type of
+    T.Adt id args -> do
+        c <- getArgCount context id
+        (context, args) <- getNextOwnershipVars context c
+        (context, o) <- getNextOwnershipVar context
+        t <- T.Var o (T.Adt id args)
+        (context, t)
+    T.Record id args -> do
+        c <- getArgCount context id
+        (context, args) <- getNextOwnershipVars context c
+        (context, o) <- getNextOwnershipVar context
+        t <- T.Var o (T.Record id args)
+        (context, t)
+    type -> do
+        (context, o) <- getNextOwnershipVar context
+        t <- T.Var o type
+        (context, t)
+
+addOwnershipVarsToExpr :: Context -> Expr -> (Context, Expr)
+addOwnershipVarsToExpr context expr = do
+    Expr s_expr type <- expr
+    (context, type) <- addOwnershipVarsToType context type
+    case s_expr of
+        Do items -> do
+            (context, items) <- processBlock context items addOwnershipVarsToExpr
+            (context, Expr (Do items) type)
+        Multi _ -> panic "Multi expr found in addOwnershipVarsToExpr"
+        StaticFunctionCall id args -> do
+            (context, args) <- processArgs context args addOwnershipVarsToExpr
+            (context, Expr (StaticFunctionCall id args) type)
+        IntegerLiteral lit -> (context, Expr (IntegerLiteral lit) type)
+        StringLiteral lit -> (context, Expr (StringLiteral lit) type)
+        FloatLiteral lit -> (context, Expr (FloatLiteral lit) type)
+        CharLiteral lit -> (context, Expr (CharLiteral lit) type)
+        VarDecl v arg -> do
+            (context, arg) <- addOwnershipVarsToExpr context arg
+            (context, Expr (VarDecl v arg) type)
+        VarRef v -> (context, Expr (VarRef v) type)
+        FieldAccess name arg -> do
+            (context, arg) <- addOwnershipVarsToExpr context arg
+            (context, Expr (FieldAccess name arg) type)
+        If cond true_branch false_branch -> do
+            (context, cond) <- addOwnershipVarsToExpr context cond
+            (context, true_branch) <- addOwnershipVarsToExpr context true_branch
+            (context, false_branch) <- addOwnershipVarsToExpr context false_branch
+            (context, Expr (If cond true_branch false_branch) type)
+        List args -> do
+            (context, args) <- processArgs context args addOwnershipVarsToExpr
+            (context, Expr (List args) type)
+        Return arg -> do
+            (context, arg) <- addOwnershipVarsToExpr context arg
+            (context, Expr (Return arg) type)
+        Continue arg -> do
+            (context, arg) <- addOwnershipVarsToExpr context arg
+            (context, Expr (Continue arg) type)
+        Break arg -> do
+            (context, arg) <- addOwnershipVarsToExpr context arg
+            (context, Expr (Break arg) type)
+        RecordUpdate v updates -> do
+            (context, updates) <- updates |> List.iter |> fold (\(context, updates), update -> do
+                (context, updated_body) <- addOwnershipVarsToExpr context update.body
+                update <- update { body = updated_body }
+                updates <- updates + [update]
+                (context, updates)) (context, [])
+            (context, Expr (RecordUpdate v updates) type)
+        Loop v initializer items -> do
+            (context, initializer) <- addOwnershipVarsToExpr context initializer
+            (context, items) <- processBlock context items addOwnershipVarsToExpr
+            (context, Expr (Loop v initializer items) type)
+        CaseOf body cases -> do
+            (context, body) <- addOwnershipVarsToExpr context body
+            (context, cases) <- cases |> List.iter |> fold (\(context, cases), case_branch -> do
+                (context, updated_body) <- addOwnershipVarsToExpr context case_branch.body
+                case_branch <- case_branch { body = updated_body }
+                cases <- cases + [case_branch]
+                (context, cases)) (context, [])
+            (context, Expr (CaseOf body cases) type)
+        Clone arg -> do
+            (context, arg) <- addOwnershipVarsToExpr context arg
+            (context, Expr (Clone arg) type)
+        Deref arg -> do
+            (context, arg) <- addOwnershipVarsToExpr context arg
+            (context, Expr (Deref arg) type)
+        Box arg -> do
+            (context, arg) <- addOwnershipVarsToExpr context arg
+            (context, Expr (Box arg) type)
+
+processFunction :: Context -> Function -> (Context, Function)
+processFunction context function = case function.kind of
+    Normal body -> do
+        (context, updated_body) <- addOwnershipVarsToExpr context body
+        (context, function { kind = Normal updated_body })
+    _ -> (context, function)
+
+processProgram :: P.Program -> P.Program
+processProgram program = do
+    dependencies <- collectDeps program
+    groups <- processDependencies dependencies
+    program <- addIndirections program groups
+    program <- addOwnershipVarsToDataTypes program groups
+    context <- Context program.adts program.records 0
+    (context, functions) <- program.functions |> Map.iter |> fold (\(context, functions), (id, function) -> do
+        (context, function) <- processFunction context function
+        (functions, _) <- insert functions id function
+        (context, functions)) (context, empty)
+    program <- program { functions = functions }
+    program
+

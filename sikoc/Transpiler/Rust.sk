@@ -14,13 +14,16 @@ data Struct = { name :: String, fields :: [StructField], attributes :: [Attribut
 
 data Type = Normal String
             | Box Type
-            | Rc Type deriving (PartialEq, Eq, PartialOrd, Ord)
+            | Rc Type
+            | Never
+            deriving (PartialEq, Eq, PartialOrd, Ord)
 
 instance Show Type where
     show t = case t of
         Normal t -> t
         Box t -> "std::boxed::Box<{}>" % show t
         Rc t -> "std::rc::Rc<{}>" % show t
+        Never -> "!"
 
 isBoxed :: Type -> Bool
 isBoxed t = case t of
@@ -32,6 +35,7 @@ getInnerType t = case t of
     Normal _ -> t
     Box t -> getInnerType t
     Rc t -> getInnerType t
+    Never -> Never
 
 data Function = { name :: String, is_method :: Bool, args :: [(String, Type)], result :: Type, body :: Expr }
 
@@ -83,15 +87,6 @@ data Expr = Block [Expr]
 
 data Program = { structs :: [Struct], enums :: [Enum], functions :: [Function], impls :: [TraitImpl] }
 
-escapeString :: String -> String
-escapeString lit = do
-    lit <- replace lit "\\" "\\\\"
-    lit <- replace lit "\n"  "\\n"
-    lit <- replace lit "\r" "\\r"
-    lit <- replace lit "\t" "\\t"
-    lit <- replace lit "\"" "\\\""
-    lit
-
 generatePattern :: Pattern -> Option Expr -> String
 generatePattern pattern guard = case pattern of
     IntegerPattern lit -> do
@@ -117,6 +112,11 @@ generatePattern pattern guard = case pattern of
         None -> "{}" % variant_name
     RecordPattern record_name -> record_name + "{..}"
     WildcardPattern -> "_"
+
+getTypeAnnotation :: Type -> String
+getTypeAnnotation type = case type of
+    Never -> ""
+    _ -> " : {} " % type
 
 generateExpr :: Expr -> Indent -> String
 generateExpr expr indent = case expr of
@@ -152,10 +152,10 @@ generateExpr expr indent = case expr of
         '\\' -> "'\\\\'"
         _ -> "'{}'" % lit
     VarDecl n rhs type -> case type of
-        Some type -> "let {}: {} = {}" % (n, type, generateExpr rhs (Indent 0))
+        Some type -> "let {}{}= {}" % (n, getTypeAnnotation type, generateExpr rhs (Indent 0))
         None -> "let {} = {}" % (n, generateExpr rhs (Indent 0))
     VarDeclMut n rhs type -> case type of
-        Some type -> "let mut {}: {} = {}" % (n, type, generateExpr rhs (Indent 0))
+        Some type -> "let mut {}{}= {}" % (n, getTypeAnnotation type, generateExpr rhs (Indent 0))
         None -> "let mut {} = {}" % (n, generateExpr rhs (Indent 0))
     VarRef n -> n
     Match body cases -> do
