@@ -61,6 +61,7 @@ checkGroup group_id group_lookup_table all_dependencies processed_items = do
 
 processDependencies a :: (PartialEq a, Ord a) => Map a [a] -> [DependencyGroup a]
 processDependencies all_dependencies = do
+    all_dependencies <- all_dependencies |> Map.iter |> map (\(id, dependencies) -> (id, dependencies |> sort |> dedup)) |> toMap
     group_table :: GroupTable a <- GroupTable Map.empty
 
     // 1. create a dependency group in the table for every single item

@@ -1,0 +1,44 @@
+module Siko.Backend.Passes.Box where
+
+import Siko.MIR.Program as P
+import Siko.MIR.Type as T
+import Siko.MIR.Data
+import Siko.MIR.Expr
+import Siko.MIR.Function
+import Siko.Util.DependencyProcessor
+import Map
+
+addIndirectionsToRecord :: [P.Identity] -> Option Record -> Option Record
+addIndirectionsToRecord group record = case record of
+    Some record -> do
+        record :: Record <- record
+        fields <- record.fields |> List.iter |> map (\field -> do
+            id <- T.getIdentity field.type
+            if contains group id
+                then field { type = T.Box field.type }
+                else field) |> toList
+        record <- record { fields = fields }
+        Some record
+    None -> None
+
+addIndirectionsToGroup :: [P.Identity] -> P.Program -> P.Program
+addIndirectionsToGroup group program = do
+    group |> List.iter |> fold (\program, id -> do
+        (records, _) <- alter (addIndirectionsToRecord group) id program.records
+        program <- program { records = records }
+        program) program
+
+addIndirections :: P.Program -> [DependencyGroup P.Identity] -> P.Program
+addIndirections program groups = do
+    program <- groups |> List.iter |> fold (\program, group -> do
+            if getLength group.items == 1
+                then program
+                else addIndirectionsToGroup group.items program
+        ) program
+    program
+
+processProgram :: P.Program -> [DependencyGroup P.Identity] -> P.Program
+processProgram program groups = do
+    program <- addIndirections program groups
+    program
+

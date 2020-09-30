@@ -2,16 +2,63 @@ module Siko.Backend where
 
 import Siko.Backend.Passes.CreateVars as CreateVars
 import Siko.Backend.Passes.Copy as Copy
-import Siko.Backend.Passes.ProcessDataTypes as ProcessDataTypes
+import Siko.Backend.Passes.Box as Box
+import Siko.Backend.Passes.Ownership as Ownership
 import Siko.MIR.Program as P
+import Siko.MIR.Data
+import Siko.MIR.Type as T
+import Siko.MIR.Function as F
 import Siko.Config
+import Siko.Util.DependencyProcessor
+import Map
 import Hack
+
+collectDataDeps :: P.Program -> Map P.Identity [P.Identity]
+collectDataDeps program = do
+    dependencies <- empty
+    dependencies <- program.adts |> Map.iter |> fold (\dependencies, (id, adt) -> do
+            deps <- adt.variants |> List.iter |> fold (\deps, variant -> do
+                deps + [T.getIdentity variant.type]) []
+            (dependencies, _) <- insert dependencies id deps
+            dependencies
+        ) dependencies
+    dependencies <- program.records |> Map.iter |> fold (\dependencies, (id, record) -> do
+            deps <- record.fields |> List.iter |> fold (\deps, field -> do
+                deps + [T.getIdentity field.type]) []
+            deps <- case record.external_info of
+                Some external_info -> do
+                    external_info :: ExternalRecordInfo <- external_info // FIXME
+                    external_info.type_args |> List.iter |> fold (\deps, type_arg -> do
+                        deps + [T.getIdentity type_arg]) deps
+                None -> deps
+            (dependencies, _) <- insert dependencies id deps
+            dependencies
+        ) dependencies
+    dependencies
+
+getDepsForFunction :: P.Program -> F.Function -> [P.Identity]
+getDepsForFunction program function = case function.kind of
+    F.Normal body -> []
+    _ -> []
+
+collectFunctionDeps :: P.Program -> Map P.Identity [P.Identity]
+collectFunctionDeps program = do
+    dependencies <- empty
+    dependencies <- program.functions |> Map.iter |> fold (\dependencies, (id, function) -> do
+            deps <- getDepsForFunction program function
+            (dependencies, _) <- insert dependencies id deps
+            dependencies
+        ) dependencies
+    dependencies
 
 processProgram :: Config -> P.Program -> P.Program
 processProgram config program = do
-    program <- ProcessDataTypes.processProgram program
+    data_dependencies <- collectDataDeps program
+    data_groups <- processDependencies data_dependencies
+    program <- Box.processProgram program data_groups
     program <- CreateVars.processProgram program
     program <- Copy.processProgram program
+    program <- Ownership.processProgram program data_groups
     s <- P.dump program
     writeTextFile (getOutputFileName config OptMIR) s
     program
