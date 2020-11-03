@@ -60,7 +60,7 @@ processBlock :: Context -> [Expr] -> (Context -> Expr -> (Context, Expr)) -> (Co
 processBlock context exprs process_fn =
     exprs |> List.iter |> fold (\(context, exprs), expr -> do
         (context, expr) <- process_fn context expr
-        Expr inner _ <- expr
+        Expr inner _ _ <- expr
         exprs <- case inner of
             Multi items -> exprs + items
             _ -> exprs + [expr]
@@ -151,6 +151,8 @@ collectUses context expr = do
             (context, Expr (CaseOf body cases) type)
         Clone _ -> panic "Clone expr found in collectUses"
         Deref _ -> panic "Deref expr found in collectUses"
+        Ref _ -> panic "Ref expr found in collectUses"
+        Move _ -> panic "Move expr found in collectUses"
         Box _ -> panic "Box expr found in collectUses"
 
 findFieldTypeByName :: Context -> T.Type -> String -> T.Type
@@ -252,6 +254,8 @@ addCopies context expr = do
             (context, Expr (CaseOf body cases) type)
         Clone _ -> panic "Clone expr found in addCopies"
         Deref _ -> panic "Deref expr found in addCopies"
+        Ref _ -> panic "Ref expr found in addCopies"
+        Move _ -> panic "Move expr found in addCopies"
         Box _ -> panic "Box expr found in addCopies"
 
 initContext :: Map P.Identity D.Record -> Context

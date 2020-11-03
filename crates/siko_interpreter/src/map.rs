@@ -1,6 +1,5 @@
 use crate::environment::Environment;
 use crate::extern_function::ExternFunction;
-use crate::interpreter::ExprResult;
 use crate::interpreter::Interpreter;
 use crate::util::create_none;
 use crate::util::create_some;
@@ -98,77 +97,6 @@ impl ExternFunction for Get {
             None => create_none(map_type_args.remove(1)),
         };
         return v;
-    }
-}
-
-pub struct Alter {}
-
-impl ExternFunction for Alter {
-    fn call(
-        &self,
-        environment: &mut Environment,
-        _: Option<ExprId>,
-        _: &NamedFunctionKind,
-        result_ty: Type,
-    ) -> Value {
-        let func = environment.get_arg_by_index(0).clone();
-        let key = environment.get_arg_by_index(1).clone();
-        let map_arg = environment.get_arg_by_index(2).clone();
-        let map_ty = map_arg.ty.clone();
-        let mut map_type_args = map_arg.ty.get_type_args();
-        let value_type = map_type_args.remove(1);
-        let mut map = map_arg.core.as_map();
-        match map.get(&key) {
-            Some(v) => {
-                let item = create_some(v.clone());
-                let new = if let ExprResult::Ok(v) = Interpreter::call_func(func, vec![item], None)
-                {
-                    v
-                } else {
-                    unreachable!()
-                };
-                match new.core.as_option(0, 1) {
-                    Some(v) => {
-                        let res = map.insert(key, v);
-                        let map = Value::new(ValueCore::Map(map), map_ty);
-                        let removed_item = match res {
-                            Some(v) => create_some(v),
-                            None => create_none(value_type),
-                        };
-                        return Value::new(ValueCore::Tuple(vec![map, removed_item]), result_ty);
-                    }
-                    None => {
-                        let removed_item = map.remove(&key);
-                        let map = Value::new(ValueCore::Map(map), map_ty);
-                        let removed_item =
-                            create_some(removed_item.expect("removed item is empty"));
-                        return Value::new(ValueCore::Tuple(vec![map, removed_item]), result_ty);
-                    }
-                }
-            }
-            None => {
-                let empty = create_none(value_type.clone());
-                let new = if let ExprResult::Ok(v) = Interpreter::call_func(func, vec![empty], None)
-                {
-                    v
-                } else {
-                    unreachable!()
-                };
-                match new.core.as_option(0, 1) {
-                    Some(v) => {
-                        map.insert(key, v);
-                        let map = Value::new(ValueCore::Map(map), map_ty);
-                        let removed_item = create_none(value_type);
-                        return Value::new(ValueCore::Tuple(vec![map, removed_item]), result_ty);
-                    }
-                    None => {
-                        let map = Value::new(ValueCore::Map(map), map_ty);
-                        let removed_item = create_none(value_type);
-                        return Value::new(ValueCore::Tuple(vec![map, removed_item]), result_ty);
-                    }
-                }
-            }
-        }
     }
 }
 
@@ -282,7 +210,6 @@ pub fn register_extern_functions(interpreter: &mut Interpreter) {
     interpreter.add_extern_function(MAP_MODULE_NAME, "insert", Box::new(Insert {}));
     interpreter.add_extern_function(MAP_MODULE_NAME, "remove", Box::new(Remove {}));
     interpreter.add_extern_function(MAP_MODULE_NAME, "get", Box::new(Get {}));
-    interpreter.add_extern_function(MAP_MODULE_NAME, "alter", Box::new(Alter {}));
     interpreter.add_extern_function(MAP_MODULE_NAME, "show", Box::new(Show {}));
     interpreter.add_extern_function(MAP_MODULE_NAME, "iter", Box::new(Iter {}));
     interpreter.add_extern_function(MAP_MODULE_NAME, "toMap", Box::new(ToMap {}));

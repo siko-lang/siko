@@ -41,7 +41,9 @@ instance Show Checker where
 
 data Case = { checker :: Checker, body :: Expr } deriving (Show)
 
-data Expr = Expr SimpleExpr T.Type deriving (Show)
+data ExprId = ExprId Int deriving (PartialEq, Eq, PartialOrd, Ord, Show)
+
+data Expr = Expr SimpleExpr T.Type ExprId deriving (Show)
 
 data SimpleExpr = Do [Expr]
             | Multi [Expr]
@@ -63,12 +65,14 @@ data SimpleExpr = Do [Expr]
             | CaseOf Expr [Case]
             | Clone Expr
             | Deref Expr
+            | Ref Expr
+            | Move Expr
             | Box Expr
             deriving (Show)
 
 prettyPrint :: Expr -> Indent -> (String, Bool)
 prettyPrint expr ind = do
-    Expr expr _ <- expr
+    Expr expr _ _ <- expr
     case expr of
         Do args -> do
             inner <- inc ind
@@ -92,7 +96,7 @@ prettyPrint expr ind = do
         FloatLiteral lit -> ("{}" % lit, True)
         CharLiteral lit -> ("'{}'" % lit, True)
         VarDecl v arg -> do
-            Expr _ arg_type <- arg
+            Expr _ arg_type id <- arg
             s <- "{} :: {} <- {}" % (v, arg_type, (prettyPrint arg ind).0)
             (s, False)
         VarRef v -> (show v, True)
@@ -152,6 +156,12 @@ prettyPrint expr ind = do
         Deref expr -> do
             (s, simple) <- prettyPrint expr ind
             ("deref({})" % s, False)
+        Ref expr -> do
+            (s, simple) <- prettyPrint expr ind
+            ("ref({})" % s, False)
+        Move expr -> do
+            (s, simple) <- prettyPrint expr ind
+            ("move({})" % s, False)
         Box expr -> do
             (s, simple) <- prettyPrint expr ind
             ("box({})" % s, False)

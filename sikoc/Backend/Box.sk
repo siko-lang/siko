@@ -28,17 +28,12 @@ addIndirectionsToGroup group program = do
         program <- program { records = records }
         program) program
 
-addIndirections :: P.Program -> [DependencyGroup P.Identity] -> P.Program
-addIndirections program groups = do
+processProgram :: P.Program -> [DependencyGroup P.Identity] -> P.Program
+processProgram program groups = do
     program <- groups |> List.iter |> fold (\program, group -> do
             if getLength group.items == 1
                 then program
                 else addIndirectionsToGroup group.items program
         ) program
-    program
-
-processProgram :: P.Program -> [DependencyGroup P.Identity] -> P.Program
-processProgram program groups = do
-    program <- addIndirections program groups
     program
 

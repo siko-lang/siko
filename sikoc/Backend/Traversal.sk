@@ -14,7 +14,7 @@ processBlock a :: a -> [Expr] -> Option (a -> Expr -> (a, Expr)) -> Option (a ->
 processBlock context exprs process_expr process_type =
     exprs |> List.iter |> fold (\(context, exprs), expr -> do
         (context, expr) <- traverse context expr process_expr process_type
-        Expr inner _ <- expr
+        Expr inner _ _ <- expr
         exprs <- case inner of
             Multi items -> exprs + items
             _ -> exprs + [expr]
@@ -22,57 +22,57 @@ processBlock context exprs process_expr process_type =
 
 traverse a :: a -> Expr -> Option (a -> Expr -> (a, Expr)) -> Option (a -> T.Type -> (a, T.Type)) -> (a, Expr)
 traverse context expr process_expr process_type = do
-    Expr s_expr type <- expr
+    Expr s_expr type id <- expr
     (context, type) <- case process_type of
         Some process_type -> process_type context type
         None -> (context, type)
     (context, expr) <- case s_expr of
         Do items -> do
             (context, items) <- processBlock context items process_expr process_type
-            (context, Expr (Do items) type)
+            (context, Expr (Do items) type id)
         Multi _ -> panic "Multi expr found in traverse"
-        StaticFunctionCall id args -> do
+        StaticFunctionCall f_id args -> do
             (context, args) <- processArgs context args process_expr process_type
-            (context, Expr (StaticFunctionCall id args) type)
-        IntegerLiteral lit -> (context, Expr (IntegerLiteral lit) type)
-        StringLiteral lit -> (context, Expr (StringLiteral lit) type)
-        FloatLiteral lit -> (context, Expr (FloatLiteral lit) type)
-        CharLiteral lit -> (context, Expr (CharLiteral lit) type)
+            (context, Expr (StaticFunctionCall f_id args) type id)
+        IntegerLiteral lit -> (context, Expr (IntegerLiteral lit) type id)
+        StringLiteral lit -> (context, Expr (StringLiteral lit) type id)
+        FloatLiteral lit -> (context, Expr (FloatLiteral lit) type id)
+        CharLiteral lit -> (context, Expr (CharLiteral lit) type id)
         VarDecl v arg -> do
             (context, arg) <- traverse context arg process_expr process_type
-            (context, Expr (VarDecl v arg) type)
-        VarRef v -> (context, Expr (VarRef v) type)
+            (context, Expr (VarDecl v arg) type id)
+        VarRef v -> (context, Expr (VarRef v) type id)
         FieldAccess name arg -> do
             (context, arg) <- traverse context arg process_expr process_type
-            (context, Expr (FieldAccess name arg) type)
+            (context, Expr (FieldAccess name arg) type id)
         If cond true_branch false_branch -> do
             (context, cond) <- traverse context cond process_expr process_type
             (context, true_branch) <- traverse context true_branch process_expr process_type
             (context, false_branch) <- traverse context false_branch process_expr process_type
-            (context, Expr (If cond true_branch false_branch) type)
+            (context, Expr (If cond true_branch false_branch) type id)
         List args -> do
             (context, args) <- processArgs context args process_expr process_type
-            (context, Expr (List args) type)
+            (context, Expr (List args) type id)
         Return arg -> do
             (context, arg) <- traverse context arg process_expr process_type
-            (context, Expr (Return arg) type)
+            (context, Expr (Return arg) type id)
         Continue arg -> do
             (context, arg) <- traverse context arg process_expr process_type
-            (context, Expr (Continue arg) type)
+            (context, Expr (Continue arg) type id)
         Break arg -> do
             (context, arg) <- traverse context arg process_expr process_type
-            (context, Expr (Break arg) type)
+            (context, Expr (Break arg) type id)
         RecordUpdate v updates -> do
             (context, updates) <- updates |> List.iter |> fold (\(context, updates), update -> do
                 (context, updated_body) <- traverse context update.body process_expr process_type
                 update <- update { body = updated_body }
                 updates <- updates + [update]
                 (context, updates)) (context, [])
-            (context, Expr (RecordUpdate v updates) type)
+            (context, Expr (RecordUpdate v updates) type id)
         Loop v initializer items -> do
             (context, initializer) <- traverse context initializer process_expr process_type
             (context, items) <- processBlock context items process_expr process_type
-            (context, Expr (Loop v initializer items) type)
+            (context, Expr (Loop v initializer items) type id)
         CaseOf body cases -> do
             (context, body) <- traverse context body process_expr process_type
             (context, cases) <- cases |> List.iter |> fold (\(context, cases), case_branch -> do
@@ -80,16 +80,22 @@ traverse context expr process_expr process_type = do
                 case_branch <- case_branch { body = updated_body }
                 cases <- cases + [case_branch]
                 (context, cases)) (context, [])
-            (context, Expr (CaseOf body cases) type)
+            (context, Expr (CaseOf body cases) type id)
         Clone arg -> do
             (context, arg) <- traverse context arg process_expr process_type
-            (context, Expr (Clone arg) type)
+            (context, Expr (Clone arg) type id)
         Deref arg -> do
             (context, arg) <- traverse context arg process_expr process_type
-            (context, Expr (Deref arg) type)
+            (context, Expr (Deref arg) type id)
+        Ref arg -> do
+            (context, arg) <- traverse context arg process_expr process_type
+            (context, Expr (Ref arg) type id)
+        Move arg -> do
+            (context, arg) <- traverse context arg process_expr process_type
+            (context, Expr (Move arg) type id)
         Box arg -> do
             (context, arg) <- traverse context arg process_expr process_type
-            (context, Expr (Box arg) type)
+            (context, Expr (Box arg) type id)
     (context, expr) <- case process_expr of
         Some process_expr -> process_expr context expr
         None -> (context, expr)

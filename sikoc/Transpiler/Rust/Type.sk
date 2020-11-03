@@ -1,0 +1,29 @@
+module Siko.Transpiler.Rust.Type where
+
+data Type = Named String
+            | Box Type
+            | Rc Type
+            | Ref Type
+            | Never
+            deriving (PartialEq, Eq, PartialOrd, Ord)
+
+instance Show Type where
+    show t = case t of
+        Named t -> t
+        Box t -> "std::boxed::Box<{}>" % t
+        Rc t -> "std::rc::Rc<{}>" % t
+        Ref t -> "&{}" % t
+        Never -> "!"
+
+isBoxed :: Type -> Bool
+isBoxed t = case t of
+    Box _ -> True
+    _ -> False
+
+getInnerType :: Type -> Type
+getInnerType t = case t of
+    Named _ -> t
+    Box t -> getInnerType t
+    Rc t -> getInnerType t
+    Ref t -> getInnerType t
+    Never -> Never

@@ -2,7 +2,7 @@ module Siko.MIR.Type where
 
 import Siko.MIR.Program
 
-data OwnershipVar = OwnershipVar Int
+data OwnershipVar = OwnershipVar Int deriving (PartialEq, Eq, PartialOrd, Ord)
 
 data Type = Adt Identity [OwnershipVar]
           | Record Identity [OwnershipVar]
@@ -34,3 +34,12 @@ getIdentity type = case type of
     Never -> panic "getIdentity called on Never!"
     Box t -> getIdentity t
     Var i t -> getIdentity t
+
+collectOwnershipVars :: Type -> [OwnershipVar]
+collectOwnershipVars type = case type of
+    Adt id args -> args
+    Record id args -> args
+    Ref t -> collectOwnershipVars t
+    Never -> []
+    Box t -> collectOwnershipVars t
+    Var i t -> [i] + collectOwnershipVars t

@@ -16,12 +16,12 @@ instance Show Identity where
 
 data Variant = { name :: String,
                  type :: Type,
-               }
+               } deriving (Show)
 
 data AlgebraicDataType = { id :: Identity,
                            variants :: [Variant],
                            external_class_impls :: [(ExternalClassImpl, Option Expr)],
-                           arg_count :: Int,
+                           ownership_vars :: [OwnershipVar],
                          }
 
 data RecordField = { name :: String,
@@ -34,19 +34,19 @@ data Record = { id :: Identity,
                 fields :: [RecordField],
                 external_info :: Option ExternalRecordInfo,
                 external_class_impls :: [(ExternalClassImpl, Option Expr)],
-                arg_count :: Int,
+                ownership_vars :: [OwnershipVar],
               }
 
 dumpAdt :: AlgebraicDataType -> String
 dumpAdt adt = do
     variants <- adt.variants |> List.iter |> map (\v -> "{} {}" % (v.name, v.type)) |> toList
-    "adt {} {} = {}" % (adt.id, adt.arg_count, join variants " | ")
+    "adt {} {} = {}" % (adt.id, adt.ownership_vars, join variants " | ")
 
 dumpRecord :: Record -> String
 dumpRecord record = do
     fields <- record.fields |> List.iter |> map (\field -> "{} :: {}" % (field.name, field.type)) |> toList
     if isEmpty fields
         then if isSome record.external_info
-            then "record {} {} = extern" % (record.id, record.arg_count)
-            else "record {} {}" % (record.id, record.arg_count)
-        else ("record {} {}" % (record.id, record.arg_count)) + " = { " + (join fields ", ") + " }"
+            then "record {} {} = extern" % (record.id, record.ownership_vars)
+            else "record {} {}" % (record.id, record.ownership_vars)
+        else ("record {} {}" % (record.id, record.ownership_vars)) + " = { " + (join fields ", ") + " }"

@@ -36,6 +36,7 @@ data Context = { hir_program :: HP.Program,
                  external_class_names :: [(HP.FullyQualifiedName, MD.ExternalClassImpl)],
                  external_class_impls :: Map HT.Type [MD.ExternalClassImpl],
                  pattern_vars :: Map HPat.PatternId ME.Var,
+                 expr_id :: Int,
                }
 
 getNextTempVar :: Context -> (Context, ME.Var)
@@ -43,6 +44,18 @@ getNextTempVar context = do
     id <- context.var_id
     context <- context { var_id = id + 1 }
     (context, ME.Temp id)
+
+getNextExprId :: Context -> (Context, ME.ExprId)
+getNextExprId context = do
+    id <- context.expr_id
+    context <- context { expr_id = id + 1 }
+    (context, ME.ExprId id)
+
+getExpr :: Context -> (ME.ExprId -> ME.Expr) -> (Context, ME.Expr)
+getExpr context gen = do
+    (context, id) <- getNextExprId context
+    expr <- gen id
+    (context, expr)
 
 getIdentity :: Context -> String -> String -> (Context, MP.Identity)
 getIdentity context module_name name = do
@@ -74,7 +87,7 @@ generateExternalImpl context hir_type impl = case impl of
     MD.Show -> do
         (context, mir_type) <- processType context hir_type
         arg_ref <- ME.VarRef (ME.Arg 0)
-        arg_ref_expr <- ME.Expr (arg_ref) mir_type
+        (context, arg_ref_expr) <- getExpr context (ME.Expr (arg_ref) mir_type)
         (context, call_expr) <- callOpShow context hir_type arg_ref_expr
         case mir_type of
             MT.Adt adt_id _ -> do
@@ -88,8 +101,8 @@ generateExternalImpl context hir_type impl = case impl of
         (context, mir_type) <- processType context hir_type
         arg_ref0 <- ME.VarRef (ME.Arg 0)
         arg_ref1 <- ME.VarRef (ME.Arg 1)
-        arg_ref0_expr <- ME.Expr (arg_ref0) mir_type
-        arg_ref1_expr <- ME.Expr (arg_ref1) mir_type
+        (context, arg_ref0_expr) <- getExpr context (ME.Expr (arg_ref0) mir_type)
+        (context, arg_ref1_expr) <- getExpr context (ME.Expr (arg_ref1) mir_type)
         (context, call_expr) <- callOpEq context hir_type arg_ref0_expr arg_ref1_expr
         case mir_type of
             MT.Adt adt_id _ -> do
@@ -113,8 +126,8 @@ generateExternalImpl context hir_type impl = case impl of
         (context, mir_type) <- processType context hir_type
         arg_ref0 <- ME.VarRef (ME.Arg 0)
         arg_ref1 <- ME.VarRef (ME.Arg 1)
-        arg_ref0_expr <- ME.Expr (arg_ref0) mir_type
-        arg_ref1_expr <- ME.Expr (arg_ref1) mir_type
+        (context, arg_ref0_expr) <- getExpr context (ME.Expr (arg_ref0) mir_type)
+        (context, arg_ref1_expr) <- getExpr context (ME.Expr (arg_ref1) mir_type)
         (context, call_expr) <- callOpPartialCmp context hir_type arg_ref0_expr arg_ref1_expr
         case mir_type of
             MT.Adt adt_id _ -> do
@@ -128,8 +141,8 @@ generateExternalImpl context hir_type impl = case impl of
         (context, mir_type) <- processType context hir_type
         arg_ref0 <- ME.VarRef (ME.Arg 0)
         arg_ref1 <- ME.VarRef (ME.Arg 1)
-        arg_ref0_expr <- ME.Expr (arg_ref0) mir_type
-        arg_ref1_expr <- ME.Expr (arg_ref1) mir_type
+        (context, arg_ref0_expr) <- getExpr context (ME.Expr (arg_ref0) mir_type)
+        (context, arg_ref1_expr) <- getExpr context (ME.Expr (arg_ref1) mir_type)
         (context, call_expr) <- callOpCmp context hir_type arg_ref0_expr arg_ref1_expr
         case mir_type of
             MT.Adt adt_id _ -> do
@@ -146,14 +159,14 @@ generateExternalImpls context = do
             impls |> List.iter |> fold (\context, impl -> generateExternalImpl context hir_type impl) context
         ) context
 
-lowerProgram :: Config -> TypecheckerState -> HP.Program -> FunctionStore -> TypeStore -> MP.Program
+lowerProgram :: Config -> TypecheckerState -> HP.Program -> FunctionStore -> TypeStore -> (MP.Program, Int)
 lowerProgram config state hir_program function_store type_store = do
     trace config "Lowering to MIR.."
     main_qn <- HP.FullPath getMainModuleName getMainFunctionName
     mir_program <- MP.createProgram
     context <- Context hir_program mir_program function_store
                type_store CS.createClosureStore IS.createIteratorStore state 0 empty
-               FQ.createFunctionQueue getExternalClassNames empty empty
+               FQ.createFunctionQueue getExternalClassNames empty empty 0
     context <- case HP.getFunctionOpt hir_program main_qn of
         Some main -> do
             item <- FQ.Normal main_qn (HT.Tuple [])
@@ -173,4 +186,4 @@ lowerProgram config state hir_program function_store type_store = do
     mir_program <- mir_program { adts = context.type_store.adts, records = context.type_store.records, unit_type = Some unit_type }
     s <- MP.dump mir_program
     writeTextFile (getOutputFileName config MIR) s
-    mir_program
+    (mir_program, context.expr_id)

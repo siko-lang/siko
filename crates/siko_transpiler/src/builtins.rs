@@ -290,7 +290,6 @@ fn generate_map_builtins(
     original_name: &str,
     result_ty: &Type,
     result_ty_str: &str,
-    arg_type_types: Vec<Type>,
     arg_types: Vec<String>,
 ) -> Result<()> {
     indent.inc();
@@ -468,143 +467,6 @@ fn generate_map_builtins(
                 "{}{} {{ value : std::rc::Rc::new(format!(\"{{{{ {{}} }}}}\", subs.join(\", \"))) }}",
                 indent, result_ty_str
             )?;
-        }
-        "alter" => {
-            let option_type = arg_type_types[0].get_result_type(1);
-            let option_type_str = ir_type_to_rust_type(&option_type, program);
-            let result_tuple_id = result_ty.get_typedef_id();
-            let result_tuple_record = program.typedefs.get(&result_tuple_id).get_record();
-            let result_option_type = result_tuple_record.fields[1].ty.clone();
-            let result_option_type_str = ir_type_to_rust_type(&result_option_type, program);
-            let map_type: &String = &arg_types[2];
-            write!(output_file, "{}let mut func = arg0;\n", indent)?;
-            write!(output_file, "{}let key = arg1;\n", indent)?;
-            write!(output_file, "{}let mut map = arg2;\n", indent)?;
-            write!(output_file, "{}match map.value.get(&key) {{\n", indent)?;
-            indent.inc();
-            write!(output_file, "{}Some(v) => {{\n", indent)?;
-            indent.inc();
-            write!(
-                output_file,
-                "{}let input = {}::Some(v.clone());\n",
-                indent, option_type_str
-            )?;
-            write!(output_file, "{}let result = func.call(input);\n", indent)?;
-            write!(output_file, "{}match result {{\n", indent)?;
-            indent.inc();
-
-            write!(
-                output_file,
-                "{}{}::Some(v) => {{\n",
-                indent, option_type_str
-            )?;
-            indent.inc();
-            write!(
-                output_file,
-                "{}let mut map = (*map.value).clone(); \n",
-                indent
-            )?;
-            write!(output_file, "{}match map.insert(key, v) {{\n", indent)?;
-            indent.inc();
-            write!(
-                output_file,
-                "{}Some(v) => {} {{ _siko_field_0: {} {{ value: std::rc::Rc::new(map) }} , _siko_field_1: {}::Some(v) }},\n",
-                indent,  result_ty_str, map_type, result_option_type_str
-            )?;
-            write!(
-                output_file,
-                "{}None => {} {{ _siko_field_0: {} {{ value: std::rc::Rc::new(map) }} , _siko_field_1: {}::None }},\n",
-                indent, result_ty_str, map_type, result_option_type_str
-            )?;
-            indent.dec();
-            write!(output_file, "{}}}\n", indent)?;
-            indent.dec();
-            write!(output_file, "{}}}\n", indent)?;
-
-            write!(output_file, "{}{}::None => {{\n", indent, option_type_str)?;
-            indent.inc();
-            write!(
-                output_file,
-                "{}let mut map = (*map.value).clone(); \n",
-                indent
-            )?;
-            write!(output_file, "{}match map.remove(&key) {{\n", indent)?;
-            indent.inc();
-            write!(
-                output_file,
-                "{}Some(v) => {} {{ _siko_field_0: {} {{ value: std::rc::Rc::new(map) }}, _siko_field_1: {}::Some(v) }},\n",
-                indent, result_ty_str, map_type,  result_option_type_str
-            )?;
-            write!(
-                output_file,
-                "{}None => {} {{ _siko_field_0: {} {{ value: std::rc::Rc::new(map) }}, _siko_field_1: {}::None }},\n",
-                indent, result_ty_str, map_type, result_option_type_str
-            )?;
-            indent.dec();
-            write!(output_file, "{}}}\n", indent)?;
-            indent.dec();
-            write!(output_file, "{}}}\n", indent)?;
-            indent.dec();
-            write!(output_file, "{}}}\n", indent)?;
-            indent.dec();
-            write!(output_file, "{}}}\n", indent)?;
-
-            write!(output_file, "{}None => {{\n", indent)?;
-            indent.inc();
-
-            write!(
-                output_file,
-                "{}let input = {}::None;\n",
-                indent, option_type_str
-            )?;
-            write!(output_file, "{}let result = func.call(input);\n", indent)?;
-            write!(output_file, "{}match result {{\n", indent)?;
-            indent.inc();
-
-            write!(
-                output_file,
-                "{}{}::Some(v) => {{\n",
-                indent, option_type_str
-            )?;
-            indent.inc();
-            write!(
-                output_file,
-                "{}let mut map = (*map.value).clone(); \n",
-                indent
-            )?;
-            write!(output_file, "{}match map.insert(key, v) {{\n", indent)?;
-            indent.inc();
-            write!(
-                output_file,
-                "{}Some(v) => {} {{ _siko_field_0: {} {{ value: std::rc::Rc::new(map) }}, _siko_field_1: {}::Some(v) }},\n",
-                indent, result_ty_str, map_type, result_option_type_str
-            )?;
-            write!(
-                output_file,
-                "{}None => {} {{ _siko_field_0: {} {{ value: std::rc::Rc::new(map) }}, _siko_field_1: {}::None }},\n",
-                indent, result_ty_str, map_type, result_option_type_str
-            )?;
-            indent.dec();
-            write!(output_file, "{}}}\n", indent)?;
-            indent.dec();
-            write!(output_file, "{}}}\n", indent)?;
-
-            write!(output_file, "{}{}::None => {{\n", indent, option_type_str)?;
-            indent.inc();
-            write!(
-                output_file,
-                "{}{} {{ _siko_field_0: map, _siko_field_1: {}::None }}\n",
-                indent, result_ty_str, result_option_type_str
-            )?;
-            indent.dec();
-            write!(output_file, "{}}}\n", indent)?;
-            indent.dec();
-            write!(output_file, "{}}}\n", indent)?;
-
-            indent.dec();
-            write!(output_file, "{}}}\n", indent)?;
-            indent.dec();
-            write!(output_file, "{}}}\n", indent)?;
         }
         "opEq" => {
             write!(output_file, "{}if arg0.value.eq(&arg1.value) {{\n", indent)?;
@@ -1015,7 +877,6 @@ pub fn generate_builtin(
                 original_name,
                 result_ty,
                 result_ty_str,
-                arg_type_types,
                 arg_types,
             );
         }

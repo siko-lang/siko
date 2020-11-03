@@ -28,6 +28,17 @@ alter f k m = // FIXME: make this builtin and much faster
         Some v -> insert m k v
         None -> remove m k
 
+alterS s k v :: (Ord k) => (s -> Option v -> (s, Option v)) -> s -> k -> Map k v -> (s, Map k v, Option v)
+alterS f s k m = do
+    (s, v) <- f s (get m k)
+    case v of
+        Some v -> do
+            (m, v) <- insert m k v
+            (s, m, v)
+        None -> do
+            (m, v) <- remove m k
+            (s, m, v)
+
 iter k v :: Map k v -> Iterator (k, v)
 iter m = createIterator (intoIter m) nextItem
 

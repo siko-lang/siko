@@ -47,8 +47,8 @@ pub struct GetArgs {}
 impl ExternFunction for GetArgs {
     fn call(
         &self,
-        environment: &mut Environment,
-        current_expr: Option<ExprId>,
+        _: &mut Environment,
+        _: Option<ExprId>,
         _: &NamedFunctionKind,
         ty: Type,
     ) -> Value {
@@ -75,4 +75,3 @@ pub fn register_extern_functions(interpreter: &mut Interpreter) {
     interpreter.add_extern_function("Hack", "writeTextFile", Box::new(WriteTextFile {}));
     interpreter.add_extern_function("Hack", "getArgs", Box::new(GetArgs {}));
 }
-

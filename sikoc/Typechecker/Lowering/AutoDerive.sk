@@ -44,7 +44,7 @@ callBoolCtor context variant = do
     (context, mir_bool_type) <- TS.processType context hir_bool_type
     queue_item <- FQ.VariantCtor qn index variant hir_bool_type
     (context, function_id) <- FQ.insert context queue_item
-    call_expr <- ME.Expr (ME.StaticFunctionCall function_id []) mir_bool_type
+    (context, call_expr) <- getExpr context (ME.Expr (ME.StaticFunctionCall function_id []) mir_bool_type)
     (context, call_expr)
 
 callOrderingCtor :: Context -> String -> (Context, ME.Expr)
@@ -56,7 +56,7 @@ callOrderingCtor context variant = do
     (context, mir_ordering_type) <- TS.processType context hir_ordering_type
     queue_item <- FQ.VariantCtor qn index variant hir_ordering_type
     (context, function_id) <- FQ.insert context queue_item
-    call_expr <- ME.Expr (ME.StaticFunctionCall function_id []) mir_ordering_type
+    (context, call_expr) <- getExpr context (ME.Expr (ME.StaticFunctionCall function_id []) mir_ordering_type)
     (context, call_expr)
 
 callOptionCtor :: Context -> String -> HT.Type -> [ME.Expr] -> (Context, ME.Expr)
@@ -71,7 +71,7 @@ callOptionCtor context variant arg_type args = do
         else hir_option_type
     queue_item <- FQ.VariantCtor qn index variant function_type
     (context, function_id) <- FQ.insert context queue_item
-    call_expr <- ME.Expr (ME.StaticFunctionCall function_id args) mir_option_type
+    (context, call_expr) <- getExpr context (ME.Expr (ME.StaticFunctionCall function_id args) mir_option_type)
     (context, call_expr)
 
 callGetDiscriminant :: Context -> HT.Type -> [ME.Expr] -> (Context, ME.Expr)
@@ -81,7 +81,7 @@ callGetDiscriminant context arg_type args = do
     (context, mir_int_type) <- TS.processType context hir_int_type
     queue_item <- FQ.Normal qn (HT.Function arg_type hir_int_type)
     (context, function_id) <- FQ.insert context queue_item
-    call_expr <- ME.Expr (ME.StaticFunctionCall function_id args) mir_int_type
+    (context, call_expr) <- getExpr context (ME.Expr (ME.StaticFunctionCall function_id args) mir_int_type)
     (context, call_expr)
 
 processMemberForShow :: Context -> HT.Type -> ME.Expr -> HP.FullyQualifiedName -> (Context, String, [ME.Expr])
@@ -92,7 +92,7 @@ processMemberForShow context member parent_expr class_name = do
                 |> fold (\(context, fmt_args, tuple_items, index), tuple_member -> do
                     (context, mir_tuple_member) <- TS.processType context tuple_member
                     tuple_field_access <- ME.FieldAccess (Util.getFieldName index) parent_expr
-                    tuple_field_access_expr <- ME.Expr tuple_field_access mir_tuple_member
+                    (context, tuple_field_access_expr) <- getExpr context (ME.Expr tuple_field_access mir_tuple_member)
                     (context, fmt_arg, items) <- processMemberForShow context tuple_member tuple_field_access_expr class_name
                     fmt_args <- fmt_args + [fmt_arg]
                     tuple_items <- tuple_items + items
@@ -114,14 +114,14 @@ processMemberForPartialEq context items var_ref0 var_ref1 = do
             (context, mir_item_type) <- TS.processType context item_type
             field_access0 <- ME.FieldAccess name var_ref0
             field_access1 <- ME.FieldAccess name var_ref1
-            field_access0_expr <- ME.Expr field_access0 mir_item_type
-            field_access1_expr <- ME.Expr field_access1 mir_item_type
+            (context, field_access0_expr) <- getExpr context (ME.Expr field_access0 mir_item_type)
+            (context, field_access1_expr) <- getExpr context (ME.Expr field_access1 mir_item_type)
             (context, call_eq) <- callOpEq context item_type field_access0_expr field_access1_expr
             (context, true_branch) <- processMemberForPartialEq context rest var_ref0 var_ref1
             (context, call_false_ctor) <- callBoolCtor context getBoolFalseVariantName
-            ME.Expr _ if_type <- call_false_ctor
+            ME.Expr _ if_type _ <- call_false_ctor
             if_expr <- ME.If call_eq true_branch call_false_ctor
-            if_expr <- ME.Expr if_expr if_type
+            (context, if_expr) <- getExpr context (ME.Expr if_expr if_type)
             (context, if_expr)
         None -> do
             (context, call_true_ctor) <- callBoolCtor context getBoolTrueVariantName
@@ -135,24 +135,24 @@ processMemberForPartialOrd context items var_ref0 var_ref1 = do
             (context, mir_item_type) <- TS.processType context item_type
             field_access0 <- ME.FieldAccess name var_ref0
             field_access1 <- ME.FieldAccess name var_ref1
-            field_access0_expr <- ME.Expr field_access0 mir_item_type
-            field_access1_expr <- ME.Expr field_access1 mir_item_type
+            (context, field_access0_expr) <- getExpr context (ME.Expr field_access0 mir_item_type)
+            (context, field_access1_expr) <- getExpr context (ME.Expr field_access1 mir_item_type)
             (context, call_partial_cmp) <- callOpPartialCmp context item_type field_access0_expr field_access1_expr
             (context, var_res) <- getNextTempVar context
             (context, unit_type) <- TS.processType context (HT.Tuple [])
             decl <- ME.VarDecl var_res call_partial_cmp
-            decl_expr <- ME.Expr decl unit_type
+            (context, decl_expr) <- getExpr context (ME.Expr decl unit_type)
             hir_optional_ordering_type <- TUtil.getOptionalOrderingType
             (context, mir_optional_ordering_type) <- TS.processType context hir_optional_ordering_type
             var_res_ref <- ME.VarRef var_res
-            var_res_ref_expr <- ME.Expr var_res_ref mir_optional_ordering_type
+            (context, var_res_ref_expr) <-getExpr context (ME.Expr var_res_ref mir_optional_ordering_type)
             (context, call_some_equal_ctor) <- callSomeEqualCtor context
             (context, call_partial_eq) <- callOpEq context hir_optional_ordering_type var_res_ref_expr call_some_equal_ctor
             (context, true_branch) <- processMemberForPartialOrd context rest var_ref0 var_ref1
             if_expr <- ME.If call_partial_eq true_branch var_res_ref_expr
-            if_expr <- ME.Expr if_expr mir_optional_ordering_type
+            (context, if_expr) <- getExpr context (ME.Expr if_expr mir_optional_ordering_type)
             do_expr <- ME.Do [decl_expr, if_expr]
-            do_expr <- ME.Expr do_expr mir_optional_ordering_type
+            (context, do_expr) <- getExpr context (ME.Expr do_expr mir_optional_ordering_type)
             (context, do_expr)
         None -> callSomeEqualCtor context
 
@@ -164,24 +164,24 @@ processMemberForOrd context items var_ref0 var_ref1 = do
             (context, mir_item_type) <- TS.processType context item_type
             field_access0 <- ME.FieldAccess name var_ref0
             field_access1 <- ME.FieldAccess name var_ref1
-            field_access0_expr <- ME.Expr field_access0 mir_item_type
-            field_access1_expr <- ME.Expr field_access1 mir_item_type
+            (context, field_access0_expr) <- getExpr context (ME.Expr field_access0 mir_item_type)
+            (context, field_access1_expr) <- getExpr context (ME.Expr field_access1 mir_item_type)
             (context, call_cmp) <- callOpCmp context item_type field_access0_expr field_access1_expr
             (context, var_res) <- getNextTempVar context
             (context, unit_type) <- TS.processType context (HT.Tuple [])
             decl <- ME.VarDecl var_res call_cmp
-            decl_expr <- ME.Expr decl unit_type
+            (context, decl_expr) <- getExpr context (ME.Expr decl unit_type)
             hir_ordering_type <- TUtil.getOrderingType
             (context, mir_ordering_type) <- TS.processType context hir_ordering_type
             var_res_ref <- ME.VarRef var_res
-            var_res_ref_expr <- ME.Expr var_res_ref mir_ordering_type
+            (context, var_res_ref_expr) <- getExpr context (ME.Expr var_res_ref mir_ordering_type)
             (context, call_equal_ctor) <- callEqualCtor context
             (context, call_partial_eq) <- callOpEq context hir_ordering_type var_res_ref_expr call_equal_ctor
             (context, true_branch) <- processMemberForOrd context rest var_ref0 var_ref1
             if_expr <- ME.If call_partial_eq true_branch var_res_ref_expr
-            if_expr <- ME.Expr if_expr mir_ordering_type
+            (context, if_expr) <- getExpr context (ME.Expr if_expr mir_ordering_type)
             do_expr <- ME.Do [decl_expr, if_expr]
-            do_expr <- ME.Expr do_expr mir_ordering_type
+            (context, do_expr) <- getExpr context (ME.Expr do_expr mir_ordering_type)
             (context, do_expr)
         None -> callEqualCtor context
 
@@ -196,10 +196,10 @@ generateShowInstance context hir_type class_name = do
                     (context, mir_adt_type) <- TS.processType context hir_type
                     (context, unit_type) <- TS.processType context (HT.Tuple [])
                     (context, var) <- getNextTempVar context
-                    var_ref_expr <- ME.Expr (ME.VarRef var) mir_adt_type
-                    arg_ref_expr <- ME.Expr (ME.VarRef (ME.Arg 0)) mir_adt_type
+                    (context, var_ref_expr) <- getExpr context (ME.Expr (ME.VarRef var) mir_adt_type)
+                    (context, arg_ref_expr) <- getExpr context (ME.Expr (ME.VarRef (ME.Arg 0)) mir_adt_type)
                     decl <- ME.VarDecl var arg_ref_expr
-                    decl_expr <- ME.Expr decl unit_type
+                    (context, decl_expr) <- getExpr context (ME.Expr decl unit_type)
                     if getLength adt.variants == 1
                         then do
                             (context, cases) <- adt.variants |> List.iter |> fold (\(context, cases), variant -> do
@@ -208,7 +208,7 @@ generateShowInstance context hir_type class_name = do
                                                 field_name <- Util.getFieldName (getLength mir_items)
                                                 (context, mir_item_type) <- TS.processType context item
                                                 field_access <- ME.FieldAccess field_name var_ref_expr
-                                                field_access_expr <- ME.Expr field_access mir_item_type
+                                                (context, field_access_expr) <- getExpr context (ME.Expr field_access mir_item_type)
                                                 (context, fmt_arg, items) <- processMemberForShow context item field_access_expr class_name
                                                 fmt_args <- fmt_args + [fmt_arg]
                                                 mir_items <- mir_items + items
@@ -221,21 +221,21 @@ generateShowInstance context hir_type class_name = do
                                 (context, cases)) (context, [])
                             case_body <- atIndex cases 0
                             body <- ME.Do [decl_expr, case_body]
-                            body_expr <- ME.Expr body mir_string_type
+                            (context, body_expr) <- getExpr context (ME.Expr body mir_string_type)
                             (context, body_expr)
                         else do
                             (context, cases) <- adt.variants |> List.iter |> fold (\(context, cases), variant -> do
                                 index <- (getLength cases)
                                 (context, var_in) <- getNextTempVar context
                                 variant_type <- getVariantType context index mir_adt_type
-                                var_in_ref_expr <- ME.Expr (ME.VarRef var_in) variant_type
+                                (context, var_in_ref_expr) <- getExpr context (ME.Expr (ME.VarRef var_in) variant_type)
                                 checker <- ME.VariantChecker index var_in mir_adt_type
                                 (context, fmt_args, mir_items) <- variant.items |> List.iter
                                             |> fold (\(context, fmt_args, mir_items), item -> do
                                                 field_name <- Util.getFieldName (getLength mir_items)
                                                 (context, mir_item_type) <- TS.processType context item
                                                 field_access <- ME.FieldAccess field_name var_in_ref_expr
-                                                field_access_expr <- ME.Expr field_access mir_item_type
+                                                (context, field_access_expr) <- getExpr context (ME.Expr field_access mir_item_type)
                                                 (context, fmt_arg, items) <- processMemberForShow context item field_access_expr class_name
                                                 fmt_args <- fmt_args + [fmt_arg]
                                                 mir_items <- mir_items + items
@@ -248,24 +248,24 @@ generateShowInstance context hir_type class_name = do
                                 cases <- cases + [c]
                                 (context, cases)) (context, [])
                             case_of <- ME.CaseOf var_ref_expr cases
-                            case_of_expr <- ME.Expr case_of mir_string_type
+                            (context, case_of_expr) <- getExpr context (ME.Expr case_of mir_string_type)
                             body <- ME.Do [decl_expr, case_of_expr]
-                            body_expr <- ME.Expr body mir_string_type
+                            (context, body_expr) <- getExpr context (ME.Expr body mir_string_type)
                             (context, body_expr)
                 DS.Record record -> do
                     (context, record) <- TS.instantiateRecord context record hir_type
                     (context, mir_record_type) <- TS.processType context hir_type
                     (context, unit_type) <- TS.processType context (HT.Tuple [])
                     (context, var) <- getNextTempVar context
-                    var_ref_expr <- ME.Expr (ME.VarRef var) mir_record_type
-                    arg_ref_expr <- ME.Expr (ME.VarRef (ME.Arg 0)) mir_record_type
+                    (context, var_ref_expr) <- getExpr context (ME.Expr (ME.VarRef var) mir_record_type)
+                    (context, arg_ref_expr) <- getExpr context (ME.Expr (ME.VarRef (ME.Arg 0)) mir_record_type)
                     decl <- ME.VarDecl var arg_ref_expr
-                    decl_expr <- ME.Expr decl unit_type
+                    (context, decl_expr) <- getExpr context (ME.Expr decl unit_type)
                     (context, fmt_args, mir_items) <- record.fields |> List.iter
                             |> fold (\(context, fmt_args, mir_items), field -> do
                         field_access <- ME.FieldAccess field.name var_ref_expr
                         (context, mir_field_type) <- TS.processType context field.type
-                        field_access_expr <- ME.Expr field_access mir_field_type
+                        (context, field_access_expr) <- getExpr context (ME.Expr field_access mir_field_type)
                         (context, fmt_arg, items) <- processMemberForShow context field.type field_access_expr class_name
                         fmt_args <- fmt_args + [fmt_arg]
                         mir_items <- mir_items + items
@@ -276,7 +276,7 @@ generateShowInstance context hir_type class_name = do
                             else "{} {}" % (name, (join fmt_args " "))
                     (context, body) <- processFormatExpr context fmt [] mir_items
                     body <- ME.Do [decl_expr, body]
-                    body_expr <- ME.Expr body mir_string_type
+                    (context, body_expr) <- getExpr context (ME.Expr body mir_string_type)
                     (context, body_expr)
         _ -> panic "Cannot auto derive show for type {}" % HT.toString hir_type
     (context, body)
@@ -317,29 +317,29 @@ generateTwoArgsInstance context hir_type class_name call_compare_discriminants p
                     (context, unit_type) <- TS.processType context (HT.Tuple [])
                     (context, var0) <- getNextTempVar context
                     arg_ref0 <- ME.VarRef (ME.Arg 0)
-                    arg_ref0_expr <- ME.Expr arg_ref0 mir_adt_type
+                    (context, arg_ref0_expr) <- getExpr context (ME.Expr arg_ref0 mir_adt_type)
                     var0_decl <- ME.VarDecl var0 arg_ref0_expr
-                    var0_decl_expr <- ME.Expr var0_decl unit_type
+                    (context, var0_decl_expr) <- getExpr context (ME.Expr var0_decl unit_type)
                     var_ref0 <- ME.VarRef var0
-                    var_ref0_expr <- ME.Expr var_ref0 mir_adt_type
+                    (context, var_ref0_expr) <- getExpr context (ME.Expr var_ref0 mir_adt_type)
                     if getLength adt.variants == 1
                         then do
                             (context, var1) <- getNextTempVar context
                             var_ref1 <- ME.VarRef var1
-                            var_ref1_expr <- ME.Expr var_ref1 mir_adt_type
+                            (context, var_ref1_expr) <- getExpr context (ME.Expr var_ref1 mir_adt_type)
                             arg_ref1 <- ME.VarRef (ME.Arg 1)
-                            arg_ref1_expr <- ME.Expr arg_ref1 mir_adt_type
+                            (context, arg_ref1_expr) <- getExpr context (ME.Expr arg_ref1 mir_adt_type)
                             var1_decl <- ME.VarDecl var1 arg_ref1_expr
-                            var1_decl_expr <- ME.Expr var1_decl unit_type
+                            (context, var1_decl_expr) <- getExpr context (ME.Expr var1_decl unit_type)
                             variant <- atIndex adt.variants 0
                             (variant_items, _) <- variant.items |> List.iter |> fold (\(items, index), item -> do
                                     item <- (Util.getFieldName index, item)
                                     items <- items + [item]
                                     (items, index + 1)) ([], 0)
                             (context, call_expr) <- process_member_fn context variant_items var_ref0_expr var_ref1_expr
-                            ME.Expr _ call_type <- call_expr
+                            ME.Expr _ call_type _ <- call_expr
                             body <- ME.Do [var0_decl_expr, var1_decl_expr, call_expr]
-                            body_expr <- ME.Expr body call_type
+                            (context, body_expr) <- getExpr context (ME.Expr body call_type)
                             (context, body_expr)
                         else do
                             (context, cases) <- adt.variants |> List.iter |> fold (\(context, cases), variant -> do
@@ -350,22 +350,22 @@ generateTwoArgsInstance context hir_type class_name call_compare_discriminants p
                                 (context, var1_in) <- getNextTempVar context
                                 variant_type <- getVariantType context variant_index mir_adt_type
                                 arg_ref1 <- ME.VarRef (ME.Arg 1)
-                                arg_ref1_expr <- ME.Expr arg_ref1 mir_adt_type
+                                (context, arg_ref1_expr) <- getExpr context (ME.Expr arg_ref1 mir_adt_type)
                                 var1_decl <- ME.VarDecl var1 arg_ref1_expr
-                                var1_decl_expr <- ME.Expr var1_decl unit_type
+                                (context, var1_decl_expr) <- getExpr context (ME.Expr var1_decl unit_type)
                                 var_ref1 <- ME.VarRef var1
-                                var_ref1_expr <- ME.Expr var_ref1 mir_adt_type
+                                (context, var_ref1_expr) <- getExpr context (ME.Expr var_ref1 mir_adt_type)
                                 var_ref1_in <- ME.VarRef var1_in
-                                var_ref1_in_expr <- ME.Expr var_ref1_in variant_type
+                                (context, var_ref1_in_expr) <- getExpr context (ME.Expr var_ref1_in variant_type)
                                 (variant_items, _) <- variant.items |> List.iter |> fold (\(items, index), item -> do
                                     item <- (Util.getFieldName index, item)
                                     items <- items + [item]
                                     (items, index + 1)) ([], 0)
                                 var_ref0_in <- ME.VarRef var0_in
-                                var_ref0_in_expr <- ME.Expr var_ref0_in variant_type
+                                (context, var_ref0_in_expr) <- getExpr context (ME.Expr var_ref0_in variant_type)
                                 (context, call_expr) <- process_member_fn context variant_items var_ref0_in_expr var_ref1_in_expr
-                                ME.Expr _ case_type <- call_expr
-                                case_body <- ME.Expr (ME.Do [call_expr]) case_type
+                                ME.Expr _ case_type _ <- call_expr
+                                (context, case_body) <- getExpr context (ME.Expr (ME.Do [call_expr]) case_type)
                                 case_ok <- ME.Case (ME.VariantChecker variant_index var1_in mir_adt_type) case_body
                                 (context, case_of) <- if getLength adt.variants == 1
                                     then do
@@ -375,30 +375,30 @@ generateTwoArgsInstance context hir_type class_name call_compare_discriminants p
                                         (context, call_get_discriminant0) <- callGetDiscriminant context hir_type [arg_ref0_expr]
                                         (context, call_get_discriminant1) <- callGetDiscriminant context hir_type [arg_ref1_expr]
                                         (context, compare_discriminants) <- call_compare_discriminants context TUtil.getIntType call_get_discriminant0 call_get_discriminant1
-                                        ME.Expr _ case_type <- compare_discriminants
-                                        case_body <- ME.Expr (ME.Do [compare_discriminants]) case_type
+                                        ME.Expr _ case_type _ <- compare_discriminants
+                                        (context, case_body) <- getExpr context (ME.Expr (ME.Do [compare_discriminants]) case_type)
                                         case_not_ok <- ME.Case ME.WildcardChecker case_body
                                         (context, ME.CaseOf var_ref1_expr [case_ok, case_not_ok])
-                                case_of_expr <- ME.Expr case_of case_type
+                                (context, case_of_expr) <- getExpr context (ME.Expr case_of case_type)
                                 body <- ME.Do [var1_decl_expr, case_of_expr]
-                                body_expr <- ME.Expr body case_type
+                                (context, body_expr) <- getExpr context (ME.Expr body case_type)
                                 c <- ME.Case checker body_expr
                                 cases <- cases + [c]
                                 (context, cases)) (context, [])
                             ME.Case _ first_case_expr <- atIndex cases 0
-                            ME.Expr _ case_type <- first_case_expr
+                            ME.Expr _ case_type _ <- first_case_expr
                             case_of <- ME.CaseOf var_ref0_expr cases
-                            case_of_expr <- ME.Expr case_of case_type
+                            (context, case_of_expr) <- getExpr context (ME.Expr case_of case_type)
                             body <- ME.Do [var0_decl_expr, case_of_expr]
-                            body_expr <- ME.Expr body case_type
+                            (context, body_expr) <- getExpr context (ME.Expr body case_type)
                             (context, body_expr)
                 DS.Record record -> do
                     (context, record) <- TS.instantiateRecord context record hir_type
                     (context, mir_record_type) <- TS.processType context hir_type
                     var_ref0 <- ME.VarRef (ME.Arg 0)
-                    var_ref0_expr <- ME.Expr var_ref0 mir_record_type
+                    (context, var_ref0_expr) <- getExpr context (ME.Expr var_ref0 mir_record_type)
                     var_ref1 <- ME.VarRef (ME.Arg 1)
-                    var_ref1_expr <- ME.Expr var_ref1 mir_record_type
+                    (context, var_ref1_expr) <- getExpr context (ME.Expr var_ref1 mir_record_type)
                     record_items <- record.fields |> List.iter |> map (\DS.RecordField name type -> (name, type)) |> toList
                     (context, call_expr) <- process_member_fn context record_items var_ref0_expr var_ref1_expr
                     (context, call_expr)

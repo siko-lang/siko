@@ -1,13 +1,14 @@
 module Siko.Backend where
 
 import Siko.Backend.Passes.CreateVars as CreateVars
-import Siko.Backend.Passes.Copy as Copy
 import Siko.Backend.Passes.Box as Box
-import Siko.Backend.Passes.Ownership as Ownership
+import Siko.Backend.Ownership.Inference as Inference
+import Siko.Backend.Traversal
 import Siko.MIR.Program as P
 import Siko.MIR.Data
 import Siko.MIR.Type as T
 import Siko.MIR.Function as F
+import Siko.MIR.Expr
 import Siko.Config
 import Siko.Util.DependencyProcessor
 import Map
@@ -36,9 +37,25 @@ collectDataDeps program = do
         ) dependencies
     dependencies
 
+data Context = { deps :: [P.Identity] }
+                 deriving (PartialEq, Eq, PartialOrd, Ord)
+
+processExpr :: Context -> Expr -> (Context, Expr)
+processExpr context expr = do
+    Expr s_expr _ _ <- expr
+    case s_expr of
+        StaticFunctionCall id _ -> do
+            deps <- context.deps + [id]
+            context <- context { deps = deps }
+            (context, expr)
+        _ -> (context, expr)
+
 getDepsForFunction :: P.Program -> F.Function -> [P.Identity]
 getDepsForFunction program function = case function.kind of
-    F.Normal body -> []
+    F.Normal body -> do
+        context <- Context []
+        (context, _) <- traverse context body (Some processExpr) None
+        context.deps
     _ -> []
 
 collectFunctionDeps :: P.Program -> Map P.Identity [P.Identity]
@@ -51,14 +68,15 @@ collectFunctionDeps program = do
         ) dependencies
     dependencies
 
-processProgram :: Config -> P.Program -> P.Program
-processProgram config program = do
+processProgram :: Config -> P.Program -> Int -> P.Program
+processProgram config program expr_id = do
     data_dependencies <- collectDataDeps program
     data_groups <- processDependencies data_dependencies
+    function_dependencies <- collectFunctionDeps program
+    function_groups <- processDependencies function_dependencies
     program <- Box.processProgram program data_groups
-    program <- CreateVars.processProgram program
-    program <- Copy.processProgram program
-    program <- Ownership.processProgram program data_groups
+    program <- CreateVars.processProgram program expr_id
+    program <- Inference.processProgram program data_groups function_groups
     s <- P.dump program
     writeTextFile (getOutputFileName config OptMIR) s
     program

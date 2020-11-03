@@ -22,10 +22,19 @@ data ParserState =
         index :: Int,
         errors :: [ParserError],
         modules :: [Module],
-        file_id :: FileId
+        file_id :: FileId,
+        ops_table :: [[Kind.TokenKind]]
     }
 
-initState file_id tokens = ParserState tokens 0 [] [] file_id
+initState file_id tokens = do
+    ops_table <- [[Kind.And, Kind.Or],
+                  [Kind.DoubleEqual, Kind.NotEqual],
+                  [Kind.LessThan, Kind.GreaterThan, Kind.LessOrEqualThan, Kind.GreaterOrEqualThan],
+                  [Kind.Add, Kind.Sub],
+                  [Kind.Mul, Kind.Div],
+                  [Kind.PipeForward]
+                 ]
+    ParserState tokens 0 [] [] file_id ops_table
 
 buildLocation :: Int -> ParserState -> Location
 buildLocation index state = do

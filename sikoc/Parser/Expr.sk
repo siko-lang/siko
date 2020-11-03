@@ -240,9 +240,9 @@ createBinaryOpExpr left right matching_op = do
         _ -> panic "Unexpected binary op"
     BinaryOp op left right
 
-callNext :: ParserState -> Bool -> Int -> [[Kind.TokenKind]] -> Result (ParserState, Expr) (ParserState, ParserError)
-callNext state for_initializer index ops_table = do
-    if index + 1 < getLength ops_table
+callNext :: ParserState -> Bool -> Int -> Result (ParserState, Expr) (ParserState, ParserError)
+callNext state for_initializer index = do
+    if index + 1 < getLength state.ops_table
         then
             parseBinaryOps state for_initializer (index + 1)
         else
@@ -250,23 +250,17 @@ callNext state for_initializer index ops_table = do
 
 parseBinaryOps :: ParserState -> Bool -> Int -> Result (ParserState, Expr) (ParserState, ParserError)
 parseBinaryOps state for_initializer index = do
-    ops_table <- [[Kind.And, Kind.Or],
-                  [Kind.DoubleEqual, Kind.NotEqual],
-                  [Kind.LessThan, Kind.GreaterThan, Kind.LessOrEqualThan, Kind.GreaterOrEqualThan],
-                  [Kind.Add, Kind.Sub],
-                  [Kind.Mul, Kind.Div],
-                  [Kind.PipeForward]
-                 ]
     start_index <- state.index
-    (state, left) <- try callNext state for_initializer index ops_table
+    (state, left) <- try callNext state for_initializer index
     (state, expr) <- loop (state, left) <- (state, left) do
-        current_ops <- atIndex ops_table index
+        state :: ParserState <- state // FIXME
+        current_ops <- atIndex state.ops_table index
         ti <- peek state
         matching_op <- current_ops |> List.iter |> fold (\result, kind -> if kind == T.getKind ti.token then Some kind else result) None
         case matching_op of
             Some matching_op -> do
                 state <- step state
-                (state, right) <- try callNext state for_initializer index ops_table
+                (state, right) <- try callNext state for_initializer index
                 left <- createBinaryOpExpr left right matching_op
                 (state, buildExpr left start_index state)
             None -> break (state, left)
