@@ -43,3 +43,17 @@ collectOwnershipVars type = case type of
     Never -> []
     Box t -> collectOwnershipVars t
     Var i t -> [i] + collectOwnershipVars t
+
+collectOwnershipArgs :: Type -> [OwnershipVar]
+collectOwnershipArgs type = case type of
+    Adt id args -> args
+    Record id args -> args
+    Ref t -> collectOwnershipVars t
+    Never -> []
+    Box t -> collectOwnershipVars t
+    Var i t -> collectOwnershipVars t
+
+debox :: Type -> Type
+debox type = case type of
+    Box t -> t
+    t -> t

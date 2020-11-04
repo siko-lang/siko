@@ -6,13 +6,10 @@ import Siko.MIR.Type as T
 import Siko.MIR.Expr as E
 import Siko.Backend.Traversal
 import Siko.Backend.Ownership.DataTypes as DataTypes
+import Siko.Backend.Ownership.Unification
 import Siko.Util.DependencyProcessor
 import Std.Util
 import Map
-
-data FunctionType = { args :: [T.Type],
-                      result :: T.Type }
-                      deriving (Show)
 
 data FunctionTypeStore = { functions :: Map P.Identity FunctionType }
 
@@ -22,99 +19,23 @@ data Context = { function_type_store :: FunctionTypeStore,
                  expr_types :: Map E.ExprId T.Type,
                  function_vars :: Map FunctionVar T.Type }
 
-data SubstitutionChange = Unification T.OwnershipVar
-                        | Owner
-                        | Borrower
-                        deriving (Show)
-
-data Substitution = { var_subs :: Map T.OwnershipVar SubstitutionChange } deriving (Show)
-
-createSubstitution :: Substitution
-createSubstitution = Substitution empty
-
-applyToContext :: Context -> Substitution -> Context
-applyToContext context sub = do
-    expr_types <- context.expr_types |> Map.iter |> map (\(expr_id, type) -> do
-        new_type <- applyToType type sub
-        //if expr_id == (E.ExprId 8)
-        //    then println "{} -> {}" % (type, new_type)
-        //    else ()
-        (expr_id, new_type)) |> toMap
-    function_vars <- context.function_vars |> Map.iter |> map (\(v, type) -> (v, applyToType type sub )) |> toMap
-    context <- context { expr_types = expr_types, function_vars = function_vars }
-    context
-
-applyToType :: T.Type -> Substitution -> T.Type
-applyToType type sub = do
-    case type of
-        T.Adt id args -> T.Adt id (args |> List.iter |> map (\v -> applyToVar v sub) |> toList)
-        T.Record id args -> T.Record id (args |> List.iter |> map (\v -> applyToVar v sub) |> toList)
-        T.Ref t -> T.Ref (applyToType t sub)
-        T.Never -> T.Never
-        T.Box t -> T.Box (applyToType t sub)
-        T.Var i t -> T.Var (applyToVar i sub) (applyToType t sub)
-
-applyToVar :: T.OwnershipVar -> Substitution -> T.OwnershipVar
-applyToVar v sub = case get sub.var_subs v of
-                     Some (Unification new) -> new
-                     _ -> v
-
-applyToFunctionType :: FunctionType -> Substitution -> FunctionType
-applyToFunctionType function_type sub = do
-    args <- function_type.args |> List.iter |> map (\t -> applyToType t sub) |> toList
-    result <- applyToType function_type.result sub
-    function_type { args = args , result = result }
-
-addSubstitution :: Substitution -> T.OwnershipVar -> SubstitutionChange -> Substitution
-addSubstitution sub var change = do
-    (var_subs, _) <- insert sub.var_subs var change
-    sub { var_subs = var_subs }
-
-unifyVars :: Substitution -> [T.OwnershipVar] -> [T.OwnershipVar] -> Substitution
-unifyVars sub args1 args2 = do
-    if getLength args1 != getLength args2
-        then panic "{} != {}" % (args1, args2)
-        else ()
-    loop (sub, index) <- (sub, 0) do
-        if index >= getLength args1
-            then break sub
-            else do
-                arg1 <- atIndex args1 index
-                arg2 <- atIndex args2 index
-                sub <- addSubstitution sub arg1 (Unification arg2)
-                (sub, index + 1)
+instance Apply Context where
+    //apply :: Context -> Substitution -> Context
+    apply context sub = do
+        expr_types <- context.expr_types |> Map.iter |> map (\(expr_id, type) -> do
+            new_type <- apply type sub
+            //if expr_id == (E.ExprId 8)
+            //    then println "{} -> {}" % (type, new_type)
+            //    else ()
+            (expr_id, new_type)) |> toMap
+        function_vars <- context.function_vars |> Map.iter |> map (\(v, type) -> (v, apply type sub )) |> toMap
+        context <- context { expr_types = expr_types, function_vars = function_vars }
+        context
 
 getExprType :: Context -> E.ExprId -> T.Type
 getExprType context expr_id = case get context.expr_types expr_id of
     Some t -> t
     None -> panic "Could not get expr type for {}" % expr_id
-
-unify :: Substitution -> T.Type -> T.Type -> Substitution
-unify sub type1 type2 = do
-    //println "Unify {} {}" % (type1, type2)
-    case (type1, type2) of
-        (T.Adt id1 args1, T.Adt id2 args2) -> do
-            unifyVars sub args1 args2
-        (T.Record id1 args1, T.Record id2 args2) -> do
-            unifyVars sub args1 args2
-        (T.Adt id1 args1, T.Var v t) -> do
-            sub <- addSubstitution sub v Owner
-            sub <- case t of
-                T.Adt id2 args2 -> do
-                    unifyVars sub args1 args2
-                _ -> panic "Unification error {} {}" % (type1, type2)
-            sub
-        (T.Record id1 args1, T.Var v t) -> do
-            sub <- addSubstitution sub v Owner
-            sub <- case t of
-                T.Record id2 args2 -> do
-                    unifyVars sub args1 args2
-                _ -> panic "Unification error {} {}" % (type1, type2)
-            sub
-        (T.Var arg1 t1, T.Var arg2 t2) -> do
-            sub <- addSubstitution sub arg1 (Unification arg2)
-            unify sub t1 t2
-        _ -> panic "NYI unify {} {}" % (type1, type2)
 
 dump :: Context -> String -> ()
 dump context msg = do
@@ -145,7 +66,7 @@ unifyExprs context expr1 expr2 = do
     type2 <- getExprType context id2
     sub <- createSubstitution
     sub <- unify sub type1 type2
-    context <- applyToContext context sub
+    context <- apply context sub
     context
 
 unifyExprWithVar :: Context -> E.ExprId -> FunctionVar -> Context
@@ -156,7 +77,7 @@ unifyExprWithVar context expr_id var = do
         None -> panic "Var {} not found in context" % var
     sub <- createSubstitution
     sub <- unify sub type1 type2
-    context <- applyToContext context sub
+    context <- apply context sub
     context
 
 checkExpr :: P.Identity -> Context -> E.Expr -> (Context, E.Expr)
@@ -175,17 +96,19 @@ checkExpr function_id context expr = do
                     (context, function_type, index) <- args |> List.iter |> fold (\(context, function_type, index), arg -> do
                         E.Expr _ _ arg_id <- arg
                         arg_type <- getExprType context arg_id
+                        func_arg_type <- atIndex function_type.args index
                         sub <- createSubstitution
                         //println "arg unify {} {}" % (arg_type, func_arg_type)
-                        //sub <- unify sub arg_type func_arg_type
+                        sub <- unify sub arg_type func_arg_type
                         //println "sub: {}" % sub
-                        context <- applyToContext context sub
-                        function_type <- applyToFunctionType function_type sub
+                        context <- apply context sub
+                        function_type <- apply function_type sub
                         (context, function_type, index + 1)) (context, function_type, 0)
                     sub <- createSubstitution
                     result_type <- getExprType context id
-                    //sub <- unify sub function_type.result result_type
-                    context <- applyToContext context sub
+                    //println "result? {}, {}" % (function_type.result, result_type)
+                    sub <- unify sub function_type.result result_type
+                    context <- apply context sub
                     result_type <- getExprType context id
                     context
                 None -> panic "Function {} not found in function type store" % f_id

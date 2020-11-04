@@ -1,0 +1,126 @@
+module Siko.Backend.Ownership.Unification where
+
+import Siko.MIR.Data as D
+import Siko.MIR.Type as T
+import Map
+
+data SubstitutionChange = Unification T.OwnershipVar
+                        | Owner
+                        | Borrower
+                        deriving (Show)
+
+data FunctionType = { args :: [T.Type],
+                      result :: T.Type }
+                      deriving (Show)
+
+data Substitution = { var_subs :: Map T.OwnershipVar SubstitutionChange } deriving (Show)
+
+createSubstitution :: Substitution
+createSubstitution = Substitution empty
+
+class Apply a where
+    apply a :: a -> Substitution -> a
+
+instance Apply T.OwnershipVar where
+    //apply :: T.OwnershipVar -> Substitution -> T.OwnershipVar
+    apply v sub = case get sub.var_subs v of
+                     Some (Unification new) -> new
+                     _ -> v
+
+instance Apply FunctionType where
+    //apply :: FunctionType -> Substitution -> FunctionType
+    apply function_type sub = do
+        args <- function_type.args |> List.iter |> map (\t -> apply t sub) |> toList
+        result <- apply function_type.result sub
+        function_type { args = args , result = result }
+
+
+instance Apply T.Type where
+    //apply :: T.Type -> Substitution -> T.Type
+    apply type sub = do
+        case type of
+            T.Adt id args -> T.Adt id (args |> List.iter |> map (\v -> apply v sub) |> toList)
+            T.Record id args -> T.Record id (args |> List.iter |> map (\v -> apply v sub) |> toList)
+            T.Ref t -> T.Ref (apply t sub)
+            T.Never -> T.Never
+            T.Box t -> T.Box (apply t sub)
+            T.Var i t -> T.Var (apply i sub) (apply t sub)
+
+instance Apply D.Record where
+    //apply :: D.Record -> Substitution -> D.Record
+    apply record sub = do
+        ownership_vars <- record.ownership_vars |> List.iter |> map (\v -> apply v sub) |> toList
+        fields <- record.fields |> List.iter |> map (\f -> do
+            type <- apply f.type sub
+            f { type = type}) |> toList
+        record { ownership_vars = ownership_vars, fields = fields }
+
+addSubstitution :: Substitution -> T.OwnershipVar -> SubstitutionChange -> Substitution
+addSubstitution sub var change = do
+    (var_subs, _) <- insert sub.var_subs var change
+    sub { var_subs = var_subs }
+
+unifyVars :: Substitution -> [T.OwnershipVar] -> [T.OwnershipVar] -> Substitution
+unifyVars sub args1 args2 = do
+    if getLength args1 != getLength args2
+        then panic "{} != {}" % (args1, args2)
+        else ()
+    loop (sub, index) <- (sub, 0) do
+        if index >= getLength args1
+            then break sub
+            else do
+                arg1 <- atIndex args1 index
+                arg2 <- atIndex args2 index
+                sub <- addSubstitution sub arg1 (Unification arg2)
+                (sub, index + 1)
+
+
+unify :: Substitution -> T.Type -> T.Type -> Substitution
+unify sub type1 type2 = do
+    //println "Unify {} {}" % (type1, type2)
+    case (type1, type2) of
+        (T.Adt id1 args1, T.Adt id2 args2) -> do
+            unifyVars sub args1 args2
+        (T.Record id1 args1, T.Record id2 args2) -> do
+            unifyVars sub args1 args2
+        (T.Adt id1 args1, T.Var v t) -> do
+            sub <- addSubstitution sub v Owner
+            sub <- case t of
+                T.Adt id2 args2 -> do
+                    unifyVars sub args1 args2
+                _ -> panic "Not Adt, Unification error {}, {}" % (type1, type2)
+            sub
+        (T.Record id1 args1, T.Var v t) -> do
+            sub <- addSubstitution sub v Owner
+            sub <- case t of
+                T.Record id2 args2 -> do
+                    unifyVars sub args1 args2
+                _ -> panic "Not Record, Unification error {}, {}" % (type1, type2)
+            sub
+        (T.Var v t, T.Adt id2 args2) -> do
+            sub <- addSubstitution sub v Owner
+            sub <- case t of
+                T.Adt id1 args1 -> do
+                    unifyVars sub args1 args2
+                _ -> panic "Not Adt, Unification error {}, {}" % (type1, type2)
+            sub
+        (T.Var v t, T.Record id2 args2) -> do
+            sub <- addSubstitution sub v Owner
+            sub <- case t of
+                T.Record id1 args1 -> do
+                    unifyVars sub args1 args2
+                _ -> panic "Not Record, Unification error {}, {}" % (type1, type2)
+            sub
+        (T.Var arg1 t1, T.Var arg2 t2) -> do
+            sub <- addSubstitution sub arg1 (Unification arg2)
+            unify sub t1 t2
+        _ -> panic "NYI unify {} {}" % (type1, type2)
+
+data OwnershipVarGenerator = { next_var :: Int }
+
+getNextOwnershipVar :: OwnershipVarGenerator -> (OwnershipVarGenerator, T.OwnershipVar)
+getNextOwnershipVar var_gen = do
+    v <- var_gen.next_var
+    o <- T.OwnershipVar v
+    var_gen <- var_gen { next_var = v + 1}
+    (var_gen, o)

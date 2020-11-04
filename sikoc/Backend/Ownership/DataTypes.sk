@@ -7,20 +7,20 @@ import Siko.MIR.Expr
 import Siko.MIR.Function
 import Siko.Util.DependencyProcessor
 import Siko.Backend.Traversal
-import Siko.Backend.OwnershipVarGenerator as G
+import Siko.Backend.Ownership.Unification as U
 import Map
 
 data Context = { arg_count_map :: Map P.Identity Int,
-                 var_gen :: G.OwnershipVarGenerator }
+                 var_gen :: U.OwnershipVarGenerator }
 
 getNextOwnershipVar :: Context -> (Context, T.OwnershipVar)
 getNextOwnershipVar context = do
-    (var_gen, v) <- G.getNextOwnershipVar context.var_gen
+    (var_gen, v) <- U.getNextOwnershipVar context.var_gen
     context <- context { var_gen = var_gen }
     (context, v)
 
-addOwnershipVarsToType2 :: Context -> [P.Identity] -> [T.OwnershipVar] -> [T.OwnershipVar] -> T.Type -> ([T.OwnershipVar], T.Type)
-addOwnershipVarsToType2 context group all_ownership_vars ownership_vars type = do
+addOwnershipVarsToDataType :: Context -> [P.Identity] -> [T.OwnershipVar] -> [T.OwnershipVar] -> T.Type -> ([T.OwnershipVar], T.Type)
+addOwnershipVarsToDataType context group all_ownership_vars ownership_vars type = do
     id <- T.getIdentity type
     if contains group id
         then do
@@ -52,7 +52,7 @@ addOwnershipVarsToRecord context all_ownership_vars group ownership_vars record 
         record :: Record <- record
         record <- record { ownership_vars = all_ownership_vars }
         (fields, ownership_vars) <- record.fields |> List.iter |> fold (\(fields, ownership_vars), field -> do
-            (ownership_vars, type) <- addOwnershipVarsToType2 context group all_ownership_vars ownership_vars field.type
+            (ownership_vars, type) <- addOwnershipVarsToDataType context group all_ownership_vars ownership_vars field.type
             field <- field { type = type }
             (fields + [field], ownership_vars)) ([], ownership_vars)
         record <- record { fields = fields }
@@ -65,7 +65,7 @@ addOwnershipVarsToAdt context all_ownership_vars group ownership_vars adt = case
         adt :: AlgebraicDataType <- adt
         adt <- adt { ownership_vars = all_ownership_vars }
         (variants, ownership_vars) <- adt.variants |> List.iter |> fold (\(variants, ownership_vars), variant -> do
-            (ownership_vars, type) <- addOwnershipVarsToType2 context group all_ownership_vars ownership_vars variant.type
+            (ownership_vars, type) <- addOwnershipVarsToDataType context group all_ownership_vars ownership_vars variant.type
             variant <- variant { type = type }
             (variants + [variant], ownership_vars)) ([], ownership_vars)
         adt <- adt { variants = variants }
@@ -117,9 +117,11 @@ addOwnershipVarsToGroup :: Context -> [P.Identity] -> P.Program -> (Context, P.P
 addOwnershipVarsToGroup context group program = do
     (context, arg_count) <- group |> List.iter |> fold (\(context, arg_count), id -> do
         c <- calculateArgCount program context group id
-        (arg_count_map, _) <- insert context.arg_count_map id c
-        context <- context { arg_count_map = arg_count_map }
         (context, arg_count + c)) (context, 0)
+    context <- group |> List.iter |> fold (\context, id -> do
+        (arg_count_map, _) <- insert context.arg_count_map id arg_count
+        context <- context { arg_count_map = arg_count_map }
+        context) context
     (context, all_vars) <- loop (context, vars) <- (context, []) do
                 if getLength vars >= arg_count
                     then break (context, vars)
@@ -195,11 +197,22 @@ processFunction program context function = case function.kind of
         id <- T.getIdentity function.result
         adt <- P.getAdt program id
         variant <- atIndex adt.variants index
+        variant_ownership_vars <- T.collectOwnershipArgs variant.type
         variant_record_id <- T.getIdentity variant.type
         variant_record <- P.getRecord program variant_record_id
-        args <- variant_record.fields |> List.iter |> map (\f -> f.type) |> toList
+        sub <- U.createSubstitution
+        sub <- loop (sub, index) <- (sub, 0) do
+            if index >= getLength variant_ownership_vars
+                then break sub
+                else do
+                    v_var <- atIndex variant_ownership_vars index
+                    r_var <- atIndex variant_record.ownership_vars index
+                    sub <- U.addSubstitution sub r_var (U.Unification v_var)
+                    (sub, index + 1)
+        variant_record <- U.apply variant_record sub
+        args <- variant_record.fields |> List.iter |> map (\f -> T.debox f.type) |> toList
         (context, o) <- getNextOwnershipVar context
-        result <- T.Record id adt.ownership_vars
+        result <- T.Adt id adt.ownership_vars
         (context, function { args = args, result = result })
     Extern -> do
         (context, args) <- function.args |> List.iter |> fold (\(context, args), arg -> do
@@ -211,7 +224,7 @@ processFunction program context function = case function.kind of
 
 processDataTypes :: P.Program -> [DependencyGroup P.Identity] -> P.Program
 processDataTypes program groups = do
-    context <- Context empty (G.OwnershipVarGenerator 0)
+    context <- Context empty (U.OwnershipVarGenerator 0)
     (context, program) <- addOwnershipVarsToDataTypes context program groups
     (context, functions) <- program.functions |> Map.iter |> fold (\(context, functions), (id, function) -> do
         (context, function) <- processFunction program context function // FIXME: program should not be copied here!
