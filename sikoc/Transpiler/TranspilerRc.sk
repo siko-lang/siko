@@ -318,12 +318,12 @@ transpile program = do
         ) rust_program
     rust_program <- program.functions |> Map.iter |> fold (\rust_program, (_, mir_function) -> do
         rust_function_name <- getRustIdentity mir_function.id
-        (rust_args, _) <- mir_function.args |> List.iter |> fold (\(args, index), arg -> do
+        (rust_args, _) <- mir_function.type.args |> List.iter |> fold (\(args, index), arg -> do
             arg_type <- convertType arg
             arg_name <- getArgName index
             args <- args + [(arg_name, arg_type)]
             (args, index + 1)) ([], 0)
-        rust_result <- convertType mir_function.result
+        rust_result <- convertType mir_function.type.result
         rust_body <- case mir_function.kind of
             Normal mir_body -> do
                     ME.Expr b _ _ <- mir_body
@@ -336,7 +336,7 @@ transpile program = do
                     case get external_functions id of
                         Some external_gen -> do
                             ExternFnBuilder external_gen <- external_gen
-                            external_gen program type_store mir_function.args mir_function.result
+                            external_gen program type_store mir_function.type.args mir_function.type.result
                         None -> do
                             println "Extern function {}/{} is not implemented" % (mod, name)
                             R.Block [R.FunctionCall "unimplemented!" []]

@@ -9,10 +9,6 @@ data SubstitutionChange = Unification T.OwnershipVar
                         | Borrower
                         deriving (Show)
 
-data FunctionType = { args :: [T.Type],
-                      result :: T.Type }
-                      deriving (Show)
-
 data Substitution = { var_subs :: Map T.OwnershipVar SubstitutionChange } deriving (Show)
 
 createSubstitution :: Substitution
@@ -26,14 +22,6 @@ instance Apply T.OwnershipVar where
     apply v sub = case get sub.var_subs v of
                      Some (Unification new) -> new
                      _ -> v
-
-instance Apply FunctionType where
-    //apply :: FunctionType -> Substitution -> FunctionType
-    apply function_type sub = do
-        args <- function_type.args |> List.iter |> map (\t -> apply t sub) |> toList
-        result <- apply function_type.result sub
-        function_type { args = args , result = result }
-
 
 instance Apply T.Type where
     //apply :: T.Type -> Substitution -> T.Type
@@ -74,6 +62,18 @@ unifyVars sub args1 args2 = do
                 sub <- addSubstitution sub arg1 (Unification arg2)
                 (sub, index + 1)
 
+batch :: [T.OwnershipVar] -> [T.OwnershipVar] -> Substitution
+batch from_vars to_vars = do
+    sub <- createSubstitution
+    sub <- loop (sub, index) <- (sub, 0) do
+            if index >= getLength from_vars
+                then break sub
+                else do
+                    from <- atIndex from_vars index
+                    to <- atIndex to_vars index
+                    sub <- addSubstitution sub from (Unification to)
+                    (sub, index + 1)
+    sub
 
 unify :: Substitution -> T.Type -> T.Type -> Substitution
 unify sub type1 type2 = do

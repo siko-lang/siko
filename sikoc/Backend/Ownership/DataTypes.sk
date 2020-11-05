@@ -4,7 +4,7 @@ import Siko.MIR.Program as P
 import Siko.MIR.Type as T
 import Siko.MIR.Data
 import Siko.MIR.Expr
-import Siko.MIR.Function
+import Siko.MIR.Function as F
 import Siko.Util.DependencyProcessor
 import Siko.Backend.Traversal
 import Siko.Backend.Ownership.Unification as U
@@ -177,52 +177,48 @@ addOwnershipVarsToExpr :: Context -> Expr -> (Context, Expr)
 addOwnershipVarsToExpr context expr = do
     traverse context expr None (Some addOwnershipVarsToType)
 
-processFunction :: P.Program -> Context -> Function -> (Context, Function)
+processFunction :: P.Program -> Context -> F.Function -> (Context, F.Function)
 processFunction program context function = case function.kind of
-    Normal body -> do
+    F.Normal body -> do
         (context, updated_body) <- addOwnershipVarsToExpr context body
-        (context, args) <- function.args |> List.iter |> fold (\(context, args), arg -> do
+        (context, args) <- function.type.args |> List.iter |> fold (\(context, args), arg -> do
             (context, arg) <- addOwnershipVarsToType context arg
             (context, args + [arg])) (context, [])
-        (context, result) <- addOwnershipVarsToType context function.result
-        (context, function { kind = Normal updated_body, args = args, result = result })
-    RecordCtor -> do
-        id <- T.getIdentity function.result
+        (context, result) <- addOwnershipVarsToType context function.type.result
+        function_type <- F.FunctionType args result
+        (context, function { kind = F.Normal updated_body, type = function_type })
+    F.RecordCtor -> do
+        id <- T.getIdentity function.type.result
         record <- P.getRecord program id
         args <- record.fields |> List.iter |> map (\f -> f.type) |> toList
         (context, o) <- getNextOwnershipVar context
         result <- T.Record id record.ownership_vars
-        (context, function { args = args, result = result })
-    VariantCtor index -> do
-        id <- T.getIdentity function.result
+        function_type <- F.FunctionType args result
+        (context, function { type = function_type })
+    F.VariantCtor index -> do
+        id <- T.getIdentity function.type.result
         adt <- P.getAdt program id
         variant <- atIndex adt.variants index
         variant_ownership_vars <- T.collectOwnershipArgs variant.type
         variant_record_id <- T.getIdentity variant.type
         variant_record <- P.getRecord program variant_record_id
-        sub <- U.createSubstitution
-        sub <- loop (sub, index) <- (sub, 0) do
-            if index >= getLength variant_ownership_vars
-                then break sub
-                else do
-                    v_var <- atIndex variant_ownership_vars index
-                    r_var <- atIndex variant_record.ownership_vars index
-                    sub <- U.addSubstitution sub r_var (U.Unification v_var)
-                    (sub, index + 1)
+        sub <- U.batch variant_record.ownership_vars variant_ownership_vars
         variant_record <- U.apply variant_record sub
         args <- variant_record.fields |> List.iter |> map (\f -> T.debox f.type) |> toList
         (context, o) <- getNextOwnershipVar context
         result <- T.Adt id adt.ownership_vars
-        (context, function { args = args, result = result })
-    Extern -> do
-        (context, args) <- function.args |> List.iter |> fold (\(context, args), arg -> do
+        function_type <- F.FunctionType args result
+        (context, function { type = function_type })
+    F.Extern -> do
+        (context, args) <- function.type.args |> List.iter |> fold (\(context, args), arg -> do
             (context, arg) <- addOwnershipVarsToType context arg
             (context, args + [arg])) (context, [])
-        (context, result) <- addOwnershipVarsToType context function.result
-        (context, function { args = args, result = result })
+        (context, result) <- addOwnershipVarsToType context function.type.result
+        function_type <- F.FunctionType args result
+        (context, function { type = function_type })
     _ -> (context, function)
 
-processDataTypes :: P.Program -> [DependencyGroup P.Identity] -> P.Program
+processDataTypes :: P.Program -> [DependencyGroup P.Identity] -> (U.OwnershipVarGenerator, P.Program)
 processDataTypes program groups = do
     context <- Context empty (U.OwnershipVarGenerator 0)
     (context, program) <- addOwnershipVarsToDataTypes context program groups
@@ -231,4 +227,4 @@ processDataTypes program groups = do
         (functions, _) <- insert functions id function
         (context, functions)) (context, empty)
     program <- program { functions = functions }
-    program
+    (context.var_gen, program)

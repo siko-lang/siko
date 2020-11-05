@@ -1122,7 +1122,7 @@ impl<'a> Parser<'a> {
         } else {
             Vec::new()
         };
-        let class_name = self.type_identifier("class name")?;
+        let class_name = self.parse_qualified_type_name()?;
         let start_index = self.get_index();
         let type_signature_id = self.parse_function_type(false, false)?;
         let end_index = self.get_index();

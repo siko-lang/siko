@@ -99,7 +99,7 @@ processNormalFunction context mir_function_id hir_type qn hir_function =
             context <- context { state = state }
             (context, mir_body) <- processExpr context sub hir_body
             (context, mir_arg_types, mir_result_type) <- getFunctionType context hir_type hir_function.arg_count
-            mir_function <- MF.Function mir_function_id (MF.Normal mir_body) mir_arg_types mir_result_type
+            mir_function <- MF.Function mir_function_id (MF.Normal mir_body) (MF.FunctionType mir_arg_types mir_result_type)
             mir_program <- MP.addFunction context.mir_program mir_function_id mir_function
             context <- context { mir_program = mir_program }
             context
@@ -123,7 +123,8 @@ processNormalFunction context mir_function_id hir_type qn hir_function =
                             (context, arg_ref1_expr) <- getExpr context (ME.Expr (ME.VarRef (ME.Arg 1)) (atIndex mir_arg_types 1))
                             mir_body <- ME.StaticFunctionCall ctor_function_id [arg_ref0_expr, arg_ref1_expr]
                             (context, mir_body_expr) <- getExpr context (ME.Expr mir_body mir_result_type)
-                            mir_function <- MF.Function mir_function_id (MF.Normal mir_body_expr) mir_arg_types mir_result_type
+                            mir_function <- MF.Function mir_function_id (MF.Normal mir_body_expr)
+                                            (MF.FunctionType mir_arg_types mir_result_type)
                             mir_program <- MP.addFunction context.mir_program mir_function_id mir_function
                             context <- context { mir_program = mir_program }
                             context
@@ -136,14 +137,16 @@ processNormalFunction context mir_function_id hir_type qn hir_function =
                                 iterator_store <- IS.setIteratorGetNext iterator_store iterator_name mir_function_id
                                 context <- context { iterator_store = iterator_store }
                                 (context, mir_body) <- getExpr context (ME.Expr (ME.Do []) mir_result_type)
-                                mir_function <- MF.Function mir_function_id (MF.Normal mir_body) mir_arg_types mir_result_type
+                                mir_function <- MF.Function mir_function_id (MF.Normal mir_body)
+                                                (MF.FunctionType mir_arg_types mir_result_type)
                                 mir_program <- MP.addFunction context.mir_program mir_function_id mir_function
                                 context <- context { mir_program = mir_program }
                                 context
                             else panic "NYI"
                 else do
                     (context, mir_arg_types, mir_result_type) <- getFunctionType context hir_type hir_function.arg_count
-                    mir_function <- MF.Function mir_function_id MF.Extern mir_arg_types mir_result_type
+                    mir_function <- MF.Function mir_function_id MF.Extern
+                                    (MF.FunctionType mir_arg_types mir_result_type)
                     mir_program <- MP.addFunction context.mir_program mir_function_id mir_function
                     context <- context { mir_program = mir_program }
                     context
@@ -159,29 +162,29 @@ processItem item mir_function_id context = do
                     variant <- atIndex adt.variants index
                     (context, mir_arg_types, mir_result_type) <- getFunctionType context hir_type (getLength variant.items)
                     mir_function <- if getLength adt.variants == 1
-                        then MF.Function mir_function_id MF.RecordCtor mir_arg_types mir_result_type
-                        else MF.Function mir_function_id (MF.VariantCtor index) mir_arg_types mir_result_type
+                        then MF.Function mir_function_id MF.RecordCtor (MF.FunctionType mir_arg_types mir_result_type)
+                        else MF.Function mir_function_id (MF.VariantCtor index) (MF.FunctionType mir_arg_types mir_result_type)
                     mir_program <- MP.addFunction context.mir_program mir_function_id mir_function
                     context <- context { mir_program = mir_program }
                     context
         RecordCtor qn hir_type -> do
                     record <- HP.getRecord context.hir_program qn
                     (context, mir_arg_types, mir_result_type) <- getFunctionType context hir_type (getLength record.fields)
-                    mir_function <- MF.Function mir_function_id MF.RecordCtor mir_arg_types mir_result_type
+                    mir_function <- MF.Function mir_function_id MF.RecordCtor (MF.FunctionType mir_arg_types mir_result_type)
                     mir_program <- MP.addFunction context.mir_program mir_function_id mir_function
                     context <- context { mir_program = mir_program }
                     context
         TupleCtor hir_type -> do
                     arg_count <- getLength (HT.getArgs hir_type)
                     (context, mir_arg_types, mir_result_type) <- getFunctionType context hir_type arg_count
-                    mir_function <- MF.Function mir_function_id MF.RecordCtor mir_arg_types mir_result_type
+                    mir_function <- MF.Function mir_function_id MF.RecordCtor (MF.FunctionType mir_arg_types mir_result_type)
                     mir_program <- MP.addFunction context.mir_program mir_function_id mir_function
                     context <- context { mir_program = mir_program }
                     context
         ClosureCtor arg_count hir_type closure_instance -> do
                     (context, mir_arg_types, mir_result_type) <- getFunctionType context hir_type arg_count
                     CS.ClosureInstanceId id <- closure_instance.id
-                    mir_function <- MF.Function mir_function_id (MF.VariantCtor id) mir_arg_types mir_result_type
+                    mir_function <- MF.Function mir_function_id (MF.VariantCtor id) (MF.FunctionType mir_arg_types mir_result_type)
                     mir_program <- MP.addFunction context.mir_program mir_function_id mir_function
                     context <- context { mir_program = mir_program }
                     context
@@ -191,7 +194,7 @@ processItem item mir_function_id context = do
                     arg_count <- getLength (HT.getArgs hir_type)
                     (context, mir_arg_types, mir_result_type) <- getFunctionType context hir_type 2
                     (context, mir_body) <- getExpr context (ME.Expr (ME.Do []) mir_result_type)
-                    mir_function <- MF.Function mir_function_id (MF.Normal mir_body) mir_arg_types mir_result_type
+                    mir_function <- MF.Function mir_function_id (MF.Normal mir_body) (MF.FunctionType mir_arg_types mir_result_type)
                     mir_program <- MP.addFunction context.mir_program mir_function_id mir_function
                     context <- context { mir_program = mir_program }
                     context
@@ -201,7 +204,7 @@ processItem item mir_function_id context = do
                     iterator_store <- IS.addIteratorInstanceCtorIdentity context.iterator_store iterator_instance mir_function_id
                     context <- context { iterator_store = iterator_store }
                     IS.IteratorInstanceId id <- iterator_instance.id
-                    mir_function <- MF.Function mir_function_id (MF.VariantCtor id) mir_arg_types mir_result_type
+                    mir_function <- MF.Function mir_function_id (MF.VariantCtor id) (MF.FunctionType mir_arg_types mir_result_type)
                     mir_program <- MP.addFunction context.mir_program mir_function_id mir_function
                     context <- context { mir_program = mir_program }
                     context
@@ -221,7 +224,7 @@ processItem item mir_function_id context = do
                 _ -> panic "Auto derive not implemented for {} / {} / {}" % (class_name, member_name, HT.toString hir_type)
             (context, mir_arg_types, mir_result_type) <- getFunctionType context hir_function_type arg_count
             (context, body) <- fn context hir_type class_name
-            mir_function <- MF.Function mir_function_id (MF.Normal body) mir_arg_types mir_result_type
+            mir_function <- MF.Function mir_function_id (MF.Normal body) (MF.FunctionType mir_arg_types mir_result_type)
             mir_program <- MP.addFunction context.mir_program mir_function_id mir_function
             context <- context { mir_program = mir_program }
             context

@@ -17,15 +17,17 @@ instance Show FunctionKind where
         RecordCtor -> "RecordCtor"
         Extern -> "Extern"
 
+data FunctionType = { args :: [T.Type],
+                      result :: T.Type }
+
 data Function = { id :: Identity,
                   kind :: FunctionKind,
-                  args :: [T.Type],
-                  result :: T.Type }
+                  type :: FunctionType }
 
 dump :: Function -> String
 dump function = do
-    s <- "{} :: {} -> {}\n" % (function.id, function.args, function.result)
-    args <- function.args |> List.iter |> fold (\args, arg -> do
+    s <- "{} :: {} -> {}\n" % (function.id, function.type.args, function.type.result)
+    args <- function.type.args |> List.iter |> fold (\args, arg -> do
         index <- getLength args
         args + ["arg{}" % index]) []
     args <- join args " "
