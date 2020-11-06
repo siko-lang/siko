@@ -58,6 +58,11 @@ getExprType context expr_id = case get context.expr_types expr_id of
     Some t -> t
     None -> panic "Could not get expr type for {}" % expr_id
 
+getVarType :: Context -> FunctionVar -> T.Type
+getVarType context var = case get context.function_vars var of
+    Some t -> t
+    None -> panic "Could not get var type for {}" % var
+
 dump :: Context -> String -> ()
 dump context msg = do
     println "-------{}---------" % msg
@@ -68,13 +73,18 @@ initExpr :: P.Identity -> Context -> E.Expr -> (Context, E.Expr)
 initExpr function_id context expr = do
     E.Expr s_expr type expr_id <- expr
     (expr_types, prev) <- insert context.expr_types expr_id type
-    assert (isNone prev)
+    if isSome prev then panic "Duplicated expr id! {} - {}" % (expr_id, s_expr) else ()
     context <- context { expr_types = expr_types }
     context <- case s_expr of
         E.VarDecl v rhs -> do
-            E.Expr _ rhs_type rhs_expr_id <- rhs
+            E.Expr _ rhs_type _ <- rhs
             var <- FunctionVar function_id v
             (function_vars, _) <- insert context.function_vars var rhs_type
+            context { function_vars = function_vars }
+        E.Loop v initializer _ _ _ -> do
+            E.Expr _ initializer_type _ <- initializer
+            var <- FunctionVar function_id v
+            (function_vars, _) <- insert context.function_vars var initializer_type
             context { function_vars = function_vars }
         _ -> context
     (context, expr)
@@ -93,9 +103,7 @@ unifyExprs context expr1 expr2 = do
 unifyExprWithVar :: Context -> E.ExprId -> FunctionVar -> Context
 unifyExprWithVar context expr_id var = do
     type1 <- getExprType context expr_id
-    type2 <- case get context.function_vars var of
-        Some t -> t
-        None -> panic "Var {} not found in context" % var
+    type2 <- getVarType context var
     sub <- U.createSubstitution
     sub <- U.unify sub type1 type2
     context <- U.apply context sub
@@ -114,6 +122,31 @@ cloneFunctionType context function_type = do
     function_type <- U.apply function_type sub
     (context, function_type)
 
+getRecordType :: Context -> T.Type -> D.Record
+getRecordType context type = do
+    record_id <- T.getIdentity type
+    record <- case get context.records record_id of
+        Some r -> r
+        None -> panic "Could not find record {}" % record_id
+    ownership_vars <- T.collectOwnershipVars type
+    sub <- U.batch record.ownership_vars ownership_vars
+    record <- U.apply record sub
+    record
+
+getRecordFieldType :: D.Record -> String -> T.Type
+getRecordFieldType record name =
+    case find record.fields (\f -> f.name == name) of
+        Some f -> do
+            f :: D.RecordField <- f // FIXME
+            f.type
+        None -> panic "No field named {}" % name
+
+getFunctionType :: Context -> P.Identity -> F.FunctionType
+getFunctionType context id =
+    case get context.function_type_store.functions id of
+        Some function_type -> function_type
+        None -> panic "No function type found for {}" % id
+
 checkExpr :: P.Identity -> Context -> E.Expr -> (Context, E.Expr)
 checkExpr function_id context expr = do
     E.Expr s_expr t id <- expr
@@ -123,59 +156,100 @@ checkExpr function_id context expr = do
             last <- atIndex items last_index
             context <- unifyExprs context expr last
             context
+        E.Multi _ -> panic "Multi found in checkExpr"
         E.StaticFunctionCall f_id args -> do
-            case get context.function_type_store.functions f_id of
-                Some function_type -> do
-                    function_type :: F.FunctionType <- function_type // FIXME
-                    (context, function_type) <- cloneFunctionType context function_type
-                    (context, function_type, index) <- args |> List.iter |> fold (\(context, function_type, index), arg -> do
-                        E.Expr _ _ arg_id <- arg
-                        arg_type <- getExprType context arg_id
-                        func_arg_type <- atIndex function_type.args index
-                        sub <- U.createSubstitution
-                        //println "arg unify {} {}" % (arg_type, func_arg_type)
-                        sub <- U.unify sub arg_type func_arg_type
-                        //println "sub: {}" % sub
-                        context <- U.apply context sub
-                        function_type <- U.apply function_type sub
-                        (context, function_type, index + 1)) (context, function_type, 0)
-                    sub <- U.createSubstitution
-                    result_type <- getExprType context id
-                    //println "result? {}, {}" % (function_type.result, result_type)
-                    sub <- U.unify sub function_type.result result_type
-                    context <- U.apply context sub
-                    result_type <- getExprType context id
-                    context
-                None -> panic "Function {} not found in function type store" % f_id
-        E.VarRef arg -> do
-            var <- FunctionVar function_id arg
-            unifyExprWithVar context id var
-        E.Clone args -> context
-        E.FieldAccess name rhs -> do
-            E.Expr _ _ rhs_expr_id <- rhs
-            rhs_type <- getExprType context rhs_expr_id
-            record_id <- T.getIdentity rhs_type
-            record <- case get context.records record_id of
-                Some r -> r
-                None -> panic "Could not find record {}" % record_id
-            rhs_ownership_vars <- T.collectOwnershipVars rhs_type
-            sub <- U.batch record.ownership_vars rhs_ownership_vars
-            record <- U.apply record sub
-            field <- case find record.fields (\f -> f.name == name) of
-                    Some f -> f
-                    None -> panic "No field named {}" % name
+            function_type <- getFunctionType context f_id
+            function_type :: F.FunctionType <- function_type // FIXME
+            (context, function_type) <- cloneFunctionType context function_type
+            (context, function_type, index) <- args |> List.iter |> fold (\(context, function_type, index), arg -> do
+                E.Expr _ _ arg_id <- arg
+                arg_type <- getExprType context arg_id
+                func_arg_type <- atIndex function_type.args index
+                sub <- U.createSubstitution
+                sub <- U.unify sub arg_type func_arg_type
+                context <- U.apply context sub
+                function_type <- U.apply function_type sub
+                (context, function_type, index + 1)) (context, function_type, 0)
             sub <- U.createSubstitution
-            type <- getExprType context id
-            sub <- U.unify sub field.type type
+            result_type <- getExprType context id
+            sub <- U.unify sub function_type.result result_type
             context <- U.apply context sub
+            result_type <- getExprType context id
             context
-        E.CaseOf body cases -> cases |> List.iter |> fold (\context, c -> unifyExprs context c.body expr) context
+        E.IntegerLiteral lit -> context
         E.StringLiteral lit -> context
+        E.FloatLiteral lit -> context
+        E.CharLiteral lit -> context
         E.VarDecl v rhs -> do
             E.Expr _ _ rhs_expr_id <- rhs
             var <- FunctionVar function_id v
             unifyExprWithVar context rhs_expr_id var
-        _ -> panic "NYI {}" % s_expr
+        E.VarRef arg -> do
+            var <- FunctionVar function_id arg
+            unifyExprWithVar context id var
+        E.FieldAccess name rhs -> do
+            E.Expr _ _ rhs_expr_id <- rhs
+            rhs_type <- getExprType context rhs_expr_id
+            record <- getRecordType context rhs_type
+            field_type <- getRecordFieldType record name
+            sub <- U.createSubstitution
+            type <- getExprType context id
+            sub <- U.unify sub field_type type
+            context <- U.apply context sub
+            context
+        E.If cond true_branch false_branch -> do
+            context <- unifyExprs context true_branch false_branch
+            context <- unifyExprs context expr true_branch
+            context
+        E.List items -> do
+            case head items of
+                Some first -> do
+                    E.Expr _ _ first_id <- first
+                    list_type <- getExprType context id
+                    first_type <- getExprType context first_id
+                    list_ownership_vars <- T.collectOwnershipArgs list_type
+                    first_ownership_vars <- T.collectOwnershipVars first_type
+                    sub <- U.batch list_ownership_vars first_ownership_vars
+                    context <- U.apply context sub
+                    context <- items |> List.iter |> fold (\context, item -> do
+                        unifyExprs context first item) context
+                    context
+                None -> context
+        E.Return arg -> do
+            function_type <- getFunctionType context function_id
+            E.Expr _ _ arg_id <- arg
+            arg_type <- getExprType context arg_id
+            sub <- U.createSubstitution
+            sub <- U.unify sub function_type.result arg_type
+            context <- U.apply context sub
+            context
+        E.Continue arg -> context
+        E.Break arg -> context
+        E.RecordUpdate v updates -> do
+            var <- FunctionVar function_id v
+            record_type <- getVarType context var
+            sub <- U.createSubstitution
+            type <- getExprType context id
+            sub <- U.unify sub record_type type
+            context <- U.apply context sub
+            record <- getRecordType context record_type
+            (context, record) <- updates |> List.iter |> fold (\(context, record), update -> do
+                field_type <- getRecordFieldType record update.field_name
+                sub <- U.createSubstitution
+                E.Expr _ _ body_id <- update.body
+                body_type <- getExprType context body_id
+                sub <- U.unify sub field_type body_type
+                context <- U.apply context sub
+                record <- U.apply record sub
+                (context, record)) (context, record)
+            context
+        E.Loop _ _ _ _ _ -> context
+        E.CaseOf body cases -> cases |> List.iter |> fold (\context, c -> unifyExprs context c.body expr) context
+        E.Clone args -> panic "Clone in checkExpr"
+        E.Deref args -> panic "Deref in checkExpr"
+        E.Ref args -> panic "Ref in checkExpr"
+        E.Move args -> panic "Move in checkExpr"
+        E.Box args -> panic "Box in checkExpr"
     (context, expr)
 
 initFunction :: Context -> F.Function -> Context

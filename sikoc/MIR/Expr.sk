@@ -61,7 +61,7 @@ data SimpleExpr = Do [Expr]
             | Continue Expr
             | Break Expr
             | RecordUpdate Var [RecordUpdateItem]
-            | Loop Var Expr [Expr]
+            | Loop Var Expr [Expr] [ExprId] [ExprId]
             | CaseOf Expr [Case]
             | Clone Expr
             | Deref Expr
@@ -136,7 +136,7 @@ prettyPrint expr ind = do
                 ("{} : {}" % (update.field_name, s))) |> toList
             s <- "({} {{ {} }})" % (var, join args ", ")
             (s, True)
-        Loop var initializer args -> do
+        Loop var initializer args _ _ -> do
             (initializer, simple) <- prettyPrint initializer ind
             initializer <- if simple then initializer else "({})" % initializer
             inner <- inc ind

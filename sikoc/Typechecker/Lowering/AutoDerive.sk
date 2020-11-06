@@ -317,7 +317,8 @@ generateTwoArgsInstance context hir_type class_name call_compare_discriminants p
                     (context, unit_type) <- TS.processType context (HT.Tuple [])
                     (context, var0) <- getNextTempVar context
                     arg_ref0 <- ME.VarRef (ME.Arg 0)
-                    (context, arg_ref0_expr) <- getExpr context (ME.Expr arg_ref0 mir_adt_type)
+                    arg_ref0 <- ME.Expr arg_ref0 mir_adt_type
+                    (context, arg_ref0_expr) <- getExpr context arg_ref0
                     var0_decl <- ME.VarDecl var0 arg_ref0_expr
                     (context, var0_decl_expr) <- getExpr context (ME.Expr var0_decl unit_type)
                     var_ref0 <- ME.VarRef var0
@@ -350,7 +351,8 @@ generateTwoArgsInstance context hir_type class_name call_compare_discriminants p
                                 (context, var1_in) <- getNextTempVar context
                                 variant_type <- getVariantType context variant_index mir_adt_type
                                 arg_ref1 <- ME.VarRef (ME.Arg 1)
-                                (context, arg_ref1_expr) <- getExpr context (ME.Expr arg_ref1 mir_adt_type)
+                                arg_ref1 <- ME.Expr arg_ref1 mir_adt_type
+                                (context, arg_ref1_expr) <- getExpr context arg_ref1
                                 var1_decl <- ME.VarDecl var1 arg_ref1_expr
                                 (context, var1_decl_expr) <- getExpr context (ME.Expr var1_decl unit_type)
                                 var_ref1 <- ME.VarRef var1
@@ -372,7 +374,9 @@ generateTwoArgsInstance context hir_type class_name call_compare_discriminants p
                                         (context, ME.CaseOf var_ref1_expr [case_ok])
                                     else do
                                         get_discriminant_qn <- HP.FullPath getStdOpsModuleName getFnGetDiscriminantName
+                                        (context, arg_ref0_expr) <- getExpr context arg_ref0
                                         (context, call_get_discriminant0) <- callGetDiscriminant context hir_type [arg_ref0_expr]
+                                        (context, arg_ref1_expr) <- getExpr context arg_ref1
                                         (context, call_get_discriminant1) <- callGetDiscriminant context hir_type [arg_ref1_expr]
                                         (context, compare_discriminants) <- call_compare_discriminants context TUtil.getIntType call_get_discriminant0 call_get_discriminant1
                                         ME.Expr _ case_type _ <- compare_discriminants

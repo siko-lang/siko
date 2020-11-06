@@ -311,7 +311,8 @@ generateGetDiscriminant program type_store arg_types result_type = do
             rust_result_type <- convertType result_type
             struct_ctor <- R.StructCtor (show rust_result_type) [R.FieldInitItem innerValueField (R.IntegerLiteral "0")]
             R.Block [struct_ctor]
-        _ -> panic "getDiscriminant not implemented for special types"
+        MT.Var _ t -> generateGetDiscriminant program type_store [t] result_type
+        _ -> panic "getDiscriminant not implemented for special types {}" % arg_type
 
 generateAssert :: Program -> TypeStore -> [MT.Type] -> MT.Type -> R.Expr
 generateAssert program type_store arg_types result_type = do

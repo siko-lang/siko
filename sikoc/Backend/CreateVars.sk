@@ -128,10 +128,10 @@ processExpr context expr = do
                 (context, extras, updates)) (context, extras, [])
             expr <- Expr (RecordUpdate var updates) type id
             createTempVar context extras expr
-        Loop v initializer items -> do
+        Loop v initializer items continues breaks -> do
             (context, extras, initializer) <- processExpr context initializer
             (context, items) <- processBlock context items
-            expr <- Expr (Loop v initializer items) type id
+            expr <- Expr (Loop v initializer items continues breaks) type id
             createTempVar context extras expr
         CaseOf body cases -> do
             (context, extras, body) <- processExpr context body
