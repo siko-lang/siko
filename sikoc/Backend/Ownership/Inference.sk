@@ -17,6 +17,7 @@ data FunctionTypeStore = { functions :: Map P.Identity F.FunctionType }
 data FunctionVar = FunctionVar P.Identity E.Var deriving (PartialEq, Eq, PartialOrd, Ord, Show)
 
 data Context = { function_type_store :: FunctionTypeStore,
+                 adts :: Map P.Identity D.AlgebraicDataType,
                  records :: Map P.Identity D.Record,
                  expr_types :: Map E.ExprId T.Type,
                  function_vars :: Map FunctionVar T.Type,
@@ -86,6 +87,17 @@ initExpr function_id context expr = do
             var <- FunctionVar function_id v
             (function_vars, _) <- insert context.function_vars var initializer_type
             context { function_vars = function_vars }
+        E.CaseOf body cases -> do
+            context <- cases |> List.iter |> fold (\context, c -> do
+                case c.checker of
+                    E.VariantChecker index v type -> do
+                        var <- FunctionVar function_id v
+                        adt <- getAdtType context type
+                        variant <- atIndex adt.variants index
+                        (function_vars, _) <- insert context.function_vars var variant.type
+                        context { function_vars = function_vars }
+                    _ -> context) context
+            context
         _ -> context
     (context, expr)
 
@@ -93,6 +105,15 @@ unifyExprs :: Context -> E.Expr -> E.Expr -> Context
 unifyExprs context expr1 expr2 = do
     E.Expr _ _ id1 <- expr1
     E.Expr _ _ id2 <- expr2
+    type1 <- getExprType context id1
+    type2 <- getExprType context id2
+    sub <- U.createSubstitution
+    sub <- U.unify sub type1 type2
+    context <- U.apply context sub
+    context
+
+unifyExprIds :: Context -> E.ExprId -> E.ExprId -> Context
+unifyExprIds context id1 id2 = do
     type1 <- getExprType context id1
     type2 <- getExprType context id2
     sub <- U.createSubstitution
@@ -132,6 +153,17 @@ getRecordType context type = do
     sub <- U.batch record.ownership_vars ownership_vars
     record <- U.apply record sub
     record
+
+getAdtType :: Context -> T.Type -> D.AlgebraicDataType
+getAdtType context type = do
+    adt_id <- T.getIdentity type
+    adt <- case get context.adts adt_id of
+        Some adt -> adt
+        None -> panic "Could not find adt {}" % adt_id
+    ownership_vars <- T.collectOwnershipVars type
+    sub <- U.batch adt.ownership_vars ownership_vars
+    adt <- U.apply adt sub
+    adt
 
 getRecordFieldType :: D.Record -> String -> T.Type
 getRecordFieldType record name =
@@ -243,8 +275,28 @@ checkExpr function_id context expr = do
                 record <- U.apply record sub
                 (context, record)) (context, record)
             context
-        E.Loop _ _ _ _ _ -> context
-        E.CaseOf body cases -> cases |> List.iter |> fold (\context, c -> unifyExprs context c.body expr) context
+        E.Loop v initializer _ continues breaks -> do
+            E.Expr _ _ initializer_id <- initializer
+            var <- FunctionVar function_id v
+            context <- unifyExprWithVar context initializer_id var
+            context <- continues |> List.iter |> fold (\context, cont -> unifyExprIds context initializer_id cont) context
+            context <- breaks |> List.iter |> fold (\context, brk -> unifyExprIds context id brk) context
+            context
+        E.CaseOf body cases -> cases |> List.iter |> fold (\context, c -> do
+            context <- case c.checker of
+                    E.VariantChecker index v type -> do
+                        var <- FunctionVar function_id v
+                        E.Expr _ _ body_id <- body
+                        body_type <- getExprType context body_id
+                        adt <- getAdtType context body_type
+                        variant <- atIndex adt.variants index
+                        sub <- U.createSubstitution
+                        var_type <- getVarType context var
+                        sub <- U.unify sub var_type variant.type
+                        context <- U.apply context sub
+                        context
+                    _ -> context
+            unifyExprs context c.body expr) context
         E.Clone args -> panic "Clone in checkExpr"
         E.Deref args -> panic "Deref in checkExpr"
         E.Ref args -> panic "Ref in checkExpr"
@@ -294,7 +346,7 @@ updateFunctionKind context kind = case kind of
 
 processFunctions :: P.Program -> FunctionTypeStore -> [P.Identity] -> U.OwnershipVarGenerator -> (P.Program, FunctionTypeStore, U.OwnershipVarGenerator)
 processFunctions program function_type_store functions var_gen = do
-    context <- Context function_type_store program.records empty empty var_gen
+    context <- Context function_type_store program.adts program.records empty empty var_gen
     context <- functions |> List.iter |> fold (\context, id -> do
         function <- P.getFunction program id
         context <- initFunction context function

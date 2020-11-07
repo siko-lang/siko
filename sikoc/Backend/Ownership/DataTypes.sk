@@ -175,12 +175,30 @@ addOwnershipVarsToType context type = case type of
 
 addOwnershipVarsToExpr :: Context -> Expr -> (Context, Expr)
 addOwnershipVarsToExpr context expr = do
-    traverse context expr None (Some addOwnershipVarsToType)
+    Expr s_expr type expr_id <- expr
+    context <- case s_expr of
+        CaseOf body cases -> do
+            (context, cases) <- cases |> List.iter |> fold (\(context, cases), c -> do
+                (context, c) <- case c.checker of
+                    VariantChecker index v type -> do
+                        (context, type) <- addOwnershipVarsToType context type
+                        checker <- VariantChecker index v type
+                        (context, c { checker = checker })
+                    _ -> (context, c)
+                (context, cases + [c])) (context, [])
+            s_expr <- CaseOf body cases
+            return (context, Expr s_expr type expr_id)
+        _ -> context
+    (context, expr)
+
+addOwnershipVarsToBody :: Context -> Expr -> (Context, Expr)
+addOwnershipVarsToBody context expr = do
+    traverse context expr (Some addOwnershipVarsToExpr) (Some addOwnershipVarsToType)
 
 processFunction :: P.Program -> Context -> F.Function -> (Context, F.Function)
 processFunction program context function = case function.kind of
     F.Normal body -> do
-        (context, updated_body) <- addOwnershipVarsToExpr context body
+        (context, updated_body) <- addOwnershipVarsToBody context body
         (context, args) <- function.type.args |> List.iter |> fold (\(context, args), arg -> do
             (context, arg) <- addOwnershipVarsToType context arg
             (context, args + [arg])) (context, [])

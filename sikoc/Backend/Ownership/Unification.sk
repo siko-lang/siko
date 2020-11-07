@@ -43,6 +43,15 @@ instance Apply D.Record where
             f { type = type}) |> toList
         record { ownership_vars = ownership_vars, fields = fields }
 
+instance Apply D.AlgebraicDataType where
+    //apply :: D.AlgebraicDataType -> Substitution -> D.AlgebraicDataType
+    apply adt sub = do
+        ownership_vars <- adt.ownership_vars |> List.iter |> map (\v -> apply v sub) |> toList
+        variants <- adt.variants |> List.iter |> map (\v -> do
+            type <- apply v.type sub
+            v { type = type}) |> toList
+        adt { ownership_vars = ownership_vars, variants = variants }
+
 addSubstitution :: Substitution -> T.OwnershipVar -> SubstitutionChange -> Substitution
 addSubstitution sub var change = do
     (var_subs, _) <- insert sub.var_subs var change
