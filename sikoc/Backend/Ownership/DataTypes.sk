@@ -238,7 +238,7 @@ processFunction program context function = case function.kind of
 
 processDataTypes :: P.Program -> [DependencyGroup P.Identity] -> (U.OwnershipVarGenerator, P.Program)
 processDataTypes program groups = do
-    context <- Context empty (U.OwnershipVarGenerator 0)
+    context <- Context empty U.createOwnershipVarGenerator
     (context, program) <- addOwnershipVarsToDataTypes context program groups
     (context, functions) <- program.functions |> Map.iter |> fold (\(context, functions), (id, function) -> do
         (context, function) <- processFunction program context function // FIXME: program should not be copied here!

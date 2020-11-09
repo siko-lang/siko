@@ -2,6 +2,7 @@ module Siko.Backend.Ownership.Unification where
 
 import Siko.MIR.Data as D
 import Siko.MIR.Type as T
+import Siko.Util.Counter
 import Map
 
 data SubstitutionChange = Unification T.OwnershipVar
@@ -125,11 +126,12 @@ unify sub type1 type2 = do
             unify sub t1 t2
         _ -> panic "NYI unify {} {}" % (type1, type2)
 
-data OwnershipVarGenerator = { next_var :: Int }
+data OwnershipVarGenerator = { counter :: Counter T.OwnershipVar }
+
+createOwnershipVarGenerator :: OwnershipVarGenerator
+createOwnershipVarGenerator = OwnershipVarGenerator (Counter T.OwnershipVar 0)
 
 getNextOwnershipVar :: OwnershipVarGenerator -> (OwnershipVarGenerator, T.OwnershipVar)
 getNextOwnershipVar var_gen = do
-    v <- var_gen.next_var
-    o <- T.OwnershipVar v
-    var_gen <- var_gen { next_var = v + 1}
-    (var_gen, o)
+    (counter, v) <- getNext var_gen.counter
+    (var_gen { counter = counter }, v)

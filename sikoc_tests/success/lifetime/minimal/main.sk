@@ -2,14 +2,17 @@ module Main where
 
 import Hack
 
+data Inner = Inner
+data Inner2 = Inner2
+
+data Foo = One | Two Inner Inner2
+
+data Data = { inner :: Inner, inner2 :: Inner2 }
+
 id a = a
 
-data Inner = Inner
-
-data Data = Data1 Inner | Data2 Inner
-
 main = do
-    d <- Data1 Inner
-    b <- case d of
-        Data1 a -> a
-        _ -> panic "a"
+    d <- Data Inner Inner2
+    d.inner2
+    inner <- id d.inner
+    d <- d { inner = inner }

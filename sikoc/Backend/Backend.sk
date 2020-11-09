@@ -1,8 +1,8 @@
 module Siko.Backend where
 
-import Siko.Backend.Passes.CreateVars as CreateVars
 import Siko.Backend.Passes.Box as Box
-import Siko.Backend.Ownership.Inference as Inference
+import Siko.Backend.Ownership.ExprUnification as ExprUnification
+import Siko.Backend.Ownership.TransformUpdates as TransformUpdates
 import Siko.Backend.Traversal
 import Siko.MIR.Program as P
 import Siko.MIR.Data
@@ -75,8 +75,8 @@ processProgram config program expr_id = do
     function_dependencies <- collectFunctionDeps program
     function_groups <- processDependencies function_dependencies
     program <- Box.processProgram program data_groups
-    program <- CreateVars.processProgram program expr_id
-    program <- Inference.processProgram program data_groups function_groups
+    program <- ExprUnification.processProgram program data_groups function_groups
+    program <- TransformUpdates.processProgram program expr_id
     s <- P.dump program
     writeTextFile (getOutputFileName config OptMIR) s
     program

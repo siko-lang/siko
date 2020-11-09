@@ -1,0 +1,188 @@
+module Siko.Backend.Ownership.TransformUpdates where
+
+import Siko.MIR.Program as P
+import Siko.MIR.Expr as E
+import Siko.MIR.Data as D
+import Siko.MIR.Type as T
+import Siko.MIR.Function as F
+import Siko.Util.Counter
+import Siko.Backend.Traversal
+import Siko.Backend.Ownership.Unification as U
+import Map
+import Set
+
+data FieldData = { access_expr :: E.ExprId -> E.Expr, var_decl_expr :: E.Expr }
+
+data SplitData = { fields :: Map String FieldData }
+
+data Context = { next_expr_id :: Counter E.ExprId,
+                 next_split_var :: Counter E.Var,
+                 updates :: Set E.Var,
+                 records :: Map P.Identity D.Record,
+                 split_vars :: Map E.Var SplitData,
+                 record_ctors :: Map P.Identity P.Identity }
+
+createContext :: Int -> Map P.Identity D.Record -> Context
+createContext id records = Context {
+            next_expr_id = Counter E.ExprId id,
+            next_split_var = Counter E.SplitRecordVar 0,
+            updates = Set.empty,
+            records = records,
+            split_vars = Map.empty,
+            record_ctors = Map.empty }
+
+getNextExprId :: Context -> (Context, E.ExprId)
+getNextExprId context = do
+    (next_expr_id, v) <- getNext context.next_expr_id
+    (context { next_expr_id = next_expr_id }, v)
+
+getNextSplitVar :: Context -> (Context, E.Var)
+getNextSplitVar context = do
+    (next_split_var, v) <- getNext context.next_split_var
+    (context { next_split_var = next_split_var }, v)
+
+getRecordType :: Context -> T.Type -> D.Record
+getRecordType context type = do
+    record_id <- T.getIdentity type
+    record <- case get context.records record_id of
+        Some r -> r
+        None -> panic "Could not find record {}" % record_id
+    ownership_vars <- T.collectOwnershipArgs type
+    sub <- U.batch record.ownership_vars ownership_vars
+    record <- U.apply record sub
+    record
+
+findUpdates :: Context -> E.Expr -> (Context, E.Expr)
+findUpdates context expr = do
+    E.Expr s_expr _ _ <- expr
+    context <- case s_expr of
+        E.RecordUpdate v _ -> do
+            (updates, _) <- Set.insert context.updates v
+            context { updates = updates }
+        _ -> context
+    (context, expr)
+
+splitDecls :: Context -> E.Expr -> (Context, E.Expr)
+splitDecls context expr = do
+    E.Expr s_expr expr_type expr_id <- expr
+    context <- case s_expr of
+        E.VarDecl v rhs -> do
+            if Set.contains context.updates v
+                then do
+                    E.Expr _ rhs_type _ <- rhs
+                    id <- T.getIdentity rhs_type
+                    record <- getRecordType context rhs_type
+                    (context, split_data) <- record.fields |> List.iter |> fold (\(context, split_data), field -> do
+                        var_ref <- E.VarRef v
+                        (context, expr_id) <- getNextExprId context
+                        var_ref_expr <- E.Expr var_ref rhs_type expr_id
+                        field_access <- E.FieldAccess field.name var_ref_expr
+                        (context, expr_id) <- getNextExprId context
+                        field_access_expr <- E.Expr field_access field.type expr_id
+                        (context, split_var) <- getNextSplitVar context
+                        var_decl <- E.VarDecl split_var field_access_expr
+                        (context, expr_id) <- getNextExprId context
+                        var_decl_expr <- E.Expr var_decl expr_type expr_id
+                        access_expr <- E.VarRef split_var
+
+                        access_expr <- E.Expr access_expr field.type
+                        field_data <- FieldData access_expr var_decl_expr
+                        (fields, _) <- Map.insert split_data.fields field.name field_data
+                        split_data <- split_data { fields = fields }
+                        (context, split_data)) (context, SplitData Map.empty)
+                    (split_vars, _) <- Map.insert context.split_vars v split_data
+                    context <- context { split_vars = split_vars }
+                    return (context, expr)
+                else context
+        _ -> context
+    (context, expr)
+
+insertSplit :: Context -> E.Expr -> (Context, E.Expr)
+insertSplit context expr = do
+    E.Expr s_expr expr_type expr_id <- expr
+    context <- case s_expr of
+        E.VarDecl v rhs -> do
+            case get context.split_vars v of
+                Some split_data -> do
+                    split_data :: SplitData <- split_data // FIXME
+                    (context, expr_id) <- getNextExprId context
+                    split_exprs <- split_data.fields |> Map.iter |> fold (\split_exprs, (_, field_data) -> do
+                        split_exprs + [field_data.var_decl_expr]) [expr]
+                    expr <- E.Expr (E.Multi split_exprs) expr_type expr_id
+                    return (context, expr)
+                None -> context
+        _ -> context
+    (context, expr)
+
+update :: Context -> E.Expr -> (Context, E.Expr)
+update context expr = do
+    E.Expr s_expr expr_type expr_id <- expr
+    context <- case s_expr of
+        E.FieldAccess name rhs -> do
+            E.Expr rhs_s_expr _ _ <- rhs
+            case rhs_s_expr of
+                E.VarRef v -> do
+                    case get context.split_vars v of
+                        Some split_data -> do
+                            split_data :: SplitData <- split_data // FIXME
+                            case get split_data.fields name of
+                                Some field_data -> do
+                                    field_data :: FieldData <- field_data // FIXME
+                                    (context, expr_id) <- getNextExprId context
+                                    return (context, field_data.access_expr expr_id)
+                                None -> panic "Field data not found for field {}" % name
+                        None -> context
+                _ -> context
+        E.RecordUpdate v updates -> do
+            record <- getRecordType context expr_type
+            split_data <- case get context.split_vars v of
+                Some split_data -> split_data
+                None -> panic "No split data found for {}" % v
+            case get context.record_ctors record.id of
+                Some ctor_id -> do
+                    //println "Calling {} instead" % ctor_id
+                    (context, args) <- record.fields |> List.iter |> fold (\(context, args), field -> do
+                        (context, arg) <- case find updates (\update -> update.field_name == field.name) of
+                            Some update -> do
+                                update :: E.RecordUpdateItem <- update // FIXME
+                                (context, update.body)
+                            None -> case get split_data.fields field.name of
+                                Some field_data -> do
+                                    field_data :: FieldData <- field_data // FIXME
+                                    (context, expr_id) <- getNextExprId context
+                                    (context, field_data.access_expr expr_id)
+                                None -> panic "Field data not found for field {}" % field.name
+                        (context, args + [arg]) ) (context, [])
+                    expr <- E.Expr (E.StaticFunctionCall ctor_id args) expr_type expr_id
+                    return (context, expr)
+                None -> panic "Updated record has no ctor! {}" % record.id
+        _ -> context
+    (context, expr)
+
+processFunction :: Context -> F.Function -> (Context, F.Function)
+processFunction context function = case function.kind of
+    F.Normal body -> do
+        context <- context { updates = Set.empty }
+        (context, body) <- traverse context body (Some findUpdates) None
+        (context, body) <- traverse context body (Some splitDecls) None
+        (context, body) <- traverse context body (Some update) None
+        (context, body) <- traverse context body (Some insertSplit) None
+        (context, function { kind = F.Normal body })
+    _ -> (context, function)
+
+processProgram :: P.Program -> Int -> P.Program
+processProgram program expr_id = do
+    context <- createContext expr_id program.records
+    context <- program.functions |> Map.iter |> fold (\context, (id, function) -> do
+            case function.kind of
+                F.RecordCtor -> do
+                    record_id <- T.getIdentity function.type.result
+                    (record_ctors, _) <- Map.insert context.record_ctors record_id id
+                    context { record_ctors = record_ctors }
+                _ -> context
+        ) context
+    (context, functions) <- program.functions |> Map.iter |> fold (\(context, functions), (id, function) -> do
+        (context, function) <- processFunction context function
+        (functions, _) <- Map.insert functions id function
+        (context, functions)) (context, Map.empty)
+    program { functions = functions }

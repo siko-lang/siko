@@ -1,4 +1,4 @@
-module Siko.Backend.Ownership.Inference where
+module Siko.Backend.Ownership.ExprUnification where
 
 import Siko.MIR.Program as P
 import Siko.MIR.Function as F
@@ -149,7 +149,7 @@ getRecordType context type = do
     record <- case get context.records record_id of
         Some r -> r
         None -> panic "Could not find record {}" % record_id
-    ownership_vars <- T.collectOwnershipVars type
+    ownership_vars <- T.collectOwnershipArgs type
     sub <- U.batch record.ownership_vars ownership_vars
     record <- U.apply record sub
     record
@@ -312,7 +312,7 @@ initFunction context function = case function.kind of
             (function_vars, _) <- insert context.function_vars var arg_type
             context <- context { function_vars = function_vars }
             (context, index + 1)) (context, 0)
-        println "Processing {} - init" % function.id
+        //println "Processing {} - init" % function.id
         (context, _) <- traverse context body (Some (initExpr function.id)) None
         context
     _ -> context
@@ -320,7 +320,7 @@ initFunction context function = case function.kind of
 checkFunction :: Context -> F.Function -> Context
 checkFunction context function = case function.kind of
     F.Normal body -> do
-        println "Processing {} - check" % function.id
+        //println "Processing {} - check" % function.id
         (context, _) <- traverse context body (Some (checkExpr function.id)) None
         E.Expr _ _ body_id <- body
         body_type <- getExprType context body_id
