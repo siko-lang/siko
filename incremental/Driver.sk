@@ -1,0 +1,102 @@
+module Siko.Driver where
+
+import Siko.Driver.Key
+import Siko.Driver.Value
+import Siko.Driver.Task
+
+import Map
+
+data Error = Error deriving (Show)
+
+data Requester = Refresh
+               | Internal Key
+               deriving (PartialEq, Eq, PartialOrd, Ord, Show)
+
+data KeyData = { value :: Value,
+                 requesters :: [Requester] }
+
+data DataBase = { values :: Map Key KeyData, requesters :: [Requester] }
+
+createDataBase :: DataBase
+createDataBase = DataBase empty []
+
+addInput :: DataBase -> String -> String -> DataBase
+addInput db name source =  do
+    add db (InputKey name) (InputValue source) Refresh
+
+add :: DataBase -> Key -> Value -> Requester -> DataBase
+add db key value requester = do
+    (invalids, values, _) <- alterS (\invalids, keydata -> case keydata of
+            Some keydata -> do
+                keydata :: KeyData <- keydata
+                requesters <- keydata.requesters + [requester]
+                requesters <- requesters |> sort |> dedup
+                invalids <- if keydata.value != value
+                    then do
+                        //println "value changed for {} deps {}" % (key, keydata.requesters)
+                        keydata.requesters |> List.iter |> fold (\invalids, r -> do
+                        case r of
+                         Internal k -> invalids + [k]
+                         _ -> invalids) []
+                    else invalids
+                keydata <- keydata { value = value, requesters = requesters }
+                (invalids, Some keydata)
+            None -> do
+                keydata <- KeyData value [requester]
+                (invalids, Some keydata)
+        ) [] key db.values
+    db <- db { values = values }
+    db <- invalids |> List.iter |> fold (\db, invalid_key -> do
+            //println "Refresh {}" % invalid_key
+            task <- tasks (getKeyType invalid_key)
+            db <- pushRequester db Refresh
+            case task.task db invalid_key of
+                Ok (db, v) -> do
+                    db <- popRequester db
+                    db <- add db invalid_key v Refresh
+                    db
+                Err _ -> panic "Refresh failed!"
+        ) db
+    db
+
+pushRequester :: DataBase -> Requester -> DataBase
+pushRequester db requester = do
+    requesters <- db.requesters + [requester]
+    db { requesters = requesters }
+
+popRequester :: DataBase -> DataBase
+popRequester db = do
+    l <- getLength db.requesters
+    (requesters, _) <- List.split db.requesters (l - 1)
+    db { requesters = requesters }
+
+query :: DataBase -> Key -> Result (DataBase, Value) Error
+query db key = do
+    case get db.values key of
+        Some keydata -> do
+            keydata :: KeyData <- keydata
+            Ok (db, keydata.value)
+        None -> do
+            task <- tasks (getKeyType key)
+            db <- pushRequester db (Internal key)
+            (db, v) <- try task.task db key
+            db <- popRequester db
+            db <- add db key v (Internal key)
+            Ok (db, v)
+
+fetch :: DataBase -> Key -> Result (DataBase, Value) Error
+fetch db key = do
+    current <- atIndex db.requesters (getLength db.requesters - 1)
+    //println "{} -> {}" % (current, key)
+    case get db.values key of
+        Some keydata -> do
+            keydata :: KeyData <- keydata
+            db <- add db key keydata.value current // FIXME
+            Ok (db, keydata.value)
+        None -> do
+            task <- tasks (getKeyType key)
+            db <- pushRequester db (Internal key)
+            (db, v) <- try task.task db key
+            db <- popRequester db
+            db <- add db key v current
+            Ok (db, v)

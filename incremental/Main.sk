@@ -1,0 +1,30 @@
+module Main where
+
+import Siko.Driver.Key
+import Siko.Driver.Value
+import Siko.Stuff
+import Siko.Driver
+
+import Map
+
+handle :: DataBase -> Result (DataBase, Value) Error -> DataBase
+handle old_db r = case r of
+    Ok (db, v) -> do
+        println "SUCC: {}" % v
+        db
+    Err err -> do
+        println "FAIL: {}" % err
+        old_db
+
+main =do
+    println "Incremental test"
+    db <- createDataBase
+    inputs <- [("input1", "alma 1,korte 2"),  ("input2", "szilva 3,banan 4")]
+    db <- inputs |> List.iter |> fold (\db, (input, source) -> addInput db input source) db
+    input_names <- inputs |> List.iter |> map (\(n, _) -> n) |> toList
+    db <- add db AllInputsKey (AllInputsValue input_names) Refresh
+    //db <- handle db (query db (TypedModuleKey "alma"))
+    db <- handle db (query db (TypedModuleKey "szilva"))
+    //db <- handle db (query db (TypedModuleKey "bogyo"))
+    db <- addInput db "input2" "szilva 4,banan 4, bogyo 2"
+    db <- handle db (query db (TypedModuleKey "szilva"))

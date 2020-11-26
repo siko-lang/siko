@@ -1,0 +1,73 @@
+module Siko.Driver.Task where
+
+import Siko.Driver
+import Siko.Driver.Value
+import Siko.Driver.Key
+
+import Siko.Stuff
+
+data Task = { task :: DataBase -> Key -> Result (DataBase, Value) Error }
+
+getInputTask :: DataBase -> Key -> Result (DataBase, Value) Error
+getInputTask db key = Err Error
+
+getAllInputTask :: DataBase -> Key -> Result (DataBase, Value) Error
+getAllInputTask db key = Err Error
+
+parseTask :: DataBase -> Key -> Result (DataBase, Value) Error
+parseTask db key = do
+    name <- getAstKey key
+    println "TASK: parseTask {}" % name
+    (db, v) <- try fetch db (InputKey name)
+    input_value <- getInputValue v
+    ast <- parse (SourceCode input_value)
+    result <- AstValue ast
+    Ok (db, result)
+
+getModuleTask :: DataBase -> Key -> Result (DataBase, Value) Error
+getModuleTask db key = do
+    name <- getModuleKey key
+    println "TASK: getModuleTask {}" % name
+    (db, v) <- try fetch db AllInputsKey
+    sources <- getAllInputsValue v
+    loop (db, sources) <- (db, sources) do
+        case pop sources of
+            Some (source, sources) -> do
+                (db, v) <- try fetch db (AstKey source)
+                Ast modules <- getAstValue v
+                mod <- find modules (\Module m _ -> m == name)
+                case mod of
+                    Some m -> return Ok (db, ModuleValue m)
+                    None -> (db, sources)
+            None -> return Err Error
+
+resolveTask :: DataBase -> Key -> Result (DataBase, Value) Error
+resolveTask db key = do
+    name <- getResolvedModuleKey key
+    println "TASK: resolveTask {}" % name
+    (db, v) <- try fetch db (ModuleKey name)
+    mod <- getModuleValue v
+    resolved_module <- resolve mod
+    result <- ResolvedModuleValue resolved_module
+    Ok (db, result)
+
+typeckTask :: DataBase -> Key -> Result (DataBase, Value) Error
+typeckTask db key = do
+    name <- getTypedModuleKey key
+    println "TASK: typeckTask {}" % name
+    (db, v) <- try fetch db (ResolvedModuleKey name)
+    resolved_module <- getResolvedModuleValue v
+    typed_module <- typeck resolved_module
+    result <- TypedModuleValue typed_module
+    Ok (db, result)
+
+tasks :: KeyType -> Task
+tasks key = do
+    case key of
+        AllInputsKeyType -> Task getAllInputTask
+        InputKeyType -> Task getInputTask
+        AstKeyType -> Task parseTask
+        ModuleKeyType -> Task getModuleTask
+        ResolvedModuleKeyType -> Task resolveTask
+        TypedModuleKeyType -> Task typeckTask
+        GetAllModulesKeyType -> panic "NYI"
