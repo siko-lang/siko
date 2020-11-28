@@ -291,7 +291,7 @@ transpile program = do
     external_functions <- initializeExternalFunctions
     external_structs <- initializeExternalStructFields
     type_store <- createTypeStore
-    rust_program <- R.Program [] [] [] []
+    rust_program <- R.Program [] [] [] [] (getRustIdentity getMainIdentity)
     (type_store, rust_program) <- program.adts |> Map.iter |> fold (\(type_store, rust_program), (_, adt) -> do
         enum <- convertAdt adt
         enum_type <- RT.Named enum.name
@@ -331,7 +331,7 @@ transpile program = do
                     case b of
                         ME.Do _ -> convertExpr context mir_body
                         _ -> R.Block [convertExpr context mir_body]
-            Extern -> do
+            Extern _ -> do
                     Identity mod name _ <- mir_function.id
                     id <- ExternalId mod name
                     case get external_functions id of

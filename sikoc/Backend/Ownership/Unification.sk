@@ -2,12 +2,14 @@ module Siko.Backend.Ownership.Unification where
 
 import Siko.MIR.Data as D
 import Siko.MIR.Type as T
+import Siko.MIR.Function as F
 import Siko.Util.Counter
+import Std.Util
 import Map
 
 data SubstitutionChange = Unification T.OwnershipVar
                         | Owner
-                        | Borrower
+                        | Borrow
                         deriving (Show)
 
 data Substitution = { var_subs :: Map T.OwnershipVar SubstitutionChange } deriving (Show)
@@ -53,6 +55,13 @@ instance Apply D.AlgebraicDataType where
             v { type = type}) |> toList
         adt { ownership_vars = ownership_vars, variants = variants }
 
+instance Apply F.FunctionType where
+    //apply :: F.FunctionType -> Substitution -> F.FunctionType
+    apply function_type sub = do
+        args <- function_type.args |> List.iter |> map (\t -> apply t sub) |> toList
+        result <- apply function_type.result sub
+        function_type { args = args , result = result }
+
 addSubstitution :: Substitution -> T.OwnershipVar -> SubstitutionChange -> Substitution
 addSubstitution sub var change = do
     (var_subs, _) <- insert sub.var_subs var change
@@ -60,30 +69,20 @@ addSubstitution sub var change = do
 
 unifyVars :: Substitution -> [T.OwnershipVar] -> [T.OwnershipVar] -> Substitution
 unifyVars sub args1 args2 = do
-    if getLength args1 != getLength args2
-        then panic "{} != {}" % (args1, args2)
-        else ()
-    loop (sub, index) <- (sub, 0) do
-        if index >= getLength args1
-            then break sub
-            else do
-                arg1 <- atIndex args1 index
-                arg2 <- atIndex args2 index
-                sub <- addSubstitution sub arg1 (Unification arg2)
-                (sub, index + 1)
+    if getLength args1 == getLength args2
+        then zipS sub args1 args2 (\sub, args1, args2 -> addSubstitution sub args1 (Unification args2))
+        else do
+            if (not (isEmpty args1)) && (not (isEmpty args2))
+                then panic "{} != {}" % (args1, args2)
+                else ()
+            sub <- args1 |> List.iter |> fold (\sub, arg -> addSubstitution sub arg Owner) sub
+            sub <- args2 |> List.iter |> fold (\sub, arg -> addSubstitution sub arg Owner) sub
+            sub
 
 batch :: [T.OwnershipVar] -> [T.OwnershipVar] -> Substitution
 batch from_vars to_vars = do
     sub <- createSubstitution
-    sub <- loop (sub, index) <- (sub, 0) do
-            if index >= getLength from_vars
-                then break sub
-                else do
-                    from <- atIndex from_vars index
-                    to <- atIndex to_vars index
-                    sub <- addSubstitution sub from (Unification to)
-                    (sub, index + 1)
-    sub
+    unifyVars sub from_vars to_vars
 
 unify :: Substitution -> T.Type -> T.Type -> Substitution
 unify sub type1 type2 = do
@@ -121,6 +120,12 @@ unify sub type1 type2 = do
                     unifyVars sub args1 args2
                 _ -> panic "Not Record, Unification error {}, {}" % (type1, type2)
             sub
+        (T.Ref t1, T.Var v t2) -> do
+            sub <- addSubstitution sub v Borrow
+            unify sub t1 t2
+        (T.Var v t1, T.Ref t2) -> do
+            sub <- addSubstitution sub v Borrow
+            unify sub t1 t2
         (T.Var arg1 t1, T.Var arg2 t2) -> do
             sub <- addSubstitution sub arg1 (Unification arg2)
             unify sub t1 t2

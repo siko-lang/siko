@@ -113,3 +113,20 @@ split l n = do
                 if index < n
                     then (left + [item], right, index + 1)
                     else (left, right + [item], index + 1)
+
+zipS s a b :: s -> [a] -> [b] -> (s -> a -> b -> s) -> s
+zipS s l1 l2 f = do
+    loop (s, index) <- (s, 0) do
+        if index >= getLength l1
+            then break s
+            else do
+                item1 <- atIndex l1 index
+                item2 <- atIndex l2 index
+                s <- f s item1 item2
+                (s, index + 1)
+
+mapS s a b :: s -> [a] -> (s -> a -> (s, b)) -> (s, [b])
+mapS s l f = do
+    l |> List.iter |> fold (\(s, items), i -> do
+        (s, i) <- f s i
+        (s, items + [i])) (s, [])

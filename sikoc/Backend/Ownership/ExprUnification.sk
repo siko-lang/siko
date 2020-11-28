@@ -47,13 +47,6 @@ instance U.Apply Context where
                              function_type_store = function_type_store }
         context
 
-instance U.Apply F.FunctionType where
-    //apply :: F.FunctionType -> Substitution -> F.FunctionType
-    apply function_type sub = do
-        args <- function_type.args |> List.iter |> map (\t -> U.apply t sub) |> toList
-        result <- U.apply function_type.result sub
-        function_type { args = args , result = result }
-
 getExprType :: Context -> E.ExprId -> T.Type
 getExprType context expr_id = case get context.expr_types expr_id of
     Some t -> t
@@ -160,7 +153,7 @@ getAdtType context type = do
     adt <- case get context.adts adt_id of
         Some adt -> adt
         None -> panic "Could not find adt {}" % adt_id
-    ownership_vars <- T.collectOwnershipVars type
+    ownership_vars <- T.collectOwnershipArgs type
     sub <- U.batch adt.ownership_vars ownership_vars
     adt <- U.apply adt sub
     adt
@@ -179,8 +172,8 @@ getFunctionType context id =
         Some function_type -> function_type
         None -> panic "No function type found for {}" % id
 
-checkExpr :: P.Identity -> Context -> E.Expr -> (Context, E.Expr)
-checkExpr function_id context expr = do
+checkExpr :: P.Identity -> [P.Identity] -> Context -> E.Expr -> (Context, E.Expr)
+checkExpr function_id functions context expr = do
     E.Expr s_expr t id <- expr
     context <- case s_expr of
         E.Do items -> do
@@ -192,7 +185,9 @@ checkExpr function_id context expr = do
         E.StaticFunctionCall f_id args -> do
             function_type <- getFunctionType context f_id
             function_type :: F.FunctionType <- function_type // FIXME
-            (context, function_type) <- cloneFunctionType context function_type
+            (context, function_type) <- if contains functions f_id
+                then (context, function_type)
+                else cloneFunctionType context function_type
             (context, function_type, index) <- args |> List.iter |> fold (\(context, function_type, index), arg -> do
                 E.Expr _ _ arg_id <- arg
                 arg_type <- getExprType context arg_id
@@ -317,11 +312,11 @@ initFunction context function = case function.kind of
         context
     _ -> context
 
-checkFunction :: Context -> F.Function -> Context
-checkFunction context function = case function.kind of
+checkFunction :: Context -> F.Function -> [P.Identity] -> Context
+checkFunction context function functions = case function.kind of
     F.Normal body -> do
         //println "Processing {} - check" % function.id
-        (context, _) <- traverse context body (Some (checkExpr function.id)) None
+        (context, _) <- traverse context body (Some (checkExpr function.id functions)) None
         E.Expr _ _ body_id <- body
         body_type <- getExprType context body_id
         sub <- U.createSubstitution
@@ -354,7 +349,7 @@ processFunctions program function_type_store functions var_gen = do
     //dump context "after init"
     context <- functions |> List.iter |> fold (\context, id -> do
         function <- P.getFunction program id
-        context <- checkFunction context function
+        context <- checkFunction context function functions
         context) context
     //dump context "after check"
     program <- functions |> List.iter |> fold (\program, id -> do

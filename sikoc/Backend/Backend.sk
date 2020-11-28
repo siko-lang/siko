@@ -3,8 +3,9 @@ module Siko.Backend where
 import Siko.Backend.Passes.Box as Box
 import Siko.Backend.Ownership.ExprUnification as ExprUnification
 import Siko.Backend.Ownership.TransformUpdates as TransformUpdates
+import Siko.Backend.Ownership.ValueGraph.Creator as ValueGraph
 import Siko.Backend.Traversal
-import Siko.MIR.Program as P
+import Siko.MIR.Program as MP
 import Siko.MIR.Data
 import Siko.MIR.Type as T
 import Siko.MIR.Function as F
@@ -14,16 +15,16 @@ import Siko.Util.DependencyProcessor
 import Map
 import Hack
 
-collectDataDeps :: P.Program -> Map P.Identity [P.Identity]
-collectDataDeps program = do
+collectDataDeps :: MP.Program -> Map MP.Identity [MP.Identity]
+collectDataDeps mir_program = do
     dependencies <- empty
-    dependencies <- program.adts |> Map.iter |> fold (\dependencies, (id, adt) -> do
+    dependencies <- mir_program.adts |> Map.iter |> fold (\dependencies, (id, adt) -> do
             deps <- adt.variants |> List.iter |> fold (\deps, variant -> do
                 deps + [T.getIdentity variant.type]) []
             (dependencies, _) <- insert dependencies id deps
             dependencies
         ) dependencies
-    dependencies <- program.records |> Map.iter |> fold (\dependencies, (id, record) -> do
+    dependencies <- mir_program.records |> Map.iter |> fold (\dependencies, (id, record) -> do
             deps <- record.fields |> List.iter |> fold (\deps, field -> do
                 deps + [T.getIdentity field.type]) []
             deps <- case record.external_info of
@@ -37,7 +38,7 @@ collectDataDeps program = do
         ) dependencies
     dependencies
 
-data Context = { deps :: [P.Identity] }
+data Context = { deps :: [MP.Identity] }
                  deriving (PartialEq, Eq, PartialOrd, Ord)
 
 processExpr :: Context -> Expr -> (Context, Expr)
@@ -50,33 +51,34 @@ processExpr context expr = do
             (context, expr)
         _ -> (context, expr)
 
-getDepsForFunction :: P.Program -> F.Function -> [P.Identity]
-getDepsForFunction program function = case function.kind of
+getDepsForFunction :: MP.Program -> F.Function -> [MP.Identity]
+getDepsForFunction mir_program function = case function.kind of
     F.Normal body -> do
         context <- Context []
         (context, _) <- traverse context body (Some processExpr) None
         context.deps
     _ -> []
 
-collectFunctionDeps :: P.Program -> Map P.Identity [P.Identity]
-collectFunctionDeps program = do
+collectFunctionDeps :: MP.Program -> Map MP.Identity [MP.Identity]
+collectFunctionDeps mir_program = do
     dependencies <- empty
-    dependencies <- program.functions |> Map.iter |> fold (\dependencies, (id, function) -> do
-            deps <- getDepsForFunction program function
+    dependencies <- mir_program.functions |> Map.iter |> fold (\dependencies, (id, function) -> do
+            deps <- getDepsForFunction mir_program function
             (dependencies, _) <- insert dependencies id deps
             dependencies
         ) dependencies
     dependencies
 
-processProgram :: Config -> P.Program -> Int -> P.Program
-processProgram config program expr_id = do
-    data_dependencies <- collectDataDeps program
+processProgram :: Config -> MP.Program -> Int -> MP.Program
+processProgram config mir_program expr_id = do
+    data_dependencies <- collectDataDeps mir_program
     data_groups <- processDependencies data_dependencies
-    function_dependencies <- collectFunctionDeps program
+    function_dependencies <- collectFunctionDeps mir_program
     function_groups <- processDependencies function_dependencies
-    program <- Box.processProgram program data_groups
-    program <- ExprUnification.processProgram program data_groups function_groups
-    program <- TransformUpdates.processProgram program expr_id
-    s <- P.dump program
+    mir_program <- Box.processProgram mir_program data_groups
+    mir_program <- ExprUnification.processProgram mir_program data_groups function_groups
+    mir_program <- TransformUpdates.processProgram mir_program expr_id
+    mir_program <- ValueGraph.processProgram mir_program function_groups
+    s <- MP.dump mir_program
     writeTextFile (getOutputFileName config OptMIR) s
-    program
+    mir_program

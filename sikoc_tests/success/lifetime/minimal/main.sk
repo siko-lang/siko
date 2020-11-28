@@ -2,17 +2,49 @@ module Main where
 
 import Hack
 
+data Double = { one :: Inner, two :: Inner }
+
+id :: Double -> Inner
+id d = d.one
+
+one a = do
+    other a
+
+other a = if True then a else one a
+
 data Inner = Inner
-data Inner2 = Inner2
 
-data Foo = One | Two Inner Inner2
+data Nested = { inner :: Inner }
 
-data Data = { inner :: Inner, inner2 :: Inner2 }
+data NextNested = { nested :: Nested }
 
-id a = a
+data Data = Data Inner
+
+trick = do
+    a <- Inner
+    ref a
+
+main2 = do
+    double <- Double Inner Inner
+    a <- id double
+    sink a
+    b <- id double
+    borrower b
+    sink (one Inner)
+    do
+        a <- trick
+    sink stuff
+    borrower stuff
+
+stuff :: [String]
+stuff = ["a"]
+
+data OneTwo = One | Two
 
 main = do
-    d <- Data Inner Inner2
-    d.inner2
-    inner <- id d.inner
-    d <- d { inner = inner }
+    korte <- One
+    loop a <- One do
+        case One of
+            One -> korte
+            Two -> korte
+    sink korte

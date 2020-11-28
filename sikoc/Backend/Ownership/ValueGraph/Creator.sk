@@ -1,0 +1,122 @@
+module Siko.Backend.Ownership.ValueGraph.Creator where
+
+import Siko.Backend.Ownership.ValueGraph
+import Siko.Backend.Ownership.ValueGraph.Visual
+import Siko.MIR.Program as P
+import Siko.MIR.Function as F
+import Siko.MIR.Expr as E
+
+import Siko.Util.DependencyProcessor
+
+import Map
+
+data Context = { program :: P.Program }
+
+processItems :: [E.Expr] -> ValueGraphs
+processItems items = do
+    last <- getLength items - 1
+    loop (prev, index) <- (createValueGraphs, last) do
+        if index < 0
+            then break prev
+            else do
+                item <- atIndex items index
+                item_value_graph_set <- processExpr item
+                (after [item_value_graph_set, prev], index - 1)
+
+processFieldAccess :: [String] -> E.Expr -> ValueGraphs
+processFieldAccess fields expr = do
+    E.Expr s_expr _ _ <- expr
+    case s_expr of
+        E.FieldAccess name rhs -> processFieldAccess ([name] + fields) rhs
+        E.VarRef v -> do
+            graphs <- createValueGraphs
+            graphs <- addNode graphs v (ValueFieldAccess fields)
+            graphs
+        _ -> processExpr expr
+
+processExpr :: E.Expr -> ValueGraphs
+processExpr expr = do
+    E.Expr s_expr _ _ <- expr
+    case s_expr of
+        E.Do items -> processItems items
+        E.Multi _ -> panic "Multi in value graph create"
+        E.StaticFunctionCall id args -> processItems args
+        E.IntegerLiteral _ -> createValueGraphs
+        E.StringLiteral _ -> createValueGraphs
+        E.FloatLiteral _ -> createValueGraphs
+        E.CharLiteral _ -> createValueGraphs
+        E.VarDecl v rhs -> do
+            prev <- processExpr rhs
+            graphs <- createValueGraphs
+            graphs <- addNode graphs v (ValueDecl (show v))
+            after [prev, graphs]
+        E.VarRef v -> do
+            graphs <- createValueGraphs
+            graphs <- addNode graphs v ValueRef
+            graphs
+        E.FieldAccess name rhs -> processFieldAccess [name] rhs
+        E.If cond true_branch false_branch -> do
+            cond_graphs <- processExpr cond
+            true_graphs <- processExpr true_branch
+            false_graphs <- processExpr false_branch
+            branch_graphs <- choice [true_graphs, false_graphs]
+            after [cond_graphs, branch_graphs]
+        E.List items -> processItems items
+        E.Return rhs -> processExpr rhs
+        E.Continue rhs -> processExpr rhs
+        E.Break rhs -> processExpr rhs
+        E.RecordUpdate _ _ -> panic "RecordUpdate in value graph create"
+        E.Loop v initializer items _ _ -> do
+            initializer_graph <- processExpr initializer
+            loop_var_graph <- createValueGraphs
+            loop_var_graph <- addNode loop_var_graph v (ValueDecl (show v))
+            items_graphs <- processItems items
+            after [initializer_graph, loop_var_graph, items_graphs, items_graphs]
+        E.CaseOf body cases -> do
+            body_graph <- processExpr body
+            branch_graphs <- cases |> List.iter |> map (\c -> processExpr c.body) |> toList
+            branch_graphs <- choice branch_graphs
+            after [body_graph, branch_graphs]
+        E.Clone rhs -> processExpr rhs
+        E.Deref rhs -> processExpr rhs
+        E.Ref rhs -> processExpr rhs
+        E.Move rhs -> processExpr rhs
+        E.Box rhs -> processExpr rhs
+
+processFunction :: Context -> F.Function -> Context
+processFunction context function = do
+    case function.kind of
+        F.Normal body -> do
+            //println "Processing function {}" % function.id
+            graphs <- createValueGraphs
+            args <- function.type.args |> List.iter |> fold (\args, _ -> do
+                index <- getLength args
+                args + [E.Arg index]) []
+            graphs <- args |> List.iter |> fold (\graphs, arg -> do
+                addNode graphs arg (ValueDecl (show arg))) graphs
+            body_graph <- processExpr body
+            final_graph <- after [graphs, body_graph]
+            final_graph <- unpackGraphs final_graph
+            final_graph.nodes |> Map.iter |> forEach (\(var, node) -> do
+                graph_name <- "{}.{}" % (function.id, var)
+                draw graph_name node)
+            context
+        F.Extern orig_fn_type -> do
+            //println "Processing extern function {}" % function.id
+            context
+        F.VariantCtor _ -> context
+        F.RecordCtor -> context
+
+processFunctionGroup :: Context -> [P.Identity] -> Context
+processFunctionGroup context functions = do
+    context <- functions |> List.iter |> fold (\context, id -> do
+        function <- P.getFunction context.program id
+        context <- processFunction context function
+        context) context
+    context
+
+processProgram :: P.Program -> [DependencyGroup P.Identity] -> P.Program
+processProgram program function_groups = do
+    context <- Context program
+    context <- function_groups |> List.iter |> fold (\context, group -> processFunctionGroup context group.items) context
+    program

@@ -1,21 +1,21 @@
-module Siko.MIR.Function where
+module Siko.LIR.Function where
 
-import Siko.MIR.Program
-import Siko.MIR.Expr as E
-import Siko.MIR.Type as T
+import Siko.LIR.Program
+import Siko.LIR.Expr as E
+import Siko.LIR.Type as T
 import Siko.Util.Format
 
 data FunctionKind = Normal E.Expr
                   | VariantCtor Int
                   | RecordCtor
-                  | Extern FunctionType
+                  | Extern
 
 instance Show FunctionKind where
     show kind = case kind of
         Normal _ -> "Normal"
         VariantCtor _ -> "VariantCtor"
         RecordCtor -> "RecordCtor"
-        Extern _ -> "Extern"
+        Extern -> "Extern"
 
 data FunctionType = { args :: [T.Type],
                       result :: T.Type }
@@ -38,4 +38,4 @@ dump function = do
         Normal body -> s + "{} {} = {}" % (function.id, args, (E.prettyPrint body (Indent 0)).0)
         VariantCtor index -> s + "{} {} = <variant_ctor:{}>" % (function.id, args, index)
         RecordCtor -> s + "{} {} = <record_ctor>" % (function.id, args)
-        Extern fn_type -> s + "{} {} = extern ({} -> {})" % (function.id, args, fn_type.args, fn_type.result)
+        Extern -> s + "{} {} = extern" % (function.id, args)

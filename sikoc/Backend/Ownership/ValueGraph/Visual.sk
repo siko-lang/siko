@@ -1,0 +1,48 @@
+module Siko.Backend.Ownership.ValueGraph.Visual where
+
+import Siko.Dot as D
+import Siko.Backend.Ownership.ValueGraph
+import Hack
+
+walk :: ValueGraphNode -> D.Graph -> (D.Graph, D.NodeId, D.NodeId)
+walk node dot_graph = case node of
+    Block items -> do
+        (dot_graph, first, last) <- items |> List.iter |> fold (\(dot_graph, first, last), item -> do
+            (dot_graph, start, end) <- walk item dot_graph
+            first <- case first of
+                Some first -> first
+                None -> start
+            dot_graph <- case last of
+                Some last -> D.addEdge dot_graph None last start
+                None -> dot_graph
+            (dot_graph, Some first, Some end)) (dot_graph, None, None)
+        (dot_graph, Option.unwrap first, Option.unwrap last)
+    ValueDecl n -> do
+        (dot_graph, node_id) <- D.addNode dot_graph "Decl {}" % n
+        (dot_graph, node_id, node_id)
+    ValueRef -> do
+        (dot_graph, node_id) <- D.addNode dot_graph "ValueRef"
+        (dot_graph, node_id, node_id)
+    ValueFieldAccess names -> do
+        (dot_graph, node_id) <- D.addNode dot_graph ("FieldAccess {}" % names)
+        (dot_graph, node_id, node_id)
+    Branches items -> do
+        (dot_graph, choice_id) <- D.addNode dot_graph "Choice"
+        (dot_graph, choice_end_id) <- D.addNode dot_graph "ChoiceEnd"
+        (dot_graph) <- items |> List.iter |> fold (\dot_graph, item -> do
+            (dot_graph, start, end) <- walk item dot_graph
+            dot_graph <- D.addEdge dot_graph None choice_id start
+            dot_graph <- D.addEdge dot_graph None end choice_end_id
+            (dot_graph)) dot_graph
+        (dot_graph, choice_id, choice_end_id)
+    Empty -> do
+        (dot_graph, node_id) <- D.addNode dot_graph "Empty"
+        (dot_graph, node_id, node_id)
+
+draw :: String -> ValueGraphNode -> ()
+draw name node = do
+    dot_graph <- D.createGraph name
+    (dot_graph, _, _) <- walk node dot_graph
+    s <- D.generateDot dot_graph
+    writeTextFile ("dots/{}.dot" % name) s
+    ()

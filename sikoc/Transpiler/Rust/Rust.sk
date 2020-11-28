@@ -1,6 +1,7 @@
 module Siko.Transpiler.Rust where
 
 import Siko.Transpiler.Rust.Type as T
+import Siko.Constants
 import Siko.Util.Format
 
 data Attribute = Clone
@@ -61,7 +62,11 @@ data Expr = Block [Expr]
             | As Expr String
             | If Expr Expr Expr
 
-data Program = { structs :: [Struct], enums :: [Enum], functions :: [Function], impls :: [TraitImpl] }
+data Program = { structs :: [Struct],
+                 enums :: [Enum],
+                 functions :: [Function],
+                 impls :: [TraitImpl],
+                 main_function_name :: String }
 
 generatePattern :: Pattern -> Option Expr -> String
 generatePattern pattern guard = case pattern of
@@ -233,5 +238,5 @@ generateProgram program = do
     content <- program.enums |> List.iter |> fold (\content, e -> content + "\n\n" + generateEnum e) content
     content <- program.functions |> List.iter |> fold (\content, f -> content + "\n\n" + generateFunction f (Indent 0)) content
     content <- program.impls |> List.iter |> fold (\content, i -> content + "\n\n" + generateTraitImpl i) content
-    content <- content + "\n\nfn main() {\n" + (show (Indent 2)) + "Main_main_0();\n}"
+    content <- content + "\n\nfn main() {\n" + (show (Indent 2)) + "{}();\n}" % program.main_function_name
     content

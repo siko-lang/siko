@@ -28,7 +28,7 @@ alter f k m = // FIXME: make this builtin and much faster
         Some v -> insert m k v
         None -> remove m k
 
-alterS s k v :: (Ord k) => (s -> Option v -> (s, Option v)) -> s -> k -> Map k v -> (s, Map k v, Option v)
+alterS si so k v :: (Ord k) => (si -> Option v -> (so, Option v)) -> si -> k -> Map k v -> (so, Map k v, Option v)
 alterS f s k m = do
     (s, v) <- f s (get m k)
     case v of
@@ -57,3 +57,6 @@ toMap iter = fold (\m, (k, v) -> do
 
 getSize k v :: Map k v -> Int
 getSize m = extern
+
+getKeys k v :: Map k v -> [k]
+getKeys m = m |> Map.iter |> fold (\keys, (k, _) -> keys + [k]) []

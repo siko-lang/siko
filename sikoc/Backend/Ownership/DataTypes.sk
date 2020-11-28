@@ -163,11 +163,7 @@ addOwnershipVarsToType context type = case type of
         (context, o) <- getNextOwnershipVar context
         t <- T.Var o (T.Record id args)
         (context, t)
-    T.Ref type -> do
-        (context, o) <- getNextOwnershipVar context
-        (context, type) <-addOwnershipVarsToType context type
-        t <- T.Var o type
-        (context, t)
+    T.Ref type -> addOwnershipVarsToType context type
     type -> do
         (context, o) <- getNextOwnershipVar context
         t <- T.Var o type
@@ -227,7 +223,7 @@ processFunction program context function = case function.kind of
         result <- T.Adt id adt.ownership_vars
         function_type <- F.FunctionType args result
         (context, function { type = function_type })
-    F.Extern -> do
+    F.Extern _ -> do
         (context, args) <- function.type.args |> List.iter |> fold (\(context, args), arg -> do
             (context, arg) <- addOwnershipVarsToType context arg
             (context, args + [arg])) (context, [])
