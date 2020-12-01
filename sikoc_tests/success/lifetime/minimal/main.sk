@@ -2,7 +2,7 @@ module Main where
 
 import Hack
 
-data Double = { one :: Inner, two :: Inner }
+data Double = { one :: Inner, two :: Nested }
 
 id :: Double -> Inner
 id d = d.one
@@ -25,7 +25,7 @@ trick = do
     ref a
 
 main2 = do
-    double <- Double Inner Inner
+    double <- Double Inner (Nested Inner)
     a <- id double
     sink a
     b <- id double
@@ -41,10 +41,30 @@ stuff = ["a"]
 
 data OneTwo = One | Two
 
-main = do
-    korte <- One
+func = do
+    next <- NextNested (Nested Inner)
+    sink next.nested
+    sink next.nested.inner
     loop a <- One do
         case One of
-            One -> korte
-            Two -> korte
-    sink korte
+            One -> do
+                next.nested
+                break ()
+            _ -> do
+                case One of
+                    One -> do
+                        next.nested.inner
+                        a
+                    Two -> do
+                        next.nested.inner
+                        a
+    next.nested.inner
+
+main = do
+    d <- Double Inner (Nested Inner)
+    sink d
+    sink d.one
+    sink d
+    sink d.two
+    sink d.one
+    sink d.two.inner

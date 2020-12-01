@@ -6,12 +6,14 @@ import Siko.MIR.Expr as E
 data ValueGraphs = { nodes :: Map E.Var ValueGraphNode } deriving (Show)
 
 data ValueGraphNode = ValueDecl String
-                | ValueRef
-                | Block [ValueGraphNode]
-                | ValueFieldAccess [String]
-                | Branches [ValueGraphNode]
-                | Empty
-                deriving (Show)
+                    | ValueRef E.ExprId
+                    | Block [ValueGraphNode]
+                    | ValueFieldAccess E.ExprId [String]
+                    | Branches [ValueGraphNode]
+                    | Loop ValueGraphNode
+                    | Empty
+                    | End
+                    deriving (Show)
 
 addNode :: ValueGraphs -> E.Var -> ValueGraphNode -> ValueGraphs
 addNode graphs var node = do
@@ -41,6 +43,11 @@ createBranch var branch_graphs = do
             None -> nodes + [Empty]) []
     Branches nodes
 
+createLoop :: E.Var -> [ValueGraphs]  -> ValueGraphNode
+createLoop var graphs = do
+    n <- createBlock var graphs
+    Loop n
+
 after :: [ValueGraphs] -> ValueGraphs
 after graphs = do
     merge graphs (\v -> createBlock v graphs)
@@ -48,6 +55,10 @@ after graphs = do
 choice :: [ValueGraphs] -> ValueGraphs
 choice branch_graphs = do
     merge branch_graphs (\v -> createBranch v branch_graphs)
+
+mergeLoop :: [ValueGraphs] -> ValueGraphs
+mergeLoop graphs = do
+    merge graphs (\v -> createLoop v graphs)
 
 merge :: [ValueGraphs] -> (E.Var -> ValueGraphNode) -> ValueGraphs
 merge input_graphs factory_fn = do
@@ -71,6 +82,7 @@ unpack node = case node of
         if getLength non_empty_nodes == 1
             then unpack (atIndex non_empty_nodes 0)
             else node
+    Loop node -> node
     _ -> node
 
 unpackGraphs :: ValueGraphs -> ValueGraphs

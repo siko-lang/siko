@@ -1,6 +1,7 @@
 module Siko.Backend.Ownership.ValueGraph.Creator where
 
 import Siko.Backend.Ownership.ValueGraph
+import Siko.Backend.Ownership.ValueGraph.Analyzer
 import Siko.Backend.Ownership.ValueGraph.Visual
 import Siko.MIR.Program as P
 import Siko.MIR.Function as F
@@ -25,18 +26,18 @@ processItems items = do
 
 processFieldAccess :: [String] -> E.Expr -> ValueGraphs
 processFieldAccess fields expr = do
-    E.Expr s_expr _ _ <- expr
+    E.Expr s_expr _ id <- expr
     case s_expr of
         E.FieldAccess name rhs -> processFieldAccess ([name] + fields) rhs
         E.VarRef v -> do
             graphs <- createValueGraphs
-            graphs <- addNode graphs v (ValueFieldAccess fields)
+            graphs <- addNode graphs v (ValueFieldAccess id fields)
             graphs
         _ -> processExpr expr
 
 processExpr :: E.Expr -> ValueGraphs
 processExpr expr = do
-    E.Expr s_expr _ _ <- expr
+    E.Expr s_expr _ id <- expr
     case s_expr of
         E.Do items -> processItems items
         E.Multi _ -> panic "Multi in value graph create"
@@ -52,7 +53,7 @@ processExpr expr = do
             after [prev, graphs]
         E.VarRef v -> do
             graphs <- createValueGraphs
-            graphs <- addNode graphs v ValueRef
+            graphs <- addNode graphs v (ValueRef id)
             graphs
         E.FieldAccess name rhs -> processFieldAccess [name] rhs
         E.If cond true_branch false_branch -> do
@@ -62,7 +63,9 @@ processExpr expr = do
             branch_graphs <- choice [true_graphs, false_graphs]
             after [cond_graphs, branch_graphs]
         E.List items -> processItems items
-        E.Return rhs -> processExpr rhs
+        E.Return rhs -> do
+            graphs <- processExpr rhs
+            createEnds graphs
         E.Continue rhs -> processExpr rhs
         E.Break rhs -> processExpr rhs
         E.RecordUpdate _ _ -> panic "RecordUpdate in value graph create"
@@ -71,7 +74,8 @@ processExpr expr = do
             loop_var_graph <- createValueGraphs
             loop_var_graph <- addNode loop_var_graph v (ValueDecl (show v))
             items_graphs <- processItems items
-            after [initializer_graph, loop_var_graph, items_graphs, items_graphs]
+            loop_body <- mergeLoop [loop_var_graph, items_graphs]
+            after [initializer_graph, loop_body]
         E.CaseOf body cases -> do
             body_graph <- processExpr body
             branch_graphs <- cases |> List.iter |> map (\c -> processExpr c.body) |> toList
@@ -82,6 +86,13 @@ processExpr expr = do
         E.Ref rhs -> processExpr rhs
         E.Move rhs -> processExpr rhs
         E.Box rhs -> processExpr rhs
+
+createEnds :: ValueGraphs -> ValueGraphs
+createEnds  graphs = do
+    keys <- getKeys graphs.nodes
+    ends <- createValueGraphs
+    ends <- keys |> List.iter |> fold (\ends, k -> addNode ends k End) ends
+    after [graphs, ends]
 
 processFunction :: Context -> F.Function -> Context
 processFunction context function = do
@@ -97,9 +108,11 @@ processFunction context function = do
             body_graph <- processExpr body
             final_graph <- after [graphs, body_graph]
             final_graph <- unpackGraphs final_graph
+            final_graph <- createEnds final_graph
             final_graph.nodes |> Map.iter |> forEach (\(var, node) -> do
                 graph_name <- "{}.{}" % (function.id, var)
                 draw graph_name node)
+            final_graph.nodes |> Map.iter |> forEach (\(var, node) -> analyze node)
             context
         F.Extern orig_fn_type -> do
             //println "Processing extern function {}" % function.id

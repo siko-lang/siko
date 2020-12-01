@@ -17,14 +17,21 @@ walk node dot_graph = case node of
                 None -> dot_graph
             (dot_graph, Some first, Some end)) (dot_graph, None, None)
         (dot_graph, Option.unwrap first, Option.unwrap last)
+    Loop node -> do
+        (dot_graph, loop_id) <- D.addNode dot_graph "Loop"
+        (dot_graph, loop_end_id) <- D.addNode dot_graph "LoopEnd"
+        (dot_graph, start, end) <- walk node dot_graph
+        dot_graph <- D.addEdge dot_graph None loop_id start
+        dot_graph <- D.addEdge dot_graph None end loop_end_id
+        (dot_graph, loop_id, loop_end_id)
     ValueDecl n -> do
         (dot_graph, node_id) <- D.addNode dot_graph "Decl {}" % n
         (dot_graph, node_id, node_id)
-    ValueRef -> do
-        (dot_graph, node_id) <- D.addNode dot_graph "ValueRef"
+    ValueRef id -> do
+        (dot_graph, node_id) <- D.addNode dot_graph "ValueRef {}" % id
         (dot_graph, node_id, node_id)
-    ValueFieldAccess names -> do
-        (dot_graph, node_id) <- D.addNode dot_graph ("FieldAccess {}" % names)
+    ValueFieldAccess id names -> do
+        (dot_graph, node_id) <- D.addNode dot_graph ("FieldAccess {} {}" % (names, id))
         (dot_graph, node_id, node_id)
     Branches items -> do
         (dot_graph, choice_id) <- D.addNode dot_graph "Choice"
@@ -37,6 +44,9 @@ walk node dot_graph = case node of
         (dot_graph, choice_id, choice_end_id)
     Empty -> do
         (dot_graph, node_id) <- D.addNode dot_graph "Empty"
+        (dot_graph, node_id, node_id)
+    End -> do
+        (dot_graph, node_id) <- D.addNode dot_graph "End"
         (dot_graph, node_id, node_id)
 
 draw :: String -> ValueGraphNode -> ()

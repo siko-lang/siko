@@ -1,0 +1,84 @@
+module Siko.Backend.Ownership.ValueGraph.Analyzer(analyze) where
+
+import Siko.MIR.Expr as E
+import Siko.Backend.Ownership.ValueGraph
+
+import Set
+
+data FieldPath = Whole E.ExprId
+               | Partial E.ExprId [String]
+               deriving (Show)
+
+getId :: FieldPath -> E.ExprId
+getId field_path = case field_path of
+    Whole e -> e
+    Partial e _ -> e
+
+data ExecutionMode = Normal
+                   | DoesNotReturn
+
+invalidates :: FieldPath -> FieldPath -> Bool
+invalidates current other = do
+    case (current, other) of
+        (Whole _, _) -> True
+        (Partial _ _, Whole _) -> True
+        (Partial _ current_path, Partial _ other_path) -> do
+            c_len <- getLength current_path
+            o_len <- getLength other_path
+            min_len <- min c_len o_len
+            (c_start, _) <- List.split current_path min_len
+            (o_start, _) <- List.split other_path min_len
+            c_start == o_start
+
+checkMoves :: Set E.ExprId -> [FieldPath] -> Set E.ExprId
+checkMoves invalids field_paths =
+    loop (invalids, field_paths) <- (invalids, field_paths) do
+        if getLength field_paths == 1
+            then break invalids
+            else do
+                (pre, last) <- List.split field_paths (getLength field_paths - 1)
+                last <- atIndex last 0
+                //println "pre {}: last {}" % (pre, last)
+                invalids :: Set E.ExprId <- pre |> List.iter |> fold (\invalids, item -> do
+                    if invalidates last item
+                        then do
+                            l <- getId last
+                            i <- getId item
+                            (invalids, _) <- Set.insert invalids i
+                            invalids
+                        else invalids) invalids
+                (invalids, pre)
+
+walk :: Set E.ExprId -> ValueGraphNode -> [FieldPath] -> (Set E.ExprId, ExecutionMode, [FieldPath])
+walk invalids node field_paths = case node of
+    ValueDecl _ -> (Set.empty, Normal, [])
+    ValueRef id -> (Set.empty, Normal, [Whole id])
+    Block nodes -> do
+        nodes |> List.iter |> fold (\(invalids, mode, paths), node -> do
+            (invalids, exec_mode, p) <- walk invalids node paths
+            exec_mode <- case (exec_mode, mode) of
+                (Normal, Normal) -> Normal
+                _ -> DoesNotReturn
+            (invalids, exec_mode, paths + p)) (invalids, Normal, field_paths)
+    ValueFieldAccess id fields -> (Set.empty, Normal, [Partial id fields])
+    Branches nodes -> do
+        nodes |> List.iter |> fold (\(invalids, mode, paths), node -> do
+            (invalids, exec_mode, p) <- walk invalids node field_paths
+            case exec_mode of
+                Normal -> (invalids, Normal, paths + p)
+                DoesNotReturn -> (invalids, mode, paths)) (invalids, DoesNotReturn, [])
+    Empty -> (Set.empty, Normal, [])
+    Loop node -> do
+        (invalids, mode, p) <- walk invalids node field_paths
+        (invalids, mode, p) <- walk invalids node (field_paths + p)
+        (invalids, mode, p + p)
+    End -> do
+        invalids <- checkMoves invalids field_paths
+        (invalids, DoesNotReturn, [])
+
+analyze :: ValueGraphNode -> ()
+analyze graph = do
+    //println "Analyzing {}" % graph
+    (invalids, _, _) <- walk Set.empty graph []
+    println "Invalids {}" % invalids
+    ()
