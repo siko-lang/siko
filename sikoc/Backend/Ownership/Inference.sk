@@ -1,0 +1,31 @@
+module Siko.Backend.Ownership.Inference where
+
+import Siko.MIR.Function as F
+import Siko.MIR.Program as P
+import Siko.MIR.Expr as E
+import Siko.MIR.Type as T
+import Siko.Util.DependencyProcessor
+import Siko.Backend.Ownership.Updater as U
+
+processFunction :: P.Program -> P.Identity -> P.Program
+processFunction program function_id = do
+    function <- P.getFunction program function_id
+    case function.kind of
+        F.Normal body -> do
+            (body, function_type) <- U.processFunction program function.id function.type.args body function.type
+            kind <- F.Normal body
+            program <- P.updateFunctionKind program function_id kind
+            program <- P.updateFunctionType program function_id function_type
+            program
+        F.Extern -> program
+        F.VariantCtor _ -> program
+        F.RecordCtor -> program
+
+processFunctionGroup :: P.Program -> [P.Identity] -> P.Program
+processFunctionGroup program functions = do
+    functions |> List.iter |> fold (\program, function -> processFunction program function) program
+
+processProgram :: P.Program -> [DependencyGroup P.Identity] -> P.Program
+processProgram program function_groups = do
+    program <- function_groups |> List.iter |> fold (\program, group -> processFunctionGroup program group.items) program
+    program

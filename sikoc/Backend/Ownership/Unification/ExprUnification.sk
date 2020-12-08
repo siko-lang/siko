@@ -6,7 +6,7 @@ import Siko.MIR.Type as T
 import Siko.MIR.Expr as E
 import Siko.MIR.Data as D
 import Siko.Backend.Traversal
-import Siko.Backend.Ownership.DataTypes as DataTypes
+import Siko.Backend.Ownership.Initialization as Initialization
 import Siko.Backend.Ownership.Unification as U
 import Siko.Util.DependencyProcessor
 import Std.Util
@@ -23,7 +23,7 @@ data Context = { function_type_store :: FunctionTypeStore,
                  function_vars :: Map FunctionVar T.Type,
                  var_gen :: U.OwnershipVarGenerator }
 
-getNextOwnershipVar :: Context -> (Context, T.OwnershipVar)
+getNextOwnershipVar :: Context -> (Context, T.OwnershipKind)
 getNextOwnershipVar context = do
     (var_gen, v) <- U.getNextOwnershipVar context.var_gen
     context <- context { var_gen = var_gen }
@@ -339,8 +339,8 @@ updateFunctionKind context kind = case kind of
         F.Normal body
     k -> k
 
-processFunctions :: P.Program -> FunctionTypeStore -> [P.Identity] -> U.OwnershipVarGenerator -> (P.Program, FunctionTypeStore, U.OwnershipVarGenerator)
-processFunctions program function_type_store functions var_gen = do
+processFunctions :: P.Program -> Map P.Identity F.FunctionType -> FunctionTypeStore -> [P.Identity] -> U.OwnershipVarGenerator -> (P.Program, FunctionTypeStore, U.OwnershipVarGenerator)
+processFunctions program saved_function_types function_type_store functions var_gen = do
     context <- Context function_type_store program.adts program.records empty empty var_gen
     context <- functions |> List.iter |> fold (\context, id -> do
         function <- P.getFunction program id
@@ -358,16 +358,27 @@ processFunctions program function_type_store functions var_gen = do
         type <- case get context.function_type_store.functions id of
             Some type -> type
             None -> panic "No function type found!"
+        (kind, type) <- case function.kind of
+            F.Normal body -> do
+                (context, body) <- traverse context body (Some updateExpr) None
+                (F.Normal body, type)
+            kind -> do
+                type <- case get saved_function_types id of
+                    Some type -> type
+                    None -> type
+                (kind, type)
         program <- P.updateFunctionType program id type
-        P.updateFunctionKind program id kind) program
+        program <- P.updateFunctionKind program id kind
+        program) program
     (program, context.function_type_store, context.var_gen)
 
 processProgram :: P.Program -> [DependencyGroup P.Identity] -> [DependencyGroup P.Identity] -> P.Program
 processProgram program data_groups function_groups = do
-    (var_gen, program) <- DataTypes.processDataTypes program data_groups
+    (var_gen, saved_function_types, program) <- Initialization.processDataTypes program data_groups
     function_type_store <- program.functions |> Map.iter |> fold (\function_type_store, (id, function) -> do
         (functions, _) <- insert function_type_store.functions id function.type
         function_type_store { functions = functions } ) (FunctionTypeStore empty)
     (program, function_type_store, var_gen) <- function_groups |> List.iter |> fold (\(program, function_type_store, var_gen), group -> do
-        processFunctions program function_type_store group.items var_gen) (program, function_type_store, var_gen)
+        processFunctions program saved_function_types
+             function_type_store group.items var_gen) (program, function_type_store, var_gen)
     program

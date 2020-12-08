@@ -1,4 +1,4 @@
-module Siko.Backend.Ownership.DataTypes where
+module Siko.Backend.Ownership.Initialization where
 
 import Siko.MIR.Program as P
 import Siko.MIR.Type as T
@@ -11,15 +11,21 @@ import Siko.Backend.Ownership.Unification as U
 import Map
 
 data Context = { arg_count_map :: Map P.Identity Int,
-                 var_gen :: U.OwnershipVarGenerator }
+                 var_gen :: U.OwnershipVarGenerator,
+                 saved_function_types :: Map P.Identity F.FunctionType }
 
-getNextOwnershipVar :: Context -> (Context, T.OwnershipVar)
+saveFunctionType :: Context -> P.Identity -> F.FunctionType -> Context
+saveFunctionType context id function_type = do
+    (saved_function_types, _) <- insert context.saved_function_types id function_type
+    context { saved_function_types = saved_function_types }
+
+getNextOwnershipVar :: Context -> (Context, T.OwnershipKind)
 getNextOwnershipVar context = do
     (var_gen, v) <- U.getNextOwnershipVar context.var_gen
     context <- context { var_gen = var_gen }
     (context, v)
 
-addOwnershipVarsToDataType :: Context -> [P.Identity] -> [T.OwnershipVar] -> [T.OwnershipVar] -> T.Type -> ([T.OwnershipVar], T.Type)
+addOwnershipVarsToDataType :: Context -> [P.Identity] -> [T.OwnershipKind] -> [T.OwnershipKind] -> T.Type -> ([T.OwnershipKind], T.Type)
 addOwnershipVarsToDataType context group all_ownership_vars ownership_vars type = do
     id <- T.getIdentity type
     if contains group id
@@ -46,7 +52,7 @@ addOwnershipVarsToDataType context group all_ownership_vars ownership_vars type 
                 t -> t
             (ownership_vars, type)
 
-addOwnershipVarsToRecord :: Context -> [T.OwnershipVar] -> [P.Identity] -> [T.OwnershipVar] -> Option Record -> ([T.OwnershipVar], Option Record)
+addOwnershipVarsToRecord :: Context -> [T.OwnershipKind] -> [P.Identity] -> [T.OwnershipKind] -> Option Record -> ([T.OwnershipKind], Option Record)
 addOwnershipVarsToRecord context all_ownership_vars group ownership_vars record = case record of
     Some record -> do
         record :: Record <- record
@@ -59,7 +65,7 @@ addOwnershipVarsToRecord context all_ownership_vars group ownership_vars record 
         (ownership_vars, Some record)
     None -> (ownership_vars, None)
 
-addOwnershipVarsToAdt :: Context -> [T.OwnershipVar] -> [P.Identity] -> [T.OwnershipVar] -> Option AlgebraicDataType -> ([T.OwnershipVar], Option AlgebraicDataType)
+addOwnershipVarsToAdt :: Context -> [T.OwnershipKind] -> [P.Identity] -> [T.OwnershipKind] -> Option AlgebraicDataType -> ([T.OwnershipKind], Option AlgebraicDataType)
 addOwnershipVarsToAdt context all_ownership_vars group ownership_vars adt = case adt of
     Some adt -> do
         adt :: AlgebraicDataType <- adt
@@ -141,7 +147,7 @@ addOwnershipVarsToDataTypes context program groups = do
         ) (context, program)
     (context, program)
 
-getNextOwnershipVars :: Context -> Int -> (Context, [T.OwnershipVar])
+getNextOwnershipVars :: Context -> Int -> (Context, [T.OwnershipKind])
 getNextOwnershipVars context count = loop (context, vars) <- (context, []) do
     if getLength vars == count
         then break (context, vars)
@@ -208,6 +214,10 @@ processFunction program context function = case function.kind of
         (context, o) <- getNextOwnershipVar context
         result <- T.Record id record.ownership_vars
         function_type <- F.FunctionType args result
+        context <- saveFunctionType context function.id function_type
+        (context, o) <- getNextOwnershipVar context
+        result <- T.Var o result
+        function_type <- F.FunctionType args result
         (context, function { type = function_type })
     F.VariantCtor index -> do
         id <- T.getIdentity function.type.result
@@ -222,8 +232,13 @@ processFunction program context function = case function.kind of
         (context, o) <- getNextOwnershipVar context
         result <- T.Adt id adt.ownership_vars
         function_type <- F.FunctionType args result
+        context <- saveFunctionType context function.id function_type
+        (context, o) <- getNextOwnershipVar context
+        result <- T.Var o result
+        function_type <- F.FunctionType args result
         (context, function { type = function_type })
-    F.Extern _ -> do
+    F.Extern -> do
+        context <- saveFunctionType context function.id function.type
         (context, args) <- function.type.args |> List.iter |> fold (\(context, args), arg -> do
             (context, arg) <- addOwnershipVarsToType context arg
             (context, args + [arg])) (context, [])
@@ -232,13 +247,13 @@ processFunction program context function = case function.kind of
         (context, function { type = function_type })
     _ -> (context, function)
 
-processDataTypes :: P.Program -> [DependencyGroup P.Identity] -> (U.OwnershipVarGenerator, P.Program)
+processDataTypes :: P.Program -> [DependencyGroup P.Identity] -> (U.OwnershipVarGenerator, Map P.Identity F.FunctionType, P.Program)
 processDataTypes program groups = do
-    context <- Context empty U.createOwnershipVarGenerator
+    context <- Context empty U.createOwnershipVarGenerator empty
     (context, program) <- addOwnershipVarsToDataTypes context program groups
     (context, functions) <- program.functions |> Map.iter |> fold (\(context, functions), (id, function) -> do
         (context, function) <- processFunction program context function // FIXME: program should not be copied here!
         (functions, _) <- insert functions id function
         (context, functions)) (context, empty)
     program <- program { functions = functions }
-    (context.var_gen, program)
+    (context.var_gen, context.saved_function_types, program)

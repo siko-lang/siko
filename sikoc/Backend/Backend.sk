@@ -3,9 +3,11 @@ module Siko.Backend where
 import Siko.Backend.Passes.Box as Box
 import Siko.Backend.Ownership.ExprUnification as ExprUnification
 import Siko.Backend.Ownership.TransformUpdates as TransformUpdates
-import Siko.Backend.Ownership.ValueGraph.Creator as ValueGraph
+import Siko.Backend.Ownership.Inference as Inference
+import Siko.Backend.Ownership.Instantiation as Instantiation
 import Siko.Backend.Traversal
 import Siko.MIR.Program as MP
+import Siko.LIR.Program as LP
 import Siko.MIR.Data
 import Siko.MIR.Type as T
 import Siko.MIR.Function as F
@@ -78,7 +80,12 @@ processProgram config mir_program expr_id = do
     mir_program <- Box.processProgram mir_program data_groups
     mir_program <- ExprUnification.processProgram mir_program data_groups function_groups
     mir_program <- TransformUpdates.processProgram mir_program expr_id
-    mir_program <- ValueGraph.processProgram mir_program function_groups
     s <- MP.dump mir_program
-    writeTextFile (getOutputFileName config OptMIR) s
+    writeTextFile (getOutputFileName config (MIR 1)) s
+    mir_program <- Inference.processProgram mir_program function_groups
+    s <- MP.dump mir_program
+    writeTextFile (getOutputFileName config (MIR 2)) s
+    lir_program <- Instantiation.processProgram mir_program
+    s <- LP.dump lir_program
+    writeTextFile (getOutputFileName config (LIR 0)) s
     mir_program

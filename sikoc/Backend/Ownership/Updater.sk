@@ -1,0 +1,115 @@
+module Siko.Backend.Ownership.Updater where
+
+import Siko.MIR.Function as F
+import Siko.MIR.Program as P
+import Siko.MIR.Expr as E
+import Siko.MIR.Type as T
+import Siko.Util.DependencyProcessor
+import Siko.Backend.Ownership.ValueGraph.Creator as C
+import Siko.Backend.Ownership.Unification as U
+
+import Set
+
+data Context = { program :: P.Program,
+                 sub :: U.Substitution,
+                 invalids :: Set E.ExprId }
+
+unify :: Context -> T.Type -> T.Type -> Context
+unify context type1 type2 = do
+    sub <- U.unify context.sub type1 type2
+    context { sub = sub }
+
+processItems :: Context -> [E.Expr] -> (Context, [E.Expr])
+processItems context items = items |> List.iter |> fold (\(context, items), item -> do
+    (context, item) <- processExpr context item
+    (context, items + [item])) (context, [])
+
+processExpr :: Context -> E.Expr -> (Context, E.Expr)
+processExpr context expr =  do
+    E.Expr s_expr type id <- expr
+    (context, s_expr) <- case s_expr of
+        E.Do items -> do
+            (context, items) <- processItems context items
+            (context, E.Do items)
+        E.Multi _ -> panic "Multi in update"
+        E.StaticFunctionCall id args -> do
+            function <- P.getFunction context.program id
+            //println "function call, result: {}, expr {}" % (function.type.result, type)
+            context <- unify context function.type.result type
+            (context, args) <- processItems context args
+            (context, E.StaticFunctionCall id args)
+        E.IntegerLiteral _ -> (context, s_expr)
+        E.StringLiteral _ -> (context, s_expr)
+        E.FloatLiteral _ -> (context, s_expr)
+        E.CharLiteral _ -> (context, s_expr)
+        E.VarDecl v rhs -> do
+            (context, rhs) <- processExpr context rhs
+            (context, E.VarDecl v rhs)
+        E.VarRef v -> (context, s_expr)
+        E.FieldAccess name rhs -> do
+            (context, rhs) <- processExpr context rhs
+            (context, E.FieldAccess name rhs)
+        E.If cond true_branch false_branch -> do
+            (context, cond) <- processExpr context cond
+            (context, true_branch) <- processExpr context true_branch
+            (context, false_branch) <- processExpr context false_branch
+            (context, E.If cond true_branch false_branch)
+        E.List items -> do
+            (context, items) <- processItems context items
+            (context, E.List items)
+        E.Return rhs -> do
+            (context, rhs) <- processExpr context rhs
+            (context, E.Return rhs)
+        E.Continue rhs -> do
+            (context, rhs) <- processExpr context rhs
+            (context, E.Continue rhs)
+        E.Break rhs -> do
+            (context, rhs) <- processExpr context rhs
+            (context, E.Break rhs)
+        E.RecordUpdate _ _ -> panic "RecordUpdate in update"
+        E.Loop v initializer items continues breaks -> do
+            (context, initializer) <- processExpr context initializer
+            (context, items) <- processItems context items
+            (context, E.Loop v initializer items continues breaks)
+        E.CaseOf body cases -> do
+            (context, body) <- processExpr context body
+            // FIXME type in patterns!!
+            (context, cases) <- cases |> List.iter |> fold (\(context, cases), c -> do
+                (context, body) <- processExpr context c.body
+                c <- c { body = body }
+                (context, cases + [c])) (context, [])
+            (context, E.CaseOf body cases)
+        E.Clone rhs -> do
+            (context, rhs) <- processExpr context rhs
+            (context, E.Clone rhs)
+        E.Deref rhs -> do
+            (context, rhs) <- processExpr context rhs
+            (context, E.Deref rhs)
+        E.Ref rhs -> do
+            (context, rhs) <- processExpr context rhs
+            (context, E.Ref rhs)
+        E.Move rhs -> do
+            (context, rhs) <- processExpr context rhs
+            (context, E.Move rhs)
+        E.Box rhs -> do
+            (context, rhs) <- processExpr context rhs
+            (context, E.Box rhs)
+    type <- U.apply type context.sub
+    type <- if contains context.invalids id
+        then do
+            case type of
+                T.Adt id args -> T.Ref (T.Adt id args)
+                T.Record id args -> T.Ref (T.Record id args)
+                type -> type
+        else type
+    expr <- E.Expr s_expr type id
+    (context, expr)
+
+processFunction :: P.Program -> P.Identity -> [T.Type] -> E.Expr -> F.FunctionType -> (E.Expr, F.FunctionType)
+processFunction program function_id args body function_type = do
+    //println "Processing function {}" % function_id
+    invalids <- C.collectInvalidators function_id body (getLength args)
+    context <- Context program U.createSubstitution invalids
+    (context, body) <- processExpr context body
+    function_type <- U.apply function_type context.sub
+    (body, function_type)

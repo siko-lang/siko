@@ -51,8 +51,8 @@ checkMoves invalids field_paths =
 
 walk :: Set E.ExprId -> ValueGraphNode -> [FieldPath] -> (Set E.ExprId, ExecutionMode, [FieldPath])
 walk invalids node field_paths = case node of
-    ValueDecl _ -> (Set.empty, Normal, [])
-    ValueRef id -> (Set.empty, Normal, [Whole id])
+    ValueDecl _ -> (invalids, Normal, [])
+    ValueRef id -> (invalids, Normal, [Whole id])
     Block nodes -> do
         nodes |> List.iter |> fold (\(invalids, mode, paths), node -> do
             (invalids, exec_mode, p) <- walk invalids node paths
@@ -60,14 +60,14 @@ walk invalids node field_paths = case node of
                 (Normal, Normal) -> Normal
                 _ -> DoesNotReturn
             (invalids, exec_mode, paths + p)) (invalids, Normal, field_paths)
-    ValueFieldAccess id fields -> (Set.empty, Normal, [Partial id fields])
+    ValueFieldAccess id fields -> (invalids, Normal, [Partial id fields])
     Branches nodes -> do
         nodes |> List.iter |> fold (\(invalids, mode, paths), node -> do
             (invalids, exec_mode, p) <- walk invalids node field_paths
             case exec_mode of
                 Normal -> (invalids, Normal, paths + p)
                 DoesNotReturn -> (invalids, mode, paths)) (invalids, DoesNotReturn, [])
-    Empty -> (Set.empty, Normal, [])
+    Empty -> (invalids, Normal, [])
     Loop node -> do
         (invalids, mode, p) <- walk invalids node field_paths
         (invalids, mode, p) <- walk invalids node (field_paths + p)
@@ -76,9 +76,7 @@ walk invalids node field_paths = case node of
         invalids <- checkMoves invalids field_paths
         (invalids, DoesNotReturn, [])
 
-analyze :: ValueGraphNode -> ()
-analyze graph = do
-    //println "Analyzing {}" % graph
-    (invalids, _, _) <- walk Set.empty graph []
-    println "Invalids {}" % invalids
-    ()
+analyze :: Set E.ExprId -> ValueGraphNode -> Set E.ExprId
+analyze invalids graph = do
+    (invalids, _, _) <- walk invalids graph []
+    invalids

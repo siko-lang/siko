@@ -1,0 +1,139 @@
+module Siko.Backend.Ownership.Instantiation where
+
+import Siko.MIR.Program as MP
+import Siko.MIR.Function as MF
+import Siko.MIR.Type as MT
+import Siko.MIR.Expr as ME
+
+import Siko.LIR.Program as LP
+import Siko.LIR.Function as LF
+import Siko.LIR.Type as LT
+import Siko.LIR.Expr as LE
+
+import Siko.Backend.Ownership.Updater as U
+
+import Map
+import Set
+
+data FunctionKey = FunctionKey MP.Identity [MT.Type] deriving (PartialEq, Eq, PartialOrd, Ord, Show)
+
+data Item = QueuedFunction FunctionKey deriving (Show)
+
+data Queue = { next_id :: Int,
+               function_ids :: Map FunctionKey LP.Identity,
+               lir_functions :: Map LP.Identity LF.Function,
+               item_queue :: [Item] }
+
+createQueue :: Queue
+createQueue = Queue 0 Map.empty Map.empty []
+
+getFunctionId :: Queue -> FunctionKey -> (Queue, LP.Identity)
+getFunctionId queue function_key = do
+    next_id <- queue.next_id
+    lir_id :: Option LP.Identity <- None
+    ((lir_id, next_id), function_ids, _) <- alterS (\(_, next_id), old_function_id -> case old_function_id of
+        Some old_function_id -> ((Some old_function_id, next_id), Some old_function_id)
+        None -> do
+            FunctionKey mir_id _ <- function_key
+            MP.Identity mod name _ <- mir_id
+            lir_id <- LP.Identity mod name next_id
+            ((Some lir_id, next_id + 1), Some lir_id)) (lir_id, next_id) function_key queue.function_ids
+    queue <- queue { next_id = next_id, function_ids = function_ids }
+    (queue, Option.unwrap lir_id)
+
+addFunction :: Queue -> LF.Function -> Queue
+addFunction queue function = do
+    (lir_functions, _) <- Map.insert queue.lir_functions function.id function
+    queue { lir_functions = lir_functions }
+
+addItem :: Queue -> Item -> Queue
+addItem queue item = do
+    item_queue <- queue.item_queue + [item]
+    queue { item_queue = item_queue }
+
+processVar :: ME.Var -> LE.Var
+processVar var = case var of
+    ME.Named n -> LE.Named n
+    ME.Temp i -> LE.Temp i
+    ME.SplitRecordVar i -> LE.SplitRecordVar i
+    ME.Arg i -> LE.Arg i
+
+processExpr :: Queue -> ME.Expr -> (Queue, LE.Expr)
+processExpr queue mir_expr = do
+    ME.Expr s_expr mir_type id <- mir_expr
+    (queue, lir_s_expr) <- case s_expr of
+        ME.Do items -> do
+            (queue, items) <- items |> List.iter |> fold (\(queue, items), item -> do
+                (queue, item) <- processExpr queue item
+                (queue, items + [item])) (queue, [])
+            (queue, LE.Do items)
+        ME.StaticFunctionCall id args -> do
+            arg_types <- args |> List.iter |> map (\ME.Expr _ t _ -> t) |> toList
+            function_key <- FunctionKey id arg_types
+            (queue, lir_id) <- getFunctionId queue function_key
+            (queue, args) <- args |> List.iter |> fold (\(queue, args), arg -> do
+                (queue, arg) <- processExpr queue arg
+                (queue, args + [arg])) (queue, [])
+            (queue, LE.StaticFunctionCall lir_id args)
+        ME.VarDecl v rhs -> do
+            lir_var <- processVar v
+            (queue, lir_rhs) <- processExpr queue rhs
+            (queue, LE.VarDecl lir_var lir_rhs)
+        ME.VarRef v -> do
+            lir_var <- processVar v
+            (queue, LE.VarRef lir_var)
+        _ -> panic "NYI {}" % s_expr
+    lir_expr <- LE.Expr lir_s_expr LT.Never (LE.ExprId 0)
+    (queue, lir_expr)
+
+processFunction :: Queue -> MP.Program -> FunctionKey -> LP.Identity -> Queue
+processFunction queue mir_program function_key lir_id = do
+    FunctionKey mir_id args <- function_key
+    mir_function <- MP.getFunction mir_program mir_id
+    case mir_function.kind of
+        MF.Normal mir_body -> do
+            (body, function_type) <- U.processFunction mir_program mir_id args mir_body mir_function.type
+            (queue, lir_body) <- processExpr queue body
+            lir_kind <- LF.Normal lir_body
+            lir_function_type <- LF.FunctionType [] LT.Never
+            lir_function <- LF.Function lir_id lir_kind lir_function_type
+            queue <- addFunction queue lir_function
+            queue
+        _ -> queue
+
+processItem :: Queue -> MP.Program -> Item -> Queue
+processItem queue mir_program item = do
+    println "Processing item {}" % item
+    case item of
+        QueuedFunction key -> do
+            lir_id <- case get queue.function_ids key of
+                Some lir_id -> lir_id
+                None -> panic "No lir id found for {}" % key
+            case get queue.lir_functions lir_id of
+                Some _ -> queue
+                None -> processFunction queue mir_program key lir_id
+
+processItems :: Queue -> MP.Program -> Queue
+processItems queue mir_program = do
+    loop queue <- queue do
+        queue :: Queue <- queue // FIXME
+        if List.isEmpty queue.item_queue
+            then break queue
+            else do
+                items <- queue.item_queue
+                queue <- queue { item_queue = [] }
+                queue <- items |> List.iter |> fold (\queue, item -> processItem queue mir_program item) queue
+                queue
+
+processProgram :: MP.Program -> LP.Program
+processProgram mir_program = do
+    main_id <- MP.getMainIdentity
+    main_function <- MP.getFunction mir_program main_id
+    function_key <- FunctionKey main_id []
+    queue <- createQueue
+    (queue, lir_main_id) <- getFunctionId queue function_key
+    queue <- addItem queue (QueuedFunction function_key)
+    queue <- processItems queue mir_program
+    lir_program <- LP.createProgram
+    lir_program <- queue.lir_functions |> Map.iter |> fold (\lir_program, (id, f) -> LP.addFunction lir_program id f) lir_program
+    lir_program

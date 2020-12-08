@@ -7,11 +7,8 @@ import Siko.MIR.Program as P
 import Siko.MIR.Function as F
 import Siko.MIR.Expr as E
 
-import Siko.Util.DependencyProcessor
-
 import Map
-
-data Context = { program :: P.Program }
+import Set
 
 processItems :: [E.Expr] -> ValueGraphs
 processItems items = do
@@ -94,42 +91,27 @@ createEnds  graphs = do
     ends <- keys |> List.iter |> fold (\ends, k -> addNode ends k End) ends
     after [graphs, ends]
 
-processFunction :: Context -> F.Function -> Context
-processFunction context function = do
-    case function.kind of
-        F.Normal body -> do
-            //println "Processing function {}" % function.id
-            graphs <- createValueGraphs
-            args <- function.type.args |> List.iter |> fold (\args, _ -> do
-                index <- getLength args
-                args + [E.Arg index]) []
-            graphs <- args |> List.iter |> fold (\graphs, arg -> do
-                addNode graphs arg (ValueDecl (show arg))) graphs
-            body_graph <- processExpr body
-            final_graph <- after [graphs, body_graph]
-            final_graph <- unpackGraphs final_graph
-            final_graph <- createEnds final_graph
-            final_graph.nodes |> Map.iter |> forEach (\(var, node) -> do
-                graph_name <- "{}.{}" % (function.id, var)
-                draw graph_name node)
-            final_graph.nodes |> Map.iter |> forEach (\(var, node) -> analyze node)
-            context
-        F.Extern orig_fn_type -> do
-            //println "Processing extern function {}" % function.id
-            context
-        F.VariantCtor _ -> context
-        F.RecordCtor -> context
+visualize :: P.Identity -> ValueGraphs -> ()
+visualize name graphs = do
+    graphs.nodes |> Map.iter |> forEach (\(var, node) -> do
+        graph_name <- "{}.{}" % (name, var)
+        draw graph_name node)
 
-processFunctionGroup :: Context -> [P.Identity] -> Context
-processFunctionGroup context functions = do
-    context <- functions |> List.iter |> fold (\context, id -> do
-        function <- P.getFunction context.program id
-        context <- processFunction context function
-        context) context
-    context
-
-processProgram :: P.Program -> [DependencyGroup P.Identity] -> P.Program
-processProgram program function_groups = do
-    context <- Context program
-    context <- function_groups |> List.iter |> fold (\context, group -> processFunctionGroup context group.items) context
-    program
+collectInvalidators :: P.Identity -> E.Expr -> Int -> Set E.ExprId
+collectInvalidators function_id body arg_count = do
+    //println "Processing function {}" % function_id
+    args <- repeat () arg_count // FIXME: make this nicer
+    graphs <- createValueGraphs
+    args <- args |> List.iter |> fold (\args, _ -> do
+        index <- getLength args
+        args + [E.Arg index]) []
+    graphs <- args |> List.iter |> fold (\graphs, arg -> do
+        addNode graphs arg (ValueDecl (show arg))) graphs
+    body_graph <- processExpr body
+    final_graph <- after [graphs, body_graph]
+    final_graph <- unpackGraphs final_graph
+    final_graph <- createEnds final_graph
+    //visualize function_id final_graph
+    invalids <- Set.empty
+    invalids <- final_graph.nodes |> Map.iter |> fold (\invalids, (var, node) -> analyze invalids node) invalids
+    invalids

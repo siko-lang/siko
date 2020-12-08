@@ -4,7 +4,7 @@ data Config = { input_files :: [String],
                 output_file_name :: Option String,
                 verbose :: Bool }
 
-data OutputFileType = Rc | Normal | MIR | OptMIR | LIR
+data OutputFileType = Rc | Normal | MIR Int | LIR Int
 
 getDefaultConfig :: Config
 getDefaultConfig = Config [] None False
@@ -17,6 +17,5 @@ getOutputFileName config type = do
     case type of
         Rc -> "{}_rc.rs" % output_file
         Normal -> "{}_normal.rs" % output_file
-        MIR -> "{}_mir.sk" % output_file
-        OptMIR -> "{}_opt_mir.sk" % output_file
-        LIR -> "{}_lir.sk" % output_file
+        MIR index -> "{}_mir_{}.sk" % (output_file, index)
+        LIR index -> "{}_lir_{}.sk" % (output_file, index)

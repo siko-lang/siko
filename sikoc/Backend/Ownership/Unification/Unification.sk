@@ -20,11 +20,15 @@ createSubstitution = Substitution empty
 class Apply a where
     apply a :: a -> Substitution -> a
 
-instance Apply T.OwnershipVar where
-    //apply :: T.OwnershipVar -> Substitution -> T.OwnershipVar
-    apply v sub = case get sub.var_subs v of
-                     Some (Unification new) -> new
-                     _ -> v
+instance Apply T.OwnershipKind where
+    //apply :: T.OwnershipKind -> Substitution -> T.OwnershipKind
+    apply k sub = case k of
+        T.OVar v -> case get sub.var_subs v of
+                        Some (Unification new) -> T.OVar new
+                        Some Owner -> T.Owner
+                        Some Borrow -> T.Borrow
+                        _ -> k
+        _ -> k
 
 instance Apply T.Type where
     //apply :: T.Type -> Substitution -> T.Type
@@ -35,7 +39,11 @@ instance Apply T.Type where
             T.Ref t -> T.Ref (apply t sub)
             T.Never -> T.Never
             T.Box t -> T.Box (apply t sub)
-            T.Var i t -> T.Var (apply i sub) (apply t sub)
+            T.Var i t -> do
+                case apply i sub of
+                    T.OVar v -> T.Var (T.OVar v) (apply t sub)
+                    T.Borrow -> T.Ref (apply t sub)
+                    T.Owner -> apply t sub
 
 instance Apply D.Record where
     //apply :: D.Record -> Substitution -> D.Record
@@ -62,15 +70,23 @@ instance Apply F.FunctionType where
         result <- apply function_type.result sub
         function_type { args = args , result = result }
 
-addSubstitution :: Substitution -> T.OwnershipVar -> SubstitutionChange -> Substitution
+addSubstitution :: Substitution -> T.OwnershipKind -> SubstitutionChange -> Substitution
 addSubstitution sub var change = do
-    (var_subs, _) <- insert sub.var_subs var change
-    sub { var_subs = var_subs }
+    case var of
+        T.OVar var -> do
+            (var_subs, _) <- insert sub.var_subs var change
+            sub { var_subs = var_subs }
+        _ -> panic "Trying to substitute {} to {}" % (var, change)
 
-unifyVars :: Substitution -> [T.OwnershipVar] -> [T.OwnershipVar] -> Substitution
+unifyVars :: Substitution -> [T.OwnershipKind] -> [T.OwnershipKind] -> Substitution
 unifyVars sub args1 args2 = do
     if getLength args1 == getLength args2
-        then zipS sub args1 args2 (\sub, args1, args2 -> addSubstitution sub args1 (Unification args2))
+        then zipS sub args1 args2 (\sub, arg1, arg2 -> case (arg1, arg2) of
+                (T.OVar v1, T.OVar v2) -> addSubstitution sub arg1 (Unification v2)
+                (T.Owner, T.Owner) -> sub
+                (T.Owner, T.OVar v2) -> addSubstitution sub arg2 Owner
+                (T.OVar v1, T.Owner) -> addSubstitution sub arg1 Owner
+                _ -> panic "Unifying kinds {} {} NYI" % (arg1, arg2))
         else do
             if (not (isEmpty args1)) && (not (isEmpty args2))
                 then panic "{} != {}" % (args1, args2)
@@ -79,7 +95,7 @@ unifyVars sub args1 args2 = do
             sub <- args2 |> List.iter |> fold (\sub, arg -> addSubstitution sub arg Owner) sub
             sub
 
-batch :: [T.OwnershipVar] -> [T.OwnershipVar] -> Substitution
+batch :: [T.OwnershipKind] -> [T.OwnershipKind] -> Substitution
 batch from_vars to_vars = do
     sub <- createSubstitution
     unifyVars sub from_vars to_vars
@@ -127,17 +143,20 @@ unify sub type1 type2 = do
             sub <- addSubstitution sub v Borrow
             unify sub t1 t2
         (T.Var arg1 t1, T.Var arg2 t2) -> do
-            sub <- addSubstitution sub arg1 (Unification arg2)
-            unify sub t1 t2
+            case arg2 of
+                T.OVar arg2 -> do
+                    sub <- addSubstitution sub arg1 (Unification arg2)
+                    unify sub t1 t2
+                _ -> panic "cannot unify {} {}" % (arg1, arg2)
         (T.Never, T.Never) -> sub
         _ -> panic "NYI unify {} {}" % (type1, type2)
 
-data OwnershipVarGenerator = { counter :: Counter T.OwnershipVar }
+data OwnershipVarGenerator = { counter :: Counter T.OwnershipKind }
 
 createOwnershipVarGenerator :: OwnershipVarGenerator
-createOwnershipVarGenerator = OwnershipVarGenerator (Counter T.OwnershipVar 0)
+createOwnershipVarGenerator = OwnershipVarGenerator (Counter (\v -> T.OVar (T.OwnershipVar v)) 0)
 
-getNextOwnershipVar :: OwnershipVarGenerator -> (OwnershipVarGenerator, T.OwnershipVar)
+getNextOwnershipVar :: OwnershipVarGenerator -> (OwnershipVarGenerator, T.OwnershipKind)
 getNextOwnershipVar var_gen = do
     (counter, v) <- getNext var_gen.counter
     (var_gen { counter = counter }, v)

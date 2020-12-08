@@ -4,17 +4,30 @@ import Siko.MIR.Program
 
 data OwnershipVar = OwnershipVar Int deriving (PartialEq, Eq, PartialOrd, Ord)
 
-data Type = Adt Identity [OwnershipVar]
-          | Record Identity [OwnershipVar]
+data OwnershipKind = OVar OwnershipVar
+                   | Borrow
+                   | Owner
+                   deriving (PartialEq, Eq, PartialOrd, Ord)
+
+
+data Type = Adt Identity [OwnershipKind]
+          | Record Identity [OwnershipKind]
           | Ref Type
           | Never
           | Box Type
-          | Var OwnershipVar Type
+          | Var OwnershipKind Type
+          deriving (PartialEq, Eq, PartialOrd, Ord)
 
 instance Show OwnershipVar where
-    show (OwnershipVar i) = "o{}" % i
+    show (OwnershipVar i) = "{}" % i
 
-printArgs :: [OwnershipVar] -> String
+instance Show OwnershipKind where
+    show k = case k of
+        OVar v -> "v{}" % v
+        Borrow -> "&"
+        Owner -> "o"
+
+printArgs :: [OwnershipKind] -> String
 printArgs args = if isEmpty args then "" else " " + join args " "
 
 instance Show Type where
@@ -35,7 +48,7 @@ getIdentity type = case type of
     Box t -> getIdentity t
     Var i t -> getIdentity t
 
-collectOwnershipVars :: Type -> [OwnershipVar]
+collectOwnershipVars :: Type -> [OwnershipKind]
 collectOwnershipVars type = case type of
     Adt id args -> args
     Record id args -> args
@@ -44,7 +57,7 @@ collectOwnershipVars type = case type of
     Box t -> collectOwnershipVars t
     Var i t -> [i] + collectOwnershipVars t
 
-collectOwnershipArgs :: Type -> [OwnershipVar]
+collectOwnershipArgs :: Type -> [OwnershipKind]
 collectOwnershipArgs type = case type of
     Adt id args -> args
     Record id args -> args
