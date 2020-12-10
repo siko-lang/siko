@@ -76,6 +76,7 @@ convertType mir_type = do
         MT.Adt id _ -> getRustFriendlyName (show id)
         MT.Record id _ -> getRustFriendlyName (show id)
         MT.Ref t -> return RT.Ref (convertType t)
+        MT.Owner t -> return (convertType t)
         MT.Never ->  return RT.Never
         MT.Box t -> return typeToBoxedType (convertType t)
         MT.Var _ t -> return (convertType t)
@@ -335,7 +336,7 @@ transpile program = do
             (args, index + 1)) ([], 0)
         rust_result <- convertType mir_function.type.result
         rust_body <- case mir_function.kind of
-            Normal mir_body -> do
+            Normal mir_body _ _ -> do
                     ME.Expr b _ _ <- mir_body
                     case b of
                         ME.Do _ -> convertExpr context mir_body

@@ -360,6 +360,9 @@ getMIRType context hir_type = case hir_type of
     HT.Ref t -> do
         (context, t) <- processType context t
         (context, MT.Ref t)
+    HT.Owner t -> do
+        (context, t) <- processType context t
+        (context, MT.Owner t)
     HT.Tuple args -> getMIRTuple context (getLength args)
 
 processQueuedType :: Context -> HT.Type -> MT.Type -> Context
@@ -378,4 +381,5 @@ processQueuedType context hir_type mir_type = case hir_type of
     HT.Function from to -> processClosure context hir_type mir_type
     HT.Never _ -> context
     HT.Ref t -> context
+    HT.Owner t -> context
     HT.Tuple args -> processTuple context hir_type args mir_type

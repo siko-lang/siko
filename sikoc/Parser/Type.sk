@@ -86,4 +86,8 @@ parseTypeSignaturePart state parsingVariant allowWildcard = do
             state <- try expect state Kind.Ampersand
             (state, ty) <- try parseTypeSignaturePart state False allowWildcard
             Ok (state, buildTypeSignature (Ref ty) start_index state)
+        T.Tilde -> do
+            state <- try expect state Kind.Tilde
+            (state, ty) <- try parseTypeSignaturePart state False allowWildcard
+            Ok (state, buildTypeSignature (Owner ty) start_index state)
         _ -> return Err (state, unexpectedToken state "type signature")

@@ -4,15 +4,15 @@ import Siko.MIR.Program
 
 data OwnershipVar = OwnershipVar Int deriving (PartialEq, Eq, PartialOrd, Ord)
 
-data OwnershipKind = OVar OwnershipVar
-                   | Borrow
-                   | Owner
+data OwnershipKind = VarKind OwnershipVar
+                   | BorrowKind
+                   | OwnerKind
                    deriving (PartialEq, Eq, PartialOrd, Ord)
-
 
 data Type = Adt Identity [OwnershipKind]
           | Record Identity [OwnershipKind]
           | Ref Type
+          | Owner Type
           | Never
           | Box Type
           | Var OwnershipKind Type
@@ -23,9 +23,9 @@ instance Show OwnershipVar where
 
 instance Show OwnershipKind where
     show k = case k of
-        OVar v -> "v{}" % v
-        Borrow -> "&"
-        Owner -> "o"
+        VarKind v -> "v{}" % v
+        BorrowKind -> "&"
+        OwnerKind -> "~"
 
 printArgs :: [OwnershipKind] -> String
 printArgs args = if isEmpty args then "" else " " + join args " "
@@ -35,6 +35,7 @@ instance Show Type where
         Adt id args -> "{}{}" % (id, printArgs args)
         Record id args -> "{}{}" % (id, printArgs args)
         Ref t -> "&{}" % t
+        Owner t -> "~{}" % t
         Never -> "!"
         Box t -> "*{}" % t
         Var i t -> "{} {}" % (i, t)
@@ -44,6 +45,7 @@ getIdentity type = case type of
     Adt id _ -> id
     Record id _ -> id
     Ref t -> getIdentity t
+    Owner t -> getIdentity t
     Never -> panic "getIdentity called on Never!"
     Box t -> getIdentity t
     Var i t -> getIdentity t
@@ -53,6 +55,7 @@ collectOwnershipVars type = case type of
     Adt id args -> args
     Record id args -> args
     Ref t -> collectOwnershipVars t
+    Owner t -> collectOwnershipVars t
     Never -> []
     Box t -> collectOwnershipVars t
     Var i t -> [i] + collectOwnershipVars t
@@ -62,6 +65,7 @@ collectOwnershipArgs type = case type of
     Adt id args -> args
     Record id args -> args
     Ref t -> collectOwnershipVars t
+    Owner t -> collectOwnershipVars t
     Never -> []
     Box t -> collectOwnershipVars t
     Var i t -> collectOwnershipVars t

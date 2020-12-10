@@ -45,6 +45,7 @@ reshape var1 var2 type = case type of
             then T.Never var2
             else type
     T.Ref t -> T.Ref (reshape var1 var2 t)
+    T.Owner t -> T.Owner (reshape var1 var2 t)
     T.Tuple args -> T.Tuple (args |> List.iter |> map (\t -> reshape var1 var2 t) |> toList)
 
 checkIsomorphicType :: T.Type -> T.Type -> ClassStore -> Bool
@@ -93,6 +94,9 @@ isIsomorphicType type1 type2 class_store = do
                 then Ok ()
                 else Err (Reshape var1 var2)
         (T.Ref t1, T.Ref t2) -> isIsomorphicType t1 t2 class_store
+        (T.Owner t1, T.Owner t2) -> isIsomorphicType t1 t2 class_store
+        (T.Owner t1, t2) -> isIsomorphicType t1 t2 class_store
+        (t1, T.Owner t2) -> isIsomorphicType t1 t2 class_store
         (T.Tuple args1, T.Tuple args2) -> do
             if getLength args1 != getLength args2
                         then Err Mismatch
@@ -107,4 +111,3 @@ isIsomorphicType type1 type2 class_store = do
                                         index + 1
                             Ok ()
         (_, _) -> Err Mismatch
-

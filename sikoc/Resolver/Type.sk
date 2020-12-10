@@ -127,6 +127,9 @@ updateTypeConstraints state type = case type of
     Ref item -> do
         item <- updateTypeConstraints state item
         Ref item
+    Owner item -> do
+        item <- updateTypeConstraints state item
+        Owner item
     Tuple items -> do
         items <- items |> List.iter |> map (\t -> updateTypeConstraints state t) |> toList
         Tuple items
@@ -203,6 +206,9 @@ processTypeSignature state resolver_state (ST.TypeSignature type_signature locat
     ST.Ref arg -> do
         (state, resolver_state, arg) <- processTypeSignature state resolver_state arg
         (state, resolver_state, Ref arg)
+    ST.Owner arg -> do
+        (state, resolver_state, arg) <- processTypeSignature state resolver_state arg
+        (state, resolver_state, Owner arg)
     ST.Wildcard -> do
         (resolver_state, var) <- getTypeVar resolver_state
         (state, resolver_state, Var var [])

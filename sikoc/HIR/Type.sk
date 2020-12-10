@@ -36,6 +36,7 @@ data Type = Var TypeVar [Constraint]
             | Function Type Type
             | Never TypeVar
             | Ref Type
+            | Owner Type
             | Tuple [Type]
             deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
@@ -47,6 +48,7 @@ isSimple type = case type of
     Function _ _ -> False
     Never _ -> True
     Ref _ -> True
+    Owner _ -> True
     Tuple _ -> True
 
 isFunction :: Type -> Bool
@@ -83,27 +85,29 @@ collectVars type = case type of
     Function from to -> collectVars from + collectVars to
     Never var -> [var]
     Ref t -> collectVars t
+    Owner t -> collectVars t
     Tuple args -> args |> List.iter |> fold (\vars, arg -> do
         vs <- collectVars arg
         vars + vs) []
 
-collectnames :: Type -> Map String [Constraint] -> ([String], Map String [Constraint])
-collectnames type constraint_map = case type of
+collectNames :: Type -> Map String [Constraint] -> ([String], Map String [Constraint])
+collectNames type constraint_map = case type of
     Var (TypeVar v)  constraints -> (collectNamesFromConstraints constraints, addConstraint ("t{}" % v) constraints constraint_map)
     FixedTypeArg n _ constraints -> (collectNamesFromConstraints constraints, addConstraint n constraints constraint_map)
     Named n args -> do
                 n <- HP.getResolvableName n
                 args |> List.iter |> fold (\(all, constraint_map), arg -> do
-                (args, constraint_map) <- collectnames arg constraint_map
+                (args, constraint_map) <- collectNames arg constraint_map
                 (all + args, constraint_map)) ([n], constraint_map)
     Function from to -> do
-        (args_from, constraint_map) <- collectnames from constraint_map
-        (args_to, constraint_map) <- collectnames to constraint_map
+        (args_from, constraint_map) <- collectNames from constraint_map
+        (args_to, constraint_map) <- collectNames to constraint_map
         (args_from + args_to, constraint_map)
     Never _ -> ([], constraint_map)
-    Ref t -> collectnames t constraint_map
+    Ref t -> collectNames t constraint_map
+    Owner t -> collectNames t constraint_map
     Tuple args -> args |> List.iter |> fold (\(all, constraint_map), arg -> do
-                (args, constraint_map) <- collectnames arg constraint_map
+                (args, constraint_map) <- collectNames arg constraint_map
                 (all + args, constraint_map)) ([], constraint_map)
 
 getShortName :: String -> String
@@ -119,7 +123,7 @@ addShortName name names = case names of
 formatType :: Type -> Bool -> String
 formatType type short = do
     limit <- if short then 1 else 0
-    (names, constraint_map) <- collectnames type empty
+    (names, constraint_map) <- collectNames type empty
     conflicting_names <- names |> List.iter |> fold (\short_names, name -> do
                 short <- getShortName name
                 (short_names, _) <- alter (addShortName name) short short_names
@@ -170,6 +174,7 @@ convertType type names = case type of
         "{} -> {}" % (from, to)
     Never _ -> "!"
     Ref t -> "&{}" % (toStringComplex t names)
+    Owner t -> "~{}" % (toStringComplex t names)
     Tuple args -> do
         args <- args |> List.iter |> map (\arg -> convertType arg names) |> toList
         if getLength args == 1
@@ -234,6 +239,7 @@ convertToFixed var_map type =
             Some (_, new_var) -> Never new_var
             None -> panic "old var {} not found" % var
         Ref t -> Ref (convertToFixed var_map t)
+        Owner t -> Owner (convertToFixed var_map t)
         Tuple args -> do
             args <- args |> List.iter |> map (\arg -> convertToFixed var_map arg) |> toList
             Tuple args
@@ -254,6 +260,7 @@ isConcreteType type = case type of
     Function from to -> isConcreteType from && isConcreteType to
     Never var -> True
     Ref t -> isConcreteType t
+    Owner t -> isConcreteType t
     Tuple args -> args |> List.iter |> fold (\concrete, arg -> do
         concrete && isConcreteType arg) True
 
@@ -270,6 +277,7 @@ removeFixed type = case type of
         Function from to
     Never var -> type
     Ref t -> Ref (removeFixed t)
+    Owner t -> Owner (removeFixed t)
     Tuple args -> do
         args <- args |> List.iter |> map (\arg -> removeFixed arg) |> toList
         Tuple args

@@ -170,6 +170,7 @@ addOwnershipVarsToType context type = case type of
         t <- T.Var o (T.Record id args)
         (context, t)
     T.Ref type -> addOwnershipVarsToType context type
+    T.Owner type -> addOwnershipVarsToType context type
     type -> do
         (context, o) <- getNextOwnershipVar context
         t <- T.Var o type
@@ -199,25 +200,26 @@ addOwnershipVarsToBody context expr = do
 
 processFunction :: P.Program -> Context -> F.Function -> (Context, F.Function)
 processFunction program context function = case function.kind of
-    F.Normal body -> do
+    F.Normal body expr_id_gen temp_var_gen -> do
         (context, updated_body) <- addOwnershipVarsToBody context body
         (context, args) <- function.type.args |> List.iter |> fold (\(context, args), arg -> do
             (context, arg) <- addOwnershipVarsToType context arg
             (context, args + [arg])) (context, [])
         (context, result) <- addOwnershipVarsToType context function.type.result
         function_type <- F.FunctionType args result
-        (context, function { kind = F.Normal updated_body, type = function_type })
+        (context, function { kind = F.Normal updated_body expr_id_gen temp_var_gen, type = function_type })
     F.RecordCtor -> do
         id <- T.getIdentity function.type.result
         record <- P.getRecord program id
         args <- record.fields |> List.iter |> map (\f -> f.type) |> toList
         (context, o) <- getNextOwnershipVar context
         result <- T.Record id record.ownership_vars
-        function_type <- F.FunctionType args result
+        owned_result <- T.Owner result
+        function_type <- F.FunctionType args owned_result
         context <- saveFunctionType context function.id function_type
         (context, o) <- getNextOwnershipVar context
-        result <- T.Var o result
-        function_type <- F.FunctionType args result
+        general_result <- T.Var o result
+        function_type <- F.FunctionType args general_result
         (context, function { type = function_type })
     F.VariantCtor index -> do
         id <- T.getIdentity function.type.result
@@ -231,11 +233,12 @@ processFunction program context function = case function.kind of
         args <- variant_record.fields |> List.iter |> map (\f -> T.debox f.type) |> toList
         (context, o) <- getNextOwnershipVar context
         result <- T.Adt id adt.ownership_vars
-        function_type <- F.FunctionType args result
+        owned_result <- T.Owner result
+        function_type <- F.FunctionType args owned_result
         context <- saveFunctionType context function.id function_type
         (context, o) <- getNextOwnershipVar context
-        result <- T.Var o result
-        function_type <- F.FunctionType args result
+        general_result <- T.Var o result
+        function_type <- F.FunctionType args general_result
         (context, function { type = function_type })
     F.Extern -> do
         context <- saveFunctionType context function.id function.type

@@ -47,9 +47,9 @@ main = do
     resolver_errors |> List.iter |> forEach \error -> printResolverError error
     trace config "Typechecking.."
     case TC.processProgram config hir_program var_gen of
-        Ok (mir_program, expr_id) -> do
+        Ok mir_program -> do
             trace config "Optimizing.."
-            mir_program <- B.processProgram config mir_program expr_id
+            mir_program <- B.processProgram config mir_program
             trace config "Transpiling RC.."
             rust_output <- TRC.transpile mir_program
             writeTextFile (getOutputFileName config Rc) rust_output

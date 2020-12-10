@@ -15,15 +15,18 @@ data Program = { functions :: Map Identity F.Function,
                  adts :: Map Identity D.AlgebraicDataType,
                  records :: Map Identity D.Record,
                  unit_type :: Option Type,
-               }
+                 record_ctors :: Map Identity Identity }
 
 createProgram :: Program
-createProgram = Program empty empty empty None
+createProgram = Program empty empty empty None empty
 
 addFunction :: Program -> Identity -> F.Function -> Program
 addFunction program function_id function = do
     (functions, _) <- insert program.functions function_id function
     program { functions = functions }
+
+getUnitType :: Program -> Type
+getUnitType program = Option.unwrap program.unit_type
 
 getFunction :: Program -> Identity -> F.Function
 getFunction program function_id = case get program.functions function_id of
@@ -39,6 +42,11 @@ getRecord :: Program -> Identity -> D.Record
 getRecord program record_id = case get program.records record_id of
     Some record -> record
     None -> panic "MIR Record not found {}" % record_id
+
+getRecordCtor :: Program -> Identity -> Identity
+getRecordCtor program record_id = case get program.record_ctors record_id of
+    Some record_ctor -> record_ctor
+    None -> panic "MIR Record ctor not found {}" % record_id
 
 updateFunctionKind :: Program -> Identity -> F.FunctionKind -> Program
 updateFunctionKind program function_id kind = do

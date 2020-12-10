@@ -39,6 +39,7 @@ apply sub type = case type of
         Some t -> apply sub t
         None -> type
     Ref t -> Ref (apply sub t)
+    Owner t -> Owner (apply sub t)
     Tuple args -> do
         args <- args |> List.iter |> map (\arg -> apply sub arg) |> toList
         Tuple args
@@ -56,6 +57,7 @@ containsVar type var = case type of
     Function from to -> containsVar from var || containsVar to var
     Never v -> v == var
     Ref t -> containsVar t var
+    Owner t -> containsVar t var
     Tuple args -> args |> List.iter |> fold (\contains, arg -> contains || containsVar arg var) False
 
 add :: Substitution -> TypeVar -> Type -> Result Substitution ()
@@ -254,4 +256,6 @@ unify gen sub data_store class_store type1 type2 = do
             Ok (gen, sub)
         (Ref type1, type2) -> unify gen sub data_store class_store type1 type2
         (type1, Ref type2) -> unify gen sub data_store class_store type1 type2
+        (Owner type1, type2) -> unify gen sub data_store class_store type1 type2
+        (type1, Owner type2) -> unify gen sub data_store class_store type1 type2
         _ -> Err ()

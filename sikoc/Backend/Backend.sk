@@ -55,7 +55,7 @@ processExpr context expr = do
 
 getDepsForFunction :: MP.Program -> F.Function -> [MP.Identity]
 getDepsForFunction mir_program function = case function.kind of
-    F.Normal body -> do
+    F.Normal body _ _ -> do
         context <- Context []
         (context, _) <- traverse context body (Some processExpr) None
         context.deps
@@ -71,20 +71,20 @@ collectFunctionDeps mir_program = do
         ) dependencies
     dependencies
 
-processProgram :: Config -> MP.Program -> Int -> MP.Program
-processProgram config mir_program expr_id = do
+processProgram :: Config -> MP.Program -> MP.Program
+processProgram config mir_program = do
     data_dependencies <- collectDataDeps mir_program
     data_groups <- processDependencies data_dependencies
     function_dependencies <- collectFunctionDeps mir_program
     function_groups <- processDependencies function_dependencies
     mir_program <- Box.processProgram mir_program data_groups
-    mir_program <- ExprUnification.processProgram mir_program data_groups function_groups
-    mir_program <- TransformUpdates.processProgram mir_program expr_id
-    s <- MP.dump mir_program
-    writeTextFile (getOutputFileName config (MIR 1)) s
-    mir_program <- Inference.processProgram mir_program function_groups
+    mir_program <- ExprUnification.processProgram config mir_program data_groups function_groups
+    mir_program <- TransformUpdates.processProgram mir_program
     s <- MP.dump mir_program
     writeTextFile (getOutputFileName config (MIR 2)) s
+    mir_program <- Inference.processProgram mir_program function_groups
+    s <- MP.dump mir_program
+    writeTextFile (getOutputFileName config (MIR 3)) s
     lir_program <- Instantiation.processProgram mir_program
     s <- LP.dump lir_program
     writeTextFile (getOutputFileName config (LIR 0)) s

@@ -11,9 +11,9 @@ processFunction :: P.Program -> P.Identity -> P.Program
 processFunction program function_id = do
     function <- P.getFunction program function_id
     case function.kind of
-        F.Normal body -> do
-            (body, function_type) <- U.processFunction program function.id function.type.args body function.type
-            kind <- F.Normal body
+        F.Normal body expr_id_gen temp_var_gen -> do
+            (body, function_type, expr_id_gen, temp_var_gen) <- U.processFunction program function.id expr_id_gen temp_var_gen function.type.args body function.type
+            kind <- F.Normal body expr_id_gen temp_var_gen
             program <- P.updateFunctionKind program function_id kind
             program <- P.updateFunctionType program function_id function_type
             program

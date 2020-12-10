@@ -15,31 +15,31 @@ data FieldData = { access_expr :: E.ExprId -> E.Expr, var_decl_expr :: E.Expr }
 
 data SplitData = { fields :: Map String FieldData }
 
-data Context = { next_expr_id :: Counter E.ExprId,
-                 next_split_var :: Counter E.Var,
+data Context = { expr_id_gen :: Counter E.ExprId,
+                 temp_var_gen :: Counter E.Var,
                  updates :: Set E.Var,
                  records :: Map P.Identity D.Record,
                  split_vars :: Map E.Var SplitData,
                  record_ctors :: Map P.Identity P.Identity }
 
-createContext :: Int -> Map P.Identity D.Record -> Context
-createContext id records = Context {
-            next_expr_id = Counter E.ExprId id,
-            next_split_var = Counter E.SplitRecordVar 0,
+createContext :: Counter E.ExprId -> Counter E.Var -> Map P.Identity D.Record -> Map P.Identity P.Identity -> Context
+createContext expr_id_gen temp_var_gen records record_ctors = Context {
+            expr_id_gen = expr_id_gen,
+            temp_var_gen = temp_var_gen,
             updates = Set.empty,
             records = records,
             split_vars = Map.empty,
-            record_ctors = Map.empty }
+            record_ctors = record_ctors }
 
 getNextExprId :: Context -> (Context, E.ExprId)
 getNextExprId context = do
-    (next_expr_id, v) <- getNext context.next_expr_id
-    (context { next_expr_id = next_expr_id }, v)
+    (expr_id_gen, v) <- getNext context.expr_id_gen
+    (context { expr_id_gen = expr_id_gen }, v)
 
-getNextSplitVar :: Context -> (Context, E.Var)
-getNextSplitVar context = do
-    (next_split_var, v) <- getNext context.next_split_var
-    (context { next_split_var = next_split_var }, v)
+getNextTempVar :: Context -> (Context, E.Var)
+getNextTempVar context = do
+    (temp_var_gen, v) <- getNext context.temp_var_gen
+    (context { temp_var_gen = temp_var_gen }, v)
 
 getRecordType :: Context -> T.Type -> D.Record
 getRecordType context type = do
@@ -79,7 +79,7 @@ splitDecls context expr = do
                         field_access <- E.FieldAccess field.name var_ref_expr
                         (context, expr_id) <- getNextExprId context
                         field_access_expr <- E.Expr field_access field.type expr_id
-                        (context, split_var) <- getNextSplitVar context
+                        (context, split_var) <- getNextTempVar context
                         var_decl <- E.VarDecl split_var field_access_expr
                         (context, expr_id) <- getNextExprId context
                         var_decl_expr <- E.Expr var_decl expr_type expr_id
@@ -159,30 +159,20 @@ update context expr = do
         _ -> context
     (context, expr)
 
-processFunction :: Context -> F.Function -> (Context, F.Function)
-processFunction context function = case function.kind of
-    F.Normal body -> do
-        context <- context { updates = Set.empty }
+processFunction :: Map P.Identity D.Record -> Map P.Identity P.Identity -> F.Function -> F.Function
+processFunction records record_ctors function = case function.kind of
+    F.Normal body expr_id_gen temp_var_gen -> do
+        context <- createContext expr_id_gen temp_var_gen records record_ctors
         (context, body) <- traverse context body (Some findUpdates) None
         (context, body) <- traverse context body (Some splitDecls) None
         (context, body) <- traverse context body (Some update) None
         (context, body) <- traverse context body (Some insertSplit) None
-        (context, function { kind = F.Normal body })
-    _ -> (context, function)
+        function { kind = F.Normal body context.expr_id_gen context.temp_var_gen }
+    _ -> (function)
 
-processProgram :: P.Program -> Int -> P.Program
-processProgram program expr_id = do
-    context <- createContext expr_id program.records
-    context <- program.functions |> Map.iter |> fold (\context, (id, function) -> do
-            case function.kind of
-                F.RecordCtor -> do
-                    record_id <- T.getIdentity function.type.result
-                    (record_ctors, _) <- Map.insert context.record_ctors record_id id
-                    context { record_ctors = record_ctors }
-                _ -> context
-        ) context
-    (context, functions) <- program.functions |> Map.iter |> fold (\(context, functions), (id, function) -> do
-        (context, function) <- processFunction context function
-        (functions, _) <- Map.insert functions id function
-        (context, functions)) (context, Map.empty)
+processProgram :: P.Program -> P.Program
+processProgram program = do
+    functions <- program.functions |> Map.iter |> map (\(id, function) -> do
+        function <- processFunction program.records program.record_ctors function
+        (id, function)) |> toMap
     program { functions = functions }

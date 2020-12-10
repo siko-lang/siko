@@ -133,7 +133,7 @@ processGroup state group program function_store lowering_type_store = do
         LTS.addPatternType lowering_type_store id type) lowering_type_store
     (context.state, context.function_store, lowering_type_store)
 
-processProgram :: Config -> P.Program -> TypeVarGenerator -> Result (MP.Program, Int) [TypecheckerError]
+processProgram :: Config -> P.Program -> TypeVarGenerator -> Result MP.Program [TypecheckerError]
 processProgram config program var_gen = do
     state <- TypecheckerState [] var_gen CS.initializeEmptyClassStore
              DS.createDataStore IR.createInstanceResolver createChoiceTreeStore
@@ -153,6 +153,6 @@ processProgram config program var_gen = do
     //FS.dump function_store
     if isEmpty state.errors
         then do
-            (mir_program, expr_id) <- L.lowerProgram config state program function_store lowering_type_store
-            Ok (mir_program, expr_id)
+            mir_program <- L.lowerProgram config state program function_store lowering_type_store
+            Ok mir_program
         else Err state.errors

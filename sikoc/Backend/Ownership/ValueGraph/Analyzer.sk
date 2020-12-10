@@ -33,9 +33,10 @@ invalidates current other = do
 checkMoves :: Set E.ExprId -> [FieldPath] -> Set E.ExprId
 checkMoves invalids field_paths =
     loop (invalids, field_paths) <- (invalids, field_paths) do
-        if getLength field_paths == 1
-            then break invalids
-            else do
+        case getLength field_paths of
+            0 -> break invalids
+            1 -> break invalids
+            _ -> do
                 (pre, last) <- List.split field_paths (getLength field_paths - 1)
                 last <- atIndex last 0
                 //println "pre {}: last {}" % (pre, last)

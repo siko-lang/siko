@@ -4,15 +4,16 @@ import Siko.MIR.Program
 import Siko.MIR.Expr as E
 import Siko.MIR.Type as T
 import Siko.Util.Format
+import Siko.Util.Counter
 
-data FunctionKind = Normal E.Expr
+data FunctionKind = Normal E.Expr (Counter E.ExprId) (Counter E.Var)
                   | VariantCtor Int
                   | RecordCtor
                   | Extern
 
 instance Show FunctionKind where
     show kind = case kind of
-        Normal _ -> "Normal"
+        Normal _ _ _ -> "Normal"
         VariantCtor _ -> "VariantCtor"
         RecordCtor -> "RecordCtor"
         Extern -> "Extern"
@@ -35,7 +36,7 @@ dump function = do
         args + ["arg{}" % index]) []
     args <- join args " "
     case function.kind of
-        Normal body -> s + "{} {} = {}" % (function.id, args, (E.prettyPrint body (Indent 0)).0)
+        Normal body _ _ -> s + "{} {} = {}" % (function.id, args, (E.prettyPrint body (Indent 0)).0)
         VariantCtor index -> s + "{} {} = <variant_ctor:{}>" % (function.id, args, index)
         RecordCtor -> s + "{} {} = <record_ctor>" % (function.id, args)
         Extern -> s + "{} {} = extern" % (function.id, args)
