@@ -4,7 +4,7 @@
 #![allow(dead_code)]
 #![allow(unused_parens)]
 #![allow(unused_macros)]
-#![allow(redundant_semicolon)]
+#![allow(redundant_semicolons)]
 #![allow(unreachable_code)]
 
 #[macro_use]

@@ -77,6 +77,9 @@ addSubstitution sub var change = do
         T.VarKind var -> do
             (var_subs, _) <- insert sub.var_subs var change
             sub { var_subs = var_subs }
+        T.OwnerKind -> case change of
+            Owner -> sub
+            _ -> panic "Trying to substitute {} to {}" % (var, change)
         _ -> panic "Trying to substitute {} to {}" % (var, change)
 
 unifyVars :: Substitution -> [T.OwnershipKind] -> [T.OwnershipKind] -> Substitution
@@ -152,6 +155,8 @@ unify sub type1 type2 = do
             unify sub t1 t2
         (T.Var v t1, T.Ref t2) -> do
             sub <- addSubstitution sub v Borrow
+            unify sub t1 t2
+        (T.Ref t1, T.Ref t2) -> do
             unify sub t1 t2
         (T.Var arg1 t1, T.Var arg2 t2) -> do
             case arg2 of

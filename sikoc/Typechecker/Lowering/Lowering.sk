@@ -196,7 +196,12 @@ generateExternalImpl context hir_type impl = case impl of
 generateExternalImpls :: Context -> Context
 generateExternalImpls context = do
     context.external_class_impls |> Map.iter |> fold (\context, (hir_type, impls) -> do
-            impls |> List.iter |> fold (\context, impl -> generateExternalImpl context hir_type impl) context
+            impls |> List.iter |> fold (\context, impl -> do
+                expr_id_gen <- getExprIdCounter
+                context <- setExprIdCounter context expr_id_gen
+                context <- generateExternalImpl context hir_type impl
+                (context, _) <- resetExprIdCounter context
+                context) context
         ) context
 
 lowerProgram :: Config -> TypecheckerState -> HP.Program -> FunctionStore -> TypeStore -> MP.Program

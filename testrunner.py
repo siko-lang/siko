@@ -58,8 +58,6 @@ def run(test_name, source_folder, index, total):
     rc_output = os.path.join(target_folder, "rc")
     run_command(["rustc", "--edition=2018", os.path.join(target_folder, "%s_normal.rs" % test_name), "-o", normal_output], "normal rustc")
     run_command([normal_output], "normal build")
-    run_command(["rustc", "--edition=2018", os.path.join(target_folder, "%s_rc.rs" % test_name), "-o", rc_output], "rc rustc")
-    run_command([rc_output], "rc build")
 
 test_source_name = "sikoc_tests"
 tests = []

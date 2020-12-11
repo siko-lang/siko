@@ -24,6 +24,16 @@ addFunction program function_id function = do
     (functions, _) <- insert program.functions function_id function
     program { functions = functions }
 
+addRecord :: Program -> Identity -> D.Record -> Program
+addRecord program record_id record = do
+    (records, _) <- insert program.records record_id record
+    program { records = records }
+
+addAdt :: Program -> Identity -> D.AlgebraicDataType -> Program
+addAdt program adt_id adt = do
+    (adts, _) <- insert program.adts adt_id adt
+    program { adts = adts }
+
 getFunction :: Program -> Identity -> F.Function
 getFunction program function_id = case get program.functions function_id of
     Some function -> function

@@ -54,8 +54,9 @@ impl Transpiler {
         write!(output_file, "#![allow(unused_variables)]\n")?;
         write!(output_file, "#![allow(dead_code)]\n")?;
         write!(output_file, "#![allow(unused_parens)]\n\n")?;
+        write!(output_file, "#![allow(unused_braces)]\n\n")?;
         write!(output_file, "#![allow(unused_macros)]\n\n")?;
-        write!(output_file, "#![allow(redundant_semicolon)]\n\n")?;
+        write!(output_file, "#![allow(redundant_semicolons)]\n\n")?;
         write!(output_file, "#![allow(unreachable_code)]\n\n")?;
         write!(output_file, "#![allow(non_shorthand_field_patterns)]\n\n")?;
         write!(output_file, "#![allow(unused_mut)]\n\n")?;

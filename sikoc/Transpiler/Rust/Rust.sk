@@ -148,7 +148,7 @@ generateExpr expr indent = case expr of
     FieldAccess name receiver -> do
         receiver <- generateExpr receiver (Indent 0)
         "{}.{}" % (receiver, name)
-    Ref rhs -> "&{}" % generateExpr rhs (Indent 0)
+    Ref rhs -> "(&({}))" % generateExpr rhs (Indent 0)
     MutRef rhs -> "&mut {}" % generateExpr rhs (Indent 0)
     Deref rhs -> "*{}" % generateExpr rhs (Indent 0)
     Loop args -> do
@@ -238,5 +238,5 @@ generateProgram program = do
     content <- program.enums |> List.iter |> fold (\content, e -> content + "\n\n" + generateEnum e) content
     content <- program.functions |> List.iter |> fold (\content, f -> content + "\n\n" + generateFunction f (Indent 0)) content
     content <- program.impls |> List.iter |> fold (\content, i -> content + "\n\n" + generateTraitImpl i) content
-    content <- content + "\n\nfn main() {\n" + (show (Indent 2)) + "{}();\n}" % program.main_function_name
+    content <- content + "\n\nfn main() " + "{\n" + (show (Indent 2)) + ("{}();\n" % program.main_function_name) + "}"
     content

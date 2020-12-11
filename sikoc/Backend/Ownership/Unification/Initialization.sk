@@ -25,8 +25,8 @@ getNextOwnershipVar context = do
     context <- context { var_gen = var_gen }
     (context, v)
 
-addOwnershipVarsToDataType :: Context -> [P.Identity] -> [T.OwnershipKind] -> [T.OwnershipKind] -> T.Type -> ([T.OwnershipKind], T.Type)
-addOwnershipVarsToDataType context group all_ownership_vars ownership_vars type = do
+addOwnershipVarsToDataType :: Context -> Bool -> [P.Identity] -> [T.OwnershipKind] -> [T.OwnershipKind] -> T.Type -> ([T.OwnershipKind], T.Type)
+addOwnershipVarsToDataType context is_adt group all_ownership_vars ownership_vars type = do
     id <- T.getIdentity type
     if contains group id
         then do
@@ -43,14 +43,24 @@ addOwnershipVarsToDataType context group all_ownership_vars ownership_vars type 
             (ownership_vars, type)
         else do
             c <- getArgCount context id
-            (var, ownership_vars) <- List.split ownership_vars 1
-            var <- atIndex var 0
-            (args, ownership_vars) <- List.split ownership_vars c
-            type <- case type of
-                T.Record id _ -> T.Var var (T.Record id args)
-                T.Adt id _ -> T.Var var (T.Adt id args)
-                t -> t
-            (ownership_vars, type)
+            if is_adt
+                then
+                    do
+                    (args, ownership_vars) <- List.split ownership_vars c
+                    type <- case type of
+                        T.Record id _ -> T.Owner (T.Record id args)
+                        T.Adt id _ -> T.Owner (T.Adt id args)
+                        t -> t
+                    (ownership_vars, type)
+                else do
+                    (var, ownership_vars) <- List.split ownership_vars 1
+                    var <- atIndex var 0
+                    (args, ownership_vars) <- List.split ownership_vars c
+                    type <- case type of
+                        T.Record id _ -> T.Var var (T.Record id args)
+                        T.Adt id _ -> T.Var var (T.Adt id args)
+                        t -> t
+                    (ownership_vars, type)
 
 addOwnershipVarsToRecord :: Context -> [T.OwnershipKind] -> [P.Identity] -> [T.OwnershipKind] -> Option Record -> ([T.OwnershipKind], Option Record)
 addOwnershipVarsToRecord context all_ownership_vars group ownership_vars record = case record of
@@ -58,7 +68,7 @@ addOwnershipVarsToRecord context all_ownership_vars group ownership_vars record 
         record :: Record <- record
         record <- record { ownership_vars = all_ownership_vars }
         (fields, ownership_vars) <- record.fields |> List.iter |> fold (\(fields, ownership_vars), field -> do
-            (ownership_vars, type) <- addOwnershipVarsToDataType context group all_ownership_vars ownership_vars field.type
+            (ownership_vars, type) <- addOwnershipVarsToDataType context False group all_ownership_vars ownership_vars field.type
             field <- field { type = type }
             (fields + [field], ownership_vars)) ([], ownership_vars)
         record <- record { fields = fields }
@@ -71,7 +81,7 @@ addOwnershipVarsToAdt context all_ownership_vars group ownership_vars adt = case
         adt :: AlgebraicDataType <- adt
         adt <- adt { ownership_vars = all_ownership_vars }
         (variants, ownership_vars) <- adt.variants |> List.iter |> fold (\(variants, ownership_vars), variant -> do
-            (ownership_vars, type) <- addOwnershipVarsToDataType context group all_ownership_vars ownership_vars variant.type
+            (ownership_vars, type) <- addOwnershipVarsToDataType context True group all_ownership_vars ownership_vars variant.type
             variant <- variant { type = type }
             (variants + [variant], ownership_vars)) ([], ownership_vars)
         adt <- adt { variants = variants }
@@ -90,7 +100,7 @@ calculateArgCountForAdt context group adt = do
         record_id <- T.getIdentity variant.type
         variant_arg_count <- if contains group record_id
             then 0
-            else 1 + getArgCount context record_id
+            else getArgCount context record_id
         arg_count + variant_arg_count) 0
 
 calculateArgCountForRecord :: Context -> [P.Identity] -> Record -> Int
@@ -155,22 +165,36 @@ getNextOwnershipVars context count = loop (context, vars) <- (context, []) do
             (context, o) <- getNextOwnershipVar context
             (context, vars + [o])
 
-addOwnershipVarsToType :: Context -> T.Type -> (Context, T.Type)
-addOwnershipVarsToType context type = case type of
+addOwnershipVarsToType :: Bool -> Context -> T.Type -> (Context, T.Type)
+addOwnershipVarsToType keep_extern context type = case type of
     T.Adt id args -> do
         c <- getArgCount context id
         (context, args) <- getNextOwnershipVars context c
-        (context, o) <- getNextOwnershipVar context
-        t <- T.Var o (T.Adt id args)
-        (context, t)
+        if keep_extern
+            then (context, T.Adt id args)
+            else do
+                (context, o) <- getNextOwnershipVar context
+                t <- T.Var o (T.Adt id args)
+                (context, t)
     T.Record id args -> do
         c <- getArgCount context id
         (context, args) <- getNextOwnershipVars context c
-        (context, o) <- getNextOwnershipVar context
-        t <- T.Var o (T.Record id args)
-        (context, t)
-    T.Ref type -> addOwnershipVarsToType context type
-    T.Owner type -> addOwnershipVarsToType context type
+        if keep_extern
+            then (context, T.Record id args)
+            else do
+                (context, o) <- getNextOwnershipVar context
+                t <- T.Var o (T.Record id args)
+                (context, t)
+    T.Ref type -> if keep_extern
+        then do
+            (context, t) <- addOwnershipVarsToType True context type
+            (context, T.Ref t)
+        else addOwnershipVarsToType False context type
+    T.Owner type -> if keep_extern
+        then do
+            (context, t) <- addOwnershipVarsToType True context type
+            (context, T.Owner t)
+        else addOwnershipVarsToType False context type
     type -> do
         (context, o) <- getNextOwnershipVar context
         t <- T.Var o type
@@ -184,7 +208,7 @@ addOwnershipVarsToExpr context expr = do
             (context, cases) <- cases |> List.iter |> fold (\(context, cases), c -> do
                 (context, c) <- case c.checker of
                     VariantChecker index v type -> do
-                        (context, type) <- addOwnershipVarsToType context type
+                        (context, type) <- addOwnershipVarsToType False context type
                         checker <- VariantChecker index v type
                         (context, c { checker = checker })
                     _ -> (context, c)
@@ -196,16 +220,16 @@ addOwnershipVarsToExpr context expr = do
 
 addOwnershipVarsToBody :: Context -> Expr -> (Context, Expr)
 addOwnershipVarsToBody context expr = do
-    traverse context expr (Some addOwnershipVarsToExpr) (Some addOwnershipVarsToType)
+    traverse context expr (Some addOwnershipVarsToExpr) (Some (addOwnershipVarsToType False))
 
 processFunction :: P.Program -> Context -> F.Function -> (Context, F.Function)
 processFunction program context function = case function.kind of
     F.Normal body expr_id_gen temp_var_gen -> do
         (context, updated_body) <- addOwnershipVarsToBody context body
         (context, args) <- function.type.args |> List.iter |> fold (\(context, args), arg -> do
-            (context, arg) <- addOwnershipVarsToType context arg
+            (context, arg) <- addOwnershipVarsToType False context arg
             (context, args + [arg])) (context, [])
-        (context, result) <- addOwnershipVarsToType context function.type.result
+        (context, result) <- addOwnershipVarsToType False context function.type.result
         function_type <- F.FunctionType args result
         (context, function { kind = F.Normal updated_body expr_id_gen temp_var_gen, type = function_type })
     F.RecordCtor -> do
@@ -241,11 +265,16 @@ processFunction program context function = case function.kind of
         function_type <- F.FunctionType args general_result
         (context, function { type = function_type })
     F.Extern -> do
-        context <- saveFunctionType context function.id function.type
         (context, args) <- function.type.args |> List.iter |> fold (\(context, args), arg -> do
-            (context, arg) <- addOwnershipVarsToType context arg
+            (context, arg) <- addOwnershipVarsToType True context arg
             (context, args + [arg])) (context, [])
-        (context, result) <- addOwnershipVarsToType context function.type.result
+        (context, result) <- addOwnershipVarsToType True context function.type.result
+        function_type <- F.FunctionType args result
+        context <- saveFunctionType context function.id function_type
+        (context, args) <- function.type.args |> List.iter |> fold (\(context, args), arg -> do
+            (context, arg) <- addOwnershipVarsToType False context arg
+            (context, args + [arg])) (context, [])
+        (context, result) <- addOwnershipVarsToType False context function.type.result
         function_type <- F.FunctionType args result
         (context, function { type = function_type })
     _ -> (context, function)

@@ -13,6 +13,7 @@ import Siko.MIR.Type as T
 import Siko.MIR.Function as F
 import Siko.MIR.Expr
 import Siko.Config
+import Siko.Trace
 import Siko.Util.DependencyProcessor
 import Map
 import Hack
@@ -71,21 +72,26 @@ collectFunctionDeps mir_program = do
         ) dependencies
     dependencies
 
-processProgram :: Config -> MP.Program -> MP.Program
+processProgram :: Config -> MP.Program -> LP.Program
 processProgram config mir_program = do
     data_dependencies <- collectDataDeps mir_program
     data_groups <- processDependencies data_dependencies
     function_dependencies <- collectFunctionDeps mir_program
     function_groups <- processDependencies function_dependencies
+    trace config "Backend boxing.."
     mir_program <- Box.processProgram mir_program data_groups
+    trace config "Backend expr unification.."
     mir_program <- ExprUnification.processProgram config mir_program data_groups function_groups
+    trace config "Backend update transforms.."
     mir_program <- TransformUpdates.processProgram mir_program
     s <- MP.dump mir_program
     writeTextFile (getOutputFileName config (MIR 2)) s
+    trace config "Backend inference.."
     mir_program <- Inference.processProgram mir_program function_groups
     s <- MP.dump mir_program
     writeTextFile (getOutputFileName config (MIR 3)) s
+    trace config "Backend lowering to LIR.."
     lir_program <- Instantiation.processProgram mir_program
     s <- LP.dump lir_program
     writeTextFile (getOutputFileName config (LIR 0)) s
-    mir_program
+    lir_program
