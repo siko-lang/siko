@@ -792,7 +792,7 @@ impl Interpreter {
                         return val;
                     }
                 }
-                unreachable!()
+                return ExprResult::Abort;
             }
             Expr::RecordInitialization(type_id, items) => {
                 let mut values: Vec<_> = Vec::with_capacity(items.len());

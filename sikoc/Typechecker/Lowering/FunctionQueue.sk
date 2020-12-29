@@ -23,6 +23,7 @@ import Siko.Typechecker.Util as TUtil
 import Siko.Constants
 import Siko.Util.Counter
 import Map as M
+import Siko.Typechecker.Lowering.TypeMapping
 
 data FunctionQueueItem = Normal HP.FullyQualifiedName HT.Type
                          | VariantCtor HP.FullyQualifiedName Int String HT.Type
@@ -164,8 +165,11 @@ processNormalFunction context mir_function_id hir_type qn hir_function =
                             else panic "NYI"
                 else do
                     (context, mir_arg_types, mir_result_type) <- getFunctionType context hir_type hir_function.arg_count
+                    type_mapping <- case hir_function.type of
+                        Some t -> createTypeMap context t hir_function.arg_count
+                        None -> panic "Extern function ha no type!"
                     function_type <- MF.FunctionType mir_arg_types mir_result_type
-                    mir_function <- MF.Function mir_function_id MF.Extern function_type
+                    mir_function <- MF.Function mir_function_id (MF.Extern type_mapping) function_type
                     mir_program <- MP.addFunction context.mir_program mir_function_id mir_function
                     context <- context { mir_program = mir_program }
                     context

@@ -175,6 +175,7 @@ consumeIdentifier state = do
     startsWithNumber <- case first of
         '0'..'9' -> True
         _ -> False
+    starts_with_upper_case <- isUppercase first
     (state, (ident, span)) <- consumeWhile state isIdentifier
     special <- case ident of
         "module" -> KeywordModule
@@ -206,7 +207,7 @@ consumeIdentifier state = do
                     then
                         return addError state (InvalidIdent span)
                     else
-                        if startsWithUppercase ident
+                        if starts_with_upper_case
                             then
                                 return addToken state (TypeIdentifier ident) span
                             else

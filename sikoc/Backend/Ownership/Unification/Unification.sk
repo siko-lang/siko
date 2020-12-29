@@ -9,7 +9,7 @@ import Map
 
 data SubstitutionChange = Unification T.OwnershipVar
                         | Owner
-                        | Borrow
+                        | Borrow Int
                         deriving (Show)
 
 data Substitution = { var_subs :: Map T.OwnershipVar SubstitutionChange } deriving (Show)
@@ -26,7 +26,7 @@ instance Apply T.OwnershipKind where
         T.VarKind v -> case get sub.var_subs v of
                         Some (Unification new) -> T.VarKind new
                         Some Owner -> T.OwnerKind
-                        Some Borrow -> T.BorrowKind
+                        Some (Borrow index) -> T.BorrowKind index
                         _ -> k
         _ -> k
 
@@ -36,14 +36,14 @@ instance Apply T.Type where
         case type of
             T.Adt id args -> T.Adt id (args |> List.iter |> map (\v -> apply v sub) |> toList)
             T.Record id args -> T.Record id (args |> List.iter |> map (\v -> apply v sub) |> toList)
-            T.Ref t -> T.Ref (apply t sub)
+            T.Ref index t -> T.Ref index (apply t sub)
             T.Owner t -> T.Owner (apply t sub)
             T.Never -> T.Never
             T.Box t -> T.Box (apply t sub)
             T.Var i t -> do
                 case apply i sub of
                     T.VarKind v -> T.Var (T.VarKind v) (apply t sub)
-                    T.BorrowKind -> T.Ref (apply t sub)
+                    T.BorrowKind index -> T.Ref index (apply t sub)
                     T.OwnerKind -> T.Owner (apply t sub)
 
 instance Apply D.Record where
@@ -88,8 +88,11 @@ unifyVars sub args1 args2 = do
         then zipS sub args1 args2 (\sub, arg1, arg2 -> case (arg1, arg2) of
                 (T.VarKind v1, T.VarKind v2) -> addSubstitution sub arg1 (Unification v2)
                 (T.OwnerKind, T.OwnerKind) -> sub
+                (T.BorrowKind index1, T.BorrowKind index2) -> sub
                 (T.OwnerKind, T.VarKind v2) -> addSubstitution sub arg2 Owner
                 (T.VarKind v1, T.OwnerKind) -> addSubstitution sub arg1 Owner
+                (T.VarKind v, T.BorrowKind index) -> addSubstitution sub arg1 (Borrow index)
+                (T.BorrowKind index, T.VarKind v) -> addSubstitution sub arg2 (Borrow index)
                 _ -> panic "Unifying kinds {} {} NYI" % (arg1, arg2))
         else do
             if (not (isEmpty args1)) && (not (isEmpty args2))
@@ -150,13 +153,13 @@ unify sub type1 type2 = do
                     unifyVars sub args1 args2
                 _ -> panic "Not Record, Unification error {}, {}" % (type1, type2)
             sub
-        (T.Ref t1, T.Var v t2) -> do
-            sub <- addSubstitution sub v Borrow
+        (T.Ref index t1, T.Var v t2) -> do
+            sub <- addSubstitution sub v (Borrow index)
             unify sub t1 t2
-        (T.Var v t1, T.Ref t2) -> do
-            sub <- addSubstitution sub v Borrow
+        (T.Var v t1, T.Ref index t2) -> do
+            sub <- addSubstitution sub v (Borrow index)
             unify sub t1 t2
-        (T.Ref t1, T.Ref t2) -> do
+        (T.Ref index1 t1, T.Ref index2 t2) -> do
             unify sub t1 t2
         (T.Var arg1 t1, T.Var arg2 t2) -> do
             case arg2 of

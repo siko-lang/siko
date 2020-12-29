@@ -1,31 +1,426 @@
 module Siko.Backend.Ownership.Inference where
 
-import Siko.MIR.Function as F
 import Siko.MIR.Program as P
 import Siko.MIR.Expr as E
+import Siko.MIR.Data as D
 import Siko.MIR.Type as T
+import Siko.MIR.Function as F
 import Siko.Util.DependencyProcessor
-import Siko.Backend.Ownership.Updater as U
+import Siko.Backend.Ownership.ValueGraph.Creator as C
+import Siko.Backend.Ownership.Unification as U
+import Siko.Util.Counter
+import Siko.Backend.Traversal
 
-processFunction :: P.Program -> P.Identity -> P.Program
-processFunction program function_id = do
-    function <- P.getFunction program function_id
-    case function.kind of
-        F.Normal body expr_id_gen temp_var_gen -> do
-            (body, function_type, expr_id_gen, temp_var_gen) <- U.processFunction program function.id expr_id_gen temp_var_gen function.type.args body function.type
-            kind <- F.Normal body expr_id_gen temp_var_gen
-            program <- P.updateFunctionKind program function_id kind
-            program <- P.updateFunctionType program function_id function_type
-            program
-        F.Extern -> program
-        F.VariantCtor _ -> program
-        F.RecordCtor -> program
+import Map
+import Set
 
-processFunctionGroup :: P.Program -> [P.Identity] -> P.Program
-processFunctionGroup program functions = do
-    functions |> List.iter |> fold (\program, function -> processFunction program function) program
+data Equal = Equal T.OwnershipKind T.OwnershipKind
+             deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
-processProgram :: P.Program -> [DependencyGroup P.Identity] -> P.Program
-processProgram program function_groups = do
-    program <- function_groups |> List.iter |> fold (\program, group -> processFunctionGroup program group.items) program
-    program
+data Converter = Converter T.OwnershipKind T.OwnershipKind
+                 deriving (Show, PartialEq, Eq, PartialOrd, Ord)
+
+data GlobalContext = { program :: P.Program }
+
+data Borrower = Borrower T.OwnershipVar deriving (PartialEq)
+
+data Context = { program :: P.Program,
+                 var_types :: Map E.Var T.Type,
+                 converters :: Set Converter,
+                 equals :: [Equal],
+                 not_moves :: Set E.ExprId,
+                 ownership_vars :: Map T.OwnershipVar T.OwnershipKind,
+                 borrowers :: [Borrower],
+                 var_gen :: U.OwnershipVarGenerator
+               }
+
+getNextOwnershipVar :: Context -> (Context, T.OwnershipKind)
+getNextOwnershipVar context = do
+    (var_gen, v) <- U.getNextOwnershipVar context.var_gen
+    context <- context { var_gen = var_gen }
+    (context, v)
+
+addOwnershipVar :: Context -> T.OwnershipVar -> Context
+addOwnershipVar context var = do
+    (ownership_vars, _) <- alter (\old -> case old of
+        Some o -> Some o
+        None -> Some (T.VarKind var)) var context.ownership_vars
+    context { ownership_vars = ownership_vars }
+
+addConverter :: Context -> Converter -> Context
+addConverter context converter = do
+    (converters, _) <- Set.insert context.converters converter
+    context { converters = converters }
+
+addEqual :: Context -> T.OwnershipKind -> T.OwnershipKind -> Context
+addEqual context kind1 kind2 = do
+    equals <- context.equals + [Equal kind1 kind2]
+    context { equals = equals }
+
+updateVar :: Context -> T.OwnershipVar -> T.OwnershipKind -> Context
+updateVar context src_var dest_kind = do
+    src_kind <- T.VarKind src_var
+    ownership_vars <- context.ownership_vars |> Map.iter |> map (\(m_v, m_o) -> do
+                        case (m_v, m_o) of
+                            (m_v, m_o) if m_v == src_var -> (m_v, dest_kind)
+                            (m_v, m_o) if m_o == src_kind -> (m_v, dest_kind)
+                            _ -> (m_v, m_o)
+                    ) |> toMap
+    /*converters <- context.converters |> Set.iter |> map (\converter -> do
+        Converter c_v1 c_v2 <- converter
+        (c1, c2) <- case (c_v1, c_v2) of
+            (c_v1, c_v2) if c_v1 == src_kind -> (dest_kind, c_v2)
+            (c_v1, c_v2) if c_v2 == src_kind -> (c_v1, dest_kind)
+            (c_v1, c_v2) if c_v1 == src_kind && c_v2 == src_kind -> (dest_kind, dest_kind)
+            _ -> (c_v1, c_v2)
+        Converter c1 c2) |> toSet
+    */
+    equals <- context.equals |> List.iter |> map (\equal -> do
+        Equal e_v1 e_v2 <- equal
+        (e1, e2) <- case (e_v1, e_v2) of
+            (e_v1, e_v2) if e_v1 == src_kind -> (dest_kind, e_v2)
+            (e_v1, e_v2) if e_v2 == src_kind -> (e_v1, dest_kind)
+            (e_v1, e_v2) if e_v1 == src_kind && e_v2 == src_kind -> (dest_kind, dest_kind)
+            _ -> (e_v1, e_v2)
+        Equal e1 e2) |> toList |> sort |> dedup
+    context { ownership_vars = ownership_vars, equals = equals }
+
+processEqual :: Context -> T.OwnershipKind -> T.OwnershipKind -> Context
+processEqual context kind1 kind2 = do
+    //println "{} = {}" % (kind1, kind2)
+    case (kind1, kind2) of
+        (T.VarKind v1, T.VarKind v2) -> updateVar context v1 kind2
+        (T.OwnerKind, T.VarKind v) -> updateVar context v kind1
+        (T.VarKind v, T.OwnerKind) -> updateVar context v kind2
+        (T.OwnerKind, T.OwnerKind) -> context
+        (T.BorrowKind l, T.VarKind v) -> updateVar context v kind1
+        (T.VarKind v, T.BorrowKind l) -> updateVar context v kind2
+        _ -> panic "addEqual {} {}" % (kind1, kind2)
+
+processEquals :: Context -> Context
+processEquals context = do
+    loop context <- context do
+        context :: Context <- context // FIXME
+        case pop context.equals of
+            Some (first, rest) -> do
+                context <- context { equals = rest }
+                Equal kind1 kind2 <- first
+                processEqual context kind1 kind2
+            None -> break context
+
+isOwned :: Context -> T.OwnershipKind -> Bool
+isOwned context kind = case kind of
+    T.VarKind v -> do
+        case Option.unwrap (get context.ownership_vars v) of
+            T.OwnerKind -> True
+            _ -> False
+    T.OwnerKind -> True
+    _ -> False
+
+isVar :: Context -> T.OwnershipKind -> Bool
+isVar context kind = case kind of
+    T.VarKind v -> do
+        case Option.unwrap (get context.ownership_vars v) of
+            T.VarKind v2 -> True
+            _ -> False
+    _ -> False
+
+processConverters :: Context -> Context
+processConverters context = do
+    context.converters |> Set.iter |> fold (\context, Converter from to -> do
+        resolved_from <- resolveKind context from
+        resolved_to <- resolveKind context to
+        context <- if isOwned context resolved_from && isVar context resolved_to
+            then do
+                case from of
+                    T.VarKind v -> do
+                        if List.contains context.borrowers (Borrower v)
+                            then processEqual context resolved_to (T.BorrowKind 0)
+                            else processEqual context resolved_to resolved_from
+                    _ -> panic "converter from is not a var!"
+            else context
+        context) context
+
+createContext :: P.Program -> Set E.ExprId -> U.OwnershipVarGenerator -> Context
+createContext program not_moves var_gen = Context {
+        program = program,
+        var_types = Map.empty,
+        converters = Set.empty,
+        equals = [],
+        not_moves = not_moves,
+        ownership_vars = Map.empty,
+        borrowers = [],
+        var_gen = var_gen }
+
+createGlobalContext :: P.Program -> GlobalContext
+createGlobalContext program = GlobalContext program
+
+dumpConverters :: Context -> ()
+dumpConverters context = do
+    context.converters |> Set.iter |> forEach (\c -> println c)
+
+dumpOwnershipVars :: Context -> ()
+dumpOwnershipVars context = do
+    context.ownership_vars |> Map.iter |> forEach (\(v, kind) -> println "{} -> {}" % (v, kind))
+
+addVarType :: Context -> E.Var -> T.Type -> Context
+addVarType context var type = do
+    (var_types, _) <- Map.insert context.var_types var type
+    context { var_types = var_types }
+
+getVarType :: Context -> E.Var -> T.Type
+getVarType context var = case get context.var_types var of
+    Some t -> t
+    None -> panic "Var {} not found in var_types" % var
+
+collectVars :: Context -> [T.OwnershipKind] -> Context
+collectVars context kinds = kinds |> List.iter |> fold (\context, kind -> case kind of
+        T.VarKind v -> addOwnershipVar context v
+        _ -> context) context
+
+convertibleConstraints :: Context -> T.Type -> T.Type -> Context
+convertibleConstraints context src dest = do
+    src_kinds <- T.collectOwnershipKinds src
+    dest_kinds <- T.collectOwnershipKinds dest
+    context <- collectVars context src_kinds
+    context <- collectVars context dest_kinds
+    context <- List.zipSE context src_kinds dest_kinds (\context, index, src_kind, dest_kind -> do
+        if index == 0
+            then addConverter context (Converter src_kind dest_kind)
+            else addEqual context src_kind dest_kind)
+    context
+
+borrowConstraints :: Context -> T.Type -> T.Type -> Context
+borrowConstraints context src dest = do
+    src_kinds <- T.collectOwnershipKinds src
+    dest_kinds <- T.collectOwnershipKinds dest
+    context <- collectVars context src_kinds
+    context <- collectVars context dest_kinds
+    context <- List.zipSE context src_kinds dest_kinds (\context, index, src_kind, dest_kind -> do
+        context <- if index == 0
+            then do
+                converter <- Converter src_kind dest_kind
+                context <- case src_kind of
+                    T.VarKind v -> do
+                        b <- Borrower v
+                        context { borrowers = context.borrowers + [b] }
+                    _ -> panic "non var kind {} in borrowConstraint src" % src_kind
+                addConverter context converter
+            else do
+                context <- addEqual context src_kind dest_kind
+                context
+        context)
+    context
+
+equalConstraints :: Context -> T.Type -> T.Type -> Context
+equalConstraints context src dest = do
+    src_kinds <- T.collectOwnershipKinds src
+    dest_kinds <- T.collectOwnershipKinds dest
+    context <- collectVars context src_kinds
+    context <- collectVars context dest_kinds
+    context <- List.zipS context src_kinds dest_kinds (\context, src_kind, dest_kind -> do
+        context <- addEqual context src_kind dest_kind
+        context)
+    context
+
+getRecordType :: Context -> T.Type -> D.Record
+getRecordType context type = do
+    record_id <- T.getIdentity type
+    record <- P.getRecord context.program record_id
+    ownership_vars <- T.collectOwnershipArgs type
+    sub <- U.batch record.ownership_vars ownership_vars
+    record <- U.apply record sub
+    record
+
+getAdtType :: Context -> T.Type -> D.AlgebraicDataType
+getAdtType context type = do
+    adt_id <- T.getIdentity type
+    adt <- P.getAdt context.program adt_id
+    ownership_vars <- T.collectOwnershipArgs type
+    sub <- U.batch adt.ownership_vars ownership_vars
+    adt <- U.apply adt sub
+    adt
+
+getRecordFieldType :: D.Record -> String -> T.Type
+getRecordFieldType record name =
+    case find record.fields (\f -> f.name == name) of
+        Some f -> do
+            f :: D.RecordField <- f // FIXME
+            f.type
+        None -> panic "No field named {}" % name
+
+processExpr :: Context -> E.Expr -> Context
+processExpr context expr = do
+    E.Expr s_expr type id <- expr
+    case s_expr of
+        E.Do items -> do
+            context <- items |> List.iter |> fold (\context, item -> processExpr context item) context
+            E.Expr _ last_type _ <- atIndex items (getLength items - 1)
+            //println "do {} {}" % (type, last_type)
+            convertibleConstraints context last_type type
+        E.VarDecl v rhs -> do
+            //println "vardecl {} {}" % (v, type)
+            context <- processExpr context rhs
+            E.Expr _ rhs_type _ <- rhs
+            context <- addVarType context v rhs_type
+            context
+        E.StaticFunctionCall id args -> do
+            function <- P.getFunction context.program id
+            //println "functioncall {} {}" % (id, type)
+            context <- args |> List.iter |> fold (\context, arg -> processExpr context arg) context
+            context <- List.zipS context args function.type.args (\context, arg_expr, f_arg_type -> do
+                E.Expr _ arg_expr_type _ <- arg_expr
+                convertibleConstraints context arg_expr_type f_arg_type)
+            context <- equalConstraints context function.type.result type
+            context
+        E.VarRef v -> do
+            var_type <- getVarType context v
+            //println "varref {} {}, {}" % (v, var_type, type)
+            context <- if Set.contains context.not_moves id
+                then do
+                    context <- borrowConstraints context var_type type
+                    context
+                else equalConstraints context var_type type
+            context
+        E.CaseOf body cases -> do
+            //println "caseof {}" % (type)
+            context <- processExpr context body
+            cases |> List.iter |> fold (\context, c -> do
+                context <- case c.checker of
+                    E.VariantChecker index v type -> do
+                        context <- addVarType context v type
+                        E.Expr _ body_type _ <- body
+                        adt <- getAdtType context body_type
+                        variant <- atIndex adt.variants index
+                        equalConstraints context variant.type body_type
+                    _ -> context
+                E.Expr _ body_type _ <- c.body
+                context <- convertibleConstraints context body_type type
+                context <- processExpr context c.body
+                context) context
+        E.FieldAccess name receiver -> do
+            //println "fieldaccess {} {}" % (name, type)
+            context <- processExpr context receiver
+            E.Expr _ receiver_type _ <- receiver
+            record <- getRecordType context receiver_type
+            field_type <- getRecordFieldType record name
+            context <- equalConstraints context field_type type
+            context
+        _ -> panic "NYI {}" % s_expr
+
+insertKind :: Set T.OwnershipKind -> T.OwnershipKind -> T.OwnershipKind -> (Set T.OwnershipKind, Bool)
+insertKind collected orig new = do
+    if Set.contains collected orig
+        then do
+            (collected, added) <- Set.insert collected new
+            (collected, added)
+        else (collected, False)
+
+resolveKind :: Context -> T.OwnershipKind -> T.OwnershipKind
+resolveKind context kind = case kind of
+    T.VarKind v -> do
+        kind <- Option.unwrap (get context.ownership_vars v)
+        case kind of
+            T.VarKind v2 -> if v == v2
+                            then kind
+                            else resolveKind context kind
+            _ -> kind
+    _ -> kind
+
+collectConvertibleConstraints :: T.OwnershipKind -> Context -> Set T.OwnershipKind
+collectConvertibleConstraints kind context = do
+    convertibles <- Set.empty
+    (convertibles, _) <- Set.insert convertibles kind
+    convertibles <- loop convertibles <- convertibles do
+        (convertibles, added) <- context.converters |> Set.iter |> fold (\(convertibles, added), converter -> do
+            Converter a b <- converter
+            c_a <- resolveKind context a
+            c_b <- resolveKind context b
+            (convertibles, added1) <- insertKind convertibles c_a c_b
+            added <- added || added1
+            (convertibles, added)) (convertibles, False)
+        if not added
+            then break convertibles
+            else convertibles
+    convertibles
+
+collectArgConstraints :: Context -> T.Type -> ()
+collectArgConstraints context arg_type = do
+    ownership_vars <- T.collectOwnershipVars arg_type
+    ownership_vars <- ownership_vars |> sort |> dedup
+    //println "processing arg {} {}" % (arg_type, ownership_vars)
+    arg_convertible_constraints <- ownership_vars |> List.iter |> map (\kind -> (kind, collectConvertibleConstraints kind context)) |> toMap
+    //println "{}" % arg_convertible_constraints
+    ()
+
+getSubstitution :: Context -> U.Substitution
+getSubstitution context = do
+    sub <- U.createSubstitution
+    sub <- context.ownership_vars |> Map.iter |> fold (\sub, (v, kind) -> do
+            case kind of
+                T.VarKind new_v -> do
+                    if new_v == v
+                        then sub
+                        else U.addSubstitution sub (T.VarKind v) (U.Unification new_v)
+                T.OwnerKind -> do
+                    U.addSubstitution sub (T.VarKind v) (U.Owner)
+                T.BorrowKind i -> do
+                    U.addSubstitution sub (T.VarKind v) (U.Borrow i)
+        ) sub
+    sub
+
+updateBodyType :: U.Substitution -> T.Type -> (U.Substitution, T.Type)
+updateBodyType sub type = do
+    type <- U.apply type sub
+    (sub, type)
+
+updateBody :: E.Expr -> U.Substitution -> E.Expr
+updateBody expr sub = do
+    (_, expr) <- traverse sub expr None (Some updateBodyType)
+    expr
+
+updateFunction :: GlobalContext -> U.Substitution -> P.Identity -> F.FunctionType -> E.Expr -> Counter E.ExprId -> Counter E.Var -> GlobalContext
+updateFunction global_context sub function_id function_type body expr_id_gen expr_var_gen = do
+    updated_body <- updateBody body sub
+    updated_kind <- F.Normal updated_body expr_id_gen expr_var_gen
+    function_type <- U.apply function_type sub
+    program <- P.updateFunctionKind global_context.program function_id updated_kind
+    program <- P.updateFunctionType program function_id function_type
+    global_context <- global_context { program = program }
+    global_context
+
+processFunction :: GlobalContext -> U.OwnershipVarGenerator -> P.Identity -> (GlobalContext, U.OwnershipVarGenerator)
+processFunction global_context var_gen function_id = do
+    function <- P.getFunction global_context.program function_id
+    (global_context, var_gen) <- case function.kind of
+        F.Normal body expr_id_gen expr_var_gen -> do
+            println "Processing {}" % function.id
+            not_moves <- C.collectNotMoves function_id body (getLength function.type.args)
+            context <- createContext global_context.program not_moves var_gen
+            context <- foldE (\context, index, arg_type -> addVarType context (E.Arg index) arg_type) context function.type.args
+            context <- processExpr context body
+            E.Expr _ body_type _ <- body
+            context <- convertibleConstraints context body_type function.type.result
+            //println "{} -> {}" % (body_type, function.type.result)
+            context <- processEquals context
+            context <- processConverters context
+            //dumpConverters context
+            //dumpOwnershipVars context
+            sub <- getSubstitution context
+            function_type <- U.apply function.type sub
+            function_type.args |> List.iter |> map (\arg_type -> collectArgConstraints context arg_type) |> toList
+            global_context <- updateFunction global_context sub function_id function.type body expr_id_gen expr_var_gen
+            (global_context, context.var_gen)
+        _ -> (global_context, var_gen)
+    (global_context, var_gen)
+
+processFunctionGroup :: GlobalContext -> U.OwnershipVarGenerator -> [P.Identity] -> (GlobalContext, U.OwnershipVarGenerator)
+processFunctionGroup context var_gen group = do
+    group |> List.iter |> fold (\(context, var_gen), function_id -> do
+        processFunction context var_gen function_id) (context, var_gen)
+
+processProgram :: P.Program -> U.OwnershipVarGenerator -> [DependencyGroup P.Identity] -> P.Program
+processProgram program var_gen function_groups = do
+    context <- createGlobalContext program
+    (context, var_gen) <- function_groups |> List.iter |> fold (\(context, var_gen), group -> processFunctionGroup context var_gen group.items) (context, var_gen)
+    context.program

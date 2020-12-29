@@ -142,8 +142,29 @@ zipS s l1 l2 f = do
                 s <- f s item1 item2
                 (s, index + 1)
 
+zipSE s a b :: s -> [a] -> [b] -> (s -> Int -> a -> b -> s) -> s
+zipSE s l1 l2 f = do
+    if getLength l1 != getLength l2
+        then panic "zipSE: length mismatch {} != {}" % (getLength l1, getLength l2)
+        else ()
+    loop (s, index) <- (s, 0) do
+        if index >= getLength l1
+            then break s
+            else do
+                item1 <- atIndex l1 index
+                item2 <- atIndex l2 index
+                s <- f s index item1 item2
+                (s, index + 1)
+
 mapS s a b :: s -> [a] -> (s -> a -> (s, b)) -> (s, [b])
 mapS s l f = do
     l |> List.iter |> fold (\(s, items), i -> do
         (s, i) <- f s i
         (s, items + [i])) (s, [])
+
+foldE a b :: (a -> Int -> b -> a) -> a -> [b] -> a
+foldE f s l = do
+    (s, i) <- l |> List.iter |> fold (\(s, index), i -> do
+        s <- f s index i
+        (s, index + 1)) (s, 0)
+    s

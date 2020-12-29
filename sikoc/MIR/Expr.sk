@@ -70,7 +70,7 @@ data SimpleExpr = Do [Expr]
 
 prettyPrint :: Expr -> Indent -> (String, Bool)
 prettyPrint expr ind = do
-    Expr expr _ _ <- expr
+    Expr expr expr_type _ <- expr
     case expr of
         Do args -> do
             inner <- inc ind
@@ -97,12 +97,12 @@ prettyPrint expr ind = do
             Expr _ arg_type id <- arg
             s <- "{} :: {} <- {}" % (v, arg_type, (prettyPrint arg ind).0)
             (s, False)
-        VarRef v -> (show v, True)
+        VarRef v -> ("({} :: {})" % (v, expr_type), True)
         FieldAccess n rhs -> do
             (s, simple) <- prettyPrint rhs ind
             s <- if simple
-                then "{}.{}" % (s, n)
-                else "({}).{}" % (s, n)
+                then "({}.{} :: {})" % (s, n, expr_type)
+                else "(({}).{} :: {})" % (s, n, expr_type)
             (s, True)
         If cond true_branch false_branch -> do
             s <- "if {} then {} else {}" % ((prettyPrint cond ind).0, (prettyPrint true_branch ind).0, (prettyPrint false_branch ind).0)

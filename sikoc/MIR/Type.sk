@@ -5,13 +5,13 @@ import Siko.MIR.Program
 data OwnershipVar = OwnershipVar Int deriving (PartialEq, Eq, PartialOrd, Ord)
 
 data OwnershipKind = VarKind OwnershipVar
-                   | BorrowKind
+                   | BorrowKind Int
                    | OwnerKind
                    deriving (PartialEq, Eq, PartialOrd, Ord)
 
 data Type = Adt Identity [OwnershipKind]
           | Record Identity [OwnershipKind]
-          | Ref Type
+          | Ref Int Type
           | Owner Type
           | Never
           | Box Type
@@ -24,7 +24,7 @@ instance Show OwnershipVar where
 instance Show OwnershipKind where
     show k = case k of
         VarKind v -> "v{}" % v
-        BorrowKind -> "&"
+        BorrowKind index -> "&^l{}" % index
         OwnerKind -> "~"
 
 printArgs :: [OwnershipKind] -> String
@@ -34,7 +34,7 @@ instance Show Type where
     show t = case t of
         Adt id args -> "{}{}" % (id, printArgs args)
         Record id args -> "{}{}" % (id, printArgs args)
-        Ref t -> "&{}" % t
+        Ref index t -> "&^{} {}" % (index, t)
         Owner t -> "~{}" % t
         Never -> "!"
         Box t -> "*{}" % t
@@ -44,7 +44,7 @@ getIdentity :: Type -> Identity
 getIdentity type = case type of
     Adt id _ -> id
     Record id _ -> id
-    Ref t -> getIdentity t
+    Ref _ t -> getIdentity t
     Owner t -> getIdentity t
     Never -> panic "getIdentity called on Never!"
     Box t -> getIdentity t
@@ -54,8 +54,18 @@ collectOwnershipVars :: Type -> [OwnershipKind]
 collectOwnershipVars type = case type of
     Adt id args -> args
     Record id args -> args
-    Ref t -> collectOwnershipVars t
+    Ref _ t -> collectOwnershipVars t
     Owner t -> collectOwnershipVars t
+    Never -> []
+    Box t -> collectOwnershipVars t
+    Var i t -> [i] + collectOwnershipVars t
+
+collectOwnershipKinds :: Type -> [OwnershipKind]
+collectOwnershipKinds type = case type of
+    Adt id args -> args
+    Record id args -> args
+    Ref i t -> [BorrowKind i] + collectOwnershipKinds t
+    Owner t -> [OwnerKind] + collectOwnershipKinds t
     Never -> []
     Box t -> collectOwnershipVars t
     Var i t -> [i] + collectOwnershipVars t
@@ -64,7 +74,7 @@ collectOwnershipArgs :: Type -> [OwnershipKind]
 collectOwnershipArgs type = case type of
     Adt id args -> args
     Record id args -> args
-    Ref t -> collectOwnershipVars t
+    Ref _ t -> collectOwnershipVars t
     Owner t -> collectOwnershipVars t
     Never -> []
     Box t -> collectOwnershipVars t

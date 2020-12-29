@@ -97,8 +97,8 @@ visualize name graphs = do
         graph_name <- "{}.{}" % (name, var)
         draw graph_name node)
 
-collectInvalidators :: P.Identity -> E.Expr -> Int -> Set E.ExprId
-collectInvalidators function_id body arg_count = do
+collectNotMoves :: P.Identity -> E.Expr -> Int -> Set E.ExprId
+collectNotMoves function_id body arg_count = do
     //println "Processing function {}" % function_id
     args <- repeat () arg_count // FIXME: make this nicer
     graphs <- createValueGraphs
@@ -112,6 +112,6 @@ collectInvalidators function_id body arg_count = do
     final_graph <- unpackGraphs final_graph
     final_graph <- createEnds final_graph
     //visualize function_id final_graph
-    invalids <- Set.empty
-    invalids <- final_graph.nodes |> Map.iter |> fold (\invalids, (var, node) -> analyze invalids node) invalids
-    invalids
+    not_moves <- Set.empty
+    not_moves <- final_graph.nodes |> Map.iter |> fold (\not_moves, (var, node) -> analyze not_moves node) not_moves
+    not_moves

@@ -1,10 +1,8 @@
 module Siko.Backend where
 
 import Siko.Backend.Passes.Box as Box
-import Siko.Backend.Ownership.ExprUnification as ExprUnification
-import Siko.Backend.Ownership.TransformUpdates as TransformUpdates
+import Siko.Backend.Ownership.Initialization as Initialization
 import Siko.Backend.Ownership.Inference as Inference
-import Siko.Backend.Ownership.Instantiation as Instantiation
 import Siko.Backend.Traversal
 import Siko.MIR.Program as MP
 import Siko.LIR.Program as LP
@@ -80,18 +78,11 @@ processProgram config mir_program = do
     function_groups <- processDependencies function_dependencies
     trace config "Backend boxing.."
     mir_program <- Box.processProgram mir_program data_groups
-    trace config "Backend expr unification.."
-    mir_program <- ExprUnification.processProgram config mir_program data_groups function_groups
-    trace config "Backend update transforms.."
-    mir_program <- TransformUpdates.processProgram mir_program
+    (var_gen, mir_program) <- Initialization.initializeOwnership mir_program data_groups
+    s <- MP.dump mir_program
+    writeTextFile (getOutputFileName config (MIR 1)) s
+    mir_program <- Inference.processProgram mir_program var_gen function_groups
     s <- MP.dump mir_program
     writeTextFile (getOutputFileName config (MIR 2)) s
-    trace config "Backend inference.."
-    mir_program <- Inference.processProgram mir_program function_groups
-    s <- MP.dump mir_program
-    writeTextFile (getOutputFileName config (MIR 3)) s
-    trace config "Backend lowering to LIR.."
-    lir_program <- Instantiation.processProgram mir_program
-    s <- LP.dump lir_program
-    writeTextFile (getOutputFileName config (LIR 0)) s
+    lir_program <- LP.createProgram
     lir_program

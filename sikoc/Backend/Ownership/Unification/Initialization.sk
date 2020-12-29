@@ -11,13 +11,7 @@ import Siko.Backend.Ownership.Unification as U
 import Map
 
 data Context = { arg_count_map :: Map P.Identity Int,
-                 var_gen :: U.OwnershipVarGenerator,
-                 saved_function_types :: Map P.Identity F.FunctionType }
-
-saveFunctionType :: Context -> P.Identity -> F.FunctionType -> Context
-saveFunctionType context id function_type = do
-    (saved_function_types, _) <- insert context.saved_function_types id function_type
-    context { saved_function_types = saved_function_types }
+                 var_gen :: U.OwnershipVarGenerator }
 
 getNextOwnershipVar :: Context -> (Context, T.OwnershipKind)
 getNextOwnershipVar context = do
@@ -67,11 +61,18 @@ addOwnershipVarsToRecord context all_ownership_vars group ownership_vars record 
     Some record -> do
         record :: Record <- record
         record <- record { ownership_vars = all_ownership_vars }
-        (fields, ownership_vars) <- record.fields |> List.iter |> fold (\(fields, ownership_vars), field -> do
+        (ownership_vars, fields) <- List.mapS ownership_vars record.fields (\ownership_vars, field -> do
             (ownership_vars, type) <- addOwnershipVarsToDataType context False group all_ownership_vars ownership_vars field.type
             field <- field { type = type }
-            (fields + [field], ownership_vars)) ([], ownership_vars)
-        record <- record { fields = fields }
+            (ownership_vars, field))
+        (ownership_vars, external_info) <- case record.external_info of
+            Some external_info -> do
+                external_info :: ExternalRecordInfo <- external_info // FIXME
+                (ownership_vars, type_args) <- List.mapS ownership_vars external_info.type_args (\ownership_vars, type_arg -> do
+                    addOwnershipVarsToDataType context False group all_ownership_vars ownership_vars type_arg)
+                (ownership_vars, Some (ExternalRecordInfo type_args))
+            None -> (ownership_vars, None)
+        record <- record { fields = fields, external_info = external_info }
         (ownership_vars, Some record)
     None -> (ownership_vars, None)
 
@@ -165,36 +166,33 @@ getNextOwnershipVars context count = loop (context, vars) <- (context, []) do
             (context, o) <- getNextOwnershipVar context
             (context, vars + [o])
 
-addOwnershipVarsToType :: Bool -> Context -> T.Type -> (Context, T.Type)
-addOwnershipVarsToType keep_extern context type = case type of
+addOwnershipVarsToType :: Context -> T.Type -> (Context, T.Type)
+addOwnershipVarsToType context type = case type of
     T.Adt id args -> do
         c <- getArgCount context id
         (context, args) <- getNextOwnershipVars context c
-        if keep_extern
-            then (context, T.Adt id args)
-            else do
-                (context, o) <- getNextOwnershipVar context
-                t <- T.Var o (T.Adt id args)
-                (context, t)
+        (context, o) <- getNextOwnershipVar context
+        t <- T.Var o (T.Adt id args)
+        (context, t)
     T.Record id args -> do
         c <- getArgCount context id
         (context, args) <- getNextOwnershipVars context c
-        if keep_extern
-            then (context, T.Record id args)
-            else do
-                (context, o) <- getNextOwnershipVar context
-                t <- T.Var o (T.Record id args)
-                (context, t)
-    T.Ref type -> if keep_extern
-        then do
-            (context, t) <- addOwnershipVarsToType True context type
-            (context, T.Ref t)
-        else addOwnershipVarsToType False context type
-    T.Owner type -> if keep_extern
-        then do
-            (context, t) <- addOwnershipVarsToType True context type
-            (context, T.Owner t)
-        else addOwnershipVarsToType False context type
+        (context, o) <- getNextOwnershipVar context
+        t <- T.Var o (T.Record id args)
+        (context, t)
+    T.Ref index type -> do
+        (context, t) <- addOwnershipVarsToType context type
+        t <- case t of
+            T.Var _ t -> t
+            _ -> panic "Ref type is not T.Var {}" % t
+        (context, T.Ref index t)
+    T.Owner type -> do
+        (context, t) <- addOwnershipVarsToType context type
+        t <- case t of
+            T.Var _ t -> t
+            _ -> panic "Ref type is not T.Var {}" % t
+        (context, T.Owner t)
+    T.Never -> (context, T.Never)
     type -> do
         (context, o) <- getNextOwnershipVar context
         t <- T.Var o type
@@ -208,7 +206,7 @@ addOwnershipVarsToExpr context expr = do
             (context, cases) <- cases |> List.iter |> fold (\(context, cases), c -> do
                 (context, c) <- case c.checker of
                     VariantChecker index v type -> do
-                        (context, type) <- addOwnershipVarsToType False context type
+                        (context, type) <- addOwnershipVarsToType context type
                         checker <- VariantChecker index v type
                         (context, c { checker = checker })
                     _ -> (context, c)
@@ -220,16 +218,93 @@ addOwnershipVarsToExpr context expr = do
 
 addOwnershipVarsToBody :: Context -> Expr -> (Context, Expr)
 addOwnershipVarsToBody context expr = do
-    traverse context expr (Some addOwnershipVarsToExpr) (Some (addOwnershipVarsToType False))
+    traverse context expr (Some addOwnershipVarsToExpr) (Some (addOwnershipVarsToType))
+
+kindsToIndices :: [T.OwnershipKind] -> [T.OwnershipKind] -> [Int]
+kindsToIndices all subs = subs |> List.iter |> map (\kind -> Option.unwrap (containsAtIndex all kind)) |> toList
+
+processIndices :: [Int] -> T.Type -> [T.OwnershipKind] -> [Int]
+processIndices sub sub_type all = do
+    if getLength sub == 0
+        then do
+            ownership_args <- T.collectOwnershipArgs sub_type
+            indices <- kindsToIndices all ownership_args
+            indices
+        else do
+            ownership_args <- T.collectOwnershipArgs sub_type
+            ownership_vars <- sub |> List.iter |> map (\index -> atIndex ownership_args index) |> toList
+            indices <- kindsToIndices all ownership_vars
+            indices
+
+processSteps :: P.Program -> [F.Step] -> T.Type -> [Int]
+processSteps program steps type = do
+    if getLength steps == 0
+        then return []
+        else do
+            (first, rest) <- Option.unwrap (pop steps)
+            case first of
+                F.External index -> do
+                    record_id <- T.getIdentity type
+                    record <- P.getRecord program record_id
+                    case record.external_info of
+                        Some external_info -> do
+                            external_info :: ExternalRecordInfo <- external_info // FIXME
+                            ext_type <- atIndex external_info.type_args index
+                            indices <- processSteps program rest ext_type
+                            processIndices indices ext_type record.ownership_vars
+                        None -> panic "Record {} is not external in type mapping processing!" % record_id
+                F.Variant index -> do
+                    adt_id <- T.getIdentity type
+                    adt <- P.getAdt program adt_id
+                    variant <- atIndex adt.variants index
+                    indices <- processSteps program rest variant.type
+                    processIndices indices variant.type adt.ownership_vars
+                F.Field index -> do
+                    record_id <- T.getIdentity type
+                    record <- P.getRecord program record_id
+                    field <- atIndex record.fields index
+                    indices <- processSteps program rest field.type
+                    processIndices indices field.type record.ownership_vars
+                _ -> panic "Incorrect step in type mapping!"
+
+applyPosition :: P.Program -> F.Position -> F.FunctionType -> [T.OwnershipKind]
+applyPosition program position function_type = do
+    F.Position steps <- position
+    (first, rest) <- Option.unwrap (pop steps)
+    type <- case first of
+        F.FunctionArg index -> atIndex function_type.args index
+        F.FunctionResult -> function_type.result
+        _ -> panic "Invalid first step in type mapping!"
+    indices <- processSteps program rest type
+    ownership_kinds <- T.collectOwnershipArgs type
+    kinds <- indices |> List.iter |> map (\index -> atIndex ownership_kinds index) |> toList
+    kinds
+
+unifyTypePositions :: P.Program -> Context -> [F.Position] -> F.FunctionType -> (Context, F.FunctionType)
+unifyTypePositions program context positions function_type = do
+    kinds <- positions |> List.iter |> fold (\kinds, position -> do
+            vars <- applyPosition program position function_type
+            kinds + vars
+        ) []
+    (context, new_kind) <- getNextOwnershipVar context
+    new_kinds <- repeat new_kind (getLength kinds)
+    sub <- U.batch kinds new_kinds
+    function_type <- U.apply function_type sub
+    (context, function_type)
+
+applyTypeMappings :: P.Program -> Context -> F.TypeMapping -> F.FunctionType -> (Context, F.FunctionType)
+applyTypeMappings program context type_mappings function_type = do
+    type_mappings.mappings |> Map.iter |> fold (\(context, function_type), (_, positions) -> do
+        unifyTypePositions program context positions function_type) (context, function_type)
 
 processFunction :: P.Program -> Context -> F.Function -> (Context, F.Function)
 processFunction program context function = case function.kind of
     F.Normal body expr_id_gen temp_var_gen -> do
         (context, updated_body) <- addOwnershipVarsToBody context body
         (context, args) <- function.type.args |> List.iter |> fold (\(context, args), arg -> do
-            (context, arg) <- addOwnershipVarsToType False context arg
+            (context, arg) <- addOwnershipVarsToType context arg
             (context, args + [arg])) (context, [])
-        (context, result) <- addOwnershipVarsToType False context function.type.result
+        (context, result) <- addOwnershipVarsToType context function.type.result
         function_type <- F.FunctionType args result
         (context, function { kind = F.Normal updated_body expr_id_gen temp_var_gen, type = function_type })
     F.RecordCtor -> do
@@ -240,10 +315,6 @@ processFunction program context function = case function.kind of
         result <- T.Record id record.ownership_vars
         owned_result <- T.Owner result
         function_type <- F.FunctionType args owned_result
-        context <- saveFunctionType context function.id function_type
-        (context, o) <- getNextOwnershipVar context
-        general_result <- T.Var o result
-        function_type <- F.FunctionType args general_result
         (context, function { type = function_type })
     F.VariantCtor index -> do
         id <- T.getIdentity function.type.result
@@ -259,33 +330,24 @@ processFunction program context function = case function.kind of
         result <- T.Adt id adt.ownership_vars
         owned_result <- T.Owner result
         function_type <- F.FunctionType args owned_result
-        context <- saveFunctionType context function.id function_type
-        (context, o) <- getNextOwnershipVar context
-        general_result <- T.Var o result
-        function_type <- F.FunctionType args general_result
         (context, function { type = function_type })
-    F.Extern -> do
+    F.Extern type_mappings -> do
         (context, args) <- function.type.args |> List.iter |> fold (\(context, args), arg -> do
-            (context, arg) <- addOwnershipVarsToType True context arg
+            (context, arg) <- addOwnershipVarsToType context arg
             (context, args + [arg])) (context, [])
-        (context, result) <- addOwnershipVarsToType True context function.type.result
+        (context, result) <- addOwnershipVarsToType context function.type.result
         function_type <- F.FunctionType args result
-        context <- saveFunctionType context function.id function_type
-        (context, args) <- function.type.args |> List.iter |> fold (\(context, args), arg -> do
-            (context, arg) <- addOwnershipVarsToType False context arg
-            (context, args + [arg])) (context, [])
-        (context, result) <- addOwnershipVarsToType False context function.type.result
-        function_type <- F.FunctionType args result
+        (context, function_type) <- applyTypeMappings program context type_mappings function_type
         (context, function { type = function_type })
     _ -> (context, function)
 
-processDataTypes :: P.Program -> [DependencyGroup P.Identity] -> (U.OwnershipVarGenerator, Map P.Identity F.FunctionType, P.Program)
-processDataTypes program groups = do
-    context <- Context empty U.createOwnershipVarGenerator empty
+initializeOwnership :: P.Program -> [DependencyGroup P.Identity] -> (U.OwnershipVarGenerator, P.Program)
+initializeOwnership program groups = do
+    context <- Context empty U.createOwnershipVarGenerator
     (context, program) <- addOwnershipVarsToDataTypes context program groups
     (context, functions) <- program.functions |> Map.iter |> fold (\(context, functions), (id, function) -> do
         (context, function) <- processFunction program context function // FIXME: program should not be copied here!
         (functions, _) <- insert functions id function
         (context, functions)) (context, empty)
     program <- program { functions = functions }
-    (context.var_gen, context.saved_function_types, program)
+    (context.var_gen, program)
