@@ -1,0 +1,87 @@
+module Siko.Backend.Ownership.Inference.Common where
+
+import Siko.MIR.Program as P
+import Siko.MIR.Expr as E
+import Siko.MIR.Data as D
+import Siko.MIR.Type as T
+import Siko.MIR.Function as F
+import Siko.Util.DependencyProcessor
+import Siko.Backend.Ownership.Unification as U
+import Siko.Util.Counter
+
+import Map
+import Set
+
+data Equal = Equal T.OwnershipKind T.OwnershipKind
+             deriving (Show, PartialEq, Eq, PartialOrd, Ord)
+
+data ConverterKind = NormalConverter
+                   | BorrowConverter
+                   deriving (Show, PartialEq, Eq, PartialOrd, Ord)
+
+data Converter = Converter ConverterKind T.OwnershipKind T.OwnershipKind
+                 deriving (Show, PartialEq, Eq, PartialOrd, Ord)
+
+data GlobalContext = { program :: P.Program }
+
+data Borrower = Borrower T.OwnershipVar deriving (PartialEq)
+
+data MovedVars = { vars :: Set T.OwnershipVar }
+
+data Context = { program :: P.Program,
+                 var_types :: Map E.Var T.Type,
+                 converters :: Set Converter,
+                 equals :: [Equal],
+                 not_moves :: Set E.ExprId,
+                 ownership_vars :: Map T.OwnershipVar T.OwnershipKind,
+                 moved_vars :: Map T.OwnershipVar MovedVars,
+                 borrowers :: [Borrower],
+                 var_gen :: U.OwnershipVarGenerator,
+                 borrower_sets :: Map Int (Set T.OwnershipVar),
+                 borrower_set_id_gen :: Int,
+               }
+
+getNextOwnershipVar :: Context -> (Context, T.OwnershipKind)
+getNextOwnershipVar context = do
+    (var_gen, v) <- U.getNextOwnershipVar context.var_gen
+    context <- context { var_gen = var_gen }
+    (context, v)
+
+addOwnershipVar :: Context -> T.OwnershipVar -> MovedVars -> Context
+addOwnershipVar context var moved_vars = do
+    (ownership_vars, _) <- alter (\old -> case old of
+        Some o -> Some o
+        None -> Some (T.VarKind var)) var context.ownership_vars
+    (moved_vars, _) <- alter (\old -> case old of
+        Some o -> Some o
+        None -> Some moved_vars) var context.moved_vars
+    context { ownership_vars = ownership_vars, moved_vars = moved_vars }
+
+addConverter :: Context -> Converter -> Context
+addConverter context converter = do
+    (converters, _) <- Set.insert context.converters converter
+    context { converters = converters }
+
+addEqual :: Context -> T.OwnershipKind -> T.OwnershipKind -> Context
+addEqual context kind1 kind2 = do
+    equals <- context.equals + [Equal kind1 kind2]
+    context { equals = equals }
+
+createContext :: P.Program -> Set E.ExprId -> U.OwnershipVarGenerator -> Context
+createContext program not_moves var_gen = Context {
+        program = program,
+        var_types = Map.empty,
+        converters = Set.empty,
+        equals = [],
+        not_moves = not_moves,
+        ownership_vars = Map.empty,
+        moved_vars = Map.empty,
+        borrowers = [],
+        var_gen = var_gen,
+        borrower_sets = Map.empty,
+        borrower_set_id_gen = 1 }
+
+addMovedVar :: MovedVars -> T.OwnershipVar -> MovedVars
+addMovedVar moved_vars var = do
+    (vars, _) <- Set.insert moved_vars.vars var
+    moved_vars { vars = vars }

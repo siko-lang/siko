@@ -51,7 +51,7 @@ pub fn write_function(
             indent.inc();
             write!(output_file, "{}let arg0 = self.clone();\n", indent)?;
             write!(output_file, "{}let value = ", indent)?;
-            write_expr(*body, output_file, program, indent)?;
+            write_expr(*body, output_file, program, indent, false)?;
             write!(output_file, ";\n")?;
             write!(output_file, "{}write!(f, \"{{}}\", value.value)\n", indent)?;
             indent.dec();
@@ -75,7 +75,7 @@ pub fn write_function(
             write!(output_file, "{}let arg0 = self.clone();\n", indent)?;
             write!(output_file, "{}let arg1 = arg1.clone();\n", indent)?;
             write!(output_file, "{}let value = ", indent)?;
-            write_expr(*body, output_file, program, indent)?;
+            write_expr(*body, output_file, program, indent, false)?;
             write!(output_file, ";\n")?;
             write!(output_file, "{}match value {{\n", indent)?;
             indent.inc();
@@ -117,7 +117,7 @@ pub fn write_function(
             write!(output_file, "{}let arg0 = self.clone();\n", indent)?;
             write!(output_file, "{}let arg1 = arg1.clone();\n", indent)?;
             write!(output_file, "{}let value = ", indent)?;
-            write_expr(*body, output_file, program, indent)?;
+            write_expr(*body, output_file, program, indent, false)?;
             write!(output_file, ";\n")?;
             write!(output_file, "{}match value {{\n", indent)?;
             indent.inc();
@@ -151,7 +151,7 @@ pub fn write_function(
             write!(output_file, "{}let arg0 = self.clone();\n", indent)?;
             write!(output_file, "{}let arg1 = arg1.clone();\n", indent)?;
             write!(output_file, "{}let value = ", indent)?;
-            write_expr(*body, output_file, program, indent)?;
+            write_expr(*body, output_file, program, indent, false)?;
             write!(output_file, ";\n")?;
             write!(output_file, "{}match value {{\n", indent)?;
             indent.inc();
@@ -197,7 +197,7 @@ pub fn write_function(
             FunctionInfo::Normal(body) => {
                 indent.inc();
                 write!(output_file, "{}", indent)?;
-                write_expr(*body, output_file, program, indent)?;
+                write_expr(*body, output_file, program, indent, false)?;
                 indent.dec();
             }
             FunctionInfo::Extern(original_name) => {
