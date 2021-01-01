@@ -41,17 +41,37 @@ data Context = { program :: P.Program,
                  borrower_set_id_gen :: Int,
                }
 
-getNextOwnershipVar :: Context -> (Context, T.OwnershipKind)
-getNextOwnershipVar context = do
+getNextOwnershipKind :: Context -> (Context, T.OwnershipKind)
+getNextOwnershipKind context = do
     (var_gen, v) <- U.getNextOwnershipVar context.var_gen
     context <- context { var_gen = var_gen }
     (context, v)
 
-addOwnershipVar :: Context -> T.OwnershipVar -> MovedVars -> Context
-addOwnershipVar context var moved_vars = do
+getNextOwnershipVar :: Context -> (Context, T.OwnershipVar)
+getNextOwnershipVar context = do
+    (var_gen, v) <- U.getNextOwnershipVar context.var_gen
+    context <- context { var_gen = var_gen }
+    (context, kindToVar v)
+
+collectOwnershipKindsFromFunctionType :: F.FunctionType -> [T.OwnershipKind]
+collectOwnershipKindsFromFunctionType function_type = do
+    ownership_kinds <- function_type.args |> List.iter |> fold (\ownership_kinds, arg_type -> do
+        vs <- T.collectOwnershipVars arg_type
+        ownership_kinds + vs) []
+    ownership_kinds <- ownership_kinds + T.collectOwnershipVars function_type.result
+    ownership_kinds <- ownership_kinds |> sort |> dedup
+    ownership_kinds
+
+kindToVar :: T.OwnershipKind -> T.OwnershipVar
+kindToVar kind = case kind of
+    T.VarKind v -> v
+    _ -> panic "V is not a v"
+
+addOwnershipVar :: Context -> T.OwnershipVar -> T.OwnershipKind -> MovedVars -> Context
+addOwnershipVar context var kind moved_vars = do
     (ownership_vars, _) <- alter (\old -> case old of
         Some o -> Some o
-        None -> Some (T.VarKind var)) var context.ownership_vars
+        None -> Some kind) var context.ownership_vars
     (moved_vars, _) <- alter (\old -> case old of
         Some o -> Some o
         None -> Some moved_vars) var context.moved_vars
