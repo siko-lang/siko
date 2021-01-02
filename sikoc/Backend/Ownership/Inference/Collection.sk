@@ -101,7 +101,7 @@ equalConstraints context moved_vars src dest = do
 getRecordType :: Common.Context -> T.Type -> D.Record
 getRecordType context type = do
     record_id <- T.getIdentity type
-    record <- P.getRecord context.program record_id
+    record <- P.getRecord context.global_context.program record_id
     ownership_vars <- T.collectOwnershipArgs type
     sub <- U.batch record.ownership_vars ownership_vars
     record <- U.apply record sub
@@ -110,7 +110,7 @@ getRecordType context type = do
 getAdtType :: Common.Context -> T.Type -> D.AlgebraicDataType
 getAdtType context type = do
     adt_id <- T.getIdentity type
-    adt <- P.getAdt context.program adt_id
+    adt <- P.getAdt context.global_context.program adt_id
     ownership_vars <- T.collectOwnershipArgs type
     sub <- U.batch adt.ownership_vars ownership_vars
     adt <- U.apply adt sub
@@ -140,17 +140,6 @@ addMovedVar moved_vars var = do
     (vars, _) <- Set.insert moved_vars.vars var
     moved_vars { vars = vars }
 
-cloneFunctionType :: Common.Context -> F.FunctionType -> (Common.Context, F.FunctionType)
-cloneFunctionType context function_type = do
-    ownership_kinds <- Common.collectOwnershipKindsFromFunctionType function_type
-    // FIXME: stateful repeat?
-    (context, clones) <- ownership_kinds |> List.iter |> fold (\(context, clones), _ -> do
-        (context, clone) <- Common.getNextOwnershipKind context
-        (context, clones + [clone])) (context, [])
-    sub <- U.batch ownership_kinds clones
-    function_type <- U.apply function_type sub
-    (context, function_type)
-
 processExpr :: Common.Context -> Common.MovedVars -> E.Expr -> (Common.Context, Common.MovedVars)
 processExpr context moved_vars expr = do
     E.Expr s_expr type id <- expr
@@ -158,19 +147,19 @@ processExpr context moved_vars expr = do
         E.Do items -> do
             (context, moved_vars) <- items |> List.iter |> fold (\(context, moved_vars), item -> processExpr context moved_vars item) (context, moved_vars)
             E.Expr _ last_type _ <- atIndex items (getLength items - 1)
-            //println "do {} {}" % (type, last_type)
             context <- convertibleConstraints context moved_vars last_type type
             (context, moved_vars)
         E.VarDecl v rhs -> do
-            //println "vardecl {} {}" % (v, type)
             (context, moved_vars) <- processExpr context moved_vars rhs
             E.Expr _ rhs_type _ <- rhs
             context <- addVarType context v rhs_type
             (context, moved_vars)
         E.StaticFunctionCall id args -> do
-            function <- P.getFunction context.program id
-            (context, function_type) <- cloneFunctionType context function.type
-            //println "functioncall {} {}" % (id, type)
+            info <- case get context.global_context.inference_infos id of
+                Some info -> info
+                None -> panic "No inference info found for function {}" % id
+            (context, info) <- Common.cloneFunctionInfo context info
+            function_type <- info.function_type
             (context, moved_vars) <- args |> List.iter |> fold (\(context, moved_vars), arg -> processExpr context moved_vars arg) (context, moved_vars)
             context <- List.zipS context args function_type.args (\context, arg_expr, f_arg_type -> do
                 E.Expr _ arg_expr_type _ <- arg_expr
@@ -179,7 +168,6 @@ processExpr context moved_vars expr = do
             (context, moved_vars)
         E.VarRef v -> do
             var_type <- getVarType context v
-            //println "varref {} {}, {}" % (v, var_type, type)
             (context, moved_vars) <- if Set.contains context.not_moves id
                 then do
                     context <- borrowConstraints context moved_vars var_type type
@@ -191,12 +179,10 @@ processExpr context moved_vars expr = do
                         T.VarKind v -> v
                         _ -> panic "Var is not varkind in move"
                     moved_vars <- addMovedVar moved_vars moved_var
-                    //println "Added moved var {}" % moved_var
                     context <- equalConstraints context moved_vars var_type type
                     (context, moved_vars)
             (context, moved_vars)
         E.CaseOf body cases -> do
-            //println "caseof {}" % (type)
             (context, moved_vars) <- processExpr context moved_vars body
             (context, moved_var_sets) <- cases |> List.iter |> fold (\(context, moved_var_sets), c -> do
                 context <- case c.checker of
@@ -215,7 +201,6 @@ processExpr context moved_vars expr = do
             moved_vars <- mergeMovedVars moved_var_sets
             (context, moved_vars)
         E.FieldAccess name receiver -> do
-            //println "fieldaccess {} {}" % (name, type)
             (context, moved_vars) <- processExpr context moved_vars receiver
             E.Expr _ receiver_type _ <- receiver
             record <- getRecordType context receiver_type
@@ -224,10 +209,10 @@ processExpr context moved_vars expr = do
             (context, moved_vars)
         _ -> panic "NYI {}" % s_expr
 
-collectConstraints :: P.Program -> U.OwnershipVarGenerator -> F.FunctionType -> P.Identity -> E.Expr -> Common.Context
-collectConstraints program var_gen function_type function_id body = do
+collectConstraints :: Common.GlobalContext -> U.OwnershipVarGenerator -> F.FunctionType -> P.Identity -> E.Expr -> Common.Context
+collectConstraints global_context var_gen function_type function_id body = do
     not_moves <- C.collectNotMoves function_id body (getLength function_type.args)
-    context <- Common.createContext program not_moves var_gen
+    context <- Common.createContext global_context not_moves var_gen
     context <- foldE (\context, index, arg_type -> addVarType context (E.Arg index) arg_type) context function_type.args
     moved_vars <- Common.MovedVars Set.empty
     (context, moved_vars) <- processExpr context moved_vars body

@@ -15,8 +15,6 @@ import Siko.Backend.Traversal
 import Map
 import Set
 
-data GlobalContext = { program :: P.Program }
-
 updateVar :: Common.Context -> T.OwnershipVar -> T.OwnershipKind -> Common.Context
 updateVar context src_var dest_kind = do
     src_kind <- T.VarKind src_var
@@ -109,9 +107,6 @@ createrBorrowerSetId context = do
     id <- context.borrower_set_id_gen
     (context { borrower_set_id_gen = id + 1 }, id)
 
-createGlobalContext :: P.Program -> GlobalContext
-createGlobalContext program = GlobalContext program
-
 dumpConverters :: Common.Context -> ()
 dumpConverters context = do
     context.converters |> Set.iter |> forEach (\c -> println c)
@@ -156,7 +151,7 @@ collectConvertibleConstraints kind context = do
             else convertibles
     convertibles
 
-collectVarConstraints :: Common.Context -> [T.OwnershipKind] -> ()
+collectVarConstraints :: Common.Context -> [T.OwnershipKind] -> Map T.OwnershipKind (Set T.OwnershipKind)
 collectVarConstraints context kinds = do
     constraints <- kinds |> List.iter |> map (\kind -> (kind, collectConvertibleConstraints kind context)) |> toMap
     constraints <- constraints |> Map.iter |> map (\(key, convertibles) -> do
@@ -165,8 +160,7 @@ collectVarConstraints context kinds = do
                     |> filter (\kind -> List.contains kinds kind && kind != key) |> toSet
             (key, convertibles))
         |> filter (\(key, convertibles) -> not (isEmpty convertibles)) |> toMap
-    println "{}" % constraints
-    ()
+    constraints
 
 getSubstitution :: Common.Context -> U.Substitution
 getSubstitution context = do
@@ -222,16 +216,13 @@ borrowCheck context = do
                 _ -> context
         ) context
 
-data FunctionInferenceInfo = { kind :: F.FunctionKind,
-                               function_type :: F.FunctionType }
-
-processFunction :: P.Program -> U.OwnershipVarGenerator -> P.Identity -> (Option FunctionInferenceInfo, U.OwnershipVarGenerator)
-processFunction program var_gen function_id = do
-    function <- P.getFunction program function_id
+processFunction :: Common.GlobalContext -> U.OwnershipVarGenerator -> P.Identity -> (Option Common.FunctionInferenceInfo, U.OwnershipVarGenerator)
+processFunction global_context var_gen function_id = do
+    function <- P.getFunction global_context.program function_id
     case function.kind of
         F.Normal body expr_id_gen expr_var_gen -> do
             println "Processing {}" % function.id
-            context <- C.collectConstraints program var_gen function.type function_id body
+            context <- C.collectConstraints global_context var_gen function.type function_id body
             context <- processEquals context
             context <- processConverters context
             context <- borrowCheck context
@@ -240,27 +231,31 @@ processFunction program var_gen function_id = do
             sub <- getSubstitution context
             function_type <- U.apply function.type sub
             ownership_kinds <- Common.collectOwnershipKindsFromFunctionType function_type
-            collectVarConstraints context ownership_kinds
-            updated_body <- updateBody body sub
-            updated_kind <- F.Normal updated_body expr_id_gen expr_var_gen
+            var_constraints <- collectVarConstraints context ownership_kinds
             function_type <- U.apply function_type sub
-            info <- FunctionInferenceInfo updated_kind function_type
+            info <- Common.FunctionInferenceInfo function_type var_constraints
             (Some info, context.var_gen)
         _ -> (None, var_gen)
 
-processFunctionGroup :: GlobalContext -> U.OwnershipVarGenerator -> [P.Identity] -> (GlobalContext, U.OwnershipVarGenerator)
+processFunctionGroup :: Common.GlobalContext -> U.OwnershipVarGenerator -> [P.Identity] -> (Common.GlobalContext, U.OwnershipVarGenerator)
 processFunctionGroup context var_gen group = do
-    group |> List.iter |> fold (\(context, var_gen), function_id -> do
-        (info, var_gen) <- processFunction context.program var_gen function_id
-        case info of
-            Some info -> do
-                info :: FunctionInferenceInfo <- info // FIXME
-                println "{} {}" % (function_id, info.function_type)
-            None -> ()
-        (context, var_gen)) (context, var_gen)
+    if getLength group == 1
+        then do
+            function_id <- atIndex group 0
+            (info, var_gen) <- processFunction context var_gen function_id
+            info <- case info of
+                Some info -> Common.normalizeFunctionInfo info
+                None -> do
+                    function <- P.getFunction context.program function_id
+                    Common.FunctionInferenceInfo function.type Map.empty
+            (context, added) <- Common.addInferenceInfo context function_id info
+            (context, var_gen)
+        else do
+            group |> List.iter |> fold (\(context, var_gen), function_id -> do
+                (context, var_gen)) (context, var_gen)
 
 processProgram :: P.Program -> U.OwnershipVarGenerator -> [DependencyGroup P.Identity] -> P.Program
 processProgram program var_gen function_groups = do
-    context <- createGlobalContext program
+    context <- Common.createGlobalContext program
     (context, var_gen) <- function_groups |> List.iter |> fold (\(context, var_gen), group -> processFunctionGroup context var_gen group.items) (context, var_gen)
     context.program

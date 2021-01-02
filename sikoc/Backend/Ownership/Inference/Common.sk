@@ -22,13 +22,14 @@ data ConverterKind = NormalConverter
 data Converter = Converter ConverterKind T.OwnershipKind T.OwnershipKind
                  deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
-data GlobalContext = { program :: P.Program }
+data GlobalContext = { program :: P.Program,
+                       inference_infos :: Map P.Identity FunctionInferenceInfo }
 
 data Borrower = Borrower T.OwnershipVar deriving (PartialEq)
 
 data MovedVars = { vars :: Set T.OwnershipVar }
 
-data Context = { program :: P.Program,
+data Context = { global_context :: GlobalContext,
                  var_types :: Map E.Var T.Type,
                  converters :: Set Converter,
                  equals :: [Equal],
@@ -40,6 +41,34 @@ data Context = { program :: P.Program,
                  borrower_sets :: Map Int (Set T.OwnershipVar),
                  borrower_set_id_gen :: Int,
                }
+
+data FunctionInferenceInfo = { function_type :: F.FunctionType,
+                               var_constraints :: Map T.OwnershipKind (Set T.OwnershipKind) }
+                               deriving (PartialEq)
+
+createGlobalContext :: P.Program -> GlobalContext
+createGlobalContext program = GlobalContext program Map.empty
+
+createContext :: GlobalContext -> Set E.ExprId -> U.OwnershipVarGenerator -> Context
+createContext global_context not_moves var_gen = Context {
+        global_context = global_context,
+        var_types = Map.empty,
+        converters = Set.empty,
+        equals = [],
+        not_moves = not_moves,
+        ownership_vars = Map.empty,
+        moved_vars = Map.empty,
+        borrowers = [],
+        var_gen = var_gen,
+        borrower_sets = Map.empty,
+        borrower_set_id_gen = 1 }
+
+addInferenceInfo :: GlobalContext -> P.Identity -> FunctionInferenceInfo -> (GlobalContext, Bool)
+addInferenceInfo context function_id info = do
+    (added, inference_infos, _) <- alterS (\_, old -> case old of
+        Some old -> (old != info, Some info)
+        None -> (True, Some info)) True function_id context.inference_infos
+    (context { inference_infos = inference_infos }, added)
 
 getNextOwnershipKind :: Context -> (Context, T.OwnershipKind)
 getNextOwnershipKind context = do
@@ -87,21 +116,35 @@ addEqual context kind1 kind2 = do
     equals <- context.equals + [Equal kind1 kind2]
     context { equals = equals }
 
-createContext :: P.Program -> Set E.ExprId -> U.OwnershipVarGenerator -> Context
-createContext program not_moves var_gen = Context {
-        program = program,
-        var_types = Map.empty,
-        converters = Set.empty,
-        equals = [],
-        not_moves = not_moves,
-        ownership_vars = Map.empty,
-        moved_vars = Map.empty,
-        borrowers = [],
-        var_gen = var_gen,
-        borrower_sets = Map.empty,
-        borrower_set_id_gen = 1 }
-
 addMovedVar :: MovedVars -> T.OwnershipVar -> MovedVars
 addMovedVar moved_vars var = do
     (vars, _) <- Set.insert moved_vars.vars var
     moved_vars { vars = vars }
+
+normalizeFunctionInfo :: FunctionInferenceInfo -> FunctionInferenceInfo
+normalizeFunctionInfo info = do
+    ownership_kinds <- collectOwnershipKindsFromFunctionType info.function_type
+    (_, kinds) <- List.mapS 0 ownership_kinds (\index, kind -> case kind of
+        T.VarKind _ -> (index + 1, T.VarKind (T.OwnershipVar index))
+        _ -> (index, kind))
+    sub <- U.batch ownership_kinds kinds
+    function_type <- U.apply info.function_type sub
+    var_constraints <- info.var_constraints |> Map.iter |> map (\(kind, constraints) -> do
+        kind <- U.apply kind sub
+        constraints <- constraints |> Set.iter |> map (\kind -> U.apply kind sub) |> toSet
+        (kind, constraints)) |> toMap
+    FunctionInferenceInfo function_type var_constraints
+
+cloneFunctionInfo :: Context -> FunctionInferenceInfo -> (Context, FunctionInferenceInfo)
+cloneFunctionInfo context info = do
+    ownership_kinds <- collectOwnershipKindsFromFunctionType info.function_type
+    (context, kinds) <- List.mapS context ownership_kinds (\context, kind -> case kind of
+        T.VarKind _ -> getNextOwnershipKind context
+        _ -> (context, kind))
+    sub <- U.batch ownership_kinds kinds
+    function_type <- U.apply info.function_type sub
+    var_constraints <- info.var_constraints |> Map.iter |> map (\(kind, constraints) -> do
+        kind <- U.apply kind sub
+        constraints <- constraints |> Set.iter |> map (\kind -> U.apply kind sub) |> toSet
+        (kind, constraints)) |> toMap
+    (context, FunctionInferenceInfo function_type var_constraints)

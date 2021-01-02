@@ -35,3 +35,12 @@ repeat item count = do
                 if c < count
                     then (items + [item], c + 1) else break (items, 0)
     items
+
+repeatS s a :: s -> (s -> (s, a)) -> Int -> (s, [a])
+repeatS state fn count = do
+    loop (state, items, c) <- (state, [], 0) do
+        if c < count
+            then do
+                (state, item) <- fn state
+                (state, items + [item], c + 1)
+            else return (state, items)
