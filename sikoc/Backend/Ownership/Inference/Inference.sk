@@ -15,36 +15,14 @@ import Siko.Backend.Traversal
 import Map
 import Set
 
-updateVar :: Common.Context -> T.OwnershipVar -> T.OwnershipKind -> Common.Context
-updateVar context src_var dest_kind = do
-    src_kind <- T.VarKind src_var
-    ownership_vars <- context.ownership_vars |> Map.iter |> map (\(m_v, m_o) -> do
-                        case (m_v, m_o) of
-                            (m_v, m_o) if m_v == src_var -> (m_v, dest_kind)
-                            (m_v, m_o) if m_o == src_kind -> (m_v, dest_kind)
-                            _ -> (m_v, m_o)
-                    ) |> toMap
-    equals <- context.equals |> List.iter |> map (\equal -> do
-        Common.Equal e_v1 e_v2 <- equal
-        (e1, e2) <- case (e_v1, e_v2) of
-            (e_v1, e_v2) if e_v1 == src_kind -> (dest_kind, e_v2)
-            (e_v1, e_v2) if e_v2 == src_kind -> (e_v1, dest_kind)
-            (e_v1, e_v2) if e_v1 == src_kind && e_v2 == src_kind -> (dest_kind, dest_kind)
-            _ -> (e_v1, e_v2)
-        Common.Equal e1 e2) |> toList |> sort |> dedup
-    context { ownership_vars = ownership_vars, equals = equals }
-
-processEqual :: Common.Context -> T.OwnershipKind -> T.OwnershipKind -> Common.Context
-processEqual context kind1 kind2 = do
-    //println "{} = {}" % (kind1, kind2)
-    case (kind1, kind2) of
-        (T.VarKind v1, T.VarKind v2) -> updateVar context v1 kind2
-        (T.OwnerKind, T.VarKind v) -> updateVar context v kind1
-        (T.VarKind v, T.OwnerKind) -> updateVar context v kind2
-        (T.OwnerKind, T.OwnerKind) -> context
-        (T.BorrowKind l, T.VarKind v) -> updateVar context v kind1
-        (T.VarKind v, T.BorrowKind l) -> updateVar context v kind2
-        _ -> panic "addEqual {} {}" % (kind1, kind2)
+processEqual :: Common.Context -> T.OwnershipVar -> T.OwnershipVar -> Common.Context
+processEqual context v1 v2 = do
+    group_id1 <- Common.getGroupId context v1
+    group_id2 <- Common.getGroupId context v2
+    (context, merged_kind) <- Common.mergeGroups context group_id1 group_id2
+    context <- Common.updateGroupKind context group_id1 merged_kind
+    context <- Common.updateGroups context group_id2 group_id1
+    context
 
 processEquals :: Common.Context -> Common.Context
 processEquals context = do
@@ -53,59 +31,33 @@ processEquals context = do
         case pop context.equals of
             Some (first, rest) -> do
                 context <- context { equals = rest }
-                Common.Equal kind1 kind2 <- first
-                processEqual context kind1 kind2
+                Common.Equal v1 v2 <- first
+                processEqual context v1 v2
             None -> break context
-
-isOwned :: Common.Context -> T.OwnershipKind -> Bool
-isOwned context kind = case kind of
-    T.VarKind v -> do
-        case Option.unwrap (get context.ownership_vars v) of
-            T.OwnerKind -> True
-            _ -> False
-    T.OwnerKind -> True
-    _ -> False
-
-isVar :: Common.Context -> T.OwnershipKind -> Bool
-isVar context kind = case kind of
-    T.VarKind v -> do
-        case Option.unwrap (get context.ownership_vars v) of
-            T.VarKind v2 -> True
-            _ -> False
-    _ -> False
-
-addBorrowerSet :: Common.Context -> Int -> Set T.OwnershipVar -> Common.Context
-addBorrowerSet context id borrower_set = do
-    (borrower_sets, _) <- Map.insert context.borrower_sets id borrower_set
-    context { borrower_sets = borrower_sets }
 
 processConverters :: Common.Context -> Common.Context
 processConverters context = do
     context.converters |> Set.iter |> fold (\context, Common.Converter converter_kind from to -> do
         resolved_from <- resolveKind context from
         resolved_to <- resolveKind context to
-        context <- if isOwned context resolved_from && isVar context resolved_to
+        context <- if T.isOwned resolved_from && T.isVar resolved_to
             then do
-                from_v <- Common.kindToVar resolved_from
-                to_v <- Common.kindToVar resolved_to
-                if List.contains context.borrowers (Common.Borrower from_v)
+                if List.contains context.borrowers (Common.Borrower from)
                     then do
-                        (context, borrower_set_id) <- createrBorrowerSetId context
+                        (context, borrower_set_id) <- Common.createrBorrowerSetId context
                         borrower_set <- Set.empty
-                        (borrower_set, _) <- Set.insert borrower_set from_v
-                        context <- addBorrowerSet context borrower_set_id borrower_set
-                        (context, borrower_var) <- Common.getNextOwnershipVar context
-                        borrower_kind <- T.VarKind borrower_var
-                        context <- Common.addOwnershipVar context borrower_var (T.BorrowKind borrower_set_id) (Common.MovedVars Set.empty)
-                        updateVar context to_v borrower_kind
-                    else processEqual context resolved_to resolved_from
+                        (borrower_set, _) <- Set.insert borrower_set from
+                        context <- Common.addBorrowerSet context borrower_set_id borrower_set
+                        borrower_kind <- T.BorrowKind borrower_set_id
+                        group_id <- Common.getGroupId context to
+                        context <- Common.updateGroupKind context group_id borrower_kind
+                        context
+                    else do
+                        group_id <- Common.getGroupId context to
+                        context <- Common.updateGroupKind context group_id T.OwnerKind
+                        context
             else context
         context) context
-
-createrBorrowerSetId :: Common.Context -> (Common.Context, Int)
-createrBorrowerSetId context = do
-    id <- context.borrower_set_id_gen
-    (context { borrower_set_id_gen = id + 1 }, id)
 
 dumpConverters :: Common.Context -> ()
 dumpConverters context = do
@@ -115,29 +67,29 @@ dumpOwnershipVars :: Common.Context -> ()
 dumpOwnershipVars context = do
     context.ownership_vars |> Map.iter |> forEach (\(v, kind) -> println "{} -> {}" % (v, kind))
 
-insertKind :: Set T.OwnershipKind -> T.OwnershipKind -> T.OwnershipKind -> (Set T.OwnershipKind, Bool)
+insertKind :: Set T.OwnershipVar -> T.OwnershipKind -> T.OwnershipKind -> (Set T.OwnershipVar, Bool)
 insertKind collected orig new = do
-    if Set.contains collected orig
-        then do
-            (collected, added) <- Set.insert collected new
-            (collected, added)
-        else (collected, False)
+    case orig of
+        T.VarKind orig -> do
+            if Set.contains collected orig
+                then case new of
+                        T.VarKind v -> do
+                            (collected, added) <- Set.insert collected v
+                            (collected, added)
+                        _ -> (collected, False)
+                else (collected, False)
+        _ -> (collected, False)
 
-resolveKind :: Common.Context -> T.OwnershipKind -> T.OwnershipKind
-resolveKind context kind = case kind of
-    T.VarKind v -> do
-        kind <- Option.unwrap (get context.ownership_vars v)
-        case kind of
-            T.VarKind v2 -> if v == v2
-                            then kind
-                            else resolveKind context kind
-            _ -> kind
-    _ -> kind
+resolveKind :: Common.Context -> T.OwnershipVar-> T.OwnershipKind
+resolveKind context var = do
+    group_id <- Common.getGroupId context var
+    group <- Common.getGroup context group_id
+    group.kind
 
-collectConvertibleConstraints :: T.OwnershipKind -> Common.Context -> Set T.OwnershipKind
-collectConvertibleConstraints kind context = do
+collectConvertibleConstraints :: T.OwnershipVar -> Common.Context -> Set T.OwnershipVar
+collectConvertibleConstraints var context = do
     convertibles <- Set.empty
-    (convertibles, _) <- Set.insert convertibles kind
+    (convertibles, _) <- Set.insert convertibles var
     convertibles <- loop convertibles <- convertibles do
         (convertibles, added) <- context.converters |> Set.iter |> fold (\(convertibles, added), converter -> do
             Common.Converter converter_kind a b <- converter
@@ -151,13 +103,19 @@ collectConvertibleConstraints kind context = do
             else convertibles
     convertibles
 
-collectVarConstraints :: Common.Context -> [T.OwnershipKind] -> Map T.OwnershipKind (Set T.OwnershipKind)
+collectVarConstraints :: Common.Context -> [T.OwnershipKind] -> Map T.OwnershipVar (Set T.OwnershipVar)
 collectVarConstraints context kinds = do
-    constraints <- kinds |> List.iter |> map (\kind -> (kind, collectConvertibleConstraints kind context)) |> toMap
+    // FIXME: use filterMap!
+    vars <- kinds |> List.iter |> filter (\kind -> case kind of
+        T.VarKind _ -> True
+        _ -> False) |> map (\kind -> case kind of
+            T.VarKind v -> v
+            _ -> unreachable) |> toList
+    constraints <- vars |> List.iter |> map (\var -> (var, collectConvertibleConstraints var context)) |> toMap
     constraints <- constraints |> Map.iter |> map (\(key, convertibles) -> do
             convertibles <- convertibles
                     |> Set.iter
-                    |> filter (\kind -> List.contains kinds kind && kind != key) |> toSet
+                    |> filter (\var -> List.contains kinds (T.VarKind var) && var != key) |> toSet
             (key, convertibles))
         |> filter (\(key, convertibles) -> not (isEmpty convertibles)) |> toMap
     constraints
@@ -165,7 +123,8 @@ collectVarConstraints context kinds = do
 getSubstitution :: Common.Context -> U.Substitution
 getSubstitution context = do
     sub <- U.createSubstitution
-    sub <- context.ownership_vars |> Map.iter |> fold (\sub, (v, kind) -> do
+    sub <- context.ownership_vars |> Map.iter |> fold (\sub, (v, _) -> do
+            kind <- resolveKind context v
             case kind of
                 T.VarKind new_v -> do
                     if new_v == v
@@ -190,7 +149,7 @@ updateBody expr sub = do
 
 borrowCheck :: Common.Context -> Common.Context
 borrowCheck context = do
-    resolved_vars <- context.ownership_vars |> Map.iter |> map (\(v, kind) -> (v, resolveKind context kind)) |> toMap
+    resolved_vars <- context.ownership_vars |> Map.iter |> map (\(v, _) -> (v, resolveKind context v)) |> toMap
     resolved_vars |> Map.iter |> fold (\context, (v, resolved_kind) -> do
             case resolved_kind of
                 T.BorrowKind id -> do
@@ -206,10 +165,8 @@ borrowCheck context = do
                                         then context
                                         else do
                                             //println "Borrow check failed for {}" % v
-                                            kind <- case get context.ownership_vars v of
-                                                Some kind -> kind
-                                                None -> panic "No ownership kind found for {}" % v
-                                            context <- processEqual context kind (T.OwnerKind)
+                                            group_id <- Common.getGroupId context v
+                                            context <- Common.updateGroupKind context group_id T.OwnerKind
                                             context
                                 None -> panic "No moved vars found for {}" % v
                         None -> panic "Borrow set {} not found" % id
@@ -258,4 +215,5 @@ processProgram :: P.Program -> U.OwnershipVarGenerator -> [DependencyGroup P.Ide
 processProgram program var_gen function_groups = do
     context <- Common.createGlobalContext program
     (context, var_gen) <- function_groups |> List.iter |> fold (\(context, var_gen), group -> processFunctionGroup context var_gen group.items) (context, var_gen)
+
     context.program

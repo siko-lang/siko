@@ -13,11 +13,11 @@ import Map
 data Context = { arg_count_map :: Map P.Identity Int,
                  var_gen :: U.OwnershipVarGenerator }
 
-getNextOwnershipVar :: Context -> (Context, T.OwnershipKind)
-getNextOwnershipVar context = do
+getNextOwnershipKind :: Context -> (Context, T.OwnershipKind)
+getNextOwnershipKind context = do
     (var_gen, v) <- U.getNextOwnershipVar context.var_gen
     context <- context { var_gen = var_gen }
-    (context, v)
+    (context, T.VarKind v)
 
 addOwnershipVarsToDataType :: Context -> Bool -> [P.Identity] -> [T.OwnershipKind] -> [T.OwnershipKind] -> T.Type -> ([T.OwnershipKind], T.Type)
 addOwnershipVarsToDataType context is_adt group all_ownership_vars ownership_vars type = do
@@ -139,12 +139,7 @@ addOwnershipVarsToGroup context group program = do
         (arg_count_map, _) <- insert context.arg_count_map id arg_count
         context <- context { arg_count_map = arg_count_map }
         context) context
-    (context, all_vars) <- loop (context, vars) <- (context, []) do
-                if getLength vars >= arg_count
-                    then break (context, vars)
-                    else do
-                        (context, v) <- getNextOwnershipVar context
-                        (context, vars + [v])
+    (context, all_vars) <- getNextOwnershipKinds context arg_count
     (vars, program) <- group |> List.iter |> fold (\(vars, program), id -> do
         (vars, records, _) <- alterS (addOwnershipVarsToRecord context all_vars group) vars id program.records
         (vars, adts, _) <- alterS (addOwnershipVarsToAdt context all_vars group) vars id program.adts
@@ -158,27 +153,22 @@ addOwnershipVarsToDataTypes context program groups = do
         ) (context, program)
     (context, program)
 
-getNextOwnershipVars :: Context -> Int -> (Context, [T.OwnershipKind])
-getNextOwnershipVars context count = loop (context, vars) <- (context, []) do
-    if getLength vars == count
-        then break (context, vars)
-        else do
-            (context, o) <- getNextOwnershipVar context
-            (context, vars + [o])
+getNextOwnershipKinds :: Context -> Int -> (Context, [T.OwnershipKind])
+getNextOwnershipKinds context count = repeatS context (\context -> getNextOwnershipKind context) count
 
 addOwnershipVarsToType :: Context -> T.Type -> (Context, T.Type)
 addOwnershipVarsToType context type = case type of
     T.Adt id args -> do
         c <- getArgCount context id
-        (context, args) <- getNextOwnershipVars context c
-        (context, o) <- getNextOwnershipVar context
-        t <- T.Var o (T.Adt id args)
+        (context, args) <- getNextOwnershipKinds context c
+        (context, kind) <- getNextOwnershipKind context
+        t <- T.Var kind (T.Adt id args)
         (context, t)
     T.Record id args -> do
         c <- getArgCount context id
-        (context, args) <- getNextOwnershipVars context c
-        (context, o) <- getNextOwnershipVar context
-        t <- T.Var o (T.Record id args)
+        (context, args) <- getNextOwnershipKinds context c
+        (context, kind) <- getNextOwnershipKind context
+        t <- T.Var kind (T.Record id args)
         (context, t)
     T.Ref index type -> do
         (context, t) <- addOwnershipVarsToType context type
@@ -194,8 +184,8 @@ addOwnershipVarsToType context type = case type of
         (context, T.Owner t)
     T.Never -> (context, T.Never)
     type -> do
-        (context, o) <- getNextOwnershipVar context
-        t <- T.Var o type
+        (context, kind) <- getNextOwnershipKind context
+        t <- T.Var kind type
         (context, t)
 
 addOwnershipVarsToExpr :: Context -> Expr -> (Context, Expr)
@@ -286,7 +276,7 @@ unifyTypePositions program context positions function_type = do
             vars <- applyPosition program position function_type
             kinds + vars
         ) []
-    (context, new_kind) <- getNextOwnershipVar context
+    (context, new_kind) <- getNextOwnershipKind context
     new_kinds <- repeat new_kind (getLength kinds)
     sub <- U.batch kinds new_kinds
     function_type <- U.apply function_type sub
@@ -311,7 +301,6 @@ processFunction program context function = case function.kind of
         id <- T.getIdentity function.type.result
         record <- P.getRecord program id
         args <- record.fields |> List.iter |> map (\f -> f.type) |> toList
-        (context, o) <- getNextOwnershipVar context
         result <- T.Record id record.ownership_vars
         owned_result <- T.Owner result
         function_type <- F.FunctionType args owned_result
@@ -326,7 +315,6 @@ processFunction program context function = case function.kind of
         sub <- U.batch variant_record.ownership_vars variant_ownership_vars
         variant_record <- U.apply variant_record sub
         args <- variant_record.fields |> List.iter |> map (\f -> T.debox f.type) |> toList
-        (context, o) <- getNextOwnershipVar context
         result <- T.Adt id adt.ownership_vars
         owned_result <- T.Owner result
         function_type <- F.FunctionType args owned_result

@@ -20,6 +20,12 @@ createSubstitution = Substitution empty
 class Apply a where
     apply a :: a -> Substitution -> a
 
+instance Apply T.OwnershipVar where
+    //apply :: T.OwnershipVar -> Substitution -> T.OwnershipVar
+    apply v sub = case get sub.var_subs v of
+                    Some (Unification new) -> new
+                    _ -> panic "Invalid Ownershipvar subtitution!"
+
 instance Apply T.OwnershipKind where
     //apply :: T.OwnershipKind -> Substitution -> T.OwnershipKind
     apply k sub = case k of
@@ -170,12 +176,12 @@ unify sub type1 type2 = do
         (T.Never, T.Never) -> sub
         _ -> panic "NYI ownership unify {} {}" % (type1, type2)
 
-data OwnershipVarGenerator = { counter :: Counter T.OwnershipKind }
+data OwnershipVarGenerator = { counter :: Counter T.OwnershipVar }
 
 createOwnershipVarGenerator :: OwnershipVarGenerator
-createOwnershipVarGenerator = OwnershipVarGenerator (Counter (\v -> T.VarKind (T.OwnershipVar v)) 0)
+createOwnershipVarGenerator = OwnershipVarGenerator (Counter (\v -> T.OwnershipVar v) 0)
 
-getNextOwnershipVar :: OwnershipVarGenerator -> (OwnershipVarGenerator, T.OwnershipKind)
+getNextOwnershipVar :: OwnershipVarGenerator -> (OwnershipVarGenerator, T.OwnershipVar)
 getNextOwnershipVar var_gen = do
     (counter, v) <- getNext var_gen.counter
     (var_gen { counter = counter }, v)
