@@ -1,4 +1,4 @@
-module Siko.Backend.Ownership.Instantiation where
+module Siko.Backend.Instantiation where
 
 import Siko.MIR.Program as MP
 import Siko.MIR.Function as MF
@@ -13,11 +13,13 @@ import Siko.LIR.Expr as LE
 import Siko.LIR.Data as LD
 
 import Siko.Backend.Ownership.Unification as U
+import Siko.Backend.Ownership.Inference as Inference
+import Siko.Backend.Ownership.Inference.Common as InferenceC
 
 import Map
 import Set
 
-data FunctionKey = FunctionKey MP.Identity [MT.Type] deriving (PartialEq, Eq, PartialOrd, Ord, Show)
+data FunctionKey = FunctionKey MP.Identity MF.FunctionType deriving (PartialEq, Eq, PartialOrd, Ord, Show)
 
 data RecordKey = RecordKey MP.Identity [MT.OwnershipKind] deriving (PartialEq, Eq, PartialOrd, Ord, Show)
 
@@ -36,10 +38,12 @@ data Queue = { next_id :: Int,
                lir_records :: Map LP.Identity LD.Record,
                adt_ids :: Map AdtKey LP.Identity,
                lir_adts :: Map LP.Identity LD.AlgebraicDataType,
-               item_queue :: [Item] }
+               item_queue :: [Item],
+               inference_info_store :: InferenceC.InferenceInfoStore,
+               var_gen :: U.OwnershipVarGenerator }
 
-createQueue :: Queue
-createQueue = Queue { next_id = 0,
+createQueue :: InferenceC.InferenceInfoStore -> U.OwnershipVarGenerator -> Queue
+createQueue inference_info_store var_gen = Queue { next_id = 0,
                       function_ids = Map.empty,
                       lir_functions = Map.empty,
                       type_ids = Map.empty,
@@ -47,7 +51,9 @@ createQueue = Queue { next_id = 0,
                       lir_records = Map.empty,
                       adt_ids = Map.empty,
                       lir_adts = Map.empty,
-                      item_queue = [] }
+                      item_queue = [],
+                      inference_info_store = inference_info_store,
+                      var_gen = var_gen }
 
 getFunctionId :: Queue -> FunctionKey -> (Queue, LP.Identity)
 getFunctionId queue function_key = do
@@ -150,9 +156,9 @@ processExpr queue mir_expr = do
             (queue, LE.Do items)
         ME.StaticFunctionCall id args -> do
             arg_types <- args |> List.iter |> map (\ME.Expr _ t _ -> t) |> toList
-            println "Calling {} with {}" % (id, arg_types)
             (indices, arg_types) <- List.mapS Map.empty arg_types normalizeType
-            function_key <- FunctionKey id arg_types
+            (indices, result) <- normalizeType indices mir_type
+            function_key <- FunctionKey id (MF.FunctionType arg_types result)
             (queue, lir_id) <- getFunctionId queue function_key
             queue <- addItem queue (QueuedFunction function_key)
             (queue, args) <- args |> List.iter |> fold (\(queue, args), arg -> do
@@ -180,6 +186,7 @@ processExpr queue mir_expr = do
             (queue, arg) <- processExpr queue arg
             (queue, LE.Ref arg)
         _ -> panic "NYI {}" % s_expr
+    //println "{} ---> {}" % (mir_type, s_expr)
     (queue, lir_type) <- processType queue mir_type
     lir_expr <- LE.Expr lir_s_expr lir_type (LE.ExprId 0)
     (queue, lir_expr)
@@ -258,17 +265,13 @@ processFunctionType queue mir_function_type = do
 
 processFunction :: Queue -> MP.Program -> FunctionKey -> LP.Identity -> Queue
 processFunction queue mir_program function_key lir_id = do
-    println "Processing function {}" % function_key
-    FunctionKey mir_id args <- function_key
+    println "Instantiation: processing function {}" % function_key
+    FunctionKey mir_id function_type <- function_key
     mir_function <- MP.getFunction mir_program mir_id
-    sub <- U.createSubstitution
-    sub <- zipS sub mir_function.type.args args (\sub, t1, t2 -> U.unify sub t1 t2)
-    function_type <- U.apply mir_function.type sub
     case mir_function.kind of
         MF.Normal mir_body expr_id_gen temp_var_gen -> do
-            //(body, function_type, expr_id_gen, temp_var_gen) <- Updater.processFunction mir_program mir_id
-            //                                        expr_id_gen temp_var_gen args mir_body mir_function.type
-            body <- mir_body
+            global_context <- InferenceC.createGlobalContext mir_program queue.inference_info_store
+            (body, var_gen) <- Inference.instantiateFunction global_context queue.var_gen mir_id function_type mir_body
             (queue, lir_body) <- processExpr queue body
             lir_kind <- LF.Normal lir_body
             (queue, lir_function_type) <- processFunctionType queue function_type
@@ -312,7 +315,7 @@ processExternalRecordInfo queue mir_external_record_info = do
 
 processRecord :: Queue -> MP.Program -> RecordKey -> LP.Identity -> Queue
 processRecord queue mir_program record_key lir_id = do
-    println "Processing record {}" % record_key
+    //println "Processing record {}" % record_key
     RecordKey mir_id args <- record_key
     mir_record <- MP.getRecord mir_program mir_id
     sub <- U.batch mir_record.ownership_vars args
@@ -378,12 +381,15 @@ processItems queue mir_program = do
                 queue <- items |> List.iter |> fold (\queue, item -> processItem queue mir_program item) queue
                 queue
 
-processProgram :: MP.Program -> LP.Program
-processProgram mir_program = do
+processProgram :: MP.Program -> InferenceC.InferenceInfoStore -> U.OwnershipVarGenerator -> LP.Program
+processProgram mir_program inference_info_store var_gen = do
     main_id <- MP.getMainIdentity
     main_function <- MP.getFunction mir_program main_id
-    function_key <- FunctionKey main_id []
-    queue <- createQueue
+    main_result <- case main_function.type.result of
+        MT.Var _ t -> MT.Owner t
+        _ -> panic "Unexpected main function resul type {}" % main_function.type.result
+    function_key <- FunctionKey main_id (MF.FunctionType [] main_result)
+    queue <- createQueue inference_info_store var_gen
     (queue, lir_main_id) <- getFunctionId queue function_key
     queue <- addItem queue (QueuedFunction function_key)
     queue <- processItems queue mir_program

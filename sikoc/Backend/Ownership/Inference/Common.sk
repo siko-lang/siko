@@ -23,7 +23,9 @@ data Converter = Converter ConverterKind T.OwnershipVar T.OwnershipVar
                  deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
 data GlobalContext = { program :: P.Program,
-                       inference_infos :: Map P.Identity FunctionInferenceInfo }
+                       inference_info_store :: InferenceInfoStore }
+
+data InferenceInfoStore = { inference_infos :: Map P.Identity FunctionInferenceInfo }
 
 data Borrower = Borrower T.OwnershipVar deriving (PartialEq)
 
@@ -32,7 +34,7 @@ data MovedVars = { vars :: Set T.OwnershipVar }
 data Group = { kind :: T.OwnershipKind }
 
 data Context = { global_context :: GlobalContext,
-                 var_types :: Map E.Var T.Type,
+                 var_vars :: Map E.Var [T.OwnershipVar],
                  converters :: Set Converter,
                  equals :: [Equal],
                  not_moves :: Set E.ExprId,
@@ -50,13 +52,16 @@ data FunctionInferenceInfo = { function_type :: F.FunctionType,
                                var_constraints :: Map T.OwnershipVar (Set T.OwnershipVar ) }
                                deriving (Show, PartialEq)
 
-createGlobalContext :: P.Program -> GlobalContext
-createGlobalContext program = GlobalContext program Map.empty
+createInferenceInfoStore :: InferenceInfoStore
+createInferenceInfoStore = InferenceInfoStore Map.empty
+
+createGlobalContext :: P.Program -> InferenceInfoStore -> GlobalContext
+createGlobalContext program inference_info_store = GlobalContext program inference_info_store
 
 createContext :: GlobalContext -> Set E.ExprId -> U.OwnershipVarGenerator -> Context
 createContext global_context not_moves var_gen = Context {
         global_context = global_context,
-        var_types = Map.empty,
+        var_vars = Map.empty,
         converters = Set.empty,
         equals = [],
         not_moves = not_moves,
@@ -79,15 +84,15 @@ addEqual context v1 v2 = do
     equals <- context.equals + [Equal v1 v2]
     context { equals = equals }
 
-addVarType :: Context -> E.Var -> T.Type -> Context
-addVarType context var type = do
-    (var_types, _) <- Map.insert context.var_types var type
-    context { var_types = var_types }
+addVarVars :: Context -> E.Var -> [T.OwnershipVar] -> Context
+addVarVars context var vars = do
+    (var_vars, _) <- Map.insert context.var_vars var vars
+    context { var_vars = var_vars }
 
-getVarType :: Context -> E.Var -> T.Type
-getVarType context var = case get context.var_types var of
-    Some t -> t
-    None -> panic "Var {} not found in var_types" % var
+getVarVars :: Context -> E.Var -> [T.OwnershipVar]
+getVarVars context var = case get context.var_vars var of
+    Some vars -> vars
+    None -> panic "Var {} not found in var_vars" % var
 
 createGroup :: Context -> T.OwnershipKind -> (Context, Int)
 createGroup context kind = do
@@ -162,10 +167,12 @@ mergeGroups context id1 id2 = do
 
 addInferenceInfo :: GlobalContext -> P.Identity -> FunctionInferenceInfo -> (GlobalContext, Bool)
 addInferenceInfo context function_id info = do
+    inference_info_store <- context.inference_info_store
     (added, inference_infos, _) <- alterS (\_, old -> case old of
         Some old -> (old != info, Some info)
-        None -> (True, Some info)) True function_id context.inference_infos
-    (context { inference_infos = inference_infos }, added)
+        None -> (True, Some info)) True function_id inference_info_store.inference_infos
+    inference_info_store <- inference_info_store { inference_infos = inference_infos }
+    (context { inference_info_store = inference_info_store }, added)
 
 getNextOwnershipKind :: Context -> (Context, T.OwnershipKind)
 getNextOwnershipKind context = do
@@ -181,9 +188,9 @@ getNextOwnershipVar context = do
 collectOwnershipKindsFromFunctionType :: F.FunctionType -> [T.OwnershipKind]
 collectOwnershipKindsFromFunctionType function_type = do
     ownership_kinds <- function_type.args |> List.iter |> fold (\ownership_kinds, arg_type -> do
-        vs <- T.collectOwnershipVars arg_type
+        vs <- T.collectOwnershipKinds arg_type
         ownership_kinds + vs) []
-    ownership_kinds <- ownership_kinds + T.collectOwnershipVars function_type.result
+    ownership_kinds <- ownership_kinds + T.collectOwnershipKinds function_type.result
     ownership_kinds <- ownership_kinds |> sort |> dedup
     ownership_kinds
 

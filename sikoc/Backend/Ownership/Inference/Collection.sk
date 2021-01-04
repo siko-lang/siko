@@ -14,9 +14,9 @@ import Siko.Util.Counter
 import Map
 import Set
 
-collectVars :: Common.Context -> Common.MovedVars -> [T.OwnershipKind] -> (Common.Context, [T.OwnershipVar])
-collectVars context moved_vars kinds = do
-    List.mapS context kinds (\context, kind -> case kind of
+processKind :: Common.Context -> Common.MovedVars -> T.OwnershipKind -> (Common.Context, T.OwnershipVar)
+processKind context moved_vars kind =
+    case kind of
         T.VarKind v -> do
             context <- Common.addOwnershipVar context v (T.VarKind v) moved_vars
             (context, v)
@@ -29,7 +29,11 @@ collectVars context moved_vars kinds = do
             (context, borrower_set_id) <- Common.createrBorrowerSetId context
             context <- Common.addBorrowerSet context borrower_set_id Set.empty
             context <- Common.addOwnershipVar context v (T.BorrowKind borrower_set_id) moved_vars
-            (context, v))
+            (context, v)
+
+collectVars :: Common.Context -> Common.MovedVars -> [T.OwnershipKind] -> (Common.Context, [T.OwnershipVar])
+collectVars context moved_vars kinds = do
+    List.mapS context kinds (\context, kind -> processKind context moved_vars kind)
 
 convertibleConstraints :: Common.Context -> Common.MovedVars -> T.Type -> T.Type -> Common.Context
 convertibleConstraints context moved_vars src dest = do
@@ -43,11 +47,9 @@ convertibleConstraints context moved_vars src dest = do
             else Common.addEqual context src_var dest_var)
     context
 
-borrowConstraints :: Common.Context -> Common.MovedVars -> T.Type -> T.Type -> Common.Context
-borrowConstraints context moved_vars src dest = do
-    src_kinds <- T.collectOwnershipKinds src
+borrowConstraints :: Common.Context -> Common.MovedVars -> [T.OwnershipVar] -> T.Type -> Common.Context
+borrowConstraints context moved_vars src_vars dest = do
     dest_kinds <- T.collectOwnershipKinds dest
-    (context, src_vars) <- collectVars context moved_vars src_kinds
     (context, dest_vars) <- collectVars context moved_vars dest_kinds
     context <- List.zipSE context src_vars dest_vars (\context, index, src_var, dest_var -> do
         context <- if index == 0
@@ -67,6 +69,15 @@ equalConstraints context moved_vars src dest = do
     src_kinds <- T.collectOwnershipKinds src
     dest_kinds <- T.collectOwnershipKinds dest
     (context, src_vars) <- collectVars context moved_vars src_kinds
+    (context, dest_vars) <- collectVars context moved_vars dest_kinds
+    context <- List.zipS context src_vars dest_vars (\context, src_var, dest_var -> do
+        context <- Common.addEqual context src_var dest_var
+        context)
+    context
+
+equalConstraintsWithVars :: Common.Context -> Common.MovedVars -> [T.OwnershipVar] -> T.Type -> Common.Context
+equalConstraintsWithVars context moved_vars src_vars dest = do
+    dest_kinds <- T.collectOwnershipKinds dest
     (context, dest_vars) <- collectVars context moved_vars dest_kinds
     context <- List.zipS context src_vars dest_vars (\context, src_var, dest_var -> do
         context <- Common.addEqual context src_var dest_var
@@ -127,10 +138,16 @@ processExpr context moved_vars expr = do
         E.VarDecl v rhs -> do
             (context, moved_vars) <- processExpr context moved_vars rhs
             E.Expr _ rhs_type _ <- rhs
-            context <- Common.addVarType context v rhs_type
+            var_kinds <- T.collectOwnershipKinds rhs_type
+            var_vars <- var_kinds |> List.iter |> map (\kind -> Common.kindToVar kind) |> toList
+            context <- Common.addVarVars context v var_vars
+            kinds <- T.collectOwnershipKinds type
+            first <- atIndex kinds 0
+            decl_result_var <- Common.kindToVar first
+            context <- Common.addOwnershipVar context decl_result_var T.OwnerKind moved_vars
             (context, moved_vars)
         E.StaticFunctionCall id args -> do
-            info <- case get context.global_context.inference_infos id of
+            info <- case get context.global_context.inference_info_store.inference_infos id of
                 Some info -> info
                 None -> panic "No inference info found for function {}" % id
             (context, info) <- Common.cloneFunctionInfo context info
@@ -145,19 +162,15 @@ processExpr context moved_vars expr = do
             context <- equalConstraints context moved_vars function_type.result type
             (context, moved_vars)
         E.VarRef v -> do
-            var_type <- Common.getVarType context v
+            var_vars <- Common.getVarVars context v
             (context, moved_vars) <- if Set.contains context.not_moves id
                 then do
-                    context <- borrowConstraints context moved_vars var_type type
+                    context <- borrowConstraints context moved_vars var_vars type
                     (context, moved_vars)
                 else do
-                    vars <- T.collectOwnershipVars var_type
-                    moved_var <- atIndex vars 0
-                    moved_var <- case moved_var of
-                        T.VarKind v -> v
-                        _ -> panic "Var is not varkind in move"
+                    moved_var <- atIndex var_vars 0
                     moved_vars <- addMovedVar moved_vars moved_var
-                    context <- equalConstraints context moved_vars var_type type
+                    context <- equalConstraintsWithVars context moved_vars var_vars type
                     (context, moved_vars)
             (context, moved_vars)
         E.CaseOf body cases -> do
@@ -165,7 +178,9 @@ processExpr context moved_vars expr = do
             (context, moved_var_sets) <- cases |> List.iter |> fold (\(context, moved_var_sets), c -> do
                 context <- case c.checker of
                     E.VariantChecker index v type -> do
-                        context <- Common.addVarType context v type
+                        var_kinds <- T.collectOwnershipKinds type
+                        var_vars <- var_kinds |> List.iter |> map (\kind -> Common.kindToVar kind) |> toList
+                        context <- Common.addVarVars context v var_vars
                         E.Expr _ body_type _ <- body
                         adt <- getAdtType context body_type
                         variant <- atIndex adt.variants index
@@ -187,11 +202,17 @@ processExpr context moved_vars expr = do
             (context, moved_vars)
         _ -> panic "NYI {}" % s_expr
 
+processArg :: Common.Context -> Int -> T.Type -> Common.Context
+processArg context index type = do
+    kinds <- T.collectOwnershipKinds type
+    (context, vars) <- List.mapS context kinds (\context, kind -> processKind context (Common.MovedVars Set.empty) kind)
+    Common.addVarVars context (E.Arg index) vars
+
 collectConstraints :: Common.GlobalContext -> U.OwnershipVarGenerator -> F.FunctionType -> P.Identity -> E.Expr -> Common.Context
 collectConstraints global_context var_gen function_type function_id body = do
     not_moves <- C.collectNotMoves function_id body (getLength function_type.args)
     context <- Common.createContext global_context not_moves var_gen
-    context <- foldE (\context, index, arg_type -> Common.addVarType context (E.Arg index) arg_type) context function_type.args
+    context <- foldE (\context, index, arg_type -> processArg context index arg_type) context function_type.args
     moved_vars <- Common.MovedVars Set.empty
     (context, moved_vars) <- processExpr context moved_vars body
     E.Expr _ body_type _ <- body

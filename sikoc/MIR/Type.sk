@@ -50,16 +50,6 @@ getIdentity type = case type of
     Box t -> getIdentity t
     Var i t -> getIdentity t
 
-collectOwnershipVars :: Type -> [OwnershipKind]
-collectOwnershipVars type = case type of
-    Adt id args -> args
-    Record id args -> args
-    Ref _ t -> collectOwnershipVars t
-    Owner t -> collectOwnershipVars t
-    Never -> []
-    Box t -> collectOwnershipVars t
-    Var i t -> [i] + collectOwnershipVars t
-
 collectOwnershipKinds :: Type -> [OwnershipKind]
 collectOwnershipKinds type = case type of
     Adt id args -> args
@@ -67,30 +57,20 @@ collectOwnershipKinds type = case type of
     Ref i t -> [BorrowKind i] + collectOwnershipKinds t
     Owner t -> [OwnerKind] + collectOwnershipKinds t
     Never -> []
-    Box t -> collectOwnershipVars t
-    Var i t -> [i] + collectOwnershipVars t
+    Box t -> collectOwnershipKinds t
+    Var i t -> [i] + collectOwnershipKinds t
 
 collectOwnershipArgs :: Type -> [OwnershipKind]
 collectOwnershipArgs type = case type of
     Adt id args -> args
     Record id args -> args
-    Ref _ t -> collectOwnershipVars t
-    Owner t -> collectOwnershipVars t
+    Ref _ t -> collectOwnershipKinds t
+    Owner t -> collectOwnershipKinds t
     Never -> []
-    Box t -> collectOwnershipVars t
-    Var i t -> collectOwnershipVars t
+    Box t -> collectOwnershipKinds t
+    Var i t -> collectOwnershipKinds t
 
 debox :: Type -> Type
 debox type = case type of
     Box t -> t
     t -> t
-
-isOwned :: OwnershipKind -> Bool
-isOwned kind = case kind of
-    OwnerKind -> True
-    _ -> False
-
-isVar :: OwnershipKind -> Bool
-isVar kind = case kind of
-    VarKind _ -> True
-    _ -> False
