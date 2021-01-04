@@ -36,8 +36,14 @@ processEquals context = do
             None -> break context
 
 processConverters :: Common.Context -> Common.Context
-processConverters context = do
-    context.converters |> Set.iter |> fold (\context, Common.Converter converter_kind from to -> do
+processConverters context =
+    loop context <- context do
+        (context, changed) <- processConvertersStep context
+        if changed then context else break context
+
+processConvertersStep :: Common.Context -> (Common.Context, Bool)
+processConvertersStep context = do
+    context.converters |> Set.iter |> fold (\(context, changed), Common.Converter converter_kind from to -> do
             resolved_from <- resolveKind context from
             resolved_to <- resolveKind context to
             case (resolved_from, resolved_to) of
@@ -51,17 +57,13 @@ processConverters context = do
                             borrower_kind <- T.BorrowKind borrower_set_id
                             group_id <- Common.getGroupId context to
                             context <- Common.updateGroupKind context group_id borrower_kind
-                            context
+                            (context, True)
                         else do
                             group_id <- Common.getGroupId context to
                             context <- Common.updateGroupKind context group_id T.OwnerKind
-                            context
-                (T.VarKind _, T.OwnerKind) -> do
-                            group_id <- Common.getGroupId context from
-                            context <- Common.updateGroupKind context group_id T.OwnerKind
-                            context
-                _ -> context
-        ) context
+                            (context, True)
+                _ -> (context, changed)
+        ) (context, False)
 
 dumpConverters :: Common.Context -> ()
 dumpConverters context = do
