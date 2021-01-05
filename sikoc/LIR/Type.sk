@@ -2,24 +2,29 @@ module Siko.LIR.Type where
 
 import Siko.LIR.Program
 
-data Type = Adt Identity
-          | Record Identity
-          | Ref Int Type
+data Lifetime = Lifetime Int
+
+instance Show Lifetime where
+    show (Lifetime i) = "'l{}" % i
+
+data Type = Adt Identity [Lifetime]
+          | Record Identity [Lifetime]
+          | Ref Lifetime Type
           | Never
           | Box Type
 
 instance Show Type where
     show t = case t of
-        Adt id -> "{}" % id
-        Record id -> "{}" % id
-        Ref index t -> "&^{} {}" % (index, t)
+        Adt id lifetimes -> "{}" % id
+        Record id lifetimes -> "{}" % id
+        Ref lifetime t -> "&{} {}" % (lifetime, t)
         Never -> "!"
         Box t -> "*{}" % t
 
 getIdentity :: Type -> Identity
 getIdentity type = case type of
-    Adt id -> id
-    Record id -> id
+    Adt id _ -> id
+    Record id _ -> id
     Ref _ t -> getIdentity t
     Never -> panic "getIdentity called on Never!"
     Box t -> getIdentity t

@@ -158,7 +158,9 @@ processExpr queue mir_expr = do
             arg_types <- args |> List.iter |> map (\ME.Expr _ t _ -> t) |> toList
             (indices, arg_types) <- List.mapS Map.empty arg_types normalizeType
             (indices, result) <- normalizeType indices mir_type
-            function_key <- FunctionKey id (MF.FunctionType arg_types result)
+            normalized_function_type <- MF.FunctionType arg_types result
+            //println "{} :: {}" % (id, normalized_function_type)
+            function_key <- FunctionKey id normalized_function_type
             (queue, lir_id) <- getFunctionId queue function_key
             queue <- addItem queue (QueuedFunction function_key)
             (queue, args) <- args |> List.iter |> fold (\(queue, args), arg -> do
@@ -185,6 +187,12 @@ processExpr queue mir_expr = do
         ME.Ref arg -> do
             (queue, arg) <- processExpr queue arg
             (queue, LE.Ref arg)
+        ME.Move arg -> do
+            (queue, arg) <- processExpr queue arg
+            (queue, LE.Move arg)
+        ME.Deref arg -> do
+            (queue, arg) <- processExpr queue arg
+            (queue, LE.Deref arg)
         _ -> panic "NYI {}" % s_expr
     //println "{} ---> {}" % (mir_type, s_expr)
     (queue, lir_type) <- processType queue mir_type
@@ -240,16 +248,18 @@ processType queue mir_type = case mir_type of
         adt_key <- AdtKey id args
         (queue, lir_id) <- getAdtId queue adt_key
         queue <- addItem queue (QueuedAdt adt_key)
-        (queue, LT.Adt lir_id)
+        lifetimes <- []
+        (queue, LT.Adt lir_id lifetimes)
     MT.Record id args -> do
         (_, args) <- normalizeArgs Map.empty args
         record_key <- RecordKey id args
         (queue, lir_id) <- getRecordId queue record_key
         queue <- addItem queue (QueuedRecord record_key)
-        (queue, LT.Record lir_id)
+        lifetimes <- []
+        (queue, LT.Record lir_id lifetimes)
     MT.Ref index t -> do
         (queue, lir_t) <- processType queue t
-        (queue, LT.Ref index lir_t)
+        (queue, LT.Ref (LT.Lifetime index) lir_t)
     MT.Owner t -> processType queue t
     MT.Never -> (queue, LT.Never)
     MT.Box t -> do
@@ -265,13 +275,13 @@ processFunctionType queue mir_function_type = do
 
 processFunction :: Queue -> MP.Program -> FunctionKey -> LP.Identity -> Queue
 processFunction queue mir_program function_key lir_id = do
-    println "Instantiation: processing function {}" % function_key
+    //println "Instantiation: processing function {}" % function_key
     FunctionKey mir_id function_type <- function_key
     mir_function <- MP.getFunction mir_program mir_id
     case mir_function.kind of
         MF.Normal mir_body expr_id_gen temp_var_gen -> do
             global_context <- InferenceC.createGlobalContext mir_program queue.inference_info_store
-            (body, var_gen) <- Inference.instantiateFunction global_context queue.var_gen mir_id function_type mir_body
+            (body, var_gen) <- Inference.instantiateFunction global_context queue.var_gen expr_id_gen mir_id function_type mir_body
             (queue, lir_body) <- processExpr queue body
             lir_kind <- LF.Normal lir_body
             (queue, lir_function_type) <- processFunctionType queue function_type

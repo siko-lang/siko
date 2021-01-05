@@ -70,7 +70,7 @@ data SimpleExpr = Do [Expr]
 
 prettyPrint :: Expr -> Indent -> (String, Bool)
 prettyPrint expr ind = do
-    Expr expr _ _ <- expr
+    Expr expr expr_type _ <- expr
     case expr of
         Do args -> do
             inner <- inc ind
@@ -97,7 +97,7 @@ prettyPrint expr ind = do
             Expr _ arg_type id <- arg
             s <- "{} :: {} <- {}" % (v, arg_type, (prettyPrint arg ind).0)
             (s, False)
-        VarRef v -> (show v, True)
+        VarRef v -> ("({} :: {})" % (v, expr_type), True)
         FieldAccess n rhs -> do
             (s, simple) <- prettyPrint rhs ind
             s <- if simple
@@ -150,16 +150,16 @@ prettyPrint expr ind = do
             (s, False)
         Clone expr -> do
             (s, simple) <- prettyPrint expr ind
-            ("clone({})" % s, False)
+            ("clone(({}) :: {})" % (s, expr_type), False)
         Deref expr -> do
             (s, simple) <- prettyPrint expr ind
-            ("deref({})" % s, False)
+            ("deref(({}) :: {})" % (s, expr_type), False)
         Ref expr -> do
             (s, simple) <- prettyPrint expr ind
-            ("ref({})" % s, False)
+            ("ref(({}) :: {})" % (s, expr_type), False)
         Move expr -> do
             (s, simple) <- prettyPrint expr ind
-            ("move({})" % s, False)
+            ("move(({}) :: {})" % (s, expr_type), False)
         Box expr -> do
             (s, simple) <- prettyPrint expr ind
             ("box({})" % s, False)

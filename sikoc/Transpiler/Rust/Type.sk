@@ -1,18 +1,31 @@
 module Siko.Transpiler.Rust.Type where
 
-data Type = Named String
+data Lifetime = Lifetime Int deriving (PartialEq, Eq, PartialOrd, Ord)
+
+instance Show Lifetime where
+    show (Lifetime i) = "'l{}" % i
+
+data Type = Named String [Lifetime]
             | Box Type
             | Rc Type
-            | Ref Int Type
+            | Ref Lifetime Type
             | Never
             deriving (PartialEq, Eq, PartialOrd, Ord)
 
-instance Show Type where
-    show t = case t of
-        Named t -> t
-        Box t -> "std::boxed::Box<{}>" % t
-        Rc t -> "std::rc::Rc<{}>" % t
-        Ref index t -> "&'l{} {}" % (index, t)
+showAll :: Type -> String
+showAll t = case t of
+        Named t lifetimes -> ("{}<{}>" % (t, join lifetimes ", "))
+        Box t -> "std::boxed::Box<{}>" % showAll t
+        Rc t -> "std::rc::Rc<{}>" % showAll t
+        Ref lifetime t -> "&{} {}" % (lifetime, showAll t)
+        Never -> "!"
+
+showBase :: Type -> String
+showBase t = case t of
+        Named t lifetimes -> t
+        Box t -> "std::boxed::Box<{}>" % showBase t
+        Rc t -> "std::rc::Rc<{}>" % showBase t
+        Ref lifetime t -> "&{}" % showBase t
         Never -> "!"
 
 isBoxed :: Type -> Bool
@@ -22,7 +35,7 @@ isBoxed t = case t of
 
 getInnerType :: Type -> Type
 getInnerType t = case t of
-    Named _ -> t
+    Named _ _ -> t
     Box t -> getInnerType t
     Rc t -> getInnerType t
     Ref _ t -> getInnerType t

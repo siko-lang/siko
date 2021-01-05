@@ -35,20 +35,20 @@ collectVars :: Common.Context -> Common.MovedVars -> [T.OwnershipKind] -> (Commo
 collectVars context moved_vars kinds = do
     List.mapS context kinds (\context, kind -> processKind context moved_vars kind)
 
-convertibleConstraints :: Common.Context -> Common.MovedVars -> T.Type -> T.Type -> Common.Context
-convertibleConstraints context moved_vars src dest = do
+convertibleConstraints :: Common.Context -> Common.ConverterPosition -> Common.MovedVars -> T.Type -> T.Type -> Common.Context
+convertibleConstraints context pos moved_vars src dest = do
     src_kinds <- T.collectOwnershipKinds src
     dest_kinds <- T.collectOwnershipKinds dest
     (context, src_vars) <- collectVars context moved_vars src_kinds
     (context, dest_vars) <- collectVars context moved_vars dest_kinds
     context <- List.zipSE context src_vars dest_vars (\context, index, src_var, dest_var -> do
         if index == 0
-            then Common.addConverter context (Common.Converter Common.NormalConverter src_var dest_var)
+            then Common.addConverter context pos (Common.Converter Common.NormalConverter src_var dest_var)
             else Common.addEqual context src_var dest_var)
     context
 
-borrowConstraints :: Common.Context -> Common.MovedVars -> [T.OwnershipVar] -> T.Type -> Common.Context
-borrowConstraints context moved_vars src_vars dest = do
+borrowConstraints :: Common.Context -> Common.ConverterPosition -> Common.MovedVars -> [T.OwnershipVar] -> T.Type -> Common.Context
+borrowConstraints context pos moved_vars src_vars dest = do
     dest_kinds <- T.collectOwnershipKinds dest
     (context, dest_vars) <- collectVars context moved_vars dest_kinds
     context <- List.zipSE context src_vars dest_vars (\context, index, src_var, dest_var -> do
@@ -57,7 +57,7 @@ borrowConstraints context moved_vars src_vars dest = do
                 converter <- Common.Converter Common.BorrowConverter src_var dest_var
                 b <- Common.Borrower src_var
                 context <- context { borrowers = context.borrowers + [b] }
-                Common.addConverter context converter
+                Common.addConverter context pos converter
             else do
                 context <- Common.addEqual context src_var dest_var
                 context
@@ -75,7 +75,7 @@ equalConstraints context moved_vars src dest = do
         context)
     context
 
-equalConstraintsWithVars :: Common.Context -> Common.MovedVars -> [T.OwnershipVar] -> T.Type -> Common.Context
+equalConstraintsWithVars :: Common.Context-> Common.MovedVars -> [T.OwnershipVar] -> T.Type -> Common.Context
 equalConstraintsWithVars context moved_vars src_vars dest = do
     dest_kinds <- T.collectOwnershipKinds dest
     (context, dest_vars) <- collectVars context moved_vars dest_kinds
@@ -133,7 +133,7 @@ processExpr context moved_vars expr = do
         E.Do items -> do
             (context, moved_vars) <- items |> List.iter |> fold (\(context, moved_vars), item -> processExpr context moved_vars item) (context, moved_vars)
             E.Expr _ last_type _ <- atIndex items (getLength items - 1)
-            context <- convertibleConstraints context moved_vars last_type type
+            context <- convertibleConstraints context (Common.ExprConverter id) moved_vars last_type type
             (context, moved_vars)
         E.VarDecl v rhs -> do
             (context, moved_vars) <- processExpr context moved_vars rhs
@@ -146,26 +146,26 @@ processExpr context moved_vars expr = do
             decl_result_var <- Common.kindToVar first
             context <- Common.addOwnershipVar context decl_result_var T.OwnerKind moved_vars
             (context, moved_vars)
-        E.StaticFunctionCall id args -> do
-            info <- case get context.global_context.inference_info_store.inference_infos id of
+        E.StaticFunctionCall f_id args -> do
+            info <- case get context.global_context.inference_info_store.inference_infos f_id of
                 Some info -> info
-                None -> panic "No inference info found for function {}" % id
+                None -> panic "No inference info found for function {}" % f_id
             (context, info) <- Common.cloneFunctionInfo context info
             context <- info.var_constraints |> Map.iter |> fold (\context, (src_var, constraints) -> do
                     constraints |> Set.iter |> fold (\context, dest_var ->
-                        Common.addConverter context (Common.Converter Common.NormalConverter src_var dest_var)) context) context
+                        Common.addConverter context Common.External (Common.Converter Common.NormalConverter src_var dest_var)) context) context
             function_type <- info.function_type
             (context, moved_vars) <- args |> List.iter |> fold (\(context, moved_vars), arg -> processExpr context moved_vars arg) (context, moved_vars)
-            context <- List.zipS context args function_type.args (\context, arg_expr, f_arg_type -> do
+            context <- List.zipSE context args function_type.args (\context, index, arg_expr, f_arg_type -> do
                 E.Expr _ arg_expr_type _ <- arg_expr
-                convertibleConstraints context moved_vars arg_expr_type f_arg_type)
+                convertibleConstraints context (Common.CallArg id index) moved_vars arg_expr_type f_arg_type)
             context <- equalConstraints context moved_vars function_type.result type
             (context, moved_vars)
         E.VarRef v -> do
             var_vars <- Common.getVarVars context v
             (context, moved_vars) <- if Set.contains context.not_moves id
                 then do
-                    context <- borrowConstraints context moved_vars var_vars type
+                    context <- borrowConstraints context (Common.ExprConverter id) moved_vars var_vars type
                     (context, moved_vars)
                 else do
                     moved_var <- atIndex var_vars 0
@@ -188,7 +188,8 @@ processExpr context moved_vars expr = do
                     _ -> context
                 (context, moved_vars) <- processExpr context moved_vars c.body
                 E.Expr _ body_type _ <- c.body
-                context <- convertibleConstraints context moved_vars body_type type
+                index <- getLength moved_var_sets
+                context <- convertibleConstraints context (Common.CaseConverter id index) moved_vars body_type type
                 moved_var_sets <- moved_var_sets + [moved_vars]
                 (context, moved_var_sets)) (context, [])
             moved_vars <- mergeMovedVars moved_var_sets
@@ -216,5 +217,5 @@ collectConstraints global_context var_gen function_type function_id body = do
     moved_vars <- Common.MovedVars Set.empty
     (context, moved_vars) <- processExpr context moved_vars body
     E.Expr _ body_type _ <- body
-    context <- convertibleConstraints context moved_vars body_type function_type.result
+    context <- equalConstraints context moved_vars body_type function_type.result
     context

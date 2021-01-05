@@ -19,6 +19,12 @@ data ConverterKind = NormalConverter
                    | BorrowConverter
                    deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
+data ConverterPosition = ExprConverter E.ExprId
+                       | CaseConverter E.ExprId Int
+                       | CallArg E.ExprId Int
+                       | External
+                       deriving (Show, PartialEq, Eq, PartialOrd, Ord)
+
 data Converter = Converter ConverterKind T.OwnershipVar T.OwnershipVar
                  deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
@@ -35,7 +41,8 @@ data Group = { kind :: T.OwnershipKind }
 
 data Context = { global_context :: GlobalContext,
                  var_vars :: Map E.Var [T.OwnershipVar],
-                 converters :: Set Converter,
+                 converters :: [Converter],
+                 converter_positions :: Map ConverterPosition Int,
                  equals :: [Equal],
                  not_moves :: Set E.ExprId,
                  ownership_vars :: Map T.OwnershipVar Int,
@@ -62,7 +69,8 @@ createContext :: GlobalContext -> Set E.ExprId -> U.OwnershipVarGenerator -> Con
 createContext global_context not_moves var_gen = Context {
         global_context = global_context,
         var_vars = Map.empty,
-        converters = Set.empty,
+        converters = [],
+        converter_positions = Map.empty,
         equals = [],
         not_moves = not_moves,
         ownership_vars = Map.empty,
@@ -74,10 +82,12 @@ createContext global_context not_moves var_gen = Context {
         groups = Map.empty,
         group_id_gen = 1 }
 
-addConverter :: Context -> Converter -> Context
-addConverter context converter = do
-    (converters, _) <- Set.insert context.converters converter
-    context { converters = converters }
+addConverter :: Context -> ConverterPosition -> Converter -> Context
+addConverter context pos converter = do
+    index <- getLength context.converters
+    (converter_positions, _) <- Map.insert context.converter_positions pos index
+    converters <- context.converters + [converter]
+    context { converters = converters, converter_positions = converter_positions }
 
 addEqual :: Context -> T.OwnershipVar -> T.OwnershipVar -> Context
 addEqual context v1 v2 = do

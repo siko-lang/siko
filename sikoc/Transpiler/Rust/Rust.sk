@@ -97,7 +97,7 @@ generatePattern pattern guard = case pattern of
 getTypeAnnotation :: T.Type -> String
 getTypeAnnotation type = case type of
     T.Never -> ""
-    _ -> " : {} " % type
+    _ -> " : {} " % T.showBase type
 
 generateExpr :: Expr -> Indent -> String
 generateExpr expr indent = case expr of
@@ -150,7 +150,7 @@ generateExpr expr indent = case expr of
         "{}.{}" % (receiver, name)
     Ref rhs -> "(&({}))" % generateExpr rhs (Indent 0)
     MutRef rhs -> "&mut {}" % generateExpr rhs (Indent 0)
-    Deref rhs -> "*{}" % generateExpr rhs (Indent 0)
+    Deref rhs -> "(*({}))" % generateExpr rhs (Indent 0)
     Loop args -> do
             inner <- inc indent
             args <- args |> List.iter |> map (\arg -> do
@@ -181,7 +181,7 @@ generateStruct :: Struct -> String
 generateStruct struct = do
     indent <- Indent 2
     fields <- struct.fields |> List.iter |> fold (\fields, field -> do
-        f <- "{}{}: {}," % (indent, field.name, field.type)
+        f <- "{}{}: {}," % (indent, field.name, T.showAll field.type)
         fields <- fields + [f]
         fields) []
     content <- ""
@@ -195,7 +195,7 @@ generateEnum :: Enum -> String
 generateEnum enum = do
     indent <- Indent 2
     variants <- enum.variants |> List.iter |> fold (\variants, variant -> do
-        v <- "{}{}({})," % (indent, variant.name, variant.type)
+        v <- "{}{}({})," % (indent, variant.name, T.showAll variant.type)
         variants <- variants + [v]
         variants) []
     content <- ""
@@ -207,17 +207,17 @@ generateEnum enum = do
 
 generateFunction :: Function -> Indent -> String
 generateFunction function indent = do
-    args <- function.args |> List.iter |> map (\(arg_name, type) -> "{}: {}" % (arg_name, type)) |> toList
+    args <- function.args |> List.iter |> map (\(arg_name, type) -> "{}: {}" % (arg_name, T.showAll type)) |> toList
     args <- if function.is_method
         then ["&self"] + args
         else args
-    signature <- "{}fn {}({}) -> {}" % (indent, function.name, join args ", ", function.result)
+    signature <- "{}fn {}({}) -> {}" % (indent, function.name, join args ", ", T.showAll function.result)
     body <- generateExpr function.body indent
     signature + " " + body
 
 generateTraitImpl :: TraitImpl -> String
 generateTraitImpl impl = do
-    signature <- "impl {} for {}" % (impl.trait_name, impl.type) + " {"
+    signature <- "impl {} for {}" % (impl.trait_name, T.showAll impl.type) + " {"
     indent <- Indent 2
     body <- impl.methods |> List.iter |> fold (\body, method -> do
         m <- generateFunction method indent

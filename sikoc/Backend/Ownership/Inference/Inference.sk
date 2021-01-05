@@ -43,7 +43,7 @@ processConverters context =
 
 processConvertersStep :: Common.Context -> (Common.Context, Bool)
 processConvertersStep context = do
-    context.converters |> Set.iter |> fold (\(context, changed), Common.Converter converter_kind from to -> do
+    context.converters |> List.iter |> fold (\(context, changed), Common.Converter converter_kind from to -> do
             resolved_from <- resolveKind context from
             resolved_to <- resolveKind context to
             case (resolved_from, resolved_to) of
@@ -62,13 +62,17 @@ processConvertersStep context = do
                             group_id <- Common.getGroupId context to
                             context <- Common.updateGroupKind context group_id T.OwnerKind
                             (context, True)
+                (T.BorrowKind _, T.VarKind _) -> do
+                    group_id <- Common.getGroupId context to
+                    context <- Common.updateGroupKind context group_id resolved_from
+                    (context, True)
                 _ -> (context, changed)
         ) (context, False)
 
 dumpConverters :: Common.Context -> ()
 dumpConverters context = do
     println "Converters:"
-    context.converters |> Set.iter |> forEach (\c -> println c)
+    context.converters |> List.iter |> forEach (\c -> println c)
 
 dumpOwnershipVars :: Common.Context -> ()
 dumpOwnershipVars context = do
@@ -99,7 +103,7 @@ collectConvertibleConstraints var context = do
     convertibles <- Set.empty
     (convertibles, _) <- Set.insert convertibles var
     convertibles <- loop convertibles <- convertibles do
-        (convertibles, added) <- context.converters |> Set.iter |> fold (\(convertibles, added), converter -> do
+        (convertibles, added) <- context.converters |> List.iter |> fold (\(convertibles, added), converter -> do
             Common.Converter converter_kind a b <- converter
             c_a <- resolveKind context a
             c_b <- resolveKind context b
@@ -176,7 +180,7 @@ calculateInferenceInfo global_context var_gen function_id = do
     function <- P.getFunction global_context.program function_id
     case function.kind of
         F.Normal body expr_id_gen expr_var_gen -> do
-            println "Inference: processing {}" % function.id
+            //println "Inference: processing {}" % function.id
             context <- C.collectConstraints global_context var_gen function.type function_id body
             context <- processEquals context
             context <- processConverters context
@@ -192,19 +196,98 @@ calculateInferenceInfo global_context var_gen function_id = do
             (Some info, context.var_gen)
         _ -> (None, var_gen)
 
-updateBodyType :: U.Substitution -> T.Type -> (U.Substitution, T.Type)
-updateBodyType sub type = do
-    type <- U.apply type sub
-    (sub, type)
+useConverter :: Common.Context -> Counter E.ExprId -> Common.Converter -> E.Expr -> (Counter E.ExprId, E.Expr)
+useConverter context expr_id_gen converter orig_expr = do
+    Common.Converter kind src dest <- converter
+    src_kind <- resolveKind context src
+    dest_kind <- resolveKind context dest
+    (expr_id_gen, next_id) <- getNext expr_id_gen
+    E.Expr orig_s_expr type orig_id <- orig_expr
+    case (src_kind, dest_kind) of
+        (T.OwnerKind, T.OwnerKind) -> do
+            case kind of
+                Common.BorrowConverter -> do
+                    clone_expr <- E.Expr (E.Clone orig_expr) type next_id
+                    //println "clone type {}" % type
+                    (expr_id_gen, clone_expr)
+                Common.NormalConverter -> do
+                    move_expr <- E.Expr (E.Move orig_expr) type next_id
+                    //println "move type {}" % type
+                    (expr_id_gen, move_expr)
+        (T.OwnerKind, T.BorrowKind _) -> do
+            new_type <- case type of
+                T.Ref _ t -> T.Owner t
+                _ -> panic "Owner -> Borrow converter's type is not ref!"
+            orig_expr <- E.Expr orig_s_expr new_type orig_id
+            ref_expr <- E.Expr (E.Ref orig_expr) type next_id
+            //println "ref type {}" % type
+            (expr_id_gen, ref_expr)
+        (T.BorrowKind _, T.OwnerKind) -> do
+            (expr_id_gen, deref_id) <- getNext expr_id_gen
+            new_type <- case type of
+                T.Ref _ t -> T.Owner t
+                _ -> panic "Borrower -> Owner converter's type is not ref!"
+            deref_expr <- E.Expr (E.Deref orig_expr) new_type deref_id
+            clone_expr <- E.Expr (E.Clone deref_expr) new_type next_id
+            //println "clone type {}" % type
+            (expr_id_gen, clone_expr)
+        (T.BorrowKind _, T.BorrowKind _) -> do
+            (expr_id_gen, orig_expr)
+        _ -> panic "Unexpected converter kinds {} -> {}" % (src_kind, dest_kind)
 
-updateBody :: E.Expr -> U.Substitution -> E.Expr
-updateBody expr sub = do
-    (_, expr) <- traverse sub expr None (Some updateBodyType)
+getConverter :: Common.Context -> Common.ConverterPosition -> Common.Converter
+getConverter context pos = do
+    converter_id <- case get context.converter_positions pos of
+        Some converter_id -> converter_id
+        None -> panic "No converter found for pos {}" % pos
+    converter <- atIndex context.converters converter_id
+    converter
+
+updateBodyExpr :: (Common.Context, U.Substitution, Counter E.ExprId) -> E.Expr -> ((Common.Context, U.Substitution, Counter E.ExprId), E.Expr)
+updateBodyExpr (context, sub, expr_id_gen) expr = do
+    E.Expr s_expr type id <- expr
+    case s_expr of
+        E.Do items -> do
+            converter <- getConverter context (Common.ExprConverter id)
+            last <- getLength items - 1
+            last_expr <- atIndex items last
+            (expr_id_gen, last_expr) <- useConverter context expr_id_gen converter last_expr
+            items <- write items last last_expr
+            do_expr <- E.Expr (E.Do items) type id
+            return ((context, sub, expr_id_gen), do_expr)
+        E.VarDecl _ _ -> ()
+        E.StaticFunctionCall f_id args -> do
+            ((expr_id_gen, index), args) <- List.mapS (expr_id_gen, 0) args (\(expr_id_gen, index), arg -> do
+                    converter <- getConverter context (Common.CallArg id index)
+                    (expr_id_gen, arg_expr) <- useConverter context expr_id_gen converter arg
+                    ((expr_id_gen, index + 1), arg_expr)
+                )
+            call_expr <- E.Expr (E.StaticFunctionCall f_id args) type id
+            return ((context, sub, expr_id_gen), call_expr)
+        E.VarRef v -> do
+            pos <- Common.ExprConverter id
+            case get context.converter_positions pos of
+                Some converter_id -> do
+                    converter <- atIndex context.converters converter_id
+                    (expr_id_gen, var_ref_expr) <- useConverter context expr_id_gen converter expr
+                    return ((context, sub, expr_id_gen), var_ref_expr)
+                None -> ()
+        _ -> ()
+    ((context, sub, expr_id_gen), expr)
+
+updateBodyType :: (Common.Context, U.Substitution, Counter E.ExprId) -> T.Type -> ((Common.Context, U.Substitution, Counter E.ExprId), T.Type)
+updateBodyType (context, sub, expr_id_gen) type = do
+    type <- U.apply type sub
+    ((context, sub, expr_id_gen), type)
+
+updateBody :: Common.Context -> U.Substitution -> Counter E.ExprId -> E.Expr -> E.Expr
+updateBody context sub expr_id_gen expr = do
+    (_, expr) <- traverse (context, sub, expr_id_gen) expr (Some updateBodyExpr) (Some updateBodyType)
     expr
 
-instantiateFunction :: Common.GlobalContext -> U.OwnershipVarGenerator -> P.Identity -> F.FunctionType -> E.Expr -> (E.Expr, U.OwnershipVarGenerator)
-instantiateFunction global_context var_gen function_id function_type body = do
-    println "Inference: instantiating {}" % function_id
+instantiateFunction :: Common.GlobalContext -> U.OwnershipVarGenerator -> Counter E.ExprId -> P.Identity -> F.FunctionType -> E.Expr -> (E.Expr, U.OwnershipVarGenerator)
+instantiateFunction global_context var_gen expr_id_gen function_id function_type body = do
+    //println "Inference: instantiating {}" % function_id
     context <- C.collectConstraints global_context var_gen function_type function_id body
     context <- processEquals context
     context <- processConverters context
@@ -212,7 +295,7 @@ instantiateFunction global_context var_gen function_id function_type body = do
     //dumpConverters context
     //dumpOwnershipVars context
     sub <- getSubstitution context
-    updated_body <- updateBody body sub
+    updated_body <- updateBody context sub expr_id_gen body
     (updated_body, context.var_gen)
 
 processFunctionGroup :: Common.GlobalContext -> U.OwnershipVarGenerator -> [P.Identity] -> (Common.GlobalContext, U.OwnershipVarGenerator)
