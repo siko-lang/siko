@@ -19,83 +19,69 @@ import Siko.Backend.Ownership.Inference.Common as InferenceC
 import Map
 import Set
 
-data FunctionKey = FunctionKey MP.Identity MF.FunctionType deriving (PartialEq, Eq, PartialOrd, Ord, Show)
+data LIRKey = FunctionKey MP.Identity MF.FunctionType
+            | RecordKey MP.Identity [MT.OwnershipKind]
+            | AdtKey MP.Identity [MT.OwnershipKind]
+            deriving (PartialEq, Eq, PartialOrd, Ord, Show)
 
-data RecordKey = RecordKey MP.Identity [MT.OwnershipKind] deriving (PartialEq, Eq, PartialOrd, Ord, Show)
+data QueuedItem = QueuedItem LIRKey deriving (Show)
 
-data AdtKey = AdtKey MP.Identity [MT.OwnershipKind] deriving (PartialEq, Eq, PartialOrd, Ord, Show)
+data Name = { module_name :: String, name :: String } deriving (PartialEq, Eq, PartialOrd, Ord, Show)
 
-data Item = QueuedFunction FunctionKey
-          | QueuedRecord RecordKey
-          | QueuedAdt AdtKey
-          deriving (Show)
+data NameMap = { names :: Map Name Int }
 
-data Queue = { next_id :: Int,
-               function_ids :: Map FunctionKey LP.Identity,
+getName :: NameMap -> MP.Identity -> (NameMap, LP.Identity)
+getName name_map mir_id = do
+    MP.Identity mod name _ <- mir_id
+    (names, id) <- alter (\old -> case old of
+        Some old_id -> Some (old_id + 1)
+        None -> Some 1) (Name mod name) name_map.names
+    lir_id <- case id of
+        Some id -> LP.Identity mod name id
+        None -> LP.Identity mod name 0
+    (name_map { names = names}, lir_id)
+
+data Queue = { name_map :: NameMap,
+               lir_ids :: Map LIRKey LP.Identity,
                lir_functions :: Map LP.Identity LF.Function,
                type_ids :: Map MT.Type LT.Type,
-               record_ids :: Map RecordKey LP.Identity,
                lir_records :: Map LP.Identity LD.Record,
-               adt_ids :: Map AdtKey LP.Identity,
                lir_adts :: Map LP.Identity LD.AlgebraicDataType,
-               item_queue :: [Item],
+               item_queue :: [QueuedItem],
                inference_info_store :: InferenceC.InferenceInfoStore,
                var_gen :: U.OwnershipVarGenerator }
 
 createQueue :: InferenceC.InferenceInfoStore -> U.OwnershipVarGenerator -> Queue
-createQueue inference_info_store var_gen = Queue { next_id = 0,
-                      function_ids = Map.empty,
+createQueue inference_info_store var_gen =
+                Queue { name_map = NameMap Map.empty,
+                      lir_ids = Map.empty,
                       lir_functions = Map.empty,
                       type_ids = Map.empty,
-                      record_ids = Map.empty,
                       lir_records = Map.empty,
-                      adt_ids = Map.empty,
                       lir_adts = Map.empty,
                       item_queue = [],
                       inference_info_store = inference_info_store,
                       var_gen = var_gen }
 
-getFunctionId :: Queue -> FunctionKey -> (Queue, LP.Identity)
-getFunctionId queue function_key = do
-    next_id <- queue.next_id
-    lir_id :: Option LP.Identity <- None
-    ((lir_id, next_id), function_ids, _) <- alterS (\(_, next_id), old_function_id -> case old_function_id of
-        Some old_function_id -> ((Some old_function_id, next_id), Some old_function_id)
-        None -> do
-            FunctionKey mir_id _ <- function_key
-            MP.Identity mod name _ <- mir_id
-            lir_id <- LP.Identity mod name next_id
-            ((Some lir_id, next_id + 1), Some lir_id)) (lir_id, next_id) function_key queue.function_ids
-    queue <- queue { next_id = next_id, function_ids = function_ids }
-    (queue, Option.unwrap lir_id)
+createId :: MP.Identity -> (NameMap, Option LP.Identity) -> Option LP.Identity -> ((NameMap, Option LP.Identity), Option LP.Identity)
+createId mir_id (name_map, _) old = case old of
+    Some name -> ((name_map, Some name), Some name)
+    None -> do
+        (name_map, lir_id) <- getName name_map mir_id
+        ((name_map, Some lir_id), Some lir_id)
 
-getRecordId :: Queue -> RecordKey -> (Queue, LP.Identity)
-getRecordId queue record_key = do
-    next_id <- queue.next_id
-    lir_id :: Option LP.Identity <- None
-    ((lir_id, next_id), record_ids, _) <- alterS (\(_, next_id), old_record_id -> case old_record_id of
-        Some old_record_id -> ((Some old_record_id, next_id), Some old_record_id)
-        None -> do
-            RecordKey mir_id _ <- record_key
-            MP.Identity mod name _ <- mir_id
-            lir_id <- LP.Identity mod name next_id
-            ((Some lir_id, next_id + 1), Some lir_id)) (lir_id, next_id) record_key queue.record_ids
-    queue <- queue { next_id = next_id, record_ids = record_ids }
-    (queue, Option.unwrap lir_id)
+getMIRId :: LIRKey -> MP.Identity
+getMIRId key = case key of
+    FunctionKey id _ -> id
+    RecordKey id _ -> id
+    AdtKey id _ -> id
 
-getAdtId :: Queue -> AdtKey -> (Queue, LP.Identity)
-getAdtId queue adt_key = do
-    next_id <- queue.next_id
+getLIRId :: Queue -> LIRKey -> (Queue, LP.Identity)
+getLIRId queue key = do
+    mir_id <- getMIRId key
     lir_id :: Option LP.Identity <- None
-    ((lir_id, next_id), adt_ids, _) <- alterS (\(_, next_id), old_adt_id -> case old_adt_id of
-        Some old_adt_id -> ((Some old_adt_id, next_id), Some old_adt_id)
-        None -> do
-            AdtKey mir_id _ <- adt_key
-            MP.Identity mod name _ <- mir_id
-            lir_id <- LP.Identity mod name next_id
-            ((Some lir_id, next_id + 1), Some lir_id)) (lir_id, next_id) adt_key queue.adt_ids
-    queue <- queue { next_id = next_id, adt_ids = adt_ids }
-    (queue, Option.unwrap lir_id)
+    ((name_map, lir_id), lir_ids, _) <- alterS (createId mir_id) (queue.name_map, None) key queue.lir_ids
+    (queue { name_map = name_map, lir_ids = lir_ids }, Option.unwrap lir_id)
 
 addFunction :: Queue -> LF.Function -> Queue
 addFunction queue function = do
@@ -112,7 +98,7 @@ addAdt queue adt = do
     (lir_adts, _) <- Map.insert queue.lir_adts adt.id adt
     queue { lir_adts = lir_adts }
 
-addItem :: Queue -> Item -> Queue
+addItem :: Queue -> QueuedItem -> Queue
 addItem queue item = do
     item_queue <- queue.item_queue + [item]
     queue { item_queue = item_queue }
@@ -161,12 +147,13 @@ processExpr queue mir_expr = do
             normalized_function_type <- MF.FunctionType arg_types result
             //println "{} :: {}" % (id, normalized_function_type)
             function_key <- FunctionKey id normalized_function_type
-            (queue, lir_id) <- getFunctionId queue function_key
-            queue <- addItem queue (QueuedFunction function_key)
+            (queue, lir_id) <- getLIRId queue function_key
+            queue <- addItem queue (QueuedItem function_key)
             (queue, args) <- args |> List.iter |> fold (\(queue, args), arg -> do
                 (queue, arg) <- processExpr queue arg
                 (queue, args + [arg])) (queue, [])
             (queue, LE.StaticFunctionCall lir_id args)
+        ME.IntegerLiteral i -> (queue, LE.IntegerLiteral i)
         ME.VarDecl v rhs -> do
             lir_var <- processVar v
             (queue, lir_rhs) <- processExpr queue rhs
@@ -256,15 +243,15 @@ processType queue mir_type = case mir_type of
     MT.Adt id args -> do
         (_, args) <- normalizeArgs Map.empty args
         adt_key <- AdtKey id args
-        (queue, lir_id) <- getAdtId queue adt_key
-        queue <- addItem queue (QueuedAdt adt_key)
+        (queue, lir_id) <- getLIRId queue adt_key
+        queue <- addItem queue (QueuedItem adt_key)
         lifetimes <- collectLifetimes mir_type
         (queue, LT.Adt lir_id lifetimes)
     MT.Record id args -> do
         (_, args) <- normalizeArgs Map.empty args
         record_key <- RecordKey id args
-        (queue, lir_id) <- getRecordId queue record_key
-        queue <- addItem queue (QueuedRecord record_key)
+        (queue, lir_id) <- getLIRId queue record_key
+        queue <- addItem queue (QueuedItem record_key)
         lifetimes <- collectLifetimes mir_type
         (queue, LT.Record lir_id lifetimes)
     MT.Ref index t -> do
@@ -287,10 +274,9 @@ processFunctionType queue mir_function_type = do
     (queue, lir_result) <- processType queue mir_function_type.result
     (queue, LF.FunctionType lir_args lir_result, lifetimes)
 
-processFunction :: Queue -> MP.Program -> FunctionKey -> LP.Identity -> Queue
-processFunction queue mir_program function_key lir_id = do
-    //println "Instantiation: processing function {}" % function_key
-    FunctionKey mir_id function_type <- function_key
+processFunction :: Queue -> MP.Program -> MP.Identity -> MF.FunctionType -> LP.Identity -> Queue
+processFunction queue mir_program mir_id function_type lir_id = do
+    //println "Instantiation: processing function {} {}" % (mir_id, function_type)
     mir_function <- MP.getFunction mir_program mir_id
     case mir_function.kind of
         MF.Normal mir_body expr_id_gen temp_var_gen -> do
@@ -337,10 +323,9 @@ processExternalRecordInfo queue mir_external_record_info = do
     (queue, lir_type_args) <- List.mapS queue mir_external_record_info.type_args processType
     (queue, LD.ExternalRecordInfo lir_type_args)
 
-processRecord :: Queue -> MP.Program -> RecordKey -> LP.Identity -> Queue
-processRecord queue mir_program record_key lir_id = do
-    //println "Processing record {}" % record_key
-    RecordKey mir_id args <- record_key
+processRecord :: Queue -> MP.Program -> MP.Identity -> [MT.OwnershipKind] -> LP.Identity -> Queue
+processRecord queue mir_program mir_id args lir_id = do
+    //println "Processing record {} {}" % (mir_id, args)
     mir_record <- MP.getRecord mir_program mir_id
     sub <- U.batch mir_record.ownership_vars args
     mir_record <- U.apply mir_record sub
@@ -356,10 +341,9 @@ processRecord queue mir_program record_key lir_id = do
     queue <- addRecord queue lir_record
     queue
 
-processAdt :: Queue -> MP.Program -> AdtKey -> LP.Identity -> Queue
-processAdt queue mir_program adt_key lir_id = do
-    //println "Processing adt {}" % adt_key
-    AdtKey mir_id args <- adt_key
+processAdt :: Queue -> MP.Program -> MP.Identity -> [MT.OwnershipKind] -> LP.Identity -> Queue
+processAdt queue mir_program mir_id args lir_id = do
+    //println "Processing adt {} {}" % (mir_id, args)
     mir_adt <- MP.getAdt mir_program mir_id
     sub <- U.batch mir_adt.ownership_vars args
     mir_record <- U.apply mir_adt sub
@@ -370,30 +354,25 @@ processAdt queue mir_program adt_key lir_id = do
     queue <- addAdt queue lir_adt
     queue
 
-processItem :: Queue -> MP.Program -> Item -> Queue
+processItem :: Queue -> MP.Program -> QueuedItem -> Queue
 processItem queue mir_program item = do
-    case item of
-        QueuedFunction key -> do
-            lir_id <- case get queue.function_ids key of
-                Some lir_id -> lir_id
-                None -> panic "No lir id found for {}" % key
+    QueuedItem lir_key <- item
+    lir_id <- case get queue.lir_ids lir_key of
+        Some lir_id -> lir_id
+        None -> panic "No lir id found for {}" % lir_key
+    case lir_key of
+        FunctionKey mir_id function_type -> do
             case get queue.lir_functions lir_id of
                 Some _ -> queue
-                None -> processFunction queue mir_program key lir_id
-        QueuedRecord key -> do
-            lir_id <- case get queue.record_ids key of
-                Some lir_id -> lir_id
-                None -> panic "No lir id found for {}" % key
+                None -> processFunction queue mir_program mir_id function_type lir_id
+        RecordKey mir_id args -> do
             case get queue.lir_records lir_id of
                 Some _ -> queue
-                None -> processRecord queue mir_program key lir_id
-        QueuedAdt key -> do
-            lir_id <- case get queue.adt_ids key of
-                Some lir_id -> lir_id
-                None -> panic "No lir id found for {}" % key
+                None -> processRecord queue mir_program mir_id args lir_id
+        AdtKey mir_id args -> do
             case get queue.lir_adts lir_id of
                 Some _ -> queue
-                None -> processAdt queue mir_program key lir_id
+                None -> processAdt queue mir_program mir_id args lir_id
 
 processItems :: Queue -> MP.Program -> Queue
 processItems queue mir_program = do
@@ -416,8 +395,8 @@ processProgram mir_program inference_info_store var_gen = do
         _ -> panic "Unexpected main function resul type {}" % main_function.type.result
     function_key <- FunctionKey main_id (MF.FunctionType [] main_result)
     queue <- createQueue inference_info_store var_gen
-    (queue, lir_main_id) <- getFunctionId queue function_key
-    queue <- addItem queue (QueuedFunction function_key)
+    (queue, lir_main_id) <- getLIRId queue function_key
+    queue <- addItem queue (QueuedItem function_key)
     queue <- processItems queue mir_program
     lir_program <- LP.createProgram
     lir_program <- queue.lir_functions |> Map.iter |> fold (\lir_program, (id, f) -> LP.addFunction lir_program id f) lir_program

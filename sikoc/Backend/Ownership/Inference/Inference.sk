@@ -267,6 +267,9 @@ updateBodyExpr (context, sub, expr_id_gen) expr = do
             do_expr <- E.Expr (E.Do items) type id
             return ((context, sub, expr_id_gen), do_expr)
         E.VarDecl _ _ -> ()
+        E.IntegerLiteral _ -> ()
+        E.FieldAccess _ _ -> () // TODO
+        E.CaseOf _ _ -> () // TODO
         E.StaticFunctionCall f_id args -> do
             ((expr_id_gen, index), args) <- List.mapS (expr_id_gen, 0) args (\(expr_id_gen, index), arg -> do
                     converter <- getConverter context (Common.CallArg id index)
@@ -283,7 +286,7 @@ updateBodyExpr (context, sub, expr_id_gen) expr = do
                     (expr_id_gen, var_ref_expr) <- useConverter context expr_id_gen converter expr
                     return ((context, sub, expr_id_gen), var_ref_expr)
                 None -> ()
-        _ -> ()
+        _ -> panic "NYI inference updateBodyExpr {}" % s_expr
     ((context, sub, expr_id_gen), expr)
 
 updateBodyType :: (Common.Context, U.Substitution, Counter E.ExprId) -> T.Type -> ((Common.Context, U.Substitution, Counter E.ExprId), T.Type)

@@ -48,11 +48,11 @@ getArgName index = "arg{}" % index
 
 innerValueField = "value"
 cloneName = "clone"
-stringTypeName = "String_String_0"
-intTypeName = "Int_Int_0"
-floatTypeName = "Float_Float_0"
-boolTypeName = "Bool_Bool_0"
-charTypeName = "Char_Char_0"
+stringTypeName = "String_String"
+intTypeName = "Int_Int"
+floatTypeName = "Float_Float"
+boolTypeName = "Bool_Bool"
+charTypeName = "Char_Char"
 stdOpsAdd = "std::ops::Add::add"
 stdOpsSub = "std::ops::Sub::sub"
 stdOpsMul = "std::ops::Mul::mul"
@@ -68,7 +68,11 @@ getRustFriendlyName input = case input of
         output
 
 getRustIdentity :: Identity -> String
-getRustIdentity id = getRustFriendlyName (show id)
+getRustIdentity id = do
+    Identity mod name index <- id
+    if index == 0
+        then getRustFriendlyName ("{}_{}" % (mod, name))
+        else getRustFriendlyName ("{}_{}_{}" % (mod, name, index))
 
 convertLifetime :: LT.Lifetime -> RT.Lifetime
 convertLifetime LT.Lifetime i = RT.Lifetime i
@@ -79,8 +83,8 @@ convertLifetimes lifetimes = lifetimes |> List.iter |> map (\l -> convertLifetim
 convertType :: LT.Type -> RT.Type
 convertType lir_type = do
     case lir_type of
-        LT.Adt id lifetimes -> RT.Named (getRustFriendlyName (show id)) (convertLifetimes lifetimes)
-        LT.Record id lifetimes -> RT.Named (getRustFriendlyName (show id)) (convertLifetimes lifetimes)
+        LT.Adt id lifetimes -> RT.Named (getRustFriendlyName (getRustIdentity id)) (convertLifetimes lifetimes)
+        LT.Record id lifetimes -> RT.Named (getRustFriendlyName (getRustIdentity id)) (convertLifetimes lifetimes)
         LT.Ref lifetime t -> RT.Ref (convertLifetime lifetime) (convertType t)
         LT.Never ->  RT.Never
         LT.Box t -> typeToBoxedType (convertType t)

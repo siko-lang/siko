@@ -146,6 +146,12 @@ processExpr context moved_vars expr = do
             decl_result_var <- Common.kindToVar first
             context <- Common.addOwnershipVar context decl_result_var T.OwnerKind moved_vars
             (context, moved_vars)
+        E.IntegerLiteral i -> do
+            kinds <- T.collectOwnershipKinds type
+            first <- atIndex kinds 0
+            literal_var <- Common.kindToVar first
+            context <- Common.addOwnershipVar context literal_var T.OwnerKind moved_vars
+            (context, moved_vars)
         E.StaticFunctionCall f_id args -> do
             info <- case get context.global_context.inference_info_store.inference_infos f_id of
                 Some info -> info
