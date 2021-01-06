@@ -121,7 +121,10 @@ convertPattern type_store checker = case checker of
             _ -> panic "Variant is not a record nor an adt"
     LE.WildcardChecker -> (R.WildcardPattern, None)
 
-data Context = { type_store :: TypeStore, loop_var :: Option String }
+data Context = { type_store :: TypeStore,
+                 loop_var :: Option String,
+                 constructors :: Map Identity (Context -> [R.Expr] -> R.Expr)
+               }
 
 convertExpr :: Context -> LE.Expr -> R.Expr
 convertExpr context lir_expr = do
@@ -141,9 +144,12 @@ convertExpr context lir_expr = do
                     R.Block (args + [unit])
                 else R.Block args
         LE.StaticFunctionCall id args -> do
-            rust_function_name <- getRustIdentity id
             args <- args |> List.iter |> map (\arg -> convertExpr context arg) |> toList
-            R.FunctionCall rust_function_name args
+            case get context.constructors id of
+                Some ctor -> ctor context args
+                None -> do
+                    rust_function_name <- getRustIdentity id
+                    R.FunctionCall rust_function_name args
         LE.IntegerLiteral lit -> R.StructCtor intTypeName [R.FieldInitItem innerValueField (R.IntegerLiteral lit)]
         LE.FloatLiteral lit -> R.StructCtor floatTypeName [R.FieldInitItem innerValueField (R.FloatLiteral lit)]
         LE.StringLiteral lit -> do
@@ -178,7 +184,7 @@ convertExpr context lir_expr = do
         LE.Loop v initializer args _ _ -> do
             n <- show v
             var_decl <- R.VarDeclMut n (convertExpr context initializer) None
-            inner_context <- Context context.type_store (Some n)
+            inner_context <- Context context.type_store (Some n) context.constructors
             args <- args |> List.iter |> map (\arg -> convertExpr inner_context arg) |> toList
             loop_body <- R.Assign (R.VarRef n) (R.Block args)
             loop_expr <- R.Loop [loop_body]
@@ -300,6 +306,38 @@ processImpl lir_program program context type_name impl impl_body_fragment = do
     impls <- program.impls + [trait_impl]
     program { impls = impls }
 
+createVariantCtor :: RT.Type -> Int -> Context -> [R.Expr] -> R.Expr
+createVariantCtor result index context args = do
+    enum <- getEnum context.type_store result
+    variant <- atIndex enum.variants index
+    ctor <- createRecordCtor (RT.getInnerType variant.type) context args
+    name <- "{}::{}" % (enum.name, variant.name)
+    R.FunctionCall name [ctor]
+
+createRecordCtor :: RT.Type -> Context -> [R.Expr] -> R.Expr
+createRecordCtor result context args = do
+    struct <- getStruct context.type_store result
+    fields <- List.zipS [] struct.fields args (\fields, field, arg -> do
+        field_init_item <- if RT.isBoxed field.type
+                then R.FieldInitItem field.name (boxExpr arg)
+                else R.FieldInitItem field.name arg
+        fields <- fields + [field_init_item]
+        fields)
+    R.StructCtor struct.name fields
+
+createConstructors :: Program -> Map Identity (Context -> [R.Expr] -> R.Expr)
+createConstructors program = do
+    constructors <- program.functions |> Map.iter |> fold (\constructors, (_, lir_function) -> do
+        rust_result <- convertType lir_function.type.result
+        ctor <- case lir_function.kind of
+            Normal lir_body -> return constructors
+            Extern -> return constructors
+            VariantCtor index -> createVariantCtor rust_result index
+            RecordCtor -> createRecordCtor rust_result
+        (constructors, _) <- Map.insert constructors lir_function.id ctor
+        constructors) Map.empty
+    constructors
+
 transpile :: Program -> String
 transpile program = do
     external_functions <- initializeExternalFunctions
@@ -318,7 +356,8 @@ transpile program = do
         structs <- rust_program.structs + [struct]
         rust_program <- rust_program { structs = structs }
         (type_store, rust_program)) (type_store, rust_program)
-    context <- Context type_store None
+    constructors <- createConstructors program
+    context <- Context type_store None constructors
     rust_program <- program.adts |> Map.iter |> fold (\rust_program, (_, adt) -> do
             name <- getRustIdentity adt.id
             adt.external_class_impls |> List.iter |> fold (\rust_program, (external_class_impl, impl_body_fragment) -> do
@@ -353,33 +392,8 @@ transpile program = do
                         None -> do
                             println "Extern function {}/{} is not implemented" % (mod, name)
                             R.Block [R.FunctionCall "unimplemented!" []]
-            VariantCtor index ->
-                do
-                enum <- getEnum type_store rust_result
-                variant <- atIndex enum.variants index
-                struct <- getStruct type_store (RT.getInnerType variant.type)
-                fields <- struct.fields |> List.iter |> fold (\fields, field -> do
-                    arg <- getArgName (getLength fields)
-                    field_init_item <- if RT.isBoxed field.type
-                        then R.FieldInitItem field.name (boxExpr (R.VarRef arg))
-                        else R.FieldInitItem field.name (R.VarRef arg)
-                    fields <- fields + [field_init_item]
-                    fields) []
-                name <- "{}::{}" % (enum.name, variant.name)
-                R.Block [R.FunctionCall name [R.StructCtor struct.name fields]]
-            RecordCtor -> do
-                lir_record_id <- LT.getIdentity lir_function.type.result
-                lir_record <- getRecord program lir_record_id
-                struct <- getStruct type_store rust_result
-                fields <- struct.fields |> List.iter |> fold (\fields, field -> do
-                    index <- getLength fields
-                    arg <- getArgName index
-                    field_init_item <- if RT.isBoxed field.type
-                        then R.FieldInitItem field.name (boxExpr (R.VarRef arg))
-                        else R.FieldInitItem field.name (R.VarRef arg)
-                    fields <- fields + [field_init_item]
-                    fields) []
-                R.Block [R.StructCtor struct.name fields]
+            VariantCtor index -> return rust_program
+            RecordCtor -> return rust_program
         lifetimes <- convertLifetimes lir_function.lifetimes
         rust_function <- R.Function rust_function_name lifetimes False rust_args rust_result rust_body
         functions <- rust_program.functions + [rust_function]
