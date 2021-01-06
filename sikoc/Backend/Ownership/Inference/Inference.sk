@@ -66,13 +66,24 @@ processConvertersStep context = do
                     group_id <- Common.getGroupId context to
                     context <- Common.updateGroupKind context group_id resolved_from
                     (context, True)
+                (T.BorrowKind index1, T.BorrowKind index2) ->
+                    if index1 != index2
+                            then do
+                                group_id1 <- Common.getGroupId context to
+                                group_id2 <- Common.getGroupId context from
+                                (context, merged_kind) <- Common.mergeGroups context group_id1 group_id2
+                                context <- Common.updateGroupKind context group_id1 merged_kind
+                                context <- Common.updateGroups context group_id2 group_id1
+                                (context, True)
+                            else (context, changed)
                 _ -> (context, changed)
         ) (context, False)
 
 dumpConverters :: Common.Context -> ()
 dumpConverters context = do
     println "Converters:"
-    context.converters |> List.iter |> forEach (\c -> println c)
+    context.converters |> List.iter |> forEach (\Common.Converter kind src dest -> do
+        println "C: {} {} {} -> {} {}" % (kind, src, resolveKind context src, dest, resolveKind context dest))
 
 dumpOwnershipVars :: Common.Context -> ()
 dumpOwnershipVars context = do
@@ -290,6 +301,7 @@ instantiateFunction global_context var_gen expr_id_gen function_id function_type
     //println "Inference: instantiating {}" % function_id
     context <- C.collectConstraints global_context var_gen function_type function_id body
     context <- processEquals context
+    //dumpConverters context
     context <- processConverters context
     context <- borrowCheck context
     //dumpConverters context

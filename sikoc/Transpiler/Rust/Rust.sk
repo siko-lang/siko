@@ -8,13 +8,13 @@ data Attribute = Clone
 
 data Variant = { name :: String, type :: T.Type }
 
-data Enum = { name :: String, variants :: [Variant], attributes :: [Attribute] }
+data Enum = { name :: String, lifetimes :: [T.Lifetime], variants :: [Variant], attributes :: [Attribute] }
 
 data StructField = { name :: String, type :: T.Type }
 
-data Struct = { name :: String, fields :: [StructField], attributes :: [Attribute] }
+data Struct = { name :: String, lifetimes :: [T.Lifetime], fields :: [StructField], attributes :: [Attribute] }
 
-data Function = { name :: String, is_method :: Bool, args :: [(String, T.Type)], result :: T.Type, body :: Expr }
+data Function = { name :: String, lifetimes :: [T.Lifetime], is_method :: Bool, args :: [(String, T.Type)], result :: T.Type, body :: Expr }
 
 data FieldInitItem = { name :: String,
                        body :: Expr }
@@ -188,7 +188,8 @@ generateStruct struct = do
     content <- struct.attributes |> List.iter |> fold (\content, attribute -> do
         case attribute of
             Clone -> content + "#[derive(Clone)]\n") content
-    content <- content + "struct " + struct.name + " {\n" + (join fields "\n") + "\n}"
+    name <- "{}<{}>" % (struct.name, join struct.lifetimes ", ")
+    content <- content + "struct " + name + " {\n" + (join fields "\n") + "\n}"
     content
 
 generateEnum :: Enum -> String
@@ -202,7 +203,8 @@ generateEnum enum = do
     content <- enum.attributes |> List.iter |> fold (\content, attribute -> do
         case attribute of
             Clone -> content + "#[derive(Clone)]\n") content
-    content <- content + "enum " + enum.name + " {\n" + (join variants "\n") + "\n}"
+    name <- "{}<{}>" % (enum.name, join enum.lifetimes ", ")
+    content <- content + "enum " + name + " {\n" + (join variants "\n") + "\n}"
     content
 
 generateFunction :: Function -> Indent -> String
@@ -211,7 +213,7 @@ generateFunction function indent = do
     args <- if function.is_method
         then ["&self"] + args
         else args
-    signature <- "{}fn {}({}) -> {}" % (indent, function.name, join args ", ", T.showAll function.result)
+    signature <- "{}fn {}<{}>({}) -> {}" % (indent, function.name, join function.lifetimes ", ", join args ", ", T.showAll function.result)
     body <- generateExpr function.body indent
     signature + " " + body
 

@@ -241,6 +241,16 @@ normalizeType indices type = case type of
         (indices, MT.Box t)
     MT.Var _ _ -> panic "Var type in LIR lowering! {}" % type
 
+collectLifetimes :: MT.Type -> [LT.Lifetime]
+collectLifetimes mir_type = do
+    kinds <- MT.collectOwnershipKinds mir_type
+    lifetimes <- kinds |> List.iter |> fold (\lifetimes, kind -> case kind of
+            MT.BorrowKind i -> do
+                lifetimes + [LT.Lifetime i]
+            _ -> lifetimes) []
+    lifetimes <- lifetimes |> sort |> dedup
+    lifetimes
+
 processType :: Queue -> MT.Type -> (Queue, LT.Type)
 processType queue mir_type = case mir_type of
     MT.Adt id args -> do
@@ -248,14 +258,14 @@ processType queue mir_type = case mir_type of
         adt_key <- AdtKey id args
         (queue, lir_id) <- getAdtId queue adt_key
         queue <- addItem queue (QueuedAdt adt_key)
-        lifetimes <- []
+        lifetimes <- collectLifetimes mir_type
         (queue, LT.Adt lir_id lifetimes)
     MT.Record id args -> do
         (_, args) <- normalizeArgs Map.empty args
         record_key <- RecordKey id args
         (queue, lir_id) <- getRecordId queue record_key
         queue <- addItem queue (QueuedRecord record_key)
-        lifetimes <- []
+        lifetimes <- collectLifetimes mir_type
         (queue, LT.Record lir_id lifetimes)
     MT.Ref index t -> do
         (queue, lir_t) <- processType queue t
@@ -267,11 +277,15 @@ processType queue mir_type = case mir_type of
         (queue, LT.Box lir_t)
     MT.Var _ _ -> panic "Var type in LIR lowering! {}" % mir_type
 
-processFunctionType :: Queue -> MF.FunctionType -> (Queue, LF.FunctionType)
+processFunctionType :: Queue -> MF.FunctionType -> (Queue, LF.FunctionType, [LT.Lifetime])
 processFunctionType queue mir_function_type = do
     (queue, lir_args) <- List.mapS queue mir_function_type.args processType
+    lifetimes <- mir_function_type.args |> List.iter |> fold (\lifetimes, mir_arg -> do
+        lifetimes + collectLifetimes mir_arg) []
+    lifetimes <- lifetimes + collectLifetimes mir_function_type.result
+    lifetimes <- lifetimes |> sort |> dedup
     (queue, lir_result) <- processType queue mir_function_type.result
-    (queue, LF.FunctionType lir_args lir_result)
+    (queue, LF.FunctionType lir_args lir_result, lifetimes)
 
 processFunction :: Queue -> MP.Program -> FunctionKey -> LP.Identity -> Queue
 processFunction queue mir_program function_key lir_id = do
@@ -284,26 +298,26 @@ processFunction queue mir_program function_key lir_id = do
             (body, var_gen) <- Inference.instantiateFunction global_context queue.var_gen expr_id_gen mir_id function_type mir_body
             (queue, lir_body) <- processExpr queue body
             lir_kind <- LF.Normal lir_body
-            (queue, lir_function_type) <- processFunctionType queue function_type
-            lir_function <- LF.Function lir_id lir_kind lir_function_type
+            (queue, lir_function_type, lifetimes) <- processFunctionType queue function_type
+            lir_function <- LF.Function lir_id lifetimes lir_kind lir_function_type
             queue <- addFunction queue lir_function
             queue
         MF.VariantCtor index -> do
             lir_kind <- LF.VariantCtor index
-            (queue, lir_function_type) <- processFunctionType queue function_type
-            lir_function <- LF.Function lir_id lir_kind lir_function_type
+            (queue, lir_function_type, lifetimes) <- processFunctionType queue function_type
+            lir_function <- LF.Function lir_id lifetimes lir_kind lir_function_type
             queue <- addFunction queue lir_function
             queue
         MF.RecordCtor -> do
             lir_kind <- LF.RecordCtor
-            (queue, lir_function_type) <- processFunctionType queue function_type
-            lir_function <- LF.Function lir_id lir_kind lir_function_type
+            (queue, lir_function_type, lifetimes) <- processFunctionType queue function_type
+            lir_function <- LF.Function lir_id lifetimes lir_kind lir_function_type
             queue <- addFunction queue lir_function
             queue
         MF.Extern _ -> do
             lir_kind <- LF.Extern
-            (queue, lir_function_type) <- processFunctionType queue function_type
-            lir_function <- LF.Function lir_id lir_kind lir_function_type
+            (queue, lir_function_type, lifetimes) <- processFunctionType queue function_type
+            lir_function <- LF.Function lir_id lifetimes lir_kind lir_function_type
             queue <- addFunction queue lir_function
             queue
         _ -> queue
@@ -337,7 +351,8 @@ processRecord queue mir_program record_key lir_id = do
             (queue, Some external_info)
         None -> (queue, None)
     external_class_impls <- [] // FIXME
-    lir_record <- LD.Record lir_id fields external_info external_class_impls
+    lifetimes <- collectLifetimes (MT.Record mir_id mir_record.ownership_vars)
+    lir_record <- LD.Record lir_id lifetimes fields external_info external_class_impls
     queue <- addRecord queue lir_record
     queue
 
@@ -350,7 +365,8 @@ processAdt queue mir_program adt_key lir_id = do
     mir_record <- U.apply mir_adt sub
     (queue, variants) <- List.mapS queue mir_adt.variants processVariant
     external_class_impls <- [] // FIXME
-    lir_adt <- LD.AlgebraicDataType lir_id variants external_class_impls
+    lifetimes <- collectLifetimes (MT.Record mir_id mir_adt.ownership_vars)
+    lir_adt <- LD.AlgebraicDataType lir_id lifetimes variants external_class_impls
     queue <- addAdt queue lir_adt
     queue
 
