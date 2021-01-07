@@ -135,23 +135,7 @@ processExpr context moved_vars expr = do
             E.Expr _ last_type _ <- atIndex items (getLength items - 1)
             context <- convertibleConstraints context (Common.ExprConverter id) moved_vars last_type type
             (context, moved_vars)
-        E.VarDecl v rhs -> do
-            (context, moved_vars) <- processExpr context moved_vars rhs
-            E.Expr _ rhs_type _ <- rhs
-            var_kinds <- T.collectOwnershipKinds rhs_type
-            var_vars <- var_kinds |> List.iter |> map (\kind -> Common.kindToVar kind) |> toList
-            context <- Common.addVarVars context v var_vars
-            kinds <- T.collectOwnershipKinds type
-            first <- atIndex kinds 0
-            decl_result_var <- Common.kindToVar first
-            context <- Common.addOwnershipVar context decl_result_var T.OwnerKind moved_vars
-            (context, moved_vars)
-        E.IntegerLiteral i -> do
-            kinds <- T.collectOwnershipKinds type
-            first <- atIndex kinds 0
-            literal_var <- Common.kindToVar first
-            context <- Common.addOwnershipVar context literal_var T.OwnerKind moved_vars
-            (context, moved_vars)
+        E.Multi _ -> panic "Multi expr in Inference.Collection"
         E.StaticFunctionCall f_id args -> do
             info <- case get context.global_context.inference_info_store.inference_infos f_id of
                 Some info -> info
@@ -167,6 +151,41 @@ processExpr context moved_vars expr = do
                 convertibleConstraints context (Common.CallArg id index) moved_vars arg_expr_type f_arg_type)
             context <- equalConstraints context moved_vars function_type.result type
             (context, moved_vars)
+        E.IntegerLiteral i -> do
+            kinds <- T.collectOwnershipKinds type
+            first <- atIndex kinds 0
+            literal_var <- Common.kindToVar first
+            context <- Common.addOwnershipVar context literal_var T.OwnerKind moved_vars
+            (context, moved_vars)
+        E.StringLiteral i -> do
+            kinds <- T.collectOwnershipKinds type
+            first <- atIndex kinds 0
+            literal_var <- Common.kindToVar first
+            context <- Common.addOwnershipVar context literal_var (T.VarKind literal_var) moved_vars // TODO
+            (context, moved_vars)
+        E.FloatLiteral i -> do
+            kinds <- T.collectOwnershipKinds type
+            first <- atIndex kinds 0
+            literal_var <- Common.kindToVar first
+            context <- Common.addOwnershipVar context literal_var T.OwnerKind moved_vars
+            (context, moved_vars)
+        E.CharLiteral i -> do
+            kinds <- T.collectOwnershipKinds type
+            first <- atIndex kinds 0
+            literal_var <- Common.kindToVar first
+            context <- Common.addOwnershipVar context literal_var T.OwnerKind moved_vars
+            (context, moved_vars)
+        E.VarDecl v rhs -> do
+            (context, moved_vars) <- processExpr context moved_vars rhs
+            E.Expr _ rhs_type _ <- rhs
+            var_kinds <- T.collectOwnershipKinds rhs_type
+            var_vars <- var_kinds |> List.iter |> map (\kind -> Common.kindToVar kind) |> toList
+            context <- Common.addVarVars context v var_vars
+            kinds <- T.collectOwnershipKinds type
+            first <- atIndex kinds 0
+            decl_result_var <- Common.kindToVar first
+            context <- Common.addOwnershipVar context decl_result_var T.OwnerKind moved_vars
+            (context, moved_vars)
         E.VarRef v -> do
             var_vars <- Common.getVarVars context v
             (context, moved_vars) <- if Set.contains context.not_moves id
@@ -179,6 +198,20 @@ processExpr context moved_vars expr = do
                     context <- equalConstraintsWithVars context moved_vars var_vars type
                     (context, moved_vars)
             (context, moved_vars)
+        E.FieldAccess name receiver -> do
+            (context, moved_vars) <- processExpr context moved_vars receiver
+            E.Expr _ receiver_type _ <- receiver
+            record <- getRecordType context receiver_type
+            field_type <- getRecordFieldType record name
+            context <- equalConstraints context moved_vars field_type type
+            (context, moved_vars)
+        E.If _ _ _ -> panic "IF NYI"
+        E.List _ -> panic "List NYI"
+        E.Return _ -> panic "Return NYI"
+        E.Continue _ -> panic "Continue NYI"
+        E.Break _ -> panic "Continue NYI"
+        E.RecordUpdate _ _ -> panic "RecordUpdate found in Inference.Collection"
+        E.Loop _ _ _ _ _ -> panic "Loop NYI"
         E.CaseOf body cases -> do
             (context, moved_vars) <- processExpr context moved_vars body
             (context, moved_var_sets) <- cases |> List.iter |> fold (\(context, moved_var_sets), c -> do
@@ -200,14 +233,11 @@ processExpr context moved_vars expr = do
                 (context, moved_var_sets)) (context, [])
             moved_vars <- mergeMovedVars moved_var_sets
             (context, moved_vars)
-        E.FieldAccess name receiver -> do
-            (context, moved_vars) <- processExpr context moved_vars receiver
-            E.Expr _ receiver_type _ <- receiver
-            record <- getRecordType context receiver_type
-            field_type <- getRecordFieldType record name
-            context <- equalConstraints context moved_vars field_type type
-            (context, moved_vars)
-        _ -> panic "NYI {}" % s_expr
+        E.Clone _ -> panic "Clone found in Inference.Collection"
+        E.Deref _ -> panic "Deref found in Inference.Collection"
+        E.Ref _ -> panic "Ref found in Inference.Collection"
+        E.Move _ -> panic "Move found in Inference.Collection"
+        E.Box _ -> panic "Box found in Inference.Collection"
 
 processArg :: Common.Context -> Int -> T.Type -> Common.Context
 processArg context index type = do

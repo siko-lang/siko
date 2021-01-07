@@ -125,9 +125,11 @@ convertPattern type_store checker = case checker of
             _ -> panic "Variant is not a record nor an adt"
     LE.WildcardChecker -> (R.WildcardPattern, None)
 
+data Constructor = { fn :: Context -> [R.Expr] -> R.Expr }
+
 data Context = { type_store :: TypeStore,
                  loop_var :: Option String,
-                 constructors :: Map Identity (Context -> [R.Expr] -> R.Expr)
+                 constructors :: Map Identity Constructor
                }
 
 convertExpr :: Context -> LE.Expr -> R.Expr
@@ -150,7 +152,9 @@ convertExpr context lir_expr = do
         LE.StaticFunctionCall id args -> do
             args <- args |> List.iter |> map (\arg -> convertExpr context arg) |> toList
             case get context.constructors id of
-                Some ctor -> ctor context args
+                Some ctor -> do
+                    ctor :: Constructor <- ctor // FIXME
+                    ctor.fn context args
                 None -> do
                     rust_function_name <- getRustIdentity id
                     R.FunctionCall rust_function_name args
@@ -329,7 +333,7 @@ createRecordCtor result context args = do
         fields)
     R.StructCtor struct.name fields
 
-createConstructors :: Program -> Map Identity (Context -> [R.Expr] -> R.Expr)
+createConstructors :: Program -> Map Identity Constructor
 createConstructors program = do
     constructors <- program.functions |> Map.iter |> fold (\constructors, (_, lir_function) -> do
         rust_result <- convertType lir_function.type.result
@@ -338,7 +342,7 @@ createConstructors program = do
             Extern -> return constructors
             VariantCtor index -> createVariantCtor rust_result index
             RecordCtor -> createRecordCtor rust_result
-        (constructors, _) <- Map.insert constructors lir_function.id ctor
+        (constructors, _) <- Map.insert constructors lir_function.id (Constructor ctor)
         constructors) Map.empty
     constructors
 
