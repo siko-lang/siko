@@ -69,10 +69,10 @@ traverse context expr process_expr process_type = do
                 updates <- updates + [update]
                 (context, updates)) (context, [])
             (context, Expr (RecordUpdate v updates) type id)
-        Loop v initializer items continues breaks -> do
+        Loop v initializer body continues breaks -> do
             (context, initializer) <- traverse context initializer process_expr process_type
-            (context, items) <- processBlock context items process_expr process_type
-            (context, Expr (Loop v initializer items continues breaks) type id)
+            (context, body) <- traverse context body process_expr process_type
+            (context, Expr (Loop v initializer body continues breaks) type id)
         CaseOf body cases -> do
             (context, body) <- traverse context body process_expr process_type
             (context, cases) <- cases |> List.iter |> fold (\(context, cases), case_branch -> do

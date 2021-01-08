@@ -266,10 +266,7 @@ updateBodyExpr (context, sub, expr_id_gen) expr = do
             items <- write items last last_expr
             do_expr <- E.Expr (E.Do items) type id
             return ((context, sub, expr_id_gen), do_expr)
-        E.VarDecl _ _ -> ()
-        E.IntegerLiteral _ -> ()
-        E.FieldAccess _ _ -> () // TODO
-        E.CaseOf _ _ -> () // TODO
+        E.Multi _ -> panic "Multi in updateBodyExpr in inference"
         E.StaticFunctionCall f_id args -> do
             ((expr_id_gen, index), args) <- List.mapS (expr_id_gen, 0) args (\(expr_id_gen, index), arg -> do
                     converter <- getConverter context (Common.CallArg id index)
@@ -278,6 +275,11 @@ updateBodyExpr (context, sub, expr_id_gen) expr = do
                 )
             call_expr <- E.Expr (E.StaticFunctionCall f_id args) type id
             return ((context, sub, expr_id_gen), call_expr)
+        E.IntegerLiteral _ -> ()
+        E.StringLiteral _ -> ()
+        E.FloatLiteral _ -> ()
+        E.CharLiteral _ -> ()
+        E.VarDecl _ _ -> ()
         E.VarRef v -> do
             pos <- Common.ExprConverter id
             case get context.converter_positions pos of
@@ -286,6 +288,31 @@ updateBodyExpr (context, sub, expr_id_gen) expr = do
                     (expr_id_gen, var_ref_expr) <- useConverter context expr_id_gen converter expr
                     return ((context, sub, expr_id_gen), var_ref_expr)
                 None -> ()
+        E.FieldAccess _ _ -> ()
+        E.If cond true_branch false_branch -> do
+            cond_converter <- getConverter context (Common.IfCond id)
+            (expr_id_gen, cond_expr) <- useConverter context expr_id_gen cond_converter cond
+            true_converter <- getConverter context (Common.CaseConverter id 0)
+            (expr_id_gen, true_branch_expr) <- useConverter context expr_id_gen true_converter true_branch
+            false_converter <- getConverter context (Common.CaseConverter id 1)
+            (expr_id_gen, false_branch_expr) <- useConverter context expr_id_gen false_converter false_branch
+            if_expr <- E.Expr (E.If cond_expr true_branch_expr false_branch_expr) type id
+            return ((context, sub, expr_id_gen), if_expr)
+        E.List items -> do
+            (expr_id_gen, items) <- List.mapSE expr_id_gen items (\expr_id_gen, index, item -> do
+                    converter <- getConverter context (Common.List id index)
+                    useConverter context expr_id_gen converter item)
+            list_expr <- E.Expr (E.List items) type id
+            return ((context, sub, expr_id_gen), list_expr)
+        E.Return arg -> do
+            converter <- getConverter context (Common.ExprConverter id)
+            (expr_id_gen, arg_expr) <- useConverter context expr_id_gen converter arg
+            return_expr <- E.Expr (E.Return arg_expr) type id
+            return ((context, sub, expr_id_gen), return_expr)
+        E.Continue _ -> () // TODO
+        E.Break _ -> () // TODO
+        E.Loop v initializer body continues breaks -> () // TODO
+        E.CaseOf _ _ -> () // TODO
         _ -> panic "NYI inference updateBodyExpr {}" % s_expr
     ((context, sub, expr_id_gen), expr)
 
@@ -301,7 +328,7 @@ updateBody context sub expr_id_gen expr = do
 
 instantiateFunction :: Common.GlobalContext -> U.OwnershipVarGenerator -> Counter E.ExprId -> P.Identity -> F.FunctionType -> E.Expr -> (E.Expr, U.OwnershipVarGenerator)
 instantiateFunction global_context var_gen expr_id_gen function_id function_type body = do
-    //println "Inference: instantiating {}" % function_id
+    //println "Inference: instantiating {} {}" % (function_id, function_type)
     context <- C.collectConstraints global_context var_gen function_type function_id body
     context <- processEquals context
     //dumpConverters context

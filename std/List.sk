@@ -91,7 +91,13 @@ tail l = extern
 pop a :: [a] -> Option (a, [a])
 pop l = case head l of
     Some a -> do
-        Some ((a, Option.unwrap (tail l)))
+        if getLength l == 1
+            then Some (a, [])
+            else do
+                t <- case tail l of
+                    Some t -> t
+                    None -> panic "pop failed, non empty list is empty?"
+                Some (a, t)
     None -> None
 
 sort a :: (Ord a) => [a] -> [a]
@@ -144,6 +150,13 @@ mapS s l f = do
     l |> List.iter |> fold (\(s, items), i -> do
         (s, i) <- f s i
         (s, items + [i])) (s, [])
+
+mapSE s a b :: s -> [a] -> (s -> Int -> a -> (s, b)) -> (s, [b])
+mapSE s l f = do
+    (s, index, l) <- l |> List.iter |> fold (\(s, index, items), i -> do
+        (s, i) <- f s index i
+        (s, index + 1, items + [i])) (s, 0, [])
+    (s, l)
 
 foldE a b :: (a -> Int -> b -> a) -> a -> [b] -> a
 foldE f s l = do

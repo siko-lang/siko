@@ -14,8 +14,9 @@ buildExpr :: SimpleExpr -> Int -> ParserState -> Expr
 buildExpr expr start_index state = do
     Expr expr (buildLocation start_index state)
 
-parseDoBlock :: ParserState -> Result (ParserState, [Expr]) (ParserState, ParserError)
+parseDoBlock :: ParserState -> Result (ParserState, Expr) (ParserState, ParserError)
 parseDoBlock state = do
+    start_index <- state.index
     state <- try expect state Kind.KeywordDo
     (state, items) <- loop (state, items) <- (state, []) do
         if check state Kind.EndOfBlock
@@ -34,7 +35,7 @@ parseDoBlock state = do
                 state <- try expect state Kind.EndOfItem
                 (state, items)
     state <- try expect state Kind.EndOfBlock
-    Ok (state, items)
+    Ok (state, buildExpr (Do items) start_index state)
 
 parseRecordFieldExpr :: ParserState -> Result (ParserState, RecordConstructionItem) (ParserState, ParserError)
 parseRecordFieldExpr state = do
@@ -157,16 +158,14 @@ parseUnary state = do
                         (state, cases)
             state <- try expect state Kind.EndOfBlock
             Ok (state, buildExpr (CaseOf body cases) start_index state)
-        T.KeywordDo -> do
-            (state, items) <- try parseDoBlock state
-            Ok (state, buildExpr (Do items) start_index state)
+        T.KeywordDo -> parseDoBlock state
         T.KeywordLoop -> do
             state <- try expect state Kind.KeywordLoop
             (state, pattern) <- try parsePattern state
             state <- try expect state Kind.LeftArrow
             (state, start_expr) <- try parseBinaryOps state True 0
-            (state, items) <- try parseDoBlock state
-            Ok (state, buildExpr (Loop pattern start_expr items) start_index state)
+            (state, body) <- try parseDoBlock state
+            Ok (state, buildExpr (Loop pattern start_expr body) start_index state)
         _ ->
             Err (state, unexpectedToken state "expression")
 

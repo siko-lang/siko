@@ -535,7 +535,7 @@ processExpr context env (SE.Expr expr location) = do
             (HE.Expr _ id location) <- hir_expr
             context <- addBreak context id location
             (context, env, HE.Break hir_expr)
-        SE.Loop pattern initializer items -> do
+        SE.Loop pattern initializer body -> do
             (context, env, hir_initializer) <- processExpr context env initializer
             pattern_env <- createPatternEnvironment True
             block_env <- createEnvironment env.lambda_id (Some env)
@@ -544,12 +544,12 @@ processExpr context env (SE.Expr expr location) = do
             prev_loop_helper <- context.loop_helper
             loop_helper <- LoopHelper [] []
             context <- context { loop_helper = Some loop_helper }
-            (context, hir_items) <- processDo context block_env items
+            (context, _, hir_body) <- processExpr context block_env body
             loop_helper <- Option.unwrap context.loop_helper
             context <- context { loop_helper = prev_loop_helper }
             continues <- loop_helper.continues
             breaks <- loop_helper.breaks
-            (context, env, HE.Loop hir_pattern hir_initializer hir_items continues breaks)
+            (context, env, HE.Loop hir_pattern hir_initializer hir_body continues breaks)
         SE.ArgRef i -> (context, env, HE.ArgRef i)
     (context, expr_id) <- getExprId context
     (context, env, HE.Expr hir_expr expr_id location)

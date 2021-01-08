@@ -136,10 +136,9 @@ processExpr queue mir_expr = do
     ME.Expr s_expr mir_type id <- mir_expr
     (queue, lir_s_expr) <- case s_expr of
         ME.Do items -> do
-            (queue, items) <- items |> List.iter |> fold (\(queue, items), item -> do
-                (queue, item) <- processExpr queue item
-                (queue, items + [item])) (queue, [])
+            (queue, items) <- List.mapS queue items processExpr
             (queue, LE.Do items)
+        ME.Multi _ -> panic "Multi in LIR Instantiation"
         ME.StaticFunctionCall id args -> do
             arg_types <- args |> List.iter |> map (\ME.Expr _ t _ -> t) |> toList
             (indices, arg_types) <- List.mapS Map.empty arg_types normalizeType
@@ -149,25 +148,49 @@ processExpr queue mir_expr = do
             function_key <- FunctionKey id normalized_function_type
             (queue, lir_id) <- getLIRId queue function_key
             queue <- addItem queue (QueuedItem function_key)
-            (queue, args) <- args |> List.iter |> fold (\(queue, args), arg -> do
-                (queue, arg) <- processExpr queue arg
-                (queue, args + [arg])) (queue, [])
+            (queue, args) <- List.mapS queue args processExpr
             (queue, LE.StaticFunctionCall lir_id args)
         ME.IntegerLiteral i -> (queue, LE.IntegerLiteral i)
+        ME.StringLiteral i -> (queue, LE.StringLiteral i)
+        ME.FloatLiteral i -> (queue, LE.FloatLiteral i)
+        ME.CharLiteral i -> (queue, LE.CharLiteral i)
         ME.VarDecl v rhs -> do
             lir_var <- processVar v
             (queue, lir_rhs) <- processExpr queue rhs
             (queue, LE.VarDecl lir_var lir_rhs)
+        ME.VarRef v -> do
+            lir_var <- processVar v
+            (queue, LE.VarRef lir_var)
+        ME.FieldAccess n rhs -> do
+            (queue, lir_rhs) <- processExpr queue rhs
+            (queue, LE.FieldAccess n lir_rhs)
+        ME.If cond true_branch false_branch -> do
+            (queue, cond) <- processExpr queue cond
+            (queue, true_branch) <- processExpr queue true_branch
+            (queue, false_branch) <- processExpr queue false_branch
+            (queue, LE.If cond true_branch false_branch)
+        ME.List items -> do
+            (queue, items) <- List.mapS queue items processExpr
+            (queue, LE.List items)
+        ME.Return arg -> do
+            (queue, arg) <- processExpr queue arg
+            (queue, LE.Return arg)
+        ME.Continue arg -> do
+            (queue, arg) <- processExpr queue arg
+            (queue, LE.Continue arg)
+        ME.Break arg -> do
+            (queue, arg) <- processExpr queue arg
+            (queue, LE.Break arg)
+        ME.RecordUpdate _ _ -> panic "RecordUpdate in LIR instantiation"
+        ME.Loop var initializer body continues breaks -> do
+            lir_var <- processVar var
+            (queue, initializer) <- processExpr queue initializer
+            (queue, body) <- processExpr queue body
+            (queue, LE.Loop lir_var initializer body)
         ME.CaseOf body cases -> do
             (queue, lir_body) <- processExpr queue body
             (queue, lir_cases) <- List.mapS queue cases processCase
             (queue, LE.CaseOf lir_body lir_cases)
-        ME.FieldAccess n rhs -> do
-            (queue, lir_rhs) <- processExpr queue rhs
-            (queue, LE.FieldAccess n lir_rhs)
-        ME.VarRef v -> do
-            lir_var <- processVar v
-            (queue, LE.VarRef lir_var)
         ME.Clone arg -> do
             (queue, arg) <- processExpr queue arg
             (queue, LE.Clone arg)
@@ -318,9 +341,10 @@ processVariant queue mir_variant = do
     (queue, lir_type) <- processType queue mir_variant.type
     (queue, LD.Variant mir_variant.name lir_type)
 
-processExternalRecordInfo :: Queue -> MD.ExternalRecordInfo -> (Queue, LD.ExternalRecordInfo)
-processExternalRecordInfo queue mir_external_record_info = do
-    (queue, lir_type_args) <- List.mapS queue mir_external_record_info.type_args processType
+processExternalRecordInfo :: Queue -> U.Substitution -> MD.ExternalRecordInfo -> (Queue, LD.ExternalRecordInfo)
+processExternalRecordInfo queue sub mir_external_record_info = do
+    type_args <- mir_external_record_info.type_args |> List.iter |> map (\type_arg -> U.apply type_arg sub) |> toList
+    (queue, lir_type_args) <- List.mapS queue type_args processType
     (queue, LD.ExternalRecordInfo lir_type_args)
 
 processRecord :: Queue -> MP.Program -> MP.Identity -> [MT.OwnershipKind] -> LP.Identity -> Queue
@@ -332,7 +356,7 @@ processRecord queue mir_program mir_id args lir_id = do
     (queue, fields) <- List.mapS queue mir_record.fields processField
     (queue, external_info) <- case mir_record.external_info of
         Some external_info -> do
-            (queue, external_info) <- processExternalRecordInfo queue external_info
+            (queue, external_info) <- processExternalRecordInfo queue sub external_info
             (queue, Some external_info)
         None -> (queue, None)
     external_class_impls <- [] // FIXME

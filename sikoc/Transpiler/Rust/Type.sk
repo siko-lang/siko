@@ -14,7 +14,10 @@ data Type = Named String [Lifetime]
 
 showAll :: Type -> String
 showAll t = case t of
-        Named t lifetimes -> ("{}<{}>" % (t, join lifetimes ", "))
+        Named t lifetimes -> do
+            if isEmpty lifetimes
+                then show t
+                else ("{}<{}>" % (t, join lifetimes ", "))
         Box t -> "std::boxed::Box<{}>" % showAll t
         Rc t -> "std::rc::Rc<{}>" % showAll t
         Ref lifetime t -> "&{} {}" % (lifetime, showAll t)

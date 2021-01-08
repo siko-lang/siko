@@ -162,6 +162,13 @@ mapS s l f = do
         (s, i) <- f s i
         (s, items + [i])) (s, [])
 
+mapSE s a b :: s -> [a] -> (s -> Int -> a -> (s, b)) -> (s, [b])
+mapSE s l f = do
+    (s, index, l) <- l |> List.iter |> fold (\(s, index, items), i -> do
+        (s, i) <- f s index i
+        (s, index + 1, items + [i])) (s, 0, [])
+    (s, l)
+
 foldE a b :: (a -> Int -> b -> a) -> a -> [b] -> a
 foldE f s l = do
     (s, i) <- l |> List.iter |> fold (\(s, index), i -> do

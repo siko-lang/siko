@@ -189,12 +189,11 @@ convertExpr context lir_expr = do
             false_case <- R.MatchCase false_pattern (convertExpr context false_branch) None
             cases <- [true_case, false_case]
             R.Match (convertExpr context cond) cases
-        LE.Loop v initializer args _ _ -> do
+        LE.Loop v initializer body -> do
             n <- show v
             var_decl <- R.VarDeclMut n (convertExpr context initializer) None
             inner_context <- Context context.type_store (Some n) context.constructors
-            args <- args |> List.iter |> map (\arg -> convertExpr inner_context arg) |> toList
-            loop_body <- R.Assign (R.VarRef n) (R.Block args)
+            loop_body <- R.Assign (R.VarRef n) (convertExpr context body)
             loop_expr <- R.Loop [loop_body]
             R.Block [var_decl, loop_expr]
         LE.Break e -> R.Break (convertExpr context e)

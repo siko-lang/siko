@@ -66,12 +66,12 @@ processExpr expr = do
         E.Continue rhs -> processExpr rhs
         E.Break rhs -> processExpr rhs
         E.RecordUpdate _ _ -> panic "RecordUpdate in value graph create"
-        E.Loop v initializer items _ _ -> do
+        E.Loop v initializer body _ _ -> do
             initializer_graph <- processExpr initializer
             loop_var_graph <- createValueGraphs
             loop_var_graph <- addNode loop_var_graph v (ValueDecl (show v))
-            items_graphs <- processItems items
-            loop_body <- mergeLoop [loop_var_graph, items_graphs]
+            body_graph <- processExpr body
+            loop_body <- mergeLoop [loop_var_graph, body_graph]
             after [initializer_graph, loop_body]
         E.CaseOf body cases -> do
             body_graph <- processExpr body

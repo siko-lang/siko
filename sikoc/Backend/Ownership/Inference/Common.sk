@@ -22,6 +22,8 @@ data ConverterKind = NormalConverter
 data ConverterPosition = ExprConverter E.ExprId
                        | CaseConverter E.ExprId Int
                        | CallArg E.ExprId Int
+                       | IfCond E.ExprId
+                       | List E.ExprId Int
                        | External
                        deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
@@ -53,6 +55,7 @@ data Context = { global_context :: GlobalContext,
                  borrower_set_id_gen :: Int,
                  groups :: Map Int Group,
                  group_id_gen :: Int,
+                 return_type :: T.Type,
                }
 
 data FunctionInferenceInfo = { function_type :: F.FunctionType,
@@ -65,8 +68,9 @@ createInferenceInfoStore = InferenceInfoStore Map.empty
 createGlobalContext :: P.Program -> InferenceInfoStore -> GlobalContext
 createGlobalContext program inference_info_store = GlobalContext program inference_info_store
 
-createContext :: GlobalContext -> Set E.ExprId -> U.OwnershipVarGenerator -> Context
-createContext global_context not_moves var_gen = Context {
+createContext :: GlobalContext -> Set E.ExprId -> U.OwnershipVarGenerator -> T.Type -> Context
+createContext global_context not_moves var_gen return_type =
+    Context {
         global_context = global_context,
         var_vars = Map.empty,
         converters = [],
@@ -80,7 +84,9 @@ createContext global_context not_moves var_gen = Context {
         borrower_sets = Map.empty,
         borrower_set_id_gen = 1,
         groups = Map.empty,
-        group_id_gen = 1 }
+        group_id_gen = 1,
+        return_type = return_type,
+    }
 
 addConverter :: Context -> ConverterPosition -> Converter -> Context
 addConverter context pos converter = do
@@ -207,7 +213,7 @@ collectOwnershipKindsFromFunctionType function_type = do
 kindToVar :: T.OwnershipKind -> T.OwnershipVar
 kindToVar kind = case kind of
     T.VarKind v -> v
-    _ -> panic "V is not a v"
+    _ -> panic "V is not a v but {}" % kind
 
 addOwnershipVar :: Context -> T.OwnershipVar -> T.OwnershipKind -> MovedVars -> Context
 addOwnershipVar context var kind moved_vars = do

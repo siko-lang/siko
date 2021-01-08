@@ -840,6 +840,7 @@ initializeExternalFunctions = do
     (externals, _) <- insert externals (ExternalId "Hack" "getArgs") (ExternFnBuilder generateGetArgs)
     (externals, _) <- insert externals (ExternalId "Hack" "sink") (ExternFnBuilder generateSink)
     (externals, _) <- insert externals (ExternalId "Hack" "borrower") (ExternFnBuilder generateBorrower)
+    (externals, _) <- insert externals (ExternalId "Hack" "add") (ExternFnBuilder generateAdd)
 
     (externals, _) <- insert externals (ExternalId "String" "opAdd") (ExternFnBuilder generateStringAdd)
     (externals, _) <- insert externals (ExternalId "String" "partialCmp") (ExternFnBuilder generatePartialCmp)
@@ -918,13 +919,13 @@ generateListFields :: [LT.Type] -> [R.StructField]
 generateListFields args = do
     first <- atIndex args 0
     rust_type_arg <- convertType first
-    [R.StructField innerValueField (RT.Named ("std::vec::Vec<{}>" % RT.showBase rust_type_arg) [])]
+    [R.StructField innerValueField (RT.Named ("std::vec::Vec<{}>" % RT.showAll rust_type_arg) [])]
 
 generateListIteratorFields :: [LT.Type] -> [R.StructField]
 generateListIteratorFields args = do
     first <- atIndex args 0
     rust_type_arg <- convertType first
-    [R.StructField innerValueField (RT.Named ("std::vec::IntoIter<{}>" % RT.showBase rust_type_arg) [])]
+    [R.StructField innerValueField (RT.Named ("std::vec::IntoIter<{}>" % RT.showAll rust_type_arg) [])]
 
 generateMapFields :: [LT.Type] -> [R.StructField]
 generateMapFields args = do
@@ -932,7 +933,7 @@ generateMapFields args = do
     second <- atIndex args 1
     rust_type_arg1 <- convertType first
     rust_type_arg2 <- convertType second
-    [R.StructField innerValueField (RT.Named "std::collections::BTreeMap<{}, {}>" % (RT.showBase rust_type_arg1, RT.showBase rust_type_arg2) [])]
+    [R.StructField innerValueField (RT.Named "std::collections::BTreeMap<{}, {}>" % (RT.showAll rust_type_arg1, RT.showAll rust_type_arg2) [])]
 
 generateMapIteratorFields :: [LT.Type] -> [R.StructField]
 generateMapIteratorFields args = do
@@ -940,7 +941,7 @@ generateMapIteratorFields args = do
     second <- atIndex args 1
     rust_type_arg1 <- convertType first
     rust_type_arg2 <- convertType second
-    [R.StructField innerValueField (RT.Named "std::vec::IntoIter<({}, {})>" % (RT.showBase rust_type_arg1, RT.showBase rust_type_arg2) [])]
+    [R.StructField innerValueField (RT.Named "std::vec::IntoIter<({}, {})>" % (RT.showAll rust_type_arg1, RT.showAll rust_type_arg2) [])]
 
 initializeExternalStructFields :: Map ExternalId ExternStructBuilder
 initializeExternalStructFields = do
