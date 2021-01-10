@@ -52,7 +52,7 @@ processExpr expr = do
             graphs <- createValueGraphs
             graphs <- addNode graphs v (ValueRef id)
             graphs
-        E.FieldAccess name rhs -> processFieldAccess [name] rhs
+        E.FieldAccess name receiver -> processFieldAccess [name] receiver
         E.If cond true_branch false_branch -> do
             cond_graphs <- processExpr cond
             true_graphs <- processExpr true_branch
@@ -60,11 +60,11 @@ processExpr expr = do
             branch_graphs <- choice [true_graphs, false_graphs]
             after [cond_graphs, branch_graphs]
         E.List items -> processItems items
-        E.Return rhs -> do
-            graphs <- processExpr rhs
+        E.Return arg -> do
+            graphs <- processExpr arg
             createEnds graphs
-        E.Continue rhs -> processExpr rhs
-        E.Break rhs -> processExpr rhs
+        E.Continue arg -> processExpr arg
+        E.Break arg -> processExpr arg
         E.RecordUpdate _ _ -> panic "RecordUpdate in value graph create"
         E.Loop v initializer body _ _ -> do
             initializer_graph <- processExpr initializer
@@ -78,11 +78,12 @@ processExpr expr = do
             branch_graphs <- cases |> List.iter |> map (\c -> processExpr c.body) |> toList
             branch_graphs <- choice branch_graphs
             after [body_graph, branch_graphs]
-        E.Clone rhs -> processExpr rhs
-        E.Deref rhs -> processExpr rhs
-        E.Ref rhs -> processExpr rhs
-        E.Move rhs -> processExpr rhs
-        E.Box rhs -> processExpr rhs
+        E.Clone arg -> processExpr arg
+        E.Deref arg -> processExpr arg
+        E.Ref arg -> processExpr arg
+        E.Move arg -> processExpr arg
+        E.Box arg -> processExpr arg
+        E.Converter arg _ -> processExpr arg
 
 createEnds :: ValueGraphs -> ValueGraphs
 createEnds  graphs = do

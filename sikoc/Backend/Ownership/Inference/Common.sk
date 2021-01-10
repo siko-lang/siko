@@ -5,7 +5,6 @@ import Siko.MIR.Expr as E
 import Siko.MIR.Data as D
 import Siko.MIR.Type as T
 import Siko.MIR.Function as F
-import Siko.Util.DependencyProcessor
 import Siko.Backend.Ownership.Unification as U
 import Siko.Util.Counter
 
@@ -13,22 +12,10 @@ import Map
 import Set
 
 data Equal = Equal T.OwnershipVar T.OwnershipVar
-             deriving (Show, PartialEq, Eq, PartialOrd, Ord)
+             deriving (Show)
 
-data ConverterKind = NormalConverter
-                   | BorrowConverter
-                   deriving (Show, PartialEq, Eq, PartialOrd, Ord)
-
-data ConverterPosition = ExprConverter E.ExprId
-                       | CaseConverter E.ExprId Int
-                       | CallArg E.ExprId Int
-                       | IfCond E.ExprId
-                       | List E.ExprId Int
-                       | External
-                       deriving (Show, PartialEq, Eq, PartialOrd, Ord)
-
-data Converter = Converter ConverterKind T.OwnershipVar T.OwnershipVar
-                 deriving (Show, PartialEq, Eq, PartialOrd, Ord)
+data Converter = Converter E.ExprId T.OwnershipVar T.OwnershipVar
+                 deriving (Show)
 
 data GlobalContext = { program :: P.Program,
                        inference_info_store :: InferenceInfoStore }
@@ -44,7 +31,6 @@ data Group = { kind :: T.OwnershipKind }
 data Context = { global_context :: GlobalContext,
                  var_vars :: Map E.Var [T.OwnershipVar],
                  converters :: [Converter],
-                 converter_positions :: Map ConverterPosition Int,
                  equals :: [Equal],
                  not_moves :: Set E.ExprId,
                  ownership_vars :: Map T.OwnershipVar Int,
@@ -56,6 +42,8 @@ data Context = { global_context :: GlobalContext,
                  groups :: Map Int Group,
                  group_id_gen :: Int,
                  return_type :: T.Type,
+                 continues :: Map E.ExprId T.Type,
+                 breaks :: Map E.ExprId T.Type,
                }
 
 data FunctionInferenceInfo = { function_type :: F.FunctionType,
@@ -74,7 +62,6 @@ createContext global_context not_moves var_gen return_type =
         global_context = global_context,
         var_vars = Map.empty,
         converters = [],
-        converter_positions = Map.empty,
         equals = [],
         not_moves = not_moves,
         ownership_vars = Map.empty,
@@ -86,14 +73,15 @@ createContext global_context not_moves var_gen return_type =
         groups = Map.empty,
         group_id_gen = 1,
         return_type = return_type,
+        continues = Map.empty,
+        breaks = Map.empty,
     }
 
-addConverter :: Context -> ConverterPosition -> Converter -> Context
-addConverter context pos converter = do
+addConverter :: Context -> Converter -> Context
+addConverter context converter = do
     index <- getLength context.converters
-    (converter_positions, _) <- Map.insert context.converter_positions pos index
     converters <- context.converters + [converter]
-    context { converters = converters, converter_positions = converter_positions }
+    context { converters = converters }
 
 addEqual :: Context -> T.OwnershipVar -> T.OwnershipVar -> Context
 addEqual context v1 v2 = do
@@ -110,11 +98,15 @@ getVarVars context var = case get context.var_vars var of
     Some vars -> vars
     None -> panic "Var {} not found in var_vars" % var
 
-createGroup :: Context -> T.OwnershipKind -> (Context, Int)
-createGroup context kind = do
+createGroupId :: Context -> (Context, Int)
+createGroupId context = do
     id <- context.group_id_gen
+    (context { group_id_gen = id + 1 }, id)
+
+createGroup :: Context -> Int -> T.OwnershipKind -> Context
+createGroup context id kind = do
     (groups, _) <- Map.insert context.groups id (Group kind)
-    (context { groups = groups, group_id_gen = id + 1 }, id)
+    context { groups = groups }
 
 getGroupId :: Context -> T.OwnershipVar -> Int
 getGroupId context var = case get context.ownership_vars var of
@@ -217,14 +209,25 @@ kindToVar kind = case kind of
 
 addOwnershipVar :: Context -> T.OwnershipVar -> T.OwnershipKind -> MovedVars -> Context
 addOwnershipVar context var kind moved_vars = do
-    (context, group_id) <- createGroup context kind
-    (ownership_vars, _) <- alter (\old -> case old of
-        Some o -> Some o
-        None -> Some group_id) var context.ownership_vars
+    //println "Adding {} as {}" % (var, kind)
+    (context, group_id) <- createGroupId context
+    context <- case get context.ownership_vars var of
+        Some id -> do
+            group <- getGroup context id
+            if group.kind != kind
+                then case kind of
+                    T.VarKind _ -> context
+                    _ -> panic "Trying to change var kind {} {} -> {}" % (var, group.kind, kind)
+                else context
+        None -> do
+            (ownership_vars, _) <- Map.insert context.ownership_vars var group_id
+            context <- context { ownership_vars = ownership_vars }
+            context <- createGroup context group_id kind
+            context
     (moved_vars, _) <- alter (\old -> case old of
         Some o -> Some o
         None -> Some moved_vars) var context.moved_vars
-    context { ownership_vars = ownership_vars, moved_vars = moved_vars }
+    context { moved_vars = moved_vars }
 
 addMovedVar :: MovedVars -> T.OwnershipVar -> MovedVars
 addMovedVar moved_vars var = do

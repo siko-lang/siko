@@ -1,0 +1,75 @@
+module Siko.Backend.Ownership.AddConverter where
+
+import Siko.MIR.Program as P
+import Siko.MIR.Expr as E
+import Siko.MIR.Data as D
+import Siko.MIR.Type as T
+import Siko.MIR.Function as F
+import Siko.Util.Counter
+import Siko.Backend.Ownership.ValueGraph.Creator as C
+import Siko.Backend.Traversal
+
+import Map
+import Set
+
+data Context = { expr_id_gen :: Counter E.ExprId, not_moves :: Set E.ExprId, }
+
+getNextExprId :: Context -> (Context, E.ExprId)
+getNextExprId context = do
+    (expr_id_gen, next_id) <- getNext context.expr_id_gen
+    (context { expr_id_gen = expr_id_gen }, next_id)
+
+packExpr :: Context -> E.Expr -> E.ConverterKind -> (Context, E.Expr)
+packExpr context orig_expr kind = do
+    (context, expr_id) <- getNextExprId context
+    E.Expr _ orig_type id <- orig_expr
+    type <- case orig_type of
+        T.Owner t -> t
+        T.Ref _ t -> t
+        _ -> orig_type
+    (context, E.Expr (E.Converter orig_expr kind) type expr_id)
+
+processExpr :: Context -> E.Expr -> (Context, E.Expr)
+processExpr context expr = do
+    E.Expr s_expr type id <- expr
+    case s_expr of
+        E.Do items -> do
+            last_index <- getLength items - 1
+            last_expr <- atIndex items last_index
+            (context, converter_expr) <- packExpr context last_expr E.NormalConverter
+            items <- write items last_index converter_expr
+            (context, E.Expr (E.Do items) type id)
+        E.VarRef v -> if Set.contains context.not_moves id
+            then packExpr context expr E.BorrowerConverter
+            else packExpr context expr E.NormalConverter
+        E.StaticFunctionCall f_id args -> do
+            (context, args) <- List.mapS context args (\context, arg -> packExpr context arg E.NormalConverter)
+            (context, E.Expr (E.StaticFunctionCall f_id args) type id)
+        E.Return arg -> do
+            (context, arg) <- packExpr context arg E.NormalConverter
+            (context, E.Expr (E.Return arg) type id)
+        E.List args -> do
+            (context, args) <- List.mapS context args (\context, arg -> packExpr context arg E.NormalConverter)
+            (context, E.Expr (E.List args) type id)
+        E.If cond true_branch false_branch -> do
+            (context, cond) <- packExpr context cond E.NormalConverter
+            (context, true_branch) <- packExpr context true_branch E.NormalConverter
+            (context, false_branch) <- packExpr context false_branch E.NormalConverter
+            (context, E.Expr (E.If cond true_branch false_branch) type id)
+        _ -> (context, expr)
+
+processFunction :: P.Identity -> F.Function -> (P.Identity, F.Function)
+processFunction id function = do
+    case function.kind of
+        F.Normal body expr_id_gen expr_var_gen -> do
+            not_moves <- C.collectNotMoves function.id body (getLength function.type.args)
+            context <- Context expr_id_gen not_moves
+            (context, new_body) <- traverse context body (Some processExpr) None
+            new_kind <- F.Normal new_body context.expr_id_gen expr_var_gen
+            (id, function { kind = new_kind })
+        _ -> (id, function)
+
+processProgram :: P.Program -> P.Program
+processProgram program = do
+    functions <- program.functions |> Map.iter |> map (\(id, function) -> processFunction id function) |> toMap
+    program { functions = functions }

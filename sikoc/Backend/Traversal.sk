@@ -96,6 +96,9 @@ traverse context expr process_expr process_type = do
         Box arg -> do
             (context, arg) <- traverse context arg process_expr process_type
             (context, Expr (Box arg) type id)
+        Converter arg kind -> do
+            (context, arg) <- traverse context arg process_expr process_type
+            (context, Expr (Converter arg kind) type id)
     (context, expr) <- case process_expr of
         Some process_expr -> process_expr context expr
         None -> (context, expr)

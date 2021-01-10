@@ -192,6 +192,10 @@ unify gen sub data_store class_store type1 type2 = do
     type1 <- apply sub type1
     type2 <- apply sub type2
     case (type1, type2) of
+        (Ref type1, type2) -> unify gen sub data_store class_store type1 type2
+        (type1, Ref type2) -> unify gen sub data_store class_store type1 type2
+        (Owner type1, type2) -> unify gen sub data_store class_store type1 type2
+        (type1, Owner type2) -> unify gen sub data_store class_store type1 type2
         (Named qn1 args1, Named qn2 args2) -> do
             if qn1 == qn2
                 then unifyArgs gen sub data_store class_store args1 args2
@@ -254,8 +258,4 @@ unify gen sub data_store class_store type1 type2 = do
         (type1, Never var) -> do
             sub <- try add sub var type1
             Ok (gen, sub)
-        (Ref type1, type2) -> unify gen sub data_store class_store type1 type2
-        (type1, Ref type2) -> unify gen sub data_store class_store type1 type2
-        (Owner type1, type2) -> unify gen sub data_store class_store type1 type2
-        (type1, Owner type2) -> unify gen sub data_store class_store type1 type2
         _ -> Err ()

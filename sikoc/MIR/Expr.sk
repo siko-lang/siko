@@ -43,6 +43,10 @@ data ExprId = ExprId Int deriving (PartialEq, Eq, PartialOrd, Ord, Show)
 
 data Expr = Expr SimpleExpr T.Type ExprId deriving (Show)
 
+data ConverterKind = NormalConverter
+                   | BorrowerConverter
+                   deriving (Show)
+
 data SimpleExpr = Do [Expr]
             | Multi [Expr]
             | StaticFunctionCall Identity [Expr]
@@ -66,11 +70,41 @@ data SimpleExpr = Do [Expr]
             | Ref Expr
             | Move Expr
             | Box Expr
+            | Converter Expr ConverterKind
             deriving (Show)
+
+short :: Expr -> String
+short expr = do
+    Expr s _ _ <- expr
+    case s of
+        Do args -> "Do"
+        Multi args -> "Multi"
+        StaticFunctionCall id args -> "StaticFunctionCall"
+        IntegerLiteral lit -> "IntegerLiteral"
+        StringLiteral lit -> "StringLiteral"
+        FloatLiteral lit -> "FloatLiteral"
+        CharLiteral lit -> "CharLiteral"
+        VarDecl v arg -> "VarDecl"
+        VarRef v -> "VarRef"
+        FieldAccess n rhs -> "FieldAccess"
+        If cond true_branch false_branch -> "If"
+        List args -> "List"
+        Return arg -> "Return"
+        Continue arg -> "Continue"
+        Break arg -> "Break"
+        RecordUpdate var updates -> "RecordUpdate"
+        Loop var initializer body _ _ -> "Loop"
+        CaseOf body cases -> "CaseOf"
+        Clone expr -> "Clone"
+        Deref expr -> "Deref"
+        Ref expr -> "Ref"
+        Move expr -> "Move"
+        Box expr -> "Box"
+        Converter expr _ -> "Converter"
 
 prettyPrint :: Expr -> Indent -> (String, Bool)
 prettyPrint expr ind = do
-    Expr expr expr_type _ <- expr
+    Expr expr expr_type expr_id <- expr
     case expr of
         Do args -> do
             inner <- inc ind
@@ -87,7 +121,7 @@ prettyPrint expr ind = do
             args <- args |> List.iter |> map (\arg -> do
                 (s, simple) <- prettyPrint arg ind
                 if simple then s else "({})" % s) |> toList
-            s <- "{} {}" % (id, join args " ")
+            s <- "({} {} :: {})" % (id, join args " ", expr_type)
             (s, isEmpty args)
         IntegerLiteral lit -> ("{}" % lit, True)
         StringLiteral lit -> ("\"{}\"" % escapeString lit, True)
@@ -161,3 +195,6 @@ prettyPrint expr ind = do
         Box expr -> do
             (s, simple) <- prettyPrint expr ind
             ("box({})" % s, False)
+        Converter expr kind -> do
+            (s, simple) <- prettyPrint expr ind
+            ("convert[{},{}]({})" % (expr_id, kind, s), False)
