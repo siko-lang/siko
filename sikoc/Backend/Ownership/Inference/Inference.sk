@@ -43,24 +43,24 @@ processConverters context =
 
 processConvertersStep :: Common.Context -> (Common.Context, Bool)
 processConvertersStep context = do
-    context.converters |> List.iter |> fold (\(context, changed), Common.Converter _ from to -> do
+    context.converters |> List.iter |> fold (\(context, changed), Common.Converter _ kind from to -> do
             resolved_from <- resolveKind context from
             resolved_to <- resolveKind context to
             case (resolved_from, resolved_to) of
                 (T.OwnerKind, T.VarKind _) -> do
-                    if List.contains context.borrowers (Common.Borrower from)
-                        then do
+                    case kind of
+                        Common.NormalConverter -> do
+                            group_id <- Common.getGroupId context to
+                            context <- Common.updateGroupKind context group_id T.OwnerKind
+                            (context, True)
+                        Common.BorrowerConverter borrow_source -> do
                             (context, borrower_set_id) <- Common.createrBorrowerSetId context
                             borrower_set <- Set.empty
-                            (borrower_set, _) <- Set.insert borrower_set from
+                            (borrower_set, _) <- Set.insert borrower_set borrow_source
                             context <- Common.addBorrowerSet context borrower_set_id borrower_set
                             borrower_kind <- T.BorrowKind borrower_set_id
                             group_id <- Common.getGroupId context to
                             context <- Common.updateGroupKind context group_id borrower_kind
-                            (context, True)
-                        else do
-                            group_id <- Common.getGroupId context to
-                            context <- Common.updateGroupKind context group_id T.OwnerKind
                             (context, True)
                 (T.BorrowKind _, T.VarKind _) -> do
                     group_id <- Common.getGroupId context to
@@ -82,7 +82,7 @@ processConvertersStep context = do
 dumpConverters :: Common.Context -> ()
 dumpConverters context = do
     println "Converters:"
-    context.converters |> List.iter |> forEach (\Common.Converter expr src dest -> do
+    context.converters |> List.iter |> forEach (\Common.Converter expr kind src dest -> do
         println "C: {} {} {} -> {} {}" % (expr, src, resolveKind context src, dest, resolveKind context dest))
 
 dumpOwnershipVars :: Common.Context -> ()
@@ -115,7 +115,7 @@ collectConvertibleConstraints var context = do
     (convertibles, _) <- Set.insert convertibles var
     convertibles <- loop convertibles <- convertibles do
         (convertibles, added) <- context.converters |> List.iter |> fold (\(convertibles, added), converter -> do
-            Common.Converter _ a b <- converter
+            Common.Converter _ _ a b <- converter
             c_a <- resolveKind context a
             c_b <- resolveKind context b
             (convertibles, added1) <- insertKind convertibles c_a c_b
@@ -226,7 +226,7 @@ updateBodyExpr (context, sub) expr = do
             expr <- case (src_kind, dest_kind) of
                 (T.OwnerKind, T.OwnerKind) -> case kind of
                     E.NormalConverter -> E.Expr (E.Move arg) type id
-                    E.BorrowerConverter -> E.Expr (E.Move arg) type id
+                    E.BorrowerConverter -> E.Expr (E.Clone arg) type id
                 (T.OwnerKind, T.BorrowKind i) -> E.Expr (E.Ref arg) type id
                 (T.BorrowKind _, T.OwnerKind) -> E.Expr (E.Clone arg) type id
                 (T.BorrowKind _, T.BorrowKind _) -> E.Expr (E.Move arg) type id

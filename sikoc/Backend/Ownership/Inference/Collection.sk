@@ -116,7 +116,7 @@ processExpr context moved_vars expr = do
             context <- info.var_constraints |> Map.iter |> fold (\context, (src_var, constraints) -> do
                     constraints |> Set.iter |> fold (\context, dest_var -> do
                         //println "Adding constraint converter {} => {}" % (src_var, dest_var)
-                        Common.addConverter context (Common.Converter id src_var dest_var)) context) context
+                        Common.addConverter context (Common.Converter id Common.NormalConverter src_var dest_var)) context) context
             function_type <- info.function_type
             (context, moved_vars) <- args |> List.iter |> fold (\(context, moved_vars), arg -> processExpr context moved_vars arg) (context, moved_vars)
             context <- List.zipSE context args function_type.args (\context, index, arg_expr, f_arg_type -> do
@@ -276,14 +276,23 @@ processExpr context moved_vars expr = do
         E.Box _ -> panic "Box found in Inference.Collection"
         E.Converter arg kind -> do
             (context, moved_vars) <- processExpr context moved_vars arg
-            E.Expr _ arg_type _ <- arg
+            E.Expr arg_s_expr arg_type _ <- arg
             src_kinds <- T.collectOwnershipKinds arg_type
             dest_kinds <- T.collectOwnershipKinds type
             (context, src_vars) <- collectVars context moved_vars src_kinds
             (context, dest_vars) <- collectVars context moved_vars dest_kinds
+            kind <- case kind of
+                E.NormalConverter -> Common.NormalConverter
+                E.BorrowerConverter ->
+                    case arg_s_expr of
+                        E.VarRef v -> do
+                            var_vars <- Common.getVarVars context v
+                            borrow_source <- atIndex var_vars 0
+                            Common.BorrowerConverter borrow_source
+                        _ -> panic "Borrow converter's arg is not VarRef {}" % (E.short arg)
             context <- List.zipSE context src_vars dest_vars (\context, index, src_var, dest_var -> do
                 if index == 0
-                    then Common.addConverter context (Common.Converter id src_var dest_var)
+                    then Common.addConverter context (Common.Converter id kind src_var dest_var)
                     else Common.addEqual context src_var dest_var)
             (context, moved_vars)
 
