@@ -14,7 +14,8 @@ module Siko.HIR.Type(Type(..),
                      isConcreteType,
                      isFunction,
                      isSimple,
-                     removeFixed) where
+                     removeFixed,
+                     removeOwnership) where
 
 import Siko.Constants
 import Siko.HIR.Program as HP
@@ -280,4 +281,22 @@ removeFixed type = case type of
     Owner t -> Owner (removeFixed t)
     Tuple args -> do
         args <- args |> List.iter |> map (\arg -> removeFixed arg) |> toList
+        Tuple args
+
+removeOwnership :: Type -> Type
+removeOwnership type = case type of
+    Var _ _ -> type
+    FixedTypeArg _ _ _ -> type
+    Named qn args -> do
+        args <- args |> List.iter |> map (\arg -> removeOwnership arg) |> toList
+        Named qn args
+    Function from to -> do
+        from <- removeOwnership from
+        to <- removeOwnership to
+        Function from to
+    Never var -> type
+    Ref t -> removeOwnership t
+    Owner t -> removeOwnership t
+    Tuple args -> do
+        args <- args |> List.iter |> map (\arg -> removeOwnership arg) |> toList
         Tuple args

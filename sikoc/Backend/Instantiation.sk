@@ -134,6 +134,7 @@ processCase queue c = do
 processExpr :: Queue -> ME.Expr -> (Queue, LE.Expr)
 processExpr queue mir_expr = do
     ME.Expr s_expr mir_type id <- mir_expr
+    //println "Lowering mir expr {}" % mir_type
     (queue, lir_s_expr) <- case s_expr of
         ME.Do items -> do
             (queue, items) <- List.mapS queue items processExpr
@@ -294,7 +295,9 @@ processFunctionType queue mir_function_type = do
         lifetimes + collectLifetimes mir_arg) []
     lifetimes <- lifetimes + collectLifetimes mir_function_type.result
     lifetimes <- lifetimes |> sort |> dedup
+    println "Processing fn result {}" % mir_function_type.result
     (queue, lir_result) <- processType queue mir_function_type.result
+    println "Processing fn result {} end" % mir_function_type.result
     (queue, LF.FunctionType lir_args lir_result, lifetimes)
 
 processFunction :: Queue -> MP.Program -> MP.Identity -> MF.FunctionType -> LP.Identity -> Queue
@@ -305,9 +308,12 @@ processFunction queue mir_program mir_id function_type lir_id = do
         MF.Normal mir_body expr_id_gen temp_var_gen -> do
             global_context <- InferenceC.createGlobalContext mir_program queue.inference_info_store
             (body, var_gen) <- Inference.instantiateFunction global_context queue.var_gen expr_id_gen mir_id function_type mir_body
+            println "Lowering mir body to lir body"
             (queue, lir_body) <- processExpr queue body
             lir_kind <- LF.Normal lir_body
+            println "Processing function type {}" % function_type
             (queue, lir_function_type, lifetimes) <- processFunctionType queue function_type
+            println "Oops"
             lir_function <- LF.Function lir_id lifetimes lir_kind lir_function_type
             queue <- addFunction queue lir_function
             queue

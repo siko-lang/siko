@@ -257,18 +257,30 @@ processSteps program steps type = do
                     processIndices indices field.type record.ownership_vars
                 _ -> panic "Incorrect step in type mapping!"
 
+getKinds :: P.Program -> [F.Step] -> T.Type -> [T.OwnershipKind]
+getKinds program steps type = do
+    indices <- if getLength steps == 0
+        then [0]
+        else do
+            indices <- processSteps program steps type
+            indices <- indices |> List.iter |> map (\i -> i + 1) |> toList
+            indices
+    ownership_kinds <- T.collectOwnershipKinds type
+    kinds <- indices |> List.iter |> map (\index -> atIndex ownership_kinds index) |> toList
+    kinds
+
 applyPosition :: P.Program -> F.Position -> F.FunctionType -> [T.OwnershipKind]
 applyPosition program position function_type = do
     F.Position steps <- position
     (first, rest) <- Option.unwrap (pop steps)
-    type <- case first of
-        F.FunctionArg index -> atIndex function_type.args index
-        F.FunctionResult -> function_type.result
+    case first of
+        F.FunctionArg index -> do
+            type <- atIndex function_type.args index
+            getKinds program rest type
+        F.FunctionResult -> do
+            type <- function_type.result
+            getKinds program rest type
         _ -> panic "Invalid first step in type mapping!"
-    indices <- processSteps program rest type
-    ownership_kinds <- T.collectOwnershipArgs type
-    kinds <- indices |> List.iter |> map (\index -> atIndex ownership_kinds index) |> toList
-    kinds
 
 unifyTypePositions :: P.Program -> Context -> [F.Position] -> F.FunctionType -> (Context, F.FunctionType)
 unifyTypePositions program context positions function_type = do
@@ -284,8 +296,23 @@ unifyTypePositions program context positions function_type = do
 
 applyTypeMappings :: P.Program -> Context -> F.TypeMapping -> F.FunctionType -> (Context, F.FunctionType)
 applyTypeMappings program context type_mappings function_type = do
-    type_mappings.mappings |> Map.iter |> fold (\(context, function_type), (_, positions) -> do
+    (context, function_type) <- type_mappings.var_mappings |> Map.iter |> fold (\(context, function_type), (_, positions) -> do
         unifyTypePositions program context positions function_type) (context, function_type)
+    (context, function_type) <- type_mappings.owner_positions |> List.iter |> fold (\(context, function_type), owner_position -> do
+            vars <- applyPosition program owner_position function_type
+            new_kinds <- repeat T.OwnerKind (getLength vars)
+            sub <- U.batch vars new_kinds
+            function_type <- U.apply function_type sub
+            (context, function_type)
+        ) (context, function_type)
+    (context, function_type) <- type_mappings.ref_positions |> List.iter |> fold (\(context, function_type), ref_position -> do
+            vars <- applyPosition program ref_position function_type
+            new_kinds <- repeat (T.BorrowKind 0) (getLength vars)
+            sub <- U.batch vars new_kinds
+            function_type <- U.apply function_type sub
+            (context, function_type)
+        ) (context, function_type)
+    (context, function_type)
 
 processFunction :: P.Program -> Context -> F.Function -> (Context, F.Function)
 processFunction program context function = case function.kind of

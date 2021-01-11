@@ -9,34 +9,49 @@ import Siko.Typechecker.Unification as U
 import Siko.Typechecker.Lowering as L
 import Map
 
-data Context = { mappings :: Map String [MF.Position], lowering_context :: L.Context }
+data Context = { var_mappings :: Map String [MF.Position],
+                 owner_positions :: [MF.Position],
+                 ref_positions :: [MF.Position],
+                 lowering_context :: L.Context }
 
 createTypeMap :: L.Context -> HT.Type -> Int -> MF.TypeMapping
 createTypeMap lowering_context type arg_count = do
     args <- HT.getArgs type
     (args, _) <- List.split args arg_count
     result_type <- HT.getResultType type arg_count
-    context <- Context empty lowering_context
+    context <- Context empty [] [] lowering_context
     (context, _ ) <- args |> List.iter |> fold (\(context, index), arg -> do
         steps <- [MF.FunctionArg index]
         context <- mapType context steps arg
         (context, index + 1)) (context, 0)
     context <- mapType context [MF.FunctionResult] result_type
-    MF.TypeMapping context.mappings
+    MF.TypeMapping context.var_mappings context.owner_positions context.ref_positions
 
-addPosition :: Context -> String -> [MF.Step] -> Context
-addPosition context name steps = do
+addVarPosition :: Context -> String -> [MF.Step] -> Context
+addVarPosition context name steps = do
     pos <- MF.Position steps
-    (mappings, _) <- alter (\positions -> case positions of
+    (var_mappings, _) <- alter (\positions -> case positions of
         Some positions -> Some (positions + [pos])
-        None -> Some [pos]) name context.mappings
-    context { mappings = mappings }
+        None -> Some [pos]) name context.var_mappings
+    context { var_mappings = var_mappings }
+
+addOwnerPosition :: Context -> [MF.Step] -> Context
+addOwnerPosition context steps = do
+    pos <- MF.Position steps
+    owner_positions <- context.owner_positions + [pos]
+    context { owner_positions = owner_positions }
+
+addRefPosition :: Context -> [MF.Step] -> Context
+addRefPosition context steps = do
+    pos <- MF.Position steps
+    ref_positions <- context.ref_positions + [pos]
+    context { ref_positions = ref_positions }
 
 mapType :: Context -> [MF.Step] -> HT.Type -> Context
 mapType context steps type = case type of
     HT.Var _ _ -> panic "Var type in type mapping!"
     HT.FixedTypeArg name _ _ -> do
-        addPosition context name steps
+        addVarPosition context name steps
     HT.Named qn args -> do
         data_type_info <- DS.getDataTypeInfo context.lowering_context.state.data_store qn
         case data_type_info of
@@ -77,8 +92,12 @@ mapType context steps type = case type of
                     Err _ -> panic "Unification failed in type mapping"
     HT.Function from to -> panic "Function type in type mapping!"
     HT.Never var -> context
-    HT.Ref t -> mapType context steps t
-    HT.Owner t -> mapType context steps t
+    HT.Ref t -> do
+        context <- addRefPosition context steps
+        mapType context steps t
+    HT.Owner t -> do
+        context <- addOwnerPosition context steps
+        mapType context steps t
     HT.Tuple args -> do
         (context, _) <- args |> List.iter |> fold (\(context, index), arg -> do
             steps <- steps + [MF.Field index]
