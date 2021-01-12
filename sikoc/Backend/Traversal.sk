@@ -76,8 +76,15 @@ traverse context expr process_expr process_type = do
         CaseOf body cases -> do
             (context, body) <- traverse context body process_expr process_type
             (context, cases) <- cases |> List.iter |> fold (\(context, cases), case_branch -> do
+                (context, checker) <- case case_branch.checker of
+                    VariantChecker index var type -> do
+                        (context, type) <- case process_type of
+                            Some process_type -> process_type context type
+                            None -> (context, type)
+                        (context, VariantChecker index var type)
+                    _ -> (context, case_branch.checker)
                 (context, updated_body) <- traverse context case_branch.body process_expr process_type
-                case_branch <- case_branch { body = updated_body }
+                case_branch <- case_branch { checker = checker, body = updated_body }
                 cases <- cases + [case_branch]
                 (context, cases)) (context, [])
             (context, Expr (CaseOf body cases) type id)

@@ -188,27 +188,9 @@ addOwnershipVarsToType context type = case type of
         t <- T.Var kind type
         (context, t)
 
-addOwnershipVarsToExpr :: Context -> Expr -> (Context, Expr)
-addOwnershipVarsToExpr context expr = do
-    Expr s_expr type expr_id <- expr
-    context <- case s_expr of
-        CaseOf body cases -> do
-            (context, cases) <- cases |> List.iter |> fold (\(context, cases), c -> do
-                (context, c) <- case c.checker of
-                    VariantChecker index v type -> do
-                        (context, type) <- addOwnershipVarsToType context type
-                        checker <- VariantChecker index v type
-                        (context, c { checker = checker })
-                    _ -> (context, c)
-                (context, cases + [c])) (context, [])
-            s_expr <- CaseOf body cases
-            return (context, Expr s_expr type expr_id)
-        _ -> context
-    (context, expr)
-
 addOwnershipVarsToBody :: Context -> Expr -> (Context, Expr)
 addOwnershipVarsToBody context expr = do
-    traverse context expr (Some addOwnershipVarsToExpr) (Some (addOwnershipVarsToType))
+    traverse context expr None (Some (addOwnershipVarsToType))
 
 kindsToIndices :: [T.OwnershipKind] -> [T.OwnershipKind] -> [Int]
 kindsToIndices all subs = subs |> List.iter |> map (\kind -> Option.unwrap (containsAtIndex all kind)) |> toList

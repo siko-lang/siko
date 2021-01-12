@@ -34,7 +34,7 @@ instance Show Checker where
         StringChecker lit -> "s:{}" % lit
         CharChecker lit -> "c:{}" % lit
         CharRangeChecker s e kind -> "{}:{}:{}" % (s, e, kind)
-        VariantChecker i v _ -> "v:{} {}" % (i, v)
+        VariantChecker i v type -> "v:{} {} :: {}" % (i, v, type)
         WildcardChecker -> "w"
 
 data Case = { checker :: Checker, body :: Expr } deriving (Show)
@@ -197,4 +197,4 @@ prettyPrint expr ind = do
             ("box({})" % s, False)
         Converter expr kind -> do
             (s, simple) <- prettyPrint expr ind
-            ("convert[{},{}]({})" % (expr_id, kind, s), False)
+            ("(convert[{},{}]({}) :: {})" % (expr_id, kind, s, expr_type), False)
