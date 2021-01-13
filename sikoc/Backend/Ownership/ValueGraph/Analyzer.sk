@@ -5,6 +5,22 @@ import Siko.Backend.Ownership.ValueGraph
 
 import Set
 
+data MoveInfo = { moves :: [FieldPath] }
+
+mergeMoveInfo :: MoveInfo -> MoveInfo -> MoveInfo
+mergeMoveInfo move_info1 move_info2 = MoveInfo (move_info1.moves + move_info2.moves)
+
+addMove :: MoveInfo -> Set E.ExprId -> FieldPath -> (MoveInfo, Set E.ExprId)
+addMove move_info not_moves move = do
+    (moves, not_moves) <- move_info.moves |> List.iter |> fold (\(moves, not_moves), prev_move -> do
+        if invalidates move prev_move
+            then do
+                id <- getId prev_move
+                (not_moves, _) <- Set.insert not_moves id
+                (moves, not_moves)
+            else (moves + [prev_move], not_moves)) ([move], not_moves)
+    (MoveInfo moves, not_moves)
+
 data FieldPath = Whole E.ExprId
                | Partial E.ExprId [String]
                deriving (Show)
@@ -30,54 +46,37 @@ invalidates current other = do
             (o_start, _) <- List.split other_path min_len
             c_start == o_start
 
-checkMoves :: Set E.ExprId -> [FieldPath] -> Set E.ExprId
-checkMoves invalids field_paths =
-    loop (invalids, field_paths) <- (invalids, field_paths) do
-        case getLength field_paths of
-            0 -> break invalids
-            1 -> break invalids
-            _ -> do
-                (pre, last) <- List.split field_paths (getLength field_paths - 1)
-                last <- atIndex last 0
-                //println "pre {}: last {}" % (pre, last)
-                invalids :: Set E.ExprId <- pre |> List.iter |> fold (\invalids, item -> do
-                    if invalidates last item
-                        then do
-                            l <- getId last
-                            i <- getId item
-                            (invalids, _) <- Set.insert invalids i
-                            invalids
-                        else invalids) invalids
-                (invalids, pre)
-
-walk :: Set E.ExprId -> ValueGraphNode -> [FieldPath] -> (Set E.ExprId, ExecutionMode, [FieldPath])
-walk invalids node field_paths = case node of
-    ValueDecl _ -> (invalids, Normal, [])
-    ValueRef id -> (invalids, Normal, [Whole id])
+walk :: MoveInfo -> Set E.ExprId -> ValueGraphNode -> (MoveInfo, Set E.ExprId, ExecutionMode)
+walk move_info not_moves node = case node of
+    ValueDecl _ -> (move_info, not_moves, Normal)
+    ValueRef id -> do
+        (move_info, not_moves) <- addMove move_info not_moves (Whole id)
+        (move_info, not_moves, Normal)
     Block nodes -> do
-        nodes |> List.iter |> fold (\(invalids, mode, paths), node -> do
-            (invalids, exec_mode, p) <- walk invalids node paths
+        nodes |> List.iter |> fold (\(move_info, not_moves, mode), node -> do
+            (move_info, not_moves, exec_mode) <- walk move_info not_moves node
             exec_mode <- case (exec_mode, mode) of
                 (Normal, Normal) -> Normal
                 _ -> DoesNotReturn
-            (invalids, exec_mode, paths + p)) (invalids, Normal, field_paths)
-    ValueFieldAccess id fields -> (invalids, Normal, [Partial id fields])
+            (move_info, not_moves, exec_mode)) (move_info, not_moves, Normal)
+    ValueFieldAccess id fields -> do
+        (move_info, not_moves) <- addMove move_info not_moves (Partial id fields)
+        (move_info, not_moves, Normal)
     Branches nodes -> do
-        nodes |> List.iter |> fold (\(invalids, mode, paths), node -> do
-            (invalids, exec_mode, p) <- walk invalids node field_paths
+        nodes |> List.iter |> fold (\(merged, not_moves, mode), node -> do
+            (new_move_info, not_moves, exec_mode) <- walk move_info not_moves node
             case exec_mode of
-                Normal -> (invalids, Normal, paths + p)
-                DoesNotReturn -> (invalids, mode, paths)) (invalids, DoesNotReturn, [])
-    Empty -> (invalids, Normal, [])
+                Normal -> do
+                    merged <- mergeMoveInfo new_move_info merged
+                    (merged, not_moves, Normal)
+                DoesNotReturn -> (merged, not_moves, mode)) (move_info, not_moves, DoesNotReturn)
+    Empty -> (move_info, not_moves, Normal)
     Loop node -> do
-        (invalids, mode, p) <- walk invalids node field_paths
-        (invalids, mode, p) <- walk invalids node (field_paths + p)
-        (invalids, mode, p + p)
-    End -> do
-        invalids <- checkMoves invalids field_paths
-        (invalids, DoesNotReturn, [])
+        (move_info, not_moves, mode) <- walk move_info not_moves node
+        walk move_info not_moves node
+    End -> (move_info, not_moves, DoesNotReturn)
 
 analyze :: Set E.ExprId -> ValueGraphNode -> Set E.ExprId
-analyze invalids graph = do
-    (invalids, _, _) <- walk invalids graph []
-    invalids
+analyze not_moves graph = do
+    (_, not_moves, _) <- walk (MoveInfo []) not_moves graph
+    not_moves
