@@ -24,6 +24,10 @@ processKind context moved_vars kind =
             (context, v) <- Common.getNextOwnershipVar context
             context <- Common.addOwnershipVar context v kind moved_vars
             (context, v)
+        T.BoxedKind -> do
+            (context, v) <- Common.getNextOwnershipVar context
+            context <- Common.addOwnershipVar context v kind moved_vars
+            (context, v)
         T.BorrowKind i -> do
             (context, v) <- Common.getNextOwnershipVar context
             (context, borrower_set_id) <- Common.createrBorrowerSetId context
@@ -100,8 +104,8 @@ addMovedVar moved_vars var = do
 processExpr :: Common.Context -> Common.MovedVars -> E.Expr -> (Common.Context, Common.MovedVars)
 processExpr context moved_vars expr = do
     E.Expr s_expr type id <- expr
-    //println "Collection {}" % E.short expr
-    case s_expr of
+    //println "Starting collection of {} = {}" % (id, E.short expr)
+    (context, moved_vars) <- case s_expr of
         E.Do items -> do
             (context, moved_vars) <- items |> List.iter |> fold (\(context, moved_vars), item -> processExpr context moved_vars item) (context, moved_vars)
             E.Expr _ last_type _ <- atIndex items (getLength items - 1)
@@ -111,7 +115,11 @@ processExpr context moved_vars expr = do
         E.StaticFunctionCall f_id args -> do
             info <- case get context.global_context.inference_info_store.inference_infos f_id of
                 Some info -> info
-                None -> panic "No inference info found for function {}" % f_id
+                None -> do
+                    // TODO check group!
+                    //panic "No inference info found for function {}" % f_id
+                    function <- P.getFunction context.global_context.program f_id
+                    Common.FunctionInferenceInfo function.type Map.empty
             (context, info) <- Common.cloneFunctionInfo context info
             context <- info.var_constraints |> Map.iter |> fold (\context, (src_var, constraints) -> do
                     constraints |> Set.iter |> fold (\context, dest_var -> do
@@ -123,7 +131,6 @@ processExpr context moved_vars expr = do
                 E.Expr _ arg_expr_type _ <- arg_expr
                 //println " {} === {}" % (arg_expr_type, f_arg_type)
                 equalConstraints context moved_vars arg_expr_type f_arg_type)
-            //println "res eq {} {}" % (function_type.result, type)
             context <- equalConstraints context moved_vars function_type.result type
             (context, moved_vars)
         E.IntegerLiteral i -> do
@@ -300,6 +307,8 @@ processExpr context moved_vars expr = do
                     then Common.addConverter context (Common.Converter id kind src_var dest_var)
                     else Common.addEqual context src_var dest_var)
             (context, moved_vars)
+    //println "End of {}" % id
+    (context, moved_vars)
 
 processArg :: Common.Context -> Int -> T.Type -> Common.Context
 processArg context index type = do

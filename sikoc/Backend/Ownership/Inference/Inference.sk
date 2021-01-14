@@ -157,6 +157,8 @@ getSubstitution context = do
                     U.addSubstitution sub (T.VarKind v) (U.Owner)
                 T.BorrowKind i -> do
                     U.addSubstitution sub (T.VarKind v) (U.Borrow i)
+                T.BoxedKind -> do
+                    U.addSubstitution sub (T.VarKind v) (U.Boxed)
         ) sub
     sub
 
@@ -258,22 +260,31 @@ instantiateFunction global_context var_gen expr_id_gen function_id function_type
     updated_body <- updateBody context sub body
     (updated_body, context.var_gen)
 
+getOrUpdateInferenceInfo :: Common.GlobalContext -> U.OwnershipVarGenerator -> P.Identity -> (Common.GlobalContext, U.OwnershipVarGenerator, Bool)
+getOrUpdateInferenceInfo context var_gen function_id = do
+    (info, var_gen) <- calculateInferenceInfo context var_gen function_id
+    info <- case info of
+        Some info -> Common.normalizeFunctionInfo info
+        None -> do
+            function <- P.getFunction context.program function_id
+            Common.FunctionInferenceInfo function.type Map.empty
+    (context, added) <- Common.addInferenceInfo context function_id info
+    (context, var_gen, added)
+
 processFunctionGroup :: Common.GlobalContext -> U.OwnershipVarGenerator -> [P.Identity] -> (Common.GlobalContext, U.OwnershipVarGenerator)
 processFunctionGroup context var_gen group = do
     if getLength group == 1
         then do
             function_id <- atIndex group 0
-            (info, var_gen) <- calculateInferenceInfo context var_gen function_id
-            info <- case info of
-                Some info -> Common.normalizeFunctionInfo info
-                None -> do
-                    function <- P.getFunction context.program function_id
-                    Common.FunctionInferenceInfo function.type Map.empty
-            (context, added) <- Common.addInferenceInfo context function_id info
+            (context, var_gen, _) <- getOrUpdateInferenceInfo context var_gen function_id
             (context, var_gen)
         else do
-            group |> List.iter |> fold (\(context, var_gen), function_id -> do
-                (context, var_gen)) (context, var_gen)
+            loop (context, var_gen) <- (context, var_gen) do
+                (context, var_gen, more) <- group |> List.iter |> fold (\(context, var_gen, more), function_id -> do
+                    (context, var_gen, added) <- getOrUpdateInferenceInfo context var_gen function_id
+                    more <- if added then True else more
+                    (context, var_gen, more)) (context, var_gen, False)
+                if more then (context, var_gen) else break (context, var_gen)
 
 processProgram :: P.Program -> U.OwnershipVarGenerator -> [DependencyGroup P.Identity] -> (Common.InferenceInfoStore, U.OwnershipVarGenerator)
 processProgram program var_gen function_groups = do

@@ -7,14 +7,15 @@ data OwnershipVar = OwnershipVar Int deriving (PartialEq, Eq, PartialOrd, Ord)
 data OwnershipKind = VarKind OwnershipVar
                    | BorrowKind Int
                    | OwnerKind
+                   | BoxedKind
                    deriving (PartialEq, Eq, PartialOrd, Ord)
 
 data Type = Adt Identity [OwnershipKind]
           | Record Identity [OwnershipKind]
           | Ref Int Type
           | Owner Type
+          | Boxed Type
           | Never
-          | Box Type
           | Var OwnershipKind Type
           deriving (PartialEq, Eq, PartialOrd, Ord)
 
@@ -26,6 +27,7 @@ instance Show OwnershipKind where
         VarKind v -> "v{}" % v
         BorrowKind index -> "&^l{}" % index
         OwnerKind -> "~"
+        BoxedKind -> "*"
 
 printArgs :: [OwnershipKind] -> String
 printArgs args = if isEmpty args then "" else " " + join args " "
@@ -36,8 +38,8 @@ instance Show Type where
         Record id args -> "{}{}" % (id, printArgs args)
         Ref index t -> "&^{} {}" % (index, t)
         Owner t -> "~{}" % t
+        Boxed t -> "*{}" % t
         Never -> "!"
-        Box t -> "*{}" % t
         Var i t -> "{} {}" % (i, t)
 
 getIdentity :: Type -> Identity
@@ -46,8 +48,8 @@ getIdentity type = case type of
     Record id _ -> id
     Ref _ t -> getIdentity t
     Owner t -> getIdentity t
+    Boxed t -> getIdentity t
     Never -> panic "getIdentity called on Never!"
-    Box t -> getIdentity t
     Var i t -> getIdentity t
 
 collectOwnershipKinds :: Type -> [OwnershipKind]
@@ -56,8 +58,8 @@ collectOwnershipKinds type = case type of
     Record id args -> args
     Ref i t -> [BorrowKind i] + collectOwnershipKinds t
     Owner t -> [OwnerKind] + collectOwnershipKinds t
+    Boxed t -> [BoxedKind] + collectOwnershipKinds t
     Never -> []
-    Box t -> collectOwnershipKinds t
     Var i t -> [i] + collectOwnershipKinds t
 
 collectOwnershipArgs :: Type -> [OwnershipKind]
@@ -66,11 +68,6 @@ collectOwnershipArgs type = case type of
     Record id args -> args
     Ref _ t -> collectOwnershipKinds t
     Owner t -> collectOwnershipKinds t
+    Boxed t -> collectOwnershipKinds t
     Never -> []
-    Box t -> collectOwnershipKinds t
     Var i t -> collectOwnershipKinds t
-
-debox :: Type -> Type
-debox type = case type of
-    Box t -> t
-    t -> t

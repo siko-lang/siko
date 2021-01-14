@@ -24,17 +24,22 @@ addOwnershipVarsToDataType context is_adt group all_ownership_vars ownership_var
     id <- T.getIdentity type
     if contains group id
         then do
-            type <- case type of
-                T.Box t -> do
-                        t <- case t of
-                            T.Record id _ -> T.Record id all_ownership_vars
-                            T.Adt id _ -> T.Adt id all_ownership_vars
-                            _ -> panic "Boxed data is not data!"
-                        T.Box t
-                T.Record id _ -> T.Record id all_ownership_vars
-                T.Adt id _ -> T.Adt id all_ownership_vars
-                _ -> panic "Data is not data!"
-            (ownership_vars, type)
+            if is_adt
+                then
+                    do
+                    type <- case type of
+                        T.Record id _ -> T.Owner (T.Record id all_ownership_vars)
+                        T.Adt id _ -> T.Owner (T.Adt id all_ownership_vars)
+                        t -> panic "addOwnershipVarsToDataType: unexpected type {}" % t
+                    (ownership_vars, type)
+                else do
+                    (var, ownership_vars) <- List.split ownership_vars 1
+                    var <- atIndex var 0
+                    type <- case type of
+                        T.Record id _ -> T.Var var (T.Record id all_ownership_vars)
+                        T.Adt id _ -> T.Var var (T.Adt id all_ownership_vars)
+                        t -> panic "addOwnershipVarsToDataType: unexpected type {}" % t
+                    (ownership_vars, type)
         else do
             c <- getArgCount context id
             if is_adt
@@ -44,7 +49,7 @@ addOwnershipVarsToDataType context is_adt group all_ownership_vars ownership_var
                     type <- case type of
                         T.Record id _ -> T.Owner (T.Record id args)
                         T.Adt id _ -> T.Owner (T.Adt id args)
-                        t -> t
+                        t -> panic "addOwnershipVarsToDataType: unexpected type {}" % t
                     (ownership_vars, type)
                 else do
                     (var, ownership_vars) <- List.split ownership_vars 1
@@ -53,7 +58,7 @@ addOwnershipVarsToDataType context is_adt group all_ownership_vars ownership_var
                     type <- case type of
                         T.Record id _ -> T.Var var (T.Record id args)
                         T.Adt id _ -> T.Var var (T.Adt id args)
-                        t -> t
+                        t -> panic "addOwnershipVarsToDataType: unexpected type {}" % t
                     (ownership_vars, type)
 
 addOwnershipVarsToRecord :: Context -> [T.OwnershipKind] -> [P.Identity] -> [T.OwnershipKind] -> Option Record -> ([T.OwnershipKind], Option Record)
@@ -109,7 +114,7 @@ calculateArgCountForRecord context group record = do
     arg_count <- record.fields |> List.iter |> fold (\arg_count, field -> do
         id <- T.getIdentity field.type
         field_arg_count <- if contains group id
-            then 0
+            then 1
             else 1 + getArgCount context id
         arg_count + field_arg_count) 0
     case record.external_info of
@@ -199,8 +204,8 @@ processIndices :: [Int] -> T.Type -> [T.OwnershipKind] -> [Int]
 processIndices sub sub_type all = do
     if getLength sub == 0
         then do
-            ownership_args <- T.collectOwnershipArgs sub_type
-            indices <- kindsToIndices all ownership_args
+            ownership_kinds <- T.collectOwnershipKinds sub_type
+            indices <- kindsToIndices all ownership_kinds
             indices
         else do
             ownership_args <- T.collectOwnershipArgs sub_type
@@ -323,7 +328,7 @@ processFunction program context function = case function.kind of
         variant_record <- P.getRecord program variant_record_id
         sub <- U.batch variant_record.ownership_vars variant_ownership_vars
         variant_record <- U.apply variant_record sub
-        args <- variant_record.fields |> List.iter |> map (\f -> T.debox f.type) |> toList
+        args <- variant_record.fields |> List.iter |> map (\f -> f.type) |> toList
         result <- T.Adt id adt.ownership_vars
         owned_result <- T.Owner result
         function_type <- F.FunctionType args owned_result

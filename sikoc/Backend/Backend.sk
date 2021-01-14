@@ -1,10 +1,10 @@
 module Siko.Backend where
 
-import Siko.Backend.Passes.Box as Box
 import Siko.Backend.Ownership.Initialization as Initialization
 import Siko.Backend.Ownership.Inference as Inference
 import Siko.Backend.Ownership.AddConverter as AddConverter
 import Siko.Backend.Instantiation as Instantiation
+import Siko.Backend.Ownership.TransformUpdates as TransformUpdates
 import Siko.Backend.Traversal
 import Siko.MIR.Program as MP
 import Siko.LIR.Program as LP
@@ -78,8 +78,8 @@ processProgram config mir_program = do
     data_groups <- processDependencies data_dependencies
     function_dependencies <- collectFunctionDeps mir_program
     function_groups <- processDependencies function_dependencies
-    trace config "Backend boxing.."
-    mir_program <- Box.processProgram mir_program data_groups
+    trace config "TransformUpdates.."
+    mir_program <- TransformUpdates.processProgram mir_program
     trace config "AddConverter.."
     mir_program <- AddConverter.processProgram mir_program
     s <- MP.dump mir_program

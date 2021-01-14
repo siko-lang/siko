@@ -39,10 +39,13 @@ def mkdir_safe(folder_name):
 def run_command(args, name):
     try:
         subprocess.run(args, check=True, stderr=subprocess.DEVNULL)
+        return True
     except subprocess.CalledProcessError as e:
         print("%s failed" % name)
+        return False
     except:
         print("%s failed" % name)
+        return False
 
 def run(test_name, source_folder, index, total):
     print("--- Running %s - %d/%d" % (test_name, total, index))
@@ -56,8 +59,9 @@ def run(test_name, source_folder, index, total):
         subprocess.call(["./sikoc.sh", "std2/*.sk", "%s/*.sk" % source_folder, "-o", os.path.join(target_folder, test_name)])
     normal_output = os.path.join(target_folder, "normal")
     rc_output = os.path.join(target_folder, "rc")
-    run_command(["rustc", "--edition=2018", os.path.join(target_folder, "%s_normal.rs" % test_name), "-o", normal_output], "normal rustc")
-    run_command([normal_output], "normal build")
+    if not run_command(["rustc", "--edition=2018", os.path.join(target_folder, "%s_normal.rs" % test_name), "-o", normal_output], "normal rustc"):
+        return False
+    return run_command([normal_output], "normal build")
 
 test_source_name = "sikoc_tests"
 tests = []
@@ -68,5 +72,11 @@ if len(sys.argv) != 1:
         selected.add(t)
     tests = list(filter(lambda test: test[0] in selected, tests))
 total = len(tests)
+success = 0
+failure = 0
 for (index, (name, path)) in enumerate(tests):
-    run(name, path, index + 1, total)
+    if run(name, path, index + 1, total):
+        success += 1
+    else:
+        failure += 1
+print("Success %d, failure %d" % (success, failure))

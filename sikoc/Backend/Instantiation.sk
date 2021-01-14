@@ -220,6 +220,7 @@ normalizeIndex indices index = do
 
 normalizeArg :: Map Int Int -> MT.OwnershipKind -> (Map Int Int, MT.OwnershipKind)
 normalizeArg indices kind = case kind of
+    MT.BoxedKind -> (indices, MT.BoxedKind)
     MT.VarKind _ -> panic "VarKind in args in lowering!"
     MT.OwnerKind -> (indices, MT.OwnerKind)
     MT.BorrowKind index -> do
@@ -247,9 +248,9 @@ normalizeType indices type = case type of
         (indices, t) <- normalizeType indices t
         (indices, MT.Owner t)
     MT.Never -> (indices, MT.Never)
-    MT.Box t -> do
+    MT.Boxed t -> do
         (indices, t) <- normalizeType indices t
-        (indices, MT.Box t)
+        (indices, MT.Boxed t)
     MT.Var _ _ -> panic "Var type in LIR lowering! {}" % type
 
 collectLifetimes :: MT.Type -> [LT.Lifetime]
@@ -283,7 +284,7 @@ processType queue mir_type = case mir_type of
         (queue, LT.Ref (LT.Lifetime index) lir_t)
     MT.Owner t -> processType queue t
     MT.Never -> (queue, LT.Never)
-    MT.Box t -> do
+    MT.Boxed t -> do
         (queue, lir_t) <- processType queue t
         (queue, LT.Box lir_t)
     MT.Var _ _ -> panic "Var type in LIR lowering! {}" % mir_type

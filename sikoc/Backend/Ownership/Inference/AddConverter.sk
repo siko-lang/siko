@@ -56,6 +56,9 @@ processExpr context expr = do
             (context, true_branch) <- packExpr context true_branch E.NormalConverter
             (context, false_branch) <- packExpr context false_branch E.NormalConverter
             (context, E.Expr (E.If cond true_branch false_branch) type id)
+        E.FieldAccess name receiver -> do
+            (context, converter_expr) <- packExpr context expr E.NormalConverter
+            (context, converter_expr)
         _ -> (context, expr)
 
 processFunction :: P.Identity -> F.Function -> (P.Identity, F.Function)

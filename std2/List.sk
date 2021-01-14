@@ -3,43 +3,58 @@ module List where
 data List a = extern
 
 instance (Show a) => Show [a] where
-    show a = extern
+    show a = showList a
 
 instance (PartialEq a) => PartialEq [a] where
-    opEq a b = extern
+    opEq a b = eqList a b
 
 instance (Eq a) => Eq [a]
 
 instance (PartialOrd a) => PartialOrd [a] where
-    partialCmp a b = extern
+    partialCmp a b = partialCmpList a b
 
 instance (Ord a) => Ord [a] where
-    cmp a b = extern
+    cmp a b = cmpList a b
 
 instance Add [a] where
-    opAdd a b = extern
+    opAdd a b = addList a b
 
-atIndex a :: [a] -> Int -> a
+showList a :: ~[a] -> String
+showList l = extern
+
+eqList a :: ~[a] -> ~[a] -> ~Bool
+eqList a b = extern
+
+partialCmpList a :: ~[a] -> ~[a] -> ~Option (~Ordering)
+partialCmpList a b = extern
+
+cmpList a :: ~[a] -> ~[a] -> ~Ordering
+cmpList a b = extern
+
+addList a :: ~[a] -> ~[a] -> ~[a]
+addList a b = extern
+
+atIndex a :: ~[a] -> ~Int -> a
 atIndex index l = extern
 
-iter a :: [a] -> Iterator a
+iter a :: ~[a] -> ~Iterator a
 iter l = createIterator (intoIter l) nextItem
 
 data ListIterator a = extern
 
-intoIter a :: [a] -> ListIterator a
+intoIter a :: ~[a] -> ~ListIterator a
 intoIter list = extern
 
-nextItem a :: ListIterator a -> Option (ListIterator a, a)
+nextItem a :: ~ListIterator a -> ~Option (~ListIterator a, a)
 nextItem iter = extern
 
-toList a :: Iterator a -> [a]
+toList a :: ~Iterator a -> ~[a]
 toList iter = fold (\list, item -> list + [item]) [] iter
 
-getLength a :: [a] -> Int
+getLength a :: ~[a] -> ~Int
 getLength l = extern
 
-isEmpty a :: [a] -> Bool
+isEmpty a :: ~[a] -> ~Bool
 isEmpty l = extern
 
 contains a :: (PartialEq a) => [a] -> a -> Bool

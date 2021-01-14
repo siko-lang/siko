@@ -9,6 +9,7 @@ import Map
 
 data SubstitutionChange = Unification T.OwnershipVar
                         | Owner
+                        | Boxed
                         | Borrow Int
                         deriving (Show)
 
@@ -32,6 +33,7 @@ instance Apply T.OwnershipKind where
         T.VarKind v -> case get sub.var_subs v of
                         Some (Unification new) -> T.VarKind new
                         Some Owner -> T.OwnerKind
+                        Some Boxed -> T.BoxedKind
                         Some (Borrow index) -> T.BorrowKind index
                         _ -> k
         _ -> k
@@ -44,13 +46,14 @@ instance Apply T.Type where
             T.Record id args -> T.Record id (args |> List.iter |> map (\v -> apply v sub) |> toList)
             T.Ref index t -> T.Ref index (apply t sub)
             T.Owner t -> T.Owner (apply t sub)
+            T.Boxed t -> T.Boxed (apply t sub)
             T.Never -> T.Never
-            T.Box t -> T.Box (apply t sub)
             T.Var i t -> do
                 case apply i sub of
                     T.VarKind v -> T.Var (T.VarKind v) (apply t sub)
                     T.BorrowKind index -> T.Ref index (apply t sub)
                     T.OwnerKind -> T.Owner (apply t sub)
+                    T.BoxedKind -> T.Boxed (apply t sub)
 
 instance Apply D.Record where
     //apply :: D.Record -> Substitution -> D.Record
@@ -112,69 +115,6 @@ batch :: [T.OwnershipKind] -> [T.OwnershipKind] -> Substitution
 batch from_vars to_vars = do
     sub <- createSubstitution
     unifyVars sub from_vars to_vars
-
-unify :: Substitution -> T.Type -> T.Type -> Substitution
-unify sub type1 type2 = do
-    //println "Unify {} {}" % (type1, type2)
-    case (type1, type2) of
-        (T.Adt id1 args1, T.Adt id2 args2) -> do
-            unifyVars sub args1 args2
-        (T.Record id1 args1, T.Record id2 args2) -> do
-            unifyVars sub args1 args2
-        (T.Owner t1, T.Owner t2) -> do
-            unify sub t1 t2
-        (T.Owner t1, T.Var v t2) -> do
-            sub <- addSubstitution sub v Owner
-            sub <- unify sub t1 t2
-            sub
-        (T.Var v t1, T.Owner t2) -> do
-            sub <- addSubstitution sub v Owner
-            sub <- unify sub t1 t2
-            sub
-        (T.Adt id1 args1, T.Var v t) -> do
-            sub <- addSubstitution sub v Owner
-            sub <- case t of
-                T.Adt id2 args2 -> do
-                    unifyVars sub args1 args2
-                _ -> panic "Not Adt, Unification error {}, {}" % (type1, type2)
-            sub
-        (T.Record id1 args1, T.Var v t) -> do
-            sub <- addSubstitution sub v Owner
-            sub <- case t of
-                T.Record id2 args2 -> do
-                    unifyVars sub args1 args2
-                _ -> panic "Not Record, Unification error {}, {}" % (type1, type2)
-            sub
-        (T.Var v t, T.Adt id2 args2) -> do
-            sub <- addSubstitution sub v Owner
-            sub <- case t of
-                T.Adt id1 args1 -> do
-                    unifyVars sub args1 args2
-                _ -> panic "Not Adt, Unification error {}, {}" % (type1, type2)
-            sub
-        (T.Var v t, T.Record id2 args2) -> do
-            sub <- addSubstitution sub v Owner
-            sub <- case t of
-                T.Record id1 args1 -> do
-                    unifyVars sub args1 args2
-                _ -> panic "Not Record, Unification error {}, {}" % (type1, type2)
-            sub
-        (T.Ref index t1, T.Var v t2) -> do
-            sub <- addSubstitution sub v (Borrow index)
-            unify sub t1 t2
-        (T.Var v t1, T.Ref index t2) -> do
-            sub <- addSubstitution sub v (Borrow index)
-            unify sub t1 t2
-        (T.Ref index1 t1, T.Ref index2 t2) -> do
-            unify sub t1 t2
-        (T.Var arg1 t1, T.Var arg2 t2) -> do
-            case arg2 of
-                T.VarKind arg2 -> do
-                    sub <- addSubstitution sub arg1 (Unification arg2)
-                    unify sub t1 t2
-                _ -> panic "cannot unify {} {}" % (arg1, arg2)
-        (T.Never, T.Never) -> sub
-        _ -> panic "NYI ownership unify {} {}" % (type1, type2)
 
 data OwnershipVarGenerator = { counter :: Counter T.OwnershipVar }
 
