@@ -172,7 +172,10 @@ mergeGroups context id1 id2 = do
         (T.OwnerKind, _) -> (context, T.OwnerKind)
         (_, T.OwnerKind) -> (context, T.OwnerKind)
         (T.BorrowKind index, T.VarKind _) -> (context, group1.kind)
+        (T.BoxedKind, T.VarKind _) -> (context, group1.kind)
         (T.VarKind _, T.BorrowKind index) -> (context, group2.kind)
+        (T.VarKind _, T.BoxedKind) -> (context, group2.kind)
+        (T.BoxedKind, T.BoxedKind) -> (context, group1.kind)
         (T.BorrowKind index1, T.BorrowKind index2) -> do
             (context, index) <- mergeBorrowSets context index1 index2
             (context, T.BorrowKind index)

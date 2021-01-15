@@ -102,6 +102,9 @@ unifyVars sub args1 args2 = do
                 (T.VarKind v1, T.OwnerKind) -> addSubstitution sub arg1 Owner
                 (T.VarKind v, T.BorrowKind index) -> addSubstitution sub arg1 (Borrow index)
                 (T.BorrowKind index, T.VarKind v) -> addSubstitution sub arg2 (Borrow index)
+                (T.BoxedKind, T.VarKind v) -> addSubstitution sub arg2 Boxed
+                (T.VarKind v, T.BoxedKind) -> addSubstitution sub arg1 Boxed
+                (T.BoxedKind, T.BoxedKind) -> sub
                 _ -> panic "Unifying kinds {} {} NYI" % (arg1, arg2))
         else do
             if (not (isEmpty args1)) && (not (isEmpty args2))

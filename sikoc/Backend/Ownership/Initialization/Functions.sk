@@ -1,5 +1,6 @@
-module Siko.Backend.Ownership.Initialization where
+module Siko.Backend.Ownership.Initialization.Functions where
 
+import Siko.Backend.Ownership.Initialization
 import Siko.MIR.Program as P
 import Siko.MIR.Type as T
 import Siko.MIR.Data
@@ -9,157 +10,6 @@ import Siko.Util.DependencyProcessor
 import Siko.Backend.Traversal
 import Siko.Backend.Ownership.Unification as U
 import Map
-
-data Context = { arg_count_map :: Map P.Identity Int,
-                 var_gen :: U.OwnershipVarGenerator }
-
-getNextOwnershipKind :: Context -> (Context, T.OwnershipKind)
-getNextOwnershipKind context = do
-    (var_gen, v) <- U.getNextOwnershipVar context.var_gen
-    context <- context { var_gen = var_gen }
-    (context, T.VarKind v)
-
-addOwnershipVarsToDataType :: Context -> Bool -> [P.Identity] -> [T.OwnershipKind] -> [T.OwnershipKind] -> T.Type -> ([T.OwnershipKind], T.Type)
-addOwnershipVarsToDataType context is_adt group all_ownership_vars ownership_vars type = do
-    id <- T.getIdentity type
-    if contains group id
-        then do
-            if is_adt
-                then
-                    do
-                    type <- case type of
-                        T.Record id _ -> T.Owner (T.Record id all_ownership_vars)
-                        T.Adt id _ -> T.Owner (T.Adt id all_ownership_vars)
-                        t -> panic "addOwnershipVarsToDataType: unexpected type {}" % t
-                    (ownership_vars, type)
-                else do
-                    (var, ownership_vars) <- List.split ownership_vars 1
-                    var <- atIndex var 0
-                    type <- case type of
-                        T.Record id _ -> T.Var var (T.Record id all_ownership_vars)
-                        T.Adt id _ -> T.Var var (T.Adt id all_ownership_vars)
-                        t -> panic "addOwnershipVarsToDataType: unexpected type {}" % t
-                    (ownership_vars, type)
-        else do
-            c <- getArgCount context id
-            if is_adt
-                then
-                    do
-                    (args, ownership_vars) <- List.split ownership_vars c
-                    type <- case type of
-                        T.Record id _ -> T.Owner (T.Record id args)
-                        T.Adt id _ -> T.Owner (T.Adt id args)
-                        t -> panic "addOwnershipVarsToDataType: unexpected type {}" % t
-                    (ownership_vars, type)
-                else do
-                    (var, ownership_vars) <- List.split ownership_vars 1
-                    var <- atIndex var 0
-                    (args, ownership_vars) <- List.split ownership_vars c
-                    type <- case type of
-                        T.Record id _ -> T.Var var (T.Record id args)
-                        T.Adt id _ -> T.Var var (T.Adt id args)
-                        t -> panic "addOwnershipVarsToDataType: unexpected type {}" % t
-                    (ownership_vars, type)
-
-addOwnershipVarsToRecord :: Context -> [T.OwnershipKind] -> [P.Identity] -> [T.OwnershipKind] -> Option Record -> ([T.OwnershipKind], Option Record)
-addOwnershipVarsToRecord context all_ownership_vars group ownership_vars record = case record of
-    Some record -> do
-        record :: Record <- record
-        record <- record { ownership_vars = all_ownership_vars }
-        (ownership_vars, fields) <- List.mapS ownership_vars record.fields (\ownership_vars, field -> do
-            (ownership_vars, type) <- addOwnershipVarsToDataType context False group all_ownership_vars ownership_vars field.type
-            field <- field { type = type }
-            (ownership_vars, field))
-        (ownership_vars, external_info) <- case record.external_info of
-            Some external_info -> do
-                external_info :: ExternalRecordInfo <- external_info // FIXME
-                (ownership_vars, type_args) <- List.mapS ownership_vars external_info.type_args (\ownership_vars, type_arg -> do
-                    addOwnershipVarsToDataType context False group all_ownership_vars ownership_vars type_arg)
-                (ownership_vars, Some (ExternalRecordInfo type_args))
-            None -> (ownership_vars, None)
-        record <- record { fields = fields, external_info = external_info }
-        (ownership_vars, Some record)
-    None -> (ownership_vars, None)
-
-addOwnershipVarsToAdt :: Context -> [T.OwnershipKind] -> [P.Identity] -> [T.OwnershipKind] -> Option AlgebraicDataType -> ([T.OwnershipKind], Option AlgebraicDataType)
-addOwnershipVarsToAdt context all_ownership_vars group ownership_vars adt = case adt of
-    Some adt -> do
-        adt :: AlgebraicDataType <- adt
-        adt <- adt { ownership_vars = all_ownership_vars }
-        (variants, ownership_vars) <- adt.variants |> List.iter |> fold (\(variants, ownership_vars), variant -> do
-            (ownership_vars, type) <- addOwnershipVarsToDataType context True group all_ownership_vars ownership_vars variant.type
-            variant <- variant { type = type }
-            (variants + [variant], ownership_vars)) ([], ownership_vars)
-        adt <- adt { variants = variants }
-        (ownership_vars, Some adt)
-    None -> (ownership_vars, None)
-
-getArgCount :: Context -> P.Identity -> Int
-getArgCount context id = do
-    case get context.arg_count_map id of
-        Some c -> c
-        None -> panic "Could not find arg count for {}" % id
-
-calculateArgCountForAdt :: Context -> [P.Identity] -> AlgebraicDataType -> Int
-calculateArgCountForAdt context group adt = do
-    adt.variants |> List.iter |> fold (\arg_count, variant -> do
-        record_id <- T.getIdentity variant.type
-        variant_arg_count <- if contains group record_id
-            then 0
-            else getArgCount context record_id
-        arg_count + variant_arg_count) 0
-
-calculateArgCountForRecord :: Context -> [P.Identity] -> Record -> Int
-calculateArgCountForRecord context group record = do
-    arg_count <- record.fields |> List.iter |> fold (\arg_count, field -> do
-        id <- T.getIdentity field.type
-        field_arg_count <- if contains group id
-            then 1
-            else 1 + getArgCount context id
-        arg_count + field_arg_count) 0
-    case record.external_info of
-        Some external_info -> do
-            external_info :: ExternalRecordInfo <- external_info // FIXME
-            arg_count <- arg_count + getLength external_info.type_args
-            external_info.type_args |> List.iter |> fold (\arg_count, type_arg -> do
-                id <- T.getIdentity type_arg
-                c <- getArgCount context id
-                arg_count + c) arg_count
-        None -> arg_count
-
-calculateArgCount :: P.Program -> Context -> [P.Identity] -> P.Identity -> Int
-calculateArgCount program context group id = do
-    case get program.records id of
-            Some record -> calculateArgCountForRecord context group record
-            None -> case get program.adts id of
-                Some adt -> calculateArgCountForAdt context group adt
-                None -> panic "Could not find data def {}" % id
-
-addOwnershipVarsToGroup :: Context -> [P.Identity] -> P.Program -> (Context, P.Program)
-addOwnershipVarsToGroup context group program = do
-    (context, arg_count) <- group |> List.iter |> fold (\(context, arg_count), id -> do
-        c <- calculateArgCount program context group id
-        (context, arg_count + c)) (context, 0)
-    context <- group |> List.iter |> fold (\context, id -> do
-        (arg_count_map, _) <- insert context.arg_count_map id arg_count
-        context <- context { arg_count_map = arg_count_map }
-        context) context
-    (context, all_vars) <- getNextOwnershipKinds context arg_count
-    (vars, program) <- group |> List.iter |> fold (\(vars, program), id -> do
-        (vars, records, _) <- alterS (addOwnershipVarsToRecord context all_vars group) vars id program.records
-        (vars, adts, _) <- alterS (addOwnershipVarsToAdt context all_vars group) vars id program.adts
-        program <- program { records = records, adts = adts }
-        (vars, program)) (all_vars, program)
-    (context, program)
-
-addOwnershipVarsToDataTypes :: Context -> P.Program -> [DependencyGroup P.Identity] -> (Context, P.Program)
-addOwnershipVarsToDataTypes context program groups = do
-    (context, program) <- groups |> List.iter |> fold (\(context, program), group -> addOwnershipVarsToGroup context group.items program
-        ) (context, program)
-    (context, program)
-
-getNextOwnershipKinds :: Context -> Int -> (Context, [T.OwnershipKind])
-getNextOwnershipKinds context count = repeatS context (\context -> getNextOwnershipKind context) count
 
 addOwnershipVarsToType :: Context -> T.Type -> (Context, T.Type)
 addOwnershipVarsToType context type = case type of
@@ -332,6 +182,9 @@ processFunction program context function = case function.kind of
         result <- T.Adt id adt.ownership_vars
         owned_result <- T.Owner result
         function_type <- F.FunctionType args owned_result
+        boxed_vars <- repeat T.BoxedKind (getLength adt.boxed_vars)
+        sub <- U.batch adt.boxed_vars boxed_vars
+        function_type <-  U.apply function_type sub
         (context, function { type = function_type })
     F.Extern type_mappings -> do
         (context, args) <- function.type.args |> List.iter |> fold (\(context, args), arg -> do
@@ -343,10 +196,8 @@ processFunction program context function = case function.kind of
         (context, function { type = function_type })
     _ -> (context, function)
 
-initializeOwnership :: P.Program -> [DependencyGroup P.Identity] -> (U.OwnershipVarGenerator, P.Program)
-initializeOwnership program groups = do
-    context <- Context empty U.createOwnershipVarGenerator
-    (context, program) <- addOwnershipVarsToDataTypes context program groups
+initializeOwnership :: Context -> P.Program -> (U.OwnershipVarGenerator, P.Program)
+initializeOwnership context program = do
     (context, functions) <- program.functions |> Map.iter |> fold (\(context, functions), (id, function) -> do
         (context, function) <- processFunction program context function // FIXME: program should not be copied here!
         (functions, _) <- insert functions id function

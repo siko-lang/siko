@@ -204,7 +204,10 @@ processExpr queue mir_expr = do
         ME.Deref arg -> do
             (queue, arg) <- processExpr queue arg
             (queue, LE.Deref arg)
-        _ -> panic "NYI {}" % s_expr
+        ME.Box arg -> do
+            (queue, arg) <- processExpr queue arg
+            (queue, LE.Box arg)
+        ME.Converter _ _ -> panic "Converter in LIR instantiation"
     //println "{} ---> {}" % (mir_type, s_expr)
     (queue, lir_type) <- processType queue mir_type
     lir_expr <- LE.Expr lir_s_expr lir_type (LE.ExprId 0)

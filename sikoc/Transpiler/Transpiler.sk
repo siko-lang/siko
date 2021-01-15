@@ -325,9 +325,7 @@ createRecordCtor :: RT.Type -> Context -> [R.Expr] -> R.Expr
 createRecordCtor result context args = do
     struct <- getStruct context.type_store result
     fields <- List.zipS [] struct.fields args (\fields, field, arg -> do
-        field_init_item <- if RT.isBoxed field.type
-                then R.FieldInitItem field.name (boxExpr arg)
-                else R.FieldInitItem field.name arg
+        field_init_item <- R.FieldInitItem field.name arg
         fields <- fields + [field_init_item]
         fields)
     R.StructCtor struct.name fields

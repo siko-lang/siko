@@ -1,0 +1,37 @@
+module Siko.Backend.Ownership.Initialization where
+
+import Siko.Backend.Ownership.Initialization.DataTypes as DataTypes
+import Siko.Backend.Ownership.Initialization.Functions as Functions
+
+import Siko.MIR.Program as P
+import Siko.MIR.Type as T
+import Siko.MIR.Data
+import Siko.MIR.Expr
+import Siko.Util.DependencyProcessor
+import Siko.Backend.Traversal
+import Siko.Backend.Ownership.Unification as U
+import Map
+
+data Context = { arg_count_map :: Map P.Identity Int,
+                 var_gen :: U.OwnershipVarGenerator }
+
+getNextOwnershipKind :: Context -> (Context, T.OwnershipKind)
+getNextOwnershipKind context = do
+    (var_gen, v) <- U.getNextOwnershipVar context.var_gen
+    context <- context { var_gen = var_gen }
+    (context, T.VarKind v)
+
+getNextOwnershipKinds :: Context -> Int -> (Context, [T.OwnershipKind])
+getNextOwnershipKinds context count = repeatS context (\context -> getNextOwnershipKind context) count
+
+getArgCount :: Context -> P.Identity -> Int
+getArgCount context id = do
+    case get context.arg_count_map id of
+        Some c -> c
+        None -> panic "Could not find arg count for {}" % id
+
+initializeOwnership :: P.Program -> [DependencyGroup P.Identity] -> (U.OwnershipVarGenerator, P.Program)
+initializeOwnership program groups = do
+    context <- Context empty U.createOwnershipVarGenerator
+    (context, program) <- DataTypes.initializeOwnership context program groups
+    Functions.initializeOwnership context program
