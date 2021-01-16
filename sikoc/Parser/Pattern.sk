@@ -24,7 +24,6 @@ irrefutablePatternFollows state = do
             T.KeywordDo -> return False
             T.LeftArrow -> return True
             _ -> continue index + 1
-    False
 
 buildPattern :: SimplePattern -> Int -> ParserState -> Pattern
 buildPattern p start_index state =
@@ -59,35 +58,31 @@ parseRecordFieldPattern state = do
 parseConstructorPattern :: ParserState -> Bool -> Int -> Result (ParserState, Pattern) (ParserState, ParserError)
 parseConstructorPattern state inner start_index = do
     if inner
-        then
-            do
-                (state, name) <- try parseQualifiedTypeName state "type constructor"
-                Ok (state, buildPattern (Constructor name []) start_index state)
-        else
-            do
-                (state, name) <- try parseQualifiedTypeName state "type constructor"
-                if check state Kind.LCurly
-                    then
-                        do
-                            (state, fields) <- try parseList state parseRecordFieldPattern Kind.LCurly Kind.RCurly
-                            Ok (state, buildPattern (Record name fields) start_index state)
-                    else
-                        do
-                            (state, args) <- loop (state, args) <- (state, []) do
-                                ti  <- peek state
-                                case T.getKind ti.token of
-                                    Kind.LParen
-                                        | Kind.IntegerLiteral
-                                        | Kind.CharLiteral
-                                        | Kind.StringLiteral
-                                        | Kind.TypeIdentifier
-                                        | Kind.VarIdentifier
-                                        | Kind.Wildcard -> do
-                                        (state, ty) <- try (parsePatternL state True)
-                                        args <- args + [ty]
-                                        (state, args)
-                                    _ -> break (state, args)
-                            Ok (state, buildPattern (Constructor name args) start_index state)
+    then do
+        (state, name) <- try parseQualifiedTypeName state "type constructor"
+        Ok (state, buildPattern (Constructor name []) start_index state)
+    else do
+        (state, name) <- try parseQualifiedTypeName state "type constructor"
+        if check state Kind.LCurly
+        then do
+            (state, fields) <- try parseList state parseRecordFieldPattern Kind.LCurly Kind.RCurly
+            Ok (state, buildPattern (Record name fields) start_index state)
+        else do
+            (state, args) <- loop (state, args) <- (state, []) do
+                ti  <- peek state
+                case T.getKind ti.token of
+                    Kind.LParen
+                        | Kind.IntegerLiteral
+                        | Kind.CharLiteral
+                        | Kind.StringLiteral
+                        | Kind.TypeIdentifier
+                        | Kind.VarIdentifier
+                        | Kind.Wildcard -> do
+                            (state, ty) <- try (parsePatternL state True)
+                            args <- args + [ty]
+                            (state, args)
+                    _ -> break (state, args)
+            Ok (state, buildPattern (Constructor name args) start_index state)
 
 parsePattern :: ParserState -> Result (ParserState, Pattern) (ParserState, ParserError)
 parsePattern state = parsePatternL state False
@@ -99,10 +94,10 @@ parseExtendedPattern state = do
         (state, pattern) <- try parsePattern state
         patterns <- patterns + [pattern]
         if check state Kind.Pipe
-            then do
-                state <- step state
-                (state, patterns)
-            else break (state, patterns)
+        then do
+            state <- step state
+            (state, patterns)
+        else break (state, patterns)
     pattern <- if getLength patterns == 1
         then atIndex patterns 0
         else (buildPattern (Or patterns) start_index state)

@@ -26,29 +26,33 @@ parseAdt state args name = do
         (state, variant) <- try parseTypeSignature state True False
         variants <- variants + [variant]
         if check state Kind.Pipe
-            then (try expect state Kind.Pipe, variants)
-            else break (state, variants)
+        then (try expect state Kind.Pipe, variants)
+        else break (state, variants)
     (state, derived_classes) <- if check state Kind.KeywordDeriving
-        then
-            do
-                state <- try expect state Kind.KeywordDeriving
-                (state, derived_classes) <- try parseList state parseDerivedClass Kind.LParen Kind.RParen
-                (state, derived_classes)
+        then do
+            state <- try expect state Kind.KeywordDeriving
+            (state, derived_classes) <- try parseList state parseDerivedClass Kind.LParen Kind.RParen
+            (state, derived_classes)
         else (state, [])
-    adt <- AlgebraicDataType { name = name, type_arguments = args, variants = variants, derived_classes = derived_classes }
+    adt <- AlgebraicDataType { name = name,
+                               type_arguments = args,
+                               variants = variants,
+                               derived_classes = derived_classes }
     Ok (state, adt)
 
 parseRecord :: ParserState -> [Ident] -> Ident -> Result (ParserState, Record) (ParserState, ParserError)
 parseRecord state args name = do
     (state, fields) <- try parseList state parseRecordField Kind.LCurly Kind.RCurly
     (state, derived_classes) <- if check state Kind.KeywordDeriving
-        then
-            do
-                state <- try expect state Kind.KeywordDeriving
-                try parseList state parseDerivedClass Kind.LParen Kind.RParen
-        else
-            (state, [])
-    record <- Record { name = name, type_arguments = args, fields = fields, external = False, derived_classes = derived_classes }
+        then do
+            state <- try expect state Kind.KeywordDeriving
+            try parseList state parseDerivedClass Kind.LParen Kind.RParen
+        else (state, [])
+    record <- Record { name = name,
+                       type_arguments = args,
+                       fields = fields,
+                       external = False,
+                       derived_classes = derived_classes }
     Ok (state, record)
 
 parseData :: ParserState -> Result (ParserState, Either AlgebraicDataType Record) (ParserState, ParserError)
@@ -66,33 +70,36 @@ parseData state = do
                 args <- args + [arg]
                 (state, args)
     (state, data_definition) <- if check state Kind.Equal
-        then
-            do
-                state <- try expect state Kind.Equal
-                if check state Kind.KeywordExtern
-                    then do
-                            state <- try expect state Kind.KeywordExtern
-                            record <- Record { name = name, type_arguments = args, fields = [], external = True, derived_classes = [] }
+        then do
+            state <- try expect state Kind.Equal
+            if check state Kind.KeywordExtern
+            then do
+                state <- try expect state Kind.KeywordExtern
+                record <- Record { name = name,
+                                   type_arguments = args,
+                                   fields = [],
+                                   external = True,
+                                   derived_classes = [] }
+                (state, Right record)
+            else do
+                    (state, data_definition) <- if check state Kind.LCurly
+                        then do
+                            (state, record) <- try parseRecord state args name
                             (state, Right record)
-                    else do
-                            (state, data_definition) <- if check state Kind.LCurly
-                                then do
-                                    (state, record) <- try parseRecord state args name
-                                    (state, Right record)
-                                else do
-                                    (state, adt) <- try parseAdt state args name
-                                    (state, Left adt)
-                            (state, data_definition)
-        else
-            do
-                (state, derived_classes) <- if check state Kind.KeywordDeriving
-                    then
-                        do
-                            state <- try expect state Kind.KeywordDeriving
-                            try parseList state parseDerivedClass Kind.LParen Kind.RParen
-                    else
-                        (state, [])
-                adt <- AlgebraicDataType { name = name, type_arguments = [], variants = [], derived_classes = derived_classes }
-                (state, Left adt)
+                        else do
+                            (state, adt) <- try parseAdt state args name
+                            (state, Left adt)
+                    (state, data_definition)
+        else do
+            (state, derived_classes) <- if check state Kind.KeywordDeriving
+                then do
+                    state <- try expect state Kind.KeywordDeriving
+                    try parseList state parseDerivedClass Kind.LParen Kind.RParen
+                else (state, [])
+            adt <- AlgebraicDataType { name = name,
+                                       type_arguments = [],
+                                       variants = [],
+                                       derived_classes = derived_classes }
+            (state, Left adt)
     state <- try expect state Kind.EndOfItem
     Ok (state, data_definition)

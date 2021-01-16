@@ -6,6 +6,7 @@ import Siko.Parser.Function
 import Siko.Parser.Token as T
 import Siko.Parser.Token.Kind as Kind
 import Siko.Syntax.Class
+import Siko.Syntax.Function
 import Siko.Parser.Error
 
 parseClassConstraint :: ParserState -> Result (ParserState, Constraint) (ParserState, ParserError)
@@ -23,18 +24,27 @@ classConstraintFollows state = do
             T.RightArrow -> return False
             T.DoubleRightArrow -> return True
             _ -> continue index + 1
-    False
 
 parseClassConstraints :: ParserState -> Result (ParserState, [Constraint]) (ParserState, ParserError)
 parseClassConstraints state =
     if check state Kind.LParen && classConstraintFollows state
-            then
-                do
-                    (state, constraints) <- try parseList state parseClassConstraint Kind.LParen Kind.RParen
-                    state <- try expect state Kind.DoubleRightArrow
-                    Ok (state, constraints)
-            else
-                Ok (state, [])
+    then do
+        (state, constraints) <- try parseList state parseClassConstraint Kind.LParen Kind.RParen
+        state <- try expect state Kind.DoubleRightArrow
+        Ok (state, constraints)
+    else Ok (state, [])
+
+parseBody :: ParserState -> Result (ParserState, [Function], [FunctionSignature]) (ParserState, ParserError)
+parseBody state = do
+    state <- try expect state Kind.KeywordWhere
+    (state, fns, fn_sigs) <- loop (state, fns, fns_sigs) <- (state, [], []) do
+            if check state Kind.EndOfBlock
+            then break (state, fns, fns_sigs)
+            else case try parseFunction state of
+                    (state, Left fn) -> (state, fns + [fn], fns_sigs)
+                    (state, Right fn_sig) -> (state, fns, fns_sigs + [fn_sig])
+    state <- try expect state Kind.EndOfBlock
+    Ok (state, fns, fn_sigs)
 
 parseClass :: ParserState -> Result (ParserState, Class) (ParserState, ParserError)
 parseClass state = do
@@ -43,21 +53,8 @@ parseClass state = do
     (state, name) <- try expectTypeIdent state "class name"
     (state, argument) <- try parseTypeSignature state False False
     (state, functions, function_type_signatures) <- if check state Kind.KeywordWhere
-        then
-            do
-                state <- try expect state Kind.KeywordWhere
-                (state, functions, function_type_signatures) <- loop (state, functions, function_type_signatures) <- (state, [], []) do
-                        if check state Kind.EndOfBlock
-                            then
-                                break (state, functions, function_type_signatures)
-                            else
-                                case try parseFunction state of
-                                    (state, Left function) -> (state, functions + [function], function_type_signatures)
-                                    (state, Right function_type_signature) -> (state, functions, function_type_signatures + [function_type_signature])
-                state <- try expect state Kind.EndOfBlock
-                (state, functions, function_type_signatures)
-        else
-            (state, [], [])
+        then try parseBody state
+        else (state, [], [])
     state <- try expect state Kind.EndOfItem
     clazz <- Class {
                 name = name,
@@ -72,31 +69,16 @@ parseInstance :: ParserState -> Result (ParserState, Instance) (ParserState, Par
 parseInstance state = do
     state <- try expect state Kind.KeywordInstance
     (state, constraints) <- if check state Kind.LParen
-        then
-            do
-                (state, constraints) <- try parseList state parseClassConstraint Kind.LParen Kind.RParen
-                state <- try expect state Kind.DoubleRightArrow
-                (state, constraints)
-        else
-            (state, [])
+        then do
+            (state, constraints) <- try parseList state parseClassConstraint Kind.LParen Kind.RParen
+            state <- try expect state Kind.DoubleRightArrow
+            (state, constraints)
+        else (state, [])
     (state, class_name) <- try expectTypeIdent state "class name"
     (state, type_signature) <- try parseTypeSignature state False False
     (state, functions, function_type_signatures) <- if check state Kind.KeywordWhere
-        then
-            do
-                state <- try expect state Kind.KeywordWhere
-                (state, functions, function_type_signatures) <- loop (state, functions, function_type_signatures) <- (state, [], []) do
-                        if check state Kind.EndOfBlock
-                            then
-                                break (state, functions, function_type_signatures)
-                            else
-                                case try parseFunction state of
-                                    (state, Left function) -> (state, functions + [function], function_type_signatures)
-                                    (state, Right function_type_signature) -> (state, functions, function_type_signatures + [function_type_signature])
-                state <- try expect state Kind.EndOfBlock
-                (state, functions, function_type_signatures)
-        else
-            (state, [], [])
+        then try parseBody state
+        else (state, [], [])
     state <- try expect state Kind.EndOfItem
     inst <- Instance {
                 class_name = class_name,

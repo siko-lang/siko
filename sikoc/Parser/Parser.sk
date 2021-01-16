@@ -26,6 +26,7 @@ data ParserState =
         ops_table :: [[Kind.TokenKind]]
     }
 
+initState :: FileId -> [TokenInfo] -> ParserState
 initState file_id tokens = do
     ops_table <- [[Kind.And, Kind.Or],
                   [Kind.DoubleEqual, Kind.NotEqual],
@@ -75,10 +76,8 @@ expect :: ParserState -> Kind.TokenKind -> Result ParserState (ParserState, Pars
 expect state kind = do
     ti <- peek state
     if getKind ti.token == kind
-        then
-            Ok (step state)
-        else
-            Err (state, unexpectedToken state (show kind))
+    then Ok (step state)
+    else Err (state, unexpectedToken state (show kind))
 
 check :: ParserState -> Kind.TokenKind -> Bool
 check state kind = do
@@ -153,49 +152,37 @@ parseParens a :: ParserState -> (ParserState -> Result (ParserState, a) (ParserS
 parseParens state parser msg = do
     state <- try expect state Kind.LParen
     (state, items, comma_found) <- loop (state, items, comma_found) <- (state, [], False) do
-            if check state Kind.RParen
-                then
-                    break (state, items, comma_found)
-                else
-                    do
-                        (state, item) <- try parser state
-                        items <- items + [item]
-                        if check state Kind.Comma
-                            then
-                                do
-                                    state <- try expect state Kind.Comma
-                                    (state, items, True)
-                            else
-                                if check state Kind.RParen
-                                    then
-                                        break (state, items, comma_found)
-                                    else
-                                        return Err (state, unexpectedToken state msg)
+        if check state Kind.RParen
+        then break (state, items, comma_found)
+        else do
+            (state, item) <- try parser state
+            items <- items + [item]
+            if check state Kind.Comma
+            then do
+                state <- try expect state Kind.Comma
+                (state, items, True)
+            else if check state Kind.RParen
+                then break (state, items, comma_found)
+                else return Err (state, unexpectedToken state msg)
     state <- try expect state Kind.RParen
     if comma_found || isEmpty items
-        then
-            Ok (state, Multi items)
-        else
-            Ok (state, Single (atIndex items 0))
+    then Ok (state, Multi items)
+    else Ok (state, Single (atIndex items 0))
 
 parseList a :: ParserState -> (ParserState -> Result (ParserState, a) (ParserState, ParserError)) -> Kind.TokenKind -> Kind.TokenKind -> Result (ParserState, [a]) (ParserState, ParserError)
 parseList state parser start end = do
     state <- try expect state start
     (state, items) <- loop (state, items) <- (state, []) do
-            if check state end
-                then
-                    break (state, items)
-                else
-                    do
-                        (state, item) <- try parser state
-                        items <- items + [item]
-                        if check state Kind.Comma
-                            then
-                                do
-                                    state <- try expect state Kind.Comma
-                                    (state, items)
-                            else
-                                break (state, items)
+        if check state end
+        then break (state, items)
+        else do
+            (state, item) <- try parser state
+            items <- items + [item]
+            if check state Kind.Comma
+            then do
+                state <- try expect state Kind.Comma
+                (state, items)
+            else break (state, items)
     state <- try expect state end
     Ok (state, items)
 
@@ -203,22 +190,19 @@ processTokens :: ParserState -> (Program, [ParserError])
 processTokens state = do
     state <- loop state <- state do
         if not (isDone state)
-            then
-                do
-                    case parseModule state of
-                        Ok state -> state
-                        Err (state, err) -> do
-                            state <- addError state err
-                            break state
-            else
-                break state
+        then do
+            case parseModule state of
+                Ok state -> state
+                Err (state, err) -> do
+                    state <- addError state err
+                    break state
+        else break state
     (Program state.modules, state.errors)
 
 parse :: String -> (Program, [LexerError], [ParserError])
-parse input =
-    do
-        (tokens, lexer_errors) <- lex input
-        //println "Tokens: {}" % tokens
-        state <- initState (FileId 0) tokens
-        (program, parser_errors) <- processTokens state
-        (program, lexer_errors, parser_errors)
+parse input = do
+    (tokens, lexer_errors) <- lex input
+    //println "Tokens: {}" % tokens
+    state <- initState (FileId 0) tokens
+    (program, parser_errors) <- processTokens state
+    (program, lexer_errors, parser_errors)
