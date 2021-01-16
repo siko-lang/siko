@@ -13,6 +13,7 @@ data LayoutProcessorState =
         errors :: [LexerError],
     }
 
+emptyState :: [TokenInfo] -> LayoutProcessorState
 emptyState tokens = LayoutProcessorState tokens 0 [] []
 
 isDone :: LayoutProcessorState -> Bool
@@ -49,7 +50,15 @@ processItem state firstSpan = do
         then
             do
                 token <- peek state
-                if token.span.start.offset <= firstSpan.start.offset && not first
+                item_ended <- if token.span.start.offset <= firstSpan.start.offset && not first
+                    then do
+                        same <- token.span.start.offset == firstSpan.start.offset
+                        case token.token of
+                            KeywordThen if same -> False
+                            KeywordElse if same -> False
+                            _ -> True
+                    else False
+                if item_ended
                     then break (state, 0, token.span.start.offset < firstSpan.start.offset, False)
                     else
                         do

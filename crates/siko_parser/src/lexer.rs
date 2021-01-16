@@ -622,10 +622,18 @@ fn process_item(
             first = false;
         } else {
             if info.location.span.start <= start.span.start {
-                if !module {
-                    iterator.add_end(Token::EndOfItem);
+                let break_out = if info.location.span.start == start.span.start {
+                    info.token.kind() != TokenKind::KeywordElse &&
+                    info.token.kind() != TokenKind::KeywordThen
+                } else {
+                    true
+                };
+                if break_out {
+                    if !module {
+                        iterator.add_end(Token::EndOfItem);
+                    }
+                    return Ok(info.location.span.start < start.span.start);
                 }
-                return Ok(info.location.span.start < start.span.start);
             }
         }
         if info.token.kind() == TokenKind::KeywordModule {

@@ -37,6 +37,7 @@ main = do
     source <- config.input_files |> List.iter |> fold (\source, arg -> do
         s <- readTextFile arg
         source + "\n" + s) ""
+    writeTextFile "full_source.sk" source
     trace config "Parsing.."
     (program, lexer_errors, parser_errors) <- parse source
     lexer_errors |> List.iter |> forEach \error -> printLexerError error
