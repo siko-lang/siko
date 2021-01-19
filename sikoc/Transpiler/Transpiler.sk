@@ -98,6 +98,19 @@ typeToRcType type = RT.Rc type
 boxExpr :: R.Expr -> R.Expr
 boxExpr expr = R.FunctionCall "std::boxed::Box::new" [expr]
 
+getVariant :: TypeStore -> Int -> LE.Var -> LT.Type -> R.Pattern
+getVariant type_store index v type = case type of
+            LT.Adt _ _ -> do
+                rust_type <- convertType type
+                enum <- getEnum type_store rust_type
+                variant <- atIndex enum.variants index
+                variant_name <- "{}::{}" % (RT.showBase rust_type, variant.name)
+                R.VariantPattern variant_name (Some (show v))
+            LT.Record _ _ -> do
+                R.VariantPattern (show v) None
+            LT.Ref _ t -> getVariant type_store index v t
+            _ -> panic "Transpiler: unexpected variant type {}" % type
+
 convertPattern :: TypeStore -> LE.Checker -> (R.Pattern, Option R.Expr)
 convertPattern type_store checker = case checker of
     LE.IntegerChecker lit -> (R.IntegerPattern lit, None)
@@ -112,17 +125,7 @@ convertPattern type_store checker = case checker of
             LE.Inclusive -> R.Inclusive
             LE.Exclusive -> R.Exclusive
         (R.CharRangePattern s e kind, None)
-    LE.VariantChecker index v type -> do
-        case type of
-            LT.Adt _ _ -> do
-                rust_type <- convertType type
-                enum <- getEnum type_store rust_type
-                variant <- atIndex enum.variants index
-                variant_name <- "{}::{}" % (RT.showBase rust_type, variant.name)
-                (R.VariantPattern variant_name (Some (show v)), None)
-            LT.Record _ _ -> do
-                (R.VariantPattern (show v) None, None)
-            _ -> panic "Variant is not a record nor an adt"
+    LE.VariantChecker index v type -> (getVariant type_store index v type, None)
     LE.WildcardChecker -> (R.WildcardPattern, None)
 
 data Constructor = { fn :: Context -> [R.Expr] -> R.Expr }

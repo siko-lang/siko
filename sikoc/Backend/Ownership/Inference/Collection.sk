@@ -101,6 +101,17 @@ addMovedVar moved_vars var = do
     (vars, _) <- Set.insert moved_vars.vars var
     moved_vars { vars = vars }
 
+getBorrowKind :: Common.Context -> E.Expr -> Common.ConverterKind
+getBorrowKind context arg = do
+    E.Expr arg_s_expr arg_type _ <- arg
+    case arg_s_expr of
+        E.VarRef v -> do
+            var_vars <- Common.getVarVars context v
+            borrow_source <- atIndex var_vars 0
+            Common.BorrowerConverter borrow_source
+        E.FieldAccess n arg -> getBorrowKind context arg
+        _ -> panic "Borrow converter's arg is not VarRef {}" % (E.short arg)
+
 processExpr :: Common.Context -> Common.MovedVars -> E.Expr -> (Common.Context, Common.MovedVars)
 processExpr context moved_vars expr = do
     E.Expr s_expr type id <- expr
@@ -270,9 +281,7 @@ processExpr context moved_vars expr = do
                         (context, var_vars) <- collectVars context moved_vars var_kinds
                         context <- Common.addVarVars context v var_vars
                         E.Expr _ body_type _ <- body
-                        adt <- getAdtType context body_type
-                        variant <- atIndex adt.variants index
-                        equalConstraints context moved_vars variant_type variant.type
+                        equalConstraints context moved_vars variant_type body_type
                     _ -> context
                 (context, moved_vars) <- processExpr context moved_vars c.body
                 E.Expr _ body_type _ <- c.body
@@ -295,13 +304,7 @@ processExpr context moved_vars expr = do
             (context, dest_vars) <- collectVars context moved_vars dest_kinds
             kind <- case kind of
                 E.NormalConverter -> Common.NormalConverter
-                E.BorrowerConverter ->
-                    case arg_s_expr of
-                        E.VarRef v -> do
-                            var_vars <- Common.getVarVars context v
-                            borrow_source <- atIndex var_vars 0
-                            Common.BorrowerConverter borrow_source
-                        _ -> panic "Borrow converter's arg is not VarRef {}" % (E.short arg)
+                E.BorrowerConverter -> getBorrowKind context arg
             context <- List.zipSE context src_vars dest_vars (\context, index, src_var, dest_var -> do
                 if index == 0
                     then Common.addConverter context (Common.Converter id kind src_var dest_var)
