@@ -26,10 +26,14 @@ processEqual context v1 v2 = do
 
 processEquals :: Common.Context -> Common.Context
 processEquals context = do
+    total <- getLength context.equals
+    //println "Processing {} equals" % total
     loop context <- context do
         context :: Common.Context <- context // FIXME
         case pop context.equals of
             Some (first, rest) -> do
+                rl <- getLength rest
+                //println "Processing an equal {}/{}" % (total - rl, total)
                 context <- context { equals = rest }
                 Common.Equal v1 v2 <- first
                 processEqual context v1 v2
@@ -38,6 +42,8 @@ processEquals context = do
 processConverters :: Common.Context -> Common.Context
 processConverters context =
     loop context <- context do
+        context :: Common.Context <- context // FIXME
+        //println "Processing {} converters" % getLength context.converters
         (context, changed) <- processConvertersStep context
         if changed then context else break context
 
@@ -54,10 +60,13 @@ processConvertersStep context = do
                             context <- Common.updateGroupKind context group_id T.OwnerKind
                             (context, True)
                         Common.FieldConverter parent_var -> do
-                            parent__kind <- resolveKind context parent_var
-                            group_id <- Common.getGroupId context to
-                            context <- Common.updateGroupKind context group_id parent__kind
-                            (context, True)
+                            parent_kind <- resolveKind context parent_var
+                            case parent_kind of
+                                T.VarKind _ -> (context, changed)
+                                _ -> do
+                                    group_id <- Common.getGroupId context to
+                                    context <- Common.updateGroupKind context group_id parent_kind
+                                    (context, True)
                         Common.BorrowerConverter borrow_source -> do
                             (context, borrower_set_id) <- Common.createrBorrowerSetId context
                             borrower_set <- Set.empty
@@ -198,11 +207,15 @@ calculateInferenceInfo global_context var_gen function_id = do
     function <- P.getFunction global_context.program function_id
     case function.kind of
         F.Normal body expr_id_gen expr_var_gen -> do
-            //println "Inference: processing {}" % function.id
+            println "Inference: processing {}" % function.id
             context <- C.collectConstraints global_context var_gen function.type function_id body
+            println "processing equals"
             context <- processEquals context
+            println "processing converters"
             context <- processConverters context
+            println "borrow check"
             context <- borrowCheck context
+            println "done"
             //dumpConverters context
             //dumpOwnershipVars context
             sub <- getSubstitution context
@@ -211,6 +224,7 @@ calculateInferenceInfo global_context var_gen function_id = do
             var_constraints <- collectVarConstraints context ownership_kinds
             function_type <- U.apply function_type sub
             info <- Common.FunctionInferenceInfo function_type var_constraints
+            println "End of processing {}" % function.id
             (Some info, context.var_gen)
         _ -> (None, var_gen)
 
@@ -258,16 +272,17 @@ updateBody context sub expr = do
 
 instantiateFunction :: Common.GlobalContext -> U.OwnershipVarGenerator -> Counter E.ExprId -> P.Identity -> F.FunctionType -> E.Expr -> (E.Expr, U.OwnershipVarGenerator)
 instantiateFunction global_context var_gen expr_id_gen function_id function_type body = do
-    //println "Inference: instantiating {} {}" % (function_id, function_type)
+    println "Inference: instantiating {} {}" % (function_id, function_type)
     context <- C.collectConstraints global_context var_gen function_type function_id body
     context <- processEquals context
     //dumpConverters context
     context <- processConverters context
     context <- borrowCheck context
-    //dumpConverters context
-    //dumpOwnershipVars context
+    dumpConverters context
+    dumpOwnershipVars context
     sub <- getSubstitution context
     updated_body <- updateBody context sub body
+    println "End of instantiating"
     (updated_body, context.var_gen)
 
 getOrUpdateInferenceInfo :: Common.GlobalContext -> U.OwnershipVarGenerator -> P.Identity -> (Common.GlobalContext, U.OwnershipVarGenerator, Bool)
