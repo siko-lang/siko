@@ -53,6 +53,11 @@ processConvertersStep context = do
                             group_id <- Common.getGroupId context to
                             context <- Common.updateGroupKind context group_id T.OwnerKind
                             (context, True)
+                        Common.FieldConverter parent_var -> do
+                            parent__kind <- resolveKind context parent_var
+                            group_id <- Common.getGroupId context to
+                            context <- Common.updateGroupKind context group_id parent__kind
+                            (context, True)
                         Common.BorrowerConverter borrow_source -> do
                             (context, borrower_set_id) <- Common.createrBorrowerSetId context
                             borrower_set <- Set.empty
@@ -232,6 +237,7 @@ updateBodyExpr (context, sub) expr = do
                         (T.OwnerKind, T.OwnerKind) -> case kind of
                             E.NormalConverter -> E.Expr (E.Move arg) type id
                             E.BorrowerConverter -> E.Expr (E.Clone arg) type id
+                            E.FieldConverter -> E.Expr (E.Move arg) type id
                         (T.OwnerKind, T.BorrowKind i) -> E.Expr (E.Ref arg) type id
                         (T.BorrowKind _, T.OwnerKind) -> E.Expr (E.Clone arg) type id
                         (T.BorrowKind _, T.BorrowKind _) -> E.Expr (E.Move arg) type id

@@ -107,13 +107,12 @@ addMovedVar moved_vars var = do
 
 getBorrowKind :: Common.Context -> E.Expr -> Common.ConverterKind
 getBorrowKind context arg = do
-    E.Expr arg_s_expr arg_type _ <- arg
+    E.Expr arg_s_expr _ _ <- arg
     case arg_s_expr of
         E.VarRef v -> do
             var_vars <- Common.getVarVars context v
             borrow_source <- atIndex var_vars 0
             Common.BorrowerConverter borrow_source
-        E.FieldAccess n arg -> getBorrowKind context arg
         _ -> panic "Borrow converter's arg is not VarRef {}" % (E.short arg)
 
 processExpr :: Common.Context -> Common.MovedVars -> E.Expr -> (Common.Context, Common.MovedVars)
@@ -315,6 +314,15 @@ processExpr context moved_vars expr = do
             kind <- case kind of
                 E.NormalConverter -> Common.NormalConverter
                 E.BorrowerConverter -> getBorrowKind context arg
+                E.FieldConverter -> do
+                    case arg_s_expr of
+                        E.FieldAccess n fieldaccess_arg -> do
+                            E.Expr _ fieldaccess_arg_type _ <- fieldaccess_arg
+                            kinds <- T.collectOwnershipKinds fieldaccess_arg_type
+                            first <- atIndex kinds 0
+                            first_var <- Common.kindToVar first
+                            Common.FieldConverter first_var
+                        _ -> panic "FieldConverter's arg is not a field access!"
             context <- List.zipSE context src_vars dest_vars (\context, index, src_var, dest_var -> do
                 if index == 0
                     then Common.addConverter context (Common.Converter id kind src_var dest_var)
