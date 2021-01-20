@@ -215,26 +215,29 @@ updateBodyExpr (context, sub) expr = do
     case s_expr of
         E.Converter arg kind -> do
             E.Expr _ arg_type _ <- arg
-            src_kinds <- T.collectOwnershipKinds arg_type
-            dest_kinds <- T.collectOwnershipKinds type
-            src <- atIndex src_kinds 0
-            dest <- atIndex dest_kinds 0
-            src_kind <- case src of
-                T.VarKind v -> resolveKind context v
-                _ -> src
-            dest_kind <- case dest of
-                T.VarKind v -> resolveKind context v
-                _ -> dest
-            expr <- case (src_kind, dest_kind) of
-                (T.OwnerKind, T.OwnerKind) -> case kind of
-                    E.NormalConverter -> E.Expr (E.Move arg) type id
-                    E.BorrowerConverter -> E.Expr (E.Clone arg) type id
-                (T.OwnerKind, T.BorrowKind i) -> E.Expr (E.Ref arg) type id
-                (T.BorrowKind _, T.OwnerKind) -> E.Expr (E.Clone arg) type id
-                (T.BorrowKind _, T.BorrowKind _) -> E.Expr (E.Move arg) type id
-                (T.OwnerKind, T.BoxedKind) -> E.Expr (E.Box arg) type id
-                _ -> panic "Unexpected converter kinds {} -> {}" % (src_kind, dest_kind)
-            ((context, sub), expr)
+            case (arg_type, type) of
+                (T.Never, T.Never) -> ((context, sub), E.Expr (E.Move arg) type id)
+                _ -> do
+                    src_kinds <- T.collectOwnershipKinds arg_type
+                    dest_kinds <- T.collectOwnershipKinds type
+                    src <- atIndex src_kinds 0
+                    dest <- atIndex dest_kinds 0
+                    src_kind <- case src of
+                        T.VarKind v -> resolveKind context v
+                        _ -> src
+                    dest_kind <- case dest of
+                        T.VarKind v -> resolveKind context v
+                        _ -> dest
+                    expr <- case (src_kind, dest_kind) of
+                        (T.OwnerKind, T.OwnerKind) -> case kind of
+                            E.NormalConverter -> E.Expr (E.Move arg) type id
+                            E.BorrowerConverter -> E.Expr (E.Clone arg) type id
+                        (T.OwnerKind, T.BorrowKind i) -> E.Expr (E.Ref arg) type id
+                        (T.BorrowKind _, T.OwnerKind) -> E.Expr (E.Clone arg) type id
+                        (T.BorrowKind _, T.BorrowKind _) -> E.Expr (E.Move arg) type id
+                        (T.OwnerKind, T.BoxedKind) -> E.Expr (E.Box arg) type id
+                        _ -> panic "Unexpected converter kinds {} -> {}" % (src_kind, dest_kind)
+                    ((context, sub), expr)
         _ -> ((context, sub), expr)
 
 updateBodyType :: (Common.Context, U.Substitution) -> T.Type -> ((Common.Context, U.Substitution), T.Type)

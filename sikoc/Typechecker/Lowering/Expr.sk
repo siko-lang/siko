@@ -670,7 +670,7 @@ processExpr context sub hir_expr = do
             ME.Expr _ _ id <- mir_arg
             (loop_jumps, _) <- insert context.loop_jumps hir_id id
             context <- context { loop_jumps = loop_jumps }
-            (context, continue_expr) <- getExpr context (ME.Expr (ME.Continue mir_arg) mir_expr_type)
+            (context, continue_expr) <- getExpr context (ME.Expr (ME.Continue mir_arg) MT.Never)
             (context, continue_expr)
         HE.Break arg -> do
             (context, mir_arg) <- processExpr context sub arg
@@ -678,7 +678,7 @@ processExpr context sub hir_expr = do
             ME.Expr _ _ id <- mir_arg
             (loop_jumps, _) <- insert context.loop_jumps hir_id id
             context <- context { loop_jumps = loop_jumps }
-            (context, break_expr) <- getExpr context (ME.Expr (ME.Break mir_arg) mir_expr_type)
+            (context, break_expr) <- getExpr context (ME.Expr (ME.Break mir_arg) MT.Never)
             (context, break_expr)
         HE.Loop p initializer body continues breaks -> do
             HP.Pattern pat id _ <- p

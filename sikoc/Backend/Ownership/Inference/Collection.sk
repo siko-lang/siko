@@ -41,14 +41,18 @@ collectVars context moved_vars kinds = do
 
 equalConstraints :: Common.Context -> Common.MovedVars -> T.Type -> T.Type -> Common.Context
 equalConstraints context moved_vars src dest = do
-    src_kinds <- T.collectOwnershipKinds src
-    dest_kinds <- T.collectOwnershipKinds dest
-    (context, src_vars) <- collectVars context moved_vars src_kinds
-    (context, dest_vars) <- collectVars context moved_vars dest_kinds
-    context <- List.zipS context src_vars dest_vars (\context, src_var, dest_var -> do
-        context <- Common.addEqual context src_var dest_var
-        context)
-    context
+    case (src, dest) of
+        (T.Never, _) -> return context
+        (_, T.Never) -> return context
+        _ -> do
+            src_kinds <- T.collectOwnershipKinds src
+            dest_kinds <- T.collectOwnershipKinds dest
+            (context, src_vars) <- collectVars context moved_vars src_kinds
+            (context, dest_vars) <- collectVars context moved_vars dest_kinds
+            context <- List.zipS context src_vars dest_vars (\context, src_var, dest_var -> do
+                context <- Common.addEqual context src_var dest_var
+                context)
+            context
 
 equalConstraintsWithVars :: Common.Context-> Common.MovedVars -> [T.OwnershipVar] -> T.Type -> Common.Context
 equalConstraintsWithVars context moved_vars src_vars dest = do
@@ -234,14 +238,12 @@ processExpr context moved_vars expr = do
             (context, moved_vars) <- processExpr context moved_vars arg
             E.Expr _ arg_type _ <- arg
             context <- equalConstraints context moved_vars arg_type context.return_type
-            context <- equalConstraints context moved_vars arg_type type // FIXME: return should have type Never
             (context, moved_vars)
         E.Continue arg -> do
             (context, moved_vars) <- processExpr context moved_vars arg
             E.Expr _ arg_type arg_id <- arg
             (continues, _) <- Map.insert context.continues arg_id arg_type
             context <- context { continues = continues }
-            context <- equalConstraints context moved_vars arg_type type // FIXME: continue should have type Never
             (context, moved_vars)
         E.Break arg -> do
             (context, moved_vars) <- processExpr context moved_vars arg
@@ -253,7 +255,6 @@ processExpr context moved_vars expr = do
                 _ -> arg_id
             (breaks, _) <- Map.insert context.breaks arg_id arg_type
             context <- context { breaks = breaks }
-            context <- equalConstraints context moved_vars arg_type type // FIXME: break should have type Never
             (context, moved_vars)
         E.RecordUpdate _ _ -> panic "RecordUpdate found in Inference.Collection"
         E.Loop v initializer body continues breaks -> do
@@ -265,7 +266,7 @@ processExpr context moved_vars expr = do
             (context, moved_vars) <- processExpr context moved_vars body
             context <- continues |> List.iter |> fold (\context, continue_id -> do
                 case get context.continues continue_id of
-                    Some continue_type -> equalConstraints context moved_vars type continue_type
+                    Some continue_type -> equalConstraints context moved_vars initializer_type continue_type
                     None -> panic "Continue_id {} not found in context" % continue_id) context
             context <- breaks |> List.iter |> fold (\context, break_id -> do
                 case get context.breaks break_id of
@@ -277,7 +278,16 @@ processExpr context moved_vars expr = do
             (context, moved_var_sets) <- cases |> List.iter |> fold (\(context, moved_var_sets), c -> do
                 context <- case c.checker of
                     E.VariantChecker index v variant_type -> do
-                        var_kinds <- T.collectOwnershipKinds variant_type
+                        var_kinds <- case variant_type of
+                            T.Var _ t -> case t of
+                                T.Adt _ _ -> do
+                                    adt <- getAdtType context variant_type
+                                    variant <- atIndex adt.variants index
+                                    T.collectOwnershipKinds variant.type
+                                T.Record _ _ -> do
+                                    T.collectOwnershipKinds variant_type
+                                _ -> panic "VariantChecker's inner type is not record nor adt"
+                            _ -> panic "VariantChecker's type is not Var"
                         (context, var_vars) <- collectVars context moved_vars var_kinds
                         context <- Common.addVarVars context v var_vars
                         E.Expr _ body_type _ <- body
