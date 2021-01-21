@@ -39,65 +39,102 @@ processEquals context = do
                 processEqual context v1 v2
             None -> break context
 
-processConverters :: Common.Context -> Common.Context
-processConverters context =
+processConstraints :: Common.Context -> Common.Context
+processConstraints context =
     loop context <- context do
         context :: Common.Context <- context // FIXME
-        //println "Processing {} converters" % getLength context.converters
-        (context, changed) <- processConvertersStep context
+        //println "Processing {} constraints" % getLength context.constraints
+        (context, changed) <- processConstraintsStep context
         if changed then context else break context
 
-processConvertersStep :: Common.Context -> (Common.Context, Bool)
-processConvertersStep context = do
-    context.converters |> List.iter |> fold (\(context, changed), Common.Converter _ kind from to -> do
-            resolved_from <- resolveKind context from
-            resolved_to <- resolveKind context to
-            case (resolved_from, resolved_to) of
-                (T.OwnerKind, T.VarKind _) -> do
-                    case kind of
-                        Common.NormalConverter -> do
-                            group_id <- Common.getGroupId context to
-                            context <- Common.updateGroupKind context group_id T.OwnerKind
-                            (context, True)
-                        Common.FieldConverter parent_var -> do
-                            parent_kind <- resolveKind context parent_var
-                            case parent_kind of
-                                T.VarKind _ -> (context, changed)
-                                _ -> do
-                                    group_id <- Common.getGroupId context to
-                                    context <- Common.updateGroupKind context group_id parent_kind
-                                    (context, True)
-                        Common.BorrowerConverter borrow_source -> do
-                            (context, borrower_set_id) <- Common.createrBorrowerSetId context
-                            borrower_set <- Set.empty
-                            (borrower_set, _) <- Set.insert borrower_set borrow_source
-                            context <- Common.addBorrowerSet context borrower_set_id borrower_set
-                            borrower_kind <- T.BorrowKind borrower_set_id
-                            group_id <- Common.getGroupId context to
-                            context <- Common.updateGroupKind context group_id borrower_kind
-                            (context, True)
-                (T.BorrowKind _, T.VarKind _) -> do
+processConverterConstraint :: Common.Context -> Common.ConverterKind -> T.OwnershipVar -> T.OwnershipVar -> (Common.Context, Bool)
+processConverterConstraint context kind from to = do
+    resolved_from <- resolveKind context from
+    resolved_to <- resolveKind context to
+    //println "Processing converter constraint {} {} {} {}" % (from, resolved_from, to, resolved_to)
+    case (resolved_from, resolved_to) of
+        (T.OwnerKind, T.VarKind _) -> do
+            case kind of
+                Common.NormalConverter -> do
                     group_id <- Common.getGroupId context to
-                    context <- Common.updateGroupKind context group_id resolved_from
+                    context <- Common.updateGroupKind context group_id T.OwnerKind
                     (context, True)
-                (T.BorrowKind index1, T.BorrowKind index2) ->
-                    if index1 != index2
-                            then do
-                                group_id1 <- Common.getGroupId context to
-                                group_id2 <- Common.getGroupId context from
-                                (context, merged_kind) <- Common.mergeGroups context group_id1 group_id2
-                                context <- Common.updateGroupKind context group_id1 merged_kind
-                                context <- Common.updateGroups context group_id2 group_id1
+                Common.BorrowerConverter borrow_source -> do
+                    (context, borrower_set_id) <- Common.createrBorrowerSetId context
+                    borrower_set <- Set.empty
+                    (borrower_set, _) <- Set.insert borrower_set borrow_source
+                    context <- Common.addBorrowerSet context borrower_set_id borrower_set
+                    borrower_kind <- T.BorrowKind borrower_set_id
+                    group_id <- Common.getGroupId context to
+                    context <- Common.updateGroupKind context group_id borrower_kind
+                    (context, True)
+        (T.BorrowKind _, T.VarKind _) -> do
+            group_id <- Common.getGroupId context to
+            context <- Common.updateGroupKind context group_id resolved_from
+            (context, True)
+        (T.BorrowKind index1, T.BorrowKind index2) ->
+            if index1 != index2
+                    then do
+                        group_id1 <- Common.getGroupId context to
+                        group_id2 <- Common.getGroupId context from
+                        (context, merged_kind) <- Common.mergeGroups context group_id1 group_id2
+                        context <- Common.updateGroupKind context group_id1 merged_kind
+                        context <- Common.updateGroups context group_id2 group_id1
+                        (context, True)
+                    else (context, False)
+        _ -> (context, False)
+
+processConstraintsStep :: Common.Context -> (Common.Context, Bool)
+processConstraintsStep context = do
+    context.constraints |> List.iter |> fold (\(context, changed), constraint ->
+            case constraint of
+                Common.Constraint _ kind from to -> do
+                    (context, changed1) <- processConverterConstraint context kind from to
+                    changed <- changed || changed1
+                    (context, changed)
+                Common.ExternalConverter from to -> do
+                    (context, changed1) <- processConverterConstraint context Common.NormalConverter from to
+                    changed <- changed || changed1
+                    (context, changed)
+                Common.FieldAccessConverter from field_src to -> do
+                    from_kind <- resolveKind context from
+                    field_src_kind <- resolveKind context field_src
+                    to_kind <- resolveKind context to
+                    case (field_src_kind, to_kind) of
+                        (T.BorrowKind _, T.VarKind _) -> do
+                            group_id <- Common.getGroupId context to
+                            context <- Common.updateGroupKind context group_id field_src_kind
+                            (context, True)
+                        _ -> case (from_kind, to_kind) of
+                            (T.BorrowKind _, T.VarKind _) -> do
+                                group_id <- Common.getGroupId context to
+                                context <- Common.updateGroupKind context group_id from_kind
                                 (context, True)
-                            else (context, changed)
-                _ -> (context, changed)
+                            (T.OwnerKind, T.VarKind _) -> do
+                                group_id <- Common.getGroupId context to
+                                context <- Common.updateGroupKind context group_id from_kind
+                                (context, True)
+                            _ -> (context, changed)
         ) (context, False)
 
-dumpConverters :: Common.Context -> ()
-dumpConverters context = do
+dumpConstraints :: Common.Context -> ()
+dumpConstraints context = do
     println "Converters:"
-    context.converters |> List.iter |> forEach (\Common.Converter expr kind src dest -> do
-        println "C: {} {} {} -> {} {}" % (expr, src, resolveKind context src, dest, resolveKind context dest))
+    context.constraints |> List.iter |> forEach (\constraint ->
+            case constraint of
+                Common.Constraint expr kind src dest -> do
+                    println "C: {} {} {} -> {} {}" % (expr, src, resolveKind context src, dest, resolveKind context dest)
+                Common.ExternalConverter src dest -> do
+                    println "External converter: {} {} -> {} {}" % (src, resolveKind context src, dest, resolveKind context dest)
+                Common.FieldAccessConverter src field_src dest -> do
+                    println "Field access converter: {} {} : {} {} : {} {}" %
+                        (src,
+                        resolveKind context src,
+                        field_src,
+                        resolveKind context field_src,
+                        dest,
+                        resolveKind context dest)
+        )
 
 dumpOwnershipVars :: Common.Context -> ()
 dumpOwnershipVars context = do
@@ -123,18 +160,32 @@ resolveKind context var = do
     group <- Common.getGroup context group_id
     group.kind
 
+addEdge :: Common.Context -> Set T.OwnershipVar -> T.OwnershipVar -> T.OwnershipVar -> (Set T.OwnershipVar, Bool)
+addEdge context convertibles a b = do
+    c_a <- resolveKind context a
+    c_b <- resolveKind context b
+    insertKind convertibles c_a c_b
+
 collectConvertibleConstraints :: T.OwnershipVar -> Common.Context -> Set T.OwnershipVar
 collectConvertibleConstraints var context = do
     convertibles <- Set.empty
     (convertibles, _) <- Set.insert convertibles var
     convertibles <- loop convertibles <- convertibles do
-        (convertibles, added) <- context.converters |> List.iter |> fold (\(convertibles, added), converter -> do
-            Common.Converter _ _ a b <- converter
-            c_a <- resolveKind context a
-            c_b <- resolveKind context b
-            (convertibles, added1) <- insertKind convertibles c_a c_b
-            added <- added || added1
-            (convertibles, added)) (convertibles, False)
+        (convertibles, added) <- context.constraints |> List.iter |> fold (\(convertibles, added), constraint -> do
+                case constraint of
+                    Common.Constraint _ _ a b -> do
+                        (convertibles, added1) <- addEdge context convertibles a b
+                        added <- added || added1
+                        (convertibles, added)
+                    Common.ExternalConverter a b -> do
+                        (convertibles, added1) <- addEdge context convertibles a b
+                        added <- added || added1
+                        (convertibles, added)
+                    Common.FieldAccessConverter a _ b -> do
+                        (convertibles, added1) <- addEdge context convertibles a b
+                        added <- added || added1
+                        (convertibles, added)
+            ) (convertibles, False)
         if not added
             then break convertibles
             else convertibles
@@ -207,16 +258,16 @@ calculateInferenceInfo global_context var_gen function_id = do
     function <- P.getFunction global_context.program function_id
     case function.kind of
         F.Normal body expr_id_gen expr_var_gen -> do
-            println "Inference: processing {}" % function.id
+            //println "Inference: processing {}" % function.id
             context <- C.collectConstraints global_context var_gen function.type function_id body
-            println "processing equals"
+            //println "processing equals"
             context <- processEquals context
-            println "processing converters"
-            context <- processConverters context
-            println "borrow check"
+            //println "processing constraints"
+            context <- processConstraints context
+            //println "borrow check"
             context <- borrowCheck context
-            println "done"
-            //dumpConverters context
+            //println "done"
+            //dumpConstraints context
             //dumpOwnershipVars context
             sub <- getSubstitution context
             function_type <- U.apply function.type sub
@@ -224,9 +275,24 @@ calculateInferenceInfo global_context var_gen function_id = do
             var_constraints <- collectVarConstraints context ownership_kinds
             function_type <- U.apply function_type sub
             info <- Common.FunctionInferenceInfo function_type var_constraints
-            println "End of processing {}" % function.id
+            //println "End of processing {}" % function.id
             (Some info, context.var_gen)
         _ -> (None, var_gen)
+
+instantiateFunction :: Common.GlobalContext -> U.OwnershipVarGenerator -> Counter E.ExprId -> P.Identity -> F.FunctionType -> E.Expr -> (E.Expr, U.OwnershipVarGenerator)
+instantiateFunction global_context var_gen expr_id_gen function_id function_type body = do
+    //println "Inference: instantiating {} {}" % (function_id, function_type)
+    context <- C.collectConstraints global_context var_gen function_type function_id body
+    context <- processEquals context
+    //dumpConstraints context
+    context <- processConstraints context
+    context <- borrowCheck context
+    //dumpConstraints context
+    //dumpOwnershipVars context
+    sub <- getSubstitution context
+    updated_body <- updateBody context sub body
+    //println "End of instantiating"
+    (updated_body, context.var_gen)
 
 updateBodyExpr :: (Common.Context, U.Substitution) -> E.Expr -> ((Common.Context, U.Substitution), E.Expr)
 updateBodyExpr (context, sub) expr = do
@@ -270,21 +336,6 @@ updateBody context sub expr = do
     (_, expr) <- traverse (context, sub) expr (Some updateBodyExpr) (Some updateBodyType)
     expr
 
-instantiateFunction :: Common.GlobalContext -> U.OwnershipVarGenerator -> Counter E.ExprId -> P.Identity -> F.FunctionType -> E.Expr -> (E.Expr, U.OwnershipVarGenerator)
-instantiateFunction global_context var_gen expr_id_gen function_id function_type body = do
-    println "Inference: instantiating {} {}" % (function_id, function_type)
-    context <- C.collectConstraints global_context var_gen function_type function_id body
-    context <- processEquals context
-    //dumpConverters context
-    context <- processConverters context
-    context <- borrowCheck context
-    dumpConverters context
-    dumpOwnershipVars context
-    sub <- getSubstitution context
-    updated_body <- updateBody context sub body
-    println "End of instantiating"
-    (updated_body, context.var_gen)
-
 getOrUpdateInferenceInfo :: Common.GlobalContext -> U.OwnershipVarGenerator -> P.Identity -> (Common.GlobalContext, U.OwnershipVarGenerator, Bool)
 getOrUpdateInferenceInfo context var_gen function_id = do
     (info, var_gen) <- calculateInferenceInfo context var_gen function_id
@@ -294,6 +345,7 @@ getOrUpdateInferenceInfo context var_gen function_id = do
             function <- P.getFunction context.program function_id
             Common.FunctionInferenceInfo function.type Map.empty
     (context, added) <- Common.addInferenceInfo context function_id info
+    //println "{} {} added {}" % (function_id, info, added)
     (context, var_gen, added)
 
 processFunctionGroup :: Common.GlobalContext -> U.OwnershipVarGenerator -> [P.Identity] -> (Common.GlobalContext, U.OwnershipVarGenerator)
@@ -304,6 +356,7 @@ processFunctionGroup context var_gen group = do
             (context, var_gen, _) <- getOrUpdateInferenceInfo context var_gen function_id
             (context, var_gen)
         else do
+            //println "Processing group {}" % group
             loop (context, var_gen) <- (context, var_gen) do
                 (context, var_gen, more) <- group |> List.iter |> fold (\(context, var_gen, more), function_id -> do
                     (context, var_gen, added) <- getOrUpdateInferenceInfo context var_gen function_id

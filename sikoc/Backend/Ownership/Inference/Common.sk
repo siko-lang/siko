@@ -16,11 +16,12 @@ data Equal = Equal T.OwnershipVar T.OwnershipVar
 
 data ConverterKind = NormalConverter
                    | BorrowerConverter T.OwnershipVar
-                   | FieldConverter T.OwnershipVar
                    deriving (Show)
 
-data Converter = Converter E.ExprId ConverterKind T.OwnershipVar T.OwnershipVar
-                 deriving (Show)
+data Constraint = Constraint E.ExprId ConverterKind T.OwnershipVar T.OwnershipVar
+                | ExternalConverter T.OwnershipVar T.OwnershipVar
+                | FieldAccessConverter T.OwnershipVar T.OwnershipVar T.OwnershipVar
+                deriving (Show)
 
 data GlobalContext = { program :: P.Program,
                        inference_info_store :: InferenceInfoStore }
@@ -35,7 +36,7 @@ data Group = { kind :: T.OwnershipKind }
 
 data Context = { global_context :: GlobalContext,
                  var_vars :: Map E.Var [T.OwnershipVar],
-                 converters :: [Converter],
+                 constraints :: [Constraint],
                  equals :: [Equal],
                  not_moves :: Set E.ExprId,
                  ownership_vars :: Map T.OwnershipVar Int,
@@ -66,7 +67,7 @@ createContext global_context not_moves var_gen return_type =
     Context {
         global_context = global_context,
         var_vars = Map.empty,
-        converters = [],
+        constraints = [],
         equals = [],
         not_moves = not_moves,
         ownership_vars = Map.empty,
@@ -82,11 +83,11 @@ createContext global_context not_moves var_gen return_type =
         breaks = Map.empty,
     }
 
-addConverter :: Context -> Converter -> Context
-addConverter context converter = do
-    index <- getLength context.converters
-    converters <- context.converters + [converter]
-    context { converters = converters }
+addConstraint :: Context -> Constraint -> Context
+addConstraint context constraint = do
+    index <- getLength context.constraints
+    constraints <- context.constraints + [constraint]
+    context { constraints = constraints }
 
 addEqual :: Context -> T.OwnershipVar -> T.OwnershipVar -> Context
 addEqual context v1 v2 = do
