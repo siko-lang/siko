@@ -41,12 +41,12 @@ data Record = { id :: Identity,
 
 dumpAdt :: AlgebraicDataType -> String
 dumpAdt adt = do
-    variants <- adt.variants |> List.iter |> map (\v -> "{} {}" % (v.name, v.type)) |> toList
+    variants <- adt.variants |> List.iter |> Iterator.map (\v -> "{} {}" % (v.name, v.type)) |> toList
     "adt {} {} = {}" % (adt.id, adt.ownership_vars, join variants " | ")
 
 dumpRecord :: Record -> String
 dumpRecord record = do
-    fields <- record.fields |> List.iter |> map (\field -> "{} :: {}" % (field.name, field.type)) |> toList
+    fields <- record.fields |> List.iter |> Iterator.map (\field -> "{} :: {}" % (field.name, field.type)) |> toList
     if isEmpty fields
         then if isSome record.external_info
             then "record {} {} = extern" % (record.id, record.ownership_vars)

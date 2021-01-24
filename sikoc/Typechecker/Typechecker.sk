@@ -56,7 +56,7 @@ checkFunctionType context fn = do
             func_type_info <- getFunctionTypeInfo context fn.name
             (Expr _ body_id location) <- body
             (context, _) <- matchExprWith context body_id func_type_info.result_type location
-            context <- context.returns |> List.iter |> fold (\context, (arg_id, arg_location) -> do
+            context <- context.returns |> List.iter |> Iterator.fold (\context, (arg_id, arg_location) -> do
                     func_type_info <- getFunctionTypeInfo context fn.name
                     (context, _) <- matchExprWith context arg_id func_type_info.result_type arg_location
                     context) context
@@ -103,32 +103,32 @@ processGroup :: TypecheckerState ->
 processGroup state group program function_store lowering_type_store = do
     //println "Group items: {}" % (group.items)
     context <- initializeContext state program function_store group.items
-    context <- group.items |> List.iter |> fold (\context, name -> do
+    context <- group.items |> List.iter |> Iterator.fold (\context, name -> do
                         fn <- P.getFunction program name
                         context <- initializeFunctionType context fn
                         context) context
     //println "After init"
     //TS.dump context.type_store
-    context <- group.items |> List.iter |> fold (\context, name -> do
+    context <- group.items |> List.iter |> Iterator.fold (\context, name -> do
                         fn <- P.getFunction program name
                         context <- checkFunctionType context fn
                         context) context
     //println "After check"
     //TS.dump context.type_store
-    context <- group.items |> List.iter |> fold (\context, name -> do
+    context <- group.items |> List.iter |> Iterator.fold (\context, name -> do
                         fn <- P.getFunction program name
                         context <- checkMissingTypes context fn
                         context) context
     context <- if isEmpty context.state.errors
-        then group.items |> List.iter |> fold (\context, name -> do
+        then group.items |> List.iter |> Iterator.fold (\context, name -> do
                         fn <- P.getFunction program name
                         context <- checkCasePatterns context fn
                         context) context
         else context
-    lowering_type_store <- context.type_store.expr_types |> Map.iter |> fold (\lowering_type_store, (id, expr_type) -> do
+    lowering_type_store <- context.type_store.expr_types |> Map.iter |> Iterator.fold (\lowering_type_store, (id, expr_type) -> do
         type <- TS.getTypeFromExprTypeState expr_type
         LTS.addExprType lowering_type_store id type) lowering_type_store
-    lowering_type_store <- context.type_store.pattern_types |> Map.iter |> fold (\lowering_type_store, (id, pattern_type) -> do
+    lowering_type_store <- context.type_store.pattern_types |> Map.iter |> Iterator.fold (\lowering_type_store, (id, pattern_type) -> do
         type <- TS.getTypeFromPatternTypeState pattern_type
         LTS.addPatternType lowering_type_store id type) lowering_type_store
     (context.state, context.function_store, lowering_type_store)
@@ -147,7 +147,7 @@ processProgram config program var_gen = do
     //println "Functions: {}" % (getSize function_store.functions)
     //println "Groups: {}" % (getLength groups)
     (state, function_store, lowering_type_store) <- groups |> List.iter
-            |> fold (\(state, function_store, lowering_type_store), group -> do
+            |> Iterator.fold (\(state, function_store, lowering_type_store), group -> do
         (state, function_store, lowering_type_store) <- processGroup state group program function_store lowering_type_store
         (state, function_store, lowering_type_store) ) (state, function_store, lowering_type_store)
     //FS.dump function_store

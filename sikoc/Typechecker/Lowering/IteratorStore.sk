@@ -101,7 +101,7 @@ createIteratorVariant context name iterator_instance = do
     mir_args <- [mir_state_type, mir_closure_type]
     variant_name <- getVariantName iterator_instance
     record_identity <- getVariantRecordIdentity iterator_instance
-    (mir_fields, _) <- mir_args |> List.iter |> fold (\(mir_fields, index), mir_arg -> do
+    (mir_fields, _) <- mir_args |> List.iter |> Iterator.fold (\(mir_fields, index), mir_arg -> do
             field_name <- getFieldName index
             mir_field <- MD.RecordField field_name mir_arg
             mir_fields <- mir_fields + [mir_field]
@@ -136,7 +136,7 @@ createGetNextFunctionBody context iterator function_id = do
     temp_var_gen <- getTempVarCounter
     context <- setTempVarCounter context temp_var_gen
     (context, unit_type) <- processType context (HT.Tuple [])
-    (context, cases) <- iterator.instances |> List.iter |> fold (\(context, cases), iterator_instance -> do
+    (context, cases) <- iterator.instances |> List.iter |> Iterator.fold (\(context, cases), iterator_instance -> do
         (context, mir_state_type) <- processType context iterator_instance.state_type
         (context, mir_closure_type) <- processType context iterator_instance.closure_type
         (context, mir_iterator_type) <- processType context iterator_instance.iterator_type
@@ -268,8 +268,8 @@ createGetNextFunctionBody context iterator function_id = do
 
 createIterators :: Context -> Context
 createIterators context = do
-    context <- context.iterator_store.iterators |> Map.iter |> fold (\context, (name, iterator) -> do
-        context <- iterator.instances |> List.iter |> fold (\context, iterator_instance -> do
+    context <- context.iterator_store.iterators |> Map.iter |> Iterator.fold (\context, (name, iterator) -> do
+        context <- iterator.instances |> List.iter |> Iterator.fold (\context, iterator_instance -> do
             context <- createIteratorVariant context name iterator_instance
             context) context
         context <- case iterator.get_next_id of

@@ -121,7 +121,7 @@ addErrorToContext context err = do
 
 processFunctionArgs :: [SP.Pattern] -> (SP.Pattern, Location)
 processFunctionArgs patterns = do
-    location <- patterns |> List.iter |> fold (\merged, (SP.Pattern _ location) -> case merged of
+    location <- patterns |> List.iter |> Iterator.fold (\merged, (SP.Pattern _ location) -> case merged of
         Some l -> Some (mergeLocations l location)
         None -> Some location) None
     location <- case location of
@@ -132,7 +132,7 @@ processFunctionArgs patterns = do
 
 createCaseBody :: [SP.Pattern] -> Location -> SE.Expr
 createCaseBody patterns location = do
-    (arg_refs, _) <- patterns |> List.iter |> fold (\(arg_refs, index), _ -> do
+    (arg_refs, _) <- patterns |> List.iter |> Iterator.fold (\(arg_refs, index), _ -> do
                     arg_ref <- SE.Expr (SE.ArgRef index) location
                     arg_refs <- arg_refs + [arg_ref]
                     (arg_refs, index + 1)) ([], 0)
@@ -149,7 +149,7 @@ desugarFunctionArgs patterns orig_body = do
 desugarFunctionArgsMulti :: [([SP.Pattern], SE.Expr)] -> SE.Expr
 desugarFunctionArgsMulti arg_cases = do
     first_patterns <- (atIndex arg_cases 0).0
-    cases <- arg_cases |> List.iter |> map (\(patterns, body) -> do
+    cases <- arg_cases |> List.iter |> Iterator.map (\(patterns, body) -> do
             (pattern_tuple, location) <- processFunctionArgs patterns
             c <- SE.Case pattern_tuple body
             c) |> toList
@@ -161,7 +161,7 @@ validatePatternEnv :: PatternEnvironment -> Context -> Context
 validatePatternEnv pattern_env context = do
     context <- pattern_env.bindings |> Map.iter
                                    |> filter (\(name, positions) -> getLength positions != 1)
-                                   |> fold (\context, (name, positions) -> do
+                                   |> Iterator.fold (\context, (name, positions) -> do
                                       err <- BindNotUnique positions
                                       addErrorToContext context err) context
     context
@@ -172,7 +172,7 @@ processCase context env (SE.Case pattern body) = do
     SP.Pattern p location <- pattern
     (context, cases, bind_group) <- case p of
         SP.Or patterns -> do
-            (context, cases, bind_group) <- patterns |> List.iter |> fold (\(context, cases, bind_group), pattern -> do
+            (context, cases, bind_group) <- patterns |> List.iter |> Iterator.fold (\(context, cases, bind_group), pattern -> do
                     pattern_env <- createPatternEnvironment False
                     (context, pattern_env, block_env, p) <- processPattern context pattern_env block_env pattern
                     context <- validatePatternEnv pattern_env context
@@ -181,7 +181,7 @@ processCase context env (SE.Case pattern body) = do
                     cases <- cases + [HE.Case p b]
                     (context, cases, bind_group)
                 ) (context, [], HP.BindGroup empty)
-            context <- bind_group.bindings |> Map.iter |> fold (\context, (name, instances) -> do
+            context <- bind_group.bindings |> Map.iter |> Iterator.fold (\context, (name, instances) -> do
                     if getLength instances != getLength patterns
                         then addErrorToContext context (OrPatternMismatch name location)
                         else context
@@ -237,7 +237,7 @@ processBinaryOp context op lhs rhs = do
 
 processExprs :: Context -> Environment -> [SE.Expr] -> (Context, [HE.Expr])
 processExprs context env exprs = do
-    (context, hir_exprs) <- exprs |> List.iter |> fold (\(context, hir_exprs), expr -> do
+    (context, hir_exprs) <- exprs |> List.iter |> Iterator.fold (\(context, hir_exprs), expr -> do
                 (context, _, hir_expr) <- processExpr context env expr
                 hir_exprs <- hir_exprs + [hir_expr]
                 (context, hir_exprs)) (context, [])
@@ -245,7 +245,7 @@ processExprs context env exprs = do
 
 processDo :: Context -> Environment -> [SE.Expr] -> (Context, [HE.Expr])
 processDo context env exprs = do
-    (context, _, hir_exprs) <- exprs |> List.iter |> fold (\(context, env, hir_exprs), expr -> do
+    (context, _, hir_exprs) <- exprs |> List.iter |> Iterator.fold (\(context, env, hir_exprs), expr -> do
                 (context, env, hir_expr) <- processExpr context env expr
                 hir_exprs <- hir_exprs + [hir_expr]
                 (context, env, hir_exprs)) (context, env, [])
@@ -253,8 +253,8 @@ processDo context env exprs = do
 
 validateUsedFields :: [Ident] -> HD.Record -> Result () ([String], [Ident], [Ident])
 validateUsedFields used_fields record = do
-    used_fields_s <- used_fields |> List.iter |> map (\i -> getString i) |> toList
-    real_fields <- record.fields |> List.iter |> map (\(HD.RecordField field_name _) -> field_name) |> toList
+    used_fields_s <- used_fields |> List.iter |> Iterator.map (\i -> getString i) |> toList
+    real_fields <- record.fields |> List.iter |> Iterator.map (\(HD.RecordField field_name _) -> field_name) |> toList
     unused_fields <- real_fields |> List.iter |> filter (\f -> not (contains used_fields_s f)) |> toList
     not_real_fields <- used_fields |> List.iter |> filter (\(Ident f _) -> not (contains real_fields f)) |> toList
     multi_used <- used_fields
@@ -295,7 +295,7 @@ shiftLambdaArgs context (HE.Expr case_of case_of_id case_of_location) offset = c
                                         extra_pattern <- HP.Pattern (HP.Wildcard) pattern_id case_of_location
                                         extra_patterns <- extra_patterns + [extra_pattern]
                                         (context, extra_arg_refs, extra_patterns)
-                arg_refs <- arg_refs |> List.iter |> map (\e -> do
+                arg_refs <- arg_refs |> List.iter |> Iterator.map (\e -> do
                         HE.Expr arg_ref_expr arg_ref_id arg_ref_location <- e
                         case arg_ref_expr of
                             HE.ArgRef index -> HE.Expr (HE.ArgRef (index + offset)) arg_ref_id arg_ref_location
@@ -349,7 +349,7 @@ processExpr context env (SE.Expr expr location) = do
             lambda_helper <- Option.unwrap context.lambda_helper
             context <- context { lambda_helper = parent_lambda_helper }
             (context, args) <- lambda_helper.captured_values |> List.iter
-                |> fold (\(context, args), c -> do
+                |> Iterator.fold (\(context, args), c -> do
                             HP.BindRef name _ <- c
                             case getBinding env name of
                                 Some (bind_ref, level) -> do
@@ -447,7 +447,7 @@ processExpr context env (SE.Expr expr location) = do
             (context, env, HE.Formatter fmt hir_args)
         SE.CaseOf body cases -> do
             (context, env, hir_body) <- processExpr context env body
-            (context, env, cases, bind_groups) <- cases |> List.iter |> fold (\(context, env, cases, bind_groups), c -> do
+            (context, env, cases, bind_groups) <- cases |> List.iter |> Iterator.fold (\(context, env, cases, bind_groups), c -> do
                 (context, hir_cases, bind_group) <- processCase context env c
                 cases <- cases + hir_cases
                 bind_groups <- case bind_group of
@@ -470,10 +470,10 @@ processExpr context env (SE.Expr expr location) = do
                         RI.Record _ _ -> do
                             case HPO.getItem context.program qn of
                                 HPO.Record record -> do
-                                    used_fields <- field_inits |> List.iter |> map (\(SE.RecordConstructionItem field _) -> field) |> toList
+                                    used_fields <- field_inits |> List.iter |> Iterator.map (\(SE.RecordConstructionItem field _) -> field) |> toList
                                     case validateUsedFields used_fields record of
                                         Ok () -> do
-                                            (context, env, args) <- record.fields |> List.iter |> fold (processRecordFieldInit field_inits) (context, env, [])
+                                            (context, env, args) <- record.fields |> List.iter |> Iterator.fold (processRecordFieldInit field_inits) (context, env, [])
                                             (context, env, HE.RecordConstructorCall qn args)
                                         Err (unused_fields, not_real_fields, multi_used) -> do
                                             context <- if not (isEmpty unused_fields)
@@ -496,7 +496,7 @@ processExpr context env (SE.Expr expr location) = do
         SE.RecordUpdate path updates -> do
             (context, env, updates, fields) <- updates
                 |> List.iter
-                |> fold (\(context, env, updates, fields), (SE.RecordConstructionItem field_name expr) -> do
+                |> Iterator.fold (\(context, env, updates, fields), (SE.RecordConstructionItem field_name expr) -> do
                         (Ident f_name _) <- field_name
                         (context, env, hir_expr) <- processExpr context env expr
                         update <- HE.RecordConstructionItem field_name hir_expr
@@ -508,7 +508,7 @@ processExpr context env (SE.Expr expr location) = do
                     ) (context, env, [], empty)
             case getBinding env (getString path) of
                 Some (bind_ref, _) -> do
-                    (context, err) <- fields |> Map.iter |> fold (\(context, err), (field_name, instances) -> do
+                    (context, err) <- fields |> Map.iter |> Iterator.fold (\(context, err), (field_name, instances) -> do
                         if getLength instances > 1
                             then do
                                 context <- addErrorToContext context (MultiUsedFields instances)

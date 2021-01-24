@@ -86,7 +86,7 @@ processConverterConstraint context kind from to = do
 
 processConstraintsStep :: Common.Context -> (Common.Context, Bool)
 processConstraintsStep context = do
-    context.constraints |> List.iter |> fold (\(context, changed), constraint ->
+    context.constraints |> List.iter |> Iterator.fold (\(context, changed), constraint ->
             case constraint of
                 Common.Constraint _ kind from to -> do
                     (context, changed1) <- processConverterConstraint context kind from to
@@ -122,11 +122,20 @@ dumpConstraints context = do
     println "Converters:"
     context.constraints |> List.iter |> forEach (\constraint ->
             case constraint of
-                Common.Constraint expr kind src dest -> do
-                    println "C: {} {} {} -> {} {}" % (expr, src, resolveKind context src, dest, resolveKind context dest)
-                Common.ExternalConverter src dest -> do
-                    println "External converter: {} {} -> {} {}" % (src, resolveKind context src, dest, resolveKind context dest)
-                Common.FieldAccessConverter src field_src dest -> do
+                Common.Constraint expr kind src dest ->
+                    println "C: {} {} {} -> {} {}" %
+                        (expr,
+                        src,
+                        resolveKind context src,
+                        dest,
+                        resolveKind context dest)
+                Common.ExternalConverter src dest ->
+                    println "External converter: {} {} -> {} {}" %
+                        (src,
+                        resolveKind context src,
+                        dest,
+                        resolveKind context dest)
+                Common.FieldAccessConverter src field_src dest ->
                     println "Field access converter: {} {} : {} {} : {} {}" %
                         (src,
                         resolveKind context src,
@@ -171,7 +180,7 @@ collectConvertibleConstraints var context = do
     convertibles <- Set.empty
     (convertibles, _) <- Set.insert convertibles var
     convertibles <- loop convertibles <- convertibles do
-        (convertibles, added) <- context.constraints |> List.iter |> fold (\(convertibles, added), constraint -> do
+        (convertibles, added) <- context.constraints |> List.iter |> Iterator.fold (\(convertibles, added), constraint -> do
                 case constraint of
                     Common.Constraint _ _ a b -> do
                         (convertibles, added1) <- addEdge context convertibles a b
@@ -196,11 +205,11 @@ collectVarConstraints context kinds = do
     // FIXME: use filterMap!
     vars <- kinds |> List.iter |> filter (\kind -> case kind of
         T.VarKind _ -> True
-        _ -> False) |> map (\kind -> case kind of
+        _ -> False) |> Iterator.map (\kind -> case kind of
             T.VarKind v -> v
             _ -> unreachable) |> toList
-    constraints <- vars |> List.iter |> map (\var -> (var, collectConvertibleConstraints var context)) |> toMap
-    constraints <- constraints |> Map.iter |> map (\(key, convertibles) -> do
+    constraints <- vars |> List.iter |> Iterator.map (\var -> (var, collectConvertibleConstraints var context)) |> toMap
+    constraints <- constraints |> Map.iter |> Iterator.map (\(key, convertibles) -> do
             convertibles <- convertibles
                     |> Set.iter
                     |> filter (\var -> List.contains kinds (T.VarKind var) && var != key) |> toSet
@@ -211,7 +220,7 @@ collectVarConstraints context kinds = do
 getSubstitution :: Common.Context -> U.Substitution
 getSubstitution context = do
     sub <- U.createSubstitution
-    sub <- context.ownership_vars |> Map.iter |> fold (\sub, (v, _) -> do
+    sub <- context.ownership_vars |> Map.iter |> Iterator.fold (\sub, (v, _) -> do
             kind <- resolveKind context v
             case kind of
                 T.VarKind new_v -> do
@@ -229,15 +238,15 @@ getSubstitution context = do
 
 borrowCheck :: Common.Context -> Common.Context
 borrowCheck context = do
-    resolved_vars <- context.ownership_vars |> Map.iter |> map (\(v, _) -> (v, resolveKind context v)) |> toMap
-    resolved_vars |> Map.iter |> fold (\context, (v, resolved_kind) -> do
+    resolved_vars <- context.ownership_vars |> Map.iter |> Iterator.map (\(v, _) -> (v, resolveKind context v)) |> toMap
+    resolved_vars |> Map.iter |> Iterator.fold (\context, (v, resolved_kind) -> do
             case resolved_kind of
                 T.BorrowKind id -> do
                     case get context.borrower_sets id of
                         Some borrower_set -> do
                             case get context.moved_vars v of
                                 Some moved_vars -> do
-                                    success <- borrower_set |> Set.iter |> fold (\success, borrower_var -> do
+                                    success <- borrower_set |> Set.iter |> Iterator.fold (\success, borrower_var -> do
                                         if Set.contains moved_vars.vars borrower_var
                                             then False
                                             else success) True
@@ -358,7 +367,7 @@ processFunctionGroup context var_gen group = do
         else do
             //println "Processing group {}" % group
             loop (context, var_gen) <- (context, var_gen) do
-                (context, var_gen, more) <- group |> List.iter |> fold (\(context, var_gen, more), function_id -> do
+                (context, var_gen, more) <- group |> List.iter |> Iterator.fold (\(context, var_gen, more), function_id -> do
                     (context, var_gen, added) <- getOrUpdateInferenceInfo context var_gen function_id
                     more <- if added then True else more
                     (context, var_gen, more)) (context, var_gen, False)
@@ -367,5 +376,5 @@ processFunctionGroup context var_gen group = do
 processProgram :: P.Program -> U.OwnershipVarGenerator -> [DependencyGroup P.Identity] -> (Common.InferenceInfoStore, U.OwnershipVarGenerator)
 processProgram program var_gen function_groups = do
     context <- Common.createGlobalContext program Common.createInferenceInfoStore
-    (context, var_gen) <- function_groups |> List.iter |> fold (\(context, var_gen), group -> processFunctionGroup context var_gen group.items) (context, var_gen)
+    (context, var_gen) <- function_groups |> List.iter |> Iterator.fold (\(context, var_gen), group -> processFunctionGroup context var_gen group.items) (context, var_gen)
     (context.inference_info_store, var_gen)

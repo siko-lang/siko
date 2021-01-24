@@ -103,16 +103,16 @@ getClosureIdentity closure_name = do
 
 createClosures :: Context -> Context
 createClosures context = do
-    context <- context.closure_store.closures |> Map.iter |> fold (\context, (name, closure) -> do
-        context <- closure.instances |> List.iter |> fold (\context, closure_instance -> do
-            (context, mir_args) <- closure_instance.args |> List.iter |> fold (\(context, mir_args), arg -> do
+    context <- context.closure_store.closures |> Map.iter |> Iterator.fold (\context, (name, closure) -> do
+        context <- closure.instances |> List.iter |> Iterator.fold (\context, closure_instance -> do
+            (context, mir_args) <- closure_instance.args |> List.iter |> Iterator.fold (\(context, mir_args), arg -> do
                     (context, mir_arg) <- TS.processType context arg
                     mir_args <- mir_args + [mir_arg]
                     (context, mir_args)
                 ) (context, [])
             variant_name <- getVariantName closure_instance
             record_identity <- getVariantRecordIdentity closure_instance
-            (mir_fields, _) <- mir_args |> List.iter |> fold (\(mir_fields, index), mir_arg -> do
+            (mir_fields, _) <- mir_args |> List.iter |> Iterator.fold (\(mir_fields, index), mir_arg -> do
                     field_name <- getFieldName index
                     mir_field <- MD.RecordField field_name mir_arg
                     mir_fields <- mir_fields + [mir_field]
@@ -128,7 +128,7 @@ createClosures context = do
             context <- context { type_store = type_store }
             context) context
         context) context
-    context.closure_store.closure_calls |> Map.iter |> fold (\context, (closure_call_name, closure_call_identity) -> do
+    context.closure_store.closure_calls |> Map.iter |> Iterator.fold (\context, (closure_call_name, closure_call_identity) -> do
         closure <- case get context.closure_store.closures closure_call_name of
             Some closure -> closure
             None -> panic "Closure not found {}" % closure_call_name
@@ -140,14 +140,14 @@ createClosures context = do
         context <- setTempVarCounter context temp_var_gen
         mir_closure_type <- MT.Adt adt_identity []
         adt <- TS.getAdt context.type_store adt_identity
-        (context, cases, _) <- closure.instances |> List.iter |> fold (\(context, cases, index), closure_instance -> do
+        (context, cases, _) <- closure.instances |> List.iter |> Iterator.fold (\(context, cases, index), closure_instance -> do
             variant <- atIndex adt.variants index
             variant_type <- TS.getRecord context.type_store (MT.getIdentity variant.type)
             ClosureInstanceId id <- closure_instance.id
             (context, prev_var) <- getNextTempVar context
             prev_var_ref <- ME.VarRef prev_var
             (context, prev_var_ref_expr) <- getExpr context (ME.Expr prev_var_ref variant.type)
-            (context, args) <- closure_instance.args |> List.iter |> fold (\(context, arg_refs), arg -> do
+            (context, args) <- closure_instance.args |> List.iter |> Iterator.fold (\(context, arg_refs), arg -> do
                 field_index <- getLength arg_refs
                 field <- atIndex variant_type.fields field_index
                 arg_ref <- ME.FieldAccess field.name prev_var_ref_expr

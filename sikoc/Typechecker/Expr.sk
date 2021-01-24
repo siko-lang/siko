@@ -69,7 +69,7 @@ processClassConstraints :: Context -> U.Substitution -> Result (Context, U.Subst
 processClassConstraints context sub = do
     constraints <- sub.constraints
     sub <- sub { constraints = [] }
-    (context, sub, success) <- constraints |> List.iter |> fold (\(context, sub, success), U.UnificationConstraint class_name type -> do
+    (context, sub, success) <- constraints |> List.iter |> Iterator.fold (\(context, sub, success), U.UnificationConstraint class_name type -> do
             state <- context.state
             case IR.checkInstance state type class_name of
                 Ok (state, cs) -> do
@@ -187,7 +187,7 @@ initializeExprType current_fn_name context (E.Expr expr id location) = do
             context <- addExprType context id (TS.ExprType var)
             context
         E.Tuple args -> do
-            (context, vars) <- args |> List.iter |> fold (\(context, vars), arg -> do
+            (context, vars) <- args |> List.iter |> Iterator.fold (\(context, vars), arg -> do
                 (context, var) <- getNewVar context
                 vars <- vars + [var]
                 (context, vars)) (context, [])
@@ -233,7 +233,7 @@ initializeExprType current_fn_name context (E.Expr expr id location) = do
             context <- addExprType context id (TS.ExprType var)
             context
         E.RecordUpdate ref updates -> do
-            (context, constraints) <- updates |> List.iter |> fold (\(context, constraints), update -> do
+            (context, constraints) <- updates |> List.iter |> Iterator.fold (\(context, constraints), update -> do
                 (E.Expr _ field_expr_id _) <- update.body
                 field_expr_ty <- getExprType context field_expr_id
                 constraints <- constraints + [T.RowConstraint (T.NamedRow (getString update.field_name)) field_expr_ty]
@@ -279,7 +279,7 @@ checkSingleArgCall context (E.Expr _ id location) fn_ty = case fn_ty of
 checkFunctionCall :: Context -> [E.Expr] -> T.Type -> Location -> (Context, Option T.Type)
 checkFunctionCall context args fn_ty call_location = do
     (context, result_ty) <- args |> List.iter
-            |> fold (\(context, result_ty), arg -> case result_ty of
+            |> Iterator.fold (\(context, result_ty), arg -> case result_ty of
                     Some result_ty -> checkSingleArgCall context arg result_ty
                     None -> (context, None)
                 ) (context, Some fn_ty)
@@ -287,7 +287,7 @@ checkFunctionCall context args fn_ty call_location = do
         Some _ -> context
         None -> do
             arg_type_strings <- args |> List.iter
-                            |> map (\(E.Expr _ arg _) -> T.toString (getExprType context arg)) |> toList
+                            |> Iterator.map (\(E.Expr _ arg _) -> T.toString (getExprType context arg)) |> toList
             arg_strings <- "{}" % (join arg_type_strings ", ")
             err <- TooManyArguments arg_strings (T.toString fn_ty) call_location
             state <- addError context.state err
@@ -351,7 +351,7 @@ checkExprType context (E.Expr expr id location) = do
             (context, _) <- matchExprs context id false_id false_location
             context
         E.Tuple args -> do
-            arg_types <- args |> List.iter |> map (\(E.Expr _ arg _) -> getExprType context arg) |> toList
+            arg_types <- args |> List.iter |> Iterator.map (\(E.Expr _ arg _) -> getExprType context arg) |> toList
             (context, _) <- matchExprWith context id (T.Tuple arg_types) location
             context
         E.List args -> if isEmpty args
@@ -359,7 +359,7 @@ checkExprType context (E.Expr expr id location) = do
                 else do
                     (E.Expr _ first_id location) <- atIndex args 0
                     first_ty <- getExprType context first_id
-                    context <- args |> List.iter |> fold (\context, (E.Expr _ arg_id arg_location) -> do
+                    context <- args |> List.iter |> Iterator.fold (\context, (E.Expr _ arg_id arg_location) -> do
                         arg_ty <- getExprType context arg_id
                         (context, _) <- matchExprWith context arg_id first_ty arg_location
                         context) context
@@ -396,7 +396,7 @@ checkExprType context (E.Expr expr id location) = do
         E.Formatter fmt args -> do
             show_class <- PO.FullPath getStdOpsModuleName getShowClassName
             constraints <- [T.ClassConstraint show_class]
-            context <- args |> List.iter |> fold (\context, arg -> do
+            context <- args |> List.iter |> Iterator.fold (\context, arg -> do
                 (E.Expr _ arg_id arg_location) <- arg
                 (context, expected_arg_ty) <- getNewVarWithConstraints context constraints
                 (context, _) <- matchExprWith context arg_id expected_arg_ty arg_location
@@ -406,14 +406,14 @@ checkExprType context (E.Expr expr id location) = do
             (E.Expr _ body_id body_location) <- body
             (E.Case (P.Pattern _ pattern_id pattern_location) (E.Expr _ case_body_id case_body_location)) <- atIndex cases 0
             (context, _) <- matchExprs context id case_body_id location
-            context <- cases |> List.iter |> fold (\context, (E.Case (P.Pattern _ pattern_id pattern_location) (E.Expr _ case_body_id case_body_location)) -> do
+            context <- cases |> List.iter |> Iterator.fold (\context, (E.Case (P.Pattern _ pattern_id pattern_location) (E.Expr _ case_body_id case_body_location)) -> do
                 (context, _) <- matchExprWithPattern context body_id pattern_id pattern_location
                 (context, _) <- matchExprs context id case_body_id case_body_location
                 context) context
-            context <- bind_groups |> List.iter |> fold (\context, bind_group -> do
-                    bind_group.bindings |> Map.iter |> fold (\context, (name, instances) -> do
+            context <- bind_groups |> List.iter |> Iterator.fold (\context, bind_group -> do
+                    bind_group.bindings |> Map.iter |> Iterator.fold (\context, (name, instances) -> do
                             P.BindRef _ first_pattern_id <- atIndex instances 0
-                            instances |> List.iter |> fold (\context, P.BindRef _ pattern_id -> do
+                            instances |> List.iter |> Iterator.fold (\context, P.BindRef _ pattern_id -> do
                                     pattern_location <- TS.getPatternLocation context.type_store pattern_id
                                     (context, _) <- matchPatterns context pattern_id first_pattern_id pattern_location
                                     context
@@ -435,10 +435,10 @@ checkExprType context (E.Expr expr id location) = do
             E.Expr _ initializer_id _ <- initializer
             P.Pattern _ pattern_id pattern_location <- pattern
             (context, _) <- matchExprWithPattern context initializer_id pattern_id pattern_location
-            context <- continues |> List.iter |> fold (\context, (E.ExprRef source ref_location) -> do
+            context <- continues |> List.iter |> Iterator.fold (\context, (E.ExprRef source ref_location) -> do
                 (context, _) <- matchExprs context initializer_id source ref_location
                 context) context
-            context <- breaks |> List.iter |> fold (\context, (E.ExprRef source ref_location) -> do
+            context <- breaks |> List.iter |> Iterator.fold (\context, (E.ExprRef source ref_location) -> do
                 (context, _) <- matchExprs context id source ref_location
                 context) context
             context
@@ -462,7 +462,7 @@ checkUndefinedVars :: Context -> [T.TypeVar] -> T.Type -> [T.TypeVar] -> Locatio
 checkUndefinedVars context undefined_vars type signature_vars location = do
     case type of
         T.Var v constraints if not (isEmpty constraints) -> do
-            row_typed <- constraints |> List.iter |> fold (\row_typed, c -> case c of
+            row_typed <- constraints |> List.iter |> Iterator.fold (\row_typed, c -> case c of
                 T.ClassConstraint _ -> row_typed
                 T.RowConstraint _ _ -> True) False
             if row_typed
@@ -472,7 +472,7 @@ checkUndefinedVars context undefined_vars type signature_vars location = do
         _ -> do
             type_vars <- UT.collectVars [] type
             type_vars |> List.iter
-                    |> fold (\(context, undefined_vars), v -> do
+                    |> Iterator.fold (\(context, undefined_vars), v -> do
                         if contains signature_vars v
                             then (context, undefined_vars)
                             else addUndefinedVarToContext context undefined_vars v location) (context, undefined_vars)

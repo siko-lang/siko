@@ -65,20 +65,20 @@ initTypeResolver module_resolver resolver_state type_arguments = do
 processTypeArgs :: ResolverState -> TypeResolverState -> [Ident] -> Bool -> (ResolverState, [Type])
 processTypeArgs resolver_state state type_arguments do_check = do
     resolver_state <- if do_check
-        then type_arguments |> List.iter |> fold (\resolver_state, arg -> do
+        then type_arguments |> List.iter |> Iterator.fold (\resolver_state, arg -> do
                 n <- getString arg
                 if not (contains state.used_type_args n)
                     then addError resolver_state (UnusedTypeArg arg)
                     else resolver_state) resolver_state
         else resolver_state
-    type_args <- type_arguments |> List.iter |> map (\(Ident n _) -> do
+    type_args <- type_arguments |> List.iter |> Iterator.map (\(Ident n _) -> do
         var <- Option.unwrap (get state.args n)
         FixedTypeArg n var []) |> toList
     (resolver_state, type_args)
 
 addTypeArguments :: TypeResolverState -> ResolverState -> [Ident] -> (TypeResolverState, ResolverState)
 addTypeArguments type_resolver resolver_state type_arguments =
-    type_arguments |> List.iter |> fold (\(type_resolver, resolver_state), arg -> addTypeArgument type_resolver resolver_state arg) (type_resolver, resolver_state)
+    type_arguments |> List.iter |> Iterator.fold (\(type_resolver, resolver_state), arg -> addTypeArgument type_resolver resolver_state arg) (type_resolver, resolver_state)
 
 addTypeArgument :: TypeResolverState -> ResolverState -> Ident -> (TypeResolverState, ResolverState)
 addTypeArgument state resolver_state arg = do
@@ -117,7 +117,7 @@ updateTypeConstraints state type = case type of
             None -> constraints
         FixedTypeArg name var constraints
     Named qn items -> do
-        items <- items |> List.iter |> map (\t -> updateTypeConstraints state t) |> toList
+        items <- items |> List.iter |> Iterator.map (\t -> updateTypeConstraints state t) |> toList
         Named qn items
     Function from to -> do
         from <- updateTypeConstraints state from
@@ -131,7 +131,7 @@ updateTypeConstraints state type = case type of
         item <- updateTypeConstraints state item
         Owner item
     Tuple items -> do
-        items <- items |> List.iter |> map (\t -> updateTypeConstraints state t) |> toList
+        items <- items |> List.iter |> Iterator.map (\t -> updateTypeConstraints state t) |> toList
         Tuple items
 
 getTypeVar :: ResolverState -> (ResolverState, TypeVar)
@@ -141,7 +141,7 @@ getTypeVar resolver_state = do
     (resolver_state, var)
 
 processArgs :: TypeResolverState -> ResolverState -> [ST.TypeSignature] -> (TypeResolverState, ResolverState, [Type])
-processArgs state resolver_state args = args |> List.iter |> fold (\(state, resolver_state, args), arg -> do
+processArgs state resolver_state args = args |> List.iter |> Iterator.fold (\(state, resolver_state, args), arg -> do
                         (state, resolver_state, arg) <- processTypeSignature state resolver_state arg
                         (state, resolver_state, args + [arg])) (state, resolver_state, [])
 

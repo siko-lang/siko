@@ -45,10 +45,10 @@ getBinding env name = do
             None -> None
 
 getAllBindings :: PatternEnvironment -> [String]
-getAllBindings env = env.bindings |> Map.iter |> fold (\names, (name, _) -> names + [name]) []
+getAllBindings env = env.bindings |> Map.iter |> Iterator.fold (\names, (name, _) -> names + [name]) []
 
 envToBindGroup :: PatternEnvironment -> Environment -> BindGroup -> BindGroup
-envToBindGroup pattern_env block_env bind_group = pattern_env.bindings |> Map.iter |> fold (\bind_group, (name, _) -> do
+envToBindGroup pattern_env block_env bind_group = pattern_env.bindings |> Map.iter |> Iterator.fold (\bind_group, (name, _) -> do
             bind_ref <- case getBinding block_env name of
                 Some (bind_ref, _) -> bind_ref
                 None -> panic "Bind {} not found in block env" % name

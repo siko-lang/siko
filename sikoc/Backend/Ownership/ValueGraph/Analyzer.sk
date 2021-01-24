@@ -12,7 +12,7 @@ mergeMoveInfo move_info1 move_info2 = MoveInfo (move_info1.moves + move_info2.mo
 
 addMove :: MoveInfo -> Set E.ExprId -> FieldPath -> (MoveInfo, Set E.ExprId)
 addMove move_info not_moves move = do
-    (moves, not_moves) <- move_info.moves |> List.iter |> fold (\(moves, not_moves), prev_move -> do
+    (moves, not_moves) <- move_info.moves |> List.iter |> Iterator.fold (\(moves, not_moves), prev_move -> do
         if invalidates move prev_move
             then do
                 id <- getId prev_move
@@ -53,7 +53,7 @@ walk move_info not_moves node = case node of
         (move_info, not_moves) <- addMove move_info not_moves (Whole id)
         (move_info, not_moves, Normal)
     Block nodes -> do
-        nodes |> List.iter |> fold (\(move_info, not_moves, mode), node -> do
+        nodes |> List.iter |> Iterator.fold (\(move_info, not_moves, mode), node -> do
             (move_info, not_moves, exec_mode) <- walk move_info not_moves node
             exec_mode <- case (exec_mode, mode) of
                 (Normal, Normal) -> Normal
@@ -63,7 +63,7 @@ walk move_info not_moves node = case node of
         (move_info, not_moves) <- addMove move_info not_moves (Partial id fields)
         (move_info, not_moves, Normal)
     Branches nodes -> do
-        nodes |> List.iter |> fold (\(merged, not_moves, mode), node -> do
+        nodes |> List.iter |> Iterator.fold (\(merged, not_moves, mode), node -> do
             (new_move_info, not_moves, exec_mode) <- walk move_info not_moves node
             case exec_mode of
                 Normal -> do

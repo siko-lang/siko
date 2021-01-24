@@ -5,14 +5,14 @@ import Siko.MIR.Type as T
 
 processArgs a :: a -> [Expr] -> Option (a -> Expr -> (a, Expr)) -> Option (a -> T.Type -> (a, T.Type)) -> (a, [Expr])
 processArgs context args process_expr process_type  = do
-    args |> List.iter |> fold (\(context, args), arg -> do
+    args |> List.iter |> Iterator.fold (\(context, args), arg -> do
         (context, arg) <- traverse context arg process_expr process_type
         args <- args + [arg]
         (context, args)) (context, [])
 
 processBlock a :: a -> [Expr] -> Option (a -> Expr -> (a, Expr)) -> Option (a -> T.Type -> (a, T.Type)) -> (a, [Expr])
 processBlock context exprs process_expr process_type =
-    exprs |> List.iter |> fold (\(context, exprs), expr -> do
+    exprs |> List.iter |> Iterator.fold (\(context, exprs), expr -> do
         (context, expr) <- traverse context expr process_expr process_type
         Expr inner _ _ <- expr
         exprs <- case inner of
@@ -63,7 +63,7 @@ traverse context expr process_expr process_type = do
             (context, arg) <- traverse context arg process_expr process_type
             (context, Expr (Break arg) type id)
         RecordUpdate v updates -> do
-            (context, updates) <- updates |> List.iter |> fold (\(context, updates), update -> do
+            (context, updates) <- updates |> List.iter |> Iterator.fold (\(context, updates), update -> do
                 (context, updated_body) <- traverse context update.body process_expr process_type
                 update <- update { body = updated_body }
                 updates <- updates + [update]
@@ -75,7 +75,7 @@ traverse context expr process_expr process_type = do
             (context, Expr (Loop v initializer body continues breaks) type id)
         CaseOf body cases -> do
             (context, body) <- traverse context body process_expr process_type
-            (context, cases) <- cases |> List.iter |> fold (\(context, cases), case_branch -> do
+            (context, cases) <- cases |> List.iter |> Iterator.fold (\(context, cases), case_branch -> do
                 (context, checker) <- case case_branch.checker of
                     VariantChecker index var type -> do
                         (context, type) <- case process_type of

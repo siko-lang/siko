@@ -153,7 +153,7 @@ getFunctions :: Program -> [F.Function]
 getFunctions program =
     program.items |> Map.iter |> filter (\(qn, item) -> case item of
         Function _ -> True
-        _ -> False) |> map (\(qn, item) -> case item of
+        _ -> False) |> Iterator.map (\(qn, item) -> case item of
             Function f -> f
             _ -> panic "Function is not a function") |> toList
 
@@ -161,7 +161,7 @@ getAdts :: Program -> [D.AlgebraicDataType]
 getAdts program =
     program.items |> Map.iter |> filter (\(qn, item) -> case item of
         Adt adt -> True
-        _ -> False) |> map (\(qn, item) -> case item of
+        _ -> False) |> Iterator.map (\(qn, item) -> case item of
             Adt adt -> adt
             _ -> panic "Adt is not an adt") |> toList
 
@@ -169,7 +169,7 @@ getRecords :: Program -> [D.Record]
 getRecords program =
     program.items |> Map.iter |> filter (\(qn, item) -> case item of
         Record record -> True
-        _ -> False) |> map (\(qn, item) -> case item of
+        _ -> False) |> Iterator.map (\(qn, item) -> case item of
             Record record -> record
             _ -> panic "Record is not a record") |> toList
 
@@ -177,13 +177,13 @@ getClasses :: Program -> [C.Class]
 getClasses program =
     program.items |> Map.iter |> filter (\(qn, item) -> case item of
         Class _ -> True
-        _ -> False) |> map (\(qn, item) -> case item of
+        _ -> False) |> Iterator.map (\(qn, item) -> case item of
             Class c -> c
             _ -> panic "Class is not a Class") |> toList
 
 getInstances :: Program -> [C.Instance]
 getInstances program =
-    program.instances |> Map.iter |> map (\(id, i) -> i) |> toList
+    program.instances |> Map.iter |> Iterator.map (\(id, i) -> i) |> toList
 
 updateInstanceMemberType :: Program -> FullyQualifiedName -> T.Type -> Program
 updateInstanceMemberType program name type = do

@@ -7,7 +7,7 @@ import Hack
 walk :: ValueGraphNode -> D.Graph -> (D.Graph, D.NodeId, D.NodeId)
 walk node dot_graph = case node of
     Block items -> do
-        (dot_graph, first, last) <- items |> List.iter |> fold (\(dot_graph, first, last), item -> do
+        (dot_graph, first, last) <- items |> List.iter |> Iterator.fold (\(dot_graph, first, last), item -> do
             (dot_graph, start, end) <- walk item dot_graph
             first <- case first of
                 Some first -> first
@@ -36,7 +36,7 @@ walk node dot_graph = case node of
     Branches items -> do
         (dot_graph, choice_id) <- D.addNode dot_graph "Choice"
         (dot_graph, choice_end_id) <- D.addNode dot_graph "ChoiceEnd"
-        (dot_graph) <- items |> List.iter |> fold (\dot_graph, item -> do
+        (dot_graph) <- items |> List.iter |> Iterator.fold (\dot_graph, item -> do
             (dot_graph, start, end) <- walk item dot_graph
             dot_graph <- D.addEdge dot_graph None choice_id start
             dot_graph <- D.addEdge dot_graph None end choice_end_id

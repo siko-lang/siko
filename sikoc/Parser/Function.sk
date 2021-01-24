@@ -70,7 +70,7 @@ parseFunction state = do
                     Ok (state, Left function)
                 Some DoubleColon -> do
                     state <- try expect state Kind.DoubleColon
-                    (args, errors) <- fold checkTypeArgs ([], []) (args |> List.iter)
+                    (args, errors) <- Iterator.fold checkTypeArgs ([], []) (args |> List.iter)
                     state <- state { errors = state.errors + errors }
                     (state, constraints) <- try parseClassConstraints state
                     (state, type_signature) <- try parseTypeSignature state False False

@@ -36,7 +36,7 @@ processRecordFieldPattern field_patterns (context, pattern_env, env, args) (HD.R
 
 processPatterns :: Context -> PatternEnvironment -> Environment -> [SP.Pattern] -> (Context, PatternEnvironment, Environment, [HP.Pattern])
 processPatterns context pattern_env env patterns = do
-    (context, pattern_env, env, hir_patterns) <- patterns |> List.iter |> fold (\(context, pattern_env, env, hir_patterns), pattern -> do
+    (context, pattern_env, env, hir_patterns) <- patterns |> List.iter |> Iterator.fold (\(context, pattern_env, env, hir_patterns), pattern -> do
                 (context, pattern_env, env, hir_pattern) <- processPattern context pattern_env env pattern
                 hir_patterns <- hir_patterns + [hir_pattern]
                 (context, pattern_env, env, hir_patterns)) (context, pattern_env, env, [])
@@ -53,7 +53,7 @@ processPattern context pattern_env env (SP.Pattern pattern location) = do
             env <- addBinding env bind_ref
             (context, pattern_env, env, HP.Binding bind_ref)
         SP.Tuple items -> do
-            (context, pattern_env, env, hir_items) <- items |> List.iter |> fold (\(context, pattern_env, env, items), item -> do
+            (context, pattern_env, env, hir_items) <- items |> List.iter |> Iterator.fold (\(context, pattern_env, env, items), item -> do
                 (context, pattern_env, env, hir_item) <- processPattern context pattern_env env item
                 items <- items + [hir_item]
                 (context, pattern_env, env, items)) (context, pattern_env, env, [])
@@ -131,10 +131,10 @@ processPattern context pattern_env env (SP.Pattern pattern location) = do
                     context :: Context <- context // FIXME: type inference
                     case HPO.getItem context.program qn of
                         HPO.Record record -> do
-                            used_fields <- field_patterns |> List.iter |> map (\(SP.RecordFieldPattern field _) -> field) |> toList
+                            used_fields <- field_patterns |> List.iter |> Iterator.map (\(SP.RecordFieldPattern field _) -> field) |> toList
                             case validateUsedFields used_fields record of
                                 Ok () -> do
-                                    (context, pattern_env, env, args) <- record.fields |> List.iter |> fold (processRecordFieldPattern field_patterns) (context, pattern_env, env, [])
+                                    (context, pattern_env, env, args) <- record.fields |> List.iter |> Iterator.fold (processRecordFieldPattern field_patterns) (context, pattern_env, env, [])
                                     (context, pattern_env, env, HP.Record qn args)
                                 Err (unused_fields, not_real_fields, multi_used) -> do
                                     context <- if not (isEmpty unused_fields)

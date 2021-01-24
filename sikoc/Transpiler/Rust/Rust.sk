@@ -103,19 +103,19 @@ generateExpr :: Expr -> Indent -> String
 generateExpr expr indent = case expr of
     Block args -> do
             inner <- inc indent
-            args <- args |> List.iter |> map (\arg -> do
+            args <- args |> List.iter |> Iterator.map (\arg -> do
                 "{}{}" % (inner, generateExpr arg inner)) |> toList
             s <- "{" + "\n{}\n{}" % (join args ";\n", indent) + "}"
             s
     FunctionCall name args -> do
-        args <- args |> List.iter |> map (\arg -> generateExpr arg (Indent 0)) |> toList
+        args <- args |> List.iter |> Iterator.map (\arg -> generateExpr arg (Indent 0)) |> toList
         "{}({})" % (name, join args ", ")
     StructCtor name fields -> do
-        fields <- fields |> List.iter |> map (\field -> do
+        fields <- fields |> List.iter |> Iterator.map (\field -> do
             "{}: {}" % (field.name, generateExpr field.body (Indent 0))) |> toList
         name + " { " + (join fields ", ") + " }"
     MethodCall receiver name args -> do
-        args <- args |> List.iter |> map (\arg -> generateExpr arg (Indent 0)) |> toList
+        args <- args |> List.iter |> Iterator.map (\arg -> generateExpr arg (Indent 0)) |> toList
         receiver <- generateExpr receiver (Indent 0)
         "{}.{}({})" % (receiver, name, join args ", ")
     IntegerLiteral lit -> lit
@@ -142,7 +142,7 @@ generateExpr expr indent = case expr of
     Match body cases -> do
         body <- generateExpr body (Indent 0)
         inner <- inc indent
-        cases <- cases |> List.iter |> map (\c -> do
+        cases <- cases |> List.iter |> Iterator.map (\c -> do
             (show inner ) + "{} => " % (generatePattern c.pattern c.guard) + "{" +  "{}" % (generateExpr c.body inner) + "}") |> toList
         ("match {} " % body) + "{" + "\n{}\n{}" % (join cases "\n", indent) + "}"
     FieldAccess name receiver -> do
@@ -153,7 +153,7 @@ generateExpr expr indent = case expr of
     Deref rhs -> "(*({}))" % generateExpr rhs (Indent 0)
     Loop args -> do
             inner <- inc indent
-            args <- args |> List.iter |> map (\arg -> do
+            args <- args |> List.iter |> Iterator.map (\arg -> do
                 "{}{}" % (inner, generateExpr arg inner)) |> toList
             s <- "loop {" + "\n{}\n{}" % (join args ";\n", indent) + "}"
             s
@@ -168,7 +168,7 @@ generateExpr expr indent = case expr of
     Assign lhs rhs -> do
         "{} = {}" % (generateExpr lhs (Indent 0), generateExpr rhs (Indent 0))
     List args -> do
-        args <- args |> List.iter |> map (\arg -> do
+        args <- args |> List.iter |> Iterator.map (\arg -> do
                 "{}" % generateExpr arg (Indent 0)) |> toList
         "vec![{}]" % (join args ", ")
     Lambda args body -> "{} {}" % (args, generateExpr body (Indent 0))
@@ -180,12 +180,12 @@ generateExpr expr indent = case expr of
 generateStruct :: Struct -> String
 generateStruct struct = do
     indent <- Indent 2
-    fields <- struct.fields |> List.iter |> fold (\fields, field -> do
+    fields <- struct.fields |> List.iter |> Iterator.fold (\fields, field -> do
         f <- "{}{}: {}," % (indent, field.name, T.showAll field.type)
         fields <- fields + [f]
         fields) []
     content <- ""
-    content <- struct.attributes |> List.iter |> fold (\content, attribute -> do
+    content <- struct.attributes |> List.iter |> Iterator.fold (\content, attribute -> do
         case attribute of
             Clone -> content + "#[derive(Clone)]\n") content
     name <- "{}<{}>" % (struct.name, join struct.lifetimes ", ")
@@ -195,12 +195,12 @@ generateStruct struct = do
 generateEnum :: Enum -> String
 generateEnum enum = do
     indent <- Indent 2
-    variants <- enum.variants |> List.iter |> fold (\variants, variant -> do
+    variants <- enum.variants |> List.iter |> Iterator.fold (\variants, variant -> do
         v <- "{}{}({})," % (indent, variant.name, T.showAll variant.type)
         variants <- variants + [v]
         variants) []
     content <- ""
-    content <- enum.attributes |> List.iter |> fold (\content, attribute -> do
+    content <- enum.attributes |> List.iter |> Iterator.fold (\content, attribute -> do
         case attribute of
             Clone -> content + "#[derive(Clone)]\n") content
     name <- "{}<{}>" % (enum.name, join enum.lifetimes ", ")
@@ -209,7 +209,7 @@ generateEnum enum = do
 
 generateFunction :: Function -> Indent -> String
 generateFunction function indent = do
-    args <- function.args |> List.iter |> map (\(arg_name, type) -> "{}: {}" % (arg_name, T.showAll type)) |> toList
+    args <- function.args |> List.iter |> Iterator.map (\(arg_name, type) -> "{}: {}" % (arg_name, T.showAll type)) |> toList
     args <- if function.is_method
         then ["&self"] + args
         else args
@@ -221,7 +221,7 @@ generateTraitImpl :: TraitImpl -> String
 generateTraitImpl impl = do
     signature <- "impl {} for {}" % (impl.trait_name, T.showAll impl.type) + " {"
     indent <- Indent 2
-    body <- impl.methods |> List.iter |> fold (\body, method -> do
+    body <- impl.methods |> List.iter |> Iterator.fold (\body, method -> do
         m <- generateFunction method indent
         body + "\n" + m) ""
     signature + body + "\n}"
@@ -236,9 +236,9 @@ generateProgram program = do
     content <- content + "#![allow(unused_parens)]\n"
     content <- content + "#![allow(unreachable_code)]\n"
     content <- content + "#![allow(path_statements)]\n"
-    content <- program.structs |> List.iter |> fold (\content, s -> content + "\n\n" + generateStruct s) content
-    content <- program.enums |> List.iter |> fold (\content, e -> content + "\n\n" + generateEnum e) content
-    content <- program.functions |> List.iter |> fold (\content, f -> content + "\n\n" + generateFunction f (Indent 0)) content
-    content <- program.impls |> List.iter |> fold (\content, i -> content + "\n\n" + generateTraitImpl i) content
+    content <- program.structs |> List.iter |> Iterator.fold (\content, s -> content + "\n\n" + generateStruct s) content
+    content <- program.enums |> List.iter |> Iterator.fold (\content, e -> content + "\n\n" + generateEnum e) content
+    content <- program.functions |> List.iter |> Iterator.fold (\content, f -> content + "\n\n" + generateFunction f (Indent 0)) content
+    content <- program.impls |> List.iter |> Iterator.fold (\content, i -> content + "\n\n" + generateTraitImpl i) content
     content <- content + "\n\nfn main() " + "{\n" + (show (Indent 2)) + ("{}();\n" % program.main_function_name) + "}"
     content

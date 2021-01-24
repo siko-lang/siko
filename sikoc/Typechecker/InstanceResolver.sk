@@ -168,12 +168,12 @@ hasInstance state sub type class_name = do
 checkConflicts :: TypecheckerState -> TypecheckerState
 checkConflicts state = do
     instance_resolver <- state.instance_resolver
-    state <- instance_resolver.instance_map |> Map.iter |> fold (\state, (class_name, instance_info_map) -> do
+    state <- instance_resolver.instance_map |> Map.iter |> Iterator.fold (\state, (class_name, instance_info_map) -> do
         generic_instance_location <- case get instance_info_map Generic of
             Some i -> do
                 Some (getLocation i instance_resolver)
             None -> None
-        state <- instance_info_map |> Map.iter |> fold (\state, (_, i) -> do
+        state <- instance_info_map |> Map.iter |> Iterator.fold (\state, (_, i) -> do
                 case generic_instance_location of
                     Some generic_instance_location -> do
                         location <- getLocation i instance_resolver
@@ -200,7 +200,7 @@ checkInstance state type class_name = do
             case hasInstance state sub type class_name of
                 Ok (state, sub) -> do
                     sub :: U.Substitution <- sub // FIXME
-                    (state, cs, success) <- sub.constraints |> List.iter |> fold (\(state, cs, success), c -> do
+                    (state, cs, success) <- sub.constraints |> List.iter |> Iterator.fold (\(state, cs, success), c -> do
                             U.UnificationConstraint c_name c_type <- c
                             if c_name == class_name && c_type == type
                                 then (state, cs, success)
@@ -220,7 +220,7 @@ checkInstance state type class_name = do
 
 mergeResolverConstraintsIntoSubstitution :: TypecheckerState -> [(T.TypeVar, P.FullyQualifiedName)] -> U.Substitution -> (TypecheckerState, U.Substitution)
 mergeResolverConstraintsIntoSubstitution state constraints sub = do
-    constraints |> List.iter |> fold (\(state, sub), (var, class_name) -> do
+    constraints |> List.iter |> Iterator.fold (\(state, sub), (var, class_name) -> do
         (var_gen, new_var) <- getNewTypeVar state.var_gen
         state <- state { var_gen = var_gen }
         new_type <- T.Var new_var [T.ClassConstraint class_name]
@@ -242,7 +242,7 @@ checkInstanceDependenciesForInstance state type class_name location = do
             class_info :: ClassInfo <- class_info // FIXME:
             class_info.direct_dependencies
         None -> panic "Class {} not found in class store" % class_name
-    state <- deps |> List.iter |> fold (\state, dep -> do
+    state <- deps |> List.iter |> Iterator.fold (\state, dep -> do
         state <- case checkInstance state type dep of
             Ok (state, cs) -> do
                 state :: TypecheckerState <- state // FIXME
@@ -258,8 +258,8 @@ checkInstanceDependenciesForInstance state type class_name location = do
 checkInstanceDependencies :: TypecheckerState -> TypecheckerState
 checkInstanceDependencies state = do
     instance_resolver <- state.instance_resolver
-    state <- instance_resolver.instance_map |> Map.iter |> fold (\state, (class_name, instance_info_map) -> do
-        state <- instance_info_map |> Map.iter |> fold (\state, (_, i) -> do
+    state <- instance_resolver.instance_map |> Map.iter |> Iterator.fold (\state, (class_name, instance_info_map) -> do
+        state <- instance_info_map |> Map.iter |> Iterator.fold (\state, (_, i) -> do
                     location <- getLocation i instance_resolver
                     case i of
                         UserDefinedInstanceInfo instance_type id location -> do

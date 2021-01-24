@@ -1,7 +1,6 @@
 module Siko.Resolver.Import(processImports, ImportedItem, unpackItemRef, ItemRef) where
 
 import Map
-import Siko.Syntax.Program
 import Siko.Syntax.Ident
 import Siko.Resolver.Item
 import Siko.Syntax.Import
@@ -33,7 +32,7 @@ importLocalItem module_name item = do
 
 processLocals :: String -> [Item] -> [ImportedItem]
 processLocals module_name locals = do
-    imported_items <- locals |> List.iter |> map (importLocalItem module_name) |> fold (\total, items -> total + items)  []
+    imported_items <- locals |> List.iter |> Iterator.map (importLocalItem module_name) |> Iterator.fold (\total, items -> total + items)  []
     imported_items
 
 importExportedItem :: Option Ident -> String -> Bool -> Item -> [ImportedItem]
@@ -45,7 +44,7 @@ importExportedItem alternative_name module_name implicit item = do
             [FullyQualifiedNameRef (FullPath alternative_name name)]
         None ->
             [FullyQualifiedNameRef (FullPath module_name name), Local name]
-    names |> List.iter |> map (\name -> ImportedItem name module_name item implicit) |> toList
+    names |> List.iter |> Iterator.map (\name -> ImportedItem name module_name item implicit) |> toList
 
 processImport :: Map String [Item] -> R.ResolverState -> Import -> (R.ResolverState, [ImportedItem])
 processImport exported_items state i = case i of
@@ -56,8 +55,8 @@ processImport exported_items state i = case i of
             Some exported_items -> do
                 imported_items <- exported_items
                                    |> List.iter
-                                   |> map (importExportedItem alternative_name module_name False)
-                                   |> fold (\total, items -> total + items) []
+                                   |> Iterator.map (importExportedItem alternative_name module_name False)
+                                   |> Iterator.fold (\total, items -> total + items) []
                 (state, imported_items)
             None -> do
                 state <- addError state (ModuleNotFound name)
@@ -67,8 +66,8 @@ processImport exported_items state i = case i of
             Some exported_items -> do
                 imported_items <- exported_items
                                    |> List.iter
-                                   |> map (importExportedItem None module_name True)
-                                   |> fold (\total, items -> total + items) []
+                                   |> Iterator.map (importExportedItem None module_name True)
+                                   |> Iterator.fold (\total, items -> total + items) []
                 (state, imported_items)
             None -> do
                 (state, [])
@@ -79,8 +78,8 @@ processImport exported_items state i = case i of
                 imported_items <- exported_items
                                    |> List.iter
                                    |> filter (matchFilters filters)
-                                   |> map (importExportedItem alternative_name module_name False)
-                                   |> fold (\total, items -> total + items) []
+                                   |> Iterator.map (importExportedItem alternative_name module_name False)
+                                   |> Iterator.fold (\total, items -> total + items) []
                 (state, imported_items)
             None -> do
                 state <- addError state (ModuleNotFound name)
@@ -88,7 +87,7 @@ processImport exported_items state i = case i of
 
 processModuleImports :: [ImportedItem] -> Map String [Item] -> R.ResolverState -> String -> [Import] -> (R.ResolverState, [ImportedItem])
 processModuleImports imported_items exported_items state module_name imports = do
-    imports |> List.iter |> fold (\(state, all_imported_items), i -> do
+    imports |> List.iter |> Iterator.fold (\(state, all_imported_items), i -> do
                                                 (state, imported_items) <- processImport exported_items state i
                                                 (state, all_imported_items + imported_items)) (state, imported_items)
 
@@ -100,13 +99,13 @@ checkHiddenImport i (ImportedItem _ source_module item _) =
             if module_name == source_module
                 then
                     do
-                        hidden_items <- hidden_items |> List.iter |> map (\name -> getString name) |> toList
+                        hidden_items <- hidden_items |> List.iter |> Iterator.map (\name -> getString name) |> toList
                         contains hidden_items (getItemName item)
                 else False
         _ -> False
 
 checkHiddenImports :: [Import] -> ImportedItem -> Bool
-checkHiddenImports imports imported_item = imports |> List.iter |> fold (\total, i -> total || checkHiddenImport i imported_item) False
+checkHiddenImports imports imported_item = imports |> List.iter |> Iterator.fold (\total, i -> total || checkHiddenImport i imported_item) False
 
 processModule :: String -> [Item] -> [Import] -> R.ResolverState -> Map String [Item] -> (R.ResolverState, [ImportedItem])
 processModule module_name locals imports state exports = do
@@ -117,7 +116,7 @@ processModule module_name locals imports state exports = do
 
 processImports :: R.ResolverState -> Map String [Item] -> Map String [Item] -> Map String [Import] -> (R.ResolverState, Map String [ImportedItem])
 processImports state locals exports imports = do
-    (imported_items, state) <- locals |> Map.iter |> fold (\(all_imported_items, state), (module_name, locals) -> do
+    (imported_items, state) <- locals |> Map.iter |> Iterator.fold (\(all_imported_items, state), (module_name, locals) -> do
                                     module_imports <- Option.unwrap (get imports module_name)
                                     (state, imported_items) <- processModule module_name locals module_imports state exports
                                     (all_imported_items, _) <- insert all_imported_items module_name imported_items

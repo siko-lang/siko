@@ -25,7 +25,7 @@ createValueGraphs = ValueGraphs empty
 
 createBlock :: E.Var -> [ValueGraphs]  -> ValueGraphNode
 createBlock var graphs = do
-    merged <- graphs |> List.iter |> fold (\merged, graph -> do
+    merged <- graphs |> List.iter |> Iterator.fold (\merged, graph -> do
         l <- case get graph.nodes var of
             Some (Block n) -> n
             Some n -> [n]
@@ -37,7 +37,7 @@ createBlock var graphs = do
 
 createBranch :: E.Var -> [ValueGraphs] -> ValueGraphNode
 createBranch var branch_graphs = do
-    nodes <- branch_graphs |> List.iter |> fold (\nodes, graphs -> do
+    nodes <- branch_graphs |> List.iter |> Iterator.fold (\nodes, graphs -> do
         case get graphs.nodes var of
             Some n -> nodes + [n]
             None -> nodes + [Empty]) []
@@ -62,13 +62,13 @@ mergeLoop graphs = do
 
 merge :: [ValueGraphs] -> (E.Var -> ValueGraphNode) -> ValueGraphs
 merge input_graphs factory_fn = do
-    keys <- input_graphs |> List.iter |> fold (\keys, g -> getKeys g.nodes + keys) []
+    keys <- input_graphs |> List.iter |> Iterator.fold (\keys, g -> getKeys g.nodes + keys) []
     keys <- keys |> sort |> dedup
-    nodes <- keys |> List.iter |> map (\k -> do
+    nodes <- keys |> List.iter |> Iterator.map (\k -> do
         node <- factory_fn k
         (k, node)) |> toList
     graphs <- createValueGraphs
-    nodes |> List.iter |> fold (\graphs, (k, node) -> addNode graphs k node) graphs
+    nodes |> List.iter |> Iterator.fold (\graphs, (k, node) -> addNode graphs k node) graphs
 
 unpack :: ValueGraphNode -> ValueGraphNode
 unpack node = case node of
@@ -87,5 +87,5 @@ unpack node = case node of
 
 unpackGraphs :: ValueGraphs -> ValueGraphs
 unpackGraphs graphs = do
-    nodes <- graphs.nodes |> Map.iter |> map (\(var, n) -> (var, unpack n)) |> toMap
+    nodes <- graphs.nodes |> Map.iter |> Iterator.map (\(var, n) -> (var, unpack n)) |> toMap
     graphs { nodes = nodes }

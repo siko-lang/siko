@@ -78,7 +78,7 @@ convertLifetime :: LT.Lifetime -> RT.Lifetime
 convertLifetime LT.Lifetime i = RT.Lifetime i
 
 convertLifetimes :: [LT.Lifetime] -> [RT.Lifetime]
-convertLifetimes lifetimes = lifetimes |> List.iter |> map (\l -> convertLifetime l) |> toList
+convertLifetimes lifetimes = lifetimes |> List.iter |> Iterator.map (\l -> convertLifetime l) |> toList
 
 convertType :: LT.Type -> RT.Type
 convertType lir_type = do
@@ -140,7 +140,7 @@ convertExpr context lir_expr = do
     LE.Expr expr expr_type _ <- lir_expr
     case expr of
         LE.Do args -> do
-            args <- args |> List.iter |> map (\arg -> convertExpr context arg) |> toList
+            args <- args |> List.iter |> Iterator.map (\arg -> convertExpr context arg) |> toList
             last <- atIndex args (getLength args - 1)
             is_var_decl <- case last of
                 R.VarDecl _ _ _ -> True
@@ -153,7 +153,7 @@ convertExpr context lir_expr = do
                     R.Block (args + [unit])
                 else R.Block args
         LE.StaticFunctionCall id args -> do
-            args <- args |> List.iter |> map (\arg -> convertExpr context arg) |> toList
+            args <- args |> List.iter |> Iterator.map (\arg -> convertExpr context arg) |> toList
             case get context.constructors id of
                 Some ctor -> do
                     ctor :: Constructor <- ctor // FIXME
@@ -178,7 +178,7 @@ convertExpr context lir_expr = do
             LE.Arg index -> R.VarRef (getArgName index)
             _ -> R.VarRef (show v)
         LE.CaseOf body cases -> do
-            cases <- cases |> List.iter |> map (\c -> do
+            cases <- cases |> List.iter |> Iterator.map (\c -> do
                 (case_pattern, case_guard) <- convertPattern context.type_store c.checker
                 case_body <- convertExpr context c.body
                 R.MatchCase case_pattern case_body case_guard) |> toList
@@ -211,14 +211,14 @@ convertExpr context lir_expr = do
             n <- show v
             new <- "new"
             var_decl <- R.VarDeclMut new (R.VarRef n) None
-            assignments <- items |> List.iter |> map (\update -> do
+            assignments <- items |> List.iter |> Iterator.map (\update -> do
             lhs <- (R.FieldAccess (getRustFriendlyName update.field_name) (R.VarRef new))
             rhs <- (convertExpr context update.body)
             R.Assign lhs rhs) |> toList
             R.Block ([var_decl] + assignments + [R.VarRef new])
         LE.List args -> do
             rust_type <- convertType expr_type
-            args <- args |> List.iter |> map (\arg -> convertExpr context arg) |> toList
+            args <- args |> List.iter |> Iterator.map (\arg -> convertExpr context arg) |> toList
             R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.List args)]
         LE.Clone expr -> do
             expr <- convertExpr context expr
@@ -250,7 +250,7 @@ convertRecord record external_struct_gens = do
                     struct_gen info.type_args
                 None -> panic "Extern struct {}/{} is not implemented" % (mod, name)
         None ->
-            record.fields |> List.iter |> map (\field -> do
+            record.fields |> List.iter |> Iterator.map (\field -> do
                 R.StructField (getRustFriendlyName field.name) (convertType field.type)) |> toList
     R.Struct name lifetimes rust_fields [R.Clone]
 
@@ -258,7 +258,7 @@ convertAdt :: LD.AlgebraicDataType -> R.Enum
 convertAdt adt = do
     name <- getRustIdentity adt.id
     lifetimes <- convertLifetimes adt.lifetimes
-    rust_variants <- adt.variants |> List.iter |> map (\variant -> do
+    rust_variants <- adt.variants |> List.iter |> Iterator.map (\variant -> do
                 R.Variant (getRustFriendlyName variant.name) (convertType variant.type)) |> toList
     R.Enum name lifetimes rust_variants [R.Clone]
 
@@ -335,7 +335,7 @@ createRecordCtor result context args = do
 
 createConstructors :: Program -> Map Identity Constructor
 createConstructors program = do
-    constructors <- program.functions |> Map.iter |> fold (\constructors, (_, lir_function) -> do
+    constructors <- program.functions |> Map.iter |> Iterator.fold (\constructors, (_, lir_function) -> do
         rust_result <- convertType lir_function.type.result
         ctor <- case lir_function.kind of
             Normal lir_body -> return constructors
@@ -352,13 +352,13 @@ transpile program = do
     external_structs <- initializeExternalStructFields
     type_store <- createTypeStore
     rust_program <- R.Program [] [] [] [] (getRustIdentity getMainIdentity)
-    (type_store, rust_program) <- program.adts |> Map.iter |> fold (\(type_store, rust_program), (_, adt) -> do
+    (type_store, rust_program) <- program.adts |> Map.iter |> Iterator.fold (\(type_store, rust_program), (_, adt) -> do
         enum <- convertAdt adt
         type_store <- addEnum type_store enum
         enums <- rust_program.enums + [enum]
         rust_program <- rust_program { enums = enums }
         (type_store, rust_program)) (type_store, rust_program)
-    (type_store, rust_program) <- program.records |> Map.iter |> fold (\(type_store, rust_program), (_, record) -> do
+    (type_store, rust_program) <- program.records |> Map.iter |> Iterator.fold (\(type_store, rust_program), (_, record) -> do
         struct <- convertRecord record external_structs
         type_store <- addStruct type_store struct
         structs <- rust_program.structs + [struct]
@@ -366,19 +366,19 @@ transpile program = do
         (type_store, rust_program)) (type_store, rust_program)
     constructors <- createConstructors program
     context <- Context type_store None constructors
-    rust_program <- program.adts |> Map.iter |> fold (\rust_program, (_, adt) -> do
+    rust_program <- program.adts |> Map.iter |> Iterator.fold (\rust_program, (_, adt) -> do
             name <- getRustIdentity adt.id
-            adt.external_class_impls |> List.iter |> fold (\rust_program, (external_class_impl, impl_body_fragment) -> do
+            adt.external_class_impls |> List.iter |> Iterator.fold (\rust_program, (external_class_impl, impl_body_fragment) -> do
                 processImpl program rust_program context name external_class_impl impl_body_fragment) rust_program
         ) rust_program
-    rust_program <- program.records |> Map.iter |> fold (\rust_program, (_, record) -> do
+    rust_program <- program.records |> Map.iter |> Iterator.fold (\rust_program, (_, record) -> do
             name <- getRustIdentity record.id
-            record.external_class_impls |> List.iter |> fold (\rust_program, (external_class_impl, impl_body_fragment) -> do
+            record.external_class_impls |> List.iter |> Iterator.fold (\rust_program, (external_class_impl, impl_body_fragment) -> do
                 processImpl program rust_program context name external_class_impl impl_body_fragment) rust_program
         ) rust_program
-    rust_program <- program.functions |> Map.iter |> fold (\rust_program, (_, lir_function) -> do
+    rust_program <- program.functions |> Map.iter |> Iterator.fold (\rust_program, (_, lir_function) -> do
         rust_function_name <- getRustIdentity lir_function.id
-        (rust_args, _) <- lir_function.type.args |> List.iter |> fold (\(args, index), arg -> do
+        (rust_args, _) <- lir_function.type.args |> List.iter |> Iterator.fold (\(args, index), arg -> do
             arg_type <- convertType arg
             arg_name <- getArgName index
             args <- args + [(arg_name, arg_type)]

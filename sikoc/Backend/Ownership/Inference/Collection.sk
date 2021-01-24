@@ -91,7 +91,7 @@ getRecordFieldType record name =
 
 mergeMovedVars :: [Common.MovedVars] -> Common.MovedVars
 mergeMovedVars moved_var_sets = do
-    moved_var_sets |> List.iter |> fold (\merged, moved_vars -> do
+    moved_var_sets |> List.iter |> Iterator.fold (\merged, moved_vars -> do
             // FIXME: set merge does not work in rust interpreter, fix this!
             // merged_vars <- merged.vars + moved_vars.vars
             vs <- merged.vars.items + moved_vars.vars.items
@@ -121,7 +121,7 @@ processExpr context moved_vars expr = do
     //println "Starting collection of {} = {} :: {}" % (id, E.short expr, type)
     (context, moved_vars) <- case s_expr of
         E.Do items -> do
-            (context, moved_vars) <- items |> List.iter |> fold (\(context, moved_vars), item -> processExpr context moved_vars item) (context, moved_vars)
+            (context, moved_vars) <- items |> List.iter |> Iterator.fold (\(context, moved_vars), item -> processExpr context moved_vars item) (context, moved_vars)
             E.Expr _ last_type _ <- atIndex items (getLength items - 1)
             context <- equalConstraints context moved_vars last_type type
             (context, moved_vars)
@@ -136,12 +136,12 @@ processExpr context moved_vars expr = do
                     Common.FunctionInferenceInfo function.type Map.empty
             (context, info) <- Common.cloneFunctionInfo context info
             //println "Cloned function {} {}" % (f_id, info)
-            context <- info.var_constraints |> Map.iter |> fold (\context, (src_var, constraints) -> do
-                    constraints |> Set.iter |> fold (\context, dest_var -> do
+            context <- info.var_constraints |> Map.iter |> Iterator.fold (\context, (src_var, constraints) -> do
+                    constraints |> Set.iter |> Iterator.fold (\context, dest_var -> do
                         //println "Adding external converter {} => {}" % (src_var, dest_var)
                         Common.addConstraint context (Common.ExternalConverter src_var dest_var)) context) context
             function_type <- info.function_type
-            (context, moved_vars) <- args |> List.iter |> fold (\(context, moved_vars), arg -> processExpr context moved_vars arg) (context, moved_vars)
+            (context, moved_vars) <- args |> List.iter |> Iterator.fold (\(context, moved_vars), arg -> processExpr context moved_vars arg) (context, moved_vars)
             context <- List.zipSE context args function_type.args (\context, index, arg_expr, f_arg_type -> do
                 E.Expr _ arg_expr_type _ <- arg_expr
                 //println " {} === {}" % (arg_expr_type, f_arg_type)
@@ -264,18 +264,18 @@ processExpr context moved_vars expr = do
             (context, var_vars) <- collectVars context moved_vars var_kinds
             context <- Common.addVarVars context v var_vars
             (context, moved_vars) <- processExpr context moved_vars body
-            context <- continues |> List.iter |> fold (\context, continue_id -> do
+            context <- continues |> List.iter |> Iterator.fold (\context, continue_id -> do
                 case get context.continues continue_id of
                     Some continue_type -> equalConstraints context moved_vars initializer_type continue_type
                     None -> panic "Continue_id {} not found in context" % continue_id) context
-            context <- breaks |> List.iter |> fold (\context, break_id -> do
+            context <- breaks |> List.iter |> Iterator.fold (\context, break_id -> do
                 case get context.breaks break_id of
                     Some break_type -> equalConstraints context moved_vars type break_type
                     None -> panic "break_id {} not found in context" % break_id) context
             (context, moved_vars)
         E.CaseOf body cases -> do
             (context, moved_vars) <- processExpr context moved_vars body
-            (context, moved_var_sets) <- cases |> List.iter |> fold (\(context, moved_var_sets), c -> do
+            (context, moved_var_sets) <- cases |> List.iter |> Iterator.fold (\(context, moved_var_sets), c -> do
                 context <- case c.checker of
                     E.VariantChecker index v variant_type -> do
                         var_kinds <- case variant_type of
@@ -289,8 +289,9 @@ processExpr context moved_vars expr = do
                                 _ -> panic "VariantChecker's inner type is not record nor adt"
                             _ -> panic "VariantChecker's type is not Var"
                         (context, var_vars) <- collectVars context moved_vars var_kinds
-                        context <- Common.addVarVars context v var_vars
                         E.Expr _ body_type _ <- body
+                        println "v {} var_vars: {} body_type: {} variant_type: {}" % (v, var_vars, body_type, variant_type)
+                        context <- Common.addVarVars context v var_vars
                         equalConstraints context moved_vars variant_type body_type
                     _ -> context
                 (context, moved_vars) <- processExpr context moved_vars c.body
@@ -350,7 +351,7 @@ collectConstraints :: Common.GlobalContext -> U.OwnershipVarGenerator -> F.Funct
 collectConstraints global_context var_gen function_type function_id body = do
     not_moves <- C.collectNotMoves function_id body (getLength function_type.args)
     context <- Common.createContext global_context not_moves var_gen function_type.result
-    context <- foldE (\context, index, arg_type -> processArg context index arg_type) context function_type.args
+    context <- List.foldE (\context, index, arg_type -> processArg context index arg_type) context function_type.args
     moved_vars <- Common.MovedVars Set.empty
     (context, moved_vars) <- processExpr context moved_vars body
     E.Expr _ body_type _ <- body

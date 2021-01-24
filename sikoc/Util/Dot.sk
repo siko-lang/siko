@@ -51,14 +51,14 @@ generateDot :: Graph -> String
 generateDot graph = do
     s <- "digraph D {\n"
     s <- s + "node [shape=record fontname=Arial splines=ortho];\n"
-    s <- graph.nodes |> List.iter |> fold (\s, node -> do
+    s <- graph.nodes |> List.iter |> Iterator.fold (\s, node -> do
             s <- if isEmpty node.elements
                 then s + "node{} [label=\"{}\"]\n" % (node.id, node.name)
                 else do
                     elements <- join node.elements "|"
                     s + "node{} [label=\"{{{}|{}}}\"]\n" % (node.id, node.name, elements)
             s) s
-    s <- graph.edges |> List.iter |> fold (\s, edge -> do
+    s <- graph.edges |> List.iter |> Iterator.fold (\s, edge -> do
             e <- case edge.name of
                 Some name -> "node{} -> node{} [label=\"{}\"]\n" % (edge.from, edge.to, name)
                 None -> "node{} -> node{}\n" % (edge.from, edge.to)

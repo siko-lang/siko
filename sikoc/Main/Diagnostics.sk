@@ -6,6 +6,7 @@ import Siko.Syntax.Location
 import Siko.Syntax.Ident
 import Siko.Resolver.Error
 import Siko.Typechecker.Error
+import Siko.FileManager
 
 printSpan :: String -> Span -> ()
 printSpan msg span = println "{} at {}" % (msg, fmtSpan span)
@@ -16,12 +17,20 @@ fmtSpan span = "{}:{}" % (span.start.line, span.start.offset + 1)
 fmtLocation :: Location -> String
 fmtLocation location = "{}" % (fmtSpan location.span)
 
-fmtIdent :: Ident -> String
-fmtIdent (Ident s location) = "{} - ({})" % (s, fmtLocation location)
+getLine :: Location -> Int
+getLine location = location.span.start.line
 
-fmtIdents :: [Ident] -> String
-fmtIdents idents = idents |> List.iter |> fold (\r, i -> do
-                                s <- fmtIdent i
+getOffset :: Location -> Int
+getOffset location = location.span.start.offset + 1
+
+fmtIdent :: FileManager -> Ident -> String
+fmtIdent file_manager (Ident s location) = do
+    file_name <- getFile file_manager location.file_id
+    "-- {}:{}:{}\n" % (file_name, getLine location, getOffset location)
+
+fmtIdents :: FileManager -> [Ident] -> String
+fmtIdents file_manager idents = idents |> List.iter |> Iterator.fold (\r, i -> do
+                                s <- fmtIdent file_manager i
                                 r <- "{} {}" % (r, s)
                                 r) ""
 
@@ -31,52 +40,75 @@ printLexerError error = case error of
     InvalidOperator span -> printSpan "InvalidOperator" span
     InvalidIdent span -> printSpan "InvalidIdent" span
 
-printParserError error = case error of
-    UnexpectedToken expected found span -> printSpan "Expected: {} found: {}" % (expected, found) span
+printParserError :: FileManager -> FileId -> ParserError -> ()
+printParserError file_manager file_id error = case error of
+    UnexpectedToken expected found span -> do
+        println "ERROR: expected: {} found: {}" % (expected, found)
+        file_name <- getFile file_manager file_id
+        println "-- {}:{}:{}\n" % (file_name, span.start.line, span.start.offset + 1)
     InvalidTypeArgument span -> printSpan "InvalidTypeArgument" span
 
-printResolverError error = case error of
-    ModuleConflict name names -> println "ModuleConflict {}" % name
-    ModuleNotFound name -> println "ModuleNotFound {}" % (fmtIdent name)
-    UnknownType name -> println "UnknownType {}" % (fmtIdent name)
-    AmbiguousName name candidates -> println "AmbiguousName {} {}" % (fmtIdent name, candidates)
-    UnknownTypeArg name -> println "UnknownTypeArg {}" % (fmtIdent name)
+printSingle :: FileManager -> String -> Ident -> ()
+printSingle file_manager msg (Ident n location) = do
+    println "ERROR: {} - {}" % (msg, n)
+    file_name <- getFile file_manager location.file_id
+    println "-- {}:{}:{}" % (file_name, getLine location, getOffset location)
+
+printSingleL :: FileManager -> String -> Location -> ()
+printSingleL file_manager msg location = do
+    println "ERROR: {}" % msg
+    file_name <- getFile file_manager location.file_id
+    println "-- {}:{}:{}" % (file_name, getLine location, getOffset location)
+
+printMulti :: FileManager -> String -> [Ident] -> ()
+printMulti file_manager msg idents = do
+    println "ERROR: {}" % msg
+    idents |> List.iter |> forEach (\(Ident n location) -> do
+        file_name <- getFile file_manager location.file_id
+        println "-- {}:{}:{}" % (file_name, getLine location, getOffset location))
+
+printResolverError :: FileManager -> ResolverError -> ()
+printResolverError file_manager error = case error of
+    ModuleNotFound name -> printSingle file_manager "ModuleNotFound" name
+    UnknownType name -> printSingle file_manager "UnknownType" name
+    AmbiguousName name candidates -> printSingle file_manager ("AmbiguousName {}" % candidates) name
+    UnknownTypeArg name -> println "UnknownTypeArg {}" % (fmtIdent file_manager name)
     InvalidVariant location -> println "InvalidVariant {}" % (fmtLocation location)
-    NotAClassName name -> println "NotAClassName {}" % (fmtIdent name)
-    UnusedTypeArg name -> println "UnusedTypeArg {}" % (fmtIdent name)
-    ConflictingSignatures names -> println "ConflictingSignatures {}" % (fmtIdents names)
-    MissingImpl name -> println "MissingImpl {}" % (fmtIdent name)
+    NotAClassName name -> println "NotAClassName {}" % (fmtIdent file_manager name)
+    UnusedTypeArg name -> println "UnusedTypeArg {}" % (fmtIdent file_manager name)
+    ConflictingSignatures names -> println "ConflictingSignatures {}" % (fmtIdents file_manager names)
+    MissingImpl name -> println "MissingImpl {}" % (fmtIdent file_manager name)
     InvalidExternArg location -> println "InvalidExternArg {}" % (fmtLocation location)
-    ExternFnWithMultiDef name -> println "ExternFnWithMultiDef {}" % (fmtIdent name)
+    ExternFnWithMultiDef name -> println "ExternFnWithMultiDef {}" % (fmtIdent file_manager name)
     MultiDefArgCountMismatch counts -> println "MultiDefArgCountMismatch {}" % counts
-    MultiDefNoArg name -> println "MultiDefNoArg {}" % (fmtIdent name)
-    NotAFunction name -> println "NotAFunction {}" % (fmtIdent name)
-    UnknownFunction name -> println "UnknownFunction {}" % (fmtIdent name)
-    NotARecord name -> println "NotARecord {}" % (fmtIdent name)
-    NotAVariant name -> println "NotAVariant {}" % (fmtIdent name)
-    InvalidVariantArgCountInPattern name e f -> println "InvalidVariantArgCountInPattern {} {} {}" % (fmtIdent name, e, f)
-    InvalidRecordArgCountInPattern name e f -> println "InvalidRecordArgCountInPattern {} {} {}" % (fmtIdent name, e, f)
+    MultiDefNoArg name -> println "MultiDefNoArg {}" % (fmtIdent file_manager name)
+    NotAFunction name -> println "NotAFunction {}" % (fmtIdent file_manager name)
+    UnknownFunction name -> printSingle file_manager "UnknownFunction" name
+    NotARecord name -> println "NotARecord {}" % (fmtIdent file_manager name)
+    NotAVariant name -> println "NotAVariant {}" % (fmtIdent file_manager name)
+    InvalidVariantArgCountInPattern name e f -> println "InvalidVariantArgCountInPattern {} {} {}" % (fmtIdent file_manager name, e, f)
+    InvalidRecordArgCountInPattern name e f -> println "InvalidRecordArgCountInPattern {} {} {}" % (fmtIdent file_manager name, e, f)
     UninitalizedFields names -> println "UninitalizedFields {}" % names
-    MultiInitFields names -> println "MultiInitFields {}" % (fmtIdents names)
-    UnknownInitFields names -> println "UnknownInitFields {}" % (fmtIdents names)
+    MultiInitFields names -> println "MultiInitFields {}" % (fmtIdents file_manager names)
+    UnknownInitFields names -> println "UnknownInitFields {}" % (fmtIdents file_manager names)
     UnusedFields names -> println "UnusedFields {}" % names
-    MultiUsedFields names -> println "MultiUsedFields {}" % (fmtIdents names)
-    UnknownUsedFields names -> println "UnknownUsedFields {}" % (fmtIdents names)
-    NotAVariable name -> println "NotAVariable {}" % (fmtIdent name)
-    BindNotUnique names -> println "BindNotUnique {}" % (fmtIdents names)
+    MultiUsedFields names -> println "MultiUsedFields {}" % (fmtIdents file_manager names)
+    UnknownUsedFields names -> println "UnknownUsedFields {}" % (fmtIdents file_manager names)
+    NotAVariable name -> println "NotAVariable {}" % (fmtIdent file_manager name)
+    BindNotUnique names -> println "BindNotUnique {}" % (fmtIdents file_manager names)
     OrPatternMismatch name location -> println "OrPatternMismatch {} {}" % (name, fmtLocation location)
     InvalidClassArgument location -> println "InvalidClassArgument {}" % (fmtLocation location)
-    UnusedClassArg name location -> println "UnusedClassArg {} {}" % (fmtIdent name, fmtLocation location)
-    ExternFnWithoutType name -> println "ExternFnWithoutType {}" % (fmtIdent name)
+    UnusedClassArg name location -> println "UnusedClassArg {} {}" % (fmtIdent file_manager name, fmtLocation location)
+    ExternFnWithoutType name -> println "ExternFnWithoutType {}" % (fmtIdent file_manager name)
     ContinueWithoutLoop location -> println "ContinueWithoutLoop {}" % (fmtLocation location)
     BreakWithoutLoop location -> println "BreakWithoutLoop {}" % (fmtLocation location)
     ItemConflict l1 l2 -> println "ItemConflict {} {}" % (fmtLocation l1, fmtLocation l2)
-    RecordFieldConflict names -> println "RecordFieldConflict {}" % names
+    RecordFieldConflict names -> printMulti file_manager "RecordFieldConflict" names
     NotIrrefutablePattern location -> println "NotIrrefutablePattern {}" % (fmtLocation location)
     InvalidTypeArgCount expected found location -> println "InvalidTypeArgCount {} {} {}" % (expected, found, fmtLocation location)
     InvalidFormatString location -> println "InvalidFormatString {}" % (fmtLocation location)
 
-printTypecheckerError error = case error of
+printTypecheckerError file_manager error = case error of
     TypeMismatch expected found location -> println "TypeMismatch expected: {} found: {} {}" % (expected, found, fmtLocation location)
     TooManyArguments args type location -> println "TooManyArguments args {} {} {}" % (args, type, fmtLocation location)
     ClassMemberWithoutType name location -> println "ClassMemberWithoutType {} {}" % (name, fmtLocation location)
@@ -90,7 +122,7 @@ printTypecheckerError error = case error of
     MissingInstance class_name location -> println "MissingInstance {} {}" % (class_name, fmtLocation location)
     SpecializedInstance location -> println "SpecializedInstance {}" % (fmtLocation location)
     AutoDeriveError type_name type class_name location -> println "AutoDeriveError {} {} {} {}" % (type_name, type, class_name, fmtLocation location)
-    TypeAnnotationNeeded location -> println "TypeAnnotationNeeded {}" % (fmtLocation location)
+    TypeAnnotationNeeded location -> printSingleL file_manager "TypeAnnotationNeeded" location
     NonExhaustiveCase location -> println "NonExhaustiveCase {}" % (fmtLocation location)
     UnreachableCase location -> println "UnreachableCase {}" % (fmtLocation location)
     IncorrectMainType type location -> println "IncorrectMainType {} {}" % (type, fmtLocation location)

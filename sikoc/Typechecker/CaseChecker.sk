@@ -94,7 +94,7 @@ processPattern context pendingPatterns = do
             binds <- additional_info.binds + [CaseBind path ref]
             (additional_info { binds = binds }, checks)
         P.Tuple args -> do
-            (args, _) <- args |> List.iter |> fold (\(args, index), arg -> do
+            (args, _) <- args |> List.iter |> Iterator.fold (\(args, index), arg -> do
                     P.Pattern _ arg_id _ <- arg
                     arg_type <- getPatternType context arg_id
                     p <- ItemIndex path index arg_type
@@ -133,7 +133,7 @@ processPattern context pendingPatterns = do
             (additional_info, checks) <- processPattern context ([arg] + pendingPatterns)
             (additional_info, checks)
         P.Record _ args -> do
-            (args, _) <- args |> List.iter |> fold (\(args, index), arg -> do
+            (args, _) <- args |> List.iter |> Iterator.fold (\(args, index), arg -> do
                     P.Pattern _ arg_id _ <- arg
                     arg_type <- getPatternType context arg_id
                     p <- ItemIndex path index arg_type
@@ -144,7 +144,7 @@ processPattern context pendingPatterns = do
             checks <- [Check path WildcardCondition] + checks
             (additional_info, checks)
         P.Variant qn variant_index args -> do
-            (args, _) <- args |> List.iter |> fold (\(args, index), arg -> do
+            (args, _) <- args |> List.iter |> Iterator.fold (\(args, index), arg -> do
                     P.Pattern _ arg_id _ <- arg
                     arg_type <- getPatternType context arg_id
                     p <- VariantPath path qn variant_index index arg_type
@@ -235,14 +235,14 @@ choiceToNode g choice = case choice of
     Choice path choices -> do
         node_name <- "{}" % path
         (g, id) <- D.addNode g node_name
-        g <- choices |> Map.iter |> fold (\g, (cond, choice) -> do
+        g <- choices |> Map.iter |> Iterator.fold (\g, (cond, choice) -> do
                 (g, child_id) <- choiceToNode g choice
                 edge_name <- "{}" % cond
                 g <- D.addEdge g (Some edge_name) id child_id
                 g) g
         (g, id)
     CaseEnd matches -> do
-        names <- matches |> List.iter |> map (\MatchInfo case_index additional_info -> do
+        names <- matches |> List.iter |> Iterator.map (\MatchInfo case_index additional_info -> do
             "{}" % (case_index)) |> toList
         node_name <- "[{}]" % join names ","
         (g, id) <- D.addNode g node_name
@@ -280,7 +280,7 @@ matchCondition c1 c2 = case (c1, c2) of
     _ -> False
 
 isMatch :: Map ValuePath Condition -> Map ValuePath Edge -> Bool -> Bool
-isMatch context rule_set partial = rule_set |> Map.iter |> fold (\match, (path, edge) -> do
+isMatch context rule_set partial = rule_set |> Map.iter |> Iterator.fold (\match, (path, edge) -> do
     case get context path of
         Some condition -> (matchCondition condition (getCondition edge)) && match
         None -> partial && match) True
@@ -303,7 +303,7 @@ buildBranch start case_info =
 
 finalizeCaseEnd :: [MatchInfo] -> [MatchInfo]
 finalizeCaseEnd match_infos = do
-    (match_infos, _) <- match_infos |> List.iter |> fold (\(match_infos, prev_guarded), match -> do
+    (match_infos, _) <- match_infos |> List.iter |> Iterator.fold (\(match_infos, prev_guarded), match -> do
                             MatchInfo _ additional_info <- match
                             if prev_guarded
                                 then (match_infos + [match], additional_info.guarded)
@@ -314,7 +314,7 @@ finalizeCaseEnd match_infos = do
 processTree :: Choice -> Map ValuePath Condition -> CaseInfo -> Bool -> (Choice, Bool)
 processTree choice context case_info finalize = case choice of
     Choice path choices -> do
-        (choices, news, modified) <- choices |> Map.iter |> fold (\(choices, news, modified), (condition, choice) -> do
+        (choices, news, modified) <- choices |> Map.iter |> Iterator.fold (\(choices, news, modified), (condition, choice) -> do
                 case condition of
                     Else -> do
                         if isMatch context case_info.rule_set True
@@ -336,7 +336,7 @@ processTree choice context case_info finalize = case choice of
                 else do
                     (choices, _) <- insert choices Else ElseNode
                     choices
-        (choices, modified) <- news |> List.iter |> fold (\(choices, modified), (condition, node) ->
+        (choices, modified) <- news |> List.iter |> Iterator.fold (\(choices, modified), (condition, node) ->
             case get choices condition of
                 Some _ -> (choices, modified)
                 None -> do
@@ -361,7 +361,7 @@ processTree choice context case_info finalize = case choice of
 removeElse :: Context -> Choice -> Choice
 removeElse context choice = case choice of
     Choice path choices -> do
-        choices <- choices |> Map.iter |> fold (\choices, (condition, choice) -> do
+        choices <- choices |> Map.iter |> Iterator.fold (\choices, (condition, choice) -> do
             case condition of
                 Else -> choices
                 _ -> do
@@ -397,14 +397,14 @@ removeElse context choice = case choice of
 checkBranches :: Choice -> ([MissingCase], [Int])
 checkBranches choice =
     case choice of
-        Choice _ subchoices -> subchoices |> Map.iter |> fold (\(missing_cases, found_cases), (cond, choice) -> do
+        Choice _ subchoices -> subchoices |> Map.iter |> Iterator.fold (\(missing_cases, found_cases), (cond, choice) -> do
                 (m, f) <- checkBranches choice
                 missing_cases <- missing_cases + m
                 found_cases <- found_cases + f
                 (missing_cases, found_cases)
             ) ([], [])
         CaseEnd matches -> do
-            (guarded_only, found_cases) <- matches |> List.iter |> fold (\(guarded_only, found_cases), MatchInfo id additional_info -> do
+            (guarded_only, found_cases) <- matches |> List.iter |> Iterator.fold (\(guarded_only, found_cases), MatchInfo id additional_info -> do
                 guarded_only <- guarded_only && additional_info.guarded
                 (guarded_only, found_cases + [id])) (True, [])
             if guarded_only || isEmpty matches
@@ -415,7 +415,7 @@ checkBranches choice =
 validateChoiceTree :: Context -> Choice -> Location -> [E.Case] -> Context
 validateChoiceTree context choice location cases = do
     (missing_cases, found_cases) <- checkBranches choice
-    (context, _) <- cases |> List.iter |> fold (\(context, case_index), c -> do
+    (context, _) <- cases |> List.iter |> Iterator.fold (\(context, case_index), c -> do
             P.Pattern p _ location <- c.pattern
             context <- if contains found_cases case_index
                 then context
@@ -438,7 +438,7 @@ checkCase :: Context -> E.ExprId -> E.Expr -> [E.Case] -> Context
 checkCase context expr_id case_body cases = do
     (E.Expr _ body_id location) <- case_body
     root_type <- getExprType context body_id
-    (case_infos, _) <- cases |> List.iter |> fold (\(case_infos, case_index), c -> do
+    (case_infos, _) <- cases |> List.iter |> Iterator.fold (\(case_infos, case_index), c -> do
             P.Pattern p _ location <- c.pattern
             (case_index, case_info) <- processSinglePattern context c.pattern case_index
             case_infos <- case_infos + [case_info]
@@ -448,13 +448,13 @@ checkCase context expr_id case_body cases = do
     (init, _) <- insert init Else ElseNode
     choice <- (Choice (Root root_type) init)
     choice <- loop (choice, modified) <- (choice, True) do
-        (choice, modified) <- case_infos |> List.iter |> fold (\(choice, modified), case_info ->
+        (choice, modified) <- case_infos |> List.iter |> Iterator.fold (\(choice, modified), case_info ->
                               processTree choice empty case_info False) (choice, False)
         if modified
             then (choice, modified)
             else break choice
     choice <- removeElse context choice
-    (choice, modified) <- case_infos |> List.iter |> fold (\(choice, modified), case_info ->
+    (choice, modified) <- case_infos |> List.iter |> Iterator.fold (\(choice, modified), case_info ->
                               processTree choice empty case_info True) (choice, False)
     //dumpChoiceTree choice "{}" % expr_id
     context <- validateChoiceTree context choice location cases

@@ -66,13 +66,13 @@ addConstraint n constraints constraint_map = do
     constraint_map
 
 collectNamesFromConstraints :: [Constraint] -> [String]
-collectNamesFromConstraints constraints = constraints |> List.iter |> map (\c -> case c of
+collectNamesFromConstraints constraints = constraints |> List.iter |> Iterator.map (\c -> case c of
                 ClassConstraint s -> HP.getResolvableName s
                 RowConstraint (NamedRow name) row_type -> name
                 RowConstraint (IndexedRow i) row_type -> "{}"  % i) |> toList
 
 collectVarsFromConstraints :: [Constraint] -> [TypeVar]
-collectVarsFromConstraints constraints = constraints |> List.iter |> fold (\all, c -> case c of
+collectVarsFromConstraints constraints = constraints |> List.iter |> Iterator.fold (\all, c -> case c of
                 ClassConstraint _ -> all
                 RowConstraint _ row_type -> all + collectVars row_type) []
 
@@ -80,14 +80,14 @@ collectVars :: Type -> [TypeVar]
 collectVars type = case type of
     Var var constraints -> [var] + collectVarsFromConstraints constraints
     FixedTypeArg _ var constraints -> [var] + collectVarsFromConstraints constraints
-    Named _ args -> args |> List.iter |> fold (\vars, arg -> do
+    Named _ args -> args |> List.iter |> Iterator.fold (\vars, arg -> do
         vs <- collectVars arg
         vars + vs) []
     Function from to -> collectVars from + collectVars to
     Never var -> [var]
     Ref t -> collectVars t
     Owner t -> collectVars t
-    Tuple args -> args |> List.iter |> fold (\vars, arg -> do
+    Tuple args -> args |> List.iter |> Iterator.fold (\vars, arg -> do
         vs <- collectVars arg
         vars + vs) []
 
@@ -97,7 +97,7 @@ collectNames type constraint_map = case type of
     FixedTypeArg n _ constraints -> (collectNamesFromConstraints constraints, addConstraint n constraints constraint_map)
     Named n args -> do
                 n <- HP.getResolvableName n
-                args |> List.iter |> fold (\(all, constraint_map), arg -> do
+                args |> List.iter |> Iterator.fold (\(all, constraint_map), arg -> do
                 (args, constraint_map) <- collectNames arg constraint_map
                 (all + args, constraint_map)) ([n], constraint_map)
     Function from to -> do
@@ -107,7 +107,7 @@ collectNames type constraint_map = case type of
     Never _ -> ([], constraint_map)
     Ref t -> collectNames t constraint_map
     Owner t -> collectNames t constraint_map
-    Tuple args -> args |> List.iter |> fold (\(all, constraint_map), arg -> do
+    Tuple args -> args |> List.iter |> Iterator.fold (\(all, constraint_map), arg -> do
                 (args, constraint_map) <- collectNames arg constraint_map
                 (all + args, constraint_map)) ([], constraint_map)
 
@@ -125,17 +125,17 @@ formatType :: Type -> Bool -> String
 formatType type short = do
     limit <- if short then 1 else 0
     (names, constraint_map) <- collectNames type empty
-    conflicting_names <- names |> List.iter |> fold (\short_names, name -> do
+    conflicting_names <- names |> List.iter |> Iterator.fold (\short_names, name -> do
                 short <- getShortName name
                 (short_names, _) <- alter (addShortName name) short short_names
                 short_names) empty
-    conflicting_names <- conflicting_names |> Map.iter |> map (\(short, names) -> if getLength names > limit then (short, True) else (short, False)) |> toMap
-    constraints <- constraint_map |> Map.iter |> map (\(name, constraints) -> do
-                                constraints <- constraints |> List.iter |> map (\c -> case c of
+    conflicting_names <- conflicting_names |> Map.iter |> Iterator.map (\(short, names) -> if getLength names > limit then (short, True) else (short, False)) |> toMap
+    constraints <- constraint_map |> Map.iter |> Iterator.map (\(name, constraints) -> do
+                                constraints <- constraints |> List.iter |> Iterator.map (\c -> case c of
                                                     ClassConstraint s -> "{} {}" % (getNiceName (HP.getResolvableName s) conflicting_names, name)
                                                     RowConstraint (NamedRow row_name) row_type -> "#{} :: {} {}" % (row_name, toString row_type, name)
                                                     RowConstraint (IndexedRow index) row_type -> "#{} :: {} {}" % (index, toString row_type, name)) |> toList
-                                constraints) |> fold (\all, constraints -> all + constraints) []
+                                constraints) |> Iterator.fold (\all, constraints -> all + constraints) []
     string_type <- convertType type conflicting_names
     if isEmpty constraints
         then string_type
@@ -167,7 +167,7 @@ convertType type names = case type of
             else if isEmpty args
                 then getNiceName n names
                 else do
-                    args <- args |> List.iter |> map (\arg -> toStringComplex arg names) |> toList
+                    args <- args |> List.iter |> Iterator.map (\arg -> toStringComplex arg names) |> toList
                     "{} {}" % (getNiceName n names, join args " ")
     Function from to -> do
         from <- if isFunction from then "({})" % (convertType from names) else convertType from names
@@ -177,7 +177,7 @@ convertType type names = case type of
     Ref t -> "&{}" % (toStringComplex t names)
     Owner t -> "~{}" % (toStringComplex t names)
     Tuple args -> do
-        args <- args |> List.iter |> map (\arg -> convertType arg names) |> toList
+        args <- args |> List.iter |> Iterator.map (\arg -> convertType arg names) |> toList
         if getLength args == 1
             then "({},)" % (join args ", ")
             else "({})" % (join args ", ")
@@ -209,14 +209,14 @@ getResultType type arg_count =
 fixedType :: Type -> Type
 fixedType type = do
     vars <- collectVars type |> sort |> dedup
-    (var_map, index) <- vars |> List.iter |> fold (\(var_map, index), v -> do
+    (var_map, index) <- vars |> List.iter |> Iterator.fold (\(var_map, index), v -> do
                  new_var <- (("t{}" % index), v)
                  (var_map, _) <- Map.insert var_map v new_var
                  (var_map, index + 1)) (Map.empty, 0)
     convertToFixed var_map type
 
 convertConstraintsToFixed :: [Constraint] -> Map TypeVar (String, TypeVar) -> [Constraint]
-convertConstraintsToFixed constraints var_map = constraints |> List.iter |> map (\c -> case c of
+convertConstraintsToFixed constraints var_map = constraints |> List.iter |> Iterator.map (\c -> case c of
     ClassConstraint s -> c
     RowConstraint row_name row_type -> RowConstraint row_name (convertToFixed var_map row_type)) |> toList
 
@@ -230,7 +230,7 @@ convertToFixed var_map type =
             Some (name, new_var) -> FixedTypeArg name new_var (convertConstraintsToFixed constraints var_map)
             None -> panic "old var {} not found" % var
         Named n args -> do
-            args <- args |> List.iter |> map (\arg -> convertToFixed var_map arg) |> toList
+            args <- args |> List.iter |> Iterator.map (\arg -> convertToFixed var_map arg) |> toList
             Named n args
         Function from to -> do
             from <- convertToFixed var_map from
@@ -242,13 +242,13 @@ convertToFixed var_map type =
         Ref t -> Ref (convertToFixed var_map t)
         Owner t -> Owner (convertToFixed var_map t)
         Tuple args -> do
-            args <- args |> List.iter |> map (\arg -> convertToFixed var_map arg) |> toList
+            args <- args |> List.iter |> Iterator.map (\arg -> convertToFixed var_map arg) |> toList
             Tuple args
 
 collectClassesFromClassConstraints :: [Constraint] -> [HP.FullyQualifiedName]
 collectClassesFromClassConstraints constraints = constraints |> List.iter |> filter (\c -> case c of
         ClassConstraint _ -> True
-        _ -> False) |> map (\c -> case c of
+        _ -> False) |> Iterator.map (\c -> case c of
             ClassConstraint n -> n
             _ -> panic "RowConstraint found while collecting classes") |> toList
 
@@ -256,13 +256,13 @@ isConcreteType :: Type -> Bool
 isConcreteType type = case type of
     Var _ _ -> False
     FixedTypeArg _ _ _ -> False
-    Named _ args -> args |> List.iter |> fold (\concrete, arg -> do
+    Named _ args -> args |> List.iter |> Iterator.fold (\concrete, arg -> do
         concrete && isConcreteType arg) True
     Function from to -> isConcreteType from && isConcreteType to
     Never var -> True
     Ref t -> isConcreteType t
     Owner t -> isConcreteType t
-    Tuple args -> args |> List.iter |> fold (\concrete, arg -> do
+    Tuple args -> args |> List.iter |> Iterator.fold (\concrete, arg -> do
         concrete && isConcreteType arg) True
 
 removeFixed :: Type -> Type
@@ -270,7 +270,7 @@ removeFixed type = case type of
     Var _ _ -> type
     FixedTypeArg _ var constraints -> Var var constraints
     Named qn args -> do
-        args <- args |> List.iter |> map (\arg -> removeFixed arg) |> toList
+        args <- args |> List.iter |> Iterator.map (\arg -> removeFixed arg) |> toList
         Named qn args
     Function from to -> do
         from <- removeFixed from
@@ -280,7 +280,7 @@ removeFixed type = case type of
     Ref t -> Ref (removeFixed t)
     Owner t -> Owner (removeFixed t)
     Tuple args -> do
-        args <- args |> List.iter |> map (\arg -> removeFixed arg) |> toList
+        args <- args |> List.iter |> Iterator.map (\arg -> removeFixed arg) |> toList
         Tuple args
 
 removeOwnership :: Type -> Type
@@ -288,7 +288,7 @@ removeOwnership type = case type of
     Var _ _ -> type
     FixedTypeArg _ _ _ -> type
     Named qn args -> do
-        args <- args |> List.iter |> map (\arg -> removeOwnership arg) |> toList
+        args <- args |> List.iter |> Iterator.map (\arg -> removeOwnership arg) |> toList
         Named qn args
     Function from to -> do
         from <- removeOwnership from
@@ -298,5 +298,5 @@ removeOwnership type = case type of
     Ref t -> removeOwnership t
     Owner t -> removeOwnership t
     Tuple args -> do
-        args <- args |> List.iter |> map (\arg -> removeOwnership arg) |> toList
+        args <- args |> List.iter |> Iterator.map (\arg -> removeOwnership arg) |> toList
         Tuple args

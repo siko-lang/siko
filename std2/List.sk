@@ -49,7 +49,7 @@ nextItem a :: ~ListIterator a -> ~Option (~ListIterator a, a)
 nextItem iter = extern
 
 toList a :: ~Iterator a -> ~[a]
-toList iter = fold (\list, item -> list + [item]) [] iter
+toList iter = Iterator.fold (\list, item -> list + [item]) [] iter
 
 getLength a :: ~[a] -> ~Int
 getLength l = extern
@@ -96,8 +96,8 @@ join a :: (Show a) => [a] -> String -> String
 join items separator = do
     len <- getLength items
     (s, _) <- items |> List.iter
-         |> map (\item -> "{}" % item)
-         |> fold (\(total, index), s -> do
+         |> Iterator.map (\item -> "{}" % item)
+         |> Iterator.fold (\(total, index), s -> do
             total <- case index of
                     0 -> s
                     _  -> "{}{}{}" % (total, separator, s)
@@ -173,20 +173,26 @@ zipSE s l1 l2 f = do
 
 mapS s a b :: s -> [a] -> (s -> a -> (s, b)) -> (s, [b])
 mapS s l f = do
-    l |> List.iter |> fold (\(s, items), i -> do
+    l |> List.iter |> Iterator.fold (\(s, items), i -> do
         (s, i) <- f s i
         (s, items + [i])) (s, [])
 
 mapSE s a b :: s -> [a] -> (s -> Int -> a -> (s, b)) -> (s, [b])
 mapSE s l f = do
-    (s, index, l) <- l |> List.iter |> fold (\(s, index, items), i -> do
+    (s, index, l) <- l |> List.iter |> Iterator.fold (\(s, index, items), i -> do
         (s, i) <- f s index i
         (s, index + 1, items + [i])) (s, 0, [])
     (s, l)
 
 foldE a b :: (a -> Int -> b -> a) -> a -> [b] -> a
 foldE f s l = do
-    (s, i) <- l |> List.iter |> fold (\(s, index), i -> do
+    (s, i) <- l |> List.iter |> Iterator.fold (\(s, index), i -> do
         s <- f s index i
         (s, index + 1)) (s, 0)
     s
+
+fold s a :: s -> [a] -> (s -> a -> s) -> s
+fold init list f = list |> List.iter |> Iterator.fold f init
+
+map a b :: (a -> b) -> [a] -> [b]
+map f input = input |> List.iter |> Iterator.map f |> toList

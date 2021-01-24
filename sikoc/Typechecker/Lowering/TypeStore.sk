@@ -149,7 +149,7 @@ checkExternalImpl context hir_type class_name external_class_impl = do
 checkExternalImpls :: Context -> HT.Type -> Context
 checkExternalImpls context hir_type = do
     external_class_names <- context.external_class_names // TODO: check that this does not copy
-    external_class_names |> List.iter |> fold (\context, (class_name, external_class_impl) ->
+    external_class_names |> List.iter |> Iterator.fold (\context, (class_name, external_class_impl) ->
         checkExternalImpl context hir_type class_name external_class_impl) context
 
 addNamedType :: Context -> HT.Type -> MT.Type -> Context
@@ -230,7 +230,7 @@ processAdt context hir_type adt_type_info module_name mir_type = do
     if getLength adt_type_info.variants == 1
         then do
             variant <- atIndex adt_type_info.variants 0
-            (context, mir_fields) <- variant.items |> List.iter |> fold (\(context, mir_fields), type -> do
+            (context, mir_fields) <- variant.items |> List.iter |> Iterator.fold (\(context, mir_fields), type -> do
                     (context, mir_type) <- processType context type
                     name <- getFieldName (getLength mir_fields)
                     mir_field <- MD.RecordField name mir_type
@@ -240,8 +240,8 @@ processAdt context hir_type adt_type_info module_name mir_type = do
             context <- addRecord context identity mir_record
             context
         else do
-            (context, mir_variants) <- adt_type_info.variants |> List.iter |> fold (\(context, mir_variants), variant -> do
-                (context, mir_fields) <- variant.items |> List.iter |> fold (\(context, mir_fields), type -> do
+            (context, mir_variants) <- adt_type_info.variants |> List.iter |> Iterator.fold (\(context, mir_variants), variant -> do
+                (context, mir_fields) <- variant.items |> List.iter |> Iterator.fold (\(context, mir_fields), type -> do
                     (context, mir_type) <- processType context type
                     name <- getFieldName (getLength mir_fields)
                     mir_field <- MD.RecordField name mir_type
@@ -270,14 +270,14 @@ processRecord context hir_type record_type_info type_args mir_type = do
     case mir_type of
         MT.Record identity _ -> do
             (context, record_type_info) <- instantiateRecord context record_type_info hir_type
-            (context, mir_fields) <- record_type_info.fields |> List.iter |> fold (\(context, mir_fields), field -> do
+            (context, mir_fields) <- record_type_info.fields |> List.iter |> Iterator.fold (\(context, mir_fields), field -> do
                 (context, mir_type) <- processType context field.type
                 mir_field <- MD.RecordField field.name mir_type
                 mir_fields <- mir_fields + [mir_field]
                 (context, mir_fields)) (context, [])
             (context, external_record_info) <- if record_type_info.external
                 then do
-                    (context, mir_args) <- type_args |> List.iter |> fold (\(context, mir_args), arg -> do
+                    (context, mir_args) <- type_args |> List.iter |> Iterator.fold (\(context, mir_args), arg -> do
                         (context, mir_arg) <- processType context arg
                         (context, mir_args + [mir_arg])) (context, [])
                     (context, Some (MD.ExternalRecordInfo mir_args))
@@ -320,7 +320,7 @@ processTuple :: Context -> HT.Type -> [HT.Type] -> MT.Type -> Context
 processTuple context hir_type args mir_type = do
     case mir_type of
         MT.Record identity _ -> do
-            (context, mir_fields) <- args |> List.iter |> fold (\(context, mir_fields), type -> do
+            (context, mir_fields) <- args |> List.iter |> Iterator.fold (\(context, mir_fields), type -> do
                 name <- getFieldName (getLength mir_fields)
                 (context, mir_type) <- processType context type
                 mir_field <- MD.RecordField name mir_type

@@ -21,7 +21,7 @@ apply sub type = case type of
     Var var constraints -> case get sub.vars var of
         Some t -> apply sub t
         None -> do
-            constraints <- constraints |> List.iter |> map (\c -> case c of
+            constraints <- constraints |> List.iter |> Iterator.map (\c -> case c of
                 ClassConstraint s -> c
                 RowConstraint name ty -> RowConstraint name (apply sub ty)) |> toList
             (Var var constraints)
@@ -29,7 +29,7 @@ apply sub type = case type of
         Some t -> panic "Trying to change fixed type arg!"
         None -> type
     Named n args -> do
-        args <- args |> List.iter |> map (\arg -> apply sub arg) |> toList
+        args <- args |> List.iter |> Iterator.map (\arg -> apply sub arg) |> toList
         Named n args
     Function from to -> do
         from <- apply sub from
@@ -41,11 +41,11 @@ apply sub type = case type of
     Ref t -> Ref (apply sub t)
     Owner t -> Owner (apply sub t)
     Tuple args -> do
-        args <- args |> List.iter |> map (\arg -> apply sub arg) |> toList
+        args <- args |> List.iter |> Iterator.map (\arg -> apply sub arg) |> toList
         Tuple args
 
 constraintsContainsVar :: [Constraint] -> TypeVar -> Bool
-constraintsContainsVar constraints var = constraints |> List.iter |> fold (\contains, constraint -> contains || case constraint of
+constraintsContainsVar constraints var = constraints |> List.iter |> Iterator.fold (\contains, constraint -> contains || case constraint of
     ClassConstraint _ -> False
     RowConstraint _ row_type -> containsVar row_type var) False
 
@@ -53,12 +53,12 @@ containsVar :: Type -> TypeVar -> Bool
 containsVar type var = case type of
     Var v constraints -> v == var || constraintsContainsVar constraints var
     FixedTypeArg _ v constraints -> v == var || constraintsContainsVar constraints var
-    Named _ args -> args |> List.iter |> fold (\contains, arg -> contains || containsVar arg var) False
+    Named _ args -> args |> List.iter |> Iterator.fold (\contains, arg -> contains || containsVar arg var) False
     Function from to -> containsVar from var || containsVar to var
     Never v -> v == var
     Ref t -> containsVar t var
     Owner t -> containsVar t var
-    Tuple args -> args |> List.iter |> fold (\contains, arg -> contains || containsVar arg var) False
+    Tuple args -> args |> List.iter |> Iterator.fold (\contains, arg -> contains || containsVar arg var) False
 
 add :: Substitution -> TypeVar -> Type -> Result Substitution ()
 add sub var type = do
@@ -89,12 +89,12 @@ unifyArgs gen sub data_store class_store args1 args2 = do
                 (gen, sub, index + 1)
 
 getClassConstraints :: [Constraint] -> [P.FullyQualifiedName]
-getClassConstraints constraints = constraints |> List.iter |> fold (\class_constraints, c -> case c of
+getClassConstraints constraints = constraints |> List.iter |> Iterator.fold (\class_constraints, c -> case c of
     ClassConstraint s -> class_constraints + [s]
     RowConstraint _ _ -> class_constraints) []
 
 getRowConstraints :: [Constraint] -> [(RowKind, Type)]
-getRowConstraints constraints = constraints |> List.iter |> fold (\row_constraints, c -> case c of
+getRowConstraints constraints = constraints |> List.iter |> Iterator.fold (\row_constraints, c -> case c of
     ClassConstraint _ -> row_constraints
     RowConstraint kind row_type -> row_constraints + [(kind, row_type)]) []
 
@@ -120,7 +120,7 @@ unifyVarWithType data_store class_store gen var constraints sub type = do
                                 record <- DS.applyRecordTypeInfo record sub
                                 (record, gen)
                             Err _ -> return Err ()
-                        (success, record, sub, gen) <- row_constraints |> List.iter |> fold (\(success, record, sub, gen), (kind, row_type) -> do
+                        (success, record, sub, gen) <- row_constraints |> List.iter |> Iterator.fold (\(success, record, sub, gen), (kind, row_type) -> do
                                 case kind of
                                     NamedRow row_name -> do
                                         case get record.field_names row_name of
@@ -145,7 +145,7 @@ unifyVarWithType data_store class_store gen var constraints sub type = do
                             ) (True, record, sub, gen)
                         if success then (sub, gen) else return Err ()
             Tuple args -> do
-                    (success, args, sub, gen) <- row_constraints |> List.iter |> fold (\(success, args, sub, gen), (kind, row_type) -> do
+                    (success, args, sub, gen) <- row_constraints |> List.iter |> Iterator.fold (\(success, args, sub, gen), (kind, row_type) -> do
                             case kind of
                                 NamedRow _ -> (False, args, sub, gen)
                                 IndexedRow index -> if index < getLength args
@@ -153,14 +153,14 @@ unifyVarWithType data_store class_store gen var constraints sub type = do
                                         item_type <- atIndex args index
                                         case unify gen sub data_store class_store item_type row_type of
                                             Ok (gen, sub) -> do
-                                                args <- args |> List.iter |> map (\t -> apply sub t) |> toList
+                                                args <- args |> List.iter |> Iterator.map (\t -> apply sub t) |> toList
                                                 (success, args, sub, gen)
                                             Err _ -> (False, args, sub, gen)
                                     else (False, args, sub, gen)
                         ) (True, args, sub, gen)
                     if success then (sub, gen) else return Err ()
             _ -> return Err ()
-    sub <- class_constraints |> List.iter |> fold (\sub, class_name -> do
+    sub <- class_constraints |> List.iter |> Iterator.fold (\sub, class_name -> do
                 c <- UnificationConstraint class_name type
                 addUnificationConstraint sub c) sub
     sub <- try add sub var type
@@ -169,12 +169,12 @@ unifyVarWithType data_store class_store gen var constraints sub type = do
 unifyVarWithFixedArg :: TypeVarGenerator -> Substitution -> CS.ClassStore -> TypeVar -> [Constraint] -> [Constraint] -> Type -> Result (TypeVarGenerator, Substitution) ()
 unifyVarWithFixedArg gen sub class_store var var_constraints fixed_arg_constraints fixed_arg_type = do
     fixed_classes <- collectClassesFromClassConstraints fixed_arg_constraints
-    ok <- var_constraints |> List.iter |> fold (\ok, constraint -> ok && case constraint of
+    ok <- var_constraints |> List.iter |> Iterator.fold (\ok, constraint -> ok && case constraint of
         ClassConstraint class_name -> do
             if contains fixed_classes class_name
                 then True
                 else do
-                    all <- fixed_classes |> List.iter |> fold (\all, c -> do
+                    all <- fixed_classes |> List.iter |> Iterator.fold (\all, c -> do
                         class_info <- Option.unwrap (get class_store.classes c)
                         all <- all + class_info.all_dependencies
                         all) []

@@ -109,17 +109,17 @@ prettyPrint expr ind = do
     case expr of
         Do args -> do
             inner <- inc ind
-            args <- args |> List.iter |> map (\arg -> do
+            args <- args |> List.iter |> Iterator.map (\arg -> do
                 "{}{}" % (inner, (prettyPrint arg inner).0)) |> toList
             s <- "do\n{}" % (join args "\n")
             (s, False)
         Multi args -> do
-            args <- args |> List.iter |> map (\arg -> do
+            args <- args |> List.iter |> Iterator.map (\arg -> do
                 "{}" % ((prettyPrint arg ind).0)) |> toList
             s <- "Multi: {}" % (join args ";")
             (s, False)
         StaticFunctionCall id args -> do
-            args <- args |> List.iter |> map (\arg -> do
+            args <- args |> List.iter |> Iterator.map (\arg -> do
                 (s, simple) <- prettyPrint arg ind
                 if simple then s else "({})" % s) |> toList
             s <- "({} {} :: {})" % (id, join args " ", expr_type)
@@ -143,7 +143,7 @@ prettyPrint expr ind = do
             s <- "if {} then {} else {}" % ((prettyPrint cond ind).0, (prettyPrint true_branch ind).0, (prettyPrint false_branch ind).0)
             (s, True)
         List args -> do
-            args <- args |> List.iter |> map (\arg -> do
+            args <- args |> List.iter |> Iterator.map (\arg -> do
                 (s, simple) <- prettyPrint arg ind
                 s) |> toList
             s <- "[{}]" % (join args ", ")
@@ -164,7 +164,7 @@ prettyPrint expr ind = do
             s <- "break {}" % s
             (s, simple)
         RecordUpdate var updates -> do
-            args <- updates |> List.iter |> map (\update -> do
+            args <- updates |> List.iter |> Iterator.map (\update -> do
                 (s, simple) <- prettyPrint update.body ind
                 ("{} : {}" % (update.field_name, s))) |> toList
             s <- "({} {{ {} }})" % (var, join args ", ")
@@ -177,7 +177,7 @@ prettyPrint expr ind = do
             (s, False)
         CaseOf body cases -> do
             inner <- inc ind
-            args <- cases |> List.iter |> map (\case_branch -> do
+            args <- cases |> List.iter |> Iterator.map (\case_branch -> do
                 "{}{} -> {}" % (inner, case_branch.checker, (prettyPrint case_branch.body inner).0)) |> toList
             s <- "case ({}) of\n{}" % ((prettyPrint body inner).0, join args "\n")
             (s, False)

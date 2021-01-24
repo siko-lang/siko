@@ -195,8 +195,8 @@ generateExternalImpl context hir_type impl = case impl of
 
 generateExternalImpls :: Context -> Context
 generateExternalImpls context = do
-    context.external_class_impls |> Map.iter |> fold (\context, (hir_type, impls) -> do
-            impls |> List.iter |> fold (\context, impl -> do
+    context.external_class_impls |> Map.iter |> Iterator.fold (\context, (hir_type, impls) -> do
+            impls |> List.iter |> Iterator.fold (\context, impl -> do
                 expr_id_gen <- getExprIdCounter
                 context <- setExprIdCounter context expr_id_gen
                 context <- generateExternalImpl context hir_type impl
@@ -229,7 +229,7 @@ lowerProgram config state hir_program function_store type_store = do
     (context, unit_type) <- processType context (HT.Tuple [])
     mir_program <- context.mir_program
     mir_program <- mir_program { adts = context.type_store.adts, records = context.type_store.records, unit_type = Some unit_type }
-    record_ctors <- mir_program.functions |> Map.iter |> fold (\record_ctors, (id, function) -> do
+    record_ctors <- mir_program.functions |> Map.iter |> Iterator.fold (\record_ctors, (id, function) -> do
             case function.kind of
                 MF.RecordCtor -> do
                     record_id <- MT.getIdentity function.type.result

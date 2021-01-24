@@ -61,9 +61,9 @@ getDataTypeInfo store name =
 applyAdtTypeInfo :: AdtTypeInfo -> U.Substitution -> AdtTypeInfo
 applyAdtTypeInfo adt sub = do
     variants <- adt.variants |> List.iter
-                                |> map (\variant -> do
+                                |> Iterator.map (\variant -> do
                                     items <- variant.items |> List.iter
-                                                            |> map (\t -> U.apply sub t)
+                                                            |> Iterator.map (\t -> U.apply sub t)
                                                             |> toList
                                     Variant variant.name items)
                                 |> toList
@@ -72,7 +72,7 @@ applyAdtTypeInfo adt sub = do
 
 applyRecordTypeInfo :: RecordTypeInfo -> U.Substitution -> RecordTypeInfo
 applyRecordTypeInfo record sub = do
-    fields <- record.fields |> List.iter |> map (\f -> RecordField f.name (U.apply sub f.type)) |> toList
+    fields <- record.fields |> List.iter |> Iterator.map (\f -> RecordField f.name (U.apply sub f.type)) |> toList
     type <- U.apply sub record.type
     RecordTypeInfo record.name type record.field_names fields record.derived_classes record.external
 
@@ -82,9 +82,9 @@ remapAdtTypeInfo adt var_gen = do
     (mapper, var_gen) <- Util.initMapper vars var_gen
     type <- Util.remap mapper adt.type
     variants <- adt.variants |> List.iter
-                                |> map (\variant -> do
+                                |> Iterator.map (\variant -> do
                                     items <- variant.items |> List.iter
-                                                            |> map (\t -> Util.remap mapper t)
+                                                            |> Iterator.map (\t -> Util.remap mapper t)
                                                             |> toList
                                     Variant variant.name items)
                                 |> toList
@@ -96,7 +96,7 @@ remapRecordTypeInfo record var_gen = do
     vars <- Util.collectVars [] record.type
     (mapper, var_gen) <- Util.initMapper vars var_gen
     type <- Util.remap mapper record.type
-    fields <- record.fields |> List.iter |> map (\f -> RecordField f.name (Util.remap mapper f.type)) |> toList
+    fields <- record.fields |> List.iter |> Iterator.map (\f -> RecordField f.name (Util.remap mapper f.type)) |> toList
     record <- RecordTypeInfo record.name type record.field_names fields record.derived_classes record.external
     (record, var_gen)
 
@@ -115,7 +115,7 @@ processMemberType state type derived_class type_name = do
             state.instance_resolver derived_class.instance_id
     case type of
         Tuple items -> do
-            items |> List.iter |> fold (\state, item -> processMemberType state item derived_class type_name) state
+            items |> List.iter |> Iterator.fold (\state, item -> processMemberType state item derived_class type_name) state
         _ -> do
                 case IR.checkInstance state type derived_class.class_name of
                     Ok (state, cs) -> do
@@ -130,18 +130,18 @@ processMemberType state type derived_class type_name = do
 
 processAutoDerivedInstances :: TypecheckerState -> TypecheckerState
 processAutoDerivedInstances state = do
-    state <- state.data_store.data_type_info_map |> Map.iter |> fold (\state, (name, data_type_info) -> do
+    state <- state.data_store.data_type_info_map |> Map.iter |> Iterator.fold (\state, (name, data_type_info) -> do
         state <- case data_type_info of
             Adt adt -> do
-                state <- adt.derived_classes |> List.iter |> fold (\state, derived_class -> do
-                    state <- adt.variants |> List.iter |> fold (\state, variant -> do
-                            state <- variant.items |> List.iter |> fold (\state, type -> processMemberType state type derived_class (show adt.name)) state
+                state <- adt.derived_classes |> List.iter |> Iterator.fold (\state, derived_class -> do
+                    state <- adt.variants |> List.iter |> Iterator.fold (\state, variant -> do
+                            state <- variant.items |> List.iter |> Iterator.fold (\state, type -> processMemberType state type derived_class (show adt.name)) state
                             state) state
                     state) state
                 state
             Record record -> do
-                state <- record.derived_classes |> List.iter |> fold (\state, derived_class -> do
-                    state <- record.fields |> List.iter |> fold (\state, field -> processMemberType state field.type derived_class (show record.name)) state
+                state <- record.derived_classes |> List.iter |> Iterator.fold (\state, derived_class -> do
+                    state <- record.fields |> List.iter |> Iterator.fold (\state, field -> processMemberType state field.type derived_class (show record.name)) state
                     state) state
                 state
         state) state

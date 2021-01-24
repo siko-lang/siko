@@ -21,19 +21,19 @@ import Hack
 collectDataDeps :: MP.Program -> Map MP.Identity [MP.Identity]
 collectDataDeps mir_program = do
     dependencies <- empty
-    dependencies <- mir_program.adts |> Map.iter |> fold (\dependencies, (id, adt) -> do
-            deps <- adt.variants |> List.iter |> fold (\deps, variant -> do
+    dependencies <- mir_program.adts |> Map.iter |> Iterator.fold (\dependencies, (id, adt) -> do
+            deps <- adt.variants |> List.iter |> Iterator.fold (\deps, variant -> do
                 deps + [T.getIdentity variant.type]) []
             (dependencies, _) <- insert dependencies id deps
             dependencies
         ) dependencies
-    dependencies <- mir_program.records |> Map.iter |> fold (\dependencies, (id, record) -> do
-            deps <- record.fields |> List.iter |> fold (\deps, field -> do
+    dependencies <- mir_program.records |> Map.iter |> Iterator.fold (\dependencies, (id, record) -> do
+            deps <- record.fields |> List.iter |> Iterator.fold (\deps, field -> do
                 deps + [T.getIdentity field.type]) []
             deps <- case record.external_info of
                 Some external_info -> do
                     external_info :: ExternalRecordInfo <- external_info // FIXME
-                    external_info.type_args |> List.iter |> fold (\deps, type_arg -> do
+                    external_info.type_args |> List.iter |> Iterator.fold (\deps, type_arg -> do
                         deps + [T.getIdentity type_arg]) deps
                 None -> deps
             (dependencies, _) <- insert dependencies id deps
@@ -65,7 +65,7 @@ getDepsForFunction mir_program function = case function.kind of
 collectFunctionDeps :: MP.Program -> Map MP.Identity [MP.Identity]
 collectFunctionDeps mir_program = do
     dependencies <- empty
-    dependencies <- mir_program.functions |> Map.iter |> fold (\dependencies, (id, function) -> do
+    dependencies <- mir_program.functions |> Map.iter |> Iterator.fold (\dependencies, (id, function) -> do
             deps <- getDepsForFunction mir_program function
             (dependencies, _) <- insert dependencies id deps
             dependencies

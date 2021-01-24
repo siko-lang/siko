@@ -31,7 +31,7 @@ import Map
 
 processArgs :: Context -> U.Substitution -> [HE.Expr] -> (Context, [ME.Expr])
 processArgs context sub args = do
-    (context, mir_args) <- args |> List.iter |> fold (\(context, mir_args), e -> do
+    (context, mir_args) <- args |> List.iter |> Iterator.fold (\(context, mir_args), e -> do
                 (context, mir_arg) <- processExpr context sub e
                 (context, mir_args + [mir_arg])) (context, [])
     (context, mir_args)
@@ -50,7 +50,7 @@ getMonomorphizedPatternType context sub id = do
 
 processArgTypes :: Context -> U.Substitution -> [HE.Expr] -> [HT.Type]
 processArgTypes context sub args =
-    args |> List.iter |> map (\(HE.Expr _ id _) -> do
+    args |> List.iter |> Iterator.map (\(HE.Expr _ id _) -> do
                 getMonomorphizedExprType context sub id) |> toList
 
 getFieldType :: MD.Record -> String -> MT.Type
@@ -61,7 +61,7 @@ getFieldType mir_record field_name = do
 
 processBindArgs :: Context -> U.Substitution -> [HP.Pattern] -> ME.Expr -> MD.Record -> (Context, [ME.Expr])
 processBindArgs context sub args var_ref_expr mir_record = do
-    (context, arg_exprs, _) <- args |> List.iter |> fold (\(context, arg_exprs, index), arg -> do
+    (context, arg_exprs, _) <- args |> List.iter |> Iterator.fold (\(context, arg_exprs, index), arg -> do
         field <- atIndex mir_record.fields index
         field_access <- ME.FieldAccess field.name var_ref_expr
         (context, field_access_expr) <- getExpr context (ME.Expr field_access field.type)
@@ -131,7 +131,7 @@ data ValuePathAccessor = { normal :: ME.Expr,
 
 processBindVars :: Context -> AdditionalInfo -> Map ValuePath ValuePathAccessor -> MT.Type -> (Context, [ME.Expr])
 processBindVars context additional_info path_info_map unit_type = do
-    (context, var_decls) <- additional_info.binds |> List.iter |> fold (\(context, var_decls), CaseBind path bind_ref -> do
+    (context, var_decls) <- additional_info.binds |> List.iter |> Iterator.fold (\(context, var_decls), CaseBind path bind_ref -> do
         var <- bindRefToVar bind_ref
         ref_expr <- case get path_info_map path of
             Some parent_expr -> do
@@ -211,7 +211,7 @@ processChoiceTree context sub choice path_info_map hir_case_bodies hir_guards = 
             ME.Expr _ body_type _ <- body_expr
             pattern_var_ref <- ME.VarRef pattern_var
             (context, pattern_var_ref_expr) <- getExpr context (ME.Expr pattern_var_ref body_type)
-            (context, cases) <- subchoices |> Map.iter |> fold (\(context, cases), (cond, choice) -> do
+            (context, cases) <- subchoices |> Map.iter |> Iterator.fold (\(context, cases), (cond, choice) -> do
                 (context, pattern_var_int) <- getNextTempVar context
                 var_type <- case cond of
                     VariantCondition index -> do
@@ -333,7 +333,7 @@ processClassMemberCall context function_type arg_type class_name qn mir_args has
     (context, function_id, arg_count) <- case instance_info of
         IR.UserDefinedInstanceInfo type instance_id _ -> do
             user_instance <- HPO.getInstance context.hir_program instance_id
-            selected_member_name <- user_instance.members |> List.iter |> fold (\selected_member_name, member -> do
+            selected_member_name <- user_instance.members |> List.iter |> Iterator.fold (\selected_member_name, member -> do
                 name <- HPO.getShortName member
                 if name == member_name
                     then Some member
@@ -443,7 +443,7 @@ processStaticFunctionCall context mir_args function_type function_id arg_count =
                             (context, closure_type, arg_types + first_arg, closures, functions)
                         else break (context, closures, functions)
                 first_closure_fn <- atIndex functions 0
-                (closure_store, _) <- closures |> List.iter |> fold (\(closure_store, index), closure -> do
+                (closure_store, _) <- closures |> List.iter |> Iterator.fold (\(closure_store, index), closure -> do
                     closure_store <- if index + 1 == getLength closures
                         then do
                             CS.addClosureInstanceSuccessor closure_store closure (CS.RealFunctionCall function_id)
@@ -474,7 +474,7 @@ processStaticFunctionCall context mir_args function_type function_id arg_count =
                 (context, do_expr)
 
 removeMulti :: Context -> [ME.Expr] -> (Context, [ME.Expr])
-removeMulti context exprs = exprs |> List.iter |> fold (\(context, exprs), expr -> do
+removeMulti context exprs = exprs |> List.iter |> Iterator.fold (\(context, exprs), expr -> do
                 ME.Expr s_expr s_type _ <- expr
                 case s_expr of
                     ME.Multi args -> (context, exprs + args)
@@ -617,7 +617,7 @@ processExpr context sub hir_expr = do
             (context, field_access_expr) <- getExpr context (ME.Expr (ME.FieldAccess name mir_receiver) mir_expr_type)
             (context, field_access_expr)
         HE.Formatter fmt args -> do
-            (context, exprs, mir_args) <- args |> List.iter |> fold (\(context, exprs, mir_args), arg -> do
+            (context, exprs, mir_args) <- args |> List.iter |> Iterator.fold (\(context, exprs, mir_args), arg -> do
                 (HE.Expr _ id _) <- arg
                 arg_type <- getMonomorphizedExprType context sub id
                 (context, var) <- getNextTempVar context
@@ -633,8 +633,8 @@ processExpr context sub hir_expr = do
                 (context, exprs, mir_args)) (context, [], [])
             processFormatExpr context fmt exprs mir_args
         HE.CaseOf body hir_cases bind_groups -> do
-            hir_case_bodies <- hir_cases |> List.iter |> map (\HE.Case _ body -> body) |> toList
-            hir_guards <- hir_cases |> List.iter |> map (\HE.Case p _ -> do
+            hir_case_bodies <- hir_cases |> List.iter |> Iterator.map (\HE.Case _ body -> body) |> toList
+            hir_guards <- hir_cases |> List.iter |> Iterator.map (\HE.Case p _ -> do
                 HP.Pattern p _ _ <- p
                 case p of
                     HP.Guarded _ expr -> Some expr
@@ -652,7 +652,7 @@ processExpr context sub hir_expr = do
         HE.RecordUpdate ref updates -> do
             var <- bindRefToVar ref
             (context, mir_updates) <- updates |> List.iter
-                    |> fold (\(context, mir_updates), update -> do
+                    |> Iterator.fold (\(context, mir_updates), update -> do
                         (context, mir_update_body) <- processExpr context sub update.body
                         Ident name _ <- update.field_name
                         mir_update <- ME.RecordUpdateItem name mir_update_body
@@ -694,10 +694,10 @@ processExpr context sub hir_expr = do
                 ME.Do items -> ME.Do (exprs + items)
                 _ -> panic "Loop body is not a do!"
             mir_body <- ME.Expr body_expr body_type body_id
-            continues <- continues |> List.iter |> map (\expr_ref -> case get context.loop_jumps expr_ref.source of
+            continues <- continues |> List.iter |> Iterator.map (\expr_ref -> case get context.loop_jumps expr_ref.source of
                     Some id -> id
                     None -> panic "Continue {} not found in MIR" % expr_ref.source) |> toList
-            breaks <- breaks |> List.iter |> map (\expr_ref -> case get context.loop_jumps expr_ref.source of
+            breaks <- breaks |> List.iter |> Iterator.map (\expr_ref -> case get context.loop_jumps expr_ref.source of
                     Some id -> id
                     None -> panic "Break {} not found in MIR" % expr_ref.source) |> toList
             (context, loop_expr) <- getExpr context (ME.Expr (ME.Loop var mir_initializer mir_body continues breaks) mir_expr_type)

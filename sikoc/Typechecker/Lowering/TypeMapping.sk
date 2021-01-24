@@ -20,7 +20,7 @@ createTypeMap lowering_context type arg_count = do
     (args, _) <- List.split args arg_count
     result_type <- HT.getResultType type arg_count
     context <- Context empty [] [] lowering_context
-    (context, _ ) <- args |> List.iter |> fold (\(context, index), arg -> do
+    (context, _ ) <- args |> List.iter |> Iterator.fold (\(context, index), arg -> do
         steps <- [MF.FunctionArg index]
         context <- mapType context steps arg
         (context, index + 1)) (context, 0)
@@ -99,7 +99,7 @@ mapType context steps type = case type of
         context <- addOwnerPosition context steps
         mapType context steps t
     HT.Tuple args -> do
-        (context, _) <- args |> List.iter |> fold (\(context, index), arg -> do
+        (context, _) <- args |> List.iter |> Iterator.fold (\(context, index), arg -> do
             steps <- steps + [MF.Field index]
             context <- mapType context steps arg
             (context, index + 1)) (context, 0)

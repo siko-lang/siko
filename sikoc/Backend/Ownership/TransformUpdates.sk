@@ -43,7 +43,7 @@ update context expr = do
             case get context.record_ctors record.id of
                 Some ctor_id -> do
                     //println "Calling {} instead" % ctor_id
-                    (context, args) <- record.fields |> List.iter |> fold (\(context, args), field -> do
+                    (context, args) <- record.fields |> List.iter |> Iterator.fold (\(context, args), field -> do
                         (context, arg) <- case find updates (\update -> update.field_name == field.name) of
                             Some update -> do
                                 update :: E.RecordUpdateItem <- update // FIXME
@@ -73,7 +73,7 @@ processFunction records record_ctors function = case function.kind of
 
 processProgram :: P.Program -> P.Program
 processProgram program = do
-    functions <- program.functions |> Map.iter |> map (\(id, function) -> do
+    functions <- program.functions |> Map.iter |> Iterator.map (\(id, function) -> do
         function <- processFunction program.records program.record_ctors function
         (id, function)) |> toMap
     program { functions = functions }

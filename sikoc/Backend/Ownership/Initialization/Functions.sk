@@ -48,7 +48,7 @@ addOwnershipVarsToBody context expr = do
     traverse context expr None (Some (addOwnershipVarsToType))
 
 kindsToIndices :: [T.OwnershipKind] -> [T.OwnershipKind] -> [Int]
-kindsToIndices all subs = subs |> List.iter |> map (\kind -> Option.unwrap (containsAtIndex all kind)) |> toList
+kindsToIndices all subs = subs |> List.iter |> Iterator.map (\kind -> Option.unwrap (containsAtIndex all kind)) |> toList
 
 processIndices :: [Int] -> T.Type -> [T.OwnershipKind] -> [Int]
 processIndices sub sub_type all = do
@@ -59,7 +59,7 @@ processIndices sub sub_type all = do
             indices
         else do
             ownership_args <- T.collectOwnershipArgs sub_type
-            ownership_vars <- sub |> List.iter |> map (\index -> atIndex ownership_args index) |> toList
+            ownership_vars <- sub |> List.iter |> Iterator.map (\index -> atIndex ownership_args index) |> toList
             indices <- kindsToIndices all ownership_vars
             indices
 
@@ -100,10 +100,10 @@ getKinds program steps type = do
         then [0]
         else do
             indices <- processSteps program steps type
-            indices <- indices |> List.iter |> map (\i -> i + 1) |> toList
+            indices <- indices |> List.iter |> Iterator.map (\i -> i + 1) |> toList
             indices
     ownership_kinds <- T.collectOwnershipKinds type
-    kinds <- indices |> List.iter |> map (\index -> atIndex ownership_kinds index) |> toList
+    kinds <- indices |> List.iter |> Iterator.map (\index -> atIndex ownership_kinds index) |> toList
     kinds
 
 applyPosition :: P.Program -> F.Position -> F.FunctionType -> [T.OwnershipKind]
@@ -121,7 +121,7 @@ applyPosition program position function_type = do
 
 unifyTypePositions :: P.Program -> Context -> [F.Position] -> F.FunctionType -> (Context, F.FunctionType)
 unifyTypePositions program context positions function_type = do
-    kinds <- positions |> List.iter |> fold (\kinds, position -> do
+    kinds <- positions |> List.iter |> Iterator.fold (\kinds, position -> do
             vars <- applyPosition program position function_type
             kinds + vars
         ) []
@@ -133,16 +133,16 @@ unifyTypePositions program context positions function_type = do
 
 applyTypeMappings :: P.Program -> Context -> F.TypeMapping -> F.FunctionType -> (Context, F.FunctionType)
 applyTypeMappings program context type_mappings function_type = do
-    (context, function_type) <- type_mappings.var_mappings |> Map.iter |> fold (\(context, function_type), (_, positions) -> do
+    (context, function_type) <- type_mappings.var_mappings |> Map.iter |> Iterator.fold (\(context, function_type), (_, positions) -> do
         unifyTypePositions program context positions function_type) (context, function_type)
-    (context, function_type) <- type_mappings.owner_positions |> List.iter |> fold (\(context, function_type), owner_position -> do
+    (context, function_type) <- type_mappings.owner_positions |> List.iter |> Iterator.fold (\(context, function_type), owner_position -> do
             vars <- applyPosition program owner_position function_type
             new_kinds <- repeat T.OwnerKind (getLength vars)
             sub <- U.batch vars new_kinds
             function_type <- U.apply function_type sub
             (context, function_type)
         ) (context, function_type)
-    (context, function_type) <- type_mappings.ref_positions |> List.iter |> fold (\(context, function_type), ref_position -> do
+    (context, function_type) <- type_mappings.ref_positions |> List.iter |> Iterator.fold (\(context, function_type), ref_position -> do
             vars <- applyPosition program ref_position function_type
             new_kinds <- repeat (T.BorrowKind 0) (getLength vars)
             sub <- U.batch vars new_kinds
@@ -155,7 +155,7 @@ processFunction :: P.Program -> Context -> F.Function -> (Context, F.Function)
 processFunction program context function = case function.kind of
     F.Normal body expr_id_gen temp_var_gen -> do
         (context, updated_body) <- addOwnershipVarsToBody context body
-        (context, args) <- function.type.args |> List.iter |> fold (\(context, args), arg -> do
+        (context, args) <- function.type.args |> List.iter |> Iterator.fold (\(context, args), arg -> do
             (context, arg) <- addOwnershipVarsToType context arg
             (context, args + [arg])) (context, [])
         (context, result) <- addOwnershipVarsToType context function.type.result
@@ -164,7 +164,7 @@ processFunction program context function = case function.kind of
     F.RecordCtor -> do
         id <- T.getIdentity function.type.result
         record <- P.getRecord program id
-        args <- record.fields |> List.iter |> map (\f -> f.type) |> toList
+        args <- record.fields |> List.iter |> Iterator.map (\f -> f.type) |> toList
         result <- T.Record id record.ownership_vars
         owned_result <- T.Owner result
         function_type <- F.FunctionType args owned_result
@@ -178,7 +178,7 @@ processFunction program context function = case function.kind of
         variant_record <- P.getRecord program variant_record_id
         sub <- U.batch variant_record.ownership_vars variant_ownership_vars
         variant_record <- U.apply variant_record sub
-        args <- variant_record.fields |> List.iter |> map (\f -> f.type) |> toList
+        args <- variant_record.fields |> List.iter |> Iterator.map (\f -> f.type) |> toList
         result <- T.Adt id adt.ownership_vars
         owned_result <- T.Owner result
         function_type <- F.FunctionType args owned_result
@@ -187,7 +187,7 @@ processFunction program context function = case function.kind of
         function_type <-  U.apply function_type sub
         (context, function { type = function_type })
     F.Extern type_mappings -> do
-        (context, args) <- function.type.args |> List.iter |> fold (\(context, args), arg -> do
+        (context, args) <- function.type.args |> List.iter |> Iterator.fold (\(context, args), arg -> do
             (context, arg) <- addOwnershipVarsToType context arg
             (context, args + [arg])) (context, [])
         (context, result) <- addOwnershipVarsToType context function.type.result
@@ -198,7 +198,7 @@ processFunction program context function = case function.kind of
 
 initializeOwnership :: Context -> P.Program -> (U.OwnershipVarGenerator, P.Program)
 initializeOwnership context program = do
-    (context, functions) <- program.functions |> Map.iter |> fold (\(context, functions), (id, function) -> do
+    (context, functions) <- program.functions |> Map.iter |> Iterator.fold (\(context, functions), (id, function) -> do
         (context, function) <- processFunction program context function // FIXME: program should not be copied here!
         (functions, _) <- insert functions id function
         (context, functions)) (context, empty)

@@ -6,9 +6,12 @@ import Siko.Resolver as R
 import Siko.Typechecker as TC
 import Siko.Transpiler as Transpiler
 import Siko.Diagnostics
+import Siko.Syntax.Location
+import Siko.Syntax.SourceFile
 import Siko.Backend as B
 import Siko.Config
 import Siko.Trace
+import Siko.FileManager
 
 processArgs :: [String] -> Config
 processArgs args = loop (config, args) <- (getDefaultConfig, args) do
@@ -25,26 +28,31 @@ processArgs args = loop (config, args) <- (getDefaultConfig, args) do
                 "-v" -> (config { verbose = True }, rest)
                 _ -> do
                         config :: Config <- config // FIXME: type inference
-                        input_files <- config.input_files + [arg]
+                        input_files <- config.input_files + [FileName arg]
                         config <- config { input_files = input_files }
                         (config, rest)
         None -> break config
 
+parseFile :: Config -> FileManager -> FileName -> (FileManager, SourceFile)
+parseFile config file_manager (FileName file_name) = do
+    trace config "Reading {}" % file_name
+    source <- readTextFile file_name
+    trace config "Parsing"
+    (file_manager, file_id) <- addFile file_manager file_name
+    (source_file, lexer_errors, parser_errors) <- parse file_id file_name source
+    lexer_errors |> List.iter |> forEach \error -> printLexerError error
+    parser_errors |> List.iter |> forEach \error -> printParserError file_manager file_id error
+    (file_manager, source_file)
+
 main = do
     args <- Option.unwrap (tail getArgs)
     config <- processArgs args
+    file_manager <- createFileManager
     trace config "Reading inputs.."
-    source <- config.input_files |> List.iter |> fold (\source, arg -> do
-        s <- readTextFile arg
-        source + "\n" + s) ""
-    writeTextFile "full_source.sk" source
-    trace config "Parsing.."
-    (program, lexer_errors, parser_errors) <- parse source
-    lexer_errors |> List.iter |> forEach \error -> printLexerError error
-    parser_errors |> List.iter |> forEach \error -> printParserError error
+    (file_manager, source_files) <-  List.mapS file_manager config.input_files (parseFile config)
     trace config "Resolving names.."
-    (hir_program, var_gen, resolver_errors) <- R.processProgram program
-    resolver_errors |> List.iter |> forEach \error -> printResolverError error
+    (hir_program, var_gen, resolver_errors) <- R.processProgram source_files
+    resolver_errors |> List.iter |> forEach \error -> printResolverError file_manager error
     trace config "Typechecking.."
     case TC.processProgram config hir_program var_gen of
         Ok mir_program -> do
@@ -53,5 +61,5 @@ main = do
             trace config "Transpiling.."
             rust_output <- Transpiler.transpile lir_program
             writeTextFile (getOutputFileName config Normal) rust_output
-        Err typechecker_errors -> typechecker_errors |> List.iter |> forEach \error -> printTypecheckerError error
+        Err typechecker_errors -> typechecker_errors |> List.iter |> forEach \error -> printTypecheckerError file_manager error
     ()

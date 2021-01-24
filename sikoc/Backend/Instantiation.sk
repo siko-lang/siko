@@ -141,7 +141,7 @@ processExpr queue mir_expr = do
             (queue, LE.Do items)
         ME.Multi _ -> panic "Multi in LIR Instantiation"
         ME.StaticFunctionCall id args -> do
-            arg_types <- args |> List.iter |> map (\ME.Expr _ t _ -> t) |> toList
+            arg_types <- args |> List.iter |> Iterator.map (\ME.Expr _ t _ -> t) |> toList
             (indices, arg_types) <- List.mapS Map.empty arg_types normalizeType
             (indices, result) <- normalizeType indices mir_type
             normalized_function_type <- MF.FunctionType arg_types result
@@ -259,7 +259,7 @@ normalizeType indices type = case type of
 collectLifetimes :: MT.Type -> [LT.Lifetime]
 collectLifetimes mir_type = do
     kinds <- MT.collectOwnershipKinds mir_type
-    lifetimes <- kinds |> List.iter |> fold (\lifetimes, kind -> case kind of
+    lifetimes <- kinds |> List.iter |> Iterator.fold (\lifetimes, kind -> case kind of
             MT.BorrowKind i -> do
                 lifetimes + [LT.Lifetime i]
             _ -> lifetimes) []
@@ -295,7 +295,7 @@ processType queue mir_type = case mir_type of
 processFunctionType :: Queue -> MF.FunctionType -> (Queue, LF.FunctionType, [LT.Lifetime])
 processFunctionType queue mir_function_type = do
     (queue, lir_args) <- List.mapS queue mir_function_type.args processType
-    lifetimes <- mir_function_type.args |> List.iter |> fold (\lifetimes, mir_arg -> do
+    lifetimes <- mir_function_type.args |> List.iter |> Iterator.fold (\lifetimes, mir_arg -> do
         lifetimes + collectLifetimes mir_arg) []
     lifetimes <- lifetimes + collectLifetimes mir_function_type.result
     lifetimes <- lifetimes |> sort |> dedup
@@ -349,7 +349,7 @@ processVariant queue mir_variant = do
 
 processExternalRecordInfo :: Queue -> U.Substitution -> MD.ExternalRecordInfo -> (Queue, LD.ExternalRecordInfo)
 processExternalRecordInfo queue sub mir_external_record_info = do
-    type_args <- mir_external_record_info.type_args |> List.iter |> map (\type_arg -> U.apply type_arg sub) |> toList
+    type_args <- mir_external_record_info.type_args |> List.iter |> Iterator.map (\type_arg -> U.apply type_arg sub) |> toList
     (queue, lir_type_args) <- List.mapS queue type_args processType
     (queue, LD.ExternalRecordInfo lir_type_args)
 
@@ -413,7 +413,7 @@ processItems queue mir_program = do
             else do
                 items <- queue.item_queue
                 queue <- queue { item_queue = [] }
-                queue <- items |> List.iter |> fold (\queue, item -> processItem queue mir_program item) queue
+                queue <- items |> List.iter |> Iterator.fold (\queue, item -> processItem queue mir_program item) queue
                 queue
 
 processProgram :: MP.Program -> InferenceC.InferenceInfoStore -> U.OwnershipVarGenerator -> LP.Program
@@ -429,7 +429,7 @@ processProgram mir_program inference_info_store var_gen = do
     queue <- addItem queue (QueuedItem function_key)
     queue <- processItems queue mir_program
     lir_program <- LP.createProgram
-    lir_program <- queue.lir_functions |> Map.iter |> fold (\lir_program, (id, f) -> LP.addFunction lir_program id f) lir_program
-    lir_program <- queue.lir_records |> Map.iter |> fold (\lir_program, (id, r) -> LP.addRecord lir_program id r) lir_program
-    lir_program <- queue.lir_adts |> Map.iter |> fold (\lir_program, (id, adt) -> LP.addAdt lir_program id adt) lir_program
+    lir_program <- queue.lir_functions |> Map.iter |> Iterator.fold (\lir_program, (id, f) -> LP.addFunction lir_program id f) lir_program
+    lir_program <- queue.lir_records |> Map.iter |> Iterator.fold (\lir_program, (id, r) -> LP.addRecord lir_program id r) lir_program
+    lir_program <- queue.lir_adts |> Map.iter |> Iterator.fold (\lir_program, (id, adt) -> LP.addAdt lir_program id adt) lir_program
     lir_program

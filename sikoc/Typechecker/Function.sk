@@ -38,11 +38,11 @@ processFunction state f program = do
 processFunctions :: TypecheckerState -> P.Program -> (TypecheckerState, FunctionStore, [DependencyGroup P.FullyQualifiedName])
 processFunctions state program = do
     functions <- P.getFunctions program
-    (state, function_store) <- functions |> List.iter |> fold (\(state, function_store), f -> do
+    (state, function_store) <- functions |> List.iter |> Iterator.fold (\(state, function_store), f -> do
         (state, func_type_info) <- processFunction state f program
         function_store <- addFunctionTypeInfo function_store func_type_info
         (state, function_store)) (state, createFunctionStore)
-    all_dependencies <- functions |> List.iter |> fold (\all_dependencies, fn -> do
+    all_dependencies <- functions |> List.iter |> Iterator.fold (\all_dependencies, fn -> do
         (deps, forced_deps) <- getFunctionDependencies fn
         untyped_deps <- deps |> List.iter |> filter (\qn -> do
             case P.getItem program qn of

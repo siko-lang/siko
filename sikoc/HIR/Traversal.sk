@@ -6,12 +6,12 @@ import Siko.HIR.Pattern as P
 processExprs a :: a -> (a -> E.Expr -> a) -> (a -> P.Pattern -> a) -> [E.Expr] -> a
 processExprs context expr_fn pattern_fn args =
     args |> List.iter
-         |> fold (\context, arg -> traverse context expr_fn pattern_fn arg) context
+         |> Iterator.fold (\context, arg -> traverse context expr_fn pattern_fn arg) context
 
 processPatterns a :: a -> (a -> P.Pattern -> a) -> (a -> E.Expr -> a) -> [P.Pattern] -> a
 processPatterns context pattern_fn expr_fn args =
     args |> List.iter
-         |> fold (\context, arg -> traversePattern context pattern_fn expr_fn arg) context
+         |> Iterator.fold (\context, arg -> traversePattern context pattern_fn expr_fn arg) context
 
 traversePattern a :: a -> (a -> P.Pattern -> a) -> (a -> E.Expr -> a) -> P.Pattern -> a
 traversePattern context pattern_fn expr_fn pattern = do
@@ -67,13 +67,13 @@ traverse context expr_fn pattern_fn expr = do
         E.Formatter _ args -> processExprs context expr_fn pattern_fn args
         E.CaseOf body cases _ -> do
             context <- traverse context expr_fn pattern_fn body
-            context <- cases |> List.iter |> fold (\context, c -> do
+            context <- cases |> List.iter |> Iterator.fold (\context, c -> do
                 context <- traversePattern context pattern_fn expr_fn c.pattern
                 context <- traverse context expr_fn pattern_fn c.body
                 context) context
             context
         E.RecordUpdate _ args -> do
-            context <- args |> List.iter |> fold (\context, arg -> do
+            context <- args |> List.iter |> Iterator.fold (\context, arg -> do
                 context <- traverse context expr_fn pattern_fn arg.body
                 context) context
             context

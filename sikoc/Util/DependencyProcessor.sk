@@ -20,7 +20,7 @@ mergeGroups a :: (Ord a) => a -> a -> GroupTable a -> GroupTable a
 mergeGroups id1 id2 table = do
     group_id1 <- Option.unwrap (get table.table id1)
     group_id2 <- Option.unwrap (get table.table id2)
-    t <- table.table |> Map.iter |> map (\(id, group_id) -> if group_id == group_id1 then (id, group_id2) else (id, group_id)) |> toMap
+    t <- table.table |> Map.iter |> Iterator.map (\(id, group_id) -> if group_id == group_id1 then (id, group_id2) else (id, group_id)) |> toMap
     table { table = t }
 
 dependsOn a :: (PartialEq a, Ord a) => a -> a -> Set a -> Map a [a] -> (Set a, Bool)
@@ -32,7 +32,7 @@ dependsOn item used_item visited all_dependencies = do
             if List.contains deps used_item
                 then (visited, True)
                 else do
-                    (depends, visited) <- deps |> List.iter |> fold (\(total_depends, visited), dep -> do
+                    (depends, visited) <- deps |> List.iter |> Iterator.fold (\(total_depends, visited), dep -> do
                         (visited, depends) <- dependsOn dep used_item visited all_dependencies
                         (total_depends || depends, visited)) (False, visited)
                     (visited, depends)
@@ -43,15 +43,15 @@ checkCircularDependency item dependencies all_dependencies group_table = do
     circular_deps <- dependencies |> List.iter |> filter (\dep -> do
         (_, depends) <- dependsOn dep item (Set.empty) all_dependencies
         depends) |> toList
-    group_table <- circular_deps |> List.iter |> fold (\group_table, id -> mergeGroups item id group_table) group_table
+    group_table <- circular_deps |> List.iter |> Iterator.fold (\group_table, id -> mergeGroups item id group_table) group_table
     group_table
 
 checkGroup a :: (PartialEq a, Ord a) => Int -> Map Int (DependencyGroup a) -> Map a [a] -> Set a -> Bool
 checkGroup group_id group_lookup_table all_dependencies processed_items = do
     group <- Option.unwrap (get group_lookup_table group_id)
-    dep_missing <- group.items |> List.iter |> fold (\total_dep_missing, item -> do
+    dep_missing <- group.items |> List.iter |> Iterator.fold (\total_dep_missing, item -> do
             deps <- Option.unwrap (get all_dependencies item)
-            some_dep_missing <- deps |> List.iter |> fold (\missing, item -> do
+            some_dep_missing <- deps |> List.iter |> Iterator.fold (\missing, item -> do
                 dep_missing <- not (Set.contains processed_items item) &&
                             not (List.contains group.items item)
                 missing || dep_missing) False
@@ -61,22 +61,22 @@ checkGroup group_id group_lookup_table all_dependencies processed_items = do
 
 processDependencies a :: (PartialEq a, Ord a) => Map a [a] -> [DependencyGroup a]
 processDependencies all_dependencies = do
-    all_dependencies <- all_dependencies |> Map.iter |> map (\(id, dependencies) -> (id, dependencies |> sort |> dedup)) |> toMap
+    all_dependencies <- all_dependencies |> Map.iter |> Iterator.map (\(id, dependencies) -> (id, dependencies |> sort |> dedup)) |> toMap
     group_table :: GroupTable a <- GroupTable Map.empty
 
     // 1. create a dependency group in the table for every single item
-    (group_table, _) <- all_dependencies |> Map.iter |> fold (\(group_table, index), (id, dependencies) -> do
+    (group_table, _) <- all_dependencies |> Map.iter |> Iterator.fold (\(group_table, index), (id, dependencies) -> do
         (table, _) <- Map.insert group_table.table id index
         (group_table { table = table }, index + 1)) (group_table, 0)
 
     // 2. merge the groups in case of circular dependencies
-    group_table <- all_dependencies |> Map.iter |> fold (\group_table, (id, dependencies) ->
+    group_table <- all_dependencies |> Map.iter |> Iterator.fold (\group_table, (id, dependencies) ->
             checkCircularDependency id dependencies all_dependencies group_table) group_table
 
     // 3. initialize group lookup table
     group_lookup_table :: Map Int (DependencyGroup a) <- Map.empty // FIXME: type annotation should not be required here
     unprocessed_groups <- Set.empty
-    (group_lookup_table, unprocessed_groups) <- group_table.table |> Map.iter |> fold (\(group_lookup_table, unprocessed_groups), (id, group_id) -> do
+    (group_lookup_table, unprocessed_groups) <- group_table.table |> Map.iter |> Iterator.fold (\(group_lookup_table, unprocessed_groups), (id, group_id) -> do
             (group_lookup_table, _) <- alter (\group -> case group of
                                                 Some group -> do
                                                     group <- addToDependencyGroup id group
@@ -102,10 +102,10 @@ processDependencies all_dependencies = do
                                             |> Set.iter
                                             |> filter (\group_id -> checkGroup group_id group_lookup_table all_dependencies processed_items) |> toList
                                 next_groups |> List.iter
-                                     |> fold (\(unprocessed_groups, ordered_groups, processed_items), group_id -> do
+                                     |> Iterator.fold (\(unprocessed_groups, ordered_groups, processed_items), group_id -> do
                                                 unprocessed_groups <- Set.remove unprocessed_groups group_id
                                                 group <- Option.unwrap (get group_lookup_table group_id)
-                                                processed_items <- group.items |> List.iter |> fold (\processed_items, item -> do
+                                                processed_items <- group.items |> List.iter |> Iterator.fold (\processed_items, item -> do
                                                     (processed_items, _) <- Set.insert processed_items item
                                                     processed_items) processed_items
                                                 ordered_groups <- ordered_groups + [group]

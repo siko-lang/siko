@@ -242,7 +242,7 @@ parseBinaryOps state for_initializer index = do
         state :: ParserState <- state // FIXME
         current_ops <- atIndex state.ops_table index
         ti <- peek state
-        matching_op <- current_ops |> List.iter |> fold (\result, kind -> if kind == T.getKind ti.token then Some kind else result) None
+        matching_op <- List.fold None current_ops (\result, kind -> if kind == T.getKind ti.token then Some kind else result)
         case matching_op of
             Some matching_op -> do
                 state <- step state

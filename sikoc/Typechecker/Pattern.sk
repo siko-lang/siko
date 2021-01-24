@@ -41,7 +41,7 @@ initializePatternType context (P.Pattern pattern id location) = do
             context <- addPatternType context id (TS.PatternType var)
             context
         P.Tuple args -> do
-            (context, vars) <- args |> List.iter |> fold (\(context, vars), arg -> do
+            (context, vars) <- args |> List.iter |> Iterator.fold (\(context, vars), arg -> do
                 (context, var) <- getNewVar context
                 vars <- vars + [var]
                 (context, vars)) (context, [])
@@ -99,7 +99,7 @@ checkPatternType context (P.Pattern pattern id location) = do
     case pattern of
         P.Binding _ -> context
         P.Tuple args -> do
-            arg_types <- args |> List.iter |> map (\(P.Pattern _ arg _) -> getPatternType context arg) |> toList
+            arg_types <- args |> List.iter |> Iterator.map (\(P.Pattern _ arg _) -> getPatternType context arg) |> toList
             (context, _) <- matchPatternWith context id (T.Tuple arg_types) location
             context
         P.Guarded p expr -> do
@@ -120,7 +120,7 @@ checkPatternType context (P.Pattern pattern id location) = do
             context
         P.Record _ args -> do
             record_type_info <- TS.getRecordTypeInfo context.type_store id
-            (context, record_type_info, _) <- args |> List.iter |> fold (\(context, record_type_info, index), (P.Pattern _ arg_id arg_location) -> do
+            (context, record_type_info, _) <- args |> List.iter |> Iterator.fold (\(context, record_type_info, index), (P.Pattern _ arg_id arg_location) -> do
                     field <- atIndex record_type_info.fields index
                     (context, sub) <- matchPatternWith context arg_id field.type arg_location
                     record_type_info <- DS.applyRecordTypeInfo record_type_info sub
@@ -129,7 +129,7 @@ checkPatternType context (P.Pattern pattern id location) = do
             context
         P.Variant _ index args -> do
             adt_type_info <- TS.getAdtTypeInfo context.type_store id
-            (context, adt_type_info, _) <- args |> List.iter |> fold (\(context, adt_type_info, arg_index), (P.Pattern _ arg_id arg_location) -> do
+            (context, adt_type_info, _) <- args |> List.iter |> Iterator.fold (\(context, adt_type_info, arg_index), (P.Pattern _ arg_id arg_location) -> do
                     variant <- atIndex adt_type_info.variants index
                     item_type <- atIndex variant.items arg_index
                     (context, sub) <- matchPatternWith context arg_id item_type arg_location

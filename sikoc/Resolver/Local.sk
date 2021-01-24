@@ -6,7 +6,6 @@ import Siko.Syntax.Class as C
 import Siko.Syntax.TypeSignature as T
 import Siko.Syntax.Ident
 import Siko.Syntax.Function as F
-import Siko.Syntax.Program
 import Siko.Resolver.Item
 import Map
 
@@ -18,7 +17,7 @@ getVariants adt =
                     T.TypeSignature v _ -> case v of
                         T.Variant _ _ -> True
                         _ -> False)
-      |> fold (\variants, v -> case v of
+      |> Iterator.fold (\variants, v -> case v of
                             T.TypeSignature v _ -> case v of
                                 T.Variant v _ -> variants + [Variant (getString adt.name) (getString v)]
                                 _ -> panic "Variant is not a variant") []
@@ -27,7 +26,7 @@ getMemberFunctions :: C.Class -> [Item]
 getMemberFunctions c =
     c.member_function_type_signatures
       |> List.iter
-      |> fold (\members, fs -> members + [ClassMember (getString c.name) (getString fs.name)]) []
+      |> Iterator.fold (\members, fs -> members + [ClassMember (getString c.name) (getString fs.name)]) []
 
 processItem :: M.Item -> [Item]
 processItem m_item = case m_item of
@@ -49,12 +48,12 @@ exportable m_item = case m_item of
 
 processModule :: M.Module -> [Item]
 processModule mod = do
-    items <- mod.items |> List.iter |> filter exportable |> map processItem |> fold (\total, items -> total + items)  []
+    items <- mod.items |> List.iter |> filter exportable |> Iterator.map processItem |> Iterator.fold (\total, items -> total + items)  []
     items
 
 processLocals :: Map String M.Module -> Map String [Item]
 processLocals modules = do
-    local_items <- modules |> Map.iter |> map (\(name, mod) -> do
+    local_items <- modules |> Map.iter |> Iterator.map (\(name, mod) -> do
                                                             items <- processModule mod
                                                             (name, items)) |> toMap
     local_items

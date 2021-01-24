@@ -1,7 +1,7 @@
 module Siko.Resolver.Module(processExportsImports, ModuleResolver(..), resolveItem, ResolvedItem(..)) where
 
 import Siko.Syntax.Module as M
-import Siko.Syntax.Program
+import Siko.Syntax.SourceFile
 import Siko.Syntax.Ident
 import Siko.Syntax.Import
 import Siko.Resolver.Local
@@ -25,7 +25,7 @@ data ModuleResolver = {
                       }
 
 getCandidates :: [ResolvedItem] -> [String]
-getCandidates resolved_items = resolved_items |> List.iter |> map (\(ResolvedItem name _ _) -> HP.getResolvableName name) |> toList
+getCandidates resolved_items = resolved_items |> List.iter |> Iterator.map (\(ResolvedItem name _ _) -> HP.getResolvableName name) |> toList
 
 resolveItem :: Map String [ResolvedItem] -> (Ident -> ResolverError) -> Ident -> Result ResolvedItem ResolverError
 resolveItem items err name = do
@@ -40,17 +40,18 @@ resolveItem items err name = do
                         else Ok (atIndex resolved_items 0)
         None -> Err (err name)
 
-getModules :: Program -> ResolverState -> HP.Program -> (ResolverState, HP.Program, Map String M.Module)
-getModules program state hir_program = do
-        (state, hir_program, modules) <- program.modules |> List.iter |> fold (\(state, hir_program, modules), mod -> do
-                                                        (Ident name location) <- mod.name
-                                                        (modules, _) <- insert modules (getString mod.name) mod
-                                                        qn <- HP.ModulePath name
-                                                        m <- HP.Module location
-                                                        (hir_program, other_item) <- HP.addItem hir_program qn m
-                                                        state <- handleItemConflict state other_item location
-                                                        (state, hir_program, modules)) (state, hir_program, empty)
-        (state, hir_program, modules)
+getModules :: [SourceFile] -> ResolverState -> HP.Program -> (ResolverState, HP.Program, Map String M.Module)
+getModules source_files state hir_program = do
+        source_files |> List.iter |> Iterator.fold (\(state, hir_program, modules), source_file -> do
+                (state, hir_program, modules) <- source_file.modules |> List.iter |> Iterator.fold (\(state, hir_program, modules), mod -> do
+                                                                (Ident name location) <- mod.name
+                                                                (modules, _) <- insert modules (getString mod.name) mod
+                                                                qn <- HP.ModulePath name
+                                                                m <- HP.Module location
+                                                                (hir_program, other_item) <- HP.addItem hir_program qn m
+                                                                state <- handleItemConflict state other_item location
+                                                                (state, hir_program, modules)) (state, hir_program, modules)
+                (state, hir_program, modules)) (state, hir_program, empty)
 
 processImport :: M.Item -> Option Import
 processImport item = case item of
@@ -58,17 +59,22 @@ processImport item = case item of
         _ -> None
 
 getModuleImports :: M.Module -> [Import]
-getModuleImports mod = mod.items |> List.iter |> map processImport |> fold (\total, item -> case item of
+getModuleImports mod = mod.items |> List.iter |> Iterator.map processImport |> Iterator.fold (\total, item -> case item of
                                                                                                 Some i -> total + [i]
                                                                                                 None -> total) []
 
-getImports :: Program -> Map String [Import]
-getImports program = do
-        imports <- program.modules |> List.iter |> fold (\imports, mod -> do
+buildModuleImportMap :: [SourceFile] -> Map String [Import]
+buildModuleImportMap source_files = do
+        source_files |> List.iter |> Iterator.fold (\import_map, source_file -> do
+                getImportsForSourceFile import_map source_file) empty
+
+getImportsForSourceFile :: Map String [Import] -> SourceFile -> Map String [Import]
+getImportsForSourceFile import_map source_file = do
+        import_map <- source_file.modules |> List.iter |> Iterator.fold (\import_map, mod -> do
                                                          module_name <- getString mod.name
-                                                         (imports, _) <- insert imports module_name (getModuleImports mod)
-                                                         imports) empty
-        imports
+                                                         (import_map, _) <- insert import_map module_name (getModuleImports mod)
+                                                         import_map) import_map
+        import_map
 
 add :: ResolvedItem -> Option [ResolvedItem] -> Option [ResolvedItem]
 add resolved_item items = case items of
@@ -117,20 +123,20 @@ addImportedItem module_resolver (ImportedItem visible_name source_module item im
 createModuleResolver :: String -> [ImportedItem] -> ModuleResolver
 createModuleResolver module_name items = items
         |> List.iter
-        |> fold (\module_resolver, item -> addImportedItem module_resolver item) (ModuleResolver module_name empty empty)
+        |> Iterator.fold (\module_resolver, item -> addImportedItem module_resolver item) (ModuleResolver module_name empty empty)
 
-processExportsImports :: Program -> ResolverState -> HP.Program -> (ResolverState, HP.Program, Map String (M.Module, ModuleResolver))
-processExportsImports program state hir_program = do
-    (state, hir_program, modules) <- getModules program state hir_program
+processExportsImports :: [SourceFile] -> ResolverState -> HP.Program -> (ResolverState, HP.Program, Map String (M.Module, ModuleResolver))
+processExportsImports source_files state hir_program = do
+    (state, hir_program, modules) <- getModules source_files state hir_program
     local_items <- processLocals modules
     //println "locals: {}" % local_items
     exported_items <- processExports local_items modules
     //println "exported items: {}" % exported_items
-    imports <- getImports program
+    imports <- buildModuleImportMap source_files
     //println "imports {}" % imports
     (state, imported_items) <- processImports state local_items exported_items imports
     //println "imported item: {}" % imported_items
-    modules <- imported_items |> Map.iter |> map (\(module_name, imported_items) -> do
+    modules <- imported_items |> Map.iter |> Iterator.map (\(module_name, imported_items) -> do
                 module_resolver <- createModuleResolver module_name imported_items
                 mod <- Option.unwrap (get modules module_name)
                 (module_name, (mod, module_resolver)))

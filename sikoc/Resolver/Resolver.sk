@@ -1,7 +1,7 @@
 module Siko.Resolver where
 
 import Siko.Syntax.Location
-import Siko.Syntax.Program as SP
+import Siko.Syntax.SourceFile as SF
 import Siko.Syntax.Module as SM
 import Siko.HIR.Program as HP
 import Siko.HIR.Expr as HE
@@ -43,18 +43,18 @@ handleItemConflict state l1 l2 = do
                 state { errors = state.errors + [err] }
         None -> state
 
-processProgram :: SP.Program -> (HP.Program, TypeVarGenerator, [ResolverError])
-processProgram program = do
+processProgram :: [SF.SourceFile] -> (HP.Program, TypeVarGenerator, [ResolverError])
+processProgram source_files = do
     state <- emptyState
     hir_program <- HP.Program empty empty
-    (state, hir_program, modules) <- processExportsImports program state hir_program
-    (state, hir_program) <- modules |> Map.iter |> fold (\(state, hir_program), (module_name, (mod, module_resolver)) -> do
+    (state, hir_program, modules) <- processExportsImports source_files state hir_program
+    (state, hir_program) <- modules |> Map.iter |> Iterator.fold (\(state, hir_program), (module_name, (mod, module_resolver)) -> do
                                     (state, hir_program) <- processData state hir_program module_resolver mod
                                     (state, hir_program)) (state, hir_program)
-    (state, hir_program) <- modules |> Map.iter |> fold (\(state, hir_program), (module_name, (mod, module_resolver)) -> do
+    (state, hir_program) <- modules |> Map.iter |> Iterator.fold (\(state, hir_program), (module_name, (mod, module_resolver)) -> do
                                     (state, hir_program) <- processFunctions state hir_program module_resolver mod
                                     (state, hir_program)) (state, hir_program)
-    (state, hir_program) <- modules |> Map.iter |> fold (\(state, hir_program), (module_name, (mod, module_resolver)) -> do
+    (state, hir_program) <- modules |> Map.iter |> Iterator.fold (\(state, hir_program), (module_name, (mod, module_resolver)) -> do
                                     (state, hir_program) <- processClassesAndInstances state hir_program module_resolver mod
                                     (state, hir_program)) (state, hir_program)
     (hir_program, state.var_gen, state.errors)

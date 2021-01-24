@@ -89,7 +89,7 @@ processMemberForShow context member parent_expr class_name = do
     case member of
         HT.Tuple tuple_members -> do
             (context, fmt_args, items, _) <- tuple_members |> List.iter
-                |> fold (\(context, fmt_args, tuple_items, index), tuple_member -> do
+                |> Iterator.fold (\(context, fmt_args, tuple_items, index), tuple_member -> do
                     (context, mir_tuple_member) <- TS.processType context tuple_member
                     tuple_field_access <- ME.FieldAccess (Util.getFieldName index) parent_expr
                     (context, tuple_field_access_expr) <- getExpr context (ME.Expr tuple_field_access mir_tuple_member)
@@ -202,9 +202,9 @@ generateShowInstance context hir_type class_name = do
                     (context, decl_expr) <- getExpr context (ME.Expr decl unit_type)
                     if getLength adt.variants == 1
                         then do
-                            (context, cases) <- adt.variants |> List.iter |> fold (\(context, cases), variant -> do
+                            (context, cases) <- adt.variants |> List.iter |> Iterator.fold (\(context, cases), variant -> do
                                 (context, fmt_args, mir_items) <- variant.items |> List.iter
-                                            |> fold (\(context, fmt_args, mir_items), item -> do
+                                            |> Iterator.fold (\(context, fmt_args, mir_items), item -> do
                                                 field_name <- Util.getFieldName (getLength mir_items)
                                                 (context, mir_item_type) <- TS.processType context item
                                                 field_access <- ME.FieldAccess field_name var_ref_expr
@@ -224,14 +224,14 @@ generateShowInstance context hir_type class_name = do
                             (context, body_expr) <- getExpr context (ME.Expr body mir_string_type)
                             (context, body_expr)
                         else do
-                            (context, cases) <- adt.variants |> List.iter |> fold (\(context, cases), variant -> do
+                            (context, cases) <- adt.variants |> List.iter |> Iterator.fold (\(context, cases), variant -> do
                                 index <- (getLength cases)
                                 (context, var_in) <- getNextTempVar context
                                 variant_type <- getVariantType context index mir_adt_type
                                 (context, var_in_ref_expr) <- getExpr context (ME.Expr (ME.VarRef var_in) variant_type)
                                 checker <- ME.VariantChecker index var_in mir_adt_type
                                 (context, fmt_args, mir_items) <- variant.items |> List.iter
-                                            |> fold (\(context, fmt_args, mir_items), item -> do
+                                            |> Iterator.fold (\(context, fmt_args, mir_items), item -> do
                                                 field_name <- Util.getFieldName (getLength mir_items)
                                                 (context, mir_item_type) <- TS.processType context item
                                                 field_access <- ME.FieldAccess field_name var_in_ref_expr
@@ -262,7 +262,7 @@ generateShowInstance context hir_type class_name = do
                     decl <- ME.VarDecl var arg_ref_expr
                     (context, decl_expr) <- getExpr context (ME.Expr decl unit_type)
                     (context, fmt_args, mir_items) <- record.fields |> List.iter
-                            |> fold (\(context, fmt_args, mir_items), field -> do
+                            |> Iterator.fold (\(context, fmt_args, mir_items), field -> do
                         field_access <- ME.FieldAccess field.name var_ref_expr
                         (context, mir_field_type) <- TS.processType context field.type
                         (context, field_access_expr) <- getExpr context (ME.Expr field_access mir_field_type)
@@ -333,7 +333,7 @@ generateTwoArgsInstance context hir_type class_name call_compare_discriminants p
                             var1_decl <- ME.VarDecl var1 arg_ref1_expr
                             (context, var1_decl_expr) <- getExpr context (ME.Expr var1_decl unit_type)
                             variant <- atIndex adt.variants 0
-                            (variant_items, _) <- variant.items |> List.iter |> fold (\(items, index), item -> do
+                            (variant_items, _) <- variant.items |> List.iter |> Iterator.fold (\(items, index), item -> do
                                     item <- (Util.getFieldName index, item)
                                     items <- items + [item]
                                     (items, index + 1)) ([], 0)
@@ -343,7 +343,7 @@ generateTwoArgsInstance context hir_type class_name call_compare_discriminants p
                             (context, body_expr) <- getExpr context (ME.Expr body call_type)
                             (context, body_expr)
                         else do
-                            (context, cases) <- adt.variants |> List.iter |> fold (\(context, cases), variant -> do
+                            (context, cases) <- adt.variants |> List.iter |> Iterator.fold (\(context, cases), variant -> do
                                 (context, var0_in) <- getNextTempVar context
                                 variant_index <- getLength cases
                                 checker <- ME.VariantChecker variant_index var0_in mir_adt_type
@@ -359,7 +359,7 @@ generateTwoArgsInstance context hir_type class_name call_compare_discriminants p
                                 (context, var_ref1_expr) <- getExpr context (ME.Expr var_ref1 mir_adt_type)
                                 var_ref1_in <- ME.VarRef var1_in
                                 (context, var_ref1_in_expr) <- getExpr context (ME.Expr var_ref1_in variant_type)
-                                (variant_items, _) <- variant.items |> List.iter |> fold (\(items, index), item -> do
+                                (variant_items, _) <- variant.items |> List.iter |> Iterator.fold (\(items, index), item -> do
                                     item <- (Util.getFieldName index, item)
                                     items <- items + [item]
                                     (items, index + 1)) ([], 0)
@@ -403,7 +403,7 @@ generateTwoArgsInstance context hir_type class_name call_compare_discriminants p
                     (context, var_ref0_expr) <- getExpr context (ME.Expr var_ref0 mir_record_type)
                     var_ref1 <- ME.VarRef (ME.Arg 1)
                     (context, var_ref1_expr) <- getExpr context (ME.Expr var_ref1 mir_record_type)
-                    record_items <- record.fields |> List.iter |> map (\DS.RecordField name type -> (name, type)) |> toList
+                    record_items <- record.fields |> List.iter |> Iterator.map (\DS.RecordField name type -> (name, type)) |> toList
                     (context, call_expr) <- process_member_fn context record_items var_ref0_expr var_ref1_expr
                     (context, call_expr)
         _ -> panic "Cannot auto derive {} for type {}" % (class_name, HT.toString hir_type)

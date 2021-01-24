@@ -118,7 +118,7 @@ addBoxedVarsToAdt context adt = case adt of
 
 calculateArgCountForAdt :: Context -> [P.Identity] -> AlgebraicDataType -> Int
 calculateArgCountForAdt context group adt = do
-    adt.variants |> List.iter |> fold (\arg_count, variant -> do
+    adt.variants |> List.iter |> Iterator.fold (\arg_count, variant -> do
         record_id <- T.getIdentity variant.type
         variant_arg_count <- if contains group record_id
             then 0
@@ -127,7 +127,7 @@ calculateArgCountForAdt context group adt = do
 
 calculateArgCountForRecord :: Context -> [P.Identity] -> Record -> Int
 calculateArgCountForRecord context group record = do
-    arg_count <- record.fields |> List.iter |> fold (\arg_count, field -> do
+    arg_count <- record.fields |> List.iter |> Iterator.fold (\arg_count, field -> do
         id <- T.getIdentity field.type
         field_arg_count <- if contains group id
             then 1
@@ -137,7 +137,7 @@ calculateArgCountForRecord context group record = do
         Some external_info -> do
             external_info :: ExternalRecordInfo <- external_info // FIXME
             arg_count <- arg_count + getLength external_info.type_args
-            external_info.type_args |> List.iter |> fold (\arg_count, type_arg -> do
+            external_info.type_args |> List.iter |> Iterator.fold (\arg_count, type_arg -> do
                 id <- T.getIdentity type_arg
                 c <- getArgCount context id
                 arg_count + c) arg_count
@@ -153,21 +153,21 @@ calculateArgCount program context group id = do
 
 addOwnershipVarsToGroup :: Context -> [P.Identity] -> P.Program -> (Context, P.Program)
 addOwnershipVarsToGroup context group program = do
-    (context, arg_count) <- group |> List.iter |> fold (\(context, arg_count), id -> do
+    (context, arg_count) <- group |> List.iter |> Iterator.fold (\(context, arg_count), id -> do
         c <- calculateArgCount program context group id
         (context, arg_count + c)) (context, 0)
-    context <- group |> List.iter |> fold (\context, id -> do
+    context <- group |> List.iter |> Iterator.fold (\context, id -> do
         (arg_count_map, _) <- insert context.arg_count_map id arg_count
         context <- context { arg_count_map = arg_count_map }
         context) context
     (context, all_vars) <- getNextOwnershipKinds context arg_count
     group_context <- GroupContext context group all_vars all_vars []
-    (group_context, program) <- group |> List.iter |> fold (\(group_context, program), id -> do
+    (group_context, program) <- group |> List.iter |> Iterator.fold (\(group_context, program), id -> do
         (group_context, records, _) <- alterS addOwnershipVarsToRecord group_context id program.records
         (group_context, adts, _) <- alterS addOwnershipVarsToAdt group_context id program.adts
         program <- program { records = records, adts = adts }
         (group_context, program)) (group_context, program)
-    program <- group |> List.iter |> fold (\program, id -> do
+    program <- group |> List.iter |> Iterator.fold (\program, id -> do
         (records, _) <- alter (addBoxedVarsToRecord group_context) id program.records
         (adts, _) <- alter (addBoxedVarsToAdt group_context) id program.adts
         program <- program { records = records, adts = adts }
@@ -176,6 +176,6 @@ addOwnershipVarsToGroup context group program = do
 
 initializeOwnership :: Context -> P.Program -> [DependencyGroup P.Identity] -> (Context, P.Program)
 initializeOwnership context program groups = do
-    (context, program) <- groups |> List.iter |> fold (\(context, program), group -> addOwnershipVarsToGroup context group.items program
+    (context, program) <- groups |> List.iter |> Iterator.fold (\(context, program), group -> addOwnershipVarsToGroup context group.items program
         ) (context, program)
     (context, program)

@@ -52,9 +52,9 @@ parseModule state = do
         (state, mod)
     state <- try expect state Kind.EndOfBlock
     state <- try expect state Kind.EndOfModule
-    mod <- getImplicitModules |> List.iter |> fold (\mod, implicit -> do
+    mod <- List.fold mod getImplicitModules (\mod, implicit -> do
         item <- Import (Implicit implicit)
         mod <- mod { items = mod.items + [item] }
-        mod) mod
+        mod)
     state <- addModule state mod
     Ok state

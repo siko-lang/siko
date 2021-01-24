@@ -93,12 +93,12 @@ getAdtTypeInfo store pattern_id = do
 
 apply :: TypeStore -> U.Substitution -> TypeStore
 apply store sub = do
-    expr_types <- store.expr_types |> Map.iter |> map (\(id, expr_ty) -> do
+    expr_types <- store.expr_types |> Map.iter |> Iterator.map (\(id, expr_ty) -> do
                                 expr_ty <- case expr_ty of
                                     ExprType ty -> ExprType (U.apply sub ty)
                                     FunctionCall ty fn_ty -> FunctionCall (U.apply sub ty) (U.apply sub fn_ty)
                                 (id, expr_ty)) |> toMap
-    pattern_types <- store.pattern_types |> Map.iter |> map (\(id, pattern_ty) -> do
+    pattern_types <- store.pattern_types |> Map.iter |> Iterator.map (\(id, pattern_ty) -> do
                                 pattern_ty <- case pattern_ty of
                                     PatternType ty -> PatternType (U.apply sub ty)
                                     PatternWithRecordType record_type_info -> PatternWithRecordType (DS.applyRecordTypeInfo record_type_info sub)

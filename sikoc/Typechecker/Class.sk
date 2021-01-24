@@ -33,7 +33,7 @@ processClass :: TypecheckerState -> C.Class -> P.Program -> ClassDependencyMap -
 processClass state c program class_dependency_map = do
     (direct_dependencies, _) <- insert class_dependency_map.direct_dependencies c.name c.dependencies
     class_dependency_map <- class_dependency_map { direct_dependencies = direct_dependencies }
-    (state, class_type_info) <- c.members |> List.iter |> fold (\(state, class_type_info), qn -> do
+    (state, class_type_info) <- c.members |> List.iter |> Iterator.fold (\(state, class_type_info), qn -> do
             member <- P.getFunction program qn
             short_name <- (P.getShortName member.name)
             (state, class_type_info) <- case member.type of
@@ -57,8 +57,8 @@ isSpecializedType :: T.Type -> Bool
 isSpecializedType type = case type of
     T.Var _ _ -> False
     T.FixedTypeArg _ _ _ -> False
-    T.Named _ args -> args |> List.iter |> fold (\specialized, arg -> specialized || not (isVar arg)) False
-    T.Tuple args -> args |> List.iter |> fold (\specialized, arg -> specialized || not (isVar arg)) False
+    T.Named _ args -> args |> List.iter |> Iterator.fold (\specialized, arg -> specialized || not (isVar arg)) False
+    T.Tuple args -> args |> List.iter |> Iterator.fold (\specialized, arg -> specialized || not (isVar arg)) False
     _ -> True
 
 processInstance :: TypecheckerState -> C.Instance -> P.Program -> (TypecheckerState, [(P.FullyQualifiedName, T.Type)])
@@ -77,7 +77,7 @@ processInstance state i program = do
     state <- state { var_gen = var_gen, instance_resolver = instance_resolver }
     (state, inferred_types) <- case get state.class_store.class_type_info_map i.class_name of
         Some class_type_info -> do
-            (state, member_names, inferred_types) <- i.members |> List.iter |> fold (\(state, member_names, inferred_types), instance_member_name -> do
+            (state, member_names, inferred_types) <- i.members |> List.iter |> Iterator.fold (\(state, member_names, inferred_types), instance_member_name -> do
                 short_name <- P.getShortName instance_member_name
                 instance_member <- P.getFunction program instance_member_name
                 (state, inferred_type) <- case get class_type_info.members short_name of
@@ -121,7 +121,7 @@ processInstance state i program = do
                     None -> inferred_types
                 (state, member_names + [short_name], inferred_types)) (state, [], [])
             class_type_info :: ClassTypeInfo <- class_type_info // FIXME: type inference fix!
-            state <- class_type_info.members |> Map.iter |> fold (\state, (name, member_data) -> do
+            state <- class_type_info.members |> Map.iter |> Iterator.fold (\state, (name, member_data) -> do
                     if member_data.has_default_impl
                         then state
                         else if List.contains member_names name
@@ -136,15 +136,15 @@ processClassesAndInstances :: TypecheckerState -> P.Program -> (TypecheckerState
 processClassesAndInstances state program = do
     classes <- P.getClasses program
     class_dependency_map <- ClassDependencyMap empty
-    (state, class_type_info_map, class_dependency_map) <- classes |> List.iter |> fold (\(state, class_type_info_map, class_dependency_map), c -> do
+    (state, class_type_info_map, class_dependency_map) <- classes |> List.iter |> Iterator.fold (\(state, class_type_info_map, class_dependency_map), c -> do
         (state, class_member_info, class_dependency_map) <- processClass state c program class_dependency_map
         (class_type_info_map, _) <- Map.insert class_type_info_map c.name class_member_info
         (state, class_type_info_map, class_dependency_map)) (state, Map.empty, class_dependency_map)
     groups <- processDependencies class_dependency_map.direct_dependencies
-    (state, circular) <- groups |> List.iter |> fold (\(state, circular), group -> do
+    (state, circular) <- groups |> List.iter |> Iterator.fold (\(state, circular), group -> do
         if getLength group.items > 1
             then do
-                (names, locations) <- group.items |> List.iter |> fold (\(names, locations), qn -> do
+                (names, locations) <- group.items |> List.iter |> Iterator.fold (\(names, locations), qn -> do
                     c <- P.getClass program qn
                     names <- names + [P.getResolvableName c.name]
                     locations <- locations + [c.location]
@@ -156,10 +156,10 @@ processClassesAndInstances state program = do
     class_store <- initializeClassStore class_dependency_map.direct_dependencies circular class_type_info_map
     state <- state { class_store = class_store }
     instances <- P.getInstances program
-    (state, inferred_types) <- instances |> List.iter |> fold (\(state, inferred_types), i -> do
+    (state, inferred_types) <- instances |> List.iter |> Iterator.fold (\(state, inferred_types), i -> do
         (state, types) <- processInstance state i program
         (state, inferred_types + types)) (state, [])
-    program <- inferred_types |> List.iter |> fold (\program, (qn, type) -> P.updateInstanceMemberType program qn type) program
+    program <- inferred_types |> List.iter |> Iterator.fold (\program, (qn, type) -> P.updateInstanceMemberType program qn type) program
     (state, program)
 
 checkInstanceConflictsAndDependencies :: TypecheckerState -> TypecheckerState

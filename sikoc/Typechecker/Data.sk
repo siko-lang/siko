@@ -12,7 +12,7 @@ import Map
 
 addDerivedClasses :: TypecheckerState -> [DeriveInfo] -> T.Type -> ([DS.DeriveInfo], TypecheckerState)
 addDerivedClasses state derived_classes type = do
-    (derived_classes, state) <- derived_classes |> List.iter |> fold (\(derived_classes, state), derived_class -> do
+    (derived_classes, state) <- derived_classes |> List.iter |> Iterator.fold (\(derived_classes, state), derived_class -> do
         (derived_classes, state) <- case IR.addAutoDerivedInstance state.instance_resolver derived_class.class_name type derived_class.location of
             Ok (instance_resolver, instance_id) -> do
                 state <- state { instance_resolver = instance_resolver }
@@ -26,7 +26,7 @@ addDerivedClasses state derived_classes type = do
 
 processRecord :: TypecheckerState -> Record -> TypecheckerState
 processRecord state record= do
-    (field_names, fields, _) <- record.fields |> List.iter |> fold (\(field_names, fields, index), (RecordField name type) -> do
+    (field_names, fields, _) <- record.fields |> List.iter |> Iterator.fold (\(field_names, fields, index), (RecordField name type) -> do
         (field_names, _) <- insert field_names name index
         fields <- fields + [DS.RecordField name type]
         (field_names, fields, index + 1)) (empty, [], 0)
@@ -41,7 +41,7 @@ processRecord state record= do
 
 processAdt :: TypecheckerState -> AlgebraicDataType -> TypecheckerState
 processAdt state adt = do
-    variants <- adt.variants |> List.iter |> map (\variant -> DS.Variant variant.name variant.items) |> toList
+    variants <- adt.variants |> List.iter |> Iterator.map (\variant -> DS.Variant variant.name variant.items) |> toList
     adt_type_info <- DS.AdtTypeInfo adt.name adt.type variants []
     (adt_type_info, var_gen) <- DS.remapAdtTypeInfo adt_type_info state.var_gen
     state <- state { var_gen = var_gen }
@@ -54,9 +54,9 @@ processAdt state adt = do
 processData :: Program -> TypecheckerState -> TypecheckerState
 processData program state = do
     records <- getRecords program
-    state <- records |> List.iter |> fold (\state, record ->
+    state <- records |> List.iter |> Iterator.fold (\state, record ->
             processRecord state record) state
     adts <- getAdts program
-    state <- adts |> List.iter |> fold (\state, adt ->
+    state <- adts |> List.iter |> Iterator.fold (\state, adt ->
             processAdt state adt) state
     state
