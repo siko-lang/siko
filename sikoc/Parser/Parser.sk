@@ -7,7 +7,7 @@ import Siko.Parser.Module
 
 import Siko.Syntax.Ident
 import Siko.Syntax.SourceFile
-import Siko.Syntax.Module
+import Siko.Syntax.Module as M
 import Siko.Syntax.TypeSignature
 import Siko.Syntax.Location
 import Siko.Parser.Token
@@ -21,9 +21,10 @@ data ParserState =
         tokens :: [TokenInfo],
         index :: Int,
         errors :: [ParserError],
-        modules :: [Module],
+        modules :: [M.Module],
         file_id :: FileId,
-        ops_table :: [[Kind.TokenKind]]
+        ops_table :: [[Kind.TokenKind]],
+        sub_items :: [M.Item],
     }
 
 initState :: FileId -> [TokenInfo] -> ParserState
@@ -35,7 +36,24 @@ initState file_id tokens = do
                   [Kind.Mul, Kind.Div],
                   [Kind.PipeForward]
                  ]
-    ParserState tokens 0 [] [] file_id ops_table
+    ParserState tokens 0 [] [] file_id ops_table []
+
+parseSubItems :: ParserState -> Result ParserState (ParserState, ParserError)
+parseSubItems state = do
+    state <- try expect state Kind.KeywordWhere
+    state <- loop state <- state do
+        ti <- peek state
+        (state, item) <- case getKind ti.token of
+            Kind.EndOfBlock -> break state
+            _ -> case parseFunction state of
+                    Ok (state, f) -> case f of
+                            Left function -> (state, M.Function function)
+                            Right function_signature -> (state, M.FunctionSignature function_signature)
+                    Err (state, err) -> return Err (state, err)
+        sub_items <- state.sub_items + [item]
+        state { sub_items = sub_items }
+    state <- try expect state Kind.EndOfBlock
+    Ok state
 
 buildLocation :: Int -> ParserState -> Location
 buildLocation index state = do
@@ -63,7 +81,7 @@ step state = do
 addError :: ParserState -> ParserError -> ParserState
 addError state error = state { errors = state.errors + [error] }
 
-addModule :: ParserState -> Module -> ParserState
+addModule :: ParserState -> M.Module -> ParserState
 addModule state mod = state { modules = state.modules + [mod] }
 
 unexpectedToken :: ParserState -> String -> ParserError

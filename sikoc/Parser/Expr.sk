@@ -32,6 +32,9 @@ parseDoBlock state = do
                     buildExpr (Bind pattern expr) start_index state
                 else try parseExpr state
             items <- items + [item]
+            state <- if check state Kind.KeywordWhere
+                then try parseSubItems state
+                else state
             state <- try expect state Kind.EndOfItem
             (state, items)
     state <- try expect state Kind.EndOfBlock

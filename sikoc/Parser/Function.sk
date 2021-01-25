@@ -20,23 +20,6 @@ checkTypeArgs (args, errors) (Pattern pattern (Location _ span)) = do
         Binding arg -> (args + [arg], errors)
         _ -> (args, errors + [InvalidTypeArgument span])
 
-parseSubFunctions :: ParserState -> Result (ParserState, [M.Item]) (ParserState, ParserError)
-parseSubFunctions state = do
-    state <- try expect state Kind.KeywordWhere
-    (state, sub_items) <- loop (state, sub_items) <- (state, []) do
-        ti <- peek state
-        (state, item) <- case getKind ti.token of
-            Kind.EndOfBlock -> break (state, sub_items)
-            _ -> case parseFunction state of
-                    Ok (state, f) -> case f of
-                            Left function -> (state, M.Function function)
-                            Right function_signature -> (state, M.FunctionSignature function_signature)
-                    Err (state, err) -> return Err (state, err)
-        sub_items <- sub_items + [item]
-        (state, sub_items)
-    state <- try expect state Kind.EndOfBlock
-    Ok (state, sub_items)
-
 parseFunction :: ParserState -> Result (ParserState, Either Function FunctionSignature) (ParserState, ParserError)
 parseFunction state = do
     ti <- peek state
@@ -62,10 +45,12 @@ parseFunction state = do
                         else do
                             (state, body) <- try parseExpr state
                             (state, Some body)
-                    (state, sub_items) <- if check state Kind.KeywordWhere
-                        then try parseSubFunctions state
-                        else (state, [])
+                    state <- if check state Kind.KeywordWhere
+                        then try parseSubItems state
+                        else state
                     state <- try expect state Kind.EndOfItem
+                    sub_items <- state.sub_items
+                    state <- state { sub_items = [] }
                     function <- Function { name = name, arguments = args, body = body, sub_items = sub_items }
                     Ok (state, Left function)
                 Some DoubleColon -> do
