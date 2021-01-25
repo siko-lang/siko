@@ -1219,9 +1219,16 @@ pub fn generate_builtin(
                     write!(output_file, "{} {{ }}", result_ty_str)?;
                 }
                 ("Hack", "getArgs") => {
-                    write!(output_file, "let args: Vec<String> = std::env::args().collect();")?;
+                    write!(
+                        output_file,
+                        "let args: Vec<String> = std::env::args().collect();"
+                    )?;
                     write!(output_file, "let args: Vec<_> = args.into_iter().map(|arg| {} {{ value : std::rc::Rc::new(arg) }}).collect();", "crate::source::String::String")?;
-                    write!(output_file, "{} {{ value : std::rc::Rc::new(args) }}", result_ty_str)?;
+                    write!(
+                        output_file,
+                        "{} {{ value : std::rc::Rc::new(args) }}",
+                        result_ty_str
+                    )?;
                 }
                 ("Std.Util.Basic", "abort") => {
                     write!(output_file, "panic!(\"abort called\");")?;

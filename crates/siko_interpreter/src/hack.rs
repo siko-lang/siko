@@ -41,7 +41,6 @@ impl ExternFunction for WriteTextFile {
     }
 }
 
-
 pub struct GetArgs {}
 
 impl ExternFunction for GetArgs {
@@ -53,15 +52,17 @@ impl ExternFunction for GetArgs {
         ty: Type,
     ) -> Value {
         let string_ty = Interpreter::get_string_type();
-        let mut args = vec![Value::new(ValueCore::String("siko".to_string()), string_ty.clone())];
+        let mut args = vec![Value::new(
+            ValueCore::String("siko".to_string()),
+            string_ty.clone(),
+        )];
         let mut after = false;
         for arg in std::env::args() {
             if after {
                 let v = Value::new(ValueCore::String(arg), string_ty.clone());
                 args.push(v);
             } else {
-                if arg == "--"
-                {
+                if arg == "--" {
                     after = true;
                 }
             }

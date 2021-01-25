@@ -15,24 +15,24 @@ parseClassConstraint state = do
     (state, arg) <- try expectVarIdent state "type argument"
     Ok (state, Constraint name arg)
 
-classConstraintFollows :: ParserState -> Bool
-classConstraintFollows state = do
-    loop index <- state.index do
-        ti <- peekAt state index
-        case ti.token of
-            T.EndOfItem -> return False
-            T.RightArrow -> return False
-            T.DoubleRightArrow -> return True
-            _ -> continue index + 1
-
 parseClassConstraints :: ParserState -> Result (ParserState, [Constraint]) (ParserState, ParserError)
 parseClassConstraints state =
-    if check state Kind.LParen && classConstraintFollows state
-    then do
-        (state, constraints) <- try parseList state parseClassConstraint Kind.LParen Kind.RParen
-        state <- try expect state Kind.DoubleRightArrow
-        Ok (state, constraints)
-    else Ok (state, [])
+        if check state Kind.LParen && classConstraintFollows state
+        then do
+            (state, constraints) <- try parseList state parseClassConstraint Kind.LParen Kind.RParen
+            state <- try expect state Kind.DoubleRightArrow
+            Ok (state, constraints)
+        else Ok (state, [])
+    where
+        classConstraintFollows :: ParserState -> Bool
+        classConstraintFollows state = do
+            loop index <- state.index do
+                ti <- peekAt state index
+                case ti.token of
+                    T.EndOfItem -> return False
+                    T.RightArrow -> return False
+                    T.DoubleRightArrow -> return True
+                    _ -> continue index + 1
 
 parseBody :: ParserState -> Result (ParserState, [Function], [FunctionSignature]) (ParserState, ParserError)
 parseBody state = do

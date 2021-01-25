@@ -1,5 +1,6 @@
 use crate::error::LexerError;
 use crate::error::LocationInfo;
+use crate::layout::process_layout;
 use crate::token::Token;
 use crate::token::TokenInfo;
 use crate::token::TokenKind;
@@ -463,10 +464,8 @@ impl Lexer {
                 self.advance()?;
             }
         }
-        let mut token_iterator = TokenIterator::new(self.tokens.clone());
-        process_program(&mut token_iterator, &self.file_path)?;
-        let mut result = token_iterator.result;
-        result.pop();
+
+        let result = process_layout(self.tokens.clone());
 
         let mut index = 0;
 
@@ -525,142 +524,4 @@ impl Lexer {
 
         Ok(new_result)
     }
-}
-
-struct TokenIterator {
-    tokens: Vec<TokenInfo>,
-    result: Vec<TokenInfo>,
-}
-
-impl TokenIterator {
-    fn new(tokens: Vec<TokenInfo>) -> TokenIterator {
-        TokenIterator {
-            tokens: tokens,
-            result: Vec::new(),
-        }
-    }
-
-    fn is_done(&self) -> bool {
-        self.tokens.is_empty()
-    }
-
-    fn peek(&self) -> TokenInfo {
-        self.tokens.first().expect("ran out of tokeninfo").clone()
-    }
-
-    fn advance(&mut self) -> TokenInfo {
-        self.tokens.remove(0)
-    }
-
-    fn add_end(&mut self, token: Token) {
-        let location = self.result.last().expect("empty iterator").location.clone();
-        self.result.push(TokenInfo {
-            token: token,
-            location: location,
-        });
-    }
-}
-
-fn process_block(
-    iterator: &mut TokenIterator,
-    block_token: TokenInfo,
-    module: bool,
-    file_path: &FilePath,
-) -> Result<(), LexerError> {
-    if iterator.is_done() {
-        return Err(LexerError::General(
-            format!("Empty block"),
-            file_path.clone(),
-            block_token.location.clone(),
-        ));
-    }
-    let first = iterator.peek();
-    while !iterator.is_done() {
-        let end_of_block = process_item(iterator, first.location.clone(), module, file_path)?;
-        if end_of_block {
-            break;
-        }
-    }
-    if !module {
-        iterator.add_end(Token::EndOfBlock);
-    }
-    Ok(())
-}
-
-fn process_program(iterator: &mut TokenIterator, file_path: &FilePath) -> Result<(), LexerError> {
-    while !iterator.is_done() {
-        let module_token = iterator.peek();
-        if module_token.token.kind() != TokenKind::KeywordModule {
-            return Err(LexerError::General(
-                format!("Expected keyword module"),
-                file_path.clone(),
-                module_token.location.clone(),
-            ));
-        }
-        let module = iterator.advance();
-        iterator.result.push(module);
-        if !iterator.is_done() {
-            process_block(iterator, module_token, true, file_path)?;
-            iterator.add_end(Token::EndOfModule);
-        }
-    }
-    iterator.add_end(Token::EndOfModule);
-    Ok(())
-}
-
-fn process_item(
-    iterator: &mut TokenIterator,
-    start: Location,
-    module: bool,
-    file_path: &FilePath,
-) -> Result<bool, LexerError> {
-    let mut first = true;
-    let mut paren_level = 0;
-    while !iterator.is_done() {
-        let info = iterator.peek();
-        if first {
-            first = false;
-        } else {
-            if info.location.span.start <= start.span.start {
-                let break_out = if info.location.span.start == start.span.start {
-                    info.token.kind() != TokenKind::KeywordElse &&
-                    info.token.kind() != TokenKind::KeywordThen
-                } else {
-                    true
-                };
-                if break_out {
-                    if !module {
-                        iterator.add_end(Token::EndOfItem);
-                    }
-                    return Ok(info.location.span.start < start.span.start);
-                }
-            }
-        }
-        if info.token.kind() == TokenKind::KeywordModule {
-            return Ok(true);
-        }
-        if info.token.kind() == TokenKind::LParen {
-            paren_level += 1;
-        }
-        if info.token.kind() == TokenKind::RParen {
-            paren_level -= 1;
-            if paren_level < 0 {
-                break;
-            }
-        }
-        iterator.result.push(info.clone());
-        if info.token.kind() == TokenKind::KeywordWhere
-            || info.token.kind() == TokenKind::KeywordDo
-            || info.token.kind() == TokenKind::KeywordOf
-        {
-            iterator.advance();
-            process_block(iterator, info, false, file_path)?;
-        } else {
-            iterator.advance();
-        }
-    }
-    if !module {
-        iterator.add_end(Token::EndOfItem);
-    }
-    Ok(true)
 }

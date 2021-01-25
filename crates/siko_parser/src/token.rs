@@ -225,3 +225,9 @@ pub struct TokenInfo {
     pub token: Token,
     pub location: Location,
 }
+
+impl std::fmt::Display for TokenInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self.token)
+    }
+}

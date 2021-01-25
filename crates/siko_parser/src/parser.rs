@@ -86,6 +86,7 @@ pub struct Parser<'a> {
     program: &'a mut Program,
     location_info: &'a mut LocationInfo,
     temp_var_counter: Counter,
+    sub_items: Vec<FunctionOrFunctionType>,
 }
 
 impl<'a> Parser<'a> {
@@ -95,6 +96,7 @@ impl<'a> Parser<'a> {
         program: &'a mut Program,
         location_info: &'a mut LocationInfo,
     ) -> Parser<'a> {
+        //println!("{}", siko_util::format_list(tokens));
         Parser {
             file_path: file_path,
             tokens: tokens,
@@ -102,6 +104,7 @@ impl<'a> Parser<'a> {
             program: program,
             location_info: location_info,
             temp_var_counter: Counter::new(),
+            sub_items: Vec::new(),
         }
     }
 
@@ -689,6 +692,17 @@ impl<'a> Parser<'a> {
             } else {
                 unreachable!()
             };
+            if self.current(TokenKind::KeywordWhere) {
+                self.expect(TokenKind::KeywordWhere)?;
+                loop {
+                    if self.current(TokenKind::EndOfBlock) {
+                        break;
+                    }
+                    let sub_item = self.parse_function_or_function_type()?;
+                    self.sub_items.push(sub_item);
+                }
+                self.expect(TokenKind::EndOfBlock)?;
+            }
             self.expect(TokenKind::EndOfItem)?;
             let id = self.program.functions.get_id();
             let function = Function {
@@ -1229,6 +1243,22 @@ impl<'a> Parser<'a> {
         Ok(actor)
     }
 
+    fn fn_helper(module: &mut Module, fnortype: FunctionOrFunctionType) {
+        match fnortype {
+            FunctionOrFunctionType::Function(name, function_id) => {
+                let fs = module.functions.entry(name).or_insert_with(|| Vec::new());
+                fs.push(function_id);
+            }
+            FunctionOrFunctionType::FunctionType(name, function_type_id) => {
+                let fs = module
+                    .function_types
+                    .entry(name)
+                    .or_insert_with(|| Vec::new());
+                fs.push(function_type_id);
+            }
+        }
+    }
+
     fn parse_module(&mut self, id: ModuleId) -> Result<Module, ParseError> {
         self.expect(TokenKind::KeywordModule)?;
         let start_index = self.get_index();
@@ -1280,19 +1310,15 @@ impl<'a> Parser<'a> {
                     TokenKind::EndOfBlock => {
                         break;
                     }
-                    _ => match self.parse_function_or_function_type()? {
-                        FunctionOrFunctionType::Function(name, function_id) => {
-                            let fs = module.functions.entry(name).or_insert_with(|| Vec::new());
-                            fs.push(function_id);
+                    _ => {
+                        let fnortype = self.parse_function_or_function_type()?;
+                        Parser::fn_helper(&mut module, fnortype);
+                        let mut sub_items = Vec::new();
+                        std::mem::swap(&mut self.sub_items, &mut sub_items);
+                        for sub_item in sub_items {
+                            Parser::fn_helper(&mut module, sub_item);
                         }
-                        FunctionOrFunctionType::FunctionType(name, function_type_id) => {
-                            let fs = module
-                                .function_types
-                                .entry(name)
-                                .or_insert_with(|| Vec::new());
-                            fs.push(function_type_id);
-                        }
-                    },
+                    }
                 }
             } else {
                 break;
