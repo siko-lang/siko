@@ -1,6 +1,7 @@
 use crate::environment::Environment;
 use crate::extern_function::ExternFunction;
 use crate::interpreter::Interpreter;
+use crate::interpreter::ExprResult;
 use crate::util::create_none;
 use crate::util::create_some;
 use crate::util::get_opt_ordering_value;
@@ -17,7 +18,7 @@ pub struct Show {}
 impl ExternFunction for Show {
     fn call(
         &self,
-        environment: &mut Environment,
+        environment: &Environment,
         _: Option<ExprId>,
         _: &NamedFunctionKind,
         ty: Type,
@@ -38,7 +39,7 @@ pub struct Iter {}
 impl ExternFunction for Iter {
     fn call(
         &self,
-        environment: &mut Environment,
+        environment: &Environment,
         _: Option<ExprId>,
         _: &NamedFunctionKind,
         ty: Type,
@@ -53,7 +54,7 @@ pub struct ToList {}
 impl ExternFunction for ToList {
     fn call(
         &self,
-        environment: &mut Environment,
+        environment: &Environment,
         _: Option<ExprId>,
         _: &NamedFunctionKind,
         ty: Type,
@@ -70,7 +71,7 @@ pub struct ListPartialEq {}
 impl ExternFunction for ListPartialEq {
     fn call(
         &self,
-        environment: &mut Environment,
+        environment: &Environment,
         _: Option<ExprId>,
         _: &NamedFunctionKind,
         _: Type,
@@ -97,7 +98,7 @@ pub struct ListPartialOrd {}
 impl ExternFunction for ListPartialOrd {
     fn call(
         &self,
-        environment: &mut Environment,
+        environment: &Environment,
         _: Option<ExprId>,
         _: &NamedFunctionKind,
         _: Type,
@@ -132,7 +133,7 @@ pub struct ListOrd {}
 impl ExternFunction for ListOrd {
     fn call(
         &self,
-        environment: &mut Environment,
+        environment: &Environment,
         _: Option<ExprId>,
         _: &NamedFunctionKind,
         _: Type,
@@ -162,7 +163,7 @@ pub struct ListAdd {}
 impl ExternFunction for ListAdd {
     fn call(
         &self,
-        environment: &mut Environment,
+        environment: &Environment,
         _: Option<ExprId>,
         _: &NamedFunctionKind,
         ty: Type,
@@ -177,17 +178,24 @@ impl ExternFunction for ListAdd {
 pub struct AtIndex {}
 
 impl ExternFunction for AtIndex {
-    fn call(
+    fn call2(
         &self,
-        environment: &mut Environment,
+        environment: &Environment,
         _: Option<ExprId>,
         _: &NamedFunctionKind,
         _: Type,
-    ) -> Value {
+    ) -> ExprResult {
         let list = environment.get_arg_by_index(0);
         let index = environment.get_arg_by_index(1).core.as_int();
-        let value = list.core.as_list()[index as usize].clone();
-        return value;
+        let list = list.core.as_list();
+        if list.len() <= index as usize {
+            println!("PANIC!: atIndex: size: {} index: {}", list.len(), index);
+            return ExprResult::Abort;
+        }
+        else {
+        let value = list[index as usize].clone();
+        return ExprResult::Ok(value);
+        }
     }
 }
 
@@ -196,7 +204,7 @@ pub struct GetLength {}
 impl ExternFunction for GetLength {
     fn call(
         &self,
-        environment: &mut Environment,
+        environment: &Environment,
         _: Option<ExprId>,
         _: &NamedFunctionKind,
         ty: Type,
@@ -212,7 +220,7 @@ pub struct IsEmpty {}
 impl ExternFunction for IsEmpty {
     fn call(
         &self,
-        environment: &mut Environment,
+        environment: &Environment,
         _: Option<ExprId>,
         _: &NamedFunctionKind,
         _: Type,
@@ -228,7 +236,7 @@ pub struct Head {}
 impl ExternFunction for Head {
     fn call(
         &self,
-        environment: &mut Environment,
+        environment: &Environment,
         _: Option<ExprId>,
         _: &NamedFunctionKind,
         _: Type,
@@ -251,7 +259,7 @@ pub struct Tail {}
 impl ExternFunction for Tail {
     fn call(
         &self,
-        environment: &mut Environment,
+        environment: &Environment,
         _: Option<ExprId>,
         _: &NamedFunctionKind,
         _: Type,
@@ -274,7 +282,7 @@ pub struct Sort {}
 impl ExternFunction for Sort {
     fn call(
         &self,
-        environment: &mut Environment,
+        environment: &Environment,
         _: Option<ExprId>,
         _: &NamedFunctionKind,
         ty: Type,
@@ -291,7 +299,7 @@ pub struct Dedup {}
 impl ExternFunction for Dedup {
     fn call(
         &self,
-        environment: &mut Environment,
+        environment: &Environment,
         _: Option<ExprId>,
         _: &NamedFunctionKind,
         ty: Type,
@@ -308,7 +316,7 @@ pub struct Write {}
 impl ExternFunction for Write {
     fn call(
         &self,
-        environment: &mut Environment,
+        environment: &Environment,
         _: Option<ExprId>,
         _: &NamedFunctionKind,
         ty: Type,

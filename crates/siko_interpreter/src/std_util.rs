@@ -12,7 +12,7 @@ pub struct Assert {}
 impl ExternFunction for Assert {
     fn call(
         &self,
-        environment: &mut Environment,
+        environment: &Environment,
         current_expr: Option<ExprId>,
         _: &NamedFunctionKind,
         ty: Type,

@@ -2,6 +2,7 @@ module Siko.Parser.Data where
 
 import Siko.Syntax.Data
 import Siko.Syntax.Ident
+import Siko.Syntax.TypeSignature as T
 import Siko.Parser
 import Siko.Parser.Type
 import Siko.Parser.Token.Kind as Kind
@@ -20,10 +21,18 @@ parseDerivedClass state = do
     (state, derived_class) <- try expectTypeIdent state "class name"
     Ok (state, derived_class)
 
+parseVariant :: ParserState -> Result (ParserState, Variant) (ParserState, ParserError)
+parseVariant state = do
+    (state, variant_type) <- try parseTypeSignature state True False
+    T.TypeSignature t _ <- variant_type
+    case t of
+        T.Named name args -> Ok (state, Variant name args)
+        _ -> panic "Variant parsing error"
+
 parseAdt :: ParserState -> [Ident] -> Ident -> Result (ParserState, AlgebraicDataType) (ParserState, ParserError)
 parseAdt state args name = do
     (state, variants) <- loop (state, variants) <- (state, []) do
-        (state, variant) <- try parseTypeSignature state True False
+        (state, variant) <- try parseVariant state
         variants <- variants + [variant]
         if check state Kind.Pipe
         then (try expect state Kind.Pipe, variants)

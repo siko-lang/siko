@@ -15,7 +15,7 @@ pub struct StringAdd {}
 impl ExternFunction for StringAdd {
     fn call(
         &self,
-        environment: &mut Environment,
+        environment: &Environment,
         _: Option<ExprId>,
         _: &NamedFunctionKind,
         ty: Type,
@@ -31,7 +31,7 @@ pub struct StringPartialEq {}
 impl ExternFunction for StringPartialEq {
     fn call(
         &self,
-        environment: &mut Environment,
+        environment: &Environment,
         _: Option<ExprId>,
         _: &NamedFunctionKind,
         _: Type,
@@ -47,7 +47,7 @@ pub struct StringPartialOrd {}
 impl ExternFunction for StringPartialOrd {
     fn call(
         &self,
-        environment: &mut Environment,
+        environment: &Environment,
         _: Option<ExprId>,
         _: &NamedFunctionKind,
         _: Type,
@@ -64,7 +64,7 @@ pub struct StringOrd {}
 impl ExternFunction for StringOrd {
     fn call(
         &self,
-        environment: &mut Environment,
+        environment: &Environment,
         _: Option<ExprId>,
         _: &NamedFunctionKind,
         _: Type,
@@ -81,7 +81,7 @@ pub struct StringShow {}
 impl ExternFunction for StringShow {
     fn call(
         &self,
-        environment: &mut Environment,
+        environment: &Environment,
         _: Option<ExprId>,
         _: &NamedFunctionKind,
         ty: Type,
@@ -96,7 +96,7 @@ pub struct StringChars {}
 impl ExternFunction for StringChars {
     fn call(
         &self,
-        environment: &mut Environment,
+        environment: &Environment,
         _: Option<ExprId>,
         _: &NamedFunctionKind,
         ty: Type,
@@ -115,7 +115,7 @@ pub struct StringSplit {}
 impl ExternFunction for StringSplit {
     fn call(
         &self,
-        environment: &mut Environment,
+        environment: &Environment,
         _: Option<ExprId>,
         _: &NamedFunctionKind,
         ty: Type,
@@ -140,7 +140,7 @@ pub struct StringReplace {}
 impl ExternFunction for StringReplace {
     fn call(
         &self,
-        environment: &mut Environment,
+        environment: &Environment,
         _: Option<ExprId>,
         _: &NamedFunctionKind,
         ty: Type,

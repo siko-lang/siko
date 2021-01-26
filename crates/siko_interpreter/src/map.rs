@@ -17,7 +17,7 @@ pub struct Empty {}
 impl ExternFunction for Empty {
     fn call(
         &self,
-        _: &mut Environment,
+        _: &Environment,
         _: Option<ExprId>,
         _: &NamedFunctionKind,
         ty: Type,
@@ -31,7 +31,7 @@ pub struct Insert {}
 impl ExternFunction for Insert {
     fn call(
         &self,
-        environment: &mut Environment,
+        environment: &Environment,
         _: Option<ExprId>,
         _: &NamedFunctionKind,
         ty: Type,
@@ -57,7 +57,7 @@ pub struct Remove {}
 impl ExternFunction for Remove {
     fn call(
         &self,
-        environment: &mut Environment,
+        environment: &Environment,
         _: Option<ExprId>,
         _: &NamedFunctionKind,
         ty: Type,
@@ -82,7 +82,7 @@ pub struct Get {}
 impl ExternFunction for Get {
     fn call(
         &self,
-        environment: &mut Environment,
+        environment: &Environment,
         _: Option<ExprId>,
         _: &NamedFunctionKind,
         _: Type,
@@ -105,7 +105,7 @@ pub struct Show {}
 impl ExternFunction for Show {
     fn call(
         &self,
-        environment: &mut Environment,
+        environment: &Environment,
         _: Option<ExprId>,
         _: &NamedFunctionKind,
         ty: Type,
@@ -126,7 +126,7 @@ pub struct Iter {}
 impl ExternFunction for Iter {
     fn call(
         &self,
-        environment: &mut Environment,
+        environment: &Environment,
         _: Option<ExprId>,
         _: &NamedFunctionKind,
         ty: Type,
@@ -141,7 +141,7 @@ pub struct ToMap {}
 impl ExternFunction for ToMap {
     fn call(
         &self,
-        environment: &mut Environment,
+        environment: &Environment,
         _: Option<ExprId>,
         _: &NamedFunctionKind,
         ty: Type,
@@ -163,7 +163,7 @@ pub struct GetSize {}
 impl ExternFunction for GetSize {
     fn call(
         &self,
-        environment: &mut Environment,
+        environment: &Environment,
         _: Option<ExprId>,
         _: &NamedFunctionKind,
         ty: Type,
@@ -179,7 +179,7 @@ pub struct MapPartialEq {}
 impl ExternFunction for MapPartialEq {
     fn call(
         &self,
-        environment: &mut Environment,
+        environment: &Environment,
         _: Option<ExprId>,
         _: &NamedFunctionKind,
         _: Type,

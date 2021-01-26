@@ -6,6 +6,7 @@ import Siko.Resolver.Type
 import Siko.Resolver.Error
 import Siko.Syntax.Ident
 import Siko.Resolver.Import
+import Siko.Resolver.ModuleResolver
 import Siko.Syntax.Data as SD
 import Siko.Syntax.Module as SM
 import Siko.Syntax.TypeSignature as ST
@@ -14,19 +15,14 @@ import Siko.HIR.Type
 import Siko.HIR.Program as HP
 import Map
 
-processVariant :: ResolverState -> TypeResolverState -> ST.TypeSignature -> (ResolverState, TypeResolverState, Option HD.Variant)
-processVariant state type_resolver (ST.TypeSignature type_signature location) = do
-    case type_signature of
-        ST.Variant name args -> do
-            (Ident name location) <- name
-            (state, type_resolver, args) <-  args |> List.iter |> Iterator.fold (\(state, type_resolver, args), arg -> do
-                    (type_resolver, state, arg) <- processTypeSignature type_resolver state arg
-                    args <- args + [arg]
-                    (state, type_resolver, args)) (state, type_resolver, [])
-            (state, type_resolver, Some (HD.Variant name location args))
-        _ -> do
-            state <- addError state (InvalidVariant location)
-            (state, type_resolver, None)
+processVariant :: ResolverState -> TypeResolverState -> SD.Variant -> (ResolverState, TypeResolverState, HD.Variant)
+processVariant state type_resolver variant = do
+    (Ident name location) <- variant.name
+    (state, type_resolver, items) <-  variant.items |> List.iter |> Iterator.fold (\(state, type_resolver, items), item -> do
+        (type_resolver, state, arg) <- processTypeSignature type_resolver state item
+        items <- items + [arg]
+        (state, type_resolver, items)) (state, type_resolver, [])
+    (state, type_resolver, HD.Variant name location items)
 
 processRecordField :: ResolverState ->
                       TypeResolverState ->
@@ -65,9 +61,7 @@ processAdt state hir_program module_resolver (SD.AlgebraicDataType name type_arg
     (type_resolver, state) <- initTypeResolver module_resolver state type_arguments
     (state, type_resolver, variants) <- variants |> List.iter |> Iterator.fold (\(state, type_resolver, variants), variant -> do
                 (state, type_resolver, variant) <- processVariant state type_resolver variant
-                variants <- case variant of
-                    Some v -> variants + [v]
-                    None -> variants
+                variants <- variants + [variant]
                 (state, type_resolver, variants)) (state, type_resolver, [])
     (state, type_args) <- processTypeArgs state type_resolver type_arguments True
     (state, derived_classes) <- processDerivedClasses state module_resolver derived_classes

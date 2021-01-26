@@ -11,7 +11,7 @@ pub struct And {}
 impl ExternFunction for And {
     fn call(
         &self,
-        environment: &mut Environment,
+        environment: &Environment,
         _: Option<ExprId>,
         _: &NamedFunctionKind,
         _: Type,
@@ -27,7 +27,7 @@ pub struct Or {}
 impl ExternFunction for Or {
     fn call(
         &self,
-        environment: &mut Environment,
+        environment: &Environment,
         _: Option<ExprId>,
         _: &NamedFunctionKind,
         _: Type,

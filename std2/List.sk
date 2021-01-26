@@ -1,5 +1,7 @@
 module List where
 
+import Map
+
 data List a = extern
 
 instance (Show a) => Show [a] where
@@ -38,7 +40,7 @@ atIndex a :: ~[a] -> ~Int -> a
 atIndex index l = extern
 
 iter a :: ~[a] -> ~Iterator a
-iter l = createIterator (intoIter l) nextItem
+iter l = createIterator (List.intoIter l) List.nextItem
 
 data ListIterator a = extern
 
@@ -194,5 +196,20 @@ foldE f s l = do
 fold s a :: s -> [a] -> (s -> a -> s) -> s
 fold init list f = list |> List.iter |> Iterator.fold f init
 
-map a b :: (a -> b) -> [a] -> [b]
-map f input = input |> List.iter |> Iterator.map f |> toList
+map a b :: [a] -> (a -> b) -> [b]
+map input f = input |> List.iter |> Iterator.map f |> toList
+
+filter a :: [a] -> (a -> Bool) -> [a]
+filter list f = list |> List.iter |> Iterator.filter f |> toList
+
+foldM a k v :: (Ord k) => Map k v -> [a] -> (a -> (k, v)) -> Map k v
+foldM init list f = List.fold init list (\m, item -> do
+    (k, v) <- f item
+    (m, _) <- Map.insert m k v
+    m)
+
+filterMap a b :: [a] -> (a -> Option b) -> [b]
+filterMap list f = List.fold [] list (\all, item -> do
+    case f item of
+        Some item -> all + [item]
+        None -> all)

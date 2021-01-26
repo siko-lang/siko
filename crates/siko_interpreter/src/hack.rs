@@ -12,7 +12,7 @@ pub struct ReadTextFile {}
 impl ExternFunction for ReadTextFile {
     fn call(
         &self,
-        environment: &mut Environment,
+        environment: &Environment,
         _: Option<ExprId>,
         _: &NamedFunctionKind,
         ty: Type,
@@ -29,7 +29,7 @@ pub struct WriteTextFile {}
 impl ExternFunction for WriteTextFile {
     fn call(
         &self,
-        environment: &mut Environment,
+        environment: &Environment,
         _: Option<ExprId>,
         _: &NamedFunctionKind,
         ty: Type,
@@ -46,7 +46,7 @@ pub struct GetArgs {}
 impl ExternFunction for GetArgs {
     fn call(
         &self,
-        _: &mut Environment,
+        _: & Environment,
         _: Option<ExprId>,
         _: &NamedFunctionKind,
         ty: Type,

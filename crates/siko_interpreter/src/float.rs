@@ -14,7 +14,7 @@ pub struct FloatAdd {}
 impl ExternFunction for FloatAdd {
     fn call(
         &self,
-        environment: &mut Environment,
+        environment: &Environment,
         _: Option<ExprId>,
         _: &NamedFunctionKind,
         ty: Type,
@@ -30,7 +30,7 @@ pub struct FloatSub {}
 impl ExternFunction for FloatSub {
     fn call(
         &self,
-        environment: &mut Environment,
+        environment: & Environment,
         _: Option<ExprId>,
         _: &NamedFunctionKind,
         ty: Type,
@@ -46,7 +46,7 @@ pub struct FloatMul {}
 impl ExternFunction for FloatMul {
     fn call(
         &self,
-        environment: &mut Environment,
+        environment: &Environment,
         _: Option<ExprId>,
         _: &NamedFunctionKind,
         ty: Type,
@@ -62,7 +62,7 @@ pub struct FloatDiv {}
 impl ExternFunction for FloatDiv {
     fn call(
         &self,
-        environment: &mut Environment,
+        environment: &Environment,
         _: Option<ExprId>,
         _: &NamedFunctionKind,
         ty: Type,
@@ -78,7 +78,7 @@ pub struct FloatPartialEq {}
 impl ExternFunction for FloatPartialEq {
     fn call(
         &self,
-        environment: &mut Environment,
+        environment: & Environment,
         _: Option<ExprId>,
         _: &NamedFunctionKind,
         _: Type,
@@ -94,7 +94,7 @@ pub struct FloatPartialOrd {}
 impl ExternFunction for FloatPartialOrd {
     fn call(
         &self,
-        environment: &mut Environment,
+        environment: & Environment,
         _: Option<ExprId>,
         _: &NamedFunctionKind,
         _: Type,
@@ -111,7 +111,7 @@ pub struct FloatShow {}
 impl ExternFunction for FloatShow {
     fn call(
         &self,
-        environment: &mut Environment,
+        environment: &Environment,
         _: Option<ExprId>,
         _: &NamedFunctionKind,
         ty: Type,

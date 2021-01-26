@@ -15,16 +15,27 @@ buildTypeSignature ty start_index state = do
 parseTypeSignature :: ParserState -> Bool -> Bool -> Result (ParserState, TypeSignature) (ParserState, ParserError)
 parseTypeSignature state parsingVariant allowWildcard = do
     start_index <- state.index
-    (state, from) <- try parseTypeSignaturePart state parsingVariant allowWildcard
-    (state, final) <- loop (state, from) <- (state, from) do
+    if parsingVariant
+    then do
+        (state, name) <- try expectTypeIdent state "variant name"
+        (state, items) <- loop (state, items) <- (state, []) do
             ti <- peek state
             case ti.token of
-                T.RightArrow -> do
-                    state <- try expect state Kind.RightArrow
-                    (state, to) <- try parseTypeSignature state parsingVariant allowWildcard
-                    buildTypeSignature (Function from to) start_index state
-                _ -> break (state, from)
-    Ok (state, final)
+                T.EndOfItem | T.Pipe | T.KeywordDeriving -> break (state, items)
+                _ -> do
+                    (state, item) <- try parseTypeSignaturePart state False
+                    (state, items + [item])
+        Ok (buildTypeSignature (Named name items) start_index state)
+    else do
+        (state, from) <- try parseTypeSignaturePart state allowWildcard
+        loop (state, from) <- (state, from) do
+                ti <- peek state
+                case ti.token of
+                    T.RightArrow -> do
+                        state <- try expect state Kind.RightArrow
+                        (state, to) <- try parseTypeSignature state False allowWildcard
+                        buildTypeSignature (Function from to) start_index state
+                    _ -> break Ok (state, from)
 
 parseTupleType :: ParserState -> Bool -> Result (ParserState, TypeSignature) (ParserState, ParserError)
 parseTupleType state allowWildcard = do
@@ -33,8 +44,8 @@ parseTupleType state allowWildcard = do
         (state, Single ty) -> Ok (state, ty)
         (state, Multi types) -> Ok (buildTypeSignature (Tuple types) start_index state)
 
-parseTypeSignaturePart :: ParserState -> Bool -> Bool -> Result (ParserState, TypeSignature) (ParserState, ParserError)
-parseTypeSignaturePart state parsingVariant allowWildcard = do
+parseTypeSignaturePart :: ParserState -> Bool -> Result (ParserState, TypeSignature) (ParserState, ParserError)
+parseTypeSignaturePart state allowWildcard = do
     start_index <- state.index
     ti <- peek state
     case ti.token of
@@ -57,7 +68,7 @@ parseTypeSignaturePart state parsingVariant allowWildcard = do
                          | T.Wildcard
                          | T.ExclamationMark
                          | T.Ampersand-> do
-                            (state, arg) <- try (parseTypeSignaturePart state False allowWildcard)
+                            (state, arg) <- try (parseTypeSignaturePart state allowWildcard)
                             args <- args + [arg]
                             (state, args)
                         T.VarIdentifier id -> do
@@ -71,9 +82,7 @@ parseTypeSignaturePart state parsingVariant allowWildcard = do
                             args <- args + [arg]
                             (state, args)
                         _ -> break (state, args)
-            if parsingVariant
-            then Ok (buildTypeSignature (Variant name args) start_index state)
-            else Ok (buildTypeSignature (Named name args) start_index state)
+            Ok (buildTypeSignature (Named name args) start_index state)
         T.Wildcard -> do
             state <- try expect state Kind.Wildcard
             Ok (buildTypeSignature Wildcard start_index state)
@@ -82,10 +91,10 @@ parseTypeSignaturePart state parsingVariant allowWildcard = do
             Ok (buildTypeSignature Never start_index state)
         T.Ampersand -> do
             state <- try expect state Kind.Ampersand
-            (state, ty) <- try parseTypeSignaturePart state False allowWildcard
+            (state, ty) <- try parseTypeSignaturePart state allowWildcard
             Ok (buildTypeSignature (Ref ty) start_index state)
         T.Tilde -> do
             state <- try expect state Kind.Tilde
-            (state, ty) <- try parseTypeSignaturePart state False allowWildcard
+            (state, ty) <- try parseTypeSignaturePart state allowWildcard
             Ok (buildTypeSignature (Owner ty) start_index state)
         _ -> return Err (state, unexpectedToken state "type signature")

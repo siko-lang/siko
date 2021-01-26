@@ -203,7 +203,7 @@ collectConvertibleConstraints var context = do
 collectVarConstraints :: Common.Context -> [T.OwnershipKind] -> Map T.OwnershipVar (Set T.OwnershipVar)
 collectVarConstraints context kinds = do
     // FIXME: use filterMap!
-    vars <- kinds |> List.iter |> filter (\kind -> case kind of
+    vars <- kinds |> List.iter |> Iterator.filter (\kind -> case kind of
         T.VarKind _ -> True
         _ -> False) |> Iterator.map (\kind -> case kind of
             T.VarKind v -> v
@@ -212,9 +212,9 @@ collectVarConstraints context kinds = do
     constraints <- constraints |> Map.iter |> Iterator.map (\(key, convertibles) -> do
             convertibles <- convertibles
                     |> Set.iter
-                    |> filter (\var -> List.contains kinds (T.VarKind var) && var != key) |> toSet
+                    |> Iterator.filter (\var -> List.contains kinds (T.VarKind var) && var != key) |> toSet
             (key, convertibles))
-        |> filter (\(key, convertibles) -> not (isEmpty convertibles)) |> toMap
+        |> Iterator.filter (\(key, convertibles) -> not (isEmpty convertibles)) |> toMap
     constraints
 
 getSubstitution :: Common.Context -> U.Substitution

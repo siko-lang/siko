@@ -14,25 +14,26 @@ import Siko.Syntax.Module as SM
 import Siko.Syntax.TypeSignature as ST
 import Siko.Syntax.Class as SC
 import Siko.Syntax.Ident
+import Siko.Resolver.ModuleResolver
 import Siko.Syntax.Function
 import Map
 
 processClassDependencies :: ResolverState -> ModuleResolver -> SC.Class -> String -> (ResolverState, [HP.FullyQualifiedName])
 processClassDependencies state module_resolver c type_arg =
-        List.fold (state, []) c.constraints (processClassDependency module_resolver type_arg)
-    where
-        processClassDependency :: ModuleResolver -> String -> (ResolverState, [HP.FullyQualifiedName]) -> SC.Constraint -> (ResolverState, [HP.FullyQualifiedName])
-        processClassDependency module_resolver type_arg (state, constraints) constraint = do
-            state <- if (getString constraint.argument) != type_arg
-                then addError state (UnknownTypeArg constraint.argument)
-                else state
-            case resolveClass module_resolver constraint.class_name of
-                Ok class_name -> do
-                    constraints <- constraints + [class_name]
-                    (state, constraints)
-                Err err -> do
-                    state <- addError state err
-                    (state, constraints)
+    List.fold (state, []) c.constraints (processClassDependency module_resolver type_arg)
+        where
+            processClassDependency :: ModuleResolver -> String -> (ResolverState, [HP.FullyQualifiedName]) -> SC.Constraint -> (ResolverState, [HP.FullyQualifiedName])
+            processClassDependency module_resolver type_arg (state, constraints) constraint = do
+                state <- if (getString constraint.argument) != type_arg
+                    then addError state (UnknownTypeArg constraint.argument)
+                    else state
+                case resolveClass module_resolver constraint.class_name of
+                    Ok class_name -> do
+                        constraints <- constraints + [class_name]
+                        (state, constraints)
+                    Err err -> do
+                        state <- addError state err
+                        (state, constraints)
 
 processClass :: ResolverState -> HP.Program -> ModuleResolver -> SC.Class -> (ResolverState, HP.Program)
 processClass state hir_program module_resolver c = do

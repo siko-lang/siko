@@ -11,16 +11,7 @@ import Map
 
 getVariants :: D.AlgebraicDataType -> [Item]
 getVariants adt =
-    adt.variants
-      |> List.iter
-      |> filter (\v -> case v of
-                    T.TypeSignature v _ -> case v of
-                        T.Variant _ _ -> True
-                        _ -> False)
-      |> Iterator.fold (\variants, v -> case v of
-                            T.TypeSignature v _ -> case v of
-                                T.Variant v _ -> variants + [Variant (getString adt.name) (getString v)]
-                                _ -> panic "Variant is not a variant") []
+    List.map adt.variants (\variant -> Variant (getString adt.name) (getString variant.name))
 
 getMemberFunctions :: C.Class -> [Item]
 getMemberFunctions c =
@@ -46,14 +37,14 @@ exportable m_item = case m_item of
     M.Class _ -> True
     M.Instance _ -> False
 
-processModule :: M.Module -> [Item]
-processModule mod = do
-    items <- mod.items |> List.iter |> filter exportable |> Iterator.map processItem |> Iterator.fold (\total, items -> total + items)  []
-    items
+processModule :: (String, M.Module) -> (String, [Item])
+processModule (name, mod) = do
+    items <- mod.items |>
+             List.iter |>
+             Iterator.filter exportable |>
+             Iterator.map processItem |>
+             Iterator.fold (\total, items -> total + items)  []
+    (name, items)
 
 processLocals :: Map String M.Module -> Map String [Item]
-processLocals modules = do
-    local_items <- modules |> Map.iter |> Iterator.map (\(name, mod) -> do
-                                                            items <- processModule mod
-                                                            (name, items)) |> toMap
-    local_items
+processLocals modules = Map.map modules processModule

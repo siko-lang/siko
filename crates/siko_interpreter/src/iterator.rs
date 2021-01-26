@@ -14,7 +14,7 @@ pub struct Map {}
 impl ExternFunction for Map {
     fn call(
         &self,
-        environment: &mut Environment,
+        environment: &Environment,
         _: Option<ExprId>,
         _: &NamedFunctionKind,
         ty: Type,
@@ -33,7 +33,7 @@ pub struct Filter {}
 impl ExternFunction for Filter {
     fn call(
         &self,
-        environment: &mut Environment,
+        environment: &Environment,
         _: Option<ExprId>,
         _: &NamedFunctionKind,
         ty: Type,
@@ -52,7 +52,7 @@ pub struct Fold {}
 impl ExternFunction for Fold {
     fn call(
         &self,
-        environment: &mut Environment,
+        environment: &Environment,
         _: Option<ExprId>,
         _: &NamedFunctionKind,
         _: Type,
@@ -79,7 +79,7 @@ pub struct ForEach {}
 impl ExternFunction for ForEach {
     fn call(
         &self,
-        environment: &mut Environment,
+        environment: &Environment,
         expr_id: Option<ExprId>,
         _: &NamedFunctionKind,
         ty: Type,

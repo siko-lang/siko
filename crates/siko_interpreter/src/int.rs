@@ -17,7 +17,7 @@ pub struct IntAdd {}
 impl ExternFunction for IntAdd {
     fn call(
         &self,
-        environment: &mut Environment,
+        environment: &Environment,
         _: Option<ExprId>,
         _: &NamedFunctionKind,
         ty: Type,
@@ -33,7 +33,7 @@ pub struct IntSub {}
 impl ExternFunction for IntSub {
     fn call(
         &self,
-        environment: &mut Environment,
+        environment: & Environment,
         _: Option<ExprId>,
         _: &NamedFunctionKind,
         ty: Type,
@@ -49,7 +49,7 @@ pub struct IntMul {}
 impl ExternFunction for IntMul {
     fn call(
         &self,
-        environment: &mut Environment,
+        environment: & Environment,
         _: Option<ExprId>,
         _: &NamedFunctionKind,
         ty: Type,
@@ -65,7 +65,7 @@ pub struct IntDiv {}
 impl ExternFunction for IntDiv {
     fn call(
         &self,
-        environment: &mut Environment,
+        environment: &Environment,
         _: Option<ExprId>,
         _: &NamedFunctionKind,
         ty: Type,
@@ -81,7 +81,7 @@ pub struct IntPartialEq {}
 impl ExternFunction for IntPartialEq {
     fn call(
         &self,
-        environment: &mut Environment,
+        environment: & Environment,
         _: Option<ExprId>,
         _: &NamedFunctionKind,
         _: Type,
@@ -97,7 +97,7 @@ pub struct IntPartialOrd {}
 impl ExternFunction for IntPartialOrd {
     fn call(
         &self,
-        environment: &mut Environment,
+        environment: & Environment,
         _: Option<ExprId>,
         _: &NamedFunctionKind,
         _: Type,
@@ -114,7 +114,7 @@ pub struct IntOrd {}
 impl ExternFunction for IntOrd {
     fn call(
         &self,
-        environment: &mut Environment,
+        environment: & Environment,
         _: Option<ExprId>,
         _: &NamedFunctionKind,
         _: Type,
@@ -131,7 +131,7 @@ pub struct IntShow {}
 impl ExternFunction for IntShow {
     fn call(
         &self,
-        environment: &mut Environment,
+        environment: & Environment,
         _: Option<ExprId>,
         _: &NamedFunctionKind,
         ty: Type,
@@ -146,7 +146,7 @@ pub struct Parse {}
 impl ExternFunction for Parse {
     fn call(
         &self,
-        environment: &mut Environment,
+        environment: &Environment,
         _: Option<ExprId>,
         _: &NamedFunctionKind,
         ty: Type,

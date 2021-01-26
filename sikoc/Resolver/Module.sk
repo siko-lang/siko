@@ -1,4 +1,4 @@
-module Siko.Resolver.Module(processExportsImports, ModuleResolver(..), resolveItem, ResolvedItem(..)) where
+module Siko.Resolver.Module(processExportsImports) where
 
 import Siko.Syntax.Module as M
 import Siko.Syntax.SourceFile
@@ -9,79 +9,46 @@ import Siko.Resolver.Import
 import Siko.Resolver.Item
 import Siko.Resolver.Error
 import Siko.Resolver.Export
+import Siko.Resolver.ModuleResolver
+import Siko.Resolver.ResolvedItem
 import Siko.Resolver
 import Siko.HIR.Program as HP
 import Map
 
-data ResolvedItem = ResolvedItem HP.FullyQualifiedName Item Bool
-
-instance PartialEq ResolvedItem where
-    opEq (ResolvedItem qn1 _ _) (ResolvedItem qn2 _ _) = qn1 == qn2
-
-data ModuleResolver = {
-                        module_name :: String,
-                        type_names :: Map String [ResolvedItem],
-                        term_names :: Map String [ResolvedItem],
-                      }
-
-getCandidates :: [ResolvedItem] -> [String]
-getCandidates resolved_items = resolved_items |> List.iter |> Iterator.map (\(ResolvedItem name _ _) -> HP.getResolvableName name) |> toList
-
-resolveItem :: Map String [ResolvedItem] -> (Ident -> ResolverError) -> Ident -> Result ResolvedItem ResolverError
-resolveItem items err name = do
-    n <- getString name
-    case get items n of
-        Some resolved_items -> if getLength resolved_items > 1
-                        then do
-                                resolved_items <- resolved_items |> List.iter |> filter (\(ResolvedItem _ _ implicit) -> not implicit) |> toList
-                                if getLength resolved_items > 1
-                                        then Err (AmbiguousName name (getCandidates resolved_items))
-                                        else Ok (atIndex resolved_items 0)
-                        else Ok (atIndex resolved_items 0)
-        None -> Err (err name)
-
 getModules :: [SourceFile] -> ResolverState -> HP.Program -> (ResolverState, HP.Program, Map String M.Module)
-getModules source_files state hir_program = do
-        source_files |> List.iter |> Iterator.fold (\(state, hir_program, modules), source_file -> do
-                (state, hir_program, modules) <- source_file.modules |> List.iter |> Iterator.fold (\(state, hir_program, modules), mod -> do
-                                                                (Ident name location) <- mod.name
-                                                                (modules, _) <- insert modules (getString mod.name) mod
-                                                                qn <- HP.ModulePath name
-                                                                m <- HP.Module location
-                                                                (hir_program, other_item) <- HP.addItem hir_program qn m
-                                                                state <- handleItemConflict state other_item location
-                                                                (state, hir_program, modules)) (state, hir_program, modules)
-                (state, hir_program, modules)) (state, hir_program, empty)
+getModules source_files state hir_program =
+        List.fold (state, hir_program, empty) source_files getModulesForSourceFile
+            where
+                getModulesForSourceFile :: (ResolverState, HP.Program, Map String M.Module) -> SourceFile -> (ResolverState, HP.Program, Map String M.Module)
+                getModulesForSourceFile (state, hir_program, modules) source_file =
+                    List.fold (state, hir_program, modules) source_file.modules getModule
 
-processImport :: M.Item -> Option Import
-processImport item = case item of
-        M.Import i -> Some i
-        _ -> None
-
-getModuleImports :: M.Module -> [Import]
-getModuleImports mod = mod.items |> List.iter |> Iterator.map processImport |> Iterator.fold (\total, item -> case item of
-                                                                                                Some i -> total + [i]
-                                                                                                None -> total) []
-
-buildModuleImportMap :: [SourceFile] -> Map String [Import]
-buildModuleImportMap source_files = do
-        source_files |> List.iter |> Iterator.fold (\import_map, source_file -> do
-                getImportsForSourceFile import_map source_file) empty
+                getModule :: (ResolverState, HP.Program, Map String M.Module) -> M.Module -> (ResolverState, HP.Program, Map String M.Module)
+                getModule (state, hir_program, modules) mod = do
+                    (Ident name location) <- mod.name
+                    (modules, _) <- insert modules (getString mod.name) mod
+                    qn <- HP.ModulePath name
+                    m <- HP.Module location
+                    (hir_program, other_item) <- HP.addItem hir_program qn m
+                    state <- handleItemConflict state other_item location
+                    (state, hir_program, modules)
 
 getImportsForSourceFile :: Map String [Import] -> SourceFile -> Map String [Import]
-getImportsForSourceFile import_map source_file = do
-        import_map <- source_file.modules |> List.iter |> Iterator.fold (\import_map, mod -> do
-                                                         module_name <- getString mod.name
-                                                         (import_map, _) <- insert import_map module_name (getModuleImports mod)
-                                                         import_map) import_map
-        import_map
+getImportsForSourceFile import_map source_file =
+    List.foldM import_map source_file.modules getModuleImports
+        where
+            getModuleImports :: M.Module -> (String, [Import])
+            getModuleImports mod = do
+                module_name <- getString mod.name
+                module_imports <- List.filterMap mod.items M.toImport
+                (module_name, module_imports)
 
 add :: ResolvedItem -> Option [ResolvedItem] -> Option [ResolvedItem]
 add resolved_item items = case items of
-        Some items -> if contains items resolved_item
-                then Some items
-                else Some (items + [resolved_item])
-        None -> Some [resolved_item]
+    Some items -> if contains items resolved_item
+            then Some items
+            else Some (items + [resolved_item])
+    None -> Some [resolved_item]
 
 addTypeName :: ModuleResolver -> ItemRef -> ResolvedItem -> ModuleResolver
 addTypeName module_resolver item_ref resolved_item = do
@@ -98,32 +65,32 @@ addTermName module_resolver item_ref resolved_item = do
         module_resolver
 
 addImportedItem :: ModuleResolver -> ImportedItem -> ModuleResolver
-addImportedItem module_resolver (ImportedItem visible_name source_module item implicit) = case item of
+addImportedItem module_resolver (ImportedItem visible_name source_module item explicitness) = case item of
         Adt name _ -> do
-                resolved_item <- ResolvedItem (HP.FullPath source_module name) item implicit
+                resolved_item <- ResolvedItem (HP.FullPath source_module name) item explicitness
                 addTypeName module_resolver visible_name resolved_item
         Variant adt name -> do
-                resolved_item <- ResolvedItem (HP.FullPathWithVariant source_module adt name) item implicit
+                resolved_item <- ResolvedItem (HP.FullPathWithVariant source_module adt name) item explicitness
                 addTermName module_resolver visible_name resolved_item
         Record name _ -> do
-                resolved_item <- ResolvedItem (HP.FullPath source_module name) item implicit
+                resolved_item <- ResolvedItem (HP.FullPath source_module name) item explicitness
                 module_resolver <- addTypeName module_resolver visible_name resolved_item
                 module_resolver <- addTermName module_resolver visible_name resolved_item
                 module_resolver
         Class name -> do
-                resolved_item <- ResolvedItem (HP.FullPath source_module name) item implicit
+                resolved_item <- ResolvedItem (HP.FullPath source_module name) item explicitness
                 addTypeName module_resolver visible_name resolved_item
         ClassMember _ name -> do
-                resolved_item <- ResolvedItem (HP.FullPath source_module name) item implicit
+                resolved_item <- ResolvedItem (HP.FullPath source_module name) item explicitness
                 addTermName module_resolver visible_name resolved_item
         Function name -> do
-                resolved_item <- ResolvedItem (HP.FullPath source_module name) item implicit
+                resolved_item <- ResolvedItem (HP.FullPath source_module name) item explicitness
                 addTermName module_resolver visible_name resolved_item
 
 createModuleResolver :: String -> [ImportedItem] -> ModuleResolver
-createModuleResolver module_name items = items
-        |> List.iter
-        |> Iterator.fold (\module_resolver, item -> addImportedItem module_resolver item) (ModuleResolver module_name empty empty)
+createModuleResolver module_name items = do
+    module_resolver <- ModuleResolver module_name empty empty
+    List.fold module_resolver items addImportedItem
 
 processExportsImports :: [SourceFile] -> ResolverState -> HP.Program -> (ResolverState, HP.Program, Map String (M.Module, ModuleResolver))
 processExportsImports source_files state hir_program = do
@@ -132,9 +99,9 @@ processExportsImports source_files state hir_program = do
     //println "locals: {}" % local_items
     exported_items <- processExports local_items modules
     //println "exported items: {}" % exported_items
-    imports <- buildModuleImportMap source_files
+    imports <- List.fold empty source_files getImportsForSourceFile
     //println "imports {}" % imports
-    (state, imported_items) <- processImports state local_items exported_items imports
+    (state, imported_items) <- processAllImports state local_items exported_items imports
     //println "imported item: {}" % imported_items
     modules <- imported_items |> Map.iter |> Iterator.map (\(module_name, imported_items) -> do
                 module_resolver <- createModuleResolver module_name imported_items

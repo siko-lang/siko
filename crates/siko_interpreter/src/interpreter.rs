@@ -924,7 +924,7 @@ impl Interpreter {
             .extern_functions
             .get(&(module.to_string(), name.to_string()))
         {
-            return ExprResult::Ok(f.call(environment, current_expr, kind, ty));
+            return f.call2(environment, current_expr, kind, ty);
         } else {
             panic!("Unimplemented extern function {} {}", module, name);
         }

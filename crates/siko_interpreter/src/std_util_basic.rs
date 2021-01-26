@@ -12,7 +12,7 @@ pub struct Print {}
 impl ExternFunction for Print {
     fn call(
         &self,
-        environment: &mut Environment,
+        environment: &Environment,
         _: Option<ExprId>,
         _: &NamedFunctionKind,
         ty: Type,
@@ -29,7 +29,7 @@ pub struct PrintLn {}
 impl ExternFunction for PrintLn {
     fn call(
         &self,
-        environment: &mut Environment,
+        environment: &Environment,
         _: Option<ExprId>,
         _: &NamedFunctionKind,
         ty: Type,

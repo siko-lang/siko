@@ -18,6 +18,8 @@ import Siko.Resolver.Function as F
 import Siko.Resolver.Type
 import Siko.Syntax.Location
 import Siko.Resolver.Environment
+import Siko.Resolver.ModuleResolver
+import Siko.Resolver.ResolvedItem
 import Map
 import Std.Util
 
@@ -160,7 +162,7 @@ desugarFunctionArgsMulti arg_cases = do
 validatePatternEnv :: PatternEnvironment -> Context -> Context
 validatePatternEnv pattern_env context = do
     context <- pattern_env.bindings |> Map.iter
-                                   |> filter (\(name, positions) -> getLength positions != 1)
+                                   |> Iterator.filter (\(name, positions) -> getLength positions != 1)
                                    |> Iterator.fold (\context, (name, positions) -> do
                                       err <- BindNotUnique positions
                                       addErrorToContext context err) context
@@ -255,13 +257,13 @@ validateUsedFields :: [Ident] -> HD.Record -> Result () ([String], [Ident], [Ide
 validateUsedFields used_fields record = do
     used_fields_s <- used_fields |> List.iter |> Iterator.map (\i -> getString i) |> toList
     real_fields <- record.fields |> List.iter |> Iterator.map (\(HD.RecordField field_name _) -> field_name) |> toList
-    unused_fields <- real_fields |> List.iter |> filter (\f -> not (contains used_fields_s f)) |> toList
-    not_real_fields <- used_fields |> List.iter |> filter (\(Ident f _) -> not (contains real_fields f)) |> toList
+    unused_fields <- real_fields |> List.iter |> Iterator.filter (\f -> not (contains used_fields_s f)) |> toList
+    not_real_fields <- used_fields |> List.iter |> Iterator.filter (\(Ident f _) -> not (contains real_fields f)) |> toList
     multi_used <- used_fields
                 |> List.iter
-                |> filter (\f -> not (contains not_real_fields f))
-                |> filter (\f -> do
-                    arg_list <- used_fields |> List.iter |> filter (\i -> getString i == getString f) |> toList
+                |> Iterator.filter (\f -> not (contains not_real_fields f))
+                |> Iterator.filter (\f -> do
+                    arg_list <- used_fields |> List.iter |> Iterator.filter (\i -> getString i == getString f) |> toList
                     getLength arg_list > 1)
                 |> toList
     if isEmpty unused_fields && isEmpty not_real_fields && isEmpty multi_used
@@ -270,7 +272,7 @@ validateUsedFields used_fields record = do
 
 processRecordFieldInit :: [SE.RecordConstructionItem] -> (Context, Environment, [HE.Expr]) -> HD.RecordField -> (Context, Environment, [HE.Expr])
 processRecordFieldInit field_inits (context, env, args) (HD.RecordField field_name _) = do
-    field_init <- field_inits |> List.iter |> filter (\(SE.RecordConstructionItem name _) -> getString name == field_name) |> toList
+    field_init <- field_inits |> List.iter |> Iterator.filter (\(SE.RecordConstructionItem name _) -> getString name == field_name) |> toList
     (SE.RecordConstructionItem name expr) <- atIndex field_init 0
     (context, env, hir_expr) <- processExpr context env expr
     args <- args + [hir_expr]

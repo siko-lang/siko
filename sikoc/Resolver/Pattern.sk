@@ -10,6 +10,8 @@ import Siko.Resolver.Environment
 import Siko.Resolver.Error
 import Siko.Resolver.Item as RI
 import Siko.Resolver.Module
+import Siko.Resolver.ModuleResolver
+import Siko.Resolver.ResolvedItem
 import Siko.Resolver.Type
 import Siko.Syntax.Ident
 import Siko.Resolver
@@ -28,7 +30,7 @@ resolveConstructor context name mustBeRecord = do
 
 processRecordFieldPattern :: [SP.RecordFieldPattern] -> (Context, PatternEnvironment, Environment, [HP.Pattern]) -> HD.RecordField -> (Context, PatternEnvironment, Environment, [HP.Pattern])
 processRecordFieldPattern field_patterns (context, pattern_env, env, args) (HD.RecordField field_name _) = do
-    field_pattern <- field_patterns |> List.iter |> filter (\(SP.RecordFieldPattern name _) -> getString name == field_name) |> toList
+    field_pattern <- field_patterns |> List.iter |> Iterator.filter (\(SP.RecordFieldPattern name _) -> getString name == field_name) |> toList
     (SP.RecordFieldPattern name pattern) <- atIndex field_pattern 0
     (context, pattern_env, env, hir_pattern) <- processPattern context  pattern_env env pattern
     args <- args + [hir_pattern]

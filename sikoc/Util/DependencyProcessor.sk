@@ -40,7 +40,7 @@ dependsOn item used_item visited all_dependencies = do
 
 checkCircularDependency a :: (PartialEq a, Ord a) => a -> [a] -> Map a [a] -> GroupTable a -> GroupTable a
 checkCircularDependency item dependencies all_dependencies group_table = do
-    circular_deps <- dependencies |> List.iter |> filter (\dep -> do
+    circular_deps <- dependencies |> List.iter |> Iterator.filter (\dep -> do
         (_, depends) <- dependsOn dep item (Set.empty) all_dependencies
         depends) |> toList
     group_table <- circular_deps |> List.iter |> Iterator.fold (\group_table, id -> mergeGroups item id group_table) group_table
@@ -100,7 +100,7 @@ processDependencies all_dependencies = do
                             else do
                                 next_groups <- unprocessed_groups
                                             |> Set.iter
-                                            |> filter (\group_id -> checkGroup group_id group_lookup_table all_dependencies processed_items) |> toList
+                                            |> Iterator.filter (\group_id -> checkGroup group_id group_lookup_table all_dependencies processed_items) |> toList
                                 next_groups |> List.iter
                                      |> Iterator.fold (\(unprocessed_groups, ordered_groups, processed_items), group_id -> do
                                                 unprocessed_groups <- Set.remove unprocessed_groups group_id
