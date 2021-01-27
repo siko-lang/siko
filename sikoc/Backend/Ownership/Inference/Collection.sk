@@ -20,6 +20,9 @@ processKind context moved_vars kind =
         T.VarKind v -> do
             context <- Common.addOwnershipVar context v (T.VarKind v) moved_vars
             (context, v)
+        T.UnusedKind v -> do
+            context <- Common.addOwnershipVar context v (T.UnusedKind v) moved_vars
+            (context, v)
         T.OwnerKind -> do
             (context, v) <- Common.getNextOwnershipVar context
             context <- Common.addOwnershipVar context v kind moved_vars
@@ -289,7 +292,15 @@ processExpr context moved_vars expr = do
                                 _ -> panic "VariantChecker's inner type is not record nor adt"
                             _ -> panic "VariantChecker's type is not Var"
                         (context, var_vars) <- collectVars context moved_vars var_kinds
+                        (context, dest_var) <- Common.getNextOwnershipVar context
+                        context <- Common.addOwnershipVar context dest_var (T.VarKind dest_var) moved_vars
+                        src_var <- atIndex var_vars 0
+                        var_vars <- write var_vars 0 dest_var
                         E.Expr _ body_type _ <- body
+                        body_type_kinds <- T.collectOwnershipKinds body_type
+                        field_src_var <- atIndex body_type_kinds 0
+                        field_src_var <- Common.kindToVar field_src_var
+                        context <- Common.addConstraint context (Common.FieldAccessConverter src_var field_src_var dest_var)
                         //println "v {} var_vars: {} body_type: {} variant_type: {}" % (v, var_vars, body_type, variant_type)
                         context <- Common.addVarVars context v var_vars
                         equalConstraints context moved_vars variant_type body_type

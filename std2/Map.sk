@@ -66,3 +66,10 @@ fold init m f = m |> Map.iter |> Iterator.fold f init
 
 map k1 v1 k2 v2 :: (Ord k1, Ord k2) => Map k1 v1 -> ((k1, v1) -> (k2, v2)) -> Map k2 v2
 map input f = input |> Map.iter |> Iterator.map f |> toMap
+
+mapS s k1 v1 k2 v2 :: (Ord k1, Ord k2) => s -> Map k1 v1 -> (s -> (k1, v1) -> (s, k2, v2)) -> (s, Map k2 v2)
+mapS s m f = do
+    m |> Map.iter |> Iterator.fold (\(s, m2), (k, v) -> do
+        (s, k, v) <- f s (k, v)
+        (m2, _) <-insert m2 k v
+        (s, m2)) (s, Map.empty)

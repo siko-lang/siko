@@ -178,13 +178,23 @@ processFunction program context function = case function.kind of
         variant_record <- P.getRecord program variant_record_id
         sub <- U.batch variant_record.ownership_vars variant_ownership_vars
         variant_record <- U.apply variant_record sub
-        args <- variant_record.fields |> List.iter |> Iterator.map (\f -> f.type) |> toList
+        args <- List.map variant_record.fields (\f -> f.type)
         result <- T.Adt id adt.ownership_vars
         owned_result <- T.Owner result
         function_type <- F.FunctionType args owned_result
         boxed_vars <- repeat T.BoxedKind (getLength adt.boxed_vars)
         sub <- U.batch adt.boxed_vars boxed_vars
         function_type <-  U.apply function_type sub
+        arg_kinds <- List.fold [] function_type.args (\kinds, t -> kinds + T.collectOwnershipKinds t)
+        result_kinds <- T.collectOwnershipKinds function_type.result
+        arg_kinds <- arg_kinds |> sort |> dedup
+        result_kinds <- result_kinds |> sort |> dedup
+        unused_var_kinds <- List.filter result_kinds (\kind -> case kind of
+                                                            T.VarKind v -> not (contains arg_kinds kind)
+                                                            _ -> False)
+        (context, unused_kinds) <- repeatS context (\context -> getNextUnusedKind context) (getLength unused_var_kinds)
+        sub <- U.batch unused_var_kinds unused_kinds
+        function_type <- U.apply function_type sub
         (context, function { type = function_type })
     F.Extern type_mappings -> do
         (context, args) <- function.type.args |> List.iter |> Iterator.fold (\(context, args), arg -> do
