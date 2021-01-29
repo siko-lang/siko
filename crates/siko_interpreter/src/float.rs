@@ -30,7 +30,7 @@ pub struct FloatSub {}
 impl ExternFunction for FloatSub {
     fn call(
         &self,
-        environment: & Environment,
+        environment: &Environment,
         _: Option<ExprId>,
         _: &NamedFunctionKind,
         ty: Type,
@@ -78,7 +78,7 @@ pub struct FloatPartialEq {}
 impl ExternFunction for FloatPartialEq {
     fn call(
         &self,
-        environment: & Environment,
+        environment: &Environment,
         _: Option<ExprId>,
         _: &NamedFunctionKind,
         _: Type,
@@ -94,7 +94,7 @@ pub struct FloatPartialOrd {}
 impl ExternFunction for FloatPartialOrd {
     fn call(
         &self,
-        environment: & Environment,
+        environment: &Environment,
         _: Option<ExprId>,
         _: &NamedFunctionKind,
         _: Type,

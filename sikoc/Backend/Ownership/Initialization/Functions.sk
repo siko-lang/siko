@@ -151,6 +151,13 @@ applyTypeMappings program context type_mappings function_type = do
         ) (context, function_type)
     (context, function_type)
 
+addBoxed :: [T.OwnershipKind] -> F.FunctionType -> F.FunctionType
+addBoxed data_boxed_vars function_type = do
+    boxed_vars <- repeat T.BoxedKind (getLength data_boxed_vars)
+    sub <- U.batch data_boxed_vars boxed_vars
+    function_type <-  U.apply function_type sub
+    function_type
+
 processFunction :: P.Program -> Context -> F.Function -> (Context, F.Function)
 processFunction program context function = case function.kind of
     F.Normal body expr_id_gen temp_var_gen -> do
@@ -168,6 +175,7 @@ processFunction program context function = case function.kind of
         result <- T.Record id record.ownership_vars
         owned_result <- T.Owner result
         function_type <- F.FunctionType args owned_result
+        function_type <- addBoxed record.boxed_vars function_type
         (context, function { type = function_type })
     F.VariantCtor index -> do
         id <- T.getIdentity function.type.result
@@ -182,19 +190,7 @@ processFunction program context function = case function.kind of
         result <- T.Adt id adt.ownership_vars
         owned_result <- T.Owner result
         function_type <- F.FunctionType args owned_result
-        boxed_vars <- repeat T.BoxedKind (getLength adt.boxed_vars)
-        sub <- U.batch adt.boxed_vars boxed_vars
-        function_type <-  U.apply function_type sub
-        arg_kinds <- List.fold [] function_type.args (\kinds, t -> kinds + T.collectOwnershipKinds t)
-        result_kinds <- T.collectOwnershipKinds function_type.result
-        arg_kinds <- arg_kinds |> sort |> dedup
-        result_kinds <- result_kinds |> sort |> dedup
-        unused_var_kinds <- List.filter result_kinds (\kind -> case kind of
-                                                            T.VarKind v -> not (contains arg_kinds kind)
-                                                            _ -> False)
-        (context, unused_kinds) <- repeatS context (\context -> getNextUnusedKind context) (getLength unused_var_kinds)
-        sub <- U.batch unused_var_kinds unused_kinds
-        function_type <- U.apply function_type sub
+        function_type <- addBoxed adt.boxed_vars function_type
         (context, function { type = function_type })
     F.Extern type_mappings -> do
         (context, args) <- function.type.args |> List.iter |> Iterator.fold (\(context, args), arg -> do

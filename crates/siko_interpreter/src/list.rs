@@ -1,7 +1,7 @@
 use crate::environment::Environment;
 use crate::extern_function::ExternFunction;
-use crate::interpreter::Interpreter;
 use crate::interpreter::ExprResult;
+use crate::interpreter::Interpreter;
 use crate::util::create_none;
 use crate::util::create_some;
 use crate::util::get_opt_ordering_value;
@@ -191,10 +191,9 @@ impl ExternFunction for AtIndex {
         if list.len() <= index as usize {
             println!("PANIC!: atIndex: size: {} index: {}", list.len(), index);
             return ExprResult::Abort;
-        }
-        else {
-        let value = list[index as usize].clone();
-        return ExprResult::Ok(value);
+        } else {
+            let value = list[index as usize].clone();
+            return ExprResult::Ok(value);
         }
     }
 }

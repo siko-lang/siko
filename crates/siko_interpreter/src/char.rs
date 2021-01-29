@@ -15,7 +15,7 @@ pub struct CharPartialEq {}
 impl ExternFunction for CharPartialEq {
     fn call(
         &self,
-        environment: & Environment,
+        environment: &Environment,
         _: Option<ExprId>,
         _: &NamedFunctionKind,
         _: Type,
@@ -31,7 +31,7 @@ pub struct CharPartialOrd {}
 impl ExternFunction for CharPartialOrd {
     fn call(
         &self,
-        environment: & Environment,
+        environment: &Environment,
         _: Option<ExprId>,
         _: &NamedFunctionKind,
         _: Type,
@@ -65,7 +65,7 @@ pub struct CharShow {}
 impl ExternFunction for CharShow {
     fn call(
         &self,
-        environment: & Environment,
+        environment: &Environment,
         _: Option<ExprId>,
         _: &NamedFunctionKind,
         ty: Type,
@@ -80,7 +80,7 @@ pub struct CharIsUppercase {}
 impl ExternFunction for CharIsUppercase {
     fn call(
         &self,
-        environment: & Environment,
+        environment: &Environment,
         _: Option<ExprId>,
         _: &NamedFunctionKind,
         _: Type,

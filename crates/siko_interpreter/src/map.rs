@@ -15,13 +15,7 @@ use std::rc::Rc;
 pub struct Empty {}
 
 impl ExternFunction for Empty {
-    fn call(
-        &self,
-        _: &Environment,
-        _: Option<ExprId>,
-        _: &NamedFunctionKind,
-        ty: Type,
-    ) -> Value {
+    fn call(&self, _: &Environment, _: Option<ExprId>, _: &NamedFunctionKind, ty: Type) -> Value {
         return Value::new(ValueCore::Map(BTreeMap::new()), ty);
     }
 }

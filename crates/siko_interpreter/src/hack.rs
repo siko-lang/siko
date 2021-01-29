@@ -44,13 +44,7 @@ impl ExternFunction for WriteTextFile {
 pub struct GetArgs {}
 
 impl ExternFunction for GetArgs {
-    fn call(
-        &self,
-        _: & Environment,
-        _: Option<ExprId>,
-        _: &NamedFunctionKind,
-        ty: Type,
-    ) -> Value {
+    fn call(&self, _: &Environment, _: Option<ExprId>, _: &NamedFunctionKind, ty: Type) -> Value {
         let string_ty = Interpreter::get_string_type();
         let mut args = vec![Value::new(
             ValueCore::String("siko".to_string()),

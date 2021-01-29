@@ -50,27 +50,38 @@ impl ExternFunction for Filter {
 pub struct Fold {}
 
 impl ExternFunction for Fold {
-    fn call(
+    fn call2(
         &self,
         environment: &Environment,
         _: Option<ExprId>,
         _: &NamedFunctionKind,
         _: Type,
-    ) -> Value {
+    ) -> ExprResult {
         let func = environment.get_arg_by_index(0).clone();
         let initial = environment.get_arg_by_index(1).clone();
         let iterator = environment.get_arg_by_index(2).clone();
-        let iterator = iterator.core.as_iterator();
-        let value = iterator.fold(initial, move |acc, x| {
-            if let ExprResult::Ok(v) =
-                Interpreter::call_func(func.clone(), vec![acc.clone(), x.clone()], None)
-            {
-                v
-            } else {
-                unreachable!()
+        let mut iterator = iterator.core.as_iterator();
+        let mut value = initial;
+        loop {
+            match iterator.next() {
+                Some(v) => {
+                    let iv =
+                        Interpreter::call_func(func.clone(), vec![value.clone(), v.clone()], None);
+                    match iv {
+                        ExprResult::Ok(v) => {
+                            value = v;
+                        }
+                        iv => {
+                            return iv;
+                        }
+                    }
+                }
+                None => {
+                    break;
+                }
             }
-        });
-        value
+        }
+        ExprResult::Ok(value)
     }
 }
 

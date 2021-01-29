@@ -53,7 +53,7 @@ processConverterConstraint context kind from to = do
     resolved_to <- resolveKind context to
     //println "Processing converter constraint {} {} {} {}" % (from, resolved_from, to, resolved_to)
     case (resolved_from, resolved_to) of
-        (T.OwnerKind, T.VarKind _) | (T.OwnerKind, T.UnusedKind _) -> do
+        (T.OwnerKind, T.VarKind _) -> do
             case kind of
                 Common.NormalConverter -> do
                     group_id <- Common.getGroupId context to
@@ -68,11 +68,7 @@ processConverterConstraint context kind from to = do
                     group_id <- Common.getGroupId context to
                     context <- Common.updateGroupKind context group_id borrower_kind
                     (context, True)
-        (T.BorrowKind _, T.VarKind _) | (T.BorrowKind _, T.UnusedKind _) -> do
-            group_id <- Common.getGroupId context to
-            context <- Common.updateGroupKind context group_id resolved_from
-            (context, True)
-        (T.UnusedKind _, T.VarKind _) -> do
+        (T.BorrowKind _, T.VarKind _) -> do
             group_id <- Common.getGroupId context to
             context <- Common.updateGroupKind context group_id resolved_from
             (context, True)
@@ -105,26 +101,22 @@ processConstraintsStep context = do
                     field_src_kind <- resolveKind context field_src
                     to_kind <- resolveKind context to
                     case (field_src_kind, to_kind) of
-                        (T.BorrowKind _, T.VarKind _) | (T.BorrowKind _, T.UnusedKind _) -> do
+                        (T.BorrowKind _, T.VarKind _) -> do
                             group_id <- Common.getGroupId context to
                             context <- Common.updateGroupKind context group_id field_src_kind
                             (context, True)
                         _ -> case (from_kind, to_kind) of
-                            (T.BorrowKind _, T.VarKind _) | (T.BorrowKind _, T.UnusedKind _) -> do
+                            (T.BorrowKind _, T.VarKind _) -> do
                                 group_id <- Common.getGroupId context to
                                 context <- Common.updateGroupKind context group_id from_kind
                                 (context, True)
-                            (T.OwnerKind , T.VarKind _) | (T.OwnerKind, T.UnusedKind _) -> do
+                            (T.OwnerKind , T.VarKind _) -> do
                                 group_id <- Common.getGroupId context to
                                 context <- Common.updateGroupKind context group_id from_kind
                                 (context, True)
-                            (T.BoxedKind, T.VarKind _) | (T.BoxedKind, T.UnusedKind _) -> do
+                            (T.BoxedKind, T.VarKind _) -> do
                                 group_id <- Common.getGroupId context to
                                 context <- Common.updateGroupKind context group_id T.OwnerKind
-                                (context, True)
-                            (T.UnusedKind _, T.VarKind _) -> do
-                                group_id <- Common.getGroupId context to
-                                context <- Common.updateGroupKind context group_id from_kind
                                 (context, True)
                             _ -> (context, changed)
         ) (context, False)
@@ -239,10 +231,6 @@ getSubstitution context = do
                     if new_v == v
                         then sub
                         else U.addSubstitution sub (T.VarKind v) (U.Unification new_v)
-                T.UnusedKind new_v -> do
-                    if new_v == v
-                        then sub
-                        else U.addSubstitution sub (T.VarKind v) (U.Unused new_v)
                 T.OwnerKind -> do
                     U.addSubstitution sub (T.VarKind v) (U.Owner)
                 T.BorrowKind i -> do
@@ -287,7 +275,7 @@ replaceUnused context = do
         replaceUnusedKind context (var, group_id) = do
             resolved_kind <- resolveKind context var
             context <- case resolved_kind of
-                T.UnusedKind _ -> do
+                T.VarKind _ -> do
                         group_id <- Common.getGroupId context var
                         Common.updateGroupKind context group_id T.OwnerKind
                 _ -> context

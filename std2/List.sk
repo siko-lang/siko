@@ -5,30 +5,57 @@ import Map
 data List a = extern
 
 instance (Show a) => Show [a] where
-    show a = showList a
+    show l = do
+        subs <- List.map l show
+        "[" + join subs ", " + "]"
 
 instance (PartialEq a) => PartialEq [a] where
-    opEq a b = eqList a b
+    opEq a b =
+        if getLength a != getLength b
+        then False
+        else loop (iter_a, iter_b) <- (List.iter a, List.iter b) do
+            case Iterator.getNext iter_a of
+                Some (iter_a, item_a) -> do
+                    (iter_b, item_b) <- Option.unwrap(Iterator.getNext iter_b)
+                    if item_a != item_b
+                    then return False
+                    else (iter_a, iter_b)
+                None -> return True
 
 instance (Eq a) => Eq [a]
 
 instance (PartialOrd a) => PartialOrd [a] where
-    partialCmp a b = partialCmpList a b
+    partialCmp a b = do
+        len_a <- getLength a
+        len_b <- getLength b
+        if len_a != len_b
+        then partialCmp len_a len_b
+        else loop (iter_a, iter_b) <- (List.iter a, List.iter b) do
+            case Iterator.getNext iter_a of
+                Some (iter_a, item_a) -> do
+                    (iter_b, item_b) <- Option.unwrap(Iterator.getNext iter_b)
+                    case partialCmp item_a item_b of
+                        Some Equal -> (iter_a, iter_b)
+                        e -> return e
+                None -> return Some Equal
 
 instance (Ord a) => Ord [a] where
-    cmp a b = cmpList a b
+    cmp a b = do
+        len_a <- getLength a
+        len_b <- getLength b
+        if len_a != len_b
+        then cmp len_a len_b
+        else loop (iter_a, iter_b) <- (List.iter a, List.iter b) do
+            case Iterator.getNext iter_a of
+                Some (iter_a, item_a) -> do
+                    (iter_b, item_b) <- Option.unwrap(Iterator.getNext iter_b)
+                    case cmp item_a item_b of
+                        Equal -> (iter_a, iter_b)
+                        e -> return e
+                None -> return Equal
 
 instance Add [a] where
     opAdd a b = addList a b
-
-showList a :: ~[a] -> String
-showList l = extern
-
-eqList a :: ~[a] -> ~[a] -> ~Bool
-eqList a b = extern
-
-partialCmpList a :: ~[a] -> ~[a] -> ~Option (~Ordering)
-partialCmpList a b = extern
 
 cmpList a :: ~[a] -> ~[a] -> ~Ordering
 cmpList a b = extern

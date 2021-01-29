@@ -1,18 +1,12 @@
 use crate::environment::Environment;
-use crate::value::Value;
 use crate::interpreter::ExprResult;
+use crate::value::Value;
 use siko_ir::expr::ExprId;
 use siko_ir::function::NamedFunctionKind;
 use siko_ir::types::Type;
 
-pub trait ExternFunction : std::panic::RefUnwindSafe {
-    fn call(
-        &self,
-        _: &Environment,
-        _: Option<ExprId>,
-        _: &NamedFunctionKind,
-        _: Type,
-    ) -> Value {
+pub trait ExternFunction {
+    fn call(&self, _: &Environment, _: Option<ExprId>, _: &NamedFunctionKind, _: Type) -> Value {
         unimplemented!()
     }
 

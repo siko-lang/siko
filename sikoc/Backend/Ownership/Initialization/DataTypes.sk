@@ -139,8 +139,10 @@ calculateArgCountForRecord context group record = do
             arg_count <- arg_count + getLength external_info.type_args
             external_info.type_args |> List.iter |> Iterator.fold (\arg_count, type_arg -> do
                 id <- T.getIdentity type_arg
-                c <- getArgCount context id
-                arg_count + c) arg_count
+                field_arg_count <- if contains group id
+                then 0
+                else getArgCount context id
+                arg_count + field_arg_count) arg_count
         None -> arg_count
 
 calculateArgCount :: P.Program -> Context -> [P.Identity] -> P.Identity -> Int

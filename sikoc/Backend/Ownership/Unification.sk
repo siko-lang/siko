@@ -8,7 +8,6 @@ import Std.Util
 import Map
 
 data SubstitutionChange = Unification T.OwnershipVar
-                        | Unused T.OwnershipVar
                         | Owner
                         | Boxed
                         | Borrow Int
@@ -33,14 +32,6 @@ instance Apply T.OwnershipKind where
     apply k sub = case k of
         T.VarKind v -> case get sub.var_subs v of
                         Some (Unification new) -> T.VarKind new
-                        Some (Unused new) -> T.UnusedKind new
-                        Some Owner -> T.OwnerKind
-                        Some Boxed -> T.BoxedKind
-                        Some (Borrow index) -> T.BorrowKind index
-                        _ -> k
-        T.UnusedKind v -> case get sub.var_subs v of
-                        Some (Unification new) -> T.UnusedKind new
-                        Some (Unused new) -> T.UnusedKind new
                         Some Owner -> T.OwnerKind
                         Some Boxed -> T.BoxedKind
                         Some (Borrow index) -> T.BorrowKind index
@@ -60,7 +51,6 @@ instance Apply T.Type where
             T.Var i t -> do
                 case apply i sub of
                     T.VarKind v -> T.Var (T.VarKind v) (apply t sub)
-                    T.UnusedKind v -> T.Var (T.UnusedKind v) (apply t sub)
                     T.BorrowKind index -> T.Ref index (apply t sub)
                     T.OwnerKind -> T.Owner (apply t sub)
                     T.BoxedKind -> T.Boxed (apply t sub)
@@ -99,9 +89,6 @@ addSubstitution sub var change = do
         T.OwnerKind -> case change of
             Owner -> sub
             _ -> panic "Trying to substitute {} to {}" % (var, change)
-        T.UnusedKind var -> do
-            (var_subs, _) <- insert sub.var_subs var change
-            sub { var_subs = var_subs }
         _ -> panic "Trying to substitute {} to {}" % (var, change)
 
 unifyVars :: Substitution -> [T.OwnershipKind] -> [T.OwnershipKind] -> Substitution
@@ -111,16 +98,17 @@ unifyVars sub args1 args2 = do
                 (T.VarKind v1, T.VarKind v2) -> addSubstitution sub arg1 (Unification v2)
                 (T.OwnerKind, T.OwnerKind) -> sub
                 (T.BorrowKind index1, T.BorrowKind index2) -> sub
+                (T.BoxedKind, T.BoxedKind) -> sub
+
                 (T.OwnerKind, T.VarKind v2) -> addSubstitution sub arg2 Owner
                 (T.VarKind v1, T.OwnerKind) -> addSubstitution sub arg1 Owner
-                (T.VarKind v, T.BorrowKind index) -> addSubstitution sub arg1 (Borrow index)
+
                 (T.BorrowKind index, T.VarKind v) -> addSubstitution sub arg2 (Borrow index)
+                (T.VarKind v, T.BorrowKind index) -> addSubstitution sub arg1 (Borrow index)
+
                 (T.BoxedKind, T.VarKind v) -> addSubstitution sub arg2 Boxed
                 (T.VarKind v, T.BoxedKind) -> addSubstitution sub arg1 Boxed
-                (T.BoxedKind, T.BoxedKind) -> sub
-                (T.UnusedKind v1, T.VarKind v2) -> addSubstitution sub arg2 (Unused v1)
-                (T.VarKind v1, T.UnusedKind v2) -> addSubstitution sub arg1 (Unused v2)
-                (T.UnusedKind v1, T.UnusedKind v2) -> addSubstitution sub arg1 (Unification v2)
+
                 _ -> panic "Unifying kinds {} {} NYI" % (arg1, arg2))
         else do
             if (not (isEmpty args1)) && (not (isEmpty args2))
