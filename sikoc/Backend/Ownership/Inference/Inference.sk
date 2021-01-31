@@ -346,7 +346,8 @@ updateBodyExpr (context, sub) expr = do
                         (T.OwnerKind, T.OwnerKind) -> case kind of
                             E.NormalConverter -> E.Expr (E.Move arg) type id
                             E.BorrowerConverter -> E.Expr (E.Clone arg) type id
-                            E.FieldConverter -> E.Expr (E.Move arg) type id
+                            E.FieldConverter False -> E.Expr (E.Move arg) type id
+                            E.FieldConverter True -> E.Expr (E.Clone arg) type id
                         (T.OwnerKind, T.BorrowKind i) -> E.Expr (E.Ref arg) type id
                         (T.BorrowKind _, T.OwnerKind) -> E.Expr (E.Clone arg) type id
                         (T.BorrowKind _, T.BorrowKind _) -> E.Expr (E.Move arg) type id

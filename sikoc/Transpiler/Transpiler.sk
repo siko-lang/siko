@@ -262,53 +262,42 @@ convertAdt adt = do
                 R.Variant (getRustFriendlyName variant.name) (convertType variant.type)) |> toList
     R.Enum name lifetimes rust_variants [R.Clone]
 
-processImpl :: Program -> R.Program -> Context -> String -> LD.ExternalClassImpl -> Option LE.Expr -> R.Program
-processImpl lir_program program context type_name impl impl_body_fragment = do
+processImpl :: Program -> R.Program -> Context -> String -> LD.ExternalClassImpl -> R.Program
+processImpl lir_program program context type_name impl = do
     rust_type_name <- RT.Named type_name []
     (name, methods) <- case impl of
-            LD.Show -> do
-                impl_body_fragment <- Option.unwrap impl_body_fragment
+            LD.Show fn_id -> do
                 args <- [("fmt", RT.Named "&mut std::fmt::Formatter" [])]
                 result <- RT.Named "std::fmt::Result" []
-                var_decl <- R.VarDecl (getArgName 0) (R.MethodCall (R.VarRef "self") cloneName []) None
-                show_call <- convertExpr context impl_body_fragment
+                show_call <- R.FunctionCall (getRustIdentity fn_id) [R.Ref (R.VarRef "self")]
                 fmt_call <- R.FunctionCall "write!" [R.VarRef "fmt", R.StringLiteral "{}", R.FieldAccess innerValueField show_call]
-                body <- R.Block [var_decl, fmt_call]
+                body <- R.Block [fmt_call]
                 method <- R.Function "fmt" [] True args result body
                 ("std::fmt::Display", [method])
-            LD.PartialEq -> do
-                impl_body_fragment <- Option.unwrap impl_body_fragment
+            LD.PartialEq fn_id -> do
                 args <- [(getArgName 1, (RT.Named "&{}" % type_name) [])]
                 result <- RT.Named "bool" []
-                var0_decl <- R.VarDecl (getArgName 0) (R.MethodCall (R.VarRef "self") cloneName []) (Some rust_type_name)
-                var1_decl <- R.VarDecl (getArgName 1) (R.MethodCall (R.VarRef (getArgName 1)) cloneName []) (Some rust_type_name)
-                op_call <- convertExpr context impl_body_fragment
-                body <- R.Block [var0_decl, var1_decl, sikoBoolToRustBool op_call (RT.Named boolTypeName [])]
+                op_call <- R.FunctionCall (getRustIdentity fn_id) [R.Ref (R.VarRef "self"), R.VarRef (getArgName 1)]
+                body <- R.Block [sikoBoolToRustBool op_call (RT.Named boolTypeName [])]
                 method <- R.Function "eq" [] True args result body
                 ("std::cmp::PartialEq", [method])
             LD.Eq -> do
                 ("std::cmp::Eq", [])
-            LD.PartialOrd -> do
-                impl_body_fragment <- Option.unwrap impl_body_fragment
+            LD.PartialOrd fn_id -> do
                 args <- [(getArgName 1, (RT.Named "&{}" % type_name) [])]
                 result <- RT.Named "Option<std::cmp::Ordering>" []
-                var0_decl <- R.VarDecl (getArgName 0) (R.MethodCall (R.VarRef "self") cloneName []) (Some rust_type_name)
-                var1_decl <- R.VarDecl (getArgName 1) (R.MethodCall (R.VarRef (getArgName 1)) cloneName []) (Some rust_type_name)
-                LE.Expr _ optional_ordering_type _ <- impl_body_fragment
-                op_call <- convertExpr context impl_body_fragment
-                body <- R.Block [var0_decl, var1_decl, sikoOptionalOrderingToRustOptionalOrdering lir_program op_call optional_ordering_type]
+                op_call <- R.FunctionCall (getRustIdentity fn_id) [R.Ref (R.VarRef "self"), R.VarRef (getArgName 1)]
+                fn <- getFunction lir_program fn_id
+                body <- R.Block [sikoOptionalOrderingToRustOptionalOrdering lir_program op_call fn.type.result]
                 method <- R.Function "partial_cmp" [] True args result body
                 ("std::cmp::PartialOrd", [method])
-            LD.Ord -> do
-                impl_body_fragment <- Option.unwrap impl_body_fragment
+            LD.Ord fn_id -> do
                 args <- [(getArgName 1, (RT.Named "&{}" % type_name) [])]
                 result <- RT.Named "std::cmp::Ordering" []
-                var0_decl <- R.VarDecl (getArgName 0) (R.MethodCall (R.VarRef "self") cloneName []) (Some rust_type_name)
-                var1_decl <- R.VarDecl (getArgName 1) (R.MethodCall (R.VarRef (getArgName 1)) cloneName []) (Some rust_type_name)
-                LE.Expr _ ordering_type _ <- impl_body_fragment
-                op_call <- convertExpr context impl_body_fragment
-                rust_ordering_type <- convertType ordering_type
-                body <- R.Block [var0_decl, var1_decl, sikoOrderingToRustOrdering op_call rust_ordering_type]
+                op_call <- R.FunctionCall (getRustIdentity fn_id) [R.Ref (R.VarRef "self"), R.VarRef (getArgName 1)]
+                fn <- getFunction lir_program fn_id
+                ordering_result <- convertType fn.type.result
+                body <- R.Block [sikoOrderingToRustOrdering op_call ordering_result]
                 method <- R.Function "cmp" [] True args result body
                 ("std::cmp::Ord", [method])
     //println "processImpl: {} {}" % (name, rust_type_name)
@@ -368,13 +357,13 @@ transpile program = do
     context <- Context type_store None constructors
     rust_program <- program.adts |> Map.iter |> Iterator.fold (\rust_program, (_, adt) -> do
             name <- getRustIdentity adt.id
-            adt.external_class_impls |> List.iter |> Iterator.fold (\rust_program, (external_class_impl, impl_body_fragment) -> do
-                processImpl program rust_program context name external_class_impl impl_body_fragment) rust_program
+            adt.external_class_impls |> List.iter |> Iterator.fold (\rust_program, external_class_impl -> do
+                processImpl program rust_program context name external_class_impl) rust_program
         ) rust_program
     rust_program <- program.records |> Map.iter |> Iterator.fold (\rust_program, (_, record) -> do
             name <- getRustIdentity record.id
-            record.external_class_impls |> List.iter |> Iterator.fold (\rust_program, (external_class_impl, impl_body_fragment) -> do
-                processImpl program rust_program context name external_class_impl impl_body_fragment) rust_program
+            record.external_class_impls |> List.iter |> Iterator.fold (\rust_program, external_class_impl -> do
+                processImpl program rust_program context name external_class_impl) rust_program
         ) rust_program
     rust_program <- program.functions |> Map.iter |> Iterator.fold (\rust_program, (_, lir_function) -> do
         rust_function_name <- getRustIdentity lir_function.id

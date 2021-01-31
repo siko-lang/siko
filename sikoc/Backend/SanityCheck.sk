@@ -22,9 +22,7 @@ check id context expr = do
     (expr_ids, inserted) <- Set.insert context.expr_ids expr_id
     context <- if inserted
         then context { expr_ids = expr_ids }
-        else do
-            println "WARNING: duplicated expr id {} in function {}/{}" % (expr_id, id, E.short expr)
-            context
+        else panic "ICE: duplicated expr id {} in function {}/{}" % (expr_id, id, E.short expr)
     (context, expr)
 
 processFunction :: F.Function -> ()

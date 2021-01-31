@@ -335,7 +335,6 @@ processFunction queue mir_program mir_id function_type lir_id = do
             lir_function <- LF.Function lir_id lifetimes lir_kind lir_function_type
             queue <- addFunction queue lir_function
             queue
-        _ -> queue
 
 processField :: Queue -> MD.RecordField -> (Queue, LD.RecordField)
 processField queue mir_field = do
@@ -353,6 +352,40 @@ processExternalRecordInfo queue sub mir_external_record_info = do
     (queue, lir_type_args) <- List.mapS queue type_args processType
     (queue, LD.ExternalRecordInfo lir_type_args)
 
+processExternalClassImpl :: MP.Program -> MT.Type -> Queue -> MD.ExternalClassImpl -> (Queue, LD.ExternalClassImpl)
+processExternalClassImpl mir_program arg_type queue mir_class_impl =
+    case mir_class_impl of
+        MD.Show id -> do
+            (queue, lir_id) <- processClassImplCall mir_program arg_type queue id
+            (queue, LD.Show lir_id)
+        MD.PartialEq id -> do
+            (queue, lir_id) <- processClassImplCall mir_program arg_type queue id
+            (queue, LD.PartialEq lir_id)
+        MD.Eq -> do
+            (queue, LD.Eq)
+        MD.PartialOrd id -> do
+            (queue, lir_id) <- processClassImplCall mir_program arg_type queue id
+            (queue, LD.PartialOrd lir_id)
+        MD.Ord id -> do
+            (queue, lir_id) <- processClassImplCall mir_program arg_type queue id
+            (queue, LD.Ord lir_id)
+    where
+        processClassImplCall :: MP.Program -> MT.Type -> Queue -> MP.Identity -> (Queue, LP.Identity)
+        processClassImplCall mir_program arg_type queue id = do
+            (indices, arg_type) <- normalizeType Map.empty arg_type
+            function <- MP.getFunction mir_program id
+            kinds <- MT.collectOwnershipKinds function.type.result
+            owners <- repeat MT.OwnerKind (getLength kinds)
+            sub <- U.batch kinds owners
+            result <- U.apply function.type.result sub
+            args <- repeat arg_type (getLength function.type.args)
+            normalized_function_type <- MF.FunctionType args result
+            //println "{} :: {}" % (id, normalized_function_type)
+            function_key <- FunctionKey id normalized_function_type
+            (queue, lir_id) <- getLIRId queue function_key
+            queue <- addItem queue (QueuedItem function_key)
+            (queue, lir_id)
+
 processRecord :: Queue -> MP.Program -> MP.Identity -> [MT.OwnershipKind] -> LP.Identity -> Queue
 processRecord queue mir_program mir_id args lir_id = do
     //println "Processing record {} {}" % (mir_id, args)
@@ -365,7 +398,8 @@ processRecord queue mir_program mir_id args lir_id = do
             (queue, external_info) <- processExternalRecordInfo queue sub external_info
             (queue, Some external_info)
         None -> (queue, None)
-    external_class_impls <- [] // FIXME
+    arg_type <- MT.Ref 0 (MT.Record mir_id args)
+    (queue, external_class_impls) <- List.mapS queue mir_record.external_class_impls (processExternalClassImpl mir_program arg_type)
     lifetimes <- collectLifetimes (MT.Record mir_id mir_record.ownership_vars)
     lir_record <- LD.Record lir_id lifetimes fields external_info external_class_impls
     queue <- addRecord queue lir_record
@@ -378,7 +412,8 @@ processAdt queue mir_program mir_id args lir_id = do
     sub <- U.batch mir_adt.ownership_vars args
     mir_adt <- U.apply mir_adt sub
     (queue, variants) <- List.mapS queue mir_adt.variants processVariant
-    external_class_impls <- [] // FIXME
+    arg_type <- MT.Ref 0 (MT.Adt mir_id args)
+    (queue, external_class_impls) <- List.mapS queue mir_adt.external_class_impls (processExternalClassImpl mir_program arg_type)
     lifetimes <- collectLifetimes (MT.Record mir_id mir_adt.ownership_vars)
     lir_adt <- LD.AlgebraicDataType lir_id lifetimes variants external_class_impls
     queue <- addAdt queue lir_adt

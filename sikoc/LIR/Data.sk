@@ -2,14 +2,12 @@ module Siko.LIR.Data where
 
 import Siko.LIR.Type
 import Siko.LIR.Program
-import Siko.LIR.Expr
 
-data ExternalClassImpl = Show
-                       | PartialEq
+data ExternalClassImpl = Show Identity
+                       | PartialEq Identity
                        | Eq
-                       | PartialOrd
-                       | Ord
-                       deriving (Show, PartialEq, Eq, PartialOrd, Ord)
+                       | PartialOrd Identity
+                       | Ord Identity
 
 instance Show Identity where
     show (Identity m n i) = "{}.{}_{}" % (m, n, i)
@@ -21,7 +19,7 @@ data Variant = { name :: String,
 data AlgebraicDataType = { id :: Identity,
                            lifetimes :: [Lifetime],
                            variants :: [Variant],
-                           external_class_impls :: [(ExternalClassImpl, Option Expr)]
+                           external_class_impls :: [ExternalClassImpl]
                          }
 
 data RecordField = { name :: String,
@@ -34,7 +32,7 @@ data Record = { id :: Identity,
                 lifetimes :: [Lifetime],
                 fields :: [RecordField],
                 external_info :: Option ExternalRecordInfo,
-                external_class_impls :: [(ExternalClassImpl, Option Expr)]
+                external_class_impls :: [ExternalClassImpl]
               }
 
 dumpAdt :: AlgebraicDataType -> String

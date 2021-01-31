@@ -35,8 +35,8 @@ data Context = { hir_program :: HP.Program,
                  state :: TypecheckerState,
                  keys :: Map Key Int,
                  function_queue :: FQ.FunctionQueue,
-                 external_class_names :: [(HP.FullyQualifiedName, MD.ExternalClassImpl)],
-                 external_class_impls :: Map HT.Type [MD.ExternalClassImpl],
+                 external_class_names :: [(HP.FullyQualifiedName, MD.ExternalClassImplKind)],
+                 external_class_impls :: Map HT.Type [MD.ExternalClassImplKind],
                  pattern_vars :: Map HPat.PatternId ME.Var,
                  loop_jumps :: Map HE.ExprId ME.ExprId,
                  expr_id_gen :: Option (Counter ME.ExprId),
@@ -66,14 +66,18 @@ getTempVarCounter :: Counter ME.Var
 getTempVarCounter = Counter ME.Temp 0
 
 setExprIdCounter :: Context -> Counter ME.ExprId -> Context
-setExprIdCounter context expr_id_gen = case context.expr_id_gen of
-    Some _ -> panic "Trying to set expr_id_gen in context when already set"
-    None -> context { expr_id_gen = Some expr_id_gen }
+setExprIdCounter context expr_id_gen = do
+    old :: Option (Counter ME.ExprId) <- context.expr_id_gen // FIXME: this should not need type annotation
+    case old of
+        Some _ -> panic "Trying to set expr_id_gen in context when already set"
+        None -> context { expr_id_gen = Some expr_id_gen }
 
 setTempVarCounter :: Context -> Counter ME.Var -> Context
-setTempVarCounter context temp_var_gen = case context.temp_var_gen of
-    Some _ -> panic "Trying to set temp_var_gen in context when already set"
-    None -> context { temp_var_gen = Some temp_var_gen }
+setTempVarCounter context temp_var_gen = do
+    old :: Option (Counter ME.Var) <- context.temp_var_gen // FIXME: this should not need type annotation
+    case old of
+        Some _ -> panic "Trying to set temp_var_gen in context when already set"
+        None -> context { temp_var_gen = Some temp_var_gen }
 
 resetExprIdCounter :: Context -> (Context, Counter ME.ExprId)
 resetExprIdCounter context = do
@@ -109,87 +113,98 @@ getIdentity context module_name name = do
     context <- context { keys = keys }
     (context, MP.Identity module_name name index)
 
-getExternalClassNames :: [(HP.FullyQualifiedName, MD.ExternalClassImpl)]
+getExternalClassNames :: [(HP.FullyQualifiedName, MD.ExternalClassImplKind)]
 getExternalClassNames = do
     show <- HP.FullPath getStdOpsModuleName getShowClassName
     partial_eq <- HP.FullPath getStdOpsModuleName getPartialEqClassName
     eq <- HP.FullPath getStdOpsModuleName getEqClassName
     partial_ord <- HP.FullPath getStdOpsModuleName getPartialOrdClassName
     ord <- HP.FullPath getStdOpsModuleName getOrdClassName
-    [(show, MD.Show),
-     (partial_eq, MD.PartialEq),
-     (eq, MD.Eq),
-     (partial_ord, MD.PartialOrd),
-     (ord, MD.Ord)]
+    [(show, MD.ShowKind),
+     (partial_eq, MD.PartialEqKind),
+     (eq, MD.EqKind),
+     (partial_ord, MD.PartialOrdKind),
+     (ord, MD.OrdKind)]
 
-generateExternalImpl :: Context -> HT.Type -> MD.ExternalClassImpl -> Context
-generateExternalImpl context hir_type impl = case impl of
-    MD.Show -> do
+unpackCall :: ME.Expr -> MP.Identity
+unpackCall expr = do
+    ME.Expr s_expr _ _ <- expr
+    case s_expr of
+        ME.StaticFunctionCall id _ -> id
+        _ -> panic "Call expr is not a function call"
+
+generateExternalImpl :: Context -> HT.Type -> MD.ExternalClassImplKind -> Context
+generateExternalImpl context hir_type impl_kind = case impl_kind of
+    MD.ShowKind -> do
         (context, mir_type) <- processType context hir_type
         arg_ref <- ME.VarRef (ME.Arg 0)
         (context, arg_ref_expr) <- getExpr context (ME.Expr (arg_ref) mir_type)
         (context, call_expr) <- callOpShow context hir_type arg_ref_expr
+        call_id <- unpackCall call_expr
         case mir_type of
             MT.Adt adt_id _ -> do
-                type_store <- addExternalClassImplForAdt context.type_store adt_id (impl, Some call_expr)
+                type_store <- addExternalClassImplForAdt context.type_store adt_id (MD.Show call_id)
                 context { type_store = type_store }
             MT.Record record_id _ -> do
-                type_store <- addExternalClassImplForRecord context.type_store record_id (impl, Some call_expr)
+                type_store <- addExternalClassImplForRecord context.type_store record_id (MD.Show call_id)
                 context { type_store = type_store }
             _ -> panic "Not yet implemented"
-    MD.PartialEq -> do
+    MD.PartialEqKind -> do
         (context, mir_type) <- processType context hir_type
         arg_ref0 <- ME.VarRef (ME.Arg 0)
         arg_ref1 <- ME.VarRef (ME.Arg 1)
         (context, arg_ref0_expr) <- getExpr context (ME.Expr (arg_ref0) mir_type)
         (context, arg_ref1_expr) <- getExpr context (ME.Expr (arg_ref1) mir_type)
         (context, call_expr) <- callOpEq context hir_type arg_ref0_expr arg_ref1_expr
+        call_id <- unpackCall call_expr
         case mir_type of
             MT.Adt adt_id _ -> do
-                type_store <- addExternalClassImplForAdt context.type_store adt_id (impl, Some call_expr)
+                type_store <- addExternalClassImplForAdt context.type_store adt_id (MD.PartialEq call_id)
                 context { type_store = type_store }
             MT.Record record_id _ -> do
-                type_store <- addExternalClassImplForRecord context.type_store record_id (impl, Some call_expr)
+                type_store <- addExternalClassImplForRecord context.type_store record_id (MD.PartialEq call_id)
                 context { type_store = type_store }
             _ -> panic "Not yet implemented"
-    MD.Eq -> do
+    MD.EqKind -> do
         (context, mir_type) <- processType context hir_type
         case mir_type of
             MT.Adt adt_id _ -> do
-                type_store <- addExternalClassImplForAdt context.type_store adt_id (impl, None)
+                type_store <- addExternalClassImplForAdt context.type_store adt_id MD.Eq
                 context { type_store = type_store }
             MT.Record record_id _ -> do
-                type_store <- addExternalClassImplForRecord context.type_store record_id (impl, None)
+                type_store <- addExternalClassImplForRecord context.type_store record_id MD.Eq
                 context { type_store = type_store }
             _ -> panic "Not yet implemented"
-    MD.PartialOrd -> do
+    MD.PartialOrdKind -> do
         (context, mir_type) <- processType context hir_type
         arg_ref0 <- ME.VarRef (ME.Arg 0)
         arg_ref1 <- ME.VarRef (ME.Arg 1)
         (context, arg_ref0_expr) <- getExpr context (ME.Expr (arg_ref0) mir_type)
         (context, arg_ref1_expr) <- getExpr context (ME.Expr (arg_ref1) mir_type)
         (context, call_expr) <- callOpPartialCmp context hir_type arg_ref0_expr arg_ref1_expr
+        call_id <- unpackCall call_expr
         case mir_type of
             MT.Adt adt_id _ -> do
-                type_store <- addExternalClassImplForAdt context.type_store adt_id (impl, Some call_expr)
+                type_store <- addExternalClassImplForAdt context.type_store adt_id (MD.PartialOrd call_id)
                 context { type_store = type_store }
             MT.Record record_id _ -> do
-                type_store <- addExternalClassImplForRecord context.type_store record_id (impl, Some call_expr)
+                type_store <- addExternalClassImplForRecord context.type_store record_id (MD.PartialOrd call_id)
                 context { type_store = type_store }
             _ -> panic "Not yet implemented "
-    MD.Ord -> do
+    MD.OrdKind -> do
         (context, mir_type) <- processType context hir_type
         arg_ref0 <- ME.VarRef (ME.Arg 0)
         arg_ref1 <- ME.VarRef (ME.Arg 1)
         (context, arg_ref0_expr) <- getExpr context (ME.Expr (arg_ref0) mir_type)
         (context, arg_ref1_expr) <- getExpr context (ME.Expr (arg_ref1) mir_type)
         (context, call_expr) <- callOpCmp context hir_type arg_ref0_expr arg_ref1_expr
+        call_id <- unpackCall call_expr
         case mir_type of
             MT.Adt adt_id _ -> do
-                type_store <- addExternalClassImplForAdt context.type_store adt_id (impl, Some call_expr)
+                type_store <- addExternalClassImplForAdt context.type_store adt_id (MD.Ord call_id)
                 context { type_store = type_store }
             MT.Record record_id _ -> do
-                type_store <- addExternalClassImplForRecord context.type_store record_id (impl, Some call_expr)
+                type_store <- addExternalClassImplForRecord context.type_store record_id (MD.Ord call_id)
                 context { type_store = type_store }
             _ -> panic "Not yet implemented"
 

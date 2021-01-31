@@ -38,22 +38,22 @@ initState file_id tokens = do
                  ]
     ParserState tokens 0 [] [] file_id ops_table []
 
-parseSubItems :: ParserState -> Result ParserState (ParserState, ParserError)
+parseSubItems :: ParserState -> Result (ParserState, [M.Item]) (ParserState, ParserError)
 parseSubItems state = do
     state <- try expect state Kind.KeywordWhere
-    state <- loop state <- state do
+    (state, sub_items) <- loop (state, sub_items) <- (state, []) do
         ti <- peek state
         (state, item) <- case getKind ti.token of
-            Kind.EndOfBlock -> break state
+            Kind.EndOfBlock -> break (state, sub_items)
             _ -> case parseFunction state of
                     Ok (state, f) -> case f of
                             Left function -> (state, M.Function function)
                             Right function_signature -> (state, M.FunctionSignature function_signature)
                     Err (state, err) -> return Err (state, err)
-        sub_items <- state.sub_items + [item]
-        state { sub_items = sub_items }
+        sub_items <- sub_items + [item]
+        (state, sub_items)
     state <- try expect state Kind.EndOfBlock
-    Ok state
+    Ok (state, sub_items)
 
 buildLocation :: Int -> ParserState -> Location
 buildLocation index state = do

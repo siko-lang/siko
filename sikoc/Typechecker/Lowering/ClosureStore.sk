@@ -146,10 +146,11 @@ createClosures context = do
             ClosureInstanceId id <- closure_instance.id
             (context, prev_var) <- getNextTempVar context
             prev_var_ref <- ME.VarRef prev_var
-            (context, prev_var_ref_expr) <- getExpr context (ME.Expr prev_var_ref variant.type)
+            prev_var_ref_expr <- ME.Expr prev_var_ref variant.type
             (context, args) <- closure_instance.args |> List.iter |> Iterator.fold (\(context, arg_refs), arg -> do
                 field_index <- getLength arg_refs
                 field <- atIndex variant_type.fields field_index
+                (context, prev_var_ref_expr) <- getExpr context prev_var_ref_expr
                 arg_ref <- ME.FieldAccess field.name prev_var_ref_expr
                 (context, arg_ref_expr) <- getExpr context (ME.Expr arg_ref field.type)
                 (context, arg_refs + [arg_ref_expr])) (context, [])

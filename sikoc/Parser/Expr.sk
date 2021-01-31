@@ -33,7 +33,10 @@ parseDoBlock state = do
                 else try parseExpr state
             items <- items + [item]
             state <- if check state Kind.KeywordWhere
-                then try parseSubItems state
+                then do
+                    (state, sub_items) <- try parseSubItems state
+                    sub_items <- state.sub_items + sub_items
+                    state { sub_items = sub_items }
                 else state
             state <- try expect state Kind.EndOfItem
             (state, items)

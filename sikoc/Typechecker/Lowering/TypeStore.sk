@@ -68,7 +68,7 @@ addVariant type_store identity variant = do
         None -> Some (MD.AlgebraicDataType identity [variant] [] [] [])) identity type_store.adts
     type_store { adts = adts }
 
-addExternalClassImplForAdt :: TypeStore -> MP.Identity -> (MD.ExternalClassImpl, Option ME.Expr) -> TypeStore
+addExternalClassImplForAdt :: TypeStore -> MP.Identity -> MD.ExternalClassImpl -> TypeStore
 addExternalClassImplForAdt type_store identity external_class_impl = do
     (adts, _) <- alter (\adt -> case adt of
         Some adt -> do
@@ -79,7 +79,7 @@ addExternalClassImplForAdt type_store identity external_class_impl = do
         None -> panic "ADT not found in type store") identity type_store.adts
     type_store { adts = adts }
 
-addExternalClassImplForRecord :: TypeStore -> MP.Identity -> (MD.ExternalClassImpl, Option ME.Expr) -> TypeStore
+addExternalClassImplForRecord :: TypeStore -> MP.Identity -> MD.ExternalClassImpl -> TypeStore
 addExternalClassImplForRecord type_store identity external_class_impl = do
     (records, _) <- alter (\record -> case record of
         Some record -> do
@@ -122,15 +122,15 @@ getAdt type_store identity = case get type_store.adts identity of
     Some r -> r
     None -> panic "Adt named {} is not found in lowering type type_store" % identity
 
-getDependencies :: MD.ExternalClassImpl -> [MD.ExternalClassImpl]
+getDependencies :: MD.ExternalClassImplKind -> [MD.ExternalClassImplKind]
 getDependencies impl = case impl of
-    MD.Show -> []
-    MD.PartialEq -> []
-    MD.Eq -> [MD.PartialEq]
-    MD.PartialOrd -> [MD.PartialEq]
-    MD.Ord -> [MD.PartialEq, MD.Eq, MD.PartialOrd]
+    MD.ShowKind -> []
+    MD.PartialEqKind -> []
+    MD.EqKind -> [MD.PartialEqKind]
+    MD.PartialOrdKind -> [MD.PartialEqKind]
+    MD.OrdKind -> [MD.PartialEqKind, MD.EqKind, MD.PartialOrdKind]
 
-checkExternalImpl :: Context -> HT.Type -> HP.FullyQualifiedName -> MD.ExternalClassImpl -> Context
+checkExternalImpl :: Context -> HT.Type -> HP.FullyQualifiedName -> MD.ExternalClassImplKind -> Context
 checkExternalImpl context hir_type class_name external_class_impl = do
     entry <- IR.CacheEntry hir_type class_name
     context <- case get context.state.instance_resolver.cache entry of
