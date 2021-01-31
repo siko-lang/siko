@@ -12,14 +12,19 @@ mergeMoveInfo move_info1 move_info2 = MoveInfo (move_info1.moves + move_info2.mo
 
 addMove :: MoveInfo -> Set E.ExprId -> FieldPath -> (MoveInfo, Set E.ExprId)
 addMove move_info not_moves move = do
-    (moves, not_moves) <- move_info.moves |> List.iter |> Iterator.fold (\(moves, not_moves), prev_move -> do
-        if invalidates move prev_move
+        //println "Adding move {}" % move
+        (moves, not_moves) <- List.fold ([move], not_moves) move_info.moves (processMove move)
+        (MoveInfo moves, not_moves)
+    where
+        processMove :: FieldPath -> ([FieldPath], Set E.ExprId) -> FieldPath -> ([FieldPath], Set E.ExprId)
+        processMove move (moves, not_moves) prev_move = do
+            if invalidates move prev_move
             then do
+                //println "{} invalidates {}, {} -> not_moves" % (move, prev_move, move)
                 id <- getId prev_move
                 (not_moves, _) <- Set.insert not_moves id
                 (moves, not_moves)
-            else (moves + [prev_move], not_moves)) ([move], not_moves)
-    (MoveInfo moves, not_moves)
+            else (moves + [prev_move], not_moves)
 
 data FieldPath = Whole E.ExprId
                | Partial E.ExprId [String]
@@ -76,7 +81,8 @@ walk move_info not_moves node = case node of
         walk move_info not_moves node
     End -> (move_info, not_moves, DoesNotReturn)
 
-analyze :: Set E.ExprId -> ValueGraphNode -> Set E.ExprId
-analyze not_moves graph = do
+analyze :: E.Var -> Set E.ExprId -> ValueGraphNode -> Set E.ExprId
+analyze var not_moves graph = do
+    //println "Analyzing value graph for var {}" % var
     (_, not_moves, _) <- walk (MoveInfo []) not_moves graph
     not_moves

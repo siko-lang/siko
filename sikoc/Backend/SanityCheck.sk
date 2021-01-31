@@ -1,0 +1,40 @@
+module Siko.Backend.SanityCheck where
+
+import Siko.MIR.Program as P
+import Siko.MIR.Expr as E
+import Siko.MIR.Data as D
+import Siko.MIR.Type as T
+import Siko.MIR.Function as F
+import Siko.Util.Counter
+import Siko.Backend.Traversal
+import Siko.Backend.Ownership.Unification as U
+import Map
+import Set
+
+data Context = { expr_ids :: Set E.ExprId }
+
+createContext :: Context
+createContext = Context Set.empty
+
+check :: P.Identity -> Context -> E.Expr -> (Context, E.Expr)
+check id context expr = do
+    E.Expr s_expr expr_type expr_id <- expr
+    (expr_ids, inserted) <- Set.insert context.expr_ids expr_id
+    context <- if inserted
+        then context { expr_ids = expr_ids }
+        else do
+            println "WARNING: duplicated expr id {} in function {}/{}" % (expr_id, id, E.short expr)
+            context
+    (context, expr)
+
+processFunction :: F.Function -> ()
+processFunction function = case function.kind of
+    F.Normal body _ _ -> do
+        context <- createContext
+        (context, body) <- traverse context body (Some (check function.id)) None
+        ()
+    _ -> ()
+
+processProgram :: P.Program -> ()
+processProgram program = do
+    program.functions |> Map.iter |> Iterator.forEach (\(id, function) -> processFunction function)

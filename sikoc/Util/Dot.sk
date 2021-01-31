@@ -14,6 +14,7 @@ data Graph = { name :: String,
 data Node = { name :: String,
               id :: NodeId,
               elements :: [String],
+              color :: String,
             }
 
 data Edge = { name :: Option String,
@@ -28,10 +29,17 @@ addNode :: Graph -> String -> (Graph, NodeId)
 addNode graph name = do
     id <- graph.next_id
     node_id <- NodeId id
-    node <- Node name node_id []
+    node <- Node name node_id [] "yellow"
     nodes <- graph.nodes + [node]
     graph <- graph { next_id = id + 1, nodes = nodes }
     (graph, node_id)
+
+addColor :: Graph -> NodeId -> String -> Graph
+addColor graph (NodeId id) color = do
+    node <- atIndex graph.nodes id // FIXME: use update
+    node <- node { color = color }
+    nodes <- write graph.nodes id node
+    graph { nodes = nodes }
 
 addElement :: Graph -> NodeId -> String -> Graph
 addElement graph (NodeId id) element = do
@@ -53,10 +61,10 @@ generateDot graph = do
     s <- s + "node [shape=record fontname=Arial splines=ortho];\n"
     s <- graph.nodes |> List.iter |> Iterator.fold (\s, node -> do
             s <- if isEmpty node.elements
-                then s + "node{} [label=\"{}\"]\n" % (node.id, node.name)
+                then s + "node{} [label=\"{}\" style=filled fillcolor={}]\n" % (node.id, node.name, node.color)
                 else do
                     elements <- join node.elements "|"
-                    s + "node{} [label=\"{{{}|{}}}\"]\n" % (node.id, node.name, elements)
+                    s + "node{} [label=\"{{{}|{}}}\" style=filled fillcolor={}]\n" % (node.id, node.name, elements, node.color)
             s) s
     s <- graph.edges |> List.iter |> Iterator.fold (\s, edge -> do
             e <- case edge.name of

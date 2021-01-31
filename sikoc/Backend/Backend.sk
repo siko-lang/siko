@@ -4,6 +4,7 @@ import Siko.Backend.Ownership.Initialization as Initialization
 import Siko.Backend.Ownership.Inference as Inference
 import Siko.Backend.Ownership.AddConverter as AddConverter
 import Siko.Backend.Instantiation as Instantiation
+import Siko.Backend.SanityCheck as SanityCheck
 import Siko.Backend.Ownership.TransformUpdates as TransformUpdates
 import Siko.Backend.Traversal
 import Siko.MIR.Program as MP
@@ -78,6 +79,7 @@ processProgram config mir_program = do
     data_groups <- processDependencies data_dependencies
     function_dependencies <- collectFunctionDeps mir_program
     function_groups <- processDependencies function_dependencies
+    SanityCheck.processProgram mir_program
     trace config "TransformUpdates.."
     mir_program <- TransformUpdates.processProgram mir_program
     trace config "AddConverter.."

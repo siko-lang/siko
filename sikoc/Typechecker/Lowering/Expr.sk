@@ -59,10 +59,11 @@ getFieldType mir_record field_name = do
         field <- atIndex mir_record.fields index
         if field.name == field_name then return field.type else index + 1
 
-processBindArgs :: Context -> U.Substitution -> [HP.Pattern] -> ME.Expr -> MD.Record -> (Context, [ME.Expr])
+processBindArgs :: Context -> U.Substitution -> [HP.Pattern] -> (ME.ExprId -> ME.Expr) -> MD.Record -> (Context, [ME.Expr])
 processBindArgs context sub args var_ref_expr mir_record = do
     (context, arg_exprs, _) <- args |> List.iter |> Iterator.fold (\(context, arg_exprs, index), arg -> do
         field <- atIndex mir_record.fields index
+        (context, var_ref_expr) <- getExpr context var_ref_expr
         field_access <- ME.FieldAccess field.name var_ref_expr
         (context, field_access_expr) <- getExpr context (ME.Expr field_access field.type)
         (context, exprs) <- processBind context sub arg field_access_expr
@@ -84,7 +85,7 @@ processBind context sub (HP.Pattern p id _) rhs = do
             tuple_type <- getMonomorphizedPatternType context sub id
             (context, mir_tuple_type) <- processType context tuple_type
             var_ref <- ME.VarRef var
-            (context, var_ref_expr) <- getExpr context (ME.Expr var_ref mir_tuple_type)
+            var_ref_expr <- ME.Expr var_ref mir_tuple_type
             mir_record <- case mir_tuple_type of
                 MT.Record record_id _ -> getRecord context.type_store record_id
                 _ -> panic "Tuple in a bind expr is not a record type!"
@@ -104,7 +105,7 @@ processBind context sub (HP.Pattern p id _) rhs = do
             record_type <- getMonomorphizedPatternType context sub id
             (context, mir_record_type) <- processType context record_type
             var_ref <- ME.VarRef var
-            (context, var_ref_expr) <- getExpr context (ME.Expr var_ref mir_record_type)
+            var_ref_expr <- ME.Expr var_ref mir_record_type
             mir_record <- case mir_record_type of
                 MT.Record record_id _ -> getRecord context.type_store record_id
                 _ -> panic "Record in a bind expr is not a record type!"
@@ -117,7 +118,7 @@ processBind context sub (HP.Pattern p id _) rhs = do
             adt_type <- getMonomorphizedPatternType context sub id
             (context, mir_adt_type) <- processType context adt_type
             var_ref <- ME.VarRef var
-            (context, var_ref_expr) <- getExpr context (ME.Expr var_ref mir_adt_type)
+            var_ref_expr <- ME.Expr var_ref mir_adt_type
             mir_record <- case mir_adt_type of
                 MT.Record record_id _ -> getRecord context.type_store record_id
                 _ -> panic "Adt in a bind expr is not a record type!"
@@ -126,8 +127,8 @@ processBind context sub (HP.Pattern p id _) rhs = do
             (context, var_decl_expr) <- getExpr context (ME.Expr var_decl unit_type)
             (context, [var_decl_expr] + arg_exprs)
 
-data ValuePathAccessor = { normal :: ME.Expr,
-                           internal :: ME.Expr }
+data ValuePathAccessor = { normal :: ME.ExprId -> ME.Expr,
+                           internal :: ME.ExprId -> ME.Expr }
 
 processBindVars :: Context -> AdditionalInfo -> Map ValuePath ValuePathAccessor -> MT.Type -> (Context, [ME.Expr])
 processBindVars context additional_info path_info_map unit_type = do
@@ -138,6 +139,7 @@ processBindVars context additional_info path_info_map unit_type = do
                 parent_expr :: ValuePathAccessor <- parent_expr // FIXME
                 parent_expr.normal
             None -> panic "Path {} not found in path_info_map" % path
+        (context, ref_expr) <- getExpr context ref_expr
         var_decl <- ME.VarDecl var ref_expr
         (context, var_decl) <- getExpr context (ME.Expr var_decl unit_type)
         var_decls <- var_decls + [var_decl]
@@ -182,14 +184,16 @@ processChoiceTree context sub choice path_info_map hir_case_bodies hir_guards = 
             parent_expr <- case get path_info_map parent_path of
                 Some parent_expr -> parent_expr
                 None -> panic "Parent path {} not found in path info map" % parent_path
-            ME.Expr _ parent_type _ <- parent_expr.internal
+            (context, internal) <- getExpr context parent_expr.internal
+            ME.Expr _ parent_type _ <- internal
             (context, body_expr) <- case path of
                 ItemIndex _ index _ -> do
                     record <- case parent_type of
                         MT.Record name _ -> getRecord context.type_store name
                         _ -> panic "Indexed type is not a record!"
                     field <- atIndex record.fields index
-                    body <- ME.FieldAccess field.name parent_expr.normal
+                    (context, normal) <- getExpr context parent_expr.normal
+                    body <- ME.FieldAccess field.name normal
                     getExpr context (ME.Expr body field.type)
                 VariantPath _ _ variant_index index _ -> do
                     case parent_type of
@@ -198,19 +202,19 @@ processChoiceTree context sub choice path_info_map hir_case_bodies hir_guards = 
                             variant <- atIndex adt.variants variant_index
                             variant_type <- getRecord context.type_store (MT.getIdentity variant.type)
                             field <- atIndex variant_type.fields index
-                            body <- ME.FieldAccess field.name parent_expr.internal
+                            body <- ME.FieldAccess field.name internal
                             getExpr context (ME.Expr body field.type)
                         MT.Record name _ -> do
                             record <- getRecord context.type_store name
                             field <- atIndex record.fields index
-                            body <- ME.FieldAccess field.name parent_expr.internal
+                            body <- ME.FieldAccess field.name internal
                             getExpr context (ME.Expr body field.type)
                         _ -> panic "Indexed adt is not a record nor an adt"
-                _ ->  (context, parent_expr.internal)
+                _ ->  (context, internal)
             (context, pattern_var) <- getNextTempVar context
             ME.Expr _ body_type _ <- body_expr
             pattern_var_ref <- ME.VarRef pattern_var
-            (context, pattern_var_ref_expr) <- getExpr context (ME.Expr pattern_var_ref body_type)
+            pattern_var_ref <- ME.Expr pattern_var_ref body_type
             (context, cases) <- subchoices |> Map.iter |> Iterator.fold (\(context, cases), (cond, choice) -> do
                 (context, pattern_var_int) <- getNextTempVar context
                 var_type <- case cond of
@@ -225,8 +229,8 @@ processChoiceTree context sub choice path_info_map hir_case_bodies hir_guards = 
                         _ -> panic "Indexed adt is not a record nor an adt"
                     _ -> body_type
                 pattern_var_int_ref <- ME.VarRef pattern_var_int
-                (context, pattern_var_int_ref_expr) <- getExpr context (ME.Expr pattern_var_int_ref var_type)
-                (path_info_map, _) <- insert path_info_map path (ValuePathAccessor pattern_var_ref_expr pattern_var_int_ref_expr)
+                pattern_var_int_ref <- ME.Expr pattern_var_int_ref var_type
+                (path_info_map, _) <- insert path_info_map path (ValuePathAccessor pattern_var_ref pattern_var_int_ref)
                 (context, choice_expr) <- processChoiceTree context sub choice path_info_map hir_case_bodies hir_guards
                 (cond, expr) <- case cond of
                     IntegerCondition literal -> do
@@ -645,7 +649,8 @@ processExpr context sub hir_expr = do
             (context, case_of_expr) <- case get context.state.choice_tree_store.choice_trees expr_id of
                 Some choice_tree -> do
                     p <- Option.unwrap (getValuePath choice_tree)
-                    (path_info_map, _) <- insert empty p (ValuePathAccessor mir_body mir_body)
+                    body_expr_accessor <- \_ -> mir_body
+                    (path_info_map, _) <- insert empty p (ValuePathAccessor body_expr_accessor body_expr_accessor)
                     processChoiceTree context sub choice_tree path_info_map hir_case_bodies hir_guards
                 None -> panic "Choice tree not found"
             (context, case_of_expr)
