@@ -1,16 +1,19 @@
 #!/bin/bash
-
-mkdir -p bootstrap
+./build.sh
+mkdir -p bootstrap/src
 echo "Generating stage0"
 date
-./siko std sikoc -c bootstrap/source.rs
-cp rt/main.rs bootstrap/main.rs
+./siko std sikoc -c bootstrap/src/source.rs
+cp rt/main.rs bootstrap/src/main.rs
+cp rt/Cargo.toml bootstrap/Cargo.toml
 echo "Compiling stage0"
 date
-rustc --edition=2018 bootstrap/main.rs -o bootstrap/stage0 -O
+cd bootstrap/
+cargo build --release
+cd ..
 echo "Generating stage1"
 date
-find ./sikoc -name *.sk | xargs ./bootstrap/stage0 std2/* -v -o bootstrap/stage1
+find ./sikoc -name *.sk | xargs ./bootstrap/target/release/rust_sikoc std2/* -v -o bootstrap/stage1
 echo "Compiling stage1"
 date
 rustc --edition=2018 bootstrap/stage1_rc.rs -O -o bootstrap/stage1

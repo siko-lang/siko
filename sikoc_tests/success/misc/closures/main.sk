@@ -7,15 +7,27 @@ plus a b c d = a + b + c + d
 
 greeter a b = "{} {}!" % (a, b)
 
+data Stuff = { m :: Int -> Int }
+
+mono a :: a -> Option (a -> a) -> Option a
+mono a f = case f of
+    Some f -> Some (f a)
+    None -> None
+
+data Foo = Foo
+
 main = do
     a <- plus 123
     a <- a 123
     a <- a 123
+    s <- Stuff a
     a <- a 123
     assert (a == 123 * 4)
+    b <- s.m 123
+    assert (a == b)
     g <- greeter "Hello"
     john <- g "John"
     lily <- g "Lily"
     assert (john == "Hello John!")
     assert (lily == "Hello Lily!")
-
+    b <- mono Foo None

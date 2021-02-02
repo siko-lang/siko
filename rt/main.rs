@@ -48,12 +48,13 @@ pub mod siko_macros {
                                                 $tuple_crate:tt :: $tuple_source:tt :: $tuple_module:tt :: $tuple_name:tt,
                                                 $map_crate:tt :: $map_source:tt :: $map_module:tt :: $map_name:tt) => {{
             let mut arg0 = (*$arg0.value).clone();
-            let value = match arg0.insert($arg1, $arg2) {
+            let (new, v) = arg0.insert($arg1, $arg2);
+         let value = match v {
                 Some(v) => $option_crate::$option_source::$option_module::$option_name::Some(v),
                 None => $option_crate::$option_source::$option_module::$option_name::None,
             };
             $tuple_crate::$tuple_source::$tuple_module::$tuple_name {
-                _siko_field_0: $map_crate::$map_source::$map_module::$map_name { value: std::rc::Rc::new(arg0) },
+                _siko_field_0: $map_crate::$map_source::$map_module::$map_name { value: std::rc::Rc::new(new) },
                 _siko_field_1: value,
             }
         }};
@@ -64,12 +65,13 @@ pub mod siko_macros {
                                    $tuple_crate:tt :: $tuple_source:tt :: $tuple_module:tt :: $tuple_name:tt,
                                     $map_crate:tt :: $map_source:tt :: $map_module:tt :: $map_name:tt) => {{
             let mut arg0 = (*$arg0.value).clone();
-            let value = match arg0.remove(&$arg1) {
+            let (new, v) = arg0.remove(&$arg1);
+            let value = match v {
                 Some(v) => $option_crate::$option_source::$option_module::$option_name::Some(v),
                 None => $option_crate::$option_source::$option_module::$option_name::None,
             };
             $tuple_crate::$tuple_source::$tuple_module::$tuple_name {
-                _siko_field_0: $map_crate::$map_source::$map_module::$map_name { value: std::rc::Rc::new(arg0) },
+                _siko_field_0: $map_crate::$map_source::$map_module::$map_name { value: std::rc::Rc::new(new) },
                 _siko_field_1: value,
             }
         }};
@@ -77,7 +79,7 @@ pub mod siko_macros {
 
     macro_rules! map_empty {
         ($map_crate:tt :: $map_source:tt :: $map_module:tt :: $map_name:tt) => {{
-            let value = std::collections::BTreeMap::new();
+            let value = immutable_chunkmap::map::Map::new();
             $map_crate::$map_source::$map_module::$map_name { value: std::rc::Rc::new(value) }
         }};
     }

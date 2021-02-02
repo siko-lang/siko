@@ -213,6 +213,13 @@ mapSE s l f = do
         (s, index + 1, items + [i])) (s, 0, [])
     (s, l)
 
+mapE a b :: [a] -> (Int -> a -> b) -> [b]
+mapE l f = do
+    (index, l) <- l |> List.iter |> Iterator.fold (\(index, items), i -> do
+        i <- f index i
+        (index + 1, items + [i])) (0, [])
+    l
+
 foldE a b :: (a -> Int -> b -> a) -> a -> [b] -> a
 foldE f s l = do
     (s, i) <- l |> List.iter |> Iterator.fold (\(s, index), i -> do

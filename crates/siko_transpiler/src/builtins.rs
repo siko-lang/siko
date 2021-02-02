@@ -415,7 +415,7 @@ fn generate_map_builtins(
                 indent, map_iter_name
             )?;
             indent.inc();
-            write!(output_file, "{}value: (*arg0.value).clone().into_iter().map(|(k,v)|{{ {} {{ _siko_field_0: k, _siko_field_1: v }} }}).collect(),\n", indent, iter_arg)?;
+            write!(output_file, "{}value: (*arg0.value).clone().into_iter().map(|(k,v)|{{ {} {{ _siko_field_0: k.clone(), _siko_field_1: v.clone() }} }}).collect(),\n", indent, iter_arg)?;
             write!(output_file, "{}index: 0,\n", indent)?;
             indent.dec();
             write!(output_file, "{}}}),\n", indent)?;
@@ -426,7 +426,7 @@ fn generate_map_builtins(
             write!(output_file, "{}let mut arg0 = arg0;\n", indent)?;
             write!(
                 output_file,
-                "{}let mut value = std::collections::BTreeMap::new();\n",
+                "{}let mut value = immutable_chunkmap::map::Map::new();\n",
                 indent
             )?;
             write!(output_file, "{}loop {{\n", indent)?;
@@ -439,7 +439,7 @@ fn generate_map_builtins(
             indent.inc();
             write!(
                 output_file,
-                "{}value.insert(v._siko_field_0, v._siko_field_1);\n",
+                "{}value = value.insert(v._siko_field_0, v._siko_field_1).0;\n",
                 indent
             )?;
             indent.dec();
@@ -459,7 +459,7 @@ fn generate_map_builtins(
         "show" => {
             write!(
                 output_file,
-                "{}let subs: Vec<_> = arg0.value.iter().map(|(k, v)| format!(\"{{}}:{{}}\", k, v)).collect();\n",
+                "{}let subs: Vec<_> = (*arg0.value).into_iter().map(|(k, v)| format!(\"{{}}:{{}}\", k, v)).collect();\n",
                 indent
             )?;
             write!(

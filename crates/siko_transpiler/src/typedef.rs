@@ -83,7 +83,7 @@ pub fn write_typedef(
                         let value_ty = ir_type_to_rust_type(&args[1], program);
                         write!(
                             output_file,
-                            "{}pub value: std::rc::Rc<std::collections::BTreeMap<{}, {}>>,\n",
+                            "{}pub value: std::rc::Rc<immutable_chunkmap::map::Map<{}, {}>>,\n",
                             indent, key_ty, value_ty
                         )?;
                         indent.dec();

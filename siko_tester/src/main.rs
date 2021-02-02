@@ -11,7 +11,7 @@ fn process_dir(arg: String, inputs: &mut Vec<(PathBuf, String)>) -> bool {
     if !path.exists() {
         let path_str = format!("{}", path.display());
         eprintln!("ERROR: path {} does not exist", path_str);
-        return false;
+        return true;
     }
     if path.is_dir() {
         for entry in WalkDir::new(path) {
@@ -43,17 +43,16 @@ fn print_usage() {
 }
 
 fn process_args(args: Vec<String>) -> bool {
-    if args.len() != 7 {
+    if args.len() != 6 {
         print_usage();
         return false;
     }
     let sikoc = args[0].clone();
     let siko_std = args[1].clone();
     let comp_dir = args[2].clone();
-    let rust_comp_dir = args[3].clone();
-    let success_dir = args[4].clone();
-    let fail_dir = args[5].clone();
-    let rt_dir = args[6].clone();
+    let success_dir = args[3].clone();
+    let fail_dir = args[4].clone();
+    let rt_dir = args[5].clone();
     let mut success_files = Vec::new();
     process_dir(success_dir, &mut success_files);
     let mut fail_files = Vec::new();
@@ -80,13 +79,16 @@ fn process_args(args: Vec<String>) -> bool {
             print!("OK");
         }
         //println!("Compiling {}", s.display());
-        let rs_output_dir = format!("{}/{}", comp_dir, tc_name);
+        let rs_output_dir = format!("{}/{}/src", comp_dir, tc_name);
+        let root_rs_output_dir = format!("{}/{}/", comp_dir, tc_name);
         std::fs::create_dir_all(&rs_output_dir).expect("Failed to create comp dir");
         let rs_output_file = format!("{}/source.rs", rs_output_dir);
         let main_output_file = format!("{}/main.rs", rs_output_dir);
+        let cargo_output_file = format!("{}/Cargo.toml", root_rs_output_dir);
         let main_source_file = format!("{}/main.rs", rt_dir);
+        let cargo_source_file = format!("{}/Cargo.toml", rt_dir);
         std::fs::copy(main_source_file, &main_output_file).expect("Failed to copy main.rs");
-        let rustc_output_file = format!("{}/{}", rust_comp_dir.clone(), tc_name);
+        std::fs::copy(cargo_source_file, &cargo_output_file).expect("Failed to copy Cargo.toml");
         let status = Command::new(sikoc.clone())
             .arg("-s")
             .arg(siko_std.clone())
@@ -103,32 +105,17 @@ fn process_args(args: Vec<String>) -> bool {
         } else {
             print!("/OK");
         }
-        let output = Command::new("rustc")
-            .arg(main_output_file)
-            .arg("-o")
-            .arg(rustc_output_file.clone())
-            .arg("--edition=2018")
-            .arg("--crate-name")
-            .arg("source")
-            .output()
+        let output = Command::new("cargo").arg("run").arg("--release")
+          .current_dir(root_rs_output_dir)
+         .output()
             .expect("failed to execute process");
         if !output.status.success() {
             fail_count += 1;
             failed_tcs.insert(tc_name.clone());
             println!("/Fail");
             continue;
-        }
-        let status = Command::new(rustc_output_file)
-            .status()
-            .expect("failed to execute process");
-        if status.success() {
-            success_count += 1;
-            println!("/OK");
         } else {
-            fail_count += 1;
-            failed_tcs.insert(tc_name.clone());
-            println!("/Fail");
-            continue;
+            println!("/OK");
         }
     }
     for (f, tc_name) in fail_files {

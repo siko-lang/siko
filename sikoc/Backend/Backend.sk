@@ -75,10 +75,15 @@ collectFunctionDeps mir_program = do
 
 processProgram :: Config -> MP.Program -> LP.Program
 processProgram config mir_program = do
+    trace config "collectDataDeps.."
     data_dependencies <- collectDataDeps mir_program
+    trace config "processing data deps.."
     data_groups <- processDependencies data_dependencies
+    trace config "collectFunctionDeps.."
     function_dependencies <- collectFunctionDeps mir_program
+    trace config "processing function deps.."
     function_groups <- processDependencies function_dependencies
+    trace config "SanityCheck.."
     SanityCheck.processProgram mir_program
     trace config "TransformUpdates.."
     mir_program <- TransformUpdates.processProgram mir_program
