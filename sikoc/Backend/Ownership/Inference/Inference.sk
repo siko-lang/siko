@@ -286,15 +286,15 @@ calculateInferenceInfo global_context var_gen function_id = do
     function <- P.getFunction global_context.program function_id
     case function.kind of
         F.Normal body expr_id_gen expr_var_gen -> do
-            //println "Inference: processing {}" % function.id
+            println "Inference: processing {}" % function.id
             context <- C.collectConstraints global_context var_gen function.type function_id body
-            //println "processing equals"
+            println "processing equals"
             context <- processEquals context
-            //println "processing constraints"
+            println "processing constraints"
             context <- processConstraints context
-            //println "borrow check"
+            println "borrow check"
             context <- borrowCheck context
-            //println "done"
+            println "done"
             //dumpConstraints context
             //dumpOwnershipVars context
             sub <- getSubstitution context
@@ -303,13 +303,13 @@ calculateInferenceInfo global_context var_gen function_id = do
             var_constraints <- collectVarConstraints context ownership_kinds
             function_type <- U.apply function_type sub
             info <- Common.FunctionInferenceInfo function_type var_constraints
-            //println "End of processing {}" % function.id
+            println "End of processing {}" % function.id
             (Some info, context.var_gen)
         _ -> (None, var_gen)
 
 instantiateFunction :: Common.GlobalContext -> U.OwnershipVarGenerator -> Counter E.ExprId -> P.Identity -> F.FunctionType -> E.Expr -> (E.Expr, U.OwnershipVarGenerator)
 instantiateFunction global_context var_gen expr_id_gen function_id function_type body = do
-    //println "Inference: instantiating {} {}" % (function_id, function_type)
+    println "Inference: instantiating {} {}" % (function_id, function_type)
     context <- C.collectConstraints global_context var_gen function_type function_id body
     context <- processEquals context
     //dumpConstraints context
@@ -320,7 +320,7 @@ instantiateFunction global_context var_gen expr_id_gen function_id function_type
     //dumpOwnershipVars context
     sub <- getSubstitution context
     updated_body <- updateBody context sub body
-    //println "End of instantiating"
+    println "End of instantiating"
     (updated_body, context.var_gen)
 
 updateBodyExpr :: (Common.Context, U.Substitution) -> E.Expr -> ((Common.Context, U.Substitution), E.Expr)

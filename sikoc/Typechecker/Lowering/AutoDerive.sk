@@ -84,15 +84,16 @@ callGetDiscriminant context arg_type args = do
     (context, call_expr) <- getExpr context (ME.Expr (ME.StaticFunctionCall function_id args) mir_int_type)
     (context, call_expr)
 
-processMemberForShow :: Context -> HT.Type -> ME.Expr -> HP.FullyQualifiedName -> (Context, String, [ME.Expr])
+processMemberForShow :: Context -> HT.Type -> LazyExpr -> HP.FullyQualifiedName -> (Context, String, [ME.Expr])
 processMemberForShow context member parent_expr class_name = do
     case member of
         HT.Tuple tuple_members -> do
             (context, fmt_args, items, _) <- tuple_members |> List.iter
                 |> Iterator.fold (\(context, fmt_args, tuple_items, index), tuple_member -> do
                     (context, mir_tuple_member) <- TS.processType context tuple_member
+                    (context, parent_expr) <- getExpr context parent_expr.expr_fn
                     tuple_field_access <- ME.FieldAccess (Util.getFieldName index) parent_expr
-                    (context, tuple_field_access_expr) <- getExpr context (ME.Expr tuple_field_access mir_tuple_member)
+                    tuple_field_access_expr <- LazyExpr (ME.Expr tuple_field_access mir_tuple_member)
                     (context, fmt_arg, items) <- processMemberForShow context tuple_member tuple_field_access_expr class_name
                     fmt_args <- fmt_args + [fmt_arg]
                     tuple_items <- tuple_items + items
@@ -102,6 +103,7 @@ processMemberForShow context member parent_expr class_name = do
                 else "({})" % (join fmt_args ", ")
             (context, fmt_arg, items)
         _ -> do
+            (context, parent_expr) <- getExpr context parent_expr.expr_fn
             (context, mir_member) <- callOpShow context member parent_expr
             fmt_arg <- if HT.isSimple member then "{}" else "({})"
             (context, fmt_arg, [mir_member])
@@ -219,7 +221,7 @@ generateShowInstance context hir_type class_name = do
                                                 (context, mir_item_type) <- TS.processType context item
                                                 (context, var_ref_expr) <- getExpr context var_ref_expr
                                                 field_access <- ME.FieldAccess field_name var_ref_expr
-                                                (context, field_access_expr) <- getExpr context (ME.Expr field_access mir_item_type)
+                                                field_access_expr <- LazyExpr (ME.Expr field_access mir_item_type)
                                                 (context, fmt_arg, items) <- processMemberForShow context item field_access_expr class_name
                                                 fmt_args <- fmt_args + [fmt_arg]
                                                 mir_items <- mir_items + items
@@ -246,7 +248,7 @@ generateShowInstance context hir_type class_name = do
                                                 field_name <- Util.getFieldName (getLength mir_items)
                                                 (context, mir_item_type) <- TS.processType context item
                                                 field_access <- ME.FieldAccess field_name var_in_ref_expr
-                                                (context, field_access_expr) <- getExpr context (ME.Expr field_access mir_item_type)
+                                                field_access_expr <- LazyExpr (ME.Expr field_access mir_item_type)
                                                 (context, fmt_arg, items) <- processMemberForShow context item field_access_expr class_name
                                                 fmt_args <- fmt_args + [fmt_arg]
                                                 mir_items <- mir_items + items
@@ -278,7 +280,7 @@ generateShowInstance context hir_type class_name = do
                         (context, var_ref_expr) <- getExpr context var_ref_expr
                         field_access <- ME.FieldAccess field.name var_ref_expr
                         (context, mir_field_type) <- TS.processType context field.type
-                        (context, field_access_expr) <- getExpr context (ME.Expr field_access mir_field_type)
+                        field_access_expr <- LazyExpr (ME.Expr field_access mir_field_type)
                         (context, fmt_arg, items) <- processMemberForShow context field.type field_access_expr class_name
                         fmt_args <- fmt_args + [fmt_arg]
                         mir_items <- mir_items + items

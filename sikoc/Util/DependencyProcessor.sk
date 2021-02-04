@@ -61,6 +61,7 @@ checkGroup group_id group_lookup_table all_dependencies processed_items = do
 
 processDependencies a :: (PartialEq a, Ord a) => Map a [a] -> [DependencyGroup a]
 processDependencies all_dependencies = do
+    println "processDependencies {}" % getSize all_dependencies
     all_dependencies <- all_dependencies |> Map.iter |> Iterator.map (\(id, dependencies) -> (id, dependencies |> sort |> dedup)) |> toMap
     group_table :: GroupTable a <- GroupTable Map.empty
 
@@ -111,4 +112,5 @@ processDependencies all_dependencies = do
                                                 ordered_groups <- ordered_groups + [group]
                                                 (unprocessed_groups, ordered_groups, processed_items)
                                         ) (unprocessed_groups, ordered_groups, processed_items)
+    println "processDependencies done"
     ordered_groups
