@@ -65,6 +65,7 @@ processFunction :: P.Identity -> F.Function -> (P.Identity, F.Function)
 processFunction id function = do
     case function.kind of
         F.Normal body expr_id_gen expr_var_gen -> do
+            println "addConverter: processing {}" % function.id
             not_moves <- C.collectNotMoves function.id body (getLength function.type.args)
             context <- Context expr_id_gen not_moves
             (context, new_body) <- traverse context body (Some processExpr) None

@@ -1,0 +1,55 @@
+module Main where
+
+effect MyEffect where
+    effCall :: Int -> Int
+
+foo :: Int -> Int
+foo a = effCall a
+
+myEff :: Int -> Int
+myEff a = a
+
+test1 = do
+    with effCall = myEff do
+        foo 2
+
+effect FileSystem a where
+    openFile :: String -> a
+    readTextFile :: a -> String
+
+myReadFile :: String -> String :: FileSystem a
+myReadFile filename = do
+    f <- openFile filename
+    readTextFile f
+
+myReadFile2 :: String -> String :: FileSystem File
+myReadFile2 filename = do
+    f <- openFile filename
+    readTextFile f
+
+effect Collector a where
+    collect :: a -> ()
+
+c1 :: Int -> Int :: Collector Int
+c1 i = do
+    collect i
+    i
+
+c2 :: String -> String :: Collector String
+c2 s = do
+    collect s
+    s
+
+cMulti :: () -> () :: Collector a
+cMulti p = do
+    c1 1
+    c2 "s"
+    ()
+
+cGeneric a :: a -> () :: Collector a
+cGeneric a = do
+    collect a
+    ()
+
+main = do
+    test1

@@ -23,6 +23,11 @@ check id context expr = do
     context <- if inserted
         then context { expr_ids = expr_ids }
         else panic "ICE: duplicated expr id {} in function {}/{}" % (expr_id, id, E.short expr)
+    case s_expr of
+        E.Do items -> if List.isEmpty items
+                    then panic "ICE: empty do block found in {}" % id
+                    else ()
+        _ -> ()
     (context, expr)
 
 processFunction :: F.Function -> ()

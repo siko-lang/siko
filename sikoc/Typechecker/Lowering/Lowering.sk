@@ -235,11 +235,11 @@ lowerProgram config state hir_program function_store type_store = do
         None -> do
             println "Main {} not found" % (HP.getResolvableName main_qn)
             context
+    context <- generateExternalImpls context
+    context <- FQ.processItems context
     context <- CS.createClosures context
     context <- FQ.processItems context
     context <- IS.createIterators context
-    context <- FQ.processItems context
-    context <- generateExternalImpls context
     context <- FQ.processItems context
     (context, unit_type) <- processType context (HT.Tuple [])
     mir_program <- context.mir_program
