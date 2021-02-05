@@ -84,6 +84,17 @@ callGetDiscriminant context arg_type args = do
     (context, call_expr) <- getExpr context (ME.Expr (ME.StaticFunctionCall function_id args) mir_int_type)
     (context, call_expr)
 
+// FIXME: this whole file including this clone hack is horrible, should cleanup and redesign this thing
+cloneExpr :: Context -> ME.Expr -> (Context, ME.Expr)
+cloneExpr context expr = do
+    ME.Expr s_expr type _ <- expr
+    case s_expr of
+        ME.VarRef _ -> getExpr context (ME.Expr s_expr type)
+        ME.FieldAccess name arg -> do
+            (context, arg_clone) <- cloneExpr context arg
+            getExpr context (ME.Expr (ME.FieldAccess name arg_clone) type)
+        _ -> panic "cloneExpr not implemented for {}" % expr
+
 processMemberForShow :: Context -> HT.Type -> LazyExpr -> HP.FullyQualifiedName -> (Context, String, [ME.Expr])
 processMemberForShow context member parent_expr class_name = do
     case member of
@@ -104,6 +115,7 @@ processMemberForShow context member parent_expr class_name = do
             (context, fmt_arg, items)
         _ -> do
             (context, parent_expr) <- getExpr context parent_expr.expr_fn
+            (context, parent_expr) <- cloneExpr context parent_expr
             (context, mir_member) <- callOpShow context member parent_expr
             fmt_arg <- if HT.isSimple member then "{}" else "({})"
             (context, fmt_arg, [mir_member])
