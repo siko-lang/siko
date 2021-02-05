@@ -66,6 +66,7 @@ update context expr = do
 processFunction :: Map P.Identity D.Record -> Map P.Identity P.Identity -> F.Function -> F.Function
 processFunction records record_ctors function = case function.kind of
     F.Normal body expr_id_gen temp_var_gen -> do
+        println "TransformUpdates processing function {}" % function.id
         context <- createContext expr_id_gen records record_ctors
         (context, body) <- traverse context body (Some update) None
         function { kind = F.Normal body context.expr_id_gen temp_var_gen }
