@@ -468,31 +468,6 @@ generateListSort program type_store arg_types result_type = do
     sort_call <- R.MethodCall (R.VarRef new) "sort" []
     R.Block [new_decl, sort_call, R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef new)]]
 
-generateListHead :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
-generateListHead program type_store arg_types result_type = do
-    arg0 <- R.VarRef (getArgName 0)
-    inner0 <- R.FieldAccess innerValueField arg0
-    first_call <- R.MethodCall inner0 "first" []
-    item <- "item"
-    some_pattern <- R.VariantPattern "Some" (Some item)
-    none_pattern <- R.VariantPattern "None" None
-    rust_result_type <- convertType result_type
-    some_record_type <- getVariantRecordType program result_type "Some"
-    none_record_type <- getVariantRecordType program result_type "None"
-    rust_some_record_type <- convertType (LT.Record some_record_type [])
-    rust_none_record_type <- convertType (LT.Record none_record_type [])
-    some_record <- getRecord program some_record_type
-    item_field <- atIndex some_record.fields 0
-    rust_item_type <- convertType item_field.type
-    clone_call <- R.MethodCall (R.VarRef item) cloneName []
-    some_ctor <- R.StructCtor (RT.showBase rust_some_record_type) [R.FieldInitItem item_field.name clone_call]
-    none_ctor <- R.StructCtor (RT.showBase rust_none_record_type) []
-    some_case <- R.MatchCase some_pattern (R.FunctionCall ("{}::Some" % RT.showBase rust_result_type) [some_ctor]) None
-    none_case <- R.MatchCase none_pattern (R.FunctionCall ("{}::None" % RT.showBase rust_result_type) [none_ctor]) None
-    cases <- [some_case, none_case]
-    match <- R.Match first_call cases
-    R.Block [match]
-
 generateListTail :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateListTail program type_store arg_types result_type = do
     arg_type <- atIndex arg_types 0
@@ -865,7 +840,6 @@ initializeExternalFunctions = do
     (externals, _) <- insert externals (ExternalId "List" "dedup") (ExternFnBuilder generateListDedup)
     (externals, _) <- insert externals (ExternalId "List" "isEmpty") (ExternFnBuilder generateListIsEmpty)
     (externals, _) <- insert externals (ExternalId "List" "sort") (ExternFnBuilder generateListSort)
-    (externals, _) <- insert externals (ExternalId "List" "head") (ExternFnBuilder generateListHead)
     (externals, _) <- insert externals (ExternalId "List" "tail") (ExternFnBuilder generateListTail)
     (externals, _) <- insert externals (ExternalId "List" "write") (ExternFnBuilder generateListWrite)
     (externals, _) <- insert externals (ExternalId "List" "intoIter") (ExternFnBuilder generateListIntoIter)

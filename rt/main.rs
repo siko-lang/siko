@@ -51,8 +51,8 @@ pub mod siko_macros {
                 Ok(v) => v,
                 Err(l) => (*l).clone(),
             };
-            let value = match arg0.insert($arg1, $arg2) {
-                Some(v) => $option_crate::$option_source::$option_module::$option_name::Some(v),
+            let value = match arg0.insert(std::rc::Rc::new($arg1), std::rc::Rc::new($arg2)) {
+                Some(v) => $option_crate::$option_source::$option_module::$option_name::Some((*v).clone()),
                 None => $option_crate::$option_source::$option_module::$option_name::None,
             };
             $tuple_crate::$tuple_source::$tuple_module::$tuple_name {
@@ -71,7 +71,7 @@ pub mod siko_macros {
                 Err(l) => (*l).clone(),
             };
             let value = match arg0.remove(&$arg1) {
-                Some(v) => $option_crate::$option_source::$option_module::$option_name::Some(v),
+                Some(v) => $option_crate::$option_source::$option_module::$option_name::Some((*v).clone()),
                 None => $option_crate::$option_source::$option_module::$option_name::None,
             };
             $tuple_crate::$tuple_source::$tuple_module::$tuple_name {
@@ -92,7 +92,7 @@ pub mod siko_macros {
         ($arg0:ident, $arg1:ident, $option_crate:tt :: $option_source:tt :: $option_module:tt :: $option_name:tt) => {{
             match $arg0.value.get(&$arg1) {
                 Some(v) => {
-                    $option_crate::$option_source::$option_module::$option_name::Some(v.clone())
+                    $option_crate::$option_source::$option_module::$option_name::Some((**v).clone())
                 }
                 None => $option_crate::$option_source::$option_module::$option_name::None,
             }

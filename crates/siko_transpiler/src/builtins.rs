@@ -243,7 +243,7 @@ fn generate_string_builtins(
         "split" => {
             write!(
                 output_file,
-                "{}let value: Vec<_> = arg0.value.split(&*arg1.value).map(|s| {} {{ value : std::rc::Rc::new(s.to_string()) }} ).collect();\n",
+                "{}let value: Vec<_> = arg0.value.split(&*arg1.value).map(|s| std::rc::Rc::new({} {{ value : std::rc::Rc::new(s.to_string()) }} )).collect();\n",
                 indent, arg_types[0]
             )?;
             write!(
@@ -267,7 +267,7 @@ fn generate_string_builtins(
         "chars" => {
             write!(
                 output_file,
-                "{}let value: Vec<_> = arg0.value.chars().map(|c| crate::source::Char::Char {{ value : c }} ).collect();\n",
+                "{}let value: Vec<_> = arg0.value.chars().map(|c| std::rc::Rc::new(crate::source::Char::Char {{ value : c }} )).collect();\n",
                 indent
             )?;
             write!(
@@ -415,7 +415,7 @@ fn generate_map_builtins(
                 indent, map_iter_name
             )?;
             indent.inc();
-            write!(output_file, "{}value: (*arg0.value).clone().into_iter().map(|(k,v)|{{ {} {{ _siko_field_0: k.clone(), _siko_field_1: v.clone() }} }}).collect(),\n", indent, iter_arg)?;
+            write!(output_file, "{}value: (&arg0.value).iter().map(|(k,v)|{{ {} {{ _siko_field_0: (**k).clone(), _siko_field_1: (**v).clone() }} }}).collect(),\n", indent, iter_arg)?;
             write!(output_file, "{}index: 0,\n", indent)?;
             indent.dec();
             write!(output_file, "{}}}),\n", indent)?;
@@ -439,7 +439,7 @@ fn generate_map_builtins(
             indent.inc();
             write!(
                 output_file,
-                "{}value.insert(v._siko_field_0, v._siko_field_1);\n",
+                "{}value.insert(std::rc::Rc::new(v._siko_field_0), std::rc::Rc::new(v._siko_field_1));\n",
                 indent
             )?;
             indent.dec();
@@ -521,7 +521,7 @@ fn generate_list_builtins(
                 indent
             )?;
             indent.inc();
-            write!(output_file, "{}value.push(v);\n", indent)?;
+            write!(output_file, "{}value.push(std::rc::Rc::new(v));\n", indent)?;
             indent.dec();
             write!(output_file, "{}}} else {{\n", indent)?;
             indent.inc();
@@ -560,7 +560,7 @@ fn generate_list_builtins(
             indent.inc();
             write!(
                 output_file,
-                "{}pub value: std::rc::Rc<Vec<{}>>,\n",
+                "{}pub value: std::rc::Rc<Vec<std::rc::Rc<{}>>>,\n",
                 indent, list_arg_type
             )?;
             write!(output_file, "{}pub index: usize,\n", indent)?;
@@ -591,7 +591,7 @@ fn generate_list_builtins(
             indent.inc();
             write!(
                 output_file,
-                "{}let v = self.value[self.index].clone();\n",
+                "{}let v = (*self.value[self.index]).clone();\n",
                 indent
             )?;
             write!(output_file, "{}self.index += 1;\n", indent)?;
@@ -664,21 +664,7 @@ fn generate_list_builtins(
         }
         "atIndex" => {
             write!(output_file, "{}let index = arg1.value as usize;\n", indent)?;
-            write!(output_file, "{}arg0.value[index].clone()\n", indent)?;
-        }
-        "head" => {
-            write!(output_file, "{}match arg0.value.first() {{\n", indent)?;
-            write!(
-                output_file,
-                "{}Some(v) => {{ {}::Some(v.clone()) }}\n",
-                indent, result_ty_str
-            )?;
-            write!(
-                output_file,
-                "{}None => {{ {}::None }}\n",
-                indent, result_ty_str
-            )?;
-            write!(output_file, "{}}}\n", indent)?;
+            write!(output_file, "{}(*arg0.value[index]).clone()\n", indent)?;
         }
         "tail" => {
             let list_type = ir_type_to_rust_type(&arg_type_types[0], program);
@@ -737,7 +723,7 @@ fn generate_list_builtins(
             )?;
             write!(
                 output_file,
-                "{}r[arg1.value as usize] = arg2.clone();\n",
+                "{}r[arg1.value as usize] = std::rc::Rc::new(arg2);\n",
                 indent
             )?;
             write!(
@@ -1223,7 +1209,7 @@ pub fn generate_builtin(
                         output_file,
                         "let args: Vec<String> = std::env::args().collect();"
                     )?;
-                    write!(output_file, "let args: Vec<_> = args.into_iter().map(|arg| {} {{ value : std::rc::Rc::new(arg) }}).collect();", "crate::source::String::String")?;
+                    write!(output_file, "let args: Vec<_> = args.into_iter().map(|arg| std::rc::Rc::new({} {{ value : std::rc::Rc::new(arg) }})).collect();", "crate::source::String::String")?;
                     write!(
                         output_file,
                         "{} {{ value : std::rc::Rc::new(args) }}",

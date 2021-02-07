@@ -266,9 +266,12 @@ pub fn write_expr(
             let ty = ir_type_to_rust_type(ty, program);
             write!(output_file, "{} {{ value: std::rc::Rc::new(vec![", ty)?;
             for (index, item) in items.iter().enumerate() {
+                write!(output_file, "std::rc::Rc::new(")?;
                 write_expr(*item, output_file, program, indent, force_clone)?;
                 if index != items.len() - 1 {
-                    write!(output_file, ", ")?;
+                    write!(output_file, "), ")?;
+                } else {
+                    write!(output_file, ") ")?;
                 }
             }
             write!(output_file, "]) }}")?;

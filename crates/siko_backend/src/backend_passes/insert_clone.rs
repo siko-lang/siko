@@ -59,7 +59,7 @@ pub fn insert_clone_pass(expr_id: &ExprId, program: &mut Program) {
             continue;
         }
         for (index, expr_id) in exprs.iter().enumerate() {
-            if index == exprs.len() -1 {
+            if index == exprs.len() - 1 {
                 break;
             }
             let location = program.exprs.get(&expr_id).location_id;

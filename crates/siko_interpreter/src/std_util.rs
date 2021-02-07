@@ -1,10 +1,10 @@
 use crate::environment::Environment;
 use crate::extern_function::ExternFunction;
-use crate::interpreter::Interpreter;
 use crate::interpreter::ExprResult;
+use crate::interpreter::Interpreter;
 use crate::value::Value;
 use crate::value::ValueCore;
-use siko_ir::expr::{ExprId};
+use siko_ir::expr::ExprId;
 use siko_ir::function::NamedFunctionKind;
 use siko_ir::types::Type;
 
@@ -23,7 +23,7 @@ impl ExternFunction for Assert {
             println!("Assertion failed!");
             return ExprResult::Abort;
         }
-        let v= Value::new(ValueCore::Tuple(vec![]), ty);
+        let v = Value::new(ValueCore::Tuple(vec![]), ty);
         ExprResult::Ok(v)
     }
 }

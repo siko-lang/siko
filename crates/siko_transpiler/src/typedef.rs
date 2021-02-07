@@ -83,7 +83,7 @@ pub fn write_typedef(
                         let value_ty = ir_type_to_rust_type(&args[1], program);
                         write!(
                             output_file,
-                            "{}pub value: std::rc::Rc<std::collections::BTreeMap<{}, {}>>,\n",
+                            "{}pub value: std::rc::Rc<std::collections::BTreeMap<std::rc::Rc<{}>, std::rc::Rc<{}>>>,\n",
                             indent, key_ty, value_ty
                         )?;
                         indent.dec();
@@ -144,7 +144,7 @@ pub fn write_typedef(
                         indent.inc();
                         write!(
                             output_file,
-                            "{}pub value: std::rc::Rc<Vec<{}>>,\n",
+                            "{}pub value: std::rc::Rc<Vec<std::rc::Rc<{}>>>,\n",
                             indent, elem_ty
                         )?;
                         indent.dec();
