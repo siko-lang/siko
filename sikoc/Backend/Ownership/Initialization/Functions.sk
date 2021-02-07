@@ -9,6 +9,8 @@ import Siko.MIR.Function as F
 import Siko.Util.DependencyProcessor
 import Siko.Backend.Traversal
 import Siko.Backend.Ownership.Unification as U
+import Siko.Config
+import Siko.Trace
 import Map
 
 addOwnershipVarsToType :: Context -> T.Type -> (Context, T.Type)
@@ -161,13 +163,12 @@ addBoxed data_boxed_vars function_type = do
 processFunction :: P.Program -> Context -> F.Function -> (Context, F.Function)
 processFunction program context function = case function.kind of
     F.Normal body expr_id_gen temp_var_gen -> do
-        (context, updated_body) <- addOwnershipVarsToBody context body
         (context, args) <- function.type.args |> List.iter |> Iterator.fold (\(context, args), arg -> do
             (context, arg) <- addOwnershipVarsToType context arg
             (context, args + [arg])) (context, [])
         (context, result) <- addOwnershipVarsToType context function.type.result
         function_type <- F.FunctionType args result
-        (context, function { kind = F.Normal updated_body expr_id_gen temp_var_gen, type = function_type })
+        (context, function { kind = F.Normal body expr_id_gen temp_var_gen, type = function_type })
     F.RecordCtor -> do
         id <- T.getIdentity function.type.result
         record <- P.getRecord program id
@@ -201,11 +202,12 @@ processFunction program context function = case function.kind of
         (context, function_type) <- applyTypeMappings program context type_mappings function_type
         (context, function { type = function_type })
 
-initializeOwnership :: Context -> P.Program -> (U.OwnershipVarGenerator, P.Program)
-initializeOwnership context program = do
+initializeOwnership :: Config -> Context -> P.Program -> (Context, P.Program)
+initializeOwnership config context program = do
     (context, functions) <- program.functions |> Map.iter |> Iterator.fold (\(context, functions), (id, function) -> do
+        trace config "initializeOwnership.Functions {}" % id
         (context, function) <- processFunction program context function // FIXME: program should not be copied here!
         (functions, _) <- insert functions id function
         (context, functions)) (context, empty)
     program <- program { functions = functions }
-    (context.var_gen, program)
+    (context, program)

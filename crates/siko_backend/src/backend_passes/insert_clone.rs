@@ -58,13 +58,16 @@ pub fn insert_clone_pass(expr_id: &ExprId, program: &mut Program) {
         if exprs.len() == 1 {
             continue;
         }
-        for expr_id in exprs {
+        for (index, expr_id) in exprs.iter().enumerate() {
+            if index == exprs.len() -1 {
+                break;
+            }
             let location = program.exprs.get(&expr_id).location_id;
             let new_ref = program.exprs.get(&expr_id).item.clone();
             let ty = program.get_expr_type(&expr_id).clone();
             let new_ref_id = program.add_expr(new_ref, location, ty);
             let clone = Expr::Clone(new_ref_id);
-            program.update_expr(expr_id, clone);
+            program.update_expr(*expr_id, clone);
         }
     }
 }

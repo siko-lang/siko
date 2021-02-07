@@ -10,6 +10,8 @@ import Siko.MIR.Expr
 import Siko.Util.DependencyProcessor
 import Siko.Backend.Traversal
 import Siko.Backend.Ownership.Unification as U
+import Siko.Config
+import Siko.Trace
 import Map
 
 data Context = { arg_count_map :: Map P.Identity Int,
@@ -30,10 +32,10 @@ getArgCount context id = do
         Some c -> c
         None -> panic "Could not find arg count for {}" % id
 
-initializeOwnership :: P.Program -> [DependencyGroup P.Identity] -> (U.OwnershipVarGenerator, P.Program)
-initializeOwnership program groups = do
+initializeOwnership :: Config -> P.Program -> [DependencyGroup P.Identity] -> (Context, P.Program)
+initializeOwnership config program groups = do
     context <- Context empty U.createOwnershipVarGenerator
-    println "initializeOwnership datatypes"
+    trace config "initializeOwnership datatypes"
     (context, program) <- DataTypes.initializeOwnership context program groups
-    println "initializeOwnership functions"
-    Functions.initializeOwnership context program
+    trace config "initializeOwnership functions"
+    Functions.initializeOwnership config context program

@@ -80,25 +80,25 @@ processProgram config mir_program = do
     trace config "collectDataDeps.."
     data_dependencies <- collectDataDeps mir_program
     trace config "processing data deps.."
-    data_groups <- processDependencies data_dependencies
+    data_groups <- processDependencies config data_dependencies
     trace config "collectFunctionDeps.."
     function_dependencies <- collectFunctionDeps mir_program
     trace config "processing function deps.."
-    function_groups <- processDependencies function_dependencies
+    function_groups <- processDependencies config function_dependencies
     trace config "TransformUpdates.."
     mir_program <- TransformUpdates.processProgram mir_program
     trace config "AddConverter.."
-    mir_program <- AddConverter.processProgram mir_program
+    mir_program <- AddConverter.processProgram config mir_program
     s <- MP.dump mir_program
     writeTextFile (getOutputFileName config (MIR 1)) s
     trace config "Initialization.."
-    (var_gen, mir_program) <- Initialization.initializeOwnership mir_program data_groups
+    (context, mir_program) <- Initialization.initializeOwnership config mir_program data_groups
     s <- MP.dump mir_program
     writeTextFile (getOutputFileName config (MIR 2)) s
     trace config "Inference.."
-    (inference_info_store, var_gen) <- Inference.processProgram mir_program var_gen function_groups
+    (inference_info_store, context) <- Inference.processProgram config mir_program context function_groups
     trace config "Instantiation.."
-    lir_program <- Instantiation.processProgram mir_program inference_info_store var_gen
+    lir_program <- Instantiation.processProgram config mir_program inference_info_store context
     s <- LP.dump lir_program
     writeTextFile (getOutputFileName config (LIR 0)) s
     lir_program

@@ -6,7 +6,9 @@ import Siko.MIR.Data as D
 import Siko.MIR.Type as T
 import Siko.MIR.Function as F
 import Siko.Backend.Ownership.Unification as U
+import Siko.Backend.Ownership.Initialization as Init
 import Siko.Util.Counter
+import Siko.Config
 
 import Map
 import Set
@@ -23,7 +25,8 @@ data Constraint = Constraint E.ExprId ConverterKind T.OwnershipVar T.OwnershipVa
                 | FieldAccessConverter T.OwnershipVar T.OwnershipVar T.OwnershipVar
                 deriving (Show)
 
-data GlobalContext = { program :: P.Program,
+data GlobalContext = { config :: Config,
+                       program :: P.Program,
                        inference_info_store :: InferenceInfoStore }
 
 data InferenceInfoStore = { inference_infos :: Map P.Identity FunctionInferenceInfo }
@@ -42,7 +45,7 @@ data Context = { global_context :: GlobalContext,
                  ownership_vars :: Map T.OwnershipVar Int,
                  moved_vars :: Map T.OwnershipVar MovedVars,
                  borrowers :: [Borrower],
-                 var_gen :: U.OwnershipVarGenerator,
+                 init_context :: Init.Context,
                  borrower_sets :: Map Int (Set T.OwnershipVar),
                  borrower_set_id_gen :: Int,
                  groups :: Map Int Group,
@@ -59,11 +62,11 @@ data FunctionInferenceInfo = { function_type :: F.FunctionType,
 createInferenceInfoStore :: InferenceInfoStore
 createInferenceInfoStore = InferenceInfoStore Map.empty
 
-createGlobalContext :: P.Program -> InferenceInfoStore -> GlobalContext
-createGlobalContext program inference_info_store = GlobalContext program inference_info_store
+createGlobalContext :: Config -> P.Program -> InferenceInfoStore -> GlobalContext
+createGlobalContext config program inference_info_store = GlobalContext config program inference_info_store
 
-createContext :: GlobalContext -> Set E.ExprId -> U.OwnershipVarGenerator -> T.Type -> Context
-createContext global_context not_moves var_gen return_type =
+createContext :: GlobalContext -> Set E.ExprId -> Init.Context -> T.Type -> Context
+createContext global_context not_moves init_context return_type =
     Context {
         global_context = global_context,
         var_vars = Map.empty,
@@ -73,7 +76,7 @@ createContext global_context not_moves var_gen return_type =
         ownership_vars = Map.empty,
         moved_vars = Map.empty,
         borrowers = [],
-        var_gen = var_gen,
+        init_context = init_context,
         borrower_sets = Map.empty,
         borrower_set_id_gen = 1,
         groups = Map.empty,
@@ -203,9 +206,10 @@ getNextOwnershipKind context = do
 
 getNextOwnershipVar :: Context -> (Context, T.OwnershipVar)
 getNextOwnershipVar context = do
-    (var_gen, v) <- U.getNextOwnershipVar context.var_gen
-    context <- context { var_gen = var_gen }
-    (context, v)
+    init_context <- context.init_context
+    (var_gen, v) <- U.getNextOwnershipVar init_context.var_gen
+    init_context <- init_context { var_gen = var_gen }
+    (context { init_context = init_context }, v)
 
 collectOwnershipKindsFromFunctionType :: F.FunctionType -> [T.OwnershipKind]
 collectOwnershipKindsFromFunctionType function_type = do

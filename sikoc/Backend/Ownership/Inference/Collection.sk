@@ -8,6 +8,8 @@ import Siko.MIR.Function as F
 import Siko.Util.DependencyProcessor
 import Siko.Backend.Ownership.ValueGraph.Creator as C
 import Siko.Backend.Ownership.Inference.Common as Common
+import Siko.Backend.Ownership.Initialization as Init
+import Siko.Backend.Ownership.Initialization.Functions as IF
 import Siko.Backend.Ownership.Unification as U
 import Siko.Util.Counter
 
@@ -355,13 +357,19 @@ processArg context index type = do
     (context, vars) <- List.mapS context kinds (\context, kind -> processKind context (Common.MovedVars Set.empty) kind)
     Common.addVarVars context (E.Arg index) vars
 
-collectConstraints :: Common.GlobalContext -> U.OwnershipVarGenerator -> F.FunctionType -> P.Identity -> E.Expr -> Common.Context
-collectConstraints global_context var_gen function_type function_id body = do
+addOwnershipVarsToBody :: Common.Context -> E.Expr -> (Common.Context, E.Expr)
+addOwnershipVarsToBody context expr = do
+    (init_context, body) <- IF.addOwnershipVarsToBody context.init_context expr
+    (context { init_context = init_context }, body)
+
+collectConstraints :: Common.GlobalContext -> Init.Context -> F.FunctionType -> P.Identity -> E.Expr -> (Common.Context, E.Expr)
+collectConstraints global_context init_context function_type function_id body = do
     not_moves <- C.collectNotMoves function_id body (getLength function_type.args)
-    context <- Common.createContext global_context not_moves var_gen function_type.result
+    context <- Common.createContext global_context not_moves init_context function_type.result
     context <- List.foldE (\context, index, arg_type -> processArg context index arg_type) context function_type.args
     moved_vars <- Common.MovedVars Set.empty
+    (context, body) <- addOwnershipVarsToBody context body
     (context, moved_vars) <- processExpr context moved_vars body
     E.Expr _ body_type _ <- body
     context <- equalConstraints context moved_vars body_type function_type.result
-    context
+    (context, body)

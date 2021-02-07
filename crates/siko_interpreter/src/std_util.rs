@@ -1,27 +1,30 @@
 use crate::environment::Environment;
 use crate::extern_function::ExternFunction;
 use crate::interpreter::Interpreter;
+use crate::interpreter::ExprResult;
 use crate::value::Value;
 use crate::value::ValueCore;
-use siko_ir::expr::ExprId;
+use siko_ir::expr::{ExprId};
 use siko_ir::function::NamedFunctionKind;
 use siko_ir::types::Type;
 
 pub struct Assert {}
 
 impl ExternFunction for Assert {
-    fn call(
+    fn call2(
         &self,
         environment: &Environment,
-        current_expr: Option<ExprId>,
+        _: Option<ExprId>,
         _: &NamedFunctionKind,
         ty: Type,
-    ) -> Value {
+    ) -> ExprResult {
         let v = environment.get_arg_by_index(0).core.as_bool();
         if !v {
-            Interpreter::call_abort(current_expr.expect("No current expr"));
+            println!("Assertion failed!");
+            return ExprResult::Abort;
         }
-        return Value::new(ValueCore::Tuple(vec![]), ty);
+        let v= Value::new(ValueCore::Tuple(vec![]), ty);
+        ExprResult::Ok(v)
     }
 }
 

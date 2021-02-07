@@ -11,6 +11,7 @@ import Siko.HIR.Type as T
 import Siko.HIR.Function as F
 import Siko.HIR.TypeVarGenerator
 import Siko.Util.DependencyProcessor
+import Siko.Config
 import Map
 
 processFunction :: TypecheckerState -> F.Function -> P.Program -> (TypecheckerState, FunctionTypeInfo)
@@ -35,8 +36,8 @@ processFunction state f program = do
     func_type_info <- FunctionTypeInfo f.name args ty result_ty defined
     (state, func_type_info)
 
-processFunctions :: TypecheckerState -> P.Program -> (TypecheckerState, FunctionStore, [DependencyGroup P.FullyQualifiedName])
-processFunctions state program = do
+processFunctions :: Config -> TypecheckerState -> P.Program -> (TypecheckerState, FunctionStore, [DependencyGroup P.FullyQualifiedName])
+processFunctions config state program = do
     functions <- P.getFunctions program
     (state, function_store) <- functions |> List.iter |> Iterator.fold (\(state, function_store), f -> do
         (state, func_type_info) <- processFunction state f program
@@ -50,5 +51,5 @@ processFunctions state program = do
                 _ -> False) |> toList
         (all_dependencies, _) <- Map.insert all_dependencies fn.name (untyped_deps + forced_deps)
         all_dependencies) Map.empty
-    groups <- processDependencies all_dependencies
+    groups <- processDependencies config all_dependencies
     (state, function_store, groups)

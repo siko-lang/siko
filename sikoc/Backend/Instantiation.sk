@@ -15,6 +15,9 @@ import Siko.LIR.Data as LD
 import Siko.Backend.Ownership.Unification as U
 import Siko.Backend.Ownership.Inference as Inference
 import Siko.Backend.Ownership.Inference.Common as InferenceC
+import Siko.Backend.Ownership.Initialization as Init
+import Siko.Config
+import Siko.Trace
 
 import Map
 import Set
@@ -41,7 +44,8 @@ getName name_map mir_id = do
         None -> LP.Identity mod name 0
     (name_map { names = names}, lir_id)
 
-data Queue = { name_map :: NameMap,
+data Queue = { config :: Config,
+               name_map :: NameMap,
                lir_ids :: Map LIRKey LP.Identity,
                lir_functions :: Map LP.Identity LF.Function,
                type_ids :: Map MT.Type LT.Type,
@@ -49,11 +53,12 @@ data Queue = { name_map :: NameMap,
                lir_adts :: Map LP.Identity LD.AlgebraicDataType,
                item_queue :: [QueuedItem],
                inference_info_store :: InferenceC.InferenceInfoStore,
-               var_gen :: U.OwnershipVarGenerator }
+               init_context :: Init.Context }
 
-createQueue :: InferenceC.InferenceInfoStore -> U.OwnershipVarGenerator -> Queue
-createQueue inference_info_store var_gen =
-                Queue { name_map = NameMap Map.empty,
+createQueue :: Config -> InferenceC.InferenceInfoStore -> Init.Context -> Queue
+createQueue config inference_info_store init_context =
+                Queue { config = config,
+                      name_map = NameMap Map.empty,
                       lir_ids = Map.empty,
                       lir_functions = Map.empty,
                       type_ids = Map.empty,
@@ -61,7 +66,7 @@ createQueue inference_info_store var_gen =
                       lir_adts = Map.empty,
                       item_queue = [],
                       inference_info_store = inference_info_store,
-                      var_gen = var_gen }
+                      init_context = init_context }
 
 createId :: MP.Identity -> (NameMap, Option LP.Identity) -> Option LP.Identity -> ((NameMap, Option LP.Identity), Option LP.Identity)
 createId mir_id (name_map, _) old = case old of
@@ -304,12 +309,12 @@ processFunctionType queue mir_function_type = do
 
 processFunction :: Queue -> MP.Program -> MP.Identity -> MF.FunctionType -> LP.Identity -> Queue
 processFunction queue mir_program mir_id function_type lir_id = do
-    //println "Instantiation: processing function {} {}" % (mir_id, function_type)
+    trace queue.config "Instantiation: processing function {} {}" % (mir_id, function_type)
     mir_function <- MP.getFunction mir_program mir_id
     case mir_function.kind of
         MF.Normal mir_body expr_id_gen temp_var_gen -> do
-            global_context <- InferenceC.createGlobalContext mir_program queue.inference_info_store
-            (body, var_gen) <- Inference.instantiateFunction global_context queue.var_gen expr_id_gen mir_id function_type mir_body
+            global_context <- InferenceC.createGlobalContext queue.config mir_program queue.inference_info_store
+            (body, init_context) <- Inference.instantiateFunction global_context queue.init_context expr_id_gen mir_id function_type mir_body
             (queue, lir_body) <- processExpr queue body
             lir_kind <- LF.Normal lir_body
             //println "Processing function type {}" % function_type
@@ -388,7 +393,7 @@ processExternalClassImpl mir_program arg_type queue mir_class_impl =
 
 processRecord :: Queue -> MP.Program -> MP.Identity -> [MT.OwnershipKind] -> LP.Identity -> Queue
 processRecord queue mir_program mir_id args lir_id = do
-    //println "Processing record {} {}" % (mir_id, args)
+    trace queue.config "Processing record {} {}" % (mir_id, args)
     mir_record <- MP.getRecord mir_program mir_id
     sub <- U.batch mir_record.ownership_vars args
     mir_record <- U.apply mir_record sub
@@ -407,7 +412,7 @@ processRecord queue mir_program mir_id args lir_id = do
 
 processAdt :: Queue -> MP.Program -> MP.Identity -> [MT.OwnershipKind] -> LP.Identity -> Queue
 processAdt queue mir_program mir_id args lir_id = do
-    //println "Processing adt {} {}" % (mir_id, args)
+    trace queue.config "Processing adt {} {}" % (mir_id, args)
     mir_adt <- MP.getAdt mir_program mir_id
     sub <- U.batch mir_adt.ownership_vars args
     mir_adt <- U.apply mir_adt sub
@@ -451,15 +456,15 @@ processItems queue mir_program = do
                 queue <- items |> List.iter |> Iterator.fold (\queue, item -> processItem queue mir_program item) queue
                 queue
 
-processProgram :: MP.Program -> InferenceC.InferenceInfoStore -> U.OwnershipVarGenerator -> LP.Program
-processProgram mir_program inference_info_store var_gen = do
+processProgram :: Config -> MP.Program -> InferenceC.InferenceInfoStore -> Init.Context -> LP.Program
+processProgram config mir_program inference_info_store init_context = do
     main_id <- MP.getMainIdentity
     main_function <- MP.getFunction mir_program main_id
     main_result <- case main_function.type.result of
         MT.Var _ t -> MT.Owner t
         _ -> panic "Unexpected main function resul type {}" % main_function.type.result
     function_key <- FunctionKey main_id (MF.FunctionType [] main_result)
-    queue <- createQueue inference_info_store var_gen
+    queue <- createQueue config inference_info_store init_context
     (queue, lir_main_id) <- getLIRId queue function_key
     queue <- addItem queue (QueuedItem function_key)
     queue <- processItems queue mir_program

@@ -8,6 +8,8 @@ import Siko.MIR.Function as F
 import Siko.Util.Counter
 import Siko.Backend.Ownership.ValueGraph.Creator as C
 import Siko.Backend.Traversal
+import Siko.Trace
+import Siko.Config
 
 import Map
 import Set
@@ -61,11 +63,11 @@ processExpr context expr = do
             packExpr context expr E.NormalConverter
         _ -> (context, expr)
 
-processFunction :: P.Identity -> F.Function -> (P.Identity, F.Function)
-processFunction id function = do
+processFunction :: Config -> P.Identity -> F.Function -> (P.Identity, F.Function)
+processFunction config id function = do
     case function.kind of
         F.Normal body expr_id_gen expr_var_gen -> do
-            println "addConverter: processing {}" % function.id
+            trace config "addConverter: processing {}" % function.id
             not_moves <- C.collectNotMoves function.id body (getLength function.type.args)
             context <- Context expr_id_gen not_moves
             (context, new_body) <- traverse context body (Some processExpr) None
@@ -73,7 +75,7 @@ processFunction id function = do
             (id, function { kind = new_kind })
         _ -> (id, function)
 
-processProgram :: P.Program -> P.Program
-processProgram program = do
-    functions <- program.functions |> Map.iter |> Iterator.map (\(id, function) -> processFunction id function) |> toMap
+processProgram :: Config -> P.Program -> P.Program
+processProgram config program = do
+    functions <- program.functions |> Map.iter |> Iterator.map (\(id, function) -> processFunction config id function) |> toMap
     program { functions = functions }

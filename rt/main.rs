@@ -47,14 +47,16 @@ pub mod siko_macros {
         ($arg0:ident, $arg1:ident, $arg2:ident, $option_crate:tt :: $option_source:tt :: $option_module:tt :: $option_name:tt,
                                                 $tuple_crate:tt :: $tuple_source:tt :: $tuple_module:tt :: $tuple_name:tt,
                                                 $map_crate:tt :: $map_source:tt :: $map_module:tt :: $map_name:tt) => {{
-            let mut arg0 = (*$arg0.value).clone();
-            let (new, v) = arg0.insert($arg1, $arg2);
-         let value = match v {
+            let mut arg0 = match std::rc::Rc::try_unwrap($arg0.value) {
+                Ok(v) => v,
+                Err(l) => (*l).clone(),
+            };
+            let value = match arg0.insert($arg1, $arg2) {
                 Some(v) => $option_crate::$option_source::$option_module::$option_name::Some(v),
                 None => $option_crate::$option_source::$option_module::$option_name::None,
             };
             $tuple_crate::$tuple_source::$tuple_module::$tuple_name {
-                _siko_field_0: $map_crate::$map_source::$map_module::$map_name { value: std::rc::Rc::new(new) },
+                _siko_field_0: $map_crate::$map_source::$map_module::$map_name { value: std::rc::Rc::new(arg0) },
                 _siko_field_1: value,
             }
         }};
@@ -64,14 +66,16 @@ pub mod siko_macros {
         ($arg0:ident, $arg1:ident, $option_crate:tt :: $option_source:tt :: $option_module:tt :: $option_name:tt,
                                    $tuple_crate:tt :: $tuple_source:tt :: $tuple_module:tt :: $tuple_name:tt,
                                     $map_crate:tt :: $map_source:tt :: $map_module:tt :: $map_name:tt) => {{
-            let mut arg0 = (*$arg0.value).clone();
-            let (new, v) = arg0.remove(&$arg1);
-            let value = match v {
+            let mut arg0 = match std::rc::Rc::try_unwrap($arg0.value) {
+                Ok(v) => v,
+                Err(l) => (*l).clone(),
+            };
+            let value = match arg0.remove(&$arg1) {
                 Some(v) => $option_crate::$option_source::$option_module::$option_name::Some(v),
                 None => $option_crate::$option_source::$option_module::$option_name::None,
             };
             $tuple_crate::$tuple_source::$tuple_module::$tuple_name {
-                _siko_field_0: $map_crate::$map_source::$map_module::$map_name { value: std::rc::Rc::new(new) },
+                _siko_field_0: $map_crate::$map_source::$map_module::$map_name { value: std::rc::Rc::new(arg0) },
                 _siko_field_1: value,
             }
         }};
@@ -79,7 +83,7 @@ pub mod siko_macros {
 
     macro_rules! map_empty {
         ($map_crate:tt :: $map_source:tt :: $map_module:tt :: $map_name:tt) => {{
-            let value = immutable_chunkmap::map::Map::new();
+            let value = std::collections::BTreeMap::new();
             $map_crate::$map_source::$map_module::$map_name { value: std::rc::Rc::new(value) }
         }};
     }
