@@ -26,6 +26,7 @@ import Siko.HIR.Expr
 import Siko.MIR.Program as MP
 import Siko.Constants
 import Siko.Config
+import Siko.Trace
 import Map
 
 data TypecheckerState = { errors :: [TypecheckerError],
@@ -34,6 +35,7 @@ data TypecheckerState = { errors :: [TypecheckerError],
                           data_store :: DS.DataStore,
                           instance_resolver :: IR.InstanceResolver,
                           choice_tree_store :: ChoiceTreeStore,
+                          config :: Config,
                         }
 
 addError :: TypecheckerState -> TypecheckerError -> TypecheckerState
@@ -49,7 +51,7 @@ initializeFunctionType context fn = do
 
 checkFunctionType :: Context -> F.Function -> Context
 checkFunctionType context fn = do
-    //println "Checking function {}" % fn.name
+    trace context.state.config "Checking function {}" % fn.name
     case fn.body of
         Some body -> do
             context <- traverse context checkExprType checkPatternType body
@@ -136,16 +138,21 @@ processGroup state group program function_store lowering_type_store = do
 processProgram :: Config -> P.Program -> TypeVarGenerator -> Result MP.Program [TypecheckerError]
 processProgram config program var_gen = do
     state <- TypecheckerState [] var_gen CS.initializeEmptyClassStore
-             DS.createDataStore IR.createInstanceResolver createChoiceTreeStore
+             DS.createDataStore IR.createInstanceResolver createChoiceTreeStore config
+    trace config "TYCHK processData"
     state <- processData program state
     lowering_type_store <- LTS.createTypeStore
+    trace config "TYCHK processClassesAndInstances"
     (state, program) <- processClassesAndInstances config state program
+    trace config "TYCHK processAutoDerivedInstances"
     state <- DS.processAutoDerivedInstances state
     state <- checkInstanceConflictsAndDependencies state
+    trace config "TYCHK processFunctions"
     (state, function_store, groups) <- processFunctions config state program
     //println "Datadefs: {}" % (getSize data_store.data_type_info_map)
     //println "Functions: {}" % (getSize function_store.functions)
     //println "Groups: {}" % (getLength groups)
+    trace config "TYCHK processGroups"
     (state, function_store, lowering_type_store) <- groups |> List.iter
             |> Iterator.fold (\(state, function_store, lowering_type_store), group -> do
         (state, function_store, lowering_type_store) <- processGroup state group program function_store lowering_type_store

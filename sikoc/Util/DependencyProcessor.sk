@@ -1,118 +1,59 @@
 module Siko.Util.DependencyProcessor where
 
 import Map
-import Set
 import Siko.Config
 import Siko.Trace
+import Siko.Util.SCC as SCC
 
 data DependencyGroup a = { items :: [a] } deriving (Show)
 
-data DependencyBucket a = { items :: [a] }
+createIdMaps a :: (PartialEq a, Ord a) => SCC.Graph -> Map a [a] -> (SCC.Graph, Map a SCC.NodeId, Map SCC.NodeId a)
+createIdMaps graph all_dependencies = do
+        keys <- getKeys all_dependencies
+        (graph, item_id_map) <- List.fold (graph, Map.empty) keys mapKey
+        id_item_map <- Map.fold Map.empty item_id_map (\id_item_map, (k, v) -> do
+            (id_item_map, _) <- insert id_item_map v k
+            id_item_map)
+        (graph, item_id_map, id_item_map)
+    where
+        mapKey a :: (PartialEq a, Ord a) => (SCC.Graph, Map a SCC.NodeId) -> a -> (SCC.Graph, Map a SCC.NodeId)
+        mapKey (graph, id_map) id = do
+            (graph, id_map, _) <- alterS update graph id id_map
+            (graph, id_map)
 
-data GroupTable a = { table :: Map a Int }
+        update :: SCC.Graph -> Option SCC.NodeId -> (SCC.Graph, Option SCC.NodeId)
+        update graph old = case old of
+                Some id -> (graph, Some id)
+                None -> do
+                    (graph, node_id) <- SCC.addNode graph
+                    (graph, Some node_id)
 
-newGroup = DependencyGroup []
+initGraph a :: (PartialEq a, Ord a) => SCC.Graph -> Map a SCC.NodeId -> Map a [a] -> SCC.Graph
+initGraph graph item_id_map all_dependencies =
+    Map.fold graph all_dependencies (processDeps item_id_map)
+        where
+            processDeps a :: (PartialEq a, Ord a) => Map a SCC.NodeId -> SCC.Graph -> (a, [a]) -> SCC.Graph
+            processDeps item_id_map graph (item, deps) = do
+                List.fold graph deps (processDep item item_id_map)
 
-addToDependencyGroup a :: (PartialEq a, Ord a) => a -> DependencyGroup a -> DependencyGroup a
-addToDependencyGroup item group = do
-    items <- group.items + [item] |> sort |> dedup
-    group { items = items }
+            processDep a :: (PartialEq a, Ord a) => a -> Map a SCC.NodeId -> SCC.Graph -> a -> SCC.Graph
+            processDep item item_id_map graph dep = do
+                item <- Option.unwrap (get item_id_map item)
+                dep <- Option.unwrap (get item_id_map dep)
+                SCC.addNeighbour graph item dep
 
-mergeGroups a :: (Ord a) => a -> a -> GroupTable a -> GroupTable a
-mergeGroups id1 id2 table = do
-    group_id1 <- Option.unwrap (get table.table id1)
-    group_id2 <- Option.unwrap (get table.table id2)
-    t <- table.table |> Map.iter |> Iterator.map (\(id, group_id) -> if group_id == group_id1 then (id, group_id2) else (id, group_id)) |> toMap
-    table { table = t }
-
-dependsOn a :: (PartialEq a, Ord a) => a -> a -> Set a -> Map a [a] -> (Set a, Bool)
-dependsOn item used_item visited all_dependencies = do
-    (visited, inserted) <- Set.insert visited item
-    if inserted
-        then do
-            deps <- Option.unwrap (get all_dependencies item)
-            if List.contains deps used_item
-                then (visited, True)
-                else do
-                    (depends, visited) <- deps |> List.iter |> Iterator.fold (\(total_depends, visited), dep -> do
-                        (visited, depends) <- dependsOn dep used_item visited all_dependencies
-                        (total_depends || depends, visited)) (False, visited)
-                    (visited, depends)
-        else (visited, False)
-
-checkCircularDependency a :: (PartialEq a, Ord a) => a -> [a] -> Map a [a] -> GroupTable a -> GroupTable a
-checkCircularDependency item dependencies all_dependencies group_table = do
-    circular_deps <- dependencies |> List.iter |> Iterator.filter (\dep -> do
-        (_, depends) <- dependsOn dep item (Set.empty) all_dependencies
-        depends) |> toList
-    group_table <- circular_deps |> List.iter |> Iterator.fold (\group_table, id -> mergeGroups item id group_table) group_table
-    group_table
-
-checkGroup a :: (PartialEq a, Ord a) => Int -> Map Int (DependencyGroup a) -> Map a [a] -> Set a -> Bool
-checkGroup group_id group_lookup_table all_dependencies processed_items = do
-    group <- Option.unwrap (get group_lookup_table group_id)
-    dep_missing <- group.items |> List.iter |> Iterator.fold (\total_dep_missing, item -> do
-            deps <- Option.unwrap (get all_dependencies item)
-            some_dep_missing <- deps |> List.iter |> Iterator.fold (\missing, item -> do
-                dep_missing <- not (Set.contains processed_items item) &&
-                            not (List.contains group.items item)
-                missing || dep_missing) False
-            total_dep_missing || some_dep_missing
-        ) False
-    not dep_missing
-
-processDependencies a :: (PartialEq a, Ord a) => Config -> Map a [a] -> [DependencyGroup a]
+processDependencies a :: (PartialEq a, Ord a, Show a) => Config -> Map a [a] -> [DependencyGroup a]
 processDependencies config all_dependencies = do
-    trace config "processDependencies {}" % getSize all_dependencies
-    all_dependencies <- all_dependencies |> Map.iter |> Iterator.map (\(id, dependencies) -> (id, dependencies |> sort |> dedup)) |> toMap
-    group_table :: GroupTable a <- GroupTable Map.empty
-
-    // 1. create a dependency group in the table for every single item
-    (group_table, _) <- all_dependencies |> Map.iter |> Iterator.fold (\(group_table, index), (id, dependencies) -> do
-        (table, _) <- Map.insert group_table.table id index
-        (group_table { table = table }, index + 1)) (group_table, 0)
-
-    // 2. merge the groups in case of circular dependencies
-    group_table <- all_dependencies |> Map.iter |> Iterator.fold (\group_table, (id, dependencies) ->
-            checkCircularDependency id dependencies all_dependencies group_table) group_table
-
-    // 3. initialize group lookup table
-    group_lookup_table :: Map Int (DependencyGroup a) <- Map.empty // FIXME: type annotation should not be required here
-    unprocessed_groups <- Set.empty
-    (group_lookup_table, unprocessed_groups) <- group_table.table |> Map.iter |> Iterator.fold (\(group_lookup_table, unprocessed_groups), (id, group_id) -> do
-            (group_lookup_table, _) <- alter (\group -> case group of
-                                                Some group -> do
-                                                    group <- addToDependencyGroup id group
-                                                    Some group
-                                                None -> do
-                                                    group <- addToDependencyGroup id newGroup
-                                                    Some group) group_id group_lookup_table
-            (unprocessed_groups, _) <- Set.insert unprocessed_groups group_id
-            (group_lookup_table, unprocessed_groups)
-        ) (group_lookup_table, unprocessed_groups)
-    ()
-
-    processed_items <- Set.empty
-    ordered_groups <- []
-
-    // 4. try to process groups in the right order
-    (_, ordered_groups, _) <- loop (unprocessed_groups, ordered_groups, processed_items) <-
-                                   (unprocessed_groups, ordered_groups, processed_items) do
-                        if Set.isEmpty unprocessed_groups
-                            then break (unprocessed_groups, ordered_groups, processed_items)
-                            else do
-                                next_groups <- unprocessed_groups
-                                            |> Set.iter
-                                            |> Iterator.filter (\group_id -> checkGroup group_id group_lookup_table all_dependencies processed_items) |> toList
-                                next_groups |> List.iter
-                                     |> Iterator.fold (\(unprocessed_groups, ordered_groups, processed_items), group_id -> do
-                                                unprocessed_groups <- Set.remove unprocessed_groups group_id
-                                                group <- Option.unwrap (get group_lookup_table group_id)
-                                                processed_items <- group.items |> List.iter |> Iterator.fold (\processed_items, item -> do
-                                                    (processed_items, _) <- Set.insert processed_items item
-                                                    processed_items) processed_items
-                                                ordered_groups <- ordered_groups + [group]
-                                                (unprocessed_groups, ordered_groups, processed_items)
-                                        ) (unprocessed_groups, ordered_groups, processed_items)
-    trace config "processDependencies done"
-    ordered_groups
+        trace config "new processDependencies {}" % getSize all_dependencies
+        graph <- SCC.createGraph
+        (graph, item_id_map, id_item_map) <- createIdMaps graph all_dependencies
+        graph <- initGraph graph item_id_map all_dependencies
+        sccs <- SCC.collectSCCs graph
+        ordered_groups <- List.map sccs (mapSCC id_item_map)
+        trace config "new processDependencies done"
+        ordered_groups
+    where
+        mapSCC a :: Map SCC.NodeId a -> [SCC.NodeId] -> DependencyGroup a
+        mapSCC id_item_map scc = do
+            items <- List.map scc (\id -> Option.unwrap (get id_item_map id))
+            DependencyGroup items

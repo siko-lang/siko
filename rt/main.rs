@@ -47,10 +47,7 @@ pub mod siko_macros {
         ($arg0:ident, $arg1:ident, $arg2:ident, $option_crate:tt :: $option_source:tt :: $option_module:tt :: $option_name:tt,
                                                 $tuple_crate:tt :: $tuple_source:tt :: $tuple_module:tt :: $tuple_name:tt,
                                                 $map_crate:tt :: $map_source:tt :: $map_module:tt :: $map_name:tt) => {{
-            let mut arg0 = match std::rc::Rc::try_unwrap($arg0.value) {
-                Ok(v) => v,
-                Err(l) => (*l).clone(),
-            };
+            let mut arg0 = crate::UnpackRC::unpack($arg0.value);
             let value = match arg0.insert(std::rc::Rc::new($arg1), std::rc::Rc::new($arg2)) {
                 Some(v) => $option_crate::$option_source::$option_module::$option_name::Some((*v).clone()),
                 None => $option_crate::$option_source::$option_module::$option_name::None,
@@ -66,10 +63,7 @@ pub mod siko_macros {
         ($arg0:ident, $arg1:ident, $option_crate:tt :: $option_source:tt :: $option_module:tt :: $option_name:tt,
                                    $tuple_crate:tt :: $tuple_source:tt :: $tuple_module:tt :: $tuple_name:tt,
                                     $map_crate:tt :: $map_source:tt :: $map_module:tt :: $map_name:tt) => {{
-            let mut arg0 = match std::rc::Rc::try_unwrap($arg0.value) {
-                Ok(v) => v,
-                Err(l) => (*l).clone(),
-            };
+            let mut arg0 = crate::UnpackRC::unpack($arg0.value);
             let value = match arg0.remove(&$arg1) {
                 Some(v) => $option_crate::$option_source::$option_module::$option_name::Some((*v).clone()),
                 None => $option_crate::$option_source::$option_module::$option_name::None,
@@ -97,6 +91,22 @@ pub mod siko_macros {
                 None => $option_crate::$option_source::$option_module::$option_name::None,
             }
         }};
+    }
+}
+
+trait UnpackRC {
+    type Item;
+    fn unpack(self) -> Self::Item;
+}
+
+
+impl<T: Clone> UnpackRC for std::rc::Rc<T> {
+    type Item = T;
+    fn unpack(self) -> T {
+        match std::rc::Rc::try_unwrap(self) {
+            Ok(v) => v,
+            Err(l) => (*l).clone(),
+        }
     }
 }
 

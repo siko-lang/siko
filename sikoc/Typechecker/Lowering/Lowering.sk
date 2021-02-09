@@ -237,10 +237,13 @@ lowerProgram config state hir_program function_store type_store = do
             context
     context <- generateExternalImpls context
     context <- FQ.processItems context
+    trace config "Lowering.. createClosures"
     context <- CS.createClosures context
     context <- FQ.processItems context
+    trace config "Lowering.. createIterators"
     context <- IS.createIterators context
     context <- FQ.processItems context
+    trace config "Lowering.. mostly done"
     (context, unit_type) <- processType context (HT.Tuple [])
     mir_program <- context.mir_program
     mir_program <- mir_program { adts = context.type_store.adts, records = context.type_store.records, unit_type = Some unit_type }
@@ -253,6 +256,9 @@ lowerProgram config state hir_program function_store type_store = do
                 _ -> record_ctors
         ) Map.empty
     mir_program <- mir_program { record_ctors = record_ctors }
-    s <- MP.dump mir_program
-    writeTextFile (getOutputFileName config (MIR 0)) s
+    if config.dump
+    then do
+        s <- MP.dump mir_program
+        writeTextFile (getOutputFileName config (MIR 0)) s
+    else ()
     mir_program

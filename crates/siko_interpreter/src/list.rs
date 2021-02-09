@@ -329,6 +329,26 @@ impl ExternFunction for Write {
     }
 }
 
+pub struct Split {}
+
+impl ExternFunction for Split {
+    fn call(
+        &self,
+        environment: &Environment,
+        _: Option<ExprId>,
+        _: &NamedFunctionKind,
+        ty: Type,
+    ) -> Value {
+        let orig_list = environment.get_arg_by_index(0);
+        let index = environment.get_arg_by_index(1).core.as_int();
+        let mut list: Vec<_> = orig_list.core.as_list().clone();
+        let rest = list.split_off(index as usize);
+        let v1 = Value::new(ValueCore::List(list), orig_list.ty.clone());
+        let v2 = Value::new(ValueCore::List(rest), orig_list.ty.clone());
+        return Value::new(ValueCore::Tuple(vec![v1, v2]), ty);
+    }
+}
+
 pub fn register_extern_functions(interpreter: &mut Interpreter) {
     interpreter.add_extern_function(LIST_MODULE_NAME, "show", Box::new(Show {}));
     interpreter.add_extern_function(LIST_MODULE_NAME, "iter", Box::new(Iter {}));
@@ -345,4 +365,5 @@ pub fn register_extern_functions(interpreter: &mut Interpreter) {
     interpreter.add_extern_function(LIST_MODULE_NAME, "partialCmp", Box::new(ListPartialOrd {}));
     interpreter.add_extern_function(LIST_MODULE_NAME, "cmp", Box::new(ListOrd {}));
     interpreter.add_extern_function(LIST_MODULE_NAME, "write", Box::new(Write {}));
+    interpreter.add_extern_function(LIST_MODULE_NAME, "split", Box::new(Split {}));
 }

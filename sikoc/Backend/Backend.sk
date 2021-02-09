@@ -89,16 +89,25 @@ processProgram config mir_program = do
     mir_program <- TransformUpdates.processProgram mir_program
     trace config "AddConverter.."
     mir_program <- AddConverter.processProgram config mir_program
-    s <- MP.dump mir_program
-    writeTextFile (getOutputFileName config (MIR 1)) s
+    if config.dump
+    then do
+        s <- MP.dump mir_program
+        writeTextFile (getOutputFileName config (MIR 1)) s
+    else ()
     trace config "Initialization.."
     (context, mir_program) <- Initialization.initializeOwnership config mir_program data_groups
-    s <- MP.dump mir_program
-    writeTextFile (getOutputFileName config (MIR 2)) s
+    if config.dump
+    then do
+        s <- MP.dump mir_program
+        writeTextFile (getOutputFileName config (MIR 2)) s
+    else ()
     trace config "Inference.."
     (inference_info_store, context) <- Inference.processProgram config mir_program context function_groups
     trace config "Instantiation.."
     lir_program <- Instantiation.processProgram config mir_program inference_info_store context
-    s <- LP.dump lir_program
-    writeTextFile (getOutputFileName config (LIR 0)) s
+    if config.dump
+    then do
+        s <- LP.dump lir_program
+        writeTextFile (getOutputFileName config (LIR 0)) s
+    else ()
     lir_program

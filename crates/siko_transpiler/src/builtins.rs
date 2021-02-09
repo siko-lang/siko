@@ -415,7 +415,7 @@ fn generate_map_builtins(
                 indent, map_iter_name
             )?;
             indent.inc();
-            write!(output_file, "{}value: (&arg0.value).iter().map(|(k,v)|{{ {} {{ _siko_field_0: (**k).clone(), _siko_field_1: (**v).clone() }} }}).collect(),\n", indent, iter_arg)?;
+            write!(output_file, "{}value: crate::UnpackRC::unpack(arg0.value).into_iter().map(|(k,v)|{{ {} {{ _siko_field_0: crate::UnpackRC::unpack(k), _siko_field_1: crate::UnpackRC::unpack(v) }} }}).collect(),\n", indent, iter_arg)?;
             write!(output_file, "{}index: 0,\n", indent)?;
             indent.dec();
             write!(output_file, "{}}}),\n", indent)?;
@@ -665,6 +665,27 @@ fn generate_list_builtins(
         "atIndex" => {
             write!(output_file, "{}let index = arg1.value as usize;\n", indent)?;
             write!(output_file, "{}(*arg0.value[index]).clone()\n", indent)?;
+        }
+        "split" => {
+            let list_type = ir_type_to_rust_type(&arg_type_types[0], program);
+            write!(output_file, "{}let mut v1 = (*arg0.value).clone();\n", indent)?;
+            write!(output_file, "{}let index = arg1.value as usize;\n", indent)?;
+            write!(output_file, "{}let v2 :Vec<_>= v1.split_off(index);\n", indent)?;
+            write!(
+                output_file,
+                "{}let v1 = {} {{ value : std::rc::Rc::new(v1) }};\n",
+                indent, list_type
+            )?;
+            write!(
+                output_file,
+                "{}let v2 = {} {{ value : std::rc::Rc::new(v2) }};\n",
+                indent, list_type
+            )?;
+            write!(
+                output_file,
+                "{} {} {{ _siko_field_0 : v1, _siko_field_1: v2 }}\n",
+                indent, result_ty_str
+            )?;
         }
         "tail" => {
             let list_type = ir_type_to_rust_type(&arg_type_types[0], program);
