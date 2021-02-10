@@ -112,6 +112,7 @@ fn calculate_modifier_variables(groups: &Vec<DependencyGroup<TypeDefId>>, progra
     }
 }
 
+#[allow(unused)]
 fn get_indirection_count(
     typedef_id: TypeDefId,
     program: &Program,

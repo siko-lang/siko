@@ -243,7 +243,7 @@ fn generate_string_builtins(
         "split" => {
             write!(
                 output_file,
-                "{}let value: Vec<_> = arg0.value.split(&*arg1.value).map(|s| std::rc::Rc::new({} {{ value : std::rc::Rc::new(s.to_string()) }} )).collect();\n",
+                "{}let value: Vec<_> = arg0.value.split(&*arg1.value).map(|s| std::rc::Rc::new({} {{ value : std::rc::Rc::new(s.to_string()) }})).collect();\n",
                 indent, arg_types[0]
             )?;
             write!(
@@ -485,6 +485,208 @@ fn generate_map_builtins(
     Ok(())
 }
 
+fn generate_map2_builtins(
+    _function: &Function,
+    output_file: &mut dyn Write,
+    program: &Program,
+    indent: &mut Indent,
+    original_name: &str,
+    result_ty: &Type,
+    result_ty_str: &str,
+    arg_types: Vec<String>,
+) -> Result<()> {
+    indent.inc();
+    match original_name {
+        "empty" => {
+            write!(output_file, "{}map2_empty!({})", indent, result_ty_str)?;
+        }
+        "insert" => {
+            let result_id = result_ty.get_typedef_id();
+            let tuple_record = program.typedefs.get(&result_id).get_record();
+            let option_ty = ir_type_to_rust_type(&tuple_record.fields[1].ty, program);
+            let arg0_type: &String = &arg_types[0];
+            write!(
+                output_file,
+                "{}map2_insert!(arg0, arg1, arg2, {}, {}, {})",
+                indent, option_ty, result_ty_str, arg0_type
+            )?;
+        }
+        "remove" => {
+            let result_id = result_ty.get_typedef_id();
+            let tuple_record = program.typedefs.get(&result_id).get_record();
+            let option_ty = ir_type_to_rust_type(&tuple_record.fields[1].ty, program);
+            let arg0_type: &String = &arg_types[0];
+            write!(
+                output_file,
+                "{}map2_remove!(arg0, arg1, {}, {}, {})",
+                indent, option_ty, result_ty_str, arg0_type
+            )?;
+        }
+        "get" => {
+            write!(
+                output_file,
+                "{}map2_get!(arg0, arg1, {})",
+                indent, result_ty_str
+            )?;
+        }
+        "getSize" => {
+            indent.inc();
+            write!(
+                output_file,
+                "{}{} {{ value : arg0.value.len() as i64 }}\n",
+                indent, result_ty_str
+            )?;
+            indent.dec();
+        }
+        "iter" => {
+            let map_type = &arg_types[0];
+
+            let iter_id = result_ty.get_typedef_id();
+            let iter_record = program.typedefs.get(&iter_id).get_record();
+            let iter_arg = if let RecordKind::External(_, args) = &iter_record.kind {
+                ir_type_to_rust_type(&args[0], program)
+            } else {
+                unreachable!();
+            };
+
+            let base_map_type: Vec<_> = map_type.split("::").collect();
+            let map_iter_name = format!("{}_Iter", base_map_type[2]);
+            let iter_trait_name = result_ty_str.replace(
+                "crate::source::Iterator::",
+                "crate::source::Iterator::Trait_",
+            );
+            write!(output_file, "{}#[derive(Clone)]\n", indent)?;
+            write!(output_file, "{}pub struct {} {{\n", indent, map_iter_name)?;
+            indent.inc();
+            write!(output_file, "{}pub value: Vec<{}>,\n", indent, iter_arg)?;
+            write!(output_file, "{}pub index : usize,\n", indent)?;
+            indent.dec();
+            write!(output_file, "{}}}\n", indent)?;
+
+            write!(
+                output_file,
+                "{}impl {} for {} {{\n",
+                indent, iter_trait_name, map_iter_name
+            )?;
+            indent.inc();
+            write!(
+                output_file,
+                "{}fn next(&mut self) -> Option<{}> {{\n",
+                indent, iter_arg
+            )?;
+            indent.inc();
+            write!(
+                output_file,
+                "{}if self.index >= self.value.len() {{\n",
+                indent
+            )?;
+            indent.inc();
+            write!(output_file, "{}None\n", indent)?;
+            indent.dec();
+            write!(output_file, "{}}} else {{\n", indent)?;
+            indent.inc();
+            write!(
+                output_file,
+                "{}let v = self.value[self.index].clone();\n",
+                indent
+            )?;
+            write!(output_file, "{}self.index += 1;\n", indent)?;
+            write!(output_file, "{}Some(v)\n", indent)?;
+            indent.dec();
+            write!(output_file, "{}}}\n", indent)?;
+            indent.dec();
+            write!(output_file, "{}}}\n", indent)?;
+
+            write!(
+                output_file,
+                "{}fn box_clone(&self) -> Box<dyn {}> {{\n",
+                indent, iter_trait_name
+            )?;
+            indent.inc();
+            write!(output_file, "{}Box::new(self.clone())\n", indent)?;
+            indent.dec();
+            write!(output_file, "{}}}\n", indent)?;
+            indent.dec();
+            write!(output_file, "{}}}\n", indent)?;
+
+            write!(output_file, "{}{} {{\n", indent, result_ty_str)?;
+            indent.inc();
+            write!(
+                output_file,
+                "{}value: Box::new({} {{\n",
+                indent, map_iter_name
+            )?;
+            indent.inc();
+            write!(output_file, "{}value: arg0.value.into_iter().map(|(k,v)|{{ {} {{ _siko_field_0: k, _siko_field_1: v }} }}).collect(),\n", indent, iter_arg)?;
+            write!(output_file, "{}index: 0,\n", indent)?;
+            indent.dec();
+            write!(output_file, "{}}}),\n", indent)?;
+            indent.dec();
+            write!(output_file, "{}}}\n", indent)?;
+        }
+        "toMap" => {
+            write!(output_file, "{}let mut arg0 = arg0;\n", indent)?;
+            write!(
+                output_file,
+                "{}let mut value = std::collections::BTreeMap::new();\n",
+                indent
+            )?;
+            write!(output_file, "{}loop {{\n", indent)?;
+            indent.inc();
+            write!(
+                output_file,
+                "{}if let Some(v) = arg0.value.next() {{\n",
+                indent
+            )?;
+            indent.inc();
+            write!(
+                output_file,
+                "{}value.insert(v._siko_field_0, v._siko_field_1);\n",
+                indent
+            )?;
+            indent.dec();
+            write!(output_file, "{}}} else {{\n", indent)?;
+            indent.inc();
+            write!(output_file, "{}break;\n", indent)?;
+            indent.dec();
+            write!(output_file, "{}}}\n", indent)?;
+            indent.dec();
+            write!(output_file, "{}}}\n", indent)?;
+            write!(
+                output_file,
+                "{}{} {{ value: value }}",
+                indent, result_ty_str
+            )?;
+        }
+        "show" => {
+            write!(
+                output_file,
+                "{}let subs: Vec<_> = arg0.value.iter().map(|(k, v)| format!(\"{{}}:{{}}\", k, v)).collect();\n",
+                indent
+            )?;
+            write!(
+                output_file,
+                "{}{} {{ value : std::rc::Rc::new(format!(\"{{{{ {{}} }}}}\", subs.join(\", \"))) }}",
+                indent, result_ty_str
+            )?;
+        }
+        "opEq" => {
+            write!(output_file, "{}if arg0.value.eq(&arg1.value) {{\n", indent)?;
+            indent.inc();
+            write!(output_file, "{}{}::True\n", indent, result_ty_str)?;
+            indent.dec();
+            write!(output_file, "{}}} else {{\n", indent)?;
+            indent.inc();
+            write!(output_file, "{}{}::False\n", indent, result_ty_str)?;
+            indent.dec();
+            write!(output_file, "{}}}\n", indent)?;
+        }
+        _ => panic!("Map/{} not implemented", original_name),
+    }
+    indent.dec();
+    Ok(())
+}
+
 fn generate_list_builtins(
     _function: &Function,
     output_file: &mut dyn Write,
@@ -560,7 +762,7 @@ fn generate_list_builtins(
             indent.inc();
             write!(
                 output_file,
-                "{}pub value: std::rc::Rc<Vec<std::rc::Rc<{}>>>,\n",
+                "{}pub value: Vec<std::rc::Rc<{}>>,\n",
                 indent, list_arg_type
             )?;
             write!(output_file, "{}pub index: usize,\n", indent)?;
@@ -579,23 +781,15 @@ fn generate_list_builtins(
                 indent, list_arg_type
             )?;
             indent.inc();
-            write!(
-                output_file,
-                "{}if self.index >= self.value.len() {{\n",
-                indent
-            )?;
+            write!(output_file, "{}if self.value.is_empty() {{\n", indent)?;
             indent.inc();
             write!(output_file, "{}None\n", indent)?;
             indent.dec();
             write!(output_file, "{}}} else {{\n", indent)?;
             indent.inc();
-            write!(
-                output_file,
-                "{}let v = (*self.value[self.index]).clone();\n",
-                indent
-            )?;
+            write!(output_file, "{}let v = self.value.remove(0);\n", indent)?;
             write!(output_file, "{}self.index += 1;\n", indent)?;
-            write!(output_file, "{}Some(v)\n", indent)?;
+            write!(output_file, "{}Some(crate::UnpackRC::unpack(v))\n", indent)?;
             indent.dec();
             write!(output_file, "{}}}\n", indent)?;
             indent.dec();
@@ -621,7 +815,7 @@ fn generate_list_builtins(
                 indent, list_iter_name
             )?;
             indent.inc();
-            write!(output_file, "{}value: arg0.value.clone(),\n", indent)?;
+            write!(output_file, "{}value: crate::UnpackRC::unpack(arg0.value),\n", indent)?;
             write!(output_file, "{}index: 0,\n", indent)?;
             indent.dec();
             write!(output_file, "{}}}),\n", indent)?;
@@ -877,6 +1071,18 @@ pub fn generate_builtin(
         }
         "Map" => {
             return generate_map_builtins(
+                function,
+                output_file,
+                program,
+                indent,
+                original_name,
+                result_ty,
+                result_ty_str,
+                arg_types,
+            );
+        }
+        "Map2" => {
+            return generate_map2_builtins(
                 function,
                 output_file,
                 program,

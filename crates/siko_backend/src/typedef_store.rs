@@ -166,6 +166,7 @@ impl TypeDefStore {
                                         ("String", "String") => ExternalDataKind::String,
                                         ("Char", "Char") => ExternalDataKind::Char,
                                         ("Map", "Map") => ExternalDataKind::Map,
+                                        ("Map2", "Map2") => ExternalDataKind::Map2,
                                         ("List", "List") => ExternalDataKind::List,
                                         ("Iterator", "Iterator") => ExternalDataKind::Iterator,
                                         _ => panic!(

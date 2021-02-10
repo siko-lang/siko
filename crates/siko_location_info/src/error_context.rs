@@ -8,7 +8,7 @@ pub struct ErrorContext {
 }
 
 impl ErrorContext {
-    pub fn report_error(&self, msg: String, location: LocationId) {
+    pub fn report_error(&self, msg: String, _location: LocationId) {
         println!("ERROR: {}", msg); // TODO
     }
 }

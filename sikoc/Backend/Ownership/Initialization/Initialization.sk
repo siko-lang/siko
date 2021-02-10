@@ -15,7 +15,8 @@ import Siko.Trace
 import Map
 
 data Context = { arg_count_map :: Map P.Identity Int,
-                 var_gen :: U.OwnershipVarGenerator }
+                 var_gen :: U.OwnershipVarGenerator,
+                 types :: Map P.Identity T.Type }
 
 getNextOwnershipKind :: Context -> (Context, T.OwnershipKind)
 getNextOwnershipKind context = do
@@ -34,7 +35,7 @@ getArgCount context id = do
 
 initializeOwnership :: Config -> P.Program -> [DependencyGroup P.Identity] -> (Context, P.Program)
 initializeOwnership config program groups = do
-    context <- Context empty U.createOwnershipVarGenerator
+    context <- Context empty U.createOwnershipVarGenerator empty
     trace config "initializeOwnership datatypes"
     (context, program) <- DataTypes.initializeOwnership config context program groups
     trace config "initializeOwnership functions"

@@ -54,7 +54,7 @@ def run(test_name, source_folder, index, total):
     mkdir_safe(target_folder)
     compiled_sikoc = os.path.join("compiled_sikoc","sikoc")
     if os.path.exists(compiled_sikoc):
-        subprocess.call(["./compiled_sikoc.sh", "std2/*.sk", "%s/*.sk" % source_folder, "-o", os.path.join(target_folder, test_name)])
+        subprocess.call(["./compiled_sikoc.sh", "-d ", "std2/*.sk", "%s/*.sk" % source_folder, "-o", os.path.join(target_folder, test_name)])
     else:
         subprocess.call(["./sikoc.sh", "std2/*.sk", "%s/*.sk" % source_folder, "-o", os.path.join(target_folder, test_name)])
     normal_output = os.path.join(target_folder, "normal")

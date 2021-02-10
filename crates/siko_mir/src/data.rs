@@ -15,6 +15,7 @@ pub enum ExternalDataKind {
     Char,
     List,
     Map,
+    Map2,
     Iterator,
 }
 

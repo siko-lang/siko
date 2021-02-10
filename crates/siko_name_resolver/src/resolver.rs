@@ -1012,7 +1012,7 @@ impl Resolver {
                 if let Some(class_member_id) = ir_class.members.get(member_name) {
                     let ir_function_id = ir_program.functions.get_id();
                     let ir_class_member = ir_program.class_members.get(class_member_id).clone();
-                    let member_function_type_signature_id = if let Some(function_type) =
+                    let member_function_type_signature_id = if let Some(_function_type) =
                         instance.member_function_types.get(member_name)
                     {
                         // TODO: the instance impl has its own type signature, compare it with the class member

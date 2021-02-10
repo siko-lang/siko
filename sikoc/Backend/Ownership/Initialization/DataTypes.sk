@@ -71,7 +71,6 @@ addOwnershipVarsToDataType context is_adt type = do
 
 addOwnershipVarsToRecord :: GroupContext -> Record -> (GroupContext, Record)
 addOwnershipVarsToRecord context record = do
-    println "addOwnershipVarsToRecord {}/{}/{}" % (record.id, getLength record.fields, getLength context.all_vars)
     record <- record { ownership_vars = context.all_vars }
     (context, fields) <- List.mapS context record.fields (\context, field -> do
         (context, type) <- addOwnershipVarsToDataType context False field.type
@@ -89,7 +88,6 @@ addOwnershipVarsToRecord context record = do
 
 addOwnershipVarsToAdt :: GroupContext -> AlgebraicDataType -> (GroupContext, AlgebraicDataType)
 addOwnershipVarsToAdt context adt = do
-    println "addOwnershipVarsToAdt {}/{}/{}" % (adt.id, getLength adt.variants, getLength context.all_vars)
     adt <- adt { ownership_vars = context.all_vars }
     (context, variants) <- List.mapS context adt.variants (\context, variant -> do
         (contains, type) <- addOwnershipVarsToDataType context True variant.type
@@ -147,14 +145,12 @@ addOwnershipVarsToGroup config context group program = do
     (context, arg_count) <- group |> List.iter |> Iterator.fold (\(context, arg_count), id -> do
         c <- calculateArgCount program context group id
         (context, arg_count + c)) (context, 0)
-    trace config "addOwnershipVarsToGroup 1"
     context <- group |> List.iter |> Iterator.fold (\context, id -> do
         (arg_count_map, _) <- insert context.arg_count_map id arg_count
         context <- context { arg_count_map = arg_count_map }
         context) context
     (context, all_vars) <- getNextOwnershipKinds context arg_count
     group_context <- GroupContext context group all_vars all_vars []
-    trace config "addOwnershipVarsToGroup 2"
     (records, adts) <- List.fold ([], []) group (\(records, adts), id -> do
         case get program.records id of
             Some r -> (records + [r], adts)
@@ -162,21 +158,15 @@ addOwnershipVarsToGroup config context group program = do
                 Some a -> (records, adts + [a])
                 None -> panic "Id is not a record nor an adt {}" % id)
     (group_context, records) <- List.mapS group_context records addOwnershipVarsToRecord
-    trace config "addOwnershipVarsToGroup 3"
     (group_context, adts) <- List.mapS group_context adts addOwnershipVarsToAdt
-    trace config "addOwnershipVarsToGroup 4"
     records <- List.map records (addBoxedVarsToRecord group_context)
-    trace config "addOwnershipVarsToGroup 5"
     adts <- List.map adts (addBoxedVarsToAdt group_context)
-    trace config "addOwnershipVarsToGroup 6"
     records <- List.fold program.records records (\records, record -> do
         (records, _) <- insert records record.id record
         records)
-    trace config "addOwnershipVarsToGroup 7"
     adts <- List.fold program.adts adts (\adts, adt -> do
         (adts, _) <- insert adts adt.id adt
         adts)
-    trace config "addOwnershipVarsToGroup 8"
     (context, program { adts = adts, records = records })
 
 initializeOwnership :: Config -> Context -> P.Program -> [DependencyGroup P.Identity] -> (Context, P.Program)

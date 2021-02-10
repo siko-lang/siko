@@ -89,6 +89,20 @@ pub fn write_typedef(
                         indent.dec();
                         write!(output_file, "{}}}\n", indent)?;
                     }
+                    ExternalDataKind::Map2 => {
+                        write!(output_file, "{}#[derive(Clone)]\n", indent)?;
+                        write!(output_file, "{}pub struct {} {{\n", indent, record.name)?;
+                        indent.inc();
+                        let key_ty = ir_type_to_rust_type(&args[0], program);
+                        let value_ty = ir_type_to_rust_type(&args[1], program);
+                        write!(
+                            output_file,
+                            "{}pub value: std::collections::BTreeMap<{}, {}>,\n",
+                            indent, key_ty, value_ty
+                        )?;
+                        indent.dec();
+                        write!(output_file, "{}}}\n", indent)?;
+                    }
                     ExternalDataKind::Iterator => {
                         let elem_ty = ir_type_to_rust_type(&args[0], program);
                         write!(

@@ -1,0 +1,65 @@
+module Map2 where
+
+data Map2 k v = extern
+
+instance (Show k, Show v) => Show Map2 k v where
+    show a = extern
+
+instance (PartialEq k, PartialEq v) => PartialEq Map2 k v where
+    opEq a b = extern
+
+instance (Eq k, Eq v) => Eq Map2 k v
+
+empty k v :: (Ord k) => Map2 k v
+empty = extern
+
+insert k v :: (Ord k) => Map2 k v -> k -> v -> (Map2 k v, Option v)
+insert m k v = extern
+
+get k v :: (Ord k) => Map2 k v -> k -> Option v
+get m k = extern
+
+remove k v :: (Ord k) => Map2 k v -> k -> (Map2 k v, Option v)
+remove m k = extern
+
+getKeys k v :: Map2 k v -> [k]
+getKeys m = m |> Map2.iter |> Iterator.fold (\keys, (k, _) -> keys + [k]) []
+
+alter k v :: (Ord k) => (Option v -> Option v) -> k -> Map2 k v -> (Map2 k v, Option v)
+alter f k m = // FIXME: make this builtin and much faster
+    case f (get m k) of
+        Some v -> insert m k v
+        None -> remove m k
+
+alterS si so k v :: (Ord k) => (si -> Option v -> (so, Option v)) -> si -> k -> Map2 k v -> (so, Map2 k v, Option v)
+alterS f s k m = do
+    (s, v) <- f s (get m k)
+    case v of
+        Some v -> do
+            (m, v) <- insert m k v
+            (s, m, v)
+        None -> do
+            (m, v) <- remove m k
+            (s, m, v)
+
+iter k v :: Map2 k v -> Iterator (k, v)
+iter m = extern
+
+toMap2 k v :: Iterator (k, v) -> Map2 k v
+toMap2 i = extern
+
+getSize k v :: Map2 k v -> Int
+getSize m = extern
+
+fold s k v :: s -> Map2 k v -> (s -> (k, v) -> s) -> s
+fold init m f = m |> Map2.iter |> Iterator.fold f init
+
+map k1 v1 k2 v2 :: (Ord k1, Ord k2) => Map2 k1 v1 -> ((k1, v1) -> (k2, v2)) -> Map2 k2 v2
+map input f = input |> Map2.iter |> Iterator.map f |> toMap2
+
+mapS s k1 v1 k2 v2 :: (Ord k1, Ord k2) => s -> Map2 k1 v1 -> (s -> (k1, v1) -> (s, k2, v2)) -> (s, Map2 k2 v2)
+mapS s m f = do
+    m |> Map2.iter |> Iterator.fold (\(s, m2), (k, v) -> do
+        (s, k, v) <- f s (k, v)
+        (m2, _) <-insert m2 k v
+        (s, m2)) (s, Map2.empty)

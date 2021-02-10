@@ -1,11 +1,6 @@
-use crate::error::LexerError;
-use crate::error::LocationInfo;
 use crate::token::Token;
 use crate::token::TokenInfo;
 use crate::token::TokenKind;
-use siko_constants::BuiltinOperator;
-use siko_location_info::filepath::FilePath;
-use siko_location_info::location::Location;
 use siko_location_info::span::Span;
 
 struct TokenIterator {
@@ -45,7 +40,7 @@ impl TokenIterator {
 
 fn process_item(iterator: &mut TokenIterator, block_start: Span) -> bool {
     let mut paren_level = 0;
-    let mut end_of_block = false;
+    let end_of_block;
     let mut first = true;
     loop {
         if iterator.is_done() {
