@@ -10,26 +10,28 @@ import Siko.Backend.Traversal
 import Siko.Backend.Ownership.Unification as U
 import Siko.Config
 import Siko.Trace
+import List2 as List2
+import List2 (List2)
 import Map
 
 data GroupContext = { context :: Context,
                       group :: [P.Identity],
-                      all_vars :: [T.OwnershipKind],
-                      available_vars :: [T.OwnershipKind],
-                      boxed_vars :: [T.OwnershipKind] }
+                      all_vars :: List2 T.OwnershipKind,
+                      available_vars :: List2 T.OwnershipKind,
+                      boxed_vars :: List2 T.OwnershipKind }
 
 getSingle :: GroupContext -> (GroupContext, T.OwnershipKind)
 getSingle context = do
-    (var, available_vars) <- List.split context.available_vars 1
-    var <- atIndex var 0
+    (var, available_vars) <- List2.split context.available_vars 1
+    var <- List2.atIndex var 0
     (context { available_vars = available_vars }, var)
 
-getMulti :: GroupContext -> Int -> (GroupContext, [T.OwnershipKind])
+getMulti :: GroupContext -> Int -> (GroupContext, List2 T.OwnershipKind)
 getMulti context count = do
-    (args, available_vars) <- List.split context.available_vars count
+    (args, available_vars) <- List2.split context.available_vars count
     (context { available_vars = available_vars }, args)
 
-updateType :: T.Type -> Option T.OwnershipKind -> [T.OwnershipKind] -> T.Type
+updateType :: T.Type -> Option T.OwnershipKind -> List2 T.OwnershipKind -> T.Type
 updateType type var args = case var of
     Some var -> case type of
                 T.Record id _ -> T.Var var (T.Record id args)
@@ -51,7 +53,7 @@ addOwnershipVarsToDataType context is_adt type = do
                     (context, type)
                 else do
                     (context, var) <- getSingle context
-                    boxed_vars <- context.boxed_vars + [var]
+                    boxed_vars <- List2.push context.boxed_vars var
                     context <- context { boxed_vars = boxed_vars }
                     type <- updateType type (Some var) context.all_vars
                     (context, type)
@@ -141,7 +143,6 @@ calculateArgCount program context group id = do
 
 addOwnershipVarsToGroup :: Config -> Context -> [P.Identity] -> P.Program -> (Context, P.Program)
 addOwnershipVarsToGroup config context group program = do
-    trace config "addOwnershipVarsToGroup group {}" % group
     (context, arg_count) <- group |> List.iter |> Iterator.fold (\(context, arg_count), id -> do
         c <- calculateArgCount program context group id
         (context, arg_count + c)) (context, 0)
@@ -150,7 +151,7 @@ addOwnershipVarsToGroup config context group program = do
         context <- context { arg_count_map = arg_count_map }
         context) context
     (context, all_vars) <- getNextOwnershipKinds context arg_count
-    group_context <- GroupContext context group all_vars all_vars []
+    group_context <- GroupContext context group all_vars all_vars List2.empty
     (records, adts) <- List.fold ([], []) group (\(records, adts), id -> do
         case get program.records id of
             Some r -> (records + [r], adts)

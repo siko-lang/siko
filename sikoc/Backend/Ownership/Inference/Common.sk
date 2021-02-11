@@ -8,6 +8,8 @@ import Siko.MIR.Function as F
 import Siko.Backend.Ownership.Unification as U
 import Siko.Backend.Ownership.Initialization as Init
 import Siko.Util.Counter
+import List2 as List2
+import List2 (List2)
 import Siko.Config
 
 import Map
@@ -38,7 +40,7 @@ data MovedVars = { vars :: Set T.OwnershipVar }
 data Group = { kind :: T.OwnershipKind }
 
 data Context = { global_context :: GlobalContext,
-                 var_vars :: Map E.Var [T.OwnershipVar],
+                 var_vars :: Map E.Var (List2 T.OwnershipVar),
                  constraints :: [Constraint],
                  equals :: [Equal],
                  not_moves :: Set E.ExprId,
@@ -97,12 +99,12 @@ addEqual context v1 v2 = do
     equals <- context.equals + [Equal v1 v2]
     context { equals = equals }
 
-addVarVars :: Context -> E.Var -> [T.OwnershipVar] -> Context
+addVarVars :: Context -> E.Var -> List2 T.OwnershipVar -> Context
 addVarVars context var vars = do
     (var_vars, _) <- Map.insert context.var_vars var vars
     context { var_vars = var_vars }
 
-getVarVars :: Context -> E.Var -> [T.OwnershipVar]
+getVarVars :: Context -> E.Var -> List2 T.OwnershipVar
 getVarVars context var = case get context.var_vars var of
     Some vars -> vars
     None -> panic "Var {} not found in var_vars" % var
@@ -211,13 +213,13 @@ getNextOwnershipVar context = do
     init_context <- init_context { var_gen = var_gen }
     (context { init_context = init_context }, v)
 
-collectOwnershipKindsFromFunctionType :: F.FunctionType -> [T.OwnershipKind]
+collectOwnershipKindsFromFunctionType :: F.FunctionType -> List2 T.OwnershipKind
 collectOwnershipKindsFromFunctionType function_type = do
     ownership_kinds <- function_type.args |> List.iter |> Iterator.fold (\ownership_kinds, arg_type -> do
         vs <- T.collectOwnershipKinds arg_type
-        ownership_kinds + vs) []
+        ownership_kinds + vs) List2.empty
     ownership_kinds <- ownership_kinds + T.collectOwnershipKinds function_type.result
-    ownership_kinds <- ownership_kinds |> sort |> dedup
+    ownership_kinds <- ownership_kinds |> List2.sort |> List2.dedup
     ownership_kinds
 
 kindToVar :: T.OwnershipKind -> T.OwnershipVar
@@ -255,7 +257,7 @@ addMovedVar moved_vars var = do
 normalizeFunctionInfo :: FunctionInferenceInfo -> FunctionInferenceInfo
 normalizeFunctionInfo info = do
     ownership_kinds <- collectOwnershipKindsFromFunctionType info.function_type
-    (_, kinds) <- List.mapS 0 ownership_kinds (\index, kind -> case kind of
+    (_, kinds) <- List2.mapS 0 ownership_kinds (\index, kind -> case kind of
         T.VarKind _ -> (index + 1, T.VarKind (T.OwnershipVar index))
         _ -> (index, kind))
     sub <- U.batch ownership_kinds kinds
@@ -269,7 +271,7 @@ normalizeFunctionInfo info = do
 cloneFunctionInfo :: Context -> FunctionInferenceInfo -> (Context, FunctionInferenceInfo)
 cloneFunctionInfo context info = do
     ownership_kinds <- collectOwnershipKindsFromFunctionType info.function_type
-    (context, kinds) <- List.mapS context ownership_kinds (\context, kind -> case kind of
+    (context, kinds) <- List2.mapS context ownership_kinds (\context, kind -> case kind of
         T.VarKind _ -> getNextOwnershipKind context
         _ -> (context, kind))
     sub <- U.batch ownership_kinds kinds

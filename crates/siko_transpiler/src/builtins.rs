@@ -815,7 +815,11 @@ fn generate_list_builtins(
                 indent, list_iter_name
             )?;
             indent.inc();
-            write!(output_file, "{}value: crate::UnpackRC::unpack(arg0.value),\n", indent)?;
+            write!(
+                output_file,
+                "{}value: crate::UnpackRC::unpack(arg0.value),\n",
+                indent
+            )?;
             write!(output_file, "{}index: 0,\n", indent)?;
             indent.dec();
             write!(output_file, "{}}}),\n", indent)?;
@@ -856,15 +860,50 @@ fn generate_list_builtins(
             indent.dec();
             write!(output_file, "{}}}\n", indent)?;
         }
+        "contains" => {
+            write!(
+                output_file,
+                "{}if arg0.value.contains(&std::rc::Rc::new(arg1)) {{\n",
+                indent
+            )?;
+            indent.inc();
+            write!(output_file, "{}{}::True\n", indent, result_ty_str)?;
+            indent.dec();
+            write!(output_file, "{}}} else {{\n", indent)?;
+            indent.inc();
+            write!(output_file, "{}{}::False\n", indent, result_ty_str)?;
+            indent.dec();
+            write!(output_file, "{}}}\n", indent)?;
+        }
+        "containsAtIndex" => {
+            write!(
+                output_file,
+                "for (index, item) in arg0.value.iter().enumerate() {{
+                if **item == arg1 {{
+                    return {}::Some(crate::source::Int::Int {{ value : index as i64}});
+                }}
+            }}
+            return {}::None;",
+                result_ty_str, result_ty_str
+            )?;
+        }
         "atIndex" => {
             write!(output_file, "{}let index = arg1.value as usize;\n", indent)?;
             write!(output_file, "{}(*arg0.value[index]).clone()\n", indent)?;
         }
         "split" => {
             let list_type = ir_type_to_rust_type(&arg_type_types[0], program);
-            write!(output_file, "{}let mut v1 = (*arg0.value).clone();\n", indent)?;
+            write!(
+                output_file,
+                "{}let mut v1 = (*arg0.value).clone();\n",
+                indent
+            )?;
             write!(output_file, "{}let index = arg1.value as usize;\n", indent)?;
-            write!(output_file, "{}let v2 :Vec<_>= v1.split_off(index);\n", indent)?;
+            write!(
+                output_file,
+                "{}let v2 :Vec<_>= v1.split_off(index);\n",
+                indent
+            )?;
             write!(
                 output_file,
                 "{}let v1 = {} {{ value : std::rc::Rc::new(v1) }};\n",
@@ -958,6 +997,377 @@ fn generate_list_builtins(
             write!(
                 output_file,
                 "{} {} {{ value : std::rc::Rc::new(r) }}\n",
+                indent, result_ty_str
+            )?;
+        }
+        "getLength" => {
+            indent.inc();
+            write!(
+                output_file,
+                "{}{} {{ value : arg0.value.len() as i64 }}\n",
+                indent, result_ty_str
+            )?;
+            indent.dec();
+        }
+        _ => panic!("List/{} not implemented", original_name),
+    }
+    indent.dec();
+    Ok(())
+}
+
+fn generate_list2_builtins(
+    _function: &Function,
+    output_file: &mut dyn Write,
+    program: &Program,
+    indent: &mut Indent,
+    original_name: &str,
+    result_ty: &Type,
+    result_ty_str: &str,
+    arg_type_types: Vec<Type>,
+    arg_types: Vec<String>,
+) -> Result<()> {
+    indent.inc();
+    match original_name {
+        "show" => {
+            write!(
+                output_file,
+                "{}let subs: Vec<_> = arg0.value.iter().map(|item| format!(\"{{}}\", item)).collect();\n",
+                indent
+            )?;
+            write!(
+                output_file,
+                "{}{} {{ value : std::rc::Rc::new(format!(\"[{{}}]\", subs.join(\", \"))) }}",
+                indent, result_ty_str
+            )?;
+        }
+        "toList" => {
+            write!(output_file, "{}let mut arg0 = arg0;\n", indent)?;
+            write!(output_file, "{}let mut value = Vec::new();\n", indent)?;
+            write!(output_file, "{}loop {{\n", indent)?;
+            indent.inc();
+            write!(
+                output_file,
+                "{}if let Some(v) = arg0.value.next() {{\n",
+                indent
+            )?;
+            indent.inc();
+            write!(output_file, "{}value.push(v);\n", indent)?;
+            indent.dec();
+            write!(output_file, "{}}} else {{\n", indent)?;
+            indent.inc();
+            write!(output_file, "{}break;\n", indent)?;
+            indent.dec();
+            write!(output_file, "{}}}\n", indent)?;
+            indent.dec();
+            write!(output_file, "{}}}\n", indent)?;
+            write!(
+                output_file,
+                "{}{} {{ value: value }}",
+                indent, result_ty_str
+            )?;
+        }
+        "iter" => {
+            let list_type = &arg_types[0];
+
+            let id = arg_type_types[0].get_typedef_id();
+            let list_record = program.typedefs.get(&id).get_record();
+            let list_arg_type = if let RecordKind::External(_, args) = &list_record.kind {
+                let value_ty = ir_type_to_rust_type(&args[0], program);
+                value_ty
+            } else {
+                unreachable!()
+            };
+
+            let base_list_type: Vec<_> = list_type.split("::").collect();
+            let list_iter_name = format!("{}_Iter", base_list_type[2]);
+            let iter_trait_name = result_ty_str.replace(
+                "crate::source::Iterator::",
+                "crate::source::Iterator::Trait_",
+            );
+
+            write!(output_file, "{}#[derive(Clone)]\n", indent)?;
+            write!(output_file, "{}pub struct {} {{\n", indent, list_iter_name)?;
+            indent.inc();
+            write!(
+                output_file,
+                "{}pub value: Vec<{}>,\n",
+                indent, list_arg_type
+            )?;
+            write!(output_file, "{}pub index: usize,\n", indent)?;
+            indent.dec();
+            write!(output_file, "{}}}\n", indent)?;
+
+            write!(
+                output_file,
+                "{}impl {} for {} {{\n",
+                indent, iter_trait_name, list_iter_name
+            )?;
+            indent.inc();
+            write!(
+                output_file,
+                "{}fn next(&mut self) -> Option<{}> {{\n",
+                indent, list_arg_type
+            )?;
+            indent.inc();
+            write!(output_file, "{}if self.value.is_empty() {{\n", indent)?;
+            indent.inc();
+            write!(output_file, "{}None\n", indent)?;
+            indent.dec();
+            write!(output_file, "{}}} else {{\n", indent)?;
+            indent.inc();
+            write!(output_file, "{}let v = self.value.remove(0);\n", indent)?;
+            write!(output_file, "{}self.index += 1;\n", indent)?;
+            write!(output_file, "{}Some(v)\n", indent)?;
+            indent.dec();
+            write!(output_file, "{}}}\n", indent)?;
+            indent.dec();
+            write!(output_file, "{}}}\n", indent)?;
+
+            write!(
+                output_file,
+                "{}fn box_clone(&self) -> Box<dyn {}> {{\n",
+                indent, iter_trait_name
+            )?;
+            indent.inc();
+            write!(output_file, "{}Box::new(self.clone())\n", indent)?;
+            indent.dec();
+            write!(output_file, "{}}}\n", indent)?;
+            indent.dec();
+            write!(output_file, "{}}}\n", indent)?;
+
+            write!(output_file, "{}{} {{\n", indent, result_ty_str)?;
+            indent.inc();
+            write!(
+                output_file,
+                "{}value: Box::new({} {{\n",
+                indent, list_iter_name
+            )?;
+            indent.inc();
+            write!(output_file, "{}value: arg0.value,\n", indent)?;
+            write!(output_file, "{}index: 0,\n", indent)?;
+            indent.dec();
+            write!(output_file, "{}}}),\n", indent)?;
+            indent.dec();
+            write!(output_file, "{}}}\n", indent)?;
+        }
+        "opEq" => {
+            write!(output_file, "{}if arg0.value.eq(&arg1.value) {{\n", indent)?;
+            indent.inc();
+            write!(output_file, "{}{}::True\n", indent, result_ty_str)?;
+            indent.dec();
+            write!(output_file, "{}}} else {{\n", indent)?;
+            indent.inc();
+            write!(output_file, "{}{}::False\n", indent, result_ty_str)?;
+            indent.dec();
+            write!(output_file, "{}}}\n", indent)?;
+        }
+        "cmp" => {
+            return generate_cmp_builtin_body(output_file, program, indent, result_ty_str);
+        }
+        "partialCmp" => {
+            return generate_partial_cmp_builtin_body(
+                output_file,
+                program,
+                indent,
+                result_ty,
+                result_ty_str,
+            );
+        }
+        "isEmpty" => {
+            write!(output_file, "{}if arg0.value.is_empty() {{\n", indent)?;
+            indent.inc();
+            write!(output_file, "{}{}::True\n", indent, result_ty_str)?;
+            indent.dec();
+            write!(output_file, "{}}} else {{\n", indent)?;
+            indent.inc();
+            write!(output_file, "{}{}::False\n", indent, result_ty_str)?;
+            indent.dec();
+            write!(output_file, "{}}}\n", indent)?;
+        }
+        "contains" => {
+            write!(output_file, "{}if arg0.value.contains(&arg1) {{\n", indent)?;
+            indent.inc();
+            write!(output_file, "{}{}::True\n", indent, result_ty_str)?;
+            indent.dec();
+            write!(output_file, "{}}} else {{\n", indent)?;
+            indent.inc();
+            write!(output_file, "{}{}::False\n", indent, result_ty_str)?;
+            indent.dec();
+            write!(output_file, "{}}}\n", indent)?;
+        }
+        "containsAtIndex" => {
+            write!(
+                output_file,
+                "for (index, item) in arg0.value.iter().enumerate() {{
+                if *item == arg1 {{
+                    return {}::Some(crate::source::Int::Int {{ value : index as i64}});
+                }}
+            }}
+            return {}::None;",
+                result_ty_str, result_ty_str
+            )?;
+        }
+        "repeat" => {
+            write!(output_file, "let v = vec![arg0; arg1.value as usize];")?;
+            write!(output_file, "{}{} {{ value : v }}\n", indent, result_ty_str)?;
+        }
+        "repeatS" => {
+            let id = result_ty.get_typedef_id();
+            let tuple_record = program.typedefs.get(&id).get_record();
+            write!(output_file, "let mut v = Vec::new();")?;
+            write!(output_file, "let mut arg0 = arg0;")?;
+            write!(output_file, "for _ in 0..arg2.value {{")?;
+            write!(output_file, "let t = arg1.clone().call(arg0);")?;
+            write!(output_file, "arg0 = t._siko_field_0;")?;
+            write!(output_file, "v.push(t._siko_field_1);")?;
+            write!(output_file, "}}")?;
+            write!(
+                output_file,
+                "{}{} {{ _siko_field_0: arg0, _siko_field_1: {} {{ value : v }} }}\n",
+                indent,
+                result_ty_str,
+                ir_type_to_rust_type(&tuple_record.fields[1].ty, program)
+            )?;
+        }
+        "zipS" => {
+            write!(output_file, "let mut state = arg0;")?;
+            write!(output_file, "let mut l1 = arg1.value;")?;
+            write!(output_file, "let mut l2 = arg2.value;")?;
+            write!(output_file, "let mut f = arg3;")?;
+            write!(output_file, "let mut index = 0;")?;
+            write!(output_file, "loop {{")?;
+            write!(output_file, "if l1.len() <= index {{ return state; }}")?;
+            write!(output_file, "let c1 = l1[index].clone();")?;
+            write!(output_file, "let c2 = l2[index].clone();")?;
+            write!(output_file, "let mut f1 = f.clone().call(state);")?;
+            write!(output_file, "let mut f2 = f1.call(c1);")?;
+            write!(output_file, "state = f2.call(c2);")?;
+            write!(output_file, "index +=1;")?;
+            write!(output_file, "}}")?;
+        }
+        "zipSE" => {
+            write!(output_file, "let mut state = arg0;")?;
+            write!(output_file, "let mut l1 = arg1.value;")?;
+            write!(output_file, "let mut l2 = arg2.value;")?;
+            write!(output_file, "let mut f = arg3;")?;
+            write!(
+                output_file,
+                "let mut index = crate::source::Int::Int {{ value : 0 }};"
+            )?;
+            write!(output_file, "loop {{")?;
+            write!(
+                output_file,
+                "if l1.len() <= (index.value as usize) {{ return state; }}"
+            )?;
+            write!(output_file, "let c1 = l1[index.value as usize].clone();")?;
+            write!(output_file, "let c2 = l2[index.value as usize].clone();")?;
+            write!(output_file, "let mut f1 = f.clone().call(state);")?;
+            write!(output_file, "let mut f2 = f1.call(index.clone());;")?;
+            write!(output_file, "let mut f3 = f2.call(c1);")?;
+            write!(output_file, "state = f3.call(c2);")?;
+            write!(output_file, "index.value += 1;")?;
+            write!(output_file, "}}")?;
+        }
+        "atIndex" => {
+            write!(output_file, "{}let index = arg1.value as usize;\n", indent)?;
+            write!(output_file, "{}arg0.value[index].clone()\n", indent)?;
+        }
+        "split" => {
+            let list_type = ir_type_to_rust_type(&arg_type_types[0], program);
+            write!(output_file, "{}let mut v1 = arg0.value;\n", indent)?;
+            write!(output_file, "{}let index = arg1.value as usize;\n", indent)?;
+            write!(
+                output_file,
+                "{}let v2 :Vec<_>= v1.split_off(index);\n",
+                indent
+            )?;
+            write!(
+                output_file,
+                "{}let v1 = {} {{ value : v1 }};\n",
+                indent, list_type
+            )?;
+            write!(
+                output_file,
+                "{}let v2 = {} {{ value : v2 }};\n",
+                indent, list_type
+            )?;
+            write!(
+                output_file,
+                "{} {} {{ _siko_field_0 : v1, _siko_field_1: v2 }}\n",
+                indent, result_ty_str
+            )?;
+        }
+        "tail" => {
+            let list_type = ir_type_to_rust_type(&arg_type_types[0], program);
+
+            write!(output_file, "{}match arg0.value.is_empty() {{\n", indent)?;
+            write!(
+                output_file,
+                "{}true => {{ {}::None }}\n",
+                indent, result_ty_str
+            )?;
+            write!(
+                output_file,
+                "{}false => {{ let mut v = arg0.value; v.remove(0); {}::Some({} {{ value : v }}) }}\n",
+                indent, result_ty_str, list_type
+            )?;
+            write!(output_file, "{}}}\n", indent)?;
+        }
+        "opAdd" => {
+            write!(output_file, "{}let mut r = arg0.value;\n", indent)?;
+            write!(output_file, "{}r.extend(arg1.value);\n", indent)?;
+            write!(
+                output_file,
+                "{} {} {{ value : r }}\n",
+                indent, result_ty_str
+            )?;
+        }
+        "dedup" => {
+            write!(output_file, "{}let mut r = arg0.value;\n", indent)?;
+            write!(output_file, "{}r.dedup();\n", indent)?;
+            write!(
+                output_file,
+                "{} {} {{ value : r }}\n",
+                indent, result_ty_str
+            )?;
+        }
+        "write" => {
+            write!(output_file, "{}let mut r = arg0.value;\n", indent)?;
+            write!(output_file, "{}r[arg1.value as usize] = arg2;\n", indent)?;
+            write!(
+                output_file,
+                "{} {} {{ value : r }}\n",
+                indent, result_ty_str
+            )?;
+        }
+        "sort" => {
+            write!(output_file, "{}let mut r = arg0.value;\n", indent)?;
+            write!(output_file, "{}r.sort();\n", indent)?;
+            write!(
+                output_file,
+                "{} {} {{ value : r }}\n",
+                indent, result_ty_str
+            )?;
+        }
+        "withCapacity" => {
+            write!(output_file, "{}let size = arg0.value as usize;\n", indent)?;
+            write!(
+                output_file,
+                "{}let new = Vec::with_capacity(size);\n",
+                indent
+            )?;
+            write!(
+                output_file,
+                "{} {} {{ value : new }}\n",
+                indent, result_ty_str
+            )?;
+        }
+        "push" => {
+            write!(output_file, "{}let mut r = arg0.value;\n", indent)?;
+            write!(output_file, "{}r.push(arg1);\n", indent)?;
+            write!(
+                output_file,
+                "{} {} {{ value : r }}\n",
                 indent, result_ty_str
             )?;
         }
@@ -1095,6 +1505,19 @@ pub fn generate_builtin(
         }
         "List" => {
             return generate_list_builtins(
+                function,
+                output_file,
+                program,
+                indent,
+                original_name,
+                result_ty,
+                result_ty_str,
+                arg_type_types,
+                arg_types,
+            );
+        }
+        "List2" => {
+            return generate_list2_builtins(
                 function,
                 output_file,
                 program,
@@ -1406,7 +1829,7 @@ pub fn generate_builtin(
                     write!(output_file, "{}let mut arg0 = arg0;\n", indent)?;
                     write!(output_file, "{}let mut arg1 = arg1;\n", indent)?;
                     write!(output_file, "{}let mut arg2 = arg2;\n", indent)?;
-                    write!(output_file, "{}loop {{  match arg2.value.next() {{ Some(v) => {{ let mut partial = arg0.clone().call(arg1.clone()); arg1 = partial.call(v); }}, None => {{ break; }}  }} }}\n", indent)?;
+                    write!(output_file, "{}loop {{  match arg2.value.next() {{ Some(v) => {{ let mut partial = arg0.clone().call(arg1); arg1 = partial.call(v); }}, None => {{ break; }}  }} }}\n", indent)?;
                     write!(output_file, "{}arg1\n", indent)?;
                 }
                 ("Hack", "readTextFile") => {

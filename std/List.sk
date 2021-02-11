@@ -21,6 +21,15 @@ instance (Ord a) => Ord [a] where
 instance Add [a] where
     opAdd a b = extern
 
+empty a :: [a]
+empty = withCapacity 0
+
+push a :: [a] -> a -> [a]
+push l item = extern
+
+withCapacity a :: Int -> [a]
+withCapacity capacity = extern
+
 atIndex a :: [a] -> Int -> a
 atIndex index l = extern
 
@@ -37,24 +46,10 @@ isEmpty a :: [a] -> Bool
 isEmpty l = extern
 
 contains a :: (PartialEq a) => [a] -> a -> Bool
-contains l i = do
-    isSome (containsAtIndex l i)
+contains l i = extern
 
 containsAtIndex a :: (PartialEq a) => [a] -> a -> Option Int
-containsAtIndex l i = do
-    loop index <- 0 do
-        if index >= getLength l
-            then
-                return None
-            else
-                do
-                e <- atIndex l index
-                if e == i
-                    then
-                        return Some index
-                    else
-                        index + 1
-    None
+containsAtIndex l i = extern
 
 find a :: [a] -> (a -> Bool) -> Option a
 find l f = do

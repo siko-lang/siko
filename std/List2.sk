@@ -1,0 +1,175 @@
+module List2 where
+
+import Map
+
+data List2 a = extern
+
+instance (Show a) => Show (List2 a) where
+    show a = extern
+
+instance (PartialEq a) => PartialEq (List2 a) where
+    opEq a b = extern
+
+instance (Eq a) => Eq (List2 a)
+
+instance (PartialOrd a) => PartialOrd (List2 a) where
+    partialCmp a b = extern
+
+instance (Ord a) => Ord (List2 a) where
+    cmp a b = extern
+
+instance Add (List2 a) where
+    opAdd a b = extern
+
+empty a :: List2 a
+empty = withCapacity 0
+
+push a :: List2 a -> a -> List2 a
+push l item = extern
+
+single a :: a -> List2 a
+single item = do
+    l <- List2.empty
+    push l item
+
+withCapacity a :: Int -> List2 a
+withCapacity capacity = extern
+
+atIndex a :: List2 a -> Int -> a
+atIndex index l = extern
+
+iter a :: List2 a -> Iterator a
+iter l = extern
+
+toList a :: Iterator a -> List2 a
+toList i = extern
+
+getLength a :: List2 a -> Int
+getLength l = extern
+
+isEmpty a :: List2 a -> Bool
+isEmpty l = extern
+
+contains a :: (PartialEq a) => List2 a -> a -> Bool
+contains l i = extern
+
+containsAtIndex a :: (PartialEq a) => List2 a -> a -> Option Int
+containsAtIndex l i = extern
+
+find a :: List2 a -> (a -> Bool) -> Option a
+find l f = do
+    loop index <- 0 do
+            if index >= getLength l
+                then
+                    return None
+                else
+                    do
+                    e <- atIndex l index
+                    if f e
+                        then
+                            return Some e
+                        else
+                            index + 1
+
+join a :: (Show a) => List2 a -> String -> String
+join items separator = do
+    len <- getLength items
+    (s, _) <- items |> List2.iter
+         |> Iterator.map (\item -> "{}" % item)
+         |> Iterator.fold (\(total, index), s -> do
+            total <- case index of
+                    0 -> s
+                    _  -> "{}{}{}" % (total, separator, s)
+            (total, index + 1)) ("", 0)
+    s
+
+head a :: List2 a -> Option a
+head l = if isEmpty l then None else Some (atIndex l 0)
+
+tail a :: List2 a -> Option (List2 a)
+tail l = extern
+
+// FIXME: pop should be a primitive?
+pop a :: List2 a -> Option (a, List2 a)
+pop l = case head l of
+    Some a -> do
+        if getLength l == 1
+            then Some (a, List2.empty)
+            else do
+                t <- case tail l of
+                    Some t -> t
+                    None -> panic "pop failed, non empty list is empty?"
+                Some (a, t)
+    None -> None
+
+sort a :: (Ord a) => List2 a -> List2 a
+sort l = extern
+
+dedup a :: (PartialEq a) => List2 a -> List2 a
+dedup l = extern
+
+write a :: List2 a -> Int -> a -> List2 a
+write l index item = extern
+
+split a :: List2 a -> Int -> (List2 a, List2 a)
+split l n = extern
+
+zipS s a b :: s -> List2 a -> List2 b -> (s -> a -> b -> s) -> s
+zipS s l1 l2 f = extern
+
+zipSE s a b :: s -> List2 a -> List2 b -> (s -> Int -> a -> b -> s) -> s
+zipSE s l1 l2 f = extern
+
+mapS s a b :: s -> List2 a -> (s -> a -> (s, b)) -> (s, List2 b)
+mapS s l f = do
+    l |> List2.iter |> Iterator.fold (\(s, items), i -> do
+        (s, i) <- f s i
+        (s, push items i)) (s, List2.empty)
+
+mapSE s a b :: s -> List2 a -> (s -> Int -> a -> (s, b)) -> (s, List2 b)
+mapSE s l f = do
+    (s, index, l) <- l |> List2.iter |> Iterator.fold (\(s, index, items), i -> do
+        (s, i) <- f s index i
+        (s, index + 1, push items i)) (s, 0, withCapacity (getLength l))
+    (s, l)
+
+mapE a b :: List2 a -> (Int -> a -> b) -> List2 b
+mapE l f = do
+    (index, l) <- l |> List2.iter |> Iterator.fold (\(index, items), i -> do
+        i <- f index i
+        (index + 1, push items i)) (0, withCapacity (getLength l))
+    l
+
+foldE a b :: (a -> Int -> b -> a) -> a -> List2 b -> a
+foldE f s l = do
+    (s, i) <- l |> List2.iter |> Iterator.fold (\(s, index), i -> do
+        s <- f s index i
+        (s, index + 1)) (s, 0)
+    s
+
+fold s a :: s -> List2 a -> (s -> a -> s) -> s
+fold init list f = list |> List2.iter |> Iterator.fold f init
+
+map a b :: List2 a -> (a -> b) -> List2 b
+map input f = input |> List2.iter |> Iterator.map f |> toList
+
+filter a :: List2 a -> (a -> Bool) -> List2 a
+filter list f = list |> List2.iter |> Iterator.filter f |> toList
+
+foldM a k v :: (Ord k) => Map k v -> List2 a -> (a -> (k, v)) -> Map k v
+foldM init list f = List2.fold init list (\m, item -> do
+    (k, v) <- f item
+    (m, _) <- Map.insert m k v
+    m)
+
+filterMap a b :: List2 a -> (a -> Option b) -> List2 b
+filterMap list f = List2.fold (withCapacity (getLength list)) list (\all, item -> do
+    case f item of
+        Some item -> push all item
+        None -> all)
+
+repeat a :: a -> Int -> List2 a
+repeat item count = extern
+
+repeatS s a :: s -> (s -> (s, a)) -> Int -> (s, List2 a)
+repeatS state fn count = extern

@@ -168,6 +168,7 @@ impl TypeDefStore {
                                         ("Map", "Map") => ExternalDataKind::Map,
                                         ("Map2", "Map2") => ExternalDataKind::Map2,
                                         ("List", "List") => ExternalDataKind::List,
+                                        ("List2", "List2") => ExternalDataKind::List2,
                                         ("Iterator", "Iterator") => ExternalDataKind::Iterator,
                                         _ => panic!(
                                             "{}/{} not implemented data kind",

@@ -164,6 +164,15 @@ pub fn write_typedef(
                         indent.dec();
                         write!(output_file, "{}}}\n", indent)?;
                     }
+                    ExternalDataKind::List2 => {
+                        let elem_ty = ir_type_to_rust_type(&args[0], program);
+                        write!(output_file, "{}#[derive(Clone)]\n", indent)?;
+                        write!(output_file, "{}pub struct {} {{\n", indent, record.name)?;
+                        indent.inc();
+                        write!(output_file, "{}pub value: Vec<{}>,\n", indent, elem_ty)?;
+                        indent.dec();
+                        write!(output_file, "{}}}\n", indent)?;
+                    }
                 }
             } else {
                 write!(output_file, "{}pub struct {} {{\n", indent, record.name)?;

@@ -1,6 +1,7 @@
 module Siko.MIR.Type where
 
 import Siko.MIR.Program
+import List2
 
 data OwnershipVar = OwnershipVar Int deriving (PartialEq, Eq, PartialOrd, Ord)
 
@@ -10,8 +11,8 @@ data OwnershipKind = VarKind OwnershipVar
                    | BoxedKind
                    deriving (PartialEq, Eq, PartialOrd, Ord)
 
-data Type = Adt Identity [OwnershipKind]
-          | Record Identity [OwnershipKind]
+data Type = Adt Identity (List2 OwnershipKind)
+          | Record Identity (List2 OwnershipKind)
           | Ref Int Type
           | Owner Type
           | Boxed Type
@@ -29,7 +30,7 @@ instance Show OwnershipKind where
         OwnerKind -> "~"
         BoxedKind -> "*"
 
-printArgs :: [OwnershipKind] -> String
+printArgs :: List2 OwnershipKind -> String
 printArgs args = if isEmpty args then "" else " " + join args " "
 
 instance Show Type where
@@ -52,22 +53,22 @@ getIdentity type = case type of
     Never -> panic "getIdentity called on Never!"
     Var i t -> getIdentity t
 
-collectOwnershipKinds :: Type -> [OwnershipKind]
+collectOwnershipKinds :: Type -> List2 OwnershipKind
 collectOwnershipKinds type = case type of
     Adt id args -> args
     Record id args -> args
-    Ref i t -> [BorrowKind i] + collectOwnershipKinds t
-    Owner t -> [OwnerKind] + collectOwnershipKinds t
-    Boxed t -> [BoxedKind] + collectOwnershipKinds t
-    Never -> []
-    Var i t -> [i] + collectOwnershipKinds t
+    Ref i t -> single (BorrowKind i) + collectOwnershipKinds t
+    Owner t -> single OwnerKind + collectOwnershipKinds t
+    Boxed t -> single BoxedKind + collectOwnershipKinds t
+    Never -> List2.empty
+    Var i t -> single i + collectOwnershipKinds t
 
-collectOwnershipArgs :: Type -> [OwnershipKind]
+collectOwnershipArgs :: Type -> List2 OwnershipKind
 collectOwnershipArgs type = case type of
     Adt id args -> args
     Record id args -> args
     Ref _ t -> collectOwnershipKinds t
     Owner t -> collectOwnershipKinds t
     Boxed t -> collectOwnershipKinds t
-    Never -> []
+    Never -> List2.empty
     Var i t -> collectOwnershipKinds t

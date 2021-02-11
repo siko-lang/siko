@@ -19,12 +19,14 @@ import Siko.Backend.Ownership.Initialization as Init
 import Siko.Config
 import Siko.Trace
 
+import List2 as List2
+import List2 (List2)
 import Map
 import Set
 
 data LIRKey = FunctionKey MP.Identity MF.FunctionType
-            | RecordKey MP.Identity [MT.OwnershipKind]
-            | AdtKey MP.Identity [MT.OwnershipKind]
+            | RecordKey MP.Identity (List2 MT.OwnershipKind)
+            | AdtKey MP.Identity (List2 MT.OwnershipKind)
             deriving (PartialEq, Eq, PartialOrd, Ord, Show)
 
 data QueuedItem = QueuedItem LIRKey deriving (Show)
@@ -235,9 +237,9 @@ normalizeArg indices kind = case kind of
         (indices, index) <- normalizeIndex indices index
         (indices, MT.BorrowKind index)
 
-normalizeArgs :: Map Int Int -> [MT.OwnershipKind] -> (Map Int Int, [MT.OwnershipKind])
+normalizeArgs :: Map Int Int -> List2 MT.OwnershipKind -> (Map Int Int, List2 MT.OwnershipKind)
 normalizeArgs indices args = do
-    (indices, args) <- List.mapS indices args normalizeArg
+    (indices, args) <- List2.mapS indices args normalizeArg
     (indices, args)
 
 normalizeType :: Map Int Int -> MT.Type -> (Map Int Int, MT.Type)
@@ -264,10 +266,10 @@ normalizeType indices type = case type of
 collectLifetimes :: MT.Type -> [LT.Lifetime]
 collectLifetimes mir_type = do
     kinds <- MT.collectOwnershipKinds mir_type
-    lifetimes <- kinds |> List.iter |> Iterator.fold (\lifetimes, kind -> case kind of
+    lifetimes <- List2.fold [] kinds (\lifetimes, kind -> case kind of
             MT.BorrowKind i -> do
                 lifetimes + [LT.Lifetime i]
-            _ -> lifetimes) []
+            _ -> lifetimes)
     lifetimes <- lifetimes |> sort |> dedup
     lifetimes
 
@@ -380,7 +382,7 @@ processExternalClassImpl mir_program arg_type queue mir_class_impl =
             (indices, arg_type) <- normalizeType Map.empty arg_type
             function <- MP.getFunction mir_program id
             kinds <- MT.collectOwnershipKinds function.type.result
-            owners <- repeat MT.OwnerKind (getLength kinds)
+            owners <- List2.repeat MT.OwnerKind (List2.getLength kinds)
             sub <- U.batch kinds owners
             result <- U.apply function.type.result sub
             args <- repeat arg_type (getLength function.type.args)
@@ -391,7 +393,7 @@ processExternalClassImpl mir_program arg_type queue mir_class_impl =
             queue <- addItem queue (QueuedItem function_key)
             (queue, lir_id)
 
-processRecord :: Queue -> MP.Program -> MP.Identity -> [MT.OwnershipKind] -> LP.Identity -> Queue
+processRecord :: Queue -> MP.Program -> MP.Identity -> List2 MT.OwnershipKind -> LP.Identity -> Queue
 processRecord queue mir_program mir_id args lir_id = do
     trace queue.config "Processing record {} {}" % (mir_id, args)
     mir_record <- MP.getRecord mir_program mir_id
@@ -410,7 +412,7 @@ processRecord queue mir_program mir_id args lir_id = do
     queue <- addRecord queue lir_record
     queue
 
-processAdt :: Queue -> MP.Program -> MP.Identity -> [MT.OwnershipKind] -> LP.Identity -> Queue
+processAdt :: Queue -> MP.Program -> MP.Identity -> List2 MT.OwnershipKind -> LP.Identity -> Queue
 processAdt queue mir_program mir_id args lir_id = do
     trace queue.config "Processing adt {} {}" % (mir_id, args)
     mir_adt <- MP.getAdt mir_program mir_id

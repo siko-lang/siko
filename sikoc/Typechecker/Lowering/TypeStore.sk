@@ -20,6 +20,7 @@ import Siko.Typechecker.Unification as U
 import Siko.Typechecker.DataStore as DS
 import Siko.Typechecker.InstanceResolver as IR
 import Siko.Constants
+import List2 as List2
 import Map
 
 data TypeStore = { expr_types :: Map E.ExprId HT.Type,
@@ -65,7 +66,7 @@ addVariant type_store identity variant = do
             variants <- adt.variants + [variant]
             adt <- adt { variants = variants }
             Some adt
-        None -> Some (MD.AlgebraicDataType identity [variant] [] [] [])) identity type_store.adts
+        None -> Some (MD.AlgebraicDataType identity [variant] [] List2.empty List2.empty)) identity type_store.adts
     type_store { adts = adts }
 
 addExternalClassImplForAdt :: TypeStore -> MP.Identity -> MD.ExternalClassImpl -> TypeStore
@@ -209,7 +210,7 @@ processIteratorType :: Context -> HT.Type -> MT.Type -> Context
 processIteratorType context hir_type mir_type = do
     case mir_type of
         MT.Adt identity _ -> do
-            mir_adt <- MD.AlgebraicDataType identity [] [] [] []
+            mir_adt <- MD.AlgebraicDataType identity [] [] List2.empty List2.empty
             context <- addAdt context identity mir_adt
             context
         _ -> panic "Iterator is not an ADT"
@@ -220,7 +221,7 @@ getMIRIteratorType context hir_type = do
     (iterator_store, iterator_name) <- IS.getIteratorName context.iterator_store iterator_type
     context <- context { iterator_store = iterator_store }
     identity <- MP.Identity getInternalModuleName iterator_name 0
-    mir_type <- MT.Adt identity []
+    mir_type <- MT.Adt identity List2.empty
     (context, mir_type)
 
 processAdt :: Context -> HT.Type -> DS.AdtTypeInfo -> String -> MT.Type -> Context
@@ -236,7 +237,7 @@ processAdt context hir_type adt_type_info module_name mir_type = do
                     mir_field <- MD.RecordField name mir_type
                     mir_fields <- mir_fields + [mir_field]
                     (context, mir_fields)) (context, [])
-            mir_record <- MD.Record identity mir_fields None [] [] []
+            mir_record <- MD.Record identity mir_fields None [] List2.empty List2.empty
             context <- addRecord context identity mir_record
             context
         else do
@@ -248,12 +249,12 @@ processAdt context hir_type adt_type_info module_name mir_type = do
                     mir_fields <- mir_fields + [mir_field]
                     (context, mir_fields)) (context, [])
                 (context, identity) <- getIdentity context module_name variant.name
-                mir_record <- MD.Record identity mir_fields None [] [] []
+                mir_record <- MD.Record identity mir_fields None [] List2.empty List2.empty
                 context <- addRecord context identity mir_record
-                mir_variant <- MD.Variant variant.name (MT.Record identity [])
+                mir_variant <- MD.Variant variant.name (MT.Record identity List2.empty)
                 mir_variants <- mir_variants + [mir_variant]
                 (context, mir_variants)) (context, [])
-            mir_adt <- MD.AlgebraicDataType identity mir_variants [] [] []
+            mir_adt <- MD.AlgebraicDataType identity mir_variants [] List2.empty List2.empty
             context <- addAdt context identity mir_adt
             context
 
@@ -261,8 +262,8 @@ getMIRAdt :: Context -> HT.Type -> DS.AdtTypeInfo -> String -> String -> (Contex
 getMIRAdt context hir_type adt_type_info module_name short_name = do
     (context, identity) <- getIdentity context module_name short_name
     mir_type <- if getLength adt_type_info.variants == 1
-        then MT.Record identity []
-        else MT.Adt identity []
+        then MT.Record identity List2.empty
+        else MT.Adt identity List2.empty
     (context, mir_type)
 
 processRecord :: Context -> HT.Type -> DS.RecordTypeInfo -> [HT.Type] -> MT.Type -> Context
@@ -282,7 +283,7 @@ processRecord context hir_type record_type_info type_args mir_type = do
                         (context, mir_args + [mir_arg])) (context, [])
                     (context, Some (MD.ExternalRecordInfo mir_args))
                 else (context, None)
-            mir_record <- MD.Record identity mir_fields external_record_info [] [] []
+            mir_record <- MD.Record identity mir_fields external_record_info [] List2.empty List2.empty
             context <- addRecord context identity mir_record
             context
         _ -> panic "Record is not a record"
@@ -290,7 +291,7 @@ processRecord context hir_type record_type_info type_args mir_type = do
 getMIRRecord :: Context -> HT.Type -> String -> String -> (Context, MT.Type)
 getMIRRecord context hir_type module_name short_name = do
     (context, identity) <- getIdentity context module_name short_name
-    mir_type <- MT.Record identity []
+    mir_type <- MT.Record identity List2.empty
     (context, mir_type)
 
 getMIRClosure :: Context -> HT.Type -> (Context, MT.Type)
@@ -298,14 +299,14 @@ getMIRClosure context hir_type = do
     (closure_store, name) <- getClosureName context.closure_store hir_type
     context <- context { closure_store = closure_store }
     identity <- getClosureIdentity name
-    mir_type <- MT.Adt identity []
+    mir_type <- MT.Adt identity List2.empty
     (context, mir_type)
 
 processClosure :: Context -> HT.Type -> MT.Type -> Context
 processClosure context hir_type mir_type = do
     case mir_type of
         MT.Adt identity _ -> do
-            mir_adt <- MD.AlgebraicDataType identity [] [] [] []
+            mir_adt <- MD.AlgebraicDataType identity [] [] List2.empty List2.empty
             context <- addAdt context identity mir_adt
             context
         _ -> panic "Closure is not an adt"
@@ -313,7 +314,7 @@ processClosure context hir_type mir_type = do
 getMIRTuple :: Context -> Int -> (Context, MT.Type)
 getMIRTuple context arg_count = do
     (context, identity) <- getIdentity context getInternalModuleName ("Tuple{}" % arg_count)
-    mir_type <- MT.Record identity []
+    mir_type <- MT.Record identity List2.empty
     (context, mir_type)
 
 processTuple :: Context -> HT.Type -> [HT.Type] -> MT.Type -> Context
@@ -326,7 +327,7 @@ processTuple context hir_type args mir_type = do
                 mir_field <- MD.RecordField name mir_type
                 mir_fields <- mir_fields + [mir_field]
                 (context, mir_fields)) (context, [])
-            mir_record <- MD.Record identity mir_fields None [] [] []
+            mir_record <- MD.Record identity mir_fields None [] List2.empty List2.empty
             context <- addRecord context identity mir_record
             context
         _ -> panic "Tuple is not a record"

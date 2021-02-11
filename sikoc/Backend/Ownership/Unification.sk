@@ -5,6 +5,8 @@ import Siko.MIR.Type as T
 import Siko.MIR.Function as F
 import Siko.Util.Counter
 import Std.Util
+import List2 as List2
+import List2 (List2)
 import Map2
 
 data SubstitutionChange = Unification T.OwnershipVar
@@ -42,8 +44,8 @@ instance Apply T.Type where
     //apply :: T.Type -> Substitution -> T.Type
     apply type sub = do
         case type of
-            T.Adt id args -> T.Adt id (args |> List.iter |> Iterator.map (\v -> apply v sub) |> toList)
-            T.Record id args -> T.Record id (args |> List.iter |> Iterator.map (\v -> apply v sub) |> toList)
+            T.Adt id args -> T.Adt id (List2.map args (\v -> apply v sub))
+            T.Record id args -> T.Record id (List2.map args (\v -> apply v sub))
             T.Ref index t -> T.Ref index (apply t sub)
             T.Owner t -> T.Owner (apply t sub)
             T.Boxed t -> T.Boxed (apply t sub)
@@ -58,19 +60,19 @@ instance Apply T.Type where
 instance Apply D.Record where
     //apply :: D.Record -> Substitution -> D.Record
     apply record sub = do
-        ownership_vars <- record.ownership_vars |> List.iter |> Iterator.map (\v -> apply v sub) |> toList
+        ownership_vars <- List2.map record.ownership_vars (\v -> apply v sub)
         fields <- record.fields |> List.iter |> Iterator.map (\f -> do
             type <- apply f.type sub
-            f { type = type}) |> toList
+            f { type = type }) |> toList
         record { ownership_vars = ownership_vars, fields = fields }
 
 instance Apply D.AlgebraicDataType where
     //apply :: D.AlgebraicDataType -> Substitution -> D.AlgebraicDataType
     apply adt sub = do
-        ownership_vars <- adt.ownership_vars |> List.iter |> Iterator.map (\v -> apply v sub) |> toList
+        ownership_vars <- List2.map adt.ownership_vars (\v -> apply v sub)
         variants <- adt.variants |> List.iter |> Iterator.map (\v -> do
             type <- apply v.type sub
-            v { type = type}) |> toList
+            v { type = type }) |> toList
         adt { ownership_vars = ownership_vars, variants = variants }
 
 instance Apply F.FunctionType where
@@ -91,10 +93,10 @@ addSubstitution sub var change = do
             _ -> panic "Trying to substitute {} to {}" % (var, change)
         _ -> panic "Trying to substitute {} to {}" % (var, change)
 
-unifyVars :: Substitution -> [T.OwnershipKind] -> [T.OwnershipKind] -> Substitution
+unifyVars :: Substitution -> List2 T.OwnershipKind -> List2 T.OwnershipKind -> Substitution
 unifyVars sub args1 args2 = do
-    if getLength args1 == getLength args2
-        then zipS sub args1 args2 (\sub, arg1, arg2 -> case (arg1, arg2) of
+    if List2.getLength args1 == List2.getLength args2
+        then List2.zipS sub args1 args2 (\sub, arg1, arg2 -> case (arg1, arg2) of
                 (T.VarKind v1, T.VarKind v2) -> addSubstitution sub arg1 (Unification v2)
                 (T.OwnerKind, T.OwnerKind) -> sub
                 (T.BorrowKind index1, T.BorrowKind index2) -> sub
@@ -111,14 +113,14 @@ unifyVars sub args1 args2 = do
 
                 _ -> panic "Unifying kinds {} {} NYI" % (arg1, arg2))
         else do
-            if (not (isEmpty args1)) && (not (isEmpty args2))
+            if (not (List2.isEmpty args1)) && (not (List2.isEmpty args2))
                 then panic "{} != {}" % (args1, args2)
                 else ()
-            sub <- args1 |> List.iter |> Iterator.fold (\sub, arg -> addSubstitution sub arg Owner) sub
-            sub <- args2 |> List.iter |> Iterator.fold (\sub, arg -> addSubstitution sub arg Owner) sub
+            sub <- args1 |> List2.iter |> Iterator.fold (\sub, arg -> addSubstitution sub arg Owner) sub
+            sub <- args2 |> List2.iter |> Iterator.fold (\sub, arg -> addSubstitution sub arg Owner) sub
             sub
 
-batch :: [T.OwnershipKind] -> [T.OwnershipKind] -> Substitution
+batch :: List2 T.OwnershipKind -> List2 T.OwnershipKind -> Substitution
 batch from_vars to_vars = do
     sub <- createSubstitution
     unifyVars sub from_vars to_vars

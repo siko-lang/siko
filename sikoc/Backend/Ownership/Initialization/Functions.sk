@@ -11,6 +11,8 @@ import Siko.Backend.Traversal
 import Siko.Backend.Ownership.Unification as U
 import Siko.Config
 import Siko.Trace
+import List2 as List2
+import List2 (List2)
 import Map
 
 addOwnershipVarsToType :: Bool -> Context -> T.Type -> (Context, T.Type)
@@ -58,26 +60,26 @@ addOwnershipVarsToBody :: Context -> Expr -> (Context, Expr)
 addOwnershipVarsToBody context expr = do
     traverse context expr None (Some (addOwnershipVarsToType False))
 
-kindsToIndices :: [T.OwnershipKind] -> [T.OwnershipKind] -> [Int]
-kindsToIndices all subs = subs |> List.iter |> Iterator.map (\kind -> Option.unwrap (containsAtIndex all kind)) |> toList
+kindsToIndices :: List2 T.OwnershipKind -> List2 T.OwnershipKind -> List2 Int
+kindsToIndices all subs = List2.map subs (\kind -> Option.unwrap (List2.containsAtIndex all kind))
 
-processIndices :: [Int] -> T.Type -> [T.OwnershipKind] -> [Int]
-processIndices sub sub_type all = do
-    if getLength sub == 0
-        then do
-            ownership_kinds <- T.collectOwnershipKinds sub_type
-            indices <- kindsToIndices all ownership_kinds
-            indices
-        else do
-            ownership_args <- T.collectOwnershipArgs sub_type
-            ownership_vars <- sub |> List.iter |> Iterator.map (\index -> atIndex ownership_args index) |> toList
-            indices <- kindsToIndices all ownership_vars
-            indices
+processIndices :: List2 Int -> T.Type -> List2 T.OwnershipKind -> List2 Int
+processIndices sub sub_type all =
+    if List2.getLength sub == 0
+    then do
+        ownership_kinds <- T.collectOwnershipKinds sub_type
+        indices <- kindsToIndices all ownership_kinds
+        indices
+    else do
+        ownership_args <- T.collectOwnershipArgs sub_type
+        ownership_vars <- List2.map sub (\index -> List2.atIndex ownership_args index)
+        indices <- kindsToIndices all ownership_vars
+        indices
 
-processSteps :: P.Program -> [F.Step] -> T.Type -> [Int]
+processSteps :: P.Program -> [F.Step] -> T.Type -> List2 Int
 processSteps program steps type = do
     if getLength steps == 0
-        then return []
+        then return List2.empty
         else do
             (first, rest) <- Option.unwrap (pop steps)
             case first of
@@ -105,19 +107,19 @@ processSteps program steps type = do
                     processIndices indices field.type record.ownership_vars
                 _ -> panic "Incorrect step in type mapping!"
 
-getKinds :: P.Program -> [F.Step] -> T.Type -> [T.OwnershipKind]
+getKinds :: P.Program -> [F.Step] -> T.Type -> List2 T.OwnershipKind
 getKinds program steps type = do
     indices <- if getLength steps == 0
-        then [0]
+        then List2.single 0
         else do
             indices <- processSteps program steps type
-            indices <- indices |> List.iter |> Iterator.map (\i -> i + 1) |> toList
+            indices <- List2.map indices (\i -> i + 1)
             indices
     ownership_kinds <- T.collectOwnershipKinds type
-    kinds <- indices |> List.iter |> Iterator.map (\index -> atIndex ownership_kinds index) |> toList
+    kinds <- List2.map indices (\index -> List2.atIndex ownership_kinds index)
     kinds
 
-applyPosition :: P.Program -> F.Position -> F.FunctionType -> [T.OwnershipKind]
+applyPosition :: P.Program -> F.Position -> F.FunctionType -> List2 T.OwnershipKind
 applyPosition program position function_type = do
     F.Position steps <- position
     (first, rest) <- Option.unwrap (pop steps)
@@ -135,9 +137,9 @@ unifyTypePositions program context positions function_type = do
     kinds <- positions |> List.iter |> Iterator.fold (\kinds, position -> do
             vars <- applyPosition program position function_type
             kinds + vars
-        ) []
+        ) List2.empty
     (context, new_kind) <- getNextOwnershipKind context
-    new_kinds <- repeat new_kind (getLength kinds)
+    new_kinds <- List2.repeat new_kind (List2.getLength kinds)
     sub <- U.batch kinds new_kinds
     function_type <- U.apply function_type sub
     (context, function_type)
@@ -148,23 +150,23 @@ applyTypeMappings program context type_mappings function_type = do
         unifyTypePositions program context positions function_type) (context, function_type)
     (context, function_type) <- type_mappings.owner_positions |> List.iter |> Iterator.fold (\(context, function_type), owner_position -> do
             vars <- applyPosition program owner_position function_type
-            new_kinds <- repeat T.OwnerKind (getLength vars)
+            new_kinds <- List2.repeat T.OwnerKind (List2.getLength vars)
             sub <- U.batch vars new_kinds
             function_type <- U.apply function_type sub
             (context, function_type)
         ) (context, function_type)
     (context, function_type) <- type_mappings.ref_positions |> List.iter |> Iterator.fold (\(context, function_type), ref_position -> do
             vars <- applyPosition program ref_position function_type
-            new_kinds <- repeat (T.BorrowKind 0) (getLength vars)
+            new_kinds <- List2.repeat (T.BorrowKind 0) (List2.getLength vars)
             sub <- U.batch vars new_kinds
             function_type <- U.apply function_type sub
             (context, function_type)
         ) (context, function_type)
     (context, function_type)
 
-addBoxed :: [T.OwnershipKind] -> F.FunctionType -> F.FunctionType
+addBoxed :: List2 T.OwnershipKind -> F.FunctionType -> F.FunctionType
 addBoxed data_boxed_vars function_type = do
-    boxed_vars <- repeat T.BoxedKind (getLength data_boxed_vars)
+    boxed_vars <- List2.repeat T.BoxedKind (List2.getLength data_boxed_vars)
     sub <- U.batch data_boxed_vars boxed_vars
     function_type <-  U.apply function_type sub
     function_type
@@ -178,10 +180,10 @@ reinitializeFunctionType function_type = do
         reinitializeType :: Int -> T.Type -> (Int, T.Type)
         reinitializeType index type = case type of
             T.Adt id args -> do
-                (index, args) <- List.mapS index args reinitializeVar
+                (index, args) <- List2.mapS index args reinitializeVar
                 (index, T.Adt id args)
             T.Record id args -> do
-                (index, args) <- List.mapS index args reinitializeVar
+                (index, args) <- List2.mapS index args reinitializeVar
                 (index, T.Record id args)
             T.Ref i type -> do
                 (index, type) <- reinitializeType index type
@@ -250,7 +252,6 @@ processFunction config program context function = case function.kind of
 initializeOwnership :: Config -> Context -> P.Program -> (Context, P.Program)
 initializeOwnership config context program = do
     (context, functions) <- program.functions |> Map.iter |> Iterator.fold (\(context, functions), (id, function) -> do
-        trace config "initializeOwnership.Functions {}" % id
         (context, function) <- processFunction config program context function // FIXME: program should not be copied here!
         (functions, _) <- insert functions id function
         (context, functions)) (context, empty)

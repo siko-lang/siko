@@ -14,6 +14,8 @@ import Siko.Backend.Ownership.Initialization as Init
 import Siko.Backend.Traversal
 import Siko.Config
 import Siko.Trace
+import List2 as List2
+import List2 (List2)
 
 import Map
 import Set
@@ -207,19 +209,17 @@ collectConvertibleConstraints var context = do
             else convertibles
     convertibles
 
-collectVarConstraints :: Common.Context -> [T.OwnershipKind] -> Map T.OwnershipVar (Set T.OwnershipVar)
+collectVarConstraints :: Common.Context -> List2 T.OwnershipKind -> Map T.OwnershipVar (Set T.OwnershipVar)
 collectVarConstraints context kinds = do
     // FIXME: use filterMap!
-    vars <- kinds |> List.iter |> Iterator.filter (\kind -> case kind of
-        T.VarKind _ -> True
-        _ -> False) |> Iterator.map (\kind -> case kind of
-            T.VarKind v -> v
-            _ -> unreachable) |> toList
-    constraints <- vars |> List.iter |> Iterator.map (\var -> (var, collectConvertibleConstraints var context)) |> toMap
+    vars <- List2.filterMap kinds (\kind -> case kind of
+        T.VarKind v -> Some v
+        _ -> None)
+    constraints <- vars |> List2.iter |> Iterator.map (\var -> (var, collectConvertibleConstraints var context)) |> toMap
     constraints <- constraints |> Map.iter |> Iterator.map (\(key, convertibles) -> do
             convertibles <- convertibles
                     |> Set.iter
-                    |> Iterator.filter (\var -> List.contains kinds (T.VarKind var) && var != key) |> toSet
+                    |> Iterator.filter (\var -> List2.contains kinds (T.VarKind var) && var != key) |> toSet
             (key, convertibles))
         |> Iterator.filter (\(key, convertibles) -> not (isEmpty convertibles)) |> toMap
     constraints
@@ -337,8 +337,8 @@ updateBodyExpr (context, sub) expr = do
                 _ -> do
                     src_kinds <- T.collectOwnershipKinds arg_type
                     dest_kinds <- T.collectOwnershipKinds type
-                    src <- atIndex src_kinds 0
-                    dest <- atIndex dest_kinds 0
+                    src <- List2.atIndex src_kinds 0
+                    dest <- List2.atIndex dest_kinds 0
                     src_kind <- case src of
                         T.VarKind v -> resolveKind context v
                         _ -> src

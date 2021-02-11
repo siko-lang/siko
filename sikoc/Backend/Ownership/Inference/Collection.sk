@@ -12,6 +12,8 @@ import Siko.Backend.Ownership.Initialization as Init
 import Siko.Backend.Ownership.Initialization.Functions as IF
 import Siko.Backend.Ownership.Unification as U
 import Siko.Util.Counter
+import List2 as List2
+import List2 (List2)
 
 import Map
 import Set
@@ -37,9 +39,9 @@ processKind context moved_vars kind =
             context <- Common.addOwnershipVar context v (T.BorrowKind borrower_set_id) moved_vars
             (context, v)
 
-collectVars :: Common.Context -> Common.MovedVars -> [T.OwnershipKind] -> (Common.Context, [T.OwnershipVar])
+collectVars :: Common.Context -> Common.MovedVars -> List2 T.OwnershipKind -> (Common.Context, List2 T.OwnershipVar)
 collectVars context moved_vars kinds = do
-    List.mapS context kinds (\context, kind -> processKind context moved_vars kind)
+    List2.mapS context kinds (\context, kind -> processKind context moved_vars kind)
 
 equalConstraints :: Common.Context -> Common.MovedVars -> T.Type -> T.Type -> Common.Context
 equalConstraints context moved_vars src dest = do
@@ -51,16 +53,16 @@ equalConstraints context moved_vars src dest = do
             dest_kinds <- T.collectOwnershipKinds dest
             (context, src_vars) <- collectVars context moved_vars src_kinds
             (context, dest_vars) <- collectVars context moved_vars dest_kinds
-            context <- List.zipS context src_vars dest_vars (\context, src_var, dest_var -> do
+            context <- List2.zipS context src_vars dest_vars (\context, src_var, dest_var -> do
                 context <- Common.addEqual context src_var dest_var
                 context)
             context
 
-equalConstraintsWithVars :: Common.Context-> Common.MovedVars -> [T.OwnershipVar] -> T.Type -> Common.Context
+equalConstraintsWithVars :: Common.Context-> Common.MovedVars -> List2 T.OwnershipVar -> T.Type -> Common.Context
 equalConstraintsWithVars context moved_vars src_vars dest = do
     dest_kinds <- T.collectOwnershipKinds dest
     (context, dest_vars) <- collectVars context moved_vars dest_kinds
-    context <- List.zipS context src_vars dest_vars (\context, src_var, dest_var -> do
+    context <- List2.zipS context src_vars dest_vars (\context, src_var, dest_var -> do
         context <- Common.addEqual context src_var dest_var
         context)
     context
@@ -113,7 +115,7 @@ getBorrowKind context arg = do
     case arg_s_expr of
         E.VarRef v -> do
             var_vars <- Common.getVarVars context v
-            borrow_source <- atIndex var_vars 0
+            borrow_source <- List2.atIndex var_vars 0
             Common.BorrowerConverter borrow_source
         _ -> panic "Borrow converter's arg is not VarRef {}" % (E.short arg)
 
@@ -123,8 +125,8 @@ processExpr context moved_vars expr = do
     //println "Starting collection of {} = {} :: {}" % (id, E.short expr, type)
     (context, moved_vars) <- case s_expr of
         E.Do items -> do
-            (context, moved_vars) <- items |> List.iter |> Iterator.fold (\(context, moved_vars), item -> processExpr context moved_vars item) (context, moved_vars)
-            E.Expr _ last_type _ <- atIndex items (getLength items - 1)
+            (context, moved_vars) <- List.fold (context, moved_vars) items (\(context, moved_vars), item -> processExpr context moved_vars item)
+            E.Expr _ last_type _ <- List.atIndex items (getLength items - 1)
             context <- equalConstraints context moved_vars last_type type
             (context, moved_vars)
         E.Multi _ -> panic "Multi expr in Inference.Collection"
@@ -152,25 +154,25 @@ processExpr context moved_vars expr = do
             (context, moved_vars)
         E.IntegerLiteral i -> do
             kinds <- T.collectOwnershipKinds type
-            first <- atIndex kinds 0
+            first <- List2.atIndex kinds 0
             literal_var <- Common.kindToVar first
             context <- Common.addOwnershipVar context literal_var T.OwnerKind moved_vars
             (context, moved_vars)
         E.StringLiteral i -> do
             kinds <- T.collectOwnershipKinds type
-            first <- atIndex kinds 0
+            first <- List2.atIndex kinds 0
             literal_var <- Common.kindToVar first
             context <- Common.addOwnershipVar context literal_var T.OwnerKind moved_vars
             (context, moved_vars)
         E.FloatLiteral i -> do
             kinds <- T.collectOwnershipKinds type
-            first <- atIndex kinds 0
+            first <- List2.atIndex kinds 0
             literal_var <- Common.kindToVar first
             context <- Common.addOwnershipVar context literal_var T.OwnerKind moved_vars
             (context, moved_vars)
         E.CharLiteral i -> do
             kinds <- T.collectOwnershipKinds type
-            first <- atIndex kinds 0
+            first <- List2.atIndex kinds 0
             literal_var <- Common.kindToVar first
             context <- Common.addOwnershipVar context literal_var T.OwnerKind moved_vars
             (context, moved_vars)
@@ -181,7 +183,7 @@ processExpr context moved_vars expr = do
             (context, var_vars) <- collectVars context moved_vars var_kinds
             context <- Common.addVarVars context v var_vars
             kinds <- T.collectOwnershipKinds type
-            first <- atIndex kinds 0
+            first <- List2.atIndex kinds 0
             decl_result_var <- Common.kindToVar first
             context <- Common.addOwnershipVar context decl_result_var T.OwnerKind moved_vars
             (context, moved_vars)
@@ -192,7 +194,7 @@ processExpr context moved_vars expr = do
                     context <- equalConstraintsWithVars context moved_vars var_vars type
                     (context, moved_vars)
                 else do
-                    moved_var <- atIndex var_vars 0
+                    moved_var <- List2.atIndex var_vars 0
                     moved_vars <- addMovedVar moved_vars moved_var
                     context <- equalConstraintsWithVars context moved_vars var_vars type
                     (context, moved_vars)
@@ -216,14 +218,14 @@ processExpr context moved_vars expr = do
             (context, owned_true_var) <- Common.getNextOwnershipVar context
             E.Expr _ cond_type _ <- cond
             kinds <- T.collectOwnershipKinds cond_type
-            cond_var <- atIndex kinds 0
+            cond_var <- List2.atIndex kinds 0
             cond_var <- Common.kindToVar cond_var
             group_id <- Common.getGroupId context cond_var
             context <- Common.updateGroupKind context group_id T.OwnerKind
             (context, moved_vars)
         E.List items -> do
             kinds <- T.collectOwnershipKinds type
-            (first, list_args) <- Option.unwrap (pop kinds)
+            (first, list_args) <- Option.unwrap (List2.pop kinds)
             (context, moved_vars) <- List.foldE (\(context, moved_vars), index, item -> do
                     E.Expr _ item_type _ <- item
                     item_kinds <- T.collectOwnershipKinds item_type
@@ -293,11 +295,11 @@ processExpr context moved_vars expr = do
                         (context, var_vars) <- collectVars context moved_vars var_kinds
                         (context, dest_var) <- Common.getNextOwnershipVar context
                         context <- Common.addOwnershipVar context dest_var (T.VarKind dest_var) moved_vars
-                        src_var <- atIndex var_vars 0
-                        var_vars <- write var_vars 0 dest_var
+                        src_var <- List2.atIndex var_vars 0
+                        var_vars <- List2.write var_vars 0 dest_var
                         E.Expr _ body_type _ <- body
                         body_type_kinds <- T.collectOwnershipKinds body_type
-                        field_src_var <- atIndex body_type_kinds 0
+                        field_src_var <- List2.atIndex body_type_kinds 0
                         field_src_var <- Common.kindToVar field_src_var
                         context <- Common.addConstraint context (Common.FieldAccessConverter src_var field_src_var dest_var)
                         //println "v {} var_vars: {} body_type: {} variant_type: {}" % (v, var_vars, body_type, variant_type)
@@ -325,13 +327,13 @@ processExpr context moved_vars expr = do
             (context, dest_vars) <- collectVars context moved_vars dest_kinds
             context <- case kind of
                 E.NormalConverter -> do
-                    List.zipSE context src_vars dest_vars (\context, index, src_var, dest_var -> do
+                    List2.zipSE context src_vars dest_vars (\context, index, src_var, dest_var -> do
                         if index == 0
                         then Common.addConstraint context (Common.Constraint id Common.NormalConverter src_var dest_var)
                         else Common.addEqual context src_var dest_var)
                 E.BorrowerConverter -> do
                     kind <- getBorrowKind context arg
-                    List.zipSE context src_vars dest_vars (\context, index, src_var, dest_var -> do
+                    List2.zipSE context src_vars dest_vars (\context, index, src_var, dest_var -> do
                         if index == 0
                         then Common.addConstraint context (Common.Constraint id kind src_var dest_var)
                         else Common.addEqual context src_var dest_var)
@@ -340,10 +342,10 @@ processExpr context moved_vars expr = do
                         E.FieldAccess n fieldaccess_arg -> do
                             E.Expr _ fieldaccess_arg_type _ <- fieldaccess_arg
                             kinds <- T.collectOwnershipKinds fieldaccess_arg_type
-                            first <- atIndex kinds 0
+                            first <- List2.atIndex kinds 0
                             Common.kindToVar first
                         _ -> panic "FieldConverter's arg is not a field access!"
-                    List.zipSE context src_vars dest_vars (\context, index, src_var, dest_var -> do
+                    List2.zipSE context src_vars dest_vars (\context, index, src_var, dest_var -> do
                         if index == 0
                         then Common.addConstraint context (Common.FieldAccessConverter src_var field_src_var dest_var)
                         else Common.addEqual context src_var dest_var)
@@ -354,7 +356,7 @@ processExpr context moved_vars expr = do
 processArg :: Common.Context -> Int -> T.Type -> Common.Context
 processArg context index type = do
     kinds <- T.collectOwnershipKinds type
-    (context, vars) <- List.mapS context kinds (\context, kind -> processKind context (Common.MovedVars Set.empty) kind)
+    (context, vars) <- List2.mapS context kinds (\context, kind -> processKind context (Common.MovedVars Set.empty) kind)
     Common.addVarVars context (E.Arg index) vars
 
 addOwnershipVarsToBody :: Common.Context -> E.Expr -> (Common.Context, E.Expr)

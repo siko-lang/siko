@@ -14,6 +14,7 @@ import Siko.MIR.Expr as ME
 import Siko.MIR.Function as MF
 import Siko.MIR.Type as MT
 import Siko.Constants
+import List2 as List2
 import Map
 
 data IteratorInstanceId = IteratorInstanceId Int deriving (Show, PartialEq, Eq, PartialOrd, Ord)
@@ -108,10 +109,10 @@ createIteratorVariant context name iterator_instance = do
             (mir_fields, index + 1)
         ) ([], 0)
     type_store <- context.type_store
-    mir_variant_record <- MD.Record record_identity mir_fields None [] [] []
+    mir_variant_record <- MD.Record record_identity mir_fields None [] List2.empty List2.empty
     (records, _) <- insert type_store.records record_identity mir_variant_record
     type_store <- type_store { records = records }
-    mir_variant <- MD.Variant variant_name (MT.Record record_identity [])
+    mir_variant <- MD.Variant variant_name (MT.Record record_identity List2.empty)
     identity <- MP.Identity getInternalModuleName name 0
     type_store <- addVariant type_store identity mir_variant
     context <- context { type_store = type_store }
