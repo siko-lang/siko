@@ -84,7 +84,7 @@ pub mod siko_macros {
 
     macro_rules! map_get {
         ($arg0:ident, $arg1:ident, $option_crate:tt :: $option_source:tt :: $option_module:tt :: $option_name:tt) => {{
-            match $arg0.value.get(&$arg1) {
+            match $arg0.value.get(&std::rc::Rc::new($arg1.clone())) {
                 Some(v) => {
                     $option_crate::$option_source::$option_module::$option_name::Some((**v).clone())
                 }
@@ -134,11 +134,63 @@ pub mod siko_macros {
 
     macro_rules! map2_get {
         ($arg0:ident, $arg1:ident, $option_crate:tt :: $option_source:tt :: $option_module:tt :: $option_name:tt) => {{
-            match $arg0.value.get(&$arg1) {
+            match $arg0.value.get($arg1) {
                 Some(v) => {
                     $option_crate::$option_source::$option_module::$option_name::Some(v.clone())
                 }
                 None => $option_crate::$option_source::$option_module::$option_name::None,
+            }
+        }};
+    }
+
+    macro_rules! map2_alter {
+        ($arg0:ident, $arg1:ident, $arg2: ident, $option_crate:tt :: $option_source:tt :: $option_module:tt :: $option_name:tt,
+                                   $tuple_crate:tt :: $tuple_source:tt :: $tuple_module:tt :: $tuple_name:tt,
+                                    $map_crate:tt :: $map_source:tt :: $map_module:tt :: $map_name:tt) => {{
+
+            let mut f = $arg0;
+            let mut m = $arg2.value;
+            let value = match m.get(&$arg1) {
+                Some(v) => $option_crate::$option_source::$option_module::$option_name::Some(v.clone()),
+                None => $option_crate::$option_source::$option_module::$option_name::None,
+            };
+            match f.call(value) {
+                $option_crate::$option_source::$option_module::$option_name::Some(v) =>  {
+                    return map2_insert!(m, $arg1, v, $option_crate::$option_source::$option_module::$option_name,
+                        $tuple_crate::$tuple_source::$tuple_module::$tuple_name,
+                        $map_crate:: $map_source :: $map_module::$map_name);
+                }
+                $option_crate::$option_source::$option_module::$option_name::None => {
+                    return map2_remove!(m, $arg1, $option_crate::$option_source::$option_module::$option_name,
+                        $tuple_crate::$tuple_source::$tuple_module::$tuple_name,
+                        $map_crate:: $map_source :: $map_module::$map_name);
+                }
+            }
+        }};
+    }
+
+    macro_rules! map_alter {
+        ($arg0:ident, $arg1:ident, $arg2:ident, $option_crate:tt :: $option_source:tt :: $option_module:tt :: $option_name:tt,
+                                   $tuple_crate:tt :: $tuple_source:tt :: $tuple_module:tt :: $tuple_name:tt,
+                                    $map_crate:tt :: $map_source:tt :: $map_module:tt :: $map_name:tt) => {{
+
+            let mut f = $arg0;
+            let mut m = $arg2;
+            let value = match m.value.get(&$arg1) {
+                Some(v) => $option_crate::$option_source::$option_module::$option_name::Some((**v).clone()),
+                None => $option_crate::$option_source::$option_module::$option_name::None,
+            };
+            match f.call(value) {
+                $option_crate::$option_source::$option_module::$option_name::Some(v) =>  {
+                    return map_insert!(m, $arg1, v, $option_crate::$option_source::$option_module::$option_name,
+                        $tuple_crate::$tuple_source::$tuple_module::$tuple_name,
+                        $map_crate:: $map_source :: $map_module::$map_name);
+                }
+                $option_crate::$option_source::$option_module::$option_name::None => {
+                    return map_remove!(m, $arg1, $option_crate::$option_source::$option_module::$option_name,
+                        $tuple_crate::$tuple_source::$tuple_module::$tuple_name,
+                        $map_crate:: $map_source :: $map_module::$map_name);
+                }
             }
         }};
     }

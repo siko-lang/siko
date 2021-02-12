@@ -4,10 +4,10 @@ use crate::util::arg_name;
 use crate::util::get_module_name;
 use crate::util::Indent;
 use siko_constants::MIR_INTERNAL_MODULE_NAME;
-use siko_mir::expr::Expr;
 use siko_mir::expr::ExprId;
 use siko_mir::pattern::Pattern;
 use siko_mir::program::Program;
+use siko_mir::{expr::Expr, function::FunctionInfo};
 use std::io::Result;
 use std::io::Write;
 
@@ -134,6 +134,18 @@ pub fn write_expr(
         }
         Expr::StaticFunctionCall(id, args) => {
             let function = program.functions.get(id);
+            let hack = match &function.info {
+                FunctionInfo::Extern(original_name) => {
+                    if (function.module == "Map" || function.module == "Map2")
+                        && (original_name == "get")
+                    {
+                        true
+                    } else {
+                        false
+                    }
+                }
+                _ => false,
+            };
             assert_eq!(function.arg_count, args.len());
             let name = format!(
                 "crate::source::{}::{}",
@@ -142,10 +154,13 @@ pub fn write_expr(
             );
             write!(output_file, "{} (", name)?;
             for (index, arg) in args.iter().enumerate() {
-                write_expr(*arg, output_file, program, indent, force_clone)?;
-                if force_clone {
-                    write!(output_file, ".clone()")?;
+                if hack {
+                    write!(output_file, "&")?;
                 }
+                write_expr(*arg, output_file, program, indent, force_clone)?;
+                //if force_clone {
+                //    write!(output_file, ".clone()")?;
+                //}
                 if index != args.len() - 1 {
                     write!(output_file, ", ")?;
                 }

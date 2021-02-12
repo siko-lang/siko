@@ -8,6 +8,7 @@ import Std.Util
 import List2 as List2
 import List2 (List2)
 import Map2
+import Map
 
 data SubstitutionChange = Unification T.OwnershipVar
                         | Owner
@@ -16,23 +17,27 @@ data SubstitutionChange = Unification T.OwnershipVar
                         deriving (Show)
 
 data Substitution = { var_subs :: Map2 T.OwnershipVar SubstitutionChange } deriving (Show)
+data SubstitutionApply = { var_subs :: Map T.OwnershipVar SubstitutionChange } deriving (Show) // FIXME: speed hack
+
+toApply :: Substitution -> SubstitutionApply
+toApply sub = SubstitutionApply (sub.var_subs |> Map2.iter |> Map.toMap)
 
 createSubstitution :: Substitution
-createSubstitution = Substitution empty
+createSubstitution = Substitution Map2.empty
 
 class Apply a where
-    apply a :: a -> Substitution -> a
+    apply a :: a -> SubstitutionApply -> a
 
 instance Apply T.OwnershipVar where
-    //apply :: T.OwnershipVar -> Substitution -> T.OwnershipVar
-    apply v sub = case get sub.var_subs v of
+    //apply :: T.OwnershipVar -> SubstitutionApply -> T.OwnershipVar
+    apply v sub = case Map.get sub.var_subs v of
                     Some (Unification new) -> new
                     _ -> panic "Invalid Ownershipvar subtitution!"
 
 instance Apply T.OwnershipKind where
-    //apply :: T.OwnershipKind -> Substitution -> T.OwnershipKind
+    //apply :: T.OwnershipKind -> SubstitutionApply -> T.OwnershipKind
     apply k sub = case k of
-        T.VarKind v -> case get sub.var_subs v of
+        T.VarKind v -> case Map.get sub.var_subs v of
                         Some (Unification new) -> T.VarKind new
                         Some Owner -> T.OwnerKind
                         Some Boxed -> T.BoxedKind
@@ -41,7 +46,7 @@ instance Apply T.OwnershipKind where
         _ -> k
 
 instance Apply T.Type where
-    //apply :: T.Type -> Substitution -> T.Type
+    //apply :: T.Type -> SubstitutionApply -> T.Type
     apply type sub = do
         case type of
             T.Adt id args -> T.Adt id (List2.map args (\v -> apply v sub))
@@ -58,7 +63,7 @@ instance Apply T.Type where
                     T.BoxedKind -> T.Boxed (apply t sub)
 
 instance Apply D.Record where
-    //apply :: D.Record -> Substitution -> D.Record
+    //apply :: D.Record -> SubstitutionApply -> D.Record
     apply record sub = do
         ownership_vars <- List2.map record.ownership_vars (\v -> apply v sub)
         fields <- record.fields |> List.iter |> Iterator.map (\f -> do
@@ -67,7 +72,7 @@ instance Apply D.Record where
         record { ownership_vars = ownership_vars, fields = fields }
 
 instance Apply D.AlgebraicDataType where
-    //apply :: D.AlgebraicDataType -> Substitution -> D.AlgebraicDataType
+    //apply :: D.AlgebraicDataType -> SubstitutionApply -> D.AlgebraicDataType
     apply adt sub = do
         ownership_vars <- List2.map adt.ownership_vars (\v -> apply v sub)
         variants <- adt.variants |> List.iter |> Iterator.map (\v -> do
@@ -76,7 +81,7 @@ instance Apply D.AlgebraicDataType where
         adt { ownership_vars = ownership_vars, variants = variants }
 
 instance Apply F.FunctionType where
-    //apply :: F.FunctionType -> Substitution -> F.FunctionType
+    //apply :: F.FunctionType -> SubstitutionApply -> F.FunctionType
     apply function_type sub = do
         args <- function_type.args |> List.iter |> Iterator.map (\t -> apply t sub) |> toList
         result <- apply function_type.result sub
@@ -86,7 +91,7 @@ addSubstitution :: Substitution -> T.OwnershipKind -> SubstitutionChange -> Subs
 addSubstitution sub var change = do
     case var of
         T.VarKind var -> do
-            (var_subs, _) <- insert sub.var_subs var change
+            (var_subs, _) <- Map2.insert sub.var_subs var change
             sub { var_subs = var_subs }
         T.OwnerKind -> case change of
             Owner -> sub
@@ -120,10 +125,11 @@ unifyVars sub args1 args2 = do
             sub <- args2 |> List2.iter |> Iterator.fold (\sub, arg -> addSubstitution sub arg Owner) sub
             sub
 
-batch :: List2 T.OwnershipKind -> List2 T.OwnershipKind -> Substitution
+batch :: List2 T.OwnershipKind -> List2 T.OwnershipKind -> SubstitutionApply
 batch from_vars to_vars = do
     sub <- createSubstitution
-    unifyVars sub from_vars to_vars
+    sub <- unifyVars sub from_vars to_vars
+    toApply sub
 
 data OwnershipVarGenerator = { counter :: Counter T.OwnershipVar }
 

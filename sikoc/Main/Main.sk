@@ -36,9 +36,7 @@ processArgs args = loop (config, args) <- (getDefaultConfig, args) do
 
 parseFile :: Config -> FileManager -> FileName -> (FileManager, SourceFile)
 parseFile config file_manager (FileName file_name) = do
-    trace config "Reading {}" % file_name
     source <- readTextFile file_name
-    trace config "Parsing"
     (file_manager, file_id) <- addFile file_manager file_name
     (source_file, lexer_errors, parser_errors) <- parse file_id file_name source
     lexer_errors |> List.iter |> forEach \error -> printLexerError error
@@ -49,7 +47,7 @@ main = do
     args <- Option.unwrap (tail getArgs)
     config <- processArgs args
     file_manager <- createFileManager
-    trace config "Reading inputs.."
+    trace config "Parsing inputs.."
     (file_manager, source_files) <-  List.mapS file_manager config.input_files (parseFile config)
     trace config "Resolving names.."
     (hir_program, var_gen, resolver_errors) <- R.processProgram source_files

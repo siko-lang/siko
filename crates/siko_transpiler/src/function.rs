@@ -26,6 +26,18 @@ pub fn write_function(
     let mut arg_type_types: Vec<Type> = Vec::new();
     for i in 0..function.arg_count {
         let arg_ty = ir_type_to_rust_type(&fn_args[i], program);
+        let arg_ty = match &function.info {
+            FunctionInfo::Extern(original_name) => {
+                if (function.module == "Map" || function.module == "Map2")
+                    && (original_name == "get")
+                {
+                    format!("&{}", arg_ty)
+                } else {
+                    arg_ty
+                }
+            }
+            _ => arg_ty,
+        };
         let arg_str = format!("{}: {}", arg_name(i), arg_ty);
         arg_type_types.push(fn_args[i].clone());
         arg_types.push(arg_ty);

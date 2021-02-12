@@ -208,6 +208,7 @@ reinitializeFunctionType function_type = do
 processFunction :: Config -> P.Program -> Context -> F.Function -> (Context, F.Function)
 processFunction config program context function = case function.kind of
     F.Normal body expr_id_gen temp_var_gen -> do
+        //trace config "Initialization.processFunction {}" % function.id
         (context, args) <- function.type.args |> List.iter |> Iterator.fold (\(context, args), arg -> do
             (context, arg) <- addOwnershipVarsToType True context arg
             (context, args + [arg])) (context, [])

@@ -319,6 +319,17 @@ fn generate_map_builtins(
                 indent, option_ty, result_ty_str, arg0_type
             )?;
         }
+        "alter" => {
+            let result_id = result_ty.get_typedef_id();
+            let tuple_record = program.typedefs.get(&result_id).get_record();
+            let option_ty = ir_type_to_rust_type(&tuple_record.fields[1].ty, program);
+            let arg0_type: &String = &arg_types[2];
+            write!(
+                output_file,
+                "{}map_alter!(arg0, arg1, arg2, {}, {}, {})",
+                indent, option_ty, result_ty_str, arg0_type
+            )?;
+        }
         "get" => {
             write!(
                 output_file,
@@ -519,6 +530,17 @@ fn generate_map2_builtins(
             write!(
                 output_file,
                 "{}map2_remove!(arg0, arg1, {}, {}, {})",
+                indent, option_ty, result_ty_str, arg0_type
+            )?;
+        }
+        "alter" => {
+            let result_id = result_ty.get_typedef_id();
+            let tuple_record = program.typedefs.get(&result_id).get_record();
+            let option_ty = ir_type_to_rust_type(&tuple_record.fields[1].ty, program);
+            let arg0_type: &String = &arg_types[2];
+            write!(
+                output_file,
+                "{}map2_alter!(arg0, arg1, arg2, {}, {}, {})",
                 indent, option_ty, result_ty_str, arg0_type
             )?;
         }

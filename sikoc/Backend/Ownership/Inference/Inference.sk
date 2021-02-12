@@ -224,7 +224,7 @@ collectVarConstraints context kinds = do
         |> Iterator.filter (\(key, convertibles) -> not (isEmpty convertibles)) |> toMap
     constraints
 
-getSubstitution :: Common.Context -> U.Substitution
+getSubstitution :: Common.Context -> U.SubstitutionApply
 getSubstitution context = do
     sub <- U.createSubstitution
     sub <- context.ownership_vars |> Map.iter |> Iterator.fold (\sub, (v, _) -> do
@@ -241,7 +241,7 @@ getSubstitution context = do
                 T.BoxedKind -> do
                     U.addSubstitution sub (T.VarKind v) (U.Boxed)
         ) sub
-    sub
+    U.toApply sub
 
 borrowCheck :: Common.Context -> Common.Context
 borrowCheck context = do
@@ -326,7 +326,7 @@ instantiateFunction global_context init_context expr_id_gen function_id function
     trace global_context.config "End of instantiating"
     (updated_body, context.init_context)
 
-updateBodyExpr :: (Common.Context, U.Substitution) -> E.Expr -> ((Common.Context, U.Substitution), E.Expr)
+updateBodyExpr :: (Common.Context, U.SubstitutionApply) -> E.Expr -> ((Common.Context, U.SubstitutionApply), E.Expr)
 updateBodyExpr (context, sub) expr = do
     E.Expr s_expr type id <- expr
     case s_expr of
@@ -361,12 +361,12 @@ updateBodyExpr (context, sub) expr = do
                     ((context, sub), expr)
         _ -> ((context, sub), expr)
 
-updateBodyType :: (Common.Context, U.Substitution) -> T.Type -> ((Common.Context, U.Substitution), T.Type)
+updateBodyType :: (Common.Context, U.SubstitutionApply) -> T.Type -> ((Common.Context, U.SubstitutionApply), T.Type)
 updateBodyType (context, sub) type = do
     new_type <- U.apply type sub
     ((context, sub), new_type)
 
-updateBody :: Common.Context -> U.Substitution -> E.Expr -> E.Expr
+updateBody :: Common.Context -> U.SubstitutionApply -> E.Expr -> E.Expr
 updateBody context sub expr = do
     (_, expr) <- traverse (context, sub) expr (Some updateBodyExpr) (Some updateBodyType)
     expr

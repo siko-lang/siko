@@ -353,7 +353,7 @@ processVariant queue mir_variant = do
     (queue, lir_type) <- processType queue mir_variant.type
     (queue, LD.Variant mir_variant.name lir_type)
 
-processExternalRecordInfo :: Queue -> U.Substitution -> MD.ExternalRecordInfo -> (Queue, LD.ExternalRecordInfo)
+processExternalRecordInfo :: Queue -> U.SubstitutionApply -> MD.ExternalRecordInfo -> (Queue, LD.ExternalRecordInfo)
 processExternalRecordInfo queue sub mir_external_record_info = do
     type_args <- mir_external_record_info.type_args |> List.iter |> Iterator.map (\type_arg -> U.apply type_arg sub) |> toList
     (queue, lir_type_args) <- List.mapS queue type_args processType

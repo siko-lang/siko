@@ -1,28 +1,11 @@
-use siko_mir::expr::Expr;
 use siko_mir::expr::ExprId;
 use siko_mir::pattern::Pattern;
 use siko_mir::pattern::PatternId;
 use siko_mir::program::Program;
-use std::collections::BTreeMap;
-
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
-enum VarRef {
-    Arg(usize),
-    Pattern(PatternId),
-}
+use siko_mir::{data::TypeDef, expr::Expr};
 
 struct Collector {
-    invalid_refs: Vec<ExprId>,
-    usages: BTreeMap<VarRef, Vec<ExprId>>,
-}
-
-impl Collector {
-    fn add_ref(&mut self, var_ref: VarRef, expr_id: &ExprId) {
-        let refs = self.usages.entry(var_ref).or_insert_with(|| Vec::new());
-        self.invalid_refs.extend(refs.clone());
-        refs.clear();
-        refs.push(*expr_id);
-    }
+    updates: Vec<(ExprId, ExprId, Vec<(ExprId, usize)>)>,
 }
 
 fn walk_body(expr_id: &ExprId, program: &Program, collector: &mut Collector) {
@@ -52,18 +35,8 @@ fn walk_body(expr_id: &ExprId, program: &Program, collector: &mut Collector) {
         }
         Expr::If(cond, true_branch, false_branch) => {
             walk_body(cond, program, collector);
-            let before = collector.usages.clone();
             walk_body(true_branch, program, collector);
-            let after1 = collector.usages.clone();
-            collector.usages = before;
             walk_body(false_branch, program, collector);
-            for (var_ref, ids) in &after1 {
-                let entry = collector
-                    .usages
-                    .entry(*var_ref)
-                    .or_insert_with(|| Vec::new());
-                entry.extend(ids);
-            }
         }
         Expr::List(items) => {
             for item in items {
@@ -83,12 +56,8 @@ fn walk_body(expr_id: &ExprId, program: &Program, collector: &mut Collector) {
             walk_body(rhs, program, collector);
             walk_pattern(bind_pattern, program, collector);
         }
-        Expr::ArgRef(index) => {
-            collector.add_ref(VarRef::Arg(*index), expr_id);
-        }
-        Expr::ExprValue(_, pattern) => {
-            collector.add_ref(VarRef::Pattern(*pattern), expr_id);
-        }
+        Expr::ArgRef(_) => {}
+        Expr::ExprValue(_, _) => {}
         Expr::FieldAccess(_, lhs) => {
             walk_body(lhs, program, collector);
         }
@@ -99,23 +68,9 @@ fn walk_body(expr_id: &ExprId, program: &Program, collector: &mut Collector) {
         }
         Expr::CaseOf(body, cases) => {
             walk_body(body, program, collector);
-            let mut saved = collector.usages.clone();
-            let mut afters = Vec::new();
             for case in cases {
-                collector.usages = saved.clone();
                 walk_pattern(&case.pattern_id, program, collector);
-                saved = collector.usages.clone();
                 walk_body(&case.body, program, collector);
-                afters.push(collector.usages.clone());
-            }
-            for after in afters {
-                for (var_ref, ids) in after {
-                    let entry = collector
-                        .usages
-                        .entry(var_ref)
-                        .or_insert_with(|| Vec::new());
-                    entry.extend(ids);
-                }
             }
         }
         Expr::RecordInitialization(_, items) => {
@@ -124,6 +79,9 @@ fn walk_body(expr_id: &ExprId, program: &Program, collector: &mut Collector) {
             }
         }
         Expr::RecordUpdate(record_expr_id, updates) => {
+            collector
+                .updates
+                .push((*expr_id, *record_expr_id, updates.clone()));
             walk_body(record_expr_id, program, collector);
             for item in updates {
                 walk_body(&item.0, program, collector);
@@ -176,22 +134,39 @@ fn walk_pattern(pattern_id: &PatternId, program: &Program, collector: &mut Colle
     }
 }
 
-pub fn insert_clone_pass(expr_id: &ExprId, program: &mut Program) {
+pub fn transform_updates_pass(expr_id: &ExprId, program: &mut Program) {
     let mut collector = Collector {
-        invalid_refs: Vec::new(),
-        usages: BTreeMap::new(),
+        updates: Vec::new(),
     };
     walk_body(expr_id, program, &mut collector);
 
-    collector.invalid_refs.sort();
-    collector.invalid_refs.dedup();
-
-    for expr_id in collector.invalid_refs.iter() {
+    for (expr_id, record_expr_id, updates) in collector.updates.iter() {
+        let ty = program.expr_types.get(expr_id).unwrap();
+        let record_id = ty.get_typedef_id();
+        let record = match program.typedefs.get(&record_id) {
+            TypeDef::Record(record) => record.clone(),
+            _ => {
+                unreachable!();
+            }
+        };
         let location = program.exprs.get(&expr_id).location_id;
-        let new_ref = program.exprs.get(&expr_id).item.clone();
-        let ty = program.get_expr_type(&expr_id).clone();
-        let new_ref_id = program.add_expr(new_ref, location, ty);
-        let clone = Expr::Clone(new_ref_id);
-        program.update_expr(*expr_id, clone);
+        let mut args = vec![];
+        for (index, field) in record.fields.iter().enumerate() {
+            let mut found = false;
+            for (update_expr, field_index) in updates {
+                if *field_index == index {
+                    args.push((*update_expr, index));
+                    found = true;
+                    break;
+                }
+            }
+            if !found {
+                let fa = Expr::FieldAccess(index, *record_expr_id);
+                let new_field_access = program.add_expr(fa, location, field.ty.clone());
+                args.push((new_field_access, index));
+            }
+        }
+        let call = Expr::RecordInitialization(record_id, args);
+        program.update_expr(*expr_id, call);
     }
 }
