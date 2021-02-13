@@ -11,10 +11,17 @@ import Siko.Backend.Ownership.Unification as U
 import Map
 import Set
 
-data Context = { expr_ids :: Set E.ExprId }
+data Context = { expr_ids :: Set E.ExprId, vars :: Set E.Var }
 
 createContext :: Context
-createContext = Context Set.empty
+createContext = Context Set.empty Set.empty
+
+addVar :: P.Identity -> Context -> E.Var -> Context
+addVar id context var = do
+    (vars, inserted) <- Set.insert context.vars var
+    if inserted
+        then context { vars = vars }
+        else panic "ICE: duplicated var decl {} in function {}" % (var, id)
 
 check :: P.Identity -> Context -> E.Expr -> (Context, E.Expr)
 check id context expr = do
@@ -23,11 +30,17 @@ check id context expr = do
     context <- if inserted
         then context { expr_ids = expr_ids }
         else panic "ICE: duplicated expr id {} in function {}/{}" % (expr_id, id, E.short expr)
-    case s_expr of
+    context <- case s_expr of
         E.Do items -> if List.isEmpty items
                     then panic "ICE: empty do block found in {}" % id
-                    else ()
-        _ -> ()
+                    else context
+        E.VarDecl v _ -> addVar id context v
+        E.Loop v _ _ _ _ -> addVar id context v
+        E.CaseOf _ cases -> do
+            List.fold context cases (\context, c -> case c.checker of
+                E.VariantChecker _ v _ -> addVar id context v
+                _ -> context)
+        _ -> context
     (context, expr)
 
 processFunction :: F.Function -> ()

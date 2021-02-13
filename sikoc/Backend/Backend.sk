@@ -95,12 +95,14 @@ createGroups config mir_program = do
 
 processProgram :: Config -> MP.Program -> LP.Program
 processProgram config mir_program = do
-    trace config "SanityCheck.."
+    trace config "SanityCheck1.."
     SanityCheck.processProgram mir_program
     (data_groups, function_groups) <- createGroups config mir_program
     trace config "Inliner.."
     mir_program <- Inliner.processProgram mir_program function_groups
     dumpProgram config mir_program (MIR 1)
+    trace config "SanityCheck2.."
+    SanityCheck.processProgram mir_program
     (data_groups, function_groups) <- createGroups config mir_program
     trace config "TransformUpdates.."
     mir_program <- TransformUpdates.processProgram mir_program

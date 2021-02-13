@@ -73,8 +73,8 @@ bindArg var_map context index arg = do
     arg <- E.Expr (E.VarDecl arg_var arg) unit_type id
     (context, arg)
 
-remapBody :: Map E.Var E.Var -> () -> E.Expr -> ((), E.Expr)
-remapBody var_map _ expr = do
+remapBody :: Map E.Var E.Var -> Context -> E.Expr -> (Context, E.Expr)
+remapBody var_map context expr = do
     E.Expr s_expr type id <- expr
     e <- case s_expr of
         E.VarDecl v rhs -> do
@@ -96,14 +96,15 @@ remapBody var_map _ expr = do
                 c { checker = checker })
             E.CaseOf body cases
         e -> e
-    ((), E.Expr e type id)
+    (context, id) <- getNextExprId context
+    (context, E.Expr e type id)
 
 getInlinedBody :: Context -> E.Expr -> [E.Expr] -> Map E.Var E.Var -> (Context, E.Expr)
 getInlinedBody context body args var_map = do
     E.Expr _ body_type _ <- body
     (context, do_id) <- getNextExprId context
     (context, args) <- List.mapSE context args (bindArg var_map)
-    (_, body) <- traverse () body (Some (remapBody var_map)) None
+    (context, body) <- traverse context body (Some (remapBody var_map)) None
     items <- args + [body]
     do_expr <- E.Expr (E.Do items) body_type do_id
     (context, do_expr)
