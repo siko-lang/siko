@@ -66,11 +66,12 @@ processExpr context expr = do
 processFunction :: Config -> P.Identity -> F.Function -> (P.Identity, F.Function)
 processFunction config id function = do
     case function.kind of
-        F.Normal body expr_id_gen expr_var_gen -> do
-            not_moves <- C.collectNotMoves function.id body (getLength function.type.args)
-            context <- Context expr_id_gen not_moves
-            (context, new_body) <- traverse context body (Some processExpr) None
-            new_kind <- F.Normal new_body context.expr_id_gen expr_var_gen
+        F.Normal info -> do
+            not_moves <- C.collectNotMoves function.id info.body (getLength function.type.args)
+            context <- Context info.expr_id_gen not_moves
+            (context, new_body) <- traverse context info.body (Some processExpr) None
+            info <- info { body = new_body, expr_id_gen = context.expr_id_gen }
+            new_kind <- F.Normal info
             (id, function { kind = new_kind })
         _ -> (id, function)
 

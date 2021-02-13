@@ -288,9 +288,9 @@ calculateInferenceInfo :: Common.GlobalContext -> Init.Context -> P.Identity -> 
 calculateInferenceInfo global_context init_context function_id = do
     function <- P.getFunction global_context.program function_id
     case function.kind of
-        F.Normal body expr_id_gen expr_var_gen -> do
+        F.Normal info -> do
             trace global_context.config "Inference: processing {}" % function.id
-            (context, _) <- C.collectConstraints global_context init_context function.type function_id body
+            (context, _) <- C.collectConstraints global_context init_context function.type function_id info.body
             trace global_context.config "processing equals"
             context <- processEquals context
             trace global_context.config "processing constraints"

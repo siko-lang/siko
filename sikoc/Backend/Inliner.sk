@@ -1,0 +1,169 @@
+module Siko.Backend.Inliner where
+
+import Siko.MIR.Program as P
+import Siko.MIR.Expr as E
+import Siko.MIR.Data as D
+import Siko.MIR.Type as T
+import Siko.MIR.Function as F
+import Siko.Util.Counter
+import Siko.Backend.Traversal
+import Siko.Util.DependencyProcessor
+import Map
+import Set
+
+data Context = { program :: P.Program,
+                 group :: [P.Identity],
+                 expr_id_gen :: Counter E.ExprId,
+                 temp_var_gen :: Counter E.Var,
+                 kept_functions :: Set P.Identity,
+               }
+
+getNextExprId :: Context -> (Context, E.ExprId)
+getNextExprId context = do
+    (expr_id_gen, next_id) <- getNext context.expr_id_gen
+    (context { expr_id_gen = expr_id_gen }, next_id)
+
+getNextTempVar :: Context -> (Context, E.Var)
+getNextTempVar context = do
+    (temp_var_gen, v) <- getNext context.temp_var_gen
+    (context { temp_var_gen = temp_var_gen }, v)
+
+data VarCollection = { vars :: Set E.Var }
+
+addVar :: VarCollection -> E.Var -> VarCollection
+addVar collection v = do
+    (vars, _) <- Set.insert collection.vars v
+    collection { vars = vars }
+
+collectVarFromExpr :: VarCollection -> E.Expr -> (VarCollection, E.Expr)
+collectVarFromExpr collection expr = do
+    E.Expr s_expr _ _ <- expr
+    case s_expr of
+        E.VarDecl v _ -> do
+            collection <- addVar collection v
+            (collection, expr)
+        E.CaseOf _ cases -> do
+            collection <- List.fold collection cases (\collection, c -> do
+                case c.checker of
+                    E.VariantChecker _ v _ -> addVar collection v
+                    _ -> collection)
+            (collection, expr)
+        E.Loop v _ _ _ _ -> do
+            collection <- addVar collection v
+            (collection, expr)
+        _ -> (collection, expr)
+
+collectVars :: E.Expr -> VarCollection
+collectVars body = do
+    collection <- VarCollection Set.empty
+    (collection, body) <- traverse collection body (Some collectVarFromExpr) None
+    collection
+
+getMappedVar :: Map E.Var E.Var -> E.Var -> E.Var
+getMappedVar var_map var = case get var_map var of
+    Some v -> v
+    _ -> panic "Mapped var {} not found in var map" % var
+
+bindArg :: Map E.Var E.Var -> Context -> Int -> E.Expr -> (Context, E.Expr)
+bindArg var_map context index arg = do
+    (context, id) <- getNextExprId context
+    unit_type <- P.getUnitType context.program
+    arg_var <- E.Arg index
+    arg_var <- getMappedVar var_map arg_var
+    arg <- E.Expr (E.VarDecl arg_var arg) unit_type id
+    (context, arg)
+
+remapBody :: Map E.Var E.Var -> () -> E.Expr -> ((), E.Expr)
+remapBody var_map _ expr = do
+    E.Expr s_expr type id <- expr
+    e <- case s_expr of
+        E.VarDecl v rhs -> do
+            v <- getMappedVar var_map v
+            E.VarDecl v rhs
+        E.VarRef v -> do
+            v <- getMappedVar var_map v
+            E.VarRef v
+        E.Loop v a b c d -> do
+            v <- getMappedVar var_map v
+            E.Loop v a b c d
+        E.CaseOf body cases -> do
+            cases <- List.map cases (\c -> do
+                checker <- case c.checker of
+                    E.VariantChecker index v type -> do
+                        v <- getMappedVar var_map v
+                        E.VariantChecker index v type
+                    other -> other
+                c { checker = checker })
+            E.CaseOf body cases
+        e -> e
+    ((), E.Expr e type id)
+
+getInlinedBody :: Context -> E.Expr -> [E.Expr] -> Map E.Var E.Var -> (Context, E.Expr)
+getInlinedBody context body args var_map = do
+    E.Expr _ body_type _ <- body
+    (context, do_id) <- getNextExprId context
+    (context, args) <- List.mapSE context args (bindArg var_map)
+    (_, body) <- traverse () body (Some (remapBody var_map)) None
+    items <- args + [body]
+    do_expr <- E.Expr (E.Do items) body_type do_id
+    (context, do_expr)
+
+processExpr :: Context -> E.Expr -> (Context, E.Expr)
+processExpr context expr = do
+    E.Expr s_expr _ _ <- expr
+    case s_expr of
+        E.StaticFunctionCall id args -> do
+            function <- P.getFunction context.program id
+            case function.kind of
+                F.Normal info if info.inline -> do
+                    //println "{} should be inline" % id
+                    if List.contains context.group id
+                    then do
+                        //println "{} cannot be inline" % id
+                        (kept_functions, _) <- Set.insert context.kept_functions id
+                        context <- context { kept_functions = kept_functions }
+                        (context, expr)
+                    else do
+                        collection <- collectVars info.body
+                        collection <- List.foldE (\collection, index, _ -> addVar collection (E.Arg index)) collection function.type.args
+                        (context, var_map) <- collection.vars |> Set.iter |> Iterator.fold (\(context, var_map), var -> do
+                            (context, temp_var) <- getNextTempVar context
+                            (var_map, _) <- Map.insert var_map var temp_var
+                            (context, var_map)) (context, Map.empty)
+                        (context, expr) <- getInlinedBody context info.body args var_map
+                        (context, expr)
+                _ -> (context, expr)
+        _ -> (context, expr)
+
+processFunction :: [P.Identity] -> (P.Program, Set P.Identity) -> P.Identity -> (P.Program, Set P.Identity)
+processFunction group (program, kept_functions) function_id = do
+    function <- P.getFunction program function_id
+    //println "Processing {}" % function_id
+    case function.kind of
+        F.Normal info -> do
+            context <- Context program group info.expr_id_gen info.temp_var_gen kept_functions
+            (context, body) <- traverse context info.body (Some processExpr) None
+            info <- info { body = body, expr_id_gen = context.expr_id_gen, temp_var_gen = context.temp_var_gen }
+            new_kind <- F.Normal info
+            program <- P.updateFunctionKind program function_id new_kind
+            (program, context.kept_functions)
+        _ -> (program, kept_functions)
+
+processFunctionGroup :: (P.Program, Set P.Identity) -> DependencyGroup P.Identity -> (P.Program, Set P.Identity)
+processFunctionGroup (program, kept_functions) group = do
+    List.fold (program, kept_functions) group.items (processFunction group.items)
+
+filterInlined :: Set P.Identity -> (P.Identity, F.Function) -> Bool
+filterInlined kept_functions (id, function) = do
+    case function.kind of
+        F.Normal info -> if info.inline && not (Set.contains kept_functions id)
+            then False
+            else True
+        _ -> True
+
+processProgram :: P.Program -> [DependencyGroup P.Identity] -> P.Program
+processProgram program groups = do
+    kept_functions <- Set.empty
+    (program, kept_functions) <- List.fold (program, kept_functions) groups processFunctionGroup
+    functions <- Map.filter program.functions (filterInlined kept_functions)
+    program { functions = functions }

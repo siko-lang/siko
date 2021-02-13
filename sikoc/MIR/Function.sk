@@ -8,14 +8,20 @@ import Siko.Util.Counter
 
 import Map
 
-data FunctionKind = Normal E.Expr (Counter E.ExprId) (Counter E.Var)
+data FunctionInfo = { body :: E.Expr,
+                      expr_id_gen :: Counter E.ExprId,
+                      temp_var_gen :: Counter E.Var,
+                      inline :: Bool,
+                    }
+
+data FunctionKind = Normal FunctionInfo
                   | VariantCtor Int
                   | RecordCtor
                   | Extern TypeMapping
 
 instance Show FunctionKind where
     show kind = case kind of
-        Normal _ _ _ -> "Normal"
+        Normal _ -> "Normal"
         VariantCtor _ -> "VariantCtor"
         RecordCtor -> "RecordCtor"
         Extern _ -> "Extern"
@@ -39,7 +45,7 @@ dump function = do
         args + ["arg{}" % index]) []
     args <- join args " "
     case function.kind of
-        Normal body _ _ -> s + "{} {} = {}" % (function.id, args, (E.prettyPrint body (Indent 0)).0)
+        Normal info -> s + "{} {} = {}" % (function.id, args, (E.prettyPrint info.body (Indent 0)).0)
         VariantCtor index -> s + "{} {} = <variant_ctor:{}>" % (function.id, args, index)
         RecordCtor -> s + "{} {} = <record_ctor>" % (function.id, args)
         Extern type_mapping -> s + "{} {} = extern" % (function.id, args)

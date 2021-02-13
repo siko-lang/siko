@@ -6,6 +6,7 @@ import Siko.Backend.Ownership.AddConverter as AddConverter
 import Siko.Backend.Instantiation as Instantiation
 import Siko.Backend.SanityCheck as SanityCheck
 import Siko.Backend.Ownership.TransformUpdates as TransformUpdates
+import Siko.Backend.Inliner as Inliner
 import Siko.Backend.Traversal
 import Siko.MIR.Program as MP
 import Siko.LIR.Program as LP
@@ -43,7 +44,6 @@ collectDataDeps mir_program = do
     dependencies
 
 data Context = { deps :: [MP.Identity] }
-                 deriving (PartialEq, Eq, PartialOrd, Ord)
 
 processExpr :: Context -> Expr -> (Context, Expr)
 processExpr context expr = do
@@ -57,9 +57,9 @@ processExpr context expr = do
 
 getDepsForFunction :: MP.Program -> F.Function -> [MP.Identity]
 getDepsForFunction mir_program function = case function.kind of
-    F.Normal body _ _ -> do
+    F.Normal info -> do
         context <- Context []
-        (context, _) <- traverse context body (Some processExpr) None
+        (context, _) <- traverse context info.body (Some processExpr) None
         context.deps
     _ -> []
 
@@ -73,10 +73,16 @@ collectFunctionDeps mir_program = do
         ) dependencies
     dependencies
 
-processProgram :: Config -> MP.Program -> LP.Program
-processProgram config mir_program = do
-    trace config "SanityCheck.."
-    SanityCheck.processProgram mir_program
+dumpProgram :: Config -> MP.Program -> OutputFileType -> ()
+dumpProgram config mir_program type =
+    if config.dump
+    then do
+        s <- MP.dump mir_program
+        writeTextFile (getOutputFileName config type) s
+    else ()
+
+createGroups :: Config -> MP.Program -> ([DependencyGroup MP.Identity], [DependencyGroup MP.Identity])
+createGroups config mir_program = do
     trace config "collectDataDeps.."
     data_dependencies <- collectDataDeps mir_program
     trace config "processing data deps.."
@@ -85,22 +91,25 @@ processProgram config mir_program = do
     function_dependencies <- collectFunctionDeps mir_program
     trace config "processing function deps.."
     function_groups <- processDependencies config function_dependencies
+    (data_groups, function_groups)
+
+processProgram :: Config -> MP.Program -> LP.Program
+processProgram config mir_program = do
+    trace config "SanityCheck.."
+    SanityCheck.processProgram mir_program
+    (data_groups, function_groups) <- createGroups config mir_program
+    trace config "Inliner.."
+    mir_program <- Inliner.processProgram mir_program function_groups
+    dumpProgram config mir_program (MIR 1)
+    (data_groups, function_groups) <- createGroups config mir_program
     trace config "TransformUpdates.."
     mir_program <- TransformUpdates.processProgram mir_program
     trace config "AddConverter.."
     mir_program <- AddConverter.processProgram config mir_program
-    if config.dump
-    then do
-        s <- MP.dump mir_program
-        writeTextFile (getOutputFileName config (MIR 1)) s
-    else ()
+    dumpProgram config mir_program (MIR 2)
     trace config "Initialization.."
     (context, mir_program) <- Initialization.initializeOwnership config mir_program data_groups
-    if config.dump
-    then do
-        s <- MP.dump mir_program
-        writeTextFile (getOutputFileName config (MIR 2)) s
-    else ()
+    dumpProgram config mir_program (MIR 3)
     trace config "Inference.."
     (inference_info_store, context) <- Inference.processProgram config mir_program context function_groups
     trace config "Instantiation.."

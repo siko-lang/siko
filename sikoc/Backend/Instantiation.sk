@@ -314,9 +314,9 @@ processFunction queue mir_program mir_id function_type lir_id = do
     trace queue.config "Instantiation: processing function {} {}" % (mir_id, function_type)
     mir_function <- MP.getFunction mir_program mir_id
     case mir_function.kind of
-        MF.Normal mir_body expr_id_gen temp_var_gen -> do
+        MF.Normal info -> do
             global_context <- InferenceC.createGlobalContext queue.config mir_program queue.inference_info_store
-            (body, init_context) <- Inference.instantiateFunction global_context queue.init_context expr_id_gen mir_id function_type mir_body
+            (body, init_context) <- Inference.instantiateFunction global_context queue.init_context info.expr_id_gen mir_id function_type info.body
             (queue, lir_body) <- processExpr queue body
             lir_kind <- LF.Normal lir_body
             //println "Processing function type {}" % function_type

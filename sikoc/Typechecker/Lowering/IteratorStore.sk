@@ -267,7 +267,8 @@ createGetNextFunctionBody context iterator function_id = do
     (context, new_body_expr) <- getExpr context (ME.Expr new_body mir_get_next_function.type.result)
     (context, expr_id_gen) <- resetExprIdCounter context
     (context, temp_var_gen) <- resetTempVarCounter context
-    new_kind <- MF.Normal new_body_expr expr_id_gen temp_var_gen
+    info <- MF.FunctionInfo new_body_expr expr_id_gen temp_var_gen True
+    new_kind <- MF.Normal info
     mir_program <- context.mir_program
     mir_program <- MP.updateFunctionKind context.mir_program function_id new_kind
     context <- context { mir_program = mir_program }

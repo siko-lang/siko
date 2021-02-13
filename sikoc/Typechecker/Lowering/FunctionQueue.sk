@@ -107,7 +107,9 @@ processNormalFunction context mir_function_id hir_type qn hir_function =
             (context, expr_id_gen) <- resetExprIdCounter context
             (context, temp_var_gen) <- resetTempVarCounter context
             (context, mir_arg_types, mir_result_type) <- getFunctionType context hir_type hir_function.arg_count
-            mir_function <- MF.Function mir_function_id (MF.Normal mir_body expr_id_gen temp_var_gen) (MF.FunctionType mir_arg_types mir_result_type)
+            info <- MF.FunctionInfo mir_body expr_id_gen temp_var_gen False
+            mir_function_type <- MF.FunctionType mir_arg_types mir_result_type
+            mir_function <- MF.Function mir_function_id (MF.Normal info) mir_function_type
             mir_program <- MP.addFunction context.mir_program mir_function_id mir_function
             context <- context { mir_program = mir_program }
             context
@@ -137,8 +139,9 @@ processNormalFunction context mir_function_id hir_type qn hir_function =
                             (context, mir_body_expr) <- getExpr context (ME.Expr mir_body mir_result_type)
                             (context, expr_id_gen) <- resetExprIdCounter context
                             (context, temp_var_gen) <- resetTempVarCounter context
-                            mir_function <- MF.Function mir_function_id (MF.Normal mir_body_expr expr_id_gen temp_var_gen)
-                                            (MF.FunctionType mir_arg_types mir_result_type)
+                            info <- MF.FunctionInfo mir_body_expr expr_id_gen temp_var_gen True
+                            mir_function_type <- MF.FunctionType mir_arg_types mir_result_type
+                            mir_function <- MF.Function mir_function_id (MF.Normal info) mir_function_type
                             mir_program <- MP.addFunction context.mir_program mir_function_id mir_function
                             context <- context { mir_program = mir_program }
                             context
@@ -157,7 +160,8 @@ processNormalFunction context mir_function_id hir_type qn hir_function =
                                 (context, mir_body) <- getExpr context (ME.Expr (ME.Do []) mir_result_type)
                                 (context, expr_id_gen) <- resetExprIdCounter context
                                 (context, temp_var_gen) <- resetTempVarCounter context
-                                mir_function <- MF.Function mir_function_id (MF.Normal mir_body expr_id_gen temp_var_gen)
+                                info <- MF.FunctionInfo mir_body expr_id_gen temp_var_gen True
+                                mir_function <- MF.Function mir_function_id (MF.Normal info)
                                                 (MF.FunctionType mir_arg_types mir_result_type)
                                 mir_program <- MP.addFunction context.mir_program mir_function_id mir_function
                                 context <- context { mir_program = mir_program }
@@ -223,7 +227,9 @@ processItem item mir_function_id context = do
                     (context, mir_body) <- getExpr context (ME.Expr (ME.Do []) mir_result_type)
                     (context, expr_id_gen) <- resetExprIdCounter context
                     (context, temp_var_gen) <- resetTempVarCounter context
-                    mir_function <- MF.Function mir_function_id (MF.Normal mir_body expr_id_gen temp_var_gen) (MF.FunctionType mir_arg_types mir_result_type)
+                    info <- MF.FunctionInfo mir_body expr_id_gen temp_var_gen True
+                    mir_function_type <- MF.FunctionType mir_arg_types mir_result_type
+                    mir_function <- MF.Function mir_function_id (MF.Normal info) mir_function_type
                     mir_program <- MP.addFunction context.mir_program mir_function_id mir_function
                     context <- context { mir_program = mir_program }
                     context
@@ -259,7 +265,9 @@ processItem item mir_function_id context = do
             (context, body) <- fn context hir_type class_name
             (context, expr_id_gen) <- resetExprIdCounter context
             (context, temp_var_gen) <- resetTempVarCounter context
-            mir_function <- MF.Function mir_function_id (MF.Normal body expr_id_gen temp_var_gen) (MF.FunctionType mir_arg_types mir_result_type)
+            info <- MF.FunctionInfo body expr_id_gen temp_var_gen False
+            mir_function_type <- MF.FunctionType mir_arg_types mir_result_type
+            mir_function <- MF.Function mir_function_id (MF.Normal info) mir_function_type
             mir_program <- MP.addFunction context.mir_program mir_function_id mir_function
             context <- context { mir_program = mir_program }
             context
