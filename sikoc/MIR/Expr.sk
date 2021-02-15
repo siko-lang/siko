@@ -122,7 +122,7 @@ prettyPrint expr ind = do
             args <- args |> List.iter |> Iterator.map (\arg -> do
                 (s, simple) <- prettyPrint arg ind
                 if simple then s else "({})" % s) |> toList
-            s <- "({} {} :: {})" % (id, join args " ", expr_type)
+            s <- "{} {}" % (id, join args " ")
             (s, isEmpty args)
         IntegerLiteral lit -> ("{}" % lit, True)
         StringLiteral lit -> ("\"{}\"" % escapeString lit, True)
@@ -132,12 +132,12 @@ prettyPrint expr ind = do
             Expr _ arg_type id <- arg
             s <- "{} :: {} <- {}" % (v, arg_type, (prettyPrint arg ind).0)
             (s, False)
-        VarRef v -> ("({} :: {})" % (v, expr_type), True)
+        VarRef v -> ("{}" % v, True)
         FieldAccess n rhs -> do
             (s, simple) <- prettyPrint rhs ind
             s <- if simple
-                then "({}.{} :: {})" % (s, n, expr_type)
-                else "(({}).{} :: {})" % (s, n, expr_type)
+                then "{}.{}" % (s, n)
+                else "({}).{}" % (s, n)
             (s, True)
         If cond true_branch false_branch -> do
             s <- "if {} then {} else {}" % ((prettyPrint cond ind).0, (prettyPrint true_branch ind).0, (prettyPrint false_branch ind).0)

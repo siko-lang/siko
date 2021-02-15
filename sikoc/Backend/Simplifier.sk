@@ -1,0 +1,134 @@
+module Siko.Backend.Simplifier where
+
+import Siko.MIR.Program as P
+import Siko.MIR.Expr as E
+import Siko.MIR.Data as D
+import Siko.MIR.Type as T
+import Siko.MIR.Function as F
+import Siko.Util.Counter
+import Siko.Backend.Traversal
+import Map
+
+data Context = { expr_id_gen :: Counter E.ExprId,
+                 temp_var_gen :: Counter E.Var, }
+
+getNextExprId :: Context -> (Context, E.ExprId)
+getNextExprId context = do
+    (expr_id_gen, next_id) <- getNext context.expr_id_gen
+    (context { expr_id_gen = expr_id_gen }, next_id)
+
+getNextTempVar :: Context -> (Context, E.Var)
+getNextTempVar context = do
+    (temp_var_gen, v) <- getNext context.temp_var_gen
+    (context { temp_var_gen = temp_var_gen }, v)
+
+processExpr :: Context -> E.Expr -> (Context, E.Expr)
+processExpr context expr = do
+    E.Expr s_expr type id <- expr
+    case s_expr of
+        E.Do items -> do
+            (context, items) <- List.mapS context items processExpr
+            (rest, last) <- List.split items (getLength items - 1)
+            last <- atIndex last 0 // FIXME: should use a pop_last or similar
+            E.Expr last_s_expr _ _ <- last
+            case last_s_expr of
+                E.Do sub_items -> (context, E.Expr (E.Do (rest + sub_items)) type id)
+                e -> do
+                    (context, E.Expr (E.Do (rest + [last])) type id)
+        E.Multi _ -> panic "Multi expr found in rebinder"
+        E.StaticFunctionCall f_id args -> do
+            (context, args) <- List.mapS context args processExpr
+            (context, E.Expr (E.StaticFunctionCall f_id args) type id)
+        E.IntegerLiteral lit -> (context, E.Expr (E.IntegerLiteral lit) type id)
+        E.StringLiteral lit -> (context, E.Expr (E.StringLiteral lit) type id)
+        E.FloatLiteral lit -> (context, E.Expr (E.FloatLiteral lit) type id)
+        E.CharLiteral lit -> (context, E.Expr (E.CharLiteral lit) type id)
+        E.VarDecl v arg -> do
+            (context, arg) <- processExpr context arg
+            (context, E.Expr (E.VarDecl v arg) type id)
+        E.VarRef v -> do
+            (context, E.Expr (E.VarRef v) type id)
+        E.FieldAccess name arg -> do
+            (context, arg) <- processExpr context arg
+            (context, E.Expr (E.FieldAccess name arg) type id)
+        E.If cond true_branch false_branch -> do
+            (context, cond) <- processExpr context cond
+            (context, true_branch) <- processExpr context true_branch
+            (context, false_branch) <- processExpr context false_branch
+            (context, E.Expr (E.If cond true_branch false_branch) type id)
+        E.List args -> do
+            (context, args) <- List.mapS context args processExpr
+            (context, E.Expr (E.List args) type id)
+        E.Return arg -> do
+            (context, arg) <- processExpr context arg
+            (context, E.Expr (E.Return arg) type id)
+        E.Continue arg -> do
+            (context, arg) <- processExpr context arg
+            (context, E.Expr (E.Continue arg) type id)
+        E.Break arg -> do
+            (context, arg) <- processExpr context arg
+            (context, E.Expr (E.Break arg) type id)
+        E.RecordUpdate v updates -> do
+            (context, updates) <- List.mapS context updates (\context, update -> do
+                update :: E.RecordUpdateItem <- update // FIXME
+                (context, updated_body) <- processExpr context update.body
+                (context, update { body = updated_body }))
+            (context, E.Expr (E.RecordUpdate v updates) type id)
+        E.Loop v initializer body continues breaks -> do
+            (context, initializer) <- processExpr context initializer
+            (context, body) <- processExpr context body
+            (context, E.Expr (E.Loop v initializer body continues breaks) type id)
+        E.CaseOf body cases -> do
+            (context, body) <- processExpr context body
+            (context, cases) <- cases |> List.iter |> Iterator.fold (\(context, cases), case_branch -> do
+                (context, updated_body) <- processExpr context case_branch.body
+                case_branch <- case_branch { body = updated_body }
+                cases <- cases + [case_branch]
+                (context, cases)) (context, [])
+            E.Expr body_s_expr _ _ <- body
+            case body_s_expr of
+                E.VarRef _ ->
+                    if getLength cases == 1
+                    then do
+                        c :: E.Case <- atIndex cases 0 // FIXME: type annotation
+                        case c.checker of
+                            E.WildcardChecker -> (context, c.body)
+                            _ -> (context, E.Expr (E.CaseOf body cases) type id)
+                    else (context, E.Expr (E.CaseOf body cases) type id)
+                _ -> (context, E.Expr (E.CaseOf body cases) type id)
+        E.Clone arg -> do
+            (context, arg) <- processExpr context arg
+            (context, E.Expr (E.Clone arg) type id)
+        E.Deref arg -> do
+            (context, arg) <- processExpr context arg
+            (context, E.Expr (E.Deref arg) type id)
+        E.Ref arg -> do
+            (context, arg) <- processExpr context arg
+            (context, E.Expr (E.Ref arg) type id)
+        E.Move arg -> do
+            (context, arg) <- processExpr context arg
+            (context, E.Expr (E.Move arg) type id)
+        E.Box arg -> do
+            (context, arg) <- processExpr context arg
+            (context, E.Expr (E.Box arg) type id)
+        E.Converter arg kind -> do
+            (context, arg) <- processExpr context arg
+            (context, E.Expr (E.Converter arg kind) type id)
+
+createContext :: Counter E.ExprId -> Counter E.Var -> Context
+createContext expr_id_gen temp_var_gen = Context expr_id_gen temp_var_gen
+
+processFunction :: F.Function -> F.Function
+processFunction function = case function.kind of
+    F.Normal info -> do
+        context <- createContext info.expr_id_gen info.temp_var_gen
+        (context, body) <- processExpr context info.body
+        info <- info { body = body, expr_id_gen = context.expr_id_gen, temp_var_gen = context.temp_var_gen }
+        new_kind <- F.Normal info
+        function { kind = new_kind}
+    _ -> function
+
+processProgram :: P.Program -> P.Program
+processProgram program = do
+    functions <- program.functions |> Map.iter |> Iterator.map (\(id, function) -> (id, processFunction function)) |> toMap
+    program { functions = functions }
