@@ -194,10 +194,13 @@ processExpr context moved_vars expr = do
                     context <- equalConstraintsWithVars context moved_vars var_vars type
                     (context, moved_vars)
                 else do
-                    moved_var <- List2.atIndex var_vars 0
-                    moved_vars <- addMovedVar moved_vars moved_var
-                    context <- equalConstraintsWithVars context moved_vars var_vars type
-                    (context, moved_vars)
+                    if List2.isEmpty var_vars
+                    then (context, moved_vars)
+                    else do
+                        moved_var <- List2.atIndex var_vars 0
+                        moved_vars <- addMovedVar moved_vars moved_var
+                        context <- equalConstraintsWithVars context moved_vars var_vars type
+                        (context, moved_vars)
             (context, moved_vars)
         E.FieldAccess name receiver -> do
             (context, moved_vars) <- processExpr context moved_vars receiver

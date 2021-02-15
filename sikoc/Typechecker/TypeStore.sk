@@ -27,12 +27,18 @@ initializeTypeStore = TypeStore empty empty empty
 
 addExprType :: TypeStore -> E.ExprId -> ExprTypeState -> TypeStore
 addExprType store expr_id expr_type = do
-    (expr_types, _) <- insert store.expr_types expr_id expr_type
+    (expr_types, prev) <- insert store.expr_types expr_id expr_type
+    if isSome prev
+    then panic "Exprid is not unique!"
+    else ()
     store { expr_types = expr_types }
 
 addPatternType :: TypeStore -> P.PatternId -> PatternTypeState -> TypeStore
 addPatternType store pattern_id pattern_type = do
-    (pattern_types, _) <- insert store.pattern_types pattern_id pattern_type
+    (pattern_types, prev) <- insert store.pattern_types pattern_id pattern_type
+    if isSome prev
+    then panic "Patternid is not unique!"
+    else ()
     store { pattern_types = pattern_types }
 
 addPatternLocation :: TypeStore -> P.PatternId -> Location -> TypeStore

@@ -5,6 +5,7 @@ import Siko.Backend.Ownership.Inference as Inference
 import Siko.Backend.Ownership.AddConverter as AddConverter
 import Siko.Backend.Instantiation as Instantiation
 import Siko.Backend.SanityCheck as SanityCheck
+import Siko.Backend.Rebinder as Rebinder
 import Siko.Backend.Ownership.TransformUpdates as TransformUpdates
 import Siko.Backend.Inliner as Inliner
 import Siko.Backend.Traversal
@@ -95,12 +96,15 @@ createGroups config mir_program = do
 
 processProgram :: Config -> MP.Program -> LP.Program
 processProgram config mir_program = do
+    trace config "Rebinder.."
+    mir_program <- Rebinder.processProgram mir_program
+    dumpProgram config mir_program (MIR 1)
     trace config "SanityCheck1.."
     SanityCheck.processProgram mir_program
     (data_groups, function_groups) <- createGroups config mir_program
     trace config "Inliner.."
     mir_program <- Inliner.processProgram mir_program function_groups
-    dumpProgram config mir_program (MIR 1)
+    dumpProgram config mir_program (MIR 2)
     trace config "SanityCheck2.."
     SanityCheck.processProgram mir_program
     (data_groups, function_groups) <- createGroups config mir_program
@@ -108,10 +112,10 @@ processProgram config mir_program = do
     mir_program <- TransformUpdates.processProgram mir_program
     trace config "AddConverter.."
     mir_program <- AddConverter.processProgram config mir_program
-    dumpProgram config mir_program (MIR 2)
+    dumpProgram config mir_program (MIR 3)
     trace config "Initialization.."
     (context, mir_program) <- Initialization.initializeOwnership config mir_program data_groups
-    dumpProgram config mir_program (MIR 3)
+    dumpProgram config mir_program (MIR 4)
     trace config "Inference.."
     (inference_info_store, context) <- Inference.processProgram config mir_program context function_groups
     trace config "Instantiation.."
