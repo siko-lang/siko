@@ -143,10 +143,26 @@ createCaseBody patterns location = do
 
 desugarFunctionArgs :: [SP.Pattern] -> SE.Expr -> SE.Expr
 desugarFunctionArgs patterns orig_body = do
-    (pattern_tuple, location) <- processFunctionArgs patterns
-    case_body <- createCaseBody patterns location
-    c <- SE.Case pattern_tuple orig_body
-    SE.Expr (SE.CaseOf case_body [c]) location
+        (pattern_tuple, location) <- processFunctionArgs patterns
+        if isSimple patterns
+        then do
+            arg_refs <- List.mapE patterns (\index, pattern -> do
+                arg <- SE.Expr (SE.ArgRef index) location
+                SE.Expr (SE.Bind pattern arg) location)
+            items <- arg_refs + [orig_body]
+            SE.Expr (SE.Do items) location
+        else do
+            case_body <- createCaseBody patterns location
+            c <- SE.Case pattern_tuple orig_body
+            SE.Expr (SE.CaseOf case_body [c]) location
+    where
+        isSimple :: [SP.Pattern] -> Bool
+        isSimple patterns = do
+            List.fold True patterns (\all_simple, p -> do
+                SP.Pattern s _ <- p
+                case s of
+                    SP.Binding _ -> all_simple
+                    _ -> False)
 
 desugarFunctionArgsMulti :: [([SP.Pattern], SE.Expr)] -> SE.Expr
 desugarFunctionArgsMulti arg_cases = do
@@ -278,46 +294,63 @@ processRecordFieldInit field_inits (context, env, args) (HD.RecordField field_na
     args <- args + [hir_expr]
     (context, env, args)
 
-shiftLambdaArgs :: Context -> HE.Expr -> Int -> (Context, HE.Expr)
-shiftLambdaArgs context (HE.Expr case_of case_of_id case_of_location) offset = case case_of of
-    HE.CaseOf body_expr cases _ -> do
-        (HE.Expr body_expr body_id body_location) <- body_expr
-        case body_expr of
-            HE.Tuple arg_refs ->
-                do
-                (context, extra_arg_refs, extra_patterns) <- loop (context, extra_arg_refs, extra_patterns) <- (context, [], []) do
-                                len <- getLength extra_arg_refs
-                                if len == offset
-                                    then break (context, extra_arg_refs, extra_patterns)
-                                    else do
-                                        (context, expr_id) <- getExprId context
-                                        extra_arg_ref <- (HE.Expr (HE.ArgRef len) expr_id case_of_location)
-                                        extra_arg_refs <- extra_arg_refs + [extra_arg_ref]
-                                        (context, pattern_id) <- getPatternId context
-                                        extra_pattern <- HP.Pattern (HP.Wildcard) pattern_id case_of_location
-                                        extra_patterns <- extra_patterns + [extra_pattern]
-                                        (context, extra_arg_refs, extra_patterns)
-                arg_refs <- arg_refs |> List.iter |> Iterator.map (\e -> do
-                        HE.Expr arg_ref_expr arg_ref_id arg_ref_location <- e
-                        case arg_ref_expr of
-                            HE.ArgRef index -> HE.Expr (HE.ArgRef (index + offset)) arg_ref_id arg_ref_location
-                            _ -> panic "Arg ref is not arg ref expr"
-                    ) |> toList
-                arg_refs <- extra_arg_refs + arg_refs
-                assert (getLength cases == 1)
-                only_case <- atIndex cases 0
-                HP.Pattern p pattern_id pattern_location <- only_case.pattern
-                pattern <- case p of
-                    (HP.Tuple args) -> do
-                        args <- extra_patterns + args
-                        HP.Pattern (HP.Tuple args) pattern_id pattern_location
-                    _ -> panic "Case body is not a tuple"
-                cases <- [HE.Case pattern only_case.body]
-                case_of <- HE.CaseOf (HE.Expr (HE.Tuple arg_refs) body_id body_location) cases []
-                expr <- HE.Expr case_of case_of_id case_of_location
-                (context, expr)
-            _ -> panic "Body is not a tuple"
-    _ -> panic "Lambda body is not case with tuple"
+shiftLambdaArgs :: Context -> HE.Expr -> Int -> Int -> (Context, HE.Expr)
+shiftLambdaArgs context (HE.Expr full_body full_body_id full_body_location) offset orig_arg_count =
+        case full_body of
+            HE.CaseOf body_expr cases _ -> do
+                (HE.Expr body_expr body_id body_location) <- body_expr
+                case body_expr of
+                    HE.Tuple arg_refs ->
+                        do
+                        (context, extras) <- repeatSE context (createExtraArg full_body_location) offset
+                        extra_arg_refs <- List.map extras (\(arg_ref, _) -> arg_ref)
+                        extra_patterns <- List.map extras (\(_, pattern) -> pattern)
+                        arg_refs <- List.map arg_refs (shiftArgRef offset)
+                        arg_refs <- extra_arg_refs + arg_refs
+                        assert (getLength cases == 1)
+                        only_case <- atIndex cases 0
+                        HP.Pattern p pattern_id pattern_location <- only_case.pattern
+                        pattern <- case p of
+                            (HP.Tuple args) -> do
+                                args <- extra_patterns + args
+                                HP.Pattern (HP.Tuple args) pattern_id pattern_location
+                            _ -> panic "Case body is not a tuple"
+                        cases <- [HE.Case pattern only_case.body]
+                        case_of <- HE.CaseOf (HE.Expr (HE.Tuple arg_refs) body_id body_location) cases []
+                        expr <- HE.Expr case_of full_body_id full_body_location
+                        (context, expr)
+                    _ -> panic "Body is not a tuple"
+            HE.Do items -> do
+                items <- List.mapE items (processBoundArg offset orig_arg_count)
+                (context, HE.Expr (HE.Do items) full_body_id full_body_location)
+            _ -> panic "Unexpected lambda body in shiftLambdaArgs"
+    where
+        processBoundArg :: Int -> Int -> Int -> HE.Expr -> HE.Expr
+        processBoundArg offset orig_arg_count index arg =
+            if index >= orig_arg_count
+            then arg
+            else do
+                HE.Expr bind_expr bind_id bind_location <- arg
+                case bind_expr of
+                    HE.Bind pattern rhs -> do
+                        rhs <- shiftArgRef offset rhs
+                        HE.Expr (HE.Bind pattern rhs) bind_id bind_location
+                    _ -> panic "Bind is not a bind!"
+
+        createExtraArg :: Location -> Context -> Int -> (Context, (HE.Expr, HP.Pattern))
+        createExtraArg location context index = do
+            (context, expr_id) <- getExprId context
+            arg_ref <- (HE.Expr (HE.ArgRef index) expr_id location)
+            (context, pattern_id) <- getPatternId context
+            pattern <- HP.Pattern (HP.Wildcard) pattern_id location
+            (context, (arg_ref, pattern))
+
+        shiftArgRef :: Int -> HE.Expr -> HE.Expr
+        shiftArgRef offset expr = do
+            HE.Expr s_expr id location <- expr
+            case s_expr of
+                HE.ArgRef index -> HE.Expr (HE.ArgRef (index + offset)) id location
+                _ -> panic "Arg ref in shiftArgRef is not arg ref expr"
 
 desugarTry :: SE.Expr -> SE.Expr
 desugarTry expr = do
@@ -366,7 +399,7 @@ processExpr context env (SE.Expr expr location) = do
                                 None -> panic "captured variable not found in parent scope"
                         ) (context, [])
             total_arg_count <- getLength args + getLength arg_patterns
-            (context, final_lambda_body) <- shiftLambdaArgs context final_lambda_body (getLength args)
+            (context, final_lambda_body) <- shiftLambdaArgs context final_lambda_body (getLength args) (getLength arg_patterns)
             lambda <- HF.LambdaInfo lambda_id total_arg_count context.function_name final_lambda_body
             lambdas <- context.lambdas + [lambda]
             context <- context { lambdas = lambdas }

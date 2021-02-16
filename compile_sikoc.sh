@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -e
+
 mkdir -p compiled_sikoc/src
 ./siko std sikoc -c compiled_sikoc/src/source.rs
 cp rt/main.rs compiled_sikoc/src/

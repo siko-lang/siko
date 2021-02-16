@@ -7,7 +7,8 @@ module Std.Util.Basic(not,
                       unwrap,
                       panic,
                       repeat,
-                      repeatS) where
+                      repeatS,
+                      repeatSE) where
 
 not :: Bool -> Bool
 not a = if a then False
@@ -54,5 +55,14 @@ repeatS state fn count = do
         if c < count
             then do
                 (state, item) <- fn state
+                (state, items + [item], c + 1)
+            else return (state, items)
+
+repeatSE s a :: s -> (s -> Int -> (s, a)) -> Int -> (s, [a])
+repeatSE state fn count = do
+    loop (state, items, c) <- (state, [], 0) do
+        if c < count
+            then do
+                (state, item) <- fn state count
                 (state, items + [item], c + 1)
             else return (state, items)

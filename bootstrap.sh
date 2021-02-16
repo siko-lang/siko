@@ -1,4 +1,6 @@
 #!/bin/bash
+set -e
+
 ./build.sh
 mkdir -p bootstrap/src
 echo "Generating stage0"
