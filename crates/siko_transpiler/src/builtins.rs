@@ -646,7 +646,7 @@ fn generate_map2_builtins(
             indent.dec();
             write!(output_file, "{}}}\n", indent)?;
         }
-        "toMap" => {
+        "toMap2" => {
             write!(output_file, "{}let mut arg0 = arg0;\n", indent)?;
             write!(
                 output_file,

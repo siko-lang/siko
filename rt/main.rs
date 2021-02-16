@@ -149,19 +149,18 @@ pub mod siko_macros {
                                     $map_crate:tt :: $map_source:tt :: $map_module:tt :: $map_name:tt) => {{
 
             let mut f = $arg0;
-            let mut m = $arg2.value;
-            let value = match m.get(&$arg1) {
+            let value = match $arg2.value.get(&$arg1) {
                 Some(v) => $option_crate::$option_source::$option_module::$option_name::Some(v.clone()),
                 None => $option_crate::$option_source::$option_module::$option_name::None,
             };
             match f.call(value) {
                 $option_crate::$option_source::$option_module::$option_name::Some(v) =>  {
-                    return map2_insert!(m, $arg1, v, $option_crate::$option_source::$option_module::$option_name,
+                    return map2_insert!($arg2, $arg1, v, $option_crate::$option_source::$option_module::$option_name,
                         $tuple_crate::$tuple_source::$tuple_module::$tuple_name,
                         $map_crate:: $map_source :: $map_module::$map_name);
                 }
                 $option_crate::$option_source::$option_module::$option_name::None => {
-                    return map2_remove!(m, $arg1, $option_crate::$option_source::$option_module::$option_name,
+                    return map2_remove!($arg2, $arg1, $option_crate::$option_source::$option_module::$option_name,
                         $tuple_crate::$tuple_source::$tuple_module::$tuple_name,
                         $map_crate:: $map_source :: $map_module::$map_name);
                 }
