@@ -47,14 +47,14 @@ def run_command(args, name):
         print("%s failed" % name)
         return False
 
-def run(verbose, test_name, source_folder, index, total):
+def run(verbose, debug, test_name, source_folder, index, total):
     print("--- Running %s - %d/%d" % (test_name, total, index))
     mkdir_safe("sikoc_test_runs")
     target_folder = os.path.join("sikoc_test_runs", test_name)
     mkdir_safe(target_folder)
     compiled_sikoc = os.path.join("compiled_sikoc","sikoc")
     if os.path.exists(compiled_sikoc):
-        subprocess.call(["./compiled_sikoc.sh", "-d", verbose, "std2/*.sk", "%s/*.sk" % source_folder, "-o", os.path.join(target_folder, test_name)])
+        subprocess.call(["./compiled_sikoc.sh", debug, verbose, "std2/*.sk", "%s/*.sk" % source_folder, "-o", os.path.join(target_folder, test_name)])
     else:
         subprocess.call(["./sikoc.sh", "std2/*.sk", "%s/*.sk" % source_folder, "-o", os.path.join(target_folder, test_name)])
     normal_output = os.path.join(target_folder, "normal")
@@ -66,12 +66,16 @@ def run(verbose, test_name, source_folder, index, total):
 test_source_name = "sikoc_tests"
 tests = []
 verbose = ""
+debug = ""
 collect_tests(test_source_name, tests, None)
 if len(sys.argv) != 1:
     selected = set()
     for t in sys.argv[1:]:
         if t == "-v":
             verbose = "-v"
+            continue
+        elif t == "-d":
+            debug = "-d"
             continue
         else:
             selected.add(t)
@@ -80,7 +84,7 @@ total = len(tests)
 success = 0
 failure = 0
 for (index, (name, path)) in enumerate(tests):
-    if run(verbose, name, path, index + 1, total):
+    if run(verbose, debug, name, path, index + 1, total):
         success += 1
     else:
         failure += 1

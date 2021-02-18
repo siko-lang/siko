@@ -1,4 +1,4 @@
-module Siko.Backend.Simplifier where
+module Siko.Backend.Simplifier.AdtSimplifier where
 
 import Siko.MIR.Program as P
 import Siko.MIR.Expr as E
@@ -35,21 +35,6 @@ replaceVar context old new = do
     context <- context { replaced_vars = replaced_vars }
     context
 
-processDoItem :: Context -> E.Expr -> (Context, Option E.Expr)
-processDoItem context expr = do
-    E.Expr item_s_expr type id <- expr
-    context <- case item_s_expr of
-        E.VarDecl v rhs -> do
-            E.Expr rhs_s_expr type id <- rhs
-            case rhs_s_expr of
-                E.VarRef orig_v -> do
-                    context <- replaceVar context v orig_v
-                    return (context, None)
-                _ -> context
-        _ -> context
-    (context, expr) <- processExpr context expr
-    (context, Some expr)
-
 processVar :: Context -> E.Var -> E.Var
 processVar context var = do
         v <- getVar context var
@@ -67,14 +52,8 @@ processExpr context expr = do
     E.Expr s_expr type id <- expr
     case s_expr of
         E.Do items -> do
-            (context, items) <- List.filterMapS context items processDoItem
-            (rest, last) <- List.split items (getLength items - 1)
-            last <- atIndex last 0 // FIXME: should use a pop_last or similar
-            E.Expr last_s_expr _ _ <- last
-            case last_s_expr of
-                E.Do sub_items -> (context, E.Expr (E.Do (rest + sub_items)) type id)
-                e -> do
-                    (context, E.Expr (E.Do (rest + [last])) type id)
+            (context, items) <- List.mapS context items processExpr
+            (context, E.Expr (E.Do items) type id)
         E.Multi _ -> panic "Multi expr found in rebinder"
         E.StaticFunctionCall f_id args -> do
             (context, args) <- List.mapS context args processExpr

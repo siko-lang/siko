@@ -1,0 +1,42 @@
+module Siko.Backend.Simplifier.DoMerger where
+
+import Siko.MIR.Program as P
+import Siko.MIR.Expr as E
+import Siko.MIR.Data as D
+import Siko.MIR.Type as T
+import Siko.MIR.Function as F
+import Siko.Util.Counter
+import Siko.Backend.Traversal
+import Map
+
+data Context = Context
+
+processExpr :: Context -> E.Expr -> (Context, E.Expr)
+processExpr context expr = do
+    E.Expr s_expr type id <- expr
+    case s_expr of
+        E.Do items -> do
+            (context, items) <- List.mapS context items processExpr
+            (rest, last) <- List.split items (getLength items - 1)
+            last <- atIndex last 0 // FIXME: should use a pop_last or similar
+            E.Expr last_s_expr _ _ <- last
+            case last_s_expr of
+                E.Do sub_items -> (context, E.Expr (E.Do (rest + sub_items)) type id)
+                e -> do
+                    (context, E.Expr (E.Do (rest + [last])) type id)
+        _ -> (context, expr)
+
+processFunction :: P.Program -> F.Function -> F.Function
+processFunction program function = case function.kind of
+    F.Normal info -> do
+        context <- Context
+        (context, body) <- traverse context info.body (Some processExpr) None
+        info <- info { body = body }
+        new_kind <- F.Normal info
+        function { kind = new_kind}
+    _ -> function
+
+processProgram :: P.Program -> P.Program
+processProgram program = do
+    functions <- program.functions |> Map.iter |> Iterator.map (\(id, function) -> (id, processFunction program function)) |> toMap
+    program { functions = functions }

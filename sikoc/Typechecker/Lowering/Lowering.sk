@@ -24,6 +24,8 @@ import Siko.Util.Counter
 import Hack
 import Map
 
+import List2
+
 data Key = { module_name :: String, name :: String } deriving (PartialEq, Eq, PartialOrd, Ord)
 
 data Context = { hir_program :: HP.Program,
@@ -225,8 +227,8 @@ lowerProgram config state hir_program function_store type_store = do
     main_qn <- HP.FullPath getMainModuleName getMainFunctionName
     mir_program <- MP.createProgram
     context <- Context hir_program mir_program function_store
-               type_store CS.createClosureStore IS.createIteratorStore state empty
-               FQ.createFunctionQueue getExternalClassNames empty empty empty None None
+               type_store CS.createClosureStore IS.createIteratorStore state Map.empty
+               FQ.createFunctionQueue getExternalClassNames Map.empty Map.empty Map.empty None None
     context <- case HP.getFunctionOpt hir_program main_qn of
         Some main -> do
             item <- FQ.Normal main_qn (HT.Tuple [])
@@ -255,10 +257,25 @@ lowerProgram config state hir_program function_store type_store = do
                     record_ctors
                 _ -> record_ctors
         ) Map.empty
+    missing_ctors <- mir_program.records |> Map.iter |> Iterator.fold (\missing_ctors, (id, record) -> case get record_ctors id of
+        Some _ -> missing_ctors
+        None -> missing_ctors + [id]) []
     mir_program <- mir_program { record_ctors = record_ctors }
+    mir_program <- missing_ctors |> List.iter |> Iterator.fold (\mir_program, id -> do
+            MP.Identity mod name index <- id
+            func_id <- MP.Identity mod (name + "_rctor") index
+            kind <- MF.RecordCtor
+            record <- MP.getRecord mir_program id
+            arg_types <- List.map record.fields (\f -> f.type)
+            result <- MT.Record id List2.empty
+            function_type <- MF.FunctionType arg_types result
+            mir_program <- MP.addFunction mir_program func_id (MF.Function func_id kind function_type)
+            (record_ctors, _) <- Map.insert mir_program.record_ctors id func_id
+            mir_program { record_ctors = record_ctors }
+        ) mir_program
     if config.dump
     then do
         s <- MP.dump mir_program
-        writeTextFile (getOutputFileName config (MIR 0)) s
+        writeTextFile (getOutputFileName config (MIR "mir_lowering")) s
     else ()
     mir_program
