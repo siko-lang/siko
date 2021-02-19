@@ -1,4 +1,4 @@
-module Siko.Backend.Simplifier.AdtSimplifier where
+module Siko.Backend.Simplification.AdtSimplifier where
 
 import Siko.MIR.Program as P
 import Siko.MIR.Expr as E
@@ -149,7 +149,9 @@ processExpr context expr = do
                             then do
                                 (case_variant, case_body) <- atIndex matching_cases 0
                                 context <- replaceVar context case_variant v
-                                (context, case_body) <- processExpr context case_body
+                                (specified_vars, _) <- remove context.specified_vars v
+                                block_context <- context { specified_vars = specified_vars }
+                                (_, case_body) <- processExpr block_context case_body
                                 return (context, case_body)
                             else ()
                         None -> do

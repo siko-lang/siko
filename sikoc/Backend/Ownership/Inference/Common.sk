@@ -11,6 +11,7 @@ import Siko.Util.Counter
 import List2 as List2
 import List2 (List2)
 import Siko.Config
+import Siko.Trace
 
 import Map
 import Set
@@ -39,23 +40,33 @@ data MovedVars = { vars :: Set T.OwnershipVar }
 
 data Group = { kind :: T.OwnershipKind }
 
+data GroupId = GroupId Int deriving (PartialEq, Eq, PartialOrd, Ord, Show)
+
 data Context = { global_context :: GlobalContext,
                  var_vars :: Map E.Var (List2 T.OwnershipVar),
                  constraints :: [Constraint],
                  equals :: [Equal],
                  not_moves :: Set E.ExprId,
-                 ownership_vars :: Map T.OwnershipVar Int,
+                 ownership_vars :: Map T.OwnershipVar GroupId,
                  moved_vars :: Map T.OwnershipVar MovedVars,
                  borrowers :: [Borrower],
                  init_context :: Init.Context,
                  borrower_sets :: Map Int (Set T.OwnershipVar),
                  borrower_set_id_gen :: Int,
-                 groups :: Map Int Group,
+                 groups :: Map GroupId Group,
                  group_id_gen :: Int,
                  return_type :: T.Type,
                  continues :: Map E.ExprId T.Type,
                  breaks :: Map E.ExprId T.Type,
                }
+
+dumpContextStats :: Context -> ()
+dumpContextStats context = do
+    trace context.global_context.config "var_vars {}" % getSize context.var_vars
+    trace context.global_context.config "constraints {}" % getLength context.constraints
+    trace context.global_context.config "equals {}" % getLength context.equals
+    trace context.global_context.config "ownership_vars {}" % getSize context.ownership_vars
+    trace context.global_context.config "groups {}" % getSize context.groups
 
 data FunctionInferenceInfo = { function_type :: F.FunctionType,
                                var_constraints :: Map T.OwnershipVar (Set T.OwnershipVar ) }
@@ -109,22 +120,22 @@ getVarVars context var = case get context.var_vars var of
     Some vars -> vars
     None -> panic "Var {} not found in var_vars" % var
 
-createGroupId :: Context -> (Context, Int)
+createGroupId :: Context -> (Context, GroupId)
 createGroupId context = do
     id <- context.group_id_gen
-    (context { group_id_gen = id + 1 }, id)
+    (context { group_id_gen = id + 1 }, GroupId id)
 
-createGroup :: Context -> Int -> T.OwnershipKind -> Context
+createGroup :: Context -> GroupId -> T.OwnershipKind -> Context
 createGroup context id kind = do
     (groups, _) <- Map.insert context.groups id (Group kind)
     context { groups = groups }
 
-getGroupId :: Context -> T.OwnershipVar -> Int
+getGroupId :: Context -> T.OwnershipVar -> GroupId
 getGroupId context var = case get context.ownership_vars var of
     Some id -> id
     None -> panic "No group found for {}" % var
 
-getGroup :: Context -> Int -> Group
+getGroup :: Context -> GroupId -> Group
 getGroup context id = case get context.groups id of
     Some group -> group
     None -> panic "Group {} not found" % id
@@ -134,19 +145,23 @@ getBorrowSet context id = case get context.borrower_sets id of
     Some s -> s
     None -> panic "Borrow set {} not found" % id
 
-updateGroupKind :: Context -> Int -> T.OwnershipKind -> Context
+updateGroupKind :: Context -> GroupId -> T.OwnershipKind -> Context
 updateGroupKind context id kind = do
     (groups, _) <- alter (\old -> case old of
         Some _ -> Some (Group kind)
         None -> panic "Group not found {}" % id) id context.groups
     context { groups = groups }
 
-updateGroups :: Context -> Int -> Int -> Context
+updateGroups :: Context -> GroupId -> GroupId -> Context
 updateGroups context old_id new_id = do
-    ownership_vars <- context.ownership_vars |> Map.iter |> Iterator.map (\(v, id) -> do
-        updated_id <- if id == old_id then new_id else id
-        (v, updated_id)) |> toMap
-    context { ownership_vars = ownership_vars }
+    if old_id == new_id
+    then context
+    else do
+        ownership_vars <- context.ownership_vars |> Map.iter |> Iterator.map (\(v, id) -> do
+            updated_id <- if id == old_id then new_id else id
+            (v, updated_id)) |> toMap
+        (groups, _) <- Map.remove context.groups old_id
+        context { ownership_vars = ownership_vars, groups = groups }
 
 createrBorrowerSetId :: Context -> (Context, Int)
 createrBorrowerSetId context = do
@@ -170,7 +185,7 @@ addBorrowerSet context id borrower_set = do
     (borrower_sets, _) <- Map.insert context.borrower_sets id borrower_set
     context { borrower_sets = borrower_sets }
 
-mergeGroups :: Context -> Int -> Int -> (Context, T.OwnershipKind)
+mergeGroups :: Context -> GroupId -> GroupId -> (Context, T.OwnershipKind)
 mergeGroups context id1 id2 = do
     group1 <- getGroup context id1
     group2 <- getGroup context id2

@@ -274,7 +274,7 @@ replaceUnused context = do
         (context, replaced_vars) <- Map.mapS context context.ownership_vars replaceUnusedKind
         context { ownership_vars = replaced_vars }
     where
-        replaceUnusedKind :: Common.Context -> (T.OwnershipVar, Int) -> (Common.Context, T.OwnershipVar, Int)
+        replaceUnusedKind :: Common.Context -> (T.OwnershipVar, Common.GroupId) -> (Common.Context, T.OwnershipVar, Common.GroupId)
         replaceUnusedKind context (var, group_id) = do
             resolved_kind <- resolveKind context var
             context <- case resolved_kind of
@@ -298,6 +298,7 @@ calculateInferenceInfo global_context init_context function_id = do
             trace global_context.config "borrow check"
             context <- borrowCheck context
             trace global_context.config "done"
+            Common.dumpContextStats context
             //dumpConstraints context
             //dumpOwnershipVars context
             sub <- getSubstitution context
