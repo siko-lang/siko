@@ -68,7 +68,7 @@ mapType context steps type = case type of
                         state <- context.lowering_context.state
                         case U.unify state.var_gen sub state.data_store state.class_store record.type type of
                             Ok (var_gen, sub) -> do
-                                record <- DS.applyRecordTypeInfo record sub
+                                record <- U.apply record sub
                                 context <- List.foldE (\context, index, field -> do
                                     steps <- steps + [MF.Field index]
                                     context <- mapType context steps field.type
@@ -80,7 +80,7 @@ mapType context steps type = case type of
                 state <- context.lowering_context.state
                 case U.unify state.var_gen sub state.data_store state.class_store adt.type type of
                     Ok (var_gen, sub) -> do
-                        adt <- DS.applyAdtTypeInfo adt sub
+                        adt <- U.apply adt sub
                         context <- List.foldE (\context, index, v -> do
                             steps <- steps + [MF.Variant index]
                             context <- List.foldE (\context, index, t -> do

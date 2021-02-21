@@ -31,9 +31,9 @@ getFunctionTypeInfo store name =
 
 applyTypeInfo :: FunctionTypeInfo -> U.Substitution -> FunctionTypeInfo
 applyTypeInfo func_type_info sub = do
-    args <- func_type_info.args |> List.iter |> Iterator.map (\t -> U.apply sub t) |> toList
-    function_type <- U.apply sub func_type_info.function_type
-    result_type <- U.apply sub func_type_info.result_type
+    args <- func_type_info.args |> List.iter |> Iterator.map (\t -> U.apply t sub) |> toList
+    function_type <- U.apply func_type_info.function_type sub
+    result_type <- U.apply func_type_info.result_type sub
     FunctionTypeInfo func_type_info.name args function_type result_type func_type_info.defined
 
 apply :: FunctionStore -> [FullyQualifiedName] -> U.Substitution -> FunctionStore

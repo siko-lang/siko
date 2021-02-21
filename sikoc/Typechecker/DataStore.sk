@@ -58,23 +58,23 @@ getDataTypeInfo store name =
         Some data_type_info -> data_type_info
         None -> panic "DataTypeInfo for {} not found" % name
 
-applyAdtTypeInfo :: AdtTypeInfo -> U.Substitution -> AdtTypeInfo
-applyAdtTypeInfo adt sub = do
-    variants <- adt.variants |> List.iter
-                                |> Iterator.map (\variant -> do
-                                    items <- variant.items |> List.iter
-                                                            |> Iterator.map (\t -> U.apply sub t)
-                                                            |> toList
-                                    Variant variant.name items)
-                                |> toList
-    type <- U.apply sub adt.type
-    AdtTypeInfo adt.name type variants adt.derived_classes
+instance U.Apply AdtTypeInfo where
+    apply adt sub = do
+        variants <- adt.variants |> List.iter
+                                    |> Iterator.map (\variant -> do
+                                        items <- variant.items |> List.iter
+                                                                |> Iterator.map (\t -> U.apply t sub)
+                                                                |> toList
+                                        Variant variant.name items)
+                                    |> toList
+        type <- U.apply adt.type sub
+        AdtTypeInfo adt.name type variants adt.derived_classes
 
-applyRecordTypeInfo :: RecordTypeInfo -> U.Substitution -> RecordTypeInfo
-applyRecordTypeInfo record sub = do
-    fields <- record.fields |> List.iter |> Iterator.map (\f -> RecordField f.name (U.apply sub f.type)) |> toList
-    type <- U.apply sub record.type
-    RecordTypeInfo record.name type record.field_names fields record.derived_classes record.external
+instance U.Apply RecordTypeInfo where
+    apply record sub = do
+        fields <- record.fields |> List.iter |> Iterator.map (\f -> RecordField f.name (U.apply f.type sub)) |> toList
+        type <- U.apply record.type sub
+        RecordTypeInfo record.name type record.field_names fields record.derived_classes record.external
 
 remapAdtTypeInfo :: AdtTypeInfo -> TypeVarGenerator -> (AdtTypeInfo , TypeVarGenerator)
 remapAdtTypeInfo adt var_gen = do
@@ -120,7 +120,7 @@ processMemberType state type derived_class type_name = do
                 case IR.checkInstance state type derived_class.class_name of
                     Ok (state, cs) -> do
                         (state, sub) <- IR.mergeResolverConstraintsIntoSubstitution state cs (U.createSubstitution)
-                        instance_type <- U.apply sub instance_type
+                        instance_type <- U.apply instance_type sub
                         i <- IR.AutoDerivedInstance instance_type location name
                         instance_resolver <- IR.updateAutoDerivedInstance state.instance_resolver derived_class.instance_id i
                         state { instance_resolver = instance_resolver }

@@ -22,6 +22,19 @@ data TypeStore = { expr_types :: Map E.ExprId ExprTypeState,
                    pattern_locations :: Map P.PatternId Location
                  } deriving (Show)
 
+instance U.Apply ExprTypeState where
+    //apply :: ExprTypeState -> U.Substitution -> ExprTypeState
+    apply ets sub = case ets of
+                    ExprType ty -> ExprType (U.apply ty sub)
+                    FunctionCall ty fn_ty -> FunctionCall (U.apply ty sub) (U.apply fn_ty sub)
+
+instance U.Apply PatternTypeState where
+    //apply :: PatternTypeState -> U.Substitution -> PatternTypeState
+    apply pts sub = case pts of
+        PatternType ty -> PatternType (U.apply ty sub)
+        PatternWithRecordType record_type_info -> PatternWithRecordType (U.apply record_type_info sub)
+        PatternWithAdtType adt_type_info -> PatternWithAdtType (U.apply adt_type_info sub)
+
 initializeTypeStore :: TypeStore
 initializeTypeStore = TypeStore empty empty empty
 
@@ -97,20 +110,11 @@ getAdtTypeInfo store pattern_id = do
         Some (PatternWithAdtType adt_type_info) -> adt_type_info
         _ -> panic "No adt type info found for {}" % pattern_id
 
-apply :: TypeStore -> U.Substitution -> TypeStore
-apply store sub = do
-    expr_types <- store.expr_types |> Map.iter |> Iterator.map (\(id, expr_ty) -> do
-                                expr_ty <- case expr_ty of
-                                    ExprType ty -> ExprType (U.apply sub ty)
-                                    FunctionCall ty fn_ty -> FunctionCall (U.apply sub ty) (U.apply sub fn_ty)
-                                (id, expr_ty)) |> toMap
-    pattern_types <- store.pattern_types |> Map.iter |> Iterator.map (\(id, pattern_ty) -> do
-                                pattern_ty <- case pattern_ty of
-                                    PatternType ty -> PatternType (U.apply sub ty)
-                                    PatternWithRecordType record_type_info -> PatternWithRecordType (DS.applyRecordTypeInfo record_type_info sub)
-                                    PatternWithAdtType adt_type_info -> PatternWithAdtType (DS.applyAdtTypeInfo adt_type_info sub)
-                                (id, pattern_ty)) |> toMap
-    store { expr_types = expr_types, pattern_types = pattern_types }
+instance U.Apply TypeStore where
+    apply store sub = do
+        expr_types <- Map.update store.expr_types (\(id, expr_ty) -> U.apply expr_ty sub)
+        pattern_types <- Map.update store.pattern_types (\(id, pattern_ty) -> U.apply pattern_ty sub)
+        store { expr_types = expr_types, pattern_types = pattern_types }
 
 dump :: TypeStore -> ()
 dump store = do

@@ -29,13 +29,13 @@ getNextExprId context = do
 getRecordType :: Context -> T.Type -> D.Record
 getRecordType context type = do
     record_id <- T.getIdentity type
-    record <- case get context.records record_id of
+    record <- case Map.get context.records record_id of
         Some r -> r
         None -> panic "Could not find record {}" % record_id
     record
 
-update :: Context -> E.Expr -> (Context, E.Expr)
-update context expr = do
+updateExpr :: Context -> E.Expr -> (Context, E.Expr)
+updateExpr context expr = do
     E.Expr s_expr expr_type expr_id <- expr
     context <- case s_expr of
         E.RecordUpdate v updates -> do
@@ -67,7 +67,7 @@ processFunction :: Map P.Identity D.Record -> Map P.Identity P.Identity -> F.Fun
 processFunction records record_ctors function = case function.kind of
     F.Normal info -> do
         context <- createContext info.expr_id_gen records record_ctors
-        (context, body) <- traverse context info.body (Some update) None
+        (context, body) <- traverse context info.body (Some updateExpr) None
         info <- info { body = body, expr_id_gen = context.expr_id_gen }
         function { kind = F.Normal info }
     _ -> (function)
@@ -76,5 +76,5 @@ processProgram :: P.Program -> P.Program
 processProgram program = do
     functions <- program.functions |> Map.iter |> Iterator.map (\(id, function) -> do
         function <- processFunction program.records program.record_ctors function
-        (id, function)) |> toMap
+        (id, function)) |> Map.toMap
     program { functions = functions }

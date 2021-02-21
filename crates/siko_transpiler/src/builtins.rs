@@ -290,6 +290,7 @@ fn generate_map_builtins(
     original_name: &str,
     result_ty: &Type,
     result_ty_str: &str,
+    arg_type_types: Vec<Type>,
     arg_types: Vec<String>,
 ) -> Result<()> {
     indent.inc();
@@ -467,6 +468,38 @@ fn generate_map_builtins(
                 indent, result_ty_str
             )?;
         }
+        "update" => {
+            let f_type = &arg_type_types[1];
+            let from = match f_type {
+                Type::Closure(t) => match &**t {
+                    Type::Function(from, _to) => from,
+                    _ => unreachable!(),
+                },
+                _ => unreachable!(),
+            };
+            write!(
+                output_file,
+                "{}let mut arg0 = (*arg0.value).clone();\n",
+                indent
+            )?;
+            write!(output_file, "{}for (k, v) in arg0.iter_mut() {{\n", indent)?;
+            write!(
+                output_file,
+                "{}let input = {} {{ _siko_field_0 : (*k).clone(), _siko_field_1 : (*v).clone() }};\n",
+                indent, ir_type_to_rust_type(&from, program)
+            )?;
+            write!(
+                output_file,
+                "{}*v = std::rc::Rc::new(arg1.clone().call(input));\n",
+                indent
+            )?;
+            write!(output_file, "{}}}\n", indent)?;
+            write!(
+                output_file,
+                "{}{} {{ value : std::rc::Rc::new(arg0) }}",
+                indent, result_ty_str
+            )?;
+        }
         "show" => {
             write!(
                 output_file,
@@ -504,6 +537,7 @@ fn generate_map2_builtins(
     original_name: &str,
     result_ty: &Type,
     result_ty_str: &str,
+    arg_type_types: Vec<Type>,
     arg_types: Vec<String>,
 ) -> Result<()> {
     indent.inc();
@@ -689,6 +723,31 @@ fn generate_map2_builtins(
             write!(
                 output_file,
                 "{}{} {{ value : std::rc::Rc::new(format!(\"{{{{ {{}} }}}}\", subs.join(\", \"))) }}",
+                indent, result_ty_str
+            )?;
+        }
+        "update" => {
+            let f_type = &arg_type_types[1];
+            let from = match f_type {
+                Type::Closure(t) => match &**t {
+                    Type::Function(from, _to) => from,
+                    _ => unreachable!(),
+                },
+                _ => unreachable!(),
+            };
+            write!(output_file, "{}let mut arg0 = arg0.value;\n", indent)?;
+            write!(output_file, "{}for (k, v) in arg0.iter_mut() {{\n", indent)?;
+            write!(
+                output_file,
+                "{}let input = {} {{ _siko_field_0 : k.clone(), _siko_field_1 : v.clone() }};\n",
+                indent,
+                ir_type_to_rust_type(&from, program)
+            )?;
+            write!(output_file, "{}*v = arg1.clone().call(input);\n", indent)?;
+            write!(output_file, "{}}}\n", indent)?;
+            write!(
+                output_file,
+                "{}{} {{ value : arg0 }}",
                 indent, result_ty_str
             )?;
         }
@@ -1016,6 +1075,19 @@ fn generate_list_builtins(
                 indent
             )?;
             write!(output_file, "{}r.sort();\n", indent)?;
+            write!(
+                output_file,
+                "{} {} {{ value : std::rc::Rc::new(r) }}\n",
+                indent, result_ty_str
+            )?;
+        }
+        "push" => {
+            write!(
+                output_file,
+                "{}let mut r = (*arg0.value).clone();\n",
+                indent
+            )?;
+            write!(output_file, "{}r.push(std::rc::Rc::new(arg1));\n", indent)?;
             write!(
                 output_file,
                 "{} {} {{ value : std::rc::Rc::new(r) }}\n",
@@ -1510,6 +1582,7 @@ pub fn generate_builtin(
                 original_name,
                 result_ty,
                 result_ty_str,
+                arg_type_types,
                 arg_types,
             );
         }
@@ -1522,6 +1595,7 @@ pub fn generate_builtin(
                 original_name,
                 result_ty,
                 result_ty_str,
+                arg_type_types,
                 arg_types,
             );
         }

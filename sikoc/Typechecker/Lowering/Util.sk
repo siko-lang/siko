@@ -18,13 +18,13 @@ getFunctionType state arg_types expected_result_type function_type = do
                 (state, sub) <- case U.unify state.var_gen sub state.data_store state.class_store arg_type fn_arg_type of
                     Ok (var_gen, sub) -> (state { var_gen = var_gen}, sub)
                     Err _ -> panic "getCallSubstitution: failed to unify {} {}" % (T.toString arg_type, T.toString fn_arg_type)
-                function_type <- U.apply sub function_type
+                function_type <- U.apply function_type sub
                 (state, function_type, sub, index + 1)
     result_type <- T.getResultType function_type (getLength arg_types)
     (state, sub) <- case U.unify state.var_gen sub state.data_store state.class_store result_type expected_result_type of
                     Ok (var_gen, sub) -> (state { var_gen = var_gen}, sub)
                     Err _ -> panic "getCallSubstitution: failed to unify {} {}" % (T.toString result_type, T.toString expected_result_type)
-    (state, U.apply sub function_type, sub)
+    (state, U.apply function_type sub, sub)
 
 getFieldName :: Int -> String
 getFieldName index = "field{}" % index

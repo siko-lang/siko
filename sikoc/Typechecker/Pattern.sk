@@ -123,7 +123,7 @@ checkPatternType context (P.Pattern pattern id location) = do
             (context, record_type_info, _) <- args |> List.iter |> Iterator.fold (\(context, record_type_info, index), (P.Pattern _ arg_id arg_location) -> do
                     field <- atIndex record_type_info.fields index
                     (context, sub) <- matchPatternWith context arg_id field.type arg_location
-                    record_type_info <- DS.applyRecordTypeInfo record_type_info sub
+                    record_type_info <- U.apply record_type_info sub
                     (context, record_type_info, index + 1)
                 ) (context, record_type_info, 0)
             context
@@ -133,7 +133,7 @@ checkPatternType context (P.Pattern pattern id location) = do
                     variant <- atIndex adt_type_info.variants index
                     item_type <- atIndex variant.items arg_index
                     (context, sub) <- matchPatternWith context arg_id item_type arg_location
-                    adt_type_info <- DS.applyAdtTypeInfo adt_type_info sub
+                    adt_type_info <- U.apply adt_type_info sub
                     (context, adt_type_info, arg_index + 1)
                 ) (context, adt_type_info, 0)
             context

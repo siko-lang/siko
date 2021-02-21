@@ -40,13 +40,13 @@ getMonomorphizedExprType :: Context -> U.Substitution -> HE.ExprId -> HT.Type
 getMonomorphizedExprType context sub id = do
     type <- getExprType context.type_store id
     type <- HT.removeFixed type
-    U.apply sub type
+    U.apply type sub
 
 getMonomorphizedPatternType :: Context -> U.Substitution -> HP.PatternId -> HT.Type
 getMonomorphizedPatternType context sub id = do
     type <- getPatternType context.type_store id
     type <- HT.removeFixed type
-    U.apply sub type
+    U.apply type sub
 
 processArgTypes :: Context -> U.Substitution -> [HE.Expr] -> [HT.Type]
 processArgTypes context sub args =
@@ -534,7 +534,7 @@ processExpr context sub hir_expr = do
                             member_type <- TUtil.remap mapper member.type
                             arg_type <- TUtil.remap mapper class_type_info.arg_type
                             (state, function_type, sub) <- getFunctionType state arg_types expr_type member_type
-                            arg <- U.apply sub arg_type
+                            arg <- U.apply arg_type sub
                             processClassMemberCall context function_type arg class_name qn mir_args member.has_default_impl
                         None -> panic "class member {} not found" % member_name
                 _ -> panic "ClassMember calls non class member"

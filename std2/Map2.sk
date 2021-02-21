@@ -56,10 +56,19 @@ intoIter m = extern
 nextItem k v :: MapIterator k v -> Option (MapIterator k v, (k, v))
 nextItem iter = extern
 
+toMap2 k v :: (Ord k) => Iterator (k, v) -> Map2 k v
+toMap2 iter = Iterator.fold (\m, (k, v) -> do
+    (m, _) <- insert m k v
+    m) empty iter
+
 toMap k v :: (Ord k) => Iterator (k, v) -> Map2 k v
 toMap iter = Iterator.fold (\m, (k, v) -> do
     (m, _) <- insert m k v
     m) empty iter
+
+update k v :: (Ord k) => Map2 k v -> ((k, v) -> v) -> Map2 k v
+update m f = m |> Map2.iter |> Iterator.map (\(k, v) -> (k, f (k, v))) |> toMap2
+// TODO, FIXME: make this extern
 
 getSize k v :: Map2 k v -> Int
 getSize m = extern

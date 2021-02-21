@@ -12,6 +12,17 @@ use siko_mir::types::Type;
 use std::io::Result;
 use std::io::Write;
 
+pub fn is_hacked_function(module: &str, name: &str) -> bool {
+    if (module == "Map" || module == "Map2") && (name == "get") {
+        true
+    } else if (module == "List" || module == "List2") && (name == "getLength" || name == "atIndex")
+    {
+        true
+    } else {
+        false
+    }
+}
+
 pub fn write_function(
     function_id: FunctionId,
     output_file: &mut dyn Write,
@@ -28,9 +39,7 @@ pub fn write_function(
         let arg_ty = ir_type_to_rust_type(&fn_args[i], program);
         let arg_ty = match &function.info {
             FunctionInfo::Extern(original_name) => {
-                if (function.module == "Map" || function.module == "Map2")
-                    && (original_name == "get")
-                {
+                if is_hacked_function(&function.module, original_name) {
                     format!("&{}", arg_ty)
                 } else {
                     arg_ty
@@ -63,7 +72,7 @@ pub fn write_function(
             indent.inc();
             write!(output_file, "{}let arg0 = self.clone();\n", indent)?;
             write!(output_file, "{}let value = ", indent)?;
-            write_expr(*body, output_file, program, indent, false)?;
+            write_expr(*body, output_file, program, indent, false, false)?;
             write!(output_file, ";\n")?;
             write!(output_file, "{}write!(f, \"{{}}\", value.value)\n", indent)?;
             indent.dec();
@@ -87,7 +96,7 @@ pub fn write_function(
             write!(output_file, "{}let arg0 = self.clone();\n", indent)?;
             write!(output_file, "{}let arg1 = arg1.clone();\n", indent)?;
             write!(output_file, "{}let value = ", indent)?;
-            write_expr(*body, output_file, program, indent, false)?;
+            write_expr(*body, output_file, program, indent, false, false)?;
             write!(output_file, ";\n")?;
             write!(output_file, "{}match value {{\n", indent)?;
             indent.inc();
@@ -129,7 +138,7 @@ pub fn write_function(
             write!(output_file, "{}let arg0 = self.clone();\n", indent)?;
             write!(output_file, "{}let arg1 = arg1.clone();\n", indent)?;
             write!(output_file, "{}let value = ", indent)?;
-            write_expr(*body, output_file, program, indent, false)?;
+            write_expr(*body, output_file, program, indent, false, false)?;
             write!(output_file, ";\n")?;
             write!(output_file, "{}match value {{\n", indent)?;
             indent.inc();
@@ -163,7 +172,7 @@ pub fn write_function(
             write!(output_file, "{}let arg0 = self.clone();\n", indent)?;
             write!(output_file, "{}let arg1 = arg1.clone();\n", indent)?;
             write!(output_file, "{}let value = ", indent)?;
-            write_expr(*body, output_file, program, indent, false)?;
+            write_expr(*body, output_file, program, indent, false, false)?;
             write!(output_file, ";\n")?;
             write!(output_file, "{}match value {{\n", indent)?;
             indent.inc();
@@ -209,7 +218,7 @@ pub fn write_function(
             FunctionInfo::Normal(body) => {
                 indent.inc();
                 write!(output_file, "{}", indent)?;
-                write_expr(*body, output_file, program, indent, false)?;
+                write_expr(*body, output_file, program, indent, false, false)?;
                 indent.dec();
             }
             FunctionInfo::Extern(original_name) => {

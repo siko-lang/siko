@@ -61,7 +61,7 @@ getFunctionTypeInfo context name = FS.getFunctionTypeInfo context.function_store
 
 applyToContext :: Context -> U.Substitution -> Context
 applyToContext context sub = do
-    type_store <- TS.apply context.type_store sub
+    type_store <- U.apply context.type_store sub
     function_store <- FS.apply context.function_store context.group_items sub
     context { type_store = type_store, function_store = function_store }
 
@@ -272,7 +272,7 @@ checkSingleArgCall :: Context -> E.Expr -> T.Type -> (Context, Option T.Type)
 checkSingleArgCall context (E.Expr _ id location) fn_ty = case fn_ty of
     T.Function from to -> do
         (context, sub) <- matchExprWith context id from location
-        to <- U.apply sub to
+        to <- U.apply to sub
         (context, Some to)
     _ -> (context, None)
 
@@ -311,7 +311,7 @@ checkExprType context (E.Expr expr id location) = do
             (ty, fn_ty) <- getExprAndFunctionCallType context id
             recv_ty <- getExprType context receiver_id
             (context, sub) <- matchExprWith context receiver_id fn_ty receiver_location
-            fn_ty <- U.apply sub fn_ty
+            fn_ty <- U.apply fn_ty sub
             (context, result_ty) <- checkFunctionCall context args fn_ty location
             case result_ty of
                 Some result_ty -> do

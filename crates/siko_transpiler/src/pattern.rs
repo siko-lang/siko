@@ -55,7 +55,7 @@ pub fn write_pattern(
         Pattern::Guarded(pattern, expr) => {
             write_pattern(*pattern, output_file, program, indent)?;
             write!(output_file, " if {{ match ")?;
-            write_expr(*expr, output_file, program, indent, true)?;
+            write_expr(*expr, output_file, program, indent, true, false)?;
             let ty = program.get_expr_type(expr);
             let ty = ir_type_to_rust_type(ty, program);
             write!(

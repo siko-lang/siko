@@ -18,31 +18,65 @@ import List2 as List2
 import List2 (List2)
 
 import Map
+import Map2 as Map2
+import Map2 (Map2)
 import Set
 
-processEqual :: Common.Context -> T.OwnershipVar -> T.OwnershipVar -> Common.Context
-processEqual context v1 v2 = do
-    group_id1 <- Common.getGroupId context v1
-    group_id2 <- Common.getGroupId context v2
-    (context, merged_kind) <- Common.mergeGroups context group_id1 group_id2
-    context <- Common.updateGroupKind context group_id1 merged_kind
-    context <- Common.updateGroups context group_id2 group_id1
-    context
+data MergeResult = Single T.OwnershipKind
+                 | MergedBorrow Int Int
+
+mergeKinds :: T.OwnershipKind -> T.OwnershipKind -> MergeResult
+mergeKinds kind1 kind2 = do
+    case (kind1, kind2) of
+        (T.VarKind _, T.VarKind _) -> Single kind1
+
+        (T.OwnerKind, _) -> Single T.OwnerKind
+        (_, T.OwnerKind) -> Single T.OwnerKind
+
+        (T.BorrowKind index1, T.BorrowKind index2) -> MergedBorrow index1 index2
+        (T.BorrowKind index, T.VarKind _) -> Single kind1
+        (T.VarKind _, T.BorrowKind index) -> Single kind2
+
+        (T.BoxedKind, T.BoxedKind) -> Single kind1
+        (T.BoxedKind, T.VarKind _) -> Single kind1
+        (T.VarKind _, T.BoxedKind) -> Single kind2
+
+        _ -> panic "Inference.mergeKinds, case {} {} not yet implemented" % (kind1, kind2)
+
+processEqual :: Map2 T.OwnershipVar Common.GroupId -> List2 Common.Group -> T.OwnershipVar -> T.OwnershipVar -> (Map2 T.OwnershipVar Common.GroupId, List2 Common.Group)
+processEqual ownership_vars groups v1 v2 = do
+    group_id1 <- Option.unwrap (Map2.get ownership_vars v1)
+    group_id2 <- Option.unwrap (Map2.get ownership_vars v2)
+    Common.GroupId index1 <- group_id1
+    group1 <- List2.atIndex groups index1
+    Common.GroupId index2 <- group_id2
+    group2 <- List2.atIndex groups index2
+    merged_kind <- case mergeKinds group1.kind group2.kind of
+        Single kind -> kind
+        MergedBorrow index1 index2 -> do
+            panic "MergedBorrow in processEqual!"
+            //(context, index) <- mergeBorrowSets context index1 index2
+            //(context, T.BorrowKind index)
+    groups <- List2.write groups index1 (Common.Group merged_kind)
+    ownership_vars <- Common.updateGroups2 ownership_vars group_id2 group_id1
+    (ownership_vars, groups)
 
 processEquals :: Common.Context -> Common.Context
 processEquals context = do
-    total <- getLength context.equals
-    //println "Processing {} equals" % total
-    loop context <- context do
-        context :: Common.Context <- context // FIXME
-        case pop context.equals of
-            Some (first, rest) -> do
-                rl <- getLength rest
-                //println "Processing an equal {}/{}" % (total - rl, total)
-                context <- context { equals = rest }
-                Common.Equal v1 v2 <- first
-                processEqual context v1 v2
-            None -> break context
+    equals <- context.equals
+    groups <- context.groups |> List.iter |> List2.toList
+    ownership_vars <- context.ownership_vars |> Map.iter |> Map2.toMap2
+    loop (groups, ownership_vars, index) <- (groups, ownership_vars, 0) do
+        if index >= getLength equals
+        then break do
+            groups <- groups |> List2.iter |> toList
+            ownership_vars <- ownership_vars |> Map2.iter |> toMap
+            context { groups = groups, ownership_vars = ownership_vars }
+        else do
+            equal <- atIndex equals index
+            Common.Equal v1 v2 <- equal
+            (ownership_vars, groups) <- processEqual ownership_vars groups v1 v2
+            (groups, ownership_vars, index + 1)
 
 processConstraints :: Common.Context -> Common.Context
 processConstraints context =
@@ -54,14 +88,14 @@ processConstraints context =
 
 processConverterConstraint :: Common.Context -> Common.ConverterKind -> T.OwnershipVar -> T.OwnershipVar -> (Common.Context, Bool)
 processConverterConstraint context kind from to = do
-    resolved_from <- resolveKind context from
-    resolved_to <- resolveKind context to
+    (context, resolved_from) <- resolveKind context from
+    (context, resolved_to) <- resolveKind context to
     //println "Processing converter constraint {} {} {} {}" % (from, resolved_from, to, resolved_to)
     case (resolved_from, resolved_to) of
         (T.OwnerKind, T.VarKind _) -> do
             case kind of
                 Common.NormalConverter -> do
-                    group_id <- Common.getGroupId context to
+                    (context, group_id) <- Common.getGroupId context to
                     context <- Common.updateGroupKind context group_id T.OwnerKind
                     (context, True)
                 Common.BorrowerConverter borrow_source -> do
@@ -70,22 +104,22 @@ processConverterConstraint context kind from to = do
                     (borrower_set, _) <- Set.insert borrower_set borrow_source
                     context <- Common.addBorrowerSet context borrower_set_id borrower_set
                     borrower_kind <- T.BorrowKind borrower_set_id
-                    group_id <- Common.getGroupId context to
+                    (context, group_id) <- Common.getGroupId context to
                     context <- Common.updateGroupKind context group_id borrower_kind
                     (context, True)
         (T.BorrowKind _, T.VarKind _) -> do
-            group_id <- Common.getGroupId context to
+            (context, group_id) <- Common.getGroupId context to
             context <- Common.updateGroupKind context group_id resolved_from
             (context, True)
         (T.BorrowKind index1, T.BorrowKind index2) ->
             if index1 != index2
                     then do
-                        group_id1 <- Common.getGroupId context to
-                        group_id2 <- Common.getGroupId context from
+                        (context, group_id1) <- Common.getGroupId context to
+                        (context, group_id2) <- Common.getGroupId context from
                         (context, merged_kind) <- Common.mergeGroups context group_id1 group_id2
                         context <- Common.updateGroupKind context group_id1 merged_kind
-                        context <- Common.updateGroups context group_id2 group_id1
-                        (context, True)
+                        ownership_vars <- Common.updateGroups context.ownership_vars group_id2 group_id1
+                        (context { ownership_vars = ownership_vars }, True)
                     else (context, False)
         _ -> (context, False)
 
@@ -102,25 +136,25 @@ processConstraintsStep context = do
                     changed <- changed || changed1
                     (context, changed)
                 Common.FieldAccessConverter from field_src to -> do
-                    from_kind <- resolveKind context from
-                    field_src_kind <- resolveKind context field_src
-                    to_kind <- resolveKind context to
+                    (context, from_kind) <- resolveKind context from
+                    (context, field_src_kind) <- resolveKind context field_src
+                    (context, to_kind) <- resolveKind context to
                     case (field_src_kind, to_kind) of
                         (T.BorrowKind _, T.VarKind _) -> do
-                            group_id <- Common.getGroupId context to
+                            (context, group_id) <- Common.getGroupId context to
                             context <- Common.updateGroupKind context group_id field_src_kind
                             (context, True)
                         _ -> case (from_kind, to_kind) of
                             (T.BorrowKind _, T.VarKind _) -> do
-                                group_id <- Common.getGroupId context to
+                                (context, group_id) <- Common.getGroupId context to
                                 context <- Common.updateGroupKind context group_id from_kind
                                 (context, True)
                             (T.OwnerKind , T.VarKind _) -> do
-                                group_id <- Common.getGroupId context to
+                                (context, group_id) <- Common.getGroupId context to
                                 context <- Common.updateGroupKind context group_id from_kind
                                 (context, True)
                             (T.BoxedKind, T.VarKind _) -> do
-                                group_id <- Common.getGroupId context to
+                                (context, group_id) <- Common.getGroupId context to
                                 context <- Common.updateGroupKind context group_id T.OwnerKind
                                 (context, True)
                             _ -> (context, changed)
@@ -135,29 +169,29 @@ dumpConstraints context = do
                     println "C: {} {} {} -> {} {}" %
                         (expr,
                         src,
-                        resolveKind context src,
+                        resolveKind2 context src,
                         dest,
-                        resolveKind context dest)
+                        resolveKind2 context dest)
                 Common.ExternalConverter src dest ->
                     println "External converter: {} {} -> {} {}" %
                         (src,
-                        resolveKind context src,
+                        resolveKind2 context src,
                         dest,
-                        resolveKind context dest)
+                        resolveKind2 context dest)
                 Common.FieldAccessConverter src field_src dest ->
                     println "Field access converter: {} {} : {} {} : {} {}" %
                         (src,
-                        resolveKind context src,
+                        resolveKind2 context src,
                         field_src,
-                        resolveKind context field_src,
+                        resolveKind2 context field_src,
                         dest,
-                        resolveKind context dest)
+                        resolveKind2 context dest)
         )
 
 dumpOwnershipVars :: Common.Context -> ()
 dumpOwnershipVars context = do
     println "Ownership vars:"
-    context.ownership_vars |> Map.iter |> forEach (\(v, _) -> println "{} -> {}" % (v, resolveKind context v))
+    context.ownership_vars |> Map.iter |> forEach (\(v, _) -> println "{} -> {}" % (v, resolveKind2 context v))
 
 insertKind :: Set T.OwnershipVar -> T.OwnershipKind -> T.OwnershipKind -> (Set T.OwnershipVar, Bool)
 insertKind collected orig new = do
@@ -172,16 +206,22 @@ insertKind collected orig new = do
                 else (collected, False)
         _ -> (collected, False)
 
-resolveKind :: Common.Context -> T.OwnershipVar-> T.OwnershipKind
+resolveKind :: Common.Context -> T.OwnershipVar-> (Common.Context, T.OwnershipKind) // MOVE HACK
 resolveKind context var = do
-    group_id <- Common.getGroupId context var
-    group <- Common.getGroup context group_id
-    group.kind
+    (context, group_id) <- Common.getGroupId context var
+    (context, group) <- Common.getGroup context group_id
+    (context, group.kind)
+
+resolveKind2 :: Common.Context -> T.OwnershipVar-> (T.OwnershipKind)
+resolveKind2 context var = do
+    (context, group_id) <- Common.getGroupId context var
+    (context, group) <- Common.getGroup context group_id
+    (group.kind)
 
 addEdge :: Common.Context -> Set T.OwnershipVar -> T.OwnershipVar -> T.OwnershipVar -> (Set T.OwnershipVar, Bool)
 addEdge context convertibles a b = do
-    c_a <- resolveKind context a
-    c_b <- resolveKind context b
+    c_a <- resolveKind2 context a
+    c_b <- resolveKind2 context b
     insertKind convertibles c_a c_b
 
 collectConvertibleConstraints :: T.OwnershipVar -> Common.Context -> Set T.OwnershipVar
@@ -228,7 +268,7 @@ getSubstitution :: Common.Context -> U.SubstitutionApply
 getSubstitution context = do
     sub <- U.createSubstitution
     sub <- context.ownership_vars |> Map.iter |> Iterator.fold (\sub, (v, _) -> do
-            kind <- resolveKind context v
+            kind <- resolveKind2 context v
             case kind of
                 T.VarKind new_v -> do
                     if new_v == v
@@ -245,7 +285,7 @@ getSubstitution context = do
 
 borrowCheck :: Common.Context -> Common.Context
 borrowCheck context = do
-    resolved_vars <- context.ownership_vars |> Map.iter |> Iterator.map (\(v, _) -> (v, resolveKind context v)) |> toMap
+    resolved_vars <- context.ownership_vars |> Map.iter |> Iterator.map (\(v, _) -> (v, resolveKind2 context v)) |> toMap
     resolved_vars |> Map.iter |> Iterator.fold (\context, (v, resolved_kind) -> do
             case resolved_kind of
                 T.BorrowKind id -> do
@@ -261,7 +301,7 @@ borrowCheck context = do
                                         then context
                                         else do
                                             //println "Borrow check failed for {}" % v
-                                            group_id <- Common.getGroupId context v
+                                            (context, group_id) <- Common.getGroupId context v
                                             context <- Common.updateGroupKind context group_id T.OwnerKind
                                             context
                                 None -> panic "No moved vars found for {}" % v
@@ -276,10 +316,10 @@ replaceUnused context = do
     where
         replaceUnusedKind :: Common.Context -> (T.OwnershipVar, Common.GroupId) -> (Common.Context, T.OwnershipVar, Common.GroupId)
         replaceUnusedKind context (var, group_id) = do
-            resolved_kind <- resolveKind context var
+            (context, resolved_kind) <- resolveKind context var
             context <- case resolved_kind of
                 T.VarKind _ -> do
-                        group_id <- Common.getGroupId context var
+                        (context, group_id) <- Common.getGroupId context var
                         Common.updateGroupKind context group_id T.OwnerKind
                 _ -> context
             (context, var, group_id)
@@ -340,12 +380,12 @@ updateBodyExpr (context, sub) expr = do
                     dest_kinds <- T.collectOwnershipKinds type
                     src <- List2.atIndex src_kinds 0
                     dest <- List2.atIndex dest_kinds 0
-                    src_kind <- case src of
+                    (context, src_kind) <- case src of
                         T.VarKind v -> resolveKind context v
-                        _ -> src
-                    dest_kind <- case dest of
+                        _ -> (context, src)
+                    (context, dest_kind) <- case dest of
                         T.VarKind v -> resolveKind context v
-                        _ -> dest
+                        _ -> (context, dest)
                     expr <- case (src_kind, dest_kind) of
                         (T.OwnerKind, T.OwnerKind) -> case kind of
                             E.NormalConverter -> E.Expr (E.Move arg) type id

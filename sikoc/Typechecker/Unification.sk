@@ -16,33 +16,37 @@ data Substitution = { vars :: Map TypeVar Type,
 
 createSubstitution = Substitution empty []
 
-apply :: Substitution -> Type -> Type
-apply sub type = case type of
-    Var var constraints -> case get sub.vars var of
-        Some t -> apply sub t
-        None -> do
-            constraints <- constraints |> List.iter |> Iterator.map (\c -> case c of
-                ClassConstraint s -> c
-                RowConstraint name ty -> RowConstraint name (apply sub ty)) |> toList
-            (Var var constraints)
-    FixedTypeArg _ var _ -> case get sub.vars var of
-        Some t -> panic "Trying to change fixed type arg!"
-        None -> type
-    Named n args -> do
-        args <- args |> List.iter |> Iterator.map (\arg -> apply sub arg) |> toList
-        Named n args
-    Function from to -> do
-        from <- apply sub from
-        to <- apply sub to
-        Function from to
-    Never var -> case get sub.vars var of
-        Some t -> apply sub t
-        None -> type
-    Ref t -> Ref (apply sub t)
-    Owner t -> Owner (apply sub t)
-    Tuple args -> do
-        args <- args |> List.iter |> Iterator.map (\arg -> apply sub arg) |> toList
-        Tuple args
+class Apply a where
+    apply a :: a -> Substitution -> a
+
+instance Apply Type where
+    //apply :: Type -> Substitution -> Type
+    apply type sub = case type of
+        Var var constraints -> case get sub.vars var of
+            Some t -> apply t sub
+            None -> do
+                constraints <- constraints |> List.iter |> Iterator.map (\c -> case c of
+                    ClassConstraint s -> c
+                    RowConstraint name ty -> RowConstraint name (apply ty sub)) |> toList
+                (Var var constraints)
+        FixedTypeArg _ var _ -> case get sub.vars var of
+            Some t -> panic "Trying to change fixed type arg!"
+            None -> type
+        Named n args -> do
+            args <- args |> List.iter |> Iterator.map (\arg -> apply arg sub) |> toList
+            Named n args
+        Function from to -> do
+            from <- apply from sub
+            to <- apply to sub
+            Function from to
+        Never var -> case get sub.vars var of
+            Some t -> apply t sub
+            None -> type
+        Ref t -> Ref (apply t sub)
+        Owner t -> Owner (apply t sub)
+        Tuple args -> do
+            args <- args |> List.iter |> Iterator.map (\arg -> apply arg sub) |> toList
+            Tuple args
 
 constraintsContainsVar :: [Constraint] -> TypeVar -> Bool
 constraintsContainsVar constraints var = constraints |> List.iter |> Iterator.fold (\contains, constraint -> contains || case constraint of
@@ -117,7 +121,7 @@ unifyVarWithType data_store class_store gen var constraints sub type = do
                         (record, gen) <- case unify gen createSubstitution data_store class_store type record.type of
                             Ok (gen, sub) -> do
                                 //println "Merging {} with {} using {}" % (toString type, toString record.type, sub)
-                                record <- DS.applyRecordTypeInfo record sub
+                                record <- apply record sub
                                 (record, gen)
                             Err _ -> return Err ()
                         (success, record, sub, gen) <- row_constraints |> List.iter |> Iterator.fold (\(success, record, sub, gen), (kind, row_type) -> do
@@ -131,7 +135,7 @@ unifyVarWithType data_store class_store gen var constraints sub type = do
                                                 case unify gen sub data_store class_store field.type row_type of
                                                     Ok (gen, sub) -> do
                                                         //println "After field unification, sub: {}" % sub
-                                                        record <- DS.applyRecordTypeInfo record sub
+                                                        record <- apply record sub
                                                         (success, record, sub, gen)
                                                     Err _ -> do
                                                         //println "Field unification failed {} {}" % (toString field.type, toString row_type)
@@ -153,7 +157,7 @@ unifyVarWithType data_store class_store gen var constraints sub type = do
                                         item_type <- atIndex args index
                                         case unify gen sub data_store class_store item_type row_type of
                                             Ok (gen, sub) -> do
-                                                args <- args |> List.iter |> Iterator.map (\t -> apply sub t) |> toList
+                                                args <- args |> List.iter |> Iterator.map (\t -> apply t sub) |> toList
                                                 (success, args, sub, gen)
                                             Err _ -> (False, args, sub, gen)
                                     else (False, args, sub, gen)
@@ -189,8 +193,8 @@ unifyVarWithFixedArg gen sub class_store var var_constraints fixed_arg_constrain
 unify :: TypeVarGenerator -> Substitution -> DS.DataStore -> CS.ClassStore -> Type -> Type -> Result (TypeVarGenerator, Substitution) ()
 unify gen sub data_store class_store type1 type2 = do
     //println "UNIFICATION {} {}" % (toString type1, toString type2)
-    type1 <- apply sub type1
-    type2 <- apply sub type2
+    type1 <- apply type1 sub
+    type2 <- apply type2 sub
     case (type1, type2) of
         (Named qn1 args1, Named qn2 args2) -> do
             if qn1 == qn2

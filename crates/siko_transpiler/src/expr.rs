@@ -17,6 +17,7 @@ pub fn write_expr(
     program: &Program,
     indent: &mut Indent,
     force_clone: bool,
+    no_clone: bool,
 ) -> Result<bool> {
     let mut is_statement = false;
     let expr = &program.exprs.get(&expr_id).item;
@@ -30,7 +31,8 @@ pub fn write_expr(
             indent.inc();
             for (index, item) in items.iter().enumerate() {
                 write!(output_file, "{}", indent)?;
-                let is_statement = write_expr(*item, output_file, program, indent, force_clone)?;
+                let is_statement =
+                    write_expr(*item, output_file, program, indent, force_clone, no_clone)?;
                 if is_statement {
                     if index == items.len() - 1 {
                         let ty = program.get_expr_type(&expr_id);
@@ -56,10 +58,10 @@ pub fn write_expr(
                 write!(output_file, "_siko_{}: ", field.name)?;
                 if field.ty.is_boxed() {
                     write!(output_file, "Box::new(")?;
-                    write_expr(*item, output_file, program, indent, force_clone)?;
+                    write_expr(*item, output_file, program, indent, force_clone, no_clone)?;
                     write!(output_file, ")")?;
                 } else {
-                    write_expr(*item, output_file, program, indent, force_clone)?;
+                    write_expr(*item, output_file, program, indent, force_clone, no_clone)?;
                 };
                 write!(output_file, ", ")?;
             }
@@ -71,17 +73,24 @@ pub fn write_expr(
             let record = program.typedefs.get(&id).get_record();
             write!(output_file, "{{ let mut value = ")?;
             indent.inc();
-            write_expr(*receiver, output_file, program, indent, force_clone)?;
+            write_expr(
+                *receiver,
+                output_file,
+                program,
+                indent,
+                force_clone,
+                no_clone,
+            )?;
             write!(output_file, ";\n")?;
             for (item, index) in items {
                 let field = &record.fields[*index];
                 write!(output_file, "{}value._siko_{} = ", indent, field.name)?;
                 if field.ty.is_boxed() {
                     write!(output_file, "Box::new(")?;
-                    write_expr(*item, output_file, program, indent, force_clone)?;
+                    write_expr(*item, output_file, program, indent, force_clone, no_clone)?;
                     write!(output_file, ")")?;
                 } else {
-                    write_expr(*item, output_file, program, indent, force_clone)?;
+                    write_expr(*item, output_file, program, indent, force_clone, no_clone)?;
                 };
                 write!(output_file, ";\n")?;
             }
@@ -92,7 +101,7 @@ pub fn write_expr(
             write!(output_file, "let ")?;
             write_pattern(*pattern, output_file, program, indent)?;
             write!(output_file, " = ")?;
-            write_expr(*rhs, output_file, program, indent, force_clone)?;
+            write_expr(*rhs, output_file, program, indent, force_clone, no_clone)?;
             write!(output_file, ";")?;
             is_statement = true;
         }
@@ -121,7 +130,7 @@ pub fn write_expr(
                 if index < args.len() {
                     let arg = &args[index];
                     write!(output_file, "Some(")?;
-                    write_expr(*arg, output_file, program, indent, force_clone)?;
+                    write_expr(*arg, output_file, program, indent, force_clone, no_clone)?;
                     write!(output_file, ")")?;
                 } else {
                     write!(output_file, "None")?;
@@ -136,13 +145,7 @@ pub fn write_expr(
             let function = program.functions.get(id);
             let hack = match &function.info {
                 FunctionInfo::Extern(original_name) => {
-                    if (function.module == "Map" || function.module == "Map2")
-                        && (original_name == "get")
-                    {
-                        true
-                    } else {
-                        false
-                    }
+                    crate::function::is_hacked_function(&function.module, original_name)
                 }
                 _ => false,
             };
@@ -157,7 +160,7 @@ pub fn write_expr(
                 if hack {
                     write!(output_file, "&")?;
                 }
-                write_expr(*arg, output_file, program, indent, force_clone)?;
+                write_expr(*arg, output_file, program, indent, force_clone, hack)?;
                 //if force_clone {
                 //    write!(output_file, ".clone()")?;
                 //}
@@ -228,7 +231,7 @@ pub fn write_expr(
                 write!(output_file, ",")?;
             }
             for (index, arg) in args.iter().enumerate() {
-                write_expr(*arg, output_file, program, indent, force_clone)?;
+                write_expr(*arg, output_file, program, indent, force_clone, no_clone)?;
                 write!(output_file, ".value")?;
                 if index != args.len() - 1 {
                     write!(output_file, ",")?;
@@ -238,14 +241,21 @@ pub fn write_expr(
         }
         Expr::CaseOf(body, cases) => {
             write!(output_file, "match (")?;
-            write_expr(*body, output_file, program, indent, force_clone)?;
+            write_expr(*body, output_file, program, indent, force_clone, no_clone)?;
             write!(output_file, ") {{\n")?;
             indent.inc();
             for case in cases {
                 write!(output_file, "{}", indent)?;
                 write_pattern(case.pattern_id, output_file, program, indent)?;
                 write!(output_file, " => {{")?;
-                write_expr(case.body, output_file, program, indent, force_clone)?;
+                write_expr(
+                    case.body,
+                    output_file,
+                    program,
+                    indent,
+                    force_clone,
+                    no_clone,
+                )?;
                 write!(output_file, "}}\n")?;
             }
             indent.dec();
@@ -255,17 +265,31 @@ pub fn write_expr(
             let ty = program.get_expr_type(cond);
             let ty = ir_type_to_rust_type(ty, program);
             write!(output_file, "if {{ match (")?;
-            write_expr(*cond, output_file, program, indent, force_clone)?;
+            write_expr(*cond, output_file, program, indent, force_clone, no_clone)?;
             write!(
                 output_file,
                 ") {{ {}::True => true, {}::False => false, }} }} ",
                 ty, ty
             )?;
             write!(output_file, " {{ ")?;
-            write_expr(*true_branch, output_file, program, indent, force_clone)?;
+            write_expr(
+                *true_branch,
+                output_file,
+                program,
+                indent,
+                force_clone,
+                no_clone,
+            )?;
             write!(output_file, " }} ")?;
             write!(output_file, " else {{ ")?;
-            write_expr(*false_branch, output_file, program, indent, force_clone)?;
+            write_expr(
+                *false_branch,
+                output_file,
+                program,
+                indent,
+                force_clone,
+                no_clone,
+            )?;
             write!(output_file, " }} ")?;
         }
         Expr::FieldAccess(index, receiver) => {
@@ -273,7 +297,14 @@ pub fn write_expr(
             let id = ty.get_typedef_id();
             let record = program.typedefs.get(&id).get_record();
             let field = &record.fields[*index];
-            write_expr(*receiver, output_file, program, indent, force_clone)?;
+            write_expr(
+                *receiver,
+                output_file,
+                program,
+                indent,
+                force_clone,
+                no_clone,
+            )?;
             write!(output_file, "._siko_{}", field.name)?;
         }
         Expr::List(items) => {
@@ -282,7 +313,7 @@ pub fn write_expr(
             write!(output_file, "{} {{ value: std::rc::Rc::new(vec![", ty)?;
             for (index, item) in items.iter().enumerate() {
                 write!(output_file, "std::rc::Rc::new(")?;
-                write_expr(*item, output_file, program, indent, force_clone)?;
+                write_expr(*item, output_file, program, indent, force_clone, no_clone)?;
                 if index != items.len() - 1 {
                     write!(output_file, "), ")?;
                 } else {
@@ -294,7 +325,14 @@ pub fn write_expr(
         Expr::DynamicFunctionCall(receiver, args) => {
             indent.inc();
             write!(output_file, "{{\n{}let mut dyn_fn = ", indent)?;
-            write_expr(*receiver, output_file, program, indent, force_clone)?;
+            write_expr(
+                *receiver,
+                output_file,
+                program,
+                indent,
+                force_clone,
+                no_clone,
+            )?;
             //write!(output_file, ".clone()")?;
             write!(output_file, ";\n")?;
             for (index, arg) in args.iter().enumerate() {
@@ -303,7 +341,7 @@ pub fn write_expr(
                 } else {
                     write!(output_file, "{}let mut dyn_fn = dyn_fn.call(", indent)?;
                 }
-                write_expr(*arg, output_file, program, indent, force_clone)?;
+                write_expr(*arg, output_file, program, indent, force_clone, no_clone)?;
                 write!(output_file, ");\n")?;
             }
             write!(output_file, "{}dyn_fn\n", indent)?;
@@ -311,16 +349,18 @@ pub fn write_expr(
             write!(output_file, "{}}}", indent)?;
         }
         Expr::Clone(rhs) => {
-            write_expr(*rhs, output_file, program, indent, force_clone)?;
-            write!(output_file, ".clone()")?;
+            write_expr(*rhs, output_file, program, indent, force_clone, false)?;
+            if !no_clone {
+                write!(output_file, ".clone()")?;
+            }
         }
         Expr::Deref(rhs) => {
             write!(output_file, "*")?;
-            write_expr(*rhs, output_file, program, indent, force_clone)?;
+            write_expr(*rhs, output_file, program, indent, force_clone, no_clone)?;
         }
         Expr::Return(rhs) => {
             write!(output_file, "return ")?;
-            write_expr(*rhs, output_file, program, indent, force_clone)?;
+            write_expr(*rhs, output_file, program, indent, force_clone, no_clone)?;
         }
         Expr::Loop(pattern, initializer, items, has_break) => {
             write!(output_file, "{{ ")?;
@@ -328,7 +368,14 @@ pub fn write_expr(
                 write!(output_file, "let mut break_state = None;")?;
             }
             write!(output_file, "let mut loop_state = ")?;
-            write_expr(*initializer, output_file, program, indent, force_clone)?;
+            write_expr(
+                *initializer,
+                output_file,
+                program,
+                indent,
+                force_clone,
+                no_clone,
+            )?;
             write!(output_file, "; loop {{")?;
             write!(output_file, "let ")?;
             write_pattern(*pattern, output_file, program, indent)?;
@@ -336,11 +383,11 @@ pub fn write_expr(
             for (index, item) in items.iter().enumerate() {
                 if index == items.len() - 1 {
                     write!(output_file, "{}let tmp{} = {{ ", indent, index)?;
-                    write_expr(*item, output_file, program, indent, force_clone)?;
+                    write_expr(*item, output_file, program, indent, force_clone, no_clone)?;
                     write!(output_file, " }} ;")?;
                     write!(output_file, "{}loop_state = tmp{};", indent, index)?;
                 } else {
-                    write_expr(*item, output_file, program, indent, force_clone)?;
+                    write_expr(*item, output_file, program, indent, force_clone, no_clone)?;
                     write!(output_file, " ;")?;
                 }
             }
@@ -352,12 +399,12 @@ pub fn write_expr(
         }
         Expr::Continue(inner) => {
             write!(output_file, "loop_state = ")?;
-            write_expr(*inner, output_file, program, indent, force_clone)?;
+            write_expr(*inner, output_file, program, indent, force_clone, no_clone)?;
             write!(output_file, "; continue;")?;
         }
         Expr::Break(inner) => {
             write!(output_file, "break_state = Some(")?;
-            write_expr(*inner, output_file, program, indent, force_clone)?;
+            write_expr(*inner, output_file, program, indent, force_clone, no_clone)?;
             write!(output_file, "); break;")?;
         }
     }
