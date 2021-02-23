@@ -490,7 +490,7 @@ fn generate_map_builtins(
             )?;
             write!(
                 output_file,
-                "{}*v = std::rc::Rc::new(arg1.clone().call(input));\n",
+                "{}*v = std::rc::Rc::new(arg1.call_ro(input));\n",
                 indent
             )?;
             write!(output_file, "{}}}\n", indent)?;
@@ -743,7 +743,7 @@ fn generate_map2_builtins(
                 indent,
                 ir_type_to_rust_type(&from, program)
             )?;
-            write!(output_file, "{}*v = arg1.clone().call(input);\n", indent)?;
+            write!(output_file, "{}*v = arg1.call_ro(input);\n", indent)?;
             write!(output_file, "{}}}\n", indent)?;
             write!(
                 output_file,
@@ -1862,7 +1862,7 @@ pub fn generate_builtin(
                     indent.inc();
                     write!(
                         output_file,
-                        "{}match self.arg0.clone().call(value.clone()) {{\n",
+                        "{}match self.arg0.call_ro(value.clone()) {{\n",
                         indent,
                     )?;
                     indent.inc();
@@ -1925,7 +1925,7 @@ pub fn generate_builtin(
                     write!(output_file, "{}let mut arg0 = arg0;\n", indent)?;
                     write!(output_file, "{}let mut arg1 = arg1;\n", indent)?;
                     write!(output_file, "{}let mut arg2 = arg2;\n", indent)?;
-                    write!(output_file, "{}loop {{  match arg2.value.next() {{ Some(v) => {{ let mut partial = arg0.clone().call(arg1); arg1 = partial.call(v); }}, None => {{ break; }}  }} }}\n", indent)?;
+                    write!(output_file, "{}loop {{  match arg2.value.next() {{ Some(v) => {{ let mut partial = arg0.call_ro(arg1); arg1 = partial.call(v); }}, None => {{ break; }}  }} }}\n", indent)?;
                     write!(output_file, "{}arg1\n", indent)?;
                 }
                 ("Hack", "readTextFile") => {

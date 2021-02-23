@@ -100,65 +100,119 @@ fn write_dyn_trait_impl_save_arg(
         ir_type_to_rust_type(to, program),
         partial_function_call.get_name()
     )?;
-    indent.inc();
-    write!(
-        output_file,
-        "{}fn call(&mut self, arg0: {}) -> {} {{\n",
-        indent,
-        ir_type_to_rust_type(from, program),
-        ir_type_to_rust_type(to, program),
-    )?;
-    indent.inc();
-    write!(
-        output_file,
-        "{}let value = {} {{\n",
-        indent,
-        partial_function_call.get_name(),
-    )?;
-    indent.inc();
-    for index in 0..partial_function_call.fields.len() {
-        if index == field_index {
+    {
+        indent.inc();
+        write!(
+            output_file,
+            "{}fn call(&mut self, arg0: {}) -> {} {{\n",
+            indent,
+            ir_type_to_rust_type(from, program),
+            ir_type_to_rust_type(to, program),
+        )?;
+        {
+            indent.inc();
             write!(
                 output_file,
-                "{}{}: Some(arg0),\n",
+                "{}let value = {} {{\n",
                 indent,
-                arg_name(field_index)
+                partial_function_call.get_name(),
             )?;
-        } else {
+            {
+                indent.inc();
+                for index in 0..partial_function_call.fields.len() {
+                    if index == field_index {
+                        write!(
+                            output_file,
+                            "{}{}: Some(arg0),\n",
+                            indent,
+                            arg_name(field_index)
+                        )?;
+                    } else {
+                        write!(
+                            output_file,
+                            "{}{}: self.{}.take(),\n",
+                            indent,
+                            arg_name(index),
+                            arg_name(index)
+                        )?;
+                    }
+                }
+                indent.dec();
+            }
+            write!(output_file, "{}}};\n", indent,)?;
             write!(
                 output_file,
-                "{}{}: self.{}.take(),\n",
+                "{}{} {{ value : Box::new(value) }}\n",
                 indent,
-                arg_name(index),
-                arg_name(index)
+                ir_type_to_rust_type(to, program),
             )?;
+            indent.dec();
         }
+        write!(output_file, "{}}}\n", indent)?;
+
+        write!(
+            output_file,
+            "{}fn call_ro(&self, arg0: {}) -> {} {{\n",
+            indent,
+            ir_type_to_rust_type(from, program),
+            ir_type_to_rust_type(to, program),
+        )?;
+        {
+            indent.inc();
+            write!(
+                output_file,
+                "{}let value = {} {{\n",
+                indent,
+                partial_function_call.get_name(),
+            )?;
+            {
+                indent.inc();
+                for index in 0..partial_function_call.fields.len() {
+                    if index == field_index {
+                        write!(
+                            output_file,
+                            "{}{}: Some(arg0),\n",
+                            indent,
+                            arg_name(field_index)
+                        )?;
+                    } else {
+                        write!(
+                            output_file,
+                            "{}{}: self.{}.clone().take(),\n",
+                            indent,
+                            arg_name(index),
+                            arg_name(index)
+                        )?;
+                    }
+                }
+                indent.dec();
+            }
+            write!(output_file, "{}}};\n", indent,)?;
+            write!(
+                output_file,
+                "{}{} {{ value : Box::new(value) }}\n",
+                indent,
+                ir_type_to_rust_type(to, program),
+            )?;
+            indent.dec();
+        }
+        write!(output_file, "{}}}\n", indent)?;
+        write!(
+            output_file,
+            "{}fn box_clone(&self) -> Box<dyn {}<{},{}>> {{\n",
+            indent,
+            MIR_FUNCTION_TRAIT_NAME,
+            ir_type_to_rust_type(from, program),
+            ir_type_to_rust_type(to, program),
+        )?;
+        {
+            indent.inc();
+            write!(output_file, "{}Box::new(self.clone())\n", indent)?;
+            indent.dec();
+        }
+        write!(output_file, "{}}}\n", indent)?;
+        indent.dec();
     }
-    indent.dec();
-    write!(output_file, "{}}};\n", indent,)?;
-    write!(
-        output_file,
-        "{}{} {{ value : Box::new(value) }}\n",
-        indent,
-        ir_type_to_rust_type(to, program),
-    )?;
-    indent.dec();
-    write!(output_file, "{}}}\n", indent)?;
-    indent.dec();
-    indent.inc();
-    write!(
-        output_file,
-        "{}fn box_clone(&self) -> Box<dyn {}<{},{}>> {{\n",
-        indent,
-        MIR_FUNCTION_TRAIT_NAME,
-        ir_type_to_rust_type(from, program),
-        ir_type_to_rust_type(to, program),
-    )?;
-    indent.inc();
-    write!(output_file, "{}Box::new(self.clone())\n", indent)?;
-    indent.dec();
-    write!(output_file, "{}}}\n", indent)?;
-    indent.dec();
     write!(output_file, "{}}}\n", indent)?;
     Ok(())
 }
@@ -180,48 +234,80 @@ fn write_dyn_trait_impl_real_call(
         ir_type_to_rust_type(to, program),
         partial_function_call.get_name()
     )?;
-    indent.inc();
-    write!(
-        output_file,
-        "{}fn call(&mut self, arg0: {}) -> {} {{\n",
-        indent,
-        ir_type_to_rust_type(from, program),
-        ir_type_to_rust_type(to, program),
-    )?;
-    indent.inc();
-    let function = program.functions.get(&partial_function_call.function);
-    write!(
-        output_file,
-        "{}crate::source::{}::{}(",
-        indent,
-        get_module_name(&function.module),
-        function.name
-    )?;
-    for index in 0..partial_function_call.fields.len() {
+    {
+        indent.inc();
         write!(
             output_file,
-            "self.{}.take().expect(\"Missing arg\"), ",
-            arg_name(index)
+            "{}fn call(&mut self, arg0: {}) -> {} {{\n",
+            indent,
+            ir_type_to_rust_type(from, program),
+            ir_type_to_rust_type(to, program),
         )?;
+        {
+            indent.inc();
+            let function = program.functions.get(&partial_function_call.function);
+            write!(
+                output_file,
+                "{}crate::source::{}::{}(",
+                indent,
+                get_module_name(&function.module),
+                function.name
+            )?;
+            for index in 0..partial_function_call.fields.len() {
+                write!(
+                    output_file,
+                    "self.{}.take().expect(\"Missing arg\"), ",
+                    arg_name(index)
+                )?;
+            }
+            write!(output_file, "arg0)\n")?;
+            indent.dec();
+        }
+        write!(output_file, "{}}}\n", indent)?;
+        write!(
+            output_file,
+            "{}fn call_ro(&self, arg0: {}) -> {} {{\n",
+            indent,
+            ir_type_to_rust_type(from, program),
+            ir_type_to_rust_type(to, program),
+        )?;
+        {
+            indent.inc();
+            let function = program.functions.get(&partial_function_call.function);
+            write!(
+                output_file,
+                "{}crate::source::{}::{}(",
+                indent,
+                get_module_name(&function.module),
+                function.name
+            )?;
+            for index in 0..partial_function_call.fields.len() {
+                write!(
+                    output_file,
+                    "self.{}.clone().take().expect(\"Missing arg\"), ",
+                    arg_name(index)
+                )?;
+            }
+            write!(output_file, "arg0)\n")?;
+            indent.dec();
+        }
+        write!(output_file, "{}}}\n", indent)?;
+        write!(
+            output_file,
+            "{}fn box_clone(&self) -> Box<dyn {}<{},{}>> {{\n",
+            indent,
+            MIR_FUNCTION_TRAIT_NAME,
+            ir_type_to_rust_type(from, program),
+            ir_type_to_rust_type(to, program),
+        )?;
+        {
+            indent.inc();
+            write!(output_file, "{}Box::new(self.clone())\n", indent)?;
+            indent.dec();
+        }
+        write!(output_file, "{}}}\n", indent)?;
+        indent.dec();
     }
-    write!(output_file, "arg0)\n")?;
-    indent.dec();
-    write!(output_file, "{}}}\n", indent)?;
-    indent.dec();
-    indent.inc();
-    write!(
-        output_file,
-        "{}fn box_clone(&self) -> Box<dyn {}<{},{}>> {{\n",
-        indent,
-        MIR_FUNCTION_TRAIT_NAME,
-        ir_type_to_rust_type(from, program),
-        ir_type_to_rust_type(to, program),
-    )?;
-    indent.inc();
-    write!(output_file, "{}Box::new(self.clone())\n", indent)?;
-    indent.dec();
-    write!(output_file, "{}}}\n", indent)?;
-    indent.dec();
     write!(output_file, "{}}}\n", indent)?;
     Ok(())
 }
@@ -234,6 +320,7 @@ fn write_function_trait(output_file: &mut dyn Write, indent: &mut Indent) -> Res
     )?;
     indent.inc();
     write!(output_file, "{}fn call(&mut self, a: A) -> B;\n", indent)?;
+    write!(output_file, "{}fn call_ro(&self, a: A) -> B;\n", indent)?;
     write!(
         output_file,
         "{}fn box_clone(&self) -> Box<dyn Function<A,B>>;\n",
@@ -296,19 +383,36 @@ fn write_closure_impl(
 ) -> Result<()> {
     write!(output_file, "{}impl {} {{\n", indent, closure.name)?;
     indent.inc();
-    write!(
-        output_file,
-        "{}pub fn call(&mut self, arg0: {}) -> {} {{\n",
-        indent,
-        ir_type_to_rust_type(&closure.from_ty, program),
-        ir_type_to_rust_type(&closure.to_ty, program)
-    )?;
-    indent.inc();
-    write!(output_file, "{}self.value.call(arg0)\n", indent)?;
-    indent.dec();
-    write!(output_file, "{}}}\n", indent)?;
-    indent.dec();
-    write!(output_file, "{}}}\n", indent)?;
+    {
+        write!(
+            output_file,
+            "{}pub fn call(&mut self, arg0: {}) -> {} {{\n",
+            indent,
+            ir_type_to_rust_type(&closure.from_ty, program),
+            ir_type_to_rust_type(&closure.to_ty, program)
+        )?;
+        {
+            indent.inc();
+            write!(output_file, "{}self.value.call(arg0)\n", indent)?;
+            indent.dec();
+        }
+        write!(output_file, "{}}}\n", indent)?;
+        write!(
+            output_file,
+            "{}pub fn call_ro(&self, arg0: {}) -> {} {{\n",
+            indent,
+            ir_type_to_rust_type(&closure.from_ty, program),
+            ir_type_to_rust_type(&closure.to_ty, program)
+        )?;
+        {
+            indent.inc();
+            write!(output_file, "{}self.value.call_ro(arg0)\n", indent)?;
+            indent.dec();
+        }
+        write!(output_file, "{}}}\n", indent)?;
+        write!(output_file, "{}}}\n", indent)?;
+        indent.dec();
+    }
     Ok(())
 }
 

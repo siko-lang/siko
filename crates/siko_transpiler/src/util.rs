@@ -4,7 +4,7 @@ use siko_mir::types::Type;
 use std::fmt;
 
 pub struct Indent {
-    indent: usize,
+    indent: isize,
 }
 
 impl Indent {
@@ -17,6 +17,7 @@ impl Indent {
     }
 
     pub fn dec(&mut self) {
+        assert!(self.indent > 0);
         self.indent -= 4;
     }
 }

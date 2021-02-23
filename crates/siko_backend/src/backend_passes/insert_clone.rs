@@ -195,7 +195,7 @@ fn walk_body(expr_id: &ExprId, program: &Program, collector: &mut Collector, blo
                 afters.push(collector.usages.clone());
             }
             for after in afters {
-                    collector.usages.extend(after);
+                collector.usages.extend(after);
             }
         }
         Expr::RecordInitialization(_, items) => {

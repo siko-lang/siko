@@ -58,25 +58,18 @@ processEqual ownership_vars groups v1 v2 = do
             //(context, index) <- mergeBorrowSets context index1 index2
             //(context, T.BorrowKind index)
     groups <- List2.write groups index1 (Common.Group merged_kind)
-    ownership_vars <- Common.updateGroups2 ownership_vars group_id2 group_id1
+    ownership_vars <- Common.updateGroups ownership_vars group_id2 group_id1
     (ownership_vars, groups)
 
 processEquals :: Common.Context -> Common.Context
 processEquals context = do
     equals <- context.equals
-    groups <- context.groups |> List.iter |> List2.toList
-    ownership_vars <- context.ownership_vars |> Map.iter |> Map2.toMap2
-    loop (groups, ownership_vars, index) <- (groups, ownership_vars, 0) do
-        if index >= getLength equals
-        then break do
-            groups <- groups |> List2.iter |> toList
-            ownership_vars <- ownership_vars |> Map2.iter |> toMap
-            context { groups = groups, ownership_vars = ownership_vars }
-        else do
-            equal <- atIndex equals index
-            Common.Equal v1 v2 <- equal
-            (ownership_vars, groups) <- processEqual ownership_vars groups v1 v2
-            (groups, ownership_vars, index + 1)
+    groups <- context.groups
+    ownership_vars <- context.ownership_vars
+    (ownership_vars, groups) <- List.fold (ownership_vars, groups) equals (\(ownership_vars, groups), equal -> do
+        Common.Equal v1 v2 <- equal
+        processEqual ownership_vars groups v1 v2)
+    context { groups = groups, ownership_vars = ownership_vars }
 
 processConstraints :: Common.Context -> Common.Context
 processConstraints context =
@@ -191,7 +184,7 @@ dumpConstraints context = do
 dumpOwnershipVars :: Common.Context -> ()
 dumpOwnershipVars context = do
     println "Ownership vars:"
-    context.ownership_vars |> Map.iter |> forEach (\(v, _) -> println "{} -> {}" % (v, resolveKind2 context v))
+    context.ownership_vars |> Map2.iter |> forEach (\(v, _) -> println "{} -> {}" % (v, resolveKind2 context v))
 
 insertKind :: Set T.OwnershipVar -> T.OwnershipKind -> T.OwnershipKind -> (Set T.OwnershipVar, Bool)
 insertKind collected orig new = do
@@ -264,12 +257,13 @@ collectVarConstraints context kinds = do
         |> Iterator.filter (\(key, convertibles) -> not (isEmpty convertibles)) |> toMap
     constraints
 
-getSubstitution :: Common.Context -> U.SubstitutionApply
+getSubstitution :: Common.Context -> (Common.Context, U.SubstitutionApply)
 getSubstitution context = do
     sub <- U.createSubstitution
-    sub <- context.ownership_vars |> Map.iter |> Iterator.fold (\sub, (v, _) -> do
-            kind <- resolveKind2 context v
-            case kind of
+    ownership_vars <- context.ownership_vars
+    (context, sub) <- Map2.fold (context, sub) ownership_vars(\(context, sub), (v, _) -> do
+            (context, kind) <- resolveKind context v
+            sub <- case kind of
                 T.VarKind new_v -> do
                     if new_v == v
                         then sub
@@ -280,23 +274,54 @@ getSubstitution context = do
                     U.addSubstitution sub (T.VarKind v) (U.Borrow i)
                 T.BoxedKind -> do
                     U.addSubstitution sub (T.VarKind v) (U.Boxed)
-        ) sub
-    U.toApply sub
+            (context, sub)
+        )
+    (context, U.toApply sub)
+
+getSubstitution2 :: Common.Context -> List2 T.OwnershipKind -> (Common.Context, U.SubstitutionApply)
+getSubstitution2 context kinds = do
+    sub <- U.createSubstitution
+    (context, sub) <- List2.fold (context, sub) kinds (\(context, sub), fn_kind -> do
+            case fn_kind of
+                T.VarKind v -> do
+                    (context, kind) <- resolveKind context v
+                    sub <- case kind of
+                        T.VarKind new_v -> do
+                            if new_v == v
+                                then sub
+                                else U.addSubstitution sub (T.VarKind v) (U.Unification new_v)
+                        T.OwnerKind -> do
+                            U.addSubstitution sub (T.VarKind v) (U.Owner)
+                        T.BorrowKind i -> do
+                            U.addSubstitution sub (T.VarKind v) (U.Borrow i)
+                        T.BoxedKind -> do
+                            U.addSubstitution sub (T.VarKind v) (U.Boxed)
+                    (context, sub)
+                _ -> (context, sub)
+        )
+    (context, U.toApply sub)
 
 borrowCheck :: Common.Context -> Common.Context
 borrowCheck context = do
-    resolved_vars <- context.ownership_vars |> Map.iter |> Iterator.map (\(v, _) -> (v, resolveKind2 context v)) |> toMap
-    resolved_vars |> Map.iter |> Iterator.fold (\context, (v, resolved_kind) -> do
+        ownership_vars <- context.ownership_vars
+        (context, resolved_vars) <- Map2.mapS context ownership_vars resolveVar
+        Map2.fold context resolved_vars checkResolvedVar
+    where
+        resolveVar :: Common.Context -> (T.OwnershipVar, Common.GroupId) -> (Common.Context, T.OwnershipVar, T.OwnershipKind)
+        resolveVar context (v, _) = do
+            (context, kind) <- resolveKind context v
+            (context, v, kind)
+
+        checkResolvedVar :: Common.Context -> (T.OwnershipVar, T.OwnershipKind) -> Common.Context
+        checkResolvedVar context (v, resolved_kind) =
             case resolved_kind of
                 T.BorrowKind id -> do
                     case get context.borrower_sets id of
                         Some borrower_set -> do
                             case get context.moved_vars v of
                                 Some moved_vars -> do
-                                    success <- borrower_set |> Set.iter |> Iterator.fold (\success, borrower_var -> do
-                                        if Set.contains moved_vars.vars borrower_var
-                                            then False
-                                            else success) True
+                                    moved_vars :: Common.MovedVars <- moved_vars // FIXME
+                                    success <- borrower_set |> Set.iter |> Iterator.fold (checkBorrowedVar moved_vars.vars) True
                                     if success
                                         then context
                                         else do
@@ -307,11 +332,16 @@ borrowCheck context = do
                                 None -> panic "No moved vars found for {}" % v
                         None -> panic "Borrow set {} not found" % id
                 _ -> context
-        ) context
+
+        checkBorrowedVar :: Set T.OwnershipVar -> Bool -> T.OwnershipVar -> Bool
+        checkBorrowedVar moved_vars prev borrower_var =
+            if Set.contains moved_vars borrower_var
+            then False
+            else prev
 
 replaceUnused :: Common.Context -> Common.Context
 replaceUnused context = do
-        (context, replaced_vars) <- Map.mapS context context.ownership_vars replaceUnusedKind
+        (context, replaced_vars) <- Map2.mapS context context.ownership_vars replaceUnusedKind
         context { ownership_vars = replaced_vars }
     where
         replaceUnusedKind :: Common.Context -> (T.OwnershipVar, Common.GroupId) -> (Common.Context, T.OwnershipVar, Common.GroupId)
@@ -341,11 +371,11 @@ calculateInferenceInfo global_context init_context function_id = do
             Common.dumpContextStats context
             //dumpConstraints context
             //dumpOwnershipVars context
-            sub <- getSubstitution context
+            ownership_kinds <- Common.collectOwnershipKindsFromFunctionType function.type
+            (context, sub) <- getSubstitution2 context ownership_kinds
             function_type <- U.apply function.type sub
             ownership_kinds <- Common.collectOwnershipKindsFromFunctionType function_type
             var_constraints <- collectVarConstraints context ownership_kinds
-            function_type <- U.apply function_type sub
             info <- Common.FunctionInferenceInfo function_type var_constraints
             trace global_context.config "End of processing {}" % function.id
             (Some info, context.init_context)
@@ -362,7 +392,7 @@ instantiateFunction global_context init_context expr_id_gen function_id function
     context <- replaceUnused context
     //dumpConstraints context
     //dumpOwnershipVars context
-    sub <- getSubstitution context
+    (context, sub) <- getSubstitution context
     updated_body <- updateBody context sub body
     trace global_context.config "End of instantiating"
     (updated_body, context.init_context)

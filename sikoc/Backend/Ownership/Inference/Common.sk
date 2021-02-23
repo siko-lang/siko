@@ -49,13 +49,13 @@ data Context = { global_context :: GlobalContext,
                  constraints :: [Constraint],
                  equals :: [Equal],
                  not_moves :: Set E.ExprId,
-                 ownership_vars :: Map T.OwnershipVar GroupId,
+                 ownership_vars :: Map2 T.OwnershipVar GroupId,
                  moved_vars :: Map T.OwnershipVar MovedVars,
                  borrowers :: [Borrower],
                  init_context :: Init.Context,
                  borrower_sets :: Map Int (Set T.OwnershipVar),
                  borrower_set_id_gen :: Int,
-                 groups :: [Group],
+                 groups :: List2 Group,
                  return_type :: T.Type,
                  continues :: Map E.ExprId T.Type,
                  breaks :: Map E.ExprId T.Type,
@@ -67,11 +67,11 @@ dumpContextStats context = do
     trace context.global_context.config "constraints {}" % getLength context.constraints
     trace context.global_context.config "equals {}" % getLength context.equals
     trace context.global_context.config "not_moves {}" % getLength context.not_moves.items
-    trace context.global_context.config "ownership_vars {}" % getSize context.ownership_vars
+    trace context.global_context.config "ownership_vars {}" % Map2.getSize context.ownership_vars
     trace context.global_context.config "moved_vars {}" % getSize context.moved_vars
     trace context.global_context.config "borrowers {}" % getLength context.borrowers
     trace context.global_context.config "borrower_sets {}" % getSize context.borrower_sets
-    trace context.global_context.config "groups {}" % getLength context.groups
+    trace context.global_context.config "groups {}" % List2.getLength context.groups
     trace context.global_context.config "continues {}" % getSize context.continues
     trace context.global_context.config "breaks {}" % getSize context.breaks
 
@@ -93,13 +93,13 @@ createContext global_context not_moves init_context return_type =
         constraints = [],
         equals = [],
         not_moves = not_moves,
-        ownership_vars = Map.empty,
+        ownership_vars = Map2.empty,
         moved_vars = Map.empty,
         borrowers = [],
         init_context = init_context,
         borrower_sets = Map.empty,
         borrower_set_id_gen = 1,
-        groups = [],
+        groups = List2.empty,
         return_type = return_type,
         continues = Map.empty,
         breaks = Map.empty,
@@ -128,19 +128,19 @@ getVarVars context var = case get context.var_vars var of
 
 createGroup :: Context -> T.OwnershipKind -> (Context, GroupId)
 createGroup context kind = do
-    group_id <- GroupId (getLength context.groups)
-    groups <- List.push context.groups (Group kind)
+    group_id <- GroupId (List2.getLength context.groups)
+    groups <- List2.push context.groups (Group kind)
     (context { groups = groups }, group_id)
 
 getGroupId :: Context -> T.OwnershipVar -> (Context, GroupId) // MOVE HACK
-getGroupId context var = case get context.ownership_vars var of
+getGroupId context var = case Map2.get context.ownership_vars var of
     Some id -> (context, id)
     None -> panic "No group found for {}" % var
 
 getGroup :: Context -> GroupId -> (Context, Group) // MOVE HACK
 getGroup context id = do
     GroupId index <- id
-    group <- atIndex context.groups index
+    group <- List2.atIndex context.groups index
     (context, group)
 
 getBorrowSet :: Context -> Int -> Set T.OwnershipVar
@@ -151,20 +151,11 @@ getBorrowSet context id = case get context.borrower_sets id of
 updateGroupKind :: Context -> GroupId -> T.OwnershipKind -> Context
 updateGroupKind context id kind = do
     GroupId index <- id
-    groups <- write context.groups index (Group kind)
+    groups <- List2.write context.groups index (Group kind)
     context { groups = groups }
 
-updateGroups :: Map T.OwnershipVar GroupId -> GroupId -> GroupId -> Map T.OwnershipVar GroupId
+updateGroups :: Map2 T.OwnershipVar GroupId -> GroupId -> GroupId -> Map2 T.OwnershipVar GroupId
 updateGroups ownership_vars old_id new_id = do
-    if old_id == new_id
-    then ownership_vars
-    else do
-        Map.update ownership_vars (\(v, id) -> do
-            updated_id <- if id == old_id then new_id else id
-            updated_id)
-
-updateGroups2 :: Map2 T.OwnershipVar GroupId -> GroupId -> GroupId -> Map2 T.OwnershipVar GroupId
-updateGroups2 ownership_vars old_id new_id = do
     if old_id == new_id
     then ownership_vars
     else do
@@ -198,9 +189,9 @@ mergeGroups :: Context -> GroupId -> GroupId -> (Context, T.OwnershipKind)
 mergeGroups context id1 id2 = do
     groups <- context.groups
     GroupId index1 <- id1
-    group1 <- atIndex groups index1
+    group1 <- List2.atIndex groups index1
     GroupId index2 <- id2
-    group2 <- atIndex groups index2
+    group2 <- List2.atIndex groups index2
     case (group1.kind, group2.kind) of
         (T.VarKind _, T.VarKind _) -> (context, group1.kind)
 
@@ -257,7 +248,7 @@ kindToVar kind = case kind of
 addOwnershipVar :: Context -> T.OwnershipVar -> T.OwnershipKind -> MovedVars -> Context
 addOwnershipVar context var kind moved_vars = do
     //println "Adding {} as {}" % (var, kind)
-    context <- case get context.ownership_vars var of
+    context <- case Map2.get context.ownership_vars var of
         Some id -> do
             (context, group) <- getGroup context id
             if group.kind != kind
@@ -267,7 +258,7 @@ addOwnershipVar context var kind moved_vars = do
                 else context
         None -> do
             (context, group_id) <- createGroup context kind
-            (ownership_vars, _) <- Map.insert context.ownership_vars var group_id
+            (ownership_vars, _) <- Map2.insert context.ownership_vars var group_id
             context <- context { ownership_vars = ownership_vars }
             context
     (moved_vars, _) <- alter (\old -> case old of
