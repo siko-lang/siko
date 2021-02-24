@@ -1,0 +1,227 @@
+module Siko.Backend.Simplification.PartialEvaluator where
+
+import Siko.MIR.Program as P
+import Siko.MIR.Expr as E
+import Siko.MIR.Data as D
+import Siko.MIR.Type as T
+import Siko.MIR.Function as F
+import Siko.Util.Counter
+import Map
+
+data Context = { program :: P.Program,
+                 expr_values :: Map E.ExprId Value,
+                 continues :: Map E.ExprId Value,
+                 breaks :: Map E.ExprId Value,
+                 vars :: Map E.Var Value }
+
+addVar :: Context -> E.Var -> Value -> Context
+addVar context var value = do
+    (vars, _) <- insert context.vars var value
+    context { vars = vars }
+
+getValue :: Context -> E.Var -> Value
+getValue context var = case get context.vars var of
+    Some v -> v
+    None -> panic "PartialEvaluator: cannot find value for var {}" % var
+
+getFieldValue :: Int -> Value -> Value
+getFieldValue index receiver = case receiver of
+    Record values -> atIndex values index
+    _ -> Unknown
+
+data Value = Unknown
+           | Variant P.Identity Int P.Identity
+           | Record [Value]
+           | Never
+           deriving (Show, PartialEq, Eq, PartialOrd, Ord)
+
+data ValueKind = UnknownKind
+               | VariantKind
+               | RecordKind
+               | NeverKind
+               deriving (Show, PartialEq, Eq, PartialOrd, Ord)
+
+getKind :: Value -> ValueKind
+getKind v = case v of
+    Unknown -> UnknownKind
+    Variant _ _ _  -> VariantKind
+    Record _ -> RecordKind
+    Never -> NeverKind
+
+mergeValues :: [Value] -> Value
+mergeValues values = do
+    non_never_values <- List.filter values (\v -> case v of
+                                            Never -> False
+                                            _ -> True)
+    non_never_values <- non_never_values |> sort |> dedup
+    case getLength non_never_values of
+        0 -> Never
+        1 -> atIndex non_never_values 0
+        _ -> do
+            kinds <- List.map non_never_values getKind
+            kinds <- kinds |> sort |> dedup
+            case getLength kinds of
+                1 -> case atIndex kinds 0 of
+                        RecordKind -> mergeRecordValues non_never_values
+                        _ -> Unknown
+                _ -> Unknown
+
+mergeRecordValues :: [Value] -> Value
+mergeRecordValues values = do
+        value_list <- List.map values (\v -> case v of
+            Record values -> values
+            _ -> panic "Record value is not a record!")
+        field_count <- getLength (atIndex value_list 0)
+        values <- repeatE (mergeFields value_list) field_count
+        Record values
+    where
+        mergeFields :: [[Value]] -> Int -> Value
+        mergeFields value_list index = mergeValues (List.map value_list (\l -> atIndex l index))
+
+processCase :: Context -> E.Case -> (Context, Value)
+processCase context c = do
+    context <- case c.checker of
+        E.VariantChecker _ v _ -> addVar context v Unknown
+        _ -> context
+    processExpr context c.body
+
+processExpr :: Context -> E.Expr -> (Context, Value)
+processExpr context expr = do
+    E.Expr s_expr type id <- expr
+    case s_expr of
+        E.Do items -> do
+            (context, values) <- List.mapS context items processExpr
+            value <- atIndex values (getLength values - 1)
+            (context, value)
+        E.Multi _ -> panic "Multi expr found in partial evaluator"
+        E.StaticFunctionCall f_id args -> do
+            function <- P.getFunction context.program f_id
+            (context, arg_values) <- List.mapS context args processExpr
+            case function.kind of
+                F.VariantCtor index -> do
+                    adt_id <- T.getIdentity function.type.result
+                    adt <- P.getAdt context.program adt_id
+                    variant <- atIndex adt.variants index
+                    record_id <- T.getIdentity variant.type
+                    (context, Variant adt_id index record_id)
+                F.RecordCtor -> do
+                    (context, Record arg_values)
+                _ -> (context, Unknown)
+        E.IntegerLiteral lit -> (context, Unknown)
+        E.StringLiteral lit -> (context, Unknown)
+        E.FloatLiteral lit -> (context, Unknown)
+        E.CharLiteral lit -> (context, Unknown)
+        E.VarDecl v rhs -> do
+            (context, rhs_value) <- processExpr context rhs
+            context <- addVar context v rhs_value
+            (context, Unknown)
+        E.VarRef v -> do
+            value <- getValue context v
+            (context, value)
+        E.FieldAccess name receiver -> do
+            E.Expr _ receiver_type _ <- receiver
+            record_id <- T.getIdentity receiver_type
+            record <- P.getRecord context.program record_id
+            // FIXME: use a better method for this
+            fields <- List.foldE (\fields, index, f -> if f.name == name then List.push fields index else fields) [] record.fields
+            field <- atIndex fields 0
+            (context, receiver_value) <- processExpr context receiver
+            value <- getFieldValue field receiver_value
+            (context, value)
+        E.If cond true_branch false_branch -> do
+            (context, cond) <- processExpr context cond
+            (context, true_branch_v) <- processExpr context true_branch
+            (context, false_branch_v) <- processExpr context false_branch
+            (context, mergeValues [true_branch_v, false_branch_v])
+        E.List items -> do
+            (context, values) <- List.mapS context items processExpr
+            (context, Unknown)
+        E.Return arg -> do
+            (context, value) <- processExpr context arg
+            (context, Never)
+        E.Continue arg -> do
+            (context, value) <- processExpr context arg
+            E.Expr _ _ arg_id <- arg
+            (continues, _) <- Map.insert context.continues arg_id value
+            (context { continues = continues }, Never)
+        E.Break arg -> do
+            (context, value) <- processExpr context arg
+            E.Expr _ _ arg_id <- arg
+            (breaks, _) <- Map.insert context.breaks arg_id value
+            (context { breaks = breaks }, Never)
+        E.RecordUpdate _ _ -> panic "Recordupdate in partial evaluator"
+        E.Loop v init body continues breaks -> do
+            (context, init_value) <- processExpr context init
+            context <- loop (context, prev_body_value, index) <- (context, init_value, 0) do
+                context <- addVar context v prev_body_value
+                (context, body_value) <- processExpr context body
+                continue_values <- List.map continues (\b -> Option.unwrap (get context.continues b))
+                body_value <- mergeValues (continue_values + [body_value, prev_body_value])
+                if prev_body_value == body_value
+                then break context
+                else (context, body_value, index + 1)
+            break_values <- List.map breaks (\b -> Option.unwrap (get context.breaks b))
+            (context, mergeValues break_values)
+        E.CaseOf body cases -> do
+            (context, body_value) <- processExpr context body
+            case body_value of
+                Variant adt_id index record_id -> do
+                    matching_bodies <- List.filterMap cases (\c -> case c.checker of
+                        E.VariantChecker v_index variant_var _ -> if v_index == index
+                                                        then Some (c.body, Some variant_var)
+                                                        else None
+                        E.WildcardChecker -> Some (c.body, None)
+                        _ -> panic "Invalid checker for variant")
+                    (case_body, variant_var) <- atIndex matching_bodies 0
+                    context <- case variant_var of
+                        Some variant_var -> addVar context variant_var body_value
+                        None -> context
+                    //println "Specific case!"
+                    processExpr context case_body
+                Record _ -> do
+                    c <- atIndex cases 0
+                    //println "Record specific case!"
+                    processCase context c
+                Never -> (context, Never)
+                Unknown -> do
+                    //println "General case!"
+                    (context, values) <- List.mapS context cases processCase
+                    (context, mergeValues values)
+        E.Clone arg -> do
+            (context, value) <- processExpr context arg
+            (context, value)
+        E.Deref arg -> do
+            (context, value) <- processExpr context arg
+            (context, value)
+        E.Ref arg -> do
+            (context, value) <- processExpr context arg
+            (context, value)
+        E.Move arg -> do
+            (context, value) <- processExpr context arg
+            (context, value)
+        E.Box arg -> do
+            (context, value) <- processExpr context arg
+            (context, value)
+        E.Converter arg kind -> do
+            (context, value) <- processExpr context arg
+            (context, value)
+
+processFunction :: P.Program -> F.Function -> F.Function
+processFunction program function = case function.kind of
+    F.Normal info -> do
+        //println "Partial evaluator processing {}" % function.id
+        context <- Context program Map.empty Map.empty Map.empty Map.empty
+        context <- List.foldE (\context, index, _ -> do
+            arg <- E.Arg index
+            addVar context arg Unknown) context function.type.args
+        (context, value) <- processExpr context info.body
+        function
+    _ -> function
+
+processProgram :: P.Program -> P.Program
+processProgram program = do
+    context <- ()
+    (context, functions) <- Map.mapS context program.functions (\context, (id, function) -> do
+        function <- processFunction program function
+        (context, id, function))
+    program { functions = functions }

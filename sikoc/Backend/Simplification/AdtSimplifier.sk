@@ -54,7 +54,7 @@ processExpr context expr = do
         E.Do items -> do
             (context, items) <- List.mapS context items processExpr
             (context, E.Expr (E.Do items) type id)
-        E.Multi _ -> panic "Multi expr found in rebinder"
+        E.Multi _ -> panic "Multi expr found in adt simplifier"
         E.StaticFunctionCall f_id args -> do
             (context, args) <- List.mapS context args processExpr
             (context, E.Expr (E.StaticFunctionCall f_id args) type id)
@@ -159,7 +159,9 @@ processExpr context expr = do
                             then do
                                 c :: E.Case <- atIndex cases 0 // FIXME: type annotation
                                 case c.checker of
-                                    E.WildcardChecker -> return (context, c.body)
+                                    E.WildcardChecker -> do
+                                        (context, c_body) <- processExpr context c.body
+                                        return (context, c_body)
                                     E.VariantChecker index v v_type -> do
                                         case v_type of
                                             T.Record _ _ -> do

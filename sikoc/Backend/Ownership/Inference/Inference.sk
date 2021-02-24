@@ -278,29 +278,6 @@ getSubstitution context = do
         )
     (context, U.toApply sub)
 
-getSubstitution2 :: Common.Context -> List2 T.OwnershipKind -> (Common.Context, U.SubstitutionApply)
-getSubstitution2 context kinds = do
-    sub <- U.createSubstitution
-    (context, sub) <- List2.fold (context, sub) kinds (\(context, sub), fn_kind -> do
-            case fn_kind of
-                T.VarKind v -> do
-                    (context, kind) <- resolveKind context v
-                    sub <- case kind of
-                        T.VarKind new_v -> do
-                            if new_v == v
-                                then sub
-                                else U.addSubstitution sub (T.VarKind v) (U.Unification new_v)
-                        T.OwnerKind -> do
-                            U.addSubstitution sub (T.VarKind v) (U.Owner)
-                        T.BorrowKind i -> do
-                            U.addSubstitution sub (T.VarKind v) (U.Borrow i)
-                        T.BoxedKind -> do
-                            U.addSubstitution sub (T.VarKind v) (U.Boxed)
-                    (context, sub)
-                _ -> (context, sub)
-        )
-    (context, U.toApply sub)
-
 borrowCheck :: Common.Context -> Common.Context
 borrowCheck context = do
         ownership_vars <- context.ownership_vars
@@ -371,8 +348,7 @@ calculateInferenceInfo global_context init_context function_id = do
             Common.dumpContextStats context
             //dumpConstraints context
             //dumpOwnershipVars context
-            ownership_kinds <- Common.collectOwnershipKindsFromFunctionType function.type
-            (context, sub) <- getSubstitution2 context ownership_kinds
+            (context, sub) <- getSubstitution context
             function_type <- U.apply function.type sub
             ownership_kinds <- Common.collectOwnershipKindsFromFunctionType function_type
             var_constraints <- collectVarConstraints context ownership_kinds

@@ -50,6 +50,15 @@ repeatSE state fn count = do
     loop (state, items, c) <- (state, [], 0) do
         if c < count
             then do
-                (state, item) <- fn state count
+                (state, item) <- fn state c
                 (state, items + [item], c + 1)
             else return (state, items)
+
+repeatE a :: (Int -> a) -> Int -> [a]
+repeatE fn count = do
+    loop (items, c) <- ([], 0) do
+        if c < count
+            then do
+                (item) <- fn c
+                (items + [item], c + 1)
+            else break items

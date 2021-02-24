@@ -9,7 +9,7 @@ import Siko.Util.Counter
 import Siko.Backend.Traversal
 import Map
 
-data Context = Context
+data Context = { modified :: Bool }
 
 processExpr :: Context -> E.Expr -> (Context, E.Expr)
 processExpr context expr = do
@@ -19,24 +19,33 @@ processExpr context expr = do
             (context, items) <- List.mapS context items processExpr
             (rest, last) <- List.split items (getLength items - 1)
             last <- atIndex last 0 // FIXME: should use a pop_last or similar
-            E.Expr last_s_expr _ _ <- last
-            case last_s_expr of
-                E.Do sub_items -> (context, E.Expr (E.Do (rest + sub_items)) type id)
-                e -> do
-                    (context, E.Expr (E.Do (rest + [last])) type id)
+            if getLength items == 1
+            then do
+                context <- context { modified = True }
+                (context, last)
+            else do
+                E.Expr last_s_expr _ _ <- last
+                case last_s_expr of
+                    E.Do sub_items -> do
+                        context <- context { modified = True }
+                        (context, E.Expr (E.Do (rest + sub_items)) type id)
+                    e -> do
+                        (context, E.Expr (E.Do (rest + [last])) type id)
         _ -> (context, expr)
 
-processFunction :: P.Program -> F.Function -> F.Function
-processFunction program function = case function.kind of
+processFunction :: Context -> P.Program -> F.Function -> (Context, F.Function)
+processFunction context program function = case function.kind of
     F.Normal info -> do
-        context <- Context
         (context, body) <- traverse context info.body (Some processExpr) None
         info <- info { body = body }
         new_kind <- F.Normal info
-        function { kind = new_kind}
-    _ -> function
+        (context, function { kind = new_kind})
+    _ -> (context, function)
 
-processProgram :: P.Program -> P.Program
+processProgram :: P.Program -> (P.Program, Bool)
 processProgram program = do
-    functions <- program.functions |> Map.iter |> Iterator.map (\(id, function) -> (id, processFunction program function)) |> toMap
-    program { functions = functions }
+    context <- Context False
+    (context, functions) <- Map.mapS context program.functions (\context, (id, function) -> do
+        (context, function) <- processFunction context program function
+        (context, id, function))
+    (program { functions = functions }, context.modified)

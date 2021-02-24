@@ -6,9 +6,7 @@ import Siko.Backend.Ownership.AddConverter as AddConverter
 import Siko.Backend.Instantiation as Instantiation
 import Siko.Backend.SanityCheck as SanityCheck
 import Siko.Backend.Rebinder as Rebinder
-import Siko.Backend.Simplification.DoMerger as DoMerger
-import Siko.Backend.Simplification.VarReplacer as VarReplacer
-import Siko.Backend.Simplification.AdtSimplifier as AdtSimplifier
+import Siko.Backend.Simplifier as Simplifier
 import Siko.Backend.Simplification.TransformUpdates as TransformUpdates
 import Siko.Backend.Inliner as Inliner
 import Siko.Backend.Traversal
@@ -104,27 +102,21 @@ processProgram config mir_program = do
     dumpProgram config mir_program (MIR "rebinder")
     trace config "SanityCheck1.."
     SanityCheck.processProgram mir_program
-    (data_groups, function_groups) <- createGroups config mir_program
-    //trace config "Inliner.."
-    //mir_program <- Inliner.processProgram mir_program function_groups
-    //dumpProgram config mir_program (MIR "inliner")
-    trace config "DoMerger.."
-    mir_program <- DoMerger.processProgram mir_program
-    dumpProgram config mir_program (MIR "domerger")
-    trace config "VarReplacer.."
-    mir_program <- VarReplacer.processProgram mir_program
-    dumpProgram config mir_program (MIR "varreplacer")
-    trace config "AdtSimplifier.."
-    //mir_program <- AdtSimplifier.processProgram mir_program
-    //dumpProgram config mir_program (MIR "adtsimplifier")
-    //mir_program <- Rebinder.processProgram mir_program
-    //dumpProgram config mir_program (MIR "rebinder2")
-    trace config "SanityCheck2.."
-    SanityCheck.processProgram mir_program
-    (data_groups, function_groups) <- createGroups config mir_program
     trace config "TransformUpdates.."
     mir_program <- TransformUpdates.processProgram mir_program
     dumpProgram config mir_program (MIR "transformupdates")
+    (data_groups, function_groups) <- createGroups config mir_program
+    trace config "Inliner.."
+    mir_program <- Inliner.processProgram mir_program function_groups
+    dumpProgram config mir_program (MIR "inliner")
+    trace config "Simplifier.."
+    mir_program <- Simplifier.processProgram config mir_program
+    dumpProgram config mir_program (MIR "simplifier")
+    mir_program <- Rebinder.processProgram mir_program
+    dumpProgram config mir_program (MIR "rebinder2")
+    trace config "SanityCheck2.."
+    SanityCheck.processProgram mir_program
+    (data_groups, function_groups) <- createGroups config mir_program
     trace config "AddConverter.."
     mir_program <- AddConverter.processProgram config mir_program
     dumpProgram config mir_program (MIR "addconverter")
