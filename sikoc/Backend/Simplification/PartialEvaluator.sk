@@ -12,7 +12,12 @@ data Context = { program :: P.Program,
                  expr_values :: Map E.ExprId Value,
                  continues :: Map E.ExprId Value,
                  breaks :: Map E.ExprId Value,
-                 vars :: Map E.Var Value }
+                 vars :: Map E.Var Value,
+                 record_id_gen :: Counter P.Identity }
+
+dumpValues :: Context -> ()
+dumpValues context =
+    context.expr_values |> Map.iter |> forEach (\(id, v) -> println "{} : {}" % (id, v))
 
 addVar :: Context -> E.Var -> Value -> Context
 addVar context var value = do
@@ -24,14 +29,19 @@ getValue context var = case get context.vars var of
     Some v -> v
     None -> panic "PartialEvaluator: cannot find value for var {}" % var
 
+getNextRecordId :: Context -> (Context, P.Identity)
+getNextRecordId context = do
+    (record_id_gen, next_id) <- getNext context.record_id_gen
+    (context { record_id_gen = record_id_gen }, next_id)
+
 getFieldValue :: Int -> Value -> Value
 getFieldValue index receiver = case receiver of
-    Record values -> atIndex values index
+    Record _ values -> atIndex values index
     _ -> Unknown
 
 data Value = Unknown
            | Variant P.Identity Int P.Identity
-           | Record [Value]
+           | Record P.Identity [Value]
            | Never
            deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
@@ -45,38 +55,57 @@ getKind :: Value -> ValueKind
 getKind v = case v of
     Unknown -> UnknownKind
     Variant _ _ _  -> VariantKind
-    Record _ -> RecordKind
+    Record _ _ -> RecordKind
     Never -> NeverKind
 
-mergeValues :: [Value] -> Value
-mergeValues values = do
+mergeValues :: Context -> [Value] -> (Context, Value)
+mergeValues context values = do
     non_never_values <- List.filter values (\v -> case v of
                                             Never -> False
                                             _ -> True)
     non_never_values <- non_never_values |> sort |> dedup
     case getLength non_never_values of
-        0 -> Never
-        1 -> atIndex non_never_values 0
+        0 -> (context, Never)
+        1 -> (context, atIndex non_never_values 0)
         _ -> do
             kinds <- List.map non_never_values getKind
             kinds <- kinds |> sort |> dedup
             case getLength kinds of
                 1 -> case atIndex kinds 0 of
-                        RecordKind -> mergeRecordValues non_never_values
-                        _ -> Unknown
-                _ -> Unknown
+                        RecordKind -> mergeRecordValues context non_never_values
+                        _ -> (context, Unknown)
+                _ -> (context, Unknown)
 
-mergeRecordValues :: [Value] -> Value
-mergeRecordValues values = do
-        value_list <- List.map values (\v -> case v of
-            Record values -> values
-            _ -> panic "Record value is not a record!")
-        field_count <- getLength (atIndex value_list 0)
-        values <- repeatE (mergeFields value_list) field_count
-        Record values
+replaceIds :: Context -> P.Identity -> [P.Identity] -> Context
+replaceIds context id ids = do
+        expr_values <- Map.update context.expr_values (\(_, v) -> replace id ids v)
+        context { expr_values = expr_values }
     where
-        mergeFields :: [[Value]] -> Int -> Value
-        mergeFields value_list index = mergeValues (List.map value_list (\l -> atIndex l index))
+        replace :: P.Identity -> [P.Identity] -> Value -> Value
+        replace id ids value = case value of
+            Unknown -> value
+            Variant _ _ _  -> value
+            Record r_id values -> if List.contains ids r_id
+                    then Record id (List.map values (replace id ids))
+                    else Record r_id (List.map values (replace id ids))
+            Never -> value
+
+mergeRecordValues :: Context -> [Value] -> (Context, Value)
+mergeRecordValues context values = do
+        info_list <- List.map values (\v -> case v of
+            Record id values -> (id, values)
+            _ -> panic "Record value is not a record!")
+        id_list <- List.map info_list (\v -> v.0)
+        id_list <- id_list |> sort |> dedup
+        value_list <- List.map info_list (\v -> v.1)
+        field_count <- getLength (atIndex value_list 0)
+        (context, values) <- repeatSE context (mergeFields value_list) field_count
+        record_id <- atIndex id_list 0
+        context <- replaceIds context record_id id_list
+        (context, Record record_id values)
+    where
+        mergeFields :: [[Value]] -> Context -> Int -> (Context, Value)
+        mergeFields value_list context index = mergeValues context (List.map value_list (\l -> atIndex l index))
 
 processCase :: Context -> E.Case -> (Context, Value)
 processCase context c = do
@@ -85,10 +114,15 @@ processCase context c = do
         _ -> context
     processExpr context c.body
 
+addExprValue :: Context -> E.ExprId -> Value -> Context
+addExprValue context id value = do
+    (expr_values, _) <- insert context.expr_values id value
+    context { expr_values = expr_values }
+
 processExpr :: Context -> E.Expr -> (Context, Value)
 processExpr context expr = do
     E.Expr s_expr type id <- expr
-    case s_expr of
+    (context, value) <- case s_expr of
         E.Do items -> do
             (context, values) <- List.mapS context items processExpr
             value <- atIndex values (getLength values - 1)
@@ -105,7 +139,8 @@ processExpr context expr = do
                     record_id <- T.getIdentity variant.type
                     (context, Variant adt_id index record_id)
                 F.RecordCtor -> do
-                    (context, Record arg_values)
+                    (context, record_id) <- getNextRecordId context
+                    (context, Record record_id arg_values)
                 _ -> (context, Unknown)
         E.IntegerLiteral lit -> (context, Unknown)
         E.StringLiteral lit -> (context, Unknown)
@@ -132,7 +167,8 @@ processExpr context expr = do
             (context, cond) <- processExpr context cond
             (context, true_branch_v) <- processExpr context true_branch
             (context, false_branch_v) <- processExpr context false_branch
-            (context, mergeValues [true_branch_v, false_branch_v])
+            (context, value) <- mergeValues context [true_branch_v, false_branch_v]
+            (context, value)
         E.List items -> do
             (context, values) <- List.mapS context items processExpr
             (context, Unknown)
@@ -156,12 +192,13 @@ processExpr context expr = do
                 context <- addVar context v prev_body_value
                 (context, body_value) <- processExpr context body
                 continue_values <- List.map continues (\b -> Option.unwrap (get context.continues b))
-                body_value <- mergeValues (continue_values + [body_value, prev_body_value])
+                (context, body_value) <- mergeValues context (continue_values + [body_value, prev_body_value])
                 if prev_body_value == body_value
                 then break context
                 else (context, body_value, index + 1)
             break_values <- List.map breaks (\b -> Option.unwrap (get context.breaks b))
-            (context, mergeValues break_values)
+            (context, value) <- mergeValues context break_values
+            (context, value)
         E.CaseOf body cases -> do
             (context, body_value) <- processExpr context body
             case body_value of
@@ -178,7 +215,7 @@ processExpr context expr = do
                         None -> context
                     //println "Specific case!"
                     processExpr context case_body
-                Record _ -> do
+                Record _ _ -> do
                     c <- atIndex cases 0
                     //println "Record specific case!"
                     processCase context c
@@ -186,7 +223,8 @@ processExpr context expr = do
                 Unknown -> do
                     //println "General case!"
                     (context, values) <- List.mapS context cases processCase
-                    (context, mergeValues values)
+                    (context, value) <- mergeValues context values
+                    (context, value)
         E.Clone arg -> do
             (context, value) <- processExpr context arg
             (context, value)
@@ -205,16 +243,28 @@ processExpr context expr = do
         E.Converter arg kind -> do
             (context, value) <- processExpr context arg
             (context, value)
+    context <- addExprValue context id value
+    (context, value)
+
+createContext :: P.Program -> P.Identity -> Context
+createContext program f_id = do
+    record_id_gen <- Counter (\id -> do
+        P.Identity mod name index <- f_id
+        name <- "{}_{}_record" % (name, index)
+        P.Identity mod name id) 0
+    Context program Map.empty Map.empty Map.empty Map.empty record_id_gen
 
 processFunction :: P.Program -> F.Function -> F.Function
 processFunction program function = case function.kind of
     F.Normal info -> do
         //println "Partial evaluator processing {}" % function.id
-        context <- Context program Map.empty Map.empty Map.empty Map.empty
+        context <- createContext program function.id
         context <- List.foldE (\context, index, _ -> do
             arg <- E.Arg index
             addVar context arg Unknown) context function.type.args
         (context, value) <- processExpr context info.body
+        println "{} final values" % function.id
+        dumpValues context
         function
     _ -> function
 

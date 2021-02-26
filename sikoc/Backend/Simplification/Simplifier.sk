@@ -2,9 +2,9 @@ module Siko.Backend.Simplifier where
 
 import Siko.Backend.Simplification.DoMerger as DoMerger
 import Siko.Backend.Simplification.VarReplacer as VarReplacer
-import Siko.Backend.Simplification.AdtSimplifier as AdtSimplifier
 import Siko.Backend.Simplification.PartialEvaluator as PartialEvaluator
 import Siko.Backend.Rebinder as Rebinder
+import Siko.Backend
 import Siko.MIR.Program as P
 import Siko.Config
 import Siko.Trace
@@ -15,15 +15,16 @@ processProgram config program = do
         modified <- False
         trace config "DoMerger.."
         (program, m) <- DoMerger.processProgram program
+        dumpProgram config program (MIR "domerger")
         modified <- m || modified
         trace config "VarReplacer.."
         (program, m) <- VarReplacer.processProgram program
+        dumpProgram config program (MIR "varreplacer")
         modified <- m || modified
-        trace config "AdtSimplifier.."
-        //program <- AdtSimplifier.processProgram program
-        //program <- Rebinder.processProgram program
+        trace config "PartialEvaluator.."
         program <- PartialEvaluator.processProgram program
+        dumpProgram config program (MIR "partialevaluator")
         modified <- m || modified
-        if modified
+        if False
         then program
         else break program
