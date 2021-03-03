@@ -8,21 +8,30 @@ import Siko.MIR.Function as F
 import Siko.Util.Counter
 import Map
 
+data Command = SelectCase Int E.Var deriving (Show)
+
 data Context = { program :: P.Program,
                  expr_values :: Map E.ExprId Value,
                  continues :: Map E.ExprId Value,
                  breaks :: Map E.ExprId Value,
                  vars :: Map E.Var Value,
+                 commands :: Map E.ExprId Command,
                  record_id_gen :: Counter P.Identity }
 
 dumpValues :: Context -> ()
-dumpValues context =
+dumpValues context = do
     context.expr_values |> Map.iter |> forEach (\(id, v) -> println "{} : {}" % (id, v))
+    println context.commands
 
 addVar :: Context -> E.Var -> Value -> Context
 addVar context var value = do
     (vars, _) <- insert context.vars var value
     context { vars = vars }
+
+addCommand :: Context -> E.ExprId -> Command -> Context
+addCommand context expr_id command = do
+    (commands, _) <- insert context.commands expr_id command
+    context { commands = commands }
 
 getValue :: Context -> E.Var -> Value
 getValue context var = case get context.vars var of
@@ -36,26 +45,26 @@ getNextRecordId context = do
 
 getFieldValue :: Int -> Value -> Value
 getFieldValue index receiver = case receiver of
-    Record _ values -> atIndex values index
+    Record _ values _ -> atIndex values index
     _ -> Unknown
 
+data VariantInfo = VariantInfo P.Identity Int
+                   deriving (Show, PartialEq, Eq, PartialOrd, Ord)
+
 data Value = Unknown
-           | Variant P.Identity Int P.Identity
-           | Record P.Identity [Value]
+           | Record P.Identity [Value] (Option VariantInfo)
            | Never
            deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
 data ValueKind = UnknownKind
-               | VariantKind
-               | RecordKind
+               | RecordKind (Option VariantInfo)
                | NeverKind
                deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
 getKind :: Value -> ValueKind
 getKind v = case v of
     Unknown -> UnknownKind
-    Variant _ _ _  -> VariantKind
-    Record _ _ -> RecordKind
+    Record _ _ variant_info -> RecordKind variant_info
     Never -> NeverKind
 
 mergeValues :: Context -> [Value] -> (Context, Value)
@@ -72,7 +81,7 @@ mergeValues context values = do
             kinds <- kinds |> sort |> dedup
             case getLength kinds of
                 1 -> case atIndex kinds 0 of
-                        RecordKind -> mergeRecordValues context non_never_values
+                        RecordKind variant_info -> mergeRecordValues context variant_info non_never_values
                         _ -> (context, Unknown)
                 _ -> (context, Unknown)
 
@@ -84,16 +93,15 @@ replaceIds context id ids = do
         replace :: P.Identity -> [P.Identity] -> Value -> Value
         replace id ids value = case value of
             Unknown -> value
-            Variant _ _ _  -> value
-            Record r_id values -> if List.contains ids r_id
-                    then Record id (List.map values (replace id ids))
-                    else Record r_id (List.map values (replace id ids))
+            Record r_id values variant_info -> if List.contains ids r_id
+                    then Record id (List.map values (replace id ids)) variant_info
+                    else Record r_id (List.map values (replace id ids)) variant_info
             Never -> value
 
-mergeRecordValues :: Context -> [Value] -> (Context, Value)
-mergeRecordValues context values = do
+mergeRecordValues :: Context -> Option VariantInfo -> [Value] -> (Context, Value)
+mergeRecordValues context variant_info values = do
         info_list <- List.map values (\v -> case v of
-            Record id values -> (id, values)
+            Record id values _ -> (id, values)
             _ -> panic "Record value is not a record!")
         id_list <- List.map info_list (\v -> v.0)
         id_list <- id_list |> sort |> dedup
@@ -102,15 +110,20 @@ mergeRecordValues context values = do
         (context, values) <- repeatSE context (mergeFields value_list) field_count
         record_id <- atIndex id_list 0
         context <- replaceIds context record_id id_list
-        (context, Record record_id values)
+        (context, Record record_id values variant_info)
     where
         mergeFields :: [[Value]] -> Context -> Int -> (Context, Value)
         mergeFields value_list context index = mergeValues context (List.map value_list (\l -> atIndex l index))
 
-processCase :: Context -> E.Case -> (Context, Value)
-processCase context c = do
+processCase :: E.ExprId -> Option (Int, E.Var) -> Context -> E.Case -> (Context, Value)
+processCase expr_id index context c = do
     context <- case c.checker of
-        E.VariantChecker _ v _ -> addVar context v Unknown
+        E.VariantChecker _ v _ -> do
+                case index of
+                    Some (index, orig_v) -> do
+                        context <- addCommand context expr_id (SelectCase index orig_v)
+                        addVar context v Unknown
+                    None -> addVar context v Unknown
         _ -> context
     processExpr context c.body
 
@@ -137,10 +150,11 @@ processExpr context expr = do
                     adt <- P.getAdt context.program adt_id
                     variant <- atIndex adt.variants index
                     record_id <- T.getIdentity variant.type
-                    (context, Variant adt_id index record_id)
+                    variant_info <- VariantInfo adt_id index
+                    (context, Record record_id arg_values (Some variant_info))
                 F.RecordCtor -> do
                     (context, record_id) <- getNextRecordId context
-                    (context, Record record_id arg_values)
+                    (context, Record record_id arg_values None)
                 _ -> (context, Unknown)
         E.IntegerLiteral lit -> (context, Unknown)
         E.StringLiteral lit -> (context, Unknown)
@@ -200,29 +214,32 @@ processExpr context expr = do
             (context, value) <- mergeValues context break_values
             (context, value)
         E.CaseOf body cases -> do
-            (context, body_value) <- processExpr context body
+            E.Expr body_s_expr _ _ <- body
+            v <- case body_s_expr of
+                E.VarRef v -> v
+                _ -> panic "Case body is not a var!"
+            body_value <- getValue context v
             case body_value of
-                Variant adt_id index record_id -> do
-                    matching_bodies <- List.filterMap cases (\c -> case c.checker of
+                Record _ _ (Some (VariantInfo _ index))-> do
+                    matches <- List.mapE cases (\variant_index, c -> case c.checker of
                         E.VariantChecker v_index variant_var _ -> if v_index == index
-                                                        then Some (c.body, Some variant_var)
+                                                        then Some variant_index
                                                         else None
-                        E.WildcardChecker -> Some (c.body, None)
+                        E.WildcardChecker -> Some variant_index
                         _ -> panic "Invalid checker for variant")
-                    (case_body, variant_var) <- atIndex matching_bodies 0
-                    context <- case variant_var of
-                        Some variant_var -> addVar context variant_var body_value
-                        None -> context
+                    matches <- List.filterMap matches (\m -> m)
+                    match_index <- atIndex matches 0
+                    c <- atIndex cases match_index
                     //println "Specific case!"
-                    processExpr context case_body
-                Record _ _ -> do
+                    processCase id (Some (match_index, v)) context c
+                Record _ _ None -> do
                     c <- atIndex cases 0
                     //println "Record specific case!"
-                    processCase context c
+                    processCase id (Some (0, v)) context c
                 Never -> (context, Never)
                 Unknown -> do
                     //println "General case!"
-                    (context, values) <- List.mapS context cases processCase
+                    (context, values) <- List.mapS context cases (processCase id None)
                     (context, value) <- mergeValues context values
                     (context, value)
         E.Clone arg -> do
@@ -252,7 +269,30 @@ createContext program f_id = do
         P.Identity mod name index <- f_id
         name <- "{}_{}_record" % (name, index)
         P.Identity mod name id) 0
-    Context program Map.empty Map.empty Map.empty Map.empty record_id_gen
+    Context program Map.empty Map.empty Map.empty Map.empty Map.empty record_id_gen
+
+unchange :: Context -> Value -> Context
+unchange context value =
+    loop (context, queue) <- (context, [value]) do
+        case pop queue of
+            Some (value, queue) -> do
+                context :: Context <- context // FIXME: type annotation
+                (queue, expr_values) <- Map.mapS [] context.expr_values (\queue, (expr_id, current) -> do
+                    (queue, current) <- unchangeValue value queue current
+                    (queue, expr_id, current))
+                context <- context { expr_values = expr_values }
+                (context, queue)
+            None -> break context
+    where
+        unchangeValue :: Value -> [Value] -> Value -> ([Value], Value)
+        unchangeValue target queue current = case current of
+            Record n fields variant_info -> if current == target
+                then (queue + fields, Unknown)
+                else do
+                    (queue, fields) <- List.mapS queue fields (unchangeValue target)
+                    (queue, Record n fields variant_info)
+            Never -> (queue, Never)
+            _ -> (queue, Unknown)
 
 processFunction :: P.Program -> F.Function -> F.Function
 processFunction program function = case function.kind of
@@ -263,8 +303,9 @@ processFunction program function = case function.kind of
             arg <- E.Arg index
             addVar context arg Unknown) context function.type.args
         (context, value) <- processExpr context info.body
-        println "{} final values" % function.id
-        dumpValues context
+        context <- unchange context value
+        //println "{} final values" % function.id
+        //dumpValues context
         function
     _ -> function
 
