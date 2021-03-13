@@ -109,6 +109,20 @@ write l index item = extern
 split a :: [a] -> Int -> ([a], [a])
 split l n = extern
 
+zip a b c :: [a] -> [b] -> (a -> b -> c) -> [c]
+zip l1 l2 f = do
+    if getLength l1 != getLength l2
+        then panic "zip: length mismatch {} != {}" % (getLength l1, getLength l2)
+        else ()
+    loop (cs, index) <- ([], 0) do
+        if index >= getLength l1
+            then break cs
+            else do
+                item1 <- atIndex l1 index
+                item2 <- atIndex l2 index
+                c <- f item1 item2
+                (push cs c, index + 1)
+
 zipS s a b :: s -> [a] -> [b] -> (s -> a -> b -> s) -> s
 zipS s l1 l2 f = do
     if getLength l1 != getLength l2

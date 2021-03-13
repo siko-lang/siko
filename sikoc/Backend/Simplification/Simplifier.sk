@@ -9,8 +9,8 @@ import Siko.MIR.Program as P
 import Siko.Config
 import Siko.Trace
 
-processProgram :: Config -> P.Program -> P.Program
-processProgram config program = do
+simplify :: Config -> P.Program -> P.Program
+simplify config program = do
     loop program <- program do
         modified <- False
         trace config "DoMerger.."
@@ -21,10 +21,15 @@ processProgram config program = do
         (program, m) <- VarReplacer.processProgram program
         dumpProgram config program (MIR "varreplacer")
         modified <- m || modified
-        trace config "PartialEvaluator.."
-        program <- PartialEvaluator.processProgram program
-        dumpProgram config program (MIR "partialevaluator")
-        modified <- m || modified
-        if False
+        if modified
         then program
         else break program
+
+processProgram :: Config -> P.Program -> P.Program
+processProgram config program = do
+    program <- simplify config program
+    trace config "PartialEvaluator.."
+    program <- PartialEvaluator.processProgram program
+    dumpProgram config program (MIR "partialevaluator")
+    program <- simplify config program
+    program

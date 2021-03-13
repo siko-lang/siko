@@ -7,6 +7,10 @@ import Siko.MIR.Type as T
 import Siko.MIR.Function as F
 import Siko.Util.Counter
 import Map
+import Set
+
+import List2 as List2
+import List2 (List2)
 
 data Command = SelectCase Int E.Var deriving (Show)
 
@@ -15,23 +19,18 @@ data Context = { program :: P.Program,
                  continues :: Map E.ExprId Value,
                  breaks :: Map E.ExprId Value,
                  vars :: Map E.Var Value,
-                 commands :: Map E.ExprId Command,
-                 record_id_gen :: Counter P.Identity }
+                 record_id_gen :: Counter P.Identity,
+                 replace_vars :: Map E.Var E.Var }
 
 dumpValues :: Context -> ()
 dumpValues context = do
     context.expr_values |> Map.iter |> forEach (\(id, v) -> println "{} : {}" % (id, v))
-    println context.commands
+    context.vars |> Map.iter |> forEach (\(var, v) -> println "{} : {}" % (var, v))
 
 addVar :: Context -> E.Var -> Value -> Context
 addVar context var value = do
-    (vars, _) <- insert context.vars var value
+    (vars, _) <- Map.insert context.vars var value
     context { vars = vars }
-
-addCommand :: Context -> E.ExprId -> Command -> Context
-addCommand context expr_id command = do
-    (commands, _) <- insert context.commands expr_id command
-    context { commands = commands }
 
 getValue :: Context -> E.Var -> Value
 getValue context var = case get context.vars var of
@@ -82,13 +81,18 @@ mergeValues context values = do
             case getLength kinds of
                 1 -> case atIndex kinds 0 of
                         RecordKind variant_info -> mergeRecordValues context variant_info non_never_values
-                        _ -> (context, Unknown)
-                _ -> (context, Unknown)
+                        _ -> do
+                            context <- List.fold context non_never_values unchange
+                            (context, Unknown)
+                _ -> do
+                    context <- List.fold context non_never_values unchange
+                    (context, Unknown)
 
 replaceIds :: Context -> P.Identity -> [P.Identity] -> Context
 replaceIds context id ids = do
         expr_values <- Map.update context.expr_values (\(_, v) -> replace id ids v)
-        context { expr_values = expr_values }
+        vars <- Map.update context.vars (\(_, v) -> replace id ids v)
+        context { expr_values = expr_values, vars = vars }
     where
         replace :: P.Identity -> [P.Identity] -> Value -> Value
         replace id ids value = case value of
@@ -115,21 +119,16 @@ mergeRecordValues context variant_info values = do
         mergeFields :: [[Value]] -> Context -> Int -> (Context, Value)
         mergeFields value_list context index = mergeValues context (List.map value_list (\l -> atIndex l index))
 
-processCase :: E.ExprId -> Option (Int, E.Var) -> Context -> E.Case -> (Context, Value)
-processCase expr_id index context c = do
+processCase :: Value -> Context -> E.Case -> (Context, Value)
+processCase value context c = do
     context <- case c.checker of
-        E.VariantChecker _ v _ -> do
-                case index of
-                    Some (index, orig_v) -> do
-                        context <- addCommand context expr_id (SelectCase index orig_v)
-                        addVar context v Unknown
-                    None -> addVar context v Unknown
+        E.VariantChecker _ v _ -> addVar context v value
         _ -> context
     processExpr context c.body
 
 addExprValue :: Context -> E.ExprId -> Value -> Context
 addExprValue context id value = do
-    (expr_values, _) <- insert context.expr_values id value
+    (expr_values, _) <- Map.insert context.expr_values id value
     context { expr_values = expr_values }
 
 processExpr :: Context -> E.Expr -> (Context, Value)
@@ -147,15 +146,15 @@ processExpr context expr = do
             case function.kind of
                 F.VariantCtor index -> do
                     adt_id <- T.getIdentity function.type.result
-                    adt <- P.getAdt context.program adt_id
-                    variant <- atIndex adt.variants index
-                    record_id <- T.getIdentity variant.type
                     variant_info <- VariantInfo adt_id index
+                    (context, record_id) <- getNextRecordId context
                     (context, Record record_id arg_values (Some variant_info))
                 F.RecordCtor -> do
                     (context, record_id) <- getNextRecordId context
                     (context, Record record_id arg_values None)
-                _ -> (context, Unknown)
+                _ -> do
+                    context <- List.fold context arg_values unchange
+                    (context, Unknown)
         E.IntegerLiteral lit -> (context, Unknown)
         E.StringLiteral lit -> (context, Unknown)
         E.FloatLiteral lit -> (context, Unknown)
@@ -231,15 +230,15 @@ processExpr context expr = do
                     match_index <- atIndex matches 0
                     c <- atIndex cases match_index
                     //println "Specific case!"
-                    processCase id (Some (match_index, v)) context c
+                    processCase body_value context c
                 Record _ _ None -> do
                     c <- atIndex cases 0
                     //println "Record specific case!"
-                    processCase id (Some (0, v)) context c
+                    processCase body_value context c
                 Never -> (context, Never)
                 Unknown -> do
                     //println "General case!"
-                    (context, values) <- List.mapS context cases (processCase id None)
+                    (context, values) <- List.mapS context cases (processCase body_value)
                     (context, value) <- mergeValues context values
                     (context, value)
         E.Clone arg -> do
@@ -269,7 +268,7 @@ createContext program f_id = do
         P.Identity mod name index <- f_id
         name <- "{}_{}_record" % (name, index)
         P.Identity mod name id) 0
-    Context program Map.empty Map.empty Map.empty Map.empty Map.empty record_id_gen
+    Context program Map.empty Map.empty Map.empty Map.empty record_id_gen Map.empty
 
 unchange :: Context -> Value -> Context
 unchange context value =
@@ -277,10 +276,13 @@ unchange context value =
         case pop queue of
             Some (value, queue) -> do
                 context :: Context <- context // FIXME: type annotation
-                (queue, expr_values) <- Map.mapS [] context.expr_values (\queue, (expr_id, current) -> do
+                (queue, expr_values) <- Map.mapS queue context.expr_values (\queue, (expr_id, current) -> do
                     (queue, current) <- unchangeValue value queue current
                     (queue, expr_id, current))
-                context <- context { expr_values = expr_values }
+                (queue, vars) <- Map.mapS queue context.vars (\queue, (var, current) -> do
+                    (queue, current) <- unchangeValue value queue current
+                    (queue, var, current))
+                context <- context { expr_values = expr_values, vars = vars }
                 (context, queue)
             None -> break context
     where
@@ -294,7 +296,204 @@ unchange context value =
             Never -> (queue, Never)
             _ -> (queue, Unknown)
 
-processFunction :: P.Program -> F.Function -> F.Function
+getNewCtorId :: P.Identity -> P.Identity
+getNewCtorId id = do
+    P.Identity mod name index <- id
+    P.Identity mod (name + "_rctor") index
+
+addRecord :: Context -> P.Identity -> [D.RecordField] -> Context
+addRecord context id fields = do
+    case get context.program.records id of
+        Some _ -> return context
+        None -> do
+    program <- context.program
+    func_id <- getNewCtorId id
+    kind <- F.RecordCtor
+    record <- D.Record id fields None [] List2.empty List2.empty
+    (records, _) <- Map.insert program.records id record
+    program <- program { records = records }
+    arg_types <- List.map fields (\f -> f.type)
+    result <- T.Record id List2.empty
+    function_type <- F.FunctionType arg_types result
+    program <- P.addFunction program func_id (F.Function func_id kind function_type)
+    //println "Added {} creating {}" % (func_id, id)
+    (record_ctors, _) <- Map.insert program.record_ctors id func_id
+    program <- program { record_ctors = record_ctors }
+    context { program = program }
+
+updateType :: Context -> E.ExprId -> T.Type -> (Context, T.Type)
+updateType context id orig_type = do
+    value <- case (get context.expr_values id) of
+        Some value -> value
+        None -> return (context, orig_type)
+    updateValueType context value orig_type
+
+updateValueType :: Context -> Value -> T.Type -> (Context, T.Type)
+updateValueType context value orig_type = do
+    (context, type) <- case value of
+        Record id fields variant_info -> do
+            case variant_info of
+                Some (VariantInfo adt_id index) -> do
+                    new_type <- T.Record id List2.empty
+                    //println "Switch {} to {}" % (orig_type, new_type)
+                    adt <- P.getAdt context.program adt_id
+                    variant <- atIndex adt.variants index
+                    orig_record_id <- T.getIdentity variant.type
+                    record <- P.getRecord context.program orig_record_id
+                    (context, fields) <- List.zipS (context, []) fields record.fields (\(context, fields), value, field -> do
+                        field :: D.RecordField <- field // FIXME
+                        (context, type) <- updateValueType context value field.type
+                        field <- D.RecordField field.name type
+                        fields <- push fields field
+                        (context, fields))
+                    context <- addRecord context id fields
+                    (context, new_type)
+                None -> do
+                    new_type <- T.Record id List2.empty
+                    //println "Switch {} to {}" % (orig_type, new_type)
+                    orig_record_id <- T.getIdentity orig_type
+                    record <- P.getRecord context.program orig_record_id
+                    (context, fields) <- List.zipS (context, []) fields record.fields (\(context, fields), value, field -> do
+                        field :: D.RecordField <- field // FIXME
+                        (context, type) <- updateValueType context value field.type
+                        field <- D.RecordField field.name type
+                        fields <- push fields field
+                        (context, fields))
+                    context <- addRecord context id fields
+                    (context, new_type)
+        Unknown -> (context, orig_type)
+        Never -> (context, orig_type)
+    (context, type)
+
+updateCase :: Context -> E.Case -> (Context, E.Case)
+updateCase context c = do
+    (context, body) <- updateExpr context c.body
+    (context, c { body = body })
+
+resolveVar :: Context -> E.Var -> E.Var
+resolveVar context v = case get context.replace_vars v of
+    Some v -> resolveVar context v
+    None -> v
+
+addReplacer :: Context -> E.Case -> E.Var -> Context
+addReplacer context c v =
+    case c.checker of
+        E.VariantChecker _ variant_var _ -> do
+            (replace_vars, _) <- Map.insert context.replace_vars variant_var v
+            context { replace_vars = replace_vars }
+        _ -> context
+
+updateExpr :: Context -> E.Expr -> (Context, E.Expr)
+updateExpr context expr = do
+    E.Expr s_expr type id <- expr
+    (context, s_expr) <- case s_expr of
+        E.Do items -> do
+            (context, items) <- List.mapS context items updateExpr
+            (context, E.Do items)
+        E.Multi _ -> panic "Multi expr found in partial evaluator"
+        E.StaticFunctionCall f_id args -> do
+            (context, args) <- List.mapS context args updateExpr
+            function <- P.getFunction context.program f_id
+            case Option.unwrap (get context.expr_values id) of
+                Record id _ _ -> do
+                    case function.kind of
+                        F.VariantCtor index -> do
+                            func_id <- getNewCtorId id
+                            //println "Calling {} instead of {}" % (func_id, f_id)
+                            (context, E.StaticFunctionCall func_id args)
+                        F.RecordCtor -> do
+                            func_id <- getNewCtorId id
+                            //println "Calling {} instead of {}" % (func_id, f_id)
+                            (context, E.StaticFunctionCall func_id args)
+                        _ -> panic "Function returning cecord value is unexpected"
+                _ -> (context, E.StaticFunctionCall f_id args)
+        E.IntegerLiteral lit -> (context, E.IntegerLiteral lit)
+        E.StringLiteral lit -> (context, E.StringLiteral lit)
+        E.FloatLiteral lit -> (context, E.FloatLiteral lit)
+        E.CharLiteral lit -> (context, E.CharLiteral lit)
+        E.VarDecl v rhs -> do
+            (context, rhs) <- updateExpr context rhs
+            (context, E.VarDecl v rhs)
+        E.VarRef v -> do
+            v <- resolveVar context v
+            (context, E.VarRef v)
+        E.FieldAccess name receiver -> do
+            (context, receiver) <- updateExpr context receiver
+            (context, E.FieldAccess name receiver)
+        E.If cond true_branch false_branch -> do
+            (context, cond) <- updateExpr context cond
+            (context, true_branch) <- updateExpr context true_branch
+            (context, false_branch) <- updateExpr context false_branch
+            (context, E.If cond true_branch false_branch)
+        E.List items -> do
+            (context, items) <- List.mapS context items updateExpr
+            (context, E.List items)
+        E.Return arg -> do
+            (context, arg) <- updateExpr context arg
+            (context, E.Return arg)
+        E.Continue arg -> do
+            (context, arg) <- updateExpr context arg
+            (context, E.Continue arg)
+        E.Break arg -> do
+            (context, arg) <- updateExpr context arg
+            (context, E.Break arg)
+        E.RecordUpdate _ _ -> panic "Recordupdate in partial evaluator"
+        E.Loop v init body continues breaks -> do
+            (context, init) <- updateExpr context init
+            (context, body) <- updateExpr context body
+            (context, E.Loop v init body continues breaks)
+        E.CaseOf body cases -> do
+            (context, body) <- updateExpr context body
+            E.Expr body_s_expr body_type _ <- body
+            v <- case body_s_expr of
+                E.VarRef v -> v
+                _ -> panic "Case body is not a var!"
+            body_value <- getValue context v
+            case body_value of
+                Record _ _ (Some (VariantInfo _ index))-> do
+                    matches <- List.mapE cases (\variant_index, c -> case c.checker of
+                        E.VariantChecker v_index variant_var _ -> if v_index == index
+                                                        then Some variant_index
+                                                        else None
+                        E.WildcardChecker -> Some variant_index
+                        _ -> panic "Invalid checker for variant")
+                    matches <- List.filterMap matches (\m -> m)
+                    match_index <- atIndex matches 0
+                    c <- atIndex cases match_index
+                    //println "Specific case!"
+                    context <- addReplacer context c v
+                    return updateExpr context c.body
+                Record _ _ None -> do
+                    c <- atIndex cases 0
+                    context <- addReplacer context c v
+                    //println "Record specific case!"
+                    return updateExpr context c.body
+                Unknown | Never -> do
+                    (context, cases) <- List.mapS context cases updateCase
+                    (context, E.CaseOf body cases)
+        E.Clone arg -> do
+            (context, arg) <- updateExpr context arg
+            (context, E.Clone arg)
+        E.Deref arg -> do
+            (context, arg) <- updateExpr context arg
+            (context, E.Deref arg)
+        E.Ref arg -> do
+            (context, arg) <- updateExpr context arg
+            (context, E.Ref arg)
+        E.Move arg -> do
+            (context, arg) <- updateExpr context arg
+            (context, E.Move arg)
+        E.Box arg -> do
+            (context, arg) <- updateExpr context arg
+            (context, E.Box arg)
+        E.Converter arg kind -> do
+            (context, arg) <- updateExpr context arg
+            (context, E.Converter arg kind)
+    (context, type) <- updateType context id type
+    expr <- E.Expr s_expr type id
+    (context, expr)
+
+processFunction :: P.Program -> F.Function -> (P.Program, F.Function)
 processFunction program function = case function.kind of
     F.Normal info -> do
         //println "Partial evaluator processing {}" % function.id
@@ -306,13 +505,16 @@ processFunction program function = case function.kind of
         context <- unchange context value
         //println "{} final values" % function.id
         //dumpValues context
-        function
-    _ -> function
+        (context, body) <- updateExpr context info.body
+        info <- info { body = body }
+        function <- function { kind = F.Normal info }
+        (context.program, function)
+    _ -> (program, function)
 
 processProgram :: P.Program -> P.Program
 processProgram program = do
-    context <- ()
-    (context, functions) <- Map.mapS context program.functions (\context, (id, function) -> do
-        function <- processFunction program function
-        (context, id, function))
-    program { functions = functions }
+    functions <- program.functions
+    program <- Map.fold program functions (\program, (id, function) -> do
+        (program, function) <- processFunction program function
+        P.addFunction program id function)
+    program
