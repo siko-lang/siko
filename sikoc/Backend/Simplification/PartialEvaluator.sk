@@ -18,6 +18,7 @@ data Context = { program :: P.Program,
                  expr_values :: Map E.ExprId Value,
                  continues :: Map E.ExprId Value,
                  breaks :: Map E.ExprId Value,
+                 returns :: Map E.ExprId Value,
                  vars :: Map E.Var Value,
                  record_id_gen :: Counter P.Identity,
                  replace_vars :: Map E.Var E.Var }
@@ -53,7 +54,13 @@ data VariantInfo = VariantInfo P.Identity Int
 data Value = Unknown
            | Record P.Identity [Value] (Option VariantInfo)
            | Never
-           deriving (Show, PartialEq, Eq, PartialOrd, Ord)
+           deriving (PartialEq, Eq, PartialOrd, Ord)
+
+instance Show Value where
+    show v = case v of
+        Unknown -> "Unknown"
+        Record id values variant_info -> "Record ({} {} {})" % (id, values, variant_info)
+        Never -> "Never"
 
 data ValueKind = UnknownKind
                | RecordKind (Option VariantInfo)
@@ -184,10 +191,13 @@ processExpr context expr = do
             (context, value)
         E.List items -> do
             (context, values) <- List.mapS context items processExpr
+            context <- List.fold context values unchange
             (context, Unknown)
         E.Return arg -> do
             (context, value) <- processExpr context arg
-            (context, Never)
+            E.Expr _ _ arg_id <- arg
+            (returns, _) <- Map.insert context.returns arg_id value
+            (context { returns = returns }, Never)
         E.Continue arg -> do
             (context, value) <- processExpr context arg
             E.Expr _ _ arg_id <- arg
@@ -205,7 +215,9 @@ processExpr context expr = do
                 context <- addVar context v prev_body_value
                 (context, body_value) <- processExpr context body
                 continue_values <- List.map continues (\b -> Option.unwrap (get context.continues b))
-                (context, body_value) <- mergeValues context (continue_values + [body_value, prev_body_value])
+                prev_body_value <- getValue context v
+                values_to_merge <- continue_values + [body_value, prev_body_value]
+                (context, body_value) <- mergeValues context values_to_merge
                 if prev_body_value == body_value
                 then break context
                 else (context, body_value, index + 1)
@@ -229,15 +241,12 @@ processExpr context expr = do
                     matches <- List.filterMap matches (\m -> m)
                     match_index <- atIndex matches 0
                     c <- atIndex cases match_index
-                    //println "Specific case!"
                     processCase body_value context c
                 Record _ _ None -> do
                     c <- atIndex cases 0
-                    //println "Record specific case!"
                     processCase body_value context c
                 Never -> (context, Never)
                 Unknown -> do
-                    //println "General case!"
                     (context, values) <- List.mapS context cases (processCase body_value)
                     (context, value) <- mergeValues context values
                     (context, value)
@@ -266,35 +275,54 @@ createContext :: P.Program -> P.Identity -> Context
 createContext program f_id = do
     record_id_gen <- Counter (\id -> do
         P.Identity mod name index <- f_id
-        name <- "{}_{}_record" % (name, index)
+        name <- "{}_{}_record{}" % (name, index, id)
         P.Identity mod name id) 0
-    Context program Map.empty Map.empty Map.empty Map.empty record_id_gen Map.empty
+    Context program Map.empty Map.empty Map.empty Map.empty Map.empty record_id_gen Map.empty
 
 unchange :: Context -> Value -> Context
-unchange context value =
-    loop (context, queue) <- (context, [value]) do
-        case pop queue of
-            Some (value, queue) -> do
-                context :: Context <- context // FIXME: type annotation
-                (queue, expr_values) <- Map.mapS queue context.expr_values (\queue, (expr_id, current) -> do
-                    (queue, current) <- unchangeValue value queue current
-                    (queue, expr_id, current))
-                (queue, vars) <- Map.mapS queue context.vars (\queue, (var, current) -> do
-                    (queue, current) <- unchangeValue value queue current
-                    (queue, var, current))
-                context <- context { expr_values = expr_values, vars = vars }
-                (context, queue)
-            None -> break context
+unchange context value = do
+        loop (context, queue) <- (context, [value]) do
+            case pop queue of
+                Some (value, queue) -> do
+                    context :: Context <- context // FIXME: type annotation
+                    (queue, expr_values) <- Map.mapS queue context.expr_values (\queue, (expr_id, current) -> do
+                        (queue, current) <- unchangeValue value queue current
+                        (queue, expr_id, current))
+                    (queue, vars) <- Map.mapS queue context.vars (\queue, (var, current) -> do
+                        (queue, current) <- unchangeValue value queue current
+                        (queue, var, current))
+                    (queue, continues) <- Map.mapS queue context.continues (\queue, (expr_id, current) -> do
+                        (queue, current) <- unchangeValue value queue current
+                        (queue, expr_id, current))
+                    (queue, breaks) <- Map.mapS queue context.breaks (\queue, (expr_id, current) -> do
+                        (queue, current) <- unchangeValue value queue current
+                        (queue, expr_id, current))
+                    (queue, returns) <- Map.mapS queue context.returns (\queue, (expr_id, current) -> do
+                        (queue, current) <- unchangeValue value queue current
+                        (queue, expr_id, current))
+                    (new_queue, queue) <- List.mapS [] queue (\queue, current -> do
+                        (queue, current) <- unchangeValue value queue current
+                        (queue, current))
+                    queue <- new_queue + queue
+                    context <- context { expr_values = expr_values,
+                                         vars = vars,
+                                         continues = continues,
+                                         breaks = breaks,
+                                         returns = returns }
+                    (context, queue)
+                None -> break context
     where
         unchangeValue :: Value -> [Value] -> Value -> ([Value], Value)
-        unchangeValue target queue current = case current of
-            Record n fields variant_info -> if current == target
-                then (queue + fields, Unknown)
-                else do
-                    (queue, fields) <- List.mapS queue fields (unchangeValue target)
-                    (queue, Record n fields variant_info)
-            Never -> (queue, Never)
-            _ -> (queue, Unknown)
+        unchangeValue target queue current = do
+            case current of
+                Record n fields variant_info -> do
+                    if current == target
+                        then (queue + fields, Unknown)
+                        else do
+                            (queue, fields) <- List.mapS queue fields (unchangeValue target)
+                            (queue, Record n fields variant_info)
+                Never -> (queue, Never)
+                Unknown -> (queue, Unknown)
 
 getNewCtorId :: P.Identity -> P.Identity
 getNewCtorId id = do
@@ -316,7 +344,6 @@ addRecord context id fields = do
     result <- T.Record id List2.empty
     function_type <- F.FunctionType arg_types result
     program <- P.addFunction program func_id (F.Function func_id kind function_type)
-    //println "Added {} creating {}" % (func_id, id)
     (record_ctors, _) <- Map.insert program.record_ctors id func_id
     program <- program { record_ctors = record_ctors }
     context { program = program }
@@ -335,7 +362,6 @@ updateValueType context value orig_type = do
             case variant_info of
                 Some (VariantInfo adt_id index) -> do
                     new_type <- T.Record id List2.empty
-                    //println "Switch {} to {}" % (orig_type, new_type)
                     adt <- P.getAdt context.program adt_id
                     variant <- atIndex adt.variants index
                     orig_record_id <- T.getIdentity variant.type
@@ -350,7 +376,6 @@ updateValueType context value orig_type = do
                     (context, new_type)
                 None -> do
                     new_type <- T.Record id List2.empty
-                    //println "Switch {} to {}" % (orig_type, new_type)
                     orig_record_id <- T.getIdentity orig_type
                     record <- P.getRecord context.program orig_record_id
                     (context, fields) <- List.zipS (context, []) fields record.fields (\(context, fields), value, field -> do
@@ -399,11 +424,9 @@ updateExpr context expr = do
                     case function.kind of
                         F.VariantCtor index -> do
                             func_id <- getNewCtorId id
-                            //println "Calling {} instead of {}" % (func_id, f_id)
                             (context, E.StaticFunctionCall func_id args)
                         F.RecordCtor -> do
                             func_id <- getNewCtorId id
-                            //println "Calling {} instead of {}" % (func_id, f_id)
                             (context, E.StaticFunctionCall func_id args)
                         _ -> panic "Function returning cecord value is unexpected"
                 _ -> (context, E.StaticFunctionCall f_id args)
@@ -460,15 +483,20 @@ updateExpr context expr = do
                     matches <- List.filterMap matches (\m -> m)
                     match_index <- atIndex matches 0
                     c <- atIndex cases match_index
-                    //println "Specific case!"
                     context <- addReplacer context c v
                     return updateExpr context c.body
                 Record _ _ None -> do
                     c <- atIndex cases 0
                     context <- addReplacer context c v
-                    //println "Record specific case!"
                     return updateExpr context c.body
                 Unknown | Never -> do
+                    if getLength cases == 1
+                    then do
+                        c <- atIndex cases 0
+                        case c.checker of
+                            E.WildcardChecker -> return updateExpr context c.body
+                            _ -> ()
+                    else ()
                     (context, cases) <- List.mapS context cases updateCase
                     (context, E.CaseOf body cases)
         E.Clone arg -> do
@@ -503,8 +531,10 @@ processFunction program function = case function.kind of
             addVar context arg Unknown) context function.type.args
         (context, value) <- processExpr context info.body
         context <- unchange context value
-        //println "{} final values" % function.id
-        //dumpValues context
+        return_ids <- getKeys context.returns
+        context <- List.fold context return_ids (\context, id -> do
+            value <- Option.unwrap (get context.returns id)
+            unchange context value)
         (context, body) <- updateExpr context info.body
         info <- info { body = body }
         function <- function { kind = F.Normal info }

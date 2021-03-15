@@ -16,21 +16,19 @@ processExpr context expr = do
     E.Expr s_expr type id <- expr
     case s_expr of
         E.Do items -> do
+            (context, items) <- List.fold (context, []) items (\(context, items), item -> do
+                E.Expr s_expr _ _ <- item
+                case s_expr of
+                    E.Do sub_items -> do
+                        context <- context { modified = True }
+                        (context, items + sub_items)
+                    _ -> (context, push items item))
             (context, items) <- List.mapS context items processExpr
-            (rest, last) <- List.split items (getLength items - 1)
-            last <- atIndex last 0 // FIXME: should use a pop_last or similar
             if getLength items == 1
             then do
                 context <- context { modified = True }
-                (context, last)
-            else do
-                E.Expr last_s_expr _ _ <- last
-                case last_s_expr of
-                    E.Do sub_items -> do
-                        context <- context { modified = True }
-                        (context, E.Expr (E.Do (rest + sub_items)) type id)
-                    e -> do
-                        (context, E.Expr (E.Do (rest + [last])) type id)
+                (context, atIndex items 0)
+            else (context, E.Expr (E.Do items) type id)
         _ -> (context, expr)
 
 processFunction :: Context -> P.Program -> F.Function -> (Context, F.Function)

@@ -18,9 +18,9 @@ instance (PartialEq a) => PartialEq (List2 a) where
                 Some (iter_a, item_a) -> do
                     (iter_b, item_b) <- Option.unwrap(Iterator.getNext iter_b)
                     if item_a != item_b
-                    then return False
+                    then break False
                     else (iter_a, iter_b)
-                None -> return True
+                None -> break True
 
 instance (Eq a) => Eq (List2 a)
 
@@ -36,8 +36,8 @@ instance (PartialOrd a) => PartialOrd (List2 a) where
                     (iter_b, item_b) <- Option.unwrap(Iterator.getNext iter_b)
                     case partialCmp item_a item_b of
                         Some Equal -> (iter_a, iter_b)
-                        e -> return e
-                None -> return Some Equal
+                        e -> break e
+                None -> break Some Equal
 
 instance (Ord a) => Ord (List2 a) where
     cmp a b = do
@@ -51,8 +51,8 @@ instance (Ord a) => Ord (List2 a) where
                     (iter_b, item_b) <- Option.unwrap(Iterator.getNext iter_b)
                     case cmp item_a item_b of
                         Equal -> (iter_a, iter_b)
-                        e -> return e
-                None -> return Equal
+                        e -> break e
+                None -> break Equal
 
 instance Add List2 a where
     opAdd a b = addList a b
@@ -109,13 +109,13 @@ containsAtIndex l i = do
     loop index <- 0 do
         if index >= getLength l
             then
-                return None
+                break None
             else
                 do
                 e <- atIndex l index
                 if e == i
                     then
-                        return Some index
+                        break Some index
                     else
                         index + 1
     None
