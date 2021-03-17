@@ -67,10 +67,16 @@ toMap iter = Iterator.fold (\m, (k, v) -> do
     m) empty iter
 
 update k v :: (Ord k) => Map2 k v -> ((k, v) -> v) -> Map2 k v
-update m f = extern
+update m f = Map2.map m (\(k, v) -> do
+    v <- f (k, v)
+    (k, v))
+// TODO, FIXME: make this extern
 
 updateS s k v :: (Ord k) => s -> Map2 k v -> (s -> (k, v) -> (s, v)) -> (s, Map2 k v)
-updateS s m f = extern
+updateS s m f = Map2.mapS s m (\s, (k, v) -> do
+    (s, v) <- f s (k, v)
+    (s, k, v))
+// TODO, FIXME: make this extern
 
 getSize k v :: Map2 k v -> Int
 getSize m = extern
