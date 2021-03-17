@@ -81,7 +81,7 @@ processSteps program steps type = do
     if getLength steps == 0
         then return List2.empty
         else do
-            (first, rest) <- Option.unwrap (pop steps)
+            (first, rest) <- List.remove steps 0
             case first of
                 F.External index -> do
                     record_id <- T.getIdentity type
@@ -122,7 +122,7 @@ getKinds program steps type = do
 applyPosition :: P.Program -> F.Position -> F.FunctionType -> List2 T.OwnershipKind
 applyPosition program position function_type = do
     F.Position steps <- position
-    (first, rest) <- Option.unwrap (pop steps)
+    (first, rest) <- List.remove steps 0
     case first of
         F.FunctionArg index -> do
             type <- atIndex function_type.args index

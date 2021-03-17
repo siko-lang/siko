@@ -751,6 +751,43 @@ fn generate_map2_builtins(
                 indent, result_ty_str
             )?;
         }
+        "updateS" => {
+            let f_type = &arg_type_types[2];
+            let m_type = &arg_type_types[1];
+            let to = match f_type {
+                Type::Closure(t) => match &**t {
+                    Type::Function(_from, to) => to,
+                    _ => unreachable!(),
+                },
+                _ => unreachable!(),
+            };
+            let from = match &**to {
+                Type::Closure(t) => match &**t {
+                    Type::Function(from, _to) => from,
+                    _ => unreachable!(),
+                },
+                _ => unreachable!(),
+            };
+            write!(output_file, "{}let mut state = arg0;\n", indent)?;
+            write!(output_file, "{}let mut m = arg1.value;\n", indent)?;
+            write!(output_file, "{}for (k, v) in m.iter_mut() {{\n", indent)?;
+            write!(
+                output_file,
+                "{}let input = {} {{ _siko_field_0 : k.clone(), _siko_field_1 : v.clone() }};\n",
+                indent,
+                ir_type_to_rust_type(from, program)
+            )?;
+            write!(output_file, "{}let call = arg2.call_ro(state);\n", indent)?;
+            write!(output_file, "{}let tuple = call.call_ro(input);\n", indent)?;
+            write!(output_file, "{}state  = tuple._siko_field_0;\n", indent)?;
+            write!(output_file, "{}*v  = tuple._siko_field_1;\n", indent)?;
+            write!(output_file, "{}}}\n", indent)?;
+            write!(
+                output_file,
+                "{}{} {{ _siko_field_0 : state, _siko_field_1: {} {{ value: m }} }}",
+                indent, result_ty_str, ir_type_to_rust_type(m_type, program)
+            )?;
+        }
         "opEq" => {
             write!(output_file, "{}if arg0.value.eq(&arg1.value) {{\n", indent)?;
             indent.inc();
@@ -762,7 +799,7 @@ fn generate_map2_builtins(
             indent.dec();
             write!(output_file, "{}}}\n", indent)?;
         }
-        _ => panic!("Map/{} not implemented", original_name),
+        _ => panic!("Map2/{} not implemented", original_name),
     }
     indent.dec();
     Ok(())
@@ -1016,6 +1053,16 @@ fn generate_list_builtins(
                 indent, result_ty_str, list_type
             )?;
             write!(output_file, "{}}}\n", indent)?;
+        }
+        "remove" => {
+            let list_type = ir_type_to_rust_type(&arg_type_types[0], program);
+            write!(output_file, "{}let mut list = crate::UnpackRC::unpack(arg0.value);\n", indent)?;
+            write!(output_file, "{}let v = crate::UnpackRC::unpack(list.remove(arg1.value as usize));\n", indent)?;
+            write!(
+                output_file,
+                "{} {} {{  _siko_field_0: v, _siko_field_1 : {} {{ value : std::rc::Rc::new(list) }} }}\n",
+                indent, result_ty_str, list_type
+            )?;
         }
         "opAdd" => {
             write!(output_file, "{}let mut r = Vec::new();\n", indent)?;
@@ -1406,6 +1453,16 @@ fn generate_list2_builtins(
                 indent, result_ty_str, list_type
             )?;
             write!(output_file, "{}}}\n", indent)?;
+        }
+        "remove" => {
+            let list_type = ir_type_to_rust_type(&arg_type_types[0], program);
+            write!(output_file, "{}let mut list = arg0.value;\n", indent)?;
+            write!(output_file, "{}let v = list.remove(arg1.value as usize);\n", indent)?;
+            write!(
+                output_file,
+                "{} {} {{  _siko_field_0: v, _siko_field_1 : {} {{ value : list }} }}\n",
+                indent, result_ty_str, list_type
+            )?;
         }
         "opAdd" => {
             write!(output_file, "{}let mut r = arg0.value;\n", indent)?;

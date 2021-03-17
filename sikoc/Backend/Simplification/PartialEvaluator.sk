@@ -6,6 +6,8 @@ import Siko.MIR.Data as D
 import Siko.MIR.Type as T
 import Siko.MIR.Function as F
 import Siko.Util.Counter
+import Map2 as Map2
+import Map2 (Map2)
 import Map
 import Set
 
@@ -15,26 +17,26 @@ import List2 (List2)
 data Command = SelectCase Int E.Var deriving (Show)
 
 data Context = { program :: P.Program,
-                 expr_values :: Map E.ExprId Value,
-                 continues :: Map E.ExprId Value,
-                 breaks :: Map E.ExprId Value,
-                 returns :: Map E.ExprId Value,
-                 vars :: Map E.Var Value,
+                 expr_values :: Map2 E.ExprId Value,
+                 continues :: Map2 E.ExprId Value,
+                 breaks :: Map2 E.ExprId Value,
+                 returns :: Map2 E.ExprId Value,
+                 vars :: Map2 E.Var Value,
                  record_id_gen :: Counter P.Identity,
-                 replace_vars :: Map E.Var E.Var }
+                 replace_vars :: Map2 E.Var E.Var }
 
 dumpValues :: Context -> ()
 dumpValues context = do
-    context.expr_values |> Map.iter |> forEach (\(id, v) -> println "{} : {}" % (id, v))
-    context.vars |> Map.iter |> forEach (\(var, v) -> println "{} : {}" % (var, v))
+    context.expr_values |> Map2.iter |> forEach (\(id, v) -> println "{} : {}" % (id, v))
+    context.vars |> Map2.iter |> forEach (\(var, v) -> println "{} : {}" % (var, v))
 
 addVar :: Context -> E.Var -> Value -> Context
 addVar context var value = do
-    (vars, _) <- Map.insert context.vars var value
+    (vars, _) <- Map2.insert context.vars var value
     context { vars = vars }
 
 getValue :: Context -> E.Var -> (Context, Value)
-getValue context var = case get context.vars var of
+getValue context var = case Map2.get context.vars var of
     Some v -> (context, v)
     None -> panic "PartialEvaluator: cannot find value for var {}" % var
 
@@ -97,8 +99,8 @@ mergeValues context values = do
 
 replaceIds :: Context -> P.Identity -> [P.Identity] -> Context
 replaceIds context id ids = do
-        expr_values <- Map.update context.expr_values (\(_, v) -> replace id ids v)
-        vars <- Map.update context.vars (\(_, v) -> replace id ids v)
+        expr_values <- Map2.update context.expr_values (\(_, v) -> replace id ids v)
+        vars <- Map2.update context.vars (\(_, v) -> replace id ids v)
         context { expr_values = expr_values, vars = vars }
     where
         replace :: P.Identity -> [P.Identity] -> Value -> Value
@@ -135,7 +137,7 @@ processCase value context c = do
 
 addExprValue :: Context -> E.ExprId -> Value -> Context
 addExprValue context id value = do
-    (expr_values, _) <- Map.insert context.expr_values id value
+    (expr_values, _) <- Map2.insert context.expr_values id value
     context { expr_values = expr_values }
 
 processExpr :: Context -> E.Expr -> (Context, Value)
@@ -196,17 +198,17 @@ processExpr context expr = do
         E.Return arg -> do
             (context, value) <- processExpr context arg
             E.Expr _ _ arg_id <- arg
-            (returns, _) <- Map.insert context.returns arg_id value
+            (returns, _) <- Map2.insert context.returns arg_id value
             (context { returns = returns }, Never)
         E.Continue arg -> do
             (context, value) <- processExpr context arg
             E.Expr _ _ arg_id <- arg
-            (continues, _) <- Map.insert context.continues arg_id value
+            (continues, _) <- Map2.insert context.continues arg_id value
             (context { continues = continues }, Never)
         E.Break arg -> do
             (context, value) <- processExpr context arg
             E.Expr _ _ arg_id <- arg
-            (breaks, _) <- Map.insert context.breaks arg_id value
+            (breaks, _) <- Map2.insert context.breaks arg_id value
             (context { breaks = breaks }, Never)
         E.RecordUpdate _ _ -> panic "Recordupdate in partial evaluator"
         E.Loop v init body continues breaks -> do
@@ -214,14 +216,14 @@ processExpr context expr = do
             context <- loop (context, prev_body_value, index) <- (context, init_value, 0) do
                 context <- addVar context v prev_body_value
                 (context, body_value) <- processExpr context body
-                continue_values <- List.map continues (\b -> Option.unwrap (get context.continues b))
+                continue_values <- List.map continues (\b -> Option.unwrap (Map2.get context.continues b))
                 (context, prev_body_value) <- getValue context v
                 values_to_merge <- continue_values + [body_value, prev_body_value]
                 (context, body_value) <- mergeValues context values_to_merge
                 if prev_body_value == body_value
                 then break context
                 else (context, body_value, index + 1)
-            break_values <- List.map breaks (\b -> Option.unwrap (get context.breaks b))
+            break_values <- List.map breaks (\b -> Option.unwrap (Map2.get context.breaks b))
             (context, value) <- mergeValues context break_values
             (context, value)
         E.CaseOf body cases -> do
@@ -277,30 +279,30 @@ createContext program f_id = do
         P.Identity mod name index <- f_id
         name <- "{}_{}_record{}" % (name, index, id)
         P.Identity mod name id) 0
-    Context program Map.empty Map.empty Map.empty Map.empty Map.empty record_id_gen Map.empty
+    Context program Map2.empty Map2.empty Map2.empty Map2.empty Map2.empty record_id_gen Map2.empty
 
 unchange :: Context -> Value -> Context
 unchange context value = do
-        loop (context, queue) <- (context, [value]) do
-            case pop queue of
+        loop (context, queue) <- (context, List2.single value) do
+            case List2.pop queue of
                 Some (value, queue) -> do
                     context :: Context <- context // FIXME: type annotation
-                    (queue, expr_values) <- Map.mapS queue context.expr_values (\queue, (expr_id, current) -> do
+                    (queue, expr_values) <- Map2.updateS queue context.expr_values (\queue, (expr_id, current) -> do
                         (queue, current) <- unchangeValue value queue current
-                        (queue, expr_id, current))
-                    (queue, vars) <- Map.mapS queue context.vars (\queue, (var, current) -> do
+                        (queue, current))
+                    (queue, vars) <- Map2.updateS queue context.vars (\queue, (var, current) -> do
                         (queue, current) <- unchangeValue value queue current
-                        (queue, var, current))
-                    (queue, continues) <- Map.mapS queue context.continues (\queue, (expr_id, current) -> do
+                        (queue, current))
+                    (queue, continues) <- Map2.updateS queue context.continues (\queue, (expr_id, current) -> do
                         (queue, current) <- unchangeValue value queue current
-                        (queue, expr_id, current))
-                    (queue, breaks) <- Map.mapS queue context.breaks (\queue, (expr_id, current) -> do
+                        (queue, current))
+                    (queue, breaks) <- Map2.updateS queue context.breaks (\queue, (expr_id, current) -> do
                         (queue, current) <- unchangeValue value queue current
-                        (queue, expr_id, current))
-                    (queue, returns) <- Map.mapS queue context.returns (\queue, (expr_id, current) -> do
+                        (queue, current))
+                    (queue, returns) <- Map2.updateS queue context.returns (\queue, (expr_id, current) -> do
                         (queue, current) <- unchangeValue value queue current
-                        (queue, expr_id, current))
-                    (new_queue, queue) <- List.mapS [] queue (\queue, current -> do
+                        (queue, current))
+                    (new_queue, queue) <- List2.mapS List2.empty queue (\queue, current -> do
                         (queue, current) <- unchangeValue value queue current
                         (queue, current))
                     queue <- new_queue + queue
@@ -312,12 +314,12 @@ unchange context value = do
                     (context, queue)
                 None -> break context
     where
-        unchangeValue :: Value -> [Value] -> Value -> ([Value], Value)
+        unchangeValue :: Value -> List2 Value -> Value -> (List2 Value, Value)
         unchangeValue target queue current = do
             case current of
                 Record n fields variant_info -> do
                     if current == target
-                        then (queue + fields, Unknown)
+                        then (List.fold queue fields (\queue, v -> List2.push queue v), Unknown)
                         else do
                             (queue, fields) <- List.mapS queue fields (unchangeValue target)
                             (queue, Record n fields variant_info)
@@ -331,7 +333,7 @@ getNewCtorId id = do
 
 addRecord :: Context -> P.Identity -> [D.RecordField] -> Context
 addRecord context id fields = do
-    case get context.program.records id of
+    case Map.get context.program.records id of
         Some _ -> return context
         None -> do
     program <- context.program
@@ -350,7 +352,7 @@ addRecord context id fields = do
 
 updateType :: Context -> E.ExprId -> T.Type -> (Context, T.Type)
 updateType context id orig_type =
-    case (get context.expr_values id) of
+    case (Map2.get context.expr_values id) of
         Some value -> updateValueType context value orig_type
         None -> (context, orig_type)
 
@@ -398,7 +400,7 @@ updateCase context c = do
     (context, c { body = body })
 
 resolveVar :: Context -> E.Var -> (Context, E.Var)
-resolveVar context v = case get context.replace_vars v of
+resolveVar context v = case Map2.get context.replace_vars v of
     Some v -> resolveVar context v
     None -> (context, v)
 
@@ -406,7 +408,7 @@ addReplacer :: Context -> E.Case -> E.Var -> Context
 addReplacer context c v =
     case c.checker of
         E.VariantChecker _ variant_var _ -> do
-            (replace_vars, _) <- Map.insert context.replace_vars variant_var v
+            (replace_vars, _) <- Map2.insert context.replace_vars variant_var v
             context { replace_vars = replace_vars }
         _ -> context
 
@@ -421,7 +423,7 @@ updateExpr context expr = do
         E.StaticFunctionCall f_id args -> do
             (context, args) <- List.mapS context args updateExpr
             function <- P.getFunction context.program f_id
-            case Option.unwrap (get context.expr_values id) of
+            case Option.unwrap (Map2.get context.expr_values id) of
                 Record id _ _ -> do
                     case function.kind of
                         F.VariantCtor index -> do
@@ -533,9 +535,9 @@ processFunction program function = case function.kind of
             addVar context arg Unknown) context function.type.args
         (context, value) <- processExpr context info.body
         context <- unchange context value
-        return_ids <- getKeys context.returns
+        return_ids <- Map2.getKeys context.returns
         context <- List.fold context return_ids (\context, id -> do
-            value <- Option.unwrap (get context.returns id)
+            value <- Option.unwrap (Map2.get context.returns id)
             unchange context value)
         (context, body) <- updateExpr context info.body
         info <- info { body = body }

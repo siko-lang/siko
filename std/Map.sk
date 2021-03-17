@@ -49,7 +49,15 @@ getSize k v :: Map k v -> Int
 getSize m = extern
 
 update k v :: (Ord k) => Map k v -> ((k, v) -> v) -> Map k v
-update m f = m |> Map.iter |> Iterator.map (\(k, v) -> (k, f (k, v))) |> toMap
+update m f = Map.map m (\(k, v) -> do
+    v <- f (k, v)
+    (k, v))
+// TODO, FIXME: make this extern
+
+updateS s k v :: (Ord k) => s -> Map k v -> (s -> (k, v) -> (s, v)) -> (s, Map k v)
+updateS s m f = Map.mapS s m (\s, (k, v) -> do
+    (s, v) <- f s (k, v)
+    (s, k, v))
 // TODO, FIXME: make this extern
 
 fold s k v :: s -> Map k v -> (s -> (k, v) -> s) -> s

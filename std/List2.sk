@@ -89,18 +89,13 @@ head l = if isEmpty l then None else Some (atIndex l 0)
 tail a :: List2 a -> Option (List2 a)
 tail l = extern
 
-// FIXME: pop should be a primitive?
-pop a :: List2 a -> Option (a, List2 a)
-pop l = case head l of
-    Some a -> do
-        if getLength l == 1
-            then Some (a, List2.empty)
-            else do
-                t <- case tail l of
-                    Some t -> t
-                    None -> panic "pop failed, non empty list is empty?"
-                Some (a, t)
-    None -> None
+remove a :: List2 a -> Int -> (a, List2 a)
+remove l index = extern
+
+pop a :: List2 a -> Option(a, List2 a)
+pop l = if isEmpty l
+        then None
+        else Some (List2.remove l 0)
 
 sort a :: (Ord a) => List2 a -> List2 a
 sort l = extern

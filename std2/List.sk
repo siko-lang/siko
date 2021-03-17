@@ -140,18 +140,13 @@ head l = if isEmpty l then None else Some (atIndex l 0)
 tail a :: [a] -> Option [a]
 tail l = extern
 
-// FIXME: pop should be a primitive?
+remove a :: [a] -> Int -> (a, [a])
+remove l index = extern
+
 pop a :: [a] -> Option (a, [a])
-pop l = case head l of
-    Some a -> do
-        if getLength l == 1
-            then Some (a, [])
-            else do
-                t <- case tail l of
-                    Some t -> t
-                    None -> panic "pop failed, non empty list is empty?"
-                Some (a, t)
-    None -> None
+pop l = if isEmpty l
+        then None
+        else Some (List.remove l 0)
 
 sort a :: (Ord a) => [a] -> [a]
 sort l = extern
