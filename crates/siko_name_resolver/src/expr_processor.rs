@@ -540,6 +540,7 @@ pub fn process_expr(
                 arg_count: arg_locations.len() + captures.len(),
                 arg_locations: arg_locations,
                 info: FunctionInfo::Lambda(lambda_info),
+                inline: false,
             };
             ir_program.functions.add_item(ir_lambda_id, ir_function);
 

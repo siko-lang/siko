@@ -115,6 +115,7 @@ pub fn generate_auto_derived_instance_member(
                         arg_count: arg_count,
                         arg_locations: vec![location],
                         info: function_info,
+                        inline: true,
                     };
                     ir_program.function_types.insert(function_id, function_type);
                     ir_program.functions.add_item(function_id, function);
@@ -193,6 +194,7 @@ pub fn generate_auto_derived_instance_member(
                         arg_count: arg_count,
                         arg_locations: vec![location],
                         info: function_info,
+                        inline: true,
                     };
                     ir_program.function_types.insert(function_id, function_type);
                     ir_program.functions.add_item(function_id, function);

@@ -214,19 +214,25 @@ fn walk_body(expr_id: &ExprId, program: &Program, collector: &mut Collector, blo
         }
         Expr::Loop(pattern, initializer, items, _) => {
             walk_body(initializer, program, collector, block_index);
-            walk_pattern(pattern, program, collector, block_index);
             let prev_loop = collector.loop_index;
             collector.loop_index = block_index + 1;
+            walk_pattern(pattern, program, collector, collector.loop_index);
             for item in items {
                 walk_body(item, program, collector, block_index + 1);
             }
             collector.loop_index = prev_loop;
         }
         Expr::Continue(inner) => {
+            let prev_loop = collector.loop_index;
+            collector.loop_index = 0;
             walk_body(inner, program, collector, block_index);
+            collector.loop_index = prev_loop;
         }
         Expr::Break(inner) => {
+            let prev_loop = collector.loop_index;
+            collector.loop_index = 0;
             walk_body(inner, program, collector, block_index);
+            collector.loop_index = prev_loop;
         }
     }
 }

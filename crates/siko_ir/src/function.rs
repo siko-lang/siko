@@ -111,6 +111,7 @@ pub struct Function {
     pub arg_locations: Vec<LocationId>,
     pub arg_count: usize,
     pub info: FunctionInfo,
+    pub inline: bool,
 }
 
 impl Function {

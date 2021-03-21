@@ -716,6 +716,7 @@ impl<'a> Builder<'a> {
             arg_count: arg_count,
             arg_locations: arg_locations,
             info: function_info,
+            inline: true,
         };
         self.program
             .function_types
@@ -748,6 +749,7 @@ impl<'a> Builder<'a> {
             arg_count: 0,
             arg_locations: arg_locations,
             info: function_info,
+            inline: true,
         };
         self.program
             .function_types

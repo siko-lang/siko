@@ -36,4 +36,5 @@ pub struct Function {
     pub function_type: Type,
     pub arg_count: usize,
     pub info: FunctionInfo,
+    pub inline: bool,
 }

@@ -145,6 +145,7 @@ pub fn process_function(
                 info: mir_function_info,
                 arg_count: function.arg_count,
                 function_type: mir_function_type,
+                inline: function.inline,
             };
             mir_program
                 .functions
@@ -174,6 +175,7 @@ pub fn process_function(
                 function_type: mir_function_type,
                 arg_count: function.arg_count,
                 info: MirFunctionInfo::Normal(mir_body),
+                inline: function.inline,
             };
             mir_program
                 .functions
@@ -195,6 +197,7 @@ pub fn process_function(
                 function_type: mir_function_type,
                 arg_count: function.arg_count,
                 info: MirFunctionInfo::VariantConstructor(mir_typedef_id, info.index),
+                inline: function.inline,
             };
             mir_program
                 .functions
@@ -211,6 +214,7 @@ pub fn process_function(
                 function_type: mir_function_type,
                 arg_count: function.arg_count,
                 info: MirFunctionInfo::RecordConstructor(mir_typedef_id),
+                inline: function.inline,
             };
             mir_program
                 .functions

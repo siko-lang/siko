@@ -751,6 +751,21 @@ fn generate_map2_builtins(
                 indent, result_ty_str
             )?;
         }
+        "updateValues" => {
+            write!(output_file, "{}let mut arg0 = arg0.value;\n", indent)?;
+            write!(output_file, "{}for (k, v) in arg0.iter_mut() {{\n", indent)?;
+            write!(
+                output_file,
+                "{}*v = if *v == arg1 {{ arg2.clone() }} else {{ v.clone() }};\n",
+                indent
+            )?;
+            write!(output_file, "{}}}\n", indent)?;
+            write!(
+                output_file,
+                "{}{} {{ value : arg0 }}",
+                indent, result_ty_str
+            )?;
+        }
         "updateS" => {
             let f_type = &arg_type_types[2];
             let m_type = &arg_type_types[1];
@@ -785,7 +800,9 @@ fn generate_map2_builtins(
             write!(
                 output_file,
                 "{}{} {{ _siko_field_0 : state, _siko_field_1: {} {{ value: m }} }}",
-                indent, result_ty_str, ir_type_to_rust_type(m_type, program)
+                indent,
+                result_ty_str,
+                ir_type_to_rust_type(m_type, program)
             )?;
         }
         "opEq" => {
@@ -1056,8 +1073,16 @@ fn generate_list_builtins(
         }
         "remove" => {
             let list_type = ir_type_to_rust_type(&arg_type_types[0], program);
-            write!(output_file, "{}let mut list = crate::UnpackRC::unpack(arg0.value);\n", indent)?;
-            write!(output_file, "{}let v = crate::UnpackRC::unpack(list.remove(arg1.value as usize));\n", indent)?;
+            write!(
+                output_file,
+                "{}let mut list = crate::UnpackRC::unpack(arg0.value);\n",
+                indent
+            )?;
+            write!(
+                output_file,
+                "{}let v = crate::UnpackRC::unpack(list.remove(arg1.value as usize));\n",
+                indent
+            )?;
             write!(
                 output_file,
                 "{} {} {{  _siko_field_0: v, _siko_field_1 : {} {{ value : std::rc::Rc::new(list) }} }}\n",
@@ -1457,7 +1482,11 @@ fn generate_list2_builtins(
         "remove" => {
             let list_type = ir_type_to_rust_type(&arg_type_types[0], program);
             write!(output_file, "{}let mut list = arg0.value;\n", indent)?;
-            write!(output_file, "{}let v = list.remove(arg1.value as usize);\n", indent)?;
+            write!(
+                output_file,
+                "{}let v = list.remove(arg1.value as usize);\n",
+                indent
+            )?;
             write!(
                 output_file,
                 "{} {} {{  _siko_field_0: v, _siko_field_1 : {} {{ value : list }} }}\n",

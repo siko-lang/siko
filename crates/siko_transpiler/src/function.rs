@@ -23,6 +23,19 @@ pub fn is_hacked_function(module: &str, name: &str) -> bool {
     }
 }
 
+pub fn should_be_inlined_function(module: &str) -> bool {
+    if module == "Map" || module == "Map2" {
+        true
+    } else if module == "List"
+        || module == "List2"
+        || module == "Siko.Backend.Ownership.Inference.Common"
+    {
+        true
+    } else {
+        false
+    }
+}
+
 pub fn write_function(
     function_id: FunctionId,
     output_file: &mut dyn Write,
@@ -209,6 +222,22 @@ pub fn write_function(
             panic!("Unimplemented extern class impl {}", class_name);
         }
     } else {
+        let mut should_be_inline = false;
+        if function.inline {
+            should_be_inline = true;
+        }
+        match &function.info {
+            FunctionInfo::Extern(_) => {
+                should_be_inline = true;
+            }
+            _ => {}
+        }
+        if should_be_inlined_function(&function.module) {
+            should_be_inline = true;
+        }
+        if should_be_inline {
+            write!(output_file, "{}#[inline(always)]\n", indent)?;
+        }
         write!(
             output_file,
             "{}pub fn {}({}) -> {} {{\n",

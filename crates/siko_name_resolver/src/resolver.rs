@@ -190,6 +190,7 @@ impl Resolver {
                     arg_count: arg_locations.len(),
                     arg_locations: arg_locations,
                     info: FunctionInfo::RecordConstructor(record_ctor_info),
+                    inline: true,
                 };
                 ir_program.functions.add_item(ir_ctor_id, ir_ctor_function);
 
@@ -486,6 +487,7 @@ impl Resolver {
             arg_count: arg_locations.len(),
             arg_locations: arg_locations,
             info: FunctionInfo::NamedFunction(named_info),
+            inline: false,
         };
         ir_program.functions.add_item(ir_function_id, ir_function);
     }
@@ -573,6 +575,7 @@ impl Resolver {
                         arg_count: arg_locations.len(),
                         arg_locations: arg_locations,
                         info: FunctionInfo::VariantConstructor(variant_ctor_info),
+                        inline: true,
                     };
                     ir_program.functions.add_item(ir_ctor_id, ir_ctor_function);
 
