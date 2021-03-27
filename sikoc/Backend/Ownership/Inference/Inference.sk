@@ -9,6 +9,7 @@ import Siko.Util.DependencyProcessor
 import Siko.Backend.Ownership.Unification as U
 import Siko.Util.Counter
 import Siko.Backend.Ownership.Inference.Collection as C
+import Siko.Backend.Ownership.Inference.Equality as Equality
 import Siko.Backend.Ownership.Inference.Common as Common
 import Siko.Backend.Ownership.Initialization as Init
 import Siko.Backend.Traversal
@@ -57,7 +58,8 @@ processEqual ownership_vars groups v1 v2 = do
             panic "MergedBorrow in processEqual!"
             //(context, index) <- mergeBorrowSets context index1 index2
             //(context, T.BorrowKind index)
-    groups <- List2.write groups index1 (Common.Group merged_kind)
+    group1 <- group1 { kind = merged_kind }
+    groups <- List2.write groups index1 group1
     ownership_vars <- Common.updateGroups ownership_vars group_id2 group_id1
     (ownership_vars, groups)
 
@@ -66,9 +68,14 @@ processEquals context = do
     equals <- context.equals
     groups <- context.groups
     ownership_vars <- context.ownership_vars
-    (ownership_vars, groups) <- List.fold (ownership_vars, groups) equals (\(ownership_vars, groups), equal -> do
-        Common.Equal v1 v2 <- equal
-        processEqual ownership_vars groups v1 v2)
+    len <- getLength equals
+    (ownership_vars, groups) <- loop (ownership_vars, groups, index) <- (ownership_vars, groups, 0) do
+        if len > index
+        then do
+            Common.Equal v1 v2 <- atIndex equals index
+            (ownership_vars, groups) <- processEqual ownership_vars groups v1 v2
+            (ownership_vars, groups, index + 1)
+        else break (ownership_vars, groups)
     context { groups = groups, ownership_vars = ownership_vars }
 
 processConstraints :: Common.Context -> Common.Context
@@ -337,6 +344,8 @@ calculateInferenceInfo global_context init_context function_id = do
     case function.kind of
         F.Normal info -> do
             trace global_context.config "Inference: processing {}" % function.id
+            body <- Equality.processBody global_context init_context function.type function_id info.body
+            trace global_context.config "equality done {}" % function.id
             (context, _) <- C.collectConstraints global_context init_context function.type function_id info.body
             trace global_context.config "processing equals"
             context <- processEquals context
@@ -348,7 +357,9 @@ calculateInferenceInfo global_context init_context function_id = do
             Common.dumpContextStats context
             //dumpConstraints context
             //dumpOwnershipVars context
+            trace global_context.config "getSubstitution"
             (context, sub) <- getSubstitution context
+            trace global_context.config "getSubstitution done"
             function_type <- U.apply function.type sub
             ownership_kinds <- Common.collectOwnershipKindsFromFunctionType function_type
             var_constraints <- collectVarConstraints context ownership_kinds
@@ -361,14 +372,20 @@ instantiateFunction :: Common.GlobalContext -> Init.Context -> Counter E.ExprId 
 instantiateFunction global_context init_context expr_id_gen function_id function_type body = do
     trace global_context.config "Inference: instantiating {} {}" % (function_id, function_type)
     (context, body) <- C.collectConstraints global_context init_context function_type function_id body
+    trace global_context.config "processing equals"
     context <- processEquals context
     //dumpConstraints context
+    trace global_context.config "processing constraints"
     context <- processConstraints context
+    trace global_context.config "borrowCheck"
     context <- borrowCheck context
+    trace global_context.config "replaceUnused"
     context <- replaceUnused context
     //dumpConstraints context
     //dumpOwnershipVars context
+    trace global_context.config "getSubstitution"
     (context, sub) <- getSubstitution context
+    trace global_context.config "updating body"
     updated_body <- updateBody context sub body
     trace global_context.config "End of instantiating"
     (updated_body, context.init_context)

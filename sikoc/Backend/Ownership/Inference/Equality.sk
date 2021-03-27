@@ -1,0 +1,184 @@
+module Siko.Backend.Ownership.Inference.Equality where
+
+import Siko.MIR.Program as P
+import Siko.MIR.Expr as E
+import Siko.MIR.Data as D
+import Siko.MIR.Type as T
+import Siko.MIR.Function as F
+import Siko.Util.DependencyProcessor
+import Siko.Backend.Ownership.ValueGraph.Creator as C
+import Siko.Backend.Ownership.Inference.Common as Common
+import Siko.Backend.Ownership.Initialization as Init
+import Siko.Backend.Ownership.Initialization.Functions as IF
+import Siko.Backend.Ownership.Unification as U
+import Siko.Util.Counter
+import Siko.Trace
+import List2 as List2
+import List2 (List2)
+import Siko.Backend.Traversal
+import Map2 as Map2
+import Map2 (Map2)
+
+import Map
+import Set
+
+data Context = { vars :: Map2 E.Var T.Type,
+                 return_type :: T.Type,
+                 program :: P.Program }
+
+addVar :: Context -> E.Var -> T.Type -> Context
+addVar context var type = do
+    (vars, _) <- Map2.insert context.vars var type
+    context { vars = vars }
+
+getVarType :: Context -> E.Var -> (Context, T.Type) // FIXME, linearity
+getVarType context var = case Map2.get context.vars var of
+    Some t -> (context, t)
+    None -> panic "Var {} not found in equality context" % var
+
+getRecordType :: Context -> T.Type -> D.Record
+getRecordType context type = do
+    record_id <- T.getIdentity type
+    record <- P.getRecord context.program record_id
+    ownership_vars <- T.collectOwnershipArgs type
+    sub <- U.batch record.ownership_vars ownership_vars
+    record <- U.apply record sub
+    record
+
+getAdtType :: Context -> T.Type -> D.AlgebraicDataType
+getAdtType context type = do
+    adt_id <- T.getIdentity type
+    adt <- P.getAdt context.program adt_id
+    ownership_vars <- T.collectOwnershipArgs type
+    sub <- U.batch adt.ownership_vars ownership_vars
+    adt <- U.apply adt sub
+    adt
+
+getRecordFieldType :: D.Record -> String -> T.Type
+getRecordFieldType record name =
+    case find record.fields (\f -> f.name == name) of
+        Some f -> do
+            f :: D.RecordField <- f // FIXME
+            f.type
+        None -> panic "No field named {}" % name
+
+processExpr :: Context -> E.Expr -> (Context, E.Expr)
+processExpr context expr = do
+    E.Expr s_expr type id <- expr
+    case s_expr of
+        E.Do items -> do
+            (context, items) <- List.mapS context items processExpr
+            index <- getLength items - 1
+            E.Expr _ last_type _ <- List.atIndex items index
+            (context, E.Expr (E.Do items) last_type id)
+        E.Multi _ -> panic "Multi expr in Equality.processExpr"
+        E.StaticFunctionCall f_id args -> do
+            (context, args) <- List.mapS context args processExpr
+            // FIXME, TODO
+            (context, E.Expr (E.StaticFunctionCall f_id args) type id)
+        E.IntegerLiteral i -> (context, E.Expr (E.IntegerLiteral i) type id)
+        E.StringLiteral i -> (context, E.Expr (E.StringLiteral i) type id)
+        E.FloatLiteral i -> (context, E.Expr (E.FloatLiteral i) type id)
+        E.CharLiteral i -> (context, E.Expr (E.CharLiteral i) type id)
+        E.VarDecl v rhs -> do
+            (context, rhs) <- processExpr context rhs
+            E.Expr _ rhs_type _ <- rhs
+            context <- addVar context v rhs_type
+            (context, E.Expr (E.VarDecl v rhs) type id)
+        E.VarRef v -> do
+            (context, type) <- getVarType context v
+            (context, E.Expr (E.VarRef v) type id)
+        E.FieldAccess name receiver -> do
+            (context, receiver) <- processExpr context receiver
+            E.Expr _ receiver_type _ <- receiver
+            record <- getRecordType context receiver_type
+            field_type <- getRecordFieldType record name
+            (context, E.Expr (E.FieldAccess name receiver) field_type id)
+        E.If cond true_branch false_branch -> do
+            (context, cond) <- processExpr context cond
+            (context, true_branch) <- processExpr context true_branch
+            (context, false_branch) <- processExpr context false_branch
+            E.Expr t_s_expr t_type t_id <- true_branch
+            E.Expr f_s_expr f_type f_id <- false_branch
+            true_branch <- E.Expr t_s_expr t_type t_id
+            false_branch <- E.Expr f_s_expr t_type f_id
+            (context, E.Expr (E.If cond true_branch false_branch) t_type id)
+        E.List items -> do
+            kinds <- T.collectOwnershipKinds type
+            (first, list_args) <- List2.remove kinds 0
+            (context, items) <- List.mapS context items (\context, item -> do
+                    (context, item) <- processExpr context item
+                    E.Expr item_s_expr item_type item_id <- item
+                    item_kinds <- T.collectOwnershipKinds item_type
+                    sub <- U.batch item_kinds list_args
+                    conv_item_type <- U.apply item_type sub
+                    (context, E.Expr item_s_expr conv_item_type item_id))
+            (context, E.Expr (E.List items) type id)
+        E.Return arg -> do
+            (context, arg) <- processExpr context arg
+            E.Expr arg_s_expr arg_type arg_id <- arg
+            arg <- E.Expr arg_s_expr context.return_type arg_id
+            (context, E.Expr (E.Return arg) type id)
+        E.Continue arg -> do
+            (context, arg) <- processExpr context arg
+            E.Expr arg_s_expr arg_type arg_id <- arg
+            //arg <- E.Expr arg_s_expr context.return_type arg_id
+            (context, E.Expr (E.Continue arg) type id)
+        E.Break arg -> do
+            (context, arg) <- processExpr context arg
+            E.Expr arg_s_expr arg_type arg_id <- arg
+            //arg <- E.Expr arg_s_expr context.return_type arg_id
+            (context, E.Expr (E.Break arg) type id)
+        E.RecordUpdate _ _ -> panic "RecordUpdate found in Equality.processExpr"
+        E.Loop v initializer body continues breaks -> do
+            (context, initializer) <- processExpr context initializer
+            E.Expr _ initializer_type _ <- initializer
+            context <- addVar context v initializer_type
+            (context, body) <- processExpr context body
+            (context, E.Expr (E.Loop v initializer body continues breaks) type id)
+        E.CaseOf body cases -> do
+            (context, body) <- processExpr context body
+            (context, cases) <- List.mapS context cases (\context, c -> do
+                context <- case c.checker of
+                    E.VariantChecker index v variant_type -> do
+                        var_type <- case variant_type of
+                            T.Var _ t -> case t of
+                                T.Adt _ _ -> do
+                                    adt <- getAdtType context variant_type
+                                    variant <- atIndex adt.variants index
+                                    variant.type
+                                T.Record _ _ -> variant_type
+                                _ -> panic "VariantChecker's inner type is not record nor adt"
+                            _ -> panic "VariantChecker's type is not Var"
+                        context <- addVar context v var_type
+                        context
+                    _ -> context
+                (context, c_body) <- processExpr context c.body
+                E.Expr c_s_expr _ c_id <- c.body
+                c_body <- E.Expr c_s_expr type c_id
+                c <- c { body = c_body }
+                (context, c))
+            (context, E.Expr (E.CaseOf body cases) type id)
+        E.Clone _ -> panic "Clone found in Equality.processExpr"
+        E.Deref _ -> panic "Deref found in Equality.processExpr"
+        E.Ref _ -> panic "Ref found in Equality.processExpr"
+        E.Move _ -> panic "Move found in Equality.processExpr"
+        E.Box _ -> panic "Box found in Equality.processExpr"
+        E.Converter arg kind -> do
+            (context, arg) <- processExpr context arg
+            (context, E.Expr (E.Converter arg kind) type id)
+
+processArg :: Context -> Int -> T.Type -> Context
+processArg context index type = addVar context (E.Arg index) type
+
+createContext :: P.Program -> T.Type -> Context
+createContext program return_type = Context Map2.empty return_type program
+
+processBody :: Common.GlobalContext -> Init.Context -> F.FunctionType -> P.Identity -> E.Expr -> E.Expr
+processBody global_context init_context function_type function_id body = do
+    trace global_context.config "Inference: Equality {}" % function_id
+    context <- createContext global_context.program function_type.result
+    context <- List.foldE processArg context function_type.args
+    (_, body) <- IF.addOwnershipVarsToBody init_context body
+    (context, body) <- processExpr context body
+    body

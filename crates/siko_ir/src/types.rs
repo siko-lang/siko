@@ -54,10 +54,11 @@ impl ResolverContext {
         self.list_type_id
     }
 
-    pub fn get_class_name(&self, class_id: &ClassId) -> &String {
-        self.class_names
-            .get(class_id)
-            .expect("Class name not found")
+    pub fn get_class_name(&self, class_id: &ClassId) -> String {
+        match self.class_names.get(class_id) {
+            Some(n) => n.to_string(),
+            None => String::from("<unknown>")
+        }
     }
 }
 

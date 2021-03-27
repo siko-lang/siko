@@ -151,17 +151,16 @@ getBorrowSet context id = case get context.borrower_sets id of
 updateGroupKind :: Context -> GroupId -> T.OwnershipKind -> Context
 updateGroupKind context id kind = do
     GroupId index <- id
-    groups <- List2.write context.groups index (Group kind)
+    group <- List2.atIndex context.groups index
+    group <- group { kind = kind }
+    groups <- List2.write context.groups index group
     context { groups = groups }
 
 updateGroups :: Map2 T.OwnershipVar GroupId -> GroupId -> GroupId -> Map2 T.OwnershipVar GroupId
 updateGroups ownership_vars old_id new_id = do
     if old_id == new_id
     then ownership_vars
-    else do
-        Map2.update ownership_vars (\(v, id) -> do
-            updated_id <- if id == old_id then new_id else id
-            updated_id)
+    else Map2.updateValues ownership_vars old_id new_id
 
 createrBorrowerSetId :: Context -> (Context, Int)
 createrBorrowerSetId context = do

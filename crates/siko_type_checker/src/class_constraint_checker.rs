@@ -60,6 +60,7 @@ impl<'a> ClassConstraintChecker<'a> {
             }
         }
         if failed {
+            println!("unification failed {} {}", ty1, ty2);
             let ty_str1 = ty1.get_resolved_type_string(self.program);
             let ty_str2 = ty2.get_resolved_type_string(self.program);
             let err = TypecheckError::TypeMismatch(location, ty_str1, ty_str2);
