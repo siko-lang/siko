@@ -40,7 +40,8 @@ data Context = { hir_program :: HP.Program,
                  external_class_names :: [(HP.FullyQualifiedName, MD.ExternalClassImplKind)],
                  external_class_impls :: Map HT.Type [MD.ExternalClassImplKind],
                  pattern_vars :: Map HPat.PatternId ME.Var,
-                 loop_jumps :: Map HE.ExprId ME.ExprId,
+                 continues :: [ME.ExprId],
+                 breaks :: [ME.ExprId],
                  expr_id_gen :: Option (Counter ME.ExprId),
                  temp_var_gen :: Option (Counter ME.Var),
                }
@@ -228,7 +229,7 @@ lowerProgram config state hir_program function_store type_store = do
     mir_program <- MP.createProgram
     context <- Context hir_program mir_program function_store
                type_store CS.createClosureStore IS.createIteratorStore state Map.empty
-               FQ.createFunctionQueue getExternalClassNames Map.empty Map.empty Map.empty None None
+               FQ.createFunctionQueue getExternalClassNames Map.empty Map.empty [] [] None None
     context <- case HP.getFunctionOpt hir_program main_qn of
         Some main -> do
             item <- FQ.Normal main_qn (HT.Tuple [])

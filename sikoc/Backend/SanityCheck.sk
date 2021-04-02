@@ -10,10 +10,13 @@ import Siko.Backend.Traversal
 import Map
 import Set
 
-data Context = { expr_ids :: Set E.ExprId, vars :: Set E.Var }
+data Context = { expr_ids :: Set E.ExprId,
+                 vars :: Set E.Var,
+                 breaks :: [E.ExprId],
+                 continues :: [E.ExprId], }
 
 createContext :: Context
-createContext = Context Set.empty Set.empty
+createContext = Context Set.empty Set.empty [] []
 
 addVar :: P.Identity -> Context -> E.Var -> Context
 addVar id context var = do
@@ -34,11 +37,29 @@ check id context expr = do
                     then panic "ICE: empty do block found in {}" % id
                     else context
         E.VarDecl v _ -> addVar id context v
-        E.Loop v _ _ _ _ -> addVar id context v
+        E.Loop v _ _ continues breaks -> do
+            loop_continues <- continues |> sort
+            context_continues <- context.continues |> sort
+            loop_breaks <- breaks |> sort
+            context_breaks <- context.breaks |> sort
+            if loop_continues != context_continues
+            then panic "ICE: loop continue set mismatch {} != {}" % (loop_continues, context_continues)
+            else ()
+            if loop_breaks != context_breaks
+            then panic "ICE: loop break set mismatch {} != {}" % (loop_breaks, context_breaks)
+            else ()
+            context <- context { continues = [], breaks = [] }
+            addVar id context v
         E.CaseOf _ cases -> do
             List.fold context cases (\context, c -> case c.checker of
                 E.VariantChecker _ v _ -> addVar id context v
                 _ -> context)
+        E.Continue arg -> do
+            E.Expr _ _ arg_id <- arg
+            context { continues = List.push context.continues arg_id }
+        E.Break arg -> do
+            E.Expr _ _ arg_id <- arg
+            context { breaks = List.push context.breaks arg_id }
         _ -> context
     (context, expr)
 

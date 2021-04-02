@@ -671,18 +671,14 @@ processExpr context sub hir_expr = do
             (context, return_expr)
         HE.Continue arg -> do
             (context, mir_arg) <- processExpr context sub arg
-            HE.Expr _ hir_id _ <- arg
             ME.Expr _ _ id <- mir_arg
-            (loop_jumps, _) <- insert context.loop_jumps hir_id id
-            context <- context { loop_jumps = loop_jumps }
+            context <- context { continues = List.push context.continues id }
             (context, continue_expr) <- getExpr context (ME.Expr (ME.Continue mir_arg) MT.Never)
             (context, continue_expr)
         HE.Break arg -> do
             (context, mir_arg) <- processExpr context sub arg
-            HE.Expr _ hir_id _ <- arg
             ME.Expr _ _ id <- mir_arg
-            (loop_jumps, _) <- insert context.loop_jumps hir_id id
-            context <- context { loop_jumps = loop_jumps }
+            context <- context { breaks = List.push context.breaks id }
             (context, break_expr) <- getExpr context (ME.Expr (ME.Break mir_arg) MT.Never)
             (context, break_expr)
         HE.Loop p initializer body continues breaks -> do
@@ -699,12 +695,9 @@ processExpr context sub hir_expr = do
                 ME.Do items -> ME.Do (exprs + items)
                 _ -> panic "Loop body is not a do!"
             mir_body <- ME.Expr body_expr body_type body_id
-            continues <- continues |> List.iter |> Iterator.map (\expr_ref -> case get context.loop_jumps expr_ref.source of
-                    Some id -> id
-                    None -> panic "Continue {} not found in MIR" % expr_ref.source) |> toList
-            breaks <- breaks |> List.iter |> Iterator.map (\expr_ref -> case get context.loop_jumps expr_ref.source of
-                    Some id -> id
-                    None -> panic "Break {} not found in MIR" % expr_ref.source) |> toList
+            continues <- context.continues
+            breaks <- context.breaks
+            context <- context { continues = [], breaks = [] }
             (context, loop_expr) <- getExpr context (ME.Expr (ME.Loop var mir_initializer mir_body continues breaks) mir_expr_type)
             (context, loop_expr)
         HE.ArgRef index -> do
