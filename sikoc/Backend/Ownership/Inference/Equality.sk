@@ -24,6 +24,8 @@ import Set
 
 data Context = { vars :: Map2 E.Var T.Type,
                  return_type :: T.Type,
+                 continue_type :: Option T.Type,
+                 break_type :: Option T.Type,
                  program :: P.Program }
 
 addVar :: Context -> E.Var -> T.Type -> Context
@@ -122,19 +124,24 @@ processExpr context expr = do
         E.Continue arg -> do
             (context, arg) <- processExpr context arg
             E.Expr arg_s_expr arg_type arg_id <- arg
-            //arg <- E.Expr arg_s_expr context.return_type arg_id
+            arg_type <- Option.unwrap context.continue_type
+            arg <- E.Expr arg_s_expr arg_type arg_id
             (context, E.Expr (E.Continue arg) type id)
         E.Break arg -> do
             (context, arg) <- processExpr context arg
             E.Expr arg_s_expr arg_type arg_id <- arg
-            //arg <- E.Expr arg_s_expr context.return_type arg_id
+            arg_type <- Option.unwrap context.break_type
+            arg <- E.Expr arg_s_expr arg_type arg_id
             (context, E.Expr (E.Break arg) type id)
         E.RecordUpdate _ _ -> panic "RecordUpdate found in Equality.processExpr"
         E.Loop v initializer body continues breaks -> do
             (context, initializer) <- processExpr context initializer
             E.Expr _ initializer_type _ <- initializer
             context <- addVar context v initializer_type
+            (orig_continue_type, orig_break_type) <- (context.continue_type, context.break_type)
+            context <- context { continue_type = Some initializer_type, break_type = Some type }
             (context, body) <- processExpr context body
+            context <- context { continue_type = orig_continue_type, break_type = orig_break_type }
             (context, E.Expr (E.Loop v initializer body continues breaks) type id)
         E.CaseOf body cases -> do
             (context, body) <- processExpr context body
@@ -172,7 +179,7 @@ processArg :: Context -> Int -> T.Type -> Context
 processArg context index type = addVar context (E.Arg index) type
 
 createContext :: P.Program -> T.Type -> Context
-createContext program return_type = Context Map2.empty return_type program
+createContext program return_type = Context Map2.empty return_type None None program
 
 processBody :: Common.GlobalContext -> Init.Context -> F.FunctionType -> P.Identity -> E.Expr -> E.Expr
 processBody global_context init_context function_type function_id body = do

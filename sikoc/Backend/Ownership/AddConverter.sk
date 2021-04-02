@@ -14,7 +14,10 @@ import Siko.Config
 import Map
 import Set
 
-data Context = { expr_id_gen :: Counter E.ExprId, not_moves :: Set E.ExprId, }
+data Context = { expr_id_gen :: Counter E.ExprId,
+                 not_moves :: Set E.ExprId,
+                 continues :: Map E.ExprId E.ExprId,
+                 breaks :: Map E.ExprId E.ExprId, }
 
 getNextExprId :: Context -> (Context, E.ExprId)
 getNextExprId context = do
@@ -24,12 +27,21 @@ getNextExprId context = do
 packExpr :: Context -> E.Expr -> E.ConverterKind -> (Context, E.Expr)
 packExpr context orig_expr kind = do
     (context, expr_id) <- getNextExprId context
-    E.Expr _ orig_type id <- orig_expr
+    E.Expr orig_s_expr orig_type orig_id <- orig_expr
     type <- case orig_type of
         T.Owner t -> t
         T.Ref _ t -> t
         _ -> orig_type
     (context, E.Expr (E.Converter orig_expr kind) type expr_id)
+
+getBothIds :: E.Expr -> (E.ExprId, E.ExprId)
+getBothIds expr = do
+    E.Expr s_expr _ id <- expr
+    case s_expr of
+        E.Converter arg _ -> do
+            (orig, _) <- getBothIds arg
+            (orig, id)
+        _ -> (id, id)
 
 processExpr :: Context -> E.Expr -> (Context, E.Expr)
 processExpr context expr = do
@@ -61,6 +73,22 @@ processExpr context expr = do
         E.FieldAccess name receiver -> do
             (context, expr) <- packExpr context expr (E.FieldConverter (Set.contains context.not_moves id))
             packExpr context expr E.NormalConverter
+        E.Continue arg -> do
+            (context, arg) <- packExpr context arg E.NormalConverter
+            (orig_id, new_id) <- getBothIds arg
+            (continues, _) <- Map.insert context.continues orig_id new_id
+            context <- context { continues = continues }
+            (context, E.Expr (E.Continue arg) type id)
+        E.Break arg -> do
+            (context, arg) <- packExpr context arg E.NormalConverter
+            (orig_id, new_id) <- getBothIds arg
+            (breaks, _) <- Map.insert context.breaks orig_id new_id
+            context <- context { breaks = breaks }
+            (context, E.Expr (E.Break arg) type id)
+        E.Loop v initializer body continues breaks -> do
+            continues <- List.map continues (\id -> Option.unwrap (get context.continues id))
+            breaks <- List.map breaks (\id -> Option.unwrap (get context.breaks id))
+            (context, E.Expr (E.Loop v initializer body continues breaks) type id)
         _ -> (context, expr)
 
 processFunction :: Config -> P.Identity -> F.Function -> (P.Identity, F.Function)
@@ -68,7 +96,7 @@ processFunction config id function = do
     case function.kind of
         F.Normal info -> do
             not_moves <- C.collectNotMoves function.id info.body (getLength function.type.args)
-            context <- Context info.expr_id_gen not_moves
+            context <- Context info.expr_id_gen not_moves Map.empty Map.empty
             (context, new_body) <- traverse context info.body (Some processExpr) None
             info <- info { body = new_body, expr_id_gen = context.expr_id_gen }
             new_kind <- F.Normal info
