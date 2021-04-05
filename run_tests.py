@@ -36,9 +36,13 @@ def mkdir_safe(folder_name):
         if e.errno != errno.EEXIST:
             raise
 
-def run_command(args, name):
+def run_command(args, name, verbose = False):
     try:
-        subprocess.run(args, check=True, stderr=subprocess.DEVNULL)
+        #print("Running %s" % args)
+        if verbose:
+            subprocess.run(args, check=True)
+        else:
+            subprocess.run(args, check=True, stderr=subprocess.DEVNULL)
         return True
     except subprocess.CalledProcessError as e:
         print("%s failed" % name)
@@ -54,9 +58,11 @@ def run(verbose, debug, test_name, source_folder, index, total):
     mkdir_safe(target_folder)
     compiled_sikoc = os.path.join("compiled_sikoc","sikoc")
     if os.path.exists(compiled_sikoc):
-        subprocess.call(["./compiled_sikoc.sh", debug, verbose, "std2/*.sk", "%s/*.sk" % source_folder, "-o", os.path.join(target_folder, test_name)])
+        if not run_command(["./compiled_sikoc.sh", debug, verbose, "std2/*.sk", "%s/*.sk" % source_folder, "-o", os.path.join(target_folder, test_name)], "compiled_sikoc", verbose = True):
+            return False
     else:
-        subprocess.call(["./sikoc.sh", "std2/*.sk", "%s/*.sk" % source_folder, "-o", os.path.join(target_folder, test_name)])
+        if not run_command(["./sikoc.sh", "std2/*.sk", "%s/*.sk" % source_folder, "-o", os.path.join(target_folder, test_name)], "normal sikoc"):
+            return False
     normal_output = os.path.join(target_folder, "normal")
     rc_output = os.path.join(target_folder, "rc")
     if not run_command(["rustc", "--edition=2018", os.path.join(target_folder, "%s_normal.rs" % test_name), "-o", normal_output], "normal rustc"):
