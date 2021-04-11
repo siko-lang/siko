@@ -1,0 +1,94 @@
+module Json.Parser where
+
+import Json.Error
+import Json.Lexer
+import Json.Token
+import Json
+
+data ParserState = { tokens :: [Token],
+                     index :: Int, }
+
+emptyState :: [Token] -> ParserState
+emptyState input = ParserState input 0
+
+isDone :: ParserState -> Bool
+isDone state = state.index >= getLength state.tokens
+
+peek :: ParserState -> Token
+peek state = atIndex state.tokens state.index
+
+step :: ParserState -> ParserState
+step state = state { index = state.index + 1 }
+
+expect :: ParserState -> Token -> Result ParserState Error
+expect state token = do
+    t <- peek state
+    if t == token
+    then Ok (step state)
+    else Err (Unexpected (show t) (show token))
+
+parseString :: ParserState -> Result (ParserState, String) Error
+parseString state = do
+    case peek state of
+        Literal s -> do
+            state <- step state
+            Ok (state, s)
+        t -> Err (Unexpected (show t) "<String>")
+
+parseObject :: ParserState -> Result (ParserState, Json) Error
+parseObject state = do
+    state <- try expect state LCurly
+    (state, items) <- loop (state, items) <- (state, []) do
+        case peek state of
+            RCurly -> break (state, items)
+            _ -> do
+                (state, name) <- try parseString state
+                state <- try expect state Colon
+                (state, value) <- try parseJson state
+                item <- JsonObjectItem name value
+                items <- items + [item]
+                case peek state of
+                    RCurly -> break (state, items)
+                    Comma -> do
+                        state <- try expect state Comma
+                        (state, items)
+                    _ -> return Err ParseError
+    state <- try expect state RCurly
+    Ok (state, JsonObject items)
+
+parseList :: ParserState -> Result (ParserState, Json) Error
+parseList state = do
+    state <- try expect state LBracket
+    (state, items) <- loop (state, items) <- (state, []) do
+        case peek state of
+            RBracket -> break (state, items)
+            _ -> do
+                (state, value) <- try parseJson state
+                item <- value
+                items <- items + [item]
+                case peek state of
+                    RBracket -> break (state, items)
+                    Comma -> do
+                        state <- try expect state Comma
+                        (state, items)
+                    _ -> return Err ParseError
+    state <- try expect state RBracket
+    Ok (state, JsonList items)
+
+parseJson :: ParserState -> Result (ParserState, Json) Error
+parseJson state = do
+    token <- peek state
+    case token of
+        Literal s -> do
+            (state, s) <- try parseString state
+            Ok (state, JsonString s)
+        LCurly -> parseObject state
+        LBracket -> parseList state
+        _ -> Err ParseError
+
+parse :: String -> Result Json Error
+parse input = do
+    tokens <- try lex input
+    state <- emptyState tokens
+    (_, json) <- try parseJson state
+    Ok json

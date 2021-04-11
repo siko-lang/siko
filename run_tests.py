@@ -51,6 +51,9 @@ def run_command(args, name, verbose = False):
         print("%s failed" % name)
         return False
 
+def getStd():
+    return ["std2/*.sk", "std2/Json/*.sk"]
+
 def run(verbose, debug, test_name, source_folder, index, total):
     print("--- Running %s - %d/%d" % (test_name, total, index))
     mkdir_safe("sikoc_test_runs")
@@ -58,10 +61,10 @@ def run(verbose, debug, test_name, source_folder, index, total):
     mkdir_safe(target_folder)
     compiled_sikoc = os.path.join("compiled_sikoc","sikoc")
     if os.path.exists(compiled_sikoc):
-        if not run_command(["./compiled_sikoc.sh", debug, verbose, "std2/*.sk", "%s/*.sk" % source_folder, "-o", os.path.join(target_folder, test_name)], "compiled_sikoc", verbose = True):
+        if not run_command(["./compiled_sikoc.sh", debug, verbose] + getStd() + ["%s/*.sk" % source_folder, "-o", os.path.join(target_folder, test_name)], "compiled_sikoc", verbose = True):
             return False
     else:
-        if not run_command(["./sikoc.sh", "std2/*.sk", "%s/*.sk" % source_folder, "-o", os.path.join(target_folder, test_name)], "normal sikoc"):
+        if not run_command(["./sikoc.sh"] + getStd() + ["%s/*.sk" % source_folder, "-o", os.path.join(target_folder, test_name)], "normal sikoc"):
             return False
     normal_output = os.path.join(target_folder, "normal")
     rc_output = os.path.join(target_folder, "rc")

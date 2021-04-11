@@ -1,0 +1,13 @@
+module Json.Writer where
+
+import Json
+
+write :: Json -> String
+write json = case json of
+    JsonString s -> "\"{}\"" % s
+    JsonObject items -> do
+        items <- List.map items (\item -> "\"{}\": {}" % (item.name, write item.value))
+        "{" + join items ", " + "}"
+    JsonList items -> do
+        items <- List.map items write
+        "[" + join items ", " + "]"
