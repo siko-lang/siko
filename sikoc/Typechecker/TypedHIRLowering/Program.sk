@@ -1,0 +1,15 @@
+module Siko.Typechecker.Lowering.TypedHIR.Program where
+
+import Siko.Typechecker.Lowering.TypedHIR.Class as LC
+import Siko.Typechecker.Lowering.TypedHIR.Function as LF
+import Siko.HIR.Program as HP
+import Siko.TypedHIR.Program as THP
+
+lowerFullyQualifiedName :: HP.FullyQualifiedName -> THP.FullyQualifiedName
+lowerFullyQualifiedName hir_qn = case hir_qn of
+    HP.FullPath mod name -> THP.FullPath mod name
+    HP.FullPathWithVariant mod name variant -> THP.FullPathWithVariant mod name variant
+    HP.FullPathWithLambda qn lambda_id -> THP.FullPathWithLambda (lowerFullyQualifiedName qn) (LF.lowerLambdaId lambda_id)
+    HP.FullPathWithInstanceId mod name instance_id -> THP.FullPathWithInstanceId mod name (LC.lowerInstanceId instance_id)
+    HP.ModulePath mod -> THP.ModulePath mod
+    HP.SubItem qn name -> THP.SubItem (lowerFullyQualifiedName qn) name

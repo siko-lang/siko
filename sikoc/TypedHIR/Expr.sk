@@ -3,6 +3,7 @@ module Siko.TypedHIR.Expr where
 import Siko.Syntax.Ident
 import Siko.TypedHIR.Pattern
 import Siko.TypedHIR.Program (FullyQualifiedName)
+import Siko.TypedHIR.Type
 import Siko.Syntax.Location
 
 data Case = { pattern :: Pattern,
@@ -22,10 +23,10 @@ data ExprId = ExprId Int deriving (PartialEq, Eq, PartialOrd, Ord)
 instance Show ExprId where
   show (ExprId id) = "#{}" % id
 
-data Expr = Expr SimpleExpr ExprId Location
+data Expr = Expr SimpleExpr ExprId Type Location
 
 instance Show Expr where
-  show (Expr e _ _) = show e
+  show (Expr e _ _ _) = show e
 
 data SimpleExpr = StaticFunctionCall FullyQualifiedName [Expr]
         | DynamicFunctionCall Expr [Expr]

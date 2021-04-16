@@ -1,0 +1,29 @@
+module Siko.Typechecker.Lowering.TypedHIR.Class where
+
+import Siko.Typechecker.Lowering.TypedHIR.Program as LP
+import Siko.Typechecker.Lowering.TypedHIR.Type as LT
+import Siko.HIR.Class as HC
+import Siko.TypedHIR.Class as THC
+
+lowerClass :: HC.Class -> THC.Class
+lowerClass hir_class =
+    THC.Class {
+        name = LP.lowerFullyQualifiedName hir_class.name,
+        location = hir_class.location,
+        arg_type = LT.lowerType hir_class.arg_type,
+        dependencies = List.map hir_class.dependencies LP.lowerFullyQualifiedName,
+        members = List.map hir_class.members LP.lowerFullyQualifiedName,
+     }
+
+lowerInstanceId :: HC.InstanceId -> THC.InstanceId
+lowerInstanceId (HC.InstanceId i) = THC.InstanceId i
+
+lowerInstance :: HC.Instance -> THC.Instance
+lowerInstance hir_instance =
+    THC.Instance {
+        location = hir_instance.location,
+        id = lowerInstanceId hir_instance.id,
+        class_name = LP.lowerFullyQualifiedName hir_instance.class_name,
+        type = LT.lowerType hir_instance.type,
+        members = List.map hir_instance.members LP.lowerFullyQualifiedName,
+     }
