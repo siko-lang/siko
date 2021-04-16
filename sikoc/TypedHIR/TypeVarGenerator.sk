@@ -1,0 +1,18 @@
+module Siko.TypedHIR.TypeVarGenerator where
+
+import Siko.TypedHIR.Type
+
+data TypeVarGenerator = { next_type_id :: Int }
+
+createTypeVarGenerator = TypeVarGenerator 0
+
+getNewTypeVar :: TypeVarGenerator -> (TypeVarGenerator, TypeVar)
+getNewTypeVar gen = do
+    id <- gen.next_type_id
+    gen <- gen { next_type_id = id + 1 }
+    (gen, TypeVar id)
+
+getNewTypeVarType :: TypeVarGenerator -> (TypeVarGenerator, Type)
+getNewTypeVarType gen = do
+    (gen, var) <- getNewTypeVar gen
+    (gen, Var var [])

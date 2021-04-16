@@ -47,12 +47,6 @@ processExpr :: Context -> E.Expr -> (Context, E.Expr)
 processExpr context expr = do
     E.Expr s_expr type id <- expr
     case s_expr of
-        E.Do items -> do
-            last_index <- getLength items - 1
-            last_expr <- atIndex items last_index
-            (context, converter_expr) <- packExpr context last_expr E.NormalConverter
-            items <- write items last_index converter_expr
-            (context, E.Expr (E.Do items) type id)
         E.VarRef v -> if Set.contains context.not_moves id
             then packExpr context expr E.BorrowerConverter
             else packExpr context expr E.NormalConverter
@@ -89,6 +83,11 @@ processExpr context expr = do
             continues <- List.map continues (\id -> Option.unwrap (get context.continues id))
             breaks <- List.map breaks (\id -> Option.unwrap (get context.breaks id))
             (context, E.Expr (E.Loop v initializer body continues breaks) type id)
+        E.CaseOf body cases -> do
+            (context, cases) <- List.mapS context cases (\context, c -> do
+                (context, new_body) <- packExpr context c.body E.NormalConverter
+                (context, c { body = new_body}))
+            (context, E.Expr (E.CaseOf body cases) type id)
         _ -> (context, expr)
 
 processFunction :: Config -> P.Identity -> F.Function -> (P.Identity, F.Function)

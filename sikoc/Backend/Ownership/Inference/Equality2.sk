@@ -31,7 +31,8 @@ data Context = { vars :: Map2 E.Var T.Type,
                  program :: P.Program,
                  graph :: Dot.Graph,
                  expr_node_ids :: Map2 E.ExprId Dot.NodeId,
-                 var_node_ids :: Map2 E.Var Dot.NodeId, }
+                 var_node_ids :: Map2 E.Var Dot.NodeId,
+                 return_node_id :: Dot.NodeId }
 
 addVar :: Context -> E.Var -> T.Type -> Context
 addVar context var type = do
@@ -88,6 +89,12 @@ addEdge context name from to = do
     from <- Option.unwrap (Map2.get context.expr_node_ids from)
     to <- Option.unwrap (Map2.get context.expr_node_ids to)
     graph <- Dot.addEdge context.graph (Some name) from to
+    context { graph = graph }
+
+addReturnEdge :: Context -> String -> E.ExprId -> Context
+addReturnEdge context name from  = do
+    from <- Option.unwrap (Map2.get context.expr_node_ids from)
+    graph <- Dot.addEdge context.graph (Some name) from context.return_node_id
     context { graph = graph }
 
 addVarEdge :: Context -> String -> E.ExprId -> E.Var -> Bool -> Context
@@ -170,6 +177,8 @@ processExpr context expr = do
         E.Return arg -> do
             (context, arg) <- processExpr context arg
             E.Expr arg_s_expr arg_type arg_id <- arg
+            context <- addReturnEdge context "explicit_return" arg_id
+            context <- addEdge context "<return>" id arg_id
             arg <- E.Expr arg_s_expr context.return_type arg_id
             (context, E.Expr (E.Return arg) type id)
         E.Continue arg -> do
@@ -188,15 +197,21 @@ processExpr context expr = do
         E.Loop v initializer body continues breaks -> do
             context <- addVarNode context v
             (context, initializer) <- processExpr context initializer
-            E.Expr _ initializer_type _ <- initializer
+            E.Expr _ initializer_type initializer_id <- initializer
+            context <- addEdge context "loop_initializer" id initializer_id
+            context <- addVarEdge context "loop_var" initializer_id v False
             context <- addVar context v initializer_type
             (orig_continue_type, orig_break_type) <- (context.continue_type, context.break_type)
             context <- context { continue_type = Some initializer_type, break_type = Some type }
             (context, body) <- processExpr context body
+            E.Expr _ _ loop_body_id <- body
+            context <- addEdge context "loop_body" id loop_body_id
+            context <- addVarEdge context "loop_var" loop_body_id v False
             context <- context { continue_type = orig_continue_type, break_type = orig_break_type }
             (context, E.Expr (E.Loop v initializer body continues breaks) type id)
         E.CaseOf body cases -> do
             (context, body) <- processExpr context body
+            E.Expr _ _ case_of_body_id <- body
             (context, cases) <- List.mapS context cases (\context, c -> do
                 context <- case c.checker of
                     E.VariantChecker index v variant_type -> do
@@ -210,11 +225,13 @@ processExpr context expr = do
                                 _ -> panic "VariantChecker's inner type is not record nor adt"
                             _ -> panic "VariantChecker's type is not Var"
                         context <- addVarNode context v
+                        context <- addVarEdge context "<case>" case_of_body_id v False
                         context <- addVar context v var_type
                         context
                     _ -> context
                 (context, c_body) <- processExpr context c.body
                 E.Expr c_s_expr _ c_id <- c.body
+                context <- addEdge context "case_of_body" case_of_body_id id
                 context <- addEdge context "case" c_id id
                 c_body <- E.Expr c_s_expr type c_id
                 c <- c { body = c_body }
@@ -237,9 +254,12 @@ processArg context index type = do
     addVar context (E.Arg index) type
 
 createContext :: P.Program -> T.Type -> String -> Context
-createContext program return_type graph_name = Context
+createContext program return_type graph_name = do
+    graph <- Dot.createGraph graph_name
+    (graph, return_node_id) <- Dot.addNode graph "function_return"
+    Context
             Map2.empty return_type None None
-            program (Dot.createGraph graph_name) Map2.empty Map2.empty
+            program  graph Map2.empty Map2.empty return_node_id
 
 processBody :: Common.GlobalContext -> Init.Context -> F.FunctionType -> P.Identity -> E.Expr -> E.Expr
 processBody global_context init_context function_type function_id body = do
@@ -248,6 +268,8 @@ processBody global_context init_context function_type function_id body = do
     context <- List.foldE processArg context function_type.args
     (_, body) <- IF.addOwnershipVarsToBody init_context body
     (context, body) <- processExpr context body
-    //s <- Dot.generateDot context.graph
-    //writeTextFile ("dots/equality_graph_{}.dot" % function_id) s
+    E.Expr _ _ body_id <- body
+    context <- addReturnEdge context "implicit_return" body_id
+    s <- Dot.generateDot context.graph
+    writeTextFile ("dots/equality_graph_{}.dot" % function_id) s
     body

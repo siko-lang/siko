@@ -1,0 +1,41 @@
+module Siko.TypedHIR.Function where
+
+import Siko.TypedHIR.Type
+import Siko.TypedHIR.Expr
+import Siko.TypedHIR.Program
+import Siko.TypedHIR.Class
+import Siko.Syntax.Location
+
+data LambdaId = LambdaId Int deriving (Show, PartialEq, Eq, PartialOrd, Ord)
+
+data FunctionKind = Normal
+                    | ClassMember FullyQualifiedName
+                    | InstanceMember InstanceId
+                    | Lambda LambdaId
+                    deriving (Show)
+
+isNormal kind = case kind of
+    Normal -> True
+    _ -> False
+
+data Function = { location :: Location,
+                  name :: FullyQualifiedName,
+                  arg_count :: Int,
+                  kind :: FunctionKind,
+                  type :: Option Type,
+                  full_type :: Option Type,
+                  body :: Option Expr,
+                }
+
+data LambdaInfo = { id :: LambdaId,
+                    arg_count :: Int,
+                    host :: FullyQualifiedName,
+                    body :: Expr
+                  } deriving (Show)
+
+instance Show Function where
+    show f = do
+        ty <- case f.type of
+            Some t -> toString t
+            None -> "<unknown>"
+        "{} - {} :: {}" % (f.name, ty, f.body)
