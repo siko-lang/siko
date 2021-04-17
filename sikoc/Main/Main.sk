@@ -9,6 +9,7 @@ import Siko.Diagnostics
 import Siko.Syntax.Location
 import Siko.Syntax.SourceFile
 import Siko.Backend as B
+import Siko.HIRBackend.Backend as HB
 import Siko.Config
 import Siko.Trace
 import Siko.FileManager
@@ -55,6 +56,8 @@ main = do
     trace config "Typechecking.."
     case TC.processProgram config hir_program var_gen of
         Ok (typed_hir_program, mir_program) -> do
+            trace config "HIR processing"
+            typed_hir_program <- HB.processProgram config typed_hir_program
             trace config "Optimizing.."
             lir_program <- B.processProgram config mir_program
             trace config "Transpiling.."

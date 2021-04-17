@@ -197,3 +197,19 @@ getInstance program instance_id = do
     case get program.instances instance_id of
         Some i -> i
         None -> panic "Instance not found {}" % instance_id
+
+dumpItem :: Item -> String
+dumpItem item = case item of
+    Function f -> "function"
+    Adt adt -> "adt"
+    Record record -> "record"
+    Class c -> "class"
+    Variant _ -> ""
+    Module _ -> ""
+
+dump :: Program -> String
+dump program = do
+    s <- ""
+    s <- program.items |> Map.iter |> Iterator.fold (\s, (id, item) -> do
+        s + dumpItem item + "\n\n") s
+    s
