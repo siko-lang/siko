@@ -16,6 +16,7 @@ import Siko.Typechecker.TypeIsomorphism
 import Siko.Typechecker.Function
 import Siko.Typechecker.Lowering as L
 import Siko.Typechecker.Lowering.TypeStore as LTS
+import Siko.Typechecker.Lowering.TypedHIR.Program as THP
 import Siko.Util.DependencyProcessor
 import Siko.HIR.Program as P
 import Siko.HIR.Function as F
@@ -160,6 +161,7 @@ processProgram config program var_gen = do
     //FS.dump function_store
     if isEmpty state.errors
         then do
+            typed_program <- THP.lowerProgram program
             mir_program <- L.lowerProgram config state program function_store lowering_type_store
             Ok mir_program
         else Err state.errors

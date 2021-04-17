@@ -1,9 +1,12 @@
 module Siko.Typechecker.Lowering.TypedHIR.Program where
 
 import Siko.Typechecker.Lowering.TypedHIR.Class as LC
+import Siko.Typechecker.Lowering.TypedHIR.Data as LD
 import Siko.Typechecker.Lowering.TypedHIR.Function as LF
 import Siko.HIR.Program as HP
 import Siko.TypedHIR.Program as THP
+
+import Map
 
 lowerFullyQualifiedName :: HP.FullyQualifiedName -> THP.FullyQualifiedName
 lowerFullyQualifiedName hir_qn = case hir_qn of
@@ -13,3 +16,18 @@ lowerFullyQualifiedName hir_qn = case hir_qn of
     HP.FullPathWithInstanceId mod name instance_id -> THP.FullPathWithInstanceId mod name (LC.lowerInstanceId instance_id)
     HP.ModulePath mod -> THP.ModulePath mod
     HP.SubItem qn name -> THP.SubItem (lowerFullyQualifiedName qn) name
+
+lowerItem :: HP.Item -> THP.Item
+lowerItem hir_item = case hir_item of
+    HP.Function function -> THP.Function (LF.lowerFunction function)
+    HP.Adt adt -> THP.Adt (LD.lowerAlgebraicDataType adt)
+    HP.Record record -> THP.Record (LD.lowerRecord record)
+    HP.Class c -> THP.Class (LC.lowerClass c)
+    HP.Variant variant_info -> THP.Variant (LD.lowerVariantInfo variant_info)
+    HP.Module location -> THP.Module location
+
+lowerProgram :: HP.Program -> THP.Program
+lowerProgram hir_program = do
+    items <- Map.map hir_program.items (\(qn, item) -> (lowerFullyQualifiedName qn, lowerItem item))
+    instances <- Map.map hir_program.instances (\(id, i) -> (LC.lowerInstanceId id, LC.lowerInstance i))
+    THP.Program items instances

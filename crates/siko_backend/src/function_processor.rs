@@ -17,6 +17,23 @@ use siko_mir::function::FunctionInfo as MirFunctionInfo;
 use siko_mir::program::Program as MirProgram;
 use std::collections::BTreeMap;
 
+#[allow(unused)]
+fn resolve_class_id_string(class_id: siko_ir::class::ClassId, ir_program: &IrProgram) -> &str {
+    if class_id == ir_program.get_ord_class_id() {
+        return "Ord";
+    } else if class_id == ir_program.get_eq_class_id() {
+        return "Eq";
+    } else if class_id == ir_program.get_partialeq_class_id() {
+        return "PartialEq";
+    } else if class_id == ir_program.get_show_class_id() {
+        return "Show";
+    } else if class_id == ir_program.get_partialord_class_id() {
+        return "PartialOrd";
+    } else {
+        return "<Unknown>";
+    }
+}
+
 pub fn process_function(
     ir_function_id: &IrFunctionId,
     mir_function_id: MirFunctionId,
@@ -70,9 +87,10 @@ pub fn process_function(
                     };
                     /*
                     println!(
-                        "{} {} {}",
+                        "{} {} {}.{}",
                         function.info,
-                        constraint.class_id,
+                        resolve_class_id_string(constraint.class_id, ir_program),
+                        module_name,
                         constraint.ty.get_resolved_type_string(ir_program)
                     );
                     */

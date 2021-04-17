@@ -15,7 +15,7 @@ processPatterns context pattern_fn expr_fn args =
 
 traversePattern a :: a -> (a -> P.Pattern -> a) -> (a -> E.Expr -> a) -> P.Pattern -> a
 traversePattern context pattern_fn expr_fn pattern = do
-    (P.Pattern p _ _) <- pattern
+    (P.Pattern p _ _ _) <- pattern
     context <- case p of
         P.Binding _ -> context
         P.Tuple args -> processPatterns context pattern_fn expr_fn args
@@ -65,7 +65,7 @@ traverse context expr_fn pattern_fn expr = do
         E.FieldAccess _ receiver -> traverse context expr_fn pattern_fn receiver
         E.TupleFieldAccess _ receiver -> traverse context expr_fn pattern_fn receiver
         E.Formatter _ args -> processExprs context expr_fn pattern_fn args
-        E.CaseOf body cases _ -> do
+        E.CaseOf body cases -> do
             context <- traverse context expr_fn pattern_fn body
             context <- cases |> List.iter |> Iterator.fold (\context, c -> do
                 context <- traversePattern context pattern_fn expr_fn c.pattern

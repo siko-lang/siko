@@ -1,10 +1,66 @@
 module Siko.Typechecker.Lowering.TypedHIR.Expr where
 
 import Siko.Typechecker.Lowering.TypedHIR.Program as LP
+import Siko.Typechecker.Lowering.TypedHIR.Pattern as LPat
 import Siko.Typechecker.Lowering.TypedHIR.Type as LT
 import Siko.Typechecker.Lowering.TypedHIR.Class as LC
 import Siko.HIR.Expr as HE
 import Siko.TypedHIR.Expr as THE
+import Siko.TypedHIR.Type as THT
+
+lowerCase :: HE.Case -> THE.Case
+lowerCase hir_case =
+    THE.Case {
+        pattern = LPat.lowerPattern hir_case.pattern,
+        body = lowerExpr hir_case.body
+     }
+
+lowerExprRef :: HE.ExprRef -> THE.ExprRef
+lowerExprRef hir_expr_ref =
+    THE.ExprRef {
+        source = lowerExprId hir_expr_ref.source,
+        location = hir_expr_ref.location
+     }
+
+lowerRecordConstructionItem :: HE.RecordConstructionItem -> THE.RecordConstructionItem
+lowerRecordConstructionItem hir_rc_item =
+    THE.RecordConstructionItem {
+        field_name = hir_rc_item.field_name,
+        body = lowerExpr hir_rc_item.body
+     }
+
+lowerExprId :: HE.ExprId -> THE.ExprId
+lowerExprId (HE.ExprId i) = THE.ExprId i
 
 lowerExpr :: HE.Expr -> THE.Expr
-lowerExpr _ = unreachable
+lowerExpr (HE.Expr s_expr id location) = THE.Expr (lowerSimpleExpr s_expr) (lowerExprId id) (THT.Tuple []) location
+
+lowerSimpleExpr :: HE.SimpleExpr -> THE.SimpleExpr
+lowerSimpleExpr hir_simple_expr = case hir_simple_expr of
+    HE.StaticFunctionCall qn args -> THE.StaticFunctionCall (LP.lowerFullyQualifiedName qn) (List.map args lowerExpr)
+    HE.DynamicFunctionCall receiver args -> THE.DynamicFunctionCall (lowerExpr receiver) (List.map args lowerExpr)
+    HE.ClassMemberCall qn args -> THE.ClassMemberCall (LP.lowerFullyQualifiedName qn) (List.map args lowerExpr)
+    HE.VariantConstructorCall qn args -> THE.VariantConstructorCall (LP.lowerFullyQualifiedName qn) (List.map args lowerExpr)
+    HE.RecordConstructorCall qn args -> THE.RecordConstructorCall (LP.lowerFullyQualifiedName qn) (List.map args lowerExpr)
+    HE.If cond true_branch false_branch -> THE.If (lowerExpr cond) (lowerExpr true_branch) (lowerExpr false_branch)
+    HE.Tuple args -> THE.Tuple (List.map args lowerExpr)
+    HE.List args -> THE.List (List.map args lowerExpr)
+    HE.IntegerLiteral lit -> THE.IntegerLiteral lit
+    HE.FloatLiteral lit -> THE.FloatLiteral lit
+    HE.StringLiteral lit -> THE.StringLiteral lit
+    HE.CharLiteral lit -> THE.CharLiteral lit
+    HE.Do items -> THE.Do (List.map items lowerExpr)
+    HE.Bind pattern rhs -> THE.Bind (LPat.lowerPattern pattern) (lowerExpr rhs)
+    HE.FieldAccess name receiver -> THE.FieldAccess name (lowerExpr receiver)
+    HE.TupleFieldAccess index receiver -> THE.TupleFieldAccess index (lowerExpr receiver)
+    HE.Formatter fmt args -> THE.Formatter fmt (List.map args lowerExpr)
+    HE.CaseOf body cases bind_group -> THE.CaseOf (lowerExpr body) (List.map cases lowerCase)
+    HE.RecordUpdate ref items -> THE.RecordUpdate (LPat.lowerBindRef ref) (List.map items lowerRecordConstructionItem)
+    HE.Return arg -> THE.Return (lowerExpr arg)
+    HE.Continue arg -> THE.Continue (lowerExpr arg)
+    HE.Break arg -> THE.Break (lowerExpr arg)
+    HE.Loop pattern initializer body continues breaks ->
+        THE.Loop (LPat.lowerPattern pattern) (lowerExpr initializer)
+                 (lowerExpr body) (List.map continues lowerExprRef) (List.map breaks lowerExprRef)
+    HE.ArgRef i -> THE.ArgRef i
+    HE.ValueRef ref -> THE.ValueRef (LPat.lowerBindRef ref)

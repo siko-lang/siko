@@ -1,7 +1,29 @@
 module Siko.Typechecker.Lowering.TypedHIR.Type where
 
+import Siko.Typechecker.Lowering.TypedHIR.Program as LP
 import Siko.HIR.Type as HT
 import Siko.TypedHIR.Type as THT
 
+lowerTypeVar :: HT.TypeVar -> THT.TypeVar
+lowerTypeVar (HT.TypeVar i) = THT.TypeVar i
+
+lowerRowKind :: HT.RowKind -> THT.RowKind
+lowerRowKind hir_row_kind = case hir_row_kind of
+    HT.NamedRow s -> THT.NamedRow s
+    HT.IndexedRow i -> THT.IndexedRow i
+
+lowerConstraint :: HT.Constraint -> THT.Constraint
+lowerConstraint hir_constraint = case hir_constraint of
+    HT.ClassConstraint qn -> THT.ClassConstraint (LP.lowerFullyQualifiedName qn)
+    HT.RowConstraint row_kind type -> THT.RowConstraint (lowerRowKind row_kind) (lowerType type)
+
 lowerType :: HT.Type -> THT.Type
-lowerType hir_type = unreachable
+lowerType hir_type = case hir_type of
+    HT.Var var constraints -> THT.Var (lowerTypeVar var) (List.map constraints lowerConstraint)
+    HT.FixedTypeArg name var constraints -> THT.FixedTypeArg name (lowerTypeVar var) (List.map constraints lowerConstraint)
+    HT.Named qn args -> THT.Named (LP.lowerFullyQualifiedName qn) (List.map args lowerType)
+    HT.Function from to -> THT.Function (lowerType from) (lowerType to)
+    HT.Never var -> THT.Never (lowerTypeVar var)
+    HT.Ref arg -> THT.Ref (lowerType arg)
+    HT.Owner arg -> THT.Owner (lowerType arg)
+    HT.Tuple args -> THT.Tuple (List.map args lowerType)
