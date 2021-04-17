@@ -18,20 +18,21 @@ lowerRangeKind hir_range_kind = case hir_range_kind of
 lowerPatternId :: HP.PatternId -> THP.PatternId
 lowerPatternId (HP.PatternId i) = THP.PatternId i
 
-lowerPattern :: HP.Pattern -> THP.Pattern
-lowerPattern (HP.Pattern s_pattern id location) =
-    THP.Pattern (lowerSimplePattern s_pattern) (lowerPatternId id) (THT.Tuple []) location
+lowerPattern a :: (LE.TypeProvider a) => a -> HP.Pattern -> THP.Pattern
+lowerPattern type_provider (HP.Pattern s_pattern id location) = do
+    hir_type <- LE.getPatternType type_provider id
+    THP.Pattern (lowerSimplePattern type_provider s_pattern) (lowerPatternId id) (THT.Tuple []) location
 
-lowerSimplePattern :: HP.SimplePattern -> THP.SimplePattern
-lowerSimplePattern hir_simple_pattern = case hir_simple_pattern of
+lowerSimplePattern a :: (LE.TypeProvider a) => a -> HP.SimplePattern -> THP.SimplePattern
+lowerSimplePattern type_provider hir_simple_pattern = case hir_simple_pattern of
     HP.Binding ref -> THP.Binding (lowerBindRef ref)
-    HP.Tuple args -> THP.Tuple (List.map args lowerPattern)
-    HP.Guarded arg expr -> THP.Guarded (lowerPattern arg) (LE.lowerExpr expr)
+    HP.Tuple args -> THP.Tuple (List.map args (lowerPattern type_provider))
+    HP.Guarded arg expr -> THP.Guarded (lowerPattern type_provider arg) (LE.lowerExpr type_provider expr)
     HP.Wildcard -> THP.Wildcard
     HP.IntegerLiteral lit -> THP.IntegerLiteral lit
     HP.StringLiteral lit -> THP.StringLiteral lit
     HP.CharLiteral lit -> THP.CharLiteral lit
     HP.CharRange c1 c2 kind -> THP.CharRange c1 c2 (lowerRangeKind kind)
-    HP.Typed arg type -> THP.Typed (lowerPattern arg) (LT.lowerType type)
-    HP.Record qn args -> THP.Record (LP.lowerFullyQualifiedName qn) (List.map args lowerPattern)
-    HP.Variant qn index args -> THP.Variant (LP.lowerFullyQualifiedName qn) index (List.map args lowerPattern)
+    HP.Typed arg type -> THP.Typed (lowerPattern type_provider arg) (LT.lowerType type)
+    HP.Record qn args -> THP.Record (LP.lowerFullyQualifiedName qn) (List.map args (lowerPattern type_provider))
+    HP.Variant qn index args -> THP.Variant (LP.lowerFullyQualifiedName qn) index (List.map args (lowerPattern type_provider))

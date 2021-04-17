@@ -54,7 +54,7 @@ main = do
     resolver_errors |> List.iter |> forEach \error -> printResolverError file_manager error
     trace config "Typechecking.."
     case TC.processProgram config hir_program var_gen of
-        Ok mir_program -> do
+        Ok (typed_hir_program, mir_program) -> do
             trace config "Optimizing.."
             lir_program <- B.processProgram config mir_program
             trace config "Transpiling.."

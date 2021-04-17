@@ -16,7 +16,8 @@ import Siko.Typechecker.TypeIsomorphism
 import Siko.Typechecker.Function
 import Siko.Typechecker.Lowering as L
 import Siko.Typechecker.Lowering.TypeStore as LTS
-import Siko.Typechecker.Lowering.TypedHIR.Program as THP
+import Siko.Typechecker.Lowering.TypedHIR.Program as LP
+import Siko.Typechecker.Lowering.TypedHIR.Expr as LE
 import Siko.Util.DependencyProcessor
 import Siko.HIR.Program as P
 import Siko.HIR.Function as F
@@ -25,6 +26,7 @@ import Siko.HIR.Type as T
 import Siko.HIR.TypeVarGenerator
 import Siko.HIR.Expr
 import Siko.MIR.Program as MP
+import Siko.TypedHIR.Program as THP
 import Siko.Constants
 import Siko.Config
 import Siko.Trace
@@ -136,7 +138,11 @@ processGroup state group program function_store lowering_type_store = do
         LTS.addPatternType lowering_type_store id type) lowering_type_store
     (context.state, context.function_store, lowering_type_store)
 
-processProgram :: Config -> P.Program -> TypeVarGenerator -> Result MP.Program [TypecheckerError]
+instance LE.TypeProvider LTS.TypeStore where
+    getExprType type_store expr_id = LTS.getExprType type_store expr_id
+    getPatternType type_store pattern_id = LTS.getPatternType type_store pattern_id
+
+processProgram :: Config -> P.Program -> TypeVarGenerator -> Result (THP.Program, MP.Program) [TypecheckerError]
 processProgram config program var_gen = do
     state <- TypecheckerState [] var_gen CS.initializeEmptyClassStore
              DS.createDataStore IR.createInstanceResolver createChoiceTreeStore config
@@ -161,7 +167,7 @@ processProgram config program var_gen = do
     //FS.dump function_store
     if isEmpty state.errors
         then do
-            typed_program <- THP.lowerProgram program
+            typed_program <- LP.lowerProgram lowering_type_store program
             mir_program <- L.lowerProgram config state program function_store lowering_type_store
-            Ok mir_program
+            Ok (typed_program, mir_program)
         else Err state.errors

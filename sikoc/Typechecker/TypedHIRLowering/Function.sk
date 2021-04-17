@@ -17,8 +17,8 @@ lowerFunctionKind hir_function_kind = case hir_function_kind of
     HF.InstanceMember instance_id -> THF.InstanceMember (LC.lowerInstanceId instance_id)
     HF.Lambda lambda_id -> THF.Lambda (lowerLambdaId lambda_id)
 
-lowerFunction :: HF.Function -> THF.Function
-lowerFunction hir_function =
+lowerFunction a :: (LE.TypeProvider a) => a -> HF.Function -> THF.Function
+lowerFunction type_provider hir_function =
     THF.Function {
         location = hir_function.location,
         name = LP.lowerFullyQualifiedName hir_function.name,
@@ -33,15 +33,15 @@ lowerFunction hir_function =
             None -> None
         ,
         body = case hir_function.body of
-            Some body -> Some (LE.lowerExpr body)
+            Some body -> Some (LE.lowerExpr type_provider body)
             None -> None
      }
 
-lowerLambdaInfo :: HF.LambdaInfo -> THF.LambdaInfo
-lowerLambdaInfo hir_lamdba_info =
+lowerLambdaInfo a :: (LE.TypeProvider a) => a -> HF.LambdaInfo -> THF.LambdaInfo
+lowerLambdaInfo type_provider hir_lamdba_info =
     THF.LambdaInfo {
         id = lowerLambdaId hir_lamdba_info.id,
         arg_count = hir_lamdba_info.arg_count,
         host = LP.lowerFullyQualifiedName hir_lamdba_info.host,
-        body = LE.lowerExpr hir_lamdba_info.body,
+        body = LE.lowerExpr type_provider hir_lamdba_info.body,
      }
