@@ -21,6 +21,12 @@ import Siko.Resolver.Type
 import Siko.Resolver.Environment
 import Map
 
+data LambdaInfo = { id :: HF.LambdaId,
+                    arg_count :: Int,
+                    host :: HP.FullyQualifiedName,
+                    body :: HE.Expr ()
+                  } deriving (Show)
+
 data FunctionInfo = {
                         signatures :: [SF.FunctionSignature],
                         functions :: [SF.Function],
@@ -66,7 +72,7 @@ processFunctionSignature state module_resolver type_resolver signature = do
     (state, type_args) <- processTypeArgs state type_resolver signature.type_arguments True
     (state, type_resolver, type)
 
-processLambdas :: [HF.LambdaInfo ()] -> HP.FullyQualifiedName -> [HF.Function ()]
+processLambdas :: [LambdaInfo] -> HP.FullyQualifiedName -> [HF.Function ()]
 processLambdas lambdas qn =
     lambdas |> List.iter
             |> Iterator.map (\lambda -> do

@@ -38,7 +38,7 @@ data Context = {
                     program :: HPO.Program (),
                     next_lambda_id :: Int,
                     lambda_helper :: Option LambdaHelper,
-                    lambdas :: [HF.LambdaInfo ()],
+                    lambdas :: [F.LambdaInfo],
                     loop_helper :: Option LoopHelper,
                     function_scope_resolver :: F.FunctionScopeResolver
                }
@@ -400,7 +400,7 @@ processExpr context env (SE.Expr expr location) = do
                         ) (context, [])
             total_arg_count <- getLength args + getLength arg_patterns
             (context, final_lambda_body) <- shiftLambdaArgs context final_lambda_body (getLength args) (getLength arg_patterns)
-            lambda <- HF.LambdaInfo lambda_id total_arg_count context.function_name final_lambda_body
+            lambda <- F.LambdaInfo lambda_id total_arg_count context.function_name final_lambda_body
             lambdas <- context.lambdas + [lambda]
             context <- context { lambdas = lambdas }
             (context, env, HE.StaticFunctionCall lambda_name args)
