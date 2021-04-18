@@ -14,7 +14,7 @@ import Siko.Util.DependencyProcessor
 import Siko.Config
 import Map
 
-processFunction :: TypecheckerState -> F.Function -> P.Program -> (TypecheckerState, FunctionTypeInfo)
+processFunction :: TypecheckerState -> F.Function () -> P.Program () -> (TypecheckerState, FunctionTypeInfo)
 processFunction state f program = do
     (state, ty, defined) <- case f.type of
         Some ty -> do
@@ -36,7 +36,7 @@ processFunction state f program = do
     func_type_info <- FunctionTypeInfo f.name args ty result_ty defined
     (state, func_type_info)
 
-processFunctions :: Config -> TypecheckerState -> P.Program -> (TypecheckerState, FunctionStore, [DependencyGroup P.FullyQualifiedName])
+processFunctions :: Config -> TypecheckerState -> P.Program () -> (TypecheckerState, FunctionStore, [DependencyGroup P.FullyQualifiedName])
 processFunctions config state program = do
     functions <- P.getFunctions program
     (state, function_store) <- functions |> List.iter |> Iterator.fold (\(state, function_store), f -> do

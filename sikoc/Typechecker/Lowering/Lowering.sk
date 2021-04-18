@@ -28,7 +28,7 @@ import List2
 
 data Key = { module_name :: String, name :: String } deriving (PartialEq, Eq, PartialOrd, Ord)
 
-data Context = { hir_program :: HP.Program,
+data Context = { hir_program :: HP.Program (),
                  mir_program :: MP.Program,
                  function_store :: FunctionStore,
                  type_store :: TypeStore,
@@ -222,7 +222,7 @@ generateExternalImpls context = do
                 context) context
         ) context
 
-lowerProgram :: Config -> TypecheckerState -> HP.Program -> FunctionStore -> TypeStore -> MP.Program
+lowerProgram :: Config -> TypecheckerState -> HP.Program () -> FunctionStore -> TypeStore -> MP.Program
 lowerProgram config state hir_program function_store type_store = do
     trace config "Lowering to MIR.."
     main_qn <- HP.FullPath getMainModuleName getMainFunctionName

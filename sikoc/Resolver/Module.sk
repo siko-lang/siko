@@ -15,15 +15,15 @@ import Siko.Resolver
 import Siko.HIR.Program as HP
 import Map
 
-getModules :: [SourceFile] -> ResolverState -> HP.Program -> (ResolverState, HP.Program, Map String M.Module)
+getModules :: [SourceFile] -> ResolverState -> HP.Program () -> (ResolverState, HP.Program (), Map String M.Module)
 getModules source_files state hir_program =
         List.fold (state, hir_program, empty) source_files getModulesForSourceFile
             where
-                getModulesForSourceFile :: (ResolverState, HP.Program, Map String M.Module) -> SourceFile -> (ResolverState, HP.Program, Map String M.Module)
+                getModulesForSourceFile :: (ResolverState, HP.Program (), Map String M.Module) -> SourceFile -> (ResolverState, HP.Program (), Map String M.Module)
                 getModulesForSourceFile (state, hir_program, modules) source_file =
                     List.fold (state, hir_program, modules) source_file.modules getModule
 
-                getModule :: (ResolverState, HP.Program, Map String M.Module) -> M.Module -> (ResolverState, HP.Program, Map String M.Module)
+                getModule :: (ResolverState, HP.Program (), Map String M.Module) -> M.Module -> (ResolverState, HP.Program (), Map String M.Module)
                 getModule (state, hir_program, modules) mod = do
                     (Ident name location) <- mod.name
                     (modules, _) <- insert modules (getString mod.name) mod
@@ -92,7 +92,7 @@ createModuleResolver module_name items = do
     module_resolver <- ModuleResolver module_name empty empty
     List.fold module_resolver items addImportedItem
 
-processExportsImports :: [SourceFile] -> ResolverState -> HP.Program -> (ResolverState, HP.Program, Map String (M.Module, ModuleResolver))
+processExportsImports :: [SourceFile] -> ResolverState -> HP.Program () -> (ResolverState, HP.Program (), Map String (M.Module, ModuleResolver))
 processExportsImports source_files state hir_program = do
     (state, hir_program, modules) <- getModules source_files state hir_program
     local_items <- processLocals modules

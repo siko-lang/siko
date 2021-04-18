@@ -31,7 +31,7 @@ addMemberInfo class_type_info name type has_default_impl = do
     (members, _) <- Map.insert class_type_info.members name (ClassMemberInfo type has_default_impl)
     class_type_info { members = members }
 
-processClass :: TypecheckerState -> C.Class -> P.Program -> ClassDependencyMap -> (TypecheckerState, ClassTypeInfo, ClassDependencyMap)
+processClass :: TypecheckerState -> C.Class -> P.Program () -> ClassDependencyMap -> (TypecheckerState, ClassTypeInfo, ClassDependencyMap)
 processClass state c program class_dependency_map = do
     (direct_dependencies, _) <- insert class_dependency_map.direct_dependencies c.name c.dependencies
     class_dependency_map <- class_dependency_map { direct_dependencies = direct_dependencies }
@@ -63,7 +63,7 @@ isSpecializedType type = case type of
     T.Tuple args -> args |> List.iter |> Iterator.fold (\specialized, arg -> specialized || not (isVar arg)) False
     _ -> True
 
-processInstance :: TypecheckerState -> C.Instance -> P.Program -> (TypecheckerState, [(P.FullyQualifiedName, T.Type)])
+processInstance :: TypecheckerState -> C.Instance -> P.Program () -> (TypecheckerState, [(P.FullyQualifiedName, T.Type)])
 processInstance state i program = do
     if isSpecializedType i.type
         then do
@@ -134,7 +134,7 @@ processInstance state i program = do
         None -> (state, [])
     (state, inferred_types)
 
-processClassesAndInstances :: Config -> TypecheckerState -> P.Program -> (TypecheckerState, P.Program)
+processClassesAndInstances :: Config -> TypecheckerState -> P.Program () -> (TypecheckerState, P.Program ())
 processClassesAndInstances config state program = do
     classes <- P.getClasses program
     class_dependency_map <- ClassDependencyMap empty

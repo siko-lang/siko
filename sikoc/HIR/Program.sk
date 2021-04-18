@@ -51,7 +51,7 @@ getModuleName f = case f of
         ModulePath m -> m
         SubItem p n -> getModuleName p
 
-data Item = Function F.Function
+data Item a = Function (F.Function a)
             | Adt D.AlgebraicDataType
             | Record D.Record
             | Class C.Class
@@ -59,18 +59,17 @@ data Item = Function F.Function
             | Module Location // dummy item, just for detecting name conflicts
             deriving (Show)
 
-data Program = {
-                  items :: Map FullyQualifiedName Item,
-                  instances :: Map C.InstanceId C.Instance,
-               } deriving (Show)
+data Program a = { items :: Map FullyQualifiedName (Item a),
+                   instances :: Map C.InstanceId C.Instance,
+                 } deriving (Show)
 
-addInstance :: Program -> C.Instance -> Program
+addInstance a :: Program a -> C.Instance -> Program a
 addInstance program i = do
     (instances, _) <- insert program.instances i.id i
     program <- program { instances = instances }
     program
 
-addItem :: Program -> FullyQualifiedName -> Item -> (Program, Option Location)
+addItem a :: Program a -> FullyQualifiedName -> Item a -> (Program a, Option Location)
 addItem program name item = do
     (items, old) <- insert program.items name item
     program <- program { items = items }
@@ -79,7 +78,7 @@ addItem program name item = do
         None -> None
     (program, location)
 
-getLocation :: Item -> Location
+getLocation a :: Item a -> Location
 getLocation item = case item of
     Function f -> f.location
     Adt adt -> adt.location
@@ -88,68 +87,68 @@ getLocation item = case item of
     Variant (D.VariantInfo _ _ location) -> location
     Module location -> location
 
-getItem :: Program -> FullyQualifiedName -> Item
+getItem a :: Program a -> FullyQualifiedName -> Item a
 getItem program name = case get program.items name of
     Some i -> i
     None -> panic "No item found {}" % name
 
-getFunction :: Program -> FullyQualifiedName -> F.Function
+getFunction a :: Program a -> FullyQualifiedName -> F.Function a
 getFunction program name =
     case get program.items name of
         Some (Function f) -> f
         _ -> panic "Function {} not found" % name
 
-getFunctionOpt :: Program -> FullyQualifiedName -> Option F.Function
+getFunctionOpt a :: Program a -> FullyQualifiedName -> Option (F.Function a)
 getFunctionOpt program name =
     case get program.items name of
         Some (Function f) -> Some f
         _ -> None
 
-getAdt :: Program -> FullyQualifiedName -> D.AlgebraicDataType
+getAdt a :: Program a -> FullyQualifiedName -> D.AlgebraicDataType
 getAdt program name =
     case get program.items name of
         Some (Adt adt) -> adt
         _ -> panic "Adt {} not found" % name
 
-getAdtOpt :: Program -> FullyQualifiedName -> Option D.AlgebraicDataType
+getAdtOpt a :: Program a -> FullyQualifiedName -> Option D.AlgebraicDataType
 getAdtOpt program name =
     case get program.items name of
         Some (Adt adt) -> Some adt
         _ -> None
 
-getVariant :: Program -> FullyQualifiedName -> Int -> D.Variant
+getVariant a :: Program a -> FullyQualifiedName -> Int -> D.Variant
 getVariant program name index =
     case get program.items name of
         Some (Adt adt) -> do
             atIndex adt.variants index
         _ -> panic "No adt found {}" % name
 
-getVariantInfo :: Program -> FullyQualifiedName -> D.VariantInfo
+getVariantInfo a :: Program a -> FullyQualifiedName -> D.VariantInfo
 getVariantInfo program name =
     case get program.items name of
         Some (Variant info) -> info
         _ -> panic "No adt info found {}" % name
 
-getVariantCtor :: Program -> FullyQualifiedName -> Int -> T.Type
+getVariantCtor a :: Program a -> FullyQualifiedName -> Int -> T.Type
 getVariantCtor program name index =
     case get program.items name of
         Some (Adt adt) -> do
             atIndex adt.variant_ctors index
         _ -> panic "No adt found {}" % name
 
-getRecord :: Program -> FullyQualifiedName -> D.Record
+getRecord a :: Program a -> FullyQualifiedName -> D.Record
 getRecord program name =
     case get program.items name of
         Some (Record record) -> record
         _ -> panic "No record found {}" % name
 
-getClass :: Program -> FullyQualifiedName -> C.Class
+getClass a :: Program a -> FullyQualifiedName -> C.Class
 getClass program name =
     case get program.items name of
         Some (Class c) -> c
         _ -> panic "No class found {}" % name
 
-getFunctions :: Program -> [F.Function]
+getFunctions a :: Program a -> [F.Function a]
 getFunctions program =
     program.items |> Map.iter |> Iterator.filter (\(qn, item) -> case item of
         Function _ -> True
@@ -157,7 +156,7 @@ getFunctions program =
             Function f -> f
             _ -> panic "Function is not a function") |> toList
 
-getAdts :: Program -> [D.AlgebraicDataType]
+getAdts a :: Program a -> [D.AlgebraicDataType]
 getAdts program =
     program.items |> Map.iter |> Iterator.filter (\(qn, item) -> case item of
         Adt adt -> True
@@ -165,7 +164,7 @@ getAdts program =
             Adt adt -> adt
             _ -> panic "Adt is not an adt") |> toList
 
-getRecords :: Program -> [D.Record]
+getRecords a :: Program a -> [D.Record]
 getRecords program =
     program.items |> Map.iter |> Iterator.filter (\(qn, item) -> case item of
         Record record -> True
@@ -173,7 +172,7 @@ getRecords program =
             Record record -> record
             _ -> panic "Record is not a record") |> toList
 
-getClasses :: Program -> [C.Class]
+getClasses a :: Program a -> [C.Class]
 getClasses program =
     program.items |> Map.iter |> Iterator.filter (\(qn, item) -> case item of
         Class _ -> True
@@ -181,18 +180,18 @@ getClasses program =
             Class c -> c
             _ -> panic "Class is not a Class") |> toList
 
-getInstances :: Program -> [C.Instance]
+getInstances a :: Program a -> [C.Instance]
 getInstances program =
     program.instances |> Map.iter |> Iterator.map (\(id, i) -> i) |> toList
 
-updateInstanceMemberType :: Program -> FullyQualifiedName -> T.Type -> Program
+updateInstanceMemberType a :: Program a -> FullyQualifiedName -> T.Type -> Program a
 updateInstanceMemberType program name type = do
     (items, _) <- alter (\f -> case f of
         Some (Function f) -> Some ( Function (f { type = Some type }))
         _ -> panic "Instance member not found") name program.items
     program { items = items }
 
-getInstance :: Program -> C.InstanceId -> C.Instance
+getInstance a :: Program a -> C.InstanceId -> C.Instance
 getInstance program instance_id = do
     case get program.instances instance_id of
         Some i -> i

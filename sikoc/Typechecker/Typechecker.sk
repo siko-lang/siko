@@ -44,13 +44,13 @@ addError state error = do
     errors <- state.errors + [error]
     state { errors = errors }
 
-initializeFunctionType :: Context -> F.Function -> Context
+initializeFunctionType :: Context -> F.Function () -> Context
 initializeFunctionType context fn = do
     case fn.body of
         Some body -> traverse context (initializeExprType fn.name) initializePatternType body
         None -> context
 
-checkFunctionType :: Context -> F.Function -> Context
+checkFunctionType :: Context -> F.Function () -> Context
 checkFunctionType context fn = do
     //trace context.state.config "Checking function {}" % fn.name
     case fn.body of
@@ -78,7 +78,7 @@ checkFunctionType context fn = do
             context
         None -> context
 
-checkMissingTypes :: Context -> F.Function -> Context
+checkMissingTypes :: Context -> F.Function () -> Context
 checkMissingTypes context fn = do
     //println "Checking missing types {}" % fn.name
     case fn.body of
@@ -89,7 +89,7 @@ checkMissingTypes context fn = do
             context
         None -> context
 
-checkCasePatterns :: Context -> F.Function -> Context
+checkCasePatterns :: Context -> F.Function () -> Context
 checkCasePatterns context fn = do
     case fn.body of
         Some body -> do
@@ -99,7 +99,7 @@ checkCasePatterns context fn = do
 
 processGroup :: TypecheckerState ->
                 DependencyGroup P.FullyQualifiedName ->
-                P.Program ->
+                P.Program () ->
                 FS.FunctionStore ->
                 LTS.TypeStore ->
                 (TypecheckerState, FS.FunctionStore, LTS.TypeStore)
@@ -136,7 +136,7 @@ processGroup state group program function_store lowering_type_store = do
         LTS.addPatternType lowering_type_store id type) lowering_type_store
     (context.state, context.function_store, lowering_type_store)
 
-processProgram :: Config -> P.Program -> TypeVarGenerator -> Result (P.Program, MP.Program) [TypecheckerError]
+processProgram :: Config -> P.Program () -> TypeVarGenerator -> Result (P.Program (), MP.Program) [TypecheckerError]
 processProgram config program var_gen = do
     state <- TypecheckerState [] var_gen CS.initializeEmptyClassStore
              DS.createDataStore IR.createInstanceResolver createChoiceTreeStore config
