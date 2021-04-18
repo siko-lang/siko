@@ -18,64 +18,73 @@ import List2 (List2)
 import Siko.Backend.Traversal
 import Map2 as Map2
 import Map2 (Map2)
+import Siko.Dot as Dot
+import Hack
 
 import Map
 import Set
 
-data Context = { vars :: Map2 E.Var T.Type,
-                 return_type :: T.Type,
-                 continue_type :: Option T.Type,
-                 break_type :: Option T.Type,
-                 program :: P.Program }
+data Context = { program :: P.Program,
+                 graph :: Dot.Graph,
+                 expr_node_ids :: Map2 E.ExprId Dot.NodeId,
+                 var_node_ids :: Map2 E.Var Dot.NodeId,
+                 return_node_id :: Dot.NodeId }
 
-addVar :: Context -> E.Var -> T.Type -> Context
-addVar context var type = do
-    (vars, _) <- Map2.insert context.vars var type
-    context { vars = vars }
+addExprNode :: Context -> E.ExprId -> String -> Context
+addExprNode context expr_id name = do
+    (graph, node_id) <- Dot.addNode context.graph ("{}{}" % (expr_id, name))
+    (expr_node_ids, _) <- Map2.insert context.expr_node_ids expr_id node_id
+    context <- context { graph = graph, expr_node_ids = expr_node_ids }
+    context
 
-getVarType :: Context -> E.Var -> (Context, T.Type) // FIXME, linearity
-getVarType context var = case Map2.get context.vars var of
-    Some t -> (context, t)
-    None -> panic "Var {} not found in equality context" % var
+addVarNode :: Context -> E.Var -> Context
+addVarNode context var = do
+    (graph, node_id) <- Dot.addNode context.graph (show var)
+    (var_node_ids, _) <- Map2.insert context.var_node_ids var node_id
+    context <- context { graph = graph, var_node_ids = var_node_ids }
+    context
 
-getRecordType :: Context -> T.Type -> D.Record
-getRecordType context type = do
-    record_id <- T.getIdentity type
-    record <- P.getRecord context.program record_id
-    ownership_vars <- T.collectOwnershipArgs type
-    sub <- U.batch record.ownership_vars ownership_vars
-    record <- U.apply record sub
-    record
+addEdge :: Context -> String -> E.ExprId -> E.ExprId -> Context
+addEdge context name from to = do
+    from <- Option.unwrap (Map2.get context.expr_node_ids from)
+    to <- Option.unwrap (Map2.get context.expr_node_ids to)
+    graph <- Dot.addEdge context.graph (Some name) from to
+    context { graph = graph }
 
-getAdtType :: Context -> T.Type -> D.AlgebraicDataType
-getAdtType context type = do
-    adt_id <- T.getIdentity type
-    adt <- P.getAdt context.program adt_id
-    ownership_vars <- T.collectOwnershipArgs type
-    sub <- U.batch adt.ownership_vars ownership_vars
-    adt <- U.apply adt sub
-    adt
+addReturnEdge :: Context -> String -> E.ExprId -> Context
+addReturnEdge context name from  = do
+    from <- Option.unwrap (Map2.get context.expr_node_ids from)
+    graph <- Dot.addEdge context.graph (Some name) from context.return_node_id
+    context { graph = graph }
 
-getRecordFieldType :: D.Record -> String -> T.Type
-getRecordFieldType record name =
-    case find record.fields (\f -> f.name == name) of
-        Some f -> do
-            f :: D.RecordField <- f // FIXME
-            f.type
-        None -> panic "No field named {}" % name
+addVarEdge :: Context -> String -> E.ExprId -> E.Var -> Bool -> Context
+addVarEdge context name from to reverse = do
+    from <- Option.unwrap (Map2.get context.expr_node_ids from)
+    to <- case (Map2.get context.var_node_ids to) of
+        Some id -> id
+        None -> panic "Could not find var in varnode ids {}/{}" % (to, name)
+    graph <- if reverse
+             then Dot.addEdge context.graph (Some name) to from
+             else Dot.addEdge context.graph (Some name) from to
+    context { graph = graph }
 
 processExpr :: Context -> E.Expr -> (Context, E.Expr)
 processExpr context expr = do
     E.Expr s_expr type id <- expr
+    context <- addExprNode context id (E.short expr)
     case s_expr of
         E.Do items -> do
             (context, items) <- List.mapS context items processExpr
             index <- getLength items - 1
-            E.Expr _ last_type _ <- List.atIndex items index
-            (context, E.Expr (E.Do items) last_type id)
+            E.Expr _ _ last_id <- List.atIndex items index
+            context <- addEdge context "do" last_id id
+            (context, E.Expr (E.Do items) type id)
         E.Multi _ -> panic "Multi expr in Equality.processExpr"
         E.StaticFunctionCall f_id args -> do
             (context, args) <- List.mapS context args processExpr
+            context <- List.fold context args (\context, arg -> do
+                E.Expr _ _ arg_id <- arg
+                addEdge context "fn_arg" arg_id id)
             // FIXME, TODO
             (context, E.Expr (E.StaticFunctionCall f_id args) type id)
         E.IntegerLiteral i -> (context, E.Expr (E.IntegerLiteral i) type id)
@@ -83,86 +92,77 @@ processExpr context expr = do
         E.FloatLiteral i -> (context, E.Expr (E.FloatLiteral i) type id)
         E.CharLiteral i -> (context, E.Expr (E.CharLiteral i) type id)
         E.VarDecl v rhs -> do
+            context <- addVarNode context v
             (context, rhs) <- processExpr context rhs
-            E.Expr _ rhs_type _ <- rhs
-            context <- addVar context v rhs_type
+            E.Expr _ _ rhs_id <- rhs
+            context <- addVarEdge context "vardef" rhs_id v False
+            context <- addVarEdge context "<def>" id v False
             (context, E.Expr (E.VarDecl v rhs) type id)
         E.VarRef v -> do
-            (context, type) <- getVarType context v
+            context <- addVarEdge context "varref" id v True
             (context, E.Expr (E.VarRef v) type id)
         E.FieldAccess name receiver -> do
             (context, receiver) <- processExpr context receiver
-            E.Expr _ receiver_type _ <- receiver
-            record <- getRecordType context receiver_type
-            field_type <- getRecordFieldType record name
-            (context, E.Expr (E.FieldAccess name receiver) field_type id)
+            E.Expr _ _ receiver_id <- receiver
+            context <- addEdge context "fieldaccess" receiver_id id
+            (context, E.Expr (E.FieldAccess name receiver) type id)
         E.If cond true_branch false_branch -> do
             (context, cond) <- processExpr context cond
+            E.Expr _ _ cond_id <- cond
+            context <- addEdge context "if_cond" cond_id id
             (context, true_branch) <- processExpr context true_branch
             (context, false_branch) <- processExpr context false_branch
-            E.Expr t_s_expr t_type t_id <- true_branch
-            E.Expr f_s_expr f_type f_id <- false_branch
-            true_branch <- E.Expr t_s_expr t_type t_id
-            false_branch <- E.Expr f_s_expr t_type f_id
-            (context, E.Expr (E.If cond true_branch false_branch) t_type id)
+            E.Expr _ _ t_id <- true_branch
+            E.Expr _ _ f_id <- false_branch
+            context <- addEdge context "if_true" t_id id
+            context <- addEdge context "if_false" f_id id
+            (context, E.Expr (E.If cond true_branch false_branch) type id)
         E.List items -> do
-            kinds <- T.collectOwnershipKinds type
-            (first, list_args) <- List2.remove kinds 0
             (context, items) <- List.mapS context items (\context, item -> do
                     (context, item) <- processExpr context item
-                    E.Expr item_s_expr item_type item_id <- item
-                    item_kinds <- T.collectOwnershipKinds item_type
-                    sub <- U.batch item_kinds list_args
-                    conv_item_type <- U.apply item_type sub
-                    (context, E.Expr item_s_expr conv_item_type item_id))
+                    E.Expr _ _ item_id <- item
+                    (context, item))
             (context, E.Expr (E.List items) type id)
         E.Return arg -> do
             (context, arg) <- processExpr context arg
-            E.Expr arg_s_expr arg_type arg_id <- arg
-            arg <- E.Expr arg_s_expr context.return_type arg_id
+            E.Expr _ _ arg_id <- arg
+            context <- addReturnEdge context "explicit_return" arg_id
+            context <- addEdge context "<return>" id arg_id
             (context, E.Expr (E.Return arg) type id)
         E.Continue arg -> do
             (context, arg) <- processExpr context arg
-            E.Expr arg_s_expr arg_type arg_id <- arg
-            arg_type <- Option.unwrap context.continue_type
-            arg <- E.Expr arg_s_expr arg_type arg_id
             (context, E.Expr (E.Continue arg) type id)
         E.Break arg -> do
             (context, arg) <- processExpr context arg
-            E.Expr arg_s_expr arg_type arg_id <- arg
-            arg_type <- Option.unwrap context.break_type
-            arg <- E.Expr arg_s_expr arg_type arg_id
             (context, E.Expr (E.Break arg) type id)
         E.RecordUpdate _ _ -> panic "RecordUpdate found in Equality.processExpr"
         E.Loop v initializer body continues breaks -> do
+            context <- addVarNode context v
             (context, initializer) <- processExpr context initializer
-            E.Expr _ initializer_type _ <- initializer
-            context <- addVar context v initializer_type
-            (orig_continue_type, orig_break_type) <- (context.continue_type, context.break_type)
-            context <- context { continue_type = Some initializer_type, break_type = Some type }
+            E.Expr _ _ initializer_id <- initializer
+            context <- addEdge context "loop_initializer" id initializer_id
+            context <- addVarEdge context "loop_var" initializer_id v False
             (context, body) <- processExpr context body
-            context <- context { continue_type = orig_continue_type, break_type = orig_break_type }
+            E.Expr _ _ loop_body_id <- body
+            context <- addEdge context "loop_body" id loop_body_id
+            context <- addVarEdge context "loop_var" loop_body_id v False
+            context <- List.fold context continues (\context, c -> addEdge context "continue" c loop_body_id)
+            context <- List.fold context breaks (\context, b -> addEdge context "break" b id)
             (context, E.Expr (E.Loop v initializer body continues breaks) type id)
         E.CaseOf body cases -> do
             (context, body) <- processExpr context body
+            E.Expr _ _ case_of_body_id <- body
             (context, cases) <- List.mapS context cases (\context, c -> do
                 context <- case c.checker of
                     E.VariantChecker index v variant_type -> do
-                        var_type <- case variant_type of
-                            T.Var _ t -> case t of
-                                T.Adt _ _ -> do
-                                    adt <- getAdtType context variant_type
-                                    variant <- atIndex adt.variants index
-                                    variant.type
-                                T.Record _ _ -> variant_type
-                                _ -> panic "VariantChecker's inner type is not record nor adt"
-                            _ -> panic "VariantChecker's type is not Var"
-                        context <- addVar context v var_type
+                        context <- addVarNode context v
+                        context <- addVarEdge context "<case>" case_of_body_id v False
                         context
                     _ -> context
                 (context, c_body) <- processExpr context c.body
-                E.Expr c_s_expr _ c_id <- c.body
-                c_body <- E.Expr c_s_expr type c_id
+                E.Expr _ _ c_id <- c.body
+                context <- addEdge context "case_of_body" case_of_body_id id
+                context <- addEdge context "case" c_id id
                 c <- c { body = c_body }
                 (context, c))
             (context, E.Expr (E.CaseOf body cases) type id)
@@ -173,19 +173,28 @@ processExpr context expr = do
         E.Box _ -> panic "Box found in Equality.processExpr"
         E.Converter arg kind -> do
             (context, arg) <- processExpr context arg
+            E.Expr _ _ arg_id <- arg
+            context <- addEdge context "converter" arg_id id
             (context, E.Expr (E.Converter arg kind) type id)
 
 processArg :: Context -> Int -> T.Type -> Context
-processArg context index type = addVar context (E.Arg index) type
+processArg context index type = addVarNode context (E.Arg index)
 
-createContext :: P.Program -> T.Type -> Context
-createContext program return_type = Context Map2.empty return_type None None program
+createContext :: P.Program -> String -> Context
+createContext program graph_name = do
+    graph <- Dot.createGraph graph_name
+    (graph, return_node_id) <- Dot.addNode graph "function_return"
+    Context program graph Map2.empty Map2.empty return_node_id
 
 processBody :: Common.GlobalContext -> Init.Context -> F.FunctionType -> P.Identity -> E.Expr -> E.Expr
 processBody global_context init_context function_type function_id body = do
     trace global_context.config "Inference: Equality {}" % function_id
-    context <- createContext global_context.program function_type.result
+    context <- createContext global_context.program (show function_id)
     context <- List.foldE processArg context function_type.args
     (_, body) <- IF.addOwnershipVarsToBody init_context body
     (context, body) <- processExpr context body
+    E.Expr _ _ body_id <- body
+    context <- addReturnEdge context "implicit_return" body_id
+    s <- Dot.generateDot context.graph
+    writeTextFile ("dots/equality_graph_{}.dot" % function_id) s
     body

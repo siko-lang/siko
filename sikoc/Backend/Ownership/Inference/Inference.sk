@@ -10,8 +10,6 @@ import Siko.Backend.Ownership.Unification as U
 import Siko.Util.Counter
 import Siko.Backend.Ownership.Inference.Collection as C
 import Siko.Backend.Ownership.Inference.Equality as Equality
-import Siko.Backend.Ownership.Inference.Equality2 as Equality2
-import Siko.Backend.Ownership.Inference.ConstraintCollection as ConstraintCollection
 import Siko.Backend.Ownership.Inference.Common as Common
 import Siko.Backend.Ownership.Initialization as Init
 import Siko.Backend.Traversal
@@ -348,9 +346,6 @@ calculateInferenceInfo global_context init_context function_id = do
             trace global_context.config "Inference: processing {}" % function.id
             body <- Equality.processBody global_context init_context function.type function_id info.body
             trace global_context.config "equality done {}" % function.id
-            body2 <- Equality2.processBody global_context init_context function.type function_id info.body
-            trace global_context.config "equality2 done {}" % function.id
-            ConstraintCollection.processBody global_context init_context function.type function_id body
             (context, _) <- C.collectConstraints global_context init_context function.type function_id info.body
             trace global_context.config "processing equals"
             context <- processEquals context
