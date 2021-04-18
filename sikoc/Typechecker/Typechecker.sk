@@ -28,6 +28,7 @@ import Siko.MIR.Program as MP
 import Siko.Constants
 import Siko.Config
 import Siko.Trace
+import Siko.Typechecker.TypedProgram as TP
 import Map
 
 data TypecheckerState = { errors :: [TypecheckerError],
@@ -101,9 +102,9 @@ processGroup :: TypecheckerState ->
                 DependencyGroup P.FullyQualifiedName ->
                 P.Program () ->
                 FS.FunctionStore ->
-                LTS.TypeStore ->
-                (TypecheckerState, FS.FunctionStore, LTS.TypeStore)
-processGroup state group program function_store lowering_type_store = do
+                TP.TypeStore ->
+                (TypecheckerState, FS.FunctionStore, TP.TypeStore)
+processGroup state group program function_store type_store = do
     //println "Group items: {}" % (group.items)
     context <- initializeContext state program function_store group.items
     context <- group.items |> List.iter |> Iterator.fold (\context, name -> do
@@ -128,13 +129,13 @@ processGroup state group program function_store lowering_type_store = do
                         context <- checkCasePatterns context fn
                         context) context
         else context
-    lowering_type_store <- context.type_store.expr_types |> Map.iter |> Iterator.fold (\lowering_type_store, (id, expr_type) -> do
+    type_store <- Map.fold type_store context.type_store.expr_types (\type_store, (id, expr_type) -> do
         type <- TS.getTypeFromExprTypeState expr_type
-        LTS.addExprType lowering_type_store id type) lowering_type_store
-    lowering_type_store <- context.type_store.pattern_types |> Map.iter |> Iterator.fold (\lowering_type_store, (id, pattern_type) -> do
+        TP.addExprType type_store id type)
+    type_store <- Map.fold type_store context.type_store.pattern_types(\type_store, (id, pattern_type) -> do
         type <- TS.getTypeFromPatternTypeState pattern_type
-        LTS.addPatternType lowering_type_store id type) lowering_type_store
-    (context.state, context.function_store, lowering_type_store)
+        TP.addPatternType type_store id type)
+    (context.state, context.function_store, type_store)
 
 processProgram :: Config -> P.Program () -> TypeVarGenerator -> Result (P.Program (), MP.Program) [TypecheckerError]
 processProgram config program var_gen = do
@@ -142,7 +143,7 @@ processProgram config program var_gen = do
              DS.createDataStore IR.createInstanceResolver createChoiceTreeStore config
     trace config "TYCHK processData"
     state <- processData program state
-    lowering_type_store <- LTS.createTypeStore
+    type_store <- TP.TypeStore Map.empty Map.empty
     trace config "TYCHK processClassesAndInstances"
     (state, program) <- processClassesAndInstances config state program
     trace config "TYCHK processAutoDerivedInstances"
@@ -154,13 +155,14 @@ processProgram config program var_gen = do
     //println "Functions: {}" % (getSize function_store.functions)
     //println "Groups: {}" % (getLength groups)
     trace config "TYCHK processGroups"
-    (state, function_store, lowering_type_store) <- groups |> List.iter
-            |> Iterator.fold (\(state, function_store, lowering_type_store), group -> do
-        (state, function_store, lowering_type_store) <- processGroup state group program function_store lowering_type_store
-        (state, function_store, lowering_type_store) ) (state, function_store, lowering_type_store)
+    (state, function_store, type_store) <- groups |> List.iter
+            |> Iterator.fold (\(state, function_store, type_store), group -> do
+        (state, function_store, type_store) <- processGroup state group program function_store type_store
+        (state, function_store, type_store) ) (state, function_store, type_store)
     //FS.dump function_store
     if isEmpty state.errors
         then do
-            mir_program <- L.lowerProgram config state program function_store lowering_type_store
+            typed_program <- TP.createTypedProgram type_store program
+            mir_program <- L.lowerProgram config state typed_program function_store
             Ok (program, mir_program)
         else Err state.errors

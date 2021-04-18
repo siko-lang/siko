@@ -30,29 +30,21 @@ import Siko.Syntax.Ident
 import Siko.Constants
 import Map
 
-processArgs :: Context -> U.Substitution -> [HE.Expr ()] -> (Context, [ME.Expr])
+processArgs :: Context -> U.Substitution -> [HE.Expr HT.Type] -> (Context, [ME.Expr])
 processArgs context sub args = do
     (context, mir_args) <- args |> List.iter |> Iterator.fold (\(context, mir_args), e -> do
                 (context, mir_arg) <- processExpr context sub e
                 (context, mir_args + [mir_arg])) (context, [])
     (context, mir_args)
 
-getMonomorphizedExprType :: Context -> U.Substitution -> HE.ExprId -> HT.Type
-getMonomorphizedExprType context sub id = do
-    type <- getExprType context.type_store id
+getMonomorphizedType :: U.Substitution -> HT.Type -> HT.Type
+getMonomorphizedType sub type = do
     type <- HT.removeFixed type
     U.apply type sub
 
-getMonomorphizedPatternType :: Context -> U.Substitution -> HP.PatternId -> HT.Type
-getMonomorphizedPatternType context sub id = do
-    type <- getPatternType context.type_store id
-    type <- HT.removeFixed type
-    U.apply type sub
-
-processArgTypes :: Context -> U.Substitution -> [HE.Expr ()] -> [HT.Type]
-processArgTypes context sub args =
-    args |> List.iter |> Iterator.map (\(HE.Expr _ id _ _) -> do
-                getMonomorphizedExprType context sub id) |> toList
+processArgTypes :: U.Substitution -> [HE.Expr HT.Type] -> [HT.Type]
+processArgTypes sub args =
+    List.map args (\HE.Expr _ _ type _ -> getMonomorphizedType sub type)
 
 getFieldType :: MD.Record -> String -> MT.Type
 getFieldType mir_record field_name = do
@@ -60,7 +52,7 @@ getFieldType mir_record field_name = do
         field <- atIndex mir_record.fields index
         if field.name == field_name then return field.type else index + 1
 
-processBindArgs :: Context -> U.Substitution -> [HP.Pattern ()] -> (ME.ExprId -> ME.Expr) -> MD.Record -> (Context, [ME.Expr])
+processBindArgs :: Context -> U.Substitution -> [HP.Pattern HT.Type] -> (ME.ExprId -> ME.Expr) -> MD.Record -> (Context, [ME.Expr])
 processBindArgs context sub args var_ref_expr mir_record = do
     (context, arg_exprs, _) <- args |> List.iter |> Iterator.fold (\(context, arg_exprs, index), arg -> do
         field <- atIndex mir_record.fields index
@@ -72,8 +64,8 @@ processBindArgs context sub args var_ref_expr mir_record = do
         (context, arg_exprs, index + 1)) (context, [], 0)
     (context, arg_exprs)
 
-processBind :: Context -> U.Substitution -> HP.Pattern () -> ME.Expr -> (Context, [ME.Expr])
-processBind context sub (HP.Pattern p id _ _) rhs = do
+processBind :: Context -> U.Substitution -> HP.Pattern HT.Type -> ME.Expr -> (Context, [ME.Expr])
+processBind context sub (HP.Pattern p id pattern_type _) rhs = do
     (context, unit_type) <- processType context (HT.Tuple [])
     case p of
         HP.Binding ref -> do
@@ -83,7 +75,7 @@ processBind context sub (HP.Pattern p id _ _) rhs = do
             (context, [var_decl_expr])
         HP.Tuple args -> do
             (context, var) <- patternToVar context id
-            tuple_type <- getMonomorphizedPatternType context sub id
+            tuple_type <- getMonomorphizedType sub pattern_type
             (context, mir_tuple_type) <- processType context tuple_type
             var_ref <- ME.VarRef var
             var_ref_expr <- ME.Expr var_ref mir_tuple_type
@@ -103,7 +95,7 @@ processBind context sub (HP.Pattern p id _ _) rhs = do
         HP.Typed p _ -> processBind context sub p rhs
         HP.Record qn args -> do
             (context, var) <- patternToVar context id
-            record_type <- getMonomorphizedPatternType context sub id
+            record_type <- getMonomorphizedType sub pattern_type
             (context, mir_record_type) <- processType context record_type
             var_ref <- ME.VarRef var
             var_ref_expr <- ME.Expr var_ref mir_record_type
@@ -116,7 +108,7 @@ processBind context sub (HP.Pattern p id _ _) rhs = do
             (context, [var_decl_expr] + arg_exprs)
         HP.Variant qn index args -> do
             (context, var) <- patternToVar context id
-            adt_type <- getMonomorphizedPatternType context sub id
+            adt_type <- getMonomorphizedType sub pattern_type
             (context, mir_adt_type) <- processType context adt_type
             var_ref <- ME.VarRef var
             var_ref_expr <- ME.Expr var_ref mir_adt_type
@@ -147,7 +139,7 @@ processBindVars context additional_info path_info_map unit_type = do
         (context, var_decls)) (context, [])
     (context, var_decls)
 
-processCaseEnds :: Context -> U.Substitution -> [MatchInfo] -> [HE.Expr ()] -> [Option (HE.Expr ())] -> Map ValuePath ValuePathAccessor -> MT.Type -> (Context, ME.Expr)
+processCaseEnds :: Context -> U.Substitution -> [MatchInfo] -> [HE.Expr HT.Type] -> [Option (HE.Expr HT.Type)] -> Map ValuePath ValuePathAccessor -> MT.Type -> (Context, ME.Expr)
 processCaseEnds context sub match_infos hir_case_bodies hir_guards path_info_map unit_type = do
     if getLength match_infos == 1
         then do
@@ -176,7 +168,7 @@ processCaseEnds context sub match_infos hir_case_bodies hir_guards path_info_map
                     (context, result)
                 None -> panic "Matchinfos ran out!"
 
-processChoiceTree :: Context -> U.Substitution -> Choice -> Map ValuePath ValuePathAccessor -> [HE.Expr ()] -> [Option (HE.Expr ())] -> (Context, ME.Expr)
+processChoiceTree :: Context -> U.Substitution -> Choice -> Map ValuePath ValuePathAccessor -> [HE.Expr HT.Type] -> [Option (HE.Expr HT.Type)] -> (Context, ME.Expr)
 processChoiceTree context sub choice path_info_map hir_case_bodies hir_guards = do
     (context, unit_type) <- processType context (HT.Tuple [])
     case choice of
@@ -487,14 +479,14 @@ removeMulti context exprs = exprs |> List.iter |> Iterator.fold (\(context, expr
                         (context, expr) <- getExpr context (ME.Expr s_expr s_type)
                         (context, exprs + [expr])) (context, [])
 
-processExpr :: Context -> U.Substitution -> HE.Expr () -> (Context, ME.Expr)
+processExpr :: Context -> U.Substitution -> HE.Expr HT.Type -> (Context, ME.Expr)
 processExpr context sub hir_expr = do
-    HE.Expr expr expr_id _ _ <- hir_expr
-    expr_type <- getMonomorphizedExprType context sub expr_id
+    HE.Expr expr expr_id expr_type _ <- hir_expr
+    expr_type <- getMonomorphizedType sub expr_type
     (context, mir_expr_type) <- processType context expr_type
     case expr of
         HE.StaticFunctionCall qn args -> do
-            arg_types <- processArgTypes context sub args
+            arg_types <- processArgTypes sub args
             function_type_info <- FS.getFunctionTypeInfo context.function_store qn
             (function_type, var_gen) <- TUtil.instantiateType function_type_info.function_type context.state.var_gen
             state <- context.state // FIXME
@@ -507,16 +499,16 @@ processExpr context sub hir_expr = do
             (context, mir_args) <- processArgs context sub args
             processStaticFunctionCall context mir_args function_type function_id arg_count
         HE.DynamicFunctionCall receiver args -> do
-            HE.Expr _ receiver_id _ _ <- receiver
-            receiver_type <- getMonomorphizedExprType context sub receiver_id
+            HE.Expr _ _ receiver_type _ <- receiver
+            receiver_type <- getMonomorphizedType sub receiver_type
             (context, mir_receiver) <- processExpr context sub receiver
             (context, mir_args) <- processArgs context sub args
-            arg_types <- processArgTypes context sub args
+            arg_types <- processArgTypes sub args
             (context, calls) <- processDynamicFunctionCall context receiver_type mir_args mir_receiver
             (context, do_expr) <- getExpr context (ME.Expr (ME.Do calls) mir_expr_type)
             (context, do_expr)
         HE.ClassMemberCall qn args -> do
-            arg_types <- processArgTypes context sub args
+            arg_types <- processArgTypes sub args
             (context, mir_args) <- processArgs context sub args
             fn <- HPO.getFunction context.hir_program qn
             case fn.kind of
@@ -540,7 +532,7 @@ processExpr context sub hir_expr = do
                         None -> panic "class member {} not found" % member_name
                 _ -> panic "ClassMember calls non class member"
         HE.VariantConstructorCall qn args -> do
-            arg_types <- processArgTypes context sub args
+            arg_types <- processArgTypes sub args
             (context, mir_args) <- processArgs context sub args
             HD.VariantInfo qn index _ <- HPO.getVariantInfo context.hir_program qn
             variant <- HPO.getVariant context.hir_program qn index
@@ -555,7 +547,7 @@ processExpr context sub hir_expr = do
             arg_count <- getLength variant.items
             processStaticFunctionCall context mir_args function_type function_id arg_count
         HE.RecordConstructorCall qn args -> do
-            arg_types <- processArgTypes context sub args
+            arg_types <- processArgTypes sub args
             (context, mir_args) <- processArgs context sub args
             record <- HPO.getRecord context.hir_program qn
             (function_type, var_gen) <- TUtil.instantiateType record.record_ctor context.state.var_gen
@@ -574,7 +566,7 @@ processExpr context sub hir_expr = do
             (context, if_expr) <- getExpr context (ME.Expr (ME.If mir_cond mir_true_branch mir_false_branch) mir_expr_type)
             (context, if_expr)
         HE.Tuple args -> do
-            arg_types <- processArgTypes context sub args
+            arg_types <- processArgTypes sub args
             (var_gen, function_type) <- TUtil.createGeneralFunction (getLength args) context.state.var_gen
             (context, mir_args) <- processArgs context sub args
             state <- context.state // FIXME
@@ -623,8 +615,8 @@ processExpr context sub hir_expr = do
             (context, field_access_expr)
         HE.Formatter fmt args -> do
             (context, exprs, mir_args) <- args |> List.iter |> Iterator.fold (\(context, exprs, mir_args), arg -> do
-                (HE.Expr _ id _ _) <- arg
-                arg_type <- getMonomorphizedExprType context sub id
+                HE.Expr _ _ arg_type _ <- arg
+                arg_type <- getMonomorphizedType sub arg_type
                 (context, var) <- getNextTempVar context
                 (context, mir_arg) <- processExpr context sub arg
                 (context, show_result) <- callOpShow context arg_type mir_arg
@@ -645,8 +637,8 @@ processExpr context sub hir_expr = do
                     HP.Guarded _ expr -> Some expr
                     _ -> None) |> toList
             (context, mir_body) <- processExpr context sub body
-            HE.Expr _ body_id _ _ <- body
-            hir_body_type <- getMonomorphizedExprType context sub body_id
+            HE.Expr _ _ hir_body_type _ <- body
+            hir_body_type <- getMonomorphizedType sub hir_body_type
             (context, case_of_expr) <- case get context.state.choice_tree_store.choice_trees expr_id of
                 Some choice_tree -> do
                     p <- Option.unwrap (getValuePath choice_tree)

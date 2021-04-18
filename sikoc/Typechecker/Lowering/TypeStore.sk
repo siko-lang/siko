@@ -24,16 +24,14 @@ import Siko.Constants
 import List2 as List2
 import Map
 
-data TypeStore = { expr_types :: Map E.ExprId HT.Type,
-                   pattern_types :: Map HPat.PatternId HT.Type,
-                   named_types :: Map HT.Type MT.Type,
+data TypeStore = { named_types :: Map HT.Type MT.Type,
                    adts :: Map MP.Identity MD.AlgebraicDataType,
                    records :: Map MP.Identity MD.Record,
                    queue :: [(HT.Type, MT.Type)]
                  }
 
 createTypeStore :: TypeStore
-createTypeStore = TypeStore empty empty empty empty empty []
+createTypeStore = TypeStore empty empty empty []
 
 enqueueType :: Context -> HT.Type -> MT.Type -> Context
 enqueueType context hir_type mir_type = do
@@ -91,28 +89,6 @@ addExternalClassImplForRecord type_store identity external_class_impl = do
             Some record
         None -> panic "Record not found in type store {}" % identity) identity type_store.records
     type_store { records = records }
-
-addExprType :: TypeStore -> E.ExprId -> HT.Type -> TypeStore
-addExprType type_store expr type = do
-    (expr_types, _) <- insert type_store.expr_types expr type
-    type_store { expr_types = expr_types }
-
-getExprType :: TypeStore -> E.ExprId -> HT.Type
-getExprType type_store expr =
-    case get type_store.expr_types expr of
-        Some t -> t
-        None -> panic "Expr {} not found in type type_store" % expr
-
-addPatternType :: TypeStore -> HPat.PatternId -> HT.Type -> TypeStore
-addPatternType type_store pattern type = do
-    (pattern_types, _) <- insert type_store.pattern_types pattern type
-    type_store { pattern_types = pattern_types }
-
-getPatternType :: TypeStore -> HPat.PatternId -> HT.Type
-getPatternType type_store pattern =
-    case get type_store.pattern_types pattern of
-        Some t -> t
-        None -> panic "Pattern {} not found in type type_store" % pattern
 
 getRecord :: TypeStore -> MP.Identity -> MD.Record
 getRecord type_store identity = case get type_store.records identity of

@@ -1,0 +1,137 @@
+module Siko.Typechecker.TypedProgram where
+
+import Siko.HIR.Program as P
+import Siko.HIR.Expr as E
+import Siko.HIR.Function as F
+import Siko.HIR.Pattern as HPat
+import Siko.HIR.Type as T
+
+import Map
+
+data TypeStore = { expr_types :: Map E.ExprId T.Type,
+                   pattern_types :: Map HPat.PatternId T.Type,
+                 }
+
+addExprType :: TypeStore -> E.ExprId -> T.Type -> TypeStore
+addExprType type_store expr type = do
+    (expr_types, _) <- insert type_store.expr_types expr type
+    type_store { expr_types = expr_types }
+
+getExprType :: TypeStore -> E.ExprId -> T.Type
+getExprType type_store expr =
+    case get type_store.expr_types expr of
+        Some t -> t
+        None -> panic "Expr {} not found in type type_store" % expr
+
+addPatternType :: TypeStore -> HPat.PatternId -> T.Type -> TypeStore
+addPatternType type_store pattern type = do
+    (pattern_types, _) <- insert type_store.pattern_types pattern type
+    type_store { pattern_types = pattern_types }
+
+getPatternType :: TypeStore -> HPat.PatternId -> T.Type
+getPatternType type_store pattern =
+    case get type_store.pattern_types pattern of
+        Some t -> t
+        None -> panic "Pattern {} not found in type type_store" % pattern
+
+createTypedRecordConstructionItem :: TypeStore -> E.RecordConstructionItem () -> E.RecordConstructionItem T.Type
+createTypedRecordConstructionItem type_store item =
+    E.RecordConstructionItem {
+        field_name = item.field_name,
+        body = createTypedExpr type_store item.body
+     }
+
+createTypedCase :: TypeStore -> E.Case () -> E.Case T.Type
+createTypedCase type_store c =
+    E.Case {
+        pattern = createTypedPattern type_store c.pattern,
+        body = createTypedExpr type_store c.body
+     }
+
+createTypedSimplePattern :: TypeStore -> HPat.SimplePattern () -> HPat.SimplePattern T.Type
+createTypedSimplePattern type_store s_pattern = case s_pattern of
+    HPat.Binding ref -> HPat.Binding ref
+    HPat.Tuple patterns -> HPat.Tuple (List.map patterns (createTypedPattern type_store))
+    HPat.Guarded pattern body -> HPat.Guarded (createTypedPattern type_store pattern) (createTypedExpr type_store body)
+    HPat.Wildcard -> HPat.Wildcard
+    HPat.IntegerLiteral lit -> HPat.IntegerLiteral lit
+    HPat.StringLiteral lit -> HPat.StringLiteral lit
+    HPat.CharLiteral lit -> HPat.CharLiteral lit
+    HPat.CharRange c1 c2 kind -> HPat.CharRange c1 c2 kind
+    HPat.Typed pattern type -> HPat.Typed (createTypedPattern type_store pattern) type
+    HPat.Record name args -> HPat.Record name (List.map args (createTypedPattern type_store))
+    HPat.Variant name index args -> HPat.Variant name index (List.map args (createTypedPattern type_store))
+
+createTypedPattern :: TypeStore -> HPat.Pattern () -> HPat.Pattern T.Type
+createTypedPattern type_store (HPat.Pattern s_pattern id _ location) = do
+    type <- getPatternType type_store id
+    s_pattern <- createTypedSimplePattern type_store s_pattern
+    HPat.Pattern s_pattern id type location
+
+processExprs :: TypeStore -> [E.Expr ()]  -> [E.Expr T.Type]
+processExprs type_store exprs = List.map exprs (createTypedExpr type_store)
+
+createTypedSimpleExpr :: TypeStore -> E.SimpleExpr () -> E.SimpleExpr T.Type
+createTypedSimpleExpr type_store s_expr = case s_expr of
+    E.StaticFunctionCall qn args -> E.StaticFunctionCall qn (processExprs type_store args)
+    E.DynamicFunctionCall receiver args -> E.DynamicFunctionCall (createTypedExpr type_store receiver) (processExprs type_store args)
+    E.ClassMemberCall qn args -> E.ClassMemberCall qn (processExprs type_store args)
+    E.VariantConstructorCall qn args -> E.VariantConstructorCall qn (processExprs type_store args)
+    E.RecordConstructorCall qn args -> E.RecordConstructorCall qn (processExprs type_store args)
+    E.If cond true_branch false_branch ->
+        E.If (createTypedExpr type_store cond) (createTypedExpr type_store true_branch) (createTypedExpr type_store false_branch)
+    E.Tuple items -> E.Tuple (processExprs type_store items)
+    E.List items -> E.List (processExprs type_store items)
+    E.IntegerLiteral lit -> E.IntegerLiteral lit
+    E.FloatLiteral lit -> E.FloatLiteral lit
+    E.StringLiteral lit -> E.StringLiteral lit
+    E.CharLiteral lit -> E.CharLiteral lit
+    E.Do items -> E.Do (processExprs type_store items)
+    E.Bind pattern rhs -> E.Bind (createTypedPattern type_store pattern) (createTypedExpr type_store rhs)
+    E.FieldAccess name receiver -> E.FieldAccess name (createTypedExpr type_store receiver)
+    E.TupleFieldAccess index receiver -> E.TupleFieldAccess index (createTypedExpr type_store receiver)
+    E.Formatter fmt args -> E.Formatter fmt (processExprs type_store args)
+    E.CaseOf body cases bind_groups -> E.CaseOf
+        (createTypedExpr type_store body) (List.map cases (createTypedCase type_store)) bind_groups
+    E.RecordUpdate ref items -> E.RecordUpdate ref (List.map items (createTypedRecordConstructionItem type_store))
+    E.Return arg -> E.Return (createTypedExpr type_store arg)
+    E.Continue arg -> E.Continue (createTypedExpr type_store arg)
+    E.Break arg -> E.Break (createTypedExpr type_store arg)
+    E.Loop pattern initializer body continues breaks -> E.Loop
+        (createTypedPattern type_store pattern) (createTypedExpr type_store initializer) (createTypedExpr type_store body) continues breaks
+    E.ArgRef i -> E.ArgRef i
+    E.ValueRef ref -> E.ValueRef ref
+
+createTypedExpr :: TypeStore -> E.Expr () -> E.Expr T.Type
+createTypedExpr type_store (E.Expr s_expr id _ location) = do
+    type <- getExprType type_store id
+    s_expr <- createTypedSimpleExpr type_store s_expr
+    E.Expr s_expr id type location
+
+createTypedFunction :: TypeStore -> F.Function () -> F.Function T.Type
+createTypedFunction type_store function = do
+    F.Function {
+        location = function.location,
+        name = function.name,
+        arg_count = function.arg_count,
+        kind = function.kind,
+        type = function.type,
+        full_type = function.full_type,
+        body = case function.body of
+            Some body -> Some (createTypedExpr type_store body)
+            None -> None
+     }
+
+createTypedItem :: TypeStore -> P.Item () -> P.Item T.Type
+createTypedItem type_store item = case item of
+    P.Function f -> P.Function (createTypedFunction type_store f)
+    P.Adt adt -> P.Adt adt
+    P.Record record -> P.Record record
+    P.Class c -> P.Class c
+    P.Variant i -> P.Variant i
+    P.Module location -> P.Module location
+
+createTypedProgram :: TypeStore -> P.Program () -> P.Program T.Type
+createTypedProgram type_store program = do
+    items <- Map.map program.items (\(qn, item) -> (qn, createTypedItem type_store item))
+    P.Program items program.instances
