@@ -4,6 +4,7 @@ import Siko.Typechecker
 import Siko.Typechecker.Unification as U
 import Siko.Typechecker.FunctionStore
 import Siko.HIR.Type as T
+import Siko.HIR.TypeFormatter as TF
 
 getFunctionType :: TypecheckerState -> [T.Type] -> T.Type -> T.Type -> (TypecheckerState, T.Type, U.Substitution)
 getFunctionType state arg_types expected_result_type function_type = do
@@ -17,13 +18,13 @@ getFunctionType state arg_types expected_result_type function_type = do
                 fn_arg_type <- atIndex fn_arg_types index
                 (state, sub) <- case U.unify state.var_gen sub state.data_store state.class_store arg_type fn_arg_type of
                     Ok (var_gen, sub) -> (state { var_gen = var_gen}, sub)
-                    Err _ -> panic "getCallSubstitution: failed to unify {} {}" % (T.toString arg_type, T.toString fn_arg_type)
+                    Err _ -> panic "getCallSubstitution: failed to unify {} {}" % (TF.toString arg_type, TF.toString fn_arg_type)
                 function_type <- U.apply function_type sub
                 (state, function_type, sub, index + 1)
     result_type <- T.getResultType function_type (getLength arg_types)
     (state, sub) <- case U.unify state.var_gen sub state.data_store state.class_store result_type expected_result_type of
                     Ok (var_gen, sub) -> (state { var_gen = var_gen}, sub)
-                    Err _ -> panic "getCallSubstitution: failed to unify {} {}" % (T.toString result_type, T.toString expected_result_type)
+                    Err _ -> panic "getCallSubstitution: failed to unify {} {}" % (TF.toString result_type, TF.toString expected_result_type)
     (state, U.apply function_type sub, sub)
 
 getFieldName :: Int -> String

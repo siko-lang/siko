@@ -30,8 +30,8 @@ matchPatterns context pattern_id1 pattern_id2 location = do
     pattern_type2 <- getPatternType context pattern_id2
     unify context pattern_type1 pattern_type2 location
 
-initializePatternType :: Context -> P.Pattern -> Context
-initializePatternType context (P.Pattern pattern id location) = do
+initializePatternType :: Context -> P.Pattern () -> Context
+initializePatternType context (P.Pattern pattern id _ location) = do
     //println "InitializePatternType: pattern {} {}" % (pattern, id)
     type_store <- TS.addPatternLocation context.type_store id location
     context <- context { type_store = type_store }
@@ -93,18 +93,18 @@ initializePatternType context (P.Pattern pattern id location) = do
             context <- addPatternType context id (TS.PatternWithAdtType adt_type_info)
             context
 
-checkPatternType :: Context -> P.Pattern -> Context
-checkPatternType context (P.Pattern pattern id location) = do
+checkPatternType :: Context -> P.Pattern () -> Context
+checkPatternType context (P.Pattern pattern id _ location) = do
     //println "checkPatternType: pattern {} {} {}" % (pattern, id, T.toString (getPatternType context id))
     case pattern of
         P.Binding _ -> context
         P.Tuple args -> do
-            arg_types <- args |> List.iter |> Iterator.map (\(P.Pattern _ arg _) -> getPatternType context arg) |> toList
+            arg_types <- args |> List.iter |> Iterator.map (\(P.Pattern _ arg _ _) -> getPatternType context arg) |> toList
             (context, _) <- matchPatternWith context id (T.Tuple arg_types) location
             context
         P.Guarded p expr -> do
-            P.Pattern _ sub_pattern_id _ <- p
-            E.Expr _ expr_id expr_location <- expr
+            P.Pattern _ sub_pattern_id _ _ <- p
+            E.Expr _ expr_id _ expr_location <- expr
             bool_ty <- UT.getBoolType
             (context, _) <- matchExprWith context expr_id bool_ty expr_location
             (context, _) <- matchPatterns context id sub_pattern_id location
@@ -115,12 +115,12 @@ checkPatternType context (P.Pattern pattern id location) = do
         P.CharLiteral lit -> context
         P.CharRange _ _ _ -> context
         P.Typed p _ -> do
-            P.Pattern _ sub_pattern_id location <- p
+            P.Pattern _ sub_pattern_id _ location <- p
             (context, _) <- matchPatterns context id sub_pattern_id location
             context
         P.Record _ args -> do
             record_type_info <- TS.getRecordTypeInfo context.type_store id
-            (context, record_type_info, _) <- args |> List.iter |> Iterator.fold (\(context, record_type_info, index), (P.Pattern _ arg_id arg_location) -> do
+            (context, record_type_info, _) <- args |> List.iter |> Iterator.fold (\(context, record_type_info, index), (P.Pattern _ arg_id _ arg_location) -> do
                     field <- atIndex record_type_info.fields index
                     (context, sub) <- matchPatternWith context arg_id field.type arg_location
                     record_type_info <- U.apply record_type_info sub
@@ -129,7 +129,7 @@ checkPatternType context (P.Pattern pattern id location) = do
             context
         P.Variant _ index args -> do
             adt_type_info <- TS.getAdtTypeInfo context.type_store id
-            (context, adt_type_info, _) <- args |> List.iter |> Iterator.fold (\(context, adt_type_info, arg_index), (P.Pattern _ arg_id arg_location) -> do
+            (context, adt_type_info, _) <- args |> List.iter |> Iterator.fold (\(context, adt_type_info, arg_index), (P.Pattern _ arg_id _ arg_location) -> do
                     variant <- atIndex adt_type_info.variants index
                     item_type <- atIndex variant.items arg_index
                     (context, sub) <- matchPatternWith context arg_id item_type arg_location
@@ -138,8 +138,8 @@ checkPatternType context (P.Pattern pattern id location) = do
                 ) (context, adt_type_info, 0)
             context
 
-checkMissingTypeInPattern :: [T.TypeVar] -> (Context, [T.TypeVar]) -> P.Pattern -> (Context, [T.TypeVar])
-checkMissingTypeInPattern signature_vars (context, undefined_vars) (P.Pattern pattern id location) = do
+checkMissingTypeInPattern :: [T.TypeVar] -> (Context, [T.TypeVar]) -> P.Pattern () -> (Context, [T.TypeVar])
+checkMissingTypeInPattern signature_vars (context, undefined_vars) (P.Pattern pattern id _ location) = do
     //println "Checking pattern {} {}" % (pattern, id)
     type <- getPatternType context id
     checkUndefinedVars context undefined_vars type signature_vars location

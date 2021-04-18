@@ -16,17 +16,15 @@ import Siko.Typechecker.TypeIsomorphism
 import Siko.Typechecker.Function
 import Siko.Typechecker.Lowering as L
 import Siko.Typechecker.Lowering.TypeStore as LTS
-import Siko.Typechecker.Lowering.TypedHIR.Program as LP
-import Siko.Typechecker.Lowering.TypedHIR.Expr as LE
 import Siko.Util.DependencyProcessor
 import Siko.HIR.Program as P
 import Siko.HIR.Function as F
 import Siko.HIR.Traversal
 import Siko.HIR.Type as T
+import Siko.HIR.TypeFormatter as TF
 import Siko.HIR.TypeVarGenerator
 import Siko.HIR.Expr
 import Siko.MIR.Program as MP
-import Siko.TypedHIR.Program as THP
 import Siko.Constants
 import Siko.Config
 import Siko.Trace
@@ -59,7 +57,7 @@ checkFunctionType context fn = do
         Some body -> do
             context <- traverse context checkExprType checkPatternType body
             func_type_info <- getFunctionTypeInfo context fn.name
-            (Expr _ body_id location) <- body
+            Expr _ body_id _ location <- body
             (context, _) <- matchExprWith context body_id func_type_info.result_type location
             context <- context.returns |> List.iter |> Iterator.fold (\context, (arg_id, arg_location) -> do
                     func_type_info <- getFunctionTypeInfo context fn.name
@@ -72,7 +70,7 @@ checkFunctionType context fn = do
                     if checkIsomorphicType func_type_info.function_type (T.Tuple []) context.state.class_store
                         then context
                         else do
-                            err <- IncorrectMainType ("{}" % T.toString func_type_info.function_type) fn.location
+                            err <- IncorrectMainType ("{}" % TF.toString func_type_info.function_type) fn.location
                             state <- addError context.state err
                             context { state = state }
                 else context
@@ -138,11 +136,7 @@ processGroup state group program function_store lowering_type_store = do
         LTS.addPatternType lowering_type_store id type) lowering_type_store
     (context.state, context.function_store, lowering_type_store)
 
-instance LE.TypeProvider LTS.TypeStore where
-    getExprType type_store expr_id = LTS.getExprType type_store expr_id
-    getPatternType type_store pattern_id = LTS.getPatternType type_store pattern_id
-
-processProgram :: Config -> P.Program -> TypeVarGenerator -> Result (THP.Program, MP.Program) [TypecheckerError]
+processProgram :: Config -> P.Program -> TypeVarGenerator -> Result (P.Program, MP.Program) [TypecheckerError]
 processProgram config program var_gen = do
     state <- TypecheckerState [] var_gen CS.initializeEmptyClassStore
              DS.createDataStore IR.createInstanceResolver createChoiceTreeStore config
@@ -167,7 +161,6 @@ processProgram config program var_gen = do
     //FS.dump function_store
     if isEmpty state.errors
         then do
-            typed_program <- LP.lowerProgram lowering_type_store program
             mir_program <- L.lowerProgram config state program function_store lowering_type_store
-            Ok (typed_program, mir_program)
+            Ok (program, mir_program)
         else Err state.errors

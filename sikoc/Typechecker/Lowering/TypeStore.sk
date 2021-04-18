@@ -2,6 +2,7 @@ module Siko.Typechecker.Lowering.TypeStore where
 
 import Siko.HIR.Expr as E
 import Siko.HIR.Type as HT
+import Siko.HIR.TypeFormatter as TF
 import Siko.HIR.Data as HD
 import Siko.HIR.Program as HP
 import Siko.HIR.Pattern as HPat
@@ -136,7 +137,7 @@ checkExternalImpl context hir_type class_name external_class_impl = do
     entry <- IR.CacheEntry hir_type class_name
     context <- case get context.state.instance_resolver.cache entry of
         Some instance_info -> do
-            //println "checkExternalImpl: {}/{}" % (HT.toString hir_type, external_class_impl)
+            //println "checkExternalImpl: {}/{}" % (TF.toString hir_type, external_class_impl)
             added_impls <- [external_class_impl] + (getDependencies external_class_impl)
             (external_class_impls, _) <- alter (\external_class_impls -> case external_class_impls of
                 Some external_class_impls -> do
@@ -190,7 +191,7 @@ instantiateAdt context adt_type_info adt_type = do
             context <- context { state = state }
             adt_type_info <- U.apply adt_type_info sub
             (context, adt_type_info)
-        Err _ -> panic "instantiateAdt: unification failed, Adt type {} hir_type {}" % (HT.toString adt_type_info.type, HT.toString adt_type)
+        Err _ -> panic "instantiateAdt: unification failed, Adt type {} hir_type {}" % (TF.toString adt_type_info.type, TF.toString adt_type)
     (context, adt_type_info)
 
 instantiateRecord :: Context -> DS.RecordTypeInfo -> HT.Type -> (Context, DS.RecordTypeInfo)
@@ -203,7 +204,7 @@ instantiateRecord context record_type_info record_type = do
             context <- context { state = state }
             record_type_info <- U.apply record_type_info sub
             (context, record_type_info)
-        Err _ -> panic "instantiateRecord: unification failed, Record type {} hir_type {}" % (HT.toString record_type_info.type, HT.toString record_type)
+        Err _ -> panic "instantiateRecord: unification failed, Record type {} hir_type {}" % (TF.toString record_type_info.type, TF.toString record_type)
     (context, record_type_info)
 
 processIteratorType :: Context -> HT.Type -> MT.Type -> Context

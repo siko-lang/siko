@@ -1,6 +1,7 @@
 module Siko.Typechecker.Lowering.FunctionQueue where
 
 import Siko.HIR.Type as HT
+import Siko.HIR.TypeFormatter as TF
 import Siko.HIR.Data as HD
 import Siko.HIR.Program as HP
 import Siko.HIR.Function as HF
@@ -128,7 +129,7 @@ processNormalFunction context mir_function_id hir_type qn hir_function =
                                 hir_type function_type of
                 Ok (var_gen, sub) -> (state { var_gen = var_gen}, sub)
                 Err _ -> panic "Failed to unify {} {} for normal function in MIR lowering" %
-                            (HT.toString hir_type, HT.toString function_type)
+                            (TF.toString hir_type, TF.toString function_type)
             context <- context { state = state }
             expr_id_gen <- getExprIdCounter
             context <- setExprIdCounter context expr_id_gen
@@ -282,13 +283,13 @@ processItem item mir_function_id context = do
             //    ("Std.Ops.PartialEq", "opEq") -> (generatePartialEqInstance, 2)
             //    ("Std.Ops.PartialOrd", "partialCmp") -> (generatePartialOrdInstance, 2)
             //    ("Std.Ops.Ord", "cmp") -> (generateOrdInstance, 2)
-            //    _ -> panic "Auto derive not implemented for {} / {} / {}" % (class_name, member_name, HT.toString hir_type)
+            //    _ -> panic "Auto derive not implemented for {} / {} / {}" % (class_name, member_name, TF.toString hir_type)
             (fn, arg_count) <- case member_name of
                 "show" -> (generateShowInstance, 1)
                 "opEq" -> (generatePartialEqInstance, 2)
                 "partialCmp" -> (generatePartialOrdInstance, 2)
                 "cmp" -> (generateOrdInstance, 2)
-                _ -> panic "Auto derive not implemented for {} / {} / {}" % (class_name, member_name, HT.toString hir_type)
+                _ -> panic "Auto derive not implemented for {} / {} / {}" % (class_name, member_name, TF.toString hir_type)
             (context, mir_arg_types, mir_result_type) <- getFunctionType context hir_function_type arg_count
             expr_id_gen <- getExprIdCounter
             context <- setExprIdCounter context expr_id_gen

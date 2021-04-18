@@ -2,6 +2,7 @@ module Siko.Typechecker.TypeStore where
 
 import Siko.Syntax.Location
 import Siko.HIR.Type as T
+import Siko.HIR.TypeFormatter as TF
 import Siko.HIR.Expr as E
 import Siko.HIR.Pattern as P
 import Siko.Typechecker.Unification as U
@@ -119,9 +120,9 @@ instance U.Apply TypeStore where
 dump :: TypeStore -> ()
 dump store = do
     store.expr_types |> Map.iter |> forEach (\(expr_id, state) -> case state of
-        ExprType ty -> println "E{}: {}" % (expr_id, T.toString ty)
-        FunctionCall ty fn_type -> println "E{}: {}" % (expr_id, T.toString ty))
+        ExprType ty -> println "E{}: {}" % (expr_id, TF.toString ty)
+        FunctionCall ty fn_type -> println "E{}: {}" % (expr_id, TF.toString ty))
     store.pattern_types |> Map.iter |> forEach (\(pattern_id, state) -> case state of
-        (PatternType ty) -> println "P{}: {}" % (pattern_id, T.toString ty)
-        (PatternWithRecordType record_type_info) -> println "P{}: {}" % (pattern_id, T.toString record_type_info.type)
-        (PatternWithAdtType adt_type_info) -> println "P{}: {}" % (pattern_id, T.toString adt_type_info.type))
+        (PatternType ty) -> println "P{}: {}" % (pattern_id, TF.toString ty)
+        (PatternWithRecordType record_type_info) -> println "P{}: {}" % (pattern_id, TF.toString record_type_info.type)
+        (PatternWithAdtType adt_type_info) -> println "P{}: {}" % (pattern_id, TF.toString adt_type_info.type))

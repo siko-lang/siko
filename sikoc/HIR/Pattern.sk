@@ -12,32 +12,28 @@ data BindRef = BindRef String PatternId deriving (Show, PartialEq)
 data BindGroup = { bindings :: Map String [BindRef] } deriving (Show)
 
 data RangeKind = Exclusive
-                | Inclusive
-                deriving (Show, PartialEq, Eq, PartialOrd, Ord)
-
-data RecordFieldPattern = { name :: Ident,
-                            pattern :: Pattern,
-                          } deriving (Show)
+               | Inclusive
+               deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
 data PatternId = PatternId Int deriving (PartialEq, Eq, PartialOrd, Ord)
 
 instance Show PatternId where
   show (PatternId id) = "{}" % id
 
-data Pattern = Pattern SimplePattern PatternId Location
+data Pattern a = Pattern (SimplePattern a) PatternId a Location
 
-instance Show Pattern where
-  show (Pattern p _ _) = show p
+instance Show Pattern a where
+  show (Pattern p _ _ _) = show p
 
-data SimplePattern = Binding BindRef
-            | Tuple [Pattern]
-            | Guarded Pattern Expr
+data SimplePattern a = Binding BindRef
+            | Tuple [Pattern a]
+            | Guarded (Pattern a) (Expr a)
             | Wildcard
             | IntegerLiteral String
             | StringLiteral String
             | CharLiteral Char
             | CharRange Char Char RangeKind
-            | Typed Pattern Type
-            | Record FullyQualifiedName [Pattern]
-            | Variant FullyQualifiedName Int [Pattern]
+            | Typed (Pattern a) Type
+            | Record FullyQualifiedName [Pattern a]
+            | Variant FullyQualifiedName Int [Pattern a]
             deriving (Show)

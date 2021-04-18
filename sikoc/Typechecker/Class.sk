@@ -12,6 +12,7 @@ import Siko.HIR.Program as P
 import Siko.HIR.Function as F
 import Siko.HIR.Traversal
 import Siko.HIR.Type as T
+import Siko.HIR.TypeFormatter as TF
 import Siko.HIR.Class as C
 import Siko.Util.DependencyProcessor
 import Siko.Config
@@ -108,12 +109,12 @@ processInstance state i program = do
                                 state <- if checkIsomorphicType inferred_instance_member_type instance_member_type state.class_store
                                     then state
                                     else do
-                                        expected <- inferred_instance_member_type |> T.fixedType |> T.toString
-                                        found <- instance_member_type |> T.fixedType |> T.toString
+                                        expected <- inferred_instance_member_type |> TF.fixedType |> TF.toString
+                                        found <- instance_member_type |> TF.fixedType |> TF.toString
                                         addError state (InstanceMemberTypeMismatch expected found instance_member.location)
                                 state
                             None -> state
-                        (state, Some (T.fixedType inferred_instance_member_type))
+                        (state, Some (TF.fixedType inferred_instance_member_type))
                     None -> do
                         state <- addError state (InstanceMemberNotClassMember short_name instance_member.location)
                         (state, None)

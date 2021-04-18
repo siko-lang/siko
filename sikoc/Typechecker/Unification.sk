@@ -1,6 +1,7 @@
 module Siko.Typechecker.Unification where
 
 import Siko.HIR.Type
+import Siko.HIR.TypeUtil as TU
 import Siko.HIR.TypeVarGenerator
 import Siko.HIR.Program as P
 import Siko.Typechecker.DataStore as DS
@@ -172,7 +173,7 @@ unifyVarWithType data_store class_store gen var constraints sub type = do
 
 unifyVarWithFixedArg :: TypeVarGenerator -> Substitution -> CS.ClassStore -> TypeVar -> [Constraint] -> [Constraint] -> Type -> Result (TypeVarGenerator, Substitution) ()
 unifyVarWithFixedArg gen sub class_store var var_constraints fixed_arg_constraints fixed_arg_type = do
-    fixed_classes <- collectClassesFromClassConstraints fixed_arg_constraints
+    fixed_classes <- TU.collectClassesFromClassConstraints fixed_arg_constraints
     ok <- var_constraints |> List.iter |> Iterator.fold (\ok, constraint -> ok && case constraint of
         ClassConstraint class_name -> do
             if contains fixed_classes class_name

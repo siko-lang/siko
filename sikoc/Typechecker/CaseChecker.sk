@@ -44,7 +44,7 @@ getParentPath path = case path of
     VariantPath p _ _ _ _ -> p
 
 data PendingPattern = { path :: ValuePath,
-                        pattern :: P.Pattern
+                        pattern :: P.Pattern ()
                       }
 
 data Check = Check ValuePath Condition deriving (Show, PartialEq, Eq, PartialOrd, Ord)
@@ -85,17 +85,17 @@ processPattern context pendingPatterns = do
         Some p -> p
         None -> []
     path <- pending_pattern.path
-    (P.Pattern pattern id _) <- pending_pattern.pattern
+    P.Pattern pattern id _ _ <- pending_pattern.pattern
     checks <- case pattern of
         P.Binding ref -> do
-            (P.BindRef s _) <- ref
+            P.BindRef s _ <- ref
             (additional_info, checks) <- processPattern context pendingPatterns
             checks <- [Check path (WildcardCondition)] + checks
             binds <- additional_info.binds + [CaseBind path ref]
             (additional_info { binds = binds }, checks)
         P.Tuple args -> do
             (args, _) <- args |> List.iter |> Iterator.fold (\(args, index), arg -> do
-                    P.Pattern _ arg_id _ <- arg
+                    P.Pattern _ arg_id _ _ <- arg
                     arg_type <- getPatternType context arg_id
                     p <- ItemIndex path index arg_type
                     arg <- PendingPattern p arg
@@ -134,7 +134,7 @@ processPattern context pendingPatterns = do
             (additional_info, checks)
         P.Record _ args -> do
             (args, _) <- args |> List.iter |> Iterator.fold (\(args, index), arg -> do
-                    P.Pattern _ arg_id _ <- arg
+                    P.Pattern _ arg_id _ _ <- arg
                     arg_type <- getPatternType context arg_id
                     p <- ItemIndex path index arg_type
                     arg <- PendingPattern p arg
@@ -145,7 +145,7 @@ processPattern context pendingPatterns = do
             (additional_info, checks)
         P.Variant qn variant_index args -> do
             (args, _) <- args |> List.iter |> Iterator.fold (\(args, index), arg -> do
-                    P.Pattern _ arg_id _ <- arg
+                    P.Pattern _ arg_id _ _ <- arg
                     arg_type <- getPatternType context arg_id
                     p <- VariantPath path qn variant_index index arg_type
                     arg <- PendingPattern p arg
@@ -188,9 +188,9 @@ data PatternInfo = { checks :: [Check],
                      end :: MatchInfo,
                    }
 
-processSinglePattern :: Context -> P.Pattern -> Int -> (Int, CaseInfo)
+processSinglePattern :: Context -> P.Pattern () -> Int -> (Int, CaseInfo)
 processSinglePattern context pattern case_index = do
-    P.Pattern _ id _ <- pattern
+    P.Pattern _ id _ _ <- pattern
     root_type <- getPatternType context id
     (additional_info, checks) <- processPattern context [PendingPattern (Root root_type) pattern]
     (rule_set, _) <- checksToRules checks
@@ -412,11 +412,11 @@ checkBranches choice =
                 else ([], found_cases)
         ElseNode -> panic "ElseNode reached"
 
-validateChoiceTree :: Context -> Choice -> Location -> [E.Case] -> Context
+validateChoiceTree :: Context -> Choice -> Location -> [E.Case ()] -> Context
 validateChoiceTree context choice location cases = do
     (missing_cases, found_cases) <- checkBranches choice
     (context, _) <- cases |> List.iter |> Iterator.fold (\(context, case_index), c -> do
-            P.Pattern p _ location <- c.pattern
+            P.Pattern p _ _ location <- c.pattern
             context <- if contains found_cases case_index
                 then context
                 else do
@@ -434,12 +434,12 @@ validateChoiceTree context choice location cases = do
             context <- context { state = state }
             context
 
-checkCase :: Context -> E.ExprId -> E.Expr -> [E.Case] -> Context
+checkCase :: Context -> E.ExprId -> E.Expr () -> [E.Case ()] -> Context
 checkCase context expr_id case_body cases = do
-    (E.Expr _ body_id location) <- case_body
+    (E.Expr _ body_id _ location) <- case_body
     root_type <- getExprType context body_id
     (case_infos, _) <- cases |> List.iter |> Iterator.fold (\(case_infos, case_index), c -> do
-            P.Pattern p _ location <- c.pattern
+            P.Pattern p _ _ location <- c.pattern
             (case_index, case_info) <- processSinglePattern context c.pattern case_index
             case_infos <- case_infos + [case_info]
             (case_infos, case_index)
@@ -465,8 +465,8 @@ checkCase context expr_id case_body cases = do
     state <- state { choice_tree_store = choice_tree_store }
     context { state = state }
 
-checkCases :: Context -> E.Expr -> Context
-checkCases context (E.Expr expr id _) = do
+checkCases :: Context -> E.Expr () -> Context
+checkCases context (E.Expr expr id _ _) = do
     context <- case expr of
         E.CaseOf body cases _ -> do
             checkCase context id body cases

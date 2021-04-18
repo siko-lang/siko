@@ -3,19 +3,19 @@ module Siko.HIR.Traversal where
 import Siko.HIR.Expr as E
 import Siko.HIR.Pattern as P
 
-processExprs a :: a -> (a -> E.Expr -> a) -> (a -> P.Pattern -> a) -> [E.Expr] -> a
+processExprs context b :: context -> (context -> E.Expr b -> context) -> (context -> P.Pattern b -> context) -> [E.Expr b] -> context
 processExprs context expr_fn pattern_fn args =
     args |> List.iter
          |> Iterator.fold (\context, arg -> traverse context expr_fn pattern_fn arg) context
 
-processPatterns a :: a -> (a -> P.Pattern -> a) -> (a -> E.Expr -> a) -> [P.Pattern] -> a
+processPatterns context b :: context -> (context -> P.Pattern b -> context) -> (context -> E.Expr b -> context) -> [P.Pattern b] -> context
 processPatterns context pattern_fn expr_fn args =
     args |> List.iter
          |> Iterator.fold (\context, arg -> traversePattern context pattern_fn expr_fn arg) context
 
-traversePattern a :: a -> (a -> P.Pattern -> a) -> (a -> E.Expr -> a) -> P.Pattern -> a
+traversePattern context b :: context -> (context -> P.Pattern b -> context) -> (context -> E.Expr b -> context) -> P.Pattern b -> context
 traversePattern context pattern_fn expr_fn pattern = do
-    (P.Pattern p _ _) <- pattern
+    (P.Pattern p _ _ _) <- pattern
     context <- case p of
         P.Binding _ -> context
         P.Tuple args -> processPatterns context pattern_fn expr_fn args
@@ -34,9 +34,9 @@ traversePattern context pattern_fn expr_fn pattern = do
     context <- pattern_fn context pattern
     context
 
-traverse a :: a -> (a -> E.Expr -> a) -> (a -> P.Pattern -> a) -> E.Expr -> a
+traverse context b :: context -> (context -> E.Expr b -> context) -> (context -> P.Pattern b -> context) -> E.Expr b -> context
 traverse context expr_fn pattern_fn expr = do
-    (E.Expr e _ _) <- expr
+    (E.Expr e _ _ _) <- expr
     context <- case e of
         E.StaticFunctionCall _ args -> processExprs context expr_fn pattern_fn args
         E.DynamicFunctionCall receiver args -> do

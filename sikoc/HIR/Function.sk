@@ -1,6 +1,7 @@
 module Siko.HIR.Function where
 
 import Siko.HIR.Type
+import Siko.HIR.TypeFormatter as TF
 import Siko.HIR.Expr
 import Siko.HIR.Program
 import Siko.HIR.Class
@@ -24,18 +25,18 @@ data Function = { location :: Location,
                   kind :: FunctionKind,
                   type :: Option Type,
                   full_type :: Option Type,
-                  body :: Option Expr,
+                  body :: Option (Expr ()),
                 }
 
 data LambdaInfo = { id :: LambdaId,
                     arg_count :: Int,
                     host :: FullyQualifiedName,
-                    body :: Expr
+                    body :: Expr ()
                   } deriving (Show)
 
 instance Show Function where
     show f = do
         ty <- case f.type of
-            Some t -> toString t
+            Some t -> TF.toString t
             None -> "<unknown>"
         "{} - {} :: {}" % (f.name, ty, f.body)

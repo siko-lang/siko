@@ -1,6 +1,7 @@
 module Siko.Typechecker.TypeIsomorphism(checkIsomorphicType) where
 
 import Siko.HIR.Type as T
+import Siko.HIR.TypeUtil as TU
 import Siko.HIR.Program as P
 import Siko.Typechecker.ClassStore
 import Map
@@ -22,8 +23,8 @@ checkClassConstraintIsomorphism classes1 classes2 class_store = do
 
 checkIsomorphicConstraints :: [T.Constraint] -> [T.Constraint] -> ClassStore -> Result () IsomorphicTestFailure
 checkIsomorphicConstraints cs1 cs2 class_store = do
-    classes1 <- T.collectClassesFromClassConstraints cs1
-    classes2 <- T.collectClassesFromClassConstraints cs2
+    classes1 <- TU.collectClassesFromClassConstraints cs1
+    classes2 <- TU.collectClassesFromClassConstraints cs2
     if checkClassConstraintIsomorphism classes1 classes2 class_store && checkClassConstraintIsomorphism classes2 classes1 class_store
         then Ok ()
         else Err Mismatch

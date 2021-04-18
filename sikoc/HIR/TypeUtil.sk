@@ -1,0 +1,22 @@
+module Siko.HIR.TypeUtil(collectClassesFromClassConstraints, isSimple) where
+
+import Siko.HIR.Type
+import Siko.HIR.Program as HP
+
+collectClassesFromClassConstraints :: [Constraint] -> [HP.FullyQualifiedName]
+collectClassesFromClassConstraints constraints = constraints |> List.iter |> Iterator.filter (\c -> case c of
+        ClassConstraint _ -> True
+        _ -> False) |> Iterator.map (\c -> case c of
+            ClassConstraint n -> n
+            _ -> panic "RowConstraint found while collecting classes") |> toList
+
+isSimple :: Type -> Bool
+isSimple type = case type of
+    Var _  _ -> True
+    FixedTypeArg _ _ _ -> True
+    Named n args -> getLength args == 0
+    Function _ _ -> False
+    Never _ -> True
+    Ref _ -> True
+    Owner _ -> True
+    Tuple _ -> True

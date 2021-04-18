@@ -1,0 +1,153 @@
+module Siko.HIR.TypeFormatter(fixedType,
+                              toString,
+                              toLongString) where
+
+import Siko.Constants
+import Siko.HIR.Type
+import Siko.HIR.TypeUtil
+import Siko.HIR.Program as HP
+import Map
+
+fixedType :: Type -> Type
+fixedType type = do
+    vars <- collectVars type |> sort |> dedup
+    (var_map, index) <- vars |> List.iter |> Iterator.fold (\(var_map, index), v -> do
+                 new_var <- (("t{}" % index), v)
+                 (var_map, _) <- Map.insert var_map v new_var
+                 (var_map, index + 1)) (Map.empty, 0)
+    convertToFixed var_map type
+
+convertConstraintsToFixed :: [Constraint] -> Map TypeVar (String, TypeVar) -> [Constraint]
+convertConstraintsToFixed constraints var_map = constraints |> List.iter |> Iterator.map (\c -> case c of
+    ClassConstraint s -> c
+    RowConstraint row_name row_type -> RowConstraint row_name (convertToFixed var_map row_type)) |> toList
+
+convertToFixed :: Map TypeVar (String, TypeVar) -> Type -> Type
+convertToFixed var_map type =
+    case type of
+        Var var constraints -> case get var_map var of
+            Some (name, new_var) -> FixedTypeArg name new_var (convertConstraintsToFixed constraints var_map)
+            None -> panic "old var {} not found" % var
+        FixedTypeArg _ var constraints -> case get var_map var of
+            Some (name, new_var) -> FixedTypeArg name new_var (convertConstraintsToFixed constraints var_map)
+            None -> panic "old var {} not found" % var
+        Named n args -> do
+            args <- args |> List.iter |> Iterator.map (\arg -> convertToFixed var_map arg) |> toList
+            Named n args
+        Function from to -> do
+            from <- convertToFixed var_map from
+            to <- convertToFixed var_map to
+            Function from to
+        Never var -> case get var_map var of
+            Some (_, new_var) -> Never new_var
+            None -> panic "old var {} not found" % var
+        Ref t -> Ref (convertToFixed var_map t)
+        Owner t -> Owner (convertToFixed var_map t)
+        Tuple args -> do
+            args <- args |> List.iter |> Iterator.map (\arg -> convertToFixed var_map arg) |> toList
+            Tuple args
+
+toStringComplex :: Type -> Map String Bool -> String
+toStringComplex type names = if isSimple type then convertType type names else "({})" % (convertType type names)
+
+convertType :: Type -> Map String Bool -> String
+convertType type names = case type of
+    Var var _ -> do
+        TypeVar v <- var
+        "tv{}" % v
+    FixedTypeArg n _ _ -> n
+    Named n args -> do
+        n <- HP.getResolvableName n
+        if n == getFullListTypeName
+            then "[{}]" % (convertType (atIndex args 0) names)
+            else if isEmpty args
+                then getNiceName n names
+                else do
+                    args <- args |> List.iter |> Iterator.map (\arg -> toStringComplex arg names) |> toList
+                    "{} {}" % (getNiceName n names, join args " ")
+    Function from to -> do
+        from <- if isFunction from then "({})" % (convertType from names) else convertType from names
+        to <- convertType to names
+        "{} -> {}" % (from, to)
+    Never _ -> "!"
+    Ref t -> "&{}" % (toStringComplex t names)
+    Owner t -> "~{}" % (toStringComplex t names)
+    Tuple args -> do
+        args <- args |> List.iter |> Iterator.map (\arg -> convertType arg names) |> toList
+        if getLength args == 1
+            then "({},)" % (join args ", ")
+            else "({})" % (join args ", ")
+
+formatType :: Type -> Bool -> String
+formatType type short = do
+    limit <- if short then 1 else 0
+    (names, constraint_map) <- collectNames type empty
+    conflicting_names <- names |> List.iter |> Iterator.fold (\short_names, name -> do
+                short <- getShortName name
+                (short_names, _) <- alter (addShortName name) short short_names
+                short_names) empty
+    conflicting_names <- conflicting_names |> Map.iter |> Iterator.map (\(short, names) -> if getLength names > limit then (short, True) else (short, False)) |> toMap
+    constraints <- constraint_map |> Map.iter |> Iterator.map (\(name, constraints) -> do
+                                constraints <- constraints |> List.iter |> Iterator.map (\c -> case c of
+                                                    ClassConstraint s -> "{} {}" % (getNiceName (HP.getResolvableName s) conflicting_names, name)
+                                                    RowConstraint (NamedRow row_name) row_type -> "#{} :: {} {}" % (row_name, toString row_type, name)
+                                                    RowConstraint (IndexedRow index) row_type -> "#{} :: {} {}" % (index, toString row_type, name)) |> toList
+                                constraints) |> Iterator.fold (\all, constraints -> all + constraints) []
+    string_type <- convertType type conflicting_names
+    if isEmpty constraints
+        then string_type
+        else "({}) => {}" % (join constraints ", ", string_type)
+
+toString :: Type -> String
+toString type = formatType type True
+
+toLongString :: Type -> String
+toLongString type = formatType type False
+
+getShortName :: String -> String
+getShortName name = do
+    parts <- String.split name "."
+    atIndex parts ((getLength parts) - 1)
+
+addShortName :: String -> Option [String] -> Option [String]
+addShortName name names = case names of
+    Some names -> if contains names name then Some names else Some (names + [name])
+    None -> Some [name]
+
+getNiceName :: String -> Map String Bool -> String
+getNiceName full_name conflicting_names = do
+    short <- getShortName full_name
+    case get conflicting_names short of
+        Some True -> full_name
+        _ -> short
+
+collectNamesFromConstraints :: [Constraint] -> [String]
+collectNamesFromConstraints constraints = constraints |> List.iter |> Iterator.map (\c -> case c of
+                ClassConstraint s -> HP.getResolvableName s
+                RowConstraint (NamedRow name) row_type -> name
+                RowConstraint (IndexedRow i) row_type -> "{}"  % i) |> toList
+
+collectNames :: Type -> Map String [Constraint] -> ([String], Map String [Constraint])
+collectNames type constraint_map = case type of
+    Var (TypeVar v)  constraints -> (collectNamesFromConstraints constraints, addConstraint ("t{}" % v) constraints constraint_map)
+    FixedTypeArg n _ constraints -> (collectNamesFromConstraints constraints, addConstraint n constraints constraint_map)
+    Named n args -> do
+                n <- HP.getResolvableName n
+                args |> List.iter |> Iterator.fold (\(all, constraint_map), arg -> do
+                (args, constraint_map) <- collectNames arg constraint_map
+                (all + args, constraint_map)) ([n], constraint_map)
+    Function from to -> do
+        (args_from, constraint_map) <- collectNames from constraint_map
+        (args_to, constraint_map) <- collectNames to constraint_map
+        (args_from + args_to, constraint_map)
+    Never _ -> ([], constraint_map)
+    Ref t -> collectNames t constraint_map
+    Owner t -> collectNames t constraint_map
+    Tuple args -> args |> List.iter |> Iterator.fold (\(all, constraint_map), arg -> do
+                (args, constraint_map) <- collectNames arg constraint_map
+                (all + args, constraint_map)) ([], constraint_map)
+
+addConstraint :: String -> [Constraint] -> Map String [Constraint] -> Map String [Constraint]
+addConstraint n constraints constraint_map = do
+    (constraint_map, _) <- insert constraint_map n constraints
+    constraint_map

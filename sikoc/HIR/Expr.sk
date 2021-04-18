@@ -5,51 +5,51 @@ import Siko.HIR.Pattern
 import Siko.HIR.Program (FullyQualifiedName)
 import Siko.Syntax.Location
 
-data Case = { pattern :: Pattern,
-              body :: Expr,
-            } deriving (Show)
+data Case a = { pattern :: Pattern a,
+                body :: Expr a,
+              } deriving (Show)
 
 data ExprRef = { source :: ExprId,
                  location :: Location
                } deriving (Show)
 
-data RecordConstructionItem = { field_name :: Ident,
-                                body :: Expr,
-                              } deriving (Show)
+data RecordConstructionItem a = { field_name :: Ident,
+                                  body :: Expr a,
+                                } deriving (Show)
 
 data ExprId = ExprId Int deriving (PartialEq, Eq, PartialOrd, Ord)
 
 instance Show ExprId where
   show (ExprId id) = "#{}" % id
 
-data Expr = Expr SimpleExpr ExprId Location
+data Expr a = Expr (SimpleExpr a) ExprId a Location
 
-instance Show Expr where
-  show (Expr e _ _) = show e
+instance Show Expr a where
+  show (Expr e _ _ _) = show e
 
-data SimpleExpr = StaticFunctionCall FullyQualifiedName [Expr]
-        | DynamicFunctionCall Expr [Expr]
-        | ClassMemberCall FullyQualifiedName [Expr]
-        | VariantConstructorCall FullyQualifiedName [Expr]
-        | RecordConstructorCall FullyQualifiedName [Expr]
-        | If Expr Expr Expr
-        | Tuple [Expr]
-        | List [Expr]
+data SimpleExpr a = StaticFunctionCall FullyQualifiedName [Expr a]
+        | DynamicFunctionCall (Expr a) [Expr a]
+        | ClassMemberCall FullyQualifiedName [Expr a]
+        | VariantConstructorCall FullyQualifiedName [Expr a]
+        | RecordConstructorCall FullyQualifiedName [Expr a]
+        | If (Expr a) (Expr a) (Expr a)
+        | Tuple [Expr a]
+        | List [Expr a]
         | IntegerLiteral String
         | FloatLiteral String
         | StringLiteral String
         | CharLiteral Char
-        | Do [Expr]
-        | Bind Pattern Expr
-        | FieldAccess Ident Expr
-        | TupleFieldAccess Int Expr
-        | Formatter String [Expr]
-        | CaseOf Expr [Case] [BindGroup]
-        | RecordUpdate BindRef [RecordConstructionItem]
-        | Return Expr
-        | Continue Expr
-        | Break Expr
-        | Loop Pattern Expr Expr [ExprRef] [ExprRef]
+        | Do [Expr a]
+        | Bind (Pattern a) (Expr a)
+        | FieldAccess Ident (Expr a)
+        | TupleFieldAccess Int (Expr a)
+        | Formatter String [Expr a]
+        | CaseOf (Expr a) [Case a] [BindGroup]
+        | RecordUpdate BindRef [RecordConstructionItem a]
+        | Return (Expr a)
+        | Continue (Expr a)
+        | Break (Expr a)
+        | Loop (Pattern a) (Expr a) (Expr a) [ExprRef] [ExprRef]
         | ArgRef Int
         | ValueRef BindRef
         deriving (Show)

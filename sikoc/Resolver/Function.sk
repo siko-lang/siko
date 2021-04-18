@@ -73,7 +73,7 @@ processLambdas lambdas qn =
                     lambda_qn <- HP.FullPathWithLambda qn lambda.id
                     kind <- (HF.Lambda lambda.id)
                     arg_count <- lambda.arg_count
-                    (HE.Expr _ _ location) <- lambda.body
+                    HE.Expr _ _ _ location <- lambda.body
                     HF.Function location lambda_qn arg_count kind None None (Some lambda.body)) |> toList
 
 processSubFunctions :: ResolverState ->
@@ -216,7 +216,7 @@ processFunctionInfo state hir_program module_resolver function_scope_resolver ty
             (Ident name location) <- first_signature.name
             qn <- qn_creator name
             arg_count <- case type of
-                Some t -> HT.getArgCount t
+                Some t -> getLength (HT.getArgs t)
                 None -> 0
             function <- HF.Function location qn arg_count kind type type None
             (state, [function])

@@ -2,6 +2,7 @@ module Siko.Typechecker.DataStore where
 
 import Siko.Syntax.Location
 import Siko.HIR.Type
+import Siko.HIR.TypeFormatter as TF
 import Siko.HIR.Program as P
 import Siko.HIR.TypeVarGenerator
 import Siko.Typechecker
@@ -126,7 +127,7 @@ processMemberType state type derived_class type_name = do
                         state { instance_resolver = instance_resolver }
                     Err state -> do
                         addError state (AutoDeriveError type_name
-                                (type |> fixedType |> toString) (show derived_class.class_name) derived_class.location)
+                                (type |> TF.fixedType |> TF.toString) (show derived_class.class_name) derived_class.location)
 
 processAutoDerivedInstances :: TypecheckerState -> TypecheckerState
 processAutoDerivedInstances state = do

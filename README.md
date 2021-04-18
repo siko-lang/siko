@@ -30,7 +30,10 @@ Status: ![](https://github.com/siko-lang/siko/workflows/Master/badge.svg)
 - [X] Iterators
 - [ ] Effects
 - [ ] Class objects
-- [ ] Bigints
+- [ ] Big integers
+- [ ] Type aliases
+- [ ] Builtin tests
+- [ ] Interpreter
 
 ## Compiler progress
 - [X] Parser

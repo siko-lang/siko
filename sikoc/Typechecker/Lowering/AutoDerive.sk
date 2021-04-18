@@ -1,6 +1,8 @@
 module Siko.Typechecker.Lowering.AutoDerive where
 
 import Siko.HIR.Type as HT
+import Siko.HIR.TypeFormatter as TF
+import Siko.HIR.TypeUtil as TU
 import Siko.HIR.Data as HD
 import Siko.HIR.Program as HP
 import Siko.HIR.Function as HF
@@ -117,7 +119,7 @@ processMemberForShow context member parent_expr class_name = do
             (context, parent_expr) <- getExpr context parent_expr.expr_fn
             (context, parent_expr) <- cloneExpr context parent_expr
             (context, mir_member) <- callOpShow context member parent_expr
-            fmt_arg <- if HT.isSimple member then "{}" else "({})"
+            fmt_arg <- if TU.isSimple member then "{}" else "({})"
             (context, fmt_arg, [mir_member])
 
 data LazyExpr = { expr_fn :: ME.ExprId -> ME.Expr }
@@ -305,7 +307,7 @@ generateShowInstance context hir_type class_name = do
                     body <- ME.Do [decl_expr, body]
                     (context, body_expr) <- getExpr context (ME.Expr body mir_string_type)
                     (context, body_expr)
-        _ -> panic "Cannot auto derive show for type {}" % HT.toString hir_type
+        _ -> panic "Cannot auto derive show for type {}" % TF.toString hir_type
     (context, body)
 
 generatePartialEqInstance :: Context -> HT.Type -> HP.FullyQualifiedName -> (Context, ME.Expr)
@@ -434,5 +436,5 @@ generateTwoArgsInstance context hir_type class_name call_compare_discriminants p
                     record_items <- record.fields |> List.iter |> Iterator.map (\DS.RecordField name type -> (name, type)) |> toList
                     (context, call_expr) <- process_member_fn context record_items (LazyExpr var_ref0_expr) (LazyExpr var_ref1_expr)
                     (context, call_expr)
-        _ -> panic "Cannot auto derive {} for type {}" % (class_name, HT.toString hir_type)
+        _ -> panic "Cannot auto derive {} for type {}" % (class_name, TF.toString hir_type)
     (context, body)
