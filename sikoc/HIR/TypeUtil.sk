@@ -1,6 +1,8 @@
-module Siko.HIR.TypeUtil(collectClassesFromClassConstraints, isSimple) where
+module Siko.HIR.TypeUtil(collectClassesFromClassConstraints, isSimple, newSub) where
 
 import Siko.HIR.Type
+import Siko.HIR.Unification.Substitution as S
+import Siko.HIR.Unification.TypeVarGenerator
 import Siko.HIR.Program as HP
 
 collectClassesFromClassConstraints :: [Constraint] -> [HP.FullyQualifiedName]
@@ -20,3 +22,12 @@ isSimple type = case type of
     Ref _ -> True
     Owner _ -> True
     Tuple _ -> True
+
+newSub :: Type -> TypeVarGenerator -> (S.Substitution, TypeVarGenerator)
+newSub type var_gen = do
+    vars <- collectVars type |> sort |> dedup
+    (var_gen, new_vars) <- repeatS var_gen (\var_gen -> getNewTypeVar var_gen) (getLength vars)
+    sub <- S.createSubstitution
+    sub <- List.zipS sub vars new_vars (\sub, var, new_var -> do
+        Result.unwrap (S.add sub var (Var new_var [])))
+    (sub, var_gen)

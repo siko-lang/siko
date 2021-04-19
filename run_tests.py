@@ -54,17 +54,17 @@ def run_command(args, name, verbose = False):
 def getStd():
     return ["std2/*.sk", "std2/Json/*.sk"]
 
-def run(verbose, debug, test_name, source_folder, index, total):
+def run(verbose, interpret, debug, test_name, source_folder, index, total):
     print("--- Running %s - %d/%d" % (test_name, total, index))
     mkdir_safe("sikoc_test_runs")
     target_folder = os.path.join("sikoc_test_runs", test_name)
     mkdir_safe(target_folder)
     compiled_sikoc = os.path.join("compiled_sikoc","sikoc")
-    if os.path.exists(compiled_sikoc):
+    if not interpret and os.path.exists(compiled_sikoc):
         if not run_command(["./compiled_sikoc.sh", debug, verbose] + getStd() + ["%s/*.sk" % source_folder, "-o", os.path.join(target_folder, test_name)], "compiled_sikoc", verbose = True):
             return False
     else:
-        if not run_command(["./sikoc.sh"] + getStd() + ["%s/*.sk" % source_folder, "-o", os.path.join(target_folder, test_name)], "normal sikoc"):
+        if not run_command(["./sikoc.sh"] + getStd() + ["%s/*.sk" % source_folder, "-o", os.path.join(target_folder, test_name)], "normal sikoc", verbose = True):
             return False
     normal_output = os.path.join(target_folder, "normal")
     rc_output = os.path.join(target_folder, "rc")
@@ -76,6 +76,7 @@ test_source_name = "sikoc_tests"
 tests = []
 verbose = ""
 debug = ""
+interpret = False
 collect_tests(test_source_name, tests, None)
 if len(sys.argv) != 1:
     selected = set()
@@ -86,6 +87,8 @@ if len(sys.argv) != 1:
         elif t == "-d":
             debug = "-d"
             continue
+        elif t == "-i":
+            interpret = True
         else:
             selected.add(t)
     tests = list(filter(lambda test: test[0] in selected, tests))
@@ -93,7 +96,7 @@ total = len(tests)
 success = 0
 failure = 0
 for (index, (name, path)) in enumerate(tests):
-    if run(verbose, debug, name, path, index + 1, total):
+    if run(verbose, interpret, debug, name, path, index + 1, total):
         success += 1
     else:
         failure += 1

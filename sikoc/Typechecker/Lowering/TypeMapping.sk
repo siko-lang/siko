@@ -1,11 +1,12 @@
 module Siko.Typechecker.Lowering.TypeMapping(createTypeMap) where
 
 import Siko.HIR.Type as HT
+import Siko.HIR.Data as HD
 import Siko.HIR.Program as HP
 import Siko.MIR.Function as MF
-import Siko.Typechecker.DataStore as DS
+import Siko.Typechecker.Lowering.TypeStore as TS
 import Siko.Typechecker
-import Siko.Typechecker.Unification as U
+import Siko.HIR.Unification as U
 import Siko.Typechecker.Lowering as L
 import Map
 
@@ -53,9 +54,8 @@ mapType context steps type = case type of
     HT.FixedTypeArg name _ _ -> do
         addVarPosition context name steps
     HT.Named qn args -> do
-        data_type_info <- DS.getDataTypeInfo context.lowering_context.state.data_store qn
-        case data_type_info of
-            DS.Record record -> do
+        case HP.getItem context.lowering_context.hir_program qn of
+            HP.Record record -> do
                 if record.external
                     then do
                         context <- List.foldE (\context, index, arg -> do
@@ -64,32 +64,23 @@ mapType context steps type = case type of
                             context) context args
                         context
                     else do
-                        sub <- U.createSubstitution
-                        state <- context.lowering_context.state
-                        case U.unify state.var_gen sub state.data_store state.class_store record.type type of
-                            Ok (var_gen, sub) -> do
-                                record <- U.apply record sub
-                                context <- List.foldE (\context, index, field -> do
-                                    steps <- steps + [MF.Field index]
-                                    context <- mapType context steps field.type
-                                    context) context record.fields
-                                context
-                            Err _ -> panic "Unification failed in type mapping"
-            DS.Adt adt -> do
-                sub <- U.createSubstitution
-                state <- context.lowering_context.state
-                case U.unify state.var_gen sub state.data_store state.class_store adt.type type of
-                    Ok (var_gen, sub) -> do
-                        adt <- U.apply adt sub
-                        context <- List.foldE (\context, index, v -> do
-                            steps <- steps + [MF.Variant index]
-                            context <- List.foldE (\context, index, t -> do
-                                    steps <- steps + [MF.Field index]
-                                    context <- mapType context steps t
-                                    context) context v.items
-                            context) context adt.variants
-                        context
-                    Err _ -> panic "Unification failed in type mapping"
+                        (lowering_context, record) <- TS.instantiateRecord context.lowering_context record type
+                        context <- context { lowering_context = lowering_context }
+                        List.foldE (\context, index, (HD.RecordField _ field_type) -> do
+                            steps <- steps + [MF.Field index]
+                            context <- mapType context steps field_type
+                            context) context record.fields
+            HP.Adt adt -> do
+                (lowering_context, adt) <- TS.instantiateAdt context.lowering_context adt type
+                context <- context { lowering_context = lowering_context }
+                List.foldE (\context, index, v -> do
+                    steps <- steps + [MF.Variant index]
+                    context <- List.foldE (\context, index, t -> do
+                            steps <- steps + [MF.Field index]
+                            context <- mapType context steps t
+                            context) context v.items
+                    context) context adt.variants
+            _ -> panic "Named type is not an adt nor a record in type mapping"
     HT.Function from to -> panic "Function type in type mapping!"
     HT.Never var -> context
     HT.Ref t -> do

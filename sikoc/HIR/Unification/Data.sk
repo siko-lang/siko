@@ -1,0 +1,63 @@
+module Siko.HIR.Unification.Data where
+
+import Siko.HIR.Type as T
+import Siko.HIR.TypeUtil as Util
+import Siko.HIR.Data as D
+import Siko.HIR.Unification as U
+import Siko.HIR.Unification.Substitution as S
+import Siko.HIR.Unification.TypeVarGenerator
+
+instance S.Apply D.Record where
+    apply record sub = transform record (\t -> S.apply t sub)
+
+instance Transform D.Record where
+    transform record f = do
+        type_args <- List.map record.type_args f
+        fields <- List.map record.fields (\D.RecordField name type -> D.RecordField name (f type))
+        type <- f record.type
+        record_ctor <- f record.record_ctor
+        D.Record record.name record.location type_args fields record.external record_ctor record.derived_classes type
+
+instance S.Apply D.AlgebraicDataType where
+    apply adt sub = transform adt (\t -> S.apply t sub)
+
+class Transform a where
+    transform a :: a -> (T.Type -> T.Type) -> a
+
+instance Transform D.AlgebraicDataType where
+    transform adt f = do
+        type_args <- List.map adt.type_args f
+        variants <- List.map adt.variants (\variant -> do
+            items <- List.map variant.items f
+            variant { items = items })
+        type <- f adt.type
+        variant_ctors <- List.map adt.variant_ctors f
+        D.AlgebraicDataType adt.name adt.location type_args variants variant_ctors adt.derived_classes type
+
+remapRecord :: D.Record -> TypeVarGenerator -> (D.Record, TypeVarGenerator)
+remapRecord record var_gen = do
+    (sub, var_gen) <- Util.newSub record.type var_gen
+    record <- transform record (\t -> S.apply (T.removeFixed t) sub)
+    (record, var_gen)
+
+remapAdt :: D.AlgebraicDataType -> TypeVarGenerator -> (D.AlgebraicDataType, TypeVarGenerator)
+remapAdt adt var_gen = do
+    (sub, var_gen) <- Util.newSub adt.type var_gen
+    adt <- transform adt (\t -> S.apply (T.removeFixed t) sub)
+    (adt, var_gen)
+
+instantiateAdt a :: (U.DataProvider a) => a -> TypeVarGenerator -> D.AlgebraicDataType -> T.Type -> Result (TypeVarGenerator, D.AlgebraicDataType) ()
+instantiateAdt data_provider var_gen adt adt_type = do
+    sub <- S.createSubstitution
+    (adt, var_gen) <- remapAdt adt var_gen
+    (var_gen, sub) <- try U.unify var_gen sub data_provider adt.type adt_type
+    adt <- S.apply adt sub
+    Ok (var_gen, adt)
+
+instantiateRecord a :: (U.DataProvider a) => a -> TypeVarGenerator -> D.Record -> T.Type -> Result (TypeVarGenerator, D.Record) ()
+instantiateRecord data_provider var_gen record record_type = do
+    sub <- S.createSubstitution
+    (record, var_gen) <- remapRecord record var_gen
+    (var_gen, sub) <- try U.unify var_gen sub data_provider record.type record_type
+    record <- S.apply record sub
+    Ok (var_gen, record)

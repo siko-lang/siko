@@ -4,13 +4,14 @@ import Siko.HIR.Class
 import Siko.HIR.Type as T
 import Siko.HIR.TypeFormatter as TF
 import Siko.HIR.Program as P
-import Siko.HIR.TypeVarGenerator
+import Siko.HIR.Unification.TypeVarGenerator
 import Siko.Syntax.Location
 import Siko.Typechecker
 import Siko.Typechecker.ClassStore
 import Siko.Typechecker.Error
-import Siko.Typechecker.Unification as U
-import Siko.Typechecker.TypeIsomorphism
+import Siko.HIR.Unification as U
+import Siko.HIR.Unification.Substitution as S
+import Siko.Typechecker.TypeIsomorphism as TS
 import Map
 
 data BaseType = Tuple
@@ -106,10 +107,10 @@ addAutoDerivedInstance instance_resolver class_name instance_type location = do
     instance_resolver <- instance_resolver { auto_derived_instances = auto_derived_instances }
     Ok (instance_resolver, id)
 
-unifyTypes :: TypecheckerState -> U.Substitution -> T.Type -> T.Type -> (TypecheckerState, U.Substitution, Bool)
+unifyTypes :: TypecheckerState -> S.Substitution -> T.Type -> T.Type -> (TypecheckerState, S.Substitution, Bool)
 unifyTypes state sub type1 type2 = do
     var_gen <- state.var_gen
-    (state, sub, success) <- case U.unify var_gen sub state.data_store state.class_store type1 type2 of
+    (state, sub, success) <- case U.unify var_gen sub state type1 type2 of
         Ok (var_gen, sub) -> do
             state <- state { var_gen = var_gen }
             (state, sub, True)
@@ -119,11 +120,11 @@ unifyTypes state sub type1 type2 = do
     (state, sub, success)
 
 checkInstancesForBaseType :: TypecheckerState ->
-                             U.Substitution ->
+                             S.Substitution ->
                              T.Type ->
                              BaseType ->
                              Map BaseType InstanceInfo ->
-                             P.FullyQualifiedName -> (TypecheckerState, U.Substitution, Bool)
+                             P.FullyQualifiedName -> (TypecheckerState, S.Substitution, Bool)
 checkInstancesForBaseType state sub type base_type instance_info_map class_name = do
     //println "checkInstancesForBaseType {} {}" % (T.toLongString type, base_type)
     case get instance_info_map base_type of
@@ -148,10 +149,10 @@ checkInstancesForBaseType state sub type base_type instance_info_map class_name 
             (state, sub, False)
 
 hasInstance :: TypecheckerState ->
-               U.Substitution ->
+               S.Substitution ->
                T.Type ->
                P.FullyQualifiedName ->
-               Result (TypecheckerState, U.Substitution) TypecheckerState
+               Result (TypecheckerState, S.Substitution) TypecheckerState
 hasInstance state sub type class_name = do
     base_type <- getBaseType type
     case get state.instance_resolver.instance_map class_name of
@@ -197,12 +198,12 @@ checkInstance state type class_name = do
         T.Var var _ -> Ok (state, [(var, class_name)])
         T.Never var -> Ok (state, [(var, class_name)])
         _ -> do
-            sub <- U.createSubstitution
+            sub <- S.createSubstitution
             case hasInstance state sub type class_name of
                 Ok (state, sub) -> do
-                    sub :: U.Substitution <- sub // FIXME
+                    sub :: S.Substitution <- sub // FIXME
                     (state, cs, success) <- sub.constraints |> List.iter |> Iterator.fold (\(state, cs, success), c -> do
-                            U.UnificationConstraint c_name c_type <- c
+                            S.UnificationConstraint c_name c_type <- c
                             if c_name == class_name && c_type == type
                                 then (state, cs, success)
                                 else do
@@ -219,22 +220,22 @@ checkInstance state type class_name = do
                     //println "checkInstance: hasInstance failed"
                     Err state
 
-mergeResolverConstraintsIntoSubstitution :: TypecheckerState -> [(T.TypeVar, P.FullyQualifiedName)] -> U.Substitution -> (TypecheckerState, U.Substitution)
+mergeResolverConstraintsIntoSubstitution :: TypecheckerState -> [(T.TypeVar, P.FullyQualifiedName)] -> S.Substitution -> (TypecheckerState, S.Substitution)
 mergeResolverConstraintsIntoSubstitution state constraints sub = do
     constraints |> List.iter |> Iterator.fold (\(state, sub), (var, class_name) -> do
         (var_gen, new_var) <- getNewTypeVar state.var_gen
         state <- state { var_gen = var_gen }
         new_type <- T.Var new_var [T.ClassConstraint class_name]
-        sub <- case U.add sub var new_type of
+        sub <- case S.add sub var new_type of
             Ok sub -> sub
             Err _ -> panic "Failed to merge new type var into sub {} {} {}" % (var, TF.toLongString new_type, sub)
         (state, sub)) (state, sub)
 
 applyResolverConstraintsToType :: TypecheckerState -> [(T.TypeVar, P.FullyQualifiedName)] -> T.Type -> (TypecheckerState, T.Type)
 applyResolverConstraintsToType state constraints type = do
-    sub <- U.createSubstitution
+    sub <- S.createSubstitution
     (state, sub) <- mergeResolverConstraintsIntoSubstitution state constraints sub
-    (state, U.apply type sub)
+    (state, S.apply type sub)
 
 checkInstanceDependenciesForInstance :: TypecheckerState -> T.Type -> P.FullyQualifiedName -> Location -> TypecheckerState
 checkInstanceDependenciesForInstance state type class_name location = do
@@ -248,7 +249,7 @@ checkInstanceDependenciesForInstance state type class_name location = do
             Ok (state, cs) -> do
                 state :: TypecheckerState <- state // FIXME
                 (state, new_type) <- applyResolverConstraintsToType state cs type
-                if checkIsomorphicType new_type type state.class_store
+                if TS.checkIsomorphicType new_type type state.class_store
                     then state
                     else addError state (MissingInstance ("{}" % dep) location)
             Err state -> do

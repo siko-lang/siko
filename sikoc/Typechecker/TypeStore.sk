@@ -2,11 +2,12 @@ module Siko.Typechecker.TypeStore where
 
 import Siko.Syntax.Location
 import Siko.HIR.Type as T
+import Siko.HIR.Data as D
 import Siko.HIR.TypeFormatter as TF
 import Siko.HIR.Expr as E
 import Siko.HIR.Pattern as P
-import Siko.Typechecker.Unification as U
-import Siko.Typechecker.DataStore as DS
+import Siko.HIR.Unification as U
+import Siko.HIR.Unification.Substitution as S
 import Map
 
 data ExprTypeState = ExprType T.Type
@@ -14,8 +15,8 @@ data ExprTypeState = ExprType T.Type
                      deriving (Show)
 
 data PatternTypeState = PatternType T.Type
-                        | PatternWithRecordType DS.RecordTypeInfo
-                        | PatternWithAdtType DS.AdtTypeInfo
+                        | PatternWithRecordType D.Record
+                        | PatternWithAdtType D.AlgebraicDataType
                         deriving (Show)
 
 data TypeStore = { expr_types :: Map E.ExprId ExprTypeState,
@@ -23,18 +24,18 @@ data TypeStore = { expr_types :: Map E.ExprId ExprTypeState,
                    pattern_locations :: Map P.PatternId Location
                  } deriving (Show)
 
-instance U.Apply ExprTypeState where
-    //apply :: ExprTypeState -> U.Substitution -> ExprTypeState
+instance S.Apply ExprTypeState where
+    //apply :: ExprTypeState -> S.Substitution -> ExprTypeState
     apply ets sub = case ets of
-                    ExprType ty -> ExprType (U.apply ty sub)
-                    FunctionCall ty fn_ty -> FunctionCall (U.apply ty sub) (U.apply fn_ty sub)
+                    ExprType ty -> ExprType (S.apply ty sub)
+                    FunctionCall ty fn_ty -> FunctionCall (S.apply ty sub) (S.apply fn_ty sub)
 
-instance U.Apply PatternTypeState where
-    //apply :: PatternTypeState -> U.Substitution -> PatternTypeState
+instance S.Apply PatternTypeState where
+    //apply :: PatternTypeState -> S.Substitution -> PatternTypeState
     apply pts sub = case pts of
-        PatternType ty -> PatternType (U.apply ty sub)
-        PatternWithRecordType record_type_info -> PatternWithRecordType (U.apply record_type_info sub)
-        PatternWithAdtType adt_type_info -> PatternWithAdtType (U.apply adt_type_info sub)
+        PatternType ty -> PatternType (S.apply ty sub)
+        PatternWithRecordType record -> PatternWithRecordType (S.apply record sub)
+        PatternWithAdtType adt -> PatternWithAdtType (S.apply adt sub)
 
 initializeTypeStore :: TypeStore
 initializeTypeStore = TypeStore empty empty empty
@@ -76,8 +77,8 @@ getTypeFromPatternTypeState :: PatternTypeState -> T.Type
 getTypeFromPatternTypeState pattern_type =
     case pattern_type of
         PatternType type -> type
-        PatternWithRecordType record_type_info -> record_type_info.type
-        PatternWithAdtType adt_type_info -> adt_type_info.type
+        PatternWithRecordType record -> record.type
+        PatternWithAdtType adt -> adt.type
 
 getExprType :: TypeStore -> E.ExprId -> T.Type
 getExprType store expr_id = do
@@ -95,26 +96,26 @@ getPatternType :: TypeStore -> P.PatternId -> T.Type
 getPatternType store pattern_id = do
     case get store.pattern_types pattern_id of
         Some (PatternType type) -> type
-        Some (PatternWithRecordType record_type_info) -> record_type_info.type
-        Some (PatternWithAdtType adt_type_info) -> adt_type_info.type
+        Some (PatternWithRecordType record) -> record.type
+        Some (PatternWithAdtType adt) -> adt.type
         _ -> panic "No type found for {}" % pattern_id
 
-getRecordTypeInfo :: TypeStore -> P.PatternId -> DS.RecordTypeInfo
-getRecordTypeInfo store pattern_id = do
+getRecord :: TypeStore -> P.PatternId -> D.Record
+getRecord store pattern_id = do
     case get store.pattern_types pattern_id of
-        Some (PatternWithRecordType record_type_info) -> record_type_info
+        Some (PatternWithRecordType record) -> record
         _ -> panic "No record type info found for {}" % pattern_id
 
-getAdtTypeInfo :: TypeStore -> P.PatternId -> DS.AdtTypeInfo
-getAdtTypeInfo store pattern_id = do
+getAdt :: TypeStore -> P.PatternId -> D.AlgebraicDataType
+getAdt store pattern_id = do
     case get store.pattern_types pattern_id of
-        Some (PatternWithAdtType adt_type_info) -> adt_type_info
+        Some (PatternWithAdtType adt) -> adt
         _ -> panic "No adt type info found for {}" % pattern_id
 
-instance U.Apply TypeStore where
+instance S.Apply TypeStore where
     apply store sub = do
-        expr_types <- Map.update store.expr_types (\(id, expr_ty) -> U.apply expr_ty sub)
-        pattern_types <- Map.update store.pattern_types (\(id, pattern_ty) -> U.apply pattern_ty sub)
+        expr_types <- Map.update store.expr_types (\(id, expr_ty) -> S.apply expr_ty sub)
+        pattern_types <- Map.update store.pattern_types (\(id, pattern_ty) -> S.apply pattern_ty sub)
         store { expr_types = expr_types, pattern_types = pattern_types }
 
 dump :: TypeStore -> ()
@@ -124,5 +125,5 @@ dump store = do
         FunctionCall ty fn_type -> println "E{}: {}" % (expr_id, TF.toString ty))
     store.pattern_types |> Map.iter |> forEach (\(pattern_id, state) -> case state of
         (PatternType ty) -> println "P{}: {}" % (pattern_id, TF.toString ty)
-        (PatternWithRecordType record_type_info) -> println "P{}: {}" % (pattern_id, TF.toString record_type_info.type)
-        (PatternWithAdtType adt_type_info) -> println "P{}: {}" % (pattern_id, TF.toString adt_type_info.type))
+        (PatternWithRecordType record) -> println "P{}: {}" % (pattern_id, TF.toString record.type)
+        (PatternWithAdtType adt) -> println "P{}: {}" % (pattern_id, TF.toString adt.type))

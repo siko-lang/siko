@@ -10,8 +10,8 @@ import Siko.MIR.Expr as ME
 import Siko.MIR.Function as MF
 import Siko.MIR.Program as MP
 import Siko.Typechecker
-import Siko.Typechecker.DataStore as DS
-import Siko.Typechecker.Unification as U
+import Siko.HIR.Unification as U
+import Siko.HIR.Unification.Substitution as S
 import Siko.Typechecker.Lowering
 import Siko.Typechecker.FunctionStore
 import Siko.Typechecker.Lowering.ClosureStore as CS
@@ -124,9 +124,8 @@ processNormalFunction context mir_function_id hir_type qn hir_function =
             state <- context.state
             function_type_info <- getFunctionTypeInfo context.function_store qn
             function_type <- HT.removeFixed function_type_info.function_type
-            sub <- U.createSubstitution
-            (state, sub) <- case U.unify state.var_gen sub state.data_store state.class_store
-                                hir_type function_type of
+            sub <- S.createSubstitution
+            (state, sub) <- case U.unify state.var_gen sub state hir_type function_type of
                 Ok (var_gen, sub) -> (state { var_gen = var_gen}, sub)
                 Err _ -> panic "Failed to unify {} {} for normal function in MIR lowering" %
                             (TF.toString hir_type, TF.toString function_type)

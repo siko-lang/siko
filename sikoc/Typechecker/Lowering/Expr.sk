@@ -10,7 +10,8 @@ import Siko.Typechecker.Lowering.TypeStore
 import Siko.Typechecker.Lowering.ClosureStore as CS
 import Siko.Typechecker.Lowering.Util
 import Siko.Typechecker.Lowering.ClassMemberCalls
-import Siko.Typechecker.Unification as U
+import Siko.HIR.Unification as U
+import Siko.HIR.Unification.Substitution as S
 import Siko.Typechecker.Util as TUtil
 import Siko.Typechecker.InstanceResolver as IR
 import Siko.Typechecker.FunctionStore as FS
@@ -30,19 +31,19 @@ import Siko.Syntax.Ident
 import Siko.Constants
 import Map
 
-processArgs :: Context -> U.Substitution -> [HE.Expr HT.Type] -> (Context, [ME.Expr])
+processArgs :: Context -> S.Substitution -> [HE.Expr HT.Type] -> (Context, [ME.Expr])
 processArgs context sub args = do
     (context, mir_args) <- args |> List.iter |> Iterator.fold (\(context, mir_args), e -> do
                 (context, mir_arg) <- processExpr context sub e
                 (context, mir_args + [mir_arg])) (context, [])
     (context, mir_args)
 
-getMonomorphizedType :: U.Substitution -> HT.Type -> HT.Type
+getMonomorphizedType :: S.Substitution -> HT.Type -> HT.Type
 getMonomorphizedType sub type = do
     type <- HT.removeFixed type
-    U.apply type sub
+    S.apply type sub
 
-processArgTypes :: U.Substitution -> [HE.Expr HT.Type] -> [HT.Type]
+processArgTypes :: S.Substitution -> [HE.Expr HT.Type] -> [HT.Type]
 processArgTypes sub args =
     List.map args (\HE.Expr _ _ type _ -> getMonomorphizedType sub type)
 
@@ -52,7 +53,7 @@ getFieldType mir_record field_name = do
         field <- atIndex mir_record.fields index
         if field.name == field_name then return field.type else index + 1
 
-processBindArgs :: Context -> U.Substitution -> [HP.Pattern HT.Type] -> (ME.ExprId -> ME.Expr) -> MD.Record -> (Context, [ME.Expr])
+processBindArgs :: Context -> S.Substitution -> [HP.Pattern HT.Type] -> (ME.ExprId -> ME.Expr) -> MD.Record -> (Context, [ME.Expr])
 processBindArgs context sub args var_ref_expr mir_record = do
     (context, arg_exprs, _) <- args |> List.iter |> Iterator.fold (\(context, arg_exprs, index), arg -> do
         field <- atIndex mir_record.fields index
@@ -64,7 +65,7 @@ processBindArgs context sub args var_ref_expr mir_record = do
         (context, arg_exprs, index + 1)) (context, [], 0)
     (context, arg_exprs)
 
-processBind :: Context -> U.Substitution -> HP.Pattern HT.Type -> ME.Expr -> (Context, [ME.Expr])
+processBind :: Context -> S.Substitution -> HP.Pattern HT.Type -> ME.Expr -> (Context, [ME.Expr])
 processBind context sub (HP.Pattern p id pattern_type _) rhs = do
     (context, unit_type) <- processType context (HT.Tuple [])
     case p of
@@ -139,7 +140,7 @@ processBindVars context additional_info path_info_map unit_type = do
         (context, var_decls)) (context, [])
     (context, var_decls)
 
-processCaseEnds :: Context -> U.Substitution -> [MatchInfo] -> [HE.Expr HT.Type] -> [Option (HE.Expr HT.Type)] -> Map ValuePath ValuePathAccessor -> MT.Type -> (Context, ME.Expr)
+processCaseEnds :: Context -> S.Substitution -> [MatchInfo] -> [HE.Expr HT.Type] -> [Option (HE.Expr HT.Type)] -> Map ValuePath ValuePathAccessor -> MT.Type -> (Context, ME.Expr)
 processCaseEnds context sub match_infos hir_case_bodies hir_guards path_info_map unit_type = do
     if getLength match_infos == 1
         then do
@@ -168,7 +169,7 @@ processCaseEnds context sub match_infos hir_case_bodies hir_guards path_info_map
                     (context, result)
                 None -> panic "Matchinfos ran out!"
 
-processChoiceTree :: Context -> U.Substitution -> Choice -> Map ValuePath ValuePathAccessor -> [HE.Expr HT.Type] -> [Option (HE.Expr HT.Type)] -> (Context, ME.Expr)
+processChoiceTree :: Context -> S.Substitution -> Choice -> Map ValuePath ValuePathAccessor -> [HE.Expr HT.Type] -> [Option (HE.Expr HT.Type)] -> (Context, ME.Expr)
 processChoiceTree context sub choice path_info_map hir_case_bodies hir_guards = do
     (context, unit_type) <- processType context (HT.Tuple [])
     case choice of
@@ -479,7 +480,7 @@ removeMulti context exprs = exprs |> List.iter |> Iterator.fold (\(context, expr
                         (context, expr) <- getExpr context (ME.Expr s_expr s_type)
                         (context, exprs + [expr])) (context, [])
 
-processExpr :: Context -> U.Substitution -> HE.Expr HT.Type -> (Context, ME.Expr)
+processExpr :: Context -> S.Substitution -> HE.Expr HT.Type -> (Context, ME.Expr)
 processExpr context sub hir_expr = do
     HE.Expr expr expr_id expr_type _ <- hir_expr
     expr_type <- getMonomorphizedType sub expr_type
@@ -527,7 +528,7 @@ processExpr context sub hir_expr = do
                             member_type <- TUtil.remap mapper member.type
                             arg_type <- TUtil.remap mapper class_type_info.arg_type
                             (state, function_type, sub) <- getFunctionType state arg_types expr_type member_type
-                            arg <- U.apply arg_type sub
+                            arg <- S.apply arg_type sub
                             processClassMemberCall context function_type arg class_name qn mir_args member.has_default_impl
                         None -> panic "class member {} not found" % member_name
                 _ -> panic "ClassMember calls non class member"

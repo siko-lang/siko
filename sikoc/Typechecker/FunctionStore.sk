@@ -3,7 +3,8 @@ module Siko.Typechecker.FunctionStore where
 import Siko.HIR.Type
 import Siko.HIR.TypeFormatter as TF
 import Siko.HIR.Program
-import Siko.Typechecker.Unification as U
+import Siko.HIR.Unification as U
+import Siko.HIR.Unification.Substitution as S
 import Map
 
 data FunctionTypeInfo = { name :: FullyQualifiedName,
@@ -30,14 +31,14 @@ getFunctionTypeInfo store name =
         Some func_type_info -> func_type_info
         None -> panic "FunctionTypeInfo for {} not found" % name
 
-applyTypeInfo :: FunctionTypeInfo -> U.Substitution -> FunctionTypeInfo
+applyTypeInfo :: FunctionTypeInfo -> S.Substitution -> FunctionTypeInfo
 applyTypeInfo func_type_info sub = do
-    args <- func_type_info.args |> List.iter |> Iterator.map (\t -> U.apply t sub) |> toList
-    function_type <- U.apply func_type_info.function_type sub
-    result_type <- U.apply func_type_info.result_type sub
+    args <- func_type_info.args |> List.iter |> Iterator.map (\t -> S.apply t sub) |> toList
+    function_type <- S.apply func_type_info.function_type sub
+    result_type <- S.apply func_type_info.result_type sub
     FunctionTypeInfo func_type_info.name args function_type result_type func_type_info.defined
 
-apply :: FunctionStore -> [FullyQualifiedName] -> U.Substitution -> FunctionStore
+apply :: FunctionStore -> [FullyQualifiedName] -> S.Substitution -> FunctionStore
 apply store group_items sub = do
     functions <- group_items |> List.iter |> Iterator.fold (\functions, name -> do
             (functions, _) <- alter (\func_type_info -> case func_type_info of

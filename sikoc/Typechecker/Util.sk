@@ -1,54 +1,56 @@
 module Siko.Typechecker.Util where
 
-import Siko.HIR.Type
+import Siko.HIR.Type as T
 import Siko.HIR.Program as P
-import Siko.HIR.TypeVarGenerator
+import Siko.HIR.Unification.TypeVarGenerator
+import Siko.HIR.Unification as U
+import Siko.HIR.Unification.Substitution as S
 import Siko.Constants
 
 import Map
 
-getIntType :: Type
-getIntType = Named (P.FullPath getIntModuleName getIntTypeName) []
+getIntType :: T.Type
+getIntType = T.Named (P.FullPath getIntModuleName getIntTypeName) []
 
-getFloatType :: Type
-getFloatType = Named (P.FullPath getFloatModuleName getFloatTypeName) []
+getFloatType :: T.Type
+getFloatType = T.Named (P.FullPath getFloatModuleName getFloatTypeName) []
 
-getStringType :: Type
-getStringType = Named (P.FullPath getStringModuleName getStringTypeName) []
+getStringType :: T.Type
+getStringType = T.Named (P.FullPath getStringModuleName getStringTypeName) []
 
-getCharType :: Type
-getCharType = Named (P.FullPath getCharModuleName getCharTypeName) []
+getCharType :: T.Type
+getCharType = T.Named (P.FullPath getCharModuleName getCharTypeName) []
 
-getBoolType :: Type
-getBoolType = Named (P.FullPath getBoolModuleName getBoolTypeName) []
+getBoolType :: T.Type
+getBoolType = T.Named (P.FullPath getBoolModuleName getBoolTypeName) []
 
-getListType :: Type -> Type
-getListType arg = Named (P.FullPath getListModuleName getListTypeName) [arg]
+getListType :: T.Type -> T.Type
+getListType arg = T.Named (P.FullPath getListModuleName getListTypeName) [arg]
 
-getOrderingType :: Type
-getOrderingType = Named (P.FullPath getOrderingModuleName getOrderingTypeName) []
+getOrderingType :: T.Type
+getOrderingType = T.Named (P.FullPath getOrderingModuleName getOrderingTypeName) []
 
-getOptionType :: Type -> Type
-getOptionType arg = Named (P.FullPath getOptionModuleName getOptionTypeName) [arg]
+getOptionType :: T.Type -> T.Type
+getOptionType arg = T.Named (P.FullPath getOptionModuleName getOptionTypeName) [arg]
 
-getOptionalOrderingType :: Type
+getOptionalOrderingType :: T.Type
 getOptionalOrderingType = getOptionType getOrderingType
 
-createGeneralFunction :: Int -> TypeVarGenerator -> (TypeVarGenerator, Type)
+createGeneralFunction :: Int -> TypeVarGenerator -> (TypeVarGenerator, T.Type)
 createGeneralFunction arg_count var_gen =
     if arg_count == 0
     then getNewTypeVarType var_gen
     else do
         (var_gen, from) <- getNewTypeVarType var_gen
         (var_gen, to) <- createGeneralFunction (arg_count - 1) var_gen
-        (var_gen, Function from to)
+        (var_gen, T.Function from to)
 
-collectVars :: [TypeVar] -> Type -> [TypeVar]
-collectVars vars type = Siko.HIR.Type.collectVars type + vars |> sort |> dedup
+collectVars :: [T.TypeVar] -> T.Type -> [T.TypeVar]
+collectVars vars type = T.collectVars type + vars |> sort |> dedup
 
-data Mapper = Mapper (Map TypeVar TypeVar) deriving (Show)
+data Mapper = Mapper (Map T.TypeVar T.TypeVar) deriving (Show)
 
-initMapper :: [TypeVar] -> TypeVarGenerator -> (Mapper, TypeVarGenerator)
+initMapper :: [T.TypeVar] -> TypeVarGenerator -> (Mapper, TypeVarGenerator)
 initMapper vars var_gen = do
     (vars, var_gen) <- vars |> List.iter |> Iterator.fold (\(vars, var_gen), old_var -> do
             (var_gen, new_var) <- getNewTypeVar var_gen
@@ -56,43 +58,42 @@ initMapper vars var_gen = do
             (vars, var_gen)) (empty, var_gen)
     (Mapper vars, var_gen)
 
-instantiateType :: Type -> TypeVarGenerator -> (Type, TypeVarGenerator)
+instantiateType :: T.Type -> TypeVarGenerator -> (T.Type, TypeVarGenerator)
 instantiateType type var_gen = do
-    vars <- Siko.HIR.Type.collectVars type |> sort |> dedup
+    vars <- T.collectVars type |> sort |> dedup
     (mapper, var_gen) <- initMapper vars var_gen
     type <- remap mapper type
     (type, var_gen)
-
-remap :: Mapper -> Type -> Type
+remap :: Mapper -> T.Type -> T.Type
 remap mapper type = do
     (Mapper vars) <- mapper
     case type of
-        Var var constraints -> case get vars var of
+        T.Var var constraints -> case get vars var of
             Some new_var -> do
                 constraints <- constraints |> List.iter |> Iterator.map (\c -> case c of
-                        ClassConstraint s -> c
-                        RowConstraint name ty -> RowConstraint name (remap mapper ty)) |> toList
-                Var new_var constraints
+                        T.ClassConstraint s -> c
+                        T.RowConstraint name ty -> T.RowConstraint name (remap mapper ty)) |> toList
+                T.Var new_var constraints
             None -> panic "old var {} not found" % var
-        FixedTypeArg _ var constraints -> case get vars var of
+        T.FixedTypeArg _ var constraints -> case get vars var of
             Some new_var -> do
                 constraints <- constraints |> List.iter |> Iterator.map (\c -> case c of
-                        ClassConstraint s -> c
-                        RowConstraint name ty -> RowConstraint name (remap mapper ty)) |> toList
-                Var new_var constraints
+                        T.ClassConstraint s -> c
+                        T.RowConstraint name ty -> T.RowConstraint name (remap mapper ty)) |> toList
+                T.Var new_var constraints
             None -> panic "old var {} not found" % var
-        Named n args -> do
+        T.Named n args -> do
             args <- args |> List.iter |> Iterator.map (\arg -> remap mapper arg) |> toList
-            Named n args
-        Function from to -> do
+            T.Named n args
+        T.Function from to -> do
             from <- remap mapper from
             to <- remap mapper to
-            Function from to
-        Never var -> case get vars var of
-            Some new_var -> Never new_var
+            T.Function from to
+        T.Never var -> case get vars var of
+            Some new_var -> T.Never new_var
             None -> panic "old var {} not found" % var
-        Ref t -> Ref (remap mapper t)
-        Owner t -> Owner (remap mapper t)
-        Tuple args -> do
+        T.Ref t -> T.Ref (remap mapper t)
+        T.Owner t -> T.Owner (remap mapper t)
+        T.Tuple args -> do
             args <- args |> List.iter |> Iterator.map (\arg -> remap mapper arg) |> toList
-            Tuple args
+            T.Tuple args

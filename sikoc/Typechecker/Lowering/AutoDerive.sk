@@ -12,8 +12,7 @@ import Siko.MIR.Data as MD
 import Siko.MIR.Function as MF
 import Siko.MIR.Program as MP
 import Siko.Typechecker
-import Siko.Typechecker.DataStore as DS
-import Siko.Typechecker.Unification as U
+import Siko.HIR.Unification as U
 import Siko.Typechecker.Lowering
 import Siko.Typechecker.FunctionStore
 import Siko.Typechecker.Lowering.ClosureStore as CS
@@ -216,8 +215,8 @@ generateShowInstance context hir_type class_name = do
     (context, mir_string_type) <- TS.processType context TUtil.getStringType
     (context, body) <- case hir_type of
         HT.Named qn _ -> do
-            case DS.getDataTypeInfo context.state.data_store qn of
-                DS.Adt adt -> do
+            case HP.getItem context.hir_program qn of
+                HP.Adt adt -> do
                     (context, adt) <- TS.instantiateAdt context adt hir_type
                     (context, mir_adt_type) <- TS.processType context hir_type
                     (context, unit_type) <- TS.processType context (HT.Tuple [])
@@ -280,7 +279,7 @@ generateShowInstance context hir_type class_name = do
                             body <- ME.Do [decl_expr, case_of_expr]
                             (context, body_expr) <- getExpr context (ME.Expr body mir_string_type)
                             (context, body_expr)
-                DS.Record record -> do
+                HP.Record record -> do
                     (context, record) <- TS.instantiateRecord context record hir_type
                     (context, mir_record_type) <- TS.processType context hir_type
                     (context, unit_type) <- TS.processType context (HT.Tuple [])
@@ -290,12 +289,12 @@ generateShowInstance context hir_type class_name = do
                     decl <- ME.VarDecl var arg_ref_expr
                     (context, decl_expr) <- getExpr context (ME.Expr decl unit_type)
                     (context, fmt_args, mir_items) <- record.fields |> List.iter
-                            |> Iterator.fold (\(context, fmt_args, mir_items), field -> do
+                            |> Iterator.fold (\(context, fmt_args, mir_items), (HD.RecordField field_name field_type) -> do
                         (context, var_ref_expr) <- getExpr context var_ref_expr
-                        field_access <- ME.FieldAccess field.name var_ref_expr
-                        (context, mir_field_type) <- TS.processType context field.type
+                        field_access <- ME.FieldAccess field_name var_ref_expr
+                        (context, mir_field_type) <- TS.processType context field_type
                         field_access_expr <- LazyExpr (ME.Expr field_access mir_field_type)
-                        (context, fmt_arg, items) <- processMemberForShow context field.type field_access_expr class_name
+                        (context, fmt_arg, items) <- processMemberForShow context field_type field_access_expr class_name
                         fmt_args <- fmt_args + [fmt_arg]
                         mir_items <- mir_items + items
                         (context, fmt_args, mir_items)) (context, [], [])
@@ -307,6 +306,7 @@ generateShowInstance context hir_type class_name = do
                     body <- ME.Do [decl_expr, body]
                     (context, body_expr) <- getExpr context (ME.Expr body mir_string_type)
                     (context, body_expr)
+                _ -> panic "Named type is not an adt nor a record"
         _ -> panic "Cannot auto derive show for type {}" % TF.toString hir_type
     (context, body)
 
@@ -339,8 +339,8 @@ generateTwoArgsInstance :: Context ->
 generateTwoArgsInstance context hir_type class_name call_compare_discriminants process_member_fn = do
     (context, body) <- case hir_type of
         HT.Named qn _ -> do
-            case DS.getDataTypeInfo context.state.data_store qn of
-                DS.Adt adt -> do
+            case HP.getItem context.hir_program qn of
+                HP.Adt adt -> do
                     (context, adt) <- TS.instantiateAdt context adt hir_type
                     (context, mir_adt_type) <- TS.processType context hir_type
                     (context, unit_type) <- TS.processType context (HT.Tuple [])
@@ -426,15 +426,16 @@ generateTwoArgsInstance context hir_type class_name call_compare_discriminants p
                             body <- ME.Do [var0_decl_expr, case_of_expr]
                             (context, body_expr) <- getExpr context (ME.Expr body case_type)
                             (context, body_expr)
-                DS.Record record -> do
+                HP.Record record -> do
                     (context, record) <- TS.instantiateRecord context record hir_type
                     (context, mir_record_type) <- TS.processType context hir_type
                     var_ref0 <- ME.VarRef (ME.Arg 0)
                     var_ref0_expr <- ME.Expr var_ref0 mir_record_type
                     var_ref1 <- ME.VarRef (ME.Arg 1)
                     var_ref1_expr <- ME.Expr var_ref1 mir_record_type
-                    record_items <- record.fields |> List.iter |> Iterator.map (\DS.RecordField name type -> (name, type)) |> toList
+                    record_items <- List.map record.fields (\HD.RecordField name type -> (name, type))
                     (context, call_expr) <- process_member_fn context record_items (LazyExpr var_ref0_expr) (LazyExpr var_ref1_expr)
                     (context, call_expr)
+                _ -> panic "Named type is not an adt nor a record"
         _ -> panic "Cannot auto derive {} for type {}" % (class_name, TF.toString hir_type)
     (context, body)

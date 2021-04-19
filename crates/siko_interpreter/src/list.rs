@@ -198,6 +198,32 @@ impl ExternFunction for AtIndex {
     }
 }
 
+pub struct Remove {}
+
+impl ExternFunction for Remove {
+    fn call2(
+        &self,
+        environment: &Environment,
+        _: Option<ExprId>,
+        _: &NamedFunctionKind,
+        ty: Type,
+    ) -> ExprResult {
+        let list = environment.get_arg_by_index(0);
+        let list_ty = list.ty.clone();
+        let index = environment.get_arg_by_index(1).core.as_int();
+        let mut list = list.core.as_list().clone();
+        if list.len() <= index as usize {
+            println!("PANIC!: remove: size: {} index: {}", list.len(), index);
+            return ExprResult::Abort;
+        } else {
+            let item = list.remove(index as usize);
+            let list = Value::new(ValueCore::List(list), list_ty);
+            let tuple = Value::new(ValueCore::Tuple(vec![item, list]), ty);
+            return ExprResult::Ok(tuple);
+        }
+    }
+}
+
 pub struct GetLength {}
 
 impl ExternFunction for GetLength {
@@ -366,4 +392,5 @@ pub fn register_extern_functions(interpreter: &mut Interpreter) {
     interpreter.add_extern_function(LIST_MODULE_NAME, "cmp", Box::new(ListOrd {}));
     interpreter.add_extern_function(LIST_MODULE_NAME, "write", Box::new(Write {}));
     interpreter.add_extern_function(LIST_MODULE_NAME, "split", Box::new(Split {}));
+    interpreter.add_extern_function(LIST_MODULE_NAME, "remove", Box::new(Remove {}));
 }

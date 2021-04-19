@@ -2,21 +2,50 @@ module Siko.Typechecker.Data where
 
 import Siko.Typechecker
 import Siko.Typechecker.Error
-import Siko.Typechecker.DataStore as DS
 import Siko.Typechecker.InstanceResolver as IR
-import Siko.HIR.TypeVarGenerator
-import Siko.HIR.Data
+import Siko.HIR.Unification.TypeVarGenerator
+import Siko.HIR.TypeFormatter as TF
+import Siko.HIR.Unification.Data as UD
+import Siko.HIR.Unification.Substitution as S
+import Siko.HIR.Data as D
 import Siko.HIR.Program
 import Siko.HIR.Type as T
+import Siko.Syntax.Location
 import Map
 
-addDerivedClasses :: TypecheckerState -> [DeriveInfo] -> T.Type -> ([DS.DeriveInfo], TypecheckerState)
+data DeriveInfo = { class_name :: FullyQualifiedName,
+                    instance_id :: IR.AutoDerivedInstanceId,
+                    location :: Location
+                  } deriving (Show)
+
+data DeriveInfoStore = { derived_classes :: Map FullyQualifiedName [DeriveInfo] }
+
+processMemberType :: TypecheckerState -> T.Type -> DeriveInfo -> String -> TypecheckerState
+processMemberType state type derived_class type_name = do
+    (IR.AutoDerivedInstance instance_type location name) <- IR.getAutoDerivedInstanceById
+            state.instance_resolver derived_class.instance_id
+    case type of
+        T.Tuple items -> do
+            items |> List.iter |> Iterator.fold (\state, item -> processMemberType state item derived_class type_name) state
+        _ -> do
+                case IR.checkInstance state type derived_class.class_name of
+                    Ok (state, cs) -> do
+                        (state, sub) <- IR.mergeResolverConstraintsIntoSubstitution state cs (S.createSubstitution)
+                        instance_type <- S.apply instance_type sub
+                        i <- IR.AutoDerivedInstance instance_type location name
+                        instance_resolver <- IR.updateAutoDerivedInstance state.instance_resolver derived_class.instance_id i
+                        state { instance_resolver = instance_resolver }
+                    Err state -> do
+                        addError state (AutoDeriveError type_name
+                                (type |> TF.fixedType |> TF.toString) (show derived_class.class_name) derived_class.location)
+
+addDerivedClasses :: TypecheckerState -> [D.DeriveInfo] -> T.Type -> ([DeriveInfo], TypecheckerState)
 addDerivedClasses state derived_classes type = do
     (derived_classes, state) <- derived_classes |> List.iter |> Iterator.fold (\(derived_classes, state), derived_class -> do
         (derived_classes, state) <- case IR.addAutoDerivedInstance state.instance_resolver derived_class.class_name type derived_class.location of
             Ok (instance_resolver, instance_id) -> do
                 state <- state { instance_resolver = instance_resolver }
-                derived_classes <- derived_classes + [DS.DeriveInfo derived_class.class_name instance_id derived_class.location]
+                derived_classes <- derived_classes + [DeriveInfo derived_class.class_name instance_id derived_class.location]
                 (derived_classes, state)
             Err location -> do
                 state <- addError state (ConflictingInstances ("{}" % derived_class.class_name) location derived_class.location)
@@ -24,39 +53,63 @@ addDerivedClasses state derived_classes type = do
         (derived_classes, state)) ([], state)
     (derived_classes, state)
 
-processRecord :: TypecheckerState -> Record -> TypecheckerState
-processRecord state record= do
-    (field_names, fields, _) <- record.fields |> List.iter |> Iterator.fold (\(field_names, fields, index), (RecordField name type) -> do
-        (field_names, _) <- insert field_names name index
-        fields <- fields + [DS.RecordField name type]
-        (field_names, fields, index + 1)) (empty, [], 0)
-    record_type_info <- DS.RecordTypeInfo record.name record.type field_names fields [] record.external
-    (record_type_info, var_gen) <- DS.remapRecordTypeInfo record_type_info state.var_gen
+processRecord :: (TypecheckerState, DeriveInfoStore) -> D.Record -> (TypecheckerState, DeriveInfoStore)
+processRecord (state, store) record = do
+    (record, var_gen) <- UD.remapRecord record state.var_gen
     state <- state { var_gen = var_gen }
-    (derived_classes, state) <- addDerivedClasses state record.derived_classes record_type_info.type
-    record_type_info <- record_type_info { derived_classes = derived_classes }
-    data_store <- DS.addDataTypeInfo state.data_store (DS.Record record_type_info)
-    state <- state { data_store = data_store }
+    (derived_classes, state) <- addDerivedClasses state record.derived_classes record.type
+    (derived_classes, _) <- Map.insert store.derived_classes record.name derived_classes
+    store <- store { derived_classes = derived_classes }
+    (state, store)
+
+processAdt :: (TypecheckerState, DeriveInfoStore) -> D.AlgebraicDataType -> (TypecheckerState, DeriveInfoStore)
+processAdt (state, store) adt = do
+    (adt, var_gen) <- UD.remapAdt adt state.var_gen
+    state <- state { var_gen = var_gen }
+    (derived_classes, state) <- addDerivedClasses state adt.derived_classes adt.type
+    (derived_classes, _) <- Map.insert store.derived_classes adt.name derived_classes
+    store <- store { derived_classes = derived_classes }
+    (state, store)
+
+processData :: TypecheckerState -> (TypecheckerState, DeriveInfoStore)
+processData state = do
+    store <- DeriveInfoStore Map.empty
+    records <- getRecords state.program
+    (state, store) <- List.fold (state, store) records processRecord
+    adts <- getAdts state.program
+    (state, store) <- List.fold (state, store) adts processAdt
+    (state, store)
+
+processRecordField :: FullyQualifiedName -> DeriveInfo -> TypecheckerState -> D.RecordField -> TypecheckerState
+processRecordField record_name derived_class state (D.RecordField name field_type) =
+    processMemberType state field_type derived_class (show record_name)
+
+processRecord2 :: DeriveInfoStore -> TypecheckerState -> D.Record -> TypecheckerState
+processRecord2 store state record = do
+    (record, var_gen) <- UD.remapRecord record state.var_gen
+    state <- state { var_gen = var_gen }
+    record_derived_classes <- Option.unwrap (Map.get store.derived_classes record.name)
+    state <- List.fold state record_derived_classes (\state, derived_class ->
+        List.fold state record.fields (processRecordField record.name derived_class))
     state
 
-processAdt :: TypecheckerState -> AlgebraicDataType -> TypecheckerState
-processAdt state adt = do
-    variants <- adt.variants |> List.iter |> Iterator.map (\variant -> DS.Variant variant.name variant.items) |> toList
-    adt_type_info <- DS.AdtTypeInfo adt.name adt.type variants []
-    (adt_type_info, var_gen) <- DS.remapAdtTypeInfo adt_type_info state.var_gen
+processVariant :: FullyQualifiedName -> DeriveInfo -> TypecheckerState -> D.Variant -> TypecheckerState
+processVariant adt_name derived_class state variant =
+    List.fold state variant.items (\state, item_type -> processMemberType state item_type derived_class (show adt_name))
+
+processAdt2 :: DeriveInfoStore -> TypecheckerState -> D.AlgebraicDataType -> TypecheckerState
+processAdt2 store state adt = do
+    (adt, var_gen) <- UD.remapAdt adt state.var_gen
     state <- state { var_gen = var_gen }
-    (derived_classes, state) <- addDerivedClasses state adt.derived_classes adt_type_info.type
-    adt_type_info <- adt_type_info { derived_classes = derived_classes }
-    data_store <- DS.addDataTypeInfo state.data_store (DS.Adt adt_type_info)
-    state <- state { data_store = data_store }
+    adt_derived_classes <- Option.unwrap (Map.get store.derived_classes adt.name)
+    state <- List.fold state adt_derived_classes (\state, derived_class ->
+        List.fold state adt.variants (processVariant adt.name derived_class))
     state
 
-processData :: Program () -> TypecheckerState -> TypecheckerState
-processData program state = do
-    records <- getRecords program
-    state <- records |> List.iter |> Iterator.fold (\state, record ->
-            processRecord state record) state
-    adts <- getAdts program
-    state <- adts |> List.iter |> Iterator.fold (\state, adt ->
-            processAdt state adt) state
+processAutoDerivedInstances :: TypecheckerState -> DeriveInfoStore -> TypecheckerState
+processAutoDerivedInstances state store = do
+    records <- getRecords state.program
+    state <- List.fold state records (processRecord2 store)
+    adts <- getAdts state.program
+    state <- List.fold state adts (processAdt2 store)
     state

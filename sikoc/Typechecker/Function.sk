@@ -9,13 +9,13 @@ import Siko.Typechecker.FunctionDependency
 import Siko.HIR.Program as P
 import Siko.HIR.Type as T
 import Siko.HIR.Function as F
-import Siko.HIR.TypeVarGenerator
+import Siko.HIR.Unification.TypeVarGenerator
 import Siko.Util.DependencyProcessor
 import Siko.Config
 import Map
 
-processFunction :: TypecheckerState -> F.Function () -> P.Program () -> (TypecheckerState, FunctionTypeInfo)
-processFunction state f program = do
+processFunction :: TypecheckerState -> F.Function () -> (TypecheckerState, FunctionTypeInfo)
+processFunction state f = do
     (state, ty, defined) <- case f.type of
         Some ty -> do
             type_arg_count <- getLength (T.getArgs ty)
@@ -36,17 +36,17 @@ processFunction state f program = do
     func_type_info <- FunctionTypeInfo f.name args ty result_ty defined
     (state, func_type_info)
 
-processFunctions :: Config -> TypecheckerState -> P.Program () -> (TypecheckerState, FunctionStore, [DependencyGroup P.FullyQualifiedName])
-processFunctions config state program = do
-    functions <- P.getFunctions program
+processFunctions :: Config -> TypecheckerState -> (TypecheckerState, FunctionStore, [DependencyGroup P.FullyQualifiedName])
+processFunctions config state = do
+    functions <- P.getFunctions state.program
     (state, function_store) <- functions |> List.iter |> Iterator.fold (\(state, function_store), f -> do
-        (state, func_type_info) <- processFunction state f program
+        (state, func_type_info) <- processFunction state f
         function_store <- addFunctionTypeInfo function_store func_type_info
         (state, function_store)) (state, createFunctionStore)
     all_dependencies <- functions |> List.iter |> Iterator.fold (\all_dependencies, fn -> do
         (deps, forced_deps) <- getFunctionDependencies fn
         untyped_deps <- deps |> List.iter |> Iterator.filter (\qn -> do
-            case P.getItem program qn of
+            case P.getItem state.program qn of
                 P.Function fn -> isNone fn.type
                 _ -> False) |> toList
         (all_dependencies, _) <- Map.insert all_dependencies fn.name (untyped_deps + forced_deps)

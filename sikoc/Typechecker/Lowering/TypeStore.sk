@@ -17,8 +17,9 @@ import Siko.Typechecker.Lowering.IteratorStore as IS
 import Siko.Typechecker.Lowering
 import Siko.Typechecker.Lowering.ClassMemberCalls
 import Siko.Typechecker
-import Siko.Typechecker.Unification as U
-import Siko.Typechecker.DataStore as DS
+import Siko.HIR.Unification as U
+import Siko.HIR.Unification.Data as UD
+import Siko.HIR.Unification.Substitution as S
 import Siko.Typechecker.InstanceResolver as IR
 import Siko.Constants
 import List2 as List2
@@ -157,31 +158,23 @@ addAdt context identity mir_adt = do
     type_store <- type_store { adts = adts }
     context { type_store = type_store }
 
-instantiateAdt :: Context -> DS.AdtTypeInfo -> HT.Type -> (Context, DS.AdtTypeInfo)
-instantiateAdt context adt_type_info adt_type = do
-    sub <- U.createSubstitution
+instantiateAdt :: Context -> HD.AlgebraicDataType -> HT.Type -> (Context, HD.AlgebraicDataType)
+instantiateAdt context adt adt_type = do
+    sub <- S.createSubstitution
     state <- context.state
-    (context, adt_type_info) <- case U.unify state.var_gen sub state.data_store state.class_store adt_type_info.type adt_type of
-        Ok (var_gen, sub) -> do
-            state <- state { var_gen = var_gen }
-            context <- context { state = state }
-            adt_type_info <- U.apply adt_type_info sub
-            (context, adt_type_info)
-        Err _ -> panic "instantiateAdt: unification failed, Adt type {} hir_type {}" % (TF.toString adt_type_info.type, TF.toString adt_type)
-    (context, adt_type_info)
+    (var_gen, adt) <- Result.unwrap (UD.instantiateAdt state state.var_gen adt adt_type)
+    state <- state { var_gen = var_gen }
+    context <- context { state = state }
+    (context, adt)
 
-instantiateRecord :: Context -> DS.RecordTypeInfo -> HT.Type -> (Context, DS.RecordTypeInfo)
-instantiateRecord context record_type_info record_type = do
-    sub <- U.createSubstitution
+instantiateRecord :: Context -> HD.Record -> HT.Type -> (Context, HD.Record)
+instantiateRecord context record record_type = do
+    sub <- S.createSubstitution
     state <- context.state
-    (context, record_type_info) <- case U.unify state.var_gen sub state.data_store state.class_store record_type_info.type record_type of
-        Ok (var_gen, sub) -> do
-            state <- state { var_gen = var_gen }
-            context <- context { state = state }
-            record_type_info <- U.apply record_type_info sub
-            (context, record_type_info)
-        Err _ -> panic "instantiateRecord: unification failed, Record type {} hir_type {}" % (TF.toString record_type_info.type, TF.toString record_type)
-    (context, record_type_info)
+    (var_gen, record) <- Result.unwrap (UD.instantiateRecord state state.var_gen record record_type)
+    state <- state { var_gen = var_gen }
+    context <- context { state = state }
+    (context, record)
 
 processIteratorType :: Context -> HT.Type -> MT.Type -> Context
 processIteratorType context hir_type mir_type = do
@@ -201,13 +194,13 @@ getMIRIteratorType context hir_type = do
     mir_type <- MT.Adt identity List2.empty
     (context, mir_type)
 
-processAdt :: Context -> HT.Type -> DS.AdtTypeInfo -> String -> MT.Type -> Context
-processAdt context hir_type adt_type_info module_name mir_type = do
+processAdt :: Context -> HT.Type -> HD.AlgebraicDataType -> String -> MT.Type -> Context
+processAdt context hir_type adt module_name mir_type = do
     identity <- MT.getIdentity mir_type
-    (context, adt_type_info) <- instantiateAdt context adt_type_info hir_type
-    if getLength adt_type_info.variants == 1
+    (context, adt) <- instantiateAdt context adt hir_type
+    if getLength adt.variants == 1
         then do
-            variant <- atIndex adt_type_info.variants 0
+            variant <- atIndex adt.variants 0
             (context, mir_fields) <- variant.items |> List.iter |> Iterator.fold (\(context, mir_fields), type -> do
                     (context, mir_type) <- processType context type
                     name <- getFieldName (getLength mir_fields)
@@ -218,7 +211,7 @@ processAdt context hir_type adt_type_info module_name mir_type = do
             context <- addRecord context identity mir_record
             context
         else do
-            (context, mir_variants) <- adt_type_info.variants |> List.iter |> Iterator.fold (\(context, mir_variants), variant -> do
+            (context, mir_variants) <- adt.variants |> List.iter |> Iterator.fold (\(context, mir_variants), variant -> do
                 (context, mir_fields) <- variant.items |> List.iter |> Iterator.fold (\(context, mir_fields), type -> do
                     (context, mir_type) <- processType context type
                     name <- getFieldName (getLength mir_fields)
@@ -235,25 +228,25 @@ processAdt context hir_type adt_type_info module_name mir_type = do
             context <- addAdt context identity mir_adt
             context
 
-getMIRAdt :: Context -> HT.Type -> DS.AdtTypeInfo -> String -> String -> (Context, MT.Type)
-getMIRAdt context hir_type adt_type_info module_name short_name = do
+getMIRAdt :: Context -> HT.Type -> HD.AlgebraicDataType -> String -> String -> (Context, MT.Type)
+getMIRAdt context hir_type adt module_name short_name = do
     (context, identity) <- getIdentity context module_name short_name
-    mir_type <- if getLength adt_type_info.variants == 1
+    mir_type <- if getLength adt.variants == 1
         then MT.Record identity List2.empty
         else MT.Adt identity List2.empty
     (context, mir_type)
 
-processRecord :: Context -> HT.Type -> DS.RecordTypeInfo -> [HT.Type] -> MT.Type -> Context
-processRecord context hir_type record_type_info type_args mir_type = do
+processRecord :: Context -> HT.Type -> HD.Record -> [HT.Type] -> MT.Type -> Context
+processRecord context hir_type record type_args mir_type = do
     case mir_type of
         MT.Record identity _ -> do
-            (context, record_type_info) <- instantiateRecord context record_type_info hir_type
-            (context, mir_fields) <- record_type_info.fields |> List.iter |> Iterator.fold (\(context, mir_fields), field -> do
-                (context, mir_type) <- processType context field.type
-                mir_field <- MD.RecordField field.name mir_type
+            (context, record) <- instantiateRecord context record hir_type
+            (context, mir_fields) <- record.fields |> List.iter |> Iterator.fold (\(context, mir_fields), (HD.RecordField field_name field_type) -> do
+                (context, mir_type) <- processType context field_type
+                mir_field <- MD.RecordField field_name mir_type
                 mir_fields <- mir_fields + [mir_field]
                 (context, mir_fields)) (context, [])
-            (context, external_record_info) <- if record_type_info.external
+            (context, external_record_info) <- if record.external
                 then do
                     (context, mir_args) <- type_args |> List.iter |> Iterator.fold (\(context, mir_args), arg -> do
                         (context, mir_arg) <- processType context arg
@@ -330,9 +323,10 @@ getMIRType context hir_type = case hir_type of
         if module_name == getIteratorModuleName &&
             short_name == getIteratorTypeName
             then getMIRIteratorType context hir_type
-            else case DS.getDataTypeInfo context.state.data_store qn of
-                DS.Adt adt_type_info -> getMIRAdt context hir_type adt_type_info module_name short_name
-                DS.Record record_type_info -> getMIRRecord context hir_type module_name short_name
+            else case HP.getItem context.hir_program qn of
+                HP.Adt adt -> getMIRAdt context hir_type adt module_name short_name
+                HP.Record record -> getMIRRecord context hir_type module_name short_name
+                _ -> panic "Named type is not an adt nor a record"
     HT.Function from to -> getMIRClosure context hir_type
     HT.Never _ -> (context, MT.Never)
     HT.Ref t -> do
@@ -353,9 +347,10 @@ processQueuedType context hir_type mir_type = case hir_type of
         if module_name == getIteratorModuleName &&
             short_name == getIteratorTypeName
             then processIteratorType context hir_type mir_type
-            else case DS.getDataTypeInfo context.state.data_store qn of
-                DS.Adt adt_type_info -> processAdt context hir_type adt_type_info module_name mir_type
-                DS.Record record_type_info -> processRecord context hir_type record_type_info args mir_type
+            else case HP.getItem context.hir_program qn of
+                HP.Adt adt -> processAdt context hir_type adt module_name mir_type
+                HP.Record record -> processRecord context hir_type record args mir_type
+                _ -> panic "Named type is not an adt nor a record!"
     HT.Function from to -> processClosure context hir_type mir_type
     HT.Never _ -> context
     HT.Ref t -> context

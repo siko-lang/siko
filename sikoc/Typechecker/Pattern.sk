@@ -4,12 +4,16 @@ import Siko.Syntax.Location
 import Siko.Typechecker
 import Siko.Typechecker.Expr
 import Siko.Typechecker.TypeStore as TS
-import Siko.Typechecker.DataStore as DS
-import Siko.Typechecker.Unification as U
+import Siko.HIR.Unification as U
+import Siko.HIR.Unification.Substitution as S
+import Siko.HIR.Unification.Data as UD
 import Siko.Typechecker.Util as UT
 import Siko.HIR.Pattern as P
+import Siko.HIR.Program as HP
 import Siko.HIR.Type as T
+import Siko.HIR.TypeFormatter as TF
 import Siko.HIR.Expr as E
+import Siko.HIR.Data as D
 
 addPatternType :: Context -> P.PatternId -> TS.PatternTypeState -> Context
 addPatternType context pattern_id pattern_type = do
@@ -19,12 +23,12 @@ addPatternType context pattern_id pattern_type = do
 getPatternType :: Context -> P.PatternId -> T.Type
 getPatternType context pattern_id = TS.getPatternType context.type_store pattern_id
 
-matchPatternWith :: Context -> P.PatternId -> T.Type -> Location -> (Context, U.Substitution)
+matchPatternWith :: Context -> P.PatternId -> T.Type -> Location -> (Context, S.Substitution)
 matchPatternWith context pattern_id type location = do
     pattern_type <- getPatternType context pattern_id
     unify context type pattern_type location
 
-matchPatterns :: Context -> P.PatternId -> P.PatternId -> Location -> (Context, U.Substitution)
+matchPatterns :: Context -> P.PatternId -> P.PatternId -> Location -> (Context, S.Substitution)
 matchPatterns context pattern_id1 pattern_id2 location = do
     pattern_type1 <- getPatternType context pattern_id1
     pattern_type2 <- getPatternType context pattern_id2
@@ -71,26 +75,20 @@ initializePatternType context (P.Pattern pattern id _ location) = do
             context <- addPatternType context id (TS.PatternType type)
             context
         P.Record qn args -> do
-            data_type_info <- DS.getDataTypeInfo context.state.data_store qn
-            (data_type_info, var_gen) <- DS.remapDataTypeInfo data_type_info context.state.var_gen
+            record <- HP.getRecord context.state.program qn
+            (record, var_gen) <- UD.remapRecord record context.state.var_gen
             state <- context.state // FIXME
             state <- state { var_gen = var_gen }
             context <- context { state = state }
-            record_type_info <- case data_type_info of
-                DS.Record record -> record
-                _ -> panic "Record_type_info is not a record_type_info!"
-            context <- addPatternType context id (TS.PatternWithRecordType record_type_info)
+            context <- addPatternType context id (TS.PatternWithRecordType record)
             context
         P.Variant qn _ _ -> do
-            data_type_info <- DS.getDataTypeInfo context.state.data_store qn
-            (data_type_info, var_gen) <- DS.remapDataTypeInfo data_type_info context.state.var_gen
+            adt <- HP.getAdt context.state.program qn
+            (adt, var_gen) <- UD.remapAdt adt context.state.var_gen
             state <- context.state // FIXME
             state <- state { var_gen = var_gen }
             context <- context { state = state }
-            adt_type_info <- case data_type_info of
-                DS.Adt adt -> adt
-                _ -> panic "Adt_type_info is not an adt_type_info!"
-            context <- addPatternType context id (TS.PatternWithAdtType adt_type_info)
+            context <- addPatternType context id (TS.PatternWithAdtType adt)
             context
 
 checkPatternType :: Context -> P.Pattern () -> Context
@@ -119,23 +117,21 @@ checkPatternType context (P.Pattern pattern id _ location) = do
             (context, _) <- matchPatterns context id sub_pattern_id location
             context
         P.Record _ args -> do
-            record_type_info <- TS.getRecordTypeInfo context.type_store id
-            (context, record_type_info, _) <- args |> List.iter |> Iterator.fold (\(context, record_type_info, index), (P.Pattern _ arg_id _ arg_location) -> do
-                    field <- atIndex record_type_info.fields index
-                    (context, sub) <- matchPatternWith context arg_id field.type arg_location
-                    record_type_info <- U.apply record_type_info sub
-                    (context, record_type_info, index + 1)
-                ) (context, record_type_info, 0)
+            record <- TS.getRecord context.type_store id
+            (context, record) <- List.foldE (\(context, record), index, (P.Pattern _ arg_id _ arg_location) -> do
+                    D.RecordField name field_type <- atIndex record.fields index
+                    (context, sub) <- matchPatternWith context arg_id field_type arg_location
+                    record <- S.apply record sub
+                    (context, record)) (context, record) args
             context
         P.Variant _ index args -> do
-            adt_type_info <- TS.getAdtTypeInfo context.type_store id
-            (context, adt_type_info, _) <- args |> List.iter |> Iterator.fold (\(context, adt_type_info, arg_index), (P.Pattern _ arg_id _ arg_location) -> do
-                    variant <- atIndex adt_type_info.variants index
+            adt <- TS.getAdt context.type_store id
+            (context, adt) <- List.foldE (\(context, adt), arg_index, (P.Pattern _ arg_id _ arg_location) -> do
+                    variant <- atIndex adt.variants index
                     item_type <- atIndex variant.items arg_index
                     (context, sub) <- matchPatternWith context arg_id item_type arg_location
-                    adt_type_info <- U.apply adt_type_info sub
-                    (context, adt_type_info, arg_index + 1)
-                ) (context, adt_type_info, 0)
+                    adt <- S.apply adt sub
+                    (context, adt)) (context, adt) args
             context
 
 checkMissingTypeInPattern :: [T.TypeVar] -> (Context, [T.TypeVar]) -> P.Pattern () -> (Context, [T.TypeVar])
