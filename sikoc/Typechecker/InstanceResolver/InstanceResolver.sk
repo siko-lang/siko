@@ -11,7 +11,7 @@ import Siko.Typechecker.ClassStore
 import Siko.Typechecker.Error
 import Siko.HIR.Unification as U
 import Siko.HIR.Unification.Substitution as S
-import Siko.Typechecker.TypeIsomorphism as TS
+import Siko.HIR.TypeIsomorphism as HTI
 import Map
 
 data BaseType = Tuple
@@ -107,17 +107,13 @@ addAutoDerivedInstance instance_resolver class_name instance_type location = do
     instance_resolver <- instance_resolver { auto_derived_instances = auto_derived_instances }
     Ok (instance_resolver, id)
 
-unifyTypes :: TypecheckerState -> S.Substitution -> T.Type -> T.Type -> (TypecheckerState, S.Substitution, Bool)
-unifyTypes state sub type1 type2 = do
-    var_gen <- state.var_gen
-    (state, sub, success) <- case U.unify var_gen sub state type1 type2 of
-        Ok (var_gen, sub) -> do
-            state <- state { var_gen = var_gen }
-            (state, sub, True)
+unifyTypes a :: (U.DataProvider a) => a -> TypeVarGenerator -> S.Substitution -> T.Type -> T.Type -> (TypeVarGenerator, S.Substitution, Bool)
+unifyTypes data_provider var_gen sub type1 type2 =
+    case U.unify var_gen sub data_provider type1 type2 of
+        Ok (var_gen, sub) -> (var_gen, sub, True)
         Err _ -> do
             //println "instance check, unifyTypes failed: {} {}" % (T.toLongString type1, T.toLongString type2)
-            (state, sub, False)
-    (state, sub, success)
+            (var_gen, sub, False)
 
 checkInstancesForBaseType :: TypecheckerState ->
                              S.Substitution ->
@@ -130,11 +126,18 @@ checkInstancesForBaseType state sub type base_type instance_info_map class_name 
     case get instance_info_map base_type of
         Some instance_info -> do
                 (state, sub, success) <- case instance_info of
-                        UserDefinedInstanceInfo instance_type _ _ -> unifyTypes state sub type instance_type
+                        UserDefinedInstanceInfo instance_type _ _ -> do
+                            var_gen <- state.var_gen
+                            (var_gen, sub, success) <- unifyTypes state var_gen sub type instance_type
+                            state <- state { var_gen = var_gen }
+                            (state, sub, success)
                         AutoDerivedInstanceInfo id -> do
                             AutoDerivedInstanceId id <- id
                             AutoDerivedInstance instance_type _ _ <- atIndex state.instance_resolver.auto_derived_instances id
-                            unifyTypes state sub type instance_type
+                            var_gen <- state.var_gen
+                            (var_gen, sub, success) <- unifyTypes state var_gen sub type instance_type
+                            state <- state { var_gen = var_gen }
+                            (state, sub, success)
                 state <- if success && T.isConcreteType type
                     then do
                         entry <- CacheEntry type class_name
@@ -167,27 +170,6 @@ hasInstance state sub type class_name = do
             //println "Class {} has no instances, at all" % (class_name)
             Err state
 
-checkConflicts :: TypecheckerState -> TypecheckerState
-checkConflicts state = do
-    instance_resolver <- state.instance_resolver
-    state <- instance_resolver.instance_map |> Map.iter |> Iterator.fold (\state, (class_name, instance_info_map) -> do
-        generic_instance_location <- case get instance_info_map Generic of
-            Some i -> do
-                Some (getLocation i instance_resolver)
-            None -> None
-        state <- instance_info_map |> Map.iter |> Iterator.fold (\state, (_, i) -> do
-                case generic_instance_location of
-                    Some generic_instance_location -> do
-                        location <- getLocation i instance_resolver
-                        state <- if generic_instance_location == location
-                            then state
-                            else addError state (ConflictingInstances ("{}" % class_name) generic_instance_location location)
-                        state
-                    None -> state
-            ) state
-        state) state
-    state
-
 checkInstance :: TypecheckerState ->
                  T.Type ->
                  P.FullyQualifiedName ->
@@ -219,56 +201,3 @@ checkInstance state type class_name = do
                 Err state -> do
                     //println "checkInstance: hasInstance failed"
                     Err state
-
-mergeResolverConstraintsIntoSubstitution :: TypecheckerState -> [(T.TypeVar, P.FullyQualifiedName)] -> S.Substitution -> (TypecheckerState, S.Substitution)
-mergeResolverConstraintsIntoSubstitution state constraints sub = do
-    constraints |> List.iter |> Iterator.fold (\(state, sub), (var, class_name) -> do
-        (var_gen, new_var) <- getNewTypeVar state.var_gen
-        state <- state { var_gen = var_gen }
-        new_type <- T.Var new_var [T.ClassConstraint class_name]
-        sub <- case S.add sub var new_type of
-            Ok sub -> sub
-            Err _ -> panic "Failed to merge new type var into sub {} {} {}" % (var, TF.toLongString new_type, sub)
-        (state, sub)) (state, sub)
-
-applyResolverConstraintsToType :: TypecheckerState -> [(T.TypeVar, P.FullyQualifiedName)] -> T.Type -> (TypecheckerState, T.Type)
-applyResolverConstraintsToType state constraints type = do
-    sub <- S.createSubstitution
-    (state, sub) <- mergeResolverConstraintsIntoSubstitution state constraints sub
-    (state, S.apply type sub)
-
-checkInstanceDependenciesForInstance :: TypecheckerState -> T.Type -> P.FullyQualifiedName -> Location -> TypecheckerState
-checkInstanceDependenciesForInstance state type class_name location = do
-    deps <- case get state.class_store.classes class_name of
-        Some class_info -> do
-            class_info :: ClassInfo <- class_info // FIXME:
-            class_info.direct_dependencies
-        None -> panic "Class {} not found in class store" % class_name
-    state <- deps |> List.iter |> Iterator.fold (\state, dep -> do
-        state <- case checkInstance state type dep of
-            Ok (state, cs) -> do
-                state :: TypecheckerState <- state // FIXME
-                (state, new_type) <- applyResolverConstraintsToType state cs type
-                if TS.checkIsomorphicType new_type type state.class_store
-                    then state
-                    else addError state (MissingInstance ("{}" % dep) location)
-            Err state -> do
-                addError state (MissingInstance ("{}" % dep) location)
-        state) state
-    state
-
-checkInstanceDependencies :: TypecheckerState -> TypecheckerState
-checkInstanceDependencies state = do
-    instance_resolver <- state.instance_resolver
-    state <- instance_resolver.instance_map |> Map.iter |> Iterator.fold (\state, (class_name, instance_info_map) -> do
-        state <- instance_info_map |> Map.iter |> Iterator.fold (\state, (_, i) -> do
-                    location <- getLocation i instance_resolver
-                    case i of
-                        UserDefinedInstanceInfo instance_type id location -> do
-                            checkInstanceDependenciesForInstance state instance_type class_name location
-                        AutoDerivedInstanceInfo id -> do
-                            AutoDerivedInstance instance_type location _ <- getAutoDerivedInstanceById instance_resolver id
-                            checkInstanceDependenciesForInstance state instance_type class_name location
-                 ) state
-        state) state
-    state

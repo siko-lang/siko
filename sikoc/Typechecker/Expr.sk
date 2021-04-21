@@ -19,6 +19,7 @@ import Siko.HIR.Unification.Substitution as S
 import Siko.Typechecker.TypeStore as TS
 import Siko.Typechecker.FunctionStore as FS
 import Siko.Typechecker.InstanceResolver as IR
+import Siko.Typechecker.InstanceResolver.Checks as IRChecks
 import Siko.Typechecker.Error
 import Siko.Constants
 import Map
@@ -74,7 +75,7 @@ processClassConstraints context sub = do
             state <- context.state
             case IR.checkInstance state type class_name of
                 Ok (state, cs) -> do
-                    (state, sub) <- IR.mergeResolverConstraintsIntoSubstitution state cs sub
+                    (state, sub) <- IRChecks.mergeResolverConstraintsIntoSubstitution state cs sub
                     context <- context { state = state }
                     context <- applyToContext context sub
                     (context, sub, success)

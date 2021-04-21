@@ -3,6 +3,7 @@ module Siko.Typechecker.Data where
 import Siko.Typechecker
 import Siko.Typechecker.Error
 import Siko.Typechecker.InstanceResolver as IR
+import Siko.Typechecker.InstanceResolver.Checks as IRChecks
 import Siko.HIR.Unification.TypeVarGenerator
 import Siko.HIR.TypeFormatter as TF
 import Siko.HIR.Unification.Data as UD
@@ -30,7 +31,7 @@ processMemberType state type derived_class type_name = do
         _ -> do
                 case IR.checkInstance state type derived_class.class_name of
                     Ok (state, cs) -> do
-                        (state, sub) <- IR.mergeResolverConstraintsIntoSubstitution state cs (S.createSubstitution)
+                        (state, sub) <- IRChecks.mergeResolverConstraintsIntoSubstitution state cs (S.createSubstitution)
                         instance_type <- S.apply instance_type sub
                         i <- IR.AutoDerivedInstance instance_type location name
                         instance_resolver <- IR.updateAutoDerivedInstance state.instance_resolver derived_class.instance_id i

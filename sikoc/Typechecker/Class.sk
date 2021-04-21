@@ -8,7 +8,7 @@ import Siko.HIR.Unification.Substitution as S
 import Siko.Typechecker.InstanceResolver as IR
 import Siko.Typechecker.Util as Util
 import Siko.Typechecker.ClassStore
-import Siko.Typechecker.TypeIsomorphism
+import Siko.HIR.TypeIsomorphism
 import Siko.HIR.Program as P
 import Siko.HIR.Function as F
 import Siko.HIR.Traversal
@@ -107,7 +107,7 @@ processInstance state i = do
                         state <- case instance_member.type of
                             Some instance_member_type -> do
                                 instance_member_type <- Util.remap instance_mapper instance_member_type
-                                state <- if checkIsomorphicType inferred_instance_member_type instance_member_type state.class_store
+                                state <- if checkIsomorphicType inferred_instance_member_type instance_member_type state
                                     then state
                                     else do
                                         expected <- inferred_instance_member_type |> TF.fixedType |> TF.toString
@@ -164,10 +164,4 @@ processClassesAndInstances config state = do
         (state, inferred_types + types)) (state, [])
     program <- inferred_types |> List.iter |> Iterator.fold (\program, (qn, type) -> P.updateInstanceMemberType program qn type) state.program
     state <- state { program = program }
-    state
-
-checkInstanceConflictsAndDependencies :: TypecheckerState -> TypecheckerState
-checkInstanceConflictsAndDependencies state = do
-    state <- IR.checkConflicts state
-    state <- IR.checkInstanceDependencies state
     state
