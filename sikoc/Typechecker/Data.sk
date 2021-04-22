@@ -9,17 +9,18 @@ import Siko.HIR.TypeFormatter as TF
 import Siko.HIR.Unification.Data as UD
 import Siko.HIR.Unification.Substitution as S
 import Siko.HIR.Data as D
-import Siko.HIR.Program
+import Siko.HIR.Class as HC
+import Siko.HIR.Program as P
 import Siko.HIR.Type as T
 import Siko.Syntax.Location
 import Map
 
-data DeriveInfo = { class_name :: FullyQualifiedName,
+data DeriveInfo = { class_name :: P.FullyQualifiedName,
                     instance_id :: IR.AutoDerivedInstanceId,
                     location :: Location
                   } deriving (Show)
 
-data DeriveInfoStore = { derived_classes :: Map FullyQualifiedName [DeriveInfo] }
+data DeriveInfoStore = { derived_classes :: Map P.FullyQualifiedName [DeriveInfo] }
 
 processMemberType :: TypecheckerState -> T.Type -> DeriveInfo -> String -> TypecheckerState
 processMemberType state type derived_class type_name = do
@@ -75,13 +76,13 @@ processAdt (state, store) adt = do
 processData :: TypecheckerState -> (TypecheckerState, DeriveInfoStore)
 processData state = do
     store <- DeriveInfoStore Map.empty
-    records <- getRecords state.program
+    records <- P.getRecords state.program
     (state, store) <- List.fold (state, store) records processRecord
-    adts <- getAdts state.program
+    adts <- P.getAdts state.program
     (state, store) <- List.fold (state, store) adts processAdt
     (state, store)
 
-processRecordField :: FullyQualifiedName -> DeriveInfo -> TypecheckerState -> D.RecordField -> TypecheckerState
+processRecordField :: P.FullyQualifiedName -> DeriveInfo -> TypecheckerState -> D.RecordField -> TypecheckerState
 processRecordField record_name derived_class state (D.RecordField name field_type) =
     processMemberType state field_type derived_class (show record_name)
 
@@ -94,7 +95,7 @@ processRecord2 store state record = do
         List.fold state record.fields (processRecordField record.name derived_class))
     state
 
-processVariant :: FullyQualifiedName -> DeriveInfo -> TypecheckerState -> D.Variant -> TypecheckerState
+processVariant :: P.FullyQualifiedName -> DeriveInfo -> TypecheckerState -> D.Variant -> TypecheckerState
 processVariant adt_name derived_class state variant =
     List.fold state variant.items (\state, item_type -> processMemberType state item_type derived_class (show adt_name))
 
@@ -109,8 +110,8 @@ processAdt2 store state adt = do
 
 processAutoDerivedInstances :: TypecheckerState -> DeriveInfoStore -> TypecheckerState
 processAutoDerivedInstances state store = do
-    records <- getRecords state.program
+    records <- P.getRecords state.program
     state <- List.fold state records (processRecord2 store)
-    adts <- getAdts state.program
+    adts <- P.getAdts state.program
     state <- List.fold state adts (processAdt2 store)
     state

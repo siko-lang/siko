@@ -3,6 +3,7 @@ module Siko.Resolver where
 import Siko.Syntax.Location
 import Siko.Syntax.SourceFile as SF
 import Siko.Syntax.Module as SM
+import Siko.Syntax.Class as SC
 import Siko.HIR.Program as HP
 import Siko.HIR.Expr as HE
 import Siko.HIR.Pattern as HP
@@ -12,6 +13,7 @@ import Siko.Resolver.Module
 import Siko.Resolver.Data
 import Siko.Resolver.Function
 import Siko.Resolver.Class
+import Siko.AutoDerive as AD
 import Map
 
 data ResolverState = { errors :: [ResolverError],
@@ -43,8 +45,34 @@ handleItemConflict state l1 l2 = do
                 state { errors = state.errors + [err] }
         None -> state
 
+processAutoDerives :: [SF.SourceFile] -> [SF.SourceFile]
+processAutoDerives source_files = do
+        List.map source_files processSourceFile
+    where
+        processSourceFile :: SF.SourceFile -> SF.SourceFile
+        processSourceFile source_file = do
+            modules <- List.map source_file.modules processADModule
+            source_file { modules = modules }
+
+        processADModule :: SM.Module -> SM.Module // FIXME: name of this function!
+        processADModule mod = do
+            (instances, items) <- List.mapS [] mod.items processADItem
+            instances <- List.map instances (\i -> SM.Instance i)
+            mod { items = items + instances }
+
+        processADItem :: [SC.Instance] -> SM.Item -> ([SC.Instance], SM.Item) // FIXME: name of this function!
+        processADItem instances item = case item of
+            SM.Record record -> do
+                (record, record_instances) <- AD.processRecordDerives record
+                (instances + record_instances, SM.Record record)
+            SM.Adt adt -> do
+                (adt, adt_instances) <- AD.processAdtDerives adt
+                (instances + adt_instances, SM.Adt adt)
+            _ -> (instances, item)
+
 processProgram :: [SF.SourceFile] -> (HP.Program (), TypeVarGenerator, [ResolverError])
 processProgram source_files = do
+    source_files <- processAutoDerives source_files
     state <- emptyState
     hir_program <- HP.Program empty empty
     (state, hir_program, modules) <- processExportsImports source_files state hir_program

@@ -1,0 +1,37 @@
+module Siko.AutoDerive where
+
+import Siko.AutoDerive.Show as ADShow
+
+import Siko.Syntax.Ident
+import Siko.Syntax.Class as C
+import Siko.Syntax.Data as D
+
+processRecordDerive :: D.Record -> Ident -> Option C.Instance
+processRecordDerive record (Ident name derive_location) = do
+    case name of
+        "Show" -> Some (ADShow.deriveRecordShow record derive_location)
+        _ -> None
+
+processAdtDerive :: D.AlgebraicDataType -> Ident -> Option C.Instance
+processAdtDerive adt (Ident name derive_location) = do
+    case name of
+        "Show" -> Some (ADShow.deriveAdtShow adt derive_location)
+        _ -> None
+
+processRecordDerives :: D.Record -> (D.Record, [C.Instance])
+processRecordDerives record = do
+    (instances, derived_classes) <- List.fold ([], []) record.derived_classes
+        (\(instances, derived_classes), derived_class -> case processRecordDerive record derived_class of
+            Some i -> (instances + [i], derived_classes)
+            None -> (instances, derived_classes + [derived_class]))
+    record <- record { derived_classes = derived_classes }
+    (record, instances)
+
+processAdtDerives :: D.AlgebraicDataType -> (D.AlgebraicDataType, [C.Instance])
+processAdtDerives adt = do
+    (instances, derived_classes) <- List.fold ([], []) adt.derived_classes
+        (\(instances, derived_classes), derived_class -> case processAdtDerive adt derived_class of
+            Some i -> (instances + [i], derived_classes)
+            None -> (instances, derived_classes + [derived_class]))
+    adt <- adt { derived_classes = derived_classes }
+    (adt, instances)

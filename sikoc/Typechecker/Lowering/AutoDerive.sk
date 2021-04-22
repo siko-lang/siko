@@ -96,31 +96,6 @@ cloneExpr context expr = do
             getExpr context (ME.Expr (ME.FieldAccess name arg_clone) type)
         _ -> panic "cloneExpr not implemented for {}" % expr
 
-processMemberForShow :: Context -> HT.Type -> LazyExpr -> HP.FullyQualifiedName -> (Context, String, [ME.Expr])
-processMemberForShow context member parent_expr class_name = do
-    case member of
-        HT.Tuple tuple_members -> do
-            (context, fmt_args, items, _) <- tuple_members |> List.iter
-                |> Iterator.fold (\(context, fmt_args, tuple_items, index), tuple_member -> do
-                    (context, mir_tuple_member) <- TS.processType context tuple_member
-                    (context, parent_expr) <- getExpr context parent_expr.expr_fn
-                    tuple_field_access <- ME.FieldAccess (Util.getFieldName index) parent_expr
-                    tuple_field_access_expr <- LazyExpr (ME.Expr tuple_field_access mir_tuple_member)
-                    (context, fmt_arg, items) <- processMemberForShow context tuple_member tuple_field_access_expr class_name
-                    fmt_args <- fmt_args + [fmt_arg]
-                    tuple_items <- tuple_items + items
-                    (context, fmt_args, tuple_items, index + 1)) (context, [], [], 0)
-            fmt_arg <- if getLength fmt_args == 1
-                then "({},)" % atIndex fmt_args 0
-                else "({})" % (join fmt_args ", ")
-            (context, fmt_arg, items)
-        _ -> do
-            (context, parent_expr) <- getExpr context parent_expr.expr_fn
-            (context, parent_expr) <- cloneExpr context parent_expr
-            (context, mir_member) <- callOpShow context member parent_expr
-            fmt_arg <- if TU.isSimple member then "{}" else "({})"
-            (context, fmt_arg, [mir_member])
-
 data LazyExpr = { expr_fn :: ME.ExprId -> ME.Expr }
 
 processMemberForPartialEq :: Context -> [(String, HT.Type)] -> LazyExpr -> LazyExpr -> (Context, ME.Expr)
@@ -209,106 +184,6 @@ processMemberForOrd context items var_ref0 var_ref1 = do
             (context, do_expr) <- getExpr context (ME.Expr do_expr mir_ordering_type)
             (context, do_expr)
         None -> callEqualCtor context
-
-generateShowInstance :: Context -> HT.Type -> HP.FullyQualifiedName -> (Context, ME.Expr)
-generateShowInstance context hir_type class_name = do
-    (context, mir_string_type) <- TS.processType context TUtil.getStringType
-    (context, body) <- case hir_type of
-        HT.Named qn _ -> do
-            case HP.getItem context.hir_program qn of
-                HP.Adt adt -> do
-                    (context, adt) <- TS.instantiateAdt context adt hir_type
-                    (context, mir_adt_type) <- TS.processType context hir_type
-                    (context, unit_type) <- TS.processType context (HT.Tuple [])
-                    (context, var) <- getNextTempVar context
-                    var_ref_expr <- ME.Expr (ME.VarRef var) mir_adt_type
-                    (context, arg_ref_expr) <- getExpr context (ME.Expr (ME.VarRef (ME.Arg 0)) mir_adt_type)
-                    decl <- ME.VarDecl var arg_ref_expr
-                    (context, decl_expr) <- getExpr context (ME.Expr decl unit_type)
-                    if getLength adt.variants == 1
-                        then do
-                            (context, cases) <- adt.variants |> List.iter |> Iterator.fold (\(context, cases), variant -> do
-                                (context, fmt_args, mir_items) <- variant.items |> List.iter
-                                            |> Iterator.fold (\(context, fmt_args, mir_items), item -> do
-                                                field_name <- Util.getFieldName (getLength mir_items)
-                                                (context, mir_item_type) <- TS.processType context item
-                                                (context, var_ref_expr) <- getExpr context var_ref_expr
-                                                field_access <- ME.FieldAccess field_name var_ref_expr
-                                                field_access_expr <- LazyExpr (ME.Expr field_access mir_item_type)
-                                                (context, fmt_arg, items) <- processMemberForShow context item field_access_expr class_name
-                                                fmt_args <- fmt_args + [fmt_arg]
-                                                mir_items <- mir_items + items
-                                                (context, fmt_args, mir_items)) (context, [], [])
-                                fmt <- if isEmpty fmt_args
-                                    then "{}" % variant.name
-                                    else "{} {}" % (variant.name, (join fmt_args " "))
-                                (context, body) <- processFormatExpr context fmt [] mir_items
-                                cases <- cases + [body]
-                                (context, cases)) (context, [])
-                            case_body <- atIndex cases 0
-                            body <- ME.Do [decl_expr, case_body]
-                            (context, body_expr) <- getExpr context (ME.Expr body mir_string_type)
-                            (context, body_expr)
-                        else do
-                            (context, cases) <- adt.variants |> List.iter |> Iterator.fold (\(context, cases), variant -> do
-                                index <- (getLength cases)
-                                (context, var_in) <- getNextTempVar context
-                                variant_type <- getVariantType context index mir_adt_type
-                                (context, var_in_ref_expr) <- getExpr context (ME.Expr (ME.VarRef var_in) variant_type)
-                                checker <- ME.VariantChecker index var_in mir_adt_type
-                                (context, fmt_args, mir_items) <- variant.items |> List.iter
-                                            |> Iterator.fold (\(context, fmt_args, mir_items), item -> do
-                                                field_name <- Util.getFieldName (getLength mir_items)
-                                                (context, mir_item_type) <- TS.processType context item
-                                                field_access <- ME.FieldAccess field_name var_in_ref_expr
-                                                field_access_expr <- LazyExpr (ME.Expr field_access mir_item_type)
-                                                (context, fmt_arg, items) <- processMemberForShow context item field_access_expr class_name
-                                                fmt_args <- fmt_args + [fmt_arg]
-                                                mir_items <- mir_items + items
-                                                (context, fmt_args, mir_items)) (context, [], [])
-                                fmt <- if isEmpty fmt_args
-                                    then "{}" % variant.name
-                                    else "{} {}" % (variant.name, (join fmt_args " "))
-                                (context, body) <- processFormatExpr context fmt [] mir_items
-                                c <- ME.Case checker body
-                                cases <- cases + [c]
-                                (context, cases)) (context, [])
-                            (context, var_ref_expr) <- getExpr context var_ref_expr
-                            case_of <- ME.CaseOf var_ref_expr cases
-                            (context, case_of_expr) <- getExpr context (ME.Expr case_of mir_string_type)
-                            body <- ME.Do [decl_expr, case_of_expr]
-                            (context, body_expr) <- getExpr context (ME.Expr body mir_string_type)
-                            (context, body_expr)
-                HP.Record record -> do
-                    (context, record) <- TS.instantiateRecord context record hir_type
-                    (context, mir_record_type) <- TS.processType context hir_type
-                    (context, unit_type) <- TS.processType context (HT.Tuple [])
-                    (context, var) <- getNextTempVar context
-                    var_ref_expr <- ME.Expr (ME.VarRef var) mir_record_type
-                    (context, arg_ref_expr) <- getExpr context (ME.Expr (ME.VarRef (ME.Arg 0)) mir_record_type)
-                    decl <- ME.VarDecl var arg_ref_expr
-                    (context, decl_expr) <- getExpr context (ME.Expr decl unit_type)
-                    (context, fmt_args, mir_items) <- record.fields |> List.iter
-                            |> Iterator.fold (\(context, fmt_args, mir_items), (HD.RecordField field_name field_type) -> do
-                        (context, var_ref_expr) <- getExpr context var_ref_expr
-                        field_access <- ME.FieldAccess field_name var_ref_expr
-                        (context, mir_field_type) <- TS.processType context field_type
-                        field_access_expr <- LazyExpr (ME.Expr field_access mir_field_type)
-                        (context, fmt_arg, items) <- processMemberForShow context field_type field_access_expr class_name
-                        fmt_args <- fmt_args + [fmt_arg]
-                        mir_items <- mir_items + items
-                        (context, fmt_args, mir_items)) (context, [], [])
-                    name <- HP.getShortName record.name
-                    fmt <- if isEmpty fmt_args
-                            then "{}" % name
-                            else "{} {}" % (name, (join fmt_args " "))
-                    (context, body) <- processFormatExpr context fmt [] mir_items
-                    body <- ME.Do [decl_expr, body]
-                    (context, body_expr) <- getExpr context (ME.Expr body mir_string_type)
-                    (context, body_expr)
-                _ -> panic "Named type is not an adt nor a record"
-        _ -> panic "Cannot auto derive show for type {}" % TF.toString hir_type
-    (context, body)
 
 generatePartialEqInstance :: Context -> HT.Type -> HP.FullyQualifiedName -> (Context, ME.Expr)
 generatePartialEqInstance context hir_type class_name = do
