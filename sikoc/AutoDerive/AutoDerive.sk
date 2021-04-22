@@ -1,6 +1,9 @@
 module Siko.AutoDerive where
 
-import Siko.AutoDerive.Show as ADShow
+import Siko.AutoDerive.Show
+import Siko.AutoDerive.PartialEq
+import Siko.AutoDerive.PartialOrd
+import Siko.AutoDerive.Ord
 
 import Siko.Syntax.Ident
 import Siko.Syntax.Class as C
@@ -9,13 +12,16 @@ import Siko.Syntax.Data as D
 processRecordDerive :: D.Record -> Ident -> Option C.Instance
 processRecordDerive record (Ident name derive_location) = do
     case name of
-        "Show" -> Some (ADShow.deriveRecordShow record derive_location)
+        "Show" -> Some (deriveRecordShow record derive_location)
+        "PartialEq" -> Some (deriveRecordPartialEq record derive_location)
+        "PartialOrd" -> Some (deriveRecordPartialOrd record derive_location)
+        "Ord" -> Some (deriveRecordOrd record derive_location)
         _ -> None
 
 processAdtDerive :: D.AlgebraicDataType -> Ident -> Option C.Instance
 processAdtDerive adt (Ident name derive_location) = do
     case name of
-        "Show" -> Some (ADShow.deriveAdtShow adt derive_location)
+        "Show" -> Some (deriveAdtShow adt derive_location)
         _ -> None
 
 processRecordDerives :: D.Record -> (D.Record, [C.Instance])

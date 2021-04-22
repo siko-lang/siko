@@ -1,0 +1,64 @@
+module Siko.AutoDerive.Util where
+
+import Siko.Syntax.Location
+import Siko.Syntax.Ident
+import Siko.Syntax.Data as D
+import Siko.Syntax.Class as C
+import Siko.Syntax.TypeSignature as T
+import Siko.Syntax.Function as F
+import Siko.Syntax.Expr as E
+import Siko.Syntax.Pattern as P
+
+data FieldInfo = { lhs :: E.Expr, rhs :: E.Expr }
+
+getFieldAccessorsForRecord :: D.Record -> String -> Location -> [E.Expr]
+getFieldAccessorsForRecord record root location = do
+    root_expr <- E.Expr (E.Path (Ident root location)) location
+    List.map record.fields (\field -> E.Expr (E.FieldAccess field.name root_expr) location)
+
+getFieldInfoForRecord :: D.Record -> Location -> [FieldInfo]
+getFieldInfoForRecord record location = do
+    lhs_accessors <- getFieldAccessorsForRecord record "lhs" location
+    rhs_accessors <- getFieldAccessorsForRecord record "rhs" location
+    List.zip lhs_accessors rhs_accessors (\lhs, rhs -> FieldInfo lhs rhs)
+
+generateCase :: [FieldInfo] -> Location -> Ident -> P.Pattern -> E.Expr -> E.Expr -> Int -> E.Expr
+generateCase field_info location cmp_fn success_p success_e failure_e index = do
+    if index < getLength field_info
+    then do
+        info <- atIndex field_info index
+        cmp_fn_expr <- E.Expr (E.Path cmp_fn) location
+        case_body <- E.Expr (E.FunctionCall cmp_fn_expr [info.lhs, info.rhs]) location
+        true_case <- E.Case success_p (generateCase field_info location cmp_fn success_p success_e failure_e (index + 1))
+        false_case_pattern <- P.Pattern (P.Binding (Ident "failure_value" location)) location
+        false_case <- E.Case false_case_pattern failure_e
+        cases <- [true_case, false_case]
+        E.Expr (E.CaseOf case_body cases) location
+    else success_e
+
+data RecordComparator = { class_name :: Ident,
+                          fn_name :: Ident,
+                          success_pattern :: P.Pattern,
+                          success_expr :: E.Expr,
+                          failure_expr :: E.Expr,
+                          location :: Location }
+
+deriveRecordGeneralCompare :: D.Record -> RecordComparator-> C.Instance
+deriveRecordGeneralCompare record comparator = do
+    location <- comparator.location
+    type_arguments <- List.map record.type_arguments (\type_arg -> T.TypeSignature (T.TypeArg type_arg) location)
+    type_signature <- T.TypeSignature (T.Named record.name type_arguments) location
+    constraints <- List.fold [] record.type_arguments (\constraints, record_type_arg -> do
+        Ident type_arg _ <- record_type_arg
+        constraint <- C.Constraint comparator.class_name (Ident type_arg location)
+        List.push constraints constraint)
+    fn_args <- [P.Pattern (P.Binding (Ident "lhs" location)) location,
+                P.Pattern (P.Binding (Ident "rhs" location)) location]
+    field_info <- getFieldInfoForRecord record location
+    body <- generateCase field_info location
+                comparator.fn_name comparator.success_pattern
+                comparator.success_expr comparator.failure_expr 0
+    body <- Some body
+    sub_items <- []
+    op_fn <- F.Function comparator.fn_name fn_args body sub_items
+    C.Instance comparator.class_name type_signature constraints [op_fn] []

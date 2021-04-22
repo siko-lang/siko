@@ -1,0 +1,21 @@
+module Siko.AutoDerive.Ord where
+
+import Siko.AutoDerive.Util
+import Siko.Syntax.Location
+import Siko.Syntax.Ident
+import Siko.Syntax.Data as D
+import Siko.Syntax.Class as C
+import Siko.Syntax.Expr as E
+import Siko.Syntax.Pattern as P
+
+deriveRecordOrd :: D.Record -> Location -> C.Instance
+deriveRecordOrd record location = do
+    class_name <- Ident "Std.Ops.Ord" location
+    fn_name <- Ident "cmp" location
+    equal_ident <- Ident "Ordering.Equal" location
+    failure_value_ident <- Ident "failure_value" location
+    success_pattern <- P.Pattern (P.Constructor equal_ident []) location
+    success_expr <- E.Expr (E.FunctionCall (E.Expr (E.Path equal_ident) location) []) location
+    failure_expr <- E.Expr (E.Path failure_value_ident) location
+    comparator <- RecordComparator class_name fn_name success_pattern success_expr failure_expr location
+    deriveRecordGeneralCompare record comparator
