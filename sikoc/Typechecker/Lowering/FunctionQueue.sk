@@ -17,7 +17,6 @@ import Siko.Typechecker.FunctionStore
 import Siko.Typechecker.Lowering.ClosureStore as CS
 import Siko.Typechecker.Lowering.IteratorStore as IS
 import Siko.Typechecker.Lowering.Expr
-import Siko.Typechecker.Lowering.AutoDerive
 import Siko.Typechecker.Lowering.Util as Util
 import Siko.Typechecker.Lowering.TypeStore as TS
 import Siko.Typechecker.Util as TUtil
@@ -33,7 +32,6 @@ data FunctionQueueItem = Normal HP.FullyQualifiedName HT.Type
                          | ClosureCtor Int HT.Type CS.ClosureInstance
                          | ClosureCall CS.ClosureName HT.Type
                          | IteratorCtor IS.IteratorInstance
-                         | AutoDerive HT.Type HT.Type HP.FullyQualifiedName String
                          deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
 data FunctionQueue = { pending :: [(FunctionQueueItem, MP.Identity)],
@@ -52,7 +50,6 @@ getItemName item = case item of
     ClosureCtor _ _ closure_instance ->  (getInternalModuleName, CS.getVariantCtorName closure_instance)
     ClosureCall n _ -> (getInternalModuleName, "ClosureCall{}" % n)
     IteratorCtor iterator_instance -> (getInternalModuleName, IS.getVariantCtorName iterator_instance)
-    AutoDerive _ _ qn n -> (HP.getModuleName qn, n)
 
 insert :: Context -> FunctionQueueItem -> (Context, MP.Identity)
 insert context item = do
@@ -275,33 +272,6 @@ processItem item mir_function_id context = do
                     mir_program <- MP.addFunction context.mir_program mir_function_id mir_function
                     context <- context { mir_program = mir_program }
                     context
-        AutoDerive hir_type hir_function_type class_name member_name -> do
-            // FIXME: avoid hardcoded names somehow
-            //(fn, arg_count) <- case (show class_name, member_name) of
-            //    ("Std.Ops.Show", "show") -> (generateShowInstance, 1)
-            //    ("Std.Ops.PartialEq", "opEq") -> (generatePartialEqInstance, 2)
-            //    ("Std.Ops.PartialOrd", "partialCmp") -> (generatePartialOrdInstance, 2)
-            //    ("Std.Ops.Ord", "cmp") -> (generateOrdInstance, 2)
-            //    _ -> panic "Auto derive not implemented for {} / {} / {}" % (class_name, member_name, TF.toString hir_type)
-            (fn, arg_count) <- case member_name of
-                "opEq" -> (generatePartialEqInstance, 2)
-                "partialCmp" -> (generatePartialOrdInstance, 2)
-                "cmp" -> (generateOrdInstance, 2)
-                _ -> panic "Auto derive not implemented for {} / {} / {}" % (class_name, member_name, TF.toString hir_type)
-            (context, mir_arg_types, mir_result_type) <- getFunctionType context hir_function_type arg_count
-            expr_id_gen <- getExprIdCounter
-            context <- setExprIdCounter context expr_id_gen
-            temp_var_gen <- getTempVarCounter
-            context <- setTempVarCounter context temp_var_gen
-            (context, body) <- fn context hir_type class_name
-            (context, expr_id_gen) <- resetExprIdCounter context
-            (context, temp_var_gen) <- resetTempVarCounter context
-            info <- MF.FunctionInfo body expr_id_gen temp_var_gen False
-            mir_function_type <- MF.FunctionType mir_arg_types mir_result_type
-            mir_function <- MF.Function mir_function_id (MF.Normal info) mir_function_type
-            mir_program <- MP.addFunction context.mir_program mir_function_id mir_function
-            context <- context { mir_program = mir_program }
-            context
 
 processItems :: Context -> Context
 processItems context = do

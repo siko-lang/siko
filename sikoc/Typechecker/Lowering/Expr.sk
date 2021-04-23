@@ -344,19 +344,6 @@ processClassMemberCall context function_type arg_type class_name qn mir_args has
             queue_item <- FQ.Normal selected_member_name function_type
             (context, function_id) <- FQ.insert context queue_item
             (context, function_id, arg_count)
-        IR.AutoDerivedInstanceInfo instance_id -> do
-            if has_default_impl
-                then do
-                    queue_item <- FQ.Normal qn function_type
-                    function_type_info <- FS.getFunctionTypeInfo context.function_store qn
-                    arg_count <- getLength function_type_info.args
-                    (context, function_id) <- FQ.insert context queue_item
-                    (context, function_id, arg_count)
-                else do
-                    queue_item <- FQ.AutoDerive arg_type function_type class_name member_name
-                    arg_count <- getLength (HT.getArgs function_type)
-                    (context, function_id) <- FQ.insert context queue_item
-                    (context, function_id, arg_count)
     processStaticFunctionCall context mir_args function_type function_id arg_count
 
 processFormatExpr :: Context -> String -> [ME.Expr] -> [ME.Expr] -> (Context, ME.Expr)

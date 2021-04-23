@@ -11,7 +11,6 @@ import Siko.Typechecker.ClassStore
 import Siko.Typechecker.Error
 import Siko.HIR.Unification as U
 import Siko.HIR.Unification.Substitution as S
-import Siko.HIR.TypeIsomorphism as HTI
 import Map
 
 data BaseType = Tuple
@@ -32,46 +31,23 @@ getBaseType type = case type of
     T.Never _ -> Generic
 
 data InstanceInfo = UserDefinedInstanceInfo T.Type InstanceId Location
-                    | AutoDerivedInstanceInfo AutoDerivedInstanceId
                     deriving (Show)
-
-data AutoDerivedInstanceId = AutoDerivedInstanceId Int deriving (Show)
-
-data AutoDerivedInstance = AutoDerivedInstance T.Type Location P.FullyQualifiedName
 
 getType :: InstanceInfo -> InstanceResolver -> T.Type
 getType instance_info instance_resolver = case instance_info of
     UserDefinedInstanceInfo t _ _ -> t
-    AutoDerivedInstanceInfo id -> do
-        AutoDerivedInstance t _ _ <- getAutoDerivedInstanceById instance_resolver id
-        t
 
 getLocation :: InstanceInfo -> InstanceResolver -> Location
 getLocation instance_info instance_resolver = case instance_info of
     UserDefinedInstanceInfo _ _ l -> l
-    AutoDerivedInstanceInfo id -> do
-        AutoDerivedInstance _ l _ <- getAutoDerivedInstanceById instance_resolver id
-        l
 
 data CacheEntry = CacheEntry T.Type P.FullyQualifiedName deriving (PartialEq, Eq, PartialOrd, Ord)
 
 data InstanceResolver = { instance_map :: Map P.FullyQualifiedName (Map BaseType InstanceInfo),
-                          auto_derived_instances :: [AutoDerivedInstance],
                           cache :: Map CacheEntry InstanceInfo, }
 
 createInstanceResolver :: InstanceResolver
-createInstanceResolver = InstanceResolver empty [] empty
-
-getAutoDerivedInstanceById :: InstanceResolver -> AutoDerivedInstanceId -> AutoDerivedInstance
-getAutoDerivedInstanceById instance_resolver id = do
-    AutoDerivedInstanceId id <- id
-    atIndex instance_resolver.auto_derived_instances id
-
-updateAutoDerivedInstance :: InstanceResolver -> AutoDerivedInstanceId -> AutoDerivedInstance -> InstanceResolver
-updateAutoDerivedInstance instance_resolver id auto_derived_instance = do
-    AutoDerivedInstanceId id <- id
-    auto_derived_instances <- List.write instance_resolver.auto_derived_instances id auto_derived_instance
-    instance_resolver { auto_derived_instances = auto_derived_instances }
+createInstanceResolver = InstanceResolver empty empty
 
 addInstanceInfoToResolver :: InstanceResolver -> P.FullyQualifiedName -> BaseType -> InstanceInfo -> Result InstanceResolver Location
 addInstanceInfoToResolver instance_resolver class_name base_type instance_info = do
@@ -96,17 +72,6 @@ addUserDefinedInstance instance_resolver class_name instance_type instance_id lo
     base_type <- getBaseType instance_type
     addInstanceInfoToResolver instance_resolver class_name base_type instance_info
 
-addAutoDerivedInstance :: InstanceResolver -> P.FullyQualifiedName -> T.Type -> Location -> Result (InstanceResolver, AutoDerivedInstanceId) Location
-addAutoDerivedInstance instance_resolver class_name instance_type location = do
-    //println "Added auto derived instance for {} {}" % (class_name, T.toLongString instance_type)
-    id <- AutoDerivedInstanceId (getLength instance_resolver.auto_derived_instances)
-    instance_info <- AutoDerivedInstanceInfo id
-    base_type <- getBaseType instance_type
-    instance_resolver <- try addInstanceInfoToResolver instance_resolver class_name base_type instance_info
-    auto_derived_instances <- instance_resolver.auto_derived_instances + [AutoDerivedInstance instance_type location class_name]
-    instance_resolver <- instance_resolver { auto_derived_instances = auto_derived_instances }
-    Ok (instance_resolver, id)
-
 unifyTypes a :: (U.DataProvider a) => a -> TypeVarGenerator -> S.Substitution -> T.Type -> T.Type -> (TypeVarGenerator, S.Substitution, Bool)
 unifyTypes data_provider var_gen sub type1 type2 =
     case U.unify var_gen sub data_provider type1 type2 of
@@ -127,13 +92,6 @@ checkInstancesForBaseType state sub type base_type instance_info_map class_name 
         Some instance_info -> do
                 (state, sub, success) <- case instance_info of
                         UserDefinedInstanceInfo instance_type _ _ -> do
-                            var_gen <- state.var_gen
-                            (var_gen, sub, success) <- unifyTypes state var_gen sub type instance_type
-                            state <- state { var_gen = var_gen }
-                            (state, sub, success)
-                        AutoDerivedInstanceInfo id -> do
-                            AutoDerivedInstanceId id <- id
-                            AutoDerivedInstance instance_type _ _ <- atIndex state.instance_resolver.auto_derived_instances id
                             var_gen <- state.var_gen
                             (var_gen, sub, success) <- unifyTypes state var_gen sub type instance_type
                             state <- state { var_gen = var_gen }

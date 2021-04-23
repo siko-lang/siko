@@ -1,6 +1,5 @@
 module Siko.Typechecker where
 
-import Siko.Typechecker.Data
 import Siko.Typechecker.Expr
 import Siko.Typechecker.Error
 import Siko.Typechecker.Pattern
@@ -157,12 +156,10 @@ processProgram config program var_gen = do
     state <- TypecheckerState program [] var_gen CS.initializeEmptyClassStore
              IR.createInstanceResolver createChoiceTreeStore config
     trace config "TYCHK processData"
-    (state, derived_info_store) <- processData state
     type_store <- TP.TypeStore Map.empty Map.empty
     trace config "TYCHK processClassesAndInstances"
     state <- processClassesAndInstances config state
     trace config "TYCHK processAutoDerivedInstances"
-    state <- processAutoDerivedInstances state derived_info_store
     state <- IRChecks.checkConflicts state
     state <- IRChecks.checkInstanceDependencies state
     trace config "TYCHK processFunctions"
