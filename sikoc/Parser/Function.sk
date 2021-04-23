@@ -11,6 +11,7 @@ import Siko.Syntax.Function
 import Siko.Syntax.Ident
 import Siko.Syntax.Pattern
 import Siko.Syntax.Location
+import Siko.Syntax.Attribute
 import Siko.Syntax.Module as M
 import Siko.Parser.Error
 
@@ -20,8 +21,21 @@ checkTypeArgs (args, errors) (Pattern pattern (Location _ span)) = do
         Binding arg -> (args + [arg], errors)
         _ -> (args, errors + [InvalidTypeArgument span])
 
+parseAttributes :: ParserState -> Result (ParserState, [Attribute]) (ParserState, ParserError)
+parseAttributes state = do
+    loop (state, attributes) <- (state, []) do
+        ti <- peek state
+        case ti.token of
+            At -> do
+                state <- try expect state Kind.At
+                (state, name) <- try expectTypeIdent state "attribute name"
+                state <- try expect state Kind.EndOfItem
+                (state, List.push attributes (Attribute name))
+            _ -> break Ok (state, attributes)
+
 parseFunction :: ParserState -> Result (ParserState, Either Function FunctionSignature) (ParserState, ParserError)
 parseFunction state = do
+    (state, attributes) <- try parseAttributes state
     ti <- peek state
     case ti.token of
         VarIdentifier id -> do
@@ -51,7 +65,11 @@ parseFunction state = do
                     state <- try expect state Kind.EndOfItem
                     sub_items <- sub_items + state.sub_items
                     state <- state { sub_items = [] }
-                    function <- Function { name = name, arguments = args, body = body, sub_items = sub_items }
+                    function <- Function { name = name,
+                                           arguments = args,
+                                           body = body,
+                                           sub_items = sub_items,
+                                           attributes = attributes }
                     Ok (state, Left function)
                 Some DoubleColon -> do
                     state <- try expect state Kind.DoubleColon
@@ -63,7 +81,8 @@ parseFunction state = do
                     function_signature <- FunctionSignature { name = name,
                                                               type_arguments = args,
                                                               constraints = constraints,
-                                                              type_signature = type_signature }
+                                                              type_signature = type_signature,
+                                                              attributes = attributes }
                     Ok (state, Right function_signature)
                 _ -> panic "Unexpected separator"
         _ -> Err (state, unexpectedToken state "function name")
