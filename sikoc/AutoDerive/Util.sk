@@ -52,14 +52,14 @@ generateCase field_info location cmp_fn success_p success_e failure_e index = do
         E.Expr (E.CaseOf case_body cases) location
     else success_e
 
-data RecordComparator = { class_name :: Ident,
-                          fn_name :: Ident,
-                          success_pattern :: P.Pattern,
-                          success_expr :: E.Expr,
-                          failure_expr :: E.Expr,
-                          location :: Location }
+data Comparator = { class_name :: Ident,
+                    fn_name :: Ident,
+                    success_pattern :: P.Pattern,
+                    success_expr :: E.Expr,
+                    failure_expr :: E.Expr,
+                    location :: Location }
 
-deriveRecordGeneralCompare :: D.Record -> RecordComparator-> C.Instance
+deriveRecordGeneralCompare :: D.Record -> Comparator-> C.Instance
 deriveRecordGeneralCompare record comparator = do
     location <- comparator.location
     type_arguments <- List.map record.type_arguments (\type_arg -> T.TypeSignature (T.TypeArg type_arg) location)
@@ -79,7 +79,7 @@ deriveRecordGeneralCompare record comparator = do
     op_fn <- F.Function comparator.fn_name fn_args body sub_items
     C.Instance comparator.class_name type_signature constraints [op_fn] []
 
-deriveAdtGeneralCompare :: D.AlgebraicDataType -> RecordComparator-> C.Instance
+deriveAdtGeneralCompare :: D.AlgebraicDataType -> Comparator-> C.Instance
 deriveAdtGeneralCompare adt comparator = do
     location <- comparator.location
     type_arguments <- List.map adt.type_arguments (\type_arg -> T.TypeSignature (T.TypeArg type_arg) location)
@@ -104,12 +104,19 @@ deriveAdtGeneralCompare adt comparator = do
                 comparator.fn_name comparator.success_pattern
                 comparator.success_expr comparator.failure_expr 0
         E.Case case_pattern body)
-    //wildcard_pattern
-    //wildcard_case <- E.Case wildcard_pattern wildcard_body
-    //cases <- List.push cases wildcard_case
-    //body <- E.Expr (E.Case case_body cases) location
-    //body <- Some body
-    body <- None
+    cases <- if getLength adt.variants > 1
+    then do
+        wildcard_pattern <- P.Pattern (P.Tuple fn_args) location
+        get_discriminant_ident_expr <- E.Expr (E.Path (Ident "Std.Ops.getDiscriminant" location)) location
+        lhs_discriminant <- E.Expr (E.FunctionCall get_discriminant_ident_expr [lhs_expr]) location
+        rhs_discriminant <- E.Expr (E.FunctionCall get_discriminant_ident_expr [rhs_expr]) location
+        fn_call <- E.Expr (E.Path comparator.fn_name) location
+        wildcard_body <- E.Expr (E.FunctionCall fn_call [lhs_discriminant, rhs_discriminant]) location
+        wildcard_case <- E.Case wildcard_pattern wildcard_body
+        List.push cases wildcard_case
+    else cases
+    body <- E.Expr (E.CaseOf case_body cases) location
+    body <- Some body
     sub_items <- []
     op_fn <- F.Function comparator.fn_name fn_args body sub_items
     C.Instance comparator.class_name type_signature constraints [op_fn] []
