@@ -7,7 +7,7 @@ import Siko.Typechecker.CaseChecker
 import Siko.Typechecker.ClassStore as CS
 import Siko.Typechecker.TypeStore as TS
 import Siko.Typechecker.FunctionStore as FS
-import Siko.Typechecker.InstanceResolver as IR
+import Siko.HIR.InstanceResolver as IR
 import Siko.Typechecker.InstanceResolver.Checks as IRChecks
 import Siko.Typechecker.Class
 import Siko.Typechecker.Util
@@ -35,7 +35,6 @@ data TypecheckerState = { program :: P.Program (),
                           errors :: [TypecheckerError],
                           var_gen :: TypeVarGenerator,
                           class_store :: CS.ClassStore,
-                          instance_resolver :: IR.InstanceResolver,
                           choice_tree_store :: ChoiceTreeStore,
                           config :: Config,
                         }
@@ -114,13 +113,14 @@ checkCasePatterns context fn = do
         None -> context
 
 processGroup :: TypecheckerState ->
+                IR.InstanceResolver ->
                 DependencyGroup P.FullyQualifiedName ->
                 FS.FunctionStore ->
                 TP.TypeStore ->
-                (TypecheckerState, FS.FunctionStore, TP.TypeStore)
-processGroup state group function_store type_store = do
+                (TypecheckerState, IR.InstanceResolver, FS.FunctionStore, TP.TypeStore)
+processGroup state instance_resolver group function_store type_store = do
     //println "Group items: {}" % (group.items)
-    context <- initializeContext state function_store group.items
+    context <- initializeContext state instance_resolver function_store group.items
     context <- group.items |> List.iter |> Iterator.fold (\context, name -> do
                         fn <- P.getFunction context.state.program name
                         context <- initializeFunctionType context fn
@@ -149,32 +149,32 @@ processGroup state group function_store type_store = do
     type_store <- Map.fold type_store context.type_store.pattern_types(\type_store, (id, pattern_type) -> do
         type <- TS.getTypeFromPatternTypeState pattern_type
         TP.addPatternType type_store id type)
-    (context.state, context.function_store, type_store)
+    (context.state, context.instance_resolver, context.function_store, type_store)
 
 processProgram :: Config -> P.Program () -> TypeVarGenerator -> Result (P.Program (), MP.Program) [TypecheckerError]
 processProgram config program var_gen = do
-    state <- TypecheckerState program [] var_gen CS.initializeEmptyClassStore
-             IR.createInstanceResolver createChoiceTreeStore config
+    instance_resolver <- IR.createInstanceResolver
+    state <- TypecheckerState program [] var_gen CS.initializeEmptyClassStore createChoiceTreeStore config
     trace config "TYCHK processData"
     type_store <- TP.TypeStore Map.empty Map.empty
     trace config "TYCHK processClassesAndInstances"
-    state <- processClassesAndInstances config state
+    (state, instance_resolver) <- processClassesAndInstances config state instance_resolver
     trace config "TYCHK processAutoDerivedInstances"
-    state <- IRChecks.checkConflicts state
-    state <- IRChecks.checkInstanceDependencies state
+    state <- IRChecks.checkConflicts state instance_resolver
+    (state, instance_resolver) <- IRChecks.checkInstanceDependencies state instance_resolver
     trace config "TYCHK processFunctions"
     (state, function_store, groups) <- processFunctions config state
     //println "Functions: {}" % (getSize function_store.functions)
     //println "Groups: {}" % (getLength groups)
     trace config "TYCHK processGroups"
-    (state, function_store, type_store) <- groups |> List.iter
-            |> Iterator.fold (\(state, function_store, type_store), group -> do
-        (state, function_store, type_store) <- processGroup state group function_store type_store
-        (state, function_store, type_store) ) (state, function_store, type_store)
+    (state, instance_resolver, function_store, type_store) <- groups |> List.iter
+            |> Iterator.fold (\(state, instance_resolver, function_store, type_store), group -> do
+        (state, instance_resolver, function_store, type_store) <- processGroup state instance_resolver group function_store type_store
+        (state, instance_resolver, function_store, type_store) ) (state, instance_resolver, function_store, type_store)
     //FS.dump function_store
     if isEmpty state.errors
         then do
             typed_program <- TP.createTypedProgram type_store function_store state.program
-            mir_program <- L.lowerProgram config state typed_program
+            mir_program <- L.lowerProgram config state typed_program instance_resolver
             Ok (program, mir_program)
         else Err state.errors

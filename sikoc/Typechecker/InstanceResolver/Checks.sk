@@ -4,7 +4,7 @@ import Siko.HIR.Class
 import Siko.HIR.Type as T
 import Siko.HIR.TypeFormatter as TF
 import Siko.HIR.Program as P
-import Siko.Typechecker.InstanceResolver
+import Siko.HIR.InstanceResolver
 import Siko.HIR.Unification.TypeVarGenerator
 import Siko.Syntax.Location
 import Siko.Typechecker
@@ -15,9 +15,8 @@ import Siko.HIR.Unification.Substitution as S
 import Siko.HIR.TypeIsomorphism as HTI
 import Map
 
-checkConflicts :: TypecheckerState -> TypecheckerState
-checkConflicts state = do
-    instance_resolver <- state.instance_resolver
+checkConflicts :: TypecheckerState -> InstanceResolver -> TypecheckerState
+checkConflicts state instance_resolver = do
     state <- instance_resolver.instance_map |> Map.iter |> Iterator.fold (\state, (class_name, instance_info_map) -> do
         generic_instance_location <- case get instance_info_map Generic of
             Some i -> do
@@ -36,40 +35,37 @@ checkConflicts state = do
         state) state
     state
 
-checkInstanceDependenciesForInstance :: TypecheckerState -> T.Type -> P.FullyQualifiedName -> Location -> TypecheckerState
-checkInstanceDependenciesForInstance state type class_name location = do
+checkInstanceDependenciesForInstance :: TypecheckerState -> InstanceResolver -> T.Type -> P.FullyQualifiedName -> Location -> (TypecheckerState, InstanceResolver)
+checkInstanceDependenciesForInstance state instance_resolver type class_name location = do
     deps <- case get state.class_store.classes class_name of
         Some class_info -> do
             class_info :: ClassInfo <- class_info // FIXME:
             class_info.direct_dependencies
         None -> panic "Class {} not found in class store" % class_name
-    state <- deps |> List.iter |> Iterator.fold (\state, dep -> do
-        state <- case checkInstance state type dep of
-            Ok (state, cs) -> do
-                state :: TypecheckerState <- state // FIXME
+    List.fold (state, instance_resolver) deps (\(state, instance_resolver), dep ->
+        case checkInstance state instance_resolver state.var_gen type dep of
+            Ok (instance_resolver, var_gen, cs) -> do
                 sub <- S.createSubstitution
+                state <- state { var_gen = var_gen }
                 (state, sub) <- mergeResolverConstraintsIntoSubstitution state cs sub
                 new_type <- S.apply type sub
                 if HTI.checkIsomorphicType new_type type state
-                    then state
-                    else addError state (MissingInstance ("{}" % dep) location)
-            Err state -> do
-                addError state (MissingInstance ("{}" % dep) location)
-        state) state
-    state
+                    then (state, instance_resolver)
+                    else do
+                        state <- addError state (MissingInstance ("{}" % dep) location)
+                        (state, instance_resolver)
+            Err _ -> do
+                state <- addError state (MissingInstance ("{}" % dep) location)
+                (state, instance_resolver))
 
-checkInstanceDependencies :: TypecheckerState -> TypecheckerState
-checkInstanceDependencies state = do
-    instance_resolver <- state.instance_resolver
-    state <- instance_resolver.instance_map |> Map.iter |> Iterator.fold (\state, (class_name, instance_info_map) -> do
-        state <- instance_info_map |> Map.iter |> Iterator.fold (\state, (_, i) -> do
-                    location <- getLocation i instance_resolver
-                    case i of
-                        UserDefinedInstanceInfo instance_type id location -> do
-                            checkInstanceDependenciesForInstance state instance_type class_name location
-                 ) state
-        state) state
-    state
+checkInstanceDependencies :: TypecheckerState -> InstanceResolver -> (TypecheckerState, InstanceResolver)
+checkInstanceDependencies state instance_resolver =
+    Map.fold (state, instance_resolver) instance_resolver.instance_map (\(state, instance_resolver), (class_name, instance_info_map) -> do
+        Map.fold (state, instance_resolver) instance_info_map (\(state, instance_resolver), (_, i) -> do
+                UserDefinedInstanceInfo instance_type id location <- i
+                checkInstanceDependenciesForInstance state instance_resolver instance_type class_name location
+            )
+    )
 
 mergeResolverConstraintsIntoSubstitution :: TypecheckerState -> [(T.TypeVar, P.FullyQualifiedName)] -> S.Substitution -> (TypecheckerState, S.Substitution)
 mergeResolverConstraintsIntoSubstitution state constraints sub = do

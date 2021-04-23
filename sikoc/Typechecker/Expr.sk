@@ -18,7 +18,7 @@ import Siko.HIR.Unification as U
 import Siko.HIR.Unification.Substitution as S
 import Siko.Typechecker.TypeStore as TS
 import Siko.Typechecker.FunctionStore as FS
-import Siko.Typechecker.InstanceResolver as IR
+import Siko.HIR.InstanceResolver as IR
 import Siko.Typechecker.InstanceResolver.Checks as IRChecks
 import Siko.Typechecker.Error
 import Siko.Constants
@@ -26,12 +26,13 @@ import Map
 
 data Context = { type_store :: TS.TypeStore,
                  function_store :: FS.FunctionStore,
+                 instance_resolver :: IR.InstanceResolver,
                  state :: TypecheckerState,
                  returns :: [(E.ExprId, Location)],
                  group_items :: [PO.FullyQualifiedName] }
 
-initializeContext :: TypecheckerState -> FS.FunctionStore -> [PO.FullyQualifiedName] -> Context
-initializeContext state function_store group_items = Context TS.initializeTypeStore function_store state [] group_items
+initializeContext :: TypecheckerState -> IR.InstanceResolver -> FS.FunctionStore -> [PO.FullyQualifiedName] -> Context
+initializeContext state instance_resolver function_store group_items = Context TS.initializeTypeStore function_store instance_resolver state [] group_items
 
 addExprType :: Context -> E.ExprId -> TS.ExprTypeState -> Context
 addExprType context expr_id expr_type = do
@@ -72,16 +73,16 @@ processClassConstraints context sub = do
     constraints <- sub.constraints
     sub <- sub { constraints = [] }
     (context, sub, success) <- constraints |> List.iter |> Iterator.fold (\(context, sub, success), S.UnificationConstraint class_name type -> do
-            state <- context.state
-            case IR.checkInstance state type class_name of
-                Ok (state, cs) -> do
+            case IR.checkInstance context.state context.instance_resolver context.state.var_gen type class_name of
+                Ok (instance_resolver, var_gen, cs) -> do
+                    state <- context.state // FIXME: better update syntax
+                    state <- state { var_gen = var_gen }
                     (state, sub) <- IRChecks.mergeResolverConstraintsIntoSubstitution state cs sub
-                    context <- context { state = state }
+                    context <- context { instance_resolver = instance_resolver, state = state }
                     context <- applyToContext context sub
                     (context, sub, success)
-                Err state -> do
+                Err _ -> do
                     //println "processClassConstraints failed: {} {}" % (TF.toString type, class_name)
-                    context <- context { state = state }
                     (context, sub, False)
         ) (context, sub, True)
     if success then Ok (context, sub) else Err (context, sub)

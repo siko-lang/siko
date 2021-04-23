@@ -10,6 +10,7 @@ import Siko.MIR.Data as MD
 import Siko.MIR.Type as MT
 import Siko.MIR.Expr as ME
 import Siko.MIR.Function as MF
+import Siko.HIR.InstanceResolver as IR
 import Siko.Typechecker.Lowering.FunctionQueue as FQ
 import Siko.Typechecker.Lowering.TypeStore
 import Siko.Typechecker.Lowering.ClassMemberCalls
@@ -33,6 +34,7 @@ data Context = { hir_program :: HP.Program HT.Type,
                  type_store :: TypeStore,
                  closure_store :: CS.ClosureStore,
                  iterator_store :: IS.IteratorStore,
+                 instance_resolver :: IR.InstanceResolver,
                  state :: TypecheckerState,
                  keys :: Map Key Int,
                  function_queue :: FQ.FunctionQueue,
@@ -221,14 +223,14 @@ generateExternalImpls context = do
                 context) context
         ) context
 
-lowerProgram :: Config -> TypecheckerState -> HP.Program HT.Type -> MP.Program
-lowerProgram config state hir_program = do
+lowerProgram :: Config -> TypecheckerState -> HP.Program HT.Type -> IR.InstanceResolver -> MP.Program
+lowerProgram config state hir_program instance_resolver = do
     trace config "Lowering to MIR.."
     main_qn <- HP.FullPath getMainModuleName getMainFunctionName
     type_store <- createTypeStore
     mir_program <- MP.createProgram
     context <- Context hir_program mir_program
-               type_store CS.createClosureStore IS.createIteratorStore state Map.empty
+               type_store CS.createClosureStore IS.createIteratorStore instance_resolver state Map.empty
                FQ.createFunctionQueue getExternalClassNames Map.empty Map.empty [] [] None None
     context <- case HP.getFunctionOpt hir_program main_qn of
         Some main -> do

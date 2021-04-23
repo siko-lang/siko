@@ -20,7 +20,7 @@ import Siko.Typechecker
 import Siko.HIR.Unification as U
 import Siko.HIR.Unification.Data as UD
 import Siko.HIR.Unification.Substitution as S
-import Siko.Typechecker.InstanceResolver as IR
+import Siko.HIR.InstanceResolver as IR
 import Siko.Constants
 import List2 as List2
 import Map
@@ -112,7 +112,7 @@ getDependencies impl = case impl of
 checkExternalImpl :: Context -> HT.Type -> HP.FullyQualifiedName -> MD.ExternalClassImplKind -> Context
 checkExternalImpl context hir_type class_name external_class_impl = do
     entry <- IR.CacheEntry hir_type class_name
-    context <- case get context.state.instance_resolver.cache entry of
+    context <- case get context.instance_resolver.cache entry of
         Some instance_info -> do
             //println "checkExternalImpl: {}/{}" % (TF.toString hir_type, external_class_impl)
             added_impls <- [external_class_impl] + (getDependencies external_class_impl)
