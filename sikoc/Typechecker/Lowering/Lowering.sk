@@ -30,7 +30,6 @@ data Key = { module_name :: String, name :: String } deriving (PartialEq, Eq, Pa
 
 data Context = { hir_program :: HP.Program HT.Type,
                  mir_program :: MP.Program,
-                 function_store :: FunctionStore,
                  type_store :: TypeStore,
                  closure_store :: CS.ClosureStore,
                  iterator_store :: IS.IteratorStore,
@@ -222,13 +221,13 @@ generateExternalImpls context = do
                 context) context
         ) context
 
-lowerProgram :: Config -> TypecheckerState -> HP.Program HT.Type -> FunctionStore -> MP.Program
-lowerProgram config state hir_program function_store = do
+lowerProgram :: Config -> TypecheckerState -> HP.Program HT.Type -> MP.Program
+lowerProgram config state hir_program = do
     trace config "Lowering to MIR.."
     main_qn <- HP.FullPath getMainModuleName getMainFunctionName
     type_store <- createTypeStore
     mir_program <- MP.createProgram
-    context <- Context hir_program mir_program function_store
+    context <- Context hir_program mir_program
                type_store CS.createClosureStore IS.createIteratorStore state Map.empty
                FQ.createFunctionQueue getExternalClassNames Map.empty Map.empty [] [] None None
     context <- case HP.getFunctionOpt hir_program main_qn of

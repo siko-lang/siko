@@ -119,8 +119,8 @@ processNormalFunction context mir_function_id hir_type qn hir_function =
     case hir_function.body of
         Some hir_body -> do
             state <- context.state
-            function_type_info <- getFunctionTypeInfo context.function_store qn
-            function_type <- HT.removeFixed function_type_info.function_type
+            hir_fn <- HP.getFunction context.hir_program qn
+            function_type <- HT.removeFixed (Option.unwrap hir_fn.type)
             sub <- S.createSubstitution
             (state, sub) <- case U.unify state.var_gen sub state hir_type function_type of
                 Ok (var_gen, sub) -> (state { var_gen = var_gen}, sub)
@@ -198,9 +198,9 @@ processNormalFunction context mir_function_id hir_type qn hir_function =
                             else panic "NYI"
                 else do
                     (context, mir_arg_types, mir_result_type) <- getFunctionType context hir_type hir_function.arg_count
-                    type_mapping <- case hir_function.full_type of
+                    type_mapping <- case hir_function.type_with_ownership of
                         Some t -> createTypeMap context t hir_function.arg_count
-                        None -> panic "Extern function ha no type! {}" % mir_function_id
+                        None -> panic "Extern function has no ownership type! {}" % mir_function_id
                     function_type <- MF.FunctionType mir_arg_types mir_result_type
                     mir_function <- MF.Function mir_function_id (MF.Extern type_mapping) function_type
                     mir_program <- MP.addFunction context.mir_program mir_function_id mir_function
