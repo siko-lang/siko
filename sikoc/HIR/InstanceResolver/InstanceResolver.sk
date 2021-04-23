@@ -10,7 +10,7 @@ import Siko.HIR.Unification as U
 import Siko.HIR.Unification.Substitution as S
 import Map
 
-data BaseType = Tuple
+data BaseType = Tuple Int
               | Named P.FullyQualifiedName
               | Function
               | Generic
@@ -18,7 +18,7 @@ data BaseType = Tuple
 
 getBaseType :: T.Type -> BaseType
 getBaseType type = case type of
-    T.Tuple _ -> Tuple
+    T.Tuple args -> Tuple (getLength args)
     T.Named qn _ -> Named qn
     T.Function _ _ -> Function
     T.Var _ _ -> Generic

@@ -15,13 +15,14 @@ cargo build --release
 cd ..
 echo "Generating stage1"
 date
-find ./sikoc -name "*.sk" | xargs ./bootstrap/target/release/rust_sikoc std2/* -v -o bootstrap/stage1
+STD2=`ls std2/*.sk std2/Json/*.sk`
+find ./sikoc -name "*.sk" | xargs ./bootstrap/target/release/rust_sikoc $STD2 -v -o bootstrap/stage1
 echo "Compiling stage1"
 date
 rustc --edition=2018 bootstrap/stage1_rc.rs -O -o bootstrap/stage1
 echo "Generating stage2"
 date
-find ./sikoc -name "*.sk" | xargs bootstrap/stage1 std2/* -v -o bootstrap/stage2
+find ./sikoc -name "*.sk" | xargs bootstrap/stage1 $STD2 -v -o bootstrap/stage2
 echo "Compiling stage2"
 date
 rustc --edition=2018 bootstrap/stage2_rc.rs -O -o bootstrap/stage2
