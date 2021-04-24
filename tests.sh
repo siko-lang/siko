@@ -1,2 +1,2 @@
 ./run_tests.py $@
-rm apple.txt
+rm -f apple.txt
