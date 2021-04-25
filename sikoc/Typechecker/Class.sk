@@ -15,7 +15,7 @@ import Siko.HIR.Traversal
 import Siko.HIR.Type as T
 import Siko.HIR.TypeFormatter as TF
 import Siko.HIR.Class as C
-import Siko.HIR.ClassDependencyStore
+import Siko.HIR.ClassInfoStore as CIS
 import Siko.Util.DependencyProcessor
 import Siko.Config
 import Map
@@ -65,8 +65,8 @@ isSpecializedType type = case type of
     T.Tuple args -> args |> List.iter |> Iterator.fold (\specialized, arg -> specialized || not (isVar arg)) False
     _ -> True
 
-processInstance :: TypecheckerState -> ClassDependencyStore -> IR.InstanceResolver -> C.Instance -> (TypecheckerState, IR.InstanceResolver, [(P.FullyQualifiedName, T.Type)])
-processInstance state class_dependency_store instance_resolver i = do
+processInstance :: TypecheckerState -> CIS.ClassInfoStore -> IR.InstanceResolver -> C.Instance -> (TypecheckerState, IR.InstanceResolver, [(P.FullyQualifiedName, T.Type)])
+processInstance state class_info_store instance_resolver i = do
     if isSpecializedType i.type
         then do
             state <- addError state (SpecializedInstance i.location)
@@ -133,12 +133,19 @@ processInstance state class_dependency_store instance_resolver i = do
         None -> (state, [])
     (state, instance_resolver, inferred_types)
 
-initializeClassDependencyStore :: TypecheckerState -> ClassDependencyStore
-initializeClassDependencyStore state =
-    Map.fold createClassDependencyStore state.class_store.classes
-        (\store, (c, info) -> addClassDependency store c info.all_dependencies)
+initializeClassInfoStore :: TypecheckerState -> CIS.ClassInfoStore
+initializeClassInfoStore state = do
+    classes <- Map.getKeys state.class_store.classes
+    List.fold CIS.createClassInfoStore classes (\store, class_name -> do
+        class_type_info <- Option.unwrap (get state.class_store.class_type_info_map class_name)
+        arg_type <- class_type_info.arg_type
+        members <- Map.map class_type_info.members (\(qn, member) -> (qn, CIS.ClassMemberInfo member.type member.has_default_impl))
+        info <- Option.unwrap (get state.class_store.classes class_name)
+        dependencies <- info.all_dependencies
+        class_info <- CIS.ClassInfo arg_type members dependencies
+        CIS.addClassInfo store class_name class_info)
 
-processClassesAndInstances :: Config -> TypecheckerState -> IR.InstanceResolver -> (TypecheckerState, IR.InstanceResolver, ClassDependencyStore)
+processClassesAndInstances :: Config -> TypecheckerState -> IR.InstanceResolver -> (TypecheckerState, IR.InstanceResolver, CIS.ClassInfoStore)
 processClassesAndInstances config state instance_resolver = do
     classes <- P.getClasses state.program
     class_dependency_map <- ClassDependencyMap empty
@@ -161,11 +168,11 @@ processClassesAndInstances config state instance_resolver = do
             else (state, circular)) (state, False)
     class_store <- initializeClassStore class_dependency_map.direct_dependencies circular class_type_info_map
     state <- state { class_store = class_store }
-    class_dependency_store <- initializeClassDependencyStore state
+    class_info_store <- initializeClassInfoStore state
     instances <- P.getInstances state.program
     (state, instance_resolver, inferred_types) <- List.fold (state, instance_resolver, []) instances (\(state, instance_resolver, inferred_types), i -> do
-        (state, instance_resolver, types) <- processInstance state class_dependency_store instance_resolver i
+        (state, instance_resolver, types) <- processInstance state class_info_store instance_resolver i
         (state, instance_resolver, inferred_types + types))
     program <- inferred_types |> List.iter |> Iterator.fold (\program, (qn, type) -> P.updateInstanceMemberType program qn type) state.program
     state <- state { program = program }
-    (state, instance_resolver, class_dependency_store)
+    (state, instance_resolver, class_info_store)

@@ -13,7 +13,7 @@ import Siko.HIR.Util
 import Siko.HIR.Unification as U
 import Siko.HIR.TypeIsomorphism as HTI
 import Siko.Typechecker.Function
-import Siko.Typechecker.Lowering as L
+import Siko.HIR.Lowering as L
 import Siko.Util.DependencyProcessor
 import Siko.HIR.Program as P
 import Siko.HIR.Function as F
@@ -22,7 +22,7 @@ import Siko.HIR.Type as T
 import Siko.HIR.TypeFormatter as TF
 import Siko.HIR.Unification.TypeVarGenerator as TVG
 import Siko.HIR.Expr
-import Siko.HIR.ClassDependencyStore
+import Siko.HIR.ClassInfoStore
 import Siko.HIR.Data as D
 import Siko.MIR.Program as MP
 import Siko.Constants
@@ -154,7 +154,7 @@ processProgram config program var_gen = do
     trace config "TYCHK processData"
     type_store <- TP.TypeStore Map.empty Map.empty
     trace config "TYCHK processClassesAndInstances"
-    (state, instance_resolver, class_dependency_store) <- processClassesAndInstances config state instance_resolver
+    (state, instance_resolver, class_info_store) <- processClassesAndInstances config state instance_resolver
     trace config "TYCHK processAutoDerivedInstances"
     state <- IRChecks.checkConflicts state instance_resolver
     (state, instance_resolver) <- IRChecks.checkInstanceDependencies state instance_resolver
@@ -171,6 +171,6 @@ processProgram config program var_gen = do
     if isEmpty state.errors
         then do
             typed_program <- TP.createTypedProgram type_store function_store state.program
-            mir_program <- L.lowerProgram config state.var_gen class_dependency_store state typed_program instance_resolver
+            mir_program <- L.lowerProgram config state.var_gen class_info_store typed_program instance_resolver
             Ok (program, mir_program)
         else Err state.errors

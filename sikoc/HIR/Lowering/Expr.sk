@@ -1,14 +1,12 @@
-module Siko.Typechecker.Lowering.Expr where
+module Siko.HIR.Lowering.Expr where
 
-import Siko.Typechecker
-import Siko.Typechecker.Class
-import Siko.Typechecker.ClassStore
-import Siko.Typechecker.Lowering
-import Siko.Typechecker.Lowering.FunctionQueue as FQ
-import Siko.Typechecker.Lowering.TypeStore
-import Siko.Typechecker.Lowering.ClosureStore as CS
-import Siko.Typechecker.Lowering.Util
-import Siko.Typechecker.Lowering.ClassMemberCalls
+import Siko.HIR.Lowering
+import Siko.HIR.Lowering.FunctionQueue as FQ
+import Siko.HIR.Lowering.TypeStore
+import Siko.HIR.Lowering.ClosureStore as CS
+import Siko.HIR.Lowering.Util
+import Siko.HIR.Lowering.ClassMemberCalls
+import Siko.HIR.ClassInfoStore
 import Siko.HIR.Unification as U
 import Siko.HIR.CaseChecker as CC
 import Siko.HIR.Unification.Substitution as S
@@ -495,16 +493,14 @@ processExpr context sub hir_expr = do
             case fn.kind of
                 HF.ClassMember class_name -> do
                     member_name <- HPO.getShortName qn
-                    class_type_info <- get context.state.class_store.class_type_info_map class_name
-                    class_type_info <- Option.unwrap class_type_info // FIXME
-                    class_type_info :: ClassTypeInfo <- class_type_info // FIXME
-                    case get class_type_info.members member_name of
+                    class_info <- getClassInfo context.class_info_store class_name
+                    case get class_info.members member_name of
                         Some member -> do
                             member :: ClassMemberInfo <- member
                             vars <- TUtil.collectVars [] member.type
                             (mapper, context) <- TUtil.initMapper vars context
                             member_type <- TUtil.remap mapper member.type
-                            arg_type <- TUtil.remap mapper class_type_info.arg_type
+                            arg_type <- TUtil.remap mapper class_info.arg_type
                             (context, function_type, sub) <- getFunctionType context arg_types expr_type member_type
                             arg <- S.apply arg_type sub
                             processClassMemberCall context function_type arg class_name qn mir_args member.has_default_impl
