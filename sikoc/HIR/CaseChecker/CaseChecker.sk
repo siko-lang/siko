@@ -1,24 +1,24 @@
-module Siko.Typechecker.CaseChecker where
+module Siko.HIR.CaseChecker where
 
+import Siko.HIR.CaseChecker.Error
 import Siko.Syntax.Location
 import Siko.HIR.Expr as E
 import Siko.HIR.Data as D
 import Siko.HIR.Pattern as P
 import Siko.HIR.Program as PO
 import Siko.HIR.Type as T
-import Siko.Typechecker
-import Siko.Typechecker.Error
-import Siko.Typechecker.Expr
-import Siko.Typechecker.Pattern
 import Siko.Dot as D
 import Std.Util
 import Map
 import Hack
 
-data ChoiceTreeStore = { choice_trees :: Map E.ExprId Choice }
+data Context = { program :: PO.Program T.Type,
+                 errors :: [CaseCheckerError] }
 
-createChoiceTreeStore :: ChoiceTreeStore
-createChoiceTreeStore = ChoiceTreeStore empty
+addError :: Context -> CaseCheckerError -> Context
+addError context error = do
+    errors <- List.push context.errors error
+    context { errors = errors }
 
 data ValuePath = ItemIndex ValuePath Int T.Type
                  | VariantPath ValuePath PO.FullyQualifiedName Int Int T.Type
@@ -44,7 +44,7 @@ getParentPath path = case path of
     VariantPath p _ _ _ _ -> p
 
 data PendingPattern = { path :: ValuePath,
-                        pattern :: P.Pattern ()
+                        pattern :: P.Pattern T.Type
                       }
 
 data Check = Check ValuePath Condition deriving (Show, PartialEq, Eq, PartialOrd, Ord)
@@ -95,8 +95,7 @@ processPattern context pendingPatterns = do
             (additional_info { binds = binds }, checks)
         P.Tuple args -> do
             (args, _) <- args |> List.iter |> Iterator.fold (\(args, index), arg -> do
-                    P.Pattern _ arg_id _ _ <- arg
-                    arg_type <- getPatternType context arg_id
+                    P.Pattern _ arg_id arg_type _ <- arg
                     p <- ItemIndex path index arg_type
                     arg <- PendingPattern p arg
                     args <- args + [arg]
@@ -134,8 +133,7 @@ processPattern context pendingPatterns = do
             (additional_info, checks)
         P.Record _ args -> do
             (args, _) <- args |> List.iter |> Iterator.fold (\(args, index), arg -> do
-                    P.Pattern _ arg_id _ _ <- arg
-                    arg_type <- getPatternType context arg_id
+                    P.Pattern _ arg_id arg_type _ <- arg
                     p <- ItemIndex path index arg_type
                     arg <- PendingPattern p arg
                     args <- args + [arg]
@@ -145,8 +143,7 @@ processPattern context pendingPatterns = do
             (additional_info, checks)
         P.Variant qn variant_index args -> do
             (args, _) <- args |> List.iter |> Iterator.fold (\(args, index), arg -> do
-                    P.Pattern _ arg_id _ _ <- arg
-                    arg_type <- getPatternType context arg_id
+                    P.Pattern _ arg_id arg_type _ <- arg
                     p <- VariantPath path qn variant_index index arg_type
                     arg <- PendingPattern p arg
                     args <- args + [arg]
@@ -176,7 +173,7 @@ getAdtVariantCount :: Context -> T.Type -> Option Int
 getAdtVariantCount context type = do
     case type of
         T.Named qn _ -> do
-            adt <- PO.getAdtOpt context.state.program qn
+            adt <- PO.getAdtOpt context.program qn
             case adt of
                 Some adt -> do
                     adt :: D.AlgebraicDataType <- adt // FIXME
@@ -188,10 +185,9 @@ data PatternInfo = { checks :: [Check],
                      end :: MatchInfo,
                    }
 
-processSinglePattern :: Context -> P.Pattern () -> Int -> (Int, CaseInfo)
+processSinglePattern :: Context -> P.Pattern T.Type -> Int -> (Int, CaseInfo)
 processSinglePattern context pattern case_index = do
-    P.Pattern _ id _ _ <- pattern
-    root_type <- getPatternType context id
+    P.Pattern _ id root_type _ <- pattern
     (additional_info, checks) <- processPattern context [PendingPattern (Root root_type) pattern]
     (rule_set, _) <- checksToRules checks
     match_info <- MatchInfo case_index additional_info
@@ -412,32 +408,23 @@ checkBranches choice =
                 else ([], found_cases)
         ElseNode -> panic "ElseNode reached"
 
-validateChoiceTree :: Context -> Choice -> Location -> [E.Case ()] -> Context
+validateChoiceTree :: Context -> Choice -> Location -> [E.Case T.Type] -> Context
 validateChoiceTree context choice location cases = do
     (missing_cases, found_cases) <- checkBranches choice
     (context, _) <- cases |> List.iter |> Iterator.fold (\(context, case_index), c -> do
             P.Pattern p _ _ location <- c.pattern
             context <- if contains found_cases case_index
                 then context
-                else do
-                    err <- UnreachableCase location
-                    state <- addError context.state err
-                    context <- context { state = state }
-                    context
+                else addError context (UnreachableCase location)
             (context, case_index + 1)
         ) (context, 0)
     if isEmpty missing_cases
         then context
-        else do
-            err <- NonExhaustiveCase location
-            state <- addError context.state err
-            context <- context { state = state }
-            context
+        else addError context (NonExhaustiveCase location)
 
-checkCase :: Context -> E.ExprId -> E.Expr () -> [E.Case ()] -> Context
+checkCase :: Context -> E.ExprId -> E.Expr T.Type -> [E.Case T.Type] -> Result Choice [CaseCheckerError]
 checkCase context expr_id case_body cases = do
-    (E.Expr _ body_id _ location) <- case_body
-    root_type <- getExprType context body_id
+    (E.Expr _ body_id root_type location) <- case_body
     (case_infos, _) <- cases |> List.iter |> Iterator.fold (\(case_infos, case_index), c -> do
             P.Pattern p _ _ location <- c.pattern
             (case_index, case_info) <- processSinglePattern context c.pattern case_index
@@ -458,17 +445,6 @@ checkCase context expr_id case_body cases = do
                               processTree choice empty case_info True) (choice, False)
     //dumpChoiceTree choice "{}" % expr_id
     context <- validateChoiceTree context choice location cases
-    state <- context.state // FIXME
-    choice_tree_store <- state.choice_tree_store
-    (choice_trees, _) <- insert choice_tree_store.choice_trees expr_id choice
-    choice_tree_store <- choice_tree_store { choice_trees = choice_trees }
-    state <- state { choice_tree_store = choice_tree_store }
-    context { state = state }
-
-checkCases :: Context -> E.Expr () -> Context
-checkCases context (E.Expr expr id _ _) = do
-    context <- case expr of
-        E.CaseOf body cases _ -> do
-            checkCase context id body cases
-        _ -> context
-    context
+    if isEmpty context.errors
+    then Ok choice
+    else Err context.errors

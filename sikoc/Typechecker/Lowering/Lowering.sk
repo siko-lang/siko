@@ -3,6 +3,8 @@ module Siko.Typechecker.Lowering where
 import Siko.HIR.Function as F
 import Siko.HIR.Program as HP
 import Siko.HIR.Pattern as HPat
+import Siko.HIR.ClassDependencyStore as CDS
+import Siko.HIR.Unification.TypeVarGenerator as TVG
 import Siko.HIR.Type as HT
 import Siko.HIR.Expr as HE
 import Siko.MIR.Program as MP
@@ -36,7 +38,6 @@ data Context = { hir_program :: HP.Program HT.Type,
                  closure_store :: CS.ClosureStore,
                  iterator_store :: IS.IteratorStore,
                  instance_resolver :: IR.InstanceResolver,
-                 state :: TypecheckerState,
                  keys :: Map Key Int,
                  function_queue :: FQ.FunctionQueue,
                  external_class_names :: [(HP.FullyQualifiedName, MD.ExternalClassImplKind)],
@@ -46,26 +47,29 @@ data Context = { hir_program :: HP.Program HT.Type,
                  breaks :: [ME.ExprId],
                  expr_id_gen :: Option (Counter ME.ExprId),
                  temp_var_gen :: Option (Counter ME.Var),
+                 var_gen :: TVG.TypeVarGenerator,
+                 class_dependency_store :: CDS.ClassDependencyStore,
+                 state :: TypecheckerState
                }
 
 instance U.TypeVarGenerator Context where
     getNewTypeVar context = do
-        (state, var) <- U.getNewTypeVar context.state
-        context <- context { state = state }
+        (var_gen, var) <- TVG.getNewTypeVar context.var_gen
+        context <- context { var_gen = var_gen }
         (context, var)
 
     getNewTypeVarType context = do
-        (state, t) <- U.getNewTypeVarType context.state
-        context <- context { state = state }
+        (var_gen, t) <- TVG.getNewTypeVarType context.var_gen
+        context <- context { var_gen = var_gen }
         (context, t)
 
 instance U.Context Context
 
 instance U.DataProvider Context where
-    getRecord context qn = U.getRecord context.state qn
+    getRecord context qn = HP.getRecordOpt context.hir_program qn
 
 instance U.ClassProvider Context where
-    getAllClassDependencies context qn = U.getAllClassDependencies context.state qn
+    getAllClassDependencies context qn = CDS.getDependencies context.class_dependency_store qn
 
 getNextTempVar :: Context -> (Context, ME.Var)
 getNextTempVar context = do
@@ -243,15 +247,15 @@ generateExternalImpls context = do
                 context) context
         ) context
 
-lowerProgram :: Config -> TypecheckerState -> HP.Program HT.Type -> IR.InstanceResolver -> MP.Program
-lowerProgram config state hir_program instance_resolver = do
+lowerProgram :: Config -> TVG.TypeVarGenerator -> CDS.ClassDependencyStore -> TypecheckerState -> HP.Program HT.Type -> IR.InstanceResolver -> MP.Program
+lowerProgram config var_gen class_dependency_store state hir_program instance_resolver = do
     trace config "Lowering to MIR.."
     main_qn <- HP.FullPath getMainModuleName getMainFunctionName
     type_store <- createTypeStore
     mir_program <- MP.createProgram
     context <- Context hir_program mir_program
-               type_store CS.createClosureStore IS.createIteratorStore instance_resolver state Map.empty
-               FQ.createFunctionQueue getExternalClassNames Map.empty Map.empty [] [] None None
+               type_store CS.createClosureStore IS.createIteratorStore instance_resolver Map.empty
+               FQ.createFunctionQueue getExternalClassNames Map.empty Map.empty [] [] None None var_gen class_dependency_store state
     context <- case HP.getFunctionOpt hir_program main_qn of
         Some main -> do
             item <- FQ.Normal main_qn (HT.Tuple [])

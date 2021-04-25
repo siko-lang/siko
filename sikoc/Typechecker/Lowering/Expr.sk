@@ -2,7 +2,6 @@ module Siko.Typechecker.Lowering.Expr where
 
 import Siko.Typechecker
 import Siko.Typechecker.Class
-import Siko.Typechecker.CaseChecker
 import Siko.Typechecker.ClassStore
 import Siko.Typechecker.Lowering
 import Siko.Typechecker.Lowering.FunctionQueue as FQ
@@ -11,6 +10,7 @@ import Siko.Typechecker.Lowering.ClosureStore as CS
 import Siko.Typechecker.Lowering.Util
 import Siko.Typechecker.Lowering.ClassMemberCalls
 import Siko.HIR.Unification as U
+import Siko.HIR.CaseChecker as CC
 import Siko.HIR.Unification.Substitution as S
 import Siko.Typechecker.Util as TUtil
 import Siko.HIR.InstanceResolver as IR
@@ -124,9 +124,9 @@ processBind context sub (HP.Pattern p id pattern_type _) rhs = do
 data ValuePathAccessor = { normal :: ME.ExprId -> ME.Expr,
                            internal :: ME.ExprId -> ME.Expr }
 
-processBindVars :: Context -> AdditionalInfo -> Map ValuePath ValuePathAccessor -> MT.Type -> (Context, [ME.Expr])
+processBindVars :: Context -> CC.AdditionalInfo -> Map CC.ValuePath ValuePathAccessor -> MT.Type -> (Context, [ME.Expr])
 processBindVars context additional_info path_info_map unit_type = do
-    (context, var_decls) <- additional_info.binds |> List.iter |> Iterator.fold (\(context, var_decls), CaseBind path bind_ref -> do
+    (context, var_decls) <- additional_info.binds |> List.iter |> Iterator.fold (\(context, var_decls), CC.CaseBind path bind_ref -> do
         var <- bindRefToVar bind_ref
         ref_expr <- case get path_info_map path of
             Some parent_expr -> do
@@ -140,11 +140,11 @@ processBindVars context additional_info path_info_map unit_type = do
         (context, var_decls)) (context, [])
     (context, var_decls)
 
-processCaseEnds :: Context -> S.Substitution -> [MatchInfo] -> [HE.Expr HT.Type] -> [Option (HE.Expr HT.Type)] -> Map ValuePath ValuePathAccessor -> MT.Type -> (Context, ME.Expr)
+processCaseEnds :: Context -> S.Substitution -> [CC.MatchInfo] -> [HE.Expr HT.Type] -> [Option (HE.Expr HT.Type)] -> Map CC.ValuePath ValuePathAccessor -> MT.Type -> (Context, ME.Expr)
 processCaseEnds context sub match_infos hir_case_bodies hir_guards path_info_map unit_type = do
     if getLength match_infos == 1
         then do
-            MatchInfo index additional_info <- atIndex match_infos 0
+            CC.MatchInfo index additional_info <- atIndex match_infos 0
             hir_case_body <- atIndex hir_case_bodies index
             (context, mir_case_body) <- processExpr context sub hir_case_body
             (context, var_decls) <- processBindVars context additional_info path_info_map unit_type
@@ -154,7 +154,7 @@ processCaseEnds context sub match_infos hir_case_bodies hir_guards path_info_map
         else do
             case pop match_infos of
                 Some (match_info, match_infos) -> do
-                    MatchInfo index additional_info <- match_info
+                    CC.MatchInfo index additional_info <- match_info
                     cond_expr <- case atIndex hir_guards index of
                         Some g -> g
                         None -> panic "guard expr not found"
@@ -169,19 +169,19 @@ processCaseEnds context sub match_infos hir_case_bodies hir_guards path_info_map
                     (context, result)
                 None -> panic "Matchinfos ran out!"
 
-processChoiceTree :: Context -> S.Substitution -> Choice -> Map ValuePath ValuePathAccessor -> [HE.Expr HT.Type] -> [Option (HE.Expr HT.Type)] -> (Context, ME.Expr)
+processChoiceTree :: Context -> S.Substitution -> CC.Choice -> Map CC.ValuePath ValuePathAccessor -> [HE.Expr HT.Type] -> [Option (HE.Expr HT.Type)] -> (Context, ME.Expr)
 processChoiceTree context sub choice path_info_map hir_case_bodies hir_guards = do
     (context, unit_type) <- processType context (HT.Tuple [])
     case choice of
-        Choice path subchoices -> do
-            parent_path <- getParentPath path
+        CC.Choice path subchoices -> do
+            parent_path <- CC.getParentPath path
             parent_expr <- case get path_info_map parent_path of
                 Some parent_expr -> parent_expr
                 None -> panic "Parent path {} not found in path info map" % parent_path
             (context, internal) <- getExpr context parent_expr.internal
             ME.Expr _ parent_type _ <- internal
             (context, body_expr) <- case path of
-                ItemIndex _ index _ -> do
+                CC.ItemIndex _ index _ -> do
                     record <- case parent_type of
                         MT.Record name _ -> getRecord context.type_store name
                         _ -> panic "Indexed type is not a record!"
@@ -189,7 +189,7 @@ processChoiceTree context sub choice path_info_map hir_case_bodies hir_guards = 
                     (context, normal) <- getExpr context parent_expr.normal
                     body <- ME.FieldAccess field.name normal
                     getExpr context (ME.Expr body field.type)
-                VariantPath _ _ variant_index index _ -> do
+                CC.VariantPath _ _ variant_index index _ -> do
                     case parent_type of
                         MT.Adt name _ -> do
                             adt <- getAdt context.type_store name
@@ -212,7 +212,7 @@ processChoiceTree context sub choice path_info_map hir_case_bodies hir_guards = 
             (context, cases) <- subchoices |> Map.iter |> Iterator.fold (\(context, cases), (cond, choice) -> do
                 (context, pattern_var_int) <- getNextTempVar context
                 var_type <- case cond of
-                    VariantCondition index -> do
+                    CC.VariantCondition index -> do
                         case body_type of
                         MT.Adt name _ -> do
                             adt <- getAdt context.type_store name
@@ -227,21 +227,21 @@ processChoiceTree context sub choice path_info_map hir_case_bodies hir_guards = 
                 (path_info_map, _) <- insert path_info_map path (ValuePathAccessor pattern_var_ref pattern_var_int_ref)
                 (context, choice_expr) <- processChoiceTree context sub choice path_info_map hir_case_bodies hir_guards
                 (cond, expr) <- case cond of
-                    IntegerCondition literal -> do
+                    CC.IntegerCondition literal -> do
                         (ME.IntegerChecker literal, choice_expr)
-                    StringCondition literal -> do
+                    CC.StringCondition literal -> do
                         (ME.StringChecker literal, choice_expr)
-                    CharCondition literal -> do
+                    CC.CharCondition literal -> do
                         (ME.CharChecker literal, choice_expr)
-                    CharRangeCondition s e kind -> do
+                    CC.CharRangeCondition s e kind -> do
                         (ME.CharRangeChecker s e (case kind of
                                                     HP.Inclusive -> ME.Inclusive
                                                     HP.Exclusive -> ME.Exclusive), choice_expr)
-                    VariantCondition index -> do
+                    CC.VariantCondition index -> do
                         (ME.VariantChecker index pattern_var_int body_type, choice_expr)
-                    WildcardCondition -> do
+                    CC.WildcardCondition -> do
                         (ME.WildcardChecker, choice_expr)
-                    Else -> panic "Else found"
+                    CC.Else -> panic "Else found"
                 c <- ME.Case cond expr
                 cases <- cases + [c]
                 (context, cases)) (context, [])
@@ -254,10 +254,10 @@ processChoiceTree context sub choice path_info_map hir_case_bodies hir_guards = 
             (context, case_of_expr) <- getExpr context (ME.Expr case_expr first_case_type)
             (context, do_expr) <- getExpr context (ME.Expr (ME.Do [var_decl_expr, case_of_expr]) first_case_type)
             (context, do_expr)
-        CaseEnd cs -> do
+        CC.CaseEnd cs -> do
             (context, expr) <- processCaseEnds context sub cs hir_case_bodies hir_guards path_info_map unit_type
             (context, expr)
-        ElseNode -> panic "ElseNode found"
+        CC.ElseNode -> panic "ElseNode found"
 
 bindRefToVar :: HP.BindRef -> ME.Var
 bindRefToVar HP.BindRef name id = ME.Named "{}_{}" % (name, id)
@@ -610,13 +610,14 @@ processExpr context sub hir_expr = do
             (context, mir_body) <- processExpr context sub body
             HE.Expr _ _ hir_body_type _ <- body
             hir_body_type <- getMonomorphizedType sub hir_body_type
-            (context, case_of_expr) <- case get context.state.choice_tree_store.choice_trees expr_id of
-                Some choice_tree -> do
-                    p <- Option.unwrap (getValuePath choice_tree)
+            cc_context <- CC.Context context.hir_program []
+            (context, case_of_expr) <- case CC.checkCase cc_context expr_id body hir_cases of
+                Ok choice_tree -> do
+                    p <- Option.unwrap (CC.getValuePath choice_tree)
                     body_expr_accessor <- \_ -> mir_body
                     (path_info_map, _) <- insert empty p (ValuePathAccessor body_expr_accessor body_expr_accessor)
                     processChoiceTree context sub choice_tree path_info_map hir_case_bodies hir_guards
-                None -> panic "Choice tree not found"
+                Err errors -> panic "Case checker failed {}" % errors
             (context, case_of_expr)
         HE.RecordUpdate ref updates -> do
             var <- bindRefToVar ref
