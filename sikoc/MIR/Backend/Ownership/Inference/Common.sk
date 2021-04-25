@@ -1,0 +1,299 @@
+module Siko.MIR.Backend.Ownership.Inference.Common where
+
+import Siko.MIR.Program as P
+import Siko.MIR.Expr as E
+import Siko.MIR.Data as D
+import Siko.MIR.Type as T
+import Siko.MIR.Function as F
+import Siko.MIR.Backend.Ownership.Unification as U
+import Siko.MIR.Backend.Ownership.Initialization as Init
+import Siko.Util.Counter
+import List2 as List2
+import List2 (List2)
+import Siko.Config
+import Siko.Trace
+
+import Map2 as Map2
+import Map2 (Map2)
+import Map
+import Set
+
+data Equal = Equal T.OwnershipVar T.OwnershipVar
+             deriving (Show)
+
+data ConverterKind = NormalConverter
+                   | BorrowerConverter T.OwnershipVar
+                   deriving (Show)
+
+data Constraint = Constraint E.ExprId ConverterKind T.OwnershipVar T.OwnershipVar
+                | ExternalConverter T.OwnershipVar T.OwnershipVar
+                | FieldAccessConverter T.OwnershipVar T.OwnershipVar T.OwnershipVar
+                deriving (Show)
+
+data GlobalContext = { config :: Config,
+                       program :: P.Program,
+                       inference_info_store :: InferenceInfoStore }
+
+data InferenceInfoStore = { inference_infos :: Map P.Identity FunctionInferenceInfo }
+
+data Borrower = Borrower T.OwnershipVar deriving (PartialEq)
+
+data MovedVars = { vars :: Set T.OwnershipVar }
+
+data Group = { kind :: T.OwnershipKind }
+
+data GroupId = GroupId Int deriving (PartialEq, Eq, PartialOrd, Ord, Show)
+
+data Context = { global_context :: GlobalContext,
+                 var_vars :: Map E.Var (List2 T.OwnershipVar),
+                 constraints :: [Constraint],
+                 equals :: [Equal],
+                 not_moves :: Set E.ExprId,
+                 ownership_vars :: Map2 T.OwnershipVar GroupId,
+                 moved_vars :: Map T.OwnershipVar MovedVars,
+                 borrowers :: [Borrower],
+                 init_context :: Init.Context,
+                 borrower_sets :: Map Int (Set T.OwnershipVar),
+                 borrower_set_id_gen :: Int,
+                 groups :: List2 Group,
+                 return_type :: T.Type,
+                 continues :: Map E.ExprId T.Type,
+                 breaks :: Map E.ExprId T.Type,
+               }
+
+dumpContextStats :: Context -> ()
+dumpContextStats context = do
+    trace context.global_context.config "var_vars {}" % getSize context.var_vars
+    trace context.global_context.config "constraints {}" % getLength context.constraints
+    trace context.global_context.config "equals {}" % getLength context.equals
+    trace context.global_context.config "not_moves {}" % getLength context.not_moves.items
+    trace context.global_context.config "ownership_vars {}" % Map2.getSize context.ownership_vars
+    trace context.global_context.config "moved_vars {}" % getSize context.moved_vars
+    trace context.global_context.config "borrowers {}" % getLength context.borrowers
+    trace context.global_context.config "borrower_sets {}" % getSize context.borrower_sets
+    trace context.global_context.config "groups {}" % List2.getLength context.groups
+    trace context.global_context.config "continues {}" % getSize context.continues
+    trace context.global_context.config "breaks {}" % getSize context.breaks
+
+data FunctionInferenceInfo = { function_type :: F.FunctionType,
+                               var_constraints :: Map T.OwnershipVar (Set T.OwnershipVar ) }
+                               deriving (Show, PartialEq)
+
+createInferenceInfoStore :: InferenceInfoStore
+createInferenceInfoStore = InferenceInfoStore Map.empty
+
+createGlobalContext :: Config -> P.Program -> InferenceInfoStore -> GlobalContext
+createGlobalContext config program inference_info_store = GlobalContext config program inference_info_store
+
+createContext :: GlobalContext -> Set E.ExprId -> Init.Context -> T.Type -> Context
+createContext global_context not_moves init_context return_type =
+    Context {
+        global_context = global_context,
+        var_vars = Map.empty,
+        constraints = [],
+        equals = [],
+        not_moves = not_moves,
+        ownership_vars = Map2.empty,
+        moved_vars = Map.empty,
+        borrowers = [],
+        init_context = init_context,
+        borrower_sets = Map.empty,
+        borrower_set_id_gen = 1,
+        groups = List2.empty,
+        return_type = return_type,
+        continues = Map.empty,
+        breaks = Map.empty,
+    }
+
+addConstraint :: Context -> Constraint -> Context
+addConstraint context constraint = do
+    index <- getLength context.constraints
+    constraints <- context.constraints + [constraint]
+    context { constraints = constraints }
+
+addEqual :: Context -> T.OwnershipVar -> T.OwnershipVar -> Context
+addEqual context v1 v2 = do
+    equals <- context.equals + [Equal v1 v2]
+    context { equals = equals }
+
+addVarVars :: Context -> E.Var -> List2 T.OwnershipVar -> Context
+addVarVars context var vars = do
+    (var_vars, _) <- Map.insert context.var_vars var vars
+    context { var_vars = var_vars }
+
+getVarVars :: Context -> E.Var -> List2 T.OwnershipVar
+getVarVars context var = case get context.var_vars var of
+    Some vars -> vars
+    None -> panic "Var {} not found in var_vars" % var
+
+createGroup :: Context -> T.OwnershipKind -> (Context, GroupId)
+createGroup context kind = do
+    group_id <- GroupId (List2.getLength context.groups)
+    groups <- List2.push context.groups (Group kind)
+    (context { groups = groups }, group_id)
+
+getGroupId :: Context -> T.OwnershipVar -> (Context, GroupId) // MOVE HACK
+getGroupId context var = case Map2.get context.ownership_vars var of
+    Some id -> (context, id)
+    None -> panic "No group found for {}" % var
+
+getGroup :: Context -> GroupId -> (Context, Group) // MOVE HACK
+getGroup context id = do
+    GroupId index <- id
+    group <- List2.atIndex context.groups index
+    (context, group)
+
+getBorrowSet :: Context -> Int -> Set T.OwnershipVar
+getBorrowSet context id = case get context.borrower_sets id of
+    Some s -> s
+    None -> panic "Borrow set {} not found" % id
+
+updateGroupKind :: Context -> GroupId -> T.OwnershipKind -> Context
+updateGroupKind context id kind = do
+    GroupId index <- id
+    group <- List2.atIndex context.groups index
+    group <- group { kind = kind }
+    groups <- List2.write context.groups index group
+    context { groups = groups }
+
+updateGroups :: Map2 T.OwnershipVar GroupId -> GroupId -> GroupId -> Map2 T.OwnershipVar GroupId
+updateGroups ownership_vars old_id new_id = do
+    if old_id == new_id
+    then ownership_vars
+    else Map2.updateValues ownership_vars old_id new_id
+
+createrBorrowerSetId :: Context -> (Context, Int)
+createrBorrowerSetId context = do
+    id <- context.borrower_set_id_gen
+    (context { borrower_set_id_gen = id + 1 }, id)
+
+mergeBorrowSets :: Context -> Int -> Int -> (Context, Int)
+mergeBorrowSets context id1 id2 = do
+    set1 <- getBorrowSet context id1
+    set2 <- getBorrowSet context id2
+    (context, id) <- createrBorrowerSetId context
+    // FIXME: set merge!
+    merged <- set1.items + set2.items
+    merged <- merged |> sort |> dedup
+    merged <- Set merged
+    context <- addBorrowerSet context id merged
+    (context, id)
+
+addBorrowerSet :: Context -> Int -> Set T.OwnershipVar -> Context
+addBorrowerSet context id borrower_set = do
+    (borrower_sets, _) <- Map.insert context.borrower_sets id borrower_set
+    context { borrower_sets = borrower_sets }
+
+mergeGroups :: Context -> GroupId -> GroupId -> (Context, T.OwnershipKind)
+mergeGroups context id1 id2 = do
+    groups <- context.groups
+    GroupId index1 <- id1
+    group1 <- List2.atIndex groups index1
+    GroupId index2 <- id2
+    group2 <- List2.atIndex groups index2
+    case (group1.kind, group2.kind) of
+        (T.VarKind _, T.VarKind _) -> (context, group1.kind)
+
+        (T.OwnerKind, _) -> (context, T.OwnerKind)
+        (_, T.OwnerKind) -> (context, T.OwnerKind)
+
+        (T.BorrowKind index1, T.BorrowKind index2) -> do
+            (context, index) <- mergeBorrowSets context index1 index2
+            (context, T.BorrowKind index)
+        (T.BorrowKind index, T.VarKind _) -> (context, group1.kind)
+        (T.VarKind _, T.BorrowKind index) -> (context, group2.kind)
+
+        (T.BoxedKind, T.BoxedKind) -> (context, group1.kind)
+        (T.BoxedKind, T.VarKind _) -> (context, group1.kind)
+        (T.VarKind _, T.BoxedKind) -> (context, group2.kind)
+
+        _ -> panic "Inference.Common.mergeGroups, case {} {} not yet implemented" % (group1.kind, group2.kind)
+
+addInferenceInfo :: GlobalContext -> P.Identity -> FunctionInferenceInfo -> (GlobalContext, Bool)
+addInferenceInfo context function_id info = do
+    inference_info_store <- context.inference_info_store
+    (added, inference_infos, _) <- alterS (\_, old -> case old of
+        Some old -> (old != info, Some info)
+        None -> (True, Some info)) True function_id inference_info_store.inference_infos
+    inference_info_store <- inference_info_store { inference_infos = inference_infos }
+    (context { inference_info_store = inference_info_store }, added)
+
+getNextOwnershipKind :: Context -> (Context, T.OwnershipKind)
+getNextOwnershipKind context = do
+    (context, v) <- getNextOwnershipVar context
+    (context, T.VarKind v)
+
+getNextOwnershipVar :: Context -> (Context, T.OwnershipVar)
+getNextOwnershipVar context = do
+    init_context <- context.init_context
+    (var_gen, v) <- U.getNextOwnershipVar init_context.var_gen
+    init_context <- init_context { var_gen = var_gen }
+    (context { init_context = init_context }, v)
+
+collectOwnershipKindsFromFunctionType :: F.FunctionType -> List2 T.OwnershipKind
+collectOwnershipKindsFromFunctionType function_type = do
+    ownership_kinds <- function_type.args |> List.iter |> Iterator.fold (\ownership_kinds, arg_type -> do
+        vs <- T.collectOwnershipKinds arg_type
+        ownership_kinds + vs) List2.empty
+    ownership_kinds <- ownership_kinds + T.collectOwnershipKinds function_type.result
+    ownership_kinds <- ownership_kinds |> List2.sort |> List2.dedup
+    ownership_kinds
+
+kindToVar :: T.OwnershipKind -> T.OwnershipVar
+kindToVar kind = case kind of
+    T.VarKind v -> v
+    _ -> panic "V is not a v but {}" % kind
+
+addOwnershipVar :: Context -> T.OwnershipVar -> T.OwnershipKind -> MovedVars -> Context
+addOwnershipVar context var kind moved_vars = do
+    //println "Adding {} as {}" % (var, kind)
+    context <- case Map2.get context.ownership_vars var of
+        Some id -> do
+            (context, group) <- getGroup context id
+            if group.kind != kind
+                then case kind of
+                    T.VarKind _ -> context
+                    _ -> panic "Trying to change var kind {} {} -> {}" % (var, group.kind, kind)
+                else context
+        None -> do
+            (context, group_id) <- createGroup context kind
+            (ownership_vars, _) <- Map2.insert context.ownership_vars var group_id
+            context <- context { ownership_vars = ownership_vars }
+            context
+    (moved_vars, _) <- alter (\old -> case old of
+        Some o -> Some o
+        None -> Some moved_vars) var context.moved_vars
+    context { moved_vars = moved_vars }
+
+addMovedVar :: MovedVars -> T.OwnershipVar -> MovedVars
+addMovedVar moved_vars var = do
+    (vars, _) <- Set.insert moved_vars.vars var
+    moved_vars { vars = vars }
+
+normalizeFunctionInfo :: FunctionInferenceInfo -> FunctionInferenceInfo
+normalizeFunctionInfo info = do
+    ownership_kinds <- collectOwnershipKindsFromFunctionType info.function_type
+    (_, kinds) <- List2.mapS 0 ownership_kinds (\index, kind -> case kind of
+        T.VarKind _ -> (index + 1, T.VarKind (T.OwnershipVar index))
+        _ -> (index, kind))
+    sub <- U.batch ownership_kinds kinds
+    function_type <- U.apply info.function_type sub
+    var_constraints <- info.var_constraints |> Map.iter |> Iterator.map (\(kind, constraints) -> do
+        kind <- U.apply kind sub
+        constraints <- constraints |> Set.iter |> Iterator.map (\kind -> U.apply kind sub) |> toSet
+        (kind, constraints)) |> toMap
+    FunctionInferenceInfo function_type var_constraints
+
+cloneFunctionInfo :: Context -> FunctionInferenceInfo -> (Context, FunctionInferenceInfo)
+cloneFunctionInfo context info = do
+    ownership_kinds <- collectOwnershipKindsFromFunctionType info.function_type
+    (context, kinds) <- List2.mapS context ownership_kinds (\context, kind -> case kind of
+        T.VarKind _ -> getNextOwnershipKind context
+        _ -> (context, kind))
+    sub <- U.batch ownership_kinds kinds
+    function_type <- U.apply info.function_type sub
+    var_constraints <- info.var_constraints |> Map.iter |> Iterator.map (\(var, constraints) -> do
+        var <-  U.apply var sub
+        constraints <- constraints |> Set.iter |> Iterator.map (\var -> U.apply var sub) |> toSet
+        (var, constraints)) |> toMap
+    (context, FunctionInferenceInfo function_type var_constraints)

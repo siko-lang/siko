@@ -1,0 +1,142 @@
+module Siko.MIR.Backend.Ownership.Unification where
+
+import Siko.MIR.Data as D
+import Siko.MIR.Type as T
+import Siko.MIR.Function as F
+import Siko.Util.Counter
+import Std.Util
+import List2 as List2
+import List2 (List2)
+import Map2
+import Map
+
+data SubstitutionChange = Unification T.OwnershipVar
+                        | Owner
+                        | Boxed
+                        | Borrow Int
+                        deriving (Show)
+
+data Substitution = { var_subs :: Map2 T.OwnershipVar SubstitutionChange } deriving (Show)
+data SubstitutionApply = { var_subs :: Map T.OwnershipVar SubstitutionChange } deriving (Show) // FIXME: speed hack
+
+toApply :: Substitution -> SubstitutionApply
+toApply sub = SubstitutionApply (sub.var_subs |> Map2.iter |> Map.toMap)
+
+createSubstitution :: Substitution
+createSubstitution = Substitution Map2.empty
+
+class Apply a where
+    apply a :: a -> SubstitutionApply -> a
+
+instance Apply T.OwnershipVar where
+    //apply :: T.OwnershipVar -> SubstitutionApply -> T.OwnershipVar
+    apply v sub = case Map.get sub.var_subs v of
+                    Some (Unification new) -> new
+                    _ -> panic "Invalid Ownershipvar subtitution!"
+
+instance Apply T.OwnershipKind where
+    //apply :: T.OwnershipKind -> SubstitutionApply -> T.OwnershipKind
+    apply k sub = case k of
+        T.VarKind v -> case Map.get sub.var_subs v of
+                        Some (Unification new) -> T.VarKind new
+                        Some Owner -> T.OwnerKind
+                        Some Boxed -> T.BoxedKind
+                        Some (Borrow index) -> T.BorrowKind index
+                        _ -> k
+        _ -> k
+
+instance Apply T.Type where
+    //apply :: T.Type -> SubstitutionApply -> T.Type
+    apply type sub = do
+        case type of
+            T.Adt id args -> T.Adt id (List2.map args (\v -> apply v sub))
+            T.Record id args -> T.Record id (List2.map args (\v -> apply v sub))
+            T.Ref index t -> T.Ref index (apply t sub)
+            T.Owner t -> T.Owner (apply t sub)
+            T.Boxed t -> T.Boxed (apply t sub)
+            T.Never -> T.Never
+            T.Var i t -> do
+                case apply i sub of
+                    T.VarKind v -> T.Var (T.VarKind v) (apply t sub)
+                    T.BorrowKind index -> T.Ref index (apply t sub)
+                    T.OwnerKind -> T.Owner (apply t sub)
+                    T.BoxedKind -> T.Boxed (apply t sub)
+
+instance Apply D.Record where
+    //apply :: D.Record -> SubstitutionApply -> D.Record
+    apply record sub = do
+        ownership_vars <- List2.map record.ownership_vars (\v -> apply v sub)
+        fields <- record.fields |> List.iter |> Iterator.map (\f -> do
+            type <- apply f.type sub
+            f { type = type }) |> toList
+        record { ownership_vars = ownership_vars, fields = fields }
+
+instance Apply D.AlgebraicDataType where
+    //apply :: D.AlgebraicDataType -> SubstitutionApply -> D.AlgebraicDataType
+    apply adt sub = do
+        ownership_vars <- List2.map adt.ownership_vars (\v -> apply v sub)
+        variants <- adt.variants |> List.iter |> Iterator.map (\v -> do
+            type <- apply v.type sub
+            v { type = type }) |> toList
+        adt { ownership_vars = ownership_vars, variants = variants }
+
+instance Apply F.FunctionType where
+    //apply :: F.FunctionType -> SubstitutionApply -> F.FunctionType
+    apply function_type sub = do
+        args <- function_type.args |> List.iter |> Iterator.map (\t -> apply t sub) |> toList
+        result <- apply function_type.result sub
+        function_type { args = args , result = result }
+
+addSubstitution :: Substitution -> T.OwnershipKind -> SubstitutionChange -> Substitution
+addSubstitution sub var change = do
+    case var of
+        T.VarKind var -> do
+            (var_subs, _) <- Map2.insert sub.var_subs var change
+            sub { var_subs = var_subs }
+        T.OwnerKind -> case change of
+            Owner -> sub
+            _ -> panic "Trying to substitute {} to {}" % (var, change)
+        _ -> panic "Trying to substitute {} to {}" % (var, change)
+
+unifyVars :: Substitution -> List2 T.OwnershipKind -> List2 T.OwnershipKind -> Substitution
+unifyVars sub args1 args2 = do
+    if List2.getLength args1 == List2.getLength args2
+        then List2.zipS sub args1 args2 (\sub, arg1, arg2 -> case (arg1, arg2) of
+                (T.VarKind v1, T.VarKind v2) -> addSubstitution sub arg1 (Unification v2)
+                (T.OwnerKind, T.OwnerKind) -> sub
+                (T.BorrowKind index1, T.BorrowKind index2) -> sub
+                (T.BoxedKind, T.BoxedKind) -> sub
+
+                (T.OwnerKind, T.VarKind v2) -> addSubstitution sub arg2 Owner
+                (T.VarKind v1, T.OwnerKind) -> addSubstitution sub arg1 Owner
+
+                (T.BorrowKind index, T.VarKind v) -> addSubstitution sub arg2 (Borrow index)
+                (T.VarKind v, T.BorrowKind index) -> addSubstitution sub arg1 (Borrow index)
+
+                (T.BoxedKind, T.VarKind v) -> addSubstitution sub arg2 Boxed
+                (T.VarKind v, T.BoxedKind) -> addSubstitution sub arg1 Boxed
+
+                _ -> panic "Unifying kinds {} {} NYI" % (arg1, arg2))
+        else do
+            if (not (List2.isEmpty args1)) && (not (List2.isEmpty args2))
+                then panic "{} != {}" % (args1, args2)
+                else ()
+            sub <- args1 |> List2.iter |> Iterator.fold (\sub, arg -> addSubstitution sub arg Owner) sub
+            sub <- args2 |> List2.iter |> Iterator.fold (\sub, arg -> addSubstitution sub arg Owner) sub
+            sub
+
+batch :: List2 T.OwnershipKind -> List2 T.OwnershipKind -> SubstitutionApply
+batch from_vars to_vars = do
+    sub <- createSubstitution
+    sub <- unifyVars sub from_vars to_vars
+    toApply sub
+
+data OwnershipVarGenerator = { counter :: Counter T.OwnershipVar }
+
+createOwnershipVarGenerator :: OwnershipVarGenerator
+createOwnershipVarGenerator = OwnershipVarGenerator (Counter (\v -> T.OwnershipVar v) 0)
+
+getNextOwnershipVar :: OwnershipVarGenerator -> (OwnershipVarGenerator, T.OwnershipVar)
+getNextOwnershipVar var_gen = do
+    (counter, v) <- getNext var_gen.counter
+    (var_gen { counter = counter }, v)

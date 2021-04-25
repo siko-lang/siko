@@ -1,0 +1,177 @@
+module Siko.MIR.Backend.Ownership.Initialization.DataTypes where
+
+import Siko.MIR.Backend.Ownership.Initialization
+import Siko.MIR.Program as P
+import Siko.MIR.Type as T
+import Siko.MIR.Data
+import Siko.MIR.Expr
+import Siko.Util.DependencyProcessor
+import Siko.MIR.Backend.Traversal
+import Siko.MIR.Backend.Ownership.Unification as U
+import Siko.Config
+import Siko.Trace
+import List2 as List2
+import List2 (List2)
+import Map
+
+data GroupContext = { context :: Context,
+                      group :: [P.Identity],
+                      all_vars :: List2 T.OwnershipKind,
+                      available_vars :: List2 T.OwnershipKind,
+                      boxed_vars :: List2 T.OwnershipKind }
+
+getSingle :: GroupContext -> (GroupContext, T.OwnershipKind)
+getSingle context = do
+    (var, available_vars) <- List2.split context.available_vars 1
+    var <- List2.atIndex var 0
+    (context { available_vars = available_vars }, var)
+
+getMulti :: GroupContext -> Int -> (GroupContext, List2 T.OwnershipKind)
+getMulti context count = do
+    (args, available_vars) <- List2.split context.available_vars count
+    (context { available_vars = available_vars }, args)
+
+updateType :: T.Type -> Option T.OwnershipKind -> List2 T.OwnershipKind -> T.Type
+updateType type var args = case var of
+    Some var -> case type of
+                T.Record id _ -> T.Var var (T.Record id args)
+                T.Adt id _ -> T.Var var (T.Adt id args)
+                t -> panic "updateType: unexpected type {}" % t
+    None -> case type of
+                T.Record id _ -> T.Owner (T.Record id args)
+                T.Adt id _ -> T.Owner (T.Adt id args)
+                t -> panic "updateType: unexpected type {}" % t
+
+addOwnershipVarsToDataType :: GroupContext -> Bool -> T.Type -> (GroupContext, T.Type)
+addOwnershipVarsToDataType context is_adt type = do
+    id <- T.getIdentity type
+    if contains context.group id
+        then if is_adt
+                then
+                    do
+                    type <- updateType type None context.all_vars
+                    (context, type)
+                else do
+                    (context, var) <- getSingle context
+                    boxed_vars <- List2.push context.boxed_vars var
+                    context <- context { boxed_vars = boxed_vars }
+                    type <- updateType type (Some var) context.all_vars
+                    (context, type)
+        else do
+            count <- getArgCount context.context id
+            if is_adt
+                then
+                    do
+                    (context, args) <- getMulti context count
+                    type <- updateType type None args
+                    (context, type)
+                else do
+                    (context, var) <- getSingle context
+                    (context, args) <- getMulti context count
+                    type <- updateType type (Some var) args
+                    (context, type)
+
+addOwnershipVarsToRecord :: GroupContext -> Record -> (GroupContext, Record)
+addOwnershipVarsToRecord context record = do
+    record <- record { ownership_vars = context.all_vars }
+    (context, fields) <- List.mapS context record.fields (\context, field -> do
+        (context, type) <- addOwnershipVarsToDataType context False field.type
+        field <- field { type = type }
+        (context, field))
+    (context, external_info) <- case record.external_info of
+        Some external_info -> do
+            external_info :: ExternalRecordInfo <- external_info // FIXME
+            (context, type_args) <- List.mapS context external_info.type_args (\context, type_arg -> do
+                addOwnershipVarsToDataType context False type_arg)
+            (context, Some (ExternalRecordInfo type_args))
+        None -> (context, None)
+    record <- record { fields = fields, external_info = external_info }
+    (context, record)
+
+addOwnershipVarsToAdt :: GroupContext -> AlgebraicDataType -> (GroupContext, AlgebraicDataType)
+addOwnershipVarsToAdt context adt = do
+    adt <- adt { ownership_vars = context.all_vars }
+    (context, variants) <- List.mapS context adt.variants (\context, variant -> do
+        (contains, type) <- addOwnershipVarsToDataType context True variant.type
+        variant <- variant { type = type }
+        (context, variant))
+    adt <- adt { variants = variants }
+    (context, adt)
+
+addBoxedVarsToRecord :: GroupContext -> Record -> Record
+addBoxedVarsToRecord context record = record { boxed_vars = context.boxed_vars }
+
+addBoxedVarsToAdt :: GroupContext -> AlgebraicDataType -> AlgebraicDataType
+addBoxedVarsToAdt context adt = adt { boxed_vars = context.boxed_vars }
+
+calculateArgCountForAdt :: Context -> [P.Identity] -> AlgebraicDataType -> Int
+calculateArgCountForAdt context group adt = do
+    adt.variants |> List.iter |> Iterator.fold (\arg_count, variant -> do
+        record_id <- T.getIdentity variant.type
+        variant_arg_count <- if contains group record_id
+            then 0
+            else getArgCount context record_id
+        arg_count + variant_arg_count) 0
+
+calculateArgCountForRecord :: Context -> [P.Identity] -> Record -> Int
+calculateArgCountForRecord context group record = do
+    arg_count <- record.fields |> List.iter |> Iterator.fold (\arg_count, field -> do
+        id <- T.getIdentity field.type
+        field_arg_count <- if contains group id
+            then 1
+            else 1 + getArgCount context id
+        arg_count + field_arg_count) 0
+    case record.external_info of
+        Some external_info -> do
+            external_info :: ExternalRecordInfo <- external_info // FIXME
+            arg_count <- arg_count + getLength external_info.type_args
+            external_info.type_args |> List.iter |> Iterator.fold (\arg_count, type_arg -> do
+                id <- T.getIdentity type_arg
+                field_arg_count <- if contains group id
+                then 0
+                else getArgCount context id
+                arg_count + field_arg_count) arg_count
+        None -> arg_count
+
+calculateArgCount :: P.Program -> Context -> [P.Identity] -> P.Identity -> Int
+calculateArgCount program context group id = do
+    case get program.records id of
+            Some record -> calculateArgCountForRecord context group record
+            None -> case get program.adts id of
+                Some adt -> calculateArgCountForAdt context group adt
+                None -> panic "Could not find data def {}" % id
+
+addOwnershipVarsToGroup :: Config -> Context -> [P.Identity] -> P.Program -> (Context, P.Program)
+addOwnershipVarsToGroup config context group program = do
+    (context, arg_count) <- group |> List.iter |> Iterator.fold (\(context, arg_count), id -> do
+        c <- calculateArgCount program context group id
+        (context, arg_count + c)) (context, 0)
+    context <- group |> List.iter |> Iterator.fold (\context, id -> do
+        (arg_count_map, _) <- insert context.arg_count_map id arg_count
+        context <- context { arg_count_map = arg_count_map }
+        context) context
+    (context, all_vars) <- getNextOwnershipKinds context arg_count
+    group_context <- GroupContext context group all_vars all_vars List2.empty
+    (records, adts) <- List.fold ([], []) group (\(records, adts), id -> do
+        case get program.records id of
+            Some r -> (records + [r], adts)
+            None -> case get program.adts id of
+                Some a -> (records, adts + [a])
+                None -> panic "Id is not a record nor an adt {}" % id)
+    (group_context, records) <- List.mapS group_context records addOwnershipVarsToRecord
+    (group_context, adts) <- List.mapS group_context adts addOwnershipVarsToAdt
+    records <- List.map records (addBoxedVarsToRecord group_context)
+    adts <- List.map adts (addBoxedVarsToAdt group_context)
+    records <- List.fold program.records records (\records, record -> do
+        (records, _) <- insert records record.id record
+        records)
+    adts <- List.fold program.adts adts (\adts, adt -> do
+        (adts, _) <- insert adts adt.id adt
+        adts)
+    (context, program { adts = adts, records = records })
+
+initializeOwnership :: Config -> Context -> P.Program -> [DependencyGroup P.Identity] -> (Context, P.Program)
+initializeOwnership config context program groups = do
+    (context, program) <- groups |> List.iter |> Iterator.fold (\(context, program), group -> addOwnershipVarsToGroup config context group.items program
+        ) (context, program)
+    (context, program)

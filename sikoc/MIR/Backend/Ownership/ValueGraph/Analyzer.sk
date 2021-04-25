@@ -1,0 +1,88 @@
+module Siko.MIR.Backend.Ownership.ValueGraph.Analyzer(analyze) where
+
+import Siko.MIR.Expr as E
+import Siko.MIR.Backend.Ownership.ValueGraph
+
+import Set
+
+data MoveInfo = { moves :: [FieldPath] }
+
+mergeMoveInfo :: MoveInfo -> MoveInfo -> MoveInfo
+mergeMoveInfo move_info1 move_info2 = MoveInfo (move_info1.moves + move_info2.moves)
+
+addMove :: MoveInfo -> Set E.ExprId -> FieldPath -> (MoveInfo, Set E.ExprId)
+addMove move_info not_moves move = do
+        //println "Adding move {}" % move
+        (moves, not_moves) <- List.fold ([move], not_moves) move_info.moves (processMove move)
+        (MoveInfo moves, not_moves)
+    where
+        processMove :: FieldPath -> ([FieldPath], Set E.ExprId) -> FieldPath -> ([FieldPath], Set E.ExprId)
+        processMove move (moves, not_moves) prev_move = do
+            if invalidates move prev_move
+            then do
+                //println "{} invalidates {}, {} -> not_moves" % (move, prev_move, move)
+                id <- getId prev_move
+                (not_moves, _) <- Set.insert not_moves id
+                (moves, not_moves)
+            else (moves + [prev_move], not_moves)
+
+data FieldPath = Whole E.ExprId
+               | Partial E.ExprId [String]
+               deriving (Show)
+
+getId :: FieldPath -> E.ExprId
+getId field_path = case field_path of
+    Whole e -> e
+    Partial e _ -> e
+
+data ExecutionMode = Normal
+                   | DoesNotReturn
+
+invalidates :: FieldPath -> FieldPath -> Bool
+invalidates current other = do
+    case (current, other) of
+        (Whole _, _) -> True
+        (Partial _ _, Whole _) -> True
+        (Partial _ current_path, Partial _ other_path) -> do
+            c_len <- getLength current_path
+            o_len <- getLength other_path
+            min_len <- min c_len o_len
+            (c_start, _) <- List.split current_path min_len
+            (o_start, _) <- List.split other_path min_len
+            c_start == o_start
+
+walk :: MoveInfo -> Set E.ExprId -> ValueGraphNode -> (MoveInfo, Set E.ExprId, ExecutionMode)
+walk move_info not_moves node = case node of
+    ValueDecl _ -> (move_info, not_moves, Normal)
+    ValueRef id -> do
+        (move_info, not_moves) <- addMove move_info not_moves (Whole id)
+        (move_info, not_moves, Normal)
+    Block nodes -> do
+        nodes |> List.iter |> Iterator.fold (\(move_info, not_moves, mode), node -> do
+            (move_info, not_moves, exec_mode) <- walk move_info not_moves node
+            exec_mode <- case (exec_mode, mode) of
+                (Normal, Normal) -> Normal
+                _ -> DoesNotReturn
+            (move_info, not_moves, exec_mode)) (move_info, not_moves, Normal)
+    ValueFieldAccess id fields -> do
+        (move_info, not_moves) <- addMove move_info not_moves (Partial id fields)
+        (move_info, not_moves, Normal)
+    Branches nodes -> do
+        nodes |> List.iter |> Iterator.fold (\(merged, not_moves, mode), node -> do
+            (new_move_info, not_moves, exec_mode) <- walk move_info not_moves node
+            case exec_mode of
+                Normal -> do
+                    merged <- mergeMoveInfo new_move_info merged
+                    (merged, not_moves, Normal)
+                DoesNotReturn -> (merged, not_moves, mode)) (move_info, not_moves, DoesNotReturn)
+    Empty -> (move_info, not_moves, Normal)
+    Loop node -> do
+        (move_info, not_moves, mode) <- walk move_info not_moves node
+        walk move_info not_moves node
+    End -> (move_info, not_moves, DoesNotReturn)
+
+analyze :: E.Var -> Set E.ExprId -> ValueGraphNode -> Set E.ExprId
+analyze var not_moves graph = do
+    //println "Analyzing value graph for var {}" % var
+    (_, not_moves, _) <- walk (MoveInfo []) not_moves graph
+    not_moves

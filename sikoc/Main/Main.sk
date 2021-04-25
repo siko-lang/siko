@@ -3,13 +3,13 @@ module Main where
 import Hack
 import Siko.Parser
 import Siko.Resolver as R
-import Siko.Typechecker as TC
+import Siko.HIR.Backend.Typechecker as TC
 import Siko.Transpiler as Transpiler
 import Siko.Diagnostics
 import Siko.Syntax.Location
 import Siko.Syntax.SourceFile
-import Siko.Backend as B
-import Siko.HIRBackend.Backend as HB
+import Siko.MIR.Backend as MB
+import Siko.HIR.Backend as HB
 import Siko.Config
 import Siko.Trace
 import Siko.FileManager
@@ -53,15 +53,11 @@ main = do
     trace config "Resolving names.."
     (hir_program, var_gen, resolver_errors) <- R.processProgram source_files
     resolver_errors |> List.iter |> forEach \error -> printResolverError file_manager error
-    trace config "Typechecking.."
-    case TC.processProgram config hir_program var_gen of
-        Ok (typed_hir_program, mir_program) -> do
-            trace config "HIR processing"
-            typed_hir_program <- HB.processProgram config typed_hir_program
-            trace config "Optimizing.."
-            lir_program <- B.processProgram config mir_program
-            trace config "Transpiling.."
-            rust_output <- Transpiler.transpile lir_program
-            writeTextFile (getOutputFileName config Normal) rust_output
-        Err typechecker_errors -> typechecker_errors |> List.iter |> forEach \error -> printTypecheckerError file_manager error
+    trace config "HIR processing"
+    mir_program <- HB.processProgram config hir_program var_gen file_manager
+    trace config "MIR processing.."
+    lir_program <- MB.processProgram config mir_program
+    trace config "Transpiling.."
+    rust_output <- Transpiler.transpile lir_program
+    writeTextFile (getOutputFileName config Normal) rust_output
     ()

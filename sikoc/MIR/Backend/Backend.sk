@@ -1,0 +1,135 @@
+module Siko.MIR.Backend where
+
+import Siko.MIR.Backend.Ownership.Initialization as Initialization
+import Siko.MIR.Backend.Ownership.Inference as Inference
+import Siko.MIR.Backend.Ownership.AddConverter as AddConverter
+import Siko.MIR.Backend.Instantiation as Instantiation
+import Siko.MIR.Backend.SanityCheck as SanityCheck
+import Siko.MIR.Backend.Rebinder as Rebinder
+import Siko.MIR.Backend.Simplifier as Simplifier
+import Siko.MIR.Backend.Simplification.TransformUpdates as TransformUpdates
+import Siko.MIR.Backend.Inliner as Inliner
+import Siko.MIR.Backend.Traversal
+import Siko.MIR.Program as MP
+import Siko.LIR.Program as LP
+import Siko.MIR.Data
+import Siko.MIR.Type as T
+import Siko.MIR.Function as F
+import Siko.MIR.Expr
+import Siko.Config
+import Siko.Trace
+import Siko.Util.DependencyProcessor
+import Map
+import Hack
+
+collectDataDeps :: MP.Program -> Map MP.Identity [MP.Identity]
+collectDataDeps mir_program = do
+    dependencies <- empty
+    dependencies <- mir_program.adts |> Map.iter |> Iterator.fold (\dependencies, (id, adt) -> do
+            deps <- adt.variants |> List.iter |> Iterator.fold (\deps, variant -> do
+                deps + [T.getIdentity variant.type]) []
+            (dependencies, _) <- insert dependencies id deps
+            dependencies
+        ) dependencies
+    dependencies <- mir_program.records |> Map.iter |> Iterator.fold (\dependencies, (id, record) -> do
+            deps <- record.fields |> List.iter |> Iterator.fold (\deps, field -> do
+                deps + [T.getIdentity field.type]) []
+            deps <- case record.external_info of
+                Some external_info -> do
+                    external_info :: ExternalRecordInfo <- external_info // FIXME
+                    external_info.type_args |> List.iter |> Iterator.fold (\deps, type_arg -> do
+                        deps + [T.getIdentity type_arg]) deps
+                None -> deps
+            (dependencies, _) <- insert dependencies id deps
+            dependencies
+        ) dependencies
+    dependencies
+
+data Context = { deps :: [MP.Identity] }
+
+processExpr :: Context -> Expr -> (Context, Expr)
+processExpr context expr = do
+    Expr s_expr _ _ <- expr
+    case s_expr of
+        StaticFunctionCall id _ -> do
+            deps <- context.deps + [id]
+            context <- context { deps = deps }
+            (context, expr)
+        _ -> (context, expr)
+
+getDepsForFunction :: MP.Program -> F.Function -> [MP.Identity]
+getDepsForFunction mir_program function = case function.kind of
+    F.Normal info -> do
+        context <- Context []
+        (context, _) <- traverse context info.body (Some processExpr) None
+        context.deps
+    _ -> []
+
+collectFunctionDeps :: MP.Program -> Map MP.Identity [MP.Identity]
+collectFunctionDeps mir_program = do
+    dependencies <- empty
+    dependencies <- mir_program.functions |> Map.iter |> Iterator.fold (\dependencies, (id, function) -> do
+            deps <- getDepsForFunction mir_program function
+            (dependencies, _) <- insert dependencies id deps
+            dependencies
+        ) dependencies
+    dependencies
+
+dumpProgram :: Config -> MP.Program -> OutputFileType -> ()
+dumpProgram config mir_program type =
+    if config.dump
+    then do
+        s <- MP.dump mir_program
+        writeTextFile (getOutputFileName config type) s
+    else ()
+
+createGroups :: Config -> MP.Program -> ([DependencyGroup MP.Identity], [DependencyGroup MP.Identity])
+createGroups config mir_program = do
+    trace config "collectDataDeps.."
+    data_dependencies <- collectDataDeps mir_program
+    trace config "processing data deps.."
+    data_groups <- processDependencies config data_dependencies
+    trace config "collectFunctionDeps.."
+    function_dependencies <- collectFunctionDeps mir_program
+    trace config "processing function deps.."
+    function_groups <- processDependencies config function_dependencies
+    (data_groups, function_groups)
+
+processProgram :: Config -> MP.Program -> LP.Program
+processProgram config mir_program = do
+    trace config "Rebinder.."
+    mir_program <- Rebinder.processProgram mir_program
+    dumpProgram config mir_program (MIR "rebinder")
+    trace config "SanityCheck1.."
+    SanityCheck.processProgram mir_program
+    trace config "TransformUpdates.."
+    mir_program <- TransformUpdates.processProgram mir_program
+    dumpProgram config mir_program (MIR "transformupdates")
+    (data_groups, function_groups) <- createGroups config mir_program
+    trace config "Inliner.."
+    mir_program <- Inliner.processProgram mir_program function_groups
+    dumpProgram config mir_program (MIR "inliner")
+    trace config "Simplifier.."
+    mir_program <- Simplifier.processProgram config mir_program
+    dumpProgram config mir_program (MIR "simplifier")
+    mir_program <- Rebinder.processProgram mir_program
+    dumpProgram config mir_program (MIR "rebinder2")
+    trace config "SanityCheck2.."
+    SanityCheck.processProgram mir_program
+    (data_groups, function_groups) <- createGroups config mir_program
+    trace config "AddConverter.."
+    mir_program <- AddConverter.processProgram config mir_program
+    dumpProgram config mir_program (MIR "addconverter")
+    trace config "Initialization.."
+    (context, mir_program) <- Initialization.initializeOwnership config mir_program data_groups
+    dumpProgram config mir_program (MIR "initialization")
+    trace config "Inference.."
+    (inference_info_store, context) <- Inference.processProgram config mir_program context function_groups
+    trace config "Instantiation.."
+    lir_program <- Instantiation.processProgram config mir_program inference_info_store context
+    if config.dump
+    then do
+        s <- LP.dump lir_program
+        writeTextFile (getOutputFileName config (LIR 0)) s
+    else ()
+    lir_program

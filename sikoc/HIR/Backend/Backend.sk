@@ -1,0 +1,33 @@
+module Siko.HIR.Backend where
+
+import Siko.HIR.Program as P
+import Siko.HIR.Backend.Typechecker as TC
+import Siko.HIR.Backend.Unification.TypeVarGenerator as TVG
+import Siko.HIR.Backend.Lowering as L
+import Siko.MIR.Program as MP
+import Siko.Diagnostics
+import Siko.FileManager
+
+import Siko.Config
+import Hack
+import Siko.Trace
+
+dumpProgram :: Config -> P.Program () -> OutputFileType -> ()
+dumpProgram config program type =
+    if config.dump
+    then do
+        //s <- P.dump program
+        //writeTextFile (getOutputFileName config type) s
+        ()
+    else ()
+
+processProgram :: Config -> P.Program () -> TVG.TypeVarGenerator -> FileManager -> MP.Program
+processProgram config program var_gen file_manager = do
+    trace config "Typechecking.."
+    (typed_program, var_gen, class_info_store, instance_resolver) <- case TC.processProgram config program var_gen of
+        Ok tc_result -> tc_result
+        Err tc_errors -> do
+            tc_errors |> List.iter |> forEach \error -> printTypecheckerError file_manager error
+            panic "Failed"
+    mir_program <- L.lowerProgram config var_gen class_info_store typed_program instance_resolver
+    mir_program

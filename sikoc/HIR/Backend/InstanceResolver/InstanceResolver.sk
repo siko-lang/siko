@@ -1,0 +1,155 @@
+module Siko.HIR.Backend.InstanceResolver where
+
+import Siko.HIR.Class
+import Siko.HIR.Type as T
+import Siko.HIR.Backend.TypeFormatter as TF
+import Siko.HIR.Program as P
+import Siko.Syntax.Location
+import Siko.HIR.Backend.Unification as U
+import Siko.HIR.Backend.Unification.Substitution as S
+import Map
+
+data BaseType = Tuple Int
+              | Named P.FullyQualifiedName
+              | Function
+              | Generic
+              deriving (Show, PartialEq, Eq, PartialOrd, Ord)
+
+getBaseType :: T.Type -> BaseType
+getBaseType type = case type of
+    T.Tuple args -> Tuple (getLength args)
+    T.Named qn _ -> Named qn
+    T.Function _ _ -> Function
+    T.Var _ _ -> Generic
+    T.FixedTypeArg _ _ _ -> Generic
+    T.Ref t -> getBaseType t
+    T.Owner t -> getBaseType t
+    T.Never _ -> Generic
+
+data InstanceInfo = UserDefinedInstanceInfo T.Type InstanceId Location
+                    deriving (Show)
+
+getType :: InstanceInfo -> InstanceResolver -> T.Type
+getType instance_info instance_resolver = case instance_info of
+    UserDefinedInstanceInfo t _ _ -> t
+
+getLocation :: InstanceInfo -> InstanceResolver -> Location
+getLocation instance_info instance_resolver = case instance_info of
+    UserDefinedInstanceInfo _ _ l -> l
+
+data CacheEntry = CacheEntry T.Type P.FullyQualifiedName deriving (PartialEq, Eq, PartialOrd, Ord)
+
+data InstanceResolver = { instance_map :: Map P.FullyQualifiedName (Map BaseType InstanceInfo),
+                          cache :: Map CacheEntry InstanceInfo, }
+
+createInstanceResolver :: InstanceResolver
+createInstanceResolver = InstanceResolver empty empty
+
+addInstanceInfoToResolver :: InstanceResolver -> P.FullyQualifiedName -> BaseType -> InstanceInfo -> Result InstanceResolver Location
+addInstanceInfoToResolver instance_resolver class_name base_type instance_info = do
+    case get instance_resolver.instance_map class_name of
+        Some instance_info_map -> case get instance_info_map base_type of
+            Some instance_info -> return Err (getLocation instance_info instance_resolver)
+            _ -> ()
+        _ -> ()
+    (instance_map, _) <- alter (\instance_info_map -> case instance_info_map of
+            Some instance_info_map -> do
+                (instance_info_map, _) <- insert instance_info_map base_type instance_info
+                Some instance_info_map
+            None -> do
+                (instance_info_map, _) <- insert empty base_type instance_info
+                Some instance_info_map) class_name instance_resolver.instance_map
+    Ok (instance_resolver { instance_map = instance_map })
+
+addUserDefinedInstance :: InstanceResolver -> P.FullyQualifiedName -> T.Type -> InstanceId -> Location -> Result InstanceResolver Location
+addUserDefinedInstance instance_resolver class_name instance_type instance_id location = do
+    //println "Added user defined instance for {} {}" % (class_name, T.toLongString instance_type)
+    instance_info <- UserDefinedInstanceInfo instance_type instance_id location
+    base_type <- getBaseType instance_type
+    addInstanceInfoToResolver instance_resolver class_name base_type instance_info
+
+unifyTypes a :: (U.DataProvider a, U.ClassProvider a, U.TypeVarGenerator a, U.Context a) => a -> S.Substitution -> T.Type -> T.Type -> (a, S.Substitution, Bool)
+unifyTypes context sub type1 type2 =
+    case U.unify context sub type1 type2 of
+        Ok (contains, sub) -> (context, sub, True)
+        Err _ -> do
+            //println "instance check, unifyTypes failed: {} {}" % (T.toLongString type1, T.toLongString type2)
+            (context, sub, False)
+
+checkInstancesForBaseType a :: (U.DataProvider a, U.ClassProvider a, U.TypeVarGenerator a, U.Context a) => a ->
+                             InstanceResolver ->
+                             S.Substitution ->
+                             T.Type ->
+                             BaseType ->
+                             Map BaseType InstanceInfo ->
+                             P.FullyQualifiedName -> (InstanceResolver, a, S.Substitution, Bool)
+checkInstancesForBaseType context instance_resolver sub type base_type instance_info_map class_name = do
+    //println "checkInstancesForBaseType {} {}" % (T.toLongString type, base_type)
+    case get instance_info_map base_type of
+        Some instance_info -> do
+                (context, sub, success) <- case instance_info of
+                        UserDefinedInstanceInfo instance_type _ _ ->
+                            unifyTypes context sub type instance_type
+                instance_resolver <- if success && T.isConcreteType type
+                    then do
+                        entry <- CacheEntry type class_name
+                        (cache, _) <- insert instance_resolver.cache entry instance_info
+                        instance_resolver { cache = cache }
+                    else instance_resolver
+                (instance_resolver, context, sub, success)
+        None -> do
+            //println "checkInstancesForBaseType: not found"
+            (instance_resolver, context, sub, False)
+
+hasInstance a :: (U.DataProvider a, U.ClassProvider a, U.TypeVarGenerator a, U.Context a) => a ->
+                 InstanceResolver ->
+                 S.Substitution ->
+                 T.Type ->
+                 P.FullyQualifiedName ->
+                 Result (InstanceResolver, a, S.Substitution) ()
+hasInstance context instance_resolver sub type class_name = do
+    base_type <- getBaseType type
+    case get instance_resolver.instance_map class_name of
+        Some instance_info_map -> do
+            (instance_resolver, context, sub, success) <- checkInstancesForBaseType context instance_resolver sub type base_type instance_info_map class_name
+            if success
+                then Ok (instance_resolver, context, sub)
+                else do
+                    (instance_resolver, context, sub, success) <- checkInstancesForBaseType context instance_resolver sub type Generic instance_info_map class_name
+                    if success then Ok (instance_resolver, context, sub) else Err ()
+        None -> do
+            //println "Class {} has no instances, at all" % (class_name)
+            Err ()
+
+checkInstance a :: (U.DataProvider a, U.ClassProvider a, U.TypeVarGenerator a, U.Context a) => a ->
+                    InstanceResolver ->
+                    T.Type ->
+                    P.FullyQualifiedName ->
+                    Result (InstanceResolver, a, [(T.TypeVar, P.FullyQualifiedName)]) ()
+checkInstance context instance_resolver type class_name = do
+    //println "checkInstance: type: {}, class_name: {}" % (T.toLongString type, class_name)
+    case type of
+        T.Var var _ -> Ok (instance_resolver, context, [(var, class_name)])
+        T.Never var -> Ok (instance_resolver, context, [(var, class_name)])
+        _ -> do
+            sub <- S.createSubstitution
+            case hasInstance context instance_resolver sub type class_name of
+                Ok (instance_resolver, context, sub) -> do
+                    sub :: S.Substitution <- sub // FIXME
+                    (instance_resolver, context, cs, success) <- sub.constraints |> List.iter |> Iterator.fold (\(instance_resolver, var_gen, cs, success), c -> do
+                            S.UnificationConstraint c_name c_type <- c
+                            if c_name == class_name && c_type == type
+                                then (instance_resolver, context, cs, success)
+                                else do
+                                    case checkInstance context instance_resolver c_type c_name of
+                                        Ok (instance_resolver, context, sub_cs) -> (instance_resolver, context, cs + sub_cs, success)
+                                        Err _ -> do
+                                            //println "Sub checkInstance failed: {} {}" % (T.toLongString c_type, c_name)
+                                            (instance_resolver, context, cs, False)
+                        ) (instance_resolver, context, [], True)
+                    if success
+                        then Ok (instance_resolver, context, cs)
+                        else Err ()
+                Err _ -> do
+                    //println "checkInstance: hasInstance failed"
+                    Err ()
