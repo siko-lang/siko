@@ -1,32 +1,35 @@
 module Siko.Typechecker.Lowering.Util where
 
-import Siko.Typechecker
+import Siko.Typechecker.Lowering
 import Siko.HIR.Unification as U
 import Siko.HIR.Unification.Substitution as S
 import Siko.Typechecker.FunctionStore
 import Siko.HIR.Type as T
+import Siko.HIR.Program as P
+import Siko.HIR.ClassDependencyStore
 import Siko.HIR.TypeFormatter as TF
 
-getFunctionType :: TypecheckerState -> [T.Type] -> T.Type -> T.Type -> (TypecheckerState, T.Type, S.Substitution)
-getFunctionType state arg_types expected_result_type function_type = do
-    (state, function_type, sub) <- loop (state, function_type, sub, index) <- (state, function_type, S.createSubstitution, 0) do
+unify a :: (U.TypeVarGenerator a, U.DataProvider a, U.ClassProvider a, U.Context a) => a -> S.Substitution -> T.Type -> T.Type -> (a, S.Substitution) // FIXME
+unify context sub type1 type2 =
+    case U.unify context sub type1 type2 of
+        Ok (context, sub) -> (context, sub)
+        Err _ -> panic "getFunctionType: failed to unify {} {}" % (TF.toString type1, TF.toString type2)
+
+getFunctionType a :: (U.TypeVarGenerator a, U.DataProvider a, U.ClassProvider a, U.Context a) => a -> [T.Type] -> T.Type -> T.Type -> (a, T.Type, S.Substitution) // FIXME
+getFunctionType context arg_types expected_result_type function_type = do
+    (context, function_type, sub) <- loop (context, function_type, sub, index) <- (context, function_type, S.createSubstitution, 0) do
         if index >= getLength arg_types
-            then break (state, function_type, sub)
+            then break (context, function_type, sub)
             else do
                 arg_type <- atIndex arg_types index
-                state :: TypecheckerState <- state // FIXME
                 fn_arg_types <- T.getArgs function_type
                 fn_arg_type <- atIndex fn_arg_types index
-                (state, sub) <- case U.unify state.var_gen sub state arg_type fn_arg_type of
-                    Ok (var_gen, sub) -> (state { var_gen = var_gen}, sub)
-                    Err _ -> panic "getCallSubstitution: failed to unify {} {}" % (TF.toString arg_type, TF.toString fn_arg_type)
+                (context, sub) <- unify context sub arg_type fn_arg_type
                 function_type <- S.apply function_type sub
-                (state, function_type, sub, index + 1)
+                (context, function_type, sub, index + 1)
     result_type <- T.getResultType function_type (getLength arg_types)
-    (state, sub) <- case U.unify state.var_gen sub state result_type expected_result_type of
-                    Ok (var_gen, sub) -> (state { var_gen = var_gen}, sub)
-                    Err _ -> panic "getCallSubstitution: failed to unify {} {}" % (TF.toString result_type, TF.toString expected_result_type)
-    (state, S.apply function_type sub, sub)
+    (context, sub) <- unify context sub result_type expected_result_type
+    (context, S.apply function_type sub, sub)
 
 getFieldName :: Int -> String
 getFieldName index = "field{}" % index

@@ -2,7 +2,6 @@ module Siko.Typechecker.Util where
 
 import Siko.HIR.Type as T
 import Siko.HIR.Program as P
-import Siko.HIR.Unification.TypeVarGenerator
 import Siko.HIR.Unification as U
 import Siko.HIR.Unification.Substitution as S
 import Siko.Constants
@@ -36,12 +35,12 @@ getOptionType arg = T.Named (P.FullPath getOptionModuleName getOptionTypeName) [
 getOptionalOrderingType :: T.Type
 getOptionalOrderingType = getOptionType getOrderingType
 
-createGeneralFunction :: Int -> TypeVarGenerator -> (TypeVarGenerator, T.Type)
+createGeneralFunction a :: (U.TypeVarGenerator a) => Int -> a -> (a, T.Type)
 createGeneralFunction arg_count var_gen =
     if arg_count == 0
-    then getNewTypeVarType var_gen
+    then U.getNewTypeVarType var_gen
     else do
-        (var_gen, from) <- getNewTypeVarType var_gen
+        (var_gen, from) <- U.getNewTypeVarType var_gen
         (var_gen, to) <- createGeneralFunction (arg_count - 1) var_gen
         (var_gen, T.Function from to)
 
@@ -50,20 +49,21 @@ collectVars vars type = T.collectVars type + vars |> sort |> dedup
 
 data Mapper = Mapper (Map T.TypeVar T.TypeVar) deriving (Show)
 
-initMapper :: [T.TypeVar] -> TypeVarGenerator -> (Mapper, TypeVarGenerator)
+initMapper a :: (U.TypeVarGenerator a) => [T.TypeVar] -> a -> (Mapper, a)
 initMapper vars var_gen = do
     (vars, var_gen) <- vars |> List.iter |> Iterator.fold (\(vars, var_gen), old_var -> do
-            (var_gen, new_var) <- getNewTypeVar var_gen
+            (var_gen, new_var) <- U.getNewTypeVar var_gen
             (vars, _) <- insert vars old_var new_var
             (vars, var_gen)) (empty, var_gen)
     (Mapper vars, var_gen)
 
-instantiateType :: T.Type -> TypeVarGenerator -> (T.Type, TypeVarGenerator)
+instantiateType a :: (U.TypeVarGenerator a) => T.Type -> a -> (T.Type, a)
 instantiateType type var_gen = do
     vars <- T.collectVars type |> sort |> dedup
     (mapper, var_gen) <- initMapper vars var_gen
     type <- remap mapper type
     (type, var_gen)
+
 remap :: Mapper -> T.Type -> T.Type
 remap mapper type = do
     (Mapper vars) <- mapper

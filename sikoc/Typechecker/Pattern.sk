@@ -41,22 +41,22 @@ initializePatternType context (P.Pattern pattern id _ location) = do
     context <- context { type_store = type_store }
     case pattern of
         P.Binding bind_ref -> do
-            (context, var) <- getNewVar context
+            (context, var) <- U.getNewTypeVarType context
             context <- addPatternType context id (TS.PatternType var)
             context
         P.Tuple args -> do
             (context, vars) <- args |> List.iter |> Iterator.fold (\(context, vars), arg -> do
-                (context, var) <- getNewVar context
+                (context, var) <- U.getNewTypeVarType context
                 vars <- vars + [var]
                 (context, vars)) (context, [])
             context <- addPatternType context id (TS.PatternType (T.Tuple vars))
             context
         P.Guarded pattern expr -> do
-            (context, var) <- getNewVar context
+            (context, var) <- U.getNewTypeVarType context
             context <- addPatternType context id (TS.PatternType var)
             context
         P.Wildcard -> do
-            (context, var) <- getNewVar context
+            (context, var) <- U.getNewTypeVarType context
             context <- addPatternType context id (TS.PatternType var)
             context
         P.IntegerLiteral lit -> do
@@ -76,18 +76,12 @@ initializePatternType context (P.Pattern pattern id _ location) = do
             context
         P.Record qn args -> do
             record <- HP.getRecord context.state.program qn
-            (record, var_gen) <- UD.remapRecord record context.state.var_gen
-            state <- context.state // FIXME
-            state <- state { var_gen = var_gen }
-            context <- context { state = state }
+            (record, context) <- UD.remapRecord record context
             context <- addPatternType context id (TS.PatternWithRecordType record)
             context
         P.Variant qn _ _ -> do
             adt <- HP.getAdt context.state.program qn
-            (adt, var_gen) <- UD.remapAdt adt context.state.var_gen
-            state <- context.state // FIXME
-            state <- state { var_gen = var_gen }
-            context <- context { state = state }
+            (adt, context) <- UD.remapAdt adt context
             context <- addPatternType context id (TS.PatternWithAdtType adt)
             context
 

@@ -21,8 +21,9 @@ import Siko.HIR.Function as F
 import Siko.HIR.Traversal
 import Siko.HIR.Type as T
 import Siko.HIR.TypeFormatter as TF
-import Siko.HIR.Unification.TypeVarGenerator
+import Siko.HIR.Unification.TypeVarGenerator as TVG
 import Siko.HIR.Expr
+import Siko.HIR.ClassDependencyStore
 import Siko.HIR.Data as D
 import Siko.MIR.Program as MP
 import Siko.Constants
@@ -33,26 +34,37 @@ import Map
 
 data TypecheckerState = { program :: P.Program (),
                           errors :: [TypecheckerError],
-                          var_gen :: TypeVarGenerator,
+                          var_gen :: TVG.TypeVarGenerator,
                           class_store :: CS.ClassStore,
                           choice_tree_store :: ChoiceTreeStore,
                           config :: Config,
                         }
 
+instance U.Context TypecheckerState
+
+instance U.TypeVarGenerator TypecheckerState where
+    getNewTypeVar state = do
+        (var_gen, var) <- TVG.getNewTypeVar state.var_gen
+        state <- state { var_gen = var_gen }
+        (state, var)
+
+    getNewTypeVarType state = do
+        (var_gen, t) <- TVG.getNewTypeVarType state.var_gen
+        state <- state { var_gen = var_gen }
+        (state, t)
+
 instance U.DataProvider TypecheckerState where
     getRecord state qn = P.getRecordOpt state.program qn
-    getAllClassDependencies state qn = case Map.get state.class_store.classes qn of
-                                            Some class_info -> do
-                                                class_info :: CS.ClassInfo <- class_info // FIXME
-                                                class_info.all_dependencies
-                                            None -> panic "Class not found in class_store {}" % qn
+
+instance U.ClassProvider TypecheckerState where
+    getAllClassDependencies state qn = case get state.class_store.classes qn of
+                                        Some class_info -> do
+                                            class_info :: CS.ClassInfo <- class_info // FIXME
+                                            class_info.all_dependencies
+                                        None -> panic "Class not found in class store"
 
 instance HTI.DependencyProvider TypecheckerState where
-    getAllDependencies state qn = case Map.get state.class_store.classes qn of
-                                    Some class_info -> do
-                                        class_info :: CS.ClassInfo <- class_info // FIXME
-                                        class_info.all_dependencies
-                                    None -> panic "Class not found in class_store {}" % qn
+    getAllDependencies state qn = U.getAllClassDependencies state qn
 
 addError :: TypecheckerState -> TypecheckerError -> TypecheckerState
 addError state error = do
@@ -151,14 +163,14 @@ processGroup state instance_resolver group function_store type_store = do
         TP.addPatternType type_store id type)
     (context.state, context.instance_resolver, context.function_store, type_store)
 
-processProgram :: Config -> P.Program () -> TypeVarGenerator -> Result (P.Program (), MP.Program) [TypecheckerError]
+processProgram :: Config -> P.Program () -> TVG.TypeVarGenerator -> Result (P.Program (), MP.Program) [TypecheckerError]
 processProgram config program var_gen = do
     instance_resolver <- IR.createInstanceResolver
     state <- TypecheckerState program [] var_gen CS.initializeEmptyClassStore createChoiceTreeStore config
     trace config "TYCHK processData"
     type_store <- TP.TypeStore Map.empty Map.empty
     trace config "TYCHK processClassesAndInstances"
-    (state, instance_resolver) <- processClassesAndInstances config state instance_resolver
+    (state, instance_resolver, class_dependency_store) <- processClassesAndInstances config state instance_resolver
     trace config "TYCHK processAutoDerivedInstances"
     state <- IRChecks.checkConflicts state instance_resolver
     (state, instance_resolver) <- IRChecks.checkInstanceDependencies state instance_resolver

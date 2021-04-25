@@ -5,7 +5,6 @@ import Siko.HIR.Type as T
 import Siko.HIR.TypeFormatter as TF
 import Siko.HIR.Program as P
 import Siko.HIR.InstanceResolver
-import Siko.HIR.Unification.TypeVarGenerator
 import Siko.Syntax.Location
 import Siko.Typechecker
 import Siko.Typechecker.ClassStore
@@ -43,10 +42,9 @@ checkInstanceDependenciesForInstance state instance_resolver type class_name loc
             class_info.direct_dependencies
         None -> panic "Class {} not found in class store" % class_name
     List.fold (state, instance_resolver) deps (\(state, instance_resolver), dep ->
-        case checkInstance state instance_resolver state.var_gen type dep of
-            Ok (instance_resolver, var_gen, cs) -> do
+        case checkInstance state instance_resolver type dep of
+            Ok (instance_resolver, state, cs) -> do
                 sub <- S.createSubstitution
-                state <- state { var_gen = var_gen }
                 (state, sub) <- mergeResolverConstraintsIntoSubstitution state cs sub
                 new_type <- S.apply type sub
                 if HTI.checkIsomorphicType new_type type state
@@ -67,13 +65,12 @@ checkInstanceDependencies state instance_resolver =
             )
     )
 
-mergeResolverConstraintsIntoSubstitution :: TypecheckerState -> [(T.TypeVar, P.FullyQualifiedName)] -> S.Substitution -> (TypecheckerState, S.Substitution)
-mergeResolverConstraintsIntoSubstitution state constraints sub = do
-    constraints |> List.iter |> Iterator.fold (\(state, sub), (var, class_name) -> do
-        (var_gen, new_var) <- getNewTypeVar state.var_gen
-        state <- state { var_gen = var_gen }
+mergeResolverConstraintsIntoSubstitution a :: (U.TypeVarGenerator a) => a -> [(T.TypeVar, P.FullyQualifiedName)] -> S.Substitution -> (a, S.Substitution)
+mergeResolverConstraintsIntoSubstitution var_gen constraints sub = do
+    constraints |> List.iter |> Iterator.fold (\(var_gen, sub), (var, class_name) -> do
+        (var_gen, new_var) <- U.getNewTypeVar var_gen
         new_type <- T.Var new_var [T.ClassConstraint class_name]
         sub <- case S.add sub var new_type of
             Ok sub -> sub
             Err _ -> panic "Failed to merge new type var into sub {} {} {}" % (var, TF.toLongString new_type, sub)
-        (state, sub)) (state, sub)
+        (var_gen, sub)) (var_gen, sub)

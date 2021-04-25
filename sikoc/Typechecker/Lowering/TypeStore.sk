@@ -161,20 +161,12 @@ addAdt context identity mir_adt = do
 instantiateAdt :: Context -> HD.AlgebraicDataType -> HT.Type -> (Context, HD.AlgebraicDataType)
 instantiateAdt context adt adt_type = do
     sub <- S.createSubstitution
-    state <- context.state
-    (var_gen, adt) <- Result.unwrap (UD.instantiateAdt state state.var_gen adt adt_type)
-    state <- state { var_gen = var_gen }
-    context <- context { state = state }
-    (context, adt)
+    Result.unwrap (UD.instantiateAdt context adt adt_type)
 
 instantiateRecord :: Context -> HD.Record -> HT.Type -> (Context, HD.Record)
 instantiateRecord context record record_type = do
     sub <- S.createSubstitution
-    state <- context.state
-    (var_gen, record) <- Result.unwrap (UD.instantiateRecord state state.var_gen record record_type)
-    state <- state { var_gen = var_gen }
-    context <- context { state = state }
-    (context, record)
+    Result.unwrap (UD.instantiateRecord context record record_type)
 
 processIteratorType :: Context -> HT.Type -> MT.Type -> Context
 processIteratorType context hir_type mir_type = do

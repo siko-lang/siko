@@ -87,15 +87,13 @@ processNormalFunction :: Context -> MP.Identity -> HT.Type -> HP.FullyQualifiedN
 processNormalFunction context mir_function_id hir_type qn hir_function =
     case hir_function.body of
         Some hir_body -> do
-            state <- context.state
             hir_fn <- HP.getFunction context.hir_program qn
             function_type <- HT.removeFixed (Option.unwrap hir_fn.type)
             sub <- S.createSubstitution
-            (state, sub) <- case U.unify state.var_gen sub state hir_type function_type of
-                Ok (var_gen, sub) -> (state { var_gen = var_gen}, sub)
+            (context, sub) <- case U.unify context sub hir_type function_type of
+                Ok (context, sub) -> (context, sub)
                 Err _ -> panic "Failed to unify {} {} for normal function in MIR lowering" %
                             (TF.toString hir_type, TF.toString function_type)
-            context <- context { state = state }
             expr_id_gen <- getExprIdCounter
             context <- setExprIdCounter context expr_id_gen
             temp_var_gen <- getTempVarCounter

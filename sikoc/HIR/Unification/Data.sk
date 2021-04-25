@@ -5,7 +5,6 @@ import Siko.HIR.TypeUtil as Util
 import Siko.HIR.Data as D
 import Siko.HIR.Unification as U
 import Siko.HIR.Unification.Substitution as S
-import Siko.HIR.Unification.TypeVarGenerator
 
 instance S.Apply D.Record where
     apply record sub = transform record (\t -> S.apply t sub)
@@ -34,30 +33,30 @@ instance Transform D.AlgebraicDataType where
         variant_ctors <- List.map adt.variant_ctors f
         D.AlgebraicDataType adt.name adt.location type_args variants variant_ctors adt.derived_classes type
 
-remapRecord :: D.Record -> TypeVarGenerator -> (D.Record, TypeVarGenerator)
-remapRecord record var_gen = do
-    (sub, var_gen) <- Util.newSub record.type var_gen
+remapRecord a :: (U.TypeVarGenerator a, U.Context a) => D.Record -> a -> (D.Record, a) // FIXME!
+remapRecord record context = do
+    (sub, contains) <- Util.newSub record.type context
     record <- transform record (\t -> S.apply (T.removeFixed t) sub)
-    (record, var_gen)
+    (record, context)
 
-remapAdt :: D.AlgebraicDataType -> TypeVarGenerator -> (D.AlgebraicDataType, TypeVarGenerator)
-remapAdt adt var_gen = do
-    (sub, var_gen) <- Util.newSub adt.type var_gen
+remapAdt a :: (U.TypeVarGenerator a, U.Context a) => D.AlgebraicDataType -> a -> (D.AlgebraicDataType, a)
+remapAdt adt context = do
+    (sub, context) <- Util.newSub adt.type context
     adt <- transform adt (\t -> S.apply (T.removeFixed t) sub)
-    (adt, var_gen)
+    (adt, context)
 
-instantiateAdt a :: (U.DataProvider a) => a -> TypeVarGenerator -> D.AlgebraicDataType -> T.Type -> Result (TypeVarGenerator, D.AlgebraicDataType) ()
-instantiateAdt data_provider var_gen adt adt_type = do
+instantiateAdt a :: (U.TypeVarGenerator a, U.DataProvider a, U.ClassProvider a, U.Context a) => a -> D.AlgebraicDataType -> T.Type -> Result (a, D.AlgebraicDataType) () // FIXME TypeVarGenerator
+instantiateAdt context adt adt_type = do
     sub <- S.createSubstitution
-    (adt, var_gen) <- remapAdt adt var_gen
-    (var_gen, sub) <- try U.unify var_gen sub data_provider adt.type adt_type
+    (adt, context) <- remapAdt adt context
+    (context, sub) <- try U.unify context sub adt.type adt_type
     adt <- S.apply adt sub
-    Ok (var_gen, adt)
+    Ok (context, adt)
 
-instantiateRecord a :: (U.DataProvider a) => a -> TypeVarGenerator -> D.Record -> T.Type -> Result (TypeVarGenerator, D.Record) ()
-instantiateRecord data_provider var_gen record record_type = do
+instantiateRecord a :: (U.TypeVarGenerator a, U.DataProvider a, U.ClassProvider a, U.Context a) => a -> D.Record -> T.Type -> Result (a, D.Record) () // FIXME TypeVarGenerator
+instantiateRecord context record record_type = do
     sub <- S.createSubstitution
-    (record, var_gen) <- remapRecord record var_gen
-    (var_gen, sub) <- try U.unify var_gen sub data_provider record.type record_type
+    (record, context) <- remapRecord record context
+    (context, sub) <- try U.unify context sub record.type record_type
     record <- S.apply record sub
-    Ok (var_gen, record)
+    Ok (context, record)

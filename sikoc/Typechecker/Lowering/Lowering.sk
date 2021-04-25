@@ -9,6 +9,7 @@ import Siko.MIR.Program as MP
 import Siko.MIR.Data as MD
 import Siko.MIR.Type as MT
 import Siko.MIR.Expr as ME
+import Siko.HIR.Unification as U
 import Siko.MIR.Function as MF
 import Siko.HIR.InstanceResolver as IR
 import Siko.Typechecker.Lowering.FunctionQueue as FQ
@@ -46,6 +47,25 @@ data Context = { hir_program :: HP.Program HT.Type,
                  expr_id_gen :: Option (Counter ME.ExprId),
                  temp_var_gen :: Option (Counter ME.Var),
                }
+
+instance U.TypeVarGenerator Context where
+    getNewTypeVar context = do
+        (state, var) <- U.getNewTypeVar context.state
+        context <- context { state = state }
+        (context, var)
+
+    getNewTypeVarType context = do
+        (state, t) <- U.getNewTypeVarType context.state
+        context <- context { state = state }
+        (context, t)
+
+instance U.Context Context
+
+instance U.DataProvider Context where
+    getRecord context qn = U.getRecord context.state qn
+
+instance U.ClassProvider Context where
+    getAllClassDependencies context qn = U.getAllClassDependencies context.state qn
 
 getNextTempVar :: Context -> (Context, ME.Var)
 getNextTempVar context = do
