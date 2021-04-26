@@ -1,0 +1,18 @@
+module Main where
+
+effect Logger where
+    log a :: (Show a) => a -> ()
+
+data Foo = Foo deriving (Show)
+
+someFunc :: () using (Logger)
+someFunc = do
+    log "string"
+    log Foo
+
+myLogger a :: (Show a) => a -> ()
+myLogger a = println a
+
+main = do
+    with { log = myLogger } do
+        someFunc

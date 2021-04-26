@@ -1,0 +1,22 @@
+module Main where
+
+effect FileSystem a where
+    open :: String -> a
+    write a :: a -> String -> ()
+
+someFunc a :: () using (FileSystem a)
+someFunc = do
+    f <- open "apple.txt"
+    write f "this is a line"
+
+data DummyFile = { content :: String }
+
+openDummy :: String -> DummyFile
+openDummy _ => DummyFile ""
+
+dummyWrite :: DummyFile -> String -> ()
+dummyWrite f content = f { content = content }
+
+main = do
+    with { open = openDummy, write = dummyWrite } do
+        someFunc
