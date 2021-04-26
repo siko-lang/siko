@@ -121,22 +121,21 @@ processGroup :: TypecheckerState ->
 processGroup state instance_resolver group function_store type_store = do
     //println "Group items: {}" % (group.items)
     context <- initializeContext state instance_resolver function_store group.items
-    context <- group.items |> List.iter |> Iterator.fold (\context, name -> do
+    context <- List.fold context group.items (\context, name -> do
                         fn <- P.getFunction context.state.program name
-                        context <- initializeFunctionType context fn
-                        context) context
+                        initializeFunctionType context fn)
+
     //println "After init"
     //TS.dump context.type_store
-    context <- group.items |> List.iter |> Iterator.fold (\context, name -> do
+    context <- List.fold context group.items (\context, name -> do
                         fn <- P.getFunction context.state.program name
-                        context <- checkFunctionType context fn
-                        context) context
+                        checkFunctionType context fn)
+
     //println "After check"
     //TS.dump context.type_store
-    context <- group.items |> List.iter |> Iterator.fold (\context, name -> do
+    context <- List.fold context group.items (\context, name -> do
                         fn <- P.getFunction context.state.program name
-                        context <- checkMissingTypes context fn
-                        context) context
+                        checkMissingTypes context fn)
     type_store <- Map.fold type_store context.type_store.expr_types (\type_store, (id, expr_type) -> do
         type <- TS.getTypeFromExprTypeState expr_type
         TP.addExprType type_store id type)

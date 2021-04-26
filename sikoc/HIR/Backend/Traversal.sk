@@ -5,13 +5,11 @@ import Siko.HIR.Pattern as P
 
 processExprs context b :: context -> (context -> E.Expr b -> context) -> (context -> P.Pattern b -> context) -> [E.Expr b] -> context
 processExprs context expr_fn pattern_fn args =
-    args |> List.iter
-         |> Iterator.fold (\context, arg -> traverse context expr_fn pattern_fn arg) context
+    List.fold context args (\context, arg -> traverse context expr_fn pattern_fn arg)
 
 processPatterns context b :: context -> (context -> P.Pattern b -> context) -> (context -> E.Expr b -> context) -> [P.Pattern b] -> context
 processPatterns context pattern_fn expr_fn args =
-    args |> List.iter
-         |> Iterator.fold (\context, arg -> traversePattern context pattern_fn expr_fn arg) context
+    List.fold context args (\context, arg -> traversePattern context pattern_fn expr_fn arg)
 
 traversePattern context b :: context -> (context -> P.Pattern b -> context) -> (context -> E.Expr b -> context) -> P.Pattern b -> context
 traversePattern context pattern_fn expr_fn pattern = do
