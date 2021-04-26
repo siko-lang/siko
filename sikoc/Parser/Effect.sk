@@ -1,0 +1,45 @@
+module Siko.Parser.Effect where
+
+import Siko.Parser
+import Siko.Parser.Type
+import Siko.Parser.Function
+import Siko.Parser.Token as T
+import Siko.Parser.Token.Kind as Kind
+import Siko.Parser.Class (parseClassConstraints)
+import Siko.Syntax.Effect
+import Siko.Syntax.Function
+import Siko.Parser.Error
+
+parseBody :: ParserState -> Result (ParserState, [Function], [FunctionSignature]) (ParserState, ParserError)
+parseBody state = do
+    state <- try expect state Kind.KeywordWhere
+    (state, fns, fn_sigs) <- loop (state, fns, fns_sigs) <- (state, [], []) do
+            if check state Kind.EndOfBlock
+            then break (state, fns, fns_sigs)
+            else case try parseFunction state of
+                    (state, Left fn) -> (state, fns + [fn], fns_sigs)
+                    (state, Right fn_sig) -> (state, fns, fns_sigs + [fn_sig])
+    state <- try expect state Kind.EndOfBlock
+    Ok (state, fns, fn_sigs)
+
+parseEffect :: ParserState -> Result (ParserState, Effect) (ParserState, ParserError)
+parseEffect state = do
+    state <- try expect state Kind.KeywordEffect
+    (state, constraints) <- try parseClassConstraints state
+    (state, name) <- try expectTypeIdent state "effect name"
+    (state, arguments) <- loop (state, arguments) <- (state, []) do
+        if check state Kind.KeywordWhere
+        then break (state, arguments)
+        else do
+            (state, argument) <- try parseTypeSignature state False False
+            (state, List.push arguments argument)
+    (state, functions, function_type_signatures) <- try parseBody state
+    state <- try expect state Kind.EndOfItem
+    eff <- Effect {
+                name = name,
+                arguments = arguments,
+                constraints = constraints,
+                member_functions = functions,
+                member_function_type_signatures = function_type_signatures,
+            }
+    Ok (state, eff)

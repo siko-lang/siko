@@ -2,6 +2,7 @@ module Siko.Parser.Module where
 
 import Siko.Parser
 import Siko.Parser.Class
+import Siko.Parser.Effect
 import Siko.Parser.Function
 import Siko.Parser.Data
 import Siko.Syntax.Ident
@@ -30,6 +31,9 @@ parseModule state = do
             Kind.EndOfBlock -> break (state, mod)
             Kind.KeywordClass -> case parseClass state of
                                     Ok (state, c) -> (state, Class c)
+                                    Err (state, err) -> return Err (state, err)
+            Kind.KeywordEffect -> case parseEffect state of
+                                    Ok (state, eff) -> (state, Effect eff)
                                     Err (state, err) -> return Err (state, err)
             Kind.KeywordData -> case parseData state of
                                     Ok (state, d) -> case d of
