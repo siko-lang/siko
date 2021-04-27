@@ -586,5 +586,9 @@ processExpr context env (SE.Expr expr location) = do
             breaks <- loop_helper.breaks
             (context, env, HE.Loop hir_pattern hir_initializer hir_body continues breaks)
         SE.ArgRef i -> (context, env, HE.ArgRef i)
+        SE.With handlers body -> do
+            hir_handlers <- []
+            (context, env, hir_body) <- processExpr context env body
+            (context, env, HE.With hir_handlers hir_body)
     (context, expr_id) <- getExprId context
     (context, env, HE.Expr hir_expr expr_id () location)

@@ -27,6 +27,10 @@ data Expr a = Expr (SimpleExpr a) ExprId a Location
 instance Show Expr a where
   show (Expr e _ _ _) = show e
 
+data EffectHandler a = { name :: FullyQualifiedName,
+                         body :: Expr a
+                       } deriving (Show)
+
 data SimpleExpr a = StaticFunctionCall FullyQualifiedName [Expr a]
                   | DynamicFunctionCall (Expr a) [Expr a]
                   | ClassMemberCall FullyQualifiedName [Expr a]
@@ -52,4 +56,5 @@ data SimpleExpr a = StaticFunctionCall FullyQualifiedName [Expr a]
                   | Loop (P.Pattern a) (Expr a) (Expr a) [ExprRef] [ExprRef]
                   | ArgRef Int
                   | ValueRef P.BindRef
+                  | With [EffectHandler a] (Expr a)
                   deriving (Show)

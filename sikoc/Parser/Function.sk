@@ -33,6 +33,30 @@ parseAttributes state = do
                 (state, List.push attributes (Attribute name))
             _ -> break Ok (state, attributes)
 
+parseEffectSignatures :: ParserState -> Result (ParserState, [EffectSignature]) (ParserState, ParserError)
+parseEffectSignatures state = do
+    (state, effects) <- if check state Kind.KeywordUsing
+        then do
+            state <- try expect state Kind.KeywordUsing
+            state <- try expect state Kind.LParen
+            (state, effects) <- loop (state, effects) <- (state, []) do
+                if check state Kind.RParen
+                then break (state, effects)
+                else do
+                    (state, name) <- try expectTypeIdent state "effect name"
+                    (state, arguments) <- loop (state, arguments) <- (state, []) do
+                        if check state Kind.RParen
+                        then break (state, arguments)
+                        else do
+                            (state, argument) <- try parseTypeSignature state False False
+                            (state, List.push arguments argument)
+                    eff <- EffectSignature name arguments
+                    (state, List.push effects eff)
+            state <- try expect state Kind.RParen
+            (state, effects)
+        else (state, [])
+    Ok (state, effects)
+
 parseFunction :: ParserState -> Result (ParserState, Either Function FunctionSignature) (ParserState, ParserError)
 parseFunction state = do
     (state, attributes) <- try parseAttributes state
@@ -77,12 +101,14 @@ parseFunction state = do
                     state <- state { errors = state.errors + errors }
                     (state, constraints) <- try parseClassConstraints state
                     (state, type_signature) <- try parseTypeSignature state False False
+                    (state, effects) <- try parseEffectSignatures state
                     state <- try expect state Kind.EndOfItem
                     function_signature <- FunctionSignature { name = name,
                                                               type_arguments = args,
                                                               constraints = constraints,
                                                               type_signature = type_signature,
-                                                              attributes = attributes }
+                                                              attributes = attributes,
+                                                              effects = effects }
                     Ok (state, Right function_signature)
                 _ -> panic "Unexpected separator"
         _ -> Err (state, unexpectedToken state "function name")

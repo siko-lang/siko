@@ -142,27 +142,30 @@ parseQualifiedTypeName state msg = do
 
 parseQualifiedName :: ParserState -> String -> Result (ParserState, Ident) (ParserState, ParserError)
 parseQualifiedName state msg = do
-    (state, name) <- try expectTypeIdent state msg
-    (state, name) <- loop (state, name) <- (state, name) do
-        ti <- peek state
-        case ti.token of
-            Dot -> do
-                dot <- Ident "." (getLocation ti.span state)
-                name <- mergeIdents name dot
-                state <- step state
-                ti <- peek state
-                case ti.token of
-                    TypeIdentifier id -> do
-                        (state, n) <- try expectTypeIdent state msg
-                        name <- mergeIdents name n
-                        continue (state, name)
-                    VarIdentifier id -> do
-                        (state, n) <- try expectVarIdent state msg
-                        name <- mergeIdents name n
-                        break (state, name)
-                    _ -> return Err (state, unexpectedToken state "identifier")
-            _ -> break (state, name)
-    Ok (state, name)
+    if check state Kind.VarIdentifier
+    then expectVarIdent state msg
+    else do
+        (state, name) <- try expectTypeIdent state msg
+        (state, name) <- loop (state, name) <- (state, name) do
+            ti <- peek state
+            case ti.token of
+                Dot -> do
+                    dot <- Ident "." (getLocation ti.span state)
+                    name <- mergeIdents name dot
+                    state <- step state
+                    ti <- peek state
+                    case ti.token of
+                        TypeIdentifier id -> do
+                            (state, n) <- try expectTypeIdent state msg
+                            name <- mergeIdents name n
+                            continue (state, name)
+                        VarIdentifier id -> do
+                            (state, n) <- try expectVarIdent state msg
+                            name <- mergeIdents name n
+                            break (state, name)
+                        _ -> return Err (state, unexpectedToken state "identifier")
+                _ -> break (state, name)
+        Ok (state, name)
 
 data ParenParse a = Single a | Multi [a]
 

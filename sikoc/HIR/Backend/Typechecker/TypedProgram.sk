@@ -75,6 +75,13 @@ createTypedPattern context (HPat.Pattern s_pattern id _ location) = do
 processExprs :: Context -> [E.Expr ()]  -> [E.Expr T.Type]
 processExprs context exprs = List.map exprs (createTypedExpr context)
 
+createTypeHandler :: Context -> E.EffectHandler () -> E.EffectHandler T.Type
+createTypeHandler context handler =
+    E.EffectHandler {
+        name = handler.name,
+        body = createTypedExpr context handler.body
+     }
+
 createTypedSimpleExpr :: Context -> E.SimpleExpr () -> E.SimpleExpr T.Type
 createTypedSimpleExpr context s_expr = case s_expr of
     E.StaticFunctionCall qn args -> E.StaticFunctionCall qn (processExprs context args)
@@ -105,6 +112,7 @@ createTypedSimpleExpr context s_expr = case s_expr of
         (createTypedPattern context pattern) (createTypedExpr context initializer) (createTypedExpr context body) continues breaks
     E.ArgRef i -> E.ArgRef i
     E.ValueRef ref -> E.ValueRef ref
+    E.With handlers body -> E.With (List.map handlers (createTypeHandler context)) (createTypedExpr context body)
 
 createTypedExpr :: Context -> E.Expr () -> E.Expr T.Type
 createTypedExpr context (E.Expr s_expr id _ location) = do

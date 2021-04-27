@@ -268,6 +268,7 @@ initializeExprType current_fn_name context (E.Expr expr id _ location) = do
             (context, var) <- U.getNewTypeVarType context
             context <- addExprType context id (TS.ExprType var)
             context
+        E.With handlers body -> context // TODO
     context
 
 checkSingleArgCall :: Context -> E.Expr () -> T.Type -> (Context, Option T.Type)
@@ -448,6 +449,7 @@ checkExprType context (E.Expr expr id _ location) = do
         E.ValueRef (P.BindRef _ pattern_id) -> do
             (context, _) <- matchExprWithPattern context id pattern_id location
             context
+        E.With handler body -> context // TODO
     context
 
 addUndefinedVarToContext :: Context -> [T.TypeVar] -> T.TypeVar -> Location -> (Context, [T.TypeVar])

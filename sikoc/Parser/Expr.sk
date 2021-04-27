@@ -43,6 +43,21 @@ parseDoBlock state = do
     state <- try expect state Kind.EndOfBlock
     Ok (buildExpr (Do items) start_index state)
 
+parseEffectHandler :: ParserState -> Result (ParserState, EffectHandler) (ParserState, ParserError)
+parseEffectHandler state = do
+    (state, name) <- try parseQualifiedName state "effect member name"
+    state <- try expect state Kind.Equal
+    (state, expr) <- try parseExpr state
+    Ok (state, EffectHandler name expr)
+
+parseWithBlock :: ParserState -> Result (ParserState, Expr) (ParserState, ParserError)
+parseWithBlock state = do
+    start_index <- state.index
+    state <- try expect state Kind.KeywordWith
+    (state, handlers) <- try parseList state parseEffectHandler Kind.LCurly Kind.RCurly
+    (state, body) <- try parseDoBlock state
+    Ok (buildExpr (With handlers body) start_index state)
+
 parseRecordFieldExpr :: ParserState -> Result (ParserState, RecordConstructionItem) (ParserState, ParserError)
 parseRecordFieldExpr state = do
     (state, name) <- try expectVarIdent state "record field"
@@ -165,6 +180,7 @@ parseUnary state = do
             (state, start_expr) <- try parseBinaryOps state True 0
             (state, body) <- try parseDoBlock state
             Ok (buildExpr (Loop pattern start_expr body) start_index state)
+        T.KeywordWith -> parseWithBlock state
         _ -> Err (state, unexpectedToken state "expression")
 
 parseFieldAccess :: ParserState -> Result (ParserState, Expr) (ParserState, ParserError)

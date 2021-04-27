@@ -70,11 +70,9 @@ traverse context expr_fn pattern_fn expr = do
                 context <- traverse context expr_fn pattern_fn c.body
                 context) context
             context
-        E.RecordUpdate _ args -> do
-            context <- args |> List.iter |> Iterator.fold (\context, arg -> do
-                context <- traverse context expr_fn pattern_fn arg.body
-                context) context
-            context
+        E.RecordUpdate _ args ->
+            List.fold context args
+                (\context, arg -> traverse context expr_fn pattern_fn arg.body)
         E.Return rhs -> traverse context expr_fn pattern_fn rhs
         E.Continue rhs -> traverse context expr_fn pattern_fn rhs
         E.Break rhs -> traverse context expr_fn pattern_fn rhs
@@ -85,5 +83,10 @@ traverse context expr_fn pattern_fn expr = do
             context
         E.ArgRef _ -> context
         E.ValueRef _ -> context
+        E.With handlers body -> do
+            context <- List.fold context handlers (\context, E.EffectHandler _ body -> do
+                traverse context expr_fn pattern_fn body)
+            context <- traverse context expr_fn pattern_fn body
+            context
     context <- expr_fn context expr
     context
