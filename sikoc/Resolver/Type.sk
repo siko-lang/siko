@@ -41,6 +41,22 @@ processClassConstraint state type_resolver module_resolver c = do
             (state, type_resolver)
     (state, type_resolver)
 
+checkTypeArguments :: ResolverState -> [Ident] -> ResolverState
+checkTypeArguments state args = do
+        names <- List.fold Map.empty args (\names, arg -> do
+            n <- getString arg
+            (names, _) <- alter (addName arg) n names
+            names)
+        Map.fold state names (\state, (name, instances) -> do
+            if getLength instances > 1
+            then addError state (TypeArgumentsNotUnique instances)
+            else state)
+    where
+        addName :: Ident -> Option [Ident] -> Option [Ident]
+        addName name names = case names of
+            Some names -> Some (names + [name])
+            None -> Some [name]
+
 resolveClass :: ModuleResolver -> Ident -> Result HP.FullyQualifiedName ResolverError
 resolveClass module_resolver name = do
     ResolvedItem n item _ <- try resolveItem module_resolver.type_names NotAClassName name
@@ -50,10 +66,10 @@ resolveClass module_resolver name = do
 
 resolveEffect :: ModuleResolver -> Ident -> Result (HP.FullyQualifiedName, Int) ResolverError
 resolveEffect module_resolver name = do
-    ResolvedItem n item _ <- try resolveItem module_resolver.type_names NotANEffectName name
+    ResolvedItem n item _ <- try resolveItem module_resolver.type_names NotAnEffectName name
     case item of
         I.Effect _  c-> Ok (n, c)
-        _ -> Err (NotANEffectName name)
+        _ -> Err (NotAnEffectName name)
 
 resolveTypeName :: TypeResolverState -> Ident -> Result (HP.FullyQualifiedName, Int) ResolverError
 resolveTypeName state name = do
@@ -166,15 +182,13 @@ resolveTypeArg state resolver_state name = do
                     state <- state { used_type_args = used_type_args }
                     (state, resolver_state, var, constraints)
             None -> if state.allow_implicit
-                    then
-                        do
+                    then do
                         (resolver_state, var) <- getTypeVar resolver_state
                         (args, _) <- insert state.args n var
                         (constraints, _) <- insert state.constraints var []
                         state <- state { args  = args, constraints = constraints }
                         (state, resolver_state, var, [])
-                    else
-                        do
+                    else do
                         resolver_state <- addError resolver_state (UnknownTypeArg name)
                         (resolver_state, var) <- getTypeVar resolver_state
                         (state, resolver_state, var, [])

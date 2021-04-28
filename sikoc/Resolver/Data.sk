@@ -59,6 +59,7 @@ createFunctionFromArgs args result_ty = do
 processAdt :: ResolverState -> HP.Program () -> ModuleResolver -> SD.AlgebraicDataType -> (ResolverState, HP.Program ())
 processAdt state hir_program module_resolver (SD.AlgebraicDataType name type_arguments variants derived_classes) = do
     (type_resolver, state) <- initTypeResolver module_resolver state type_arguments
+    state <- checkTypeArguments state type_arguments
     (state, type_resolver, variants) <- variants |> List.iter |> Iterator.fold (\(state, type_resolver, variants), variant -> do
                 (state, type_resolver, variant) <- processVariant state type_resolver variant
                 variants <- variants + [variant]

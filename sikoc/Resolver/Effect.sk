@@ -21,17 +21,10 @@ processEffect state hir_program eff module_resolver = do
     (Ident name location) <- eff.name
     qn <- HP.FullPath module_name name
     type_resolver <- createTypeResolverState module_resolver True
+    state <- checkTypeArguments state eff.arguments
     (state, type_resolver, arguments) <- List.fold (state, type_resolver, []) eff.arguments (\(state, type_resolver, arguments), arg -> do
-        ST.TypeSignature type_arg location <- arg
-        case type_arg of
-            ST.TypeArg type_arg -> do
-                type_arg_str <- getString type_arg
-                (type_resolver, state) <- addTypeArgument type_resolver state type_arg
-                (type_resolver, state, arg_type) <- processTypeSignature type_resolver state arg
-                arguments <- List.push arguments arg_type
-                (state, type_resolver, arguments)
-            _ -> do
-                state <- addError state (InvalidEffectArgument location)
+                (type_resolver, state) <- addTypeArgument type_resolver state arg
+                arguments <- List.push arguments arg
                 (state, type_resolver, arguments))
     type_resolver <- disableImplicitTypeArgs type_resolver
     kind <- HF.EffectMember qn

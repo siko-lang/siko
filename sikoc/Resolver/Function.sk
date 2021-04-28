@@ -84,6 +84,7 @@ addFunctionSignature signature info = case info of
 processFunctionSignature :: ResolverState -> ModuleResolver -> TypeResolverState -> SF.FunctionSignature -> (ResolverState, TypeResolverState, HT.Type)
 processFunctionSignature state module_resolver type_resolver signature = do
     (type_resolver, state) <- addTypeArguments type_resolver state signature.type_arguments
+    state <- checkTypeArguments state signature.type_arguments
     (state, type_resolver) <- signature.constraints |> List.iter |> Iterator.fold (\(state, type_resolver), c ->
             processClassConstraint state type_resolver module_resolver c
         ) (state, type_resolver)
@@ -91,9 +92,11 @@ processFunctionSignature state module_resolver type_resolver signature = do
     (state,  type_resolver, effects) <- List.fold (state, type_resolver, []) signature.effects (\(state, type_resolver, effects), eff ->
         case resolveEffect module_resolver eff.name of
             Ok (qn, count) -> do
+                state <- checkTypeArguments state eff.arguments
                 (state, type_resolver, args) <- List.fold (state, type_resolver, []) eff.arguments (\(state, type_resolver, args), arg -> do
-                (type_resolver, state, arg) <- processTypeSignature type_resolver state arg
-                (state, type_resolver, args + [arg]))
+                    (type_resolver, state, var, constraints) <- resolveTypeArg type_resolver state arg
+                    arg_type <- HT.FixedTypeArg (getString arg) var constraints
+                    (state, type_resolver, args + [arg_type]))
                 state <- if getLength args != count
                 then do
                     (Ident _ location) <- eff.name
