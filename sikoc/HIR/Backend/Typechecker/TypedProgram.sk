@@ -87,6 +87,7 @@ createTypedSimpleExpr context s_expr = case s_expr of
     E.StaticFunctionCall qn args -> E.StaticFunctionCall qn (processExprs context args)
     E.DynamicFunctionCall receiver args -> E.DynamicFunctionCall (createTypedExpr context receiver) (processExprs context args)
     E.ClassMemberCall qn args -> E.ClassMemberCall qn (processExprs context args)
+    E.EffectMemberCall qn args -> E.EffectMemberCall qn (processExprs context args)
     E.VariantConstructorCall qn args -> E.VariantConstructorCall qn (processExprs context args)
     E.RecordConstructorCall qn args -> E.RecordConstructorCall qn (processExprs context args)
     E.If cond true_branch false_branch ->
@@ -149,6 +150,7 @@ createTypedItem context item = case item of
     P.Class c -> P.Class c
     P.Variant i -> P.Variant i
     P.Module location -> P.Module location
+    P.Effect eff -> P.Effect eff
 
 createTypedProgram :: TypeStore -> FunctionStore -> P.Program () -> P.Program T.Type
 createTypedProgram context function_store program = do

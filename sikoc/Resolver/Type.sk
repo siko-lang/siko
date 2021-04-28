@@ -43,10 +43,17 @@ processClassConstraint state type_resolver module_resolver c = do
 
 resolveClass :: ModuleResolver -> Ident -> Result HP.FullyQualifiedName ResolverError
 resolveClass module_resolver name = do
-    ResolvedItem n item _ <- try resolveItem module_resolver.type_names UnknownType name
+    ResolvedItem n item _ <- try resolveItem module_resolver.type_names NotAClassName name
     case item of
         I.Class _ -> Ok (n)
         _ -> Err (NotAClassName name)
+
+resolveEffect :: ModuleResolver -> Ident -> Result (HP.FullyQualifiedName, Int) ResolverError
+resolveEffect module_resolver name = do
+    ResolvedItem n item _ <- try resolveItem module_resolver.type_names NotANEffectName name
+    case item of
+        I.Effect _  c-> Ok (n, c)
+        _ -> Err (NotANEffectName name)
 
 resolveTypeName :: TypeResolverState -> Ident -> Result (HP.FullyQualifiedName, Int) ResolverError
 resolveTypeName state name = do

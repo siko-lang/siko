@@ -171,6 +171,7 @@ initializeExprType current_fn_name context (E.Expr expr id _ location) = do
             (context, var) <- U.getNewTypeVarType context
             context <- addExprType context id (TS.FunctionCall var function_type)
             context
+        E.EffectMemberCall qn args -> context // TODO
         E.VariantConstructorCall qn args -> do
             D.VariantInfo qn index _ <- PO.getVariantInfo context.state.program qn
             function_type <- PO.getVariantCtor context.state.program qn index
@@ -329,6 +330,7 @@ checkExprType context (E.Expr expr id _ location) = do
                     (context, _) <- matchExprWith context id result_ty location
                     context
                 None -> context
+        E.EffectMemberCall qn args -> context // TODO
         E.VariantConstructorCall _ args -> do
             (ty, fn_ty) <- getExprAndFunctionCallType context id
             (context, result_ty) <- checkFunctionCall context args fn_ty location

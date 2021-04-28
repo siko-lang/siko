@@ -11,7 +11,7 @@ data Item = Adt String Int
           | Class String
           | ClassMember String String
           | Function String
-          | Effect String
+          | Effect String Int
           | EffectMember String String
           deriving (Show)
 
@@ -23,7 +23,7 @@ getItemName item = case item of
     Class c -> c
     ClassMember c m -> m
     Function f -> f
-    Effect e -> e
+    Effect e _ -> e
     EffectMember e m -> m
 
 getItemArgCount :: Item -> Int
@@ -34,7 +34,7 @@ getItemArgCount item = case item of
     Class _ -> 0
     ClassMember _ _ -> 0
     Function _ -> 0
-    Effect _ -> 0
+    Effect _ c -> c
     EffectMember _ _ -> 0
 
 matchSpecs :: [SI.MemberSpecification] -> String -> Bool
@@ -56,7 +56,7 @@ matchFilter filter item = case filter of
             Class c -> c == name
             ClassMember c m -> m == name
             Function f -> f == name
-            Effect e -> e == name
+            Effect e _ -> e == name
             EffectMember eff m -> m == name
     SI.Group name specs -> do
         name <- getString name
@@ -67,7 +67,7 @@ matchFilter filter item = case filter of
             Class c -> c == name
             ClassMember c m -> c == name && matchSpecs specs m
             Function f -> False
-            Effect e -> e == name
+            Effect e _ -> e == name
             EffectMember eff m -> eff == name && matchSpecs specs m
 
 matchFilters :: [SI.Filter] -> Item -> Bool

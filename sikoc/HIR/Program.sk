@@ -5,6 +5,7 @@ import Siko.HIR.Function as F
 import Siko.HIR.Data as D
 import Siko.HIR.Class as C
 import Siko.HIR.Type as T
+import Siko.HIR.Effect as E
 import Map
 
 data FullyQualifiedName = FullPath String String
@@ -57,6 +58,7 @@ data Item a = Function (F.Function a)
             | Class C.Class
             | Variant D.VariantInfo
             | Module Location // dummy item, just for detecting name conflicts
+            | Effect E.Effect
             deriving (Show)
 
 data Program a = { items :: Map FullyQualifiedName (Item a),
@@ -86,6 +88,7 @@ getLocation item = case item of
     Class c -> c.location
     Variant (D.VariantInfo _ _ location) -> location
     Module location -> location
+    Effect eff -> eff.location
 
 getItem a :: Program a -> FullyQualifiedName -> Item a
 getItem program name = case get program.items name of

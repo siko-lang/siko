@@ -88,6 +88,21 @@ processFunctionSignature state module_resolver type_resolver signature = do
             processClassConstraint state type_resolver module_resolver c
         ) (state, type_resolver)
     (type_resolver, state, type) <- processTypeSignature type_resolver state signature.type_signature
+    (state,  type_resolver, effects) <- List.fold (state, type_resolver, []) signature.effects (\(state, type_resolver, effects), eff ->
+        case resolveEffect module_resolver eff.name of
+            Ok (qn, count) -> do
+                (state, type_resolver, args) <- List.fold (state, type_resolver, []) eff.arguments (\(state, type_resolver, args), arg -> do
+                (type_resolver, state, arg) <- processTypeSignature type_resolver state arg
+                (state, type_resolver, args + [arg]))
+                state <- if getLength args != count
+                then do
+                    (Ident _ location) <- eff.name
+                    addError state (InvalidEffectArgCount count (getLength args) location)
+                else state
+                (state, type_resolver, List.push effects qn)
+            Err err -> do
+                state <- addError state err
+                (state, type_resolver, effects))
     (state, type_args) <- processTypeArgs state type_resolver signature.type_arguments True
     (state, type_resolver, type)
 
