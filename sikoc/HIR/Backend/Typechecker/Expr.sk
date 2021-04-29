@@ -171,7 +171,12 @@ initializeExprType current_fn_name context (E.Expr expr id _ location) = do
             (context, var) <- U.getNewTypeVarType context
             context <- addExprType context id (TS.FunctionCall var function_type)
             context
-        E.EffectMemberCall qn args -> context // TODO
+        E.EffectMemberCall qn args -> do
+            function <- PO.getFunction context.state.program qn
+            (context, function_type) <- instantiateType context (Option.unwrap function.type)
+            (context, var) <- U.getNewTypeVarType context
+            context <- addExprType context id (TS.FunctionCall var function_type)
+            context
         E.VariantConstructorCall qn args -> do
             D.VariantInfo qn index _ <- PO.getVariantInfo context.state.program qn
             function_type <- PO.getVariantCtor context.state.program qn index
@@ -269,7 +274,10 @@ initializeExprType current_fn_name context (E.Expr expr id _ location) = do
             (context, var) <- U.getNewTypeVarType context
             context <- addExprType context id (TS.ExprType var)
             context
-        E.With handlers body -> context // TODO
+        E.With handlers body -> do
+            (context, var) <- U.getNewTypeVarType context
+            context <- addExprType context id (TS.ExprType var)
+            context
     context
 
 checkSingleArgCall :: Context -> E.Expr () -> T.Type -> (Context, Option T.Type)
@@ -330,7 +338,14 @@ checkExprType context (E.Expr expr id _ location) = do
                     (context, _) <- matchExprWith context id result_ty location
                     context
                 None -> context
-        E.EffectMemberCall qn args -> context // TODO
+        E.EffectMemberCall qn args -> do
+            (ty, fn_ty) <- getExprAndFunctionCallType context id
+            (context, result_ty) <- checkFunctionCall context args fn_ty location
+            case result_ty of
+                Some result_ty -> do
+                    (context, _) <- matchExprWith context id result_ty location
+                    context
+                None -> context
         E.VariantConstructorCall _ args -> do
             (ty, fn_ty) <- getExprAndFunctionCallType context id
             (context, result_ty) <- checkFunctionCall context args fn_ty location
@@ -375,7 +390,7 @@ checkExprType context (E.Expr expr id _ location) = do
         E.StringLiteral _ -> context
         E.CharLiteral _ -> context
         E.Do args -> do
-            (E.Expr _ last_id _ _) <- atIndex args ((getLength args) - 1)
+            E.Expr _ last_id _ _ <- atIndex args ((getLength args) - 1)
             (context, _) <- matchExprs context id last_id location
             context
         E.Bind p rhs -> do
@@ -451,7 +466,10 @@ checkExprType context (E.Expr expr id _ location) = do
         E.ValueRef (P.BindRef _ pattern_id) -> do
             (context, _) <- matchExprWithPattern context id pattern_id location
             context
-        E.With handler body -> context // TODO
+        E.With handler body -> do
+            E.Expr _ body_id _ _ <- body
+            (context, _) <- matchExprs context id body_id location
+            context
     context
 
 addUndefinedVarToContext :: Context -> [T.TypeVar] -> T.TypeVar -> Location -> (Context, [T.TypeVar])

@@ -85,8 +85,10 @@ traverse context expr_fn pattern_fn expr = do
         E.ArgRef _ -> context
         E.ValueRef _ -> context
         E.With handlers body -> do
-            context <- List.fold context handlers (\context, E.EffectHandler _ body -> do
-                traverse context expr_fn pattern_fn body)
+            context <- List.fold context handlers (\context, E.EffectHandler _ selection ->
+                case selection of
+                    E.Dynamic body -> traverse context expr_fn pattern_fn body
+                    _ -> context)
             context <- traverse context expr_fn pattern_fn body
             context
     context <- expr_fn context expr

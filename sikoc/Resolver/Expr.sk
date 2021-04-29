@@ -372,6 +372,30 @@ desugarTry expr = do
     err_case <- SE.Case err_pattern err_body
     ce (SE.CaseOf expr [ok_case, err_case])
 
+processEffectHandlers :: Context -> Environment -> [SE.EffectHandler] -> (Context, [HE.EffectHandler ()])
+processEffectHandlers context env handlers =
+        List.fold (context, []) handlers (\(context, hir_handlers), handler ->
+                case resolveEffectMember context.module_resolver handler.name of
+                    Ok qn -> do
+                        (context, env, hir_value) <- processExpr context env handler.value
+                        HE.Expr s_expr _ _ _ <- hir_value
+                        selection <- case s_expr of
+                            HE.StaticFunctionCall call_qn args -> if isEmpty args
+                                then HE.Static call_qn
+                                else HE.Dynamic hir_value
+                            HE.EffectMemberCall call_qn args -> if isEmpty args
+                                then if call_qn == qn
+                                    then HE.Default
+                                    else HE.Dynamic hir_value
+                                else HE.Dynamic hir_value
+                            _ -> HE.Dynamic hir_value
+                        hir_handler <- HE.EffectHandler qn selection
+                        (context, List.push hir_handlers hir_handler)
+                    Err err -> do
+                        context <- addErrorToContext context err
+                        (context, hir_handlers)
+            )
+
 processExpr :: Context -> Environment -> SE.Expr -> (Context, Environment, HE.Expr ())
 processExpr context env (SE.Expr expr location) = do
     (context, env, hir_expr) <- case expr of
@@ -588,7 +612,7 @@ processExpr context env (SE.Expr expr location) = do
             (context, env, HE.Loop hir_pattern hir_initializer hir_body continues breaks)
         SE.ArgRef i -> (context, env, HE.ArgRef i)
         SE.With handlers body -> do
-            hir_handlers <- []
+            (context, hir_handlers) <- processEffectHandlers context env handlers
             (context, env, hir_body) <- processExpr context env body
             (context, env, HE.With hir_handlers hir_body)
     (context, expr_id) <- getExprId context

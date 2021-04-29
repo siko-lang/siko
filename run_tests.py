@@ -71,7 +71,7 @@ def run(verbose, interpret, nostd, debug, test_name, source_folder, index, total
             return False
     normal_output = os.path.join(target_folder, "normal")
     rc_output = os.path.join(target_folder, "rc")
-    if not run_command(["rustc", "--edition=2018", os.path.join(target_folder, "%s_normal.rs" % test_name), "-o", normal_output], "normal rustc"):
+    if not run_command(["rustc", "--edition=2018", os.path.join(target_folder, "%s_normal.rs" % test_name), "-o", normal_output], "normal rustc", verbose = True):
         return False
     return run_command([normal_output], "normal build")
 

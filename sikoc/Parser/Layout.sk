@@ -64,8 +64,8 @@ processItem state first_span = do
                 case token.token of
                     KeywordDo | KeywordWhere | KeywordOf -> item_state { state = processBlock item_state.state }
                     KeywordModule -> break item_state { end_of_block = True }
-                    LParen -> item_state { state = advance item_state.state, paren_level = item_state.paren_level + 1}
-                    RParen -> do
+                    LParen | LCurly | LBracket -> item_state { state = advance item_state.state, paren_level = item_state.paren_level + 1}
+                    RParen | RCurly | RBracket -> do
                         paren_level <- item_state.paren_level - 1
                         if paren_level < 0
                         then break item_state { end_of_block = True }

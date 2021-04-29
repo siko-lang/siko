@@ -68,8 +68,15 @@ resolveEffect :: ModuleResolver -> Ident -> Result (HP.FullyQualifiedName, Int) 
 resolveEffect module_resolver name = do
     ResolvedItem n item _ <- try resolveItem module_resolver.type_names NotAnEffectName name
     case item of
-        I.Effect _  c-> Ok (n, c)
+        I.Effect _ c -> Ok (n, c)
         _ -> Err (NotAnEffectName name)
+
+resolveEffectMember :: ModuleResolver -> Ident -> Result (HP.FullyQualifiedName) ResolverError
+resolveEffectMember module_resolver name = do
+    ResolvedItem n item _ <- try resolveItem module_resolver.term_names NotAnEffectMemberName name
+    case item of
+        I.EffectMember q _ -> Ok n
+        _ -> Err (NotAnEffectMemberName name)
 
 resolveTypeName :: TypeResolverState -> Ident -> Result (HP.FullyQualifiedName, Int) ResolverError
 resolveTypeName state name = do

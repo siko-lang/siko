@@ -27,9 +27,14 @@ data Expr a = Expr (SimpleExpr a) ExprId a Location
 instance Show Expr a where
   show (Expr e _ _ _) = show e
 
-data EffectHandler a = { name :: FullyQualifiedName,
-                         body :: Expr a
-                       } deriving (Show)
+data EffectHandler a =  { name :: FullyQualifiedName,
+                          selection :: EffectHandlerSelection a
+                        } deriving (Show)
+
+data EffectHandlerSelection a = Static FullyQualifiedName
+                              | Dynamic (Expr a)
+                              | Default
+                              deriving (Show)
 
 data SimpleExpr a = StaticFunctionCall FullyQualifiedName [Expr a]
                   | DynamicFunctionCall (Expr a) [Expr a]

@@ -75,11 +75,17 @@ createTypedPattern context (HPat.Pattern s_pattern id _ location) = do
 processExprs :: Context -> [E.Expr ()]  -> [E.Expr T.Type]
 processExprs context exprs = List.map exprs (createTypedExpr context)
 
+createTypedEffectHandlerSelection :: Context -> E.EffectHandlerSelection () -> E.EffectHandlerSelection T.Type
+createTypedEffectHandlerSelection context selection = case selection of
+    E.Static qn -> E.Static qn
+    E.Dynamic expr -> E.Dynamic (createTypedExpr context expr)
+    E.Default -> E.Default
+
 createTypeHandler :: Context -> E.EffectHandler () -> E.EffectHandler T.Type
 createTypeHandler context handler =
     E.EffectHandler {
         name = handler.name,
-        body = createTypedExpr context handler.body
+        selection = createTypedEffectHandlerSelection context handler.selection
      }
 
 createTypedSimpleExpr :: Context -> E.SimpleExpr () -> E.SimpleExpr T.Type
