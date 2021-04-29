@@ -1,0 +1,40 @@
+module Siko.MIR.Backend.Ownership.ConstraintGraph where
+
+import Siko.MIR.Expr as E
+import Map
+
+data NodeId = NodeId Int deriving (Show, PartialEq, Eq, PartialOrd, Ord)
+
+
+data ExprInfo = { id :: E.ExprId,
+                  name :: String, }
+
+data VarInfo = { var :: E.Var }
+
+data Node = Expr ExprInfo
+          | Var E.Var
+
+data EdgeKind = Do
+              | FnArg
+              | VarDef
+              | VarRef
+              | FieldAccess
+              | IfCond
+              | IfTrue
+              | IfFalse
+              | Return
+              | LoopInitializer
+              | LoopVar
+              | Continue
+              | Break
+              | Converter
+              | CaseVar
+              | CaseBody
+              | CaseOfBody
+
+data Edge = { kind :: EdgeKind,
+              source :: NodeId,
+              target :: NodeId }
+
+data ConstraintGraph = { nodes :: Map NodeId Node,
+                         edges :: [Edge]}
