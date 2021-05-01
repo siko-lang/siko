@@ -1,0 +1,84 @@
+module Siko.MIR.Backend.Ownership.ConstraintGraph where
+
+import Siko.MIR.Expr as E
+import Siko.MIR.Type as T
+import Map
+
+data NodeId = NodeId Int deriving (Show, PartialEq, Eq, PartialOrd, Ord)
+
+data EdgeId = EdgeId Int deriving (Show, PartialEq, Eq, PartialOrd, Ord)
+
+data ExprInfo = { id :: E.ExprId,
+                  name :: String }
+
+data VarInfo = { var :: E.Var }
+
+data NodeKind = Expr ExprInfo
+              | Var E.Var
+              | FnReturn
+
+data Node = { kind :: NodeKind,
+              type :: T.Type,
+              edges :: [EdgeId] }
+
+data EdgeKind = Do
+              | FnArg
+              | VarDef
+              | VarRef
+              | FieldAccess
+              | IfCond
+              | IfTrue
+              | IfFalse
+              | Return
+              | LoopInitializer
+              | LoopVar
+              | Continue
+              | Break
+              | Converter
+              | CaseVar
+              | CaseBody
+              | CaseOfBody
+
+data Edge = { kind :: EdgeKind,
+              source :: NodeId,
+              destination :: NodeId }
+
+data ConstraintGraph = { nodes :: Map NodeId Node,
+                         edges :: Map EdgeId Edge
+                       }
+
+addNode :: ConstraintGraph -> NodeKind -> T.Type -> (ConstraintGraph, NodeId)
+addNode graph kind type = do
+    node <- Node kind type []
+    node_id <- Map.getSize graph.nodes
+    node_id <- NodeId node_id
+    (nodes, _) <- Map.insert graph.nodes node_id node
+    (graph { nodes = nodes }, node_id)
+
+updateNode :: ConstraintGraph -> NodeId -> (Node -> Node) -> ConstraintGraph
+updateNode graph node_id f = do
+        (nodes, _) <- Map.alter (nodeUpdate f node_id) node_id graph.nodes
+        graph { nodes = nodes }
+    where
+        nodeUpdate f node_id old_node =
+            case old_node of
+                Some n -> Some (f n)
+                None -> panic "Node with node_id {} not found in constraint graph" % node_id
+
+addEdge :: ConstraintGraph -> EdgeKind -> NodeId -> NodeId -> (ConstraintGraph, EdgeId)
+addEdge graph kind source destination = do
+        edge <- Edge kind source destination
+        edge_id <- Map.getSize graph.edges
+        edge_id <- EdgeId edge_id
+        graph <- updateNode graph source (addEdgeToNode edge_id)
+        graph <- updateNode graph destination (addEdgeToNode edge_id)
+        (edges, _) <- Map.insert graph.edges edge_id edge
+        (graph { edges = edges }, edge_id)
+    where
+        addEdgeToNode :: EdgeId -> Node -> Node
+        addEdgeToNode edge_id node = do
+            edges <- List.push node.edges edge_id
+            node { edges = edges }
+
+createGraph :: ConstraintGraph
+createGraph = ConstraintGraph Map.empty Map.empty

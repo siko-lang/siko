@@ -1,77 +1,71 @@
-module Siko.MIR.Backend.Ownership.Inference.Equality where
+module Siko.MIR.Backend.Ownership.ConstraintGraph.Creator where
 
 import Siko.MIR.Program as P
 import Siko.MIR.Expr as E
 import Siko.MIR.Data as D
 import Siko.MIR.Type as T
 import Siko.MIR.Function as F
-import Siko.Util.DependencyProcessor
-import Siko.MIR.Backend.Ownership.ValueGraph.Creator as C
 import Siko.MIR.Backend.Ownership.Inference.Common as Common
 import Siko.MIR.Backend.Ownership.Initialization as Init
 import Siko.MIR.Backend.Ownership.Initialization.Functions as IF
-import Siko.MIR.Backend.Ownership.Unification as U
-import Siko.Util.Counter
 import Siko.Trace
-import List2 as List2
-import List2 (List2)
-import Siko.MIR.Backend.Traversal
-import Map2 as Map2
-import Map2 (Map2)
-import Siko.Dot as Dot
-import Hack
+import Siko.MIR.Backend.Ownership.ConstraintGraph as CG
 
 import Map
-import Set
 
 data Context = { program :: P.Program,
-                 graph :: Dot.Graph,
-                 expr_node_ids :: Map2 E.ExprId Dot.NodeId,
-                 var_node_ids :: Map2 E.Var Dot.NodeId,
-                 return_node_id :: Dot.NodeId }
+                 expr_node_ids :: Map E.ExprId CG.NodeId,
+                 var_node_ids :: Map E.Var CG.NodeId,
+                 return_node_id :: CG.NodeId,
+                 constraint_graph :: CG.ConstraintGraph }
 
-addExprNode :: Context -> E.ExprId -> String -> Context
-addExprNode context expr_id name = do
-    (graph, node_id) <- Dot.addNode context.graph ("{}{}" % (expr_id, name))
-    (expr_node_ids, _) <- Map2.insert context.expr_node_ids expr_id node_id
-    context <- context { graph = graph, expr_node_ids = expr_node_ids }
+addExprNode :: Context -> E.ExprId -> String -> T.Type -> Context
+addExprNode context expr_id name type = do
+    kind <- CG.Expr (CG.ExprInfo expr_id name)
+    (constraint_graph, node_id) <- CG.addNode context.constraint_graph kind type
+    (expr_node_ids, _) <- Map.insert context.expr_node_ids expr_id node_id
+    context <- context { constraint_graph = constraint_graph, expr_node_ids = expr_node_ids }
     context
 
-addVarNode :: Context -> E.Var -> Context
-addVarNode context var = do
-    (graph, node_id) <- Dot.addNode context.graph (show var)
-    (var_node_ids, _) <- Map2.insert context.var_node_ids var node_id
-    context <- context { graph = graph, var_node_ids = var_node_ids }
+addVarNode :: Context -> E.Var -> T.Type -> Context
+addVarNode context var type = do
+    kind <- CG.Var var
+    (constraint_graph, node_id) <- CG.addNode context.constraint_graph kind type
+    (var_node_ids, _) <- Map.insert context.var_node_ids var node_id
+    context <- context { constraint_graph = constraint_graph, var_node_ids = var_node_ids }
     context
 
 addEdge :: Context -> String -> E.ExprId -> E.ExprId -> Context
 addEdge context name from to = do
-    from <- Option.unwrap (Map2.get context.expr_node_ids from)
-    to <- Option.unwrap (Map2.get context.expr_node_ids to)
-    graph <- Dot.addEdge context.graph (Some name) from to
-    context { graph = graph }
+    from <- Option.unwrap (Map.get context.expr_node_ids from)
+    to <- Option.unwrap (Map.get context.expr_node_ids to)
+    kind <- CG.Do
+    (constraint_graph, _) <- CG.addEdge context.constraint_graph kind from to
+    context { constraint_graph = constraint_graph }
 
 addReturnEdge :: Context -> String -> E.ExprId -> Context
 addReturnEdge context name from  = do
-    from <- Option.unwrap (Map2.get context.expr_node_ids from)
-    graph <- Dot.addEdge context.graph (Some name) from context.return_node_id
-    context { graph = graph }
+    from <- Option.unwrap (Map.get context.expr_node_ids from)
+    kind <- CG.Do // TODO
+    (constraint_graph, _) <- CG.addEdge context.constraint_graph kind from context.return_node_id
+    context { constraint_graph = constraint_graph }
 
 addVarEdge :: Context -> String -> E.ExprId -> E.Var -> Bool -> Context
 addVarEdge context name from to reverse = do
-    from <- Option.unwrap (Map2.get context.expr_node_ids from)
-    to <- case (Map2.get context.var_node_ids to) of
+    kind <- CG.Do // TODO
+    from <- Option.unwrap (Map.get context.expr_node_ids from)
+    to <- case (Map.get context.var_node_ids to) of
         Some id -> id
         None -> panic "Could not find var in varnode ids {}/{}" % (to, name)
-    graph <- if reverse
-             then Dot.addEdge context.graph (Some name) to from
-             else Dot.addEdge context.graph (Some name) from to
-    context { graph = graph }
+    (constraint_graph, _) <- if reverse
+             then CG.addEdge context.constraint_graph kind to from
+             else CG.addEdge context.constraint_graph kind from to
+    context { constraint_graph = constraint_graph }
 
 processExpr :: Context -> E.Expr -> (Context, E.Expr)
 processExpr context expr = do
     E.Expr s_expr type id <- expr
-    context <- addExprNode context id (E.short expr)
+    context <- addExprNode context id (E.short expr) type
     case s_expr of
         E.Do items -> do
             (context, items) <- List.mapS context items processExpr
@@ -92,7 +86,8 @@ processExpr context expr = do
         E.FloatLiteral i -> (context, E.Expr (E.FloatLiteral i) type id)
         E.CharLiteral i -> (context, E.Expr (E.CharLiteral i) type id)
         E.VarDecl v rhs -> do
-            context <- addVarNode context v
+            E.Expr _ rhs_type _ <- rhs
+            context <- addVarNode context v rhs_type
             (context, rhs) <- processExpr context rhs
             E.Expr _ _ rhs_id <- rhs
             context <- addVarEdge context "vardef" rhs_id v False
@@ -137,9 +132,9 @@ processExpr context expr = do
             (context, E.Expr (E.Break arg) type id)
         E.RecordUpdate _ _ -> panic "RecordUpdate found in Equality.processExpr"
         E.Loop v initializer body continues breaks -> do
-            context <- addVarNode context v
+            E.Expr _ initializer_type initializer_id <- initializer
+            context <- addVarNode context v initializer_type
             (context, initializer) <- processExpr context initializer
-            E.Expr _ _ initializer_id <- initializer
             context <- addEdge context "loop_initializer" id initializer_id
             context <- addVarEdge context "loop_var" initializer_id v False
             (context, body) <- processExpr context body
@@ -155,7 +150,7 @@ processExpr context expr = do
             (context, cases) <- List.mapS context cases (\context, c -> do
                 context <- case c.checker of
                     E.VariantChecker index v variant_type -> do
-                        context <- addVarNode context v
+                        context <- addVarNode context v variant_type
                         context <- addVarEdge context "<case>" case_of_body_id v False
                         context
                     _ -> context
@@ -178,23 +173,21 @@ processExpr context expr = do
             (context, E.Expr (E.Converter arg kind) type id)
 
 processArg :: Context -> Int -> T.Type -> Context
-processArg context index type = addVarNode context (E.Arg index)
+processArg context index type = addVarNode context (E.Arg index) type
 
-createContext :: P.Program -> String -> Context
-createContext program graph_name = do
-    graph <- Dot.createGraph graph_name
-    (graph, return_node_id) <- Dot.addNode graph "function_return"
-    Context program graph Map2.empty Map2.empty return_node_id
+createContext :: P.Program -> String -> T.Type -> Context
+createContext program graph_name return_type = do
+    constraint_graph <- CG.createGraph
+    (constraint_graph, return_node_id) <- CG.addNode constraint_graph CG.FnReturn return_type
+    Context program Map.empty Map.empty return_node_id constraint_graph
 
-processBody :: Common.GlobalContext -> Init.Context -> F.FunctionType -> P.Identity -> E.Expr -> E.Expr
-processBody global_context init_context function_type function_id body = do
+buildConstraintGraph :: Common.GlobalContext -> Init.Context -> F.FunctionType -> P.Identity -> E.Expr -> E.Expr
+buildConstraintGraph global_context init_context function_type function_id body = do
     trace global_context.config "Inference: Equality {}" % function_id
-    context <- createContext global_context.program (show function_id)
+    context <- createContext global_context.program (show function_id) function_type.result
     context <- List.foldE processArg context function_type.args
     (_, body) <- IF.addOwnershipVarsToBody init_context body
     (context, body) <- processExpr context body
     E.Expr _ _ body_id <- body
     context <- addReturnEdge context "implicit_return" body_id
-    //s <- Dot.generateDot context.graph
-    //writeTextFile ("dots/equality_graph_{}.dot" % function_id) s
     body
