@@ -1,6 +1,7 @@
 module Siko.HIR.Backend.Typechecker.TypeStore where
 
 import Siko.Syntax.Location
+import Siko.HIR.Program as PO
 import Siko.HIR.Type as T
 import Siko.HIR.Data as D
 import Siko.HIR.Backend.TypeFormatter as TF
@@ -10,19 +11,28 @@ import Siko.HIR.Backend.Unification as U
 import Siko.HIR.Backend.Unification.Substitution as S
 import Map
 
+data EffectSignatureSet = { signatures :: Map PO.FullyQualifiedName T.Type } deriving (Show)
+
 data ExprTypeState = ExprType T.Type
-                     | FunctionCall T.Type T.Type
-                     deriving (Show)
+                   | FunctionCall T.Type T.Type
+                   deriving (Show)
 
 data PatternTypeState = PatternType T.Type
-                        | PatternWithRecordType D.Record
-                        | PatternWithAdtType D.AlgebraicDataType
-                        deriving (Show)
+                      | PatternWithRecordType D.Record
+                      | PatternWithAdtType D.AlgebraicDataType
+                      deriving (Show)
 
 data TypeStore = { expr_types :: Map E.ExprId ExprTypeState,
+                   expr_effect_signatures :: Map E.ExprId EffectSignatureSet,
                    pattern_types :: Map P.PatternId PatternTypeState,
+                   pattern_effect_signatures :: Map P.PatternId EffectSignatureSet,
                    pattern_locations :: Map P.PatternId Location
                  } deriving (Show)
+
+instance S.Apply EffectSignatureSet where
+    apply effects sub = do
+        signatures <- Map.update effects.signatures (\(id, t) -> S.apply t sub)
+        effects { signatures = signatures }
 
 instance S.Apply ExprTypeState where
     //apply :: ExprTypeState -> S.Substitution -> ExprTypeState
@@ -38,7 +48,7 @@ instance S.Apply PatternTypeState where
         PatternWithAdtType adt -> PatternWithAdtType (S.apply adt sub)
 
 initializeTypeStore :: TypeStore
-initializeTypeStore = TypeStore empty empty empty
+initializeTypeStore = TypeStore empty empty empty empty empty
 
 addExprType :: TypeStore -> E.ExprId -> ExprTypeState -> TypeStore
 addExprType store expr_id expr_type = do
@@ -114,9 +124,17 @@ getAdt store pattern_id = do
 
 instance S.Apply TypeStore where
     apply store sub = do
-        expr_types <- Map.update store.expr_types (\(id, expr_ty) -> S.apply expr_ty sub)
-        pattern_types <- Map.update store.pattern_types (\(id, pattern_ty) -> S.apply pattern_ty sub)
-        store { expr_types = expr_types, pattern_types = pattern_types }
+            expr_types <- Map.update store.expr_types (applySub sub)
+            expr_effect_signatures <- Map.update store.expr_effect_signatures (applySub sub)
+            pattern_types <- Map.update store.pattern_types (applySub sub)
+            pattern_effect_signatures <- Map.update store.pattern_effect_signatures (applySub sub)
+            store { expr_types = expr_types,
+                    expr_effect_signatures = expr_effect_signatures,
+                    pattern_types = pattern_types,
+                    pattern_effect_signatures = pattern_effect_signatures }
+        where
+            applySub a b :: (S.Apply b) => S.Substitution -> (a, b) -> b
+            applySub sub (id, item) = S.apply item sub
 
 dump :: TypeStore -> ()
 dump store = do
