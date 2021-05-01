@@ -13,6 +13,9 @@ import Map
 
 data EffectSignatureSet = { signatures :: Map PO.FullyQualifiedName T.Type } deriving (Show)
 
+emptyEffectSignatureSet :: EffectSignatureSet
+emptyEffectSignatureSet = EffectSignatureSet Map.empty
+
 data ExprTypeState = ExprType T.Type
                    | FunctionCall T.Type T.Type
                    deriving (Show)
@@ -49,6 +52,16 @@ instance S.Apply PatternTypeState where
 
 initializeTypeStore :: TypeStore
 initializeTypeStore = TypeStore empty empty empty empty empty
+
+addExprEffectSignatureSet :: TypeStore -> E.ExprId -> EffectSignatureSet -> TypeStore
+addExprEffectSignatureSet store expr_id effects = do
+    (expr_effect_signatures, _) <- insert store.expr_effect_signatures expr_id effects
+    store { expr_effect_signatures = expr_effect_signatures }
+
+addPatternEffectSignatureSet :: TypeStore -> P.PatternId -> EffectSignatureSet -> TypeStore
+addPatternEffectSignatureSet store pattern_id effects = do
+    (pattern_effect_signatures, _) <- insert store.pattern_effect_signatures pattern_id effects
+    store { pattern_effect_signatures = pattern_effect_signatures }
 
 addExprType :: TypeStore -> E.ExprId -> ExprTypeState -> TypeStore
 addExprType store expr_id expr_type = do

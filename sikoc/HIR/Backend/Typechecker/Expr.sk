@@ -58,6 +58,11 @@ addExprType context expr_id expr_type = do
     type_store <- TS.addExprType context.type_store expr_id expr_type
     context { type_store = type_store }
 
+addExprEffectSignatureSet :: Context -> E.ExprId -> TS.EffectSignatureSet -> Context
+addExprEffectSignatureSet context expr_id effects = do
+    type_store <- TS.addExprEffectSignatureSet context.type_store expr_id effects
+    context { type_store = type_store }
+
 getExprType :: Context -> E.ExprId -> T.Type
 getExprType context expr_id = TS.getExprType context.type_store expr_id
 
@@ -159,23 +164,27 @@ initializeExprType current_fn_name context (E.Expr expr id _ location) = do
                 else instantiateType context func_type_info.function_type
             (context, var) <- U.getNewTypeVarType context
             context <- addExprType context id (TS.FunctionCall var function_type)
+            context <- addExprEffectSignatureSet context id TS.emptyEffectSignatureSet
             context
         E.DynamicFunctionCall receiver args -> do
             (context, function_type) <- Util.createGeneralFunction (getLength args) context
             (context, var) <- U.getNewTypeVarType context
             context <- addExprType context id (TS.FunctionCall var function_type)
+            context <- addExprEffectSignatureSet context id TS.emptyEffectSignatureSet
             context
         E.ClassMemberCall qn args -> do
             function <- PO.getFunction context.state.program qn
             (context, function_type) <- instantiateType context (Option.unwrap function.type)
             (context, var) <- U.getNewTypeVarType context
             context <- addExprType context id (TS.FunctionCall var function_type)
+            context <- addExprEffectSignatureSet context id TS.emptyEffectSignatureSet
             context
         E.EffectMemberCall qn args -> do
             function <- PO.getFunction context.state.program qn
             (context, function_type) <- instantiateType context (Option.unwrap function.type)
             (context, var) <- U.getNewTypeVarType context
             context <- addExprType context id (TS.FunctionCall var function_type)
+            context <- addExprEffectSignatureSet context id TS.emptyEffectSignatureSet
             context
         E.VariantConstructorCall qn args -> do
             D.VariantInfo qn index _ <- PO.getVariantInfo context.state.program qn
@@ -183,16 +192,19 @@ initializeExprType current_fn_name context (E.Expr expr id _ location) = do
             (context, function_type) <- instantiateType context function_type
             (context, var) <- U.getNewTypeVarType context
             context <- addExprType context id (TS.FunctionCall var function_type)
+            context <- addExprEffectSignatureSet context id TS.emptyEffectSignatureSet
             context
         E.RecordConstructorCall qn args -> do
             record <- PO.getRecord context.state.program qn
             (context, new_ctor) <- instantiateType context record.record_ctor
             (context, var) <- U.getNewTypeVarType context
             context <- addExprType context id (TS.FunctionCall var new_ctor)
+            context <- addExprEffectSignatureSet context id TS.emptyEffectSignatureSet
             context
         E.If cond true_branch false_branch -> do
             (context, var) <- U.getNewTypeVarType context
             context <- addExprType context id (TS.ExprType var)
+            context <- addExprEffectSignatureSet context id TS.emptyEffectSignatureSet
             context
         E.Tuple args -> do
             (context, vars) <- args |> List.iter |> Iterator.fold (\(context, vars), arg -> do
@@ -200,45 +212,57 @@ initializeExprType current_fn_name context (E.Expr expr id _ location) = do
                 vars <- vars + [var]
                 (context, vars)) (context, [])
             context <- addExprType context id (TS.ExprType (T.Tuple vars))
+            context <- addExprEffectSignatureSet context id TS.emptyEffectSignatureSet
             context
         E.List args -> do
             (context, var) <- U.getNewTypeVarType context
             context <- addExprType context id (TS.ExprType (Util.getListType var))
+            context <- addExprEffectSignatureSet context id TS.emptyEffectSignatureSet
             context
         E.IntegerLiteral _ -> do
             context <- addExprType context id (TS.ExprType Util.getIntType)
+            context <- addExprEffectSignatureSet context id TS.emptyEffectSignatureSet
             context
         E.FloatLiteral _ -> do
             context <- addExprType context id (TS.ExprType Util.getFloatType)
+            context <- addExprEffectSignatureSet context id TS.emptyEffectSignatureSet
             context
         E.StringLiteral _ -> do
             context <- addExprType context id (TS.ExprType Util.getStringType)
+            context <- addExprEffectSignatureSet context id TS.emptyEffectSignatureSet
             context
         E.CharLiteral _ -> do
             context <- addExprType context id (TS.ExprType Util.getCharType)
+            context <- addExprEffectSignatureSet context id TS.emptyEffectSignatureSet
             context
         E.Do args -> do
             (context, var) <- U.getNewTypeVarType context
             context <- addExprType context id (TS.ExprType var)
+            context <- addExprEffectSignatureSet context id TS.emptyEffectSignatureSet
             context
         E.Bind _ _ -> do
             (context, var) <- U.getNewTypeVarType context
             context <- addExprType context id (TS.ExprType var)
+            context <- addExprEffectSignatureSet context id TS.emptyEffectSignatureSet
             context
         E.FieldAccess _ _ -> do
             (context, var) <- U.getNewTypeVarType context
             context <- addExprType context id (TS.ExprType var)
+            context <- addExprEffectSignatureSet context id TS.emptyEffectSignatureSet
             context
         E.TupleFieldAccess _ _ -> do
             (context, var) <- U.getNewTypeVarType context
             context <- addExprType context id (TS.ExprType var)
+            context <- addExprEffectSignatureSet context id TS.emptyEffectSignatureSet
             context
         E.Formatter fmt args -> do
             context <- addExprType context id (TS.ExprType Util.getStringType)
+            context <- addExprEffectSignatureSet context id TS.emptyEffectSignatureSet
             context
         E.CaseOf _ _ _ -> do
             (context, var) <- U.getNewTypeVarType context
             context <- addExprType context id (TS.ExprType var)
+            context <- addExprEffectSignatureSet context id TS.emptyEffectSignatureSet
             context
         E.RecordUpdate ref updates -> do
             (context, constraints) <- updates |> List.iter |> Iterator.fold (\(context, constraints), update -> do
@@ -248,35 +272,43 @@ initializeExprType current_fn_name context (E.Expr expr id _ location) = do
                 (context, constraints)) (context, [])
             (context, var) <- getNewVarWithConstraints context constraints
             context <- addExprType context id (TS.ExprType var)
+            context <- addExprEffectSignatureSet context id TS.emptyEffectSignatureSet
             context
         E.Return _ -> do
             (context, never_type) <- getNeverType context
             context <- addExprType context id (TS.ExprType never_type)
+            context <- addExprEffectSignatureSet context id TS.emptyEffectSignatureSet
             context
         E.Continue _ -> do
             (context, never_type) <- getNeverType context
             context <- addExprType context id (TS.ExprType never_type)
+            context <- addExprEffectSignatureSet context id TS.emptyEffectSignatureSet
             context
         E.Break _ -> do
             (context, never_type) <- getNeverType context
             context <- addExprType context id (TS.ExprType never_type)
+            context <- addExprEffectSignatureSet context id TS.emptyEffectSignatureSet
             context
         E.Loop _ _ _ _ _ -> do
             (context, never_type) <- getNeverType context
             context <- addExprType context id (TS.ExprType never_type)
+            context <- addExprEffectSignatureSet context id TS.emptyEffectSignatureSet
             context
         E.ArgRef index -> do
             func_type_info <- getFunctionTypeInfo context current_fn_name
             arg_type <- atIndex func_type_info.args index
             context <- addExprType context id (TS.ExprType arg_type)
+            context <- addExprEffectSignatureSet context id TS.emptyEffectSignatureSet
             context
         E.ValueRef ref -> do
             (context, var) <- U.getNewTypeVarType context
             context <- addExprType context id (TS.ExprType var)
+            context <- addExprEffectSignatureSet context id TS.emptyEffectSignatureSet
             context
         E.With handlers body -> do
             (context, var) <- U.getNewTypeVarType context
             context <- addExprType context id (TS.ExprType var)
+            context <- addExprEffectSignatureSet context id TS.emptyEffectSignatureSet
             context
     context
 
