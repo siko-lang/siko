@@ -19,7 +19,13 @@ data TypeResolverState = { args :: Map String TypeVar,
                            constraints :: Map TypeVar [Constraint],
                            module_resolver :: ModuleResolver,
                            used_type_args :: [String],
+                           effect_args :: [TypeVar],
                            allow_implicit :: Bool }
+
+addEffectTypeArgument :: TypeResolverState -> TypeVar -> TypeResolverState
+addEffectTypeArgument state var = do
+    effect_args <- List.push state.effect_args var
+    state { effect_args = effect_args }
 
 disableImplicitTypeArgs :: TypeResolverState -> TypeResolverState
 disableImplicitTypeArgs type_resolver = type_resolver { allow_implicit = False }
@@ -86,7 +92,7 @@ resolveTypeName state name = do
 
 createTypeResolverState :: ModuleResolver -> Bool -> TypeResolverState
 createTypeResolverState module_resolver allow_implicit =
-    TypeResolverState empty empty module_resolver [] allow_implicit
+    TypeResolverState empty empty module_resolver [] [] allow_implicit
 
 initTypeResolver :: ModuleResolver -> ResolverState -> [Ident] -> (TypeResolverState, ResolverState)
 initTypeResolver module_resolver resolver_state type_arguments = do
@@ -148,6 +154,11 @@ updateTypeConstraints state type = case type of
             Some constraints -> constraints
             None -> constraints
         FixedTypeArg name var constraints
+    EffectTypeArg name var constraints -> do
+        constraints <- case get state.constraints var of
+            Some constraints -> constraints
+            None -> constraints
+        EffectTypeArg name var constraints
     Named qn items -> do
         items <- items |> List.iter |> Iterator.map (\t -> updateTypeConstraints state t) |> toList
         Named qn items
@@ -205,7 +216,9 @@ processTypeSignature state resolver_state (ST.TypeSignature type_signature locat
     ST.TypeArg name -> do
             (state, resolver_state, var, constraints) <- resolveTypeArg state resolver_state name
             name <- getString name
-            (state, resolver_state, FixedTypeArg name var constraints)
+            if List.contains state.effect_args var
+            then (state, resolver_state, EffectTypeArg name var constraints)
+            else (state, resolver_state, FixedTypeArg name var constraints)
     ST.Named name args -> do
         case resolveTypeName state name of
             Ok (resolved_name, arg_count) -> do

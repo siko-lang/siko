@@ -9,12 +9,12 @@ import Siko.HIR.Effect as E
 import Map
 
 data FullyQualifiedName = FullPath String String
-                          | FullPathWithVariant String String String
-                          | FullPathWithLambda FullyQualifiedName F.LambdaId
-                          | FullPathWithInstanceId String String C.InstanceId
-                          | ModulePath String
-                          | SubItem FullyQualifiedName String
-                          deriving (PartialEq, Eq, PartialOrd, Ord)
+                        | FullPathWithVariant String String String
+                        | FullPathWithLambda FullyQualifiedName F.LambdaId
+                        | FullPathWithInstanceId String String C.InstanceId
+                        | ModulePath String
+                        | SubItem FullyQualifiedName String
+                        deriving (PartialEq, Eq, PartialOrd, Ord)
 
 instance Show FullyQualifiedName where
     show f = case f of
@@ -156,6 +156,12 @@ getClass program name =
     case get program.items name of
         Some (Class c) -> c
         _ -> panic "No class found {}" % name
+
+getEffect a :: Program a -> FullyQualifiedName -> E.Effect
+getEffect program name =
+    case get program.items name of
+        Some (Effect eff) -> eff
+        _ -> panic "No effect found {}" % name
 
 getFunctions a :: Program a -> [F.Function a]
 getFunctions program =

@@ -3,6 +3,7 @@ module Siko.HIR.Backend.Typechecker.Expr where
 import Siko.Syntax.Location
 import Siko.Syntax.Ident
 import Siko.HIR.Expr as E
+import Siko.HIR.Effect as Eff
 import Siko.HIR.Type as T
 import Siko.HIR.Backend.TypeFormatter as TF
 import Siko.HIR.Data as D
@@ -181,7 +182,13 @@ initializeExprType current_fn_name context (E.Expr expr id _ location) = do
             context
         E.EffectMemberCall qn args -> do
             function <- PO.getFunction context.state.program qn
-            (context, function_type) <- instantiateType context (Option.unwrap function.type)
+            effect_name <- getEffectName function.kind
+            println "Calling em {} kind {}" % (qn, effect_name)
+            eff <- PO.getEffect context.state.program effect_name
+            println "Eff type {} / {}" % (TF.toString eff.type, eff.type)
+            fn_type <- Option.unwrap function.type
+            println "Eff member type {} / {}" % (TF.toString fn_type, fn_type)
+            (context, function_type) <- instantiateType context fn_type
             (context, var) <- U.getNewTypeVarType context
             context <- addExprType context id (TS.FunctionCall var function_type)
             context <- addExprEffectSignatureSet context id TS.emptyEffectSignatureSet

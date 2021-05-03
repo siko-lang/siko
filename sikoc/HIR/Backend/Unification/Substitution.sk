@@ -31,6 +31,9 @@ instance Apply Type where
         FixedTypeArg _ var _ -> case get sub.vars var of
             Some t -> panic "Trying to change fixed type arg!"
             None -> type
+        EffectTypeArg _ var _ -> case get sub.vars var of
+            Some t -> panic "Trying to change effect type arg!"
+            None -> type
         Named n args -> do
             args <- args |> List.iter |> Iterator.map (\arg -> apply arg sub) |> toList
             Named n args
@@ -56,6 +59,7 @@ containsVar :: Type -> TypeVar -> Bool
 containsVar type var = case type of
     Var v constraints -> v == var || constraintsContainsVar constraints var
     FixedTypeArg _ v constraints -> v == var || constraintsContainsVar constraints var
+    EffectTypeArg _ v constraints -> v == var || constraintsContainsVar constraints var
     Named _ args -> args |> List.iter |> Iterator.fold (\contains, arg -> contains || containsVar arg var) False
     Function from to -> containsVar from var || containsVar to var
     Never v -> v == var

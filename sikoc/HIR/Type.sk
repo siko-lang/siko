@@ -9,30 +9,33 @@ module Siko.HIR.Type(Type(..),
                      isConcreteType,
                      isFunction,
                      removeFixed,
-                     removeOwnership) where
+                     removeOwnership,
+                     traverse) where
 
 import Siko.HIR.Program as HP
+import Siko.HIR.Backend.TypeFormatter as TF
 import Map
 
 data TypeVar = TypeVar Int deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
 data RowKind = NamedRow String
-               | IndexedRow Int
-               deriving (Show, PartialEq, Eq, PartialOrd, Ord)
+             | IndexedRow Int
+             deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
 data Constraint = ClassConstraint HP.FullyQualifiedName
-                  | RowConstraint RowKind Type
-                  deriving (Show, PartialEq, Eq, PartialOrd, Ord)
+                | RowConstraint RowKind Type
+                deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
 data Type = Var TypeVar [Constraint]
-            | FixedTypeArg String TypeVar [Constraint]
-            | Named HP.FullyQualifiedName [Type]
-            | Function Type Type
-            | Never TypeVar
-            | Ref Type
-            | Owner Type
-            | Tuple [Type]
-            deriving (Show, PartialEq, Eq, PartialOrd, Ord)
+          | FixedTypeArg String TypeVar [Constraint]
+          | EffectTypeArg String TypeVar [Constraint]
+          | Named HP.FullyQualifiedName [Type]
+          | Function Type Type
+          | Never TypeVar
+          | Ref Type
+          | Owner Type
+          | Tuple [Type]
+          deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
 isFunction :: Type -> Bool
 isFunction type = case type of
@@ -48,16 +51,17 @@ collectVars :: Type -> [TypeVar]
 collectVars type = case type of
     Var var constraints -> [var] + collectVarsFromConstraints constraints
     FixedTypeArg _ var constraints -> [var] + collectVarsFromConstraints constraints
-    Named _ args -> args |> List.iter |> Iterator.fold (\vars, arg -> do
+    EffectTypeArg _ var constraints -> [var] + collectVarsFromConstraints constraints
+    Named _ args -> List.fold [] args (\vars, arg -> do
         vs <- collectVars arg
-        vars + vs) []
+        vars + vs)
     Function from to -> collectVars from + collectVars to
     Never var -> [var]
     Ref t -> collectVars t
     Owner t -> collectVars t
-    Tuple args -> args |> List.iter |> Iterator.fold (\vars, arg -> do
+    Tuple args -> List.fold [] args (\vars, arg -> do
         vs <- collectVars arg
-        vars + vs) []
+        vars + vs)
 
 getArgs :: Type -> [Type]
 getArgs type =
@@ -81,6 +85,7 @@ isConcreteType :: Type -> Bool
 isConcreteType type = case type of
     Var _ _ -> False
     FixedTypeArg _ _ _ -> False
+    EffectTypeArg _ _ _ -> False
     Named _ args -> args |> List.iter |> Iterator.fold (\concrete, arg -> do
         concrete && isConcreteType arg) True
     Function from to -> isConcreteType from && isConcreteType to
@@ -90,38 +95,40 @@ isConcreteType type = case type of
     Tuple args -> args |> List.iter |> Iterator.fold (\concrete, arg -> do
         concrete && isConcreteType arg) True
 
-removeFixed :: Type -> Type
-removeFixed type = case type of
-    Var _ _ -> type
-    FixedTypeArg _ var constraints -> Var var constraints
+traverseConstraints :: (Type -> Type) -> Constraint -> Constraint
+traverseConstraints f constraint = case constraint of
+    ClassConstraint qn -> ClassConstraint qn
+    RowConstraint kind type -> RowConstraint kind (traverse f type)
+
+traverse :: (Type -> Type) -> Type -> Type
+traverse f type = case type of
+    Var _ _ -> f type
+    FixedTypeArg name var constraints -> f (FixedTypeArg name var (List.map constraints (traverseConstraints f)))
+    EffectTypeArg name var constraints -> f (EffectTypeArg name var (List.map constraints (traverseConstraints f)))
     Named qn args -> do
-        args <- args |> List.iter |> Iterator.map (\arg -> removeFixed arg) |> toList
-        Named qn args
+        args <- List.map args (traverse f)
+        f (Named qn args)
     Function from to -> do
-        from <- removeFixed from
-        to <- removeFixed to
-        Function from to
-    Never var -> type
-    Ref t -> Ref (removeFixed t)
-    Owner t -> Owner (removeFixed t)
+        from <- traverse f from
+        to <- traverse f to
+        f (Function from to)
+    Never var -> f type
+    Ref t -> f (Ref (traverse f t))
+    Owner t -> f (Owner (traverse f t))
     Tuple args -> do
-        args <- args |> List.iter |> Iterator.map (\arg -> removeFixed arg) |> toList
-        Tuple args
+        args <- List.map args (traverse f)
+        f (Tuple args)
+
+removeFixed :: Type -> Type
+removeFixed type = traverse removeFixed_ type // FIXME: name!
+    where removeFixed_ type = case type of
+            FixedTypeArg _ var constraints -> Var var constraints
+            EffectTypeArg _ var constraints -> Var var constraints
+            _ -> type
 
 removeOwnership :: Type -> Type
-removeOwnership type = case type of
-    Var _ _ -> type
-    FixedTypeArg _ _ _ -> type
-    Named qn args -> do
-        args <- args |> List.iter |> Iterator.map (\arg -> removeOwnership arg) |> toList
-        Named qn args
-    Function from to -> do
-        from <- removeOwnership from
-        to <- removeOwnership to
-        Function from to
-    Never var -> type
-    Ref t -> removeOwnership t
-    Owner t -> removeOwnership t
-    Tuple args -> do
-        args <- args |> List.iter |> Iterator.map (\arg -> removeOwnership arg) |> toList
-        Tuple args
+removeOwnership type = traverse removeOwnership_ type // FIXME: name!
+    where removeOwnership_ type = case type of
+        Ref t -> t
+        Owner t -> t
+        _ -> type
