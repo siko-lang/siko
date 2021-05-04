@@ -1,7 +1,6 @@
 module Siko.HIR.Backend.Typechecker.TypeStore where
 
 import Siko.Syntax.Location
-import Siko.HIR.Program as PO
 import Siko.HIR.Type as T
 import Siko.HIR.Data as D
 import Siko.HIR.Backend.TypeFormatter as TF
@@ -9,12 +8,8 @@ import Siko.HIR.Expr as E
 import Siko.HIR.Pattern as P
 import Siko.HIR.Backend.Unification as U
 import Siko.HIR.Backend.Unification.Substitution as S
+import Siko.HIR.Backend.Typechecker.Effect as Eff
 import Map
-
-data EffectSignatureSet = { signatures :: Map PO.FullyQualifiedName T.Type } deriving (Show)
-
-emptyEffectSignatureSet :: EffectSignatureSet
-emptyEffectSignatureSet = EffectSignatureSet Map.empty
 
 data ExprTypeState = ExprType T.Type
                    | FunctionCall T.Type T.Type
@@ -26,16 +21,11 @@ data PatternTypeState = PatternType T.Type
                       deriving (Show)
 
 data TypeStore = { expr_types :: Map E.ExprId ExprTypeState,
-                   expr_effect_signatures :: Map E.ExprId EffectSignatureSet,
+                   expr_effect_signatures :: Map E.ExprId Eff.EffectSignatureSet,
                    pattern_types :: Map P.PatternId PatternTypeState,
-                   pattern_effect_signatures :: Map P.PatternId EffectSignatureSet,
+                   pattern_effect_signatures :: Map P.PatternId Eff.EffectSignatureSet,
                    pattern_locations :: Map P.PatternId Location
                  } deriving (Show)
-
-instance S.Apply EffectSignatureSet where
-    apply effects sub = do
-        signatures <- Map.update effects.signatures (\(id, t) -> S.apply t sub)
-        effects { signatures = signatures }
 
 instance S.Apply ExprTypeState where
     //apply :: ExprTypeState -> S.Substitution -> ExprTypeState
@@ -53,12 +43,12 @@ instance S.Apply PatternTypeState where
 initializeTypeStore :: TypeStore
 initializeTypeStore = TypeStore empty empty empty empty empty
 
-addExprEffectSignatureSet :: TypeStore -> E.ExprId -> EffectSignatureSet -> TypeStore
+addExprEffectSignatureSet :: TypeStore -> E.ExprId -> Eff.EffectSignatureSet -> TypeStore
 addExprEffectSignatureSet store expr_id effects = do
     (expr_effect_signatures, _) <- insert store.expr_effect_signatures expr_id effects
     store { expr_effect_signatures = expr_effect_signatures }
 
-addPatternEffectSignatureSet :: TypeStore -> P.PatternId -> EffectSignatureSet -> TypeStore
+addPatternEffectSignatureSet :: TypeStore -> P.PatternId -> Eff.EffectSignatureSet -> TypeStore
 addPatternEffectSignatureSet store pattern_id effects = do
     (pattern_effect_signatures, _) <- insert store.pattern_effect_signatures pattern_id effects
     store { pattern_effect_signatures = pattern_effect_signatures }
@@ -124,16 +114,28 @@ getPatternType store pattern_id = do
         _ -> panic "No type found for {}" % pattern_id
 
 getRecord :: TypeStore -> P.PatternId -> D.Record
-getRecord store pattern_id = do
+getRecord store pattern_id =
     case get store.pattern_types pattern_id of
         Some (PatternWithRecordType record) -> record
         _ -> panic "No record type info found for {}" % pattern_id
 
 getAdt :: TypeStore -> P.PatternId -> D.AlgebraicDataType
-getAdt store pattern_id = do
+getAdt store pattern_id =
     case get store.pattern_types pattern_id of
         Some (PatternWithAdtType adt) -> adt
         _ -> panic "No adt type info found for {}" % pattern_id
+
+getExprEffectSignature :: TypeStore -> E.ExprId -> Eff.EffectSignatureSet
+getExprEffectSignature store expr_id =
+    case get store.expr_effect_signatures expr_id of
+        Some eff -> eff
+        _ -> panic "No effect signature found for {}" % expr_id
+
+getPatternEffectSignature :: TypeStore -> P.PatternId -> Eff.EffectSignatureSet
+getPatternEffectSignature store pattern_id =
+    case get store.pattern_effect_signatures pattern_id of
+        Some eff -> eff
+        _ -> panic "No effect signature found for {}" % pattern_id
 
 instance S.Apply TypeStore where
     apply store sub = do

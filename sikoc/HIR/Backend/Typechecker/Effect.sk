@@ -1,0 +1,90 @@
+module Siko.HIR.Backend.Typechecker.Effect where
+
+import Siko.Syntax.Location
+import Siko.HIR.Backend.Typechecker.TypeStore as TS
+import Siko.HIR.Program as PO
+import Siko.HIR.Pattern as P
+import Siko.HIR.Expr as E
+import Siko.HIR.Backend.Typechecker.Expr as TExpr
+import Siko.HIR.Backend.Unification.Substitution as S
+import Siko.HIR.Type as T
+
+import Map
+
+data EffectSignatureSet = { signatures :: Map PO.FullyQualifiedName T.Type } deriving (Show)
+
+instance S.Apply EffectSignatureSet where
+    apply effects sub = do
+        signatures <- Map.update effects.signatures (\(id, t) -> S.apply t sub)
+        effects { signatures = signatures }
+
+emptyEffectSignatureSet :: EffectSignatureSet
+emptyEffectSignatureSet = EffectSignatureSet Map.empty
+
+createEffectSignatureSetFrom :: T.Type -> EffectSignatureSet
+createEffectSignatureSetFrom type = case type of
+    T.Named qn _ -> do
+        (signatures, _) <- Map.insert Map.empty qn type
+        EffectSignatureSet signatures
+    _ -> panic "createEffectSignatureSetFrom: effect type is not Named!"
+
+getExprEffectSignatures :: TExpr.Context -> [E.ExprId] -> [EffectSignatureSet]
+getExprEffectSignatures context ids = List.map ids (TS.getExprEffectSignature context.type_store)
+
+getPatternEffectSignatures :: TExpr.Context -> [P.PatternId] -> [EffectSignatureSet]
+getPatternEffectSignatures context ids = List.map ids (TS.getPatternEffectSignature context.type_store)
+
+copyExprEffect :: TExpr.Context -> E.ExprId -> E.ExprId -> TExpr.Context
+copyExprEffect context source target = do
+    target_signature <- TS.getExprEffectSignature context.type_store source
+    type_store <- TS.addExprEffectSignatureSet context.type_store target target_signature
+    context { type_store = type_store }
+
+copyPatternEffect :: TExpr.Context -> P.PatternId -> P.PatternId -> TExpr.Context
+copyPatternEffect context source target = do
+    target_signature <- TS.getPatternEffectSignature context.type_store source
+    type_store <- TS.addPatternEffectSignatureSet context.type_store target target_signature
+    context { type_store = type_store }
+
+updateExprEffect :: TExpr.Context -> E.ExprId -> [EffectSignatureSet] -> Location -> TExpr.Context
+updateExprEffect context expr sub_signatures location = do
+    target_signature <- TS.getExprEffectSignature context.type_store expr
+    (context, target_signature) <- mergeEffectSignatures context target_signature sub_signatures location
+    type_store <- TS.addExprEffectSignatureSet context.type_store expr target_signature
+    context { type_store = type_store }
+
+updatePatternEffect :: TExpr.Context -> P.PatternId -> [EffectSignatureSet] -> Location -> TExpr.Context
+updatePatternEffect context pattern sub_signatures location = do
+    target_signature <- TS.getPatternEffectSignature context.type_store pattern
+    (context, target_signature) <- mergeEffectSignatures context target_signature sub_signatures location
+    type_store <- TS.addPatternEffectSignatureSet context.type_store pattern target_signature
+    context { type_store = type_store }
+
+mergeEffectSignatures :: TExpr.Context -> EffectSignatureSet -> [EffectSignatureSet] -> Location -> (TExpr.Context, EffectSignatureSet)
+mergeEffectSignatures context target_signature sub_signatures location =
+    List.fold (context, target_signature) sub_signatures (\(context, target_signature), sub_sig -> do
+        mergeEffectSignatureSets context target_signature sub_sig location)
+
+mergeEffectSignatureSets :: TExpr.Context -> EffectSignatureSet -> EffectSignatureSet -> Location -> (TExpr.Context, EffectSignatureSet)
+mergeEffectSignatureSets context set1 set2 location = do
+    keys1 <- getKeys set1.signatures
+    keys2 <- getKeys set2.signatures
+    keys <- (keys1 + keys2) |> sort |> dedup
+    (context, signatures) <- List.fold (context, Map.empty) keys (\(context, signatures), key -> do
+            t1 <- get set1.signatures key
+            t2 <- get set2.signatures key
+            case (t1, t2) of
+                (Some type1, Some type2) -> do
+                    (context, sub) <- TExpr.unify context type1 type2 location
+                    type <- S.apply type1 sub
+                    (signatures, _) <- Map.insert signatures key type
+                    (context, signatures)
+                (Some type1, None) -> do
+                    (signatures, _) <- Map.insert signatures key type1
+                    (context, signatures)
+                (None, Some type2) -> do
+                    (signatures, _) <- Map.insert signatures key type2
+                    (context, signatures)
+                (None, None) -> panic "key not found anywhere in merge!"
+        )
+    (context, EffectSignatureSet signatures)
