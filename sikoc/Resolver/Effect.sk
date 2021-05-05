@@ -41,7 +41,7 @@ processEffect state hir_program eff module_resolver = do
     (state, members) <- processFunctionsAndSignatures state hir_program module_resolver createEmptyFunctionScopeResolver type_resolver
                             kind eff.member_functions eff.member_function_type_signatures (HP.FullPath module_resolver.module_name)
     (state, hir_program, effect_members) <- members |> List.iter |> Iterator.fold (\(state, hir_program, effect_members), member -> case member.kind of
-            HF.ClassMember _ -> do
+            HF.EffectMember _ -> do
                 (hir_program, other_item) <- HP.addItem hir_program member.name (HP.Function member)
                 state <- handleItemConflict state other_item location
                 effect_members <- effect_members + [member.name]
