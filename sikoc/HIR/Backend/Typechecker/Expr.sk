@@ -166,20 +166,17 @@ initializeExprType current_fn_name context (E.Expr expr id _ location) = do
                 else instantiateType context func_type_info.function_type
             (context, var) <- U.getNewTypeVarType context
             context <- addExprType context id (TS.FunctionCall var function_type)
-            context <- addExprEffectSignatureSet context id TEff.emptyEffectSignatureSet
             context
         E.DynamicFunctionCall receiver args -> do
             (context, function_type) <- Util.createGeneralFunction (getLength args) context
             (context, var) <- U.getNewTypeVarType context
             context <- addExprType context id (TS.FunctionCall var function_type)
-            context <- addExprEffectSignatureSet context id TEff.emptyEffectSignatureSet
             context
         E.ClassMemberCall qn args -> do
             function <- PO.getFunction context.state.program qn
             (context, function_type) <- instantiateType context (Option.unwrap function.type)
             (context, var) <- U.getNewTypeVarType context
             context <- addExprType context id (TS.FunctionCall var function_type)
-            context <- addExprEffectSignatureSet context id TEff.emptyEffectSignatureSet
             context
         E.EffectMemberCall qn args -> do
             function <- PO.getFunction context.state.program qn
@@ -202,19 +199,16 @@ initializeExprType current_fn_name context (E.Expr expr id _ location) = do
             (context, function_type) <- instantiateType context function_type
             (context, var) <- U.getNewTypeVarType context
             context <- addExprType context id (TS.FunctionCall var function_type)
-            context <- addExprEffectSignatureSet context id TEff.emptyEffectSignatureSet
             context
         E.RecordConstructorCall qn args -> do
             record <- PO.getRecord context.state.program qn
             (context, new_ctor) <- instantiateType context record.record_ctor
             (context, var) <- U.getNewTypeVarType context
             context <- addExprType context id (TS.FunctionCall var new_ctor)
-            context <- addExprEffectSignatureSet context id TEff.emptyEffectSignatureSet
             context
         E.If cond true_branch false_branch -> do
             (context, var) <- U.getNewTypeVarType context
             context <- addExprType context id (TS.ExprType var)
-            context <- addExprEffectSignatureSet context id TEff.emptyEffectSignatureSet
             context
         E.Tuple args -> do
             (context, vars) <- args |> List.iter |> Iterator.fold (\(context, vars), arg -> do
@@ -222,57 +216,45 @@ initializeExprType current_fn_name context (E.Expr expr id _ location) = do
                 vars <- vars + [var]
                 (context, vars)) (context, [])
             context <- addExprType context id (TS.ExprType (T.Tuple vars))
-            context <- addExprEffectSignatureSet context id TEff.emptyEffectSignatureSet
             context
         E.List args -> do
             (context, var) <- U.getNewTypeVarType context
             context <- addExprType context id (TS.ExprType (Util.getListType var))
-            context <- addExprEffectSignatureSet context id TEff.emptyEffectSignatureSet
             context
         E.IntegerLiteral _ -> do
             context <- addExprType context id (TS.ExprType Util.getIntType)
-            context <- addExprEffectSignatureSet context id TEff.emptyEffectSignatureSet
             context
         E.FloatLiteral _ -> do
             context <- addExprType context id (TS.ExprType Util.getFloatType)
-            context <- addExprEffectSignatureSet context id TEff.emptyEffectSignatureSet
             context
         E.StringLiteral _ -> do
             context <- addExprType context id (TS.ExprType Util.getStringType)
-            context <- addExprEffectSignatureSet context id TEff.emptyEffectSignatureSet
             context
         E.CharLiteral _ -> do
             context <- addExprType context id (TS.ExprType Util.getCharType)
-            context <- addExprEffectSignatureSet context id TEff.emptyEffectSignatureSet
             context
         E.Do args -> do
             (context, var) <- U.getNewTypeVarType context
             context <- addExprType context id (TS.ExprType var)
-            context <- addExprEffectSignatureSet context id TEff.emptyEffectSignatureSet
             context
         E.Bind _ _ -> do
             (context, var) <- U.getNewTypeVarType context
             context <- addExprType context id (TS.ExprType var)
-            context <- addExprEffectSignatureSet context id TEff.emptyEffectSignatureSet
             context
         E.FieldAccess _ _ -> do
             (context, var) <- U.getNewTypeVarType context
             context <- addExprType context id (TS.ExprType var)
-            context <- addExprEffectSignatureSet context id TEff.emptyEffectSignatureSet
             context
         E.TupleFieldAccess _ _ -> do
             (context, var) <- U.getNewTypeVarType context
             context <- addExprType context id (TS.ExprType var)
-            context <- addExprEffectSignatureSet context id TEff.emptyEffectSignatureSet
             context
         E.Formatter fmt args -> do
             context <- addExprType context id (TS.ExprType Util.getStringType)
-            context <- addExprEffectSignatureSet context id TEff.emptyEffectSignatureSet
             context
         E.CaseOf _ _ _ -> do
             (context, var) <- U.getNewTypeVarType context
             context <- addExprType context id (TS.ExprType var)
-            context <- addExprEffectSignatureSet context id TEff.emptyEffectSignatureSet
             context
         E.RecordUpdate ref updates -> do
             (context, constraints) <- updates |> List.iter |> Iterator.fold (\(context, constraints), update -> do
@@ -282,43 +264,35 @@ initializeExprType current_fn_name context (E.Expr expr id _ location) = do
                 (context, constraints)) (context, [])
             (context, var) <- getNewVarWithConstraints context constraints
             context <- addExprType context id (TS.ExprType var)
-            context <- addExprEffectSignatureSet context id TEff.emptyEffectSignatureSet
             context
         E.Return _ -> do
             (context, never_type) <- getNeverType context
             context <- addExprType context id (TS.ExprType never_type)
-            context <- addExprEffectSignatureSet context id TEff.emptyEffectSignatureSet
             context
         E.Continue _ -> do
             (context, never_type) <- getNeverType context
             context <- addExprType context id (TS.ExprType never_type)
-            context <- addExprEffectSignatureSet context id TEff.emptyEffectSignatureSet
             context
         E.Break _ -> do
             (context, never_type) <- getNeverType context
             context <- addExprType context id (TS.ExprType never_type)
-            context <- addExprEffectSignatureSet context id TEff.emptyEffectSignatureSet
             context
         E.Loop _ _ _ _ _ -> do
             (context, never_type) <- getNeverType context
             context <- addExprType context id (TS.ExprType never_type)
-            context <- addExprEffectSignatureSet context id TEff.emptyEffectSignatureSet
             context
         E.ArgRef index -> do
             func_type_info <- getFunctionTypeInfo context current_fn_name
             arg_type <- atIndex func_type_info.args index
             context <- addExprType context id (TS.ExprType arg_type)
-            context <- addExprEffectSignatureSet context id TEff.emptyEffectSignatureSet
             context
         E.ValueRef ref -> do
             (context, var) <- U.getNewTypeVarType context
             context <- addExprType context id (TS.ExprType var)
-            context <- addExprEffectSignatureSet context id TEff.emptyEffectSignatureSet
             context
         E.With handlers body -> do
             (context, var) <- U.getNewTypeVarType context
             context <- addExprType context id (TS.ExprType var)
-            context <- addExprEffectSignatureSet context id TEff.emptyEffectSignatureSet
             context
     context
 
@@ -354,8 +328,9 @@ checkExprType context (E.Expr expr id _ location) = do
     context <- case expr of
         E.StaticFunctionCall _ args -> do
             sub_ids <- List.map args (\E.Expr _ id _ _ -> id)
+            // TODO: effect of functions
             sub_signatures <- TEff.getExprEffectSignatures context sub_ids
-            context <- TEff.updateExprEffect context id sub_signatures location
+            context <- TEff.setExprEffect context id sub_signatures location
             (ty, fn_ty) <- getExprAndFunctionCallType context id
             (context, result_ty) <- checkFunctionCall context args fn_ty location
             case result_ty of
@@ -367,7 +342,7 @@ checkExprType context (E.Expr expr id _ location) = do
             sub_ids <- List.map args (\E.Expr _ id _ _ -> id)
             E.Expr _ receiver_id _ receiver_location <- receiver
             sub_signatures <- TEff.getExprEffectSignatures context (sub_ids + [receiver_id])
-            context <- TEff.updateExprEffect context id sub_signatures location
+            context <- TEff.setExprEffect context id sub_signatures location
             (ty, fn_ty) <- getExprAndFunctionCallType context id
             recv_ty <- getExprType context receiver_id
             (context, sub) <- matchExprWith context receiver_id fn_ty receiver_location
@@ -381,7 +356,7 @@ checkExprType context (E.Expr expr id _ location) = do
         E.ClassMemberCall _ args -> do
             sub_ids <- List.map args (\E.Expr _ id _ _ -> id)
             sub_signatures <- TEff.getExprEffectSignatures context sub_ids
-            context <- TEff.updateExprEffect context id sub_signatures location
+            context <- TEff.setExprEffect context id sub_signatures location
             (ty, fn_ty) <- getExprAndFunctionCallType context id
             (context, result_ty) <- checkFunctionCall context args fn_ty location
             case result_ty of
@@ -403,7 +378,7 @@ checkExprType context (E.Expr expr id _ location) = do
         E.VariantConstructorCall _ args -> do
             sub_ids <- List.map args (\E.Expr _ id _ _ -> id)
             sub_signatures <- TEff.getExprEffectSignatures context sub_ids
-            context <- TEff.updateExprEffect context id sub_signatures location
+            context <- TEff.setExprEffect context id sub_signatures location
             (ty, fn_ty) <- getExprAndFunctionCallType context id
             (context, result_ty) <- checkFunctionCall context args fn_ty location
             case result_ty of
@@ -414,7 +389,7 @@ checkExprType context (E.Expr expr id _ location) = do
         E.RecordConstructorCall _ args -> do
             sub_ids <- List.map args (\E.Expr _ id _ _ -> id)
             sub_signatures <- TEff.getExprEffectSignatures context sub_ids
-            context <- TEff.updateExprEffect context id sub_signatures location
+            context <- TEff.setExprEffect context id sub_signatures location
             (ty, fn_ty) <- getExprAndFunctionCallType context id
             (context, result_ty) <- checkFunctionCall context args fn_ty location
             case result_ty of
@@ -428,7 +403,7 @@ checkExprType context (E.Expr expr id _ location) = do
             E.Expr _ false_id _ false_location <- false
             sub_ids <- [cond_id, true_id, false_id]
             sub_signatures <- TEff.getExprEffectSignatures context sub_ids
-            context <- TEff.updateExprEffect context id sub_signatures location
+            context <- TEff.setExprEffect context id sub_signatures location
             (context, _) <- matchExprWith context cond_id Util.getBoolType cond_location
             (context, _) <- matchExprs context true_id false_id false_location
             (context, _) <- matchExprs context id false_id false_location
@@ -436,14 +411,14 @@ checkExprType context (E.Expr expr id _ location) = do
         E.Tuple args -> do
             sub_ids <- List.map args (\E.Expr _ id _ _ -> id)
             sub_signatures <- TEff.getExprEffectSignatures context sub_ids
-            context <- TEff.updateExprEffect context id sub_signatures location
+            context <- TEff.setExprEffect context id sub_signatures location
             arg_types <- args |> List.iter |> Iterator.map (\(E.Expr _ arg _ _) -> getExprType context arg) |> toList
             (context, _) <- matchExprWith context id (T.Tuple arg_types) location
             context
         E.List args -> do
             sub_ids <- List.map args (\E.Expr _ id _ _ -> id)
             sub_signatures <- TEff.getExprEffectSignatures context sub_ids
-            context <- TEff.updateExprEffect context id sub_signatures location
+            context <- TEff.setExprEffect context id sub_signatures location
             if isEmpty args
             then context
             else do
@@ -455,22 +430,23 @@ checkExprType context (E.Expr expr id _ location) = do
                     context) context
                 (context, _) <- matchExprWith context id (Util.getListType first_ty) location
                 context
-        E.IntegerLiteral _ -> context
-        E.FloatLiteral _ -> context
-        E.StringLiteral _ -> context
-        E.CharLiteral _ -> context
+        E.IntegerLiteral _ -> addExprEffectSignatureSet context id TEff.emptyEffectSignatureSet
+        E.FloatLiteral _ -> addExprEffectSignatureSet context id TEff.emptyEffectSignatureSet
+        E.StringLiteral _ -> addExprEffectSignatureSet context id TEff.emptyEffectSignatureSet
+        E.CharLiteral _ -> addExprEffectSignatureSet context id TEff.emptyEffectSignatureSet
         E.Do args -> do
             sub_ids <- List.map args (\E.Expr _ id _ _ -> id)
             sub_signatures <- TEff.getExprEffectSignatures context sub_ids
-            context <- TEff.updateExprEffect context id sub_signatures location
+            context <- TEff.setExprEffect context id sub_signatures location
             E.Expr _ last_id _ _ <- atIndex args ((getLength args) - 1)
             (context, _) <- matchExprs context id last_id location
             context
         E.Bind p rhs -> do
             P.Pattern _ pattern_id _ pattern_location <- p
             E.Expr _ rhs_id _ _ <- rhs
-            sub_signatures <- TEff.getExprEffectSignatures context [rhs_id]
-            context <- TEff.updateExprEffect context id sub_signatures location
+            pattern_sig <- TS.getPatternEffectSignature context.type_store pattern_id
+            rhs_sig <- TS.getExprEffectSignature context.type_store rhs_id
+            context <- TEff.setExprEffect context id [pattern_sig, rhs_sig] location
             (context, _) <- matchExprWithPattern context rhs_id pattern_id pattern_location
             (context, _) <- matchExprWith context id (T.Tuple []) location
             context
@@ -493,7 +469,7 @@ checkExprType context (E.Expr expr id _ location) = do
         E.Formatter fmt args -> do
             sub_ids <- List.map args (\E.Expr _ id _ _ -> id)
             sub_signatures <- TEff.getExprEffectSignatures context sub_ids
-            context <- TEff.updateExprEffect context id sub_signatures location
+            context <- TEff.setExprEffect context id sub_signatures location
             show_class <- PO.FullPath getStdOpsModuleName getShowClassName
             constraints <- [T.ClassConstraint show_class]
             context <- args |> List.iter |> Iterator.fold (\context, arg -> do
@@ -504,6 +480,12 @@ checkExprType context (E.Expr expr id _ location) = do
             context
         E.CaseOf body cases bind_groups -> do
             E.Expr _ body_id _ body_location <- body
+            body_sig <- TS.getExprEffectSignature context.type_store body_id
+            case_sigs <- List.fold [] cases (\case_sigs, E.Case (P.Pattern _ pattern_id () _) (E.Expr _ case_body_id () _) -> do
+                case_pattern_sig <- TS.getPatternEffectSignature context.type_store pattern_id
+                case_body_sig <- TS.getExprEffectSignature context.type_store case_body_id
+                case_sigs + [case_pattern_sig, case_body_sig])
+            context <- TEff.setExprEffect context id ([body_sig] + case_sigs) location
             E.Case (P.Pattern _ pattern_id () pattern_location) (E.Expr _ case_body_id () case_body_location) <- atIndex cases 0
             (context, _) <- matchExprs context id case_body_id location
             context <- cases |> List.iter |> Iterator.fold (\context, (E.Case (P.Pattern _ pattern_id () pattern_location) (E.Expr _ case_body_id () case_body_location)) -> do
@@ -526,7 +508,7 @@ checkExprType context (E.Expr expr id _ location) = do
                     E.Expr _ id _ _ <- update.body
                     id)
             sub_signatures <- TEff.getExprEffectSignatures context sub_ids
-            context <- TEff.updateExprEffect context id sub_signatures location
+            context <- TEff.setExprEffect context id sub_signatures location
             (context, _) <- matchExprWithPattern context id pattern_id location
             context
         E.Return arg -> do
@@ -545,7 +527,11 @@ checkExprType context (E.Expr expr id _ location) = do
             context
         E.Loop pattern initializer body continues breaks -> do
             E.Expr _ initializer_id _ _ <- initializer
+            E.Expr _ body_id _ _ <- body
             P.Pattern _ pattern_id _ pattern_location <- pattern
+            pattern_sig <- TS.getPatternEffectSignature context.type_store pattern_id
+            expr_sigs <- TEff.getExprEffectSignatures context [initializer_id, body_id]
+            context <- TEff.setExprEffect context id ([pattern_sig] + expr_sigs) location
             (context, _) <- matchExprWithPattern context initializer_id pattern_id pattern_location
             context <- continues |> List.iter |> Iterator.fold (\context, (E.ExprRef source ref_location) -> do
                 (context, _) <- matchExprs context initializer_id source ref_location
@@ -554,9 +540,10 @@ checkExprType context (E.Expr expr id _ location) = do
                 (context, _) <- matchExprs context id source ref_location
                 context) context
             context
-        E.ArgRef _ -> context
+        E.ArgRef _ -> addExprEffectSignatureSet context id TEff.emptyEffectSignatureSet
         E.ValueRef (P.BindRef _ pattern_id) -> do
             (context, _) <- matchExprWithPattern context id pattern_id location
+            context <- addExprEffectSignatureSet context id TEff.emptyEffectSignatureSet
             context
         E.With handlers body -> do
             E.Expr _ body_id _ _ <- body
