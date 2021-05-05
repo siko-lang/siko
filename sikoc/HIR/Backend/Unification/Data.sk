@@ -7,9 +7,9 @@ import Siko.HIR.Backend.Unification as U
 import Siko.HIR.Backend.Unification.Substitution as S
 
 instance S.Apply D.Record where
-    apply record sub = transform record (\t -> S.apply t sub)
+    apply record sub = S.transform record (\t -> S.apply t sub)
 
-instance Transform D.Record where
+instance S.Transform D.Record where
     transform record f = do
         type_args <- List.map record.type_args f
         fields <- List.map record.fields (\D.RecordField name type -> D.RecordField name (f type))
@@ -18,12 +18,9 @@ instance Transform D.Record where
         D.Record record.name record.location type_args fields record.external record_ctor record.derived_classes type
 
 instance S.Apply D.AlgebraicDataType where
-    apply adt sub = transform adt (\t -> S.apply t sub)
+    apply adt sub = S.transform adt (\t -> S.apply t sub)
 
-class Transform a where
-    transform a :: a -> (T.Type -> T.Type) -> a
-
-instance Transform D.AlgebraicDataType where
+instance S.Transform D.AlgebraicDataType where
     transform adt f = do
         type_args <- List.map adt.type_args f
         variants <- List.map adt.variants (\variant -> do
@@ -35,14 +32,14 @@ instance Transform D.AlgebraicDataType where
 
 remapRecord a :: (U.TypeVarGenerator a, U.Context a) => D.Record -> a -> (D.Record, a) // FIXME!
 remapRecord record context = do
-    (sub, context) <- Util.newSub record.type context
-    record <- transform record (\t -> S.apply (T.removeFixed t) sub)
+    (sub, context) <- Util.newSub [record.type] context
+    record <- S.transform record (\t -> S.apply (T.removeFixed t) sub)
     (record, context)
 
 remapAdt a :: (U.TypeVarGenerator a, U.Context a) => D.AlgebraicDataType -> a -> (D.AlgebraicDataType, a)
 remapAdt adt context = do
-    (sub, context) <- Util.newSub adt.type context
-    adt <- transform adt (\t -> S.apply (T.removeFixed t) sub)
+    (sub, context) <- Util.newSub [adt.type] context
+    adt <- S.transform adt (\t -> S.apply (T.removeFixed t) sub)
     (adt, context)
 
 instantiateAdt a :: (U.TypeVarGenerator a, U.DataProvider a, U.ClassProvider a, U.Context a) => a -> D.AlgebraicDataType -> T.Type -> Result (a, D.AlgebraicDataType) () // FIXME TypeVarGenerator

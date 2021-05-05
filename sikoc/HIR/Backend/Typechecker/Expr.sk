@@ -172,6 +172,34 @@ checkEffectMemberNames context qns location = do
             Some count -> Some (count + 1)
             None -> Some 1
 
+data EffectTypeInfo = { effect_type :: T.Type,
+                        members :: Map PO.FullyQualifiedName T.Type }
+
+instance S.Apply EffectTypeInfo where
+    apply eff_type_info sub = S.transform eff_type_info (\t -> S.apply t sub)
+
+instance S.Transform EffectTypeInfo where
+    transform eff_type_info f = do
+        members <- Map.map eff_type_info.members (\(qn, t) -> (qn, f t))
+        type <- f eff_type_info.effect_type
+        EffectTypeInfo type members
+
+remapEffectTypeInfo a :: (U.TypeVarGenerator a, U.Context a) => EffectTypeInfo -> a -> (EffectTypeInfo, a) // FIXME!
+remapEffectTypeInfo eff_type_info context = do
+    types <- Map.fold [eff_type_info.effect_type] eff_type_info.members (\types, (qn, t) -> List.push types t)
+    (sub, context) <- Util.newSub types context
+    eff_type_info <- S.transform eff_type_info (\t -> S.apply (T.removeFixed t) sub)
+    (eff_type_info, context)
+
+createEffectTypeInfo :: Context -> PO.FullyQualifiedName -> EffectTypeInfo
+createEffectTypeInfo context qn = do
+    eff <- PO.getEffect context.state.program qn
+    members <- eff.members |> List.iter |> Iterator.map (\member_name -> do
+        function <- PO.getFunction context.state.program member_name
+        function_type <- Option.unwrap function.type
+        (member_name, function_type)) |> toMap
+    EffectTypeInfo eff.type members
+
 processHandledEffects :: Context -> [E.EffectHandler ()] -> Location -> (Context, [T.Type])
 processHandledEffects context handlers location = do
     effect_names <- List.map handlers (\E.EffectHandler qn _ -> do
@@ -191,6 +219,13 @@ processHandledEffects context handlers location = do
         err <- MissingEffectMembers missing_members location
         state <- addError context.state err
         context { state = state }
+    (context, effects) <- List.mapS context effect_names (\context, eff -> do
+        eff_type_info <- createEffectTypeInfo context eff
+        (eff_type_info, context) <- remapEffectTypeInfo eff_type_info context
+        (context, eff_type_info))
+    (context, effects) <- List.fold (context, effects) handlers (\(context, effects), handler -> do
+        E.EffectHandler qn selection <- handler
+        (context, effects))
     (context, [])
 
 initializeExprType :: PO.FullyQualifiedName -> Context -> E.Expr () -> Context
