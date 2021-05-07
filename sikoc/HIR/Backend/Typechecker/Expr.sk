@@ -155,23 +155,6 @@ getNeverType context = do
     (context, var) <- U.getNewTypeVar context
     (context, T.Never var)
 
-checkEffectMemberNames :: Context -> [PO.FullyQualifiedName] -> Location -> Context
-checkEffectMemberNames context qns location = do
-        names <- List.fold Map.empty qns (\names, qn -> do
-            (names, _) <- alter addName qn names
-            names)
-        Map.fold context names (\context, (name, instances) -> do
-            if instances > 1
-            then do
-                state <- addError context.state (EffectMemberNotUnique (show name) location)
-                context { state = state }
-            else context)
-    where
-        addName :: Option Int -> Option Int
-        addName count = case count of
-            Some count -> Some (count + 1)
-            None -> Some 1
-
 data EffectTypeInfo = { effect_type :: T.Type,
                         members :: Map PO.FullyQualifiedName T.Type }
 
@@ -200,33 +183,107 @@ createEffectTypeInfo context qn = do
         (member_name, function_type)) |> toMap
     EffectTypeInfo eff.type members
 
-processHandledEffects :: Context -> [E.EffectHandler ()] -> Location -> (Context, [T.Type])
-processHandledEffects context handlers location = do
-    effect_names <- List.map handlers (\E.EffectHandler qn _ -> do
+data HandlerInfo = { location :: Location,
+                     index :: Int,
+                   } deriving (Show)
+
+data HandledEffect = { handlers :: Map PO.FullyQualifiedName [HandlerInfo] } deriving (Show)
+
+data HandledEffectInfo = { handled_effects :: Map PO.FullyQualifiedName HandledEffect } deriving (Show)
+
+addHandler :: Context -> HandledEffectInfo -> Int -> E.EffectHandler () -> HandledEffectInfo
+addHandler context info index (E.EffectHandler qn _ location) = do
         function <- PO.getFunction context.state.program qn
-        getEffectName function.kind)
-    handled_member_names <- List.map handlers (\E.EffectHandler qn _ -> qn)
-    context <- checkEffectMemberNames context handled_member_names location
-    effect_names <- effect_names |> sort |> dedup
-    effects <- List.map effect_names (\eff -> PO.getEffect context.state.program eff)
-    all_members <- List.fold [] effects (\all_members, eff -> do
-        all_members + eff.members)
-    missing_members <- List.filter all_members (\m -> not (List.contains handled_member_names m))
-    missing_members <- List.map missing_members (\m -> show m)
-    context <- if isEmpty missing_members
+        effect_name <- getEffectName function.kind
+        (handled_effects, _) <- alter (addEffect qn location index effect_name) effect_name info.handled_effects
+        info { handled_effects = handled_effects }
+    where
+        addEffect :: PO.FullyQualifiedName -> Location -> Int -> PO.FullyQualifiedName ->
+                     Option HandledEffect -> Option HandledEffect
+        addEffect handler_name location index effect_name old_effect = case old_effect of
+            Some handled_effect -> do
+                handled_effect <- addEffectHandler handled_effect handler_name location index
+                Some handled_effect
+            None -> do
+                handled_effect <- addEffectHandler (HandledEffect Map.empty) handler_name location index
+                Some handled_effect
+
+        addEffectHandler :: HandledEffect -> PO.FullyQualifiedName -> Location -> Int -> HandledEffect
+        addEffectHandler handled_effect qn location index = do
+                (handlers, _) <- alter (add (HandlerInfo location index)) qn handled_effect.handlers
+                handled_effect { handlers = handlers }
+            where
+                add :: HandlerInfo -> Option [HandlerInfo] -> Option [HandlerInfo]
+                add info old_info = case old_info of
+                    Some infos -> Some (List.push infos info)
+                    None -> Some [info]
+
+checkHandlerConsistency :: Context -> Location -> HandledEffectInfo -> Context
+checkHandlerConsistency context location info = do
+    (context, missing_members) <- Map.fold (context, []) info.handled_effects (\(context, missing_members), (effect_name, handled_effect) -> do
+            eff <- PO.getEffect context.state.program effect_name
+            context <- Map.fold context handled_effect.handlers (\context, (name, locations) -> do
+                case getLength locations of
+                    1 -> context
+                    _ -> do
+                        locations <- List.map locations (\HandlerInfo location _ -> location)
+                        err <- EffectMemberNotUnique (show name) locations
+                        state <- addError context.state err
+                        context { state = state })
+            List.fold (context, missing_members) eff.members (\(context, missing_members), member_name -> do
+                case get handled_effect.handlers member_name of
+                    Some _ -> (context, missing_members)
+                    None -> (context, missing_members + [show member_name]))
+        )
+    if isEmpty missing_members
     then context
     else do
         err <- MissingEffectMembers missing_members location
         state <- addError context.state err
         context { state = state }
-    (context, effects) <- List.mapS context effect_names (\context, eff -> do
-        eff_type_info <- createEffectTypeInfo context eff
+
+getEffectHandlerType :: Context -> E.EffectHandler () -> (Context, T.Type)
+getEffectHandlerType context E.EffectHandler _ selection _ = do
+    case selection of
+        E.Static qn -> do
+            func_type_info <- getFunctionTypeInfo context qn
+            (context, function_type) <- if contains context.group_items qn
+            then (context, func_type_info.function_type)
+            else instantiateType context func_type_info.function_type
+            println "Static: selection type {}" % (TF.toString function_type)
+            (context, function_type)
+        E.Dynamic (E.Expr _ body_id _ _) -> do
+            body_type <- getExprType context body_id
+            println "Dynamic: selection type {}" % (TF.toString body_type)
+            (context, body_type)
+        E.Default -> panic "Default eff not yet implemented"
+
+getEffectType :: HandledEffectInfo -> [E.EffectHandler ()] -> Context -> PO.FullyQualifiedName -> HandledEffect -> (Context, T.Type)
+getEffectType info handlers context effect_name handled_effect  = do
+        eff_type_info <- createEffectTypeInfo context effect_name
         (eff_type_info, context) <- remapEffectTypeInfo eff_type_info context
-        (context, eff_type_info))
-    (context, effects) <- List.fold (context, effects) handlers (\(context, effects), handler -> do
-        E.EffectHandler qn selection <- handler
-        (context, effects))
-    (context, [])
+        (context, eff_type_info) <- Map.fold (context, eff_type_info) handled_effect.handlers (checkEffectHandlerType handlers)
+        (context, eff_type_info.effect_type)
+    where
+        checkEffectHandlerType :: [E.EffectHandler ()] -> (Context, EffectTypeInfo) -> (PO.FullyQualifiedName, [HandlerInfo]) -> (Context, EffectTypeInfo)
+        checkEffectHandlerType handlers (context, eff_type_info) (handler_name, handler_infos) = do
+            HandlerInfo location index <- atIndex handler_infos 0
+            (context, handler_type) <- getEffectHandlerType context (atIndex handlers index)
+            eff_type_info_member_type <- Option.unwrap (get eff_type_info.members handler_name)
+            (context, sub) <- unify context handler_type eff_type_info_member_type location
+            eff_type_info <- S.apply eff_type_info sub
+            (context, eff_type_info)
+
+processHandledEffects :: Context -> [E.EffectHandler ()] -> Location -> (Context, [T.Type])
+processHandledEffects context handlers location = do
+    info <- HandledEffectInfo Map.empty
+    info <- List.foldE (\info, index, handler -> addHandler context info index handler) info handlers
+    context <- checkHandlerConsistency context location info
+    (context, eff_types) <- Map.fold (context, []) info.handled_effects (\(context, eff_types), (effect_name, handled_effect) -> do
+        (context, eff_type) <- getEffectType info handlers context effect_name handled_effect
+        (context, List.push eff_types eff_type))
+    eff_types |> List.iter |> forEach (\eff_type -> println "eff_type {}" % TF.toString eff_type)
+    (context, eff_types)
 
 initializeExprType :: PO.FullyQualifiedName -> Context -> E.Expr () -> Context
 initializeExprType current_fn_name context (E.Expr expr id _ location) = do
@@ -620,7 +677,7 @@ checkExprType context (E.Expr expr id _ location) = do
             context
         E.With handlers body -> do
             (context, effects) <- processHandledEffects context handlers location
-            handler_sigs <- List.map handlers (\E.EffectHandler _ selection -> case selection of
+            handler_sigs <- List.map handlers (\E.EffectHandler _ selection _ -> case selection of
                 E.Static qn -> TEff.emptyEffectSignatureSet
                 E.Dynamic (E.Expr _ handler_id () _) -> TS.getExprEffectSignature context.type_store handler_id
                 E.Default -> TEff.emptyEffectSignatureSet)

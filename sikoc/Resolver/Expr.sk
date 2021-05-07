@@ -378,7 +378,7 @@ processEffectHandlers context env handlers =
                 case resolveEffectMember context.module_resolver handler.name of
                     Ok qn -> do
                         (context, env, hir_value) <- processExpr context env handler.value
-                        HE.Expr s_expr _ _ _ <- hir_value
+                        HE.Expr s_expr _ _ location <- hir_value
                         selection <- case s_expr of
                             HE.StaticFunctionCall call_qn args -> if isEmpty args
                                 then HE.Static call_qn
@@ -389,7 +389,7 @@ processEffectHandlers context env handlers =
                                     else HE.Dynamic hir_value
                                 else HE.Dynamic hir_value
                             _ -> HE.Dynamic hir_value
-                        hir_handler <- HE.EffectHandler qn selection
+                        hir_handler <- HE.EffectHandler qn selection location
                         (context, List.push hir_handlers hir_handler)
                     Err err -> do
                         context <- addErrorToContext context err
