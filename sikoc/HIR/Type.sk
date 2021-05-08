@@ -28,7 +28,6 @@ data Constraint = ClassConstraint HP.FullyQualifiedName
 
 data Type = Var TypeVar [Constraint]
           | FixedTypeArg String TypeVar [Constraint]
-          | EffectTypeArg String TypeVar [Constraint]
           | Named HP.FullyQualifiedName [Type]
           | Function Type Type
           | Never TypeVar
@@ -51,7 +50,6 @@ collectVars :: Type -> [TypeVar]
 collectVars type = case type of
     Var var constraints -> [var] + collectVarsFromConstraints constraints
     FixedTypeArg _ var constraints -> [var] + collectVarsFromConstraints constraints
-    EffectTypeArg _ var constraints -> [var] + collectVarsFromConstraints constraints
     Named _ args -> List.fold [] args (\vars, arg -> do
         vs <- collectVars arg
         vars + vs)
@@ -85,7 +83,6 @@ isConcreteType :: Type -> Bool
 isConcreteType type = case type of
     Var _ _ -> False
     FixedTypeArg _ _ _ -> False
-    EffectTypeArg _ _ _ -> False
     Named _ args -> args |> List.iter |> Iterator.fold (\concrete, arg -> do
         concrete && isConcreteType arg) True
     Function from to -> isConcreteType from && isConcreteType to
@@ -104,7 +101,6 @@ traverse :: (Type -> Type) -> Type -> Type
 traverse f type = case type of
     Var _ _ -> f type
     FixedTypeArg name var constraints -> f (FixedTypeArg name var (List.map constraints (traverseConstraints f)))
-    EffectTypeArg name var constraints -> f (EffectTypeArg name var (List.map constraints (traverseConstraints f)))
     Named qn args -> do
         args <- List.map args (traverse f)
         f (Named qn args)
@@ -123,7 +119,6 @@ removeFixed :: Type -> Type
 removeFixed type = traverse removeFixed_ type // FIXME: name!
     where removeFixed_ type = case type of
             FixedTypeArg _ var constraints -> Var var constraints
-            EffectTypeArg _ var constraints -> Var var constraints
             _ -> type
 
 removeOwnership :: Type -> Type

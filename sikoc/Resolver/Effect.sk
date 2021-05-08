@@ -31,8 +31,7 @@ processEffect state hir_program eff module_resolver = do
     (state, type_resolver, arguments) <- List.fold (state, type_resolver, []) arguments
             (\(state, type_resolver, arguments), arg -> do
                 (type_resolver, state, var, constraints) <- resolveTypeArg type_resolver state arg
-                type_resolver <- addEffectTypeArgument type_resolver var
-                arg_type <- HT.EffectTypeArg (getString arg) var constraints
+                arg_type <- HT.FixedTypeArg (getString arg) var constraints
                 arguments <- List.push arguments arg_type
                 (state, type_resolver, arguments))
     eff_type <- HT.Named qn arguments
