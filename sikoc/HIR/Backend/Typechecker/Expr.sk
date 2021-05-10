@@ -456,10 +456,16 @@ checkExprType :: Context -> E.Expr () -> Context
 checkExprType context (E.Expr expr id _ location) = do
     //println "checkExprType: expr {} {} {}" % (expr, id, TF.toString (getExprType context id))
     context <- case expr of
-        E.StaticFunctionCall _ args -> do
+        E.StaticFunctionCall qn args -> do
             sub_ids <- List.map args (\E.Expr _ id _ _ -> id)
-            // TODO: effect of functions
             sub_signatures <- TEff.getExprEffectSignatures context sub_ids
+            sub_signatures <- if contains context.group_items qn
+                then sub_signatures // TODO: group effects
+                else do
+                    func_type_info <- getFunctionTypeInfo context qn
+                    case func_type_info.effects of
+                        Some called_fn_effects -> sub_signatures + List.map called_fn_effects (\eff -> TEff.createEffectSignatureSetFrom eff)
+                        None -> panic "Effects not found for called fn {}" % qn
             context <- TEff.setExprEffect context id sub_signatures location
             (ty, fn_ty) <- getExprAndFunctionCallType context id
             (context, result_ty) <- checkFunctionCall context args fn_ty location
@@ -682,7 +688,8 @@ checkExprType context (E.Expr expr id _ location) = do
                 E.Dynamic (E.Expr _ handler_id () _) -> TS.getExprEffectSignature context.type_store handler_id
                 E.Default -> TEff.emptyEffectSignatureSet)
             E.Expr _ body_id _ _ <- body
-            context <- TEff.copyExprEffect context body_id id
+            body_sig <- TS.getExprEffectSignature context.type_store body_id
+            context <- TEff.setExprEffect context id ([body_sig] + handler_sigs) location
             (context, _) <- matchExprs context id body_id location
             context
     context

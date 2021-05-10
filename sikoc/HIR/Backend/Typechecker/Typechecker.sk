@@ -2,6 +2,7 @@ module Siko.HIR.Backend.Typechecker where
 
 import Siko.HIR.Backend.Typechecker.Expr
 import Siko.HIR.Backend.Typechecker.Error
+import Siko.HIR.Backend.Typechecker.Effect
 import Siko.HIR.Backend.Typechecker.Pattern
 import Siko.HIR.Backend.Typechecker.ClassStore as CS
 import Siko.HIR.Backend.Typechecker.TypeStore as TS
@@ -81,6 +82,38 @@ checkFunctionType context fn = do
             context <- traverse context checkExprType checkPatternType body
             func_type_info <- getFunctionTypeInfo context fn.name
             Expr _ body_id _ location <- body
+            eff_signature <- TS.getExprEffectSignature context.type_store body_id
+            inferred_effect_names <- getKeys eff_signature.signatures
+            context <- case func_type_info.effects of
+                Some declared_effects -> do
+                    declared_effect_names <- List.map declared_effects (\eff -> case eff of
+                        T.Named qn _ -> qn
+                        _ -> panic "Unexpected eff type {}" % TF.toString eff)
+                    if not (isEmpty inferred_effect_names) || not (isEmpty declared_effect_names)
+                    then do
+                        context <- List.fold context inferred_effect_names (\context, inferred_effect -> do
+                            if List.contains declared_effect_names inferred_effect
+                            then context
+                            else do
+                                err <- UndeclaredEffect (show inferred_effect) fn.location
+                                state <- addError context.state err
+                                context { state = state } )
+                        context <- List.fold context declared_effect_names (\context, declared_effect -> do
+                            if List.contains inferred_effect_names declared_effect
+                            then context
+                            else do
+                                err <- UnnecessaryEffect (show declared_effect) fn.location
+                                state <- addError context.state err
+                                context { state = state } )
+                        context
+                    else context
+                None -> do
+                    if isEmpty inferred_effect_names
+                    then ()
+                    else println "{}: inferred effects {}" % (fn.name, inferred_effect_names)
+                    inferred_effects <- eff_signature.signatures |> Map.iter |> Iterator.map (\(_, eff) -> eff) |> toList
+                    function_store <- FS.setFunctionEffects context.function_store fn.name inferred_effects
+                    context { function_store = function_store }
             (context, _) <- matchExprWith context body_id func_type_info.result_type location
             context <- context.returns |> List.iter |> Iterator.fold (\context, (arg_id, arg_location) -> do
                     func_type_info <- getFunctionTypeInfo context fn.name
@@ -108,6 +141,9 @@ checkMissingTypes context fn = do
         Some body -> do
             func_type_info <- getFunctionTypeInfo context fn.name
             vars <- collectVars [] func_type_info.function_type
+            vars <- case func_type_info.effects of
+                Some effects -> List.fold vars effects (\vars, eff -> collectVars vars eff)
+                None -> vars // FIXME: this cannot happen after all fixes!
             (context, _) <- traverse (context, []) (checkMissingTypeInExpr vars) (checkMissingTypeInPattern vars) body
             context
         None -> context

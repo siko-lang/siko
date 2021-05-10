@@ -31,7 +31,7 @@ processFunction state f = do
     args <- T.getArgs ty
     (args, _) <- List.split args f.arg_count
     result_ty <- T.getResultType ty (getLength args)
-    func_type_info <- FunctionTypeInfo f.name args ty result_ty defined
+    func_type_info <- FunctionTypeInfo f.name args ty result_ty f.effects defined
     (state, func_type_info)
 
 processFunctions :: Config -> TypecheckerState -> (TypecheckerState, FunctionStore, [DependencyGroup P.FullyQualifiedName])
@@ -45,7 +45,7 @@ processFunctions config state = do
         (deps, forced_deps) <- getFunctionDependencies fn
         untyped_deps <- deps |> List.iter |> Iterator.filter (\qn -> do
             case P.getItem state.program qn of
-                P.Function fn -> isNone fn.type
+                P.Function fn -> isNone fn.type || isNone fn.effects
                 _ -> False) |> toList
         (all_dependencies, _) <- Map.insert all_dependencies fn.name (untyped_deps + forced_deps)
         all_dependencies) Map.empty

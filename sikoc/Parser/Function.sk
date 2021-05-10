@@ -33,7 +33,7 @@ parseAttributes state = do
                 (state, List.push attributes (Attribute name))
             _ -> break Ok (state, attributes)
 
-parseEffectSignatures :: ParserState -> Result (ParserState, [EffectSignature]) (ParserState, ParserError)
+parseEffectSignatures :: ParserState -> Result (ParserState, Option [EffectSignature]) (ParserState, ParserError)
 parseEffectSignatures state = do
     (state, effects) <- if check state Kind.KeywordUsing
         then do
@@ -45,16 +45,21 @@ parseEffectSignatures state = do
                 else do
                     (state, name) <- try expectTypeIdent state "effect name"
                     (state, arguments) <- loop (state, arguments) <- (state, []) do
-                        if check state Kind.RParen
+                        if (check state Kind.RParen) || (check state Kind.Comma)
                         then break (state, arguments)
                         else do
                             (state, argument) <- try expectVarIdent state "effect argument"
                             (state, List.push arguments argument)
                     eff <- EffectSignature name arguments
-                    (state, List.push effects eff)
+                    effects <- List.push effects eff
+                    if check state Kind.RParen
+                    then break (state, effects)
+                    else do
+                        state <- try expect state Kind.Comma
+                        (state, effects)
             state <- try expect state Kind.RParen
-            (state, effects)
-        else (state, [])
+            (state, Some effects)
+        else (state, None)
     Ok (state, effects)
 
 parseFunction :: ParserState -> Result (ParserState, Either Function FunctionSignature) (ParserState, ParserError)

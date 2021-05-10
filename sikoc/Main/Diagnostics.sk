@@ -113,6 +113,7 @@ printResolverError file_manager error = case error of
     InvalidEffectArgCount expected found location ->
         printSingleL file_manager ("InvalidEffectArgCount {} {}" % (expected, found)) location
     TypeArgumentsNotUnique names -> println "TypeArgumentsNotUnique {}" % (fmtIdents file_manager names)
+    ExternEffect name -> println "ExternEffect {}" % (fmtIdent file_manager name)
 
 printTypecheckerError file_manager error = case error of
     TypeMismatch expected found location -> printSingleL file_manager "TypeMismatch expected: {} found: {}" % (expected, found) location
@@ -135,3 +136,5 @@ printTypecheckerError file_manager error = case error of
     IncorrectMainType type location -> println "IncorrectMainType {} {}" % (type, fmtLocation location)
     MissingEffectMembers names location -> printSingleL file_manager ("MissingEffectMembers {}" % names) location
     EffectMemberNotUnique name locations -> println "EffectMemberNotUnique {} {}" % (name, locations)
+    UndeclaredEffect name location -> printSingleL file_manager ("UndeclaredEffect {}" % name) location
+    UnnecessaryEffect name location -> printSingleL file_manager ("UnnecessaryEffect {}" % name) location

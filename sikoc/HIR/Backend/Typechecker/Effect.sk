@@ -8,10 +8,16 @@ import Siko.HIR.Expr as E
 import Siko.HIR.Backend.Typechecker.Expr as TExpr
 import Siko.HIR.Backend.Unification.Substitution as S
 import Siko.HIR.Type as T
+import Siko.HIR.Backend.TypeFormatter as TF
 
 import Map
 
-data EffectSignatureSet = { signatures :: Map PO.FullyQualifiedName T.Type } deriving (Show)
+data EffectSignatureSet = { signatures :: Map PO.FullyQualifiedName T.Type }
+
+instance Show EffectSignatureSet where
+    show effects = do
+        names <- effects.signatures |> Map.iter |> Iterator.map (\(qn, type) -> "{}: {}" % (qn, TF.toString type)) |> toList
+        "{" + (join names ",") + "}"
 
 instance S.Apply EffectSignatureSet where
     apply effects sub = do
