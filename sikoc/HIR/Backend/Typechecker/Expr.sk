@@ -250,11 +250,11 @@ getEffectHandlerType context E.EffectHandler _ selection _ = do
             (context, function_type) <- if contains context.group_items qn
             then (context, func_type_info.function_type)
             else instantiateType context func_type_info.function_type
-            println "Static: selection type {}" % (TF.toString function_type)
+            //println "Static: selection type {}" % (TF.toString function_type)
             (context, function_type)
         E.Dynamic (E.Expr _ body_id _ _) -> do
             body_type <- getExprType context body_id
-            println "Dynamic: selection type {}" % (TF.toString body_type)
+            //println "Dynamic: selection type {}" % (TF.toString body_type)
             (context, body_type)
         E.Default -> panic "Default eff not yet implemented"
 
@@ -282,7 +282,6 @@ processHandledEffects context handlers location = do
     (context, eff_types) <- Map.fold (context, []) info.handled_effects (\(context, eff_types), (effect_name, handled_effect) -> do
         (context, eff_type) <- getEffectType info handlers context effect_name handled_effect
         (context, List.push eff_types eff_type))
-    eff_types |> List.iter |> forEach (\eff_type -> println "eff_type {}" % TF.toString eff_type)
     (context, eff_types)
 
 initializeExprType :: PO.FullyQualifiedName -> Context -> E.Expr () -> Context
@@ -311,14 +310,10 @@ initializeExprType current_fn_name context (E.Expr expr id _ location) = do
         E.EffectMemberCall qn args -> do
             function <- PO.getFunction context.state.program qn
             effect_name <- getEffectName function.kind
-            //println "Calling em {} kind {}" % (qn, effect_name)
             eff <- PO.getEffect context.state.program effect_name
-            //println "Eff type {} / {}" % (TF.toString eff.type, eff.type)
             fn_type <- Option.unwrap function.type // FIXME: untyped effect/class members are errors!
-            //println "Eff member type {} / {}" % (TF.toString fn_type, fn_type)
             (context, function_type) <- instantiateType context fn_type
             (context, eff_type) <- instantiateType context eff.type
-            //println "instantiated {} {}" % (TF.toString function_type, TF.toString eff_type)
             (context, var) <- U.getNewTypeVarType context
             context <- addExprType context id (TS.FunctionCall var function_type)
             context <- addExprEffectSignatureSet context id (TEff.createEffectSignatureSetFrom eff_type)
@@ -689,6 +684,7 @@ checkExprType context (E.Expr expr id _ location) = do
                 E.Default -> TEff.emptyEffectSignatureSet)
             E.Expr _ body_id _ _ <- body
             body_sig <- TS.getExprEffectSignature context.type_store body_id
+            body_sig <- TEff.removeEffects body_sig effects
             context <- TEff.setExprEffect context id ([body_sig] + handler_sigs) location
             (context, _) <- matchExprs context id body_id location
             context

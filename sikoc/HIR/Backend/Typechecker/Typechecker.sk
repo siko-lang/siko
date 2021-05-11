@@ -86,9 +86,7 @@ checkFunctionType context fn = do
             inferred_effect_names <- getKeys eff_signature.signatures
             context <- case func_type_info.effects of
                 Some declared_effects -> do
-                    declared_effect_names <- List.map declared_effects (\eff -> case eff of
-                        T.Named qn _ -> qn
-                        _ -> panic "Unexpected eff type {}" % TF.toString eff)
+                    declared_effect_names <- List.map declared_effects getEffectNameFromType
                     if not (isEmpty inferred_effect_names) || not (isEmpty declared_effect_names)
                     then do
                         context <- List.fold context inferred_effect_names (\context, inferred_effect -> do
@@ -108,9 +106,6 @@ checkFunctionType context fn = do
                         context
                     else context
                 None -> do
-                    if isEmpty inferred_effect_names
-                    then ()
-                    else println "{}: inferred effects {}" % (fn.name, inferred_effect_names)
                     inferred_effects <- eff_signature.signatures |> Map.iter |> Iterator.map (\(_, eff) -> eff) |> toList
                     function_store <- FS.setFunctionEffects context.function_store fn.name inferred_effects
                     context { function_store = function_store }
@@ -123,12 +118,22 @@ checkFunctionType context fn = do
             context <- if fn.name == main
                 then do
                     func_type_info <- getFunctionTypeInfo context fn.name
-                    if HTI.checkIsomorphicType func_type_info.function_type (T.Tuple []) context.state
+                    context <- if HTI.checkIsomorphicType func_type_info.function_type (T.Tuple []) context.state
                         then context
                         else do
                             err <- IncorrectMainType ("{}" % TF.toString func_type_info.function_type) fn.location
                             state <- addError context.state err
                             context { state = state }
+                    context <- case func_type_info.effects of
+                        Some effects -> if isEmpty effects
+                                        then context
+                                        else do
+                                            effect_names <- List.map effects TF.toString
+                                            err <- MainEffectFound effect_names fn.location
+                                            state <- addError context.state err
+                                            context { state = state }
+                        None -> context
+                    context
                 else context
             context <- context { returns = [] }
             context

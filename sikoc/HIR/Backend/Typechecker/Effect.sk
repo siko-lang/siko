@@ -27,12 +27,23 @@ instance S.Apply EffectSignatureSet where
 emptyEffectSignatureSet :: EffectSignatureSet
 emptyEffectSignatureSet = EffectSignatureSet Map.empty
 
+getEffectNameFromType :: T.Type -> PO.FullyQualifiedName
+getEffectNameFromType type = case type of
+    T.Named qn _ -> qn
+    _ -> panic "getEffectNameFromType: effect type is not Named!"
+
 createEffectSignatureSetFrom :: T.Type -> EffectSignatureSet
-createEffectSignatureSetFrom type = case type of
-    T.Named qn _ -> do
-        (signatures, _) <- Map.insert Map.empty qn type
-        EffectSignatureSet signatures
-    _ -> panic "createEffectSignatureSetFrom: effect type is not Named!"
+createEffectSignatureSetFrom type = do
+    qn <- getEffectNameFromType type
+    (signatures, _) <- Map.insert Map.empty qn type
+    EffectSignatureSet signatures
+
+removeEffects :: EffectSignatureSet -> [T.Type] -> EffectSignatureSet
+removeEffects sig effects =
+    List.fold sig effects (\sig, eff -> do
+        qn <- getEffectNameFromType eff
+        (signatures, _) <- Map.remove sig.signatures qn
+        sig { signatures = signatures})
 
 getExprEffectSignatures :: TExpr.Context -> [E.ExprId] -> [EffectSignatureSet]
 getExprEffectSignatures context ids = List.map ids (TS.getExprEffectSignature context.type_store)
