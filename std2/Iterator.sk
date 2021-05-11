@@ -53,3 +53,12 @@ createIterator s f = extern
 
 getNext a :: Iterator a -> Option (Iterator a, a)
 getNext iterator = extern
+
+zip a b :: Iterator a -> Iterator b -> Iterator (a, b)
+zip iter_a iter_b = createIterator (iter_a, iter_b) (\(iter_a, iter_b) ->
+    case getNext iter_a of
+        Some (iter_a, a) -> do
+            case getNext iter_b of
+                Some (iter_b, b) -> Some ((iter_a, iter_b), (a, b))
+                None -> None
+        None -> None)

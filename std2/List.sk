@@ -13,14 +13,14 @@ instance (PartialEq a) => PartialEq [a] where
     opEq a b =
         if getLength a != getLength b
         then False
-        else loop (iter_a, iter_b) <- (List.iter a, List.iter b) do
-            case Iterator.getNext iter_a of
-                Some (iter_a, item_a) -> do
-                    (iter_b, item_b) <- Option.unwrap(Iterator.getNext iter_b)
-                    if item_a != item_b
-                    then break False
-                    else (iter_a, iter_b)
-                None -> break True
+        else do
+            loop zipper <- Iterator.zip (List.iter a) (List.iter b) do
+                case Iterator.getNext zipper of
+                    Some (zipper, (item_a, item_b)) ->
+                        if item_a != item_b
+                        then break False
+                        else zipper
+                    None -> break True
 
 instance (Eq a) => Eq [a]
 
@@ -30,14 +30,14 @@ instance (PartialOrd a) => PartialOrd [a] where
         len_b <- getLength b
         if len_a != len_b
         then partialCmp len_a len_b
-        else loop (iter_a, iter_b) <- (List.iter a, List.iter b) do
-            case Iterator.getNext iter_a of
-                Some (iter_a, item_a) -> do
-                    (iter_b, item_b) <- Option.unwrap(Iterator.getNext iter_b)
-                    case partialCmp item_a item_b of
-                        Some Equal -> (iter_a, iter_b)
-                        e -> break e
-                None -> break Some Equal
+        else do
+            loop zipper <- Iterator.zip (List.iter a) (List.iter b) do
+                case Iterator.getNext zipper of
+                    Some (zipper, (item_a, item_b)) ->
+                        case partialCmp item_a item_b of
+                            Some Equal -> zipper
+                            e -> break e
+                    None -> break (Some Equal)
 
 instance (Ord a) => Ord [a] where
     cmp a b = do
@@ -45,14 +45,14 @@ instance (Ord a) => Ord [a] where
         len_b <- getLength b
         if len_a != len_b
         then cmp len_a len_b
-        else loop (iter_a, iter_b) <- (List.iter a, List.iter b) do
-            case Iterator.getNext iter_a of
-                Some (iter_a, item_a) -> do
-                    (iter_b, item_b) <- Option.unwrap(Iterator.getNext iter_b)
-                    case cmp item_a item_b of
-                        Equal -> (iter_a, iter_b)
-                        e -> break e
-                None -> break Equal
+        else do
+            loop zipper <- Iterator.zip (List.iter a) (List.iter b) do
+                case Iterator.getNext zipper of
+                    Some (zipper, (item_a, item_b)) ->
+                        case cmp item_a item_b of
+                            Equal -> zipper
+                            e -> break e
+                    None -> break Equal
 
 instance Add [a] where
     opAdd a b = addList a b

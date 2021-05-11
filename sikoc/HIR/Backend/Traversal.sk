@@ -3,93 +3,123 @@ module Siko.HIR.Backend.Traversal where
 import Siko.HIR.Expr as E
 import Siko.HIR.Pattern as P
 
-processExprs context b :: context -> (context -> E.Expr b -> context) -> (context -> P.Pattern b -> context) -> [E.Expr b] -> context
-processExprs context expr_fn pattern_fn args =
-    List.fold context args (\context, arg -> traverse context expr_fn pattern_fn arg)
+data TraversalOrder = Up | Down deriving (PartialEq, Eq, Show)
 
-processPatterns context b :: context -> (context -> P.Pattern b -> context) -> (context -> E.Expr b -> context) -> [P.Pattern b] -> context
-processPatterns context pattern_fn expr_fn args =
-    List.fold context args (\context, arg -> traversePattern context pattern_fn expr_fn arg)
+data TraversalContext context b = { user_context :: context,
+                                    expr_fn :: (context -> E.Expr b -> context),
+                                    pattern_fn :: (context -> P.Pattern b -> context),
+                                    order :: TraversalOrder
+                                  }
 
-traversePattern context b :: context -> (context -> P.Pattern b -> context) -> (context -> E.Expr b -> context) -> P.Pattern b -> context
-traversePattern context pattern_fn expr_fn pattern = do
+processExprs context b :: TraversalContext context b -> [E.Expr b] -> TraversalContext context b
+processExprs context args =
+    List.fold context args (\context, arg -> internalTraverse context arg)
+
+processPatterns context b :: TraversalContext context b -> [P.Pattern b] -> TraversalContext context b
+processPatterns context args =
+    List.fold context args (\context, arg -> traversePattern context arg)
+
+traversePattern context b :: TraversalContext context b -> P.Pattern b -> TraversalContext context b
+traversePattern context pattern = do
     (P.Pattern p _ _ _) <- pattern
+    context <- if context.order == Down
+    then do
+        user_context <- context.pattern_fn context.user_context pattern
+        context { user_context = user_context }
+    else context
     context <- case p of
         P.Binding _ -> context
-        P.Tuple args -> processPatterns context pattern_fn expr_fn args
+        P.Tuple args -> processPatterns context args
         P.Guarded arg guard_expr -> do
-            context <- traversePattern context pattern_fn expr_fn arg
-            context <- traverse context expr_fn pattern_fn guard_expr
+            context <- traversePattern context arg
+            context <- internalTraverse context guard_expr
             context
         P.Wildcard -> context
         P.IntegerLiteral _ -> context
         P.StringLiteral _ -> context
         P.CharLiteral _ -> context
         P.CharRange _ _ _ -> context
-        P.Typed arg _ -> traversePattern context pattern_fn expr_fn arg
-        P.Record qn args -> processPatterns context pattern_fn expr_fn args
-        P.Variant qn _ args -> processPatterns context pattern_fn expr_fn args
-    context <- pattern_fn context pattern
-    context
+        P.Typed arg _ -> traversePattern context arg
+        P.Record qn args -> processPatterns context args
+        P.Variant qn _ args -> processPatterns context args
+    if context.order == Up
+    then do
+        user_context <- context.pattern_fn context.user_context pattern
+        context { user_context = user_context }
+    else context
 
-traverse context b :: context -> (context -> E.Expr b -> context) -> (context -> P.Pattern b -> context) -> E.Expr b -> context
-traverse context expr_fn pattern_fn expr = do
+internalTraverse context b :: TraversalContext context b -> E.Expr b -> TraversalContext context b
+internalTraverse context expr = do
     (E.Expr e _ _ _) <- expr
+    context <- if context.order == Down
+    then do
+        user_context <- context.expr_fn context.user_context expr
+        context { user_context = user_context }
+    else context
     context <- case e of
-        E.StaticFunctionCall _ args -> processExprs context expr_fn pattern_fn args
+        E.StaticFunctionCall _ args -> processExprs context args
         E.DynamicFunctionCall receiver args -> do
-            context <- traverse context expr_fn pattern_fn receiver
-            context <- processExprs context expr_fn pattern_fn args
+            context <- internalTraverse context receiver
+            context <- processExprs context args
             context
-        E.ClassMemberCall _ args -> processExprs context expr_fn pattern_fn args
-        E.EffectMemberCall _ args -> processExprs context expr_fn pattern_fn args
-        E.VariantConstructorCall _ args -> processExprs context expr_fn pattern_fn args
-        E.RecordConstructorCall _ args -> processExprs context expr_fn pattern_fn args
+        E.ClassMemberCall _ args -> processExprs context args
+        E.EffectMemberCall _ args -> processExprs context args
+        E.VariantConstructorCall _ args -> processExprs context args
+        E.RecordConstructorCall _ args -> processExprs context args
         E.If cond true_branch false_branch -> do
-            context <- traverse context expr_fn pattern_fn cond
-            context <- traverse context expr_fn pattern_fn true_branch
-            context <- traverse context expr_fn pattern_fn false_branch
+            context <- internalTraverse context cond
+            context <- internalTraverse context true_branch
+            context <- internalTraverse context false_branch
             context
-        E.Tuple args -> processExprs context expr_fn pattern_fn args
-        E.List args -> processExprs context expr_fn pattern_fn args
+        E.Tuple args -> processExprs context args
+        E.List args -> processExprs context args
         E.IntegerLiteral _ -> context
         E.FloatLiteral _ -> context
         E.StringLiteral _ -> context
         E.CharLiteral _ -> context
-        E.Do args -> processExprs context expr_fn pattern_fn args
+        E.Do args -> processExprs context args
         E.Bind pattern rhs -> do
-            context <- traverse context expr_fn pattern_fn rhs
-            context <- traversePattern context pattern_fn expr_fn pattern
+            context <- internalTraverse context rhs
+            context <- traversePattern context pattern
             context
-        E.FieldAccess _ receiver -> traverse context expr_fn pattern_fn receiver
-        E.TupleFieldAccess _ receiver -> traverse context expr_fn pattern_fn receiver
-        E.Formatter _ args -> processExprs context expr_fn pattern_fn args
+        E.FieldAccess _ receiver -> internalTraverse context receiver
+        E.TupleFieldAccess _ receiver -> internalTraverse context receiver
+        E.Formatter _ args -> processExprs context args
         E.CaseOf body cases _ -> do
-            context <- traverse context expr_fn pattern_fn body
+            context <- internalTraverse context body
             context <- cases |> List.iter |> Iterator.fold (\context, c -> do
-                context <- traversePattern context pattern_fn expr_fn c.pattern
-                context <- traverse context expr_fn pattern_fn c.body
+                context <- traversePattern context c.pattern
+                context <- internalTraverse context c.body
                 context) context
             context
         E.RecordUpdate _ args ->
             List.fold context args
-                (\context, arg -> traverse context expr_fn pattern_fn arg.body)
-        E.Return rhs -> traverse context expr_fn pattern_fn rhs
-        E.Continue rhs -> traverse context expr_fn pattern_fn rhs
-        E.Break rhs -> traverse context expr_fn pattern_fn rhs
+                (\context, arg -> internalTraverse context arg.body)
+        E.Return rhs -> internalTraverse context rhs
+        E.Continue rhs -> internalTraverse context rhs
+        E.Break rhs -> internalTraverse context rhs
         E.Loop pattern initializer body _ _ -> do
-            context <- traverse context expr_fn pattern_fn initializer
-            context <- traversePattern context pattern_fn expr_fn pattern
-            context <- traverse context expr_fn pattern_fn body
+            context <- internalTraverse context initializer
+            context <- traversePattern context pattern
+            context <- internalTraverse context body
             context
         E.ArgRef _ -> context
         E.ValueRef _ -> context
         E.With handlers body -> do
             context <- List.fold context handlers (\context, E.EffectHandler _ selection _ ->
                 case selection of
-                    E.Dynamic body -> traverse context expr_fn pattern_fn body
+                    E.Dynamic body -> internalTraverse context body
                     _ -> context)
-            context <- traverse context expr_fn pattern_fn body
+            context <- internalTraverse context body
             context
-    context <- expr_fn context expr
-    context
+    if context.order == Up
+    then do
+        user_context <- context.expr_fn context.user_context expr
+        context { user_context = user_context }
+    else context
+
+traverse context b :: context -> (context -> E.Expr b -> context) -> (context -> P.Pattern b -> context) -> TraversalOrder -> E.Expr b -> context
+traverse context expr_fn pattern_fn order expr = do
+    traversal_context <- TraversalContext context expr_fn pattern_fn order
+    traversal_context <- internalTraverse traversal_context expr
+    traversal_context.user_context

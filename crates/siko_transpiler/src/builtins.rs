@@ -523,6 +523,18 @@ fn generate_map_builtins(
             indent.dec();
             write!(output_file, "{}}}\n", indent)?;
         }
+        "cmp" => {
+            return generate_cmp_builtin_body(output_file, program, indent, result_ty_str);
+        }
+        "partialCmp" => {
+            return generate_partial_cmp_builtin_body(
+                output_file,
+                program,
+                indent,
+                result_ty,
+                result_ty_str,
+            );
+        }
         _ => panic!("Map/{} not implemented", original_name),
     }
     indent.dec();

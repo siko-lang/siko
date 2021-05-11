@@ -72,7 +72,7 @@ addError state error = do
 initializeFunctionType :: Context -> F.Function () -> Context
 initializeFunctionType context fn = do
     case fn.body of
-        Some body -> traverse context (initializeExprType fn.name) initializePatternType body
+        Some body -> traverse  context (initializeExprType fn.name) initializePatternType Up body
         None -> context
 
 checkFunctionType :: Context -> F.Function () -> Context
@@ -80,7 +80,7 @@ checkFunctionType context fn = do
     //trace context.state.config "Checking function {}" % fn.name
     case fn.body of
         Some body -> do
-            context <- traverse context checkExprType checkPatternType body
+            context <- traverse context checkExprType checkPatternType Up body
             func_type_info <- getFunctionTypeInfo context fn.name
             Expr _ body_id _ location <- body
             eff_signature <- TS.getExprEffectSignature context.type_store body_id
@@ -159,7 +159,7 @@ checkMissingTypes context fn = do
             vars <- case func_type_info.effects of
                 Some effects -> List.fold vars effects (\vars, eff -> collectVars vars eff)
                 None -> vars // FIXME: this cannot happen after all fixes!
-            (context, _) <- traverse (context, []) (checkMissingTypeInExpr vars) (checkMissingTypeInPattern vars) body
+            (context, _) <- traverse (context, []) (checkMissingTypeInExpr vars) (checkMissingTypeInPattern vars) Up body
             context
         None -> context
 
