@@ -10,8 +10,11 @@ import Siko.HIR.Backend.Typechecker.FunctionStore as FS
 import Siko.HIR.Backend.InstanceResolver as IR
 import Siko.HIR.Backend.Typechecker.InstanceResolver.Checks as IRChecks
 import Siko.HIR.Backend.Typechecker.Class
+import Siko.HIR.Backend.TypeFormatter as TF
 import Siko.HIR.Backend.Util
 import Siko.HIR.Backend.Unification as U
+import Siko.HIR.Backend.Unification.Substitution as S
+import Siko.HIR.Backend.Unification.TypeVarGenerator as TVG
 import Siko.HIR.Backend.TypeIsomorphism as HTI
 import Siko.HIR.Backend.Typechecker.Function
 import Siko.Util.DependencyProcessor
@@ -19,8 +22,6 @@ import Siko.HIR.Program as P
 import Siko.HIR.Function as F
 import Siko.HIR.Backend.Traversal
 import Siko.HIR.Type as T
-import Siko.HIR.Backend.TypeFormatter as TF
-import Siko.HIR.Backend.Unification.TypeVarGenerator as TVG
 import Siko.HIR.Expr
 import Siko.HIR.Backend.ClassInfoStore
 import Siko.HIR.Data as D
@@ -87,7 +88,7 @@ checkFunctionType context fn = do
             context <- case func_type_info.effects of
                 Some declared_effects -> do
                     declared_effect_names <- List.map declared_effects getEffectNameFromType
-                    if not (isEmpty inferred_effect_names) || not (isEmpty declared_effect_names)
+                    context <- if not (isEmpty inferred_effect_names) || not (isEmpty declared_effect_names)
                     then do
                         context <- List.fold context inferred_effect_names (\context, inferred_effect -> do
                             if List.contains declared_effect_names inferred_effect
@@ -105,6 +106,15 @@ checkFunctionType context fn = do
                                 context { state = state } )
                         context
                     else context
+                    (context, _) <- List.fold (context, eff_signature) declared_effects (\(context, eff_signature), declared_effect -> do
+                        qn <- getEffectNameFromType declared_effect
+                        case get eff_signature.signatures qn of
+                            Some inferred_effect -> do
+                                (context, sub) <- unify context declared_effect inferred_effect fn.location
+                                eff_signature <- S.apply eff_signature sub
+                                (context, eff_signature)
+                            None -> (context, eff_signature))
+                    context
                 None -> do
                     inferred_effects <- eff_signature.signatures |> Map.iter |> Iterator.map (\(_, eff) -> eff) |> toList
                     function_store <- FS.setFunctionEffects context.function_store fn.name inferred_effects

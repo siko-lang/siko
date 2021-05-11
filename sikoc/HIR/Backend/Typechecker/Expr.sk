@@ -310,13 +310,12 @@ initializeExprType current_fn_name context (E.Expr expr id _ location) = do
         E.EffectMemberCall qn args -> do
             function <- PO.getFunction context.state.program qn
             effect_name <- getEffectName function.kind
-            eff <- PO.getEffect context.state.program effect_name
-            fn_type <- Option.unwrap function.type // FIXME: untyped effect/class members are errors!
-            (context, function_type) <- instantiateType context fn_type
-            (context, eff_type) <- instantiateType context eff.type
+            eff_type_info <- createEffectTypeInfo context effect_name
+            (eff_type_info, context) <- remapEffectTypeInfo eff_type_info context
+            function_type <- Option.unwrap (get eff_type_info.members qn)
             (context, var) <- U.getNewTypeVarType context
             context <- addExprType context id (TS.FunctionCall var function_type)
-            context <- addExprEffectSignatureSet context id (TEff.createEffectSignatureSetFrom eff_type)
+            context <- addExprEffectSignatureSet context id (TEff.createEffectSignatureSetFrom eff_type_info.effect_type)
             context
         E.VariantConstructorCall qn args -> do
             D.VariantInfo qn index _ <- PO.getVariantInfo context.state.program qn
