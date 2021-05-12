@@ -4,8 +4,13 @@ data Map k v = extern
 
 instance (Show k, Show v, Ord k) => Show Map k v where
     show m = do
-        subs <- m |> Map.iter |> Iterator.map (\(id, key) -> "{}:{}" % (id, key)) |> toList
-        "{" + join subs ", " + "}"
+        size <- getSize m
+        (s, _) <- Map.fold ("{", 0) m (\(s, index), (k, v) -> do
+            item <- if index + 1 == size
+                then "{}:{}" % (k, v)
+                else "{}:{}," % (k, v)
+            (s + item, index + 1))
+        s + "}"
 
 instance (PartialEq k, PartialEq v) => PartialEq Map k v where
     opEq a b = do
