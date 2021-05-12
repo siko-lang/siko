@@ -290,7 +290,7 @@ initializeExprType current_fn_name context (E.Expr expr id _ location) = do
     context <- case expr of
         E.StaticFunctionCall qn args -> do
             func_type_info <- getFunctionTypeInfo context qn
-            (context, function_type) <- if contains context.group_items qn
+            (context, function_type) <- if contains context.group_items qn && not func_type_info.defined
                 then (context, func_type_info.function_type)
                 else instantiateType context func_type_info.function_type
             (context, var) <- U.getNewTypeVarType context
