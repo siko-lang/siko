@@ -5,7 +5,7 @@ import Siko.HIR.Backend.Typechecker as TC
 import Siko.HIR.Backend.Typechecker.Error
 import Siko.HIR.Backend.Unification.TypeVarGenerator as TVG
 import Siko.HIR.Backend.Lowering as L
-import Siko.HIR.Backend.EffectHandler as EH
+import Siko.HIR.Backend.EffectResolver as ER
 import Siko.MIR.Program as MP
 import Siko.Diagnostics
 import Siko.FileManager
@@ -27,6 +27,6 @@ processProgram :: Config -> P.Program () -> TVG.TypeVarGenerator -> FileManager 
 processProgram config program var_gen file_manager = do
     trace config "Typechecking.."
     (typed_program, var_gen, class_info_store, instance_resolver) <- try TC.processProgram config program var_gen
-    typed_program <- EH.processProgram config typed_program
+    typed_program <- ER.processProgram config typed_program
     mir_program <- L.lowerProgram config var_gen class_info_store typed_program instance_resolver
     Ok mir_program

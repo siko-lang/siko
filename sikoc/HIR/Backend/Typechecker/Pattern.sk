@@ -40,12 +40,13 @@ matchPatterns context pattern_id1 pattern_id2 location = do
     pattern_type2 <- getPatternType context pattern_id2
     unify context pattern_type1 pattern_type2 location
 
-initializePatternType :: Context -> P.Pattern () -> Context
-initializePatternType context (P.Pattern pattern id _ location) = do
+initializePatternType :: Context -> P.Pattern () -> (Context, P.Pattern ())
+initializePatternType context pat = do
+    P.Pattern pattern id _ location <- pat
     //println "InitializePatternType: pattern {} {}" % (pattern, id)
     type_store <- TS.addPatternLocation context.type_store id location
     context <- context { type_store = type_store }
-    case pattern of
+    context <- case pattern of
         P.Binding bind_ref -> do
             (context, var) <- U.getNewTypeVarType context
             context <- addPatternType context id (TS.PatternType var)
@@ -90,11 +91,13 @@ initializePatternType context (P.Pattern pattern id _ location) = do
             (adt, context) <- UD.remapAdt adt context
             context <- addPatternType context id (TS.PatternWithAdtType adt)
             context
+    (context, pat)
 
-checkPatternType :: Context -> P.Pattern () -> Context
-checkPatternType context (P.Pattern pattern id _ location) = do
+checkPatternType :: Context -> P.Pattern () -> (Context, P.Pattern ())
+checkPatternType context pat = do
+    P.Pattern pattern id _ location <- pat
     //println "checkPatternType: pattern {} {} {}" % (pattern, id, TF.toString (getPatternType context id))
-    case pattern of
+    context <- case pattern of
         P.Binding _ -> addPatternEffectSignatureSet context id TEff.emptyEffectSignatureSet
         P.Tuple args -> do
             sub_ids <- List.map args (\P.Pattern _ id _ _ -> id)
@@ -146,9 +149,12 @@ checkPatternType context (P.Pattern pattern id _ location) = do
                     adt <- S.apply adt sub
                     (context, adt)) (context, adt) args
             context
+    (context, pat)
 
-checkMissingTypeInPattern :: [T.TypeVar] -> (Context, [T.TypeVar]) -> P.Pattern () -> (Context, [T.TypeVar])
-checkMissingTypeInPattern signature_vars (context, undefined_vars) (P.Pattern pattern id _ location) = do
-    //println "Checking pattern {} {}" % (pattern, id)
+checkMissingTypeInPattern :: [T.TypeVar] -> (Context, [T.TypeVar]) -> P.Pattern () -> ((Context, [T.TypeVar]), P.Pattern ())
+checkMissingTypeInPattern signature_vars (context, undefined_vars) pattern = do
+    P.Pattern s_pattern id _ location <- pattern
+    //println "Checking pattern {} {}" % (s_pattern, id)
     type <- getPatternType context id
-    checkUndefinedVars context undefined_vars type signature_vars location
+    (context, undefined_vars) <- checkUndefinedVars context undefined_vars type signature_vars location
+    ((context, undefined_vars), pattern)

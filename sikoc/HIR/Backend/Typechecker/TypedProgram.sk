@@ -135,6 +135,11 @@ createTypedFunction context function = do
         None -> do
             function_type_info <- getFunctionTypeInfo context.function_store function.name
             function_type_info.function_type
+    effects <- case function.effects of
+        Some effects -> Some effects
+        None -> do
+            function_type_info <- getFunctionTypeInfo context.function_store function.name
+            function_type_info.effects
     F.Function {
         location = function.location,
         name = function.name,
@@ -145,8 +150,8 @@ createTypedFunction context function = do
         body = case function.body of
             Some body -> Some (createTypedExpr context body)
             None -> None
-        , // FIXME: why is this needed? fix parser
-        effects = function.effects, // FIXME
+        , // FIXME: why is this comma needed? fix parser
+        effects = effects,
         attributes = function.attributes
      }
 

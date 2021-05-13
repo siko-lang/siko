@@ -284,8 +284,9 @@ processHandledEffects context handlers location = do
         (context, List.push eff_types eff_type))
     (context, eff_types)
 
-initializeExprType :: PO.FullyQualifiedName -> Context -> E.Expr () -> Context
-initializeExprType current_fn_name context (E.Expr expr id _ location) = do
+initializeExprType :: PO.FullyQualifiedName -> Context -> E.Expr () -> (Context, E.Expr ())
+initializeExprType current_fn_name context orig_expr = do
+    E.Expr expr id _ location <- orig_expr
     //println "initializeExprType: expr {} {}" % (expr, id)
     context <- case expr of
         E.StaticFunctionCall qn args -> do
@@ -418,7 +419,7 @@ initializeExprType current_fn_name context (E.Expr expr id _ location) = do
             (context, var) <- U.getNewTypeVarType context
             context <- addExprType context id (TS.ExprType var)
             context
-    context
+    (context, orig_expr)
 
 checkSingleArgCall :: Context -> E.Expr () -> T.Type -> (Context, Option T.Type)
 checkSingleArgCall context (E.Expr _ id _ location) fn_ty = case fn_ty of
@@ -446,8 +447,9 @@ checkFunctionCall context args fn_ty call_location = do
             context { state = state }
     (context, result_ty)
 
-checkExprType :: Context -> E.Expr () -> Context
-checkExprType context (E.Expr expr id _ location) = do
+checkExprType :: Context -> E.Expr () -> (Context, E.Expr ())
+checkExprType context orig_expr = do
+    E.Expr expr id _ location <- orig_expr
     //println "checkExprType: expr {} {} {}" % (expr, id, TF.toString (getExprType context id))
     context <- case expr of
         E.StaticFunctionCall qn args -> do
@@ -687,7 +689,7 @@ checkExprType context (E.Expr expr id _ location) = do
             context <- TEff.setExprEffect context id ([body_sig] + handler_sigs) location
             (context, _) <- matchExprs context id body_id location
             context
-    context
+    (context, orig_expr)
 
 addUndefinedVarToContext :: Context -> [T.TypeVar] -> T.TypeVar -> Location -> (Context, [T.TypeVar])
 addUndefinedVarToContext context undefined_vars var location =
@@ -718,8 +720,10 @@ checkUndefinedVars context undefined_vars type signature_vars location = do
                             then (context, undefined_vars)
                             else addUndefinedVarToContext context undefined_vars v location) (context, undefined_vars)
 
-checkMissingTypeInExpr :: [T.TypeVar] -> (Context, [T.TypeVar]) -> E.Expr () -> (Context, [T.TypeVar])
-checkMissingTypeInExpr signature_vars (context, undefined_vars) (E.Expr expr id _ location) = do
+checkMissingTypeInExpr :: [T.TypeVar] -> (Context, [T.TypeVar]) -> E.Expr () -> ((Context, [T.TypeVar]), E.Expr ())
+checkMissingTypeInExpr signature_vars (context, undefined_vars) expr = do
+    E.Expr s_expr id _ location <- expr
     type <- getExprType context id
-    //println "Checking expr {} {} {}" % (expr, id, TF.toString type)
-    checkUndefinedVars context undefined_vars type signature_vars location
+    //println "Checking expr {} {} {}" % (s_expr, id, TF.toString type)
+    (context, undefined_vars) <- checkUndefinedVars context undefined_vars type signature_vars location
+    ((context, undefined_vars), expr)
