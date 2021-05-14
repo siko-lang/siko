@@ -566,15 +566,23 @@ processExpr context env (SE.Expr expr location) = do
                                     None -> Some [field_name]) f_name fields
                         (context, env, updates, fields)
                     ) (context, env, [], empty)
-            case getBinding env (getString path) of
-                Some (bind_ref, _) -> do
+            Ident path_name path_location <- path
+            case getBinding env path_name of
+                Some (bind_ref, level) -> do
                     (context, err) <- fields |> Map.iter |> Iterator.fold (\(context, err), (field_name, instances) -> do
                         if getLength instances > 1
                             then do
                                 context <- addErrorToContext context (MultiUsedFields instances)
                                 (context, True)
                             else (context, err)) (context, False)
-                    (context, env, HE.RecordUpdate bind_ref updates)
+                    (context, ref_expr) <- if level != env.lambda_id
+                        then do
+                            (context, index) <- captureValue context bind_ref
+                            (context, HE.ArgRef index)
+                        else (context, HE.ValueRef bind_ref)
+                    (context, expr_id) <- getExprId context
+                    ref_expr <- HE.Expr ref_expr expr_id () path_location
+                    (context, env, HE.RecordUpdate ref_expr updates)
                 None -> do
                     context <- addErrorToContext context (NotAVariable path)
                     (context, env, HE.Tuple [])

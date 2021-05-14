@@ -635,13 +635,15 @@ checkExprType context orig_expr = do
                         ) context
                 ) context
             context
-        E.RecordUpdate (P.BindRef _ pattern_id) updates -> do
+        E.RecordUpdate ref updates -> do
+            E.Expr _ ref_id _ _ <- ref
+            updates :: [E.RecordConstructionItem ()] <- updates
             sub_ids <- List.map updates (\update -> do
                     E.Expr _ id _ _ <- update.body
                     id)
             sub_signatures <- TEff.getExprEffectSignatures context sub_ids
             context <- TEff.setExprEffect context id sub_signatures location
-            (context, _) <- matchExprWithPattern context id pattern_id location
+            (context, _) <- matchExprs context id ref_id location
             context
         E.Return arg -> do
             E.Expr _ arg_id _ arg_location <- arg

@@ -114,12 +114,13 @@ internalTraverse context expr = do
                 (context, body) <- internalTraverse context c.body
                 (context, c { pattern = pattern, body = body }))
             (context, E.Expr (E.CaseOf body cases bind_group) id type location)
-        E.RecordUpdate v args -> do
+        E.RecordUpdate ref args -> do
+            (context, ref) <- internalTraverse context ref
             (context, args) <- List.mapS context args
                 (\context, arg -> do
                     (context, body) <- internalTraverse context arg.body
                     (context, arg { body = body }))
-            (context, E.Expr (E.RecordUpdate v args) id type location)
+            (context, E.Expr (E.RecordUpdate ref args) id type location)
         E.Return arg -> do
             (context, arg) <- internalTraverse context arg
             (context, E.Expr (E.Return arg) id type location)

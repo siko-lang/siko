@@ -616,7 +616,8 @@ processExpr context sub hir_expr = do
                 Err errors -> panic "Case checker failed {}" % errors
             (context, case_of_expr)
         HE.RecordUpdate ref updates -> do
-            var <- bindRefToVar ref
+            (context, unit_type) <- processType context (HT.Tuple [])
+            (context, mir_ref) <- processExpr context sub ref
             (context, mir_updates) <- updates |> List.iter
                     |> Iterator.fold (\(context, mir_updates), update -> do
                         (context, mir_update_body) <- processExpr context sub update.body
@@ -624,8 +625,11 @@ processExpr context sub hir_expr = do
                         mir_update <- ME.RecordUpdateItem name mir_update_body
                         mir_updates <- mir_updates + [mir_update]
                         (context, mir_updates)) (context, [])
+            (context, var) <- getNextTempVar context
             (context, record_update_expr) <- getExpr context (ME.Expr (ME.RecordUpdate var mir_updates) mir_expr_type)
-            (context, record_update_expr)
+            (context, mir_var_decl) <- getExpr context (ME.Expr (ME.VarDecl var mir_ref) unit_type)
+            (context, do_expr) <- getExpr context (ME.Expr (ME.Do [mir_var_decl, record_update_expr]) mir_expr_type)
+            (context, do_expr)
         HE.Return arg -> do
             (context, mir_arg) <- processExpr context sub arg
             (context, return_expr) <- getExpr context (ME.Expr (ME.Return mir_arg) mir_expr_type)
