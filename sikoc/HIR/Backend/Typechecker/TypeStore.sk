@@ -24,8 +24,12 @@ data TypeStore = { expr_types :: Map E.ExprId ExprTypeState,
                    expr_effect_signatures :: Map E.ExprId Eff.EffectSignatureSet,
                    pattern_types :: Map P.PatternId PatternTypeState,
                    pattern_effect_signatures :: Map P.PatternId Eff.EffectSignatureSet,
-                   pattern_locations :: Map P.PatternId Location
+                   pattern_locations :: Map P.PatternId Location,
+                   with_effects :: Map E.ExprId [T.Type]
                  } deriving (Show)
+
+instance (S.Apply a) => S.Apply [a] where
+    apply xs sub = List.map xs (\x -> S.apply x sub)
 
 instance S.Apply ExprTypeState where
     //apply :: ExprTypeState -> S.Substitution -> ExprTypeState
@@ -41,7 +45,7 @@ instance S.Apply PatternTypeState where
         PatternWithAdtType adt -> PatternWithAdtType (S.apply adt sub)
 
 initializeTypeStore :: TypeStore
-initializeTypeStore = TypeStore empty empty empty empty empty
+initializeTypeStore = TypeStore empty empty empty empty empty empty
 
 addExprEffectSignatureSet :: TypeStore -> E.ExprId -> Eff.EffectSignatureSet -> TypeStore
 addExprEffectSignatureSet store expr_id effects = do
@@ -57,7 +61,7 @@ addExprType :: TypeStore -> E.ExprId -> ExprTypeState -> TypeStore
 addExprType store expr_id expr_type = do
     (expr_types, prev) <- insert store.expr_types expr_id expr_type
     if isSome prev
-    then panic "Exprid is not unique!"
+    then panic "ExprId is not unique!"
     else ()
     store { expr_types = expr_types }
 
@@ -73,6 +77,11 @@ addPatternLocation :: TypeStore -> P.PatternId -> Location -> TypeStore
 addPatternLocation store pattern_id location = do
     (pattern_locations, _) <- insert store.pattern_locations pattern_id location
     store { pattern_locations = pattern_locations }
+
+addWithEffects :: TypeStore -> E.ExprId -> [T.Type] -> TypeStore
+addWithEffects store expr_id effect_types = do
+    (with_effects, _) <- insert store.with_effects expr_id effect_types
+    store { with_effects = with_effects }
 
 getPatternLocation :: TypeStore -> P.PatternId -> Location
 getPatternLocation store pattern_id =
@@ -143,10 +152,12 @@ instance S.Apply TypeStore where
             expr_effect_signatures <- Map.update store.expr_effect_signatures (applySub sub)
             pattern_types <- Map.update store.pattern_types (applySub sub)
             pattern_effect_signatures <- Map.update store.pattern_effect_signatures (applySub sub)
+            with_effects <- Map.update store.with_effects (applySub sub)
             store { expr_types = expr_types,
                     expr_effect_signatures = expr_effect_signatures,
                     pattern_types = pattern_types,
-                    pattern_effect_signatures = pattern_effect_signatures }
+                    pattern_effect_signatures = pattern_effect_signatures,
+                    with_effects = with_effects }
         where
             applySub a b :: (S.Apply b) => S.Substitution -> (a, b) -> b
             applySub sub (id, item) = S.apply item sub

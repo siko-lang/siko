@@ -91,7 +91,7 @@ checkFunctionType context fn = do
             inferred_effect_names <- getKeys eff_signature.signatures
             context <- case func_type_info.effects of
                 Some declared_effects -> do
-                    declared_effect_names <- List.map declared_effects getEffectNameFromType
+                    declared_effect_names <- List.map declared_effects T.getNameFromType
                     context <- if not (isEmpty inferred_effect_names) || not (isEmpty declared_effect_names)
                     then do
                         context <- List.fold context inferred_effect_names (\context, inferred_effect -> do
@@ -111,7 +111,7 @@ checkFunctionType context fn = do
                         context
                     else context
                     (context, _) <- List.fold (context, eff_signature) declared_effects (\(context, eff_signature), declared_effect -> do
-                        qn <- getEffectNameFromType declared_effect
+                        qn <- T.getNameFromType declared_effect
                         case get eff_signature.signatures qn of
                             Some inferred_effect -> do
                                 (context, sub) <- unify context declared_effect inferred_effect fn.location
@@ -195,9 +195,11 @@ processGroup state instance_resolver group function_store type_store = do
     type_store <- Map.fold type_store context.type_store.expr_types (\type_store, (id, expr_type) -> do
         type <- TS.getTypeFromExprTypeState expr_type
         TP.addExprType type_store id type)
-    type_store <- Map.fold type_store context.type_store.pattern_types(\type_store, (id, pattern_type) -> do
+    type_store <- Map.fold type_store context.type_store.pattern_types (\type_store, (id, pattern_type) -> do
         type <- TS.getTypeFromPatternTypeState pattern_type
         TP.addPatternType type_store id type)
+    type_store <- Map.fold type_store context.type_store.with_effects (\type_store, (id, effect_types) -> do
+        TP.addWithEffects type_store id effect_types)
     (context.state, context.instance_resolver, context.function_store, type_store)
 
 processProgram :: Config -> P.Program () -> TVG.TypeVarGenerator ->
@@ -206,7 +208,7 @@ processProgram config program var_gen = do
     instance_resolver <- IR.createInstanceResolver
     state <- TypecheckerState program [] var_gen CS.initializeEmptyClassStore config
     trace config "TYCHK processData"
-    type_store <- TP.TypeStore Map.empty Map.empty
+    type_store <- TP.TypeStore Map.empty Map.empty Map.empty
     trace config "TYCHK processClassesAndInstances"
     (state, instance_resolver, class_info_store) <- processClassesAndInstances config state instance_resolver
     trace config "TYCHK processAutoDerivedInstances"

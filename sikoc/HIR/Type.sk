@@ -10,7 +10,8 @@ module Siko.HIR.Type(Type(..),
                      isFunction,
                      removeFixed,
                      removeOwnership,
-                     traverse) where
+                     traverse,
+                     getNameFromType) where
 
 import Siko.HIR.Program as HP
 import Siko.HIR.Backend.TypeFormatter as TF
@@ -127,3 +128,8 @@ removeOwnership type = traverse removeOwnership_ type // FIXME: name!
         Ref t -> t
         Owner t -> t
         _ -> type
+
+getNameFromType :: Type -> HP.FullyQualifiedName
+getNameFromType type = case type of
+    Named qn _ -> qn
+    _ -> panic "getNameFromType: type is not Named!"

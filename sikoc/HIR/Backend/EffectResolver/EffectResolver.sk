@@ -3,10 +3,15 @@ module Siko.HIR.Backend.EffectResolver where
 import Siko.HIR.Backend.Queue as Q
 import Siko.HIR.Program as PO
 import Siko.HIR.Type as T
+import Siko.HIR.Backend.TypeFormatter as TF
 import Siko.HIR.Function as F
 import Siko.HIR.Expr as E
 import Siko.HIR.Pattern as P
 import Siko.HIR.Backend.Traversal
+import Siko.HIR.Backend.Unification as U
+import Siko.HIR.Backend.ClassInfoStore as CDS
+import Siko.HIR.Backend.Unification.Substitution as S
+import Siko.HIR.Backend.Unification.TypeVarGenerator as TVG
 import Siko.Config
 import Siko.Constants
 import Siko.Trace
@@ -36,6 +41,7 @@ data Resolution = StaticResolution PO.FullyQualifiedName
                 deriving (PartialEq, Eq, PartialOrd, Ord, Show)
 
 data EffectResolutionSet = { resolutions :: Map PO.FullyQualifiedName Resolution,
+                             effect_types :: Map PO.FullyQualifiedName T.Type,
                            } deriving (PartialEq, Eq, PartialOrd, Ord, Show)
 
 data FunctionKey = { original_name :: PO.FullyQualifiedName,
@@ -46,7 +52,29 @@ data Context = { function_names :: Map FunctionKey PO.FullyQualifiedName,
                  functions :: Map PO.FullyQualifiedName (F.Function T.Type),
                  program :: PO.Program T.Type,
                  effect_resolutions :: [EffectResolutionSet],
-                 name_map :: NameMap }
+                 name_map :: NameMap,
+                 var_gen :: TVG.TypeVarGenerator,
+                 class_info_store :: CDS.ClassInfoStore,
+                }
+
+instance U.TypeVarGenerator Context where
+    getNewTypeVar context = do
+        (var_gen, var) <- TVG.getNewTypeVar context.var_gen
+        context <- context { var_gen = var_gen }
+        (context, var)
+
+    getNewTypeVarType context = do
+        (var_gen, t) <- TVG.getNewTypeVarType context.var_gen
+        context <- context { var_gen = var_gen }
+        (context, t)
+
+instance U.Context Context
+
+instance U.DataProvider Context where
+    getRecord context qn = PO.getRecordOpt context.program qn
+
+instance U.ClassProvider Context where
+    getAllClassDependencies context qn = CDS.getDependencies context.class_info_store qn
 
 getFunctionName :: Context -> FunctionKey -> (Context, PO.FullyQualifiedName, Bool)
 getFunctionName context key = do
@@ -63,14 +91,18 @@ getFunctionName context key = do
                 (name_map, effectless_id) <- getName name_map effectfull_id
                 ((name_map, Some effectless_id), Some effectless_id)
 
-createEffectResolutionSet :: EffectResolutionSet -> [E.EffectHandler T.Type] -> EffectResolutionSet
-createEffectResolutionSet base handlers = do
-    List.fold base handlers (\resolution, E.EffectHandler name selection location -> case selection of
+createEffectResolutionSet :: EffectResolutionSet -> [E.EffectHandler T.Type] -> [E.EffectType T.Type] -> EffectResolutionSet
+createEffectResolutionSet base handlers effect_types = do
+    resolution <- List.fold base handlers (\resolution, E.EffectHandler name selection location -> case selection of
         E.Static qn -> do
             (resolutions, _) <- Map.insert resolution.resolutions name (StaticResolution qn)
             resolution { resolutions = resolutions }
         E.Dynamic _ -> panic "Dynamic effect resolution NYI"
         E.Default -> panic "Default effect resolution NYI")
+    List.fold resolution effect_types (\resolution, E.EffectType t -> do
+        name <- T.getNameFromType t
+        (effect_types, _) <- Map.insert resolution.effect_types name t
+        resolution { effect_types = effect_types })
 
 getFunctionKey :: Context -> PO.FullyQualifiedName -> FunctionKey
 getFunctionKey context qn = do
@@ -87,9 +119,9 @@ popResolution context = do
     (_, effect_resolutions) <- List.remove context.effect_resolutions 0
     context { effect_resolutions = effect_resolutions }
 
-preWithHook :: (Q.Queue FunctionKey, Context) -> [E.EffectHandler T.Type] -> (Q.Queue FunctionKey, Context)
-preWithHook (queue, context) handlers = do
-    resolution_set <- createEffectResolutionSet (List.last context.effect_resolutions) handlers
+preWithHook :: (Q.Queue FunctionKey, Context) -> [E.EffectHandler T.Type] -> [E.EffectType T.Type] -> (Q.Queue FunctionKey, Context)
+preWithHook (queue, context) handlers effect_types = do
+    resolution_set <- createEffectResolutionSet (List.last context.effect_resolutions) handlers effect_types
     context <- pushResolution context resolution_set
     (queue, context)
 
@@ -102,7 +134,7 @@ processExpr :: (Q.Queue FunctionKey, Context) -> E.Expr T.Type -> ((Q.Queue Func
 processExpr (queue, context) expr = do
     E.Expr s_expr id type location <- expr
     case s_expr of
-        E.With handlers body -> ((queue, context), body) // TODO
+        E.With handlers body _ -> ((queue, context), body) // TODO
         E.StaticFunctionCall qn args -> do
             fn <- PO.getFunction context.program qn
             case fn.body of
@@ -128,17 +160,34 @@ processExpr (queue, context) expr = do
 processPattern :: (Q.Queue FunctionKey, Context) -> P.Pattern T.Type -> ((Q.Queue FunctionKey, Context), P.Pattern T.Type)
 processPattern (queue, context) pattern = ((queue, context), pattern)
 
+typeConverter :: S.Substitution -> T.Type -> T.Type
+typeConverter sub type = S.apply type sub
+
 processItem :: Q.Queue FunctionKey -> Context -> FunctionKey -> (Q.Queue FunctionKey, Context)
 processItem queue context key = do
     (context, effectless_id, _) <- getFunctionName context key
     //println "Processing key {} -> new id {}" % (key, effectless_id)
     fn <- PO.getFunction context.program key.original_name
     context <- pushResolution context key.resolutions
+    (context, sub) <- case fn.effects of
+        Some effects -> do
+            List.fold (context, S.createSubstitution) effects (\(context, sub), eff -> do
+                    eff_name <- T.getNameFromType eff
+                    case get key.resolutions.effect_types eff_name of
+                        Some specific_eff -> do
+                            eff <- T.removeFixed eff
+                            case U.unify context sub specific_eff eff of
+                                Ok (context, sub) -> (context, sub)
+                                Err _ -> panic "EffectResolver: failed to unify {} {}" % (TF.toString specific_eff, TF.toString eff)
+                        None -> panic "Eff type {} not found in resolution" % eff_name
+                )
+        None -> (context, S.createSubstitution)
     ((queue, context), body) <- case fn.body of
         Some body -> do
             traversal_context <- createTraversalContext (queue, context) processExpr processPattern
             traversal_context <- setPreWithHook traversal_context preWithHook
             traversal_context <- setPostWithHook traversal_context postWithHook
+            traversal_context <- setTypeConverter traversal_context (typeConverter sub)
             ((queue, context), body) <- traverse traversal_context body
             ((queue, context), Some body)
         None -> ((queue, context), None)
@@ -147,16 +196,16 @@ processItem queue context key = do
     (functions, _) <- Map.insert context.functions effectless_id fn
     (queue, context { functions = functions })
 
-createContext :: PO.Program T.Type -> Context
-createContext program = Context Map.empty Map.empty program [] (NameMap Map.empty)
+createContext :: PO.Program T.Type -> TVG.TypeVarGenerator -> CDS.ClassInfoStore -> Context
+createContext program var_gen class_info_store = Context Map.empty Map.empty program [] (NameMap Map.empty) var_gen class_info_store
 
-processProgram :: Config -> PO.Program T.Type -> PO.Program T.Type
-processProgram config program = do
+processProgram :: Config -> PO.Program T.Type -> TVG.TypeVarGenerator -> CDS.ClassInfoStore -> (TVG.TypeVarGenerator, PO.Program T.Type)
+processProgram config program var_gen class_info_store = do
     main_qn <- PO.FullPath getMainModuleName getMainFunctionName
-    main_key <- FunctionKey main_qn (EffectResolutionSet Map.empty)
+    main_key <- FunctionKey main_qn (EffectResolutionSet Map.empty Map.empty)
     queue :: Q.Queue FunctionKey <- Q.createQueue // FIXME: annotation!
     queue <- Q.addItem queue main_key
-    context <- createContext program
+    context <- createContext program var_gen class_info_store
     (context, _, _) <- getFunctionName context main_key
     (queue, context) <- Q.processItems queue context processItem
     trace config "HIR processing effect handlers"
@@ -164,4 +213,4 @@ processProgram config program = do
         (program, _) <- PO.addItem program name (PO.Function fn)
         program)
     trace config "HIR processing effect handlers done"
-    program
+    (context.var_gen, program)

@@ -37,6 +37,11 @@ data EffectHandlerSelection a = Static FullyQualifiedName
                               | Default
                               deriving (Show)
 
+data EffectType a = EffectType a
+
+instance Show EffectType a where
+    show (EffectType ts) = "EffectType" // FIXME
+
 data SimpleExpr a = StaticFunctionCall FullyQualifiedName [Expr a]
                   | DynamicFunctionCall (Expr a) [Expr a]
                   | ClassMemberCall FullyQualifiedName [Expr a]
@@ -63,5 +68,5 @@ data SimpleExpr a = StaticFunctionCall FullyQualifiedName [Expr a]
                   | Loop (P.Pattern a) (Expr a) (Expr a) [ExprRef] [ExprRef]
                   | ArgRef Int
                   | ValueRef P.BindRef
-                  | With [EffectHandler a] (Expr a)
+                  | With [EffectHandler a] (Expr a) [EffectType a]
                   deriving (Show)
