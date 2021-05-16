@@ -10,6 +10,7 @@ import Siko.MIR.Backend.Ownership.Unification as U
 import Siko.Util.Counter
 import Siko.MIR.Backend.Ownership.Inference.Collection as C
 import Siko.MIR.Backend.Ownership.ConstraintGraph.Creator as CGCreator
+import Siko.MIR.Backend.Ownership.ConstraintGraph.Visual as CGVisual
 import Siko.MIR.Backend.Ownership.Inference.Common as Common
 import Siko.MIR.Backend.Ownership.Initialization as Init
 import Siko.MIR.Backend.Traversal
@@ -347,7 +348,8 @@ calculateInferenceInfo global_context init_context function_id = do
     case function.kind of
         F.Normal info -> do
             trace global_context.config "Inference: processing {}" % function.id
-            body <- CGCreator.buildConstraintGraph global_context init_context function.type function_id info.body
+            cg_graph <- CGCreator.buildConstraintGraph global_context init_context function.type function_id info.body
+            //CGVisual.draw cg_graph (show function.id)
             trace global_context.config "buildConstraintGraph done {}" % function.id
             (context, _) <- C.collectConstraints global_context init_context function.type function_id info.body
             trace global_context.config "processing equals"
