@@ -51,10 +51,10 @@ main = do
     trace config "Parsing inputs.."
     (file_manager, source_files) <-  List.mapS file_manager config.input_files (parseFile config)
     trace config "Resolving names.."
-    (hir_program, var_gen, resolver_errors) <- R.processProgram source_files
+    (hir_program, expr_id_gen, pattern_id_gen, var_gen, resolver_errors) <- R.processProgram source_files
     resolver_errors |> List.iter |> forEach \error -> printResolverError file_manager error
     trace config "HIR processing"
-    case HB.processProgram config hir_program var_gen file_manager of
+    case HB.processProgram config hir_program expr_id_gen pattern_id_gen var_gen file_manager of
         Ok mir_program -> do
             trace config "MIR processing.."
             lir_program <- MB.processProgram config mir_program

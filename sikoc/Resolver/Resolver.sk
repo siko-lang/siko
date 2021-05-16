@@ -8,6 +8,8 @@ import Siko.HIR.Program as HP
 import Siko.HIR.Expr as HE
 import Siko.HIR.Pattern as HP
 import Siko.HIR.Backend.Unification.TypeVarGenerator
+import Siko.HIR.Backend.ExprIdGenerator
+import Siko.HIR.Backend.PatternIdGenerator
 import Siko.Resolver.Error
 import Siko.Resolver.Module
 import Siko.Resolver.Data
@@ -18,25 +20,25 @@ import Siko.AutoDerive as AD
 import Map
 
 data ResolverState = { errors :: [ResolverError],
-                       next_expr_id :: Int,
-                       next_pattern_id :: Int,
+                       expr_id_gen :: ExprIdGenerator,
+                       pattern_id_gen :: PatternIdGenerator,
                        var_gen :: TypeVarGenerator,
                      }
 
 emptyState :: ResolverState
-emptyState = ResolverState [] 0 0 createTypeVarGenerator
+emptyState = ResolverState [] createExprIdGenerator createPatternIdGenerator createTypeVarGenerator
 
 getNextExprId :: ResolverState -> (ResolverState, HE.ExprId)
 getNextExprId state = do
-    id <- state.next_expr_id
-    state <- state { next_expr_id = id + 1 }
-    (state, HE.ExprId id)
+    (expr_id_gen, id) <- getNewExprId state.expr_id_gen
+    state <- state { expr_id_gen = expr_id_gen }
+    (state, id)
 
 getNextPatternId :: ResolverState -> (ResolverState, HP.PatternId)
 getNextPatternId state = do
-    id <- state.next_pattern_id
-    state <- state { next_pattern_id = id + 1 }
-    (state, HP.PatternId id)
+    (pattern_id_gen, id) <- getNewPatternId state.pattern_id_gen
+    state <- state { pattern_id_gen = pattern_id_gen }
+    (state, id)
 
 handleItemConflict :: ResolverState -> Option Location -> Location -> ResolverState
 handleItemConflict state l1 l2 = do
@@ -71,7 +73,11 @@ processAutoDerives source_files = do
                 (instances + adt_instances, SM.Adt adt)
             _ -> (instances, item)
 
-processProgram :: [SF.SourceFile] -> (HP.Program (), TypeVarGenerator, [ResolverError])
+processProgram :: [SF.SourceFile] -> (HP.Program (),
+                                      ExprIdGenerator,
+                                      PatternIdGenerator,
+                                      TypeVarGenerator,
+                                      [ResolverError])
 processProgram source_files = do
     source_files <- processAutoDerives source_files
     state <- emptyState
@@ -89,4 +95,4 @@ processProgram source_files = do
     (state, hir_program) <- modules |> Map.iter |> Iterator.fold (\(state, hir_program), (module_name, (mod, module_resolver)) -> do
                                     (state, hir_program) <- processEffects state hir_program module_resolver mod
                                     (state, hir_program)) (state, hir_program)
-    (hir_program, state.var_gen, state.errors)
+    (hir_program, state.expr_id_gen, state.pattern_id_gen, state.var_gen, state.errors)

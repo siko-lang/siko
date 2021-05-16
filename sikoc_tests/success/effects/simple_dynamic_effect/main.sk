@@ -1,16 +1,24 @@
 module Main where
 
-effect Dynamic where
-    call :: ()
+effect Dynamic1 where
+    call1 :: Int -> ()
 
-foo :: ()
-foo = call
+effect Dynamic2 where
+    call2 :: Int -> ()
 
-myCall :: Int -> ()
-myCall a = do
-    println "myCall {}" % a
+foo :: Int -> ()
+foo a = do
+    a
+    call1 5
+    call2 5
+    ()
+
+myCall :: Int -> Int -> ()
+myCall a b = do
+    println "myCall {} {}" % (a, b)
     ()
 
 main = do
-    with { call = myCall 5 } do
-        foo
+    with { call1 = myCall 5 } do
+        with { call2 = myCall 6 } do
+            foo 4
