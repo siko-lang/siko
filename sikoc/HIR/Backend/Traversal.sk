@@ -2,20 +2,17 @@ module Siko.HIR.Backend.Traversal where
 
 import Siko.HIR.Expr as E
 import Siko.HIR.Pattern as P
+import Siko.Syntax.Location
 
 data TraversalContext context b = { user_context :: context,
                                     expr_fn :: (context -> E.Expr b -> (context, E.Expr b)),
                                     pattern_fn :: (context -> P.Pattern b -> (context, P.Pattern b)),
-                                    pre_with_hook_fn :: Option (context -> [E.EffectHandler b] -> [E.EffectType b] -> context),
-                                    post_with_hook_fn :: Option (context -> context),
+                                    pre_with_hook_fn :: Option (context -> E.ExprId -> [E.EffectHandler b] -> [E.EffectType b] -> Location -> context),
                                     type_converter_fn :: Option (b -> b),
                                   }
 
-setPreWithHook context b :: TraversalContext context b -> (context -> [E.EffectHandler b] -> [E.EffectType b] -> context) -> TraversalContext context b
+setPreWithHook context b :: TraversalContext context b -> (context -> E.ExprId -> [E.EffectHandler b] -> [E.EffectType b] -> Location -> context) -> TraversalContext context b
 setPreWithHook context hook = context { pre_with_hook_fn = Some hook }
-
-setPostWithHook context b :: TraversalContext context b -> (context -> context) -> TraversalContext context b
-setPostWithHook context hook = context { post_with_hook_fn = Some hook }
 
 setTypeConverter context b :: TraversalContext context b -> (b -> b) -> TraversalContext context b
 setTypeConverter context fn = context { type_converter_fn = Some fn }
@@ -157,22 +154,17 @@ internalTraverse context expr = do
                 (context, handler { selection = selection }))
             context <- case context.pre_with_hook_fn of
                 Some pre_with_hook_fn -> do
-                    user_context <- pre_with_hook_fn context.user_context handlers eff_types
+                    user_context <- pre_with_hook_fn context.user_context id handlers eff_types location
                     context { user_context = user_context }
                 None -> context
             (context, body) <- internalTraverse context body
-            context <- case context.post_with_hook_fn of
-                Some post_with_hook_fn -> do
-                    user_context <- post_with_hook_fn context.user_context
-                    context { user_context = user_context }
-                None -> context
             (context, E.Expr (E.With handlers body eff_types) id type location)
     (user_context, expr) <- context.expr_fn context.user_context expr
     (context { user_context = user_context }, expr)
 
 createTraversalContext context b :: context -> (context -> E.Expr b -> (context, E.Expr b)) ->
                                                (context -> P.Pattern b -> (context, P.Pattern b)) -> TraversalContext context b
-createTraversalContext context expr_fn pattern_fn = TraversalContext context expr_fn pattern_fn None None None
+createTraversalContext context expr_fn pattern_fn = TraversalContext context expr_fn pattern_fn None None
 
 traverse context b :: TraversalContext context b -> E.Expr b -> (context, E.Expr b)
 traverse context expr = do
