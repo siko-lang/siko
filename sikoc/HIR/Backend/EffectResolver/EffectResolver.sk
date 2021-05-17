@@ -245,21 +245,31 @@ processExpr (queue, context) expr = do
             fn <- PO.getFunction context.program qn
             case fn.body of
                 Some _ -> do
-                    key <- getFunctionKey context qn
-                    (context, effectless_id, newlyAdded) <- getFunctionName context key
-                    queue <- if newlyAdded
-                    then Q.addItem queue key
-                    else queue
-                    effect_context <- getCurrentEffectContext context
-                    args <- if isDynamic effect_context
+                    effects <- Option.unwrap fn.effects
+                    if isEmpty effects
                     then do
-                        dyn_ref <- getDynRef effect_context
-                        (context, ref_id) <- getNextExprId context
-                        dynamic_context_type <- getDynamicResolutionTupleType effect_context.resolution
-                        arg_ref <- E.Expr dyn_ref ref_id dynamic_context_type location
-                        [arg_ref] + args
-                    else args
-                    ((queue, context), E.Expr (E.StaticFunctionCall effectless_id args) id type location)
+                        key <- FunctionKey qn (EffectResolutionSet Map.empty Map.empty)
+                        (context, effectless_id, newlyAdded) <- getFunctionName context key
+                        queue <- if newlyAdded
+                        then Q.addItem queue key
+                        else queue
+                        ((queue, context), E.Expr (E.StaticFunctionCall effectless_id args) id type location)
+                    else do
+                        key <- getFunctionKey context qn
+                        (context, effectless_id, newlyAdded) <- getFunctionName context key
+                        queue <- if newlyAdded
+                        then Q.addItem queue key
+                        else queue
+                        effect_context <- getCurrentEffectContext context
+                        args <- if isDynamic effect_context
+                        then do
+                            dyn_ref <- getDynRef effect_context
+                            (context, ref_id) <- getNextExprId context
+                            dynamic_context_type <- getDynamicResolutionTupleType effect_context.resolution
+                            arg_ref <- E.Expr dyn_ref ref_id dynamic_context_type location
+                            [arg_ref] + args
+                        else args
+                        ((queue, context), E.Expr (E.StaticFunctionCall effectless_id args) id type location)
                 None -> // extern function
                     ((queue, context), E.Expr (E.StaticFunctionCall qn args) id type location)
         E.EffectMemberCall qn args -> do
