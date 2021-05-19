@@ -1,5 +1,6 @@
 module Siko.MIR.Backend.Ownership.ConstraintGraph where
 
+import Siko.MIR.Program as P
 import Siko.MIR.Expr as E
 import Siko.MIR.Type as T
 import Map
@@ -8,8 +9,18 @@ data NodeId = NodeId Int deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
 data EdgeId = EdgeId Int deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
+data ExprKind = EVarDecl
+              | EStaticFunctionCall P.Identity
+              | EStringLiteral
+              | EFloatLiteral
+              | ECharLiteral
+              | EIntegerLiteral
+              | EList
+              | Other String
+              deriving (Show)
+
 data ExprInfo = { id :: E.ExprId,
-                  name :: String,
+                  kind :: ExprKind,
                 } deriving (Show)
 
 data VarInfo = { var :: E.Var }
@@ -21,7 +32,8 @@ data NodeKind = Expr ExprInfo
 
 data Node = { kind :: NodeKind,
               type :: T.Type,
-              edges :: [EdgeId] }
+              edges :: [EdgeId]
+            } deriving (Show)
 
 data EdgeKind = Do
               | FnArg
@@ -32,11 +44,15 @@ data EdgeKind = Do
               | IfTrue
               | IfFalse
               | Return
+              | ReturnArg
               | ImplicitReturn
               | LoopInitializer
+              | ListArg
               | LoopVar
               | Continue
               | Break
+              | ContinueArg
+              | BreakArg
               | Converter
               | CaseVar
               | CaseBody
@@ -50,6 +66,16 @@ data Edge = { kind :: EdgeKind,
 data ConstraintGraph = { nodes :: Map NodeId Node,
                          edges :: Map EdgeId Edge
                        }
+
+getNode :: ConstraintGraph -> NodeId -> Node
+getNode constraint_graph node_id = case get constraint_graph.nodes node_id of
+    Some node -> node
+    None -> panic "ConstraintGraph node not found"
+
+getEdge :: ConstraintGraph -> EdgeId -> Edge
+getEdge constraint_graph edge_id = case get constraint_graph.edges edge_id of
+    Some edge -> edge
+    None -> panic "ConstraintGraph edge not found"
 
 addNode :: ConstraintGraph -> NodeKind -> T.Type -> (ConstraintGraph, NodeId)
 addNode graph kind type = do

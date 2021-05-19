@@ -1,6 +1,66 @@
 module Siko.MIR.Backend.Ownership.ConstraintGraph.Inference where
 
+import Siko.MIR.Backend.Ownership.Unification as U
 import Siko.MIR.Backend.Ownership.ConstraintGraph as CG
+import Siko.MIR.Type as T
+import Siko.MIR.Program as P
+import Siko.MIR.Function as F
 
-process :: CG.ConstraintGraph -> CG.ConstraintGraph
-process constraint_graph = constraint_graph
+import Map
+import List2 as List2
+import List2 (List2)
+
+isSourceNode :: CG.ConstraintGraph -> CG.NodeId -> Bool
+isSourceNode constraint_graph node_id = do
+    node <- CG.getNode constraint_graph node_id
+    edges <- List.map node.edges (\edge_id -> CG.getEdge constraint_graph edge_id)
+    incoming_edges <- List.filter edges (\edge -> edge.destination == node_id)
+    isEmpty incoming_edges
+
+setNodeType :: CG.ConstraintGraph -> CG.NodeId -> T.Type -> CG.ConstraintGraph
+setNodeType constraint_graph node_id type = CG.updateNode constraint_graph node_id (\node -> node { type = type })
+
+startFromSourceNode :: P.Program -> CG.ConstraintGraph -> CG.NodeId -> CG.ConstraintGraph
+startFromSourceNode program constraint_graph node_id = do
+    node <- CG.getNode constraint_graph node_id
+    case node.kind of
+        CG.Expr expr_info -> case expr_info.kind of
+                            CG.EVarDecl -> do
+                                kinds <- T.collectOwnershipKinds node.type
+                                sub <- U.batch kinds (List2.single T.OwnerKind)
+                                new_type <- U.apply node.type sub
+                                constraint_graph <- setNodeType constraint_graph node_id new_type
+                                constraint_graph
+                            CG.EStaticFunctionCall id -> do
+                                function <- P.getFunction program id
+                                if isEmpty function.type.args
+                                then ()
+                                else panic "Source node function type has args! {}" % id
+                                constraint_graph <- setNodeType constraint_graph node_id function.type.result
+                                constraint_graph
+                            CG.EIntegerLiteral | CG.ECharLiteral  | CG.EFloatLiteral | CG.EStringLiteral-> do
+                                kinds <- T.collectOwnershipKinds node.type
+                                sub <- U.batch kinds (List2.single T.OwnerKind)
+                                new_type <- U.apply node.type sub
+                                constraint_graph <- setNodeType constraint_graph node_id new_type
+                                constraint_graph
+                            CG.EList -> do
+                                kinds <- T.collectOwnershipKinds node.type
+                                first <- case List2.head kinds of
+                                    Some first -> first
+                                    None -> panic "List type does not have ownership kind"
+                                sub <- U.batch (List2.single first) (List2.single T.OwnerKind)
+                                new_type <- U.apply node.type sub
+                                constraint_graph <- setNodeType constraint_graph node_id new_type
+                                constraint_graph
+                            kind -> do
+                                panic "Unsupported source node {}" % kind
+                                constraint_graph
+        _ -> constraint_graph
+
+infer :: P.Program -> CG.ConstraintGraph -> CG.ConstraintGraph
+infer program constraint_graph = do
+    node_ids <- Map.getKeys constraint_graph.nodes
+    source_nodes <- List.filter node_ids (isSourceNode constraint_graph)
+    constraint_graph <- List.fold constraint_graph source_nodes (startFromSourceNode program)
+    constraint_graph

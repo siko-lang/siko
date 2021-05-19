@@ -19,9 +19,9 @@ data Context = { program :: P.Program,
                  return_node_id :: CG.NodeId,
                  constraint_graph :: CG.ConstraintGraph }
 
-addExprNode :: Context -> E.ExprId -> String -> T.Type -> Context
-addExprNode context expr_id name type = do
-    kind <- CG.Expr (CG.ExprInfo expr_id name)
+addExprNode :: Context -> E.ExprId -> CG.ExprKind -> T.Type -> Context
+addExprNode context expr_id kind type = do
+    kind <- CG.Expr (CG.ExprInfo expr_id kind)
     (constraint_graph, node_id) <- CG.addNode context.constraint_graph kind type
     (expr_node_ids, _) <- Map.insert context.expr_node_ids expr_id node_id
     context <- context { constraint_graph = constraint_graph, expr_node_ids = expr_node_ids }
@@ -62,9 +62,9 @@ addVarEdge context kind from to reverse = do
 processExpr :: Context -> E.Expr -> (Context, E.Expr)
 processExpr context expr = do
     E.Expr s_expr type id <- expr
-    context <- addExprNode context id (E.short expr) type
     case s_expr of
         E.Do items -> do
+            context <- addExprNode context id (CG.Other (E.short expr)) type
             (context, items) <- List.mapS context items processExpr
             index <- getLength items - 1
             E.Expr _ _ last_id <- List.atIndex items index
@@ -72,17 +72,27 @@ processExpr context expr = do
             (context, E.Expr (E.Do items) type id)
         E.Multi _ -> panic "Multi expr in Equality.processExpr"
         E.StaticFunctionCall f_id args -> do
+            context <- addExprNode context id (CG.EStaticFunctionCall f_id) type
             (context, args) <- List.mapS context args processExpr
             context <- List.fold context args (\context, arg -> do
                 E.Expr _ _ arg_id <- arg
                 addEdge context CG.FnArg arg_id id)
             // FIXME, TODO
             (context, E.Expr (E.StaticFunctionCall f_id args) type id)
-        E.IntegerLiteral i -> (context, E.Expr (E.IntegerLiteral i) type id)
-        E.StringLiteral i -> (context, E.Expr (E.StringLiteral i) type id)
-        E.FloatLiteral i -> (context, E.Expr (E.FloatLiteral i) type id)
-        E.CharLiteral i -> (context, E.Expr (E.CharLiteral i) type id)
+        E.IntegerLiteral i -> do
+            context <- addExprNode context id CG.EIntegerLiteral type
+            (context, E.Expr (E.IntegerLiteral i) type id)
+        E.StringLiteral i -> do
+            context <- addExprNode context id CG.EStringLiteral type
+            (context, E.Expr (E.StringLiteral i) type id)
+        E.FloatLiteral i -> do
+            context <- addExprNode context id CG.EFloatLiteral type
+            (context, E.Expr (E.FloatLiteral i) type id)
+        E.CharLiteral i -> do
+            context <- addExprNode context id CG.ECharLiteral type
+            (context, E.Expr (E.CharLiteral i) type id)
         E.VarDecl v rhs -> do
+            context <- addExprNode context id CG.EVarDecl type
             E.Expr _ rhs_type _ <- rhs
             context <- addVarNode context v rhs_type
             (context, rhs) <- processExpr context rhs
@@ -90,14 +100,17 @@ processExpr context expr = do
             context <- addVarEdge context CG.VarDecl rhs_id v False
             (context, E.Expr (E.VarDecl v rhs) type id)
         E.VarRef v -> do
+            context <- addExprNode context id (CG.Other (E.short expr)) type
             context <- addVarEdge context CG.VarRef id v True
             (context, E.Expr (E.VarRef v) type id)
         E.FieldAccess name receiver -> do
+            context <- addExprNode context id (CG.Other (E.short expr)) type
             (context, receiver) <- processExpr context receiver
             E.Expr _ _ receiver_id <- receiver
             context <- addEdge context CG.FieldAccess receiver_id id
             (context, E.Expr (E.FieldAccess name receiver) type id)
         E.If cond true_branch false_branch -> do
+            context <- addExprNode context id (CG.Other (E.short expr)) type
             (context, cond) <- processExpr context cond
             E.Expr _ _ cond_id <- cond
             context <- addEdge context CG.IfCond cond_id id
@@ -109,24 +122,35 @@ processExpr context expr = do
             context <- addEdge context CG.IfFalse f_id id
             (context, E.Expr (E.If cond true_branch false_branch) type id)
         E.List items -> do
+            context <- addExprNode context id CG.EList type
             (context, items) <- List.mapS context items (\context, item -> do
                     (context, item) <- processExpr context item
                     E.Expr _ _ item_id <- item
+                    context <- addEdge context CG.ListArg item_id id
                     (context, item))
             (context, E.Expr (E.List items) type id)
         E.Return arg -> do
+            context <- addExprNode context id (CG.Other (E.short expr)) type
             (context, arg) <- processExpr context arg
             E.Expr _ _ arg_id <- arg
+            context <- addEdge context CG.ReturnArg arg_id id
             context <- addReturnEdge context CG.Return arg_id
             (context, E.Expr (E.Return arg) type id)
         E.Continue arg -> do
+            context <- addExprNode context id (CG.Other (E.short expr)) type
             (context, arg) <- processExpr context arg
+            E.Expr _ _ arg_id <- arg
+            context <- addEdge context CG.ContinueArg arg_id id
             (context, E.Expr (E.Continue arg) type id)
         E.Break arg -> do
+            context <- addExprNode context id (CG.Other (E.short expr)) type
             (context, arg) <- processExpr context arg
+            E.Expr _ _ arg_id <- arg
+            context <- addEdge context CG.BreakArg arg_id id
             (context, E.Expr (E.Break arg) type id)
         E.RecordUpdate _ _ -> panic "RecordUpdate found in Equality.processExpr"
         E.Loop v initializer body continues breaks -> do
+            context <- addExprNode context id (CG.Other (E.short expr)) type
             E.Expr _ initializer_type initializer_id <- initializer
             context <- addVarNode context v initializer_type
             (context, initializer) <- processExpr context initializer
@@ -139,6 +163,7 @@ processExpr context expr = do
             context <- List.fold context breaks (\context, b -> addEdge context CG.Break b id)
             (context, E.Expr (E.Loop v initializer body continues breaks) type id)
         E.CaseOf body cases -> do
+            context <- addExprNode context id (CG.Other (E.short expr)) type
             (context, body) <- processExpr context body
             E.Expr _ _ case_of_body_id <- body
             (context, cases) <- List.mapS context cases (\context, c -> do
@@ -161,6 +186,7 @@ processExpr context expr = do
         E.Move _ -> panic "Move found in Equality.processExpr"
         E.Box _ -> panic "Box found in Equality.processExpr"
         E.Converter arg kind -> do
+            context <- addExprNode context id (CG.Other (E.short expr)) type
             (context, arg) <- processExpr context arg
             E.Expr _ _ arg_id <- arg
             context <- addEdge context CG.Converter arg_id id
