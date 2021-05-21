@@ -5,6 +5,7 @@ import Siko.MIR.Backend.Ownership.ConstraintGraph as CG
 import Siko.MIR.Type as T
 import Siko.MIR.Program as P
 import Siko.MIR.Function as F
+import Siko.MIR.Expr as E
 
 import Map
 import List2 as List2
@@ -20,47 +21,136 @@ isSourceNode constraint_graph node_id = do
 setNodeType :: CG.ConstraintGraph -> CG.NodeId -> T.Type -> CG.ConstraintGraph
 setNodeType constraint_graph node_id type = CG.updateNode constraint_graph node_id (\node -> node { type = type })
 
-startFromSourceNode :: P.Program -> CG.ConstraintGraph -> CG.NodeId -> CG.ConstraintGraph
-startFromSourceNode program constraint_graph node_id = do
+getSourceEdges :: CG.ConstraintGraph -> CG.NodeId -> [EdgeCheck]
+getSourceEdges constraint_graph node_id = do
     node <- CG.getNode constraint_graph node_id
-    case node.kind of
-        CG.Expr expr_info -> case expr_info.kind of
-                            CG.EVarDecl -> do
-                                kinds <- T.collectOwnershipKinds node.type
-                                sub <- U.batch kinds (List2.single T.OwnerKind)
-                                new_type <- U.apply node.type sub
-                                constraint_graph <- setNodeType constraint_graph node_id new_type
-                                constraint_graph
-                            CG.EStaticFunctionCall id -> do
-                                function <- P.getFunction program id
-                                if isEmpty function.type.args
-                                then ()
-                                else panic "Source node function type has args! {}" % id
-                                constraint_graph <- setNodeType constraint_graph node_id function.type.result
-                                constraint_graph
-                            CG.EIntegerLiteral | CG.ECharLiteral  | CG.EFloatLiteral | CG.EStringLiteral-> do
-                                kinds <- T.collectOwnershipKinds node.type
-                                sub <- U.batch kinds (List2.single T.OwnerKind)
-                                new_type <- U.apply node.type sub
-                                constraint_graph <- setNodeType constraint_graph node_id new_type
-                                constraint_graph
-                            CG.EList -> do
-                                kinds <- T.collectOwnershipKinds node.type
-                                first <- case List2.head kinds of
-                                    Some first -> first
-                                    None -> panic "List type does not have ownership kind"
-                                sub <- U.batch (List2.single first) (List2.single T.OwnerKind)
-                                new_type <- U.apply node.type sub
-                                constraint_graph <- setNodeType constraint_graph node_id new_type
-                                constraint_graph
-                            kind -> do
-                                panic "Unsupported source node {}" % kind
-                                constraint_graph
-        _ -> constraint_graph
+    source_edges <- List.filter node.edges (\edge_id -> do
+                    edge <- CG.getEdge constraint_graph edge_id
+                    edge.source == node_id)
+    List.map source_edges (\edge_id -> EdgeCheck edge_id node_id)
 
-infer :: P.Program -> CG.ConstraintGraph -> CG.ConstraintGraph
-infer program constraint_graph = do
+data EdgeCheck = { edge_id :: CG.EdgeId,
+                   source :: CG.NodeId
+                 } deriving (Show)
+
+startFromSourceNode :: P.Program -> P.Identity -> CG.ConstraintGraph -> CG.NodeId -> (CG.ConstraintGraph, [EdgeCheck])
+startFromSourceNode program function_id constraint_graph node_id = do
+    node <- CG.getNode constraint_graph node_id
+    constraint_graph <- case node.kind of
+        CG.Expr expr_info -> do
+                case expr_info.kind of
+                    CG.EVarDecl -> do
+                        kinds <- T.collectOwnershipKinds node.type
+                        sub <- U.batch kinds (List2.single T.OwnerKind)
+                        new_type <- U.apply node.type sub
+                        constraint_graph <- setNodeType constraint_graph node_id new_type
+                        constraint_graph
+                    CG.EStaticFunctionCall id -> do
+                        function <- P.getFunction program id
+                        if isEmpty function.type.args
+                        then ()
+                        else panic "Source node function type has args! {}" % id
+                        constraint_graph <- setNodeType constraint_graph node_id function.type.result
+                        constraint_graph
+                    CG.EIntegerLiteral | CG.ECharLiteral  | CG.EFloatLiteral | CG.EStringLiteral-> do
+                        kinds <- T.collectOwnershipKinds node.type
+                        sub <- U.batch kinds (List2.single T.OwnerKind)
+                        new_type <- U.apply node.type sub
+                        constraint_graph <- setNodeType constraint_graph node_id new_type
+                        constraint_graph
+                    CG.EList -> do
+                        kinds <- T.collectOwnershipKinds node.type
+                        first <- case List2.head kinds of
+                            Some first -> first
+                            None -> panic "List type does not have ownership kind"
+                        sub <- U.batch (List2.single first) (List2.single T.OwnerKind)
+                        new_type <- U.apply node.type sub
+                        constraint_graph <- setNodeType constraint_graph node_id new_type
+                        constraint_graph
+                    kind -> panic "Unsupported source node {}" % kind
+        CG.Var (E.Arg index) -> do
+            function <- P.getFunction program function_id
+            arg_type <- atIndex function.type.args index
+            constraint_graph <- setNodeType constraint_graph node_id arg_type
+            constraint_graph
+        n -> panic "Source node kind is not expr!{}" % n
+    edge_checks <- getSourceEdges constraint_graph node_id
+    (constraint_graph, edge_checks)
+
+processChecks :: CG.ConstraintGraph -> [EdgeCheck] -> CG.ConstraintGraph
+processChecks constraint_graph checks = do
+    loop (constraint_graph, checks) <- (constraint_graph, checks) do
+        (constraint_graph, checks) <- List.mapS constraint_graph checks processCheck
+        checks <- List.flatten checks
+        if isEmpty checks
+        then break constraint_graph
+        else (constraint_graph, checks)
+
+copyType :: CG.ConstraintGraph -> T.Type -> T.Type -> CG.NodeId -> (CG.ConstraintGraph, [EdgeCheck])
+copyType constraint_graph src_type dest_type target = do
+    if src_type == dest_type
+    then (constraint_graph, [])
+    else do
+        println "Updating type of node {} from {} to {}" % (target, dest_type, src_type)
+        constraint_graph <- setNodeType constraint_graph target src_type
+        edge_checks <- getSourceEdges constraint_graph target
+        (constraint_graph, edge_checks)
+
+processCheck :: CG.ConstraintGraph -> EdgeCheck -> (CG.ConstraintGraph, [EdgeCheck])
+processCheck constraint_graph check = do
+    edge <- CG.getEdge constraint_graph check.edge_id
+    (source, destination) <- if edge.source == check.source
+        then (edge.source, edge.destination)
+        else (edge.destination, edge.source)
+    println "Processing check: {} -> {}: {}" % (source, destination, edge.kind)
+    dump constraint_graph
+    case edge.kind of
+        CG.Converter -> do
+            src_node <- CG.getNode constraint_graph source
+            dest_node <- CG.getNode constraint_graph destination
+            source_kinds <- T.collectOwnershipKinds src_node.type
+            destination_kinds <- T.collectOwnershipKinds dest_node.type
+            (_, source_kinds) <- List2.remove source_kinds 0
+            (_, destination_kinds) <- List2.remove destination_kinds 0
+            sub <- U.batch source_kinds destination_kinds
+            new_type <- U.apply dest_node.type sub
+            println "Converter {} => {}/{}" % (src_node.type, dest_node.type, new_type)
+            if new_type == dest_node.type
+            then (constraint_graph, [])
+            else do
+                constraint_graph <- setNodeType constraint_graph destination new_type
+                edge_checks <- getSourceEdges constraint_graph destination
+                (constraint_graph, edge_checks)
+        CG.VarDecl -> do
+            src_node <- CG.getNode constraint_graph source
+            dest_node <- CG.getNode constraint_graph destination
+            copyType constraint_graph src_node.type dest_node.type destination
+        CG.Do -> do
+            src_node <- CG.getNode constraint_graph source
+            dest_node <- CG.getNode constraint_graph destination
+            copyType constraint_graph src_node.type dest_node.type destination
+        CG.ImplicitReturn -> do
+            src_node <- CG.getNode constraint_graph source
+            dest_node <- CG.getNode constraint_graph destination
+            copyType constraint_graph src_node.type dest_node.type destination
+        kind -> do
+            println "Unsupported edge kind {}" % kind
+            (constraint_graph, [])
+
+dump :: CG.ConstraintGraph -> ()
+dump constraint_graph = do
+    println "-----"
+    constraint_graph.nodes |> Map.iter |> Iterator.forEach (\(node_id, node) -> println "{}: {}" % (node_id, node.type))
+    println "-----"
+
+infer :: P.Program -> P.Identity -> CG.ConstraintGraph -> CG.ConstraintGraph
+infer program function_id constraint_graph = do
     node_ids <- Map.getKeys constraint_graph.nodes
     source_nodes <- List.filter node_ids (isSourceNode constraint_graph)
-    constraint_graph <- List.fold constraint_graph source_nodes (startFromSourceNode program)
+    (constraint_graph, checks) <- List.mapS constraint_graph source_nodes (startFromSourceNode program function_id)
+    println "Initial checks {}" % checks
+    checks <- List.flatten checks
+    constraint_graph <- processChecks constraint_graph checks
+    println "Final"
+    dump constraint_graph
     constraint_graph
