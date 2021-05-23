@@ -54,7 +54,9 @@ unify :: T.Type -> T.Type -> U.SubstitutionApply
 unify type1 type2 = do
         kinds1 <- T.collectOwnershipKinds type1
         kinds2 <- T.collectOwnershipKinds type2
-        unifyKinds kinds1 kinds2
+        sub <- unifyKinds kinds1 kinds2
+        //println "Unify {} {} => {}" % (type1, type2, sub)
+        sub
 
 unifyKinds :: List2 T.OwnershipKind -> List2 T.OwnershipKind -> U.SubstitutionApply
 unifyKinds kinds1 kinds2 = do
@@ -69,7 +71,7 @@ unifyKinds kinds1 kinds2 = do
                         if v1 == v2
                         then (index + 1, kinds1, kinds2, changes)
                         else do
-                            change <- if v1 < v2
+                            change <- if v1 > v2
                             then (kind1, v2)
                             else (kind2, v1)
                             changes :: [(T.OwnershipKind, T.OwnershipVar)] <- List.push changes change
@@ -92,19 +94,22 @@ instance U.Apply CG.Node where
             CG.FnCall e_id f_id function_type -> CG.FnCall e_id f_id (U.apply function_type sub)
             CG.ListCtor e_id t -> CG.ListCtor e_id (U.apply t sub)
             CG.FnReturn t -> CG.FnReturn (U.apply t sub)
+        //println "Type update: {} => {}" % (node.kind, kind)
         node { kind = kind }
 
 updateNodeTypes :: CG.ConstraintGraph -> CG.NodeId -> CG.NodeId -> U.SubstitutionApply -> Bool -> (CG.ConstraintGraph, [CG.EdgeId])
 updateNodeTypes constraint_graph node1 node2 sub forced = do
-    edges <- []
     (constraint_graph, updated) <- CG.updateNode constraint_graph node1 (\node -> U.apply node sub)
+    //println "{} updated to {} {}" % (node1, CG.getNodeType (CG.getNode constraint_graph node1), updated)
     edges <- if updated || forced
     then getNodeEdges constraint_graph node1
-    else edges
+    else []
     (constraint_graph, updated) <- CG.updateNode constraint_graph node2 (\node -> U.apply node sub)
+    //println "{} updated to {} {}" % (node2, CG.getNodeType (CG.getNode constraint_graph node2), updated)
     edges <- if updated || forced
-    then getNodeEdges constraint_graph node2
+    then edges + (getNodeEdges constraint_graph node2)
     else edges
+    edges <- edges |> sort |> dedup
     (constraint_graph, edges)
 
 processEdge :: CG.ConstraintGraph -> CG.EdgeId -> (CG.ConstraintGraph, [CG.EdgeId])
