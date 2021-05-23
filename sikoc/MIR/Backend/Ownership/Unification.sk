@@ -32,13 +32,18 @@ instance Apply T.OwnershipVar where
     //apply :: T.OwnershipVar -> SubstitutionApply -> T.OwnershipVar
     apply v sub = case Map.get sub.var_subs v of
                     Some (Unification new) -> new
-                    _ -> panic "Invalid Ownershipvar subtitution!"
+                    e -> panic "Invalid Ownershipvar subtitution! {}" % e
 
 instance Apply T.OwnershipKind where
     //apply :: T.OwnershipKind -> SubstitutionApply -> T.OwnershipKind
     apply k sub = case k of
         T.VarKind v -> case Map.get sub.var_subs v of
-                        Some (Unification new) -> T.VarKind new
+                        Some (Unification new) -> do
+                            //if v == new
+                            //then k
+                            //else apply (T.VarKind new) sub
+                            // FIXME:
+                            T.VarKind new
                         Some Owner -> T.OwnerKind
                         Some Boxed -> T.BoxedKind
                         Some (Borrow index) -> T.BorrowKind index

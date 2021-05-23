@@ -10,34 +10,19 @@ data NodeId = NodeId Int deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
 data EdgeId = EdgeId Int deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
-data ExprKind = EVarDecl
-              | EStaticFunctionCall P.Identity F.FunctionType
-              | EStringLiteral
-              | EFloatLiteral
-              | ECharLiteral
-              | EIntegerLiteral
-              | EList
-              | Other String
-              deriving (Show)
-
-data ExprInfo = { id :: E.ExprId,
-                  kind :: ExprKind,
-                } deriving (Show)
-
-data VarInfo = { var :: E.Var }
-
-data NodeKind = Expr ExprInfo
-              | Var E.Var
-              | FnReturn
-              deriving (Show)
+data NodeKind = Expr E.ExprId T.Type
+              | Var E.Var T.Type
+              | FnCall E.ExprId P.Identity F.FunctionType
+              | ListCtor E.ExprId T.Type
+              | FnReturn T.Type
+              deriving (Show, PartialEq, Eq)
 
 data Node = { kind :: NodeKind,
-              type :: T.Type,
               edges :: [EdgeId]
-            } deriving (Show)
+            } deriving (Show, PartialEq, Eq)
 
 data EdgeKind = Do
-              | FnArg
+              | FnArg Int
               | VarDecl
               | VarRef
               | FieldAccess
@@ -62,11 +47,30 @@ data EdgeKind = Do
 
 data Edge = { kind :: EdgeKind,
               source :: NodeId,
-              destination :: NodeId }
+              destination :: NodeId,
+              visited :: Bool }
 
 data ConstraintGraph = { nodes :: Map NodeId Node,
                          edges :: Map EdgeId Edge
                        }
+
+getNodeType :: Node -> T.Type
+getNodeType node = case node.kind of
+    Expr _ t -> t
+    Var _ t -> t
+    FnCall _ _ t -> t.result
+    ListCtor _ t -> t
+    FnReturn t -> t
+
+setNodeType :: Node -> T.Type -> Node
+setNodeType node type = do
+    kind <- case node.kind of
+        Expr i _ -> Expr i type
+        Var v _ -> Var v type
+        FnCall _ _ _ -> panic "setNodeType called on FnCall node!"
+        ListCtor _ _ -> panic "setNodeType called on ListCtor node!"
+        FnReturn _ -> FnReturn type
+    node { kind = kind }
 
 getNode :: ConstraintGraph -> NodeId -> Node
 getNode constraint_graph node_id = case get constraint_graph.nodes node_id of
@@ -78,31 +82,46 @@ getEdge constraint_graph edge_id = case get constraint_graph.edges edge_id of
     Some edge -> edge
     None -> panic "ConstraintGraph edge not found"
 
-addNode :: ConstraintGraph -> NodeKind -> T.Type -> (ConstraintGraph, NodeId)
-addNode graph kind type = do
-    node <- Node kind type []
+addNode :: ConstraintGraph -> NodeKind -> (ConstraintGraph, NodeId)
+addNode graph kind = do
+    node <- Node kind []
     node_id <- Map.getSize graph.nodes
     node_id <- NodeId node_id
     (nodes, _) <- Map.insert graph.nodes node_id node
     (graph { nodes = nodes }, node_id)
 
-updateNode :: ConstraintGraph -> NodeId -> (Node -> Node) -> ConstraintGraph
+updateNode :: ConstraintGraph -> NodeId -> (Node -> Node) -> (ConstraintGraph, Bool)
 updateNode graph node_id f = do
-        (nodes, _) <- Map.alter (nodeUpdate f node_id) node_id graph.nodes
-        graph { nodes = nodes }
+        (updated, nodes, _) <- Map.alterS (nodeUpdate f node_id) False node_id graph.nodes
+        (graph { nodes = nodes }, updated)
     where
-        nodeUpdate f node_id old_node =
+        nodeUpdate f node_id _ old_node =
             case old_node of
-                Some n -> Some (f n)
+                Some n -> do
+                    updated_node <- f n
+                    if updated_node != n
+                    then (True, Some updated_node)
+                    else (False, Some updated_node)
                 None -> panic "Node with node_id {} not found in constraint graph" % node_id
+
+visitEdge :: ConstraintGraph -> EdgeId -> ConstraintGraph
+visitEdge graph edge_id = do
+        (edges, _) <- Map.alter (edgeUpdate edge_id) edge_id graph.edges
+        graph { edges = edges }
+    where
+        edgeUpdate edge_id old_edge =
+            case old_edge of
+                Some edge -> do
+                    Some (edge { visited = True })
+                None -> panic "Edge with edge_id {} not found in constraint graph" % edge_id
 
 addEdge :: ConstraintGraph -> EdgeKind -> NodeId -> NodeId -> (ConstraintGraph, EdgeId)
 addEdge graph kind source destination = do
-        edge <- Edge kind source destination
+        edge <- Edge kind source destination False
         edge_id <- Map.getSize graph.edges
         edge_id <- EdgeId edge_id
-        graph <- updateNode graph source (addEdgeToNode edge_id)
-        graph <- updateNode graph destination (addEdgeToNode edge_id)
+        (graph, _) <- updateNode graph source (addEdgeToNode edge_id)
+        (graph, _) <- updateNode graph destination (addEdgeToNode edge_id)
         (edges, _) <- Map.insert graph.edges edge_id edge
         (graph { edges = edges }, edge_id)
     where
