@@ -7,13 +7,17 @@ import Siko.MIR.Type as T
 import Siko.MIR.Function as F
 import Siko.MIR.Backend.Ownership.Inference.Common as Common
 import Siko.MIR.Backend.Ownership.Initialization as Init
+import Siko.MIR.Backend.Ownership.Unification as U
 import Siko.MIR.Backend.Ownership.Initialization.Functions as IF
+import List2 as List2
+import List2 (List2)
 import Siko.Trace
 import Siko.MIR.Backend.Ownership.ConstraintGraph as CG
 
 import Map
 
 data Context = { program :: P.Program,
+                 init_context :: Init.Context,
                  expr_node_ids :: Map E.ExprId CG.NodeId,
                  var_node_ids :: Map E.Var CG.NodeId,
                  return_node_id :: CG.NodeId,
@@ -26,6 +30,77 @@ addExprNode context expr_id kind type = do
     (expr_node_ids, _) <- Map.insert context.expr_node_ids expr_id node_id
     context <- context { constraint_graph = constraint_graph, expr_node_ids = expr_node_ids }
     context
+
+getNextOwnershipKind :: Context -> (Context, T.OwnershipKind)
+getNextOwnershipKind context = do
+    (context, v) <- getNextOwnershipVar context
+    (context, T.VarKind v)
+
+getNextOwnershipVar :: Context -> (Context, T.OwnershipVar)
+getNextOwnershipVar context = do
+    init_context <- context.init_context
+    (var_gen, v) <- U.getNextOwnershipVar init_context.var_gen
+    init_context <- init_context { var_gen = var_gen }
+    (context { init_context = init_context }, v)
+
+instantiateOwnershipKind :: Context -> T.OwnershipKind -> (Context, T.OwnershipKind)
+instantiateOwnershipKind context kind = case kind of
+    T.VarKind v -> (context, kind)
+    _ -> getNextOwnershipKind context
+
+instantiateOwnershipKinds :: Context -> List2 T.OwnershipKind -> (Context, List2 T.OwnershipKind)
+instantiateOwnershipKinds context kinds = List2.mapS context kinds instantiateOwnershipKind
+
+instantiateType :: Context -> T.Type -> (Context, T.Type)
+instantiateType context type = case type of
+    T.Adt id ownership_kinds -> do
+        (context, ownership_kinds) <- instantiateOwnershipKinds context ownership_kinds
+        (context, T.Adt id ownership_kinds)
+    T.Record id ownership_kinds -> do
+        (context, ownership_kinds) <- instantiateOwnershipKinds context ownership_kinds
+        (context, T.Record id ownership_kinds)
+    T.Ref index t -> do
+        (context, kind) <- getNextOwnershipKind context
+        (context, type) <- instantiateType context t
+        (context, T.Var kind type)
+    T.Owner t -> do
+        (context, kind) <- getNextOwnershipKind context
+        (context, type) <- instantiateType context t
+        (context, T.Var kind type)
+    T.Boxed t -> do
+        (context, kind) <- getNextOwnershipKind context
+        (context, type) <- instantiateType context t
+        (context, T.Var kind type)
+    T.Never -> (context, T.Never)
+    T.Var i t -> do
+        (context, type) <- instantiateType context t
+        (context, T.Var i t)
+
+collectOwnershipKindsFromFunctionType :: F.FunctionType -> List2 T.OwnershipKind
+collectOwnershipKindsFromFunctionType function_type = do
+    ownership_kinds <- function_type.args |> List.iter |> Iterator.fold (\ownership_kinds, arg_type -> do
+        vs <- T.collectOwnershipKinds arg_type
+        ownership_kinds + vs) List2.empty
+    ownership_kinds <- ownership_kinds + T.collectOwnershipKinds function_type.result
+    ownership_kinds <- ownership_kinds |> List2.sort |> List2.dedup
+    ownership_kinds
+
+instantiateFunctionType :: Context -> F.FunctionType -> (Context, F.FunctionType)
+instantiateFunctionType context function_type = do
+    (context, args) <- List.mapS context function_type.args instantiateType
+    (context, result) <- instantiateType context function_type.result
+    (context, F.FunctionType args result)
+
+cloneFunctionType :: Context -> F.FunctionType -> (Context, F.FunctionType)
+cloneFunctionType context function_type = do
+    (context, function_type) <- instantiateFunctionType context function_type
+    ownership_kinds <- collectOwnershipKindsFromFunctionType function_type
+    (context, kinds) <- List2.mapS context ownership_kinds (\context, kind -> case kind of
+        T.VarKind _ -> getNextOwnershipKind context
+        _ -> (context, kind))
+    sub <- U.batch ownership_kinds kinds
+    function_type <- U.apply function_type sub
+    (context, function_type)
 
 addVarNode :: Context -> E.Var -> T.Type -> Context
 addVarNode context var type = do
@@ -72,7 +147,9 @@ processExpr context expr = do
             (context, E.Expr (E.Do items) type id)
         E.Multi _ -> panic "Multi expr in Equality.processExpr"
         E.StaticFunctionCall f_id args -> do
-            context <- addExprNode context id (CG.EStaticFunctionCall f_id) type
+            function <- P.getFunction context.program f_id
+            (context, function_type) <- cloneFunctionType context function.type
+            context <- addExprNode context id (CG.EStaticFunctionCall f_id function_type) function_type.result
             (context, args) <- List.mapS context args processExpr
             context <- List.fold context args (\context, arg -> do
                 E.Expr _ _ arg_id <- arg
@@ -195,19 +272,19 @@ processExpr context expr = do
 processArg :: Context -> Int -> T.Type -> Context
 processArg context index type = addVarNode context (E.Arg index) type
 
-createContext :: P.Program -> String -> T.Type -> Context
-createContext program graph_name return_type = do
+createContext :: P.Program -> Init.Context -> String -> T.Type -> Context
+createContext program init_context graph_name return_type = do
     constraint_graph <- CG.createGraph
     (constraint_graph, return_node_id) <- CG.addNode constraint_graph CG.FnReturn return_type
-    Context program Map.empty Map.empty return_node_id constraint_graph
+    Context program init_context Map.empty Map.empty return_node_id constraint_graph
 
-buildConstraintGraph :: Common.GlobalContext -> Init.Context -> F.FunctionType -> P.Identity -> E.Expr -> CG.ConstraintGraph
+buildConstraintGraph :: Common.GlobalContext -> Init.Context -> F.FunctionType -> P.Identity -> E.Expr -> (Init.Context, CG.ConstraintGraph)
 buildConstraintGraph global_context init_context function_type function_id body = do
     trace global_context.config "Inference: Equality {}" % function_id
-    context <- createContext global_context.program (show function_id) function_type.result
+    (init_context, body) <- IF.addOwnershipVarsToBody init_context body
+    context <- createContext global_context.program init_context (show function_id) function_type.result
     context <- List.foldE processArg context function_type.args
-    (_, body) <- IF.addOwnershipVarsToBody init_context body
     (context, body) <- processExpr context body
     E.Expr _ _ body_id <- body
     context <- addReturnEdge context CG.ImplicitReturn body_id
-    context.constraint_graph
+    (context.init_context, context.constraint_graph)
