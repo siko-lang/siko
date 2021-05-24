@@ -24,6 +24,8 @@ import Map
 import Map2 as Map2
 import Map2 (Map2)
 import Set
+import Set2 as Set2
+import Set2 (Set2)
 
 data MergeResult = Single T.OwnershipKind
                  | MergedBorrow Int Int
@@ -73,11 +75,11 @@ processEquals context = do
     equals <- context.equals
     groups <- context.groups
     ownership_vars <- context.ownership_vars
-    len <- getLength equals
+    len <- List2.getLength equals
     (ownership_vars, groups) <- loop (ownership_vars, groups, index) <- (ownership_vars, groups, 0) do
         if len > index
         then do
-            Common.Equal v1 v2 <- atIndex equals index
+            Common.Equal v1 v2 <- List2.atIndex equals index
             (ownership_vars, groups) <- processEqual ownership_vars groups v1 v2
             (ownership_vars, groups, index + 1)
         else break (ownership_vars, groups)
@@ -198,14 +200,14 @@ dumpOwnershipVars context = do
     println "Ownership vars:"
     context.ownership_vars |> Map2.iter |> forEach (\(v, _) -> println "{} -> {}" % (v, resolveKind2 context v))
 
-insertKind :: Set T.OwnershipVar -> T.OwnershipKind -> T.OwnershipKind -> (Set T.OwnershipVar, Bool)
+insertKind :: Set2 T.OwnershipVar -> T.OwnershipKind -> T.OwnershipKind -> (Set2 T.OwnershipVar, Bool)
 insertKind collected orig new = do
     case orig of
         T.VarKind orig -> do
-            if Set.contains collected orig
+            if Set2.contains collected orig
                 then case new of
                         T.VarKind v -> do
-                            (collected, added) <- Set.insert collected v
+                            (collected, added) <- Set2.insert collected v
                             (collected, added)
                         _ -> (collected, False)
                 else (collected, False)
@@ -223,51 +225,55 @@ resolveKind2 context var = do
     (context, group) <- Common.getGroup context group_id
     (group.kind)
 
-addEdge :: Common.Context -> Set T.OwnershipVar -> T.OwnershipVar -> T.OwnershipVar -> (Set T.OwnershipVar, Bool)
+addEdge :: Common.Context -> Set2 T.OwnershipVar -> T.OwnershipVar -> T.OwnershipVar -> (Common.Context, (Set2 T.OwnershipVar, Bool))
 addEdge context convertibles a b = do
-    c_a <- resolveKind2 context a
-    c_b <- resolveKind2 context b
-    insertKind convertibles c_a c_b
+    (context, c_a) <- resolveKind context a
+    (context, c_b) <- resolveKind context b
+    (context, insertKind convertibles c_a c_b)
 
-collectConvertibleConstraints :: T.OwnershipVar -> Common.Context -> Set T.OwnershipVar
+collectConvertibleConstraints :: T.OwnershipVar -> Common.Context -> (Common.Context, Set2 T.OwnershipVar)
 collectConvertibleConstraints var context = do
-    convertibles <- Set.empty
-    (convertibles, _) <- Set.insert convertibles var
-    convertibles <- loop convertibles <- convertibles do
-        (convertibles, added) <- context.constraints |> List.iter |> Iterator.fold (\(convertibles, added), constraint -> do
+    convertibles <- Set2.empty
+    (convertibles, _) <- Set2.insert convertibles var
+    (context, convertibles) <- loop (context, convertibles) <- (context, convertibles) do
+        context :: Common.Context <- context // FIXME
+        (context, convertibles, added) <- context.constraints |> List.iter |> Iterator.fold (\(context, convertibles, added), constraint -> do
                 case constraint of
                     Common.Constraint _ _ a b -> do
-                        (convertibles, added1) <- addEdge context convertibles a b
+                        (context, (convertibles, added1)) <- addEdge context convertibles a b
                         added <- added || added1
-                        (convertibles, added)
+                        (context, convertibles, added)
                     Common.ExternalConverter a b -> do
-                        (convertibles, added1) <- addEdge context convertibles a b
+                        (context, (convertibles, added1)) <- addEdge context convertibles a b
                         added <- added || added1
-                        (convertibles, added)
+                        (context, convertibles, added)
                     Common.FieldAccessConverter a _ b -> do
-                        (convertibles, added1) <- addEdge context convertibles a b
+                        (context, (convertibles, added1)) <- addEdge context convertibles a b
                         added <- added || added1
-                        (convertibles, added)
-            ) (convertibles, False)
+                        (context, convertibles, added)
+            ) (context, convertibles, False)
         if not added
-            then break convertibles
-            else convertibles
-    convertibles
+            then break (context, convertibles)
+            else (context, convertibles)
+    (context, convertibles)
 
-collectVarConstraints :: Common.Context -> List2 T.OwnershipKind -> Map T.OwnershipVar (Set T.OwnershipVar)
+filterConvertibles :: Set2 T.OwnershipVar -> List2 T.OwnershipKind ->  T.OwnershipVar -> Set2 T.OwnershipVar
+filterConvertibles convertibles kinds key = Set2.filter convertibles (\var -> List2.contains kinds (T.VarKind var) && var != key)
+
+collectVarConstraints :: Common.Context -> List2 T.OwnershipKind -> (Common.Context, Map2 T.OwnershipVar (Set2 T.OwnershipVar))
 collectVarConstraints context kinds = do
-    // FIXME: use filterMap!
     vars <- List2.filterMap kinds (\kind -> case kind of
         T.VarKind v -> Some v
         _ -> None)
-    constraints <- vars |> List2.iter |> Iterator.map (\var -> (var, collectConvertibleConstraints var context)) |> toMap
-    constraints <- constraints |> Map.iter |> Iterator.map (\(key, convertibles) -> do
-            convertibles <- convertibles
-                    |> Set.iter
-                    |> Iterator.filter (\var -> List2.contains kinds (T.VarKind var) && var != key) |> toSet
-            (key, convertibles))
-        |> Iterator.filter (\(key, convertibles) -> not (isEmpty convertibles)) |> toMap
-    constraints
+    (context, constraints) <- List2.mapS context vars (\context, var -> do
+        (context, convertibles) <- collectConvertibleConstraints var context
+        (context, (var, convertibles)))
+    constraints <- constraints |> List2.iter |> Map2.toMap2
+    constraints <- Map2.filterMap constraints (\(key, convertibles) ->
+        if Set2.isEmpty convertibles
+        then None
+        else Some (key, filterConvertibles convertibles kinds key))
+    (context, constraints)
 
 getSubstitution :: Common.Context -> (Common.Context, U.SubstitutionApply)
 getSubstitution context = do
@@ -349,7 +355,7 @@ calculateInferenceInfo global_context init_context function_id = do
     case function.kind of
         F.Normal info -> do
             trace global_context.config "Inference: processing {}" % function.id
-            (init_context, cgraph) <- CGCreator.buildConstraintGraph global_context init_context function.type function_id info.body
+            //(init_context, cgraph) <- CGCreator.buildConstraintGraph global_context.config global_context.program init_context function.type function_id info.body
             //cgraph <- CGInfer.infer global_context.program function_id cgraph
             //CGVisual.draw cgraph (show function.id)
             trace global_context.config "buildConstraintGraph done {}" % function.id
@@ -369,7 +375,7 @@ calculateInferenceInfo global_context init_context function_id = do
             trace global_context.config "getSubstitution done"
             function_type <- U.apply function.type sub
             ownership_kinds <- Common.collectOwnershipKindsFromFunctionType function_type
-            var_constraints <- collectVarConstraints context ownership_kinds
+            (context, var_constraints) <- collectVarConstraints context ownership_kinds
             info <- Common.FunctionInferenceInfo function_type var_constraints
             trace global_context.config "End of processing {}" % function.id
             (Some info, context.init_context)
@@ -449,7 +455,7 @@ getOrUpdateInferenceInfo context init_context function_id = do
         Some info -> Common.normalizeFunctionInfo info
         None -> do
             function <- P.getFunction context.program function_id
-            Common.FunctionInferenceInfo function.type Map.empty
+            Common.FunctionInferenceInfo function.type Map2.empty
     (context, added) <- Common.addInferenceInfo context function_id info
     //println "{} {} added {}" % (function_id, info, added)
     (context, init_context, added)

@@ -116,10 +116,7 @@ zipSE s a b :: s -> List2 a -> List2 b -> (s -> Int -> a -> b -> s) -> s
 zipSE s l1 l2 f = extern
 
 mapS s a b :: s -> List2 a -> (s -> a -> (s, b)) -> (s, List2 b)
-mapS s l f = do
-    l |> List2.iter |> Iterator.fold (\(s, items), i -> do
-        (s, i) <- f s i
-        (s, push items i)) (s, List2.empty)
+mapS s l f = extern
 
 mapSE s a b :: s -> List2 a -> (s -> Int -> a -> (s, b)) -> (s, List2 b)
 mapSE s l f = do
@@ -146,10 +143,10 @@ fold s a :: s -> List2 a -> (s -> a -> s) -> s
 fold init list f = list |> List2.iter |> Iterator.fold f init
 
 map a b :: List2 a -> (a -> b) -> List2 b
-map input f = input |> List2.iter |> Iterator.map f |> toList
+map input f = extern
 
 filter a :: List2 a -> (a -> Bool) -> List2 a
-filter list f = list |> List2.iter |> Iterator.filter f |> toList
+filter list f = extern
 
 foldM a k v :: (Ord k) => Map k v -> List2 a -> (a -> (k, v)) -> Map k v
 foldM init list f = List2.fold init list (\m, item -> do

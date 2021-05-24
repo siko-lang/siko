@@ -46,30 +46,28 @@ addOwnershipVarsToDataType :: GroupContext -> Bool -> T.Type -> (GroupContext, T
 addOwnershipVarsToDataType context is_adt type = do
     id <- T.getIdentity type
     if contains context.group id
-        then if is_adt
-                then
-                    do
-                    type <- updateType type None context.all_vars
-                    (context, type)
-                else do
-                    (context, var) <- getSingle context
-                    boxed_vars <- List2.push context.boxed_vars var
-                    context <- context { boxed_vars = boxed_vars }
-                    type <- updateType type (Some var) context.all_vars
-                    (context, type)
+    then if is_adt
+        then do
+            type <- updateType type None context.all_vars
+            (context, type)
         else do
-            count <- getArgCount context.context id
-            if is_adt
-                then
-                    do
-                    (context, args) <- getMulti context count
-                    type <- updateType type None args
-                    (context, type)
-                else do
-                    (context, var) <- getSingle context
-                    (context, args) <- getMulti context count
-                    type <- updateType type (Some var) args
-                    (context, type)
+            (context, var) <- getSingle context
+            boxed_vars <- List2.push context.boxed_vars var
+            context <- context { boxed_vars = boxed_vars }
+            type <- updateType type (Some var) context.all_vars
+            (context, type)
+    else do
+        count <- getArgCount context.context id
+        if is_adt
+        then do
+            (context, args) <- getMulti context count
+            type <- updateType type None args
+            (context, type)
+        else do
+            (context, var) <- getSingle context
+            (context, args) <- getMulti context count
+            type <- updateType type (Some var) args
+            (context, type)
 
 addOwnershipVarsToRecord :: GroupContext -> Record -> (GroupContext, Record)
 addOwnershipVarsToRecord context record = do

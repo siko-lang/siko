@@ -5,6 +5,7 @@ import Siko.MIR.Backend.Ownership.ConstraintGraph as CG
 import Siko.MIR.Type as T
 import Siko.MIR.Program as P
 import Siko.MIR.Function as F
+import Siko.MIR.Data as D
 import Siko.MIR.Expr as E
 
 import Map
@@ -52,11 +53,11 @@ processEdges constraint_graph edges = do
 
 unify :: T.Type -> T.Type -> U.SubstitutionApply
 unify type1 type2 = do
-        kinds1 <- T.collectOwnershipKinds type1
-        kinds2 <- T.collectOwnershipKinds type2
-        sub <- unifyKinds kinds1 kinds2
-        //println "Unify {} {} => {}" % (type1, type2, sub)
-        sub
+    kinds1 <- T.collectOwnershipKinds type1
+    kinds2 <- T.collectOwnershipKinds type2
+    sub <- unifyKinds kinds1 kinds2
+    //println "Unify {} {} => {}" % (type1, type2, sub)
+    sub
 
 unifyKinds :: List2 T.OwnershipKind -> List2 T.OwnershipKind -> U.SubstitutionApply
 unifyKinds kinds1 kinds2 = do
@@ -94,6 +95,7 @@ instance U.Apply CG.Node where
             CG.FnCall e_id f_id function_type -> CG.FnCall e_id f_id (U.apply function_type sub)
             CG.ListCtor e_id t -> CG.ListCtor e_id (U.apply t sub)
             CG.FnReturn t -> CG.FnReturn (U.apply t sub)
+            CG.CaseVariable v variant_type var_type -> CG.CaseVariable v (U.apply variant_type sub) (U.apply var_type sub)
         //println "Type update: {} => {}" % (node.kind, kind)
         node { kind = kind }
 
@@ -142,6 +144,25 @@ processEdge constraint_graph edge_id = do
             dest_node <- CG.getNode constraint_graph edge.destination
             unify (CG.getNodeType src_node) (CG.getNodeType dest_node)
         CG.VarRef -> do
+            src_node <- CG.getNode constraint_graph edge.source
+            dest_node <- CG.getNode constraint_graph edge.destination
+            unify (CG.getNodeType src_node) (CG.getNodeType dest_node)
+        CG.CaseBody -> do
+            src_node <- CG.getNode constraint_graph edge.source
+            dest_node <- CG.getNode constraint_graph edge.destination
+            unify (CG.getNodeType src_node) (CG.getNodeType dest_node)
+        CG.CaseVar -> do
+            src_node <- CG.getNode constraint_graph edge.source
+            dest_node <- CG.getNode constraint_graph edge.destination
+            case dest_node.kind of
+                CG.CaseVariable var variant_type var_type -> do
+                    unify (CG.getNodeType src_node) variant_type
+                _ -> panic "CaseVar is not case variable?!"
+        CG.IfTrue -> do
+            src_node <- CG.getNode constraint_graph edge.source
+            dest_node <- CG.getNode constraint_graph edge.destination
+            unify (CG.getNodeType src_node) (CG.getNodeType dest_node)
+        CG.IfFalse -> do
             src_node <- CG.getNode constraint_graph edge.source
             dest_node <- CG.getNode constraint_graph edge.destination
             unify (CG.getNodeType src_node) (CG.getNodeType dest_node)

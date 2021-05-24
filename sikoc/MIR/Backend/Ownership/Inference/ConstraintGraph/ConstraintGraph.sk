@@ -15,6 +15,7 @@ data NodeKind = Expr E.ExprId T.Type
               | FnCall E.ExprId P.Identity F.FunctionType
               | ListCtor E.ExprId T.Type
               | FnReturn T.Type
+              | CaseVariable E.Var T.Type T.Type
               deriving (Show, PartialEq, Eq)
 
 data Node = { kind :: NodeKind,
@@ -42,7 +43,6 @@ data EdgeKind = Do
               | Converter
               | CaseVar
               | CaseBody
-              | CaseOfBody
               deriving (Show)
 
 data Edge = { kind :: EdgeKind,
@@ -61,6 +61,7 @@ getNodeType node = case node.kind of
     FnCall _ _ t -> t.result
     ListCtor _ t -> t
     FnReturn t -> t
+    CaseVariable _ _ t -> t
 
 setNodeType :: Node -> T.Type -> Node
 setNodeType node type = do
@@ -70,6 +71,7 @@ setNodeType node type = do
         FnCall _ _ _ -> panic "setNodeType called on FnCall node!"
         ListCtor _ _ -> panic "setNodeType called on ListCtor node!"
         FnReturn _ -> FnReturn type
+        CaseVariable _ _ _ -> panic "setNodeType called on CaseVariable node!"
     node { kind = kind }
 
 getNode :: ConstraintGraph -> NodeId -> Node

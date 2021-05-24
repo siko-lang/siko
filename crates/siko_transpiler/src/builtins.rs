@@ -806,7 +806,7 @@ fn generate_map2_builtins(
             )?;
             write!(output_file, "{}let call = arg2.call_ro(state);\n", indent)?;
             write!(output_file, "{}let tuple = call.call_ro(input);\n", indent)?;
-            write!(output_file, "{}state  = tuple._siko_field_0;\n", indent)?;
+            write!(output_file, "{}state  = tupl;e._siko_field_0;\n", indent)?;
             write!(output_file, "{}*v  = tuple._siko_field_1;\n", indent)?;
             write!(output_file, "{}}}\n", indent)?;
             write!(
@@ -816,6 +816,39 @@ fn generate_map2_builtins(
                 result_ty_str,
                 ir_type_to_rust_type(m_type, program)
             )?;
+        }
+        "filterMap" => {
+            let f_type = &arg_type_types[1];
+            let (from, to) = match f_type {
+                Type::Closure(t) => match &**t {
+                    Type::Function(from, to) => (from, to),
+                    _ => unreachable!(),
+                },
+                _ => unreachable!(),
+            };
+            let from = ir_type_to_rust_type(from, program);
+            let to = ir_type_to_rust_type(to, program);
+            write!(output_file, "{}let mut m = std::collections::BTreeMap::new();\n", indent)?;
+            write!(
+                output_file,
+                "{}for (k, v) in arg0.value.iter() {{\n",
+                indent
+            )?;
+            write!(
+                output_file,
+                "{}let input = {} {{ _siko_field_0 : k.clone(), _siko_field_1 : v.clone() }};\n",
+                indent, from
+            )?;
+            write!(output_file, "{}match arg1.call_ro(input) {{\n", indent)?;
+            write!(
+                output_file,
+                "{} {}::Some(t)=> {{ m.insert(t._siko_field_0, t._siko_field_1); }}\n",
+                indent, to
+            )?;
+            write!(output_file, "{} {}::None => {{ }}\n", indent, to)?;
+            write!(output_file, "{}}}\n", indent)?;
+            write!(output_file, "{}}}\n", indent)?;
+            write!(output_file, "{}{} {{ value: m }}", indent, result_ty_str,)?;
         }
         "opEq" => {
             write!(output_file, "{}if arg0.value.eq(&arg1.value) {{\n", indent)?;
@@ -1396,6 +1429,54 @@ fn generate_list2_builtins(
             write!(output_file, "let mut arg0 = arg0;")?;
             write!(output_file, "for _ in 0..arg2.value {{")?;
             write!(output_file, "let t = arg1.clone().call(arg0);")?;
+            write!(output_file, "arg0 = t._siko_field_0;")?;
+            write!(output_file, "v.push(t._siko_field_1);")?;
+            write!(output_file, "}}")?;
+            write!(
+                output_file,
+                "{}{} {{ _siko_field_0: arg0, _siko_field_1: {} {{ value : v }} }}\n",
+                indent,
+                result_ty_str,
+                ir_type_to_rust_type(&tuple_record.fields[1].ty, program)
+            )?;
+        }
+        "map" => {
+            write!(
+                output_file,
+                "let mut v = Vec::with_capacity(arg0.value.len());"
+            )?;
+            write!(output_file, "for item in arg0.value {{")?;
+            write!(output_file, "let t = arg1.clone().call(item);")?;
+            write!(output_file, "v.push(t);")?;
+            write!(output_file, "}}")?;
+            write!(output_file, "{}{} {{ value : v }}\n", indent, result_ty_str,)?;
+        }
+        "filter" => {
+            write!(
+                output_file,
+                "let mut v = Vec::with_capacity(arg0.value.len());"
+            )?;
+            write!(output_file, "for item in arg0.value {{")?;
+            write!(output_file, "match (arg1.clone().call(item.clone())) {{ ")?;
+            write!(
+                output_file,
+                " crate::source::Bool::Bool_8::True => {{ v.push(item); }}"
+            )?;
+            write!(output_file, " _ => {{ }}")?;
+            write!(output_file, "}}; }}")?;
+            write!(output_file, "{}{} {{ value : v }}\n", indent, result_ty_str,)?;
+        }
+        "mapS" => {
+            let id = result_ty.get_typedef_id();
+            let tuple_record = program.typedefs.get(&id).get_record();
+            write!(
+                output_file,
+                "let mut v = Vec::with_capacity(arg1.value.len());"
+            )?;
+            write!(output_file, "let mut arg0 = arg0;")?;
+            write!(output_file, "for item in arg1.value {{")?;
+            write!(output_file, "let mut call = arg2.clone().call(arg0);")?;
+            write!(output_file, "let t = call.call(item);")?;
             write!(output_file, "arg0 = t._siko_field_0;")?;
             write!(output_file, "v.push(t._siko_field_1);")?;
             write!(output_file, "}}")?;

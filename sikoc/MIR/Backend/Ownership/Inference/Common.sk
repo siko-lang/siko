@@ -17,6 +17,8 @@ import Map2 as Map2
 import Map2 (Map2)
 import Map
 import Set
+import Set2 as Set2
+import Set2 (Set2)
 
 data Equal = Equal T.OwnershipVar T.OwnershipVar
              deriving (Show)
@@ -47,7 +49,7 @@ data GroupId = GroupId Int deriving (PartialEq, Eq, PartialOrd, Ord, Show)
 data Context = { global_context :: GlobalContext,
                  var_vars :: Map E.Var (List2 T.OwnershipVar),
                  constraints :: [Constraint],
-                 equals :: [Equal],
+                 equals :: List2 Equal,
                  not_moves :: Set E.ExprId,
                  ownership_vars :: Map2 T.OwnershipVar GroupId,
                  moved_vars :: Map T.OwnershipVar MovedVars,
@@ -65,7 +67,7 @@ dumpContextStats :: Context -> ()
 dumpContextStats context = do
     trace context.global_context.config "var_vars {}" % getSize context.var_vars
     trace context.global_context.config "constraints {}" % getLength context.constraints
-    trace context.global_context.config "equals {}" % getLength context.equals
+    trace context.global_context.config "equals {}" % List2.getLength context.equals
     trace context.global_context.config "not_moves {}" % getLength context.not_moves.items
     trace context.global_context.config "ownership_vars {}" % Map2.getSize context.ownership_vars
     trace context.global_context.config "moved_vars {}" % getSize context.moved_vars
@@ -76,7 +78,7 @@ dumpContextStats context = do
     trace context.global_context.config "breaks {}" % getSize context.breaks
 
 data FunctionInferenceInfo = { function_type :: F.FunctionType,
-                               var_constraints :: Map T.OwnershipVar (Set T.OwnershipVar ) }
+                               var_constraints :: Map2 T.OwnershipVar (Set2 T.OwnershipVar ) }
                                deriving (Show, PartialEq)
 
 createInferenceInfoStore :: InferenceInfoStore
@@ -91,7 +93,7 @@ createContext global_context not_moves init_context return_type =
         global_context = global_context,
         var_vars = Map.empty,
         constraints = [],
-        equals = [],
+        equals = List2.empty,
         not_moves = not_moves,
         ownership_vars = Map2.empty,
         moved_vars = Map.empty,
@@ -113,7 +115,7 @@ addConstraint context constraint = do
 
 addEqual :: Context -> T.OwnershipVar -> T.OwnershipVar -> Context
 addEqual context v1 v2 = do
-    equals <- context.equals + [Equal v1 v2]
+    equals <- List2.push context.equals (Equal v1 v2)
     context { equals = equals }
 
 addVarVars :: Context -> E.Var -> List2 T.OwnershipVar -> Context
@@ -281,10 +283,10 @@ normalizeFunctionInfo info = do
         _ -> (index, kind))
     sub <- U.batch ownership_kinds kinds
     function_type <- U.apply info.function_type sub
-    var_constraints <- info.var_constraints |> Map.iter |> Iterator.map (\(kind, constraints) -> do
+    var_constraints <- info.var_constraints |> Map2.iter |> Iterator.map (\(kind, constraints) -> do
         kind <- U.apply kind sub
-        constraints <- constraints |> Set.iter |> Iterator.map (\kind -> U.apply kind sub) |> toSet
-        (kind, constraints)) |> toMap
+        constraints <- constraints |> Set2.iter |> Iterator.map (\kind -> U.apply kind sub) |> Set2.toSet2
+        (kind, constraints)) |> Map2.toMap2
     FunctionInferenceInfo function_type var_constraints
 
 cloneFunctionInfo :: Context -> FunctionInferenceInfo -> (Context, FunctionInferenceInfo)
@@ -295,8 +297,8 @@ cloneFunctionInfo context info = do
         _ -> (context, kind))
     sub <- U.batch ownership_kinds kinds
     function_type <- U.apply info.function_type sub
-    var_constraints <- info.var_constraints |> Map.iter |> Iterator.map (\(var, constraints) -> do
+    var_constraints <- info.var_constraints |> Map2.iter |> Iterator.map (\(var, constraints) -> do
         var <-  U.apply var sub
-        constraints <- constraints |> Set.iter |> Iterator.map (\var -> U.apply var sub) |> toSet
-        (var, constraints)) |> toMap
+        constraints <- constraints |> Set2.iter |> Iterator.map (\var -> U.apply var sub) |> Set2.toSet2
+        (var, constraints)) |> Map2.toMap2
     (context, FunctionInferenceInfo function_type var_constraints)

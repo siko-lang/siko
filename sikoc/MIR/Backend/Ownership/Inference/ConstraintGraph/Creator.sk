@@ -5,13 +5,13 @@ import Siko.MIR.Expr as E
 import Siko.MIR.Data as D
 import Siko.MIR.Type as T
 import Siko.MIR.Function as F
-import Siko.MIR.Backend.Ownership.Inference.Common as Common
 import Siko.MIR.Backend.Ownership.Initialization as Init
 import Siko.MIR.Backend.Ownership.Unification as U
 import Siko.MIR.Backend.Ownership.Initialization.Functions as IF
 import List2 as List2
 import List2 (List2)
 import Siko.Trace
+import Siko.Config
 import Siko.MIR.Backend.Ownership.ConstraintGraph as CG
 
 import Map
@@ -75,6 +75,35 @@ instantiateType context type = case type of
         (context, type) <- instantiateType context t
         (context, T.Var i t)
 
+getAdtType :: Context -> T.Type -> (Context, T.Type, D.AlgebraicDataType)
+getAdtType context type = do
+    adt_id <- T.getIdentity type
+    adt <- P.getAdt context.program adt_id
+    ownership_vars <- T.collectOwnershipArgs type
+    sub <- U.batch adt.ownership_vars ownership_vars
+    adt <- U.apply adt sub
+    type <- U.apply type sub
+    (context, variants) <- List.mapS context adt.variants (\context, v -> do
+        (context, type) <- instantiateType context v.type
+        (context, v { type = type }))
+    adt <- adt { variants = variants }
+    println "getAdtType : {} {}" % (adt.id, adt.ownership_vars)
+    adt.variants |> List.iter |> Iterator.forEach (\v -> println "v {} / {}" % (v.name, v.type))
+    println "-------"
+    (context, type, adt)
+
+getVariantVarType :: Context -> T.Type -> Int -> (Context, T.Type, T.Type)
+getVariantVarType context variant_type index =
+    case variant_type of
+        T.Var _ t -> case t of
+            T.Adt _ _ -> do
+                (context, type, adt) <- getAdtType context variant_type
+                variant <- atIndex adt.variants index
+                (context, type, variant.type)
+            T.Record _ _ -> (context, variant_type, variant_type)
+            _ -> panic "VariantChecker's inner type is not record nor adt"
+        _ -> panic "VariantChecker's type is not Var"
+
 collectOwnershipKindsFromFunctionType :: F.FunctionType -> List2 T.OwnershipKind
 collectOwnershipKindsFromFunctionType function_type = do
     ownership_kinds <- function_type.args |> List.iter |> Iterator.fold (\ownership_kinds, arg_type -> do
@@ -104,6 +133,14 @@ cloneFunctionType context function_type = do
 addVarNode :: Context -> E.Var -> T.Type -> Context
 addVarNode context var type = do
     kind <- CG.Var var type
+    (constraint_graph, node_id) <- CG.addNode context.constraint_graph kind
+    (var_node_ids, _) <- Map.insert context.var_node_ids var node_id
+    context <- context { constraint_graph = constraint_graph, var_node_ids = var_node_ids }
+    context
+
+addCaseVarNode :: Context -> E.Var -> T.Type -> T.Type -> Context
+addCaseVarNode context var variant_type var_type = do
+    kind <- CG.CaseVariable var variant_type var_type
     (constraint_graph, node_id) <- CG.addNode context.constraint_graph kind
     (var_node_ids, _) <- Map.insert context.var_node_ids var node_id
     context <- context { constraint_graph = constraint_graph, var_node_ids = var_node_ids }
@@ -244,13 +281,14 @@ processExpr context expr = do
             (context, cases) <- List.mapS context cases (\context, c -> do
                 context <- case c.checker of
                     E.VariantChecker index v variant_type -> do
-                        context <- addVarNode context v variant_type
+                        (context, variant_type, var_type) <- getVariantVarType context variant_type index
+                        println "Adding CaseVar {} {} {}" % (v, variant_type, var_type)
+                        context <- addCaseVarNode context v variant_type var_type
                         context <- addVarEdge context CG.CaseVar case_of_body_id v False
                         context
                     _ -> context
                 (context, c_body) <- processExpr context c.body
                 E.Expr _ _ c_id <- c.body
-                context <- addEdge context CG.CaseOfBody case_of_body_id id
                 context <- addEdge context CG.CaseBody c_id id
                 c <- c { body = c_body }
                 (context, c))
@@ -276,11 +314,11 @@ createContext program init_context graph_name return_type = do
     (constraint_graph, return_node_id) <- CG.addNode constraint_graph (CG.FnReturn return_type)
     Context program init_context Map.empty Map.empty return_node_id constraint_graph
 
-buildConstraintGraph :: Common.GlobalContext -> Init.Context -> F.FunctionType -> P.Identity -> E.Expr -> (Init.Context, CG.ConstraintGraph)
-buildConstraintGraph global_context init_context function_type function_id body = do
-    trace global_context.config "Inference: Equality {}" % function_id
+buildConstraintGraph :: Config -> P.Program -> Init.Context -> F.FunctionType -> P.Identity -> E.Expr -> (Init.Context, CG.ConstraintGraph)
+buildConstraintGraph config program init_context function_type function_id body = do
+    trace config "Inference: Equality {}" % function_id
     (init_context, body) <- IF.addOwnershipVarsToBody init_context body
-    context <- createContext global_context.program init_context (show function_id) function_type.result
+    context <- createContext program init_context (show function_id) function_type.result
     context <- List.foldE processArg context function_type.args
     (context, body) <- processExpr context body
     E.Expr _ _ body_id <- body

@@ -17,6 +17,10 @@ import List2 (List2)
 
 import Map
 import Set
+import Map2 as Map2
+import Map2 (Map2)
+import Set2 as Set2
+import Set2 (Set2)
 
 processKind :: Common.Context -> Common.MovedVars -> T.OwnershipKind -> (Common.Context, T.OwnershipVar)
 processKind context moved_vars kind =
@@ -137,11 +141,11 @@ processExpr context moved_vars expr = do
                     // TODO check group!
                     //panic "No inference info found for function {}" % f_id
                     function <- P.getFunction context.global_context.program f_id
-                    Common.FunctionInferenceInfo function.type Map.empty
+                    Common.FunctionInferenceInfo function.type Map2.empty
             (context, info) <- Common.cloneFunctionInfo context info
             //println "Cloned function {} {}" % (f_id, info)
-            context <- info.var_constraints |> Map.iter |> Iterator.fold (\context, (src_var, constraints) -> do
-                    constraints |> Set.iter |> Iterator.fold (\context, dest_var -> do
+            context <- info.var_constraints |> Map2.iter |> Iterator.fold (\context, (src_var, constraints) -> do
+                    constraints |> Set2.iter |> Iterator.fold (\context, dest_var -> do
                         //println "Adding external converter {} => {}" % (src_var, dest_var)
                         Common.addConstraint context (Common.ExternalConverter src_var dest_var)) context) context
             function_type <- info.function_type

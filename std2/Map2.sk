@@ -99,3 +99,14 @@ mapS s m f = do
         (s, k, v) <- f s (k, v)
         (m2, _) <-insert m2 k v
         (s, m2)) (s, Map2.empty)
+
+filter k v :: (Ord k) => Map2 k v -> ((k, v) -> Bool) -> Map2 k v
+filter map f = map |> Map2.iter |> Iterator.filter f |> toMap2
+
+filterMap k v :: (Ord k) => Map2 k v -> ((k, v) -> Option (k, v)) -> Map2 k v
+filterMap m f = m |> Map2.iter |> Iterator.fold (\m2, (k, v) -> do
+        case f (k, v) of
+            Some (k, v) -> do
+                (m2, _) <-insert m2 k v
+                m2
+            None -> m2) Map2.empty
