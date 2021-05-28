@@ -1,5 +1,7 @@
 module Map2 where
 
+import List2
+
 data Map2 k v = extern
 
 instance (Show k, Show v) => Show Map2 k v where
@@ -32,7 +34,7 @@ alter k v :: (Ord k) => (Option v -> Option v) -> k -> Map2 k v -> (Map2 k v, Op
 alter f k m = // FIXME: make this builtin and much faster
     case f (get m k) of
         Some v -> insert m k v
-        None -> remove m k
+        None -> Map2.remove m k
 
 alterS si so k v :: (Ord k) => (si -> Option v -> (so, Option v)) -> si -> k -> Map2 k v -> (so, Map2 k v, Option v)
 alterS f s k m = do
@@ -42,11 +44,11 @@ alterS f s k m = do
             (m, v) <- insert m k v
             (s, m, v)
         None -> do
-            (m, v) <- remove m k
+            (m, v) <- Map2.remove m k
             (s, m, v)
 
 iter k v :: Map2 k v -> Iterator (k, v)
-iter m = createIterator (intoIter m) nextItem
+iter m = createIterator (Map2.intoIter m) Map2.nextItem
 
 data MapIterator k v = extern
 
@@ -59,12 +61,12 @@ nextItem iter = extern
 toMap2 k v :: (Ord k) => Iterator (k, v) -> Map2 k v
 toMap2 iter = Iterator.fold (\m, (k, v) -> do
     (m, _) <- insert m k v
-    m) empty iter
+    m) Map2.empty iter
 
 toMap k v :: (Ord k) => Iterator (k, v) -> Map2 k v
 toMap iter = Iterator.fold (\m, (k, v) -> do
     (m, _) <- insert m k v
-    m) empty iter
+    m) Map2.empty iter
 
 update k v :: (Ord k) => Map2 k v -> ((k, v) -> v) -> Map2 k v
 update m f = Map2.map m (\(k, v) -> do
@@ -84,8 +86,8 @@ updateValues m old new = Map2.update m (\(k, v) -> if old == v then new else old
 getSize k v :: Map2 k v -> Int
 getSize m = extern
 
-getKeys k v :: Map2 k v -> [k]
-getKeys m = m |> Map2.iter |> Iterator.fold (\keys, (k, _) -> keys + [k]) []
+getKeys k v :: Map2 k v -> List2 k
+getKeys m = m |> Map2.iter |> Iterator.fold (\keys, (k, _) -> List2.push keys k) List2.empty
 
 fold s k v :: s -> Map2 k v -> (s -> (k, v) -> s) -> s
 fold init m f = m |> Map2.iter |> Iterator.fold f init

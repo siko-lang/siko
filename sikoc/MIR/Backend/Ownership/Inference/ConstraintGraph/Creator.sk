@@ -87,10 +87,37 @@ getAdtType context type = do
         (context, type) <- instantiateType context v.type
         (context, v { type = type }))
     adt <- adt { variants = variants }
-    println "getAdtType : {} {}" % (adt.id, adt.ownership_vars)
-    adt.variants |> List.iter |> Iterator.forEach (\v -> println "v {} / {}" % (v.name, v.type))
-    println "-------"
+    //println "getAdtType : {} {}" % (adt.id, adt.ownership_vars)
+    //adt.variants |> List.iter |> Iterator.forEach (\v -> println "v {} / {}" % (v.name, v.type))
+    //println "-------"
     (context, type, adt)
+
+getRecordType :: Context -> T.Type -> (Context, T.Type, D.Record)
+getRecordType context type = do
+    record_id <- T.getIdentity type
+    record <- P.getRecord context.program record_id
+    ownership_vars <- T.collectOwnershipArgs type
+    sub <- U.batch record.ownership_vars ownership_vars
+    record <- U.apply record sub
+    type <- U.apply type sub
+    (context, fields) <- List.mapS context record.fields (\context, f -> do
+        (context, type) <- instantiateType context f.type
+        (context, f { type = type }))
+    record <- record { fields = fields }
+    //println "getRecordType : {} {}" % (record.id, record.ownership_vars)
+    //record.fields |> List.iter |> Iterator.forEach (\f -> println "f {} / {}" % (f.name, f.type))
+    //println "-------"
+    (context, type, record)
+
+getFieldType :: Context -> T.Type -> String -> (Context, T.Type, T.Type)
+getFieldType context type name = do
+    (context, type, record) <- getRecordType context type
+    field_type <- case find record.fields (\f -> f.name == name) of
+        Some f -> do
+            f :: D.RecordField <- f // FIXME
+            f.type
+        None -> panic "No field named {}" % name
+    (context, type, field_type)
 
 getVariantVarType :: Context -> T.Type -> Int -> (Context, T.Type, T.Type)
 getVariantVarType context variant_type index =
@@ -179,7 +206,7 @@ processExpr context expr = do
             (context, items) <- List.mapS context items processExpr
             index <- getLength items - 1
             E.Expr _ _ last_id <- List.atIndex items index
-            context <- addEdge context CG.Do last_id id
+            context <- addEdge context CG.Equals last_id id
             (context, E.Expr (E.Do items) type id)
         E.Multi _ -> panic "Multi expr in Equality.processExpr"
         E.StaticFunctionCall f_id args -> do
@@ -209,32 +236,36 @@ processExpr context expr = do
             context <- addVarNode context v rhs_type
             (context, rhs) <- processExpr context rhs
             E.Expr _ _ rhs_id <- rhs
-            context <- addVarEdge context CG.VarDecl rhs_id v False
+            context <- addVarEdge context CG.Equals rhs_id v False
             (context, E.Expr (E.VarDecl v rhs) type id)
         E.VarRef v -> do
             context <- addExprNode context id (CG.Expr id type)
-            context <- addVarEdge context CG.VarRef id v True
+            context <- addVarEdge context CG.Equals id v True
             (context, E.Expr (E.VarRef v) type id)
         E.FieldAccess name receiver -> do
-            context <- addExprNode context id (CG.Expr id type)
             (context, receiver) <- processExpr context receiver
-            E.Expr _ _ receiver_id <- receiver
+            E.Expr _ receiver_type receiver_id <- receiver
+            (context, record_type, field_type) <- getFieldType context receiver_type name
+            context <- addExprNode context id (CG.RecordFieldAccess id record_type field_type)
             context <- addEdge context CG.FieldAccess receiver_id id
             (context, E.Expr (E.FieldAccess name receiver) type id)
         E.If cond true_branch false_branch -> do
             context <- addExprNode context id (CG.Expr id type)
             (context, cond) <- processExpr context cond
-            E.Expr _ _ cond_id <- cond
-            context <- addEdge context CG.IfCond cond_id id
             (context, true_branch) <- processExpr context true_branch
             (context, false_branch) <- processExpr context false_branch
             E.Expr _ _ t_id <- true_branch
             E.Expr _ _ f_id <- false_branch
-            context <- addEdge context CG.IfTrue t_id id
-            context <- addEdge context CG.IfFalse f_id id
+            context <- addEdge context CG.Equals t_id id
+            context <- addEdge context CG.Equals f_id id
             (context, E.Expr (E.If cond true_branch false_branch) type id)
         E.List items -> do
-            context <- addExprNode context id (CG.ListCtor id type)
+            arg_type <- case head items of
+                Some first -> do
+                    E.Expr _ arg_type _ <- first
+                    arg_type
+                None -> type
+            context <- addExprNode context id (CG.ListCtor id type arg_type)
             (context, items) <- List.mapS context items (\context, item -> do
                     (context, item) <- processExpr context item
                     E.Expr _ _ item_id <- item
@@ -245,20 +276,15 @@ processExpr context expr = do
             context <- addExprNode context id (CG.Expr id type)
             (context, arg) <- processExpr context arg
             E.Expr _ _ arg_id <- arg
-            context <- addEdge context CG.ReturnArg arg_id id
-            context <- addReturnEdge context CG.Return arg_id
+            context <- addReturnEdge context CG.Equals arg_id
             (context, E.Expr (E.Return arg) type id)
         E.Continue arg -> do
             context <- addExprNode context id (CG.Expr id type)
             (context, arg) <- processExpr context arg
-            E.Expr _ _ arg_id <- arg
-            context <- addEdge context CG.ContinueArg arg_id id
             (context, E.Expr (E.Continue arg) type id)
         E.Break arg -> do
             context <- addExprNode context id (CG.Expr id type)
             (context, arg) <- processExpr context arg
-            E.Expr _ _ arg_id <- arg
-            context <- addEdge context CG.BreakArg arg_id id
             (context, E.Expr (E.Break arg) type id)
         E.RecordUpdate _ _ -> panic "RecordUpdate found in Equality.processExpr"
         E.Loop v initializer body continues breaks -> do
@@ -266,13 +292,12 @@ processExpr context expr = do
             E.Expr _ initializer_type initializer_id <- initializer
             context <- addVarNode context v initializer_type
             (context, initializer) <- processExpr context initializer
-            context <- addEdge context CG.LoopInitializer id initializer_id
-            context <- addVarEdge context CG.LoopVar initializer_id v False
+            context <- addVarEdge context CG.Equals initializer_id v False
             (context, body) <- processExpr context body
             E.Expr _ _ loop_body_id <- body
-            context <- addVarEdge context CG.LoopVar loop_body_id v False
-            context <- List.fold context continues (\context, c -> addEdge context CG.Continue c loop_body_id)
-            context <- List.fold context breaks (\context, b -> addEdge context CG.Break b id)
+            context <- addVarEdge context CG.Equals loop_body_id v False
+            context <- List.fold context continues (\context, c -> addEdge context CG.Equals c loop_body_id)
+            context <- List.fold context breaks (\context, b -> addEdge context CG.Equals b id)
             (context, E.Expr (E.Loop v initializer body continues breaks) type id)
         E.CaseOf body cases -> do
             context <- addExprNode context id (CG.Expr id type)
@@ -282,14 +307,14 @@ processExpr context expr = do
                 context <- case c.checker of
                     E.VariantChecker index v variant_type -> do
                         (context, variant_type, var_type) <- getVariantVarType context variant_type index
-                        println "Adding CaseVar {} {} {}" % (v, variant_type, var_type)
+                        //println "Adding CaseVar {} {} {}" % (v, variant_type, var_type)
                         context <- addCaseVarNode context v variant_type var_type
                         context <- addVarEdge context CG.CaseVar case_of_body_id v False
                         context
                     _ -> context
                 (context, c_body) <- processExpr context c.body
                 E.Expr _ _ c_id <- c.body
-                context <- addEdge context CG.CaseBody c_id id
+                context <- addEdge context CG.Equals c_id id
                 c <- c { body = c_body }
                 (context, c))
             (context, E.Expr (E.CaseOf body cases) type id)
@@ -322,5 +347,5 @@ buildConstraintGraph config program init_context function_type function_id body 
     context <- List.foldE processArg context function_type.args
     (context, body) <- processExpr context body
     E.Expr _ _ body_id <- body
-    context <- addReturnEdge context CG.ImplicitReturn body_id
+    context <- addReturnEdge context CG.Equals body_id
     (context.init_context, context.constraint_graph)

@@ -3,6 +3,7 @@ module Siko.MIR.Backend.Ownership.ConstraintGraph.Visual where
 import Siko.MIR.Backend.Ownership.ConstraintGraph as CG
 
 import Siko.Dot as D
+import Map2
 import Map
 import Hack
 
@@ -10,7 +11,7 @@ draw :: CG.ConstraintGraph -> String -> ()
 draw constraint_graph name = do
     graph <- D.createGraph name
     node_map <- Map.empty
-    (graph, node_map) <- Map.fold (graph, node_map) constraint_graph.nodes (\(graph, node_map), (id, node) -> do
+    (graph, node_map) <- Map2.fold (graph, node_map) constraint_graph.nodes (\(graph, node_map), (id, node) -> do
         node_name <- "{}" % node.kind
         node_name <- replace node_name "{" ""
         node_name <- replace node_name "}" ""
@@ -19,12 +20,12 @@ draw constraint_graph name = do
         node_name <- replace node_name "(" ""
         node_name <- replace node_name ")" ""
         (graph, dot_node_id) <- D.addNode graph node_name
-        (node_map, _) <- insert node_map id dot_node_id
+        (node_map, _) <- Map.insert node_map id dot_node_id
         (graph, node_map))
-    graph <- Map.fold graph constraint_graph.edges (\graph, (id, edge) -> do
+    graph <- Map2.fold graph constraint_graph.edges (\graph, (id, edge) -> do
         edge_name <- "{}" % edge.kind
-        src <- Option.unwrap (get node_map edge.source)
-        dest <- Option.unwrap (get node_map edge.destination)
+        src <- Option.unwrap (Map.get node_map edge.source)
+        dest <- Option.unwrap (Map.get node_map edge.destination)
         graph <- D.addEdge graph (Some edge_name) src dest
         graph)
     s <- D.generateDot graph

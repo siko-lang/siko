@@ -355,10 +355,11 @@ calculateInferenceInfo global_context init_context function_id = do
     case function.kind of
         F.Normal info -> do
             trace global_context.config "Inference: processing {}" % function.id
-            //(init_context, cgraph) <- CGCreator.buildConstraintGraph global_context.config global_context.program init_context function.type function_id info.body
-            //cgraph <- CGInfer.infer global_context.program function_id cgraph
+            (init_context, cgraph) <- CGCreator.buildConstraintGraph global_context.config global_context.program init_context function.type function_id info.body
+            trace global_context.config "constraint graph infer"
+            cgraph <- CGInfer.infer global_context.program function_id cgraph
             //CGVisual.draw cgraph (show function.id)
-            trace global_context.config "buildConstraintGraph done {}" % function.id
+            trace global_context.config "buildConstraintGraph done"
             (context, _) <- C.collectConstraints global_context init_context function.type function_id info.body
             trace global_context.config "processing equals"
             context <- processEquals context

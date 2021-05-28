@@ -1,5 +1,7 @@
 module Map2 where
 
+import List2
+
 data Map2 k v = extern
 
 instance (Show k, Show v) => Show Map2 k v where
@@ -22,8 +24,8 @@ get m k = extern
 remove k v :: (Ord k) => Map2 k v -> k -> (Map2 k v, Option v)
 remove m k = extern
 
-getKeys k v :: Map2 k v -> [k]
-getKeys m = m |> Map2.iter |> Iterator.fold (\keys, (k, _) -> keys + [k]) []
+getKeys k v :: Map2 k v -> List2 k
+getKeys m = m |> Map2.iter |> Iterator.fold (\keys, (k, _) -> List2.push keys k) List2.empty
 
 alter k v :: (Ord k) => (Option v -> Option v) -> k -> Map2 k v -> (Map2 k v, Option v)
 alter f k m = extern
@@ -36,7 +38,7 @@ alterS f s k m = do
             (m, v) <- insert m k v
             (s, m, v)
         None -> do
-            (m, v) <- remove m k
+            (m, v) <- Map2.remove m k
             (s, m, v)
 
 iter k v :: Map2 k v -> Iterator (k, v)
