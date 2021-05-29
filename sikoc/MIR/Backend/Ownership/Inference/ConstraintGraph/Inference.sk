@@ -8,16 +8,19 @@ import Siko.MIR.Function as F
 import Siko.MIR.Data as D
 import Siko.MIR.Expr as E
 
+import Siko.Config
+import Siko.Trace
+
 import Map2
 import List2 as List2
 import List2 (List2)
 
-isSourceNode :: CG.ConstraintGraph -> CG.NodeId -> Bool
+isSourceNode :: CG.ConstraintGraph -> CG.NodeId -> (CG.ConstraintGraph, Bool)
 isSourceNode constraint_graph node_id = do
     (constraint_graph, node) <- CG.getNode constraint_graph node_id
     (constraint_graph, edges) <- List2.mapS constraint_graph node.edges CG.getEdge
     incoming_edges <- List2.filter edges (\edge -> edge.destination == node_id)
-    List2.isEmpty incoming_edges
+    (constraint_graph, List2.isEmpty incoming_edges)
 
 setNodeType :: CG.ConstraintGraph -> CG.NodeId -> T.Type -> CG.ConstraintGraph
 setNodeType constraint_graph node_id type = do
@@ -42,11 +45,12 @@ startFromSourceNode program function_id constraint_graph node_id = do
     (constraint_graph, edges) <- getNodeEdges constraint_graph node_id
     (constraint_graph, edges)
 
-processEdges :: CG.ConstraintGraph -> List2 CG.EdgeId -> CG.ConstraintGraph
-processEdges constraint_graph edges = do
+processEdges :: Config -> CG.ConstraintGraph -> List2 CG.EdgeId -> CG.ConstraintGraph
+processEdges config constraint_graph edges = do
+    trace config "processEdges!"
     loop (constraint_graph, edges) <- (constraint_graph, edges) do
-        (constraint_graph, edges) <- List2.mapS constraint_graph edges processEdge
-        edges <- List2.flatten edges
+        trace config "Processing {} edges" % (List2.getLength edges)
+        (constraint_graph, edges) <- List2.fold (constraint_graph, List2.empty) edges processEdge
         if List2.isEmpty edges
         then break constraint_graph
         else (constraint_graph, edges)
@@ -68,31 +72,28 @@ unify type1 type2 = do
 
 unifyKinds :: List2 T.OwnershipKind -> List2 T.OwnershipKind -> U.SubstitutionApply
 unifyKinds kinds1 kinds2 = do
-        changes <- loop (index, kinds1, kinds2, changes) <- (0, kinds1, kinds2, List2.empty) do
-            if index >= List2.getLength kinds1
-            then break changes
-            else do
-                kind1 <- List2.atIndex kinds1 index
-                kind2 <- List2.atIndex kinds2 index
-                case (kind1, kind2) of
-                    (T.VarKind v1, T.VarKind v2) -> do
-                        if v1 == v2
-                        then (index + 1, kinds1, kinds2, changes)
-                        else do
-                            change <- if v1 > v2
-                            then (kind1, v2)
-                            else (kind2, v1)
-                            changes <- List2.push changes change
-                            kinds1 <- changeKinds kinds1 change
-                            kinds2 <- changeKinds kinds2 change
-                            (index + 1, kinds1, kinds2, changes)
-                    _ -> panic "OwnershipKind unify: unexpected kinds {}, {}" % (kind1, kind2)
-        sub <- U.createSubstitution
-        sub <- List2.fold sub changes (\sub, (kind, var) -> U.addSubstitution sub kind (U.Unification var))
-        U.toApply sub
-    where
-        changeKinds :: List2 T.OwnershipKind -> (T.OwnershipKind, T.OwnershipVar) -> List2 T.OwnershipKind
-        changeKinds kinds (kind, var) = List2.map kinds (\k -> if k == kind then (T.VarKind var) else k)
+    changes <- loop (index, kinds1, kinds2, changes) <- (0, kinds1, kinds2, List2.empty) do
+        if index >= List2.getLength kinds1
+        then break changes
+        else do
+            kind1 <- List2.atIndex kinds1 index
+            kind2 <- List2.atIndex kinds2 index
+            case (kind1, kind2) of
+                (T.VarKind v1, T.VarKind v2) -> do
+                    if v1 == v2
+                    then (index + 1, kinds1, kinds2, changes)
+                    else do
+                        change <- if v1 > v2
+                        then (kind1, v2)
+                        else (kind2, v1)
+                        changes <- List2.push changes change
+                        kinds1 <- List2.updateSpecifics kinds1 change.0 (T.VarKind change.1)
+                        kinds2 <- List2.updateSpecifics kinds2 change.0 (T.VarKind change.1)
+                        (index + 1, kinds1, kinds2, changes)
+                _ -> panic "OwnershipKind unify: unexpected kinds {}, {}" % (kind1, kind2)
+    sub <- U.createSubstitution
+    sub <- List2.fold sub changes (\sub, (kind, var) -> U.addSubstitution sub kind (U.Unification var))
+    U.toApply sub
 
 instance U.Apply CG.Node where
     apply node sub = do
@@ -107,12 +108,14 @@ instance U.Apply CG.Node where
         //println "Type update: {} => {}" % (node.kind, kind)
         node { kind = kind }
 
-updateNodeTypes :: CG.ConstraintGraph -> CG.NodeId -> CG.NodeId -> U.SubstitutionApply -> Bool -> (CG.ConstraintGraph, List2 CG.EdgeId)
-updateNodeTypes constraint_graph node_id1 node_id2 sub forced = do
+updateNodeTypes :: CG.ConstraintGraph -> List2 CG.EdgeId -> CG.NodeId -> CG.NodeId -> U.SubstitutionApply -> Bool -> (CG.ConstraintGraph, List2 CG.EdgeId)
+updateNodeTypes constraint_graph edges node_id1 node_id2 sub forced = do
     (constraint_graph, updated) <- CG.updateNode constraint_graph node_id1 (\node -> U.apply node sub)
     (constraint_graph, edges) <- if updated || forced
-    then getNodeEdges constraint_graph node_id1
-    else (constraint_graph, List2.empty)
+    then do
+        (constraint_graph, edges2) <- getNodeEdges constraint_graph node_id1
+        (constraint_graph, edges + edges2)
+    else (constraint_graph, edges)
     (constraint_graph, updated) <- CG.updateNode constraint_graph node_id2 (\node -> U.apply node sub)
     (constraint_graph, edges) <- if updated || forced
     then do
@@ -122,8 +125,8 @@ updateNodeTypes constraint_graph node_id1 node_id2 sub forced = do
     edges <- edges |> List2.sort |> List2.dedup
     (constraint_graph, edges)
 
-processEdge :: CG.ConstraintGraph -> CG.EdgeId -> (CG.ConstraintGraph, List2 CG.EdgeId)
-processEdge constraint_graph edge_id = do
+processEdge :: (CG.ConstraintGraph, List2 CG.EdgeId) -> CG.EdgeId -> (CG.ConstraintGraph, List2 CG.EdgeId)
+processEdge (constraint_graph, edges) edge_id = do
     (constraint_graph, edge) <- CG.getEdge constraint_graph edge_id
     forced <- not edge.visited // force check on first visit
     constraint_graph <- if forced
@@ -184,7 +187,7 @@ processEdge constraint_graph edge_id = do
                     unify arg_type (CG.getNodeType src_node)
                 _ -> panic "ListArg's target is not a ListCtor!"
             (constraint_graph, sub)
-    updateNodeTypes constraint_graph edge.source edge.destination sub forced
+    updateNodeTypes constraint_graph edges edge.source edge.destination sub forced
 
 dump :: CG.ConstraintGraph -> ()
 dump constraint_graph = do
@@ -193,17 +196,23 @@ dump constraint_graph = do
     constraint_graph.edges |> Map2.iter |> Iterator.forEach (\(edge_id, edge) -> println "{}: {} => {} / {}" % (edge_id, edge.source, edge.destination, edge.kind))
     println "-----"
 
-infer :: P.Program -> P.Identity -> CG.ConstraintGraph -> CG.ConstraintGraph
-infer program function_id constraint_graph = do
+infer :: Config -> P.Program -> P.Identity -> CG.ConstraintGraph -> CG.ConstraintGraph
+infer config program function_id constraint_graph = do
     //println "infer {}" % function_id
     node_ids <- Map2.getKeys constraint_graph.nodes
-    source_nodes <- List2.filter node_ids (isSourceNode constraint_graph)
+    (constraint_graph, source_nodes) <- List2.mapS constraint_graph node_ids (\constraint_graph, node_id -> do
+        (constraint_graph, source_node) <- isSourceNode constraint_graph node_id
+        if source_node
+        then (constraint_graph, List2.single node_id)
+        else (constraint_graph, List2.empty))
+    source_nodes <- List2.flatten source_nodes
+    //source_nodes <- List2.filter node_ids (isSourceNode constraint_graph)
     (constraint_graph, edges) <- List2.mapS constraint_graph source_nodes (startFromSourceNode program function_id)
     //println "Initial checks {}" % edges
     //println "Initial {}" % function_id
     //dump constraint_graph
     edges <- List2.flatten edges
-    constraint_graph <- processEdges constraint_graph edges
+    constraint_graph <- processEdges config constraint_graph edges
     //println "Final"
     //dump constraint_graph
     constraint_graph

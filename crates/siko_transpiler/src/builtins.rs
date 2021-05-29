@@ -1446,8 +1446,31 @@ fn generate_list2_builtins(
                 "let mut v = Vec::with_capacity(arg0.value.len());"
             )?;
             write!(output_file, "for item in arg0.value {{")?;
-            write!(output_file, "let t = arg1.clone().call(item);")?;
+            write!(output_file, "let t = arg1.call_ro(item);")?;
             write!(output_file, "v.push(t);")?;
+            write!(output_file, "}}")?;
+            write!(output_file, "{}{} {{ value : v }}\n", indent, result_ty_str,)?;
+        }
+        "updateAll" => {
+            write!(
+                output_file,
+                "let mut v = arg0.value;"
+            )?;
+            write!(output_file, "for item in &mut v {{")?;
+            write!(output_file, "let t = arg1.call_ro(item.clone());")?;
+            write!(output_file, "*item  = t;")?;
+            write!(output_file, "}}")?;
+            write!(output_file, "{}{} {{ value : v }}\n", indent, result_ty_str,)?;
+        }
+        "updateSpecifics" => {
+            write!(
+                output_file,
+                "let mut v = arg0.value;"
+            )?;
+            write!(output_file, "for item in &mut v {{")?;
+            write!(output_file, "if *item == arg1 {{")?;
+            write!(output_file, "*item  = arg2.clone();")?;
+            write!(output_file, "}}")?;
             write!(output_file, "}}")?;
             write!(output_file, "{}{} {{ value : v }}\n", indent, result_ty_str,)?;
         }

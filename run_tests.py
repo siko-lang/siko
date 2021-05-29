@@ -54,8 +54,9 @@ def run_command(args, name, verbose = False):
 def getStd():
     return ["std2/*.sk", "std2/Json/*.sk"]
 
-def run(verbose, interpret, nostd, debug, test_name, source_folder, index, total):
-    print("--- Running %s - %d/%d" % (test_name, total, index))
+def run(silent, verbose, interpret, nostd, debug, test_name, source_folder, index, total):
+    if not silent:
+        print("--- Running %s - %d/%d" % (test_name, total, index))
     mkdir_safe("sikoc_test_runs")
     target_folder = os.path.join("sikoc_test_runs", test_name)
     mkdir_safe(target_folder)
@@ -81,6 +82,7 @@ verbose = ""
 debug = ""
 nostd = False
 interpret = False
+silent = False
 collect_tests(test_source_name, tests, None)
 if len(sys.argv) != 1:
     selected = set()
@@ -95,6 +97,8 @@ if len(sys.argv) != 1:
             interpret = True
         elif t == "-nostd":
             nostd = True
+        elif t == "-s":
+            silent = True
         else:
             selected.add(t)
     tests = list(filter(lambda test: test[0] in selected, tests))
@@ -102,8 +106,9 @@ total = len(tests)
 success = 0
 failure = 0
 for (index, (name, path)) in enumerate(tests):
-    if run(verbose, interpret, nostd, debug, name, path, index + 1, total):
+    if run(silent, verbose, interpret, nostd, debug, name, path, index + 1, total):
         success += 1
     else:
         failure += 1
-print("Success %d, failure %d" % (success, failure))
+if not silent:
+    print("Success %d, failure %d" % (success, failure))
