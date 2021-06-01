@@ -2,6 +2,7 @@ module Siko.MIR.Backend where
 
 import Siko.MIR.Backend.Ownership.Initialization as Initialization
 import Siko.MIR.Backend.Ownership.Inference as Inference
+import Siko.MIR.Backend.Ownership.V2.Inference as InferenceV2
 import Siko.MIR.Backend.Ownership.AddConverter as AddConverter
 import Siko.MIR.Backend.Instantiation as Instantiation
 import Siko.MIR.Backend.SanityCheck as SanityCheck
@@ -106,9 +107,9 @@ processProgram config mir_program = do
     mir_program <- TransformUpdates.processProgram mir_program
     dumpProgram config mir_program (MIR "transformupdates")
     (data_groups, function_groups) <- createGroups config mir_program
-    trace config "Inliner.."
-    mir_program <- Inliner.processProgram mir_program function_groups
-    dumpProgram config mir_program (MIR "inliner")
+    //trace config "Inliner.."
+    //mir_program <- Inliner.processProgram mir_program function_groups
+    //dumpProgram config mir_program (MIR "inliner")
     trace config "Simplifier.."
     mir_program <- Simplifier.processProgram config mir_program
     dumpProgram config mir_program (MIR "simplifier")
@@ -120,6 +121,8 @@ processProgram config mir_program = do
     trace config "AddConverter.."
     mir_program <- AddConverter.processProgram config mir_program
     dumpProgram config mir_program (MIR "addconverter")
+    //v2_mir_program <- InferenceV2.processProgram config mir_program function_groups
+    //panic "Enough"
     trace config "Initialization.."
     (context, mir_program) <- Initialization.initializeOwnership config mir_program data_groups
     dumpProgram config mir_program (MIR "initialization")

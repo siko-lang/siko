@@ -1,0 +1,252 @@
+module Siko.MIR.Backend.Ownership.V2.Inference where
+
+import Siko.MIR.Program as P
+import Siko.MIR.Function as F
+import Siko.MIR.Expr as E
+import Siko.MIR.Data as D
+import Siko.MIR.Type as T
+import Siko.Config
+import Siko.Trace
+import Siko.Util.DependencyProcessor
+import Siko.MIR.Backend.Ownership.Unification as U
+
+import List2
+import Map2
+
+data ExprInfo = { type :: T.Type,
+                  name :: String }
+
+instance Show ExprInfo where
+    show (ExprInfo t n) = "{}/{}" % (t, n)
+
+data MemberSource = { source :: T.OwnershipKind,
+                    name :: String
+                  } deriving (Show, PartialEq, Eq, PartialOrd, Ord)
+
+data MemberInfo = { mode :: T.OwnershipKind,
+                    kind :: T.OwnershipKind
+                  } deriving (Show)
+
+data Context = { config :: Config,
+                 program :: P.Program,
+                 var_gen :: U.OwnershipVarGenerator,
+                 expr_types :: Map2 E.ExprId ExprInfo,
+                 var_types :: Map2 E.Var T.Type,
+                 members :: Map2 MemberSource MemberInfo
+               }
+
+dump :: Context -> ()
+dump context = do
+    context.expr_types |> Map2.iter |> Iterator.forEach (\(id, type) -> println "Expr: {} - {}" % (id, type))
+    context.var_types |> Map2.iter |> Iterator.forEach (\(v, type) -> println "Var: {} - {}" % (v, type))
+    context.members |> Map2.iter |> Iterator.forEach (\(s, info) -> println "Member: {}: {}/{}" % (s, info.mode, info.kind))
+
+getNextOwnershipKind :: Context -> (Context, T.OwnershipKind)
+getNextOwnershipKind context = do
+    (var_gen, v) <- U.getNextOwnershipVar context.var_gen
+    context <- context { var_gen = var_gen }
+    (context, T.VarKind v)
+
+prepareType :: Context -> T.Type -> (Context, T.Type)
+prepareType context type =
+    case type of
+        T.Adt id _ -> do
+            (context, v) <- getNextOwnershipKind context
+            (context, arg) <- getNextOwnershipKind context
+            (context, T.Var v (T.Adt id (List2.single arg)))
+        T.Record id _ -> do
+            (context, v) <- getNextOwnershipKind context
+            (context, arg) <- getNextOwnershipKind context
+            (context, T.Var v (T.Record id (List2.single arg)))
+        T.Never -> (context, T.Never)
+        _ -> panic "v2: prepareType: unexpected type {}" % type
+
+getTypeArg :: T.Type -> T.OwnershipKind
+getTypeArg type = case type of
+    T.Var v t -> case t of
+        T.Adt _ args -> List2.atIndex args 0
+        T.Record _ args -> List2.atIndex args 0
+        _ -> panic "getTypeArg: unexpected type {}" % type
+    _ -> panic "getTypeArg: unexpected type {}" % type
+
+getTypeMode :: T.Type -> T.OwnershipKind
+getTypeMode type = case type of
+    T.Var v _ -> v
+    _ -> panic "getTypeMode: unexpected type {}" % type
+
+addExprType :: Context -> E.ExprId -> String -> T.Type -> Context
+addExprType context expr_id name type = do
+    //println "addExprType {} {}" % (name, type)
+    (expr_types, _) <- Map2.insert context.expr_types expr_id (ExprInfo type name)
+    context { expr_types = expr_types }
+
+addVarType :: Context -> E.Var -> T.Type -> Context
+addVarType context var type = do
+    //println "addVarType {} {}" % (var, type)
+    (var_types, _) <- Map2.insert context.var_types var type
+    context { var_types = var_types }
+
+getExprType :: Context -> E.ExprId -> (Context, T.Type)
+getExprType context expr_id = case Map2.get context.expr_types expr_id of
+    Some expr_info -> do
+        expr_info :: ExprInfo <- expr_info // FIXME
+        (context, expr_info.type)
+    None -> panic "ExprType not found in context"
+
+getVarType :: Context -> E.Var -> (Context, T.Type)
+getVarType context var = case Map2.get context.var_types var of
+    Some t -> (context, t)
+    None -> panic "VarType not found in context"
+
+makeEqual :: Context -> T.OwnershipKind -> T.OwnershipKind -> Context
+makeEqual context from to = do
+        expr_types <- Map2.update context.expr_types (updateExprType from to)
+        var_types <- Map2.update context.var_types (updateVarType from to)
+        members <- Map2.map context.members (updateMember from to)
+        context { expr_types = expr_types, var_types = var_types, members = members }
+    where
+        updateExprType from to (_, info) = do
+            info :: ExprInfo <- info // FIXME
+            type <- updateType from to info.type
+            info { type = type }
+        updateVarType from to (_, t) = updateType from to t
+        updateMember from to (s, info) = do
+            s :: MemberSource <- s
+            info :: MemberInfo <- info
+            u <- updateKind from to
+            s <- s { source = u s.source }
+            info <- info { mode = u info.mode, kind = u info.kind }
+            (s, info)
+        updateKind from to k = if k == from then to else k
+
+updateType :: T.OwnershipKind -> T.OwnershipKind -> T.Type -> T.Type
+updateType from to type = case type of
+    T.Var v t -> if v == from
+        then T.Var to (updateType from to t)
+        else T.Var v (updateType from to t)
+    T.Adt id kinds -> do
+        arg <- List2.atIndex kinds 0
+        if arg == from
+        then T.Adt id (List2.single to)
+        else T.Adt id kinds
+    T.Record id kinds -> do
+        arg <- List2.atIndex kinds 0
+        if arg == from
+        then T.Record id (List2.single to)
+        else T.Record id kinds
+    t -> t
+
+processExpr :: Context -> E.Expr -> Context
+processExpr context expr = do
+    E.Expr s_expr type id <- expr
+    //println "processExpr {} {}" % (E.short expr, type)
+    case s_expr of
+        E.Do items -> do
+            context <- List.fold context items processExpr
+            E.Expr _ _ last_id <- List.last items
+            (context, last_type) <- getExprType context last_id
+            context <- addExprType context id (E.short expr) last_type
+            context
+        E.StaticFunctionCall f_id args -> do
+            context <- List.fold context args processExpr
+            function <- P.getFunction context.program f_id
+            (context, type) <- prepareType context type
+            context <- addExprType context id (E.short expr) type
+            context <- case function.kind of
+                F.RecordCtor -> do
+                    record_id <- T.getIdentity type
+                    record_kind <- getTypeArg type
+                    record <- P.getRecord context.program record_id
+                    List.foldE (\context, index, field -> do
+                        arg <- List.atIndex args index
+                        E.Expr _ _ arg_id <- arg
+                        (context, arg_type) <- getExprType context arg_id
+                        arg_kind <- getTypeArg arg_type
+                        arg_mode <- getTypeMode arg_type
+                        (members, _) <- Map2.insert context.members (MemberSource record_kind field.name) (MemberInfo arg_mode arg_kind)
+                        context <- context { members = members }
+                        context) context record.fields
+                _ -> do
+                    println "Unsupported function kind {}" % function.kind
+                    context
+            context
+        E.Converter arg kind -> do
+            context <- processExpr context arg
+            E.Expr _ _ arg_id <- arg
+            (context, arg_type) <- getExprType context arg_id
+            (context, type) <- prepareType context type
+            context <- addExprType context id (E.short expr) type
+            arg_kind <- getTypeArg arg_type
+            converter_kind <- getTypeArg type
+            context <- makeEqual context arg_kind converter_kind
+            context
+        E.VarDecl v rhs -> do
+            context <- processExpr context rhs
+            E.Expr _ _ rhs_id <- rhs
+            (context, rhs_type) <- getExprType context rhs_id
+            context <- addVarType context v rhs_type
+            (context, type) <- prepareType context type
+            context <- addExprType context id (E.short expr) type
+            context
+        E.VarRef v -> do
+            (context, type) <- getVarType context v
+            context <- addExprType context id (E.short expr) type
+            context
+        E.FieldAccess name receiver -> do
+            context <- processExpr context receiver
+            E.Expr _ _ receiver_id <- receiver
+            (context, receiver_type) <- getExprType context receiver_id
+            (context, type) <- prepareType context type
+            context <- addExprType context id (E.short expr) type
+            receiver_kind <- getTypeArg receiver_type
+            fa_mode <- getTypeMode type
+            fa_kind <- getTypeArg type
+            context <- case get context.members (MemberSource receiver_kind name) of
+                Some member_info -> do
+                    member_info :: MemberInfo <- member_info // FIXME
+                    //println "member info {}" % member_info
+                    //println "{}.{} => {}" % (receiver_type, name, type)
+                    context <- makeEqual context fa_mode member_info.mode
+                    context <- makeEqual context fa_kind member_info.kind
+                    context
+                None -> do
+                    (members, _) <- Map2.insert context.members (MemberSource receiver_kind name) (MemberInfo fa_mode fa_kind)
+                    context <- context { members = members }
+                    context
+            context
+        _ -> panic "{} NYI" % E.short expr
+
+createContext :: Config -> P.Program -> Context
+createContext config program = Context config program U.createOwnershipVarGenerator Map2.empty Map2.empty Map2.empty
+
+processFunction :: Context -> P.Identity -> Context
+processFunction context function_id = do
+    function <- P.getFunction context.program function_id
+    case function.kind of
+        F.Normal info -> do
+            trace context.config "Processing {}" % function_id
+            context <- List.foldE (\context, index, arg_type -> do
+                (context, arg_type) <- prepareType context arg_type
+                addVarType context (E.Arg index) arg_type) context function.type.args
+            context <- processExpr context info.body
+            E.Expr _ _ body_id <- info.body
+            (context, body_type) <- getExprType context body_id
+            args <- List.foldE (\args, index, _ -> List.push args (E.Arg index)) [] function.type.args
+            arg_types <- List.map args (\arg -> do
+                (context, arg_type) <- getVarType context arg
+                arg_type)
+            //println "Final fn type: {} -> {}" % (arg_types, body_type)
+            //dump context
+            context
+        _ -> context
+    context
+
+processFunctionGroup :: Context -> [P.Identity] -> Context
+processFunctionGroup context group = List.fold context group processFunction
+
+processProgram :: Config -> P.Program -> [DependencyGroup P.Identity] -> P.Program
+processProgram config program function_groups = do
+    trace config "InferenceV2"
+    context <- createContext config program
+    context <- List.fold context function_groups (\context, group -> processFunctionGroup context group.items)
+    program
