@@ -33,11 +33,26 @@ data MemberInfo = { mode :: T.OwnershipKind,
 instance Show MemberInfo where
     show (MemberInfo m k) = "{} {}" % (m, k)
 
+data VariantSource = { source :: T.OwnershipKind,
+                       index :: Int
+                     } deriving (PartialEq, Eq, PartialOrd, Ord)
+
+instance Show VariantSource where
+    show (VariantSource s i) = "{}.{}" % (s, i)
+
+data VariantInfo = { mode :: T.OwnershipKind,
+                     kind :: T.OwnershipKind
+                   } deriving (PartialEq, Eq, PartialOrd, Ord)
+
+instance Show VariantInfo where
+    show (VariantInfo m k) = "{} {}" % (m, k)
+
 data ConverterInfo  = { from :: T.OwnershipKind, to :: T.OwnershipKind }
 
 data FunctionInferenceInfo = { arg_types :: List2 T.Type,
                                result_type :: T.Type,
                                members :: Map2 MemberSource (List2 MemberInfo),
+                               variants :: Map2 VariantSource (List2 VariantInfo),
                                converters :: List2 ConverterInfo,
                              }
 
@@ -47,6 +62,11 @@ collectKindsFromFunctionInferenceInfo inference_info = do
     kinds <- List2.fold kinds inference_info.arg_types (\kinds, arg_type -> T.collectOwnershipKinds arg_type)
     kinds <- kinds + T.collectOwnershipKinds inference_info.result_type
     kinds <- Map2.fold kinds inference_info.members (\kinds, (source, infos) -> do
+        info <- List2.atIndex infos 0
+        kinds <- List2.push kinds source.source
+        kinds <- List2.push kinds info.mode
+        List2.push kinds info.kind)
+    kinds <- Map2.fold kinds inference_info.variants (\kinds, (source, infos) -> do
         info <- List2.atIndex infos 0
         kinds <- List2.push kinds source.source
         kinds <- List2.push kinds info.mode
@@ -71,9 +91,15 @@ cloneFunctionInferenceInfo context inference_info = do
             mode <- cloneKind kind_map info.mode
             kind <- cloneKind kind_map info.kind
             (s { source = source }, List2.single (info { mode = mode, kind = kind })))
+        variants <- Map2.map inference_info.variants (\(s, infos) -> do
+            info <- List2.atIndex infos 0
+            source <- cloneKind kind_map s.source
+            mode <- cloneKind kind_map info.mode
+            kind <- cloneKind kind_map info.kind
+            (s { source = source }, List2.single (info { mode = mode, kind = kind })))
         converters <- List2.map inference_info.converters (\info -> do
             ConverterInfo (cloneKind kind_map info.from) (cloneKind kind_map info.to))
-        (context, FunctionInferenceInfo arg_types result_type members converters)
+        (context, FunctionInferenceInfo arg_types result_type members variants converters)
     where
         cloneType kind_map type = case type of
             T.Var v t -> T.Var (cloneKind kind_map v) (cloneType kind_map t)
@@ -87,10 +113,12 @@ updateFunctionInferenceInfo inference_info from to = do
     arg_types <- List2.map inference_info.arg_types (updateType from to)
     result_type <- updateType from to inference_info.result_type
     members <- Map2.map inference_info.members (updateMember from to)
+    variants <- Map2.map inference_info.variants (updateVariant from to)
     converters <- List2.updateAll inference_info.converters (updateConverter from to)
     inference_info { arg_types = arg_types,
                      result_type = result_type,
                      members = members,
+                     variants = variants,
                      converters = converters }
 
 data Context = { config :: Config,
@@ -99,6 +127,7 @@ data Context = { config :: Config,
                  expr_types :: Map2 E.ExprId ExprInfo,
                  var_types :: Map2 E.Var T.Type,
                  members :: Map2 MemberSource (List2 MemberInfo),
+                 variants :: Map2 VariantSource (List2 VariantInfo),
                  converters :: List2 ConverterInfo,
                  function_inference_info_map :: Map2 P.Identity FunctionInferenceInfo,
                  current_inference_info :: Option FunctionInferenceInfo
@@ -109,6 +138,7 @@ dump context = do
     context.expr_types |> Map2.iter |> Iterator.forEach (\(id, type) -> println "Expr: {} - {}" % (id, type))
     context.var_types |> Map2.iter |> Iterator.forEach (\(v, type) -> println "Var: {} - {}" % (v, type))
     context.members |> Map2.iter |> Iterator.forEach (\(s, info) -> println "Member: {}: {}" % (s, info))
+    context.variants |> Map2.iter |> Iterator.forEach (\(s, info) -> println "Variant: {}: {}" % (s, info))
     context.converters |> List2.iter |> Iterator.forEach (\ConverterInfo from to -> println "Converter: {} => {}" % (from, to))
 
 getNextOwnershipKind :: Context -> (Context, T.OwnershipKind)
@@ -173,6 +203,11 @@ addMemberInfo context source info = do
     (members, _) <- Map2.insert context.members source (List2.single info)
     context { members = members }
 
+addVariantInfo :: Context -> VariantSource -> VariantInfo -> Context
+addVariantInfo context source info = do
+    (variants, _) <- Map2.insert context.variants source (List2.single info)
+    context { variants = variants }
+
 updateKind from to k = if k == from then to else k
 
 updateMember from to (s, infos) = do
@@ -181,6 +216,15 @@ updateMember from to (s, infos) = do
             s <- s { source = u s.source }
             infos <- List2.map infos (\info -> do
                 info :: MemberInfo <- info // FIXME
+                info { mode = u info.mode, kind = u info.kind })
+            (s, infos)
+
+updateVariant from to (s, infos) = do
+            u <- updateKind from to
+            s :: VariantSource <- s
+            s <- s { source = u s.source }
+            infos <- List2.map infos (\info -> do
+                info :: VariantInfo <- info // FIXME
                 info { mode = u info.mode, kind = u info.kind })
             (s, infos)
 
@@ -207,6 +251,8 @@ makeEqual context from to = do
         var_types <- Map2.update context.var_types (updateVarType from to)
         new_members <- context.members |> Map2.iter |> Iterator.map (updateMember from to) |> toList
         members <- classify new_members
+        new_variants <- context.variants |> Map2.iter |> Iterator.map (updateVariant from to) |> toList
+        variants <- classify new_variants
         converters <- List2.updateAll context.converters (updateConverter from to)
         current_inference_info <- case context.current_inference_info of
             Some inference_info -> Some (updateFunctionInferenceInfo inference_info from to)
@@ -214,6 +260,7 @@ makeEqual context from to = do
         context { expr_types = expr_types,
                   var_types = var_types,
                   members = members,
+                  variants = variants,
                   converters = converters,
                   current_inference_info = current_inference_info }
     where
@@ -270,6 +317,25 @@ unifyMembers context = do
             members <- Map2.map context.members (\(s, infos) -> (s, infos |> sort |> dedup))
             context { members = members }
 
+unifyVariants :: Context -> Context
+unifyVariants context = do
+    loop context <- context do
+        context :: Context <- context // FIXME
+        infos <- Map2.fold List2.empty context.variants (\prev, (s, infos) -> do
+            if List2.getLength infos > 1
+            then infos
+            else prev)
+        if List2.isEmpty infos
+        then break context
+        else do
+            (first_info, infos) <- List2.remove infos 0
+            next_info <- List2.atIndex infos 0
+            first_info :: VariantInfo <- first_info // FIXME
+            context <- makeEqual context first_info.mode next_info.mode
+            context <- makeEqual context first_info.kind next_info.kind
+            variants <- Map2.map context.variants (\(s, infos) -> (s, infos |> sort |> dedup))
+            context { variants = variants }
+
 processExpr :: Context -> E.Expr -> Context
 processExpr context expr = do
     E.Expr s_expr type id <- expr
@@ -281,6 +347,7 @@ processExpr context expr = do
             (context, last_type) <- getExprType context last_id
             context <- addExprType context id (E.short expr) last_type
             context
+        E.Multi _ -> panic "Multi found in Inference"
         E.StaticFunctionCall f_id args -> do
             context <- List.fold context args processExpr
             function <- P.getFunction context.program f_id
@@ -291,6 +358,25 @@ processExpr context expr = do
                     record_id <- T.getIdentity type
                     record_kind <- getTypeArg type
                     record <- P.getRecord context.program record_id
+                    List.foldE (\context, index, field -> do
+                        arg <- List.atIndex args index
+                        E.Expr _ _ arg_id <- arg
+                        (context, arg_type) <- getExprType context arg_id
+                        arg_kind <- getTypeArg arg_type
+                        arg_mode <- getTypeMode arg_type
+                        context <- addMemberInfo context (MemberSource record_kind field.name) (MemberInfo arg_mode arg_kind)
+                        context) context record.fields
+                F.VariantCtor index -> do
+                    adt_id <- T.getIdentity type
+                    adt_kind <- getTypeArg type
+                    adt <- P.getAdt context.program adt_id
+                    variant <- List.atIndex adt.variants index
+                    (context, record_type) <- prepareType context variant.type
+                    record_id <- T.getIdentity variant.type
+                    record_mode <- getTypeMode record_type
+                    record_kind <- getTypeArg record_type
+                    record <- P.getRecord context.program record_id
+                    context <- addVariantInfo context (VariantSource adt_kind index) (VariantInfo record_mode record_kind)
                     List.foldE (\context, index, field -> do
                         arg <- List.atIndex args index
                         E.Expr _ _ arg_id <- arg
@@ -322,8 +408,8 @@ processExpr context expr = do
                             context <- unifyTypes context inference_info.result_type type
                             context
                         None -> panic "No inference info found for function {}" % f_id
-                _ -> do
-                    println "Unsupported function kind {}" % function.kind
+                F.Extern _ -> do
+                    println "Extern NYI"
                     context
             context <- unifyMembers context
             context
@@ -374,12 +460,48 @@ processExpr context expr = do
                 None -> addMemberInfo context (MemberSource receiver_kind name) (MemberInfo fa_mode fa_kind)
             context <- unifyMembers context
             context
+        E.CaseOf body cases -> do
+            context <- processExpr context body
+            (context, type) <- prepareType context type
+            context <- addExprType context id (E.short expr) type
+            context <- List.fold context cases (\context, c -> do
+                context <- case c.checker of
+                    E.VariantChecker index v variant_type -> do
+                        case variant_type of
+                            T.Adt adt_id _ -> do
+                                adt_kind <- getTypeArg type
+                                adt <- P.getAdt context.program adt_id
+                                variant <- List.atIndex adt.variants index
+                                (context, record_type) <- prepareType context variant.type
+                                record_mode <- getTypeMode record_type
+                                record_kind <- getTypeArg record_type
+                                context <- addVarType context v record_type
+                                context <- addVariantInfo context (VariantSource adt_kind index) (VariantInfo record_mode record_kind)
+                                context
+                            T.Record _ _ -> do
+                                (context, record_type) <- prepareType context variant_type
+                                context <- addVarType context v record_type
+                                context
+                            _ -> panic "VariantChecker's type is not record nor adt"
+                    _ -> context
+                E.Expr _ _ case_body_id <- c.body
+                context <- processExpr context c.body
+                (context, case_body_type) <- getExprType context case_body_id
+                (context, caseof_type) <- getExprType context id
+                unifyTypes context case_body_type caseof_type)
+            context
+        E.RecordUpdate _ _ -> panic "RecordUpdate found in Inference"
+        E.Clone _ -> panic "Clone found in Inference"
+        E.Deref _ -> panic "Deref found in Inference"
+        E.Ref _ -> panic "Ref found in Inference"
+        E.Move _ -> panic "Move found in Inference"
+        E.Box _ -> panic "Box found in Inference"
         _ -> panic "{} NYI" % E.short expr
 
 createContext :: Config -> P.Program -> Context
 createContext config program =
     Context config program U.createOwnershipVarGenerator
-        Map2.empty Map2.empty Map2.empty List2.empty Map2.empty None
+        Map2.empty Map2.empty Map2.empty Map2.empty List2.empty Map2.empty None
 
 processFunction :: Context -> P.Identity -> Context
 processFunction context function_id = do
@@ -397,7 +519,7 @@ processFunction context function_id = do
             arg_types <- List2.map args (\arg -> do
                 (context, arg_type) <- getVarType context arg
                 arg_type)
-            inference_info <- FunctionInferenceInfo arg_types body_type context.members context.converters
+            inference_info <- FunctionInferenceInfo arg_types body_type context.members context.variants context.converters
             (function_inference_info_map, _) <- Map2.insert context.function_inference_info_map function_id inference_info
             dump context
             context <- context { expr_types = Map2.empty,
