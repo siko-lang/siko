@@ -319,7 +319,7 @@ unifyTypes context type1 type2 =
 
 unifyMembers :: Context -> Context
 unifyMembers context = do
-    println "unifyMembers: members {}" % Map2.getSize context.members
+    //println "unifyMembers: members {}" % Map2.getSize context.members
     loop context <- context do
         context :: Context <- context // FIXME
         infos <- Map2.fold List2.empty context.members (\prev, (s, infos) -> do
@@ -339,7 +339,7 @@ unifyMembers context = do
 
 unifyVariants :: Context -> Context
 unifyVariants context = do
-    println "unifyVariants: variants {}" % Map2.getSize context.variants
+    //println "unifyVariants: variants {}" % Map2.getSize context.variants
     loop context <- context do
         context :: Context <- context // FIXME
         infos <- Map2.fold List2.empty context.variants (\prev, (s, infos) -> do
@@ -409,24 +409,24 @@ processExpr context expr = do
                 F.Normal _ -> do
                     case Map2.get context.function_inference_info_map f_id of
                         Some inference_info -> do
-                            (context, inference_info) <- cloneFunctionInferenceInfo context inference_info
-                            converters <- context.converters + inference_info.converters
-                            context <- context { converters = converters }
-                            context <- Map2.fold context inference_info.members (\c, (s, infos) ->
-                                List2.fold c infos (\c, i -> addMemberInfo c s i))
-                            context <- context { current_inference_info = Some inference_info }
-                            context <- List2.foldE (\context, index, _ -> do
-                                arg <- List.atIndex args index
-                                E.Expr _ _ arg_id <- arg
-                                (context, arg_type) <- getExprType context arg_id
-                                inference_info <- Option.expect context.current_inference_info "current_inference_info1"
-                                inference_info_arg_type <- List2.atIndex inference_info.arg_types index
-                                context <- unifyTypes context inference_info_arg_type arg_type
-                                context) context inference_info.arg_types
-                            inference_info <- Option.expect context.current_inference_info "current_inference_info2"
-                            context <- context { current_inference_info = None }
-                            (context, type) <- getExprType context id
-                            context <- unifyTypes context inference_info.result_type type
+                            // (context, inference_info) <- cloneFunctionInferenceInfo context inference_info
+                            // converters <- context.converters + inference_info.converters
+                            // context <- context { converters = converters }
+                            // context <- Map2.fold context inference_info.members (\c, (s, infos) ->
+                            //     List2.fold c infos (\c, i -> addMemberInfo c s i))
+                            // context <- context { current_inference_info = Some inference_info }
+                            // context <- List2.foldE (\context, index, _ -> do
+                            //     arg <- List.atIndex args index
+                            //     E.Expr _ _ arg_id <- arg
+                            //     (context, arg_type) <- getExprType context arg_id
+                            //     inference_info <- Option.expect context.current_inference_info "current_inference_info1"
+                            //     inference_info_arg_type <- List2.atIndex inference_info.arg_types index
+                            //     context <- unifyTypes context inference_info_arg_type arg_type
+                            //     context) context inference_info.arg_types
+                            // inference_info <- Option.expect context.current_inference_info "current_inference_info2"
+                            // context <- context { current_inference_info = None }
+                            // (context, type) <- getExprType context id
+                            // context <- unifyTypes context inference_info.result_type type
                             context
                         None -> do
                             // TODO: recursion!
@@ -538,7 +538,8 @@ processExpr context expr = do
                     E.VariantChecker index v variant_type -> do
                         case variant_type of
                             T.Adt adt_id _ -> do
-                                adt_kind <- getTypeArg type
+                                (context, variant_type) <- prepareType context variant_type
+                                adt_kind <- getTypeArg variant_type
                                 adt <- P.getAdt context.program adt_id
                                 variant <- List.atIndex adt.variants index
                                 (context, record_type) <- prepareType context variant.type
@@ -570,10 +571,11 @@ processExpr context expr = do
             E.Expr _ _ arg_id <- arg
             (context, type) <- prepareType context type
             context <- addExprType context id (E.short expr) type
-            case type of
-                T.Never -> context
+            (context, arg_type) <- getExprType context arg_id
+            case (type, arg_type) of
+                (T.Never, _) -> context
+                (_, T.Never) -> context
                 _ -> do
-                    (context, arg_type) <- getExprType context arg_id
                     arg_kind <- getTypeArg arg_type
                     converter_kind <- getTypeArg type
                     arg_mode <- getTypeMode arg_type
