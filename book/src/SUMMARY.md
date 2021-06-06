@@ -1,7 +1,5 @@
 # Summary
 
-# Title of part
-
 - [Introduction](./introduction.md)
 - [Modules](./modules.md)
 - [Data types](./data_types.md)
