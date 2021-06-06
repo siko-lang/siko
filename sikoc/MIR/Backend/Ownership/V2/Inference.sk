@@ -85,33 +85,42 @@ cloneFunctionInferenceInfo context inference_info = do
         kind_map <- List2.zipS Map2.empty kinds cloned_kinds (\kind_map, from, to -> do
             (kind_map, _) <- Map2.insert kind_map from to
             kind_map)
-        arg_types <- List2.map inference_info.arg_types (\arg_type -> cloneType kind_map arg_type)
-        result_type <- cloneType kind_map inference_info.result_type
-        members <- Map2.map inference_info.members (\(s, infos) -> do
-            source <- cloneKind kind_map s.source
-            infos <- List2.map infos (\info -> do
-                mode <- cloneKind kind_map info.mode
-                kind <- cloneKind kind_map info.kind
-                info { mode = mode, kind = kind })
-            (s { source = source }, infos))
-        variants <- Map2.map inference_info.variants (\(s, infos) -> do
-            source <- cloneKind kind_map s.source
-            infos <- List2.map infos (\info -> do
-                mode <- cloneKind kind_map info.mode
-                kind <- cloneKind kind_map info.kind
-                info { mode = mode, kind = kind })
-            (s { source = source }, infos))
-        converters <- List2.map inference_info.converters (\info -> do
-            ConverterInfo (cloneKind kind_map info.from) (cloneKind kind_map info.to))
+        (kind_map, arg_types) <- List2.mapS kind_map inference_info.arg_types cloneType
+        (kind_map, result_type) <- cloneType kind_map inference_info.result_type
+        (kind_map, members) <- Map2.mapS kind_map inference_info.members (\kind_map, (s, infos) -> do
+            (kind_map, source) <- cloneKind kind_map s.source
+            (kind_map, infos) <- List2.mapS kind_map infos (\kind_map, info -> do
+                (kind_map, mode) <- cloneKind kind_map info.mode
+                (kind_map, kind) <- cloneKind kind_map info.kind
+                (kind_map, info { mode = mode, kind = kind }))
+            (kind_map, s { source = source }, infos))
+        (kind_map, variants) <- Map2.mapS kind_map inference_info.variants (\kind_map, (s, infos) -> do
+            (kind_map, source) <- cloneKind kind_map s.source
+            (kind_map, infos) <- List2.mapS kind_map infos (\kind_map, info -> do
+                (kind_map, mode) <- cloneKind kind_map info.mode
+                (kind_map, kind) <- cloneKind kind_map info.kind
+                (kind_map, info { mode = mode, kind = kind }))
+            (kind_map, s { source = source }, infos))
+        (kind_map, converters) <- List2.mapS kind_map inference_info.converters (\kind_map, info -> do
+            (kind_map, from) <- cloneKind kind_map info.from
+            (kind_map, to) <- cloneKind kind_map info.to
+            (kind_map, ConverterInfo from to))
         (context, FunctionInferenceInfo arg_types result_type members variants converters)
     where
         cloneType kind_map type = case type of
-            T.Var v t -> T.Var (cloneKind kind_map v) (cloneType kind_map t)
-            T.Adt id kinds -> T.Adt id (List2.map kinds (cloneKind kind_map))
-            T.Record id kinds -> T.Record id (List2.map kinds (cloneKind kind_map))
-            t -> t
+            T.Var v t -> do
+                (kind_map, v) <- cloneKind kind_map v
+                (kind_map, t) <- cloneType kind_map t
+                (kind_map, T.Var v t)
+            T.Adt id kinds -> do
+                (kind_map, kinds) <- List2.mapS kind_map kinds cloneKind
+                (kind_map, T.Adt id kinds)
+            T.Record id kinds -> do
+                (kind_map, kinds) <- List2.mapS kind_map kinds cloneKind
+                (kind_map, T.Record id kinds)
+            t -> (kind_map, t)
         cloneKind kind_map kind = case (Map2.get kind_map kind) of
-            Some k -> k
+            Some k -> (kind_map, k)
             None -> panic "{} not found in kind map" % kind
 
 updateFunctionInferenceInfo :: FunctionInferenceInfo -> T.OwnershipKind -> T.OwnershipKind -> FunctionInferenceInfo
@@ -310,6 +319,7 @@ unifyTypes context type1 type2 =
 
 unifyMembers :: Context -> Context
 unifyMembers context = do
+    println "unifyMembers: members {}" % Map2.getSize context.members
     loop context <- context do
         context :: Context <- context // FIXME
         infos <- Map2.fold List2.empty context.members (\prev, (s, infos) -> do
@@ -329,6 +339,7 @@ unifyMembers context = do
 
 unifyVariants :: Context -> Context
 unifyVariants context = do
+    println "unifyVariants: variants {}" % Map2.getSize context.variants
     loop context <- context do
         context :: Context <- context // FIXME
         infos <- Map2.fold List2.empty context.variants (\prev, (s, infos) -> do
@@ -587,15 +598,16 @@ processFunction context function_id = do
                 (context, arg_type) <- prepareType context arg_type
                 addVarType context (E.Arg index) arg_type) context function.type.args
             context <- processExpr context info.body
+            trace context.config "Processing expr done"
             E.Expr _ _ body_id <- info.body
             (context, body_type) <- getExprType context body_id
             args <- List.foldE (\args, index, _ -> List2.push args (E.Arg index)) List2.empty function.type.args
-            arg_types <- List2.map args (\arg -> do
-                (context, arg_type) <- getVarType context arg
-                arg_type)
+            (context, arg_types) <- List2.mapS context args getVarType
+            trace context.config "Creating FunctionInferenceInfo"
             inference_info <- FunctionInferenceInfo arg_types body_type context.members context.variants context.converters
             (function_inference_info_map, _) <- Map2.insert context.function_inference_info_map function_id inference_info
             //dump context
+            trace context.config "Updating context"
             context <- context { expr_types = Map2.empty,
                                  var_types = Map2.empty,
                                  members = Map2.empty,
