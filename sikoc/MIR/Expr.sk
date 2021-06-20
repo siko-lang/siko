@@ -3,6 +3,7 @@ module Siko.MIR.Expr where
 import Siko.MIR.Program
 import Siko.Util.Format
 import Siko.MIR.Type as T
+import Json
 
 data Var = Named String
          | Temp Int
@@ -200,3 +201,49 @@ prettyPrint expr ind = do
             //(s, simple) <- prettyPrint expr ind
             //("(convert[{},{}]({}) :: {})" % (expr_id, kind, s, expr_type), False)
             prettyPrint expr ind
+
+build k args = do
+    arg_ids <- List.map args (\Expr _ _ (ExprId i) -> JsonString (show i))
+    args <- List.map args toJson
+    kind <- JsonObjectItem "kind" (JsonString k)
+    if isEmpty args
+    then ([kind], args)
+    else ([kind, JsonObjectItem "args" (JsonList arg_ids)], args)
+
+toJson :: Expr -> Json
+toJson expr = do
+    Expr s type (ExprId i) <- expr
+    type <- JsonObjectItem "type" (JsonString (show type))
+    id <- JsonObjectItem "id" (JsonString (show i))
+    (kinds, subs) <- case s of
+        Do args -> build "do" args
+        Multi args -> panic "Multi in toJson"
+        StaticFunctionCall id args -> build "functioncall" args
+        IntegerLiteral lit -> ([JsonObjectItem "kind" (JsonString "IntegerLiteral")], [])
+        StringLiteral lit -> ([JsonObjectItem "kind" (JsonString "StringLiteral")], [])
+        FloatLiteral lit -> ([JsonObjectItem "kind" (JsonString "FloatLiteral")], [])
+        CharLiteral lit -> ([JsonObjectItem "kind" (JsonString "CharLiteral")], [])
+        VarDecl v arg -> ([JsonObjectItem "kind" (JsonString "VarDecl")], [])
+        VarRef v -> ([JsonObjectItem "kind" (JsonString "VarRef")], [])
+        FieldAccess n rhs -> ([JsonObjectItem "kind" (JsonString "FieldAccess")], [])
+        If cond true_branch false_branch -> ([JsonObjectItem "kind" (JsonString "If")], [])
+        List args -> build "list" args
+        Return arg -> build "return" [arg]
+        Continue arg -> build "continue" [arg]
+        Break arg -> build "break" [arg]
+        RecordUpdate var updates -> ([JsonObjectItem "kind" (JsonString "RecordUpdate")], [])
+        Loop var initializer body _ _ -> ([JsonObjectItem "kind" (JsonString "Loop")], [])
+        CaseOf body cases -> ([JsonObjectItem "kind" (JsonString "CaseOf")], [])
+        Clone expr -> panic "Clone in toJson"
+        Deref expr -> panic "Deref in toJson"
+        Ref expr -> panic "Ref in toJson"
+        Move expr -> panic "Move in toJson"
+        Box expr -> panic "Box in toJson"
+        Converter expr _ -> ([JsonObjectItem "kind" (JsonString "Converter")], [])
+    if isEmpty subs
+    then JsonObject ([id, type] + kinds)
+    else do
+        subs <- List.fold [] subs (\subs, sub -> case sub of
+            JsonList s -> subs + s
+            j -> List.push subs j)
+        JsonList ([JsonObject ([id, type] + kinds)] + subs)

@@ -434,8 +434,6 @@ processExpr context expr = do
                 F.Extern _ -> do
                     //println "Extern NYI"
                     context
-            context <- unifyMembers context
-            context <- unifyVariants context
             context
         E.IntegerLiteral _ -> do
             (context, type) <- prepareType context type
@@ -484,7 +482,6 @@ processExpr context expr = do
                     context <- makeEqual context fa_kind member_info.kind
                     context
                 None -> addMemberInfo context (MemberSource receiver_kind name) (MemberInfo fa_mode fa_kind)
-            context <- unifyMembers context
             context
         E.If cond true_branch false_branch -> do
             context <- processExpr context cond
@@ -559,7 +556,6 @@ processExpr context expr = do
                 (context, case_body_type) <- getExprType context case_body_id
                 (context, caseof_type) <- getExprType context id
                 unifyTypes context case_body_type caseof_type)
-            context <- unifyVariants context
             context
         E.Clone _ -> panic "Clone found in Inference"
         E.Deref _ -> panic "Deref found in Inference"
@@ -605,9 +601,12 @@ processFunction context function_id = do
             (context, body_type) <- getExprType context body_id
             args <- List.foldE (\args, index, _ -> List2.push args (E.Arg index)) List2.empty function.type.args
             (context, arg_types) <- List2.mapS context args getVarType
+            //println "arg_types {}, result {}" % (arg_types, body_type)
             trace context.config "Creating FunctionInferenceInfo"
             inference_info <- FunctionInferenceInfo arg_types body_type context.members context.variants context.converters
             (function_inference_info_map, _) <- Map2.insert context.function_inference_info_map function_id inference_info
+            context <- unifyMembers context
+            context <- unifyVariants context
             //dump context
             trace context.config "Updating context"
             context <- context { expr_types = Map2.empty,
