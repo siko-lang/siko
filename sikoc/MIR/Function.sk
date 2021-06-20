@@ -5,6 +5,7 @@ import Siko.MIR.Expr as E
 import Siko.MIR.Type as T
 import Siko.Util.Format
 import Siko.Util.Counter
+import Json
 
 import Map
 
@@ -48,6 +49,19 @@ dump function = do
         VariantCtor index -> s + "{} {} = <variant_ctor:{}>" % (function.id, args, index)
         RecordCtor -> s + "{} {} = <record_ctor>" % (function.id, args)
         Extern type_mapping -> s + "{} {} = extern" % (function.id, args)
+
+toJson :: Function -> Json
+toJson function = do
+    name <- JsonObjectItem "name" (JsonString (show function.id))
+    args <- List.map function.type.args (\arg -> JsonString (show arg))
+    args <- JsonObjectItem "args" (JsonList args)
+    result <- JsonObjectItem "result" (JsonString (show function.type.result))
+    kinds <- case function.kind of
+        Normal info -> [JsonObjectItem "kind" (JsonString "normal")]
+        VariantCtor index -> [JsonObjectItem "kind" (JsonString "variant"), JsonObjectItem "index" (JsonString (show index))]
+        RecordCtor -> [JsonObjectItem "kind" (JsonString ("record"))]
+        Extern _ -> [JsonObjectItem "kind" (JsonString ("extern"))]
+    JsonObject ([name, args, result] + kinds)
 
 data Step = External Int
           | Variant Int

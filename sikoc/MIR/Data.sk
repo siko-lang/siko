@@ -3,6 +3,7 @@ module Siko.MIR.Data where
 import Siko.MIR.Type
 import Siko.MIR.Program
 import List2
+import Json
 
 data ExternalClassImpl = Show Identity
                        | PartialEq Identity
@@ -49,6 +50,27 @@ dumpAdt :: AlgebraicDataType -> String
 dumpAdt adt = do
     variants <- adt.variants |> List.iter |> Iterator.map (\v -> "{} {}" % (v.name, v.type)) |> toList
     "adt {} {} = {}" % (adt.id, adt.ownership_vars, join variants " | ")
+
+adtToJson :: AlgebraicDataType -> Json
+adtToJson adt = do
+    name <- JsonObjectItem "name" (JsonString (show adt.id))
+    variants <- List.map adt.variants (\v -> do
+        name <- JsonObjectItem "name" (JsonString v.name)
+        type <- JsonObjectItem "type" (JsonString (show v.type))
+        JsonObject [name, type])
+    variants <- JsonObjectItem "variants" (JsonList variants)
+    JsonObject [name, variants]
+
+recordToJson :: Record -> Json
+recordToJson record = do
+    name <- JsonObjectItem "name" (JsonString (show record.id))
+    external <- JsonObjectItem "external" (JsonString (show (isSome record.external_info)))
+    fields <- List.map record.fields (\f -> do
+        name <- JsonObjectItem "name" (JsonString f.name)
+        type <- JsonObjectItem "type" (JsonString (show f.type))
+        JsonObject [name, type])
+    fields <- JsonObjectItem "fields" (JsonList fields)
+    JsonObject [name, external, fields]
 
 dumpRecord :: Record -> String
 dumpRecord record = do
