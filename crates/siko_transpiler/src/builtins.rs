@@ -828,7 +828,11 @@ fn generate_map2_builtins(
             };
             let from = ir_type_to_rust_type(from, program);
             let to = ir_type_to_rust_type(to, program);
-            write!(output_file, "{}let mut m = std::collections::BTreeMap::new();\n", indent)?;
+            write!(
+                output_file,
+                "{}let mut m = std::collections::BTreeMap::new();\n",
+                indent
+            )?;
             write!(
                 output_file,
                 "{}for (k, v) in arg0.value.iter() {{\n",
@@ -1452,10 +1456,7 @@ fn generate_list2_builtins(
             write!(output_file, "{}{} {{ value : v }}\n", indent, result_ty_str,)?;
         }
         "updateAll" => {
-            write!(
-                output_file,
-                "let mut v = arg0.value;"
-            )?;
+            write!(output_file, "let mut v = arg0.value;")?;
             write!(output_file, "for item in &mut v {{")?;
             write!(output_file, "let t = arg1.call_ro(item.clone());")?;
             write!(output_file, "*item  = t;")?;
@@ -1463,10 +1464,7 @@ fn generate_list2_builtins(
             write!(output_file, "{}{} {{ value : v }}\n", indent, result_ty_str,)?;
         }
         "updateSpecifics" => {
-            write!(
-                output_file,
-                "let mut v = arg0.value;"
-            )?;
+            write!(output_file, "let mut v = arg0.value;")?;
             write!(output_file, "for item in &mut v {{")?;
             write!(output_file, "if *item == arg1 {{")?;
             write!(output_file, "*item  = arg2.clone();")?;

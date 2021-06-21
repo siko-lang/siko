@@ -2,9 +2,17 @@ module Json.Writer where
 
 import Json
 
+escape s = do
+    s <- replace s "\\" "\\\\"
+    s <- replace s "\"" "\\\""
+    s <- replace s "\n" "\\n"
+    s <- replace s "\r" "\\r"
+    s <- replace s "\t" "\\t"
+    s
+
 write :: Json -> String
 write json = case json of
-    JsonString s -> "\"{}\"" % s
+    JsonString s -> "\"{}\"" % (escape s)
     JsonObject items -> do
         items <- List.map items (\item -> "\"{}\": {}" % (item.name, write item.value))
         "{" + join items ", " + "}"
