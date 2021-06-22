@@ -138,11 +138,12 @@ fn parse_expr(expr: &Value) -> Expr {
             ExprKind::Do(subs)
         }
         "staticfunctioncall" => {
+            let f_id = parse_value(expr, "f_id");
             if expr.get("args").is_some() {
                 let subs = parse_args(expr);
-                ExprKind::StaticFunctionCall(subs)
+                ExprKind::StaticFunctionCall(f_id, subs)
             } else {
-                ExprKind::StaticFunctionCall(Vec::new())
+                ExprKind::StaticFunctionCall(f_id, Vec::new())
             }
         }
         "integerliteral" => {

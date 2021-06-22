@@ -34,7 +34,7 @@ pub struct Case {
 
 pub enum ExprKind {
     Do(Vec<i64>),
-    StaticFunctionCall(Vec<i64>),
+    StaticFunctionCall(String, Vec<i64>),
     IntegerLiteral(String),
     StringLiteral(String),
     FloatLiteral(String),
@@ -80,4 +80,10 @@ impl Program {
             functions: BTreeMap::new(),
         }
     }
+}
+
+pub enum Type {
+    Adt(String),
+    Record(String),
+    Never,
 }
