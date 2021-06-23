@@ -53,15 +53,16 @@ fn parse_record(record: &Value) -> Record {
         .expect("fields not found")
         .as_array()
         .expect("fields is not a list");
-    let external = record
-        .get("external")
-        .expect("Record does not have an external flag")
-        .as_str()
-        .expect("External is not a str");
-    let external = match external {
-        "True" => true,
-        "False" => false,
-        e => panic!("Unexpected external flag {}", e),
+    let externals = match record.get("externals") {
+        Some(externals) => {
+            let externals = externals.as_array().expect("Externals is not a list");
+            let externals: Vec<_> = externals
+                .iter()
+                .map(|e| e.as_str().expect("External is not a str").to_string())
+                .collect();
+            Some(externals)
+        }
+        None => None,
     };
     let mut fs = Vec::new();
     for f in fields {
@@ -87,7 +88,7 @@ fn parse_record(record: &Value) -> Record {
     Record {
         name: name.to_string(),
         fields: fs,
-        external: external,
+        externals: externals,
     }
 }
 
@@ -247,6 +248,7 @@ fn parse_expr(expr: &Value) -> Expr {
         id: id.to_string(),
         ty: ty.to_string(),
         kind: kind,
+        type_args: Vec::new()
     }
 }
 

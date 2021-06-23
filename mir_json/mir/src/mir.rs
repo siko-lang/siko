@@ -18,13 +18,14 @@ pub struct Field {
 pub struct Record {
     pub name: String,
     pub fields: Vec<Field>,
-    pub external: bool,
+    pub externals: Option<Vec<String>>,
 }
 
 pub struct Expr {
     pub id: String,
     pub ty: String,
     pub kind: ExprKind,
+    pub type_args: Vec<i64>,
 }
 
 pub struct Case {

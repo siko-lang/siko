@@ -64,13 +64,19 @@ adtToJson adt = do
 recordToJson :: Record -> Json
 recordToJson record = do
     name <- JsonObjectItem "name" (JsonString (show record.id))
-    external <- JsonObjectItem "external" (JsonString (show (isSome record.external_info)))
+    externals <- case record.external_info of
+        Some external_record_info -> do
+            external_record_info :: ExternalRecordInfo <- external_record_info // FIXME
+            externals <- List.map external_record_info.type_args (\arg -> do
+                JsonString (show arg))
+            [JsonObjectItem "externals" (JsonList externals)]
+        None -> []
     fields <- List.map record.fields (\f -> do
         name <- JsonObjectItem "name" (JsonString f.name)
         type <- JsonObjectItem "type" (JsonString (show f.type))
         JsonObject [name, type])
     fields <- JsonObjectItem "fields" (JsonList fields)
-    JsonObject [name, external, fields]
+    JsonObject ([name, fields] + externals)
 
 dumpRecord :: Record -> String
 dumpRecord record = do

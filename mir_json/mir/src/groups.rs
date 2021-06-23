@@ -1,5 +1,5 @@
-use crate::scc::*;
 use crate::mir::*;
+use crate::scc::*;
 use std::collections::BTreeMap;
 
 pub fn collect_data_groups(mir_program: &Program) -> Vec<Vec<String>> {
@@ -21,6 +21,15 @@ pub fn collect_data_groups(mir_program: &Program) -> Vec<Vec<String>> {
         let id = id_map.get(name).unwrap();
         for v in &adt.variants {
             let sub_id = id_map.get(&v.ty).unwrap();
+            if let Some(member) = mir_program.records.get(&v.ty) {
+                if let Some(externals) = &member.externals {
+                    for e in externals {
+                        let sub_id = id_map.get(&e).unwrap();
+                        g.add_neighbour(*id, *sub_id);
+                    }
+                    continue;
+                }
+            }
             g.add_neighbour(*id, *sub_id);
         }
     }
@@ -28,6 +37,15 @@ pub fn collect_data_groups(mir_program: &Program) -> Vec<Vec<String>> {
         let id = id_map.get(name).unwrap();
         for f in &record.fields {
             let sub_id = id_map.get(&f.ty).unwrap();
+            if let Some(member) = mir_program.records.get(&f.ty) {
+                if let Some(externals) = &member.externals {
+                    for e in externals {
+                        let sub_id = id_map.get(&e).unwrap();
+                        g.add_neighbour(*id, *sub_id);
+                    }
+                    continue;
+                }
+            }
             g.add_neighbour(*id, *sub_id);
         }
     }

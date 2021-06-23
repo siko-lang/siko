@@ -1,13 +1,13 @@
+mod groups;
+mod init_data;
 mod mir;
 mod mir_loader;
 mod scc;
-mod groups;
-mod init_data;
 
-use mir::*;
-use mir_loader::*;
 use groups::*;
 use init_data::*;
+use mir::*;
+use mir_loader::*;
 
 fn check_type(ty: &str, mir_program: &Program) -> Type {
     if let Some(_) = mir_program.adts.get(ty) {
@@ -42,7 +42,7 @@ fn check_types(mir_program: &Program) {
     }
 }
 
-fn process_program(mir_program: Program) {
+fn process_program(mut mir_program: Program) -> Program {
     check_types(&mir_program);
     let data_groups = collect_data_groups(&mir_program);
     let function_groups = collect_function_groups(&mir_program);
@@ -51,7 +51,29 @@ fn process_program(mir_program: Program) {
         data_groups.len(),
         function_groups.len()
     );
-    init_data(&mir_program, &data_groups);
+    let data_arg_counts = init_data(&mir_program, &data_groups);
+    for (name, f) in &mut mir_program.functions {
+        match &mut f.kind {
+            FunctionKind::Normal(exprs) => {
+                for e in exprs.iter_mut() {
+                    if e.ty == "!" {
+                        continue;
+                    } else {
+                        match data_arg_counts.get(&e.ty) {
+                            Some(count) => {
+                                e.type_args = vec![1; *count as usize];
+                            }
+                            None => {
+                                println!("{} not found", e.ty);
+                            }
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    mir_program
 }
 
 fn main() {
@@ -61,7 +83,9 @@ fn main() {
         match load_mir(arg) {
             Ok(mir_program) => {
                 println!("MIR loaded");
-                process_program(mir_program);
+                let mir_program = process_program(mir_program);
+                println!("Done!");
+                std::thread::sleep(std::time::Duration::from_secs(60));
             }
             Err(e) => {
                 println!("Failed to parse {:?}", e);
