@@ -10,17 +10,12 @@ use mir::*;
 use mir_loader::*;
 
 fn check_type(ty: &str, mir_program: &Program) -> Type {
-    if let Some(_) = mir_program.adts.get(ty) {
-        Type::Adt(ty.to_string())
+    if ty == "!" {
+        Type::Never
     } else {
-        if let Some(_) = mir_program.records.get(ty) {
-            Type::Record(ty.to_string())
-        } else {
-            if ty == "!" {
-                Type::Never
-            } else {
-                panic!("{} is not an adt not a record!", ty);
-            }
+        match mir_program.data.get(ty).unwrap() {
+            Data::Adt(_) => Type::Adt(ty.to_string()),
+            Data::Record(_) => Type::Record(ty.to_string()),
         }
     }
 }
@@ -52,7 +47,7 @@ fn process_program(mut mir_program: Program) -> Program {
         function_groups.len()
     );
     let data_arg_counts = init_data(&mir_program, &data_groups);
-    for (name, f) in &mut mir_program.functions {
+    for (_, f) in &mut mir_program.functions {
         match &mut f.kind {
             FunctionKind::Normal(exprs) => {
                 for e in exprs.iter_mut() {

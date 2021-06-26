@@ -67,17 +67,20 @@ pub struct Function {
     pub kind: FunctionKind,
 }
 
+pub enum Data {
+    Adt(Adt),
+    Record(Record),
+}
+
 pub struct Program {
-    pub adts: BTreeMap<String, Adt>,
-    pub records: BTreeMap<String, Record>,
+    pub data: BTreeMap<String, Data>,
     pub functions: BTreeMap<String, Function>,
 }
 
 impl Program {
     pub fn new() -> Program {
         Program {
-            adts: BTreeMap::new(),
-            records: BTreeMap::new(),
+            data: BTreeMap::new(),
             functions: BTreeMap::new(),
         }
     }

@@ -7,46 +7,45 @@ pub fn collect_data_groups(mir_program: &Program) -> Vec<Vec<String>> {
     let mut g = Graph::new();
     let mut id_map = BTreeMap::new();
     let mut name_map = BTreeMap::new();
-    for (name, _) in &mir_program.adts {
+    for (name, _) in &mir_program.data {
         let id = g.add_node();
         id_map.insert(name, id);
         name_map.insert(id, name);
     }
-    for (name, _) in &mir_program.records {
-        let id = g.add_node();
-        id_map.insert(name, id);
-        name_map.insert(id, name);
-    }
-    for (name, adt) in &mir_program.adts {
-        let id = id_map.get(name).unwrap();
-        for v in &adt.variants {
-            let sub_id = id_map.get(&v.ty).unwrap();
-            if let Some(member) = mir_program.records.get(&v.ty) {
-                if let Some(externals) = &member.externals {
-                    for e in externals {
-                        let sub_id = id_map.get(&e).unwrap();
-                        g.add_neighbour(*id, *sub_id);
+    for (name, d) in &mir_program.data {
+        match d {
+            Data::Adt(adt) => {
+                let id = id_map.get(name).unwrap();
+                for v in &adt.variants {
+                    let sub_id = id_map.get(&v.ty).unwrap();
+                    if let Data::Record(record) = mir_program.data.get(&v.ty).unwrap() {
+                        if let Some(externals) = &record.externals {
+                            for e in externals {
+                                let sub_id = id_map.get(&e).unwrap();
+                                g.add_neighbour(*id, *sub_id);
+                            }
+                            continue;
+                        }
                     }
-                    continue;
+                    g.add_neighbour(*id, *sub_id);
                 }
             }
-            g.add_neighbour(*id, *sub_id);
-        }
-    }
-    for (name, record) in &mir_program.records {
-        let id = id_map.get(name).unwrap();
-        for f in &record.fields {
-            let sub_id = id_map.get(&f.ty).unwrap();
-            if let Some(member) = mir_program.records.get(&f.ty) {
-                if let Some(externals) = &member.externals {
-                    for e in externals {
-                        let sub_id = id_map.get(&e).unwrap();
-                        g.add_neighbour(*id, *sub_id);
+            Data::Record(record) => {
+                let id = id_map.get(name).unwrap();
+                for f in &record.fields {
+                    let sub_id = id_map.get(&f.ty).unwrap();
+                    if let Data::Record(record) = mir_program.data.get(&f.ty).unwrap() {
+                        if let Some(externals) = &record.externals {
+                            for e in externals {
+                                let sub_id = id_map.get(&e).unwrap();
+                                g.add_neighbour(*id, *sub_id);
+                            }
+                            continue;
+                        }
                     }
-                    continue;
+                    g.add_neighbour(*id, *sub_id);
                 }
             }
-            g.add_neighbour(*id, *sub_id);
         }
     }
     let sccs = g.collect_sccs();

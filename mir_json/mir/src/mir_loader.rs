@@ -248,7 +248,7 @@ fn parse_expr(expr: &Value) -> Expr {
         id: id.to_string(),
         ty: ty.to_string(),
         kind: kind,
-        type_args: Vec::new()
+        type_args: Vec::new(),
     }
 }
 
@@ -353,11 +353,13 @@ pub fn load_mir(f: String) -> Result<Program> {
     let mut program = Program::new();
     for v in adts {
         let adt = parse_adt(v);
-        program.adts.insert(adt.name.clone(), adt);
+        program.data.insert(adt.name.clone(), Data::Adt(adt));
     }
     for v in records {
         let record = parse_record(v);
-        program.records.insert(record.name.clone(), record);
+        program
+            .data
+            .insert(record.name.clone(), Data::Record(record));
     }
     for v in functions {
         let function = parse_function(v);
