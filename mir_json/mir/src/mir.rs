@@ -3,22 +3,31 @@ use std::collections::BTreeMap;
 pub struct Variant {
     pub name: String,
     pub ty: String,
+    pub args: Vec<i64>,
 }
 
 pub struct Adt {
     pub name: String,
     pub variants: Vec<Variant>,
+    pub args: Vec<i64>,
 }
 
 pub struct Field {
     pub name: String,
     pub ty: String,
+    pub args: Vec<i64>,
+}
+
+pub struct External {
+    pub ty: String,
+    pub args: Vec<i64>,
 }
 
 pub struct Record {
     pub name: String,
     pub fields: Vec<Field>,
-    pub externals: Option<Vec<String>>,
+    pub externals: Option<Vec<External>>,
+    pub args: Vec<i64>,
 }
 
 pub struct Expr {

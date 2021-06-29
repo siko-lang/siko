@@ -2,6 +2,11 @@ use crate::mir::*;
 use crate::scc::*;
 use std::collections::BTreeMap;
 
+fn process_item(id: &NodeId, ty: &String, id_map: &BTreeMap<&String, NodeId>, g: &mut Graph) {
+    let sub_id = id_map.get(ty).unwrap();
+    g.add_neighbour(*id, *sub_id);
+}
+
 pub fn collect_data_groups(mir_program: &Program) -> Vec<Vec<String>> {
     println!("Collecting data groups");
     let mut g = Graph::new();
@@ -17,33 +22,18 @@ pub fn collect_data_groups(mir_program: &Program) -> Vec<Vec<String>> {
             Data::Adt(adt) => {
                 let id = id_map.get(name).unwrap();
                 for v in &adt.variants {
-                    let sub_id = id_map.get(&v.ty).unwrap();
-                    if let Data::Record(record) = mir_program.data.get(&v.ty).unwrap() {
-                        if let Some(externals) = &record.externals {
-                            for e in externals {
-                                let sub_id = id_map.get(&e).unwrap();
-                                g.add_neighbour(*id, *sub_id);
-                            }
-                            continue;
-                        }
-                    }
-                    g.add_neighbour(*id, *sub_id);
+                    process_item(id, &v.ty, &id_map, &mut g);
                 }
             }
             Data::Record(record) => {
                 let id = id_map.get(name).unwrap();
-                for f in &record.fields {
-                    let sub_id = id_map.get(&f.ty).unwrap();
-                    if let Data::Record(record) = mir_program.data.get(&f.ty).unwrap() {
-                        if let Some(externals) = &record.externals {
-                            for e in externals {
-                                let sub_id = id_map.get(&e).unwrap();
-                                g.add_neighbour(*id, *sub_id);
-                            }
-                            continue;
-                        }
+                if let Some(externals) = &record.externals {
+                    for e in externals {
+                        process_item(id, &e.ty, &id_map, &mut g);
                     }
-                    g.add_neighbour(*id, *sub_id);
+                }
+                for f in &record.fields {
+                    process_item(id, &f.ty, &id_map, &mut g);
                 }
             }
         }

@@ -46,7 +46,7 @@ fn process_program(mut mir_program: Program) -> Program {
         data_groups.len(),
         function_groups.len()
     );
-    let data_arg_counts = init_data(&mir_program, &data_groups);
+    let data_arg_counts = init_data(&mut mir_program, &data_groups);
     for (_, f) in &mut mir_program.functions {
         match &mut f.kind {
             FunctionKind::Normal(exprs) => {
@@ -56,7 +56,7 @@ fn process_program(mut mir_program: Program) -> Program {
                     } else {
                         match data_arg_counts.get(&e.ty) {
                             Some(count) => {
-                                e.type_args = vec![1; *count as usize];
+                                //e.type_args = vec![1; *count as usize];
                             }
                             None => {
                                 println!("{} not found", e.ty);

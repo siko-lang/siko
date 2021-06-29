@@ -32,12 +32,14 @@ fn parse_adt(adt: &Value) -> Adt {
         vs.push(Variant {
             name: variant_name.to_string(),
             ty: variant_type.to_string(),
+            args: Vec::new(),
         });
     }
     //println!("{} has {} variants", name, variants.len());
     Adt {
         name: name.to_string(),
         variants: vs,
+        args: Vec::new(),
     }
 }
 
@@ -58,7 +60,13 @@ fn parse_record(record: &Value) -> Record {
             let externals = externals.as_array().expect("Externals is not a list");
             let externals: Vec<_> = externals
                 .iter()
-                .map(|e| e.as_str().expect("External is not a str").to_string())
+                .map(|e| {
+                    let ty = e.as_str().expect("External is not a str").to_string();
+                    External {
+                        ty: ty,
+                        args: Vec::new(),
+                    }
+                })
                 .collect();
             Some(externals)
         }
@@ -82,6 +90,7 @@ fn parse_record(record: &Value) -> Record {
         fs.push(Field {
             name: field_name.to_string(),
             ty: field_type.to_string(),
+            args: Vec::new(),
         });
     }
     //println!("{} has {} fields", name, fields.len());
@@ -89,6 +98,7 @@ fn parse_record(record: &Value) -> Record {
         name: name.to_string(),
         fields: fs,
         externals: externals,
+        args: Vec::new(),
     }
 }
 
