@@ -31,8 +31,7 @@ fn parse_adt(adt: &Value) -> Adt {
         //println!("type :{}", variant_type);
         vs.push(Variant {
             name: variant_name.to_string(),
-            ty: variant_type.to_string(),
-            args: Vec::new(),
+            ty: ExtendedType::new(variant_type.to_string()),
         });
     }
     //println!("{} has {} variants", name, variants.len());
@@ -63,8 +62,7 @@ fn parse_record(record: &Value) -> Record {
                 .map(|e| {
                     let ty = e.as_str().expect("External is not a str").to_string();
                     External {
-                        ty: ty,
-                        args: Vec::new(),
+                        ty: ExtendedType::new(ty),
                     }
                 })
                 .collect();
@@ -89,8 +87,7 @@ fn parse_record(record: &Value) -> Record {
         //println!("type :{}", field_type);
         fs.push(Field {
             name: field_name.to_string(),
-            ty: field_type.to_string(),
-            args: Vec::new(),
+            ty: ExtendedType::new(field_type.to_string()),
         });
     }
     //println!("{} has {} fields", name, fields.len());
@@ -124,6 +121,19 @@ fn parse_value(v: &Map<String, Value>, name: &str) -> String {
         .as_str()
         .expect("value not a string")
         .to_string()
+}
+
+fn parse_checker(checker: String) -> Checker {
+    if checker.starts_with("w") {
+        Checker::Wildcard
+    } else if checker.starts_with("v") {
+        let subs: Vec<_> = checker.split(" ").collect();
+        let index: Vec<_> = subs[0].split(":").collect();
+        let index = index[1].parse().expect("checker index is not a number");
+        Checker::Variant(index, subs[1].to_string(), subs[3].to_string())
+    } else {
+        Checker::Other(checker)
+    }
 }
 
 fn parse_expr(expr: &Value) -> Expr {
@@ -231,6 +241,7 @@ fn parse_expr(expr: &Value) -> Expr {
                     .as_str()
                     .expect("checker not a str")
                     .to_string();
+                let checker = parse_checker(checker);
                 let body = c
                     .get("body")
                     .expect("case body not found")
@@ -255,10 +266,9 @@ fn parse_expr(expr: &Value) -> Expr {
         }
     };
     Expr {
-        id: id.to_string(),
-        ty: ty.to_string(),
+        id: id.parse().expect("Expr id is not a number!"),
+        ty: ExtendedType::new(ty.to_string()),
         kind: kind,
-        type_args: Vec::new(),
     }
 }
 
@@ -286,11 +296,11 @@ fn parse_function(function: &Value) -> Function {
         .expect("Args is not a list");
     let mut vargs = Vec::new();
     for arg in args {
-        vargs.push(
+        vargs.push(ExtendedType::new(
             arg.as_str()
                 .expect("Function arg is not a string")
                 .to_string(),
-        );
+        ));
     }
     let kind = match kind {
         "normal" => {
@@ -329,7 +339,7 @@ fn parse_function(function: &Value) -> Function {
     Function {
         name: name.to_string(),
         args: vargs,
-        result: result.to_string(),
+        result: ExtendedType::new(result.to_string()),
         kind: kind,
     }
 }

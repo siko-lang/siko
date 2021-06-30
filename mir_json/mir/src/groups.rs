@@ -22,18 +22,18 @@ pub fn collect_data_groups(mir_program: &Program) -> Vec<Vec<String>> {
             Data::Adt(adt) => {
                 let id = id_map.get(name).unwrap();
                 for v in &adt.variants {
-                    process_item(id, &v.ty, &id_map, &mut g);
+                    process_item(id, &v.ty.ty, &id_map, &mut g);
                 }
             }
             Data::Record(record) => {
                 let id = id_map.get(name).unwrap();
                 if let Some(externals) = &record.externals {
                     for e in externals {
-                        process_item(id, &e.ty, &id_map, &mut g);
+                        process_item(id, &e.ty.ty, &id_map, &mut g);
                     }
                 }
                 for f in &record.fields {
-                    process_item(id, &f.ty, &id_map, &mut g);
+                    process_item(id, &f.ty.ty, &id_map, &mut g);
                 }
             }
         }

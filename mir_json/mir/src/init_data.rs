@@ -53,20 +53,19 @@ impl ArgAllocator {
 }
 
 fn allocate_item_args(
-    ty: &String,
-    item_args: &mut Vec<i64>,
+    ty: &mut ExtendedType,
     allocator: &mut ArgAllocator,
     data_group: &Vec<String>,
     data_arg_counts: &BTreeMap<String, i64>,
 ) {
-    if data_group.contains(ty) {
+    if data_group.contains(&ty.ty) {
         let mut args = allocator.allocate(1);
         args.extend(allocator.get_group_args());
-        std::mem::swap(item_args, &mut args);
+        std::mem::swap(&mut ty.args, &mut args);
     } else {
-        let arg_count = data_arg_counts.get(ty).unwrap();
+        let arg_count = data_arg_counts.get(&ty.ty).unwrap();
         let mut args = allocator.allocate(arg_count + 1);
-        std::mem::swap(item_args, &mut args);
+        std::mem::swap(&mut ty.args, &mut args);
     }
 }
 
@@ -80,17 +79,17 @@ fn process_data_group(
         match mir_program.data.get(data).unwrap() {
             Data::Adt(adt) => {
                 for v in &adt.variants {
-                    process_item(&mut total_count, &v.ty, data_group, data_arg_counts);
+                    process_item(&mut total_count, &v.ty.ty, data_group, data_arg_counts);
                 }
             }
             Data::Record(record) => {
                 if let Some(externals) = &record.externals {
                     for e in externals {
-                        process_item(&mut total_count, &e.ty, data_group, data_arg_counts);
+                        process_item(&mut total_count, &e.ty.ty, data_group, data_arg_counts);
                     }
                 }
                 for f in &record.fields {
-                    process_item(&mut total_count, &f.ty, data_group, data_arg_counts);
+                    process_item(&mut total_count, &f.ty.ty, data_group, data_arg_counts);
                 }
             }
         }
@@ -102,36 +101,18 @@ fn process_data_group(
             Data::Adt(adt) => {
                 adt.args = allocator.get_group_args();
                 for v in &mut adt.variants {
-                    allocate_item_args(
-                        &v.ty,
-                        &mut v.args,
-                        &mut allocator,
-                        data_group,
-                        &data_arg_counts,
-                    );
+                    allocate_item_args(&mut v.ty, &mut allocator, data_group, &data_arg_counts);
                 }
             }
             Data::Record(record) => {
                 record.args = allocator.get_group_args();
                 if let Some(externals) = &mut record.externals {
                     for e in externals {
-                        allocate_item_args(
-                            &e.ty,
-                            &mut e.args,
-                            &mut allocator,
-                            data_group,
-                            &data_arg_counts,
-                        );
+                        allocate_item_args(&mut e.ty, &mut allocator, data_group, &data_arg_counts);
                     }
                 }
                 for f in &mut record.fields {
-                    allocate_item_args(
-                        &f.ty,
-                        &mut f.args,
-                        &mut allocator,
-                        data_group,
-                        &data_arg_counts,
-                    );
+                    allocate_item_args(&mut f.ty, &mut allocator, data_group, &data_arg_counts);
                 }
             }
         }

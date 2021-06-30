@@ -1,10 +1,12 @@
 mod groups;
+mod inference;
 mod init_data;
 mod mir;
 mod mir_loader;
 mod scc;
 
 use groups::*;
+use inference::*;
 use init_data::*;
 use mir::*;
 use mir_loader::*;
@@ -23,13 +25,13 @@ fn check_type(ty: &str, mir_program: &Program) -> Type {
 fn check_types(mir_program: &Program) {
     for (_, f) in &mir_program.functions {
         for arg in &f.args {
-            check_type(&arg, &mir_program);
+            check_type(&arg.ty, &mir_program);
         }
-        check_type(&f.result, &mir_program);
+        check_type(&f.result.ty, &mir_program);
         match &f.kind {
             FunctionKind::Normal(exprs) => {
                 for e in exprs {
-                    check_type(&e.ty, &mir_program);
+                    check_type(&e.ty.ty, &mir_program);
                 }
             }
             _ => {}
@@ -47,27 +49,19 @@ fn process_program(mut mir_program: Program) -> Program {
         function_groups.len()
     );
     let data_arg_counts = init_data(&mut mir_program, &data_groups);
+    inference(function_groups, &mir_program);
+    /*
     for (_, f) in &mut mir_program.functions {
+        fill_type(&mut f.result, &data_arg_counts);
+        for arg in &mut f.args {
+            fill_type(arg, &data_arg_counts);
+        }
         match &mut f.kind {
-            FunctionKind::Normal(exprs) => {
-                for e in exprs.iter_mut() {
-                    if e.ty == "!" {
-                        continue;
-                    } else {
-                        match data_arg_counts.get(&e.ty) {
-                            Some(count) => {
-                                //e.type_args = vec![1; *count as usize];
-                            }
-                            None => {
-                                println!("{} not found", e.ty);
-                            }
-                        }
-                    }
-                }
-            }
+            FunctionKind::Normal(exprs) => for e in exprs.iter_mut() {},
             _ => {}
         }
     }
+    */
     mir_program
 }
 
@@ -80,7 +74,7 @@ fn main() {
                 println!("MIR loaded");
                 let mir_program = process_program(mir_program);
                 println!("Done!");
-                std::thread::sleep(std::time::Duration::from_secs(60));
+                //std::thread::sleep(std::time::Duration::from_secs(60));
             }
             Err(e) => {
                 println!("Failed to parse {:?}", e);

@@ -2,8 +2,7 @@ use std::collections::BTreeMap;
 
 pub struct Variant {
     pub name: String,
-    pub ty: String,
-    pub args: Vec<i64>,
+    pub ty: ExtendedType,
 }
 
 pub struct Adt {
@@ -14,13 +13,11 @@ pub struct Adt {
 
 pub struct Field {
     pub name: String,
-    pub ty: String,
-    pub args: Vec<i64>,
+    pub ty: ExtendedType,
 }
 
 pub struct External {
-    pub ty: String,
-    pub args: Vec<i64>,
+    pub ty: ExtendedType,
 }
 
 pub struct Record {
@@ -31,14 +28,20 @@ pub struct Record {
 }
 
 pub struct Expr {
-    pub id: String,
-    pub ty: String,
+    pub id: i64,
+    pub ty: ExtendedType,
     pub kind: ExprKind,
-    pub type_args: Vec<i64>,
+}
+
+#[derive(Debug)]
+pub enum Checker {
+    Variant(i64, String, String),
+    Other(String),
+    Wildcard,
 }
 
 pub struct Case {
-    pub checker: String,
+    pub checker: Checker,
     pub body: i64,
 }
 
@@ -69,10 +72,28 @@ pub enum FunctionKind {
     External,
 }
 
+pub struct ExtendedType {
+    pub ty: String,
+    pub args: Vec<i64>,
+}
+
+impl ExtendedType {
+    pub fn new(ty: String) -> ExtendedType {
+        ExtendedType {
+            ty: ty,
+            args: Vec::new(),
+        }
+    }
+
+    pub fn add_args(&mut self, mut args: Vec<i64>) {
+        self.args.append(&mut args);
+    }
+}
+
 pub struct Function {
     pub name: String,
-    pub args: Vec<String>,
-    pub result: String,
+    pub args: Vec<ExtendedType>,
+    pub result: ExtendedType,
     pub kind: FunctionKind,
 }
 
