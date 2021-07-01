@@ -1,4 +1,5 @@
 use serde_json::{Map, Result, Value};
+use std::collections::BTreeMap;
 
 use crate::mir::*;
 
@@ -272,6 +273,91 @@ fn parse_expr(expr: &Value) -> Expr {
     }
 }
 
+struct IdNormalizer {
+    id_map: BTreeMap<i64, i64>,
+}
+
+impl IdNormalizer {
+    fn new() -> IdNormalizer {
+        IdNormalizer {
+            id_map: BTreeMap::new(),
+        }
+    }
+
+    fn add(&mut self, id: i64, index: i64) {
+        let old = self.id_map.insert(id, index);
+        assert!(old.is_none());
+    }
+
+    fn normalize(&self, id: &mut i64) {
+        let new = self.id_map.get(id).unwrap();
+        *id = *new;
+    }
+
+    fn normalize_exprs(&self, ids: &mut Vec<i64>) {
+        for id in ids {
+            self.normalize(id);
+        }
+    }
+}
+
+fn normalize(exprs: &mut Vec<Expr>) {
+    let mut normalizer = IdNormalizer::new();
+
+    for (index, expr) in exprs.iter().enumerate() {
+        normalizer.add(expr.id, index as i64);
+    }
+
+    for expr in exprs {
+        normalizer.normalize(&mut expr.id);
+        match &mut expr.kind {
+            ExprKind::Do(items) => {
+                normalizer.normalize_exprs(items);
+            }
+            ExprKind::StaticFunctionCall(_, args) => {
+                normalizer.normalize_exprs(args);
+            }
+            ExprKind::VarDecl(_, rhs) => {
+                normalizer.normalize(rhs);
+            }
+            ExprKind::FieldAccess(_, receiver) => {
+                normalizer.normalize(receiver);
+            }
+            ExprKind::If(cond, true_branch, false_branch) => {
+                normalizer.normalize(cond);
+                normalizer.normalize(true_branch);
+                normalizer.normalize(false_branch);
+            }
+            ExprKind::List(items) => {
+                normalizer.normalize_exprs(items);
+            }
+            ExprKind::Return(arg) => {
+                normalizer.normalize(arg);
+            }
+            ExprKind::Continue(arg) => {
+                normalizer.normalize(arg);
+            }
+            ExprKind::Break(arg) => {
+                normalizer.normalize(arg);
+            }
+            ExprKind::Loop(_, initializer, body) => {
+                normalizer.normalize(initializer);
+                normalizer.normalize(body);
+            }
+            ExprKind::CaseOf(body, cases) => {
+                normalizer.normalize(body);
+                for c in cases {
+                    normalizer.normalize(&mut c.body);
+                }
+            }
+            ExprKind::Converter(arg) => {
+                normalizer.normalize(arg);
+            }
+            _ => {}
+        }
+    }
+}
+
 fn parse_function(function: &Value) -> Function {
     let function = function.as_object().expect("Function is not an object");
     let name = function
@@ -319,7 +405,7 @@ fn parse_function(function: &Value) -> Function {
                 }
                 _ => panic!("Body is not a single item, nor a list"),
             }
-
+            normalize(&mut exprs);
             FunctionKind::Normal(exprs)
         }
         "variant" => {
