@@ -40,75 +40,13 @@ pub enum Checker {
     Wildcard,
 }
 
+#[derive(Debug)]
 pub struct Case {
     pub checker: Checker,
     pub body: i64,
 }
 
-pub trait Visitor {
-    fn visit(&mut self, expr: &Expr);
-}
-
-pub fn walk(exprs: &Vec<Expr>, index: &i64, visitor: &mut Visitor) {
-    let expr = &exprs[*index as usize];
-    visitor.visit(expr);
-    match &expr.kind {
-        ExprKind::Do(items) => {
-            for item in items {
-                walk(exprs, item, visitor);
-            }
-        }
-        ExprKind::StaticFunctionCall(_, args) => {
-            for arg in args {
-                walk(exprs, arg, visitor);
-            }
-        }
-        ExprKind::IntegerLiteral(_) => {}
-        ExprKind::StringLiteral(_) => {}
-        ExprKind::FloatLiteral(_) => {}
-        ExprKind::CharLiteral(_) => {}
-        ExprKind::VarDecl(_, rhs) => {
-            walk(exprs, rhs, visitor);
-        }
-        ExprKind::VarRef(_) => {}
-        ExprKind::FieldAccess(_, receiver) => {
-            walk(exprs, receiver, visitor);
-        }
-        ExprKind::If(cond, true_branch, false_branch) => {
-            walk(exprs, cond, visitor);
-            walk(exprs, true_branch, visitor);
-            walk(exprs, false_branch, visitor);
-        }
-        ExprKind::List(args) => {
-            for arg in args {
-                walk(exprs, arg, visitor);
-            }
-        }
-        ExprKind::Return(arg) => {
-            walk(exprs, arg, visitor);
-        }
-        ExprKind::Continue(arg) => {
-            walk(exprs, arg, visitor);
-        }
-        ExprKind::Break(arg) => {
-            walk(exprs, arg, visitor);
-        }
-        ExprKind::Loop(_, initializer, body) => {
-            walk(exprs, initializer, visitor);
-            walk(exprs, body, visitor);
-        }
-        ExprKind::CaseOf(body, cases) => {
-            walk(exprs, body, visitor);
-            for c in cases {
-                walk(exprs, &c.body, visitor);
-            }
-        }
-        ExprKind::Converter(arg) => {
-            walk(exprs, arg, visitor);
-        }
-    }
-}
-
+#[derive(Debug)]
 pub enum ExprKind {
     Do(Vec<i64>),
     StaticFunctionCall(String, Vec<i64>),
@@ -184,4 +122,70 @@ pub enum Type {
     Adt(String),
     Record(String),
     Never,
+}
+
+pub trait Visitor {
+    fn visit(&mut self, _: &Expr) {}
+    fn visit_after(&mut self, _: &Expr) {}
+}
+
+pub fn walk(exprs: &Vec<Expr>, index: &i64, visitor: &mut dyn Visitor) {
+    let expr = &exprs[*index as usize];
+    visitor.visit(expr);
+    match &expr.kind {
+        ExprKind::Do(items) => {
+            for item in items {
+                walk(exprs, item, visitor);
+            }
+        }
+        ExprKind::StaticFunctionCall(_, args) => {
+            for arg in args {
+                walk(exprs, arg, visitor);
+            }
+        }
+        ExprKind::IntegerLiteral(_) => {}
+        ExprKind::StringLiteral(_) => {}
+        ExprKind::FloatLiteral(_) => {}
+        ExprKind::CharLiteral(_) => {}
+        ExprKind::VarDecl(_, rhs) => {
+            walk(exprs, rhs, visitor);
+        }
+        ExprKind::VarRef(_) => {}
+        ExprKind::FieldAccess(_, receiver) => {
+            walk(exprs, receiver, visitor);
+        }
+        ExprKind::If(cond, true_branch, false_branch) => {
+            walk(exprs, cond, visitor);
+            walk(exprs, true_branch, visitor);
+            walk(exprs, false_branch, visitor);
+        }
+        ExprKind::List(args) => {
+            for arg in args {
+                walk(exprs, arg, visitor);
+            }
+        }
+        ExprKind::Return(arg) => {
+            walk(exprs, arg, visitor);
+        }
+        ExprKind::Continue(arg) => {
+            walk(exprs, arg, visitor);
+        }
+        ExprKind::Break(arg) => {
+            walk(exprs, arg, visitor);
+        }
+        ExprKind::Loop(_, initializer, body) => {
+            walk(exprs, initializer, visitor);
+            walk(exprs, body, visitor);
+        }
+        ExprKind::CaseOf(body, cases) => {
+            walk(exprs, body, visitor);
+            for c in cases {
+                walk(exprs, &c.body, visitor);
+            }
+        }
+        ExprKind::Converter(arg) => {
+            walk(exprs, arg, visitor);
+        }
+    }
+    visitor.visit_after(expr);
 }
