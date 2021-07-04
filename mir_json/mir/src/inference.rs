@@ -1,6 +1,19 @@
 use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 
 use crate::mir::*;
+
+#[derive(Clone)]
+pub struct Converter {
+    from: TypeVariable,
+    to: TypeVariable,
+}
+
+impl std::fmt::Debug for Converter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "({:?} -> {:?})", self.from, self.to)
+    }
+}
 
 #[derive(Clone)]
 pub struct FunctionInfo {
@@ -8,6 +21,7 @@ pub struct FunctionInfo {
     result: TypeVariableInfo,
     members: Vec<MemberInfo>,
     variants: Vec<VariantInfo>,
+    converters: Vec<Converter>,
 }
 
 impl FunctionInfo {
@@ -16,12 +30,14 @@ impl FunctionInfo {
         result: TypeVariableInfo,
         members: Vec<MemberInfo>,
         variants: Vec<VariantInfo>,
+        converters: Vec<Converter>,
     ) -> FunctionInfo {
         FunctionInfo {
             args: args,
             result: result,
             members: members,
             variants: variants,
+            converters: converters,
         }
     }
 }
@@ -119,6 +135,7 @@ pub struct InferenceInfo {
     members: Vec<MemberInfo>,
     variants: Vec<VariantInfo>,
     var_allocator: TypeVariableAllocator,
+    converters: Vec<Converter>,
 }
 
 impl InferenceInfo {
@@ -134,6 +151,7 @@ impl InferenceInfo {
             members: Vec::new(),
             variants: Vec::new(),
             var_allocator: allocator,
+            converters: Vec::new(),
         };
 
         for index in 0..arg_count {
@@ -145,11 +163,132 @@ impl InferenceInfo {
     }
 
     fn to_function_info(&self) -> FunctionInfo {
+        let mut input_vars = BTreeSet::new();
+        for arg in &self.args {
+            input_vars.insert(arg.ownership_var);
+            input_vars.insert(arg.arg_group_var);
+        }
+        loop {
+            let mut added = false;
+            for member in &self.members {
+                if input_vars.contains(&member.root) {
+                    if input_vars.insert(member.info.ownership_var) {
+                        added = true;
+                    }
+                    if input_vars.insert(member.info.arg_group_var) {
+                        added = true;
+                    }
+                }
+            }
+            for variant in &self.variants {
+                if input_vars.contains(&variant.root) {
+                    if input_vars.insert(variant.info.ownership_var) {
+                        added = true;
+                    }
+                    if input_vars.insert(variant.info.arg_group_var) {
+                        added = true;
+                    }
+                }
+            }
+            if !added {
+                break;
+            }
+        }
+        let mut output_vars = BTreeSet::new();
+        output_vars.insert(self.result_info.ownership_var);
+        output_vars.insert(self.result_info.arg_group_var);
+        loop {
+            let mut added = false;
+            for member in &self.members {
+                if output_vars.contains(&member.root) {
+                    if output_vars.insert(member.info.ownership_var) {
+                        added = true;
+                    }
+                    if output_vars.insert(member.info.arg_group_var) {
+                        added = true;
+                    }
+                }
+            }
+            for variant in &self.variants {
+                if output_vars.contains(&variant.root) {
+                    if output_vars.insert(variant.info.ownership_var) {
+                        added = true;
+                    }
+                    if output_vars.insert(variant.info.arg_group_var) {
+                        added = true;
+                    }
+                }
+            }
+            if !added {
+                break;
+            }
+        }
+        //println!("All inputs {:?}", input_vars);
+        //println!("All outputs: {:?}", output_vars);
+        let same_vars: Vec<_> = input_vars.intersection(&output_vars).cloned().collect();
+        let members = self
+            .members
+            .iter()
+            .filter(|member| {
+                !same_vars.contains(&member.info.ownership_var)
+                    || !same_vars.contains(&member.info.arg_group_var)
+            })
+            .cloned()
+            .collect();
+        let variants = self
+            .variants
+            .iter()
+            .filter(|variant| {
+                !same_vars.contains(&variant.info.ownership_var)
+                    || !same_vars.contains(&variant.info.arg_group_var)
+            })
+            .cloned()
+            .collect();
+        let mut converter_map = BTreeMap::new();
+        for c in &self.converters {
+            let tos = converter_map.entry(c.from).or_insert_with(|| Vec::new());
+            tos.push(c.to);
+        }
+        let mut converters = Vec::new();
+        for input in &input_vars {
+            let mut conversions = BTreeSet::new();
+            conversions.insert(input);
+            let mut new_ones = vec![input];
+            loop {
+                let mut currents = Vec::new();
+                std::mem::swap(&mut new_ones, &mut currents);
+                for new_one in currents {
+                    match converter_map.get(new_one) {
+                        Some(tos) => {
+                            for to in tos {
+                                if conversions.insert(to) {
+                                    new_ones.push(to);
+                                }
+                            }
+                        }
+                        None => {}
+                    }
+                }
+                if new_ones.is_empty() {
+                    break;
+                }
+            }
+            for output in &output_vars {
+                if conversions.contains(output) {
+                    //println!("{:?} converts into {:?}", input, output);
+                    converters.push(Converter {
+                        from:* input,
+                        to: *output,
+                    });
+                }
+            }
+        }
         FunctionInfo::new(
             self.args.clone(),
             self.result_info.clone(),
-            self.members.clone(),
-            self.variants.clone(),
+            members,
+            variants,
+            converters,
         )
     }
 
@@ -174,7 +313,7 @@ impl InferenceInfo {
                     members.push(member);
                     args.push(arg_info);
                 }
-                FunctionInfo::new(args, result, members, Vec::new())
+                FunctionInfo::new(args, result, members, Vec::new(), Vec::new())
             }
             _ => panic!("Not a record!"),
         }
@@ -212,7 +351,7 @@ impl InferenceInfo {
                             root: adt_result.arg_group_var,
                             info: record_result,
                         }];
-                        FunctionInfo::new(args, adt_result, members, variants)
+                        FunctionInfo::new(args, adt_result, members, variants, Vec::new())
                     }
                     _ => panic!("Not a record!"),
                 }
@@ -229,6 +368,7 @@ impl InferenceInfo {
         FunctionInfo::new(
             args,
             self.var_allocator.allocate_info(),
+            Vec::new(),
             Vec::new(),
             Vec::new(),
         )
@@ -282,18 +422,21 @@ impl InferenceInfo {
     }
 
     fn merge_members_and_variants(&mut self) {
-        println!(
-            "merge_members_and_variants started {} {} {} {}",
-            self.expr_type_variables.len(),
-            self.var_type_variables.len(),
-            self.members.len(),
-            self.variants.len()
-        );
+        // println!(
+        //     "merge_members_and_variants started {} {} {} {} {}",
+        //     self.expr_type_variables.len(),
+        //     self.var_type_variables.len(),
+        //     self.members.len(),
+        //     self.variants.len(),
+        //     self.converters.len()
+        // );
         loop {
             let mut root_map = BTreeMap::new();
             let mut constraints = ConstraintStore::new();
             for member in &self.members {
-                let infos = root_map.entry((&member.name, member.root)).or_insert_with(|| Vec::new());
+                let infos = root_map
+                    .entry((&member.name, member.root))
+                    .or_insert_with(|| Vec::new());
                 infos.push(member.info);
             }
             for (_, infos) in root_map {
@@ -317,7 +460,9 @@ impl InferenceInfo {
             let mut root_map = BTreeMap::new();
             let mut constraints = ConstraintStore::new();
             for variant in &self.variants {
-                let infos = root_map.entry((variant.index, variant.root)).or_insert_with(|| Vec::new());
+                let infos = root_map
+                    .entry((variant.index, variant.root))
+                    .or_insert_with(|| Vec::new());
                 infos.push(variant.info);
             }
             for (_, infos) in root_map {
@@ -337,7 +482,7 @@ impl InferenceInfo {
                 self.variants.dedup();
             }
         }
-        println!("merge_members_and_variants ended");
+        //println!("merge_members_and_variants ended");
     }
 
     fn apply_all(&mut self, constraints: &mut ConstraintStore) {
@@ -517,7 +662,7 @@ fn process_function(
     // initialization
     let f = mir_program.functions.get(f).unwrap();
     let mut inference_info = InferenceInfo::new(f.args.len());
-    println!("Processing {}", f.name);
+    //println!("Processing {}", f.name);
     let mut loop_collector = LoopCollector::new();
     match &f.kind {
         FunctionKind::Normal(exprs) => {
@@ -587,6 +732,7 @@ fn process_function(
                         };
                         inference_info.members.extend(function_info.members);
                         inference_info.variants.extend(function_info.variants);
+                        inference_info.converters.extend(function_info.converters);
                         for index in 0..args.len() {
                             let arg_expr = &args[index];
                             let arg_expr_info = inference_info.expr_info(*arg_expr);
@@ -676,13 +822,17 @@ fn process_function(
                         constraints
                             .constraints
                             .push(Constraint::Equal(info1.arg_group_var, info2.arg_group_var));
+                        inference_info.converters.push(Converter {
+                            from: info1.ownership_var,
+                            to: info2.ownership_var,
+                        });
                     }
                     _ => {}
                 }
             }
             let body_info = inference_info.expr_info(0);
             constraints.add_equal_info(inference_info.result_info, body_info);
-            println!("{} constraints", constraints.constraints.len());
+            //println!("{} constraints", constraints.constraints.len());
             inference_info.apply_all(&mut constraints);
             inference_info.merge_members_and_variants();
             //println!("members: {:?}", inference_info.members);
@@ -702,10 +852,12 @@ fn process_function(
             println!("Result {:?}", inferer.inference_info.result_info);
             println!("members: {:?}", inferer.inference_info.members);
             println!("variants: {:?}", inferer.inference_info.variants);
+            println!("Converters: {:?}", inferer.inference_info.converters);
             */
             function_info_store
                 .add_function(f.name.clone(), inferer.inference_info.to_function_info());
-            /*if f.name == "Bool.opEq_0" {
+            /*
+                if f.name == "Bool.opEq_0" {
                 panic!("Done with {}!", f.name);
             }*/
         }
@@ -732,7 +884,7 @@ pub fn inference(function_groups: Vec<Vec<String>>, mir_program: &Program) {
         let info = TypeVariableInfo::new(TypeVariable::new(30), TypeVariable::new(31));
         let args = vec![info, info];
         let result = info;
-        let function_info = FunctionInfo::new(args, result, Vec::new(), Vec::new());
+        let function_info = FunctionInfo::new(args, result, Vec::new(), Vec::new(), Vec::new());
         function_info_store.add_function(name, function_info);
     }
     {
@@ -741,7 +893,7 @@ pub fn inference(function_groups: Vec<Vec<String>>, mir_program: &Program) {
         let info2 = TypeVariableInfo::new(TypeVariable::new(1032), TypeVariable::new(1033));
         let args = vec![info1];
         let result = info2;
-        let function_info = FunctionInfo::new(args, result, Vec::new(), Vec::new());
+        let function_info = FunctionInfo::new(args, result, Vec::new(), Vec::new(), Vec::new());
         function_info_store.add_function(name, function_info);
     }
     for group in &function_groups {
