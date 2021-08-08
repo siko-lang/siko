@@ -358,6 +358,52 @@ fn normalize(exprs: &mut Vec<Expr>) {
     }
 }
 
+pub enum Step {
+    External(i64),
+    Variant(i64),
+    Field(i64),
+    FunctionArg(i64),
+    FunctionResult,
+}
+
+pub struct Position {
+    steps: Vec<Step>,
+}
+
+fn parse_step(step: &String) -> Step {
+    if step.starts_with("arg") {
+        let (first, index) = step.split_at(3);
+        Step::FunctionArg(index.parse().expect("index is not number!"))
+    } else if step.starts_with("e") {
+        let (first, index) = step.split_at(1);
+        Step::External(index.parse().expect("index is not number!"))
+    }  else if step.starts_with("f") {
+        let (first, index) = step.split_at(1);
+        Step::Field(index.parse().expect("index is not number!"))
+    }else if step.starts_with("v") {
+        let (first, index) = step.split_at(1);
+        Step::Variant(index.parse().expect("index is not number!"))
+    } else {
+        assert_eq!(step, "R");
+        Step::FunctionResult
+    }
+}
+
+fn parse_position(pos_s: &str) -> Position {
+    let steps: Vec<String> = pos_s.split(".").map(|s| s.to_string()).collect();
+    let steps: Vec<_> = steps.iter().map(parse_step).collect();
+    Position { steps: steps }
+}
+
+fn parse_positions(positions: &Value) -> Vec<Position> {
+    let positions = positions.as_array().expect("positions not an array");
+    let positions: Vec<Position> = positions
+        .iter()
+        .map(|p| parse_position(p.as_str().expect("pos is not str")))
+        .collect();
+    positions
+}
+
 fn parse_function(function: &Value) -> Function {
     let function = function.as_object().expect("Function is not an object");
     let name = function
@@ -419,7 +465,23 @@ fn parse_function(function: &Value) -> Function {
             FunctionKind::VariantCtor(index)
         }
         "record" => FunctionKind::RecordCtor,
-        "extern" => FunctionKind::External,
+        "extern" => {
+            let owner_positions: &Value = function
+                .get("owner_positions")
+                .expect("owner positions not found");
+            let owner_positions: Vec<Position> = parse_positions(owner_positions);
+            let ref_positions = function.get("ref_positions").expect("ref positions not found");
+            let ref_positions: Vec<Position> = parse_positions(ref_positions);
+            let var_mappings = function
+                .get("var_mappings")
+                .expect("var_mappings not found")
+                .as_object()
+                .expect("var_mapping is not an object");
+            for (k, v) in var_mappings {
+                let var_positions = parse_positions(v);
+            }
+            FunctionKind::External
+        }
         e => panic!("Unexpected function kind {}", e),
     };
     Function {

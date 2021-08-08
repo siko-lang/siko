@@ -277,7 +277,7 @@ impl InferenceInfo {
                 if conversions.contains(output) {
                     //println!("{:?} converts into {:?}", input, output);
                     converters.push(Converter {
-                        from:* input,
+                        from: *input,
                         to: *output,
                     });
                 }

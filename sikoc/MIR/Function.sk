@@ -50,6 +50,10 @@ dump function = do
         RecordCtor -> s + "{} {} = <record_ctor>" % (function.id, args)
         Extern type_mapping -> s + "{} {} = extern" % (function.id, args)
 
+positionsToJson :: [Position] -> Json
+positionsToJson positions = do
+    JsonList (List.map positions (\p -> JsonString "{}" % p))
+
 toJson :: Function -> Json
 toJson function = do
     name <- JsonObjectItem "name" (JsonString (show function.id))
@@ -61,7 +65,15 @@ toJson function = do
                         JsonObjectItem "body" (E.toJson info.body)]
         VariantCtor index -> [JsonObjectItem "kind" (JsonString "variant"), JsonObjectItem "index" (JsonString (show index))]
         RecordCtor -> [JsonObjectItem "kind" (JsonString ("record"))]
-        Extern _ -> [JsonObjectItem "kind" (JsonString ("extern"))]
+        Extern type_mapping -> do
+            kind <- JsonObjectItem "kind" (JsonString ("extern"))
+            owner_positions <- JsonObjectItem "owner_positions" (positionsToJson type_mapping.owner_positions)
+            ref_positions <- JsonObjectItem "ref_positions" (positionsToJson type_mapping.ref_positions)
+            var_mappings <- type_mapping.var_mappings |> Map.iter |> Iterator.map
+                (\(name, positions) -> JsonObjectItem name (positionsToJson positions)) |> toList
+            var_mappings <- JsonObject var_mappings
+            var_mappings <- JsonObjectItem "var_mappings" var_mappings
+            [kind, owner_positions, ref_positions, var_mappings]
     JsonObject ([name, args, result] + kinds)
 
 data Step = External Int
@@ -79,7 +91,7 @@ instance Show Step where
     show step = case step of
         External index -> ".e{}" % index
         Variant index -> ".v{}" % index
-        Field index -> "[{}]" % index
+        Field index -> ".f{}" % index
         FunctionArg index -> "arg{}" % index
         FunctionResult -> "R"
 
