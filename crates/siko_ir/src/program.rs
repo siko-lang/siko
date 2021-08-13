@@ -5,6 +5,7 @@ use crate::class::ClassMemberId;
 use crate::class::Instance;
 use crate::class::InstanceId;
 use crate::data::Adt;
+use crate::data::Record;
 use crate::data::TypeDef;
 use crate::data::TypeDefId;
 use crate::data_type_info::AdtTypeInfo;
@@ -146,6 +147,16 @@ impl Program {
         Type::Named(OPTION_TYPE_NAME.to_string(), id, vec![ty])
     }
 
+    pub fn get_json_object_item_type(&self) -> Type {
+        let id = self.get_named_type("Json", "JsonObjectItem");
+        Type::Named("JsonObjectItem".to_string(), id, vec![])
+    }
+
+    pub fn get_json_type(&self) -> Type {
+        let id = self.get_named_type("Json", "Json");
+        Type::Named("Json".to_string(), id, vec![])
+    }
+
     pub fn get_show_type(&self) -> Type {
         let class_id = self.get_show_class_id();
         let mut var = self.type_var_generator.clone();
@@ -231,7 +242,21 @@ impl Program {
         if let TypeDef::Adt(adt) = self.typedefs.get(id) {
             adt
         } else {
-            unreachable!()
+            panic!("{}/{} is not an adt", module, name)
+        }
+    }
+
+    pub fn get_record_by_name(&self, module: &str, name: &str) -> &Record {
+        let id = self
+            .named_types
+            .get(module)
+            .expect("Module not found")
+            .get(name)
+            .expect("Typedef not found");
+        if let TypeDef::Record(record) = self.typedefs.get(id) {
+            record
+        } else {
+            panic!("{}/{} is not a record", module, name)
         }
     }
 

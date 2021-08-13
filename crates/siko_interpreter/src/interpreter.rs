@@ -11,6 +11,10 @@ use crate::std_ops;
 use crate::std_util;
 use crate::std_util_basic;
 use crate::string;
+use crate::util::create_json_list;
+use crate::util::create_json_object;
+use crate::util::create_json_object_item;
+use crate::util::create_json_string;
 use crate::util::get_opt_ordering_value;
 use crate::util::get_ordering_value;
 use crate::value::BuiltinCallable;
@@ -25,6 +29,7 @@ use siko_constants::ORDERING_TYPE_NAME;
 use siko_ir::class::ClassMember;
 use siko_ir::class::ClassMemberId;
 use siko_ir::data::Adt;
+use siko_ir::data::TypeDef;
 use siko_ir::data::TypeDefId;
 use siko_ir::expr::Expr;
 use siko_ir::expr::ExprId;
@@ -81,6 +86,9 @@ pub struct TypeDefIdCache {
     pub ordering_id: TypeDefId,
     pub option_variants: VariantCache,
     pub ordering_variants: VariantCache,
+    pub json_id: TypeDefId,
+    pub json_variants: VariantCache,
+    pub json_object_item_id: TypeDefId,
 }
 
 pub struct Interpreter {
@@ -112,6 +120,7 @@ impl Interpreter {
                             BuiltinCallable::PartialEq => 2,
                             BuiltinCallable::PartialOrd => 2,
                             BuiltinCallable::Ord => 2,
+                            &BuiltinCallable::ToJson => 1,
                         },
                         CallableKind::FunctionId(function_id) => {
                             let func = self.program.functions.get(function_id);
@@ -315,6 +324,15 @@ impl Interpreter {
         })
     }
 
+    pub fn get_json_type() -> Type {
+        INTERPRETER_CONTEXT.with(|i| {
+            let b = i.borrow();
+            let i = b.as_ref().expect("Interpreter not set");
+            let bool_ty = i.program.get_json_type();
+            bool_ty
+        })
+    }
+
     pub fn get_char_type() -> Type {
         INTERPRETER_CONTEXT.with(|i| {
             let b = i.borrow();
@@ -424,6 +442,15 @@ impl Interpreter {
         )
     }
 
+    pub fn call_op_tojson(arg: Value) -> Value {
+        Interpreter::call_specific_class_member(
+            vec![arg],
+            "ToJson",
+            "toJson",
+            Interpreter::get_json_type(),
+        )
+    }
+
     pub fn call_op_cmp(arg1: Value, arg2: Value) -> Value {
         let ordering_ty = Interpreter::get_ordering_type();
         Interpreter::call_specific_class_member(vec![arg1, arg2], "Ord", "cmp", ordering_ty)
@@ -444,7 +471,8 @@ impl Interpreter {
         }
         for (index, arg) in arg_types.iter().enumerate() {
             println!("{}.argty {}", index, arg);
-        }*/
+        }
+        */
         let mut call_unifier = self.program.get_unifier();
         let mut func_ty = func_ty.clone();
         for arg in arg_values {
@@ -514,6 +542,9 @@ impl Interpreter {
                     }
                     ("Std.Ops", "Ord") => {
                         Interpreter::check_member(member, "cmp", BuiltinCallable::Ord)
+                    }
+                    ("Json.Serialize", "ToJson") => {
+                        Some(CallableKind::Builtin(BuiltinCallable::ToJson))
                     }
                     _ => panic!(
                         "Auto derive of {}/{} is not implemented",
@@ -1103,6 +1134,38 @@ impl Interpreter {
                 }
                 unimplemented!()
             }
+            BuiltinCallable::ToJson => {
+                let v = environment.get_arg_by_index(0);
+                if let ValueCore::Record(id, items) = &*v.core {
+                    let record = if let TypeDef::Record(r) = self.program.typedefs.get(id) {
+                        r
+                    } else {
+                        panic!("Record is not record!");
+                    };
+                    let mut json_items = Vec::new();
+                    for (item, field) in items.iter().zip(record.fields.iter()) {
+                        let name = Value::new(
+                            ValueCore::String(field.name.clone()),
+                            self.program.get_string_type(),
+                        );
+                        let value = Interpreter::call_op_tojson(item.clone());
+                        let object_item = create_json_object_item(name, value);
+                        json_items.push(object_item);
+                    }
+                    let core = ValueCore::List(json_items);
+                    let json_items = Value::new(
+                        core,
+                        self.program
+                            .get_list_type(self.program.get_json_object_item_type()),
+                    );
+                    return create_json_object(json_items);
+                }
+                let s = Value::new(
+                    ValueCore::String("foo".to_string()),
+                    self.program.get_string_type(),
+                );
+                return create_json_string(s);
+            }
         }
     }
 
@@ -1170,11 +1233,16 @@ impl Interpreter {
         let ordering = self
             .program
             .get_adt_by_name(ORDERING_MODULE_NAME, ORDERING_TYPE_NAME);
+        let json = self.program.get_adt_by_name("Json", "Json");
+        let json_object_item = self.program.get_record_by_name("Json", "JsonObjectItem");
         let cache = TypeDefIdCache {
             option_id: option.id,
             ordering_id: ordering.id,
             option_variants: VariantCache::new(option),
             ordering_variants: VariantCache::new(ordering),
+            json_id: json.id,
+            json_variants: VariantCache::new(json),
+            json_object_item_id: json_object_item.id,
         };
         self.typedefid_cache = Some(cache);
     }

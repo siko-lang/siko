@@ -19,7 +19,6 @@ use crate::type_processor::process_class_type_signature;
 use crate::type_processor::process_type_signature;
 use crate::type_processor::subtitute_type_signature;
 use siko_constants::get_auto_derivable_classes;
-use siko_constants::STD_OPS_MODULE_NAME;
 use siko_ir::class::Class as IrClass;
 use siko_ir::class::ClassId as IrClassId;
 use siko_ir::class::ClassMember as IrClassMember;
@@ -277,8 +276,7 @@ impl Resolver {
                     }
                 }
                 let auto_derivable_classes: Vec<_> = get_auto_derivable_classes();
-                let auto_derivable = module.name == STD_OPS_MODULE_NAME
-                    && auto_derivable_classes.contains(&class.name.as_ref());
+                let auto_derivable = auto_derivable_classes.contains(&class.name.as_ref());
                 let ir_class = IrClass {
                     id: ir_class_id,
                     name: class.name.clone(),

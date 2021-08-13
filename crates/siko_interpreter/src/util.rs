@@ -76,3 +76,47 @@ pub fn get_ordering_value(ordering: Ordering) -> Value {
         Ordering::Greater => create_ordering(cache.ordering_variants.get_index("Greater")),
     }
 }
+
+pub fn create_json_string(value: Value) -> Value {
+    let cache = Interpreter::get_typedef_id_cache();
+    let concrete_type = Type::Named("Json".to_string(), cache.json_id, vec![]);
+    let core = ValueCore::Variant(
+        cache.json_id,
+        cache.json_variants.get_index("JsonString"),
+        vec![value],
+    );
+    let js_value = Value::new(core, concrete_type);
+    js_value
+}
+
+pub fn create_json_object(value: Value) -> Value {
+    let cache = Interpreter::get_typedef_id_cache();
+    let concrete_type = Type::Named("Json".to_string(), cache.json_id, vec![]);
+    let core = ValueCore::Variant(
+        cache.json_id,
+        cache.json_variants.get_index("JsonObject"),
+        vec![value],
+    );
+    let js_value = Value::new(core, concrete_type);
+    js_value
+}
+
+pub fn create_json_list(value: Value) -> Value {
+    let cache = Interpreter::get_typedef_id_cache();
+    let concrete_type = Type::Named("Json".to_string(), cache.json_id, vec![]);
+    let core = ValueCore::Variant(
+        cache.json_id,
+        cache.json_variants.get_index("JsonList"),
+        vec![value],
+    );
+    let js_value = Value::new(core, concrete_type);
+    js_value
+}
+
+pub fn create_json_object_item(name: Value, value: Value) -> Value {
+    let cache = Interpreter::get_typedef_id_cache();
+    let concrete_type = Type::Named("Json".to_string(), cache.json_object_item_id, vec![]);
+    let core = ValueCore::Record(cache.json_object_item_id, vec![name, value]);
+    let js_value = Value::new(core, concrete_type);
+    js_value
+}
