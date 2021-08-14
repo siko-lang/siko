@@ -1,5 +1,6 @@
 module Char where
 
+import Json
 import Json.Serialize
 
 data Char = extern
@@ -20,6 +21,11 @@ instance Show Char where
 
 instance ToJson Char where
     toJson c = toJson (show c)
+
+instance FromJson Char where
+    fromJson json = case json of
+        JsonString s -> atIndex (chars s) 0
+        _ -> panic "Expected Char in json"
 
 isUppercase :: Char -> Bool
 isUppercase a = extern

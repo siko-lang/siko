@@ -11,9 +11,11 @@ use crate::std_ops;
 use crate::std_util;
 use crate::std_util_basic;
 use crate::string;
+use crate::util::as_json_field;
+use crate::util::as_json_object_items;
 use crate::util::create_json_object;
 use crate::util::create_json_object_item;
-use crate::util::create_json_string;
+use crate::util::get_field_value;
 use crate::util::get_opt_ordering_value;
 use crate::util::get_ordering_value;
 use crate::value::BuiltinCallable;
@@ -40,9 +42,12 @@ use siko_ir::pattern::Pattern;
 use siko_ir::pattern::PatternId;
 use siko_ir::pattern::RangeKind;
 use siko_ir::program::Program;
+use siko_ir::type_signature::process_type_signature;
+use siko_ir::type_var_generator::TypeVarGenerator;
 use siko_ir::types::Type;
 use siko_ir::unifier::Unifier;
 use siko_location_info::error_context::ErrorContext;
+use siko_util::RcCounter;
 use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
@@ -119,7 +124,8 @@ impl Interpreter {
                             BuiltinCallable::PartialEq => 2,
                             BuiltinCallable::PartialOrd => 2,
                             BuiltinCallable::Ord => 2,
-                            &BuiltinCallable::ToJson => 1,
+                            BuiltinCallable::ToJson => 1,
+                            BuiltinCallable::FromJson => 1,
                         },
                         CallableKind::FunctionId(function_id) => {
                             let func = self.program.functions.get(function_id);
@@ -459,6 +465,10 @@ impl Interpreter {
         )
     }
 
+    pub fn call_op_fromjson(arg: Value, ty: Type) -> Value {
+        Interpreter::call_specific_class_member(vec![arg], "FromJson", "fromJson", ty)
+    }
+
     pub fn call_op_cmp(arg1: Value, arg2: Value) -> Value {
         let ordering_ty = Interpreter::get_ordering_type();
         Interpreter::call_specific_class_member(vec![arg1, arg2], "Ord", "cmp", ordering_ty)
@@ -553,6 +563,9 @@ impl Interpreter {
                     }
                     ("Json.Serialize", "ToJson") => {
                         Some(CallableKind::Builtin(BuiltinCallable::ToJson))
+                    }
+                    ("Json.Serialize", "FromJson") => {
+                        Some(CallableKind::Builtin(BuiltinCallable::FromJson))
                     }
                     _ => panic!(
                         "Auto derive of {}/{} is not implemented",
@@ -975,7 +988,7 @@ impl Interpreter {
         environment: &mut Environment,
         _: Option<ExprId>,
         _: &Unifier,
-        _: Type,
+        ty: Type,
     ) -> Value {
         match builtin {
             BuiltinCallable::Show => {
@@ -1205,6 +1218,67 @@ impl Interpreter {
                     return create_json_object(json_items);
                 }
                 panic!("ToJson, not adt nor record!");
+            }
+            BuiltinCallable::FromJson => {
+                let json_input = environment.get_arg_by_index(0);
+                let id = ty.get_typedef_id();
+                match self.program.typedefs.get(&id) {
+                    TypeDef::Adt(adt) => {
+                        let values = as_json_object_items(json_input);
+                        let (name, value) = as_json_field(&values[0]);
+                        //println!("Parsing variant {}", name);
+                        let values = as_json_object_items(&value);
+                        for (variant_index, v) in adt.variants.iter().enumerate() {
+                            if v.name == name {
+                                let mut variant_values = Vec::new();
+                                for (index, item) in v.items.iter().enumerate() {
+                                    let field_name = format!("field_{}", index);
+                                    {
+                                        //println!("Parsing field {}", field_name);
+                                        let field_value = get_field_value(&values, &field_name);
+                                        let mut var_gen = TypeVarGenerator::new(RcCounter::new());
+                                        let ty = process_type_signature(
+                                            item.type_signature_id,
+                                            &self.program,
+                                            &mut var_gen,
+                                        );
+                                        let ty = ty.remove_fixed_types();
+                                        let field_value =
+                                            Interpreter::call_op_fromjson(field_value, ty.clone());
+                                        variant_values.push(field_value);
+                                    }
+                                }
+                                let core = ValueCore::Variant(id, variant_index, variant_values);
+                                return Value::new(core, ty.clone());
+                            }
+                        }
+                    }
+                    TypeDef::Record(record) => {
+                        let values = as_json_object_items(json_input);
+                        let mut items = Vec::new();
+                        for field in &record.fields {
+                            //println!("Looking for field {} {}", record.name, field.name);
+                            let field_value = get_field_value(&values, &field.name);
+                            let mut var_gen = TypeVarGenerator::new(RcCounter::new());
+                            let ty = process_type_signature(
+                                field.type_signature_id,
+                                &self.program,
+                                &mut var_gen,
+                            );
+                            let ty = ty.remove_fixed_types();
+                            let field_value =
+                                Interpreter::call_op_fromjson(field_value, ty.clone());
+                            //println!("Field ty: {}", ty);
+                            items.push(field_value);
+                        }
+                        let core = ValueCore::Record(id.clone(), items);
+                        return Value::new(core, ty.clone());
+                    }
+                }
+                panic!(
+                    "FromJson parsing {}",
+                    ty.get_resolved_type_string(&self.program)
+                );
             }
         }
     }

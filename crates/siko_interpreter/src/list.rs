@@ -2,6 +2,7 @@ use crate::environment::Environment;
 use crate::extern_function::ExternFunction;
 use crate::interpreter::ExprResult;
 use crate::interpreter::Interpreter;
+use crate::util::as_json_object_items;
 use crate::util::create_json_list;
 use crate::util::create_none;
 use crate::util::create_some;
@@ -53,6 +54,29 @@ impl ExternFunction for ToJson {
             subs.push(s);
         }
         return create_json_list(subs);
+    }
+}
+
+pub struct FromJson {}
+
+impl ExternFunction for FromJson {
+    fn call(
+        &self,
+        environment: &Environment,
+        _: Option<ExprId>,
+        _: &NamedFunctionKind,
+        ty: Type,
+    ) -> Value {
+        let v = environment.get_arg_by_index(0);
+        let values = as_json_object_items(v);
+        let mut subs = Vec::new();
+        let list_type_arg = ty.get_type_args()[0].clone();
+        for item in values {
+            let s = Interpreter::call_op_fromjson(item.clone(), list_type_arg.clone());
+            subs.push(s);
+        }
+        let core = ValueCore::List(subs);
+        return Value::new(core, ty);
     }
 }
 
@@ -400,6 +424,7 @@ impl ExternFunction for Split {
 pub fn register_extern_functions(interpreter: &mut Interpreter) {
     interpreter.add_extern_function(LIST_MODULE_NAME, "show", Box::new(Show {}));
     interpreter.add_extern_function(LIST_MODULE_NAME, "toJson", Box::new(ToJson {}));
+    interpreter.add_extern_function(LIST_MODULE_NAME, "fromJson", Box::new(FromJson {}));
     interpreter.add_extern_function(LIST_MODULE_NAME, "iter", Box::new(Iter {}));
     interpreter.add_extern_function(LIST_MODULE_NAME, "toList", Box::new(ToList {}));
     interpreter.add_extern_function(LIST_MODULE_NAME, "opEq", Box::new(ListPartialEq {}));

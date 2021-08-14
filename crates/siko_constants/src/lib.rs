@@ -72,6 +72,7 @@ pub const LESS_NAME: &str = "Less";
 pub const GREATER_NAME: &str = "Greater";
 pub const SHOW_CLASS_NAME: &str = "Show";
 pub const TOJSON_CLASS_NAME: &str = "ToJson";
+pub const FROMJSON_CLASS_NAME: &str = "FromJson";
 pub const PARTIALEQ_CLASS_NAME: &str = "PartialEq";
 pub const EQ_CLASS_NAME: &str = "Eq";
 pub const PARTIALORD_CLASS_NAME: &str = "PartialOrd";
@@ -115,5 +116,6 @@ pub fn get_auto_derivable_classes() -> Vec<&'static str> {
         ORD_CLASS_NAME,
         SHOW_CLASS_NAME,
         TOJSON_CLASS_NAME,
+        FROMJSON_CLASS_NAME,
     ]
 }

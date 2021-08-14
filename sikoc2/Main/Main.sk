@@ -11,6 +11,7 @@ import Siko.Trace
 import Json
 import Json.Serialize
 import Json.Writer
+import Json.Parser as JsonParser
 
 processArgs :: [String] -> Config
 processArgs args = loop (config, args) <- (getDefaultConfig, args) do
@@ -37,10 +38,21 @@ data Foo = { alma :: String, korte :: String } deriving (ToJson)
 
 dumpModule :: Module -> ()
 dumpModule m = do
-    println ("Dumping module {}" % m.name)
+    println "Dumping module {}" % m.name
     json <- toJson m
+    println "ToJson done"
     filename <- "cache/{}.json" % m.name
     writeTextFile filename (Json.Writer.write json)
+    json <- readTextFile filename
+    println "Parsing json"
+    case JsonParser.parse json of
+        Ok json -> do
+            println "JsonParsing {}" % filename
+            m2 :: Module <- fromJson json
+            filename <- "cache/{}_2.json" % m2.name
+            json <- toJson m2
+            writeTextFile filename (Json.Writer.write json)
+        Err e -> panic "Failed to parse json"
 
 parseFile :: Config -> FileManager -> FileName -> (FileManager, SourceFile)
 parseFile config file_manager (FileName file_name) = do

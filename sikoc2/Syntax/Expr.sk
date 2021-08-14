@@ -7,11 +7,11 @@ import Siko.Syntax.Location
 
 data Case = { pattern :: P.Pattern,
               body :: Expr,
-            } deriving (Show, ToJson)
+            } deriving (Show, ToJson, FromJson)
 
 data RecordConstructionItem = { field_name :: Ident,
                                 body :: Expr,
-                              } deriving (Show, ToJson)
+                              } deriving (Show, ToJson, FromJson)
 
 data Op = Equal
         | NotEqual
@@ -26,13 +26,13 @@ data Op = Equal
         | Mul
         | Div
         | PipeForward
-        deriving (Show, PartialEq, ToJson)
+        deriving (Show, PartialEq, ToJson, FromJson)
 
-data Expr = Expr SimpleExpr Location deriving (ToJson)
+data Expr = Expr SimpleExpr Location deriving (ToJson, FromJson)
 
 data EffectHandler = { name :: Ident,
                        value :: Expr
-                     } deriving (Show, ToJson)
+                     } deriving (Show, ToJson, FromJson)
 
 instance Show Expr where
     show (Expr s _) = show s
@@ -66,4 +66,4 @@ data SimpleExpr = Lambda [P.Pattern] Expr
                 | Loop P.Pattern Expr Expr
                 | ArgRef Int
                 | With [EffectHandler] Expr
-                deriving (Show, ToJson)
+                deriving (Show, ToJson, FromJson)

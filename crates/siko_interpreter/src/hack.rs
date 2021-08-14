@@ -24,6 +24,32 @@ impl ExternFunction for ReadTextFile {
     }
 }
 
+pub struct Investigate {}
+
+impl ExternFunction for Investigate {
+    fn call(
+        &self,
+        environment: &Environment,
+        _: Option<ExprId>,
+        _: &NamedFunctionKind,
+        ty: Type,
+    ) -> Value {
+        let value = environment.get_arg_by_index(0);
+        match &*value.core {
+            ValueCore::Record(id, _items) => {
+                println!("Record ! {:?}", id);
+            }
+            ValueCore::Variant(id, _, _items) => {
+                println!("Variant ! {:?}", id);
+            }
+            _ => {
+                println!("Something else ");
+            }
+        }
+        return Value::new(ValueCore::Tuple(Vec::new()), ty);
+    }
+}
+
 pub struct WriteTextFile {}
 
 impl ExternFunction for WriteTextFile {
@@ -69,4 +95,5 @@ pub fn register_extern_functions(interpreter: &mut Interpreter) {
     interpreter.add_extern_function("Hack", "readTextFile", Box::new(ReadTextFile {}));
     interpreter.add_extern_function("Hack", "writeTextFile", Box::new(WriteTextFile {}));
     interpreter.add_extern_function("Hack", "getArgs", Box::new(GetArgs {}));
+    interpreter.add_extern_function("Hack", "investigate", Box::new(Investigate {}));
 }

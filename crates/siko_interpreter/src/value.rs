@@ -17,6 +17,7 @@ pub enum BuiltinCallable {
     PartialOrd,
     Ord,
     ToJson,
+    FromJson,
 }
 
 #[derive(Debug, Clone, Copy)]

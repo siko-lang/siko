@@ -36,3 +36,8 @@ parse s = extern
 
 instance ToJson Int where
     toJson i = toJson (show i)
+
+instance FromJson Int where
+    fromJson json = case json of
+        JsonString s -> Option.unwrap (parse s)
+        _ -> panic "Expected Int in json"

@@ -124,3 +124,39 @@ pub fn create_json_object_item(name: Value, value: Value) -> Value {
     let js_value = Value::new(core, concrete_type);
     js_value
 }
+
+pub fn as_json_object_items(v: &Value) -> Vec<Value> {
+    match &*v.core {
+        ValueCore::Variant(_, _, items) => {
+            return items[0].core.as_list().clone();
+        }
+        _ => panic!("json_object_item in json is not a variant!"),
+    }
+}
+
+pub fn get_field_value(items: &Vec<Value>, name: &String) -> Value {
+    for item in items {
+        match &*item.core {
+            ValueCore::Record(_, items) => {
+                let field_name = &items[0];
+                let value = &items[1];
+                if field_name.core.as_string() == *name {
+                    return value.clone();
+                }
+            }
+            _ => panic!("json_object_item in json is not a record!"),
+        }
+    }
+    panic!("No field named {} found", name);
+}
+
+pub fn as_json_field(item: &Value) -> (String, Value) {
+    match &*item.core {
+        ValueCore::Record(_, items) => {
+            let field_name = &items[0];
+            let value = &items[1];
+            return (field_name.core.as_string(), value.clone());
+        }
+        _ => panic!("as_json_Field in json is not a record!"),
+    }
+}
