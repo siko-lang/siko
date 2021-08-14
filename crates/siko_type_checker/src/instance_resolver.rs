@@ -18,10 +18,13 @@ pub fn check_dependencies_for_single_instance(
     for dep in &class.constraints {
         let dep_class = program.classes.get(dep);
         let mut unifiers = Vec::new();
-        if !program
-            .instance_resolver
-            .check_instance(*dep, &ty, location, &mut unifiers)
-        {
+        if !program.instance_resolver.check_instance(
+            *dep,
+            program.get_class_name(*dep),
+            &ty,
+            location,
+            &mut unifiers,
+        ) {
             let err = TypecheckError::MissingInstance(dep_class.name.clone(), location);
             errors.push(err);
         }

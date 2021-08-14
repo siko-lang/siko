@@ -11,7 +11,6 @@ use crate::std_ops;
 use crate::std_util;
 use crate::std_util_basic;
 use crate::string;
-use crate::util::create_json_list;
 use crate::util::create_json_object;
 use crate::util::create_json_object_item;
 use crate::util::create_json_string;
@@ -312,6 +311,15 @@ impl Interpreter {
             let i = b.as_ref().expect("Interpreter not set");
             let string_ty = i.program.get_string_type();
             string_ty
+        })
+    }
+
+    pub fn get_list_type(t: Type) -> Type {
+        INTERPRETER_CONTEXT.with(|i| {
+            let b = i.borrow();
+            let i = b.as_ref().expect("Interpreter not set");
+            let list_ty = i.program.get_list_type(t);
+            list_ty
         })
     }
 
@@ -1160,11 +1168,43 @@ impl Interpreter {
                     );
                     return create_json_object(json_items);
                 }
-                let s = Value::new(
-                    ValueCore::String("foo".to_string()),
-                    self.program.get_string_type(),
-                );
-                return create_json_string(s);
+                if let ValueCore::Variant(id, variant_index, items) = &*v.core {
+                    let adt = if let TypeDef::Adt(adt) = self.program.typedefs.get(id) {
+                        adt
+                    } else {
+                        panic!("Adt is not Adt!");
+                    };
+                    let mut json_items = Vec::new();
+                    for (index, item) in items.iter().enumerate() {
+                        let name = Value::new(
+                            ValueCore::String(format!("field_{}", index)),
+                            self.program.get_string_type(),
+                        );
+                        let value = Interpreter::call_op_tojson(item.clone());
+                        let object_item = create_json_object_item(name, value);
+                        json_items.push(object_item);
+                    }
+                    let core = ValueCore::List(json_items);
+                    let json_items = Value::new(
+                        core,
+                        self.program
+                            .get_list_type(self.program.get_json_object_item_type()),
+                    );
+                    let adt_json = create_json_object(json_items);
+                    let name = Value::new(
+                        ValueCore::String(adt.variants[*variant_index].name.clone()),
+                        self.program.get_string_type(),
+                    );
+                    let json_items = create_json_object_item(name, adt_json);
+                    let core = ValueCore::List(vec![json_items]);
+                    let json_items = Value::new(
+                        core,
+                        self.program
+                            .get_list_type(self.program.get_json_object_item_type()),
+                    );
+                    return create_json_object(json_items);
+                }
+                panic!("ToJson, not adt nor record!");
             }
         }
     }

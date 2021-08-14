@@ -1,16 +1,17 @@
 module Siko.Syntax.Expr where
 
+import Json.Serialize
 import Siko.Syntax.Ident
 import Siko.Syntax.Pattern as P
 import Siko.Syntax.Location
 
 data Case = { pattern :: P.Pattern,
               body :: Expr,
-            } deriving (Show)
+            } deriving (Show, ToJson)
 
 data RecordConstructionItem = { field_name :: Ident,
                                 body :: Expr,
-                              } deriving (Show)
+                              } deriving (Show, ToJson)
 
 data Op = Equal
         | NotEqual
@@ -25,13 +26,13 @@ data Op = Equal
         | Mul
         | Div
         | PipeForward
-        deriving (Show, PartialEq)
+        deriving (Show, PartialEq, ToJson)
 
-data Expr = Expr SimpleExpr Location
+data Expr = Expr SimpleExpr Location deriving (ToJson)
 
 data EffectHandler = { name :: Ident,
                        value :: Expr
-                     } deriving (Show)
+                     } deriving (Show, ToJson)
 
 instance Show Expr where
     show (Expr s _) = show s
@@ -65,4 +66,4 @@ data SimpleExpr = Lambda [P.Pattern] Expr
                 | Loop P.Pattern Expr Expr
                 | ArgRef Int
                 | With [EffectHandler] Expr
-                deriving (Show)
+                deriving (Show, ToJson)

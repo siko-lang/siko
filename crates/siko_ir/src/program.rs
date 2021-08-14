@@ -374,4 +374,9 @@ impl Program {
         let cmp_id = class.members.get("cmp").expect("cmp not found").clone();
         cmp_id
     }
+
+    pub fn get_class_name(&self, id: ClassId) -> String {
+        let class = self.classes.get(&id);
+        class.name.clone()
+    }
 }

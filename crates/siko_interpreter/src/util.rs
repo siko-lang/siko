@@ -101,9 +101,13 @@ pub fn create_json_object(value: Value) -> Value {
     js_value
 }
 
-pub fn create_json_list(value: Value) -> Value {
+pub fn create_json_list(values: Vec<Value>) -> Value {
     let cache = Interpreter::get_typedef_id_cache();
     let concrete_type = Type::Named("Json".to_string(), cache.json_id, vec![]);
+    let value = Value::new(
+        ValueCore::List(values),
+        Interpreter::get_list_type(concrete_type.clone()),
+    );
     let core = ValueCore::Variant(
         cache.json_id,
         cache.json_variants.get_index("JsonList"),

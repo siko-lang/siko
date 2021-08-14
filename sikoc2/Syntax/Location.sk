@@ -1,23 +1,24 @@
 module Siko.Syntax.Location where
 
+import Json.Serialize
 import Std.Util
 
-data FileId = FileId Int deriving (Show, PartialEq, Eq, PartialOrd, Ord)
+data FileId = FileId Int deriving (Show, PartialEq, Eq, PartialOrd, Ord, ToJson)
 
 data Position = {
               line :: Int,
               offset :: Int
-            } deriving (Show, PartialEq, Eq, PartialOrd, Ord)
+            } deriving (Show, PartialEq, Eq, PartialOrd, Ord, ToJson)
 
 data Span = {
                 start :: Position,
                 end :: Position
-            } deriving (Show, PartialEq)
+            } deriving (Show, PartialEq, ToJson)
 
 data Location = {
                   file_id :: FileId,
                   span :: Span,
-                } deriving (Show, PartialEq)
+                } deriving (Show, PartialEq, ToJson)
 
 mergeSpan :: Span -> Span -> Span
 mergeSpan (Span s1 e1) (Span s2 e2) = do

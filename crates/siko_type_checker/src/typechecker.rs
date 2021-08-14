@@ -58,6 +58,7 @@ impl Typechecker {
                         for item_type in &variant_type.item_types {
                             if program.instance_resolver.check_instance(
                                 derive_info.class_id,
+                                class.name.clone(),
                                 &item_type.0,
                                 item_type.1,
                                 &mut unifiers,
@@ -110,6 +111,7 @@ impl Typechecker {
                     for field_type in &record_type_info.field_types {
                         if program.instance_resolver.check_instance(
                             derive_info.class_id,
+                            class.name.clone(),
                             &field_type.0,
                             field_type.1,
                             &mut unifiers,

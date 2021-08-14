@@ -158,11 +158,12 @@ impl InstanceResolver {
     pub fn check_instance(
         &mut self,
         class_id: ClassId,
+        _name: String,
         ty: &Type,
         location_id: LocationId,
         unifiers: &mut Vec<(Unifier, LocationId)>,
     ) -> bool {
-        //println!("Checking instance {} {}", class_id, ty);
+        //println!("Checking instance {} {}", name, ty);
         if let Type::Var(_, constraints) = ty {
             if constraints.contains(&class_id) {
                 return true;
@@ -185,16 +186,19 @@ impl InstanceResolver {
                 } else {
                     if !self.check_instance(
                         constraint.class_id,
+                        "<Other>".to_string(),
                         &constraint.ty,
                         location_id,
                         unifiers,
                     ) {
+                        println!("Failed2");
                         return false;
                     }
                 }
             }
             return true;
         } else {
+            println!("Failed!");
             return false;
         }
     }

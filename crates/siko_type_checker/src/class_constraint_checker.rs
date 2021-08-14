@@ -51,6 +51,7 @@ impl<'a> ClassConstraintChecker<'a> {
             let mut unifiers = Vec::new();
             if !self.program.instance_resolver.check_instance(
                 constraint.class_id,
+                self.program.get_class_name(constraint.class_id),
                 &constraint.ty,
                 location,
                 &mut unifiers,

@@ -1,19 +1,20 @@
 module Siko.Syntax.Pattern where
 
+import Json.Serialize
 import Siko.Syntax.Location
 import Siko.Syntax.Ident
 import Siko.Syntax.Expr as E
 import Siko.Syntax.TypeSignature as T
 
 data RangeKind = Exclusive
-               | Inclusive deriving (Show)
+               | Inclusive deriving (Show, ToJson)
 
 data RecordFieldPattern = {
                             name :: Ident,
                             pattern :: Pattern,
-                          } deriving (Show)
+                          } deriving (Show, ToJson)
 
-data Pattern = Pattern SimplePattern Location
+data Pattern = Pattern SimplePattern Location deriving (ToJson)
 
 instance Show Pattern where
   show (Pattern p _) = show p
@@ -30,4 +31,4 @@ data SimplePattern = Binding Ident
                    | Typed Pattern T.TypeSignature
                    | Record Ident [RecordFieldPattern]
                    | Or [Pattern]
-                   deriving (Show)
+                   deriving (Show, ToJson)
