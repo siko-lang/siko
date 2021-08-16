@@ -118,6 +118,7 @@ fn process_args(args: Vec<String>) -> (Config, Vec<CompilerInput>, bool) {
 }
 
 fn main() {
+    println!("Start");
     let args: Vec<_> = env::args().skip(1).collect();
 
     let (config, inputs, success) = process_args(args);

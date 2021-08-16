@@ -1,8 +1,10 @@
 use crate::environment::Environment;
 use crate::extern_function::ExternFunction;
+use crate::interpreter::ExprResult;
 use crate::interpreter::Interpreter;
 use crate::util::create_none;
 use crate::util::create_some;
+use crate::util::get_ordering_value;
 use crate::value::Value;
 use crate::value::ValueCore;
 use siko_constants::MAP_MODULE_NAME;
@@ -168,6 +170,57 @@ impl ExternFunction for GetSize {
     }
 }
 
+pub struct Update {}
+
+impl ExternFunction for Update {
+    fn call2(
+        &self,
+        environment: &Environment,
+        expr_id: Option<ExprId>,
+        _: &NamedFunctionKind,
+        ty: Type,
+    ) -> ExprResult {
+        let mut map = environment.get_arg_by_index(0).core.as_map();
+        let f = environment.get_arg_by_index(1);
+        for (m_k, m_v) in &mut map {
+            let tuple_core = ValueCore::Tuple(vec![m_k.clone(), m_v.clone()]);
+            let tuple = Value::new(tuple_core, Type::Tuple(vec![]));
+            let r = Interpreter::call_func(f.clone(), vec![tuple], expr_id);
+            match r {
+                ExprResult::Ok(v) => {
+                    *m_v = v;
+                }
+                e => { return e; }
+            }
+        }
+        return ExprResult::Ok(Value::new(ValueCore::Map(map), ty));
+    }
+}
+
+
+pub struct UpdateValues {}
+
+impl ExternFunction for UpdateValues {
+    fn call2(
+        &self,
+        environment: &Environment,
+        _: Option<ExprId>,
+        _: &NamedFunctionKind,
+        ty: Type,
+    ) -> ExprResult {
+        let mut map = environment.get_arg_by_index(0).core.as_map();
+        let old_v = environment.get_arg_by_index(1);
+        let new_v = environment.get_arg_by_index(2);
+        for (_m_k, m_v) in &mut map {
+            let r = Interpreter::call_op_partial_eq(old_v.clone(), m_v.clone());
+            if r.core.as_bool() {
+                *m_v = new_v.clone();
+            }
+        }
+        return ExprResult::Ok(Value::new(ValueCore::Map(map), ty));
+    }
+}
+
 pub struct MapPartialEq {}
 
 impl ExternFunction for MapPartialEq {
@@ -199,6 +252,46 @@ impl ExternFunction for MapPartialEq {
     }
 }
 
+pub struct MapOrd {}
+
+impl ExternFunction for MapOrd {
+    fn call(
+        &self,
+        environment: &Environment,
+        _: Option<ExprId>,
+        _: &NamedFunctionKind,
+        _: Type,
+    ) -> Value {
+        let l = environment.get_arg_by_index(0);
+        let l = l.core.as_map();
+        let r = environment.get_arg_by_index(1);
+        let r = r.core.as_map();
+        if l.len() != r.len() {
+            return get_ordering_value(l.len().cmp(&r.len()));
+        }
+        for (a, b) in l.iter().zip(r.iter()) {
+            let r = Interpreter::call_op_cmp(a.0.clone(), b.0.clone());
+            match r.core.as_ordering(0, 1, 2) {
+                std::cmp::Ordering::Equal => {
+                    let r = Interpreter::call_op_cmp(a.1.clone(), b.1.clone());
+                    match r.core.as_ordering(0, 1, 2) {
+                        std::cmp::Ordering::Equal => {
+                            continue;
+                        }
+                        _ => {
+                            return r;
+                        }
+                    }
+                }
+                _ => {
+                    return r;
+                }
+            }
+        }
+        return get_ordering_value(std::cmp::Ordering::Equal);
+    }
+}
+
 pub fn register_extern_functions(interpreter: &mut Interpreter) {
     interpreter.add_extern_function(MAP_MODULE_NAME, "empty", Box::new(Empty {}));
     interpreter.add_extern_function(MAP_MODULE_NAME, "insert", Box::new(Insert {}));
@@ -207,6 +300,10 @@ pub fn register_extern_functions(interpreter: &mut Interpreter) {
     interpreter.add_extern_function(MAP_MODULE_NAME, "show", Box::new(Show {}));
     interpreter.add_extern_function(MAP_MODULE_NAME, "iter", Box::new(Iter {}));
     interpreter.add_extern_function(MAP_MODULE_NAME, "toMap", Box::new(ToMap {}));
+    interpreter.add_extern_function(MAP_MODULE_NAME, "toMap2", Box::new(ToMap {}));
     interpreter.add_extern_function(MAP_MODULE_NAME, "getSize", Box::new(GetSize {}));
     interpreter.add_extern_function(MAP_MODULE_NAME, "opEq", Box::new(MapPartialEq {}));
+    interpreter.add_extern_function(MAP_MODULE_NAME, "cmp", Box::new(MapOrd {}));
+    interpreter.add_extern_function(MAP_MODULE_NAME, "update", Box::new(Update {}));
+    interpreter.add_extern_function(MAP_MODULE_NAME, "updateValues", Box::new(UpdateValues {}));
 }

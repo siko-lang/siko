@@ -87,7 +87,7 @@ impl ExternFunction for GetArgs {
                 }
             }
         }
-        return Value::new(ValueCore::List(args), ty);
+        return Value::new(ValueCore::List(args.into_iter().collect()), ty);
     }
 }
 

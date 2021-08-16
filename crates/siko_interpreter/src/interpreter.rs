@@ -23,6 +23,8 @@ use crate::value::Callable;
 use crate::value::CallableKind;
 use crate::value::Value;
 use crate::value::ValueCore;
+use im_rc;
+use im_rc::Vector;
 use siko_constants::OPTION_MODULE_NAME;
 use siko_constants::OPTION_TYPE_NAME;
 use siko_constants::ORDERING_MODULE_NAME;
@@ -543,6 +545,16 @@ impl Interpreter {
         let function_type = call_unifier.apply(&class_member_type);
         let class_arg = call_unifier.apply(&class_arg_ty.remove_fixed_types());
         let class = self.program.classes.get(&member.class_id);
+        if !class_arg.is_concrete_type() {
+            println!("class arg {}", class_arg);
+            for arg in &arg_values {
+                println!("arg {}", arg.ty);
+            }
+            println!("res {}", expr_ty);
+        }
+        if !class_arg.is_concrete_type() {
+            println!("Member {}, fn type {}", member.name, function_type);
+        }
         assert!(class_arg.is_concrete_type());
         match self
             .program
@@ -627,9 +639,10 @@ impl Interpreter {
         unifier: &Unifier,
     ) -> ExprResult {
         let expr = &self.program.exprs.get(&expr_id).item;
-        //println!("Eval {} {}", expr_id, expr);
-        let expr_ty = self.program.get_expr_type(&expr_id).clone();
-        let expr_ty = unifier.apply(&expr_ty);
+        let expr_ty_orig = self.program.get_expr_type(&expr_id).clone();
+        let expr_ty = unifier.apply(&expr_ty_orig);
+        //println!("Eval {} {} {} {}", expr_id, expr, expr_ty, expr_ty_orig);
+        //assert!(expr_ty.is_concrete_type());
         match expr {
             Expr::IntegerLiteral(v) => ExprResult::Ok(Value::new(ValueCore::Int(*v), expr_ty)),
             Expr::StringLiteral(v) => {
@@ -660,10 +673,8 @@ impl Interpreter {
                     assert!(arg.ty.is_concrete_type());
                     //println!("ARG {}", arg.ty.get_resolved_type_string(&self.program));
                 }
-                /*
-                let f = self.program.functions.get(function_id);
-                println!("Calling {}", f.info);
-                */
+                //let f = self.program.functions.get(function_id);
+                //println!("Calling {}", f.info);
                 let call_unifier = self.get_call_unifier(&arg_values, &func_ty, &expr_ty);
                 let function_type = call_unifier.apply(&func_ty);
                 /*
@@ -761,11 +772,11 @@ impl Interpreter {
                 return ExprResult::Ok(Value::new(ValueCore::Tuple(values), expr_ty));
             }
             Expr::List(exprs) => {
-                let mut values = Vec::new();
+                let mut values = Vector::new();
                 for e in exprs {
                     match self.eval_expr(*e, environment, unifier) {
                         ExprResult::Ok(v) => {
-                            values.push(v);
+                            values.push_back(v);
                         }
                         r => {
                             return r;
@@ -837,6 +848,7 @@ impl Interpreter {
                         return r;
                     }
                 };
+                assert!(case_value.ty.is_concrete_type());
                 for case in cases {
                     let mut case_env = Environment::block_child(environment);
                     if self.match_pattern(&case.pattern_id, &case_value, &mut case_env, unifier) {
@@ -969,12 +981,17 @@ impl Interpreter {
         kind: &NamedFunctionKind,
         ty: Type,
     ) -> ExprResult {
-        if (module, name) == ("Std.Util.Basic", "abort") {
+        let module = match module {
+            "List2" => "List".to_string(),
+            "Map2" => "Map".to_string(),
+            _ => module.to_string(),
+        };
+        if (module.as_ref(), name) == ("Std.Util.Basic", "abort") {
             return ExprResult::Abort;
         }
         if let Some(f) = self
             .extern_functions
-            .get(&(module.to_string(), name.to_string()))
+            .get(&(module.clone(), name.to_string()))
         {
             return f.call2(environment, current_expr, kind, ty);
         } else {
@@ -1173,7 +1190,7 @@ impl Interpreter {
                         let object_item = create_json_object_item(name, value);
                         json_items.push(object_item);
                     }
-                    let core = ValueCore::List(json_items);
+                    let core = ValueCore::List(json_items.into_iter().collect());
                     let json_items = Value::new(
                         core,
                         self.program
@@ -1197,7 +1214,7 @@ impl Interpreter {
                         let object_item = create_json_object_item(name, value);
                         json_items.push(object_item);
                     }
-                    let core = ValueCore::List(json_items);
+                    let core = ValueCore::List(json_items.into_iter().collect());
                     let json_items = Value::new(
                         core,
                         self.program
@@ -1209,7 +1226,7 @@ impl Interpreter {
                         self.program.get_string_type(),
                     );
                     let json_items = create_json_object_item(name, adt_json);
-                    let core = ValueCore::List(vec![json_items]);
+                    let core = ValueCore::List(im_rc::vector![json_items]);
                     let json_items = Value::new(
                         core,
                         self.program
@@ -1296,7 +1313,14 @@ impl Interpreter {
         match &function.info {
             FunctionInfo::NamedFunction(info) => match info.body {
                 Some(body) => {
-                    return self.eval_expr(body, environment, unifier);
+                    //println!("Executing {} {}", info.name, expr_ty);
+                    let body_expr_ty_orig = self.program.get_expr_type(&body).remove_fixed_types();
+                    //println!("body_expr_ty_orig {}", body_expr_ty_orig);
+                    let mut unifier = unifier.clone();
+                    unifier
+                        .unify(&expr_ty, &body_expr_ty_orig)
+                        .expect("Unification for function body failed");
+                    return self.eval_expr(body, environment, &unifier);
                 }
                 None => {
                     return self.call_extern(

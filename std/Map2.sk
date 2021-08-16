@@ -28,7 +28,9 @@ getKeys k v :: Map2 k v -> List2 k
 getKeys m = m |> Map2.iter |> Iterator.fold (\keys, (k, _) -> List2.push keys k) List2.empty
 
 alter k v :: (Ord k) => (Option v -> Option v) -> k -> Map2 k v -> (Map2 k v, Option v)
-alter f k m = extern
+alter f k m = case f (Map2.get m k) of
+        Some v -> Map2.insert m k v
+        None -> Map2.remove m k
 
 alterS si so k v :: (Ord k) => (si -> Option v -> (so, Option v)) -> si -> k -> Map2 k v -> (so, Map2 k v, Option v)
 alterS f s k m = do
@@ -76,4 +78,6 @@ filter k v :: (Ord k) => Map2 k v -> ((k, v) -> Bool) -> Map2 k v
 filter map f = map |> Map2.iter |> Iterator.filter f |> toMap2
 
 filterMap k v ::(Ord k) => Map2 k v -> ((k, v) -> Option (k, v)) -> Map2 k v
-filterMap m f = extern
+filterMap m f = m |> Map2.iter |> Iterator.map f |> Iterator.filter (\m -> isSome m) |> Iterator.map (\m -> case m of
+    Some v -> v
+    None -> panic "None found in filterMap") |> toMap2

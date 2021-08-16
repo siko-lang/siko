@@ -51,10 +51,13 @@ impl<'a> Environment<'a> {
         if let CallableKind::FunctionId(id) = self.callable_kind {
             assert_eq!(id, arg_ref.id);
             assert!(!arg_ref.captured);
+            assert!(self.args[arg_ref.index].ty.is_concrete_type());
             return self.args[arg_ref.index].clone();
         }
         if let Some(parent) = self.parent {
-            return parent.get_arg(arg_ref);
+            let v = parent.get_arg(arg_ref);
+            assert!(v.ty.is_concrete_type());
+            return v;
         } else {
             unreachable!()
         }

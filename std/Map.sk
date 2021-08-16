@@ -32,7 +32,10 @@ getKeys k v :: Map k v -> [k]
 getKeys m = m |> Map.iter |> Iterator.fold (\keys, (k, _) -> keys + [k]) []
 
 alter k v :: (Ord k) => (Option v -> Option v) -> k -> Map k v -> (Map k v, Option v)
-alter f k m = extern
+alter f k m =
+    case f (get m k) of
+        Some v -> insert m k v
+        None -> remove m k
 
 alterS si so k v :: (Ord k) => (si -> Option v -> (so, Option v)) -> si -> k -> Map k v -> (so, Map k v, Option v)
 alterS f s k m = do

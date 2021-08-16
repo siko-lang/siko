@@ -105,7 +105,7 @@ pub fn create_json_list(values: Vec<Value>) -> Value {
     let cache = Interpreter::get_typedef_id_cache();
     let concrete_type = Type::Named("Json".to_string(), cache.json_id, vec![]);
     let value = Value::new(
-        ValueCore::List(values),
+        ValueCore::List(values.into_iter().collect()),
         Interpreter::get_list_type(concrete_type.clone()),
     );
     let core = ValueCore::Variant(
@@ -128,7 +128,7 @@ pub fn create_json_object_item(name: Value, value: Value) -> Value {
 pub fn as_json_object_items(v: &Value) -> Vec<Value> {
     match &*v.core {
         ValueCore::Variant(_, _, items) => {
-            return items[0].core.as_list().clone();
+            return items[0].core.as_list().iter().cloned().collect();
         }
         _ => panic!("json_object_item in json is not a variant!"),
     }

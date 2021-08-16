@@ -1,5 +1,6 @@
 use crate::interpreter::ExprResult;
 use crate::interpreter::Interpreter;
+use im_rc::Vector;
 use siko_ir::data::TypeDefId;
 use siko_ir::function::FunctionId;
 use siko_ir::program::Program;
@@ -90,7 +91,7 @@ pub enum ValueCore {
     Callable(Callable),
     Variant(TypeDefId, usize, Vec<Value>),
     Record(TypeDefId, Vec<Value>),
-    List(Vec<Value>),
+    List(Vector<Value>),
     Map(BTreeMap<Value, Value>),
     Iterator(Box<Value>),
     IteratorMap(Box<Value>, Box<Value>),
@@ -170,7 +171,7 @@ impl ValueCore {
         }
     }
 
-    pub fn as_list(&self) -> &Vec<Value> {
+    pub fn as_list(&self) -> &Vector<Value> {
         match self {
             ValueCore::List(l) => l,
             _ => unreachable!(),

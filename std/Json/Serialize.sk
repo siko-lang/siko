@@ -7,3 +7,25 @@ class ToJson a where
 
 class FromJson a where
     fromJson a :: Json -> a
+
+getField :: Json -> String -> Json
+getField json name = case json of
+    JsonObject items -> do
+        loop index <- 0 do
+            if index >= getLength items
+            then panic "Json field named {} not found" % name
+            else do
+                item <- atIndex items index
+                if item.name == name
+                then break item.value
+                else index + 1
+    _ -> panic "Cannot find json field named {} because this is not a json object" % name
+
+unpackVariant :: Json -> (String, [Json])
+unpackVariant json = case json of
+    JsonObject items -> do
+        item <- atIndex items 0
+        case item.value of
+            JsonList items -> (item.name, items)
+            _ -> panic "Variant items in json is not a json list"
+    _ -> panic "Variant in json is not a json object"

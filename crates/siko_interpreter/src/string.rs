@@ -106,7 +106,7 @@ impl ExternFunction for StringChars {
             .chars()
             .map(|c| Value::new(ValueCore::Char(c), Interpreter::get_char_type()))
             .collect();
-        return Value::new(ValueCore::List(chars), ty);
+        return Value::new(ValueCore::List(chars.into_iter().collect()), ty);
     }
 }
 
@@ -131,7 +131,7 @@ impl ExternFunction for StringSplit {
                 )
             })
             .collect();
-        return Value::new(ValueCore::List(output), ty);
+        return Value::new(ValueCore::List(output.into_iter().collect()), ty);
     }
 }
 

@@ -110,13 +110,38 @@ split a :: List2 a -> Int -> (List2 a, List2 a)
 split l n = extern
 
 zipS s a b :: s -> List2 a -> List2 b -> (s -> a -> b -> s) -> s
-zipS s l1 l2 f = extern
+zipS s l1 l2 f = do
+    if getLength l1 != getLength l2
+        then panic "zipS: length mismatch {} != {}" % (getLength l1, getLength l2)
+        else ()
+    loop (s, index) <- (s, 0) do
+        if index >= getLength l1
+            then break s
+            else do
+                item1 <- atIndex l1 index
+                item2 <- atIndex l2 index
+                s <- f s item1 item2
+                (s, index + 1)
 
 zipSE s a b :: s -> List2 a -> List2 b -> (s -> Int -> a -> b -> s) -> s
-zipSE s l1 l2 f = extern
+zipSE s l1 l2 f = do
+    if getLength l1 != getLength l2
+        then panic "zipSE: length mismatch {} != {}" % (getLength l1, getLength l2)
+        else ()
+    loop (s, index) <- (s, 0) do
+        if index >= getLength l1
+            then break s
+            else do
+                item1 <- atIndex l1 index
+                item2 <- atIndex l2 index
+                s <- f s index item1 item2
+                (s, index + 1)
 
 mapS s a b :: s -> List2 a -> (s -> a -> (s, b)) -> (s, List2 b)
-mapS s l f = extern
+mapS s l f = do
+    l |> List2.iter |> Iterator.fold (\(s, items), i -> do
+        (s, i) <- f s i
+        (s, push items i)) (s, List2.empty)
 
 mapSE s a b :: s -> List2 a -> (s -> Int -> a -> (s, b)) -> (s, List2 b)
 mapSE s l f = do
@@ -143,7 +168,7 @@ fold s a :: s -> List2 a -> (s -> a -> s) -> s
 fold init list f = list |> List2.iter |> Iterator.fold f init
 
 map a b :: List2 a -> (a -> b) -> List2 b
-map input f = extern
+map input f = input |> List2.iter |> Iterator.map f |> List2.toList
 
 filter a :: List2 a -> (a -> Bool) -> List2 a
 filter list f = extern
@@ -161,10 +186,21 @@ filterMap list f = List2.fold (withCapacity (getLength list)) list (\all, item -
         None -> all)
 
 repeat a :: a -> Int -> List2 a
-repeat item count = extern
+repeat item count = do
+    (items, _) <- loop (items, c) <- (List2.empty, 0) do
+                if c < count
+                then (push items item, c + 1)
+                else break (items, 0)
+    items
 
 repeatS s a :: s -> (s -> (s, a)) -> Int -> (s, List2 a)
-repeatS state fn count = extern
+repeatS state fn count = do
+    loop (state, items, c) <- (state, List2.empty, 0) do
+        if c < count
+            then do
+                (state, item) <- fn state
+                (state, push items item, c + 1)
+            else return (state, items)
 
 flatten a :: List2 (List2 a) -> List2 a
 flatten lists = List2.fold List2.empty lists (\s, l -> s + l)

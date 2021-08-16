@@ -92,6 +92,18 @@ impl ExtendedType {
     }
 }
 
+pub enum Step {
+    External(i64),
+    Variant(i64),
+    Field(i64),
+    FunctionArg(i64),
+    FunctionResult,
+}
+
+pub struct Position {
+    steps: Vec<Step>,
+}
+
 pub struct Function {
     pub name: String,
     pub args: Vec<ExtendedType>,

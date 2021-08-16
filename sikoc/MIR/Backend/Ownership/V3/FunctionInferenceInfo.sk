@@ -1,0 +1,118 @@
+module Siko.MIR.Backend.Ownership.V3.InferenceInfo where
+
+import Siko.MIR.Expr as E
+import Siko.MIR.Backend.Traversal
+import Map
+import Siko.Util.Counter
+
+data TypeVariableAllocator = { counter :: Counter TypeVariable }
+
+createTypeVariableAllocator :: TypeVariableAllocator
+createTypeVariableAllocator = TypeVariableAllocator (Counter (\v -> TypeVariable v) 0)
+
+getNextTypeVariable :: TypeVariableAllocator -> (TypeVariableAllocator, TypeVariable)
+getNextTypeVariable allocator = do
+    (counter, v) <- getNext allocator.counter
+    (allocator { counter = counter }, v)
+
+getNextTypeVariableInfo :: TypeVariableAllocator -> (TypeVariableAllocator, TypeVariableInfo)
+getNextTypeVariableInfo allocator = do
+    (allocator, var1) <- getNextTypeVariable allocator
+    (allocator, var2) <- getNextTypeVariable allocator
+    (allocator, TypeVariableInfo var1 var2)
+
+data TypeVariable = TypeVariable Int deriving (PartialEq, Eq, PartialOrd, Ord)
+
+instance Show TypeVariable where
+    show (TypeVariable i) = "#{}" % i
+
+data TypeVariableInfo = { ownership_var :: TypeVariable,
+                          arg_group_var :: TypeVariable,
+                        } deriving (PartialEq, Eq, PartialOrd, Ord)
+
+instance Show TypeVariableInfo where
+    show (TypeVariableInfo o a) = "({}, {})" % (o, a)
+
+data MemberInfo = { name :: String,
+                    root :: TypeVariable,
+                    info :: TypeVariableInfo,
+                  } deriving (PartialEq, Eq, PartialOrd, Ord)
+
+data VariantInfo = { index :: Int,
+                     root :: TypeVariable,
+                     info :: TypeVariableInfo,
+                   } deriving (PartialEq, Eq, PartialOrd, Ord)
+
+data Converter = { from :: TypeVariable,
+                   to :: TypeVariable,
+                 }
+
+data InferenceInfo = { expr_type_variables :: Map E.ExprId TypeVariableInfo,
+                       var_type_variables :: Map E.Var TypeVariableInfo,
+                       args :: [TypeVariableInfo],
+                       result :: TypeVariableInfo,
+                       members :: [MemberInfo],
+                       variants :: [VariantInfo],
+                       converters :: [Converter] }
+
+data FunctionInfo = { args :: [TypeVariableInfo],
+                      result :: TypeVariableInfo,
+                      members :: [MemberInfo],
+                      variants :: [VariantInfo],
+                      converters :: [Converter],
+                    }
+
+createInferenceInfo :: Int -> TypeVariableAllocator -> (TypeVariableAllocator, InferenceInfo)
+createInferenceInfo arg_count allocator = do
+    expr_type_variables <- Map.empty
+    var_type_variables <- Map.empty
+    args <- []
+    (allocator, result) <- getNextTypeVariableInfo allocator
+    inference_info <- InferenceInfo expr_type_variables var_type_variables args result [] [] []
+    loop (allocator, inference_info, index) <- (allocator, inference_info, 0) do
+        if index >= arg_count
+        then break (allocator, inference_info)
+        else do
+            (allocator, inference_info) <- addVar allocator inference_info (E.Arg index)
+            (allocator, inference_info, index + 1)
+
+addVar :: TypeVariableAllocator -> InferenceInfo -> E.Var -> (TypeVariableAllocator, InferenceInfo)
+addVar allocator inference_info var = do
+    (allocator, info) <- getNextTypeVariableInfo allocator
+    (var_type_variables, _) <- Map.insert inference_info.var_type_variables var info
+    inference_info <- inference_info { var_type_variables = var_type_variables }
+    (allocator, inference_info)
+
+addExpr :: TypeVariableAllocator -> InferenceInfo -> E.ExprId -> (TypeVariableAllocator, InferenceInfo)
+addExpr allocator inference_info expr_id = do
+    (allocator, info) <- getNextTypeVariableInfo allocator
+    (expr_type_variables, _) <- Map.insert inference_info.expr_type_variables expr_id info
+    inference_info <- inference_info { expr_type_variables = expr_type_variables }
+    (allocator, inference_info)
+
+initializeExpr :: (TypeVariableAllocator, InferenceInfo) -> E.Expr -> ((TypeVariableAllocator, InferenceInfo), E.Expr)
+initializeExpr (allocator, inference_info) expr = do
+    E.Expr s_expr _ expr_id <- expr
+    (allocator, inference_info) <- addExpr allocator inference_info expr_id
+    case s_expr of
+        E.VarDecl var rhs -> do
+            (allocator, inference_info) <- addVar allocator inference_info var
+            ((allocator, inference_info), expr)
+        E.Loop var _ _ _ _ -> do
+            (allocator, inference_info) <- addVar allocator inference_info var
+            ((allocator, inference_info), expr)
+        E.CaseOf body cases -> do
+            (allocator, inference_info) <- List.fold (allocator, inference_info) cases (\(allocator, inference_info), c -> do
+                    case c.checker of
+                        E.VariantChecker index var variant_type -> do
+                            (allocator, inference_info) <- addVar allocator inference_info var
+                            (allocator, inference_info)
+                        _ -> (allocator, inference_info)
+                )
+            ((allocator, inference_info), expr)
+        _ -> ((allocator, inference_info), expr)
+
+initializeTypeVariables :: TypeVariableAllocator -> InferenceInfo -> E.Expr -> (TypeVariableAllocator, InferenceInfo)
+initializeTypeVariables allocator inference_info body = do
+    ((allocator, inference_info), body) <- traverse (allocator, inference_info) body (Some initializeExpr) None
+    (allocator, inference_info)

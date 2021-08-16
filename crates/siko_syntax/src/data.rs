@@ -1,3 +1,4 @@
+use crate::module::ModuleId;
 use crate::types::TypeSignatureId;
 use siko_location_info::location_id::LocationId;
 
@@ -16,6 +17,7 @@ pub enum Data {
 pub struct Adt {
     pub name: String,
     pub id: AdtId,
+    pub module_id: ModuleId,
     pub type_args: Vec<(String, LocationId)>,
     pub variants: Vec<VariantId>,
     pub location_id: LocationId,
@@ -56,6 +58,7 @@ impl From<usize> for VariantId {
 pub struct Record {
     pub name: String,
     pub id: RecordId,
+    pub module_id: ModuleId,
     pub type_args: Vec<(String, LocationId)>,
     pub fields: Vec<RecordFieldId>,
     pub location_id: LocationId,

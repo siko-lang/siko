@@ -95,6 +95,8 @@ impl Compiler {
             )?;
         }
 
+        program.create_tojson_instances();
+
         let mut resolver = Resolver::new();
         let mut ir_program = resolver.resolve(&program)?;
 

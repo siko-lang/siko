@@ -10,6 +10,7 @@ use crate::util::get_opt_ordering_value;
 use crate::util::get_ordering_value;
 use crate::value::Value;
 use crate::value::ValueCore;
+use im_rc::Vector;
 use siko_constants::LIST_MODULE_NAME;
 use siko_ir::expr::ExprId;
 use siko_ir::function::NamedFunctionKind;
@@ -69,11 +70,11 @@ impl ExternFunction for FromJson {
     ) -> Value {
         let v = environment.get_arg_by_index(0);
         let values = as_json_object_items(v);
-        let mut subs = Vec::new();
+        let mut subs = Vector::new();
         let list_type_arg = ty.get_type_args()[0].clone();
         for item in values {
             let s = Interpreter::call_op_fromjson(item.clone(), list_type_arg.clone());
-            subs.push(s);
+            subs.push_back(s);
         }
         let core = ValueCore::List(subs);
         return Value::new(core, ty);
@@ -107,7 +108,7 @@ impl ExternFunction for ToList {
     ) -> Value {
         let iter = environment.get_arg_by_index(0);
         let iter = iter.core.as_iterator();
-        let list: Vec<_> = iter.collect();
+        let list: Vector<_> = iter.collect();
         return Value::new(ValueCore::List(list), ty);
     }
 }
@@ -270,6 +271,33 @@ impl ExternFunction for Remove {
     }
 }
 
+pub struct Push {}
+
+impl ExternFunction for Push {
+    fn call2(
+        &self,
+        environment: &Environment,
+        _: Option<ExprId>,
+        _: &NamedFunctionKind,
+        ty: Type,
+    ) -> ExprResult {
+        let mut list = environment.get_arg_by_index(0).clone();
+        let item = environment.get_arg_by_index(1);
+        match std::rc::Rc::get_mut(&mut list.core) {
+            Some(ValueCore::List(inner)) => {
+                inner.push_back(item.clone());
+                return ExprResult::Ok(list.clone());
+            }
+            _ => {
+                let mut list = list.core.as_list().clone();
+                list.push_back(item.clone());
+                let list = Value::new(ValueCore::List(list), ty);
+                return ExprResult::Ok(list);
+            }
+        };
+    }
+}
+
 pub struct GetLength {}
 
 impl ExternFunction for GetLength {
@@ -314,7 +342,7 @@ impl ExternFunction for Head {
     ) -> Value {
         let list = environment.get_arg_by_index(0);
         let mut list_type_args = list.ty.get_type_args();
-        match list.core.as_list().first() {
+        match list.core.as_list().front() {
             Some(v) => {
                 return create_some(v.clone());
             }
@@ -338,7 +366,7 @@ impl ExternFunction for Tail {
         let list = environment.get_arg_by_index(0);
         let ty = list.ty.clone();
         let mut list_type_args = list.ty.get_type_args();
-        let mut list: Vec<_> = list.core.as_list().clone();
+        let mut list: Vector<_> = list.core.as_list().clone();
         if list.is_empty() {
             return create_none(list_type_args.remove(0));
         } else {
@@ -359,7 +387,7 @@ impl ExternFunction for Sort {
         ty: Type,
     ) -> Value {
         let list = environment.get_arg_by_index(0);
-        let mut list: Vec<_> = list.core.as_list().clone();
+        let mut list: Vector<_> = list.core.as_list().clone();
         list.sort();
         return Value::new(ValueCore::List(list), ty);
     }
@@ -376,9 +404,9 @@ impl ExternFunction for Dedup {
         ty: Type,
     ) -> Value {
         let list = environment.get_arg_by_index(0);
-        let mut list: Vec<_> = list.core.as_list().clone();
+        let mut list: Vec<_> = list.core.as_list().iter().cloned().collect();
         list.dedup();
-        return Value::new(ValueCore::List(list), ty);
+        return Value::new(ValueCore::List(list.into_iter().collect()), ty);
     }
 }
 
@@ -395,12 +423,26 @@ impl ExternFunction for Write {
         let list = environment.get_arg_by_index(0);
         let index = environment.get_arg_by_index(1).core.as_int();
         let item = environment.get_arg_by_index(2).clone();
-        let mut list: Vec<_> = list.core.as_list().clone();
+        let mut list: Vector<_> = list.core.as_list().clone();
         list[index as usize] = item;
         return Value::new(ValueCore::List(list), ty);
     }
 }
 
+
+pub struct WithCapacity {}
+
+impl ExternFunction for WithCapacity {
+    fn call(
+        &self,
+        _: &Environment,
+        _: Option<ExprId>,
+        _: &NamedFunctionKind,
+        ty: Type,
+    ) -> Value {
+        return Value::new(ValueCore::List(Vector::new()), ty);
+    }
+}
 pub struct Split {}
 
 impl ExternFunction for Split {
@@ -413,13 +455,40 @@ impl ExternFunction for Split {
     ) -> Value {
         let orig_list = environment.get_arg_by_index(0);
         let index = environment.get_arg_by_index(1).core.as_int();
-        let mut list: Vec<_> = orig_list.core.as_list().clone();
+        let mut list: Vector<_> = orig_list.core.as_list().clone();
         let rest = list.split_off(index as usize);
         let v1 = Value::new(ValueCore::List(list), orig_list.ty.clone());
         let v2 = Value::new(ValueCore::List(rest), orig_list.ty.clone());
         return Value::new(ValueCore::Tuple(vec![v1, v2]), ty);
     }
 }
+
+
+pub struct UpdateAll {}
+
+impl ExternFunction for UpdateAll {
+    fn call2(
+        &self,
+        environment: &Environment,
+        expr_id: Option<ExprId>,
+        _: &NamedFunctionKind,
+        ty: Type,
+    ) -> ExprResult {
+        let mut list = environment.get_arg_by_index(0).core.as_list().clone();
+        let f = environment.get_arg_by_index(1);
+        for l_v in list.iter_mut() {
+            let r = Interpreter::call_func(f.clone(), vec![l_v.clone()], expr_id);
+            match r {
+                ExprResult::Ok(v) => {
+                    *l_v = v;
+                }
+                e => { return e; }
+            }
+        }
+        return ExprResult::Ok(Value::new(ValueCore::List(list), ty));
+    }
+}
+
 
 pub fn register_extern_functions(interpreter: &mut Interpreter) {
     interpreter.add_extern_function(LIST_MODULE_NAME, "show", Box::new(Show {}));
@@ -441,4 +510,7 @@ pub fn register_extern_functions(interpreter: &mut Interpreter) {
     interpreter.add_extern_function(LIST_MODULE_NAME, "write", Box::new(Write {}));
     interpreter.add_extern_function(LIST_MODULE_NAME, "split", Box::new(Split {}));
     interpreter.add_extern_function(LIST_MODULE_NAME, "remove", Box::new(Remove {}));
+    interpreter.add_extern_function(LIST_MODULE_NAME, "push", Box::new(Push {}));
+    interpreter.add_extern_function(LIST_MODULE_NAME, "withCapacity", Box::new(WithCapacity {}));
+    interpreter.add_extern_function(LIST_MODULE_NAME, "updateAll", Box::new(UpdateAll {}));
 }

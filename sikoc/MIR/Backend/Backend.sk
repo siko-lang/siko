@@ -3,6 +3,7 @@ module Siko.MIR.Backend where
 import Siko.MIR.Backend.Ownership.Initialization as Initialization
 import Siko.MIR.Backend.Ownership.Inference as Inference
 import Siko.MIR.Backend.Ownership.V2.Inference as InferenceV2
+import Siko.MIR.Backend.Ownership.V3.Inference as InferenceV3
 import Siko.MIR.Backend.Ownership.AddConverter as AddConverter
 import Siko.MIR.Backend.Instantiation as Instantiation
 import Siko.MIR.Backend.SanityCheck as SanityCheck
@@ -121,10 +122,13 @@ processProgram config mir_program = do
     trace config "AddConverter.."
     mir_program <- AddConverter.processProgram config mir_program
     dumpProgram config mir_program (MIR "addconverter")
-    writeTextFile (getOutputFileName config (MIRJson "base")) (MP.dumpJson mir_program)
-    trace config "InferenceV2 start.."
-    v2_mir_program <- InferenceV2.processProgram config mir_program function_groups
-    trace config "InferenceV2 end.."
+    //writeTextFile (getOutputFileName config (MIRJson "base")) (MP.dumpJson mir_program)
+    //trace config "InferenceV2 start.."
+    //v2_mir_program <- InferenceV2.processProgram config mir_program function_groups
+    //trace config "InferenceV2 end.."
+    trace config "InferenceV3 start.."
+    v3_mir_program <- InferenceV3.processProgram config mir_program function_groups
+    trace config "InferenceV3 end.."
     trace config "Initialization.."
     (context, mir_program) <- Initialization.initializeOwnership config mir_program data_groups
     dumpProgram config mir_program (MIR "initialization")

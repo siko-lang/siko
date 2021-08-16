@@ -358,18 +358,6 @@ fn normalize(exprs: &mut Vec<Expr>) {
     }
 }
 
-pub enum Step {
-    External(i64),
-    Variant(i64),
-    Field(i64),
-    FunctionArg(i64),
-    FunctionResult,
-}
-
-pub struct Position {
-    steps: Vec<Step>,
-}
-
 fn parse_step(step: &String) -> Step {
     if step.starts_with("arg") {
         let (first, index) = step.split_at(3);

@@ -825,6 +825,7 @@ impl<'a> Parser<'a> {
         name: String,
         type_args: Vec<(String, LocationId)>,
         start_index: usize,
+        module_id: ModuleId,
     ) -> Result<Record, ParseError> {
         let mut fields = Vec::new();
         loop {
@@ -855,6 +856,7 @@ impl<'a> Parser<'a> {
         let record = Record {
             name: name,
             id: self.program.records.get_id(),
+            module_id: module_id,
             type_args: type_args,
             fields: fields,
             location_id: location_id,
@@ -927,7 +929,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_data(&mut self) -> Result<Data, ParseError> {
+    fn parse_data(&mut self, module_id: ModuleId) -> Result<Data, ParseError> {
         let start_index = self.get_index();
         self.expect(TokenKind::KeywordData)?;
         let name = self.type_identifier("type")?;
@@ -936,7 +938,7 @@ impl<'a> Parser<'a> {
             self.expect(TokenKind::Equal)?;
             if self.current(TokenKind::LCurly) {
                 self.expect(TokenKind::LCurly)?;
-                let record = self.parse_record(name, args, start_index)?;
+                let record = self.parse_record(name, args, start_index, module_id)?;
                 Ok(Data::Record(record))
             } else if self.current(TokenKind::KeywordExtern) {
                 self.expect(TokenKind::KeywordExtern)?;
@@ -945,6 +947,7 @@ impl<'a> Parser<'a> {
                 let record = Record {
                     name: name,
                     id: self.program.records.get_id(),
+                    module_id: module_id,
                     type_args: args,
                     fields: Vec::new(),
                     location_id: location_id,
@@ -969,6 +972,7 @@ impl<'a> Parser<'a> {
                 let adt = Adt {
                     name: name,
                     id: self.program.adts.get_id(),
+                    module_id: module_id,
                     type_args: args,
                     variants: variants,
                     location_id: location_id,
@@ -983,6 +987,7 @@ impl<'a> Parser<'a> {
             let adt = Adt {
                 name: name,
                 id: self.program.adts.get_id(),
+                module_id: module_id,
                 type_args: args,
                 variants: Vec::new(),
                 location_id: location_id,
@@ -1278,7 +1283,7 @@ impl<'a> Parser<'a> {
                         module.imports.push(import_id);
                     }
                     TokenKind::KeywordData => {
-                        let data = self.parse_data()?;
+                        let data = self.parse_data(id)?;
                         self.expect(TokenKind::EndOfItem)?;
                         match data {
                             Data::Record(record) => {
