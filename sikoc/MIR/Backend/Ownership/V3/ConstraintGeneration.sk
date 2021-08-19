@@ -1,0 +1,126 @@
+module Siko.MIR.Backend.Ownership.V3.ConstraintGeneration where
+
+import Siko.MIR.Expr as E
+import Siko.MIR.Type as T
+import Siko.MIR.Backend.Ownership.V3.InferenceInfo
+import Siko.MIR.Backend.Traversal
+
+data Context = { constraints :: [Constraint],
+                 inference_info :: InferenceInfo }
+
+addEqualInfo :: Context -> TypeVariableInfo -> TypeVariableInfo -> Context
+addEqualInfo context info1 info2 = do
+    constraints <- context.constraints
+    constraints <- push constraints (Equal info1.ownership_var info2.ownership_var)
+    constraints <- push constraints (Equal info1.arg_group_var info2.arg_group_var)
+    context { constraints = constraints }
+
+addEqualExprs :: Context -> E.ExprId -> E.ExprId -> Context
+addEqualExprs context expr_id1 expr_id2 = do
+    info1 <- getTypeVariableInfoByExprId context.inference_info expr_id1
+    info2 <- getTypeVariableInfoByExprId context.inference_info expr_id2
+    addEqualInfo context info1 info2
+
+addEqualExprVar :: Context -> E.ExprId -> E.Var -> Context
+addEqualExprVar context expr_id var = do
+    info1 <- getTypeVariableInfoByExprId context.inference_info expr_id
+    info2 <- getTypeVariableInfoByVar context.inference_info var
+    addEqualInfo context info1 info2
+
+getExprId :: E.Expr -> E.ExprId
+getExprId (E.Expr _ _ id) = id
+
+processExpr :: Context -> E.Expr -> (Context, E.Expr)
+processExpr context expr = do
+    E.Expr s_expr _ expr_id <- expr
+    case s_expr of
+        E.Do items -> do
+            last_item_id <- getExprId (last items)
+            context <- addEqualExprs context expr_id last_item_id
+            (context, expr)
+        E.Multi _ -> (context, expr)
+        E.StaticFunctionCall f_id args -> do
+            // TODO
+            (context, expr)
+        E.IntegerLiteral _ -> (context, expr)
+        E.StringLiteral _ -> (context, expr)
+        E.FloatLiteral _ -> (context, expr)
+        E.CharLiteral _ -> (context, expr)
+        E.VarDecl var rhs -> do
+            rhs_id <- getExprId rhs
+            context <- addEqualExprVar context rhs_id var
+            (context, expr)
+        E.VarRef var -> do
+            context <- addEqualExprVar context expr_id var
+            (context, expr)
+        E.If cond true_branch false_branch -> do
+            true_branch_id <- getExprId true_branch
+            false_branch_id <- getExprId false_branch
+            context <- addEqualExprs context true_branch_id expr_id
+            context <- addEqualExprs context true_branch_id false_branch_id
+            (context, expr)
+        E.List items -> do
+            // TODO
+            (context, expr)
+        E.FieldAccess name receiver -> do
+            inference_info <- context.inference_info
+            receiver_info <- getTypeVariableInfoByExprId inference_info (getExprId receiver)
+            info <- getTypeVariableInfoByExprId inference_info expr_id
+            inference_info <- addMemberInfo inference_info (MemberInfo name receiver_info.arg_group_var info)
+            (context { inference_info = inference_info }, expr)
+        E.Return arg -> do
+            inference_info <- context.inference_info
+            result_info <- inference_info.result
+            arg_info <- getTypeVariableInfoByExprId inference_info (getExprId arg)
+            context <- addEqualInfo context result_info arg_info
+            (context, expr)
+        E.Continue _ -> (context, expr)
+        E.Break _ -> (context, expr)
+        E.RecordUpdate _ _ -> (context, expr)
+        E.Loop var initializer body continues breaks -> do
+            context <- addEqualExprVar context (getExprId initializer) var
+            body_id <- getExprId body
+            context <- addEqualExprVar context body_id var
+            context <- List.fold context continues (\context, c -> addEqualExprs context c body_id)
+            context <- List.fold context breaks (\context, b -> addEqualExprs context b expr_id)
+            (context, expr)
+        E.CaseOf body cases -> do
+            body_id <- getExprId body
+            first_id <- getExprId (atIndex cases 0).body
+            context <- List.foldE (\context, index, c -> do
+                    case_body <- getExprId c.body
+                    context <- if index != 0
+                    then addEqualExprs context first_id case_body
+                    else context
+                    case c.checker of
+                        E.VariantChecker index var ty -> do
+                            case ty of
+                                T.Adt _ _ -> do
+                                    inference_info <- context.inference_info
+                                    body_info <- getTypeVariableInfoByExprId inference_info body_id
+                                    var_info <- getTypeVariableInfoByVar inference_info var
+                                    inference_info <- addVariantInfo inference_info (VariantInfo index body_info.arg_group_var var_info)
+                                    context { inference_info = inference_info }
+                                T.Record _ _ -> do
+                                    inference_info <- context.inference_info
+                                    body_info <- getTypeVariableInfoByExprId inference_info body_id
+                                    var_info <- getTypeVariableInfoByVar inference_info var
+                                    addEqualInfo context body_info var_info
+                                _ -> panic "VariantCheckers' type is nor adt nor record"
+                        _ -> context
+                ) context cases
+            (context, expr)
+        E.Clone _ -> (context, expr)
+        E.Deref _ -> (context, expr)
+        E.Ref _ -> (context, expr)
+        E.Move _ -> (context, expr)
+        E.Box _ -> (context, expr)
+        E.Converter _ _ -> do
+            // TODO
+            (context, expr)
+
+generateConstraints :: TypeVariableAllocator -> InferenceInfo -> E.Expr -> (TypeVariableAllocator, InferenceInfo)
+generateConstraints allocator inference_info body = do
+    context <- Context [] inference_info
+    (context, body) <- traverse context body (Some processExpr) None
+    (allocator, context.inference_info)

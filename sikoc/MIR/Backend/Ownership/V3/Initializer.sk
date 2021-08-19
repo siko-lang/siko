@@ -1,0 +1,32 @@
+module Siko.MIR.Backend.Ownership.V3.Initializer where
+
+import Siko.MIR.Expr as E
+import Siko.MIR.Backend.Ownership.V3.InferenceInfo
+import Siko.MIR.Backend.Traversal
+
+processExpr :: (TypeVariableAllocator, InferenceInfo) -> E.Expr -> ((TypeVariableAllocator, InferenceInfo), E.Expr)
+processExpr (allocator, inference_info) expr = do
+    E.Expr s_expr _ expr_id <- expr
+    (allocator, inference_info) <- addExpr allocator inference_info expr_id
+    case s_expr of
+        E.VarDecl var rhs -> do
+            (allocator, inference_info) <- addVar allocator inference_info var
+            ((allocator, inference_info), expr)
+        E.Loop var _ _ _ _ -> do
+            (allocator, inference_info) <- addVar allocator inference_info var
+            ((allocator, inference_info), expr)
+        E.CaseOf body cases -> do
+            (allocator, inference_info) <- List.fold (allocator, inference_info) cases (\(allocator, inference_info), c -> do
+                    case c.checker of
+                        E.VariantChecker index var variant_type -> do
+                            (allocator, inference_info) <- addVar allocator inference_info var
+                            (allocator, inference_info)
+                        _ -> (allocator, inference_info)
+                )
+            ((allocator, inference_info), expr)
+        _ -> ((allocator, inference_info), expr)
+
+initializeTypeVariables :: TypeVariableAllocator -> InferenceInfo -> E.Expr -> (TypeVariableAllocator, InferenceInfo)
+initializeTypeVariables allocator inference_info body = do
+    ((allocator, inference_info), body) <- traverse (allocator, inference_info) body (Some processExpr) None
+    (allocator, inference_info)

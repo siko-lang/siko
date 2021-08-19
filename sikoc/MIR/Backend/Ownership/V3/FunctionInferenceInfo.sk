@@ -1,7 +1,6 @@
 module Siko.MIR.Backend.Ownership.V3.InferenceInfo where
 
 import Siko.MIR.Expr as E
-import Siko.MIR.Backend.Traversal
 import Map
 import Siko.Util.Counter
 
@@ -90,29 +89,26 @@ addExpr allocator inference_info expr_id = do
     inference_info <- inference_info { expr_type_variables = expr_type_variables }
     (allocator, inference_info)
 
-initializeExpr :: (TypeVariableAllocator, InferenceInfo) -> E.Expr -> ((TypeVariableAllocator, InferenceInfo), E.Expr)
-initializeExpr (allocator, inference_info) expr = do
-    E.Expr s_expr _ expr_id <- expr
-    (allocator, inference_info) <- addExpr allocator inference_info expr_id
-    case s_expr of
-        E.VarDecl var rhs -> do
-            (allocator, inference_info) <- addVar allocator inference_info var
-            ((allocator, inference_info), expr)
-        E.Loop var _ _ _ _ -> do
-            (allocator, inference_info) <- addVar allocator inference_info var
-            ((allocator, inference_info), expr)
-        E.CaseOf body cases -> do
-            (allocator, inference_info) <- List.fold (allocator, inference_info) cases (\(allocator, inference_info), c -> do
-                    case c.checker of
-                        E.VariantChecker index var variant_type -> do
-                            (allocator, inference_info) <- addVar allocator inference_info var
-                            (allocator, inference_info)
-                        _ -> (allocator, inference_info)
-                )
-            ((allocator, inference_info), expr)
-        _ -> ((allocator, inference_info), expr)
+addMemberInfo :: InferenceInfo -> MemberInfo -> InferenceInfo
+addMemberInfo inference_info member_info = do
+    members <- push inference_info.members member_info
+    inference_info { members = members }
 
-initializeTypeVariables :: TypeVariableAllocator -> InferenceInfo -> E.Expr -> (TypeVariableAllocator, InferenceInfo)
-initializeTypeVariables allocator inference_info body = do
-    ((allocator, inference_info), body) <- traverse (allocator, inference_info) body (Some initializeExpr) None
-    (allocator, inference_info)
+addVariantInfo :: InferenceInfo -> VariantInfo -> InferenceInfo
+addVariantInfo inference_info variant_info = do
+    variants <- push inference_info.variants variant_info
+    inference_info { variants = variants }
+
+getTypeVariableInfoByExprId :: InferenceInfo -> E.ExprId -> TypeVariableInfo
+getTypeVariableInfoByExprId inference_info expr_id =
+    case Map.get inference_info.expr_type_variables expr_id of
+        Some i -> i
+        None -> panic "TypeVariableInfo not found for expr {}" % expr_id
+
+getTypeVariableInfoByVar :: InferenceInfo -> E.Var -> TypeVariableInfo
+getTypeVariableInfoByVar inference_info var =
+    case Map.get inference_info.var_type_variables var of
+        Some i -> i
+        None -> panic "TypeVariableInfo not found for var {}" % var
+
+data Constraint = Equal TypeVariable TypeVariable
