@@ -2,11 +2,17 @@ module Siko.MIR.Backend.Ownership.V3.ConstraintGeneration where
 
 import Siko.MIR.Expr as E
 import Siko.MIR.Type as T
+import Siko.MIR.Function as F
+import Siko.MIR.Data as D
+import Siko.MIR.Program as P
 import Siko.MIR.Backend.Ownership.V3.InferenceInfo
 import Siko.MIR.Backend.Traversal
 
 data Context = { constraints :: [Constraint],
-                 inference_info :: InferenceInfo }
+                 inference_info :: InferenceInfo,
+                 function_info_store :: FunctionInfoStore,
+                 program :: P.Program,
+                 allocator :: TypeVariableAllocator }
 
 addEqualInfo :: Context -> TypeVariableInfo -> TypeVariableInfo -> Context
 addEqualInfo context info1 info2 = do
@@ -30,6 +36,55 @@ addEqualExprVar context expr_id var = do
 getExprId :: E.Expr -> E.ExprId
 getExprId (E.Expr _ _ id) = id
 
+createDummyFunctionInfo :: Context -> Int -> (Context, FunctionInfo)
+createDummyFunctionInfo context arg_count = do
+    allocator <- context.allocator
+    (allocator, args) <- repeatS allocator getNextTypeVariableInfo arg_count
+    (allocator, result) <- getNextTypeVariableInfo allocator
+    function_info <- FunctionInfo args result [] [] []
+    (context { allocator = allocator }, function_info)
+
+createVariantctorFunctionInfo :: Context -> Int -> T.Type -> (Context, FunctionInfo)
+createVariantctorFunctionInfo context index type =
+    case type of
+        T.Adt id _ -> do
+            adt <- P.getAdt context.program id
+            variant <- atIndex adt.variants index
+            case variant.type of
+                T.Record id _ -> do
+                    record <- P.getRecord context.program id
+                    allocator <- context.allocator
+                    (allocator, adt_result) <- getNextTypeVariableInfo allocator
+                    (allocator, record_result) <- getNextTypeVariableInfo allocator
+                    (allocator, args, members) <- List.fold (allocator, [], []) record.fields (\(allocator, args, members), field -> do
+                            (allocator, arg_info) <- getNextTypeVariableInfo allocator
+                            member <- MemberInfo field.name record_result.arg_group_var arg_info
+                            members <- push members member
+                            args <- push args arg_info
+                            (allocator, args, members))
+                    variants <- [VariantInfo index adt_result.arg_group_var record_result]
+                    function_info <- FunctionInfo args adt_result members variants []
+                    (context { allocator = allocator }, function_info)
+                _ -> panic "createVariantctorFunctionInfo: not a record"
+        _ -> panic "createVariantctorFunctionInfo: not an adt"
+
+createRecordCtorFunctionInfo :: Context -> T.Type -> (Context, FunctionInfo)
+createRecordCtorFunctionInfo context type =
+    case type of
+        T.Record id _ -> do
+            record <- P.getRecord context.program id
+            allocator <- context.allocator
+            (allocator, result) <- getNextTypeVariableInfo allocator
+            (allocator, args, members) <- List.fold (allocator, [], []) record.fields (\(allocator, args, members), field -> do
+                    (allocator, arg_info) <- getNextTypeVariableInfo allocator
+                    member <- MemberInfo field.name result.arg_group_var arg_info
+                    members <- push members member
+                    args <- push args arg_info
+                    (allocator, args, members))
+            function_info <- FunctionInfo args result members [] []
+            (context { allocator = allocator }, function_info)
+        _ -> panic "createRecordCtorFunctionInfo: not a record"
+
 processExpr :: Context -> E.Expr -> (Context, E.Expr)
 processExpr context expr = do
     E.Expr s_expr _ expr_id <- expr
@@ -40,7 +95,15 @@ processExpr context expr = do
             (context, expr)
         E.Multi _ -> (context, expr)
         E.StaticFunctionCall f_id args -> do
-            // TODO
+            (context, function_info) <- case getFunctionInfo context.function_info_store f_id of
+                Some function_info -> (context, function_info)
+                None -> do
+                    function <- P.getFunction context.program f_id
+                    case function.kind of
+                        F.Normal _ -> createDummyFunctionInfo context (getLength args)
+                        F.VariantCtor index -> createVariantctorFunctionInfo context index function.type.result
+                        F.RecordCtor -> createRecordCtorFunctionInfo context function.type.result
+                        F.Extern type_mapping -> panic "No function info found for extern function"
             (context, expr)
         E.IntegerLiteral _ -> (context, expr)
         E.StringLiteral _ -> (context, expr)
@@ -60,7 +123,11 @@ processExpr context expr = do
             context <- addEqualExprs context true_branch_id false_branch_id
             (context, expr)
         E.List items -> do
-            // TODO
+            context <- case head items of
+                Some first -> do
+                    first <- getExprId first
+                    List.fold context items (\context, item -> addEqualExprs context first (getExprId item))
+                None -> context
             (context, expr)
         E.FieldAccess name receiver -> do
             inference_info <- context.inference_info
@@ -115,12 +182,18 @@ processExpr context expr = do
         E.Ref _ -> (context, expr)
         E.Move _ -> (context, expr)
         E.Box _ -> (context, expr)
-        E.Converter _ _ -> do
-            // TODO
-            (context, expr)
+        E.Converter arg _ -> do
+            inference_info <- context.inference_info
+            constraints <- context.constraints
+            info1 <- getTypeVariableInfoByExprId inference_info (getExprId arg)
+            info2 <- getTypeVariableInfoByExprId inference_info expr_id
+            converter <- Converter info1.ownership_var info2.ownership_var
+            inference_info <- addConverter inference_info converter
+            constraints <- push constraints (Equal info1.arg_group_var info2.arg_group_var)
+            (context { inference_info = inference_info, constraints = constraints }, expr)
 
-generateConstraints :: TypeVariableAllocator -> InferenceInfo -> E.Expr -> (TypeVariableAllocator, InferenceInfo)
-generateConstraints allocator inference_info body = do
-    context <- Context [] inference_info
+generateConstraints :: TypeVariableAllocator -> InferenceInfo -> FunctionInfoStore -> P.Program -> E.Expr -> (TypeVariableAllocator, InferenceInfo, FunctionInfoStore)
+generateConstraints allocator inference_info function_info_store program body = do
+    context <- Context [] inference_info function_info_store program allocator
     (context, body) <- traverse context body (Some processExpr) None
-    (allocator, context.inference_info)
+    (context.allocator, context.inference_info, context.function_info_store)

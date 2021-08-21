@@ -1,6 +1,7 @@
 module Siko.MIR.Backend.Ownership.V3.InferenceInfo where
 
 import Siko.MIR.Expr as E
+import Siko.MIR.Program as P
 import Map
 import Siko.Util.Counter
 
@@ -61,6 +62,14 @@ data FunctionInfo = { args :: [TypeVariableInfo],
                       converters :: [Converter],
                     }
 
+data FunctionInfoStore = { functions :: Map P.Identity FunctionInfo }
+
+createFunctionInfoStore :: FunctionInfoStore
+createFunctionInfoStore = FunctionInfoStore Map.empty
+
+getFunctionInfo :: FunctionInfoStore -> P.Identity -> Option FunctionInfo
+getFunctionInfo function_info_store id = Map.get function_info_store.functions id
+
 createInferenceInfo :: Int -> TypeVariableAllocator -> (TypeVariableAllocator, InferenceInfo)
 createInferenceInfo arg_count allocator = do
     expr_type_variables <- Map.empty
@@ -98,6 +107,11 @@ addVariantInfo :: InferenceInfo -> VariantInfo -> InferenceInfo
 addVariantInfo inference_info variant_info = do
     variants <- push inference_info.variants variant_info
     inference_info { variants = variants }
+
+addConverter :: InferenceInfo -> Converter -> InferenceInfo
+addConverter inference_info converter = do
+    converters <- push inference_info.converters converter
+    inference_info { converters = converters }
 
 getTypeVariableInfoByExprId :: InferenceInfo -> E.ExprId -> TypeVariableInfo
 getTypeVariableInfoByExprId inference_info expr_id =
