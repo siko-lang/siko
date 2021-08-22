@@ -196,4 +196,7 @@ generateConstraints :: TypeVariableAllocator -> InferenceInfo -> FunctionInfoSto
 generateConstraints allocator inference_info function_info_store program body = do
     context <- Context [] inference_info function_info_store program allocator
     (context, body) <- traverse context body (Some processExpr) None
+    body_info <- getTypeVariableInfoByExprId context.inference_info (getExprId body)
+    result_info <- context.inference_info.result
+    context <- addEqualInfo context body_info result_info
     (context.allocator, context.inference_info, context.function_info_store)

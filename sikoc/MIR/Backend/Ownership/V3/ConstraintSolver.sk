@@ -1,0 +1,60 @@
+module Siko.MIR.Backend.Ownership.V3.ConstraintSolver where
+
+import Siko.MIR.Backend.Ownership.V3.InferenceInfo
+import Map
+
+class Apply a where
+    apply a :: Constraint -> a -> a
+
+instance (Apply a) => Apply [a] where
+    //apply a :: Constraint -> [a] -> [a]
+    apply constraint items = List.map items (apply constraint)
+
+instance Apply Constraint where
+    apply c constraint2 =
+        case constraint2 of
+            Equal id1 id2 -> Equal (apply c id1) (apply c id2)
+
+instance (Apply v, Ord k) => Apply Map k v where
+    apply c items = Map.map items (\(k, v) -> (k, apply c v))
+
+instance Apply MemberInfo where
+    apply c info = MemberInfo info.name (apply c info.root) (apply c info.info)
+
+instance Apply VariantInfo where
+    apply c info = VariantInfo info.index (apply c info.root) (apply c info.info)
+
+instance Apply Converter where
+    apply c converter = Converter (apply c converter.from) (apply c converter.to)
+
+instance Apply InferenceInfo where
+    apply c inference_info = do
+        expr_type_variables <- apply c inference_info.expr_type_variables
+        var_type_variables <- apply c inference_info.var_type_variables
+        args <- apply c inference_info.args
+        result <- apply c inference_info.result
+        members <- apply c inference_info.members
+        variants <- apply c inference_info.variants
+        converters <- apply c inference_info.converters
+        InferenceInfo expr_type_variables var_type_variables args result members variants converters
+
+instance Apply TypeVariable where
+    apply constraint type_variable = case constraint of
+            Equal id1 id2 -> do
+                min_id <- min id1 id2
+                max_id <- max id1 id2
+                if type_variable == max_id then min_id else type_variable
+
+instance Apply TypeVariableInfo where
+    apply c info = TypeVariableInfo (apply c info.ownership_var) (apply c info.arg_group_var)
+
+solve :: [Constraint] -> InferenceInfo -> InferenceInfo
+solve constraints inference_info = do
+    loop (constraints, inference_info) <- (constraints, inference_info) do
+        if isEmpty constraints
+        then break inference_info
+        else do
+            (constraint, constraints) <- List.remove constraints 0
+            constraints <- apply constraint constraints
+            inference_info <- apply constraint inference_info
+            (constraints, inference_info)
