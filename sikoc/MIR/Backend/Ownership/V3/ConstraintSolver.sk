@@ -58,3 +58,46 @@ solve constraints inference_info = do
             constraints <- apply constraint constraints
             inference_info <- apply constraint inference_info
             (constraints, inference_info)
+
+data MergeKey a b = MergeKey a b deriving (PartialEq, Eq, PartialOrd, Ord)
+
+addEqual :: [Constraint] -> TypeVariableInfo -> TypeVariableInfo -> [Constraint]
+addEqual constraints info1 info2 = do
+    constraints <- push constraints (Equal info1.ownership_var info2.ownership_var)
+    constraints <- push constraints (Equal info1.arg_group_var info2.arg_group_var)
+    constraints
+
+merge :: InferenceInfo -> InferenceInfo
+merge inference_info =
+    loop inference_info <- inference_info do
+        inference_info :: InferenceInfo <- inference_info // FIXME
+        m_root_map <- List.fold Map.empty inference_info.members (\root_map, member -> do
+                (root_map, _) <- alter (add member.info) (MergeKey member.name member.root) root_map
+                root_map)
+        constraints <- Map.fold [] m_root_map (\constraints, (_, infos) -> do
+            if getLength infos > 1
+            then do
+                first <- atIndex infos 0
+                List.fold constraints infos (\constraints, info -> addEqual constraints info first)
+            else constraints)
+        v_root_map <- List.fold Map.empty inference_info.variants (\root_map, variant -> do
+                (root_map, _) <- alter (add variant.info) (MergeKey variant.index variant.root) root_map
+                root_map)
+        constraints <- Map.fold [] v_root_map (\constraints, (_, infos) -> do
+            if getLength infos > 1
+            then do
+                first <- atIndex infos 0
+                List.fold constraints infos (\constraints, info -> addEqual constraints info first)
+            else constraints)
+        if isEmpty constraints
+        then break inference_info
+        else do
+            inference_info <- solve constraints inference_info
+            members <- inference_info.members |> sort |> dedup
+            variants <- inference_info.variants |> sort |> dedup
+            inference_info <- inference_info { members = members, variants = variants }
+            inference_info
+    where
+        add info old = case old of
+            Some infos -> Some (push infos info)
+            None -> Some [info]
