@@ -10,6 +10,7 @@ import Siko.Util.DependencyProcessor
 import Siko.MIR.Backend.Ownership.V3.InferenceInfo
 import Siko.MIR.Backend.Ownership.V3.Initializer
 import Siko.MIR.Backend.Ownership.V3.ConstraintGeneration
+import Siko.MIR.Backend.Ownership.V3.OwnershipInference
 
 data Context = { config :: Config, program :: P.Program }
 
@@ -25,6 +26,7 @@ processFunction context function_id = do
             (allocator, inference_info) <- initializeTypeVariables allocator inference_info info.body
             store <- createFunctionInfoStore
             (allocator, inference_info) <- generateConstraints allocator inference_info store context.program info.body
+            inference_info <- inferOwnership inference_info context.program info.body
             trace context.config "Processing expr done"
             context
         _ -> context

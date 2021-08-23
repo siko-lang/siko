@@ -1,0 +1,68 @@
+module Siko.MIR.Backend.Ownership.V3.OwnershipInference(inferOwnership) where
+
+import Siko.MIR.Program as P
+import Siko.MIR.Backend.Ownership.V3.InferenceInfo
+import Siko.MIR.Backend.Traversal
+import Siko.MIR.Expr as E
+import Siko.MIR.Function as F
+
+import Map
+
+data OwnershipKind = Unknown
+                   | Owner
+                   | Borrower
+                   deriving (Show)
+
+data Context = { inference_info :: InferenceInfo,
+                 ownership_values :: Map TypeVariable OwnershipKind,
+                 program :: P.Program }
+
+addOwnershipValue :: Context -> TypeVariable -> OwnershipKind -> Context
+addOwnershipValue context var kind = do
+    (ownership_values, _) <- Map.insert context.ownership_values var kind
+    context { ownership_values = ownership_values }
+
+getOwnershipValue :: Context -> TypeVariable -> OwnershipKind
+getOwnershipValue context var =
+    case Map.get context.ownership_values var of
+        Some kind -> kind
+        None -> panic "Ownership value not found"
+
+initializeExpr :: Context -> E.Expr -> (Context, E.Expr)
+initializeExpr context expr = do
+    E.Expr s_expr _ expr_id <- expr
+    info <- getTypeVariableInfoByExprId context.inference_info expr_id
+    context <- addOwnershipValue context info.ownership_var Unknown
+    (context, expr)
+
+processExpr :: Context -> E.Expr -> (Context, E.Expr)
+processExpr context expr = do
+    E.Expr s_expr _ expr_id <- expr
+    info <- getTypeVariableInfoByExprId context.inference_info expr_id
+    context <- case s_expr of
+        E.StaticFunctionCall f_id args -> do
+                function <- P.getFunction context.program f_id
+                case function.kind of
+                    F.Normal _ -> context
+                    F.VariantCtor _ -> addOwnershipValue context info.ownership_var Owner
+                    F.RecordCtor -> addOwnershipValue context info.ownership_var Owner
+                    F.Extern type_mapping -> context
+        E.VarDecl _ _ -> addOwnershipValue context info.ownership_var Owner
+        E.Converter arg converter_kind  -> do
+            E.Expr _ _ arg_id <- arg
+            arg_info <- getTypeVariableInfoByExprId context.inference_info arg_id
+            arg_kind <- case converter_kind of
+                E.BorrowerConverter -> Borrower
+                _ -> getOwnershipValue context arg_info.ownership_var
+            addOwnershipValue context info.ownership_var arg_kind
+        _ -> context
+    o1 <- getOwnershipValue context info.ownership_var
+    println "InferOwnership {} {} {}" % (E.short expr, info, o1)
+    (context, expr)
+
+inferOwnership :: InferenceInfo -> P.Program -> E.Expr -> InferenceInfo
+inferOwnership inference_info program body = do
+    context <- Context inference_info Map.empty program
+    (context, body) <- traverse context body (Some initializeExpr) None
+    (context, body) <- traverse context body (Some processExpr) None
+    context.inference_info

@@ -6,6 +6,7 @@ import Siko.MIR.Function as F
 import Siko.MIR.Data as D
 import Siko.MIR.Program as P
 import Siko.MIR.Backend.Ownership.V3.InferenceInfo
+import Siko.MIR.Backend.Ownership.V3.ConstraintSolver
 import Siko.MIR.Backend.Traversal
 
 data Context = { constraints :: [Constraint],
@@ -199,4 +200,8 @@ generateConstraints allocator inference_info function_info_store program body = 
     body_info <- getTypeVariableInfoByExprId context.inference_info (getExprId body)
     result_info <- context.inference_info.result
     context <- addEqualInfo context body_info result_info
-    (context.allocator, context.inference_info)
+    inference_info <- context.inference_info
+    constraints <- context.constraints
+    inference_info <- solve constraints inference_info
+    inference_info <- merge inference_info
+    (context.allocator, inference_info)
