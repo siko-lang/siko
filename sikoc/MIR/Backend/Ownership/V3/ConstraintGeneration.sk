@@ -1,4 +1,4 @@
-module Siko.MIR.Backend.Ownership.V3.ConstraintGeneration where
+module Siko.MIR.Backend.Ownership.V3.ConstraintGeneration(generateConstraints) where
 
 import Siko.MIR.Expr as E
 import Siko.MIR.Type as T
@@ -192,11 +192,11 @@ processExpr context expr = do
             constraints <- push constraints (Equal info1.arg_group_var info2.arg_group_var)
             (context { inference_info = inference_info, constraints = constraints }, expr)
 
-generateConstraints :: TypeVariableAllocator -> InferenceInfo -> FunctionInfoStore -> P.Program -> E.Expr -> (TypeVariableAllocator, InferenceInfo, FunctionInfoStore)
+generateConstraints :: TypeVariableAllocator -> InferenceInfo -> FunctionInfoStore -> P.Program -> E.Expr -> (TypeVariableAllocator, InferenceInfo)
 generateConstraints allocator inference_info function_info_store program body = do
     context <- Context [] inference_info function_info_store program allocator
     (context, body) <- traverse context body (Some processExpr) None
     body_info <- getTypeVariableInfoByExprId context.inference_info (getExprId body)
     result_info <- context.inference_info.result
     context <- addEqualInfo context body_info result_info
-    (context.allocator, context.inference_info, context.function_info_store)
+    (context.allocator, context.inference_info)

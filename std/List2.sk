@@ -51,10 +51,18 @@ isEmpty a :: List2 a -> Bool
 isEmpty l = extern
 
 contains a :: (PartialEq a) => List2 a -> a -> Bool
-contains l i = extern
+contains l i = isSome (containsAtIndex l i)
 
 containsAtIndex a :: (PartialEq a) => List2 a -> a -> Option Int
-containsAtIndex l i = extern
+containsAtIndex l i =
+    loop index <- 0 do
+        if index >= getLength l
+        then break None
+        else do
+            e <- atIndex l index
+            if e == i
+            then break Some index
+            else index + 1
 
 find a :: List2 a -> (a -> Bool) -> Option a
 find l f = do
@@ -171,7 +179,7 @@ map a b :: List2 a -> (a -> b) -> List2 b
 map input f = input |> List2.iter |> Iterator.map f |> List2.toList
 
 filter a :: List2 a -> (a -> Bool) -> List2 a
-filter list f = extern
+filter list f = list |> List2.iter |> Iterator.filter f |> List2.toList
 
 foldM a k v :: (Ord k) => Map k v -> List2 a -> (a -> (k, v)) -> Map k v
 foldM init list f = List2.fold init list (\m, item -> do
