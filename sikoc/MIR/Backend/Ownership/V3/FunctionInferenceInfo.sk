@@ -3,6 +3,7 @@ module Siko.MIR.Backend.Ownership.V3.InferenceInfo where
 import Siko.MIR.Expr as E
 import Siko.MIR.Program as P
 import Map
+import Set
 import Siko.Util.Counter
 
 data TypeVariableAllocator = { counter :: Counter TypeVariable }
@@ -126,3 +127,43 @@ getTypeVariableInfoByVar inference_info var =
         None -> panic "TypeVariableInfo not found for var {}" % var
 
 data Constraint = Equal TypeVariable TypeVariable
+
+toFunctionInfo :: InferenceInfo -> FunctionInfo
+toFunctionInfo inference_info = do
+        members <- inference_info.members
+        variants <- inference_info.variants
+        converters <- inference_info.converters
+        input_vars <- Set.empty
+        input_vars <- List.fold input_vars inference_info.args (\input_vars, info -> do
+            (input_vars, _) <- Set.insert input_vars info.ownership_var
+            (input_vars, _) <- Set.insert input_vars info.arg_group_var
+            input_vars)
+        output_vars <- Set.empty
+        (output_vars, _) <- Set.insert output_vars inference_info.result.ownership_var
+        (output_vars, _) <- Set.insert output_vars inference_info.result.arg_group_var
+        input_vars <- addMore inference_info input_vars
+        output_vars <- addMore inference_info output_vars
+        same_vars <- Set.intersection input_vars output_vars
+        FunctionInfo inference_info.args inference_info.result members variants converters
+    where
+        addMore :: InferenceInfo -> Set TypeVariable -> Set TypeVariable
+        addMore inference_info vars =
+            loop vars <- vars do
+                start_size <- Set.getSize vars
+                vars <- List.fold vars inference_info.members (\added, member ->
+                    if Set.contains vars member.root
+                    then do
+                        (vars, _) <- Set.insert vars member.ownership_var
+                        (vars, _) <- Set.insert vars member.arg_group_var
+                        vars
+                    else vars)
+                vars <- List.fold vars inference_info.variants (\added, variant ->
+                    if Set.contains vars variant.root
+                    then do
+                        (vars, _) <- Set.insert vars variant.ownership_var
+                        (vars, _) <- Set.insert vars variant.arg_group_var
+                        vars
+                    else vars)
+                if Set.getSize vars != start_size
+                then vars
+                else break vars

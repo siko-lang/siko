@@ -8,7 +8,7 @@ import Siko.MIR.Function as F
 
 import Map
 
-data OwnershipKind = Unknown
+data OwnershipKind = Unknown Int
                    | Owner
                    | Borrower
                    deriving (Show)
@@ -32,7 +32,8 @@ initializeExpr :: Context -> E.Expr -> (Context, E.Expr)
 initializeExpr context expr = do
     E.Expr s_expr _ expr_id <- expr
     info <- getTypeVariableInfoByExprId context.inference_info expr_id
-    context <- addOwnershipValue context info.ownership_var Unknown
+    TypeVariable index <- info.ownership_var
+    context <- addOwnershipValue context info.ownership_var (Unknown index)
     (context, expr)
 
 processExpr :: Context -> E.Expr -> (Context, E.Expr)
