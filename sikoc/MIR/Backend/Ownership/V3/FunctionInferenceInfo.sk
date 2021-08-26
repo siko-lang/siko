@@ -144,6 +144,14 @@ toFunctionInfo inference_info = do
         input_vars <- addMore inference_info input_vars
         output_vars <- addMore inference_info output_vars
         same_vars <- Set.intersection input_vars output_vars
+        members <- List.filter members (\member ->
+                not (Set.contains same_vars member.info.ownership_var)
+                || not (Set.contains same_vars member.info.arg_group_var)
+            )
+        variants <- List.filter variants (\variant ->
+                not (Set.contains same_vars variant.info.ownership_var)
+                || not (Set.contains same_vars variant.info.arg_group_var)
+            )
         FunctionInfo inference_info.args inference_info.result members variants converters
     where
         addMore :: InferenceInfo -> Set TypeVariable -> Set TypeVariable
@@ -153,15 +161,15 @@ toFunctionInfo inference_info = do
                 vars <- List.fold vars inference_info.members (\added, member ->
                     if Set.contains vars member.root
                     then do
-                        (vars, _) <- Set.insert vars member.ownership_var
-                        (vars, _) <- Set.insert vars member.arg_group_var
+                        (vars, _) <- Set.insert vars member.info.ownership_var
+                        (vars, _) <- Set.insert vars member.info.arg_group_var
                         vars
                     else vars)
                 vars <- List.fold vars inference_info.variants (\added, variant ->
                     if Set.contains vars variant.root
                     then do
-                        (vars, _) <- Set.insert vars variant.ownership_var
-                        (vars, _) <- Set.insert vars variant.arg_group_var
+                        (vars, _) <- Set.insert vars variant.info.ownership_var
+                        (vars, _) <- Set.insert vars variant.info.arg_group_var
                         vars
                     else vars)
                 if Set.getSize vars != start_size
