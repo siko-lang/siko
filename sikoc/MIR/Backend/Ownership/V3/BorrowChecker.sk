@@ -1,0 +1,139 @@
+module Siko.MIR.Backend.Ownership.V3.BorrowChecker(checkBorrows) where
+
+import Siko.MIR.Program as P
+import Siko.MIR.Backend.Ownership.V3.InferenceInfo
+import Siko.MIR.Backend.Traversal
+import Siko.MIR.Expr as E
+import Siko.MIR.Function as F
+
+import Set
+import Map
+
+data Path = Whole | Partial [String]
+
+data Usage = { expr_id :: E.ExprId, path :: Path }
+
+data UsageStore = { usages :: Map E.Var [Usage] }
+
+data Context = { program :: P.Program,
+                 borrows :: [E.ExprId],
+                 forbidden_borrows :: Map E.Var [E.Var] }
+
+data ExecutionMode = Normal
+                   | DoesNotReturn
+
+invalidates :: Path -> Path -> Bool
+invalidates current other = do
+    case (current, other) of
+        (Whole , _) -> True
+        (Partial  _, Whole) -> True
+        (Partial current_path, Partial other_path) -> do
+            c_len <- getLength current_path
+            o_len <- getLength other_path
+            min_len <- min c_len o_len
+            (c_start, _) <- List.split current_path min_len
+            (o_start, _) <- List.split other_path min_len
+            c_start == o_start
+
+checkUsages :: [Usage] -> Usage -> [E.ExprId]
+checkUsages usages usage = do
+    List.fold [] usages (\borrows, prev_usage ->
+        if invalidates usage.path prev_usage.path
+        then push borrows prev_usage.expr_id
+        else borrows)
+
+addUsage :: Context -> UsageStore -> E.Var -> E.ExprId -> Path -> (Context, UsageStore)
+addUsage context usage_store var expr_id path = do
+    usage <- Usage expr_id path
+    usages <- case Map.get usage_store.usages var of
+        Some usages -> usages
+        None -> []
+    borrows <- checkUsages usages usage
+    borrows <- context.borrows + borrows
+    context <- context { borrows = borrows |> sort |> dedup }
+    usages <- push usages usage
+    (usages, _) <- Map.insert usage_store.usages var usages
+    (context, usage_store { usages = usages })
+
+collectBlockBorrows :: Context -> UsageStore -> [E.Expr] -> (Context, UsageStore, ExecutionMode)
+collectBlockBorrows context usage_store items =
+    List.fold (context, usage_store, Normal) items (\(context, usage_store,  mode), item -> do
+                (context, usage_store, exec_mode) <- collectBorrows context usage_store item
+                exec_mode <- case (exec_mode, mode) of
+                    (Normal, Normal) -> Normal
+                    _ -> DoesNotReturn
+                (context, usage_store, exec_mode))
+
+collectBorrows :: Context -> UsageStore -> E.Expr -> (Context, UsageStore, ExecutionMode)
+collectBorrows context usage_store expr = do
+    E.Expr s_expr _ expr_id <- expr
+    (context, usage_store, exec_mode) <- case s_expr of
+        E.Do items -> collectBlockBorrows context usage_store items
+        E.StaticFunctionCall f_id args -> collectBlockBorrows context usage_store args
+        E.VarDecl var rhs -> collectBorrows context usage_store rhs
+        E.VarRef var -> do
+            path <- Whole
+            (context, usage_store) <- addUsage context usage_store var expr_id path
+            (context, usage_store, Normal)
+        E.Converter arg _ -> collectBorrows context usage_store arg
+        _ -> panic "NYI {}" % (E.short expr)
+    (context, usage_store, exec_mode)
+
+addForbiddenBorrow :: Context -> E.Var -> E.Var -> Context
+addForbiddenBorrow context dying_var live_var = do
+        (forbidden_borrows, _) <- alter (add dying_var) live_var context.forbidden_borrows
+        context { forbidden_borrows = forbidden_borrows }
+    where
+        add :: E.Var -> Option [E.Var] -> Option [E.Var]
+        add new old_vars = case old_vars of
+            Some old_vars -> Some ((push old_vars new) |> sort |> dedup)
+            None -> Some [new]
+
+data LiveSet = { live_vars :: Set E.Var } deriving (Show)
+
+addLiveVar :: LiveSet -> E.Var -> LiveSet
+addLiveVar live_set var = do
+    (live_vars, _) <- Set.insert live_set.live_vars var
+    live_set { live_vars = live_vars }
+
+removeLiveVar :: LiveSet -> E.Var -> LiveSet
+removeLiveVar live_set var = do
+    live_vars <- Set.remove live_set.live_vars var
+    live_set { live_vars = live_vars }
+
+checkVar :: Context -> LiveSet -> E.Var -> E.ExprId -> (Context, LiveSet)
+checkVar context live_set var expr_id = do
+    if List.contains context.borrows expr_id
+    then (context, live_set)
+    else do
+        live_set <- removeLiveVar live_set var
+        context <- live_set.live_vars |> Set.iter |> Iterator.fold (\context, live_var -> addForbiddenBorrow context live_var var) context
+        (context, live_set)
+
+checkVarsInBlock :: Context -> LiveSet -> [E.Expr] -> (Context, LiveSet,)
+checkVarsInBlock context live_set items =
+    List.fold (context, live_set) items (\(context, live_set), item -> checkVars context live_set item)
+
+checkVars :: Context -> LiveSet -> E.Expr -> (Context, LiveSet)
+checkVars context live_set expr = do
+    E.Expr s_expr _ expr_id <- expr
+    (context, live_set) <- case s_expr of
+        E.Do items -> checkVarsInBlock context live_set items
+        E.StaticFunctionCall f_id args -> checkVarsInBlock context live_set args
+        E.VarDecl var rhs -> do
+            (context, live_set) <- checkVars context live_set rhs
+            live_set <- addLiveVar live_set var
+            (context, live_set)
+        E.VarRef var -> checkVar context live_set var expr_id
+        E.Converter arg _ -> checkVars context live_set arg
+        _ -> panic "NYI {}" % (E.short expr)
+    (context, live_set)
+
+checkBorrows :: P.Program -> E.Expr -> ()
+checkBorrows program body = do
+    context <- Context program [] Map.empty
+    usage_store <- UsageStore Map.empty
+    (context, usage_store, exec_mode) <- collectBorrows context usage_store body
+    live_set <- LiveSet Set.empty
+    (context, live_set) <- checkVars context live_set body
+    println "Forbidden borrows {}" % context.forbidden_borrows
