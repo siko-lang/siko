@@ -10,12 +10,13 @@ import Map
 
 data OwnershipKind = Unknown Int
                    | Owner
-                   | Borrower
+                   | Borrower (E.Var)
                    deriving (Show)
 
 data Context = { inference_info :: InferenceInfo,
                  ownership_values :: Map TypeVariable OwnershipKind,
-                 program :: P.Program }
+                 program :: P.Program,
+                 borrow_info :: BorrowInfo }
 
 addOwnershipValue :: Context -> TypeVariable -> OwnershipKind -> Context
 addOwnershipValue context var kind = do
@@ -48,22 +49,53 @@ processExpr context expr = do
                     F.VariantCtor _ -> addOwnershipValue context info.ownership_var Owner
                     F.RecordCtor -> addOwnershipValue context info.ownership_var Owner
                     F.Extern type_mapping -> context
-        E.VarDecl _ _ -> addOwnershipValue context info.ownership_var Owner
-        E.Converter arg converter_kind  -> do
-            E.Expr _ _ arg_id <- arg
+        E.VarDecl var rhs -> do
+            println "VarDecl {}" % var
+            context <- addOwnershipValue context info.ownership_var Owner
+            E.Expr _ _ rhs_id <- rhs
+            rhs_info <- getTypeVariableInfoByExprId context.inference_info rhs_id
+            rhs_kind <- getOwnershipValue context rhs_info.ownership_var
+            var_info <- getTypeVariableInfoByVar context.inference_info var
+            case rhs_kind of
+                Owner -> addOwnershipValue context var_info.ownership_var Owner
+                Borrower b ->
+                    if isBorrowAllowed context.borrow_info b var
+                    then addOwnershipValue context var_info.ownership_var (Borrower b)
+                    else do
+                        println "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! {} {}" % (var, b)
+                        context <- addOwnershipValue context rhs_info.ownership_var Owner
+                        addOwnershipValue context var_info.ownership_var Owner
+                _ -> context
+        E.Converter arg _  -> do
+            E.Expr arg_s_expr _ arg_id <- arg
             arg_info <- getTypeVariableInfoByExprId context.inference_info arg_id
-            arg_kind <- case converter_kind of
-                E.BorrowerConverter -> Borrower
-                _ -> getOwnershipValue context arg_info.ownership_var
-            addOwnershipValue context info.ownership_var arg_kind
+            arg_kind <- getOwnershipValue context arg_info.ownership_var
+            converted_kind <- case (arg_kind, arg_s_expr) of
+                (Owner, E.VarRef var) -> do
+                    if isBorrow context.borrow_info arg_id
+                    then Borrower (var)
+                    else Owner
+                (Owner, _) -> Owner
+                (Borrower b, _) -> Borrower b
+                (Unknown _, _) -> getOwnershipValue context info.ownership_var
+            addOwnershipValue context info.ownership_var converted_kind
         _ -> context
-    o1 <- getOwnershipValue context info.ownership_var
-    println "InferOwnership {} {} {}" % (E.short expr, info, o1)
+    //o1 <- getOwnershipValue context info.ownership_var
+    //println "InferOwnership {} {} {}" % (E.short expr, info, o1)
     (context, expr)
 
-inferOwnership :: InferenceInfo -> P.Program -> E.Expr -> InferenceInfo
-inferOwnership inference_info program body = do
-    context <- Context inference_info Map.empty program
+dumpExpr :: Context -> E.Expr -> (Context, E.Expr)
+dumpExpr context expr = do
+    E.Expr s_expr _ expr_id <- expr
+    info <- getTypeVariableInfoByExprId context.inference_info expr_id
+    o1 <- getOwnershipValue context info.ownership_var
+    println "dumpOwnership {} {} {}" % (E.short expr, info, o1)
+    (context, expr)
+
+inferOwnership :: InferenceInfo -> P.Program -> E.Expr -> BorrowInfo -> InferenceInfo
+inferOwnership inference_info program body borrow_info = do
+    context <- Context inference_info Map.empty program borrow_info
     (context, body) <- traverse context body (Some initializeExpr) None
     (context, body) <- traverse context body (Some processExpr) None
+    (context, body) <- traverse context body (Some dumpExpr) None
     context.inference_info

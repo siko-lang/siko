@@ -175,3 +175,16 @@ toFunctionInfo inference_info = do
                 if Set.getSize vars != start_size
                 then vars
                 else break vars
+
+data BorrowInfo = {  borrows :: [E.ExprId],
+                     forbidden_borrows :: Map E.Var [E.Var]
+                  }
+
+isBorrow :: BorrowInfo -> E.ExprId -> Bool
+isBorrow borrow_info expr_id = List.contains borrow_info.borrows expr_id
+
+isBorrowAllowed :: BorrowInfo -> E.Var -> E.Var -> Bool
+isBorrowAllowed borrow_info source dest = do
+    case Map.get borrow_info.forbidden_borrows dest of
+        Some forbidden_borrows -> not (List.contains forbidden_borrows source)
+        None -> True

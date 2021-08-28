@@ -107,7 +107,7 @@ checkVar context live_set var expr_id = do
     then (context, live_set)
     else do
         live_set <- removeLiveVar live_set var
-        context <- live_set.live_vars |> Set.iter |> Iterator.fold (\context, live_var -> addForbiddenBorrow context live_var var) context
+        context <- live_set.live_vars |> Set.iter |> Iterator.fold (\context, live_var -> addForbiddenBorrow context var live_var) context
         (context, live_set)
 
 checkVarsInBlock :: Context -> LiveSet -> [E.Expr] -> (Context, LiveSet,)
@@ -129,11 +129,12 @@ checkVars context live_set expr = do
         _ -> panic "NYI {}" % (E.short expr)
     (context, live_set)
 
-checkBorrows :: P.Program -> E.Expr -> ()
+checkBorrows :: P.Program -> E.Expr -> BorrowInfo
 checkBorrows program body = do
     context <- Context program [] Map.empty
     usage_store <- UsageStore Map.empty
     (context, usage_store, exec_mode) <- collectBorrows context usage_store body
     live_set <- LiveSet Set.empty
     (context, live_set) <- checkVars context live_set body
-    println "Forbidden borrows {}" % context.forbidden_borrows
+    println "forbidden {}" % (context.forbidden_borrows)
+    BorrowInfo context.borrows context.forbidden_borrows

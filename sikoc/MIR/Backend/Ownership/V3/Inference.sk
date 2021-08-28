@@ -27,8 +27,8 @@ processFunction context function_id = do
             (allocator, inference_info) <- initializeTypeVariables allocator inference_info info.body
             store <- createFunctionInfoStore
             (allocator, inference_info) <- generateConstraints allocator inference_info store context.program info.body
-            checkBorrows context.program info.body
-            inference_info <- inferOwnership inference_info context.program info.body
+            borrow_info <- checkBorrows context.program info.body
+            inference_info <- inferOwnership inference_info context.program info.body borrow_info
             trace context.config "Processing expr done"
             context
         _ -> context
