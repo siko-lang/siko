@@ -22,15 +22,15 @@ getNextExprId context = do
     (expr_id_gen, next_id) <- getNext context.expr_id_gen
     (context { expr_id_gen = expr_id_gen }, next_id)
 
-packExpr :: Context -> E.Expr -> E.ConverterKind -> (Context, E.Expr)
-packExpr context orig_expr kind = do
+packExpr :: Context -> E.Expr -> (Context, E.Expr)
+packExpr context orig_expr = do
     (context, expr_id) <- getNextExprId context
     E.Expr orig_s_expr orig_type orig_id <- orig_expr
     type <- case orig_type of
         T.Owner t -> t
         T.Ref _ t -> t
         _ -> orig_type
-    (context, E.Expr (E.Converter orig_expr kind) type expr_id)
+    (context, E.Expr (E.Converter orig_expr E.NormalConverter) type expr_id)
 
 getBothIds :: E.Expr -> (E.ExprId, E.ExprId)
 getBothIds expr = do
@@ -55,32 +55,35 @@ processExpr :: Context -> E.Expr -> (Context, E.Expr)
 processExpr context expr = do
     E.Expr s_expr type id <- expr
     case s_expr of
-        E.VarRef v -> packExpr context expr E.NormalConverter
+        E.VarRef v -> do
+            (context, expr) <- packExpr context expr
+            packExpr context expr
         E.StaticFunctionCall f_id args -> do
-            (context, args) <- List.mapS context args (\context, arg -> packExpr context arg E.NormalConverter)
+            (context, args) <- List.mapS context args (\context, arg -> packExpr context arg)
             (context, E.Expr (E.StaticFunctionCall f_id args) type id)
         E.Return arg -> do
-            (context, arg) <- packExpr context arg E.NormalConverter
+            (context, arg) <- packExpr context arg
             (context, E.Expr (E.Return arg) type id)
         E.List args -> do
-            (context, args) <- List.mapS context args (\context, arg -> packExpr context arg E.NormalConverter)
+            (context, args) <- List.mapS context args (\context, arg -> packExpr context arg)
             (context, E.Expr (E.List args) type id)
         E.If cond true_branch false_branch -> do
-            (context, cond) <- packExpr context cond E.NormalConverter
-            (context, true_branch) <- packExpr context true_branch E.NormalConverter
-            (context, false_branch) <- packExpr context false_branch E.NormalConverter
+            (context, cond) <- packExpr context cond
+            (context, true_branch) <- packExpr context true_branch
+            (context, false_branch) <- packExpr context false_branch
             (context, E.Expr (E.If cond true_branch false_branch) type id)
         E.FieldAccess name receiver -> do
             receiver <- unpackReceiver receiver
-            packExpr context (E.Expr (E.FieldAccess name receiver) type id) E.NormalConverter
+            (context, expr) <- packExpr context (E.Expr (E.FieldAccess name receiver) type id)
+            packExpr context expr
         E.Continue arg -> do
-            (context, arg) <- packExpr context arg E.NormalConverter
+            (context, arg) <- packExpr context arg
             (orig_id, new_id) <- getBothIds arg
             (continues, _) <- Map.insert context.continues orig_id new_id
             context <- context { continues = continues }
             (context, E.Expr (E.Continue arg) type id)
         E.Break arg -> do
-            (context, arg) <- packExpr context arg E.NormalConverter
+            (context, arg) <- packExpr context arg
             (orig_id, new_id) <- getBothIds arg
             (breaks, _) <- Map.insert context.breaks orig_id new_id
             context <- context { breaks = breaks }
@@ -91,7 +94,7 @@ processExpr context expr = do
             (context, E.Expr (E.Loop v initializer body continues breaks) type id)
         E.CaseOf body cases -> do
             (context, cases) <- List.mapS context cases (\context, c -> do
-                (context, new_body) <- packExpr context c.body E.NormalConverter
+                (context, new_body) <- packExpr context c.body
                 (context, c { body = new_body}))
             (context, E.Expr (E.CaseOf body cases) type id)
         _ -> (context, expr)
