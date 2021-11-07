@@ -4,35 +4,9 @@ import Siko.MIR.Expr as E
 import Siko.MIR.Program as P
 import Map
 import Set
-import Siko.Util.Counter
-
-data TypeVariableAllocator = { counter :: Counter TypeVariable }
-
-createTypeVariableAllocator :: TypeVariableAllocator
-createTypeVariableAllocator = TypeVariableAllocator (Counter (\v -> TypeVariable v) 0)
-
-getNextTypeVariable :: TypeVariableAllocator -> (TypeVariableAllocator, TypeVariable)
-getNextTypeVariable allocator = do
-    (counter, v) <- getNext allocator.counter
-    (allocator { counter = counter }, v)
-
-getNextTypeVariableInfo :: TypeVariableAllocator -> (TypeVariableAllocator, TypeVariableInfo)
-getNextTypeVariableInfo allocator = do
-    (allocator, var1) <- getNextTypeVariable allocator
-    (allocator, var2) <- getNextTypeVariable allocator
-    (allocator, TypeVariableInfo var1 var2)
-
-data TypeVariable = TypeVariable Int deriving (PartialEq, Eq, PartialOrd, Ord)
-
-instance Show TypeVariable where
-    show (TypeVariable i) = "#{}" % i
-
-data TypeVariableInfo = { ownership_var :: TypeVariable,
-                          arg_group_var :: TypeVariable,
-                        } deriving (PartialEq, Eq, PartialOrd, Ord)
-
-instance Show TypeVariableInfo where
-    show (TypeVariableInfo o a) = "({}, {})" % (o, a)
+import Siko.MIR.Backend.Ownership.V3.FunctionInfo
+import Siko.MIR.Backend.Ownership.V3.TypeVariableInfo
+import Siko.MIR.Backend.Ownership.V3.TypeVariableAllocator
 
 data MemberInfo = { name :: String,
                     root :: TypeVariable,
@@ -55,21 +29,6 @@ data InferenceInfo = { expr_type_variables :: Map E.ExprId TypeVariableInfo,
                        members :: [MemberInfo],
                        variants :: [VariantInfo],
                        converters :: [Converter] }
-
-data FunctionInfo = { args :: [TypeVariableInfo],
-                      result :: TypeVariableInfo,
-                      members :: [MemberInfo],
-                      variants :: [VariantInfo],
-                      converters :: [Converter],
-                    }
-
-data FunctionInfoStore = { functions :: Map P.Identity FunctionInfo }
-
-createFunctionInfoStore :: FunctionInfoStore
-createFunctionInfoStore = FunctionInfoStore Map.empty
-
-getFunctionInfo :: FunctionInfoStore -> P.Identity -> Option FunctionInfo
-getFunctionInfo function_info_store id = Map.get function_info_store.functions id
 
 createInferenceInfo :: Int -> TypeVariableAllocator -> (TypeVariableAllocator, InferenceInfo)
 createInferenceInfo arg_count allocator = do
@@ -175,16 +134,3 @@ toFunctionInfo inference_info = do
                 if Set.getSize vars != start_size
                 then vars
                 else break vars
-
-data BorrowInfo = {  borrows :: [E.ExprId],
-                     forbidden_borrows :: Map E.Var [E.Var]
-                  }
-
-isBorrow :: BorrowInfo -> E.ExprId -> Bool
-isBorrow borrow_info expr_id = List.contains borrow_info.borrows expr_id
-
-isBorrowAllowed :: BorrowInfo -> E.Var -> E.Var -> Bool
-isBorrowAllowed borrow_info source dest = do
-    case Map.get borrow_info.forbidden_borrows dest of
-        Some forbidden_borrows -> not (List.contains forbidden_borrows source)
-        None -> True

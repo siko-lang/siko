@@ -1,0 +1,20 @@
+module Siko.MIR.Backend.Ownership.V3.TypeVariableAllocator where
+
+import Siko.Util.Counter
+import Siko.MIR.Backend.Ownership.V3.TypeVariableInfo
+
+data TypeVariableAllocator = { counter :: Counter TypeVariable }
+
+createTypeVariableAllocator :: TypeVariableAllocator
+createTypeVariableAllocator = TypeVariableAllocator (Counter (\v -> TypeVariable v) 0)
+
+getNextTypeVariable :: TypeVariableAllocator -> (TypeVariableAllocator, TypeVariable)
+getNextTypeVariable allocator = do
+    (counter, v) <- getNext allocator.counter
+    (allocator { counter = counter }, v)
+
+getNextTypeVariableInfo :: TypeVariableAllocator -> (TypeVariableAllocator, TypeVariableInfo)
+getNextTypeVariableInfo allocator = do
+    (allocator, var1) <- getNextTypeVariable allocator
+    (allocator, var2) <- getNextTypeVariable allocator
+    (allocator, TypeVariableInfo var1 var2)
