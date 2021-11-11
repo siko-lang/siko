@@ -13,11 +13,14 @@ import Siko.MIR.Backend.Ownership.V3.ConstraintGeneration
 import Siko.MIR.Backend.Ownership.V3.OwnershipInference
 import Siko.MIR.Backend.Ownership.V3.BorrowChecker
 import Siko.MIR.Backend.Ownership.V3.FunctionInfoStore
+import Siko.MIR.Backend.Ownership.V3.FunctionInfo
 import Siko.MIR.Backend.Ownership.V3.TypeVariableAllocator
 
-data Context = { config :: Config, program :: P.Program }
+data Context = { config :: Config,
+                 program :: P.Program,
+                 function_info_store :: FunctionInfoStore }
 
-processFunction :: Context -> P.Identity -> Context
+processFunction :: Context -> P.Identity -> (Context, Bool)
 processFunction context function_id = do
     function <- P.getFunction context.program function_id
     case function.kind of
@@ -27,20 +30,37 @@ processFunction context function_id = do
             arg_count <- getLength function.type.args
             (allocator, inference_info) <- createInferenceInfo arg_count allocator
             (allocator, inference_info) <- initializeTypeVariables allocator inference_info info.body
-            store <- createFunctionInfoStore
-            (allocator, inference_info) <- generateConstraints allocator inference_info store context.program info.body
+            function_info_store <- context.function_info_store
+            (allocator, inference_info) <- generateConstraints allocator inference_info function_info_store context.program info.body
             borrow_info <- checkBorrows context.program info.body
             inference_info <- inferOwnership inference_info context.program info.body borrow_info
+            function_info <- toFunctionInfo inference_info
+            function_info <- normalize function_info
+            (function_info_store, added) <- addFunctionInfo function_info_store function_id function_info
+            context <- context { function_info_store = function_info_store }
             trace context.config "Processing expr done"
-            context
-        _ -> context
+            (context, added)
+        _ -> (context, False)
 
 processFunctionGroup :: Context -> [P.Identity] -> Context
-processFunctionGroup context group = List.fold context group processFunction
+processFunctionGroup context group =
+    if getLength group == 1
+        then do
+            function_id <- atIndex group 0
+            (context, _) <- processFunction context function_id
+            context
+        else do
+            //println "Processing group {}" % group
+            loop context <- context do
+                (context, more) <- group |> List.iter |> Iterator.fold (\(context, more), function_id -> do
+                    (context, added) <- processFunction context function_id
+                    more <- if added then True else more
+                    (context, more)) (context, False)
+                if more then context else break context
 
 processProgram :: Config -> P.Program -> [DependencyGroup P.Identity] -> P.Program
 processProgram config program function_groups = do
     trace config "InferenceV3"
-    context <- Context config program
+    context <- Context config program createFunctionInfoStore
     context <- List.fold context function_groups (\context, group -> processFunctionGroup context group.items)
     program
