@@ -1,12 +1,14 @@
 module Siko.MIR.Backend.Ownership.V3.Inference where
 
 import Siko.MIR.Program as P
+import Siko.LIR.Program as LP
 import Siko.MIR.Function as F
 import Siko.MIR.Expr as E
 import Siko.Config
 import Siko.Trace
 import Siko.Util.DependencyProcessor
 
+import Siko.MIR.Backend.Ownership.V3.Instantiation as I
 import Siko.MIR.Backend.Ownership.V3.InferenceInfo
 import Siko.MIR.Backend.Ownership.V3.Initializer
 import Siko.MIR.Backend.Ownership.V3.ConstraintGeneration
@@ -58,9 +60,10 @@ processFunctionGroup context group =
                     (context, more)) (context, False)
                 if more then context else break context
 
-processProgram :: Config -> P.Program -> [DependencyGroup P.Identity] -> P.Program
+processProgram :: Config -> P.Program -> [DependencyGroup P.Identity] -> LP.Program
 processProgram config program function_groups = do
     trace config "InferenceV3"
     context <- Context config program createFunctionInfoStore
     context <- List.fold context function_groups (\context, group -> processFunctionGroup context group.items)
-    program
+    lir_program <- I.processProgram program
+    lir_program

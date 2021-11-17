@@ -2,15 +2,13 @@ module Siko.MIR.Backend.Ownership.V3.FunctionInfo(FunctionInfo, normalize) where
 
 import Siko.MIR.Backend.Ownership.V3.InferenceInfo
 import Siko.MIR.Backend.Ownership.V3.TypeVariableInfo
-import Siko.MIR.Backend.Ownership.V3.MemberInfo
-import Siko.MIR.Backend.Ownership.V3.VariantInfo
+import Siko.MIR.Backend.Ownership.V3.ConstraintInfo
 
 import Map
 
 data FunctionInfo = { args :: [TypeVariableInfo],
                       result :: TypeVariableInfo,
-                      members :: [MemberInfo],
-                      variants :: [VariantInfo],
+                      constraints :: [ConstraintInfo],
                       converters :: [Converter],
                     } deriving (PartialEq, Eq)
 
@@ -28,17 +26,16 @@ normalizeTypeVariableInfo vars type_variable_info = do
     (vars, arg_group_var) <- normalizeVar vars type_variable_info.arg_group_var
     (vars, TypeVariableInfo ownership_var arg_group_var)
 
-normalizeMemberInfo :: Map TypeVariable TypeVariable -> MemberInfo -> (Map TypeVariable TypeVariable, MemberInfo)
-normalizeMemberInfo vars member_info = do
-    (vars, root) <- normalizeVar vars member_info.root
-    (vars, info) <- normalizeTypeVariableInfo vars member_info.info
-    (vars, MemberInfo member_info.name root info)
-
-normalizeVariantInfo :: Map TypeVariable TypeVariable -> VariantInfo -> (Map TypeVariable TypeVariable, VariantInfo)
-normalizeVariantInfo vars variant_info = do
-    (vars, root) <- normalizeVar vars variant_info.root
-    (vars, info) <- normalizeTypeVariableInfo vars variant_info.info
-    (vars, VariantInfo variant_info.index root info)
+normalizeConstraint :: Map TypeVariable TypeVariable -> ConstraintInfo -> (Map TypeVariable TypeVariable, ConstraintInfo)
+normalizeConstraint vars constraint_info = case constraint_info of
+    VariantConstraint index root info -> do
+        (vars, root) <- normalizeVar vars root
+        (vars, info) <- normalizeTypeVariableInfo vars info
+        (vars, VariantConstraint index root info)
+    MemberConstraint name root info -> do
+        (vars, root) <- normalizeVar vars root
+        (vars, info) <- normalizeTypeVariableInfo vars info
+        (vars, MemberConstraint name root info)
 
 normalizeConverter :: Map TypeVariable TypeVariable -> Converter -> (Map TypeVariable TypeVariable, Converter)
 normalizeConverter vars converter = do
@@ -51,7 +48,6 @@ normalize function_info = do
     vars <- Map.empty
     (vars, args) <- List.mapS vars function_info.args normalizeTypeVariableInfo
     (vars, result) <- normalizeTypeVariableInfo vars function_info.result
-    (vars, members) <- List.mapS vars function_info.members normalizeMemberInfo
-    (vars, variants) <- List.mapS vars function_info.variants normalizeVariantInfo
+    (vars, constraints) <- List.mapS vars function_info.constraints normalizeConstraint
     (vars, converters) <- List.mapS vars function_info.converters normalizeConverter
-    FunctionInfo args result members variants converters
+    FunctionInfo args result constraints converters

@@ -7,7 +7,7 @@ import Siko.MIR.Data as D
 import Siko.MIR.Program as P
 import Siko.MIR.Backend.Ownership.V3.FunctionInfo
 import Siko.MIR.Backend.Ownership.V3.MemberInfo
-import Siko.MIR.Backend.Ownership.V3.VariantInfo
+import Siko.MIR.Backend.Ownership.V3.ConstraintInfo
 import Siko.MIR.Backend.Ownership.V3.InferenceInfo
 import Siko.MIR.Backend.Ownership.V3.FunctionInfoStore
 import Siko.MIR.Backend.Ownership.V3.ConstraintSolver
@@ -48,7 +48,7 @@ createDummyFunctionInfo context arg_count = do
     allocator <- context.allocator
     (allocator, args) <- repeatS allocator getNextTypeVariableInfo arg_count
     (allocator, result) <- getNextTypeVariableInfo allocator
-    function_info <- FunctionInfo args result [] [] []
+    function_info <- FunctionInfo args result [] []
     (context { allocator = allocator }, function_info)
 
 createVariantctorFunctionInfo :: Context -> Int -> T.Type -> (Context, FunctionInfo)
@@ -65,12 +65,12 @@ createVariantctorFunctionInfo context index type =
                     (allocator, record_result) <- getNextTypeVariableInfo allocator
                     (allocator, args, members) <- List.fold (allocator, [], []) record.fields (\(allocator, args, members), field -> do
                             (allocator, arg_info) <- getNextTypeVariableInfo allocator
-                            member <- MemberInfo field.name record_result.arg_group_var arg_info
+                            member <- MemberConstraint field.name record_result.arg_group_var arg_info
                             members <- push members member
                             args <- push args arg_info
                             (allocator, args, members))
-                    variants <- [VariantInfo index adt_result.arg_group_var record_result]
-                    function_info <- FunctionInfo args adt_result members variants []
+                    variants <- [VariantConstraint index adt_result.arg_group_var record_result]
+                    function_info <- FunctionInfo args adt_result (members + variants) []
                     (context { allocator = allocator }, function_info)
                 _ -> panic "createVariantctorFunctionInfo: not a record"
         _ -> panic "createVariantctorFunctionInfo: not an adt"
@@ -84,11 +84,11 @@ createRecordCtorFunctionInfo context type =
             (allocator, result) <- getNextTypeVariableInfo allocator
             (allocator, args, members) <- List.fold (allocator, [], []) record.fields (\(allocator, args, members), field -> do
                     (allocator, arg_info) <- getNextTypeVariableInfo allocator
-                    member <- MemberInfo field.name result.arg_group_var arg_info
+                    member <- MemberConstraint field.name result.arg_group_var arg_info
                     members <- push members member
                     args <- push args arg_info
                     (allocator, args, members))
-            function_info <- FunctionInfo args result members [] []
+            function_info <- FunctionInfo args result members []
             (context { allocator = allocator }, function_info)
         _ -> panic "createRecordCtorFunctionInfo: not a record"
 
@@ -140,7 +140,7 @@ processExpr context expr = do
             inference_info <- context.inference_info
             receiver_info <- getTypeVariableInfoByExprId inference_info (getExprId receiver)
             info <- getTypeVariableInfoByExprId inference_info expr_id
-            inference_info <- addMemberInfo inference_info (MemberInfo name receiver_info.arg_group_var info)
+            inference_info <- addConstraintInfo inference_info (MemberConstraint name receiver_info.arg_group_var info)
             (context { inference_info = inference_info }, expr)
         E.Return arg -> do
             inference_info <- context.inference_info
@@ -173,7 +173,7 @@ processExpr context expr = do
                                     inference_info <- context.inference_info
                                     body_info <- getTypeVariableInfoByExprId inference_info body_id
                                     var_info <- getTypeVariableInfoByVar inference_info var
-                                    inference_info <- addVariantInfo inference_info (VariantInfo index body_info.arg_group_var var_info)
+                                    inference_info <- addConstraintInfo inference_info (VariantConstraint index body_info.arg_group_var var_info)
                                     context { inference_info = inference_info }
                                 T.Record _ _ -> do
                                     inference_info <- context.inference_info

@@ -6,8 +6,7 @@ import Map
 import Set
 import Siko.MIR.Backend.Ownership.V3.FunctionInfo
 import Siko.MIR.Backend.Ownership.V3.TypeVariableInfo
-import Siko.MIR.Backend.Ownership.V3.MemberInfo
-import Siko.MIR.Backend.Ownership.V3.VariantInfo
+import Siko.MIR.Backend.Ownership.V3.ConstraintInfo
 import Siko.MIR.Backend.Ownership.V3.TypeVariableAllocator
 
 data Converter = { from :: TypeVariable,
@@ -18,8 +17,7 @@ data InferenceInfo = { expr_type_variables :: Map E.ExprId TypeVariableInfo,
                        var_type_variables :: Map E.Var TypeVariableInfo,
                        args :: [TypeVariableInfo],
                        result :: TypeVariableInfo,
-                       members :: [MemberInfo],
-                       variants :: [VariantInfo],
+                       constraints :: [ConstraintInfo],
                        converters :: [Converter] }
 
 createInferenceInfo :: Int -> TypeVariableAllocator -> (TypeVariableAllocator, InferenceInfo)
@@ -28,7 +26,7 @@ createInferenceInfo arg_count allocator = do
     var_type_variables <- Map.empty
     args <- []
     (allocator, result) <- getNextTypeVariableInfo allocator
-    inference_info <- InferenceInfo expr_type_variables var_type_variables args result [] [] []
+    inference_info <- InferenceInfo expr_type_variables var_type_variables args result [] []
     loop (allocator, inference_info, index) <- (allocator, inference_info, 0) do
         if index >= arg_count
         then break (allocator, inference_info)
@@ -50,15 +48,10 @@ addExpr allocator inference_info expr_id = do
     inference_info <- inference_info { expr_type_variables = expr_type_variables }
     (allocator, inference_info)
 
-addMemberInfo :: InferenceInfo -> MemberInfo -> InferenceInfo
-addMemberInfo inference_info member_info = do
-    members <- push inference_info.members member_info
-    inference_info { members = members }
-
-addVariantInfo :: InferenceInfo -> VariantInfo -> InferenceInfo
-addVariantInfo inference_info variant_info = do
-    variants <- push inference_info.variants variant_info
-    inference_info { variants = variants }
+addConstraintInfo :: InferenceInfo -> ConstraintInfo -> InferenceInfo
+addConstraintInfo inference_info constraint_info = do
+    constraints <- push inference_info.constraints constraint_info
+    inference_info { constraints = constraints }
 
 addConverter :: InferenceInfo -> Converter -> InferenceInfo
 addConverter inference_info converter = do
@@ -81,8 +74,7 @@ data Constraint = Equal TypeVariable TypeVariable
 
 toFunctionInfo :: InferenceInfo -> FunctionInfo
 toFunctionInfo inference_info = do
-        members <- inference_info.members
-        variants <- inference_info.variants
+        constraints <- inference_info.constraints
         converters <- inference_info.converters
         input_vars <- Set.empty
         input_vars <- List.fold input_vars inference_info.args (\input_vars, info -> do
@@ -95,34 +87,35 @@ toFunctionInfo inference_info = do
         input_vars <- addMore inference_info input_vars
         output_vars <- addMore inference_info output_vars
         same_vars <- Set.intersection input_vars output_vars
-        members <- List.filter members (\member ->
-                not (Set.contains same_vars member.info.ownership_var)
-                || not (Set.contains same_vars member.info.arg_group_var)
+        constraints <- List.filter constraints (\constraint -> case constraint of
+                 VariantConstraint index root info ->
+                        not (Set.contains same_vars info.ownership_var)
+                        || not (Set.contains same_vars info.arg_group_var)
+                 MemberConstraint name root info ->
+                        not (Set.contains same_vars info.ownership_var)
+                        || not (Set.contains same_vars info.arg_group_var)
             )
-        variants <- List.filter variants (\variant ->
-                not (Set.contains same_vars variant.info.ownership_var)
-                || not (Set.contains same_vars variant.info.arg_group_var)
-            )
-        FunctionInfo inference_info.args inference_info.result members variants converters
+        FunctionInfo inference_info.args inference_info.result constraints converters
     where
         addMore :: InferenceInfo -> Set TypeVariable -> Set TypeVariable
         addMore inference_info vars =
             loop vars <- vars do
                 start_size <- Set.getSize vars
-                vars <- List.fold vars inference_info.members (\added, member ->
-                    if Set.contains vars member.root
-                    then do
-                        (vars, _) <- Set.insert vars member.info.ownership_var
-                        (vars, _) <- Set.insert vars member.info.arg_group_var
-                        vars
-                    else vars)
-                vars <- List.fold vars inference_info.variants (\added, variant ->
-                    if Set.contains vars variant.root
-                    then do
-                        (vars, _) <- Set.insert vars variant.info.ownership_var
-                        (vars, _) <- Set.insert vars variant.info.arg_group_var
-                        vars
-                    else vars)
+                vars <- List.fold vars inference_info.constraints (\added, constraint -> case constraint of
+                    VariantConstraint index root info ->
+                        if Set.contains vars root
+                        then do
+                            (vars, _) <- Set.insert vars info.ownership_var
+                            (vars, _) <- Set.insert vars info.arg_group_var
+                            vars
+                        else vars
+                    MemberConstraint name root info ->
+                        if Set.contains vars root
+                        then do
+                            (vars, _) <- Set.insert vars info.ownership_var
+                            (vars, _) <- Set.insert vars info.arg_group_var
+                            vars
+                        else vars)
                 if Set.getSize vars != start_size
                 then vars
                 else break vars
