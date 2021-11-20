@@ -48,7 +48,7 @@ createDummyFunctionInfo context arg_count = do
     allocator <- context.allocator
     (allocator, args) <- repeatS allocator getNextTypeVariableInfo arg_count
     (allocator, result) <- getNextTypeVariableInfo allocator
-    function_info <- FunctionInfo args result [] []
+    function_info <- FunctionInfo args result [] [] []
     (context { allocator = allocator }, function_info)
 
 createVariantctorFunctionInfo :: Context -> Int -> T.Type -> (Context, FunctionInfo)
@@ -70,7 +70,7 @@ createVariantctorFunctionInfo context index type =
                             args <- push args arg_info
                             (allocator, args, members))
                     variants <- [VariantConstraint index adt_result.arg_group_var record_result]
-                    function_info <- FunctionInfo args adt_result (members + variants) []
+                    function_info <- FunctionInfo args adt_result (members + variants) [] []
                     (context { allocator = allocator }, function_info)
                 _ -> panic "createVariantctorFunctionInfo: not a record"
         _ -> panic "createVariantctorFunctionInfo: not an adt"
@@ -88,7 +88,7 @@ createRecordCtorFunctionInfo context type =
                     members <- push members member
                     args <- push args arg_info
                     (allocator, args, members))
-            function_info <- FunctionInfo args result members []
+            function_info <- FunctionInfo args result members [] []
             (context { allocator = allocator }, function_info)
         _ -> panic "createRecordCtorFunctionInfo: not a record"
 

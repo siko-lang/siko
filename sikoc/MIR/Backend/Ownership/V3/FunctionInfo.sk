@@ -6,10 +6,15 @@ import Siko.MIR.Backend.Ownership.V3.ConstraintInfo
 
 import Map
 
+data OwnershipInfo = Owner TypeVariable
+                   | Borrower TypeVariable Int
+                   deriving (PartialEq, Eq)
+
 data FunctionInfo = { args :: [TypeVariableInfo],
                       result :: TypeVariableInfo,
                       constraints :: [ConstraintInfo],
                       converters :: [Converter],
+                      ownershipinfos :: [OwnershipInfo],
                     } deriving (PartialEq, Eq)
 
 normalizeVar :: Map TypeVariable TypeVariable -> TypeVariable -> (Map TypeVariable TypeVariable, TypeVariable)
@@ -27,21 +32,32 @@ normalizeTypeVariableInfo vars type_variable_info = do
     (vars, TypeVariableInfo ownership_var arg_group_var)
 
 normalizeConstraint :: Map TypeVariable TypeVariable -> ConstraintInfo -> (Map TypeVariable TypeVariable, ConstraintInfo)
-normalizeConstraint vars constraint_info = case constraint_info of
-    VariantConstraint index root info -> do
-        (vars, root) <- normalizeVar vars root
-        (vars, info) <- normalizeTypeVariableInfo vars info
-        (vars, VariantConstraint index root info)
-    MemberConstraint name root info -> do
-        (vars, root) <- normalizeVar vars root
-        (vars, info) <- normalizeTypeVariableInfo vars info
-        (vars, MemberConstraint name root info)
+normalizeConstraint vars constraint_info =
+    case constraint_info of
+        VariantConstraint index root info -> do
+            (vars, root) <- normalizeVar vars root
+            (vars, info) <- normalizeTypeVariableInfo vars info
+            (vars, VariantConstraint index root info)
+        MemberConstraint name root info -> do
+            (vars, root) <- normalizeVar vars root
+            (vars, info) <- normalizeTypeVariableInfo vars info
+            (vars, MemberConstraint name root info)
 
 normalizeConverter :: Map TypeVariable TypeVariable -> Converter -> (Map TypeVariable TypeVariable, Converter)
 normalizeConverter vars converter = do
     (vars, from) <- normalizeVar vars converter.from
     (vars, to) <- normalizeVar vars converter.to
     (vars, Converter from to)
+
+normalizeOwnershipInfo :: Map TypeVariable TypeVariable -> OwnershipInfo -> (Map TypeVariable TypeVariable, OwnershipInfo)
+normalizeOwnershipInfo vars ownershipinfo =
+    case ownershipinfo of
+        Owner v -> do
+            (vars, v) <- normalizeVar vars v
+            (vars, Owner v)
+        Borrower v i -> do
+            (vars, v) <- normalizeVar vars v
+            (vars, Borrower v i)
 
 normalize :: FunctionInfo -> FunctionInfo
 normalize function_info = do
@@ -50,4 +66,5 @@ normalize function_info = do
     (vars, result) <- normalizeTypeVariableInfo vars function_info.result
     (vars, constraints) <- List.mapS vars function_info.constraints normalizeConstraint
     (vars, converters) <- List.mapS vars function_info.converters normalizeConverter
-    FunctionInfo args result constraints converters
+    (vars, ownershipinfos) <- List.mapS vars function_info.ownershipinfos normalizeOwnershipInfo
+    FunctionInfo args result constraints converters ownershipinfos
