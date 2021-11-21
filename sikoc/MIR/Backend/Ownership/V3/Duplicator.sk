@@ -1,0 +1,69 @@
+module Siko.MIR.Backend.Ownership.V3.Duplicator where
+
+import Siko.MIR.Backend.Ownership.V3.ConstraintInfo as C
+import Siko.MIR.Backend.Ownership.V3.TypeVariableInfo
+import Siko.MIR.Backend.Ownership.V3.TypeVariableAllocator
+import Siko.MIR.Backend.Ownership.V3.InferenceInfo
+import Siko.Util.Counter
+import Map
+
+data Duplicator = { vars :: Map TypeVariable TypeVariable,
+                    allocator :: TypeVariableAllocator }
+
+class Duplicable a where
+    duplicate a :: Duplicator -> a -> (Duplicator, a)
+
+createDuplicator :: TypeVariableAllocator -> Duplicator
+createDuplicator allocator = Duplicator Map.empty allocator
+
+createNormalizer :: Duplicator
+createNormalizer = createDuplicator createTypeVariableAllocator
+
+getMax :: Duplicator -> Int
+getMax duplicator = duplicator.allocator.counter.next // FIXME: make this nicer!
+
+instance Duplicable TypeVariable where
+    //duplicate :: Duplicator -> TypeVariable -> (Duplicator, TypeVariable)
+    duplicate duplicator var = do
+        vars <- duplicator.vars
+        allocator <- duplicator.allocator
+        ((s, var), vars, _) <- Map.alterS (\allocator, old -> case old of
+            Some old -> ((allocator, old), Some old)
+            None -> do
+                (allocator, next) <- getNextTypeVariable allocator
+                ((allocator, next), Some next)) allocator var vars
+        (duplicator { vars = vars, allocator = allocator }, var)
+
+instance Duplicable TypeVariableInfo where
+    duplicate duplicator type_variable_info = do
+        (duplicator, ownership_var) <- duplicate duplicator type_variable_info.ownership_var
+        (duplicator, arg_group_var) <- duplicate duplicator type_variable_info.arg_group_var
+        (duplicator, TypeVariableInfo ownership_var arg_group_var)
+
+instance Duplicable C.ConstraintInfo where
+    duplicate duplicator constraint_info =
+        case constraint_info of
+            C.VariantConstraint index root info -> do
+                (duplicator, root) <- duplicate duplicator root
+                (duplicator, info) <- duplicate duplicator info
+                (duplicator, C.VariantConstraint index root info)
+            C.MemberConstraint name root info -> do
+                (duplicator, root) <- duplicate duplicator root
+                (duplicator, info) <- duplicate duplicator info
+                (duplicator, C.MemberConstraint name root info)
+
+instance Duplicable C.OwnershipInfo where
+    duplicate duplicator ownershipinfo =
+        case ownershipinfo of
+            C.Owner v -> do
+                (duplicator, v) <- duplicate duplicator v
+                (duplicator, C.Owner v)
+            C.Borrower v i -> do
+                (duplicator, v) <- duplicate duplicator v
+                (duplicator, C.Borrower v i)
+
+instance Duplicable Converter where
+    duplicate duplicator converter = do
+        (duplicator, from) <- duplicate duplicator converter.from
+        (duplicator, to) <- duplicate duplicator converter.to
+        (duplicator, Converter from to)

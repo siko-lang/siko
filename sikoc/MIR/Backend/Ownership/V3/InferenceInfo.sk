@@ -6,49 +6,61 @@ import Map
 import Set
 import Siko.MIR.Backend.Ownership.V3.FunctionInfo
 import Siko.MIR.Backend.Ownership.V3.TypeVariableInfo
-import Siko.MIR.Backend.Ownership.V3.ConstraintInfo
 import Siko.MIR.Backend.Ownership.V3.TypeVariableAllocator
+import Siko.MIR.Backend.Ownership.V3.ConstraintInfo as C
 
 data Converter = { from :: TypeVariable,
                    to :: TypeVariable,
-                 } deriving (PartialEq, Eq)
+                 } deriving (PartialEq, Eq, Show)
+
+data OwnershipKind = Unknown Int
+                   | Owner
+                   | Borrower (E.Var)
+                   deriving (Show)
 
 data InferenceInfo = { expr_type_variables :: Map E.ExprId TypeVariableInfo,
                        var_type_variables :: Map E.Var TypeVariableInfo,
+                       ownership_values :: Map TypeVariable OwnershipKind,
                        args :: [TypeVariableInfo],
                        result :: TypeVariableInfo,
-                       constraints :: [ConstraintInfo],
-                       converters :: [Converter] }
+                       constraints :: [C.ConstraintInfo],
+                       converters :: [Converter],
+                       allocator :: TypeVariableAllocator,
+                     } deriving (Show)
 
-createInferenceInfo :: Int -> TypeVariableAllocator -> (TypeVariableAllocator, InferenceInfo)
+createInferenceInfo :: Int -> TypeVariableAllocator -> (InferenceInfo)
 createInferenceInfo arg_count allocator = do
     expr_type_variables <- Map.empty
     var_type_variables <- Map.empty
+    ownership_values <- Map.empty
     args <- []
     (allocator, result) <- getNextTypeVariableInfo allocator
-    inference_info <- InferenceInfo expr_type_variables var_type_variables args result [] []
-    loop (allocator, inference_info, index) <- (allocator, inference_info, 0) do
+    inference_info <- InferenceInfo expr_type_variables var_type_variables ownership_values args result [] [] allocator
+    loop (inference_info, index) <- (inference_info, 0) do
         if index >= arg_count
-        then break (allocator, inference_info)
+        then break inference_info
         else do
-            (allocator, inference_info) <- addVar allocator inference_info (E.Arg index)
-            (allocator, inference_info, index + 1)
+            inference_info <- addVar inference_info (E.Arg index)
+            (inference_info, index + 1)
 
-addVar :: TypeVariableAllocator -> InferenceInfo -> E.Var -> (TypeVariableAllocator, InferenceInfo)
-addVar allocator inference_info var = do
-    (allocator, info) <- getNextTypeVariableInfo allocator
+addVar :: InferenceInfo -> E.Var -> InferenceInfo
+addVar inference_info var = do
+    (allocator, info) <- getNextTypeVariableInfo inference_info.allocator
+    args <- case var of
+        E.Arg _ -> List.push inference_info.args info
+        _ -> inference_info.args
     (var_type_variables, _) <- Map.insert inference_info.var_type_variables var info
-    inference_info <- inference_info { var_type_variables = var_type_variables }
-    (allocator, inference_info)
+    inference_info <- inference_info { args = args, var_type_variables = var_type_variables, allocator = allocator }
+    inference_info
 
-addExpr :: TypeVariableAllocator -> InferenceInfo -> E.ExprId -> (TypeVariableAllocator, InferenceInfo)
-addExpr allocator inference_info expr_id = do
-    (allocator, info) <- getNextTypeVariableInfo allocator
+addExpr :: InferenceInfo -> E.ExprId -> InferenceInfo
+addExpr inference_info expr_id = do
+    (allocator, info) <- getNextTypeVariableInfo inference_info.allocator
     (expr_type_variables, _) <- Map.insert inference_info.expr_type_variables expr_id info
-    inference_info <- inference_info { expr_type_variables = expr_type_variables }
-    (allocator, inference_info)
+    inference_info <- inference_info { expr_type_variables = expr_type_variables, allocator = allocator }
+    inference_info
 
-addConstraintInfo :: InferenceInfo -> ConstraintInfo -> InferenceInfo
+addConstraintInfo :: InferenceInfo -> C.ConstraintInfo -> InferenceInfo
 addConstraintInfo inference_info constraint_info = do
     constraints <- push inference_info.constraints constraint_info
     inference_info { constraints = constraints }
@@ -72,6 +84,40 @@ getTypeVariableInfoByVar inference_info var =
 
 data Constraint = Equal TypeVariable TypeVariable
 
+toOwnershipInfo :: Map TypeVariable OwnershipKind -> Bool -> [C.OwnershipInfo]
+toOwnershipInfo ownership_values allow_unknown =
+    Map.fold [] ownership_values (\ownershipinfos, (var, kind) -> do
+                case kind of
+                    Unknown i -> if allow_unknown
+                        then ownershipinfos
+                        else panic "Unknown found in toOwnershipInfo"
+                    Owner -> List.push ownershipinfos (C.Owner var)
+                    Borrower v -> List.push ownershipinfos (C.Borrower var 0) // FIXME, TODO:
+            )
+
+collectRelevantVars :: [C.ConstraintInfo] -> Set TypeVariable -> Set TypeVariable
+collectRelevantVars constraints vars =
+    loop vars <- vars do
+        start_size <- Set.getSize vars
+        vars <- List.fold vars constraints (\added, constraint -> case constraint of
+            C.VariantConstraint index root info ->
+                if Set.contains vars root
+                then do
+                    (vars, _) <- Set.insert vars info.ownership_var
+                    (vars, _) <- Set.insert vars info.arg_group_var
+                    vars
+                else vars
+            C.MemberConstraint name root info ->
+                if Set.contains vars root
+                then do
+                    (vars, _) <- Set.insert vars info.ownership_var
+                    (vars, _) <- Set.insert vars info.arg_group_var
+                    vars
+                else vars)
+        if Set.getSize vars != start_size
+        then vars
+        else break vars
+
 toFunctionInfo :: InferenceInfo -> FunctionInfo
 toFunctionInfo inference_info = do
         constraints <- inference_info.constraints
@@ -84,39 +130,16 @@ toFunctionInfo inference_info = do
         output_vars <- Set.empty
         (output_vars, _) <- Set.insert output_vars inference_info.result.ownership_var
         (output_vars, _) <- Set.insert output_vars inference_info.result.arg_group_var
-        input_vars <- addMore inference_info input_vars
-        output_vars <- addMore inference_info output_vars
+        input_vars <- collectRelevantVars inference_info.constraints input_vars
+        output_vars <- collectRelevantVars inference_info.constraints output_vars
         same_vars <- Set.intersection input_vars output_vars
         constraints <- List.filter constraints (\constraint -> case constraint of
-                 VariantConstraint index root info ->
+                 C.VariantConstraint index root info ->
                         not (Set.contains same_vars info.ownership_var)
                         || not (Set.contains same_vars info.arg_group_var)
-                 MemberConstraint name root info ->
+                 C.MemberConstraint name root info ->
                         not (Set.contains same_vars info.ownership_var)
                         || not (Set.contains same_vars info.arg_group_var)
             )
-        ownershipinfos <- []
+        ownershipinfos <- toOwnershipInfo inference_info.ownership_values True
         FunctionInfo inference_info.args inference_info.result constraints converters ownershipinfos
-    where
-        addMore :: InferenceInfo -> Set TypeVariable -> Set TypeVariable
-        addMore inference_info vars =
-            loop vars <- vars do
-                start_size <- Set.getSize vars
-                vars <- List.fold vars inference_info.constraints (\added, constraint -> case constraint of
-                    VariantConstraint index root info ->
-                        if Set.contains vars root
-                        then do
-                            (vars, _) <- Set.insert vars info.ownership_var
-                            (vars, _) <- Set.insert vars info.arg_group_var
-                            vars
-                        else vars
-                    MemberConstraint name root info ->
-                        if Set.contains vars root
-                        then do
-                            (vars, _) <- Set.insert vars info.ownership_var
-                            (vars, _) <- Set.insert vars info.arg_group_var
-                            vars
-                        else vars)
-                if Set.getSize vars != start_size
-                then vars
-                else break vars

@@ -1,0 +1,62 @@
+module Siko.MIR.Backend.Ownership.V3.Lowering.Function where
+
+import Siko.Config
+import Siko.Trace
+import Siko.MIR.Backend.Ownership.V3.Lowering.Context
+import Siko.MIR.Backend.Ownership.V3.Lowering.LoweringInfo
+import Siko.MIR.Backend.Ownership.V3.Lowering.Naming
+import Siko.MIR.Backend.Ownership.V3.Lowering.Expr
+import Siko.MIR.Backend.Ownership.V3.Lowering.Type
+import Siko.MIR.Backend.Ownership.V3.FunctionInfoStore
+import Siko.MIR.Backend.Ownership.V3.OwnershipInference
+import Siko.MIR.Backend.Ownership.V3.BorrowChecker
+import Siko.MIR.Backend.Ownership.V3.ConstraintGeneration
+import Siko.MIR.Backend.Ownership.V3.Initializer
+import Siko.MIR.Backend.Ownership.V3.InferenceInfo
+import Siko.MIR.Backend.Ownership.V3.TypeVariableAllocator
+import Siko.MIR.Program as MP
+import Siko.LIR.Program as LP
+import Siko.MIR.Function as MF
+import Siko.LIR.Function as LF
+import Siko.LIR.Type as LT
+
+lowerFunction :: Context -> LoweringInfo -> MP.Identity -> LP.Identity -> Context
+lowerFunction context lowering_info mir_id lir_id = do
+    trace context.config "Lowering function {}" % (mir_id)
+    function <- MP.getFunction context.mir_program mir_id
+    context <- case function.kind of
+        MF.Normal info -> do
+            allocator <- createTypeVariableAllocator
+            arg_count <- getLength function.type.args
+            inference_info <- createInferenceInfo arg_count allocator
+            inference_info <- initializeTypeVariables inference_info info.body
+            function_info_store <- context.function_info_store
+            inference_info <- generateConstraints inference_info
+                    function_info_store context.mir_program info.body
+            borrow_info <- checkBorrows context.mir_program info.body
+            inference_info <- inferOwnership context.function_info_store inference_info context.mir_program info.body borrow_info
+            (context, lir_body) <- lowerExpr inference_info context info.body
+            //trace context.config "Processing expr done"
+            lir_kind <- LF.Normal lir_body
+            //println "after inference1 {}" % inference_info
+            lowering_info <- createLoweringInfo inference_info inference_info.args inference_info.result
+            //println "after inference2 {}" % lowering_info
+            (context, lir_function_type, lifetimes) <- lowerFunctionType context lowering_info function.type
+            lir_function <- LF.Function lir_id lifetimes lir_kind lir_function_type
+            context <- addFunction context lir_function
+            context
+        MF.RecordCtor -> do
+            lir_kind <- LF.RecordCtor
+            (context, lir_function_type, lifetimes) <- lowerFunctionType context lowering_info function.type
+            lir_function <- LF.Function lir_id lifetimes lir_kind lir_function_type
+            context <- addFunction context lir_function
+            context
+        MF.VariantCtor index -> do
+            lir_kind <- LF.VariantCtor index
+            (context, lir_function_type, lifetimes) <- lowerFunctionType context lowering_info function.type
+            lir_function <- LF.Function lir_id lifetimes lir_kind lir_function_type
+            context <- addFunction context lir_function
+            context
+        _ -> context
+    trace context.config "Lowering done"
+    context

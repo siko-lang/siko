@@ -8,7 +8,7 @@ import Siko.Config
 import Siko.Trace
 import Siko.Util.DependencyProcessor
 
-import Siko.MIR.Backend.Ownership.V3.Instantiation as I
+import Siko.MIR.Backend.Ownership.V3.Lowering
 import Siko.MIR.Backend.Ownership.V3.InferenceInfo
 import Siko.MIR.Backend.Ownership.V3.Initializer
 import Siko.MIR.Backend.Ownership.V3.ConstraintGeneration
@@ -30,14 +30,15 @@ processFunction context function_id = do
             trace context.config "Processing {}" % function_id
             allocator <- createTypeVariableAllocator
             arg_count <- getLength function.type.args
-            (allocator, inference_info) <- createInferenceInfo arg_count allocator
-            (allocator, inference_info) <- initializeTypeVariables allocator inference_info info.body
+            inference_info <- createInferenceInfo arg_count allocator
+            inference_info <- initializeTypeVariables inference_info info.body
             function_info_store <- context.function_info_store
-            (allocator, inference_info) <- generateConstraints allocator inference_info function_info_store context.program info.body
+            inference_info <- generateConstraints inference_info function_info_store context.program info.body
             borrow_info <- checkBorrows context.program info.body
-            inference_info <- inferOwnership inference_info context.program info.body borrow_info
+            inference_info <- inferOwnership context.function_info_store inference_info context.program info.body borrow_info
             function_info <- toFunctionInfo inference_info
-            function_info <- normalize function_info
+            function_info <- normalizeFunctionInfo function_info
+            //println "normalized function info {}" % function_info
             (function_info_store, added) <- addFunctionInfo function_info_store function_id function_info
             context <- context { function_info_store = function_info_store }
             trace context.config "Processing expr done"
@@ -65,5 +66,5 @@ processProgram config program function_groups = do
     trace config "InferenceV3"
     context <- Context config program createFunctionInfoStore
     context <- List.fold context function_groups (\context, group -> processFunctionGroup context group.items)
-    lir_program <- I.processProgram program
+    lir_program <- lowerProgram program context.config context.function_info_store
     lir_program

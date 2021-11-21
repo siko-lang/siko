@@ -1,0 +1,50 @@
+module Siko.MIR.Backend.Ownership.V3.Lowering.Data where
+
+import Siko.Config
+import Siko.Trace
+import Siko.MIR.Backend.Ownership.V3.Lowering.LoweringInfo
+import Siko.MIR.Backend.Ownership.V3.Lowering.Context
+import Siko.MIR.Backend.Ownership.V3.Lowering.Naming
+import Siko.MIR.Backend.Ownership.V3.Lowering.Expr
+import Siko.MIR.Backend.Ownership.V3.FunctionInfoStore
+import Siko.MIR.Backend.Ownership.V3.Lowering.Type
+import Siko.MIR.Program as MP
+import Siko.LIR.Program as LP
+import Siko.MIR.Data as MD
+import Siko.LIR.Data as LD
+import Siko.LIR.Type as LT
+
+import Map
+
+lowerField :: LoweringInfo -> Context -> MD.RecordField -> (Context, LD.RecordField)
+lowerField lowering_info context mir_field = do
+    (context, lir_type) <- lowerType context lowering_info mir_field.type
+    (context, LD.RecordField mir_field.name lir_type)
+
+lowerVariant :: LoweringInfo -> Context -> MD.Variant -> (Context, LD.Variant)
+lowerVariant lowering_info context mir_variant = do
+    (context, lir_type) <- lowerType context lowering_info mir_variant.type
+    (context, LD.Variant mir_variant.name lir_type)
+
+lowerRecord :: Context -> LoweringInfo -> MP.Identity -> LP.Identity -> Context
+lowerRecord context lowering_info mir_id lir_id = do
+    trace context.config "Lowering record {} {} {}" % (mir_id, lir_id, lowering_info)
+    mir_record <- MP.getRecord context.mir_program mir_id
+    (context, fields) <- List.mapS context mir_record.fields (lowerField lowering_info)
+    lifetimes <- collectLifetimes lowering_info
+    external_info <- None
+    external_class_impls <- []
+    lir_record <- LD.Record lir_id lifetimes fields external_info external_class_impls
+    context <- addRecord context lir_record
+    context
+
+lowerAdt :: Context -> LoweringInfo -> MP.Identity -> LP.Identity -> Context
+lowerAdt context lowering_info mir_id lir_id = do
+    trace context.config "Lowering adt {}" % mir_id
+    mir_adt <- MP.getAdt context.mir_program mir_id
+    (context, variants) <- List.mapS context mir_adt.variants (lowerVariant lowering_info)
+    lifetimes <- collectLifetimes lowering_info
+    external_class_impls <- []
+    lir_adt <- LD.AlgebraicDataType lir_id lifetimes variants external_class_impls
+    context <- addAdt context lir_adt
+    context

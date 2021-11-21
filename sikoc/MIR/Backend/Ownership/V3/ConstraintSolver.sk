@@ -32,11 +32,12 @@ instance Apply InferenceInfo where
     apply c inference_info = do
         expr_type_variables <- apply c inference_info.expr_type_variables
         var_type_variables <- apply c inference_info.var_type_variables
+        ownership_values <- Map.map inference_info.ownership_values (\(k, v) -> (apply c k, v))
         args <- apply c inference_info.args
         result <- apply c inference_info.result
         constraints <- apply c inference_info.constraints
         converters <- apply c inference_info.converters
-        InferenceInfo expr_type_variables var_type_variables args result constraints converters
+        InferenceInfo expr_type_variables var_type_variables ownership_values args result constraints converters inference_info.allocator
 
 instance Apply TypeVariable where
     apply constraint type_variable = case constraint of

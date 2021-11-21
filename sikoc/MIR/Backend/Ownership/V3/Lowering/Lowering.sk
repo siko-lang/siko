@@ -1,0 +1,27 @@
+module Siko.MIR.Backend.Ownership.V3.Lowering where
+
+import Siko.Config
+import Siko.MIR.Backend.Ownership.V3.Lowering.Context
+import Siko.MIR.Backend.Ownership.V3.Lowering.Naming
+import Siko.MIR.Backend.Ownership.V3.Lowering.LoweringInfo
+import Siko.MIR.Backend.Ownership.V3.TypeVariableInfo
+import Siko.MIR.Backend.Ownership.V3.ConstraintInfo
+import Siko.MIR.Backend.Ownership.V3.FunctionInfoStore
+import Siko.LIR.Program as LP
+import Siko.MIR.Program as MP
+
+import Map
+
+lowerProgram :: MP.Program -> Config -> FunctionInfoStore -> LP.Program
+lowerProgram mir_program config function_info_store = do
+    context <- createContext function_info_store config mir_program
+    main_result <- TypeVariableInfo (TypeVariable 0) (TypeVariable 1)
+    main_key <- FunctionKey MP.getMainIdentity (LoweringInfo [] [] main_result [Owner (TypeVariable 0)] 2)
+    (context, main_lir_id) <- getLIRId context main_key
+    context <- addItem context main_key
+    context <- processQueue context
+    lir_program <- LP.createProgram
+    lir_program <- Map.fold lir_program context.lir_functions (\lir_program, (id, f) -> LP.addFunction lir_program id f)
+    lir_program <- Map.fold lir_program context.lir_records (\lir_program, (id, r) -> LP.addRecord lir_program id r)
+    lir_program <- Map.fold lir_program context.lir_adts (\lir_program, (id, a) -> LP.addAdt lir_program id a)
+    lir_program

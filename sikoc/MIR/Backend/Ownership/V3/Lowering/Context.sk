@@ -1,0 +1,92 @@
+
+module Siko.MIR.Backend.Ownership.V3.Lowering.Context where
+
+import Siko.Config
+import Siko.Trace
+import Siko.MIR.Backend.Ownership.V3.Lowering.LoweringInfo
+import Siko.MIR.Backend.Ownership.V3.Lowering.Naming
+import Siko.MIR.Backend.Ownership.V3.Lowering.Expr
+import Siko.MIR.Backend.Ownership.V3.FunctionInfoStore
+import Siko.MIR.Backend.Ownership.V3.Lowering.Function
+import Siko.MIR.Backend.Ownership.V3.Lowering.Data
+import Siko.MIR.Program as MP
+import Siko.LIR.Program as LP
+import Siko.LIR.Function as LF
+import Siko.LIR.Type as LT
+import Siko.LIR.Data as LD
+
+import Map
+
+data LIRKey = FunctionKey MP.Identity LoweringInfo
+            | RecordKey MP.Identity LoweringInfo
+            | AdtKey MP.Identity LoweringInfo
+            deriving (PartialEq, Eq, PartialOrd, Ord, Show)
+
+data Context = { function_info_store :: FunctionInfoStore,
+                 config :: Config,
+                 mir_program :: MP.Program,
+                 items :: [LIRKey],
+                 name_map :: NameMap,
+                 lir_ids :: Map LIRKey LP.Identity,
+                 lir_functions :: Map LP.Identity LF.Function,
+                 lir_records :: Map LP.Identity LD.Record,
+                 lir_adts :: Map LP.Identity LD.AlgebraicDataType,
+               }
+
+createContext :: FunctionInfoStore -> Config -> MP.Program -> Context
+createContext function_info_store config mir_program =
+    Context function_info_store config mir_program [] (NameMap Map.empty)
+            Map.empty Map.empty Map.empty Map.empty
+
+addItem :: Context -> LIRKey -> Context
+addItem context key = do
+    items <- List.push context.items key
+    context { items = items }
+
+addFunction :: Context -> LF.Function -> Context
+addFunction context function = do
+    (lir_functions, _) <- Map.insert context.lir_functions function.id function
+    context { lir_functions = lir_functions }
+
+addRecord :: Context -> LD.Record -> Context
+addRecord context record = do
+    (lir_records, _) <- Map.insert context.lir_records record.id record
+    context { lir_records = lir_records }
+
+addAdt :: Context -> LD.AlgebraicDataType -> Context
+addAdt context adt = do
+    (lir_adts, _) <- Map.insert context.lir_adts adt.id adt
+    context { lir_adts = lir_adts }
+
+processQueue :: Context -> Context
+processQueue context = do
+    loop context <- context do
+        context :: Context <- context // FIXME
+        if List.isEmpty context.items
+            then break context
+            else do
+                items <- context.items
+                context <- context { items = [] }
+                List.fold context items (\context, item -> processItem context item)
+
+processItem :: Context -> LIRKey -> Context
+processItem context lir_key = do
+    lir_id <- case get context.lir_ids lir_key of
+        Some lir_id -> lir_id
+        None -> panic "No lir id found for {}" % lir_key
+    case lir_key of
+        FunctionKey mir_id lowering_info -> do
+            case get context.lir_functions lir_id of
+                Some _ -> context
+                None -> lowerFunction context lowering_info mir_id lir_id
+                _ -> context
+        RecordKey mir_id lowering_info -> do
+            case get context.lir_records lir_id of
+                Some _ -> context
+                None -> lowerRecord context lowering_info mir_id lir_id
+                _ -> context
+        AdtKey mir_id lowering_info -> do
+            case get context.lir_adts lir_id of
+                Some _ -> context
+                None -> lowerAdt context lowering_info mir_id lir_id
+                _ -> context

@@ -1,70 +1,36 @@
-module Siko.MIR.Backend.Ownership.V3.FunctionInfo(FunctionInfo, normalize) where
+module Siko.MIR.Backend.Ownership.V3.FunctionInfo(FunctionInfo, normalizeFunctionInfo, duplicateFunctionInfo) where
 
 import Siko.MIR.Backend.Ownership.V3.InferenceInfo
 import Siko.MIR.Backend.Ownership.V3.TypeVariableInfo
-import Siko.MIR.Backend.Ownership.V3.ConstraintInfo
+import Siko.MIR.Backend.Ownership.V3.TypeVariableAllocator
+import Siko.MIR.Backend.Ownership.V3.ConstraintInfo as C
+import Siko.MIR.Backend.Ownership.V3.Duplicator
 
 import Map
 
-data OwnershipInfo = Owner TypeVariable
-                   | Borrower TypeVariable Int
-                   deriving (PartialEq, Eq)
-
 data FunctionInfo = { args :: [TypeVariableInfo],
                       result :: TypeVariableInfo,
-                      constraints :: [ConstraintInfo],
+                      constraints :: [C.ConstraintInfo],
                       converters :: [Converter],
-                      ownershipinfos :: [OwnershipInfo],
-                    } deriving (PartialEq, Eq)
+                      ownershipinfos :: [C.OwnershipInfo],
+                    } deriving (PartialEq, Eq, Show)
 
-normalizeVar :: Map TypeVariable TypeVariable -> TypeVariable -> (Map TypeVariable TypeVariable, TypeVariable)
-normalizeVar vars var = do
-    next <- TypeVariable (Map.getSize vars)
-    (var, vars, _) <- Map.alterS (\index, old -> case old of
-        Some old -> (old, Some old)
-        None -> (next, Some next)) next var vars
-    (vars, var)
-
-normalizeTypeVariableInfo :: Map TypeVariable TypeVariable -> TypeVariableInfo -> (Map TypeVariable TypeVariable, TypeVariableInfo)
-normalizeTypeVariableInfo vars type_variable_info = do
-    (vars, ownership_var) <- normalizeVar vars type_variable_info.ownership_var
-    (vars, arg_group_var) <- normalizeVar vars type_variable_info.arg_group_var
-    (vars, TypeVariableInfo ownership_var arg_group_var)
-
-normalizeConstraint :: Map TypeVariable TypeVariable -> ConstraintInfo -> (Map TypeVariable TypeVariable, ConstraintInfo)
-normalizeConstraint vars constraint_info =
-    case constraint_info of
-        VariantConstraint index root info -> do
-            (vars, root) <- normalizeVar vars root
-            (vars, info) <- normalizeTypeVariableInfo vars info
-            (vars, VariantConstraint index root info)
-        MemberConstraint name root info -> do
-            (vars, root) <- normalizeVar vars root
-            (vars, info) <- normalizeTypeVariableInfo vars info
-            (vars, MemberConstraint name root info)
-
-normalizeConverter :: Map TypeVariable TypeVariable -> Converter -> (Map TypeVariable TypeVariable, Converter)
-normalizeConverter vars converter = do
-    (vars, from) <- normalizeVar vars converter.from
-    (vars, to) <- normalizeVar vars converter.to
-    (vars, Converter from to)
-
-normalizeOwnershipInfo :: Map TypeVariable TypeVariable -> OwnershipInfo -> (Map TypeVariable TypeVariable, OwnershipInfo)
-normalizeOwnershipInfo vars ownershipinfo =
-    case ownershipinfo of
-        Owner v -> do
-            (vars, v) <- normalizeVar vars v
-            (vars, Owner v)
-        Borrower v i -> do
-            (vars, v) <- normalizeVar vars v
-            (vars, Borrower v i)
-
-normalize :: FunctionInfo -> FunctionInfo
-normalize function_info = do
-    vars <- Map.empty
-    (vars, args) <- List.mapS vars function_info.args normalizeTypeVariableInfo
-    (vars, result) <- normalizeTypeVariableInfo vars function_info.result
-    (vars, constraints) <- List.mapS vars function_info.constraints normalizeConstraint
-    (vars, converters) <- List.mapS vars function_info.converters normalizeConverter
-    (vars, ownershipinfos) <- List.mapS vars function_info.ownershipinfos normalizeOwnershipInfo
+normalizeFunctionInfo :: FunctionInfo -> FunctionInfo
+normalizeFunctionInfo function_info = do
+    duplicator <- createNormalizer
+    (duplicator, args) <- List.mapS duplicator function_info.args duplicate
+    (duplicator, result) <- duplicate duplicator function_info.result
+    (duplicator, constraints) <- List.mapS duplicator function_info.constraints duplicate
+    (duplicator, converters) <- List.mapS duplicator function_info.converters duplicate
+    (duplicator, ownershipinfos) <- List.mapS duplicator function_info.ownershipinfos duplicate
     FunctionInfo args result constraints converters ownershipinfos
+
+duplicateFunctionInfo :: TypeVariableAllocator -> FunctionInfo -> (TypeVariableAllocator, FunctionInfo)
+duplicateFunctionInfo allocator function_info = do
+    duplicator <- createDuplicator allocator
+    (duplicator, args) <- List.mapS duplicator function_info.args duplicate
+    (duplicator, result) <- duplicate duplicator function_info.result
+    (duplicator, constraints) <- List.mapS duplicator function_info.constraints duplicate
+    (duplicator, converters) <- List.mapS duplicator function_info.converters duplicate
+    (duplicator, ownershipinfos) <- List.mapS duplicator function_info.ownershipinfos duplicate
+    (duplicator.allocator, FunctionInfo args result constraints converters ownershipinfos)

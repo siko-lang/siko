@@ -1,0 +1,46 @@
+module Siko.MIR.Backend.Ownership.V3.Lowering.Type where
+
+import Siko.MIR.Backend.Ownership.V3.Lowering.Context
+import Siko.MIR.Backend.Ownership.V3.Lowering.Naming
+import Siko.MIR.Backend.Ownership.V3.Lowering.LoweringInfo
+import Siko.MIR.Backend.Ownership.V3.TypeVariableInfo
+import Siko.LIR.Type as LT
+import Siko.MIR.Type as MT
+import Siko.LIR.Function as LF
+import Siko.MIR.Function as MF
+
+lowerType :: Context -> LoweringInfo -> MT.Type -> (Context, LT.Type)
+lowerType context lowering_info mir_type = do
+    lowering_info <- lowering_info { args = [] }
+    case mir_type of
+        MT.Record id _ -> do
+            //println "Record input {}" % lowering_info
+            lowering_info <- normalizeLoweringInfo lowering_info
+            lir_key <- RecordKey id lowering_info
+            context <- addItem context lir_key
+            (context, lir_id) <- getLIRId context lir_key
+            //println "lowerType: {} {}" % (lir_id, lir_key)
+            lifetimes <- collectLifetimes lowering_info
+            (context, LT.Record lir_id lifetimes)
+        MT.Adt id _ -> do
+            lowering_info <- normalizeLoweringInfo lowering_info
+            lir_key <- AdtKey id lowering_info
+            context <- addItem context lir_key
+            (context, lir_id) <- getLIRId context lir_key
+            //println "lowerType: {} {}" % (lir_id, lir_key)
+            lifetimes <- collectLifetimes lowering_info
+            (context, LT.Adt lir_id lifetimes)
+        _ -> (context, LT.Never)
+
+lowerFunctionType :: Context -> LoweringInfo -> MF.FunctionType -> (Context, LF.FunctionType, [LT.Lifetime])
+lowerFunctionType context lowering_info mir_function_type = do
+    (context, args) <- List.mapSE context mir_function_type.args (\context, index, arg_type -> do
+        lowering_info <- filterInfo lowering_info [atIndex lowering_info.args index]
+        lowerType context lowering_info arg_type)
+    (context, result) <- lowerType context (filterInfo lowering_info [lowering_info.result]) mir_function_type.result
+    lifetimes <- collectLifetimes lowering_info
+    (context, LF.FunctionType args result, lifetimes)
+
+collectLifetimes :: LoweringInfo -> [LT.Lifetime]
+collectLifetimes lowering_info = do
+    []

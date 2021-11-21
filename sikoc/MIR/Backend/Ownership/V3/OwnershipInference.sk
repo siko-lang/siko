@@ -4,30 +4,28 @@ import Siko.MIR.Program as P
 import Siko.MIR.Backend.Ownership.V3.InferenceInfo
 import Siko.MIR.Backend.Ownership.V3.BorrowInfo
 import Siko.MIR.Backend.Ownership.V3.TypeVariableInfo
+import Siko.MIR.Backend.Ownership.V3.FunctionInfoStore
 import Siko.MIR.Backend.Traversal
 import Siko.MIR.Expr as E
 import Siko.MIR.Function as F
 
 import Map
 
-data OwnershipKind = Unknown Int
-                   | Owner
-                   | Borrower (E.Var)
-                   deriving (Show)
-
 data Context = { inference_info :: InferenceInfo,
-                 ownership_values :: Map TypeVariable OwnershipKind,
                  program :: P.Program,
-                 borrow_info :: BorrowInfo }
+                 borrow_info :: BorrowInfo,
+                 function_info_store :: FunctionInfoStore }
 
 addOwnershipValue :: Context -> TypeVariable -> OwnershipKind -> Context
 addOwnershipValue context var kind = do
-    (ownership_values, _) <- Map.insert context.ownership_values var kind
-    context { ownership_values = ownership_values }
+    inference_info <- context.inference_info
+    (ownership_values, _) <- Map.insert inference_info.ownership_values var kind
+    inference_info <- inference_info { ownership_values = ownership_values }
+    context { inference_info = inference_info }
 
 getOwnershipValue :: Context -> TypeVariable -> OwnershipKind
 getOwnershipValue context var =
-    case Map.get context.ownership_values var of
+    case Map.get context.inference_info.ownership_values var of
         Some kind -> kind
         None -> panic "Ownership value not found"
 
@@ -47,7 +45,11 @@ processExpr context expr = do
         E.StaticFunctionCall f_id args -> do
                 function <- P.getFunction context.program f_id
                 case function.kind of
-                    F.Normal _ -> context
+                    F.Normal _ -> do
+                        case getFunctionInfo context.function_info_store f_id of
+                            Some function_info -> do
+                                context
+                            None -> panic "No function info found for called fn {}" % f_id
                     F.VariantCtor _ -> addOwnershipValue context info.ownership_var Owner
                     F.RecordCtor -> addOwnershipValue context info.ownership_var Owner
                     F.Extern type_mapping -> context
@@ -94,10 +96,11 @@ dumpExpr context expr = do
     println "dumpOwnership {} {} {}" % (E.short expr, info, o1)
     (context, expr)
 
-inferOwnership :: InferenceInfo -> P.Program -> E.Expr -> BorrowInfo -> InferenceInfo
-inferOwnership inference_info program body borrow_info = do
-    context <- Context inference_info Map.empty program borrow_info
+inferOwnership :: FunctionInfoStore -> InferenceInfo -> P.Program -> E.Expr -> BorrowInfo -> InferenceInfo
+inferOwnership function_info_store inference_info program body borrow_info = do
+    context <- Context inference_info program borrow_info function_info_store
     (context, body) <- traverse context body (Some initializeExpr) None
     (context, body) <- traverse context body (Some processExpr) None
-    (context, body) <- traverse context body (Some dumpExpr) None
+    //(context, body) <- traverse context body (Some dumpExpr) None
+    //println "end of infer {}" % context.inference_info
     context.inference_info
