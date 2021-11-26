@@ -5,16 +5,18 @@ import Siko.MIR.Backend.Ownership.V3.TypeVariableInfo
 import Siko.MIR.Backend.Ownership.V3.ConstraintInfo
 import Map
 
+data Equal = Equal TypeVariable TypeVariable deriving (Show)
+
 class Apply a where
-    apply a :: Constraint -> a -> a
+    apply a :: Equal -> a -> a
 
 instance (Apply a) => Apply [a] where
-    //apply a :: Constraint -> [a] -> [a]
-    apply constraint items = List.map items (apply constraint)
+    //apply a :: Equal -> [a] -> [a]
+    apply equal items = List.map items (apply equal)
 
-instance Apply Constraint where
-    apply c constraint2 =
-        case constraint2 of
+instance Apply Equal where
+    apply c equal =
+        case equal of
             Equal id1 id2 -> Equal (apply c id1) (apply c id2)
 
 instance (Apply v, Ord k) => Apply Map k v where
@@ -37,10 +39,11 @@ instance Apply InferenceInfo where
         result <- apply c inference_info.result
         constraints <- apply c inference_info.constraints
         converters <- apply c inference_info.converters
-        InferenceInfo expr_type_variables var_type_variables ownership_values args result constraints converters inference_info.allocator
+        InferenceInfo expr_type_variables var_type_variables ownership_values
+            args result constraints converters inference_info.allocator
 
 instance Apply TypeVariable where
-    apply constraint type_variable = case constraint of
+    apply equal type_variable = case equal of
             Equal id1 id2 -> do
                 min_id <- min id1 id2
                 max_id <- max id1 id2
@@ -49,25 +52,25 @@ instance Apply TypeVariable where
 instance Apply TypeVariableInfo where
     apply c info = TypeVariableInfo (apply c info.ownership_var) (apply c info.arg_group_var)
 
-solve :: [Constraint] -> InferenceInfo -> InferenceInfo
-solve constraints inference_info = do
-    loop (constraints, inference_info) <- (constraints, inference_info) do
-        if isEmpty constraints
+applyEquals :: [Equal] -> InferenceInfo -> InferenceInfo
+applyEquals equals inference_info = do
+    loop (equals, inference_info) <- (equals, inference_info) do
+        if isEmpty equals
         then break inference_info
         else do
-            (constraint, constraints) <- List.remove constraints 0
-            constraints <- apply constraint constraints
-            inference_info <- apply constraint inference_info
-            (constraints, inference_info)
+            (equal, equals) <- List.remove equals 0
+            equals <- apply equal equals
+            inference_info <- apply equal inference_info
+            (equals, inference_info)
 
 data MergeKey b = VariantKey Int b
                 | MemberKey String b deriving (PartialEq, Eq, PartialOrd, Ord)
 
-addEqual :: [Constraint] -> TypeVariableInfo -> TypeVariableInfo -> [Constraint]
-addEqual constraints info1 info2 = do
-    constraints <- push constraints (Equal info1.ownership_var info2.ownership_var)
-    constraints <- push constraints (Equal info1.arg_group_var info2.arg_group_var)
-    constraints
+addEqual :: [Equal] -> TypeVariableInfo -> TypeVariableInfo -> [Equal]
+addEqual equals info1 info2 = do
+    equals <- push equals (Equal info1.ownership_var info2.ownership_var)
+    equals <- push equals (Equal info1.arg_group_var info2.arg_group_var)
+    equals
 
 merge :: InferenceInfo -> InferenceInfo
 merge inference_info =
@@ -89,7 +92,7 @@ merge inference_info =
         if isEmpty equals
         then break inference_info
         else do
-            inference_info <- solve equals inference_info
+            inference_info <- applyEquals equals inference_info
             constraints <- inference_info.constraints |> sort |> dedup
             inference_info <- inference_info { constraints = constraints }
             inference_info

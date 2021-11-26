@@ -5,6 +5,7 @@ import Siko.MIR.Program as P
 import Map
 import Set
 import Siko.MIR.Backend.Ownership.V3.FunctionInfo
+import Siko.MIR.Backend.Ownership.V3.Lowering.LoweringInfo
 import Siko.MIR.Backend.Ownership.V3.TypeVariableInfo
 import Siko.MIR.Backend.Ownership.V3.TypeVariableAllocator
 import Siko.MIR.Backend.Ownership.V3.ConstraintInfo as C
@@ -28,8 +29,33 @@ data InferenceInfo = { expr_type_variables :: Map E.ExprId TypeVariableInfo,
                        allocator :: TypeVariableAllocator,
                      } deriving (Show)
 
-createInferenceInfo :: Int -> TypeVariableAllocator -> (InferenceInfo)
-createInferenceInfo arg_count allocator = do
+createInferenceInfoFromLoweringInfo :: LoweringInfo -> InferenceInfo
+createInferenceInfoFromLoweringInfo lowering_info = do
+    expr_type_variables <- Map.empty
+    var_type_variables <- Map.empty
+    ownership_values <- Map.empty
+    args <- lowering_info.args
+    result <- lowering_info.result
+    allocator <- createTypeVariableAllocator (lowering_info.max + 1)
+    constraints <- lowering_info.constraints
+    converters <- []
+    inference_info <- InferenceInfo expr_type_variables var_type_variables
+        ownership_values args result constraints converters allocator
+    inference_info <- List.foldE (\inference_info, index, arg -> do
+        var <- E.Arg index
+        (var_type_variables, _) <- Map.insert inference_info.var_type_variables var arg
+        inference_info { var_type_variables = var_type_variables }) inference_info args
+    List.fold inference_info lowering_info.ownershipinfos (\inference_info, ownershipinfo -> do
+            (v, kind) <- case ownershipinfo of
+                C.Owner v -> (v, Owner)
+                C.Borrower v _ -> (v, Borrower (E.Arg 0)) // FIXME: this is wrong
+            (ownership_values, _) <- Map.insert inference_info.ownership_values v kind
+            inference_info { ownership_values = ownership_values }
+        )
+
+createInferenceInfo :: Int -> InferenceInfo
+createInferenceInfo arg_count = do
+    allocator <- createTypeVariableAllocator 0
     expr_type_variables <- Map.empty
     var_type_variables <- Map.empty
     ownership_values <- Map.empty
@@ -81,8 +107,6 @@ getTypeVariableInfoByVar inference_info var =
     case Map.get inference_info.var_type_variables var of
         Some i -> i
         None -> panic "TypeVariableInfo not found for var {}" % var
-
-data Constraint = Equal TypeVariable TypeVariable
 
 toOwnershipInfo :: Map TypeVariable OwnershipKind -> Bool -> [C.OwnershipInfo]
 toOwnershipInfo ownership_values allow_unknown =

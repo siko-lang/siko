@@ -14,17 +14,17 @@ import Siko.MIR.Backend.Ownership.V3.TypeVariableInfo
 import Siko.MIR.Backend.Ownership.V3.TypeVariableAllocator
 import Siko.MIR.Backend.Traversal
 
-data Context = { constraints :: [Constraint],
+data Context = { equals :: [Equal],
                  inference_info :: InferenceInfo,
                  function_info_store :: FunctionInfoStore,
                  program :: P.Program }
 
 addEqualInfo :: Context -> TypeVariableInfo -> TypeVariableInfo -> Context
 addEqualInfo context info1 info2 = do
-    constraints <- context.constraints
-    constraints <- push constraints (Equal info1.ownership_var info2.ownership_var)
-    constraints <- push constraints (Equal info1.arg_group_var info2.arg_group_var)
-    context { constraints = constraints }
+    equals <- context.equals
+    equals <- push equals (Equal info1.ownership_var info2.ownership_var)
+    equals <- push equals (Equal info1.arg_group_var info2.arg_group_var)
+    context { equals = equals }
 
 addEqualExprs :: Context -> E.ExprId -> E.ExprId -> Context
 addEqualExprs context expr_id1 expr_id2 = do
@@ -111,6 +111,7 @@ processExpr context expr = do
                     inference_info <- context.inference_info
                     allocator <- inference_info.allocator
                     (allocator, function_info) <- duplicateFunctionInfo allocator function_info
+                    println "function_info {} {}" % (f_id, function_info)
                     inference_info <- inference_info { allocator = allocator }
                     context <- context { inference_info = inference_info }
                     (context, function_info)
@@ -121,7 +122,18 @@ processExpr context expr = do
                         F.VariantCtor index -> createVariantctorFunctionInfo context index function.type.result
                         F.RecordCtor -> createRecordCtorFunctionInfo context function.type.result
                         F.Extern type_mapping -> panic "No function info found for extern function"
-
+            context <- zipS context function_info.args args (\context, info_arg, arg_expr -> do
+                E.Expr _ _ arg_id <- arg_expr
+                expr_info <- getTypeVariableInfoByExprId context.inference_info arg_id
+                addEqualInfo context expr_info info_arg)
+            result_info <- getTypeVariableInfoByExprId context.inference_info expr_id
+            context <- addEqualInfo context result_info function_info.result
+            inference_info <- context.inference_info
+            inference_info <- List.fold inference_info function_info.constraints (
+                    \inference_info, constraint -> addConstraintInfo inference_info constraint)
+            inference_info <- List.fold inference_info function_info.converters (
+                    \inference_info, converter -> addConverter inference_info converter)
+            context <- context { inference_info = inference_info }
             (context, expr)
         E.IntegerLiteral _ -> (context, expr)
         E.StringLiteral _ -> (context, expr)
@@ -202,13 +214,13 @@ processExpr context expr = do
         E.Box _ -> (context, expr)
         E.Converter arg _ -> do
             inference_info <- context.inference_info
-            constraints <- context.constraints
+            equals <- context.equals
             info1 <- getTypeVariableInfoByExprId inference_info (getExprId arg)
             info2 <- getTypeVariableInfoByExprId inference_info expr_id
             converter <- Converter info1.ownership_var info2.ownership_var
             inference_info <- addConverter inference_info converter
-            constraints <- push constraints (Equal info1.arg_group_var info2.arg_group_var)
-            (context { inference_info = inference_info, constraints = constraints }, expr)
+            equals <- push equals (Equal info1.arg_group_var info2.arg_group_var)
+            (context { inference_info = inference_info, equals = equals }, expr)
 
 generateConstraints :: InferenceInfo -> FunctionInfoStore -> P.Program -> E.Expr -> InferenceInfo
 generateConstraints inference_info function_info_store program body = do
@@ -218,7 +230,7 @@ generateConstraints inference_info function_info_store program body = do
     result_info <- context.inference_info.result
     context <- addEqualInfo context body_info result_info
     inference_info <- context.inference_info
-    constraints <- context.constraints
-    inference_info <- solve constraints inference_info
+    equals <- context.equals
+    inference_info <- applyEquals equals inference_info
     inference_info <- merge inference_info
     inference_info

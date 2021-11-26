@@ -16,7 +16,6 @@ import Siko.MIR.Backend.Ownership.V3.OwnershipInference
 import Siko.MIR.Backend.Ownership.V3.BorrowChecker
 import Siko.MIR.Backend.Ownership.V3.FunctionInfoStore
 import Siko.MIR.Backend.Ownership.V3.FunctionInfo
-import Siko.MIR.Backend.Ownership.V3.TypeVariableAllocator
 
 data Context = { config :: Config,
                  program :: P.Program,
@@ -28,9 +27,8 @@ processFunction context function_id = do
     case function.kind of
         F.Normal info -> do
             trace context.config "Processing {}" % function_id
-            allocator <- createTypeVariableAllocator
             arg_count <- getLength function.type.args
-            inference_info <- createInferenceInfo arg_count allocator
+            inference_info <- createInferenceInfo arg_count
             inference_info <- initializeTypeVariables inference_info info.body
             function_info_store <- context.function_info_store
             inference_info <- generateConstraints inference_info function_info_store context.program info.body

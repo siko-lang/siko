@@ -17,7 +17,7 @@ createDuplicator :: TypeVariableAllocator -> Duplicator
 createDuplicator allocator = Duplicator Map.empty allocator
 
 createNormalizer :: Duplicator
-createNormalizer = createDuplicator createTypeVariableAllocator
+createNormalizer = createDuplicator (createTypeVariableAllocator 0)
 
 getMax :: Duplicator -> Int
 getMax duplicator = duplicator.allocator.counter.next // FIXME: make this nicer!
@@ -27,7 +27,7 @@ instance Duplicable TypeVariable where
     duplicate duplicator var = do
         vars <- duplicator.vars
         allocator <- duplicator.allocator
-        ((s, var), vars, _) <- Map.alterS (\allocator, old -> case old of
+        ((allocator, var), vars, _) <- Map.alterS (\allocator, old -> case old of
             Some old -> ((allocator, old), Some old)
             None -> do
                 (allocator, next) <- getNextTypeVariable allocator
