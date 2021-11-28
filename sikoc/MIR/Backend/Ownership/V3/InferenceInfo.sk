@@ -27,6 +27,7 @@ data InferenceInfo = { expr_type_variables :: Map E.ExprId TypeVariableInfo,
                        constraints :: [C.ConstraintInfo],
                        converters :: [Converter],
                        allocator :: TypeVariableAllocator,
+                       function_converters :: Map E.ExprId [Converter],
                      } deriving (Show)
 
 createInferenceInfoFromLoweringInfo :: LoweringInfo -> InferenceInfo
@@ -39,8 +40,10 @@ createInferenceInfoFromLoweringInfo lowering_info = do
     allocator <- createTypeVariableAllocator (lowering_info.max + 1)
     constraints <- lowering_info.constraints
     converters <- []
+    function_converters <- Map.empty
     inference_info <- InferenceInfo expr_type_variables var_type_variables
         ownership_values args result constraints converters allocator
+        function_converters
     inference_info <- List.foldE (\inference_info, index, arg -> do
         var <- E.Arg index
         (var_type_variables, _) <- Map.insert inference_info.var_type_variables var arg
@@ -60,8 +63,11 @@ createInferenceInfo arg_count = do
     var_type_variables <- Map.empty
     ownership_values <- Map.empty
     args <- []
+    function_converters <- Map.empty
     (allocator, result) <- getNextTypeVariableInfo allocator
-    inference_info <- InferenceInfo expr_type_variables var_type_variables ownership_values args result [] [] allocator
+    inference_info <- InferenceInfo expr_type_variables var_type_variables
+            ownership_values args result [] [] allocator
+            function_converters
     loop (inference_info, index) <- (inference_info, 0) do
         if index >= arg_count
         then break inference_info

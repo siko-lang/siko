@@ -14,6 +14,8 @@ import Siko.MIR.Backend.Ownership.V3.TypeVariableInfo
 import Siko.MIR.Backend.Ownership.V3.TypeVariableAllocator
 import Siko.MIR.Backend.Traversal
 
+import Map
+
 data Context = { equals :: [Equal],
                  inference_info :: InferenceInfo,
                  function_info_store :: FunctionInfoStore,
@@ -111,7 +113,7 @@ processExpr context expr = do
                     inference_info <- context.inference_info
                     allocator <- inference_info.allocator
                     (allocator, function_info) <- duplicateFunctionInfo allocator function_info
-                    println "function_info {} {}" % (f_id, function_info)
+                    //println "function_info {} {}" % (f_id, function_info)
                     inference_info <- inference_info { allocator = allocator }
                     context <- context { inference_info = inference_info }
                     (context, function_info)
@@ -133,6 +135,8 @@ processExpr context expr = do
                     \inference_info, constraint -> addConstraintInfo inference_info constraint)
             inference_info <- List.fold inference_info function_info.converters (
                     \inference_info, converter -> addConverter inference_info converter)
+            (function_converters, _) <- Map.insert inference_info.function_converters expr_id function_info.converters
+            inference_info <- inference_info { function_converters = function_converters }
             context <- context { inference_info = inference_info }
             (context, expr)
         E.IntegerLiteral _ -> (context, expr)

@@ -20,16 +20,17 @@ createLoweringInfo :: InferenceInfo -> [TypeVariableInfo] -> TypeVariableInfo ->
 createLoweringInfo inference_info args result = do
     //println "Creating lowering info"
     lowering_info <- LoweringInfo inference_info.constraints args result (toOwnershipInfo inference_info.ownership_values False) 0
+    //println "Unfiltered {}" % lowering_info
     filterInfo lowering_info (List.push args result)
     //println "Inference info {}" % inference_info
     //println "Lowering info {}" % lowering_info
     //lowering_info
 
 matchVarsToConstraints :: [TypeVariable] -> ConstraintInfo -> Bool
-matchVarsToConstraints vars constraint = List.fold False vars (\match, var -> False || filterConstraint constraint var)
+matchVarsToConstraints vars constraint = List.fold False vars (\match, var -> match || filterConstraint constraint var)
 
 matchVarsToOwnershipInfo :: [TypeVariable] -> OwnershipInfo -> Bool
-matchVarsToOwnershipInfo vars ownershipinfo = List.fold False vars (\match, var -> False || filterOwnershipInfo ownershipinfo var)
+matchVarsToOwnershipInfo vars ownershipinfo = List.fold False vars (\match, var -> match || filterOwnershipInfo ownershipinfo var)
 
 filterInfo :: LoweringInfo -> [TypeVariableInfo] -> LoweringInfo
 filterInfo lowering_info sources = do
@@ -40,8 +41,10 @@ filterInfo lowering_info sources = do
         relevant_vars)
     relevant_vars <- collectRelevantVars lowering_info.constraints relevant_vars
     relevant_vars <- Set.iter relevant_vars |> toList
+    //println "Relevant vars {}" % relevant_vars
     constraints <- List.filter lowering_info.constraints (matchVarsToConstraints relevant_vars)
     ownershipinfos <- List.filter lowering_info.ownershipinfos (matchVarsToOwnershipInfo relevant_vars)
+    //println "{} => {}" % (lowering_info.ownershipinfos, ownershipinfos)
     LoweringInfo constraints lowering_info.args lowering_info.result ownershipinfos lowering_info.max
 
 normalizeLoweringInfo :: LoweringInfo -> LoweringInfo

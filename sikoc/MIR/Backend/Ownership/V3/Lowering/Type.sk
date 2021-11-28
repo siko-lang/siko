@@ -19,7 +19,7 @@ lowerType context lowering_info mir_type = do
             lir_key <- RecordKey id lowering_info
             context <- addItem context lir_key
             (context, lir_id) <- getLIRId context lir_key
-            //println "lowerType: {} {}" % (lir_id, lir_key)
+            //println "lowerType: {} {} {}" % (lir_id, lir_key, lowering_info)
             lifetimes <- collectLifetimes lowering_info
             (context, LT.Record lir_id lifetimes)
         MT.Adt id _ -> do
@@ -34,8 +34,11 @@ lowerType context lowering_info mir_type = do
 
 lowerFunctionType :: Context -> LoweringInfo -> MF.FunctionType -> (Context, LF.FunctionType, [LT.Lifetime])
 lowerFunctionType context lowering_info mir_function_type = do
+    //println "lowerFunctionType {} {}" % (mir_function_type, lowering_info)
     (context, args) <- List.mapSE context mir_function_type.args (\context, index, arg_type -> do
-        lowering_info <- filterInfo lowering_info [atIndex lowering_info.args index]
+        result <- atIndex lowering_info.args index
+        lowering_info <- filterInfo lowering_info [result]
+        lowering_info <- lowering_info { result = result }
         lowerType context lowering_info arg_type)
     (context, result) <- lowerType context (filterInfo lowering_info [lowering_info.result]) mir_function_type.result
     lifetimes <- collectLifetimes lowering_info

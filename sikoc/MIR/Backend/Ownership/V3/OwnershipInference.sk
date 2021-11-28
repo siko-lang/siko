@@ -34,8 +34,21 @@ initializeExpr context expr = do
     E.Expr s_expr _ expr_id <- expr
     info <- getTypeVariableInfoByExprId context.inference_info expr_id
     TypeVariable index <- info.ownership_var
-    context <- addOwnershipValue context info.ownership_var (Unknown index)
-    (context, expr)
+    case Map.get context.inference_info.ownership_values info.ownership_var of
+        Some _ -> (context, expr)
+        None -> do
+            context <- addOwnershipValue context info.ownership_var (Unknown index)
+            (context, expr)
+
+processFunctionConverter :: Context -> TypeVariable -> TypeVariable -> Context
+processFunctionConverter context from to = do
+    from_kind <- getOwnershipValue context from
+    to_kind <- case from_kind of
+        Owner -> Owner
+        Borrower b -> Borrower b
+        Unknown u -> Unknown u
+    context <- addOwnershipValue context to to_kind
+    context
 
 processExpr :: Context -> E.Expr -> (Context, E.Expr)
 processExpr context expr = do
@@ -48,7 +61,11 @@ processExpr context expr = do
                     F.Normal _ -> do
                         case getFunctionInfo context.function_info_store f_id of
                             Some function_info -> do
-                                context
+                                case Map.get context.inference_info.function_converters expr_id of
+                                    Some function_converters -> do
+                                        List.fold context function_converters (\context, converter -> do
+                                            processFunctionConverter context converter.from converter.to)
+                                    None -> panic "No function converters found for {} {}" % (f_id, expr_id)
                             None -> panic "No function info found for called fn {}" % f_id
                     F.VariantCtor _ -> addOwnershipValue context info.ownership_var Owner
                     F.RecordCtor -> addOwnershipValue context info.ownership_var Owner
