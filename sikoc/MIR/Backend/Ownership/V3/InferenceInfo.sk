@@ -31,30 +31,32 @@ data InferenceInfo = { expr_type_variables :: Map E.ExprId TypeVariableInfo,
                      } deriving (Show)
 
 createInferenceInfoFromLoweringInfo :: LoweringInfo -> InferenceInfo
-createInferenceInfoFromLoweringInfo lowering_info = do
-    expr_type_variables <- Map.empty
-    var_type_variables <- Map.empty
-    ownership_values <- Map.empty
-    args <- lowering_info.args
-    result <- lowering_info.result
-    allocator <- createTypeVariableAllocator (lowering_info.max + 1)
-    constraints <- lowering_info.constraints
-    converters <- []
-    function_converters <- Map.empty
-    inference_info <- InferenceInfo expr_type_variables var_type_variables
-        ownership_values args result constraints converters allocator
-        function_converters
-    inference_info <- List.foldE (\inference_info, index, arg -> do
-        var <- E.Arg index
-        (var_type_variables, _) <- Map.insert inference_info.var_type_variables var arg
-        inference_info { var_type_variables = var_type_variables }) inference_info args
-    List.fold inference_info lowering_info.ownershipinfos (\inference_info, ownershipinfo -> do
-            (v, kind) <- case ownershipinfo of
-                C.Owner v -> (v, Owner)
-                C.Borrower v _ -> (v, Borrower (E.Arg 0)) // FIXME: this is wrong
-            (ownership_values, _) <- Map.insert inference_info.ownership_values v kind
-            inference_info { ownership_values = ownership_values }
-        )
+createInferenceInfoFromLoweringInfo lowering_info = case lowering_info of
+    Function lowering_info -> do
+        expr_type_variables <- Map.empty
+        var_type_variables <- Map.empty
+        ownership_values <- Map.empty
+        args <- lowering_info.args
+        result <- lowering_info.result
+        allocator <- createTypeVariableAllocator (lowering_info.max + 1)
+        constraints <- lowering_info.constraints
+        converters <- []
+        function_converters <- Map.empty
+        inference_info <- InferenceInfo expr_type_variables var_type_variables
+            ownership_values args result constraints converters allocator
+            function_converters
+        inference_info <- List.foldE (\inference_info, index, arg -> do
+            var <- E.Arg index
+            (var_type_variables, _) <- Map.insert inference_info.var_type_variables var arg
+            inference_info { var_type_variables = var_type_variables }) inference_info args
+        List.fold inference_info lowering_info.ownershipinfos (\inference_info, ownershipinfo -> do
+                (v, kind) <- case ownershipinfo of
+                    C.Owner v -> (v, Owner)
+                    C.Borrower v _ -> (v, Borrower (E.Arg 0)) // FIXME: this is wrong
+                (ownership_values, _) <- Map.insert inference_info.ownership_values v kind
+                inference_info { ownership_values = ownership_values }
+            )
+    Type _ -> panic "createInferenceInfoFromLoweringInfo called on type lowering info"
 
 createInferenceInfo :: Int -> InferenceInfo
 createInferenceInfo arg_count = do

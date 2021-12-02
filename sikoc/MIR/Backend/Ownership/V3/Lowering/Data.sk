@@ -2,6 +2,7 @@ module Siko.MIR.Backend.Ownership.V3.Lowering.Data where
 
 import Siko.Config
 import Siko.Trace
+import Siko.MIR.Backend.Ownership.V3.ConstraintInfo
 import Siko.MIR.Backend.Ownership.V3.Lowering.LoweringInfo
 import Siko.MIR.Backend.Ownership.V3.Lowering.Context
 import Siko.MIR.Backend.Ownership.V3.Lowering.Naming
@@ -18,11 +19,13 @@ import Map
 
 lowerField :: LoweringInfo -> Context -> MD.RecordField -> (Context, LD.RecordField)
 lowerField lowering_info context mir_field = do
+    lowering_info <- getLoweringInfoForMember lowering_info mir_field.name
     (context, lir_type) <- lowerType context lowering_info mir_field.type
     (context, LD.RecordField mir_field.name lir_type)
 
-lowerVariant :: LoweringInfo -> Context -> MD.Variant -> (Context, LD.Variant)
-lowerVariant lowering_info context mir_variant = do
+lowerVariant :: LoweringInfo -> Context -> Int -> MD.Variant -> (Context, LD.Variant)
+lowerVariant lowering_info context index mir_variant = do
+    lowering_info <- getLoweringInfoForVariant lowering_info index
     (context, lir_type) <- lowerType context lowering_info mir_variant.type
     (context, LD.Variant mir_variant.name lir_type)
 
@@ -42,7 +45,7 @@ lowerAdt :: Context -> LoweringInfo -> MP.Identity -> LP.Identity -> Context
 lowerAdt context lowering_info mir_id lir_id = do
     trace context.config "Lowering adt {}" % mir_id
     mir_adt <- MP.getAdt context.mir_program mir_id
-    (context, variants) <- List.mapS context mir_adt.variants (lowerVariant lowering_info)
+    (context, variants) <- List.mapSE context mir_adt.variants (lowerVariant lowering_info)
     lifetimes <- collectLifetimes lowering_info
     external_class_impls <- []
     lir_adt <- LD.AlgebraicDataType lir_id lifetimes variants external_class_impls

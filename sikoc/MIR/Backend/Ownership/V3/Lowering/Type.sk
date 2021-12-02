@@ -11,7 +11,6 @@ import Siko.MIR.Function as MF
 
 lowerType :: Context -> LoweringInfo -> MT.Type -> (Context, LT.Type)
 lowerType context lowering_info mir_type = do
-    lowering_info <- lowering_info { args = [] }
     case mir_type of
         MT.Record id _ -> do
             //println "Record input {}" % lowering_info
@@ -34,13 +33,11 @@ lowerType context lowering_info mir_type = do
 
 lowerFunctionType :: Context -> LoweringInfo -> MF.FunctionType -> (Context, LF.FunctionType, [LT.Lifetime])
 lowerFunctionType context lowering_info mir_function_type = do
-    //println "lowerFunctionType {} {}" % (mir_function_type, lowering_info)
+    println "lowerFunctionType {} {}" % (mir_function_type, lowering_info)
     (context, args) <- List.mapSE context mir_function_type.args (\context, index, arg_type -> do
-        result <- atIndex lowering_info.args index
-        lowering_info <- filterInfo lowering_info [result]
-        lowering_info <- lowering_info { result = result }
+        lowering_info <- getLoweringInfoForArg lowering_info index
         lowerType context lowering_info arg_type)
-    (context, result) <- lowerType context (filterInfo lowering_info [lowering_info.result]) mir_function_type.result
+    (context, result) <- lowerType context (getLoweringInfoForResult lowering_info) mir_function_type.result
     lifetimes <- collectLifetimes lowering_info
     (context, LF.FunctionType args result, lifetimes)
 
