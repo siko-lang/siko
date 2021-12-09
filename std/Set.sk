@@ -47,3 +47,12 @@ intersection a :: (PartialEq a) => Set a -> Set a -> Set a
 intersection s1 s2 = do
     items <- s1.items |> List.iter |> Iterator.filter (\i -> contains s2 i) |> toList
     Set { items = items }
+
+collect a b :: [b] -> Set a -> (Set a -> b -> Set a) -> Set a
+collect sources result f =
+    loop result <- result do
+        start_size <- Set.getSize result
+        result <- List.fold result sources f
+        if Set.getSize result != start_size
+        then result
+        else break result

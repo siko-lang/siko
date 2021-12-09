@@ -2,23 +2,23 @@ module Siko.MIR.Backend.Ownership.V3.Lowering.LoweringInfo where
 
 import Siko.MIR.Backend.Ownership.V3.TypeVariableInfo
 import Siko.MIR.Backend.Ownership.V3.TypeVariableAllocator
-import Siko.MIR.Backend.Ownership.V3.ConstraintInfo
+import Siko.MIR.Backend.Ownership.V3.ConstraintInfo as C
 import Siko.MIR.Backend.Ownership.V3.InferenceInfo
 import Siko.MIR.Backend.Ownership.V3.Duplicator
 
 import Map
 import Set
 
-data FunctionLoweringInfo = { constraints :: [ConstraintInfo],
+data FunctionLoweringInfo = { constraints :: [C.ConstraintInfo],
                               args :: [TypeVariableInfo],
                               result :: TypeVariableInfo,
-                              ownershipinfos :: [OwnershipInfo],
+                              ownershipinfos :: [C.OwnershipInfo],
                               max :: Int,
                             } deriving (PartialEq, Eq, PartialOrd, Ord, Show)
 
-data TypeLoweringInfo = { constraints :: [ConstraintInfo],
+data TypeLoweringInfo = { constraints :: [C.ConstraintInfo],
                           root :: TypeVariableInfo,
-                          ownershipinfos :: [OwnershipInfo],
+                          ownershipinfos :: [C.OwnershipInfo],
                           max :: Int,
                         } deriving (PartialEq, Eq, PartialOrd, Ord, Show)
 
@@ -26,70 +26,125 @@ data LoweringInfo = Function FunctionLoweringInfo
                   | Type TypeLoweringInfo
                   deriving (PartialEq, Eq, PartialOrd, Ord, Show)
 
-createFunctionLoweringInfo :: InferenceInfo -> [TypeVariableInfo] -> TypeVariableInfo -> LoweringInfo
-createFunctionLoweringInfo inference_info args result = do
+createFunctionLoweringInfo :: [TypeVariableInfo] -> TypeVariableInfo -> LoweringInfo
+createFunctionLoweringInfo args result = Function (FunctionLoweringInfo [] args result [] 0)
+
+createTypeLoweringInfo :: TypeVariableInfo -> LoweringInfo
+createTypeLoweringInfo root = Type (TypeLoweringInfo [] root [] 0)
+
+convertToFunctionLoweringInfo :: InferenceInfo -> [TypeVariableInfo] -> TypeVariableInfo -> LoweringInfo
+convertToFunctionLoweringInfo inference_info args result = do
     //println "Creating function lowering info"
     lowering_info <- Function (FunctionLoweringInfo inference_info.constraints args result
             (toOwnershipInfo inference_info.ownership_values False) 0)
     //println "Unfiltered {}" % lowering_info
-    filterInfo lowering_info (List.push args result)
-    //println "Inference info {}" % inference_info
-    //println "Lowering info {}" % lowering_info
-    //lowering_info
+    output <- createFunctionLoweringInfo args result
+    sources <- List.push args result
+    source_vars <- List.map sources (\source -> source.ownership_var)
+    (output, _) <- List.fold (output, False) sources (filterInfo source_vars lowering_info)
+    output
 
 createTypeLoweringInfoFromInferenceInfo :: InferenceInfo -> TypeVariableInfo -> LoweringInfo
 createTypeLoweringInfoFromInferenceInfo inference_info root = do
     //println "Creating type lowering info"
     lowering_info <- Type (TypeLoweringInfo inference_info.constraints root
             (toOwnershipInfo inference_info.ownership_values False) 0)
-    filterInfo lowering_info [root]
+    output <- createTypeLoweringInfo root
+    (output, _) <- filterInfo [root.ownership_var] lowering_info (output, False) root
+    output
 
 createTypeLoweringInfoFromLoweringInfo :: LoweringInfo -> TypeVariableInfo -> LoweringInfo
 createTypeLoweringInfoFromLoweringInfo lowering_info root = do
     //println "Creating type lowering info"
     case lowering_info of
         Function info -> do
-            lowering_info <- Type (TypeLoweringInfo info.constraints root info.ownershipinfos 0)
-            filterInfo lowering_info [root]
+            output <- createTypeLoweringInfo root
+            (output, _) <- filterInfo [root.ownership_var] lowering_info (output, False) root
+            output
         Type info -> do
-            lowering_info <- Type (TypeLoweringInfo info.constraints root info.ownershipinfos 0)
-            filterInfo lowering_info [root]
+            output <- createTypeLoweringInfo root
+            (output, _) <- filterInfo [root.ownership_var] lowering_info (output, False) root
+            output
 
-matchVarsToConstraints :: [TypeVariable] -> ConstraintInfo -> Bool
-matchVarsToConstraints vars constraint = List.fold False vars (\match, var -> match || filterConstraint constraint var)
-
-matchVarsToOwnershipInfo :: [TypeVariable] -> OwnershipInfo -> Bool
-matchVarsToOwnershipInfo vars ownershipinfo = List.fold False vars (\match, var -> match || filterOwnershipInfo ownershipinfo var)
-
-filterInfo :: LoweringInfo -> [TypeVariableInfo] -> LoweringInfo
-filterInfo lowering_info sources =
+collectBorrows :: LoweringInfo -> Set TypeVariable
+collectBorrows lowering_info =
     case lowering_info of
-        Function info -> do
-            relevant_vars <- Set.empty
-            relevant_vars <- List.fold relevant_vars sources (\relevant_vars, source -> do
-                (relevant_vars, _) <- Set.insert relevant_vars source.ownership_var
-                (relevant_vars, _) <- Set.insert relevant_vars source.arg_group_var
-                relevant_vars)
-            relevant_vars <- collectRelevantVars info.constraints relevant_vars
-            relevant_vars <- Set.iter relevant_vars |> toList
-            //println "Relevant vars {}" % relevant_vars
-            constraints <- List.filter info.constraints (matchVarsToConstraints relevant_vars)
-            ownershipinfos <- List.filter info.ownershipinfos (matchVarsToOwnershipInfo relevant_vars)
-            //println "{} => {}" % (info.ownershipinfos, ownershipinfos)
-            Function (FunctionLoweringInfo constraints info.args info.result ownershipinfos info.max)
-        Type info -> do
-            relevant_vars <- Set.empty
-            relevant_vars <- List.fold relevant_vars sources (\relevant_vars, source -> do
-                (relevant_vars, _) <- Set.insert relevant_vars source.ownership_var
-                (relevant_vars, _) <- Set.insert relevant_vars source.arg_group_var
-                relevant_vars)
-            relevant_vars <- collectRelevantVars info.constraints relevant_vars
-            relevant_vars <- Set.iter relevant_vars |> toList
-            //println "Relevant vars {}" % relevant_vars
-            constraints <- List.filter info.constraints (matchVarsToConstraints relevant_vars)
-            ownershipinfos <- List.filter info.ownershipinfos (matchVarsToOwnershipInfo relevant_vars)
-            //println "{} => {}" % (info.ownershipinfos, ownershipinfos)
-            Type (TypeLoweringInfo constraints info.root ownershipinfos info.max)
+        Function function -> do
+            List.fold Set.empty function.ownershipinfos (\borrows, ownershipinfo ->
+                case ownershipinfo of
+                    C.Owner v -> borrows
+                    C.Borrower v _ -> do
+                        (borrows, _) <- Set.insert borrows v
+                        borrows)
+        Type type -> do
+            List.fold Set.empty type.ownershipinfos (\borrows, ownershipinfo ->
+                case ownershipinfo of
+                    C.Owner v -> borrows
+                    C.Borrower v _ -> do
+                        (borrows, _) <- Set.insert borrows v
+                        borrows)
+
+filterInfo :: [TypeVariable] -> LoweringInfo -> (LoweringInfo, Bool) -> TypeVariableInfo -> (LoweringInfo, Bool)
+filterInfo source_vars input (output, added) source =
+    case input of
+        Function function -> do
+            (output, added) <- List.fold (output, added) function.constraints (processConstraint source_vars input source)
+            (output, added) <- List.fold (output, added) function.ownershipinfos (processOwnershipInfo source_vars input source)
+            (output, added)
+        Type type -> do
+            (output, added) <- List.fold (output, added) type.constraints (processConstraint source_vars input source)
+            (output, added) <- List.fold (output, added) type.ownershipinfos (processOwnershipInfo source_vars input source)
+            (output, added)
+        _ -> panic "filterInfo inconsistency!"
+    where
+        processConstraint :: [TypeVariable] -> LoweringInfo -> TypeVariableInfo -> (LoweringInfo, Bool) -> C.ConstraintInfo -> (LoweringInfo, Bool)
+        processConstraint source_vars input source (output, added) constraint = do
+            (output, local_added) <- case constraint of
+                C.VariantConstraint index root info ->
+                    if source.arg_group_var == root
+                    then filterInfo source_vars input (output, False) info
+                    else (output, False)
+                C.MemberConstraint name root info ->
+                    if source.arg_group_var == root
+                    then filterInfo source_vars input (output, False) info
+                    else (output, False)
+            if local_added
+            then do
+                output <- case output of
+                            Function function -> do
+                                constraints <- List.push function.constraints constraint
+                                Function (function { constraints = constraints })
+                            Type type -> do
+                                constraints <- List.push type.constraints constraint
+                                Type (type { constraints = constraints })
+                (output, True)
+            else (output, added)
+
+        processOwnershipInfo :: [TypeVariable] -> LoweringInfo -> TypeVariableInfo -> (LoweringInfo, Bool) -> C.OwnershipInfo -> (LoweringInfo, Bool)
+        processOwnershipInfo source_vars input source (output, added) ownershipinfo =
+            case ownershipinfo of
+                C.Owner v ->
+                    if added || List.contains source_vars v
+                    then case output of
+                        Function output -> do
+                            ownershipinfos <- List.push output.ownershipinfos ownershipinfo
+                            ownershipinfos <- ownershipinfos |> List.sort |> List.dedup
+                            (Function (output { ownershipinfos = ownershipinfos }), added)
+                        Type output -> do
+                            ownershipinfos <- List.push output.ownershipinfos ownershipinfo
+                            ownershipinfos <- ownershipinfos |> List.sort |> List.dedup
+                            (Type (output { ownershipinfos = ownershipinfos }), added)
+                    else (output, added)
+                C.Borrower v i ->
+                    if source.ownership_var == v
+                    then case output of
+                            Function output -> do
+                                ownershipinfos <- List.push output.ownershipinfos ownershipinfo
+                                (Function (output { ownershipinfos = ownershipinfos }), True)
+                            Type output -> do
+                                ownershipinfos <- List.push output.ownershipinfos ownershipinfo
+                                (Type (output { ownershipinfos = ownershipinfos }), True)
+                    else (output, added)
 
 normalizeLoweringInfo :: LoweringInfo -> LoweringInfo
 normalizeLoweringInfo lowering_info =
@@ -129,12 +184,13 @@ getLoweringInfoForMember lowering_info name = do
         Function info -> panic "getLoweringInfoForMember called on function lowering info"
         Type info -> do
             memberConstraint <- List.filter info.constraints (\constraint -> case constraint of
-                    MemberConstraint n root member_info -> n == name && info.root.arg_group_var == root
+                    C.MemberConstraint n root member_info -> n == name && info.root.arg_group_var == root
                     _ -> False)
             case head memberConstraint of
-                Some (MemberConstraint name root member_info) -> lowering_info  // FIXME
+                Some (C.MemberConstraint name root member_info) ->
+                    createTypeLoweringInfoFromLoweringInfo lowering_info member_info
                 Some _ -> panic "memberConstraint is not a memberConstraint"
-                None -> lowering_info // FIXME
+                None -> createTypeLoweringInfo createRoot
 
 getLoweringInfoForVariant :: LoweringInfo -> Int -> LoweringInfo
 getLoweringInfoForVariant lowering_info index = do
@@ -142,9 +198,10 @@ getLoweringInfoForVariant lowering_info index = do
         Function info -> panic "getLoweringInfoForVariant called on function lowering info"
         Type info -> do
             variantConstraint <- List.filter info.constraints (\constraint -> case constraint of
-                    VariantConstraint i root member_info -> i == index && info.root.arg_group_var == root
+                    C.VariantConstraint i root member_info -> i == index && info.root.arg_group_var == root
                     _ -> False)
             case head variantConstraint of
-                Some (VariantConstraint index root member_info) -> lowering_info  // FIXME
+                Some (C.VariantConstraint index root member_info) ->
+                    createTypeLoweringInfoFromLoweringInfo lowering_info member_info
                 Some _ -> panic "variantConstraint is not a variantConstraint"
-                None -> lowering_info // FIXME
+                None -> createTypeLoweringInfo createRoot
