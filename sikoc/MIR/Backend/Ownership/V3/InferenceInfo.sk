@@ -135,15 +135,15 @@ collectRelevantVars constraints vars =
             C.VariantConstraint index root info ->
                 if Set.contains vars root
                 then do
-                    (vars, _) <- Set.insert vars info.ownership_var
-                    (vars, _) <- Set.insert vars info.arg_group_var
+                    vars <- Set.put vars info.ownership_var
+                    vars <- Set.put vars info.arg_group_var
                     vars
                 else vars
             C.MemberConstraint name root info ->
                 if Set.contains vars root
                 then do
-                    (vars, _) <- Set.insert vars info.ownership_var
-                    (vars, _) <- Set.insert vars info.arg_group_var
+                    vars <- Set.put vars info.ownership_var
+                    vars <- Set.put vars info.arg_group_var
                     vars
                 else vars)
         if Set.getSize vars != start_size
@@ -156,12 +156,12 @@ toFunctionInfo inference_info = do
         converters <- inference_info.converters
         input_vars <- Set.empty
         input_vars <- List.fold input_vars inference_info.args (\input_vars, info -> do
-            (input_vars, _) <- Set.insert input_vars info.ownership_var
-            (input_vars, _) <- Set.insert input_vars info.arg_group_var
+            input_vars <- Set.put input_vars info.ownership_var
+            input_vars <- Set.put input_vars info.arg_group_var
             input_vars)
         output_vars <- Set.empty
-        (output_vars, _) <- Set.insert output_vars inference_info.result.ownership_var
-        (output_vars, _) <- Set.insert output_vars inference_info.result.arg_group_var
+        output_vars <- Set.put output_vars inference_info.result.ownership_var
+        output_vars <- Set.put output_vars inference_info.result.arg_group_var
         input_vars <- collectRelevantVars inference_info.constraints input_vars
         output_vars <- collectRelevantVars inference_info.constraints output_vars
         same_vars <- Set.intersection input_vars output_vars

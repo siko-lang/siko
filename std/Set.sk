@@ -26,6 +26,11 @@ insert set item = do
     inserted <- len != getLength items
     (set { items = items }, inserted)
 
+put a :: (PartialEq a, Ord a) => Set a -> a -> Set a
+put set item = do
+    (set, _) <- insert set item
+    set
+
 remove a :: (PartialEq a) => Set a -> a -> Set a
 remove set item = do
     items <- set.items |> List.iter |> Iterator.filter (\i -> i != item) |> toList
