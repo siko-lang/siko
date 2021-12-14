@@ -18,15 +18,8 @@ createIdMaps graph all_dependencies = do
     where
         mapKey a :: (PartialEq a, Ord a) => (SCC.Graph, Map a SCC.NodeId) -> a -> (SCC.Graph, Map a SCC.NodeId)
         mapKey (graph, id_map) id = do
-            (graph, id_map, _) <- alterS updateGraph graph id id_map
+            (graph, _, id_map) <- addS graph id id_map (\graph, id -> SCC.addNode graph)
             (graph, id_map)
-
-        updateGraph :: SCC.Graph -> Option SCC.NodeId -> (SCC.Graph, Option SCC.NodeId)
-        updateGraph graph old = case old of
-                Some id -> (graph, Some id)
-                None -> do
-                    (graph, node_id) <- SCC.addNode graph
-                    (graph, Some node_id)
 
 initGraph a :: (PartialEq a, Ord a) => SCC.Graph -> Map a SCC.NodeId -> Map a [a] -> SCC.Graph
 initGraph graph item_id_map all_dependencies =

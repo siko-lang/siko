@@ -4,6 +4,8 @@ import Siko.MIR.Program as P
 import Siko.LIR.Program as LP
 import Siko.MIR.Function as F
 import Siko.MIR.Expr as E
+import Siko.MIR.Type as T
+import Siko.MIR.Data as D
 import Siko.Config
 import Siko.Trace
 import Siko.Util.DependencyProcessor
@@ -11,15 +13,66 @@ import Siko.Util.DependencyProcessor
 import Siko.MIR.Backend.Ownership.V3.Lowering
 import Siko.MIR.Backend.Ownership.V3.InferenceInfo
 import Siko.MIR.Backend.Ownership.V3.Initializer
-import Siko.MIR.Backend.Ownership.V3.ConstraintGeneration
+import Siko.MIR.Backend.Ownership.V3.EqualityGeneration
 import Siko.MIR.Backend.Ownership.V3.OwnershipInference
 import Siko.MIR.Backend.Ownership.V3.BorrowChecker
 import Siko.MIR.Backend.Ownership.V3.FunctionInfoStore
 import Siko.MIR.Backend.Ownership.V3.FunctionInfo
+import Siko.MIR.Backend.Ownership.V3.ExternProcessor
+import Siko.MIR.Backend.Ownership.V3.TypeVariableAllocator
+import Siko.MIR.Backend.Ownership.V3.TypeVariableInfo
+import Siko.MIR.Backend.Ownership.V3.MemberInfo
 
 data Context = { config :: Config,
                  program :: P.Program,
                  function_info_store :: FunctionInfoStore }
+
+createRecordCtorFunctionInfo :: Context -> T.Type -> FunctionInfo
+createRecordCtorFunctionInfo context type =
+    case type of
+        T.Record id _ -> do
+            record <- P.getRecord context.program id
+            allocator <- createTypeVariableAllocator 0
+            (allocator, result) <- getNextTypeVariableInfo allocator
+            (allocator, args, members) <- List.fold (allocator, [], []) record.fields (\(allocator, args, members), field -> do
+                    (allocator, arg_info) <- getNextTypeVariableInfo allocator
+                    member <- Member field.name result.arg_group_var arg_info
+                    members <- push members member
+                    args <- push args arg_info
+                    (allocator, args, members))
+            FunctionInfo args result members [] []
+        _ -> panic "createRecordCtorFunctionInfo: not a record"
+
+createVariantctorFunctionInfo :: Context -> Int -> T.Type -> FunctionInfo
+createVariantctorFunctionInfo context index type =
+    case type of
+        T.Adt id _ -> do
+            adt <- P.getAdt context.program id
+            variant <- atIndex adt.variants index
+            case variant.type of
+                T.Record id _ -> do
+                    record <- P.getRecord context.program id
+                    allocator <- createTypeVariableAllocator 0
+                    (allocator, adt_result) <- getNextTypeVariableInfo allocator
+                    (allocator, record_result) <- getNextTypeVariableInfo allocator
+                    (allocator, args, members) <- List.fold (allocator, [], []) record.fields (\(allocator, args, members), field -> do
+                            (allocator, arg_info) <- getNextTypeVariableInfo allocator
+                            member <- Member field.name record_result.arg_group_var arg_info
+                            members <- push members member
+                            args <- push args arg_info
+                            (allocator, args, members))
+                    variants <- [Variant index adt_result.arg_group_var record_result]
+                    FunctionInfo args adt_result (members + variants) [] []
+                _ -> panic "createVariantctorFunctionInfo: not a record"
+        _ -> panic "createVariantctorFunctionInfo: not an adt"
+
+processFunctionInfo :: Context -> FunctionInfo -> P.Identity -> (Context, Bool)
+processFunctionInfo context function_info function_id = do
+    function_info <- normalizeFunctionInfo function_info
+    function_info_store <- context.function_info_store
+    (function_info_store, added) <- addFunctionInfo function_info_store function_id function_info
+    context <- context { function_info_store = function_info_store }
+    (context, added)
 
 processFunction :: Context -> P.Identity -> (Context, Bool)
 processFunction context function_id = do
@@ -31,17 +84,20 @@ processFunction context function_id = do
             inference_info <- createInferenceInfo arg_count
             inference_info <- initializeTypeVariables inference_info info.body
             function_info_store <- context.function_info_store
-            inference_info <- generateConstraints inference_info function_info_store context.program info.body
+            inference_info <- processEqualities inference_info function_info_store context.program info.body
             borrow_info <- checkBorrows context.program info.body
             inference_info <- inferOwnership context.function_info_store inference_info context.program info.body borrow_info
             function_info <- toFunctionInfo inference_info
-            function_info <- normalizeFunctionInfo function_info
-            //println "normalized function info {}" % function_info
-            (function_info_store, added) <- addFunctionInfo function_info_store function_id function_info
-            context <- context { function_info_store = function_info_store }
-            trace context.config "Processing expr done"
-            (context, added)
-        _ -> (context, False)
+            processFunctionInfo context function_info function_id
+        F.VariantCtor index -> do
+            function_info <- createVariantctorFunctionInfo context index function.type.result
+            processFunctionInfo context function_info function_id
+        F.RecordCtor -> do
+            function_info <- createRecordCtorFunctionInfo context function.type.result
+            processFunctionInfo context function_info function_id
+        F.Extern type_mapping -> do
+            function_info <- createExternFunctionInfo type_mapping
+            processFunctionInfo context function_info function_id
 
 processFunctionGroup :: Context -> [P.Identity] -> Context
 processFunctionGroup context group =

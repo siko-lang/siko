@@ -48,6 +48,15 @@ alterS f s k m = do
             (m, v) <- remove m k
             (s, m, v)
 
+addS s k v :: (Ord k) => s -> k -> Map k v -> (s -> k -> (s, v)) -> (s, v, Map k v)
+addS s k m f = do
+    ((s, v), m, _) <- alterS (\s, old -> case old of
+            Some v -> ((s, v), Some v)
+            None -> do
+                (s, v) <- f s k
+                ((s, v), Some v)) s k m
+    (s, v, m)
+
 iter k v :: Map k v -> Iterator (k, v)
 iter m = extern
 

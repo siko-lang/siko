@@ -18,9 +18,7 @@ data Context = { inference_info :: InferenceInfo,
 
 addOwnershipValue :: Context -> TypeVariable -> OwnershipKind -> Context
 addOwnershipValue context var kind = do
-    inference_info <- context.inference_info
-    (ownership_values, _) <- Map.insert inference_info.ownership_values var kind
-    inference_info <- inference_info { ownership_values = ownership_values }
+    inference_info <- addOwnership context.inference_info var kind
     context { inference_info = inference_info }
 
 getOwnershipValue :: Context -> TypeVariable -> OwnershipKind
@@ -58,7 +56,7 @@ processExpr context expr = do
         E.StaticFunctionCall f_id args -> do
                 function <- P.getFunction context.program f_id
                 case function.kind of
-                    F.Normal _ -> do
+                    F.Normal _ | F.Extern _ -> do
                         case getFunctionInfo context.function_info_store f_id of
                             Some function_info -> do
                                 case Map.get context.inference_info.function_converters expr_id of
@@ -69,7 +67,6 @@ processExpr context expr = do
                             None -> panic "No function info found for called fn {}" % f_id
                     F.VariantCtor _ -> addOwnershipValue context info.ownership_var Owner
                     F.RecordCtor -> addOwnershipValue context info.ownership_var Owner
-                    F.Extern type_mapping -> context
         E.VarDecl var rhs -> do
             //println "VarDecl {}" % var
             context <- addOwnershipValue context info.ownership_var Owner
@@ -118,6 +115,6 @@ inferOwnership function_info_store inference_info program body borrow_info = do
     context <- Context inference_info program borrow_info function_info_store
     (context, body) <- traverse context body (Some initializeExpr) None
     (context, body) <- traverse context body (Some processExpr) None
-    //(context, body) <- traverse context body (Some dumpExpr) None
+    (context, body) <- traverse context body (Some dumpExpr) None
     //println "end of infer {}" % context.inference_info
     context.inference_info

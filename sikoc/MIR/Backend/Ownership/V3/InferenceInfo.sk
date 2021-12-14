@@ -8,7 +8,8 @@ import Siko.MIR.Backend.Ownership.V3.FunctionInfo
 import Siko.MIR.Backend.Ownership.V3.Lowering.LoweringInfo
 import Siko.MIR.Backend.Ownership.V3.TypeVariableInfo
 import Siko.MIR.Backend.Ownership.V3.TypeVariableAllocator
-import Siko.MIR.Backend.Ownership.V3.ConstraintInfo as C
+import Siko.MIR.Backend.Ownership.V3.MemberInfo as M
+import Siko.MIR.Backend.Ownership.V3.EqualitySolver
 
 data Converter = { from :: TypeVariable,
                    to :: TypeVariable,
@@ -24,7 +25,7 @@ data InferenceInfo = { expr_type_variables :: Map E.ExprId TypeVariableInfo,
                        ownership_values :: Map TypeVariable OwnershipKind,
                        args :: [TypeVariableInfo],
                        result :: TypeVariableInfo,
-                       constraints :: [C.ConstraintInfo],
+                       members :: [M.MemberInfo],
                        converters :: [Converter],
                        allocator :: TypeVariableAllocator,
                        function_converters :: Map E.ExprId [Converter],
@@ -39,11 +40,11 @@ createInferenceInfoFromLoweringInfo lowering_info = case lowering_info of
         args <- lowering_info.args
         result <- lowering_info.result
         allocator <- createTypeVariableAllocator (lowering_info.max + 1)
-        constraints <- lowering_info.constraints
+        members <- lowering_info.members
         converters <- []
         function_converters <- Map.empty
         inference_info <- InferenceInfo expr_type_variables var_type_variables
-            ownership_values args result constraints converters allocator
+            ownership_values args result members converters allocator
             function_converters
         inference_info <- List.foldE (\inference_info, index, arg -> do
             var <- E.Arg index
@@ -51,8 +52,8 @@ createInferenceInfoFromLoweringInfo lowering_info = case lowering_info of
             inference_info { var_type_variables = var_type_variables }) inference_info args
         List.fold inference_info lowering_info.ownershipinfos (\inference_info, ownershipinfo -> do
                 (v, kind) <- case ownershipinfo of
-                    C.Owner v -> (v, Owner)
-                    C.Borrower v _ -> (v, Borrower (E.Arg 0)) // FIXME: this is wrong
+                    M.Owner v -> (v, Owner)
+                    M.Borrower v _ -> (v, Borrower (E.Arg 0)) // FIXME: this is wrong
                 (ownership_values, _) <- Map.insert inference_info.ownership_values v kind
                 inference_info { ownership_values = ownership_values }
             )
@@ -94,15 +95,20 @@ addExpr inference_info expr_id = do
     inference_info <- inference_info { expr_type_variables = expr_type_variables, allocator = allocator }
     inference_info
 
-addConstraintInfo :: InferenceInfo -> C.ConstraintInfo -> InferenceInfo
-addConstraintInfo inference_info constraint_info = do
-    constraints <- push inference_info.constraints constraint_info
-    inference_info { constraints = constraints }
+addMemberInfo :: InferenceInfo -> M.MemberInfo -> InferenceInfo
+addMemberInfo inference_info member_info = do
+    members <- push inference_info.members member_info
+    inference_info { members = members }
 
 addConverter :: InferenceInfo -> Converter -> InferenceInfo
 addConverter inference_info converter = do
     converters <- push inference_info.converters converter
     inference_info { converters = converters }
+
+addOwnership :: InferenceInfo -> TypeVariable -> OwnershipKind -> InferenceInfo
+addOwnership inference_info var kind = do
+    (ownership_values, _) <- Map.insert inference_info.ownership_values var kind
+    inference_info { ownership_values = ownership_values }
 
 getTypeVariableInfoByExprId :: InferenceInfo -> E.ExprId -> TypeVariableInfo
 getTypeVariableInfoByExprId inference_info expr_id =
@@ -116,30 +122,30 @@ getTypeVariableInfoByVar inference_info var =
         Some i -> i
         None -> panic "TypeVariableInfo not found for var {}" % var
 
-toOwnershipInfo :: Map TypeVariable OwnershipKind -> Bool -> [C.OwnershipInfo]
+toOwnershipInfo :: Map TypeVariable OwnershipKind -> Bool -> [M.OwnershipInfo]
 toOwnershipInfo ownership_values allow_unknown =
     Map.fold [] ownership_values (\ownershipinfos, (var, kind) -> do
                 case kind of
                     Unknown i -> if allow_unknown
                         then ownershipinfos
                         else panic "Unknown found in toOwnershipInfo"
-                    Owner -> List.push ownershipinfos (C.Owner var)
-                    Borrower v -> List.push ownershipinfos (C.Borrower var 0) // FIXME, TODO:
+                    Owner -> List.push ownershipinfos (M.Owner var)
+                    Borrower v -> List.push ownershipinfos (M.Borrower var 0) // FIXME, TODO:
             )
 
-collectRelevantVars :: [C.ConstraintInfo] -> Set TypeVariable -> Set TypeVariable
-collectRelevantVars constraints vars =
+collectRelevantVars :: [M.MemberInfo] -> Set TypeVariable -> Set TypeVariable
+collectRelevantVars members vars =
     loop vars <- vars do
         start_size <- Set.getSize vars
-        vars <- List.fold vars constraints (\added, constraint -> case constraint of
-            C.VariantConstraint index root info ->
+        vars <- List.fold vars members (\added, member_info -> case member_info of
+            M.Variant index root info ->
                 if Set.contains vars root
                 then do
                     vars <- Set.put vars info.ownership_var
                     vars <- Set.put vars info.arg_group_var
                     vars
                 else vars
-            C.MemberConstraint name root info ->
+            M.Member name root info ->
                 if Set.contains vars root
                 then do
                     vars <- Set.put vars info.ownership_var
@@ -152,7 +158,7 @@ collectRelevantVars constraints vars =
 
 toFunctionInfo :: InferenceInfo -> FunctionInfo
 toFunctionInfo inference_info = do
-        constraints <- inference_info.constraints
+        members <- inference_info.members
         converters <- inference_info.converters
         input_vars <- Set.empty
         input_vars <- List.fold input_vars inference_info.args (\input_vars, info -> do
@@ -162,16 +168,37 @@ toFunctionInfo inference_info = do
         output_vars <- Set.empty
         output_vars <- Set.put output_vars inference_info.result.ownership_var
         output_vars <- Set.put output_vars inference_info.result.arg_group_var
-        input_vars <- collectRelevantVars inference_info.constraints input_vars
-        output_vars <- collectRelevantVars inference_info.constraints output_vars
+        input_vars <- collectRelevantVars inference_info.members input_vars
+        output_vars <- collectRelevantVars inference_info.members output_vars
         same_vars <- Set.intersection input_vars output_vars
-        constraints <- List.filter constraints (\constraint -> case constraint of
-                 C.VariantConstraint index root info ->
+        members <- List.filter members (\member_info -> case member_info of
+                 M.Variant index root info ->
                         not (Set.contains same_vars info.ownership_var)
                         || not (Set.contains same_vars info.arg_group_var)
-                 C.MemberConstraint name root info ->
+                 M.Member name root info ->
                         not (Set.contains same_vars info.ownership_var)
                         || not (Set.contains same_vars info.arg_group_var)
             )
         ownershipinfos <- toOwnershipInfo inference_info.ownership_values True
-        FunctionInfo inference_info.args inference_info.result constraints converters ownershipinfos
+        FunctionInfo inference_info.args inference_info.result members converters ownershipinfos
+
+instance Apply Converter where
+    apply equal converter = Converter (apply equal converter.from) (apply equal converter.to)
+
+instance Apply InferenceInfo where
+    apply equal inference_info = do
+        expr_type_variables <- apply equal inference_info.expr_type_variables
+        var_type_variables <- apply equal inference_info.var_type_variables
+        ownership_values <- Map.map inference_info.ownership_values (\(k, v) -> (apply equal k, v))
+        args <- apply equal inference_info.args
+        result <- apply equal inference_info.result
+        members <- apply equal inference_info.members
+        converters <- apply equal inference_info.converters
+        function_converters <- apply equal inference_info.function_converters
+        InferenceInfo expr_type_variables var_type_variables ownership_values
+            args result members converters inference_info.allocator
+            function_converters
+
+instance EqualityStore InferenceInfo where
+    getEqualities inference_info = inference_info.members
+    putEqualities inference_info members = inference_info { members = members }

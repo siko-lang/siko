@@ -60,7 +60,8 @@ processExpr context expr = do
             packExpr context expr
         E.StaticFunctionCall f_id args -> do
             (context, args) <- List.mapS context args (\context, arg -> packExpr context arg)
-            (context, E.Expr (E.StaticFunctionCall f_id args) type id)
+            expr <- E.Expr (E.StaticFunctionCall f_id args) type id
+            packExpr context expr
         E.Return arg -> do
             (context, arg) <- packExpr context arg
             (context, E.Expr (E.Return arg) type id)

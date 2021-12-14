@@ -78,11 +78,12 @@ toJson function = do
 
 data Step = External Int
           | Variant Int
-          | Field Int
+          | Field String Int
           | FunctionArg Int
           | FunctionResult
+          deriving (PartialEq, Eq, PartialOrd, Ord)
 
-data Position = Position [Step]
+data Position = Position [Step] deriving (PartialEq, Eq, PartialOrd, Ord)
 
 instance Show Position where
     show (Position steps) = join steps ""
@@ -91,7 +92,7 @@ instance Show Step where
     show step = case step of
         External index -> ".e{}" % index
         Variant index -> ".v{}" % index
-        Field index -> ".f{}" % index
+        Field name index -> ".f{}" % index
         FunctionArg index -> "arg{}" % index
         FunctionResult -> "R"
 

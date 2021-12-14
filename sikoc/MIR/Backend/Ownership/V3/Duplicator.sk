@@ -1,6 +1,6 @@
 module Siko.MIR.Backend.Ownership.V3.Duplicator where
 
-import Siko.MIR.Backend.Ownership.V3.ConstraintInfo as C
+import Siko.MIR.Backend.Ownership.V3.MemberInfo as M
 import Siko.MIR.Backend.Ownership.V3.TypeVariableInfo
 import Siko.MIR.Backend.Ownership.V3.TypeVariableAllocator
 import Siko.MIR.Backend.Ownership.V3.InferenceInfo
@@ -40,27 +40,27 @@ instance Duplicable TypeVariableInfo where
         (duplicator, arg_group_var) <- duplicate duplicator type_variable_info.arg_group_var
         (duplicator, TypeVariableInfo ownership_var arg_group_var)
 
-instance Duplicable C.ConstraintInfo where
-    duplicate duplicator constraint_info =
-        case constraint_info of
-            C.VariantConstraint index root info -> do
+instance Duplicable M.MemberInfo where
+    duplicate duplicator member_info =
+        case member_info of
+            M.Variant index root info -> do
                 (duplicator, root) <- duplicate duplicator root
                 (duplicator, info) <- duplicate duplicator info
-                (duplicator, C.VariantConstraint index root info)
-            C.MemberConstraint name root info -> do
+                (duplicator, M.Variant index root info)
+            M.Member name root info -> do
                 (duplicator, root) <- duplicate duplicator root
                 (duplicator, info) <- duplicate duplicator info
-                (duplicator, C.MemberConstraint name root info)
+                (duplicator, M.Member name root info)
 
-instance Duplicable C.OwnershipInfo where
+instance Duplicable M.OwnershipInfo where
     duplicate duplicator ownershipinfo =
         case ownershipinfo of
-            C.Owner v -> do
+            M.Owner v -> do
                 (duplicator, v) <- duplicate duplicator v
-                (duplicator, C.Owner v)
-            C.Borrower v i -> do
+                (duplicator, M.Owner v)
+            M.Borrower v i -> do
                 (duplicator, v) <- duplicate duplicator v
-                (duplicator, C.Borrower v i)
+                (duplicator, M.Borrower v i)
 
 instance Duplicable Converter where
     duplicate duplicator converter = do

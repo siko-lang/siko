@@ -1,0 +1,99 @@
+module Siko.MIR.Backend.Ownership.V3.ExternProcessor(createExternFunctionInfo) where
+
+import Siko.MIR.Function as F
+
+import Siko.MIR.Backend.Ownership.V3.TypeVariableInfo
+import Siko.MIR.Backend.Ownership.V3.TypeVariableAllocator
+import Siko.MIR.Backend.Ownership.V3.MemberInfo as M
+import Siko.MIR.Backend.Ownership.V3.EqualitySolver
+import Siko.MIR.Backend.Ownership.V3.FunctionInfo
+
+import Map
+
+data Context = { args :: [F.Step],
+                 allocator :: TypeVariableAllocator,
+                 info_map :: Map F.Position TypeVariableInfo,
+                 members :: [M.MemberInfo],
+                 ownershipinfos :: [M.OwnershipInfo],
+               }
+
+instance Apply Context where
+    apply equal context = do
+        info_map <- apply equal context.info_map
+        members <- apply equal context.members
+        ownershipinfos <- apply equal context.ownershipinfos |> sort |> dedup
+        Context context.args context.allocator info_map members ownershipinfos
+
+instance EqualityStore Context where
+    getEqualities context = context.members
+    putEqualities context members = context { members = members }
+
+getNext :: Context -> (Context, TypeVariableInfo)
+getNext context = do
+    (allocator, info) <- getNextTypeVariableInfo context.allocator
+    (context { allocator = allocator }, info)
+
+processPosition :: Context -> F.Position -> (Context, TypeVariableInfo)
+processPosition context pos = do
+    F.Position steps <- pos
+    (context, info) <- case get context.info_map pos of
+        Some info -> (context, info)
+        None -> do
+            (context, info) <- if getLength steps == 1
+                            then processStep context None (atIndex steps 0)
+                            else do
+                                (last_step, parent) <- List.remove steps (getLength steps - 1)
+                                (context, parent_info) <- processPosition context (F.Position parent)
+                                println "info for parent {} {}/{}" % (parent_info, parent, last_step)
+                                processStep context (Some parent_info) last_step
+            (info_map, _) <- Map.insert context.info_map pos info
+            (context { info_map = info_map }, info)
+    //println "Processing position {} -> {}" % (steps, info)
+    (context, info)
+
+processStep :: Context -> Option TypeVariableInfo -> F.Step -> (Context, TypeVariableInfo)
+processStep context parent step =
+    case step of
+        F.External index -> getNext context
+        F.Variant index -> do
+            (context, info) <- getNext context
+            parent <- Option.unwrap parent
+            variant <- M.Variant index parent.arg_group_var info
+            members <- List.push context.members variant
+            (context { members = members }, info)
+        F.Field name index -> do
+            (context, info) <- getNext context
+            parent <- Option.unwrap parent
+            member <- M.Member name parent.arg_group_var info
+            members <- List.push context.members member
+            (context { members = members }, info)
+        F.FunctionArg index -> do
+            context <- context { args = List.push context.args step }
+            getNext context
+        F.FunctionResult -> getNext context
+
+createExternFunctionInfo :: F.TypeMapping -> FunctionInfo
+createExternFunctionInfo type_mapping = do
+    context <- Context [] (createTypeVariableAllocator 0) Map.empty [] []
+    (context, var_infos) <- Map.mapS context type_mapping.var_mappings (\context, (n, positions) -> do
+        (context, infos) <- List.mapS context positions processPosition
+        (context, n, infos))
+    (context, owner_infos) <- List.mapS context type_mapping.owner_positions processPosition
+    (context, ref_infos) <- List.mapS context type_mapping.ref_positions processPosition
+    owner_infos <- List.map owner_infos (\info -> M.Owner info.ownership_var)
+    ref_infos <- List.map ref_infos (\info -> M.Borrower info.ownership_var 0) // FIXME
+    context <- context { ownershipinfos = owner_infos + ref_infos }
+    equals <- Map.fold [] var_infos (\equals, (_, infos) -> do
+        if getLength infos > 1
+        then do
+            first <- atIndex infos 0
+            List.fold equals infos (\equals, info -> addEqual equals first info)
+        else equals)
+    args <- context.args |> sort |> dedup
+    args <- List.map args (\arg_step -> case get context.info_map (F.Position [arg_step]) of
+                        Some info -> info
+                        None -> panic "No type variable info for arg step")
+    result <- case get context.info_map (F.Position [F.FunctionResult]) of
+        Some info -> info
+        None -> panic "No type variable info for result step"
+    FunctionInfo args result context.members [] context.ownershipinfos
