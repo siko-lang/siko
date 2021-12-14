@@ -28,7 +28,7 @@ Status: ![](https://github.com/siko-lang/siko/workflows/Master/badge.svg)
 - [X] Instances
 - [X] Auto currying
 - [X] Iterators
-- [ ] Effects
+- [X] Effects
 - [ ] Class objects
 - [ ] Big integers
 - [ ] Type aliases
@@ -45,7 +45,7 @@ Status: ![](https://github.com/siko-lang/siko/workflows/Master/badge.svg)
   - [X] Defunctionalization
   - [X] Auto derive instances
   - [ ] Inlining
-  - [ ] Effects
+  - [X] Effects
   - [ ] Class objects
 - [X] Backend
   - [ ] Ownership inference
