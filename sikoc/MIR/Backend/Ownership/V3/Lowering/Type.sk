@@ -4,6 +4,7 @@ import Siko.MIR.Backend.Ownership.V3.Lowering.Context
 import Siko.MIR.Backend.Ownership.V3.Lowering.Naming
 import Siko.MIR.Backend.Ownership.V3.Lowering.LoweringInfo
 import Siko.MIR.Backend.Ownership.V3.TypeVariableInfo
+import Siko.MIR.Backend.Ownership.V3.MemberInfo as M
 import Siko.LIR.Type as LT
 import Siko.MIR.Type as MT
 import Siko.LIR.Function as LF
@@ -49,4 +50,13 @@ lowerFunctionType context lowering_info mir_function_type = do
 
 collectLifetimes :: LoweringInfo -> [LT.Lifetime]
 collectLifetimes lowering_info = do
-    []
+        lifetimes <- case lowering_info of
+                Function function -> List.fold [] function.ownershipinfos addLifetime
+                Type type -> List.fold [] type.ownershipinfos addLifetime
+        lifetimes |> sort |> dedup
+    where
+        addLifetime :: [LT.Lifetime] -> M.OwnershipInfo -> [LT.Lifetime]
+        addLifetime lifetimes ownershipinfo =
+            case ownershipinfo of
+                M.Owner _ -> lifetimes
+                M.Borrower v i -> List.push lifetimes (LT.Lifetime i)
