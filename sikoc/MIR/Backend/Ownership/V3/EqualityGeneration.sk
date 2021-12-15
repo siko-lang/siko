@@ -89,6 +89,10 @@ processExpr context expr = do
                     \inference_info, ownershipinfo -> case ownershipinfo of
                         M.Owner v -> addOwnership inference_info v Owner
                         M.Borrower v _ -> panic "Not yet implemented")
+            inference_info <- List.fold inference_info function_info.converters (\inference_info, converter -> do
+                inference_info <- maybeAddOwnership inference_info converter.from Unknown
+                inference_info <- maybeAddOwnership inference_info converter.to Unknown
+                inference_info)
             context <- context { inference_info = inference_info }
             (context, expr)
         E.IntegerLiteral _ -> (context, expr)

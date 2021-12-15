@@ -15,7 +15,7 @@ data Converter = { from :: TypeVariable,
                    to :: TypeVariable,
                  } deriving (PartialEq, Eq, Show)
 
-data OwnershipKind = Unknown Int
+data OwnershipKind = Unknown
                    | Owner
                    | Borrower (E.Var)
                    deriving (Show)
@@ -110,6 +110,19 @@ addOwnership inference_info var kind = do
     (ownership_values, _) <- Map.insert inference_info.ownership_values var kind
     inference_info { ownership_values = ownership_values }
 
+maybeAddOwnership :: InferenceInfo -> TypeVariable -> OwnershipKind -> InferenceInfo
+maybeAddOwnership inference_info var kind = do
+    (ownership_values, _) <- Map.alter (\old -> case old of
+        Some old -> Some old
+        None -> Some kind) var inference_info.ownership_values
+    inference_info { ownership_values = ownership_values }
+
+getOwnership :: InferenceInfo -> TypeVariable -> OwnershipKind
+getOwnership inference_info var =
+    case Map.get inference_info.ownership_values var of
+        Some kind -> kind
+        None -> panic "Ownership not found {}" % var
+
 getTypeVariableInfoByExprId :: InferenceInfo -> E.ExprId -> TypeVariableInfo
 getTypeVariableInfoByExprId inference_info expr_id =
     case Map.get inference_info.expr_type_variables expr_id of
@@ -126,7 +139,7 @@ toOwnershipInfo :: Map TypeVariable OwnershipKind -> Bool -> [M.OwnershipInfo]
 toOwnershipInfo ownership_values allow_unknown =
     Map.fold [] ownership_values (\ownershipinfos, (var, kind) -> do
                 case kind of
-                    Unknown i -> if allow_unknown
+                    Unknown -> if allow_unknown
                         then ownershipinfos
                         else panic "Unknown found in toOwnershipInfo"
                     Owner -> List.push ownershipinfos (M.Owner var)

@@ -5,6 +5,7 @@ import Siko.MIR.Backend.Ownership.V3.Lowering.Context
 import Siko.MIR.Backend.Ownership.V3.Lowering.Naming
 import Siko.MIR.Backend.Ownership.V3.Lowering.Type
 import Siko.MIR.Backend.Ownership.V3.InferenceInfo
+import Siko.MIR.Backend.Ownership.V3.TypeVariableInfo
 import Siko.MIR.Expr as ME
 import Siko.LIR.Expr as LE
 
@@ -36,6 +37,8 @@ lowerExpr inference_info context expr = do
                 ME.Expr _ arg_type arg_id <- arg
                 getTypeVariableInfoByExprId inference_info arg_id)
             //println "-----------------------------------------"
+            //println "---------------{}---------------" % f_id
+            //println "-----------------------------------------"
             lowering_info <- convertToFunctionLoweringInfo inference_info args_info expr_info
             //println "Full inference info {}" % inference_info
             //println "Calling {} Lowering info {}" % (f_id, lowering_info)
@@ -47,8 +50,17 @@ lowerExpr inference_info context expr = do
             (context, lir_args) <- List.mapS context args (lowerExpr inference_info)
             (context, LE.StaticFunctionCall lir_id lir_args)
         ME.Converter arg _ -> do
+            ME.Expr _ _ arg_id <- arg
+            arg_info <- getTypeVariableInfoByExprId inference_info arg_id
+            from <- getOwnership inference_info arg_info.ownership_var
+            to <- getOwnership inference_info expr_info.ownership_var
             (context, lir_arg) <- lowerExpr inference_info context arg
-            (context, LE.Clone lir_arg)
+            case (from, to) of
+                (Owner, Owner) -> (context, LE.Move lir_arg)
+                (Owner, Borrower _) -> (context, LE.Ref lir_arg)
+                (Borrower _, Borrower _) -> (context, LE.Move lir_arg)
+                (Borrower _, Owner) -> (context, LE.Clone lir_arg)
+                _ -> panic "Unexpected converter in lowering {} => {}" % (from, to)
         ME.VarRef var -> do
             lir_var <- lowerVar var
             (context, LE.VarRef lir_var)

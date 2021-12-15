@@ -36,6 +36,7 @@ convertToFunctionLoweringInfo inference_info args result = do
             (toOwnershipInfo inference_info.ownership_values False) 0)
     //println "Unfiltered {}" % lowering_info
     sources <- List.push args result
+    //println "sources {}" % sources
     filterInfo lowering_info sources
 
 createTypeLoweringInfoFromInferenceInfo :: InferenceInfo -> TypeVariableInfo -> LoweringInfo
@@ -68,13 +69,34 @@ collectBorrows lowering_info =
                 M.Owner _ -> borrows
                 M.Borrower v _ -> Set.put borrows v
 
+data Direction = Up | Down
+
+normalizeRef :: LoweringInfo -> (LoweringInfo, Bool)
+normalizeRef lowering_info =
+    case lowering_info of
+        Function _ -> panic "normalizeRef called on function lower info"
+        Type type -> do
+            ownershipinfos <- type.ownershipinfos
+            (ownershipinfos, is_ref) <- List.fold ([], False) ownershipinfos (\(ownershipinfos, is_ref), ownershipinfo ->
+                case ownershipinfo of
+                    M.Borrower v _ -> if v == type.root.ownership_var
+                        then (List.push ownershipinfos (M.Owner v), True)
+                        else (List.push ownershipinfos ownershipinfo, is_ref)
+                    _ -> (ownershipinfos, is_ref))
+            (Type (type { ownershipinfos = ownershipinfos }), is_ref)
+
 filterInfo :: LoweringInfo -> [TypeVariableInfo] -> LoweringInfo
 filterInfo lowering_info sources = do
-        vars <- collectBorrows lowering_info
-        vars <- List.fold vars sources (\vars, source -> Set.put vars source.ownership_var)
+        all_borrower_vars <- collectBorrows lowering_info
+        source_vars <- List.fold Set.empty sources (\vars, source -> Set.put vars source.ownership_var)
+        relevant_vars <- case lowering_info of
+            Function function -> Set.collect function.members source_vars (collectDeps Down)
+            Type type -> Set.collect type.members source_vars (collectDeps Down)
+        relevant_borrows <- intersection relevant_vars all_borrower_vars
         vars <- case lowering_info of
-            Function function -> Set.collect function.members vars collectDeps
-            Type type -> Set.collect type.members vars collectDeps
+            Function function -> Set.collect function.members relevant_borrows (collectDeps Up)
+            Type type -> Set.collect type.members relevant_borrows (collectDeps Up)
+        vars <- source_vars + vars
         case lowering_info of
             Function function -> do
                 members <- List.filter function.members (filterConstraint vars)
@@ -97,17 +119,21 @@ filterInfo lowering_info sources = do
                 M.Owner v -> Set.contains vars v
                 M.Borrower v _ -> Set.contains vars v
 
-        collectDeps :: Set TypeVariable -> M.MemberInfo -> Set TypeVariable
-        collectDeps vars constraint =
+        collectDeps :: Direction -> Set TypeVariable -> M.MemberInfo -> Set TypeVariable
+        collectDeps dir vars constraint =
             case constraint of
-                M.Variant index root info -> add vars info
-                M.Member name root info -> add vars info
+                M.Variant index root info -> add dir vars root info
+                M.Member name root info -> add dir vars root info
             where
-                add :: Set TypeVariable -> TypeVariableInfo -> Set TypeVariable
-                add vars info =
-                    if Set.contains vars info.ownership_var
-                    then Set.put vars info.ownership_var
-                    else vars
+                add :: Direction -> Set TypeVariable -> TypeVariable -> TypeVariableInfo -> Set TypeVariable
+                add dir vars root info =
+                    case dir of
+                        Up -> if Set.contains vars info.ownership_var
+                              then Set.put vars root
+                              else vars
+                        Down -> if Set.contains vars root
+                              then Set.put vars info.ownership_var
+                              else vars
 
 normalizeLoweringInfo :: LoweringInfo -> LoweringInfo
 normalizeLoweringInfo lowering_info =

@@ -15,20 +15,26 @@ lowerType context lowering_info mir_type = do
         MT.Record id _ -> do
             //println "Record input {}" % lowering_info
             lowering_info <- normalizeLoweringInfo lowering_info
+            (lowering_info, is_ref) <- normalizeRef lowering_info
             lir_key <- RecordKey id lowering_info
             context <- addItem context lir_key
             (context, lir_id) <- getLIRId context lir_key
             //println "lowerType: {} {} {}" % (lir_id, lir_key, lowering_info)
             lifetimes <- collectLifetimes lowering_info
-            (context, LT.Record lir_id lifetimes)
+            if is_ref
+            then (context, LT.Ref (LT.Lifetime 0) (LT.Record lir_id lifetimes)) // FIXME lifetime
+            else (context, LT.Record lir_id lifetimes)
         MT.Adt id _ -> do
             lowering_info <- normalizeLoweringInfo lowering_info
+            (lowering_info, is_ref) <- normalizeRef lowering_info
             lir_key <- AdtKey id lowering_info
             context <- addItem context lir_key
             (context, lir_id) <- getLIRId context lir_key
             //println "lowerType: {} {}" % (lir_id, lir_key)
             lifetimes <- collectLifetimes lowering_info
-            (context, LT.Adt lir_id lifetimes)
+            if is_ref
+            then (context, LT.Ref (LT.Lifetime 0) (LT.Adt lir_id lifetimes)) // FIXME lifetime
+            else (context, LT.Adt lir_id lifetimes)
         _ -> (context, LT.Never)
 
 lowerFunctionType :: Context -> LoweringInfo -> MF.FunctionType -> (Context, LF.FunctionType, [LT.Lifetime])
