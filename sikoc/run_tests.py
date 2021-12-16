@@ -57,8 +57,8 @@ def getStd():
 def run(silent, verbose, interpret, nostd, debug, test_name, source_folder, index, total):
     if not silent:
         print("--- Running %s - %d/%d" % (test_name, total, index))
-    mkdir_safe("sikoc_test_runs")
-    target_folder = os.path.join("sikoc_test_runs", test_name)
+    mkdir_safe("test_runs")
+    target_folder = os.path.join("test_runs", test_name)
     mkdir_safe(target_folder)
     compiled_sikoc = os.path.join("..", "rust", "compiled_sikoc","sikoc")
     std = getStd()
@@ -76,7 +76,7 @@ def run(silent, verbose, interpret, nostd, debug, test_name, source_folder, inde
         return False
     return run_command([normal_output], "normal build")
 
-test_source_name = "sikoc_tests"
+test_source_name = "tests"
 tests = []
 verbose = ""
 debug = ""

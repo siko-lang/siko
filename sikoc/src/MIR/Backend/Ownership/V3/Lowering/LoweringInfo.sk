@@ -88,7 +88,10 @@ normalizeRef lowering_info =
 filterInfo :: LoweringInfo -> [TypeVariableInfo] -> LoweringInfo
 filterInfo lowering_info sources = do
         all_borrower_vars <- collectBorrows lowering_info
-        source_vars <- List.fold Set.empty sources (\vars, source -> Set.put vars source.ownership_var)
+        source_vars <- List.fold Set.empty sources (\vars, source -> do
+            vars <- Set.put vars source.ownership_var
+            vars <- Set.put vars source.arg_group_var
+            vars)
         relevant_vars <- case lowering_info of
             Function function -> Set.collect function.members source_vars (collectDeps Down)
             Type type -> Set.collect type.members source_vars (collectDeps Down)
@@ -128,11 +131,14 @@ filterInfo lowering_info sources = do
                 add :: Direction -> Set TypeVariable -> TypeVariable -> TypeVariableInfo -> Set TypeVariable
                 add dir vars root info =
                     case dir of
-                        Up -> if Set.contains vars info.ownership_var
+                        Up -> if Set.contains vars info.ownership_var || Set.contains vars info.arg_group_var
                               then Set.put vars root
                               else vars
                         Down -> if Set.contains vars root
-                              then Set.put vars info.ownership_var
+                              then do
+                                vars <- Set.put vars info.ownership_var
+                                vars <- Set.put vars info.arg_group_var
+                                vars
                               else vars
 
 normalizeLoweringInfo :: LoweringInfo -> LoweringInfo
@@ -164,7 +170,9 @@ getLoweringInfoForResult :: LoweringInfo -> LoweringInfo
 getLoweringInfoForResult lowering_info = do
     case lowering_info of
         Function info -> do
-            createTypeLoweringInfoFromLoweringInfo lowering_info info.result
+            li <- createTypeLoweringInfoFromLoweringInfo lowering_info info.result
+            println "getLoweringInfoForResult {}" % li
+            li
         Type info -> panic "getLoweringInfoForResult called on type lowering info"
 
 getLoweringInfoForMember :: LoweringInfo -> String -> LoweringInfo

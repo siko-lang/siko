@@ -6,6 +6,7 @@ import Siko.Syntax.Location
 import Siko.Syntax.Ident
 import Siko.Resolver.Error
 import Siko.HIR.Backend.Typechecker.Error
+import Siko.HIR.Backend.CaseChecker.Error as CCE
 import Siko.FileManager
 
 printSpan :: String -> Span -> ()
@@ -130,12 +131,14 @@ printTypecheckerError file_manager error = case error of
     SpecializedInstance location -> println "SpecializedInstance {}" % (fmtLocation location)
     AutoDeriveError type_name type class_name location -> println "AutoDeriveError {} {} {} {}" % (type_name, type, class_name, fmtLocation location)
     TypeAnnotationNeeded location -> printSingleL file_manager "TypeAnnotationNeeded" location
-    NonExhaustiveCase location -> println "NonExhaustiveCase {}" % (fmtLocation location)
-    UnreachableCase location ->
-        printSingleL file_manager "UnreachableCase" location
     IncorrectMainType type location -> println "IncorrectMainType {} {}" % (type, fmtLocation location)
     MissingEffectMembers names location -> printSingleL file_manager ("MissingEffectMembers {}" % names) location
     EffectMemberNotUnique name locations -> println "EffectMemberNotUnique {} {}" % (name, locations)
     UndeclaredEffect name location -> printSingleL file_manager ("UndeclaredEffect {}" % name) location
     UnnecessaryEffect name location -> printSingleL file_manager ("UnnecessaryEffect {}" % name) location
     MainEffectFound names location -> printSingleL file_manager ("MainEffectFound {}" % names) location
+
+printCaseCheckerError :: FileManager -> CCE.CaseCheckerError -> ()
+printCaseCheckerError file_manager error = case error of
+    CCE.UnreachableCase location -> printSingleL file_manager "UnreachableCase" location
+    CCE.NonExhaustiveCase location -> printSingleL file_manager "NonExhaustiveCase" location

@@ -20,6 +20,7 @@ import Siko.HIR.Backend.Lowering.ClassMemberCalls
 import Siko.HIR.Backend.Lowering.ClosureStore as CS
 import Siko.HIR.Backend.Lowering.IteratorStore as IS
 import Siko.Constants
+import Siko.FileManager
 import Siko.Config
 import Siko.Trace
 import Siko.Util.Counter
@@ -47,6 +48,7 @@ data Context = { hir_program :: HP.Program HT.Type,
                  temp_var_gen :: Option (Counter ME.Var),
                  var_gen :: TVG.TypeVarGenerator,
                  class_info_store :: CDS.ClassInfoStore,
+                 file_manager :: FileManager
                }
 
 instance U.TypeVarGenerator Context where
@@ -244,8 +246,8 @@ generateExternalImpls context = do
                 context) context
         ) context
 
-lowerProgram :: Config -> TVG.TypeVarGenerator -> CDS.ClassInfoStore -> HP.Program HT.Type -> IR.InstanceResolver -> MP.Program
-lowerProgram config var_gen class_info_store hir_program instance_resolver = do
+lowerProgram :: Config -> FileManager -> TVG.TypeVarGenerator -> CDS.ClassInfoStore -> HP.Program HT.Type -> IR.InstanceResolver -> MP.Program
+lowerProgram config file_manager var_gen class_info_store hir_program instance_resolver = do
     trace config "Lowering to MIR.."
     main_qn <- HP.Effectless getMainModuleName getMainFunctionName
     type_store <- createTypeStore
@@ -253,6 +255,7 @@ lowerProgram config var_gen class_info_store hir_program instance_resolver = do
     context <- Context hir_program mir_program
                type_store CS.createClosureStore IS.createIteratorStore instance_resolver Map.empty
                FQ.createFunctionQueue getExternalClassNames Map.empty Map.empty [] [] None None var_gen class_info_store
+               file_manager
     context <- case HP.getFunctionOpt hir_program main_qn of
         Some main -> do
             item <- FQ.Normal main_qn (HT.Tuple [])

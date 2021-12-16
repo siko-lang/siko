@@ -128,7 +128,9 @@ fn match_item(name: &str, group: bool, item: &Item, program: &Program) -> bool {
             let class = program.classes.get(&id);
             class.name == name && !group
         }
-        Item::ClassMember(_, _, _) => false,
+        Item::ClassMember(_, _, _) => {
+            true
+        }
     }
 }
 

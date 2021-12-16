@@ -9,6 +9,7 @@ import Siko.HIR.Backend.Lowering.ClassMemberCalls
 import Siko.HIR.Backend.ClassInfoStore
 import Siko.HIR.Backend.Unification as U
 import Siko.HIR.Backend.CaseChecker as CC
+import Siko.HIR.Backend.CaseChecker.Error as CCE
 import Siko.HIR.Backend.Unification.Substitution as S
 import Siko.HIR.Backend.Util as Util
 import Siko.HIR.Backend.InstanceResolver as IR
@@ -27,6 +28,8 @@ import Siko.MIR.Program as MP
 import Siko.Syntax.Ident
 import Siko.Constants
 import Map
+import Siko.FileManager
+import Siko.Diagnostics
 
 processArgs :: Context -> S.Substitution -> [HE.Expr HT.Type] -> (Context, [ME.Expr])
 processArgs context sub args = do
@@ -613,7 +616,9 @@ processExpr context sub hir_expr = do
                     body_expr_accessor <- \_ -> mir_body
                     (path_info_map, _) <- insert empty p (ValuePathAccessor body_expr_accessor body_expr_accessor)
                     processChoiceTree context sub choice_tree path_info_map hir_case_bodies hir_guards
-                Err errors -> panic "Case checker failed {}" % errors
+                Err errors -> do
+                    List.fold () errors (\_, error -> printCaseCheckerError context.file_manager error) // FIXME, reorganize this!!!
+                    panic "Case checker failed"
             (context, case_of_expr)
         HE.RecordUpdate ref updates -> do
             (context, unit_type) <- processType context (HT.Tuple [])

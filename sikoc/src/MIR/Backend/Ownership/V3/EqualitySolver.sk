@@ -1,4 +1,4 @@
-module Siko.MIR.Backend.Ownership.V3.EqualitySolver(processEquals, addEqual, Equal(..), EqualityStore, Apply) where
+module Siko.MIR.Backend.Ownership.V3.EqualitySolver(processEquals, addEqual, Equal(..), EqualityStore, Apply, apply) where
 
 import Siko.MIR.Backend.Ownership.V3.TypeVariableInfo
 import Siko.MIR.Backend.Ownership.V3.MemberInfo
@@ -68,19 +68,23 @@ processEquals equals store = do
 
 getEqualsFromMemberInfos :: [MemberInfo] -> [Equal]
 getEqualsFromMemberInfos members = do
-    root_map <- List.fold Map.empty members (\root_map, member_info -> case member_info of
-            Variant index root info -> do
-                (root_map, _) <- alter (add info) (VariantKey index root) root_map
-                root_map
-            Member name root info -> do
-                (root_map, _) <- alter (add info) (MemberKey name root) root_map
-                root_map)
-    Map.fold [] root_map (\equals, (_, infos) -> do
-        if getLength infos > 1
-        then do
-            first <- atIndex infos 0
-            List.fold equals infos (\equals, info -> addEqual equals info first)
-        else equals)
+        root_map <- List.fold Map.empty members (\root_map, member_info -> case member_info of
+                Variant index root info -> do
+                    (root_map, _) <- alter (add info) (VariantKey index root) root_map
+                    root_map
+                Member name root info -> do
+                    (root_map, _) <- alter (add info) (MemberKey name root) root_map
+                    root_map)
+        Map.fold [] root_map (\equals, (_, infos) -> do
+            if getLength infos > 1
+            then do
+                first <- atIndex infos 0
+                List.fold equals infos (\equals, info -> addEqual equals info first)
+            else equals)
+    where
+        add info old = case old of
+            Some infos -> Some (push infos info)
+            None -> Some [info]
 
 class EqualityStore a where
     getEqualities a :: a -> [MemberInfo]
@@ -97,7 +101,3 @@ merge store =
             members <- getEqualities store |> sort |> dedup
             store <- putEqualities store members
             store
-    where
-        add info old = case old of
-            Some infos -> Some (push infos info)
-            None -> Some [info]

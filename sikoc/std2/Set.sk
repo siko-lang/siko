@@ -47,3 +47,13 @@ collect sources result f =
 
 getSize a :: Set a -> Int
 getSize set = List.getLength set.items
+
+intersection a :: (PartialEq a) => Set a -> Set a -> Set a
+intersection s1 s2 = do
+    items <- s1.items |> List.iter |> Iterator.filter (\i -> contains s2 i) |> toList
+    Set { items = items }
+
+put a :: (PartialEq a, Ord a) => Set a -> a -> Set a
+put set item = do
+    (set, _) <- insert set item
+    set
