@@ -28,10 +28,7 @@ lowerExpr inference_info context expr = do
         ME.Do items -> do
             (context, items) <- List.mapS context items (lowerExpr inference_info)
             (context, LE.Do items)
-        ME.VarDecl var rhs -> do
-            (context, lir_rhs) <- lowerExpr inference_info context rhs
-            lir_var <- lowerVar var
-            (context, LE.VarDecl lir_var lir_rhs)
+
         ME.StaticFunctionCall f_id args -> do
             args_info <- List.map args (\arg -> do
                 ME.Expr _ arg_type arg_id <- arg
@@ -49,6 +46,17 @@ lowerExpr inference_info context expr = do
             context <- addItem context lir_key
             (context, lir_args) <- List.mapS context args (lowerExpr inference_info)
             (context, LE.StaticFunctionCall lir_id lir_args)
+        ME.IntegerLiteral lit -> (context, LE.IntegerLiteral lit)
+        ME.StringLiteral lit -> (context, LE.StringLiteral lit)
+        ME.FloatLiteral lit -> (context, LE.FloatLiteral lit)
+        ME.CharLiteral lit -> (context, LE.CharLiteral lit)
+        ME.VarDecl var rhs -> do
+            (context, lir_rhs) <- lowerExpr inference_info context rhs
+            lir_var <- lowerVar var
+            (context, LE.VarDecl lir_var lir_rhs)
+        ME.VarRef var -> do
+            lir_var <- lowerVar var
+            (context, LE.VarRef lir_var)
         ME.Converter arg _ -> do
             ME.Expr _ _ arg_id <- arg
             arg_info <- getTypeVariableInfoByExprId inference_info arg_id
@@ -61,9 +69,7 @@ lowerExpr inference_info context expr = do
                 (Borrower _, Borrower _) -> (context, LE.Move lir_arg)
                 (Borrower _, Owner) -> (context, LE.Clone lir_arg)
                 _ -> panic "Unexpected converter in lowering {} => {}" % (from, to)
-        ME.VarRef var -> do
-            lir_var <- lowerVar var
-            (context, LE.VarRef lir_var)
+
         _ -> panic "NYE lowerExpr {}" % (ME.short expr)
     //println "Transforming EXPR {} {}" % ((ME.short expr), expr_info)
     lowering_info <- createTypeLoweringInfoFromInferenceInfo inference_info expr_info

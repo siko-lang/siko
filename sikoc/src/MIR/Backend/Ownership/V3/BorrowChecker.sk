@@ -71,13 +71,17 @@ collectBorrows context usage_store expr = do
     (context, usage_store, exec_mode) <- case s_expr of
         E.Do items -> collectBlockBorrows context usage_store items
         E.StaticFunctionCall f_id args -> collectBlockBorrows context usage_store args
+        E.IntegerLiteral _ -> (context, usage_store, Normal)
+        E.StringLiteral _ -> (context, usage_store, Normal)
+        E.FloatLiteral _ -> (context, usage_store, Normal)
+        E.CharLiteral _ -> (context, usage_store, Normal)
         E.VarDecl var rhs -> collectBorrows context usage_store rhs
         E.VarRef var -> do
             path <- Whole
             (context, usage_store) <- addUsage context usage_store var expr_id path
             (context, usage_store, Normal)
         E.Converter arg _ -> collectBorrows context usage_store arg
-        _ -> panic "NYI {}" % (E.short expr)
+        _ -> panic "borrow checker: NYI {}" % (E.short expr)
     (context, usage_store, exec_mode)
 
 addForbiddenBorrow :: Context -> E.Var -> E.Var -> Context
@@ -121,6 +125,10 @@ checkVars context live_set expr = do
     (context, live_set) <- case s_expr of
         E.Do items -> checkVarsInBlock context live_set items
         E.StaticFunctionCall f_id args -> checkVarsInBlock context live_set args
+        E.IntegerLiteral _ -> (context, live_set)
+        E.StringLiteral _ -> (context, live_set)
+        E.FloatLiteral _ -> (context, live_set)
+        E.CharLiteral _ -> (context, live_set)
         E.VarDecl var rhs -> do
             (context, live_set) <- checkVars context live_set rhs
             live_set <- addLiveVar live_set var

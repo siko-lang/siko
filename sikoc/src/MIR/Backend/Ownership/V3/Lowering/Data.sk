@@ -35,7 +35,9 @@ lowerRecord context lowering_info mir_id lir_id = do
     mir_record <- MP.getRecord context.mir_program mir_id
     (context, fields) <- List.mapS context mir_record.fields (lowerField lowering_info)
     lifetimes <- collectLifetimes lowering_info
-    external_info <- None
+    external_info <- case mir_record.external_info of
+        Some _ -> Some (LD.ExternalRecordInfo []) // TODO:
+        None -> None
     external_class_impls <- []
     lir_record <- LD.Record lir_id lifetimes fields external_info external_class_impls
     context <- addRecord context lir_record
