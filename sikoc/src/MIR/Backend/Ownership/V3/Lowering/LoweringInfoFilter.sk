@@ -1,64 +1,10 @@
 module Siko.MIR.Backend.Ownership.V3.Lowering.LoweringInfo.Filter where
 
 import Siko.MIR.Backend.Ownership.V3.TypeVariableInfo
-import Siko.MIR.Backend.Ownership.V3.TypeVariableAllocator
 import Siko.MIR.Backend.Ownership.V3.MemberInfo as M
 import Siko.MIR.Backend.Ownership.V3.Lowering.LoweringInfo
 
-import Map
 import Set
-
-getGroupOwnerMap :: LoweringInfo -> Map TypeVariable TypeVariable
-getGroupOwnerMap lowering_info =
-    case lowering_info of
-        Function function -> do
-            group_owner_map <- Map.empty
-            group_owner_map <- List.fold group_owner_map function.args (\group_owner_map, info -> Map.put group_owner_map info.arg_group_var info.ownership_var)
-            group_owner_map <- Map.put group_owner_map function.result.arg_group_var function.result.ownership_var
-            List.fold group_owner_map function.members addGroupOwnerFromMember
-        Type type -> do
-            group_owner_map <- Map.empty
-            group_owner_map <- Map.put group_owner_map type.root.arg_group_var type.root.ownership_var
-            List.fold group_owner_map type.members addGroupOwnerFromMember
-    where
-        addGroupOwnerFromMember :: Map TypeVariable TypeVariable -> M.MemberInfo -> Map TypeVariable TypeVariable
-        addGroupOwnerFromMember group_owner_map member =
-            case member of
-                M.Variant index root info -> Map.put group_owner_map info.arg_group_var info.ownership_var
-                M.Member name root info -> Map.put group_owner_map info.arg_group_var info.ownership_var
-
-toOwnershipVar :: Map TypeVariable TypeVariable -> TypeVariable -> TypeVariable
-toOwnershipVar group_owner_map group_var  =
-    case get group_owner_map group_var of
-        Some ownership_var -> ownership_var
-        None -> panic "toOwnershipVar: {} not found in group owner map" % group_var
-
-getOwnershipInfo :: LoweringInfo -> TypeVariable -> Option M.OwnershipInfo
-getOwnershipInfo lowering_info var =
-    case lowering_info of
-        Function function -> getOwnershipInfoHelper function.ownershipinfos var
-        Type type -> getOwnershipInfoHelper type.ownershipinfos var
-    where
-        getOwnershipInfoHelper :: [M.OwnershipInfo] -> TypeVariable -> Option M.OwnershipInfo
-        getOwnershipInfoHelper ownershipinfos var = do
-            ownershipinfos <- List.filterMap ownershipinfos (\ownershipinfo ->
-                    case ownershipinfo of
-                        M.Owner v -> if v == var
-                            then Some ownershipinfo
-                            else None
-                        M.Borrower v _ -> if v == var
-                            then Some ownershipinfo
-                            else None)
-            head ownershipinfos
-
-containsBorrow :: Set (Option M.OwnershipInfo) -> Bool
-containsBorrow ownershipinfos = Set.fold False ownershipinfos (\result, info -> result || isBorrow info)
-    where
-        isBorrow :: Option M.OwnershipInfo -> Bool
-        isBorrow ownershipinfo =
-            case ownershipinfo of
-                Some (M.Borrower _ _) -> True
-                _ -> False
 
 filterInfo :: LoweringInfo -> [TypeVariableInfo] -> LoweringInfo
 filterInfo lowering_info sources = do

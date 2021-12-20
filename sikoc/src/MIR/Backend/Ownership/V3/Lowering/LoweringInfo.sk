@@ -57,20 +57,6 @@ createTypeLoweringInfoFromLoweringInfo lowering_info root = do
             output <- Type (TypeLoweringInfo info.members root info.ownershipinfos 0)
             filterInfo output [root]
 
-collectBorrows :: LoweringInfo -> Set TypeVariable
-collectBorrows lowering_info =
-    case lowering_info of
-        Function function -> List.fold Set.empty function.ownershipinfos addBorrow
-        Type type -> List.fold Set.empty type.ownershipinfos addBorrow
-    where
-        addBorrow :: Set TypeVariable -> M.OwnershipInfo -> Set TypeVariable
-        addBorrow borrows ownershipinfo =
-            case ownershipinfo of
-                M.Owner _ -> borrows
-                M.Borrower v _ -> Set.put borrows v
-
-data Direction = Up | Down
-
 normalizeRef :: LoweringInfo -> (LoweringInfo, Bool)
 normalizeRef lowering_info =
     case lowering_info of
@@ -90,7 +76,7 @@ normalizeRef lowering_info =
 normalizeLoweringInfo :: LoweringInfo -> LoweringInfo
 normalizeLoweringInfo lowering_info =
     // FIXME: we need a better normalization algorithm
-    // that is more robust
+    // that is more robust and does not care about ordering
     case lowering_info of
         Function info -> do
             duplicator <- createNormalizer
