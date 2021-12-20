@@ -65,6 +65,15 @@ collectBlockBorrows context usage_store items =
                     _ -> DoesNotReturn
                 (context, usage_store, exec_mode))
 
+processBranches :: Context -> UsageStore -> [E.Expr] -> (Context, UsageStore, ExecutionMode)
+processBranches context usage_store branches =
+    List.fold (context, usage_store, DoesNotReturn) branches (\(context, usage_store, exec_mode), branch -> do
+            saved <- usage_store
+            (context, usage_store, exec_mode) <- collectBorrows context usage_store branch
+            case exec_mode of
+                Normal -> (context, usage_store, Normal)
+                DoesNotReturn -> (context, saved, exec_mode))
+
 collectBorrows :: Context -> UsageStore -> E.Expr -> (Context, UsageStore, ExecutionMode)
 collectBorrows context usage_store expr = do
     E.Expr s_expr _ expr_id <- expr
@@ -80,6 +89,9 @@ collectBorrows context usage_store expr = do
             path <- Whole
             (context, usage_store) <- addUsage context usage_store var expr_id path
             (context, usage_store, Normal)
+        E.If cond true_branch false_branch -> do
+            (context, usage_store, exec_mode) <- collectBorrows context usage_store cond
+            processBranches context usage_store [true_branch, false_branch]
         E.Converter arg _ -> collectBorrows context usage_store arg
         _ -> panic "borrow checker: NYI {}" % (E.short expr)
     (context, usage_store, exec_mode)
@@ -134,6 +146,12 @@ checkVars context live_set expr = do
             live_set <- addLiveVar live_set var
             (context, live_set)
         E.VarRef var -> checkVar context live_set var expr_id
+        E.If cond true_branch false_branch -> do
+            // FIXME, TODO: check this!!
+            (context, live_set) <- checkVars context live_set cond
+            (context, live_set) <- checkVars context live_set true_branch
+            (context, live_set) <- checkVars context live_set false_branch
+            (context, live_set)
         E.Converter arg _ -> checkVars context live_set arg
         _ -> panic "NYI {}" % (E.short expr)
     (context, live_set)
