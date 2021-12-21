@@ -42,9 +42,9 @@ lowerFunctionType :: Context -> LoweringInfo -> MF.FunctionType -> (Context, LF.
 lowerFunctionType context lowering_info mir_function_type = do
     //println "lowerFunctionType {}" % lowering_info
     (context, args) <- List.mapSE context mir_function_type.args (\context, index, arg_type -> do
-        lowering_info <- getLoweringInfoForArg lowering_info index
+        lowering_info <- getLoweringInfoForArg context.config lowering_info index
         lowerType context lowering_info arg_type)
-    (context, result) <- lowerType context (getLoweringInfoForResult lowering_info) mir_function_type.result
+    (context, result) <- lowerType context (getLoweringInfoForResult context.config lowering_info) mir_function_type.result
     lifetimes <- collectLifetimes lowering_info
     (context, LF.FunctionType args result, lifetimes)
 

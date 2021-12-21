@@ -19,13 +19,13 @@ import Map
 
 lowerField :: LoweringInfo -> Context -> MD.RecordField -> (Context, LD.RecordField)
 lowerField lowering_info context mir_field = do
-    lowering_info <- getLoweringInfoForMember lowering_info mir_field.name
+    lowering_info <- getLoweringInfoForMember context.config lowering_info mir_field.name
     (context, lir_type) <- lowerType context lowering_info mir_field.type
     (context, LD.RecordField mir_field.name lir_type)
 
 lowerVariant :: LoweringInfo -> Context -> Int -> MD.Variant -> (Context, LD.Variant)
 lowerVariant lowering_info context index mir_variant = do
-    lowering_info <- getLoweringInfoForVariant lowering_info index
+    lowering_info <- getLoweringInfoForVariant context.config lowering_info index
     (context, lir_type) <- lowerType context lowering_info mir_variant.type
     (context, LD.Variant mir_variant.name lir_type)
 
@@ -45,7 +45,7 @@ lowerRecord context lowering_info mir_id lir_id = do
 
 lowerAdt :: Context -> LoweringInfo -> MP.Identity -> LP.Identity -> Context
 lowerAdt context lowering_info mir_id lir_id = do
-    trace context.config "Lowering adt {}" % mir_id
+    trace context.config "Lowering adt {} {} {}" % (mir_id, lir_id, lowering_info)
     mir_adt <- MP.getAdt context.mir_program mir_id
     (context, variants) <- List.mapSE context mir_adt.variants (lowerVariant lowering_info)
     lifetimes <- collectLifetimes lowering_info

@@ -92,6 +92,10 @@ collectBorrows context usage_store expr = do
         E.If cond true_branch false_branch -> do
             (context, usage_store, exec_mode) <- collectBorrows context usage_store cond
             processBranches context usage_store [true_branch, false_branch]
+        E.CaseOf body cases -> do
+            (context, usage_store, exec_mode) <- collectBorrows context usage_store body
+            branches <- List.map cases (\c -> c.body)
+            processBranches context usage_store branches
         E.Converter arg _ -> collectBorrows context usage_store arg
         _ -> panic "borrow checker: NYI {}" % (E.short expr)
     (context, usage_store, exec_mode)
@@ -147,10 +151,16 @@ checkVars context live_set expr = do
             (context, live_set)
         E.VarRef var -> checkVar context live_set var expr_id
         E.If cond true_branch false_branch -> do
-            // FIXME, TODO: check this!!
+            // FIXME, TODO: double check this!!
             (context, live_set) <- checkVars context live_set cond
             (context, live_set) <- checkVars context live_set true_branch
             (context, live_set) <- checkVars context live_set false_branch
+            (context, live_set)
+        E.CaseOf body cases -> do
+            // FIXME, TODO: double check this!!
+            (context, live_set) <- checkVars context live_set body
+            (context, live_set) <- List.fold (context, live_set) cases (\(context, live_set), c ->
+                checkVars context live_set c.body)
             (context, live_set)
         E.Converter arg _ -> checkVars context live_set arg
         _ -> panic "NYI {}" % (E.short expr)

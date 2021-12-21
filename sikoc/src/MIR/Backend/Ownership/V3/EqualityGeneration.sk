@@ -143,12 +143,9 @@ processExpr context expr = do
             (context, expr)
         E.CaseOf body cases -> do
             body_id <- getExprId body
-            first_id <- getExprId (atIndex cases 0).body
             context <- List.foldE (\context, index, c -> do
                     case_body <- getExprId c.body
-                    context <- if index != 0
-                    then addEqualExprs context first_id case_body
-                    else context
+                    context <- addEqualExprs context case_body expr_id
                     case c.checker of
                         E.VariantChecker index var ty -> do
                             case ty of

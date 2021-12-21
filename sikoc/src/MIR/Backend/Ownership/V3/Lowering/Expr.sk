@@ -20,20 +20,41 @@ lowerRangeKind range_kind = case range_kind of
     ME.Inclusive -> LE.Inclusive
     ME.Exclusive -> LE.Exclusive
 
+lowerChecker :: LoweringInfo -> Context -> ME.Checker -> (Context, LE.Checker)
+lowerChecker lowering_info context checker = case checker of
+    ME.IntegerChecker lit -> (context, LE.IntegerChecker lit)
+    ME.StringChecker lit -> (context, LE.StringChecker lit)
+    ME.CharChecker lit -> (context, LE.CharChecker lit)
+    ME.CharRangeChecker s e kind -> (context, LE.CharRangeChecker s e (lowerRangeKind kind))
+    ME.VariantChecker i v t -> do
+        //println "VariantChecker: {}" % lowering_info
+        (context, type) <- lowerType context lowering_info t
+        (context, LE.VariantChecker i (lowerVar v) type)
+    ME.WildcardChecker -> (context, LE.WildcardChecker)
+
+lowerCase :: InferenceInfo -> LoweringInfo -> Context -> ME.Case -> (Context, LE.Case)
+lowerCase inference_info lowering_info context c = do
+    (context, checker) <- lowerChecker lowering_info context c.checker
+    (context, body) <- lowerExpr inference_info context c.body
+    (context, LE.Case checker body)
+
 lowerExpr :: InferenceInfo -> Context -> ME.Expr -> (Context, LE.Expr)
 lowerExpr inference_info context expr = do
     ME.Expr s_expr expr_type expr_id <- expr
     expr_info <- getTypeVariableInfoByExprId inference_info expr_id
+    lowering_info <- createTypeLoweringInfoFromInferenceInfo context.config inference_info expr_info
+    lowering_info <- normalizeLoweringInfo lowering_info
+    //println "expr type {} {}" % (expr_type, lowering_info)
+    (context, lir_type) <- lowerType context lowering_info expr_type
     (context, lir_s_expr) <- case s_expr of
         ME.Do items -> do
             (context, items) <- List.mapS context items (lowerExpr inference_info)
             (context, LE.Do items)
-
         ME.StaticFunctionCall f_id args -> do
             args_info <- List.map args (\arg -> do
                 ME.Expr _ arg_type arg_id <- arg
                 getTypeVariableInfoByExprId inference_info arg_id)
-            lowering_info <- convertToFunctionLoweringInfo inference_info args_info expr_info
+            lowering_info <- convertToFunctionLoweringInfo context.config inference_info args_info expr_info
             // println "-----------------------------------------"
             // println "---------------{}---------------" % f_id
             // println "-----------------------------------------"
@@ -62,6 +83,14 @@ lowerExpr inference_info context expr = do
             (context, lir_true_branch) <- lowerExpr inference_info context true_branch
             (context, lir_false_branch) <- lowerExpr inference_info context false_branch
             (context, LE.If lir_cond lir_true_branch lir_false_branch)
+        ME.CaseOf body cases -> do
+            ME.Expr _ _ body_id <- body
+            body_info <- getTypeVariableInfoByExprId inference_info body_id
+            lowering_info <- createTypeLoweringInfoFromInferenceInfo context.config inference_info body_info
+            lowering_info <- normalizeLoweringInfo lowering_info
+            (context, lir_body) <- lowerExpr inference_info context body
+            (context, lir_cases) <- List.mapS context cases (lowerCase inference_info lowering_info)
+            (context, LE.CaseOf lir_body lir_cases)
         ME.Converter arg _ -> do
             ME.Expr _ _ arg_id <- arg
             arg_info <- getTypeVariableInfoByExprId inference_info arg_id
@@ -74,12 +103,7 @@ lowerExpr inference_info context expr = do
                 (Borrower _, Borrower _) -> (context, LE.Move lir_arg)
                 (Borrower _, Owner) -> (context, LE.Clone lir_arg)
                 _ -> panic "Unexpected converter in lowering {} => {}" % (from, to)
-
         _ -> panic "NYE lowerExpr {}" % (ME.short expr)
     //println "Transforming EXPR {} {}" % ((ME.short expr), expr_info)
-    lowering_info <- createTypeLoweringInfoFromInferenceInfo inference_info expr_info
-    lowering_info <- normalizeLoweringInfo lowering_info
-    //println "expr type {} {}" % (expr_type, lowering_info)
-    (context, lir_type) <- lowerType context lowering_info expr_type
     lir_expr <- LE.Expr lir_s_expr lir_type (LE.ExprId 0)
     (context, lir_expr)

@@ -1,5 +1,6 @@
 module Siko.MIR.Backend.Ownership.V3.Lowering.LoweringInfo where
 
+import Siko.Config
 import Siko.MIR.Backend.Ownership.V3.TypeVariableInfo
 import Siko.MIR.Backend.Ownership.V3.TypeVariableAllocator
 import Siko.MIR.Backend.Ownership.V3.MemberInfo as M
@@ -30,32 +31,32 @@ data LoweringInfo = Function FunctionLoweringInfo
 createFunctionLoweringInfo :: [TypeVariableInfo] -> TypeVariableInfo -> LoweringInfo
 createFunctionLoweringInfo args result = Function (FunctionLoweringInfo [] args result [] 0)
 
-convertToFunctionLoweringInfo :: InferenceInfo -> [TypeVariableInfo] -> TypeVariableInfo -> LoweringInfo
-convertToFunctionLoweringInfo inference_info args result = do
+convertToFunctionLoweringInfo :: Config -> InferenceInfo -> [TypeVariableInfo] -> TypeVariableInfo -> LoweringInfo
+convertToFunctionLoweringInfo config inference_info args result = do
     //println "Creating function lowering info"
     lowering_info <- Function (FunctionLoweringInfo inference_info.members args result
             (toOwnershipInfo inference_info.ownership_values False) 0)
     //println "Unfiltered {}" % lowering_info
     sources <- List.push args result
-    filterInfo lowering_info sources
+    filterInfo config lowering_info sources
 
-createTypeLoweringInfoFromInferenceInfo :: InferenceInfo -> TypeVariableInfo -> LoweringInfo
-createTypeLoweringInfoFromInferenceInfo inference_info root = do
+createTypeLoweringInfoFromInferenceInfo :: Config -> InferenceInfo -> TypeVariableInfo -> LoweringInfo
+createTypeLoweringInfoFromInferenceInfo config inference_info root = do
     //println "Creating type lowering info"
     lowering_info <- Type (TypeLoweringInfo inference_info.members root
             (toOwnershipInfo inference_info.ownership_values False) 0)
-    filterInfo lowering_info [root]
+    filterInfo config lowering_info [root]
 
-createTypeLoweringInfoFromLoweringInfo :: LoweringInfo -> TypeVariableInfo -> LoweringInfo
-createTypeLoweringInfoFromLoweringInfo lowering_info root = do
+createTypeLoweringInfoFromLoweringInfo :: Config -> LoweringInfo -> TypeVariableInfo -> LoweringInfo
+createTypeLoweringInfoFromLoweringInfo config lowering_info root = do
     //println "Creating type lowering info"
     case lowering_info of
         Function info -> do
             output <- Type (TypeLoweringInfo info.members root info.ownershipinfos 0)
-            filterInfo output [root]
+            filterInfo config output [root]
         Type info -> do
             output <- Type (TypeLoweringInfo info.members root info.ownershipinfos 0)
-            filterInfo output [root]
+            filterInfo config output [root]
 
 normalizeRef :: LoweringInfo -> (LoweringInfo, Bool)
 normalizeRef lowering_info =
@@ -63,12 +64,19 @@ normalizeRef lowering_info =
         Function _ -> panic "normalizeRef called on function lower info"
         Type type -> do
             ownershipinfos <- type.ownershipinfos
-            (ownershipinfos, is_ref) <- List.fold ([], False) ownershipinfos (\(ownershipinfos, is_ref), ownershipinfo ->
-                case ownershipinfo of
-                    M.Borrower v _ -> if v == type.root.ownership_var
-                        then (List.push ownershipinfos (M.Owner v), True)
-                        else (List.push ownershipinfos ownershipinfo, is_ref)
-                    _ -> (List.push ownershipinfos ownershipinfo, is_ref))
+            (ownershipinfos, is_ref, found) <- List.fold ([], False, False) ownershipinfos
+                (\(ownershipinfos, is_ref, found), ownershipinfo ->
+                    case ownershipinfo of
+                        M.Borrower v _ -> if v == type.root.ownership_var
+                            then (List.push ownershipinfos (M.Owner v), True, True)
+                            else (List.push ownershipinfos ownershipinfo, is_ref, found)
+                        M.Owner v ->
+                            if v == type.root.ownership_var
+                            then (List.push ownershipinfos ownershipinfo, False, True)
+                            else (List.push ownershipinfos ownershipinfo, is_ref, found))
+            ownershipinfos <- if not found
+            then List.push ownershipinfos (M.Owner type.root.ownership_var)
+            else ownershipinfos
             lowering_info <- Type (type { ownershipinfos = ownershipinfos })
             lowering_info <- normalizeLoweringInfo lowering_info
             (lowering_info, is_ref)
@@ -96,22 +104,22 @@ normalizeLoweringInfo lowering_info =
             ownershipinfos <- ownershipinfos |> sort
             Type (TypeLoweringInfo members root ownershipinfos (getMax duplicator))
 
-getLoweringInfoForArg :: LoweringInfo -> Int -> LoweringInfo
-getLoweringInfoForArg lowering_info index = do
+getLoweringInfoForArg :: Config -> LoweringInfo -> Int -> LoweringInfo
+getLoweringInfoForArg config lowering_info index = do
     case lowering_info of
         Function info -> do
             arg <- atIndex info.args index
-            createTypeLoweringInfoFromLoweringInfo lowering_info arg
+            createTypeLoweringInfoFromLoweringInfo config lowering_info arg
         Type info -> panic "getLoweringInfoForArg called on type lowering info"
 
-getLoweringInfoForResult :: LoweringInfo -> LoweringInfo
-getLoweringInfoForResult lowering_info = do
+getLoweringInfoForResult :: Config -> LoweringInfo -> LoweringInfo
+getLoweringInfoForResult config lowering_info = do
     case lowering_info of
-        Function info -> createTypeLoweringInfoFromLoweringInfo lowering_info info.result
+        Function info -> createTypeLoweringInfoFromLoweringInfo config lowering_info info.result
         Type info -> panic "getLoweringInfoForResult called on type lowering info"
 
-getLoweringInfoForMember :: LoweringInfo -> String -> LoweringInfo
-getLoweringInfoForMember lowering_info name = do
+getLoweringInfoForMember :: Config -> LoweringInfo -> String -> LoweringInfo
+getLoweringInfoForMember config lowering_info name = do
     case lowering_info of
         Function info -> panic "getLoweringInfoForMember called on function lowering info"
         Type info -> do
@@ -119,14 +127,14 @@ getLoweringInfoForMember lowering_info name = do
                     M.Member n root member_info -> n == name && info.root.arg_group_var == root
                     _ -> False)
             case head memberConstraint of
-                Some (M.Member name root member_info) -> createTypeLoweringInfoFromLoweringInfo lowering_info member_info
+                Some (M.Member name root member_info) -> createTypeLoweringInfoFromLoweringInfo config lowering_info member_info
                 Some _ -> panic "memberConstraint is not a memberConstraint"
                 None -> do
                     root <- createRoot
                     Type (TypeLoweringInfo [] root [M.Owner root.ownership_var] 0)
 
-getLoweringInfoForVariant :: LoweringInfo -> Int -> LoweringInfo
-getLoweringInfoForVariant lowering_info index = do
+getLoweringInfoForVariant :: Config -> LoweringInfo -> Int -> LoweringInfo
+getLoweringInfoForVariant config lowering_info index = do
     case lowering_info of
         Function info -> panic "getLoweringInfoForVariant called on function lowering info"
         Type info -> do
@@ -134,8 +142,7 @@ getLoweringInfoForVariant lowering_info index = do
                     M.Variant i root member_info -> i == index && info.root.arg_group_var == root
                     _ -> False)
             case head variantConstraint of
-                Some (M.Variant index root member_info) ->
-                    createTypeLoweringInfoFromLoweringInfo lowering_info member_info
+                Some (M.Variant index root member_info) -> createTypeLoweringInfoFromLoweringInfo config lowering_info member_info
                 Some _ -> panic "variantConstraint is not a variantConstraint"
                 None -> do
                     root <- createRoot

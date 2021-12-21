@@ -37,13 +37,13 @@ initGraph graph item_id_map all_dependencies =
 
 processDependencies a :: (PartialEq a, Ord a, Show a) => Config -> Map a [a] -> [DependencyGroup a]
 processDependencies config all_dependencies = do
-        trace config "new processDependencies {}" % getSize all_dependencies
+        //trace config "new processDependencies {}" % getSize all_dependencies
         graph <- SCC.createGraph
         (graph, item_id_map, id_item_map) <- createIdMaps graph all_dependencies
         graph <- initGraph graph item_id_map all_dependencies
         sccs <- SCC.collectSCCs graph
         ordered_groups <- List.map sccs (mapSCC id_item_map)
-        trace config "new processDependencies done"
+        //trace config "new processDependencies done"
         ordered_groups
     where
         mapSCC a :: Map SCC.NodeId a -> [SCC.NodeId] -> DependencyGroup a
