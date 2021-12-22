@@ -7,6 +7,7 @@ import Siko.MIR.Backend.Ownership.V3.Lowering.Type
 import Siko.MIR.Backend.Ownership.V3.InferenceInfo
 import Siko.MIR.Backend.Ownership.V3.TypeVariableInfo
 import Siko.MIR.Expr as ME
+import Siko.MIR.Type as MT
 import Siko.LIR.Expr as LE
 
 lowerVar :: ME.Var -> LE.Var
@@ -26,10 +27,14 @@ lowerChecker lowering_info context checker = case checker of
     ME.StringChecker lit -> (context, LE.StringChecker lit)
     ME.CharChecker lit -> (context, LE.CharChecker lit)
     ME.CharRangeChecker s e kind -> (context, LE.CharRangeChecker s e (lowerRangeKind kind))
-    ME.VariantChecker i v t -> do
+    ME.VariantChecker index var ty -> do
+        lowering_info <- case ty of
+            MT.Adt _ _ -> getLoweringInfoForVariant context.config lowering_info index
+            MT.Record _ _ -> lowering_info
+            _ -> panic "VariantCheckers' type is nor adt nor record"
         //println "VariantChecker: {}" % lowering_info
-        (context, type) <- lowerType context lowering_info t
-        (context, LE.VariantChecker i (lowerVar v) type)
+        (context, type) <- lowerType context lowering_info ty
+        (context, LE.VariantChecker index (lowerVar var) type)
     ME.WildcardChecker -> (context, LE.WildcardChecker)
 
 lowerCase :: InferenceInfo -> LoweringInfo -> Context -> ME.Case -> (Context, LE.Case)
@@ -78,11 +83,31 @@ lowerExpr inference_info context expr = do
         ME.VarRef var -> do
             lir_var <- lowerVar var
             (context, LE.VarRef lir_var)
+        ME.FieldAccess name receiver -> do
+            (context, lir_receiver) <- lowerExpr inference_info context receiver
+            (context, LE.FieldAccess name lir_receiver)
         ME.If cond true_branch false_branch -> do
             (context, lir_cond) <- lowerExpr inference_info context cond
             (context, lir_true_branch) <- lowerExpr inference_info context true_branch
             (context, lir_false_branch) <- lowerExpr inference_info context false_branch
             (context, LE.If lir_cond lir_true_branch lir_false_branch)
+        ME.List args -> do
+            (context, args) <- List.mapS context args (lowerExpr inference_info)
+            (context, LE.List args)
+        ME.Return arg -> do
+            (context, lir_arg) <- lowerExpr inference_info context arg
+            (context, LE.Return lir_arg)
+        ME.Continue arg -> do
+            (context, lir_arg) <- lowerExpr inference_info context arg
+            (context, LE.Continue lir_arg)
+        ME.Break arg -> do
+            (context, lir_arg) <- lowerExpr inference_info context arg
+            (context, LE.Break lir_arg)
+        ME.Loop var initializer body _ _ -> do
+            lir_var <- lowerVar var
+            (context, lir_initializer) <- lowerExpr inference_info context initializer
+            (context, lir_body) <- lowerExpr inference_info context body
+            (context, LE.Loop lir_var lir_initializer lir_body)
         ME.CaseOf body cases -> do
             ME.Expr _ _ body_id <- body
             body_info <- getTypeVariableInfoByExprId inference_info body_id
@@ -91,6 +116,11 @@ lowerExpr inference_info context expr = do
             (context, lir_body) <- lowerExpr inference_info context body
             (context, lir_cases) <- List.mapS context cases (lowerCase inference_info lowering_info)
             (context, LE.CaseOf lir_body lir_cases)
+        ME.Clone arg -> panic "Clone in MIR -> LIR lowering"
+        ME.Deref arg -> panic "Deref in MIR -> LIR lowering"
+        ME.Ref arg -> panic "Ref in MIR -> LIR lowering"
+        ME.Move arg -> panic "Move in MIR -> LIR lowering"
+        ME.Box arg -> panic "Box in MIR -> LIR lowering"
         ME.Converter arg _ -> do
             ME.Expr _ _ arg_id <- arg
             arg_info <- getTypeVariableInfoByExprId inference_info arg_id

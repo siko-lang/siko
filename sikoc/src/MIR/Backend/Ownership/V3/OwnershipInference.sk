@@ -14,7 +14,8 @@ import Map
 data Context = { inference_info :: InferenceInfo,
                  program :: P.Program,
                  borrow_info :: BorrowInfo,
-                 function_info_store :: FunctionInfoStore }
+                 function_info_store :: FunctionInfoStore,
+                 group :: [P.Identity], }
 
 addOwnershipValue :: Context -> TypeVariable -> OwnershipKind -> Context
 addOwnershipValue context var kind = do
@@ -48,6 +49,7 @@ processConverter context borrowed_var from to = do
         (Borrower a, Unknown) -> addOwnershipValue context to from_kind
         (Borrower a, Owner) -> context
         (Unknown, Unknown) -> addOwnershipValue context to from_kind
+        (Unknown, Owner) -> context
         _ -> panic "NYI converter rule {} => {}" % (from_kind, to_kind)
 
 processExpr :: Context -> E.Expr -> (Context, E.Expr)
@@ -66,7 +68,9 @@ processExpr context expr = do
                                         List.fold context function_converters (\context, converter -> do
                                             processConverter context None converter.from converter.to)
                                     None -> panic "No function converters found for {} {}" % (f_id, expr_id)
-                            None -> panic "No function info found for called fn {}" % f_id
+                            None -> if List.contains context.group f_id
+                                then context
+                                else panic "No function info found for called fn {}" % f_id
                     F.VariantCtor _ -> addOwnershipValue context info.ownership_var Owner
                     F.RecordCtor -> addOwnershipValue context info.ownership_var Owner
         E.IntegerLiteral _ -> addOwnershipValue context info.ownership_var Owner
@@ -90,6 +94,7 @@ processExpr context expr = do
                         context <- addOwnershipValue context rhs_info.ownership_var Owner
                         addOwnershipValue context var_info.ownership_var Owner
                 _ -> context
+        E.List args -> addOwnershipValue context info.ownership_var Owner
         E.Converter arg _  -> do
             E.Expr arg_s_expr _ arg_id <- arg
             arg_info <- getTypeVariableInfoByExprId context.inference_info arg_id
@@ -112,9 +117,9 @@ dumpExpr context expr = do
     println "dumpOwnership {} {} {}" % (E.short expr, info, o1)
     (context, expr)
 
-inferOwnership :: FunctionInfoStore -> InferenceInfo -> P.Program -> E.Expr -> BorrowInfo -> InferenceInfo
-inferOwnership function_info_store inference_info program body borrow_info = do
-    context <- Context inference_info program borrow_info function_info_store
+inferOwnership :: [P.Identity] -> FunctionInfoStore -> InferenceInfo -> P.Program -> E.Expr -> BorrowInfo -> InferenceInfo
+inferOwnership group function_info_store inference_info program body borrow_info = do
+    context <- Context inference_info program borrow_info function_info_store group
     (context, body) <- traverse context body (Some initializeExpr) None
     (context, body) <- traverse context body (Some processExpr) None
     //(context, body) <- traverse context body (Some dumpExpr) None

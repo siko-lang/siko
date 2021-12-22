@@ -25,6 +25,7 @@ instance Apply MemberInfo where
     apply c info = case info of
         Variant index root info -> Variant index (apply c root) (apply c info)
         Member name root info -> Member name (apply c root) (apply c info)
+        Extern index root info -> Extern index (apply c root) (apply c info)
 
 instance Apply OwnershipInfo where
     apply c info = case info of
@@ -53,7 +54,8 @@ applyEquals equals target = do
             (equals, target)
 
 data MergeKey b = VariantKey Int b
-                | MemberKey String b deriving (PartialEq, Eq, PartialOrd, Ord)
+                | MemberKey String b
+                | ExternKey Int b deriving (PartialEq, Eq, PartialOrd, Ord)
 
 addEqual :: [Equal] -> TypeVariableInfo -> TypeVariableInfo -> [Equal]
 addEqual equals info1 info2 = do
@@ -74,6 +76,9 @@ getEqualsFromMemberInfos members = do
                     root_map
                 Member name root info -> do
                     (root_map, _) <- alter (add info) (MemberKey name root) root_map
+                    root_map
+                Extern index root info -> do
+                    (root_map, _) <- alter (add info) (ExternKey index root) root_map
                     root_map)
         Map.fold [] root_map (\equals, (_, infos) -> do
             if getLength infos > 1

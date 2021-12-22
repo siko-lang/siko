@@ -164,6 +164,13 @@ collectRelevantVars members vars =
                     vars <- Set.put vars info.ownership_var
                     vars <- Set.put vars info.arg_group_var
                     vars
+                else vars
+            M.Extern index root info ->
+                if Set.contains vars root
+                then do
+                    vars <- Set.put vars info.ownership_var
+                    vars <- Set.put vars info.arg_group_var
+                    vars
                 else vars)
         if Set.getSize vars != start_size
         then vars
@@ -189,6 +196,9 @@ toFunctionInfo inference_info = do
                         not (Set.contains same_vars info.ownership_var)
                         || not (Set.contains same_vars info.arg_group_var)
                  M.Member name root info ->
+                        not (Set.contains same_vars info.ownership_var)
+                        || not (Set.contains same_vars info.arg_group_var)
+                 M.Extern index root info ->
                         not (Set.contains same_vars info.ownership_var)
                         || not (Set.contains same_vars info.arg_group_var)
             )

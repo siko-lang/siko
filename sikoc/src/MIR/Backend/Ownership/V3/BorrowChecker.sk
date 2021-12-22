@@ -79,6 +79,7 @@ collectBorrows context usage_store expr = do
     E.Expr s_expr _ expr_id <- expr
     (context, usage_store, exec_mode) <- case s_expr of
         E.Do items -> collectBlockBorrows context usage_store items
+        E.Multi _ -> panic "Multi in borrow checker"
         E.StaticFunctionCall f_id args -> collectBlockBorrows context usage_store args
         E.IntegerLiteral _ -> (context, usage_store, Normal)
         E.StringLiteral _ -> (context, usage_store, Normal)
@@ -89,13 +90,33 @@ collectBorrows context usage_store expr = do
             path <- Whole
             (context, usage_store) <- addUsage context usage_store var expr_id path
             (context, usage_store, Normal)
+        E.FieldAccess name receiver -> collectBorrows context usage_store receiver
         E.If cond true_branch false_branch -> do
             (context, usage_store, exec_mode) <- collectBorrows context usage_store cond
             processBranches context usage_store [true_branch, false_branch]
+        E.List args -> collectBlockBorrows context usage_store args
+        E.Return arg -> do
+            (context, usage_store, exec_mode) <- collectBorrows context usage_store arg
+            (context, usage_store, DoesNotReturn)
+        E.Continue arg -> do
+            (context, usage_store, exec_mode) <- collectBorrows context usage_store arg
+            (context, usage_store, DoesNotReturn)
+        E.Break arg -> do
+            (context, usage_store, exec_mode) <- collectBorrows context usage_store arg
+            (context, usage_store, DoesNotReturn)
+        E.Loop var initializer body _ _ -> do
+            (context, usage_store, exec_mode) <- collectBorrows context usage_store initializer
+            (context, usage_store, exec_mode) <- collectBorrows context usage_store body
+            (context, usage_store, exec_mode)
         E.CaseOf body cases -> do
             (context, usage_store, exec_mode) <- collectBorrows context usage_store body
             branches <- List.map cases (\c -> c.body)
             processBranches context usage_store branches
+        E.Clone arg -> panic "Clone in MIR borrow checker"
+        E.Deref arg -> panic "Deref in MIR borrow checker"
+        E.Ref arg -> panic "Ref in MIR borrow checker"
+        E.Move arg -> panic "Move in MIR borrow checker"
+        E.Box arg -> panic "Box in MIR borrow checker"
         E.Converter arg _ -> collectBorrows context usage_store arg
         _ -> panic "borrow checker: NYI {}" % (E.short expr)
     (context, usage_store, exec_mode)
@@ -140,6 +161,7 @@ checkVars context live_set expr = do
     E.Expr s_expr _ expr_id <- expr
     (context, live_set) <- case s_expr of
         E.Do items -> checkVarsInBlock context live_set items
+        E.Multi _ -> panic "Multi in borrow checker"
         E.StaticFunctionCall f_id args -> checkVarsInBlock context live_set args
         E.IntegerLiteral _ -> (context, live_set)
         E.StringLiteral _ -> (context, live_set)
@@ -150,11 +172,23 @@ checkVars context live_set expr = do
             live_set <- addLiveVar live_set var
             (context, live_set)
         E.VarRef var -> checkVar context live_set var expr_id
+        E.FieldAccess name receiver -> checkVars context live_set receiver
         E.If cond true_branch false_branch -> do
             // FIXME, TODO: double check this!!
             (context, live_set) <- checkVars context live_set cond
             (context, live_set) <- checkVars context live_set true_branch
             (context, live_set) <- checkVars context live_set false_branch
+            (context, live_set)
+        E.List args -> checkVarsInBlock context live_set args
+        E.Return arg -> checkVars context live_set arg
+        E.Continue arg -> checkVars context live_set arg
+        E.Break arg -> checkVars context live_set arg
+        E.Loop var initializer body _ _ -> do
+            (context, live_set) <- checkVars context live_set initializer
+            live_set <- addLiveVar live_set var
+            (context, live_set) <- checkVars context live_set body
+            //FIXME: is this correct?, double check this!
+            (context, live_set) <- checkVars context live_set body
             (context, live_set)
         E.CaseOf body cases -> do
             // FIXME, TODO: double check this!!
@@ -162,6 +196,11 @@ checkVars context live_set expr = do
             (context, live_set) <- List.fold (context, live_set) cases (\(context, live_set), c ->
                 checkVars context live_set c.body)
             (context, live_set)
+        E.Clone arg -> panic "Clone in MIR borrow checker"
+        E.Deref arg -> panic "Deref in MIR borrow checker"
+        E.Ref arg -> panic "Ref in MIR borrow checker"
+        E.Move arg -> panic "Move in MIR borrow checker"
+        E.Box arg -> panic "Box in MIR borrow checker"
         E.Converter arg _ -> checkVars context live_set arg
         _ -> panic "NYI {}" % (E.short expr)
     (context, live_set)

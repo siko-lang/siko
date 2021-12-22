@@ -44,7 +44,6 @@ processPosition context pos = do
                             else do
                                 (last_step, parent) <- List.remove steps (getLength steps - 1)
                                 (context, parent_info) <- processPosition context (F.Position parent)
-                                println "info for parent {} {}/{}" % (parent_info, parent, last_step)
                                 processStep context (Some parent_info) last_step
             (info_map, _) <- Map.insert context.info_map pos info
             (context { info_map = info_map }, info)
@@ -54,7 +53,12 @@ processPosition context pos = do
 processStep :: Context -> Option TypeVariableInfo -> F.Step -> (Context, TypeVariableInfo)
 processStep context parent step =
     case step of
-        F.External index -> getNext context
+        F.External index -> do
+            (context, info) <- getNext context
+            parent <- Option.unwrap parent
+            variant <- M.Extern index parent.arg_group_var info
+            members <- List.push context.members variant
+            (context { members = members }, info)
         F.Variant index -> do
             (context, info) <- getNext context
             parent <- Option.unwrap parent

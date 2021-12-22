@@ -18,14 +18,16 @@ getDependencyMap lowering_info =
             deps_map <- addInfo deps_map function.result
             deps_map <- List.fold deps_map function.members (\deps_map, member -> case member of
                 M.Variant index root info -> addInfo deps_map info
-                M.Member name root info -> addInfo deps_map info)
+                M.Member name root info -> addInfo deps_map info
+                M.Extern index root info -> addInfo deps_map info)
             processMembers function.members deps_map
         Type type -> do
             deps_map <- Map.empty
             deps_map <- addInfo deps_map type.root
             deps_map <- List.fold deps_map type.members (\deps_map, member -> case member of
                 M.Variant index root info -> addInfo deps_map info
-                M.Member name root info -> addInfo deps_map info)
+                M.Member name root info -> addInfo deps_map info
+                M.Extern index root info -> addInfo deps_map info)
             processMembers type.members deps_map
     where
         processMembers :: [M.MemberInfo] -> Map TypeVariableInfo [TypeVariableInfo] -> Map TypeVariableInfo [TypeVariableInfo]
@@ -33,7 +35,8 @@ getDependencyMap lowering_info =
             List.fold deps_map members (\deps_map, member ->
                 case member of
                     M.Variant index root info -> addDependency deps_map root info
-                    M.Member name root info -> addDependency deps_map root info)
+                    M.Member name root info -> addDependency deps_map root info
+                    M.Extern index root info -> addDependency deps_map root info)
 
         addInfo :: Map TypeVariableInfo [TypeVariableInfo] -> TypeVariableInfo -> Map TypeVariableInfo [TypeVariableInfo]
         addInfo deps_map info = do
@@ -128,12 +131,14 @@ filterInfo config lowering_info sources = do
             case member of
                 M.Variant index root info -> List.contains infos info && List.contains vars root
                 M.Member name root info -> List.contains infos info && List.contains vars root
+                M.Extern index root info -> List.contains infos info && List.contains vars root
 
         filterConstraint :: Set TypeVariable -> M.MemberInfo -> Bool
         filterConstraint vars constraint =
             case constraint of
                 M.Variant index root info -> Set.contains vars root
                 M.Member name root info -> Set.contains vars root
+                M.Extern index root info -> Set.contains vars root
 
         filterOwnershipInfo :: [TypeVariableInfo] -> M.OwnershipInfo -> Bool
         filterOwnershipInfo vars ownershipinfo =
@@ -146,6 +151,7 @@ filterInfo config lowering_info sources = do
             case constraint of
                 M.Variant index root info -> add vars root info
                 M.Member name root info -> add vars root info
+                M.Extern index root info -> add vars root info
             where
                 add :: Set TypeVariable -> TypeVariable -> TypeVariableInfo -> Set TypeVariable
                 add vars root info =

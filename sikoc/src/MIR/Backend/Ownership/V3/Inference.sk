@@ -74,8 +74,8 @@ processFunctionInfo context function_info function_id = do
     context <- context { function_info_store = function_info_store }
     (context, added)
 
-processFunction :: Context -> P.Identity -> (Context, Bool)
-processFunction context function_id = do
+processFunction :: Context -> [P.Identity] -> P.Identity -> (Context, Bool)
+processFunction context group function_id = do
     function <- P.getFunction context.program function_id
     case function.kind of
         F.Normal info -> do
@@ -84,9 +84,10 @@ processFunction context function_id = do
             inference_info <- createInferenceInfo arg_count
             inference_info <- initializeTypeVariables inference_info info.body
             function_info_store <- context.function_info_store
-            inference_info <- processEqualities inference_info function_info_store context.program info.body
+            inference_info <- processEqualities group inference_info function_info_store context.program info.body
             borrow_info <- checkBorrows context.program info.body
-            inference_info <- inferOwnership context.function_info_store inference_info context.program info.body borrow_info
+            inference_info <- inferOwnership group context.function_info_store inference_info
+                              context.program info.body borrow_info
             function_info <- toFunctionInfo inference_info
             processFunctionInfo context function_info function_id
         F.VariantCtor index -> do
@@ -104,13 +105,13 @@ processFunctionGroup context group =
     if getLength group == 1
         then do
             function_id <- atIndex group 0
-            (context, _) <- processFunction context function_id
+            (context, _) <- processFunction context group function_id
             context
         else do
             //println "Processing group {}" % group
             loop context <- context do
                 (context, more) <- group |> List.iter |> Iterator.fold (\(context, more), function_id -> do
-                    (context, added) <- processFunction context function_id
+                    (context, added) <- processFunction context group function_id
                     more <- if added then True else more
                     (context, more)) (context, False)
                 if more then context else break context

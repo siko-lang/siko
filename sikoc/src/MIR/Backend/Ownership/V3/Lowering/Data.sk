@@ -17,6 +17,12 @@ import Siko.LIR.Type as LT
 
 import Map
 
+lowerExternalRecordInfo :: LoweringInfo -> Context -> MD.ExternalRecordInfo -> (Context, LD.ExternalRecordInfo)
+lowerExternalRecordInfo lowering_info context mir_external_record_info = do
+    (context, lir_type_args) <- List.mapS context mir_external_record_info.type_args (\context, type_arg ->
+        lowerType context lowering_info type_arg)
+    (context, LD.ExternalRecordInfo lir_type_args)
+
 lowerField :: LoweringInfo -> Context -> MD.RecordField -> (Context, LD.RecordField)
 lowerField lowering_info context mir_field = do
     lowering_info <- getLoweringInfoForMember context.config lowering_info mir_field.name
@@ -35,9 +41,11 @@ lowerRecord context lowering_info mir_id lir_id = do
     mir_record <- MP.getRecord context.mir_program mir_id
     (context, fields) <- List.mapS context mir_record.fields (lowerField lowering_info)
     lifetimes <- collectLifetimes lowering_info
-    external_info <- case mir_record.external_info of
-        Some _ -> Some (LD.ExternalRecordInfo []) // TODO:
-        None -> None
+    (context, external_info) <- case mir_record.external_info of
+        Some external_info -> do
+            (context, external_info) <- lowerExternalRecordInfo lowering_info context external_info
+            (context, Some external_info)
+        None -> (context, None)
     external_class_impls <- []
     lir_record <- LD.Record lir_id lifetimes fields external_info external_class_impls
     context <- addRecord context lir_record
