@@ -104,6 +104,7 @@ collectBorrows context usage_store expr = do
         E.Break arg -> do
             (context, usage_store, exec_mode) <- collectBorrows context usage_store arg
             (context, usage_store, DoesNotReturn)
+        E.RecordUpdate var updates -> panic "RecordUpdate in MIR borrow checker"
         E.Loop var initializer body _ _ -> do
             (context, usage_store, exec_mode) <- collectBorrows context usage_store initializer
             (context, usage_store, exec_mode) <- collectBorrows context usage_store body
@@ -118,7 +119,6 @@ collectBorrows context usage_store expr = do
         E.Move arg -> panic "Move in MIR borrow checker"
         E.Box arg -> panic "Box in MIR borrow checker"
         E.Converter arg _ -> collectBorrows context usage_store arg
-        _ -> panic "borrow checker: NYI {}" % (E.short expr)
     (context, usage_store, exec_mode)
 
 addForbiddenBorrow :: Context -> E.Var -> E.Var -> Context
@@ -183,6 +183,7 @@ checkVars context live_set expr = do
         E.Return arg -> checkVars context live_set arg
         E.Continue arg -> checkVars context live_set arg
         E.Break arg -> checkVars context live_set arg
+        E.RecordUpdate var updates -> panic "RecordUpdate in MIR borrow checker"
         E.Loop var initializer body _ _ -> do
             (context, live_set) <- checkVars context live_set initializer
             live_set <- addLiveVar live_set var
@@ -202,7 +203,6 @@ checkVars context live_set expr = do
         E.Move arg -> panic "Move in MIR borrow checker"
         E.Box arg -> panic "Box in MIR borrow checker"
         E.Converter arg _ -> checkVars context live_set arg
-        _ -> panic "NYI {}" % (E.short expr)
     (context, live_set)
 
 checkBorrows :: P.Program -> E.Expr -> BorrowInfo

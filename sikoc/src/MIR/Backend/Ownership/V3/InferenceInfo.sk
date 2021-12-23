@@ -117,11 +117,8 @@ maybeAddOwnership inference_info var kind = do
         None -> Some kind) var inference_info.ownership_values
     inference_info { ownership_values = ownership_values }
 
-getOwnership :: InferenceInfo -> TypeVariable -> OwnershipKind
-getOwnership inference_info var =
-    case Map.get inference_info.ownership_values var of
-        Some kind -> kind
-        None -> panic "Ownership not found {}" % var
+getOwnership :: InferenceInfo -> TypeVariable -> Option OwnershipKind
+getOwnership inference_info var = Map.get inference_info.ownership_values var
 
 getTypeVariableInfoByExprId :: InferenceInfo -> E.ExprId -> TypeVariableInfo
 getTypeVariableInfoByExprId inference_info expr_id =

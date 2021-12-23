@@ -3,6 +3,7 @@ module Siko.MIR.Backend.Ownership.V3.OwnershipInference(inferOwnership) where
 import Siko.MIR.Program as P
 import Siko.MIR.Backend.Ownership.V3.InferenceInfo
 import Siko.MIR.Backend.Ownership.V3.BorrowInfo
+import Siko.MIR.Backend.Ownership.V3.MemberInfo as M
 import Siko.MIR.Backend.Ownership.V3.TypeVariableInfo
 import Siko.MIR.Backend.Ownership.V3.FunctionInfoStore
 import Siko.MIR.Backend.Traversal
@@ -23,7 +24,10 @@ addOwnershipValue context var kind = do
     context { inference_info = inference_info }
 
 getOwnershipValue :: Context -> TypeVariable -> OwnershipKind
-getOwnershipValue context var = getOwnership context.inference_info var
+getOwnershipValue context var =
+    case getOwnership context.inference_info var of
+        Some o -> o
+        None -> panic "Ownership value not found for {}" % var
 
 initializeExpr :: Context -> E.Expr -> (Context, E.Expr)
 initializeExpr context expr = do
@@ -57,6 +61,8 @@ processExpr context expr = do
     E.Expr s_expr _ expr_id <- expr
     info <- getTypeVariableInfoByExprId context.inference_info expr_id
     context <- case s_expr of
+        E.Do _ -> context
+        E.Multi _ -> context
         E.StaticFunctionCall f_id args -> do
                 function <- P.getFunction context.program f_id
                 case function.kind of
@@ -94,7 +100,49 @@ processExpr context expr = do
                         context <- addOwnershipValue context rhs_info.ownership_var Owner
                         addOwnershipValue context var_info.ownership_var Owner
                 _ -> context
+        E.VarRef _ -> context
+        E.FieldAccess name receiver -> do
+            E.Expr _ _ receiver_id <- receiver
+            receiver_info <- getTypeVariableInfoByExprId context.inference_info receiver_id
+            receiver_kind <- getOwnershipValue context receiver_info.ownership_var
+            expr_kind <- getOwnershipValue context info.ownership_var
+            case (receiver_kind, expr_kind) of
+                (Borrower _, Owner) -> addOwnershipValue context info.ownership_var receiver_kind
+                (Borrower _, Unknown) -> addOwnershipValue context info.ownership_var receiver_kind
+                (Owner, Unknown) -> addOwnershipValue context info.ownership_var receiver_kind
+                _ -> context
+        E.If _ _ _ -> context
         E.List args -> addOwnershipValue context info.ownership_var Owner
+        E.Return arg -> addOwnershipValue context info.ownership_var Owner
+        E.Continue arg -> addOwnershipValue context info.ownership_var Owner
+        E.Break arg -> addOwnershipValue context info.ownership_var Owner
+        E.RecordUpdate var updates -> panic "RecordUpdate in InferOwnership"
+        E.Loop _ _ _ _ _ -> context
+        E.CaseOf body cases -> do
+            E.Expr _ _ body_id <- body
+            body_info <- getTypeVariableInfoByExprId context.inference_info body_id
+            List.fold context cases (\context, c -> case c.checker of
+                E.VariantChecker index var _ -> do
+                    var_info <- getTypeVariableInfoByVar context.inference_info var
+                    variant <- List.find context.inference_info.members (\member -> case member of
+                        M.Variant i root member_info -> i == index && member_info == var_info
+                        _ -> False)
+                    case variant of
+                        Some (M.Variant i root member_info) -> do
+                            body_kind <- getOwnershipValue context body_info.ownership_var
+                            member_kind <- case getOwnership context.inference_info member_info.ownership_var of
+                                Some o -> o
+                                None -> Unknown
+                            case (body_kind, member_kind) of
+                                (body_o, Unknown) -> addOwnershipValue context member_info.ownership_var body_o
+                                _ -> context
+                        _ -> panic "No variant found for variant checker's var {}" % var
+                _ -> context)
+        E.Clone arg -> panic "Clone in InferOwnership"
+        E.Deref arg -> panic "Deref in InferOwnership"
+        E.Ref arg -> panic "Ref in InferOwnership"
+        E.Move arg -> panic "Move in InferOwnership"
+        E.Box arg -> panic "Box in InferOwnership"
         E.Converter arg _  -> do
             E.Expr arg_s_expr _ arg_id <- arg
             arg_info <- getTypeVariableInfoByExprId context.inference_info arg_id
@@ -104,7 +152,6 @@ processExpr context expr = do
                         else None
                 _ -> None
             processConverter context borrowed_var arg_info.ownership_var info.ownership_var
-        _ -> context
     //o1 <- getOwnershipValue context info.ownership_var
     //println "InferOwnership {} {} {}" % (E.short expr, info, o1)
     (context, expr)

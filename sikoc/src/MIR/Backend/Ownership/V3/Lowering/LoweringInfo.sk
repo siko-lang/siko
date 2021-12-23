@@ -123,12 +123,12 @@ getLoweringInfoForMember config lowering_info name = do
     case lowering_info of
         Function info -> panic "getLoweringInfoForMember called on function lowering info"
         Type info -> do
-            memberConstraint <- List.filter info.members (\constraint -> case constraint of
+            member <- List.filter info.members (\constraint -> case constraint of
                     M.Member n root member_info -> n == name && info.root.arg_group_var == root
                     _ -> False)
-            case head memberConstraint of
+            case head member of
                 Some (M.Member name root member_info) -> createTypeLoweringInfoFromLoweringInfo config lowering_info member_info
-                Some _ -> panic "memberConstraint is not a memberConstraint"
+                Some _ -> panic "member is not a member"
                 None -> do
                     root <- createRoot
                     Type (TypeLoweringInfo [] root [M.Owner root.ownership_var] 0)
@@ -138,12 +138,12 @@ getLoweringInfoForVariant config lowering_info index = do
     case lowering_info of
         Function info -> panic "getLoweringInfoForVariant called on function lowering info"
         Type info -> do
-            variantConstraint <- List.filter info.members (\constraint -> case constraint of
+            variant <- List.filter info.members (\constraint -> case constraint of
                     M.Variant i root member_info -> i == index && info.root.arg_group_var == root
                     _ -> False)
-            case head variantConstraint of
+            case head variant of
                 Some (M.Variant index root member_info) -> createTypeLoweringInfoFromLoweringInfo config lowering_info member_info
-                Some _ -> panic "variantConstraint is not a variantConstraint"
+                Some _ -> panic "variant is not a variant"
                 None -> do
                     root <- createRoot
                     Type (TypeLoweringInfo [] root [M.Owner root.ownership_var] 0)

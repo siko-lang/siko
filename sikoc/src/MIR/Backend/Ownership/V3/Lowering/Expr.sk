@@ -55,6 +55,7 @@ lowerExpr inference_info context expr = do
         ME.Do items -> do
             (context, items) <- List.mapS context items (lowerExpr inference_info)
             (context, LE.Do items)
+        ME.Multi _ -> panic "Multi in MIR -> LIR lowering"
         ME.StaticFunctionCall f_id args -> do
             args_info <- List.map args (\arg -> do
                 ME.Expr _ arg_type arg_id <- arg
@@ -103,6 +104,7 @@ lowerExpr inference_info context expr = do
         ME.Break arg -> do
             (context, lir_arg) <- lowerExpr inference_info context arg
             (context, LE.Break lir_arg)
+        ME.RecordUpdate _ _ ->  panic "RecordUpdate in MIR -> LIR lowering"
         ME.Loop var initializer body _ _ -> do
             lir_var <- lowerVar var
             (context, lir_initializer) <- lowerExpr inference_info context initializer
@@ -124,8 +126,8 @@ lowerExpr inference_info context expr = do
         ME.Converter arg _ -> do
             ME.Expr _ _ arg_id <- arg
             arg_info <- getTypeVariableInfoByExprId inference_info arg_id
-            from <- getOwnership inference_info arg_info.ownership_var
-            to <- getOwnership inference_info expr_info.ownership_var
+            from <- Option.unwrap (getOwnership inference_info arg_info.ownership_var)
+            to <- Option.unwrap (getOwnership inference_info expr_info.ownership_var)
             (context, lir_arg) <- lowerExpr inference_info context arg
             case (from, to) of
                 (Owner, Owner) -> (context, LE.Move lir_arg)
@@ -133,7 +135,6 @@ lowerExpr inference_info context expr = do
                 (Borrower _, Borrower _) -> (context, LE.Move lir_arg)
                 (Borrower _, Owner) -> (context, LE.Clone lir_arg)
                 _ -> panic "Unexpected converter in lowering {} => {}" % (from, to)
-        _ -> panic "NYE lowerExpr {}" % (ME.short expr)
     //println "Transforming EXPR {} {}" % ((ME.short expr), expr_info)
     lir_expr <- LE.Expr lir_s_expr lir_type (LE.ExprId 0)
     (context, lir_expr)
