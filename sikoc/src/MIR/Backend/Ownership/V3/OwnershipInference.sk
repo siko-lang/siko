@@ -11,12 +11,14 @@ import Siko.MIR.Expr as E
 import Siko.MIR.Function as F
 
 import Map
+import Set
 
 data Context = { inference_info :: InferenceInfo,
                  program :: P.Program,
                  borrow_info :: BorrowInfo,
                  function_info_store :: FunctionInfoStore,
-                 group :: [P.Identity], }
+                 group :: [P.Identity],
+                 strict :: Bool, }
 
 addOwnershipValue :: Context -> TypeVariable -> OwnershipKind -> Context
 addOwnershipValue context var kind = do
@@ -46,15 +48,22 @@ processConverter context borrowed_var from to = do
     to_kind <- getOwnershipValue context to
     case (from_kind, to_kind) of
         (Owner, Owner) -> context
-        (Borrower a, Borrower b) -> context //panic "NYI converter rule borrower -> borrower" // FIXME
+        (Owner, Borrower _) -> context
         (Owner, Unknown) -> case borrowed_var of
-            Some var -> addOwnershipValue context to (Borrower var)
+            Some var -> do
+                (inference_info, id) <- createBorrowSetForVar context.inference_info var
+                context <- context { inference_info = inference_info }
+                addOwnershipValue context to (Borrower id)
             None -> addOwnershipValue context to from_kind
-        (Borrower a, Unknown) -> addOwnershipValue context to from_kind
         (Borrower a, Owner) -> context
-        (Unknown, Unknown) -> context
+        (Borrower a, Borrower b) -> do
+            (inference_info, id) <- mergeBorrowSets context.inference_info a b
+            context <- context { inference_info = inference_info }
+            addOwnershipValue context to (Borrower id)
+        (Borrower a, Unknown) -> addOwnershipValue context to from_kind
         (Unknown, Owner) -> context
-        _ -> panic "NYI converter rule {} => {}" % (from_kind, to_kind)
+        (Unknown, Unknown) -> context
+        (Unknown, Borrower _) -> context
 
 preCaseCheck :: Context -> E.Expr -> Context
 preCaseCheck context expr = do
@@ -120,9 +129,14 @@ processExpr context expr = do
             var_info <- getTypeVariableInfoByVar context.inference_info var
             case rhs_kind of
                 Owner -> addOwnershipValue context var_info.ownership_var Owner
-                Borrower b ->
-                    if isBorrowAllowed context.borrow_info b var
-                    then addOwnershipValue context var_info.ownership_var (Borrower b)
+                Borrower borrow_set_id -> do
+                    borrow_set <- getBorrowSet context.inference_info borrow_set_id
+                    is_borrow_allowed <- Set.fold True borrow_set.borrows (\is_borrow_allowed, borrow ->
+                        case borrow of
+                            BorrowedVar b -> is_borrow_allowed && isBorrowAllowed context.borrow_info b var
+                            _ -> is_borrow_allowed)
+                    if is_borrow_allowed
+                    then addOwnershipValue context var_info.ownership_var (Borrower borrow_set_id)
                     else do
                         //println "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! {} {}" % (var, b)
                         context <- addOwnershipValue context rhs_info.ownership_var Owner
@@ -165,8 +179,15 @@ processExpr context expr = do
                         else None
                 _ -> None
             processConverter context borrowed_var arg_info.ownership_var info.ownership_var
-    //o1 <- getOwnershipValue context info.ownership_var
-    //println "InferOwnership {} {} {}" % (E.short expr, info, o1)
+    if context.strict
+    then do
+        o1 <- getOwnershipValue context info.ownership_var
+        case o1 of
+            Unknown -> do
+                println "InferOwnership {} {} {}" % (E.short expr, info, o1)
+                panic "Unknown found in strict mode"
+            _ -> ()
+    else ()
     (context, expr)
 
 dumpExpr :: Context -> E.Expr -> (Context, E.Expr)
@@ -179,7 +200,7 @@ dumpExpr context expr = do
 
 inferOwnership :: [P.Identity] -> FunctionInfoStore -> InferenceInfo -> P.Program -> E.Expr -> BorrowInfo -> Bool -> InferenceInfo
 inferOwnership group function_info_store inference_info program body borrow_info strict = do
-    context <- Context inference_info program borrow_info function_info_store group
+    context <- Context inference_info program borrow_info function_info_store group strict
     (context, body) <- traverse context body (Some initializeExpr) None None
     (context, body) <- traverse context body (Some processExpr) None (Some preCaseCheck)
     if strict

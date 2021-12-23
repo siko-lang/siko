@@ -15,9 +15,17 @@ data Converter = { from :: TypeVariable,
                    to :: TypeVariable,
                  } deriving (PartialEq, Eq, Show)
 
+data Borrow = BorrowedVar E.Var
+            | External Int
+            deriving (PartialEq, Eq, PartialOrd, Ord, Show)
+
+data BorrowSetId = BorrowSetId Int deriving (PartialEq, Eq, PartialOrd, Ord, Show)
+
+data BorrowSet = { borrows :: Set Borrow } deriving (Show)
+
 data OwnershipKind = Unknown
                    | Owner
-                   | Borrower (E.Var)
+                   | Borrower BorrowSetId
                    deriving (Show)
 
 data InferenceInfo = { expr_type_variables :: Map E.ExprId TypeVariableInfo,
@@ -29,6 +37,7 @@ data InferenceInfo = { expr_type_variables :: Map E.ExprId TypeVariableInfo,
                        converters :: [Converter],
                        allocator :: TypeVariableAllocator,
                        function_converters :: Map E.ExprId [Converter],
+                       borrow_sets :: Map BorrowSetId BorrowSet,
                      } deriving (Show)
 
 createInferenceInfoFromLoweringInfo :: LoweringInfo -> InferenceInfo
@@ -43,17 +52,20 @@ createInferenceInfoFromLoweringInfo lowering_info = case lowering_info of
         members <- lowering_info.members
         converters <- []
         function_converters <- Map.empty
+        borrow_sets <- Map.empty
         inference_info <- InferenceInfo expr_type_variables var_type_variables
             ownership_values args result members converters allocator
-            function_converters
+            function_converters borrow_sets
         inference_info <- List.foldE (\inference_info, index, arg -> do
             var <- E.Arg index
             (var_type_variables, _) <- Map.insert inference_info.var_type_variables var arg
             inference_info { var_type_variables = var_type_variables }) inference_info args
         List.fold inference_info lowering_info.ownershipinfos (\inference_info, ownershipinfo -> do
-                (v, kind) <- case ownershipinfo of
-                    M.Owner v -> (v, Owner)
-                    M.Borrower v _ -> (v, Borrower (E.Arg 0)) // FIXME: this is wrong
+                (inference_info, v, kind) <- case ownershipinfo of
+                    M.Owner v -> (inference_info, v, Owner)
+                    M.Borrower v index -> do
+                        (inference_info, id) <- createBorrowSetForExternal inference_info index
+                        (inference_info, v, Borrower id)
                 (ownership_values, _) <- Map.insert inference_info.ownership_values v kind
                 inference_info { ownership_values = ownership_values }
             )
@@ -67,16 +79,52 @@ createInferenceInfo arg_count = do
     ownership_values <- Map.empty
     args <- []
     function_converters <- Map.empty
+    borrow_sets <- Map.empty
     (allocator, result) <- getNextTypeVariableInfo allocator
     inference_info <- InferenceInfo expr_type_variables var_type_variables
             ownership_values args result [] [] allocator
-            function_converters
+            function_converters borrow_sets
     loop (inference_info, index) <- (inference_info, 0) do
         if index >= arg_count
         then break inference_info
         else do
             inference_info <- addVar inference_info (E.Arg index)
             (inference_info, index + 1)
+
+createBorrowSetForVar :: InferenceInfo -> E.Var -> (InferenceInfo, BorrowSetId)
+createBorrowSetForVar inference_info var = do
+    id <- Map.getSize inference_info.borrow_sets
+    id <- BorrowSetId id
+    borrows <- Set.empty
+    borrow_set <- BorrowSet (Set.put borrows (BorrowedVar var))
+    borrow_sets <- Map.put inference_info.borrow_sets id borrow_set
+    (inference_info { borrow_sets = borrow_sets }, id)
+
+createBorrowSetForExternal :: InferenceInfo -> Int -> (InferenceInfo, BorrowSetId)
+createBorrowSetForExternal inference_info index = do
+    id <- Map.getSize inference_info.borrow_sets
+    id <- BorrowSetId id
+    borrows <- Set.empty
+    borrow_set <- BorrowSet (Set.put borrows (External index))
+    borrow_sets <- Map.put inference_info.borrow_sets id borrow_set
+    (inference_info { borrow_sets = borrow_sets }, id)
+
+mergeBorrowSets :: InferenceInfo -> BorrowSetId -> BorrowSetId -> (InferenceInfo, BorrowSetId)
+mergeBorrowSets inference_info id1 id2 = do
+    set1 <- getBorrowSet inference_info id1
+    set2 <- getBorrowSet inference_info id2
+    id <- Map.getSize inference_info.borrow_sets
+    id <- BorrowSetId id
+    merged <- set1.borrows + set2.borrows
+    merged_set <- BorrowSet merged
+    borrow_sets <- Map.put inference_info.borrow_sets id merged_set
+    (inference_info { borrow_sets = borrow_sets }, id)
+
+getBorrowSet :: InferenceInfo -> BorrowSetId -> BorrowSet
+getBorrowSet inference_info id =
+    case Map.get inference_info.borrow_sets id of
+        Some borrow_set -> borrow_set
+        None -> panic "No borrow set found for {}" % id
 
 addVar :: InferenceInfo -> E.Var -> InferenceInfo
 addVar inference_info var = do
@@ -217,7 +265,7 @@ instance Apply InferenceInfo where
         function_converters <- apply equal inference_info.function_converters
         InferenceInfo expr_type_variables var_type_variables ownership_values
             args result members converters inference_info.allocator
-            function_converters
+            function_converters inference_info.borrow_sets
 
 instance EqualityStore InferenceInfo where
     getEqualities inference_info = inference_info.members
