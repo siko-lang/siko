@@ -190,7 +190,7 @@ processExpr context expr = do
 processEqualities :: [P.Identity] -> InferenceInfo -> FunctionInfoStore -> P.Program -> E.Expr -> InferenceInfo
 processEqualities group inference_info function_info_store program body = do
     context <- Context [] inference_info function_info_store program group
-    (context, body) <- traverse context body (Some processExpr) None
+    (context, body) <- traverse context body (Some processExpr) None None
     body_info <- getTypeVariableInfoByExprId context.inference_info (getExprId body)
     result_info <- context.inference_info.result
     context <- addEqualInfo context body_info result_info

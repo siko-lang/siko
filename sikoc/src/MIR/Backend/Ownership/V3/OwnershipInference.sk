@@ -52,9 +52,37 @@ processConverter context borrowed_var from to = do
             None -> addOwnershipValue context to from_kind
         (Borrower a, Unknown) -> addOwnershipValue context to from_kind
         (Borrower a, Owner) -> context
-        (Unknown, Unknown) -> addOwnershipValue context to from_kind
+        (Unknown, Unknown) -> context
         (Unknown, Owner) -> context
         _ -> panic "NYI converter rule {} => {}" % (from_kind, to_kind)
+
+preCaseCheck :: Context -> E.Expr -> Context
+preCaseCheck context expr = do
+    E.Expr s_expr _ expr_id <- expr
+    info <- getTypeVariableInfoByExprId context.inference_info expr_id
+    case s_expr of
+        E.CaseOf body cases -> do
+            E.Expr _ _ body_id <- body
+            body_info <- getTypeVariableInfoByExprId context.inference_info body_id
+            List.fold context cases (\context, c -> case c.checker of
+                E.VariantChecker index var _ -> do
+                    var_info <- getTypeVariableInfoByVar context.inference_info var
+                    //println "var_info {}" % var_info
+                    variant <- List.find context.inference_info.members (\member -> case member of
+                        M.Variant i root member_info -> i == index && member_info == var_info
+                        _ -> False)
+                    case variant of
+                        Some (M.Variant i root member_info) -> do
+                            body_kind <- getOwnershipValue context body_info.ownership_var
+                            member_kind <- case getOwnership context.inference_info member_info.ownership_var of
+                                Some o -> o
+                                None -> Unknown
+                            case (body_kind, member_kind) of
+                                (body_o, Unknown) -> addOwnershipValue context member_info.ownership_var body_o
+                                _ -> context
+                        _ -> panic "No variant found for variant checker's var {}" % var
+                _ -> context)
+        _ -> context
 
 processExpr :: Context -> E.Expr -> (Context, E.Expr)
 processExpr context expr = do
@@ -100,12 +128,16 @@ processExpr context expr = do
                         context <- addOwnershipValue context rhs_info.ownership_var Owner
                         addOwnershipValue context var_info.ownership_var Owner
                 _ -> context
-        E.VarRef _ -> context
+        E.VarRef _ -> do
+            //expr_kind <- getOwnershipValue context info.ownership_var
+            //println "varref {} {}" % (info, expr_kind)
+            context
         E.FieldAccess name receiver -> do
             E.Expr _ _ receiver_id <- receiver
             receiver_info <- getTypeVariableInfoByExprId context.inference_info receiver_id
             receiver_kind <- getOwnershipValue context receiver_info.ownership_var
             expr_kind <- getOwnershipValue context info.ownership_var
+            //println "Field access {} {} {} {}" % (receiver_kind, expr_kind, receiver_info, info)
             case (receiver_kind, expr_kind) of
                 (Borrower _, Owner) -> addOwnershipValue context info.ownership_var receiver_kind
                 (Borrower _, Unknown) -> addOwnershipValue context info.ownership_var receiver_kind
@@ -118,26 +150,7 @@ processExpr context expr = do
         E.Break arg -> addOwnershipValue context info.ownership_var Owner
         E.RecordUpdate var updates -> panic "RecordUpdate in InferOwnership"
         E.Loop _ _ _ _ _ -> context
-        E.CaseOf body cases -> do
-            E.Expr _ _ body_id <- body
-            body_info <- getTypeVariableInfoByExprId context.inference_info body_id
-            List.fold context cases (\context, c -> case c.checker of
-                E.VariantChecker index var _ -> do
-                    var_info <- getTypeVariableInfoByVar context.inference_info var
-                    variant <- List.find context.inference_info.members (\member -> case member of
-                        M.Variant i root member_info -> i == index && member_info == var_info
-                        _ -> False)
-                    case variant of
-                        Some (M.Variant i root member_info) -> do
-                            body_kind <- getOwnershipValue context body_info.ownership_var
-                            member_kind <- case getOwnership context.inference_info member_info.ownership_var of
-                                Some o -> o
-                                None -> Unknown
-                            case (body_kind, member_kind) of
-                                (body_o, Unknown) -> addOwnershipValue context member_info.ownership_var body_o
-                                _ -> context
-                        _ -> panic "No variant found for variant checker's var {}" % var
-                _ -> context)
+        E.CaseOf body cases -> context
         E.Clone arg -> panic "Clone in InferOwnership"
         E.Deref arg -> panic "Deref in InferOwnership"
         E.Ref arg -> panic "Ref in InferOwnership"
@@ -164,11 +177,25 @@ dumpExpr context expr = do
     println "dumpOwnership {} {} {}" % (E.short expr, info, o1)
     (context, expr)
 
-inferOwnership :: [P.Identity] -> FunctionInfoStore -> InferenceInfo -> P.Program -> E.Expr -> BorrowInfo -> InferenceInfo
-inferOwnership group function_info_store inference_info program body borrow_info = do
+inferOwnership :: [P.Identity] -> FunctionInfoStore -> InferenceInfo -> P.Program -> E.Expr -> BorrowInfo -> Bool -> InferenceInfo
+inferOwnership group function_info_store inference_info program body borrow_info strict = do
     context <- Context inference_info program borrow_info function_info_store group
-    (context, body) <- traverse context body (Some initializeExpr) None
-    (context, body) <- traverse context body (Some processExpr) None
-    //(context, body) <- traverse context body (Some dumpExpr) None
-    //println "end of infer {}" % context.inference_info
+    (context, body) <- traverse context body (Some initializeExpr) None None
+    (context, body) <- traverse context body (Some processExpr) None (Some preCaseCheck)
+    if strict
+    then do
+        found <- Map.fold False context.inference_info.expr_type_variables (\found, (_, info) -> do
+        case getOwnership context.inference_info info.ownership_var of
+            Some Unknown -> True
+            _ -> found)
+        found <- Map.fold found context.inference_info.var_type_variables (\found, (_, info) -> do
+        case getOwnership context.inference_info info.ownership_var of
+            Some Unknown -> True
+            _ -> found)
+        if found
+        then do
+            (context, body) <- traverse context body (Some dumpExpr) None None
+            panic "unknown found in strict inferOwnership {}" % context.inference_info
+        else ()
+    else ()
     context.inference_info
