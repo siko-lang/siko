@@ -7,7 +7,8 @@ import Set
 import Siko.MIR.Backend.Ownership.V3.FunctionInfo
 import Siko.MIR.Backend.Ownership.V3.Lowering.LoweringInfo
 import Siko.MIR.Backend.Ownership.V3.TypeVariableInfo
-import Siko.MIR.Backend.Ownership.V3.TypeVariableAllocator
+import Siko.MIR.Backend.Ownership.V3.Allocator
+import Siko.MIR.Backend.Ownership.V3.BorrowId
 import Siko.MIR.Backend.Ownership.V3.MemberInfo as M
 import Siko.MIR.Backend.Ownership.V3.EqualitySolver
 
@@ -16,16 +17,14 @@ data Converter = { from :: TypeVariable,
                  } deriving (PartialEq, Eq, Show)
 
 data Borrow = BorrowedVar E.Var
-            | External Int
+            | External BorrowId
             deriving (PartialEq, Eq, PartialOrd, Ord, Show)
-
-data BorrowSetId = BorrowSetId Int deriving (PartialEq, Eq, PartialOrd, Ord, Show)
 
 data BorrowSet = { borrows :: Set Borrow } deriving (Show)
 
 data OwnershipKind = Unknown
                    | Owner
-                   | Borrower BorrowSetId
+                   | Borrower BorrowId
                    deriving (Show)
 
 data InferenceInfo = { expr_type_variables :: Map E.ExprId TypeVariableInfo,
@@ -35,9 +34,9 @@ data InferenceInfo = { expr_type_variables :: Map E.ExprId TypeVariableInfo,
                        result :: TypeVariableInfo,
                        members :: [M.MemberInfo],
                        converters :: [Converter],
-                       allocator :: TypeVariableAllocator,
+                       allocator :: Allocator,
                        function_converters :: Map E.ExprId [Converter],
-                       borrow_sets :: Map BorrowSetId BorrowSet,
+                       borrow_sets :: Map BorrowId BorrowSet,
                      } deriving (Show)
 
 createInferenceInfoFromLoweringInfo :: LoweringInfo -> InferenceInfo
@@ -48,7 +47,7 @@ createInferenceInfoFromLoweringInfo lowering_info = case lowering_info of
         ownership_values <- Map.empty
         args <- lowering_info.args
         result <- lowering_info.result
-        allocator <- createTypeVariableAllocator (lowering_info.max + 1)
+        allocator <- lowering_info.allocator
         members <- lowering_info.members
         converters <- []
         function_converters <- Map.empty
@@ -62,9 +61,10 @@ createInferenceInfoFromLoweringInfo lowering_info = case lowering_info of
             inference_info { var_type_variables = var_type_variables }) inference_info args
         List.fold inference_info lowering_info.ownershipinfos (\inference_info, ownershipinfo -> do
                 (inference_info, v, kind) <- case ownershipinfo of
+                    M.Unknown v -> (inference_info, v, Unknown)
                     M.Owner v -> (inference_info, v, Owner)
-                    M.Borrower v index -> do
-                        (inference_info, id) <- createBorrowSetForExternal inference_info index
+                    M.Borrower v external_id -> do
+                        (inference_info, id) <- createBorrowSetForExternal inference_info external_id
                         (inference_info, v, Borrower id)
                 (ownership_values, _) <- Map.insert inference_info.ownership_values v kind
                 inference_info { ownership_values = ownership_values }
@@ -73,7 +73,7 @@ createInferenceInfoFromLoweringInfo lowering_info = case lowering_info of
 
 createInferenceInfo :: Int -> InferenceInfo
 createInferenceInfo arg_count = do
-    allocator <- createTypeVariableAllocator 0
+    allocator <- createAllocator
     expr_type_variables <- Map.empty
     var_type_variables <- Map.empty
     ownership_values <- Map.empty
@@ -91,36 +91,36 @@ createInferenceInfo arg_count = do
             inference_info <- addVar inference_info (E.Arg index)
             (inference_info, index + 1)
 
-createBorrowSetForVar :: InferenceInfo -> E.Var -> (InferenceInfo, BorrowSetId)
+createBorrowSetForVar :: InferenceInfo -> E.Var -> (InferenceInfo, BorrowId)
 createBorrowSetForVar inference_info var = do
-    id <- Map.getSize inference_info.borrow_sets
-    id <- BorrowSetId id
+    allocator <- inference_info.allocator
+    (allocator, id) <- getNextBorrowId allocator
     borrows <- Set.empty
     borrow_set <- BorrowSet (Set.put borrows (BorrowedVar var))
     borrow_sets <- Map.put inference_info.borrow_sets id borrow_set
-    (inference_info { borrow_sets = borrow_sets }, id)
+    (inference_info { allocator = allocator, borrow_sets = borrow_sets }, id)
 
-createBorrowSetForExternal :: InferenceInfo -> Int -> (InferenceInfo, BorrowSetId)
-createBorrowSetForExternal inference_info index = do
-    id <- Map.getSize inference_info.borrow_sets
-    id <- BorrowSetId id
+createBorrowSetForExternal :: InferenceInfo -> BorrowId -> (InferenceInfo, BorrowId)
+createBorrowSetForExternal inference_info external_id = do
+    allocator <- inference_info.allocator
+    (allocator, id) <- getNextBorrowId allocator
     borrows <- Set.empty
-    borrow_set <- BorrowSet (Set.put borrows (External index))
+    borrow_set <- BorrowSet (Set.put borrows (External external_id))
     borrow_sets <- Map.put inference_info.borrow_sets id borrow_set
-    (inference_info { borrow_sets = borrow_sets }, id)
+    (inference_info { allocator = allocator, borrow_sets = borrow_sets }, id)
 
-mergeBorrowSets :: InferenceInfo -> BorrowSetId -> BorrowSetId -> (InferenceInfo, BorrowSetId)
+mergeBorrowSets :: InferenceInfo -> BorrowId -> BorrowId -> (InferenceInfo, BorrowId)
 mergeBorrowSets inference_info id1 id2 = do
     set1 <- getBorrowSet inference_info id1
     set2 <- getBorrowSet inference_info id2
-    id <- Map.getSize inference_info.borrow_sets
-    id <- BorrowSetId id
+    allocator <- inference_info.allocator
+    (allocator, id) <- getNextBorrowId allocator
     merged <- set1.borrows + set2.borrows
     merged_set <- BorrowSet merged
     borrow_sets <- Map.put inference_info.borrow_sets id merged_set
-    (inference_info { borrow_sets = borrow_sets }, id)
+    (inference_info { allocator = allocator, borrow_sets = borrow_sets }, id)
 
-getBorrowSet :: InferenceInfo -> BorrowSetId -> BorrowSet
+getBorrowSet :: InferenceInfo -> BorrowId -> BorrowSet
 getBorrowSet inference_info id =
     case Map.get inference_info.borrow_sets id of
         Some borrow_set -> borrow_set
@@ -180,17 +180,14 @@ getTypeVariableInfoByVar inference_info var =
         Some i -> i
         None -> panic "TypeVariableInfo not found for var {}" % var
 
-toOwnershipInfo :: Map TypeVariable OwnershipKind -> Bool -> [M.OwnershipInfo]
-toOwnershipInfo ownership_values allow_unknown =
+toOwnershipInfo :: Map TypeVariable OwnershipKind -> [M.OwnershipInfo]
+toOwnershipInfo ownership_values =
     Map.fold [] ownership_values (\ownershipinfos, (var, kind) -> do
                 case kind of
-                    Unknown -> if allow_unknown
-                        then ownershipinfos
-                        else panic "Unknown found in toOwnershipInfo"
+                    Unknown -> List.push ownershipinfos (M.Unknown var)
                     Owner -> List.push ownershipinfos (M.Owner var)
-                    Borrower v -> List.push ownershipinfos (M.Borrower var 0) // FIXME, TODO:
+                    Borrower id -> List.push ownershipinfos (M.Borrower var id)
             )
-
 collectRelevantVars :: [M.MemberInfo] -> Set TypeVariable -> Set TypeVariable
 collectRelevantVars members vars =
     loop vars <- vars do
@@ -247,7 +244,7 @@ toFunctionInfo inference_info = do
                         not (Set.contains same_vars info.ownership_var)
                         || not (Set.contains same_vars info.arg_group_var)
             )
-        ownershipinfos <- toOwnershipInfo inference_info.ownership_values True
+        ownershipinfos <- toOwnershipInfo inference_info.ownership_values
         FunctionInfo inference_info.args inference_info.result members converters ownershipinfos
 
 instance Apply Converter where

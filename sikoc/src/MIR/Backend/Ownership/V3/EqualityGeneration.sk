@@ -11,7 +11,7 @@ import Siko.MIR.Backend.Ownership.V3.InferenceInfo
 import Siko.MIR.Backend.Ownership.V3.FunctionInfoStore
 import Siko.MIR.Backend.Ownership.V3.EqualitySolver
 import Siko.MIR.Backend.Ownership.V3.TypeVariableInfo
-import Siko.MIR.Backend.Ownership.V3.TypeVariableAllocator
+import Siko.MIR.Backend.Ownership.V3.Allocator
 import Siko.MIR.Backend.Traversal
 
 import Map
@@ -90,9 +90,10 @@ processExpr context expr = do
             inference_info <- inference_info { function_converters = function_converters }
             inference_info <- List.fold inference_info function_info.ownershipinfos (
                     \inference_info, ownershipinfo -> case ownershipinfo of
+                        M.Unknown v -> addOwnership inference_info v Unknown
                         M.Owner v -> addOwnership inference_info v Owner
-                        M.Borrower v index -> do
-                            (inference_info, id) <- createBorrowSetForExternal inference_info index
+                        M.Borrower v external_id -> do
+                            (inference_info, id) <- createBorrowSetForExternal inference_info external_id
                             addOwnership inference_info v (Borrower id))
             inference_info <- List.fold inference_info function_info.converters (\inference_info, converter -> do
                 inference_info <- maybeAddOwnership inference_info converter.from Unknown

@@ -2,25 +2,36 @@ module Siko.MIR.Backend.Ownership.V3.Duplicator where
 
 import Siko.MIR.Backend.Ownership.V3.MemberInfo as M
 import Siko.MIR.Backend.Ownership.V3.TypeVariableInfo
-import Siko.MIR.Backend.Ownership.V3.TypeVariableAllocator
+import Siko.MIR.Backend.Ownership.V3.Allocator
+import Siko.MIR.Backend.Ownership.V3.BorrowId
 import Siko.MIR.Backend.Ownership.V3.InferenceInfo
 import Siko.Util.Counter
 import Map
 
 data Duplicator = { vars :: Map TypeVariable TypeVariable,
-                    allocator :: TypeVariableAllocator }
+                    borrows :: Map BorrowId BorrowId,
+                    allocator :: Allocator }
 
 class Duplicable a where
     duplicate a :: Duplicator -> a -> (Duplicator, a)
 
-createDuplicator :: TypeVariableAllocator -> Duplicator
-createDuplicator allocator = Duplicator Map.empty allocator
+createDuplicator :: Allocator -> Duplicator
+createDuplicator allocator = Duplicator Map.empty Map.empty allocator
 
 createNormalizer :: Duplicator
-createNormalizer = createDuplicator (createTypeVariableAllocator 0)
+createNormalizer = createDuplicator createAllocator
 
-getMax :: Duplicator -> Int
-getMax duplicator = duplicator.allocator.counter.next // FIXME: make this nicer!
+instance Duplicable BorrowId where
+    //duplicate :: Duplicator -> BorrowId -> (Duplicator, BorrowId)
+    duplicate duplicator id = do
+        borrows <- duplicator.borrows
+        allocator <- duplicator.allocator
+        ((allocator, id), borrows, _) <- Map.alterS (\allocator, old -> case old of
+            Some old -> ((allocator, old), Some old)
+            None -> do
+                (allocator, next) <- getNextBorrowId allocator
+                ((allocator, next), Some next)) allocator id borrows
+        (duplicator { borrows = borrows, allocator = allocator }, id)
 
 instance Duplicable TypeVariable where
     //duplicate :: Duplicator -> TypeVariable -> (Duplicator, TypeVariable)
@@ -59,10 +70,14 @@ instance Duplicable M.MemberInfo where
 instance Duplicable M.OwnershipInfo where
     duplicate duplicator ownershipinfo =
         case ownershipinfo of
+            M.Unknown v -> do
+                (duplicator, v) <- duplicate duplicator v
+                (duplicator, M.Unknown v)
             M.Owner v -> do
                 (duplicator, v) <- duplicate duplicator v
                 (duplicator, M.Owner v)
             M.Borrower v i -> do
+                (duplicator, i) <- duplicate duplicator i
                 (duplicator, v) <- duplicate duplicator v
                 (duplicator, M.Borrower v i)
 

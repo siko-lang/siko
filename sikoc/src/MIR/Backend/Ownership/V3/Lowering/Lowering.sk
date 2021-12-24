@@ -5,6 +5,7 @@ import Siko.MIR.Backend.Ownership.V3.Lowering.Context
 import Siko.MIR.Backend.Ownership.V3.Lowering.Naming
 import Siko.MIR.Backend.Ownership.V3.Lowering.LoweringInfo
 import Siko.MIR.Backend.Ownership.V3.TypeVariableInfo
+import Siko.MIR.Backend.Ownership.V3.Allocator
 import Siko.MIR.Backend.Ownership.V3.MemberInfo
 import Siko.MIR.Backend.Ownership.V3.FunctionInfoStore
 import Siko.LIR.Program as LP
@@ -15,8 +16,9 @@ import Map
 lowerProgram :: MP.Program -> Config -> FunctionInfoStore -> LP.Program
 lowerProgram mir_program config function_info_store = do
     context <- createContext function_info_store config mir_program
-    main_result <- createRoot
-    main_key <- FunctionKey MP.getMainIdentity (Function (FunctionLoweringInfo [] [] main_result [Owner (TypeVariable 0)] 2))
+    allocator <- createAllocator
+    (allocator, result) <- getNextTypeVariableInfo allocator
+    main_key <- FunctionKey MP.getMainIdentity (Function (FunctionLoweringInfo [] [] result [Owner result.ownership_var] allocator))
     (context, main_lir_id) <- getLIRId context main_key
     context <- addItem context main_key
     context <- processQueue context

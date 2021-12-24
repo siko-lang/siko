@@ -19,7 +19,7 @@ import Siko.MIR.Backend.Ownership.V3.BorrowChecker
 import Siko.MIR.Backend.Ownership.V3.FunctionInfoStore
 import Siko.MIR.Backend.Ownership.V3.FunctionInfo
 import Siko.MIR.Backend.Ownership.V3.ExternProcessor
-import Siko.MIR.Backend.Ownership.V3.TypeVariableAllocator
+import Siko.MIR.Backend.Ownership.V3.Allocator
 import Siko.MIR.Backend.Ownership.V3.TypeVariableInfo
 import Siko.MIR.Backend.Ownership.V3.MemberInfo
 
@@ -32,7 +32,7 @@ createRecordCtorFunctionInfo context type =
     case type of
         T.Record id _ -> do
             record <- P.getRecord context.program id
-            allocator <- createTypeVariableAllocator 0
+            allocator <- createAllocator
             (allocator, result) <- getNextTypeVariableInfo allocator
             (allocator, args, members) <- List.fold (allocator, [], []) record.fields (\(allocator, args, members), field -> do
                     (allocator, arg_info) <- getNextTypeVariableInfo allocator
@@ -52,7 +52,7 @@ createVariantctorFunctionInfo context index type =
             case variant.type of
                 T.Record id _ -> do
                     record <- P.getRecord context.program id
-                    allocator <- createTypeVariableAllocator 0
+                    allocator <- createAllocator
                     (allocator, adt_result) <- getNextTypeVariableInfo allocator
                     (allocator, record_result) <- getNextTypeVariableInfo allocator
                     (allocator, args, members) <- List.fold (allocator, [], []) record.fields (\(allocator, args, members), field -> do

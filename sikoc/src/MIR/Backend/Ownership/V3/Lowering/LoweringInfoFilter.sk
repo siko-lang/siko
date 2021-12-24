@@ -143,6 +143,7 @@ filterInfo config lowering_info sources = do
         filterOwnershipInfo :: [TypeVariableInfo] -> M.OwnershipInfo -> Bool
         filterOwnershipInfo vars ownershipinfo =
             case ownershipinfo of
+                M.Unknown v -> List.fold False vars (\found, var -> found || var.ownership_var == v)
                 M.Owner v -> List.fold False vars (\found, var -> found || var.ownership_var == v)
                 M.Borrower v _ -> List.fold False vars (\found, var -> found || var.ownership_var == v)
 

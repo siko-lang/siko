@@ -2,7 +2,8 @@ module Siko.MIR.Backend.Ownership.V3.Lowering.LoweringInfo where
 
 import Siko.Config
 import Siko.MIR.Backend.Ownership.V3.TypeVariableInfo
-import Siko.MIR.Backend.Ownership.V3.TypeVariableAllocator
+import Siko.MIR.Backend.Ownership.V3.Allocator
+import Siko.MIR.Backend.Ownership.V3.BorrowId
 import Siko.MIR.Backend.Ownership.V3.MemberInfo as M
 import Siko.MIR.Backend.Ownership.V3.InferenceInfo
 import Siko.MIR.Backend.Ownership.V3.Duplicator
@@ -15,27 +16,24 @@ data FunctionLoweringInfo = { members :: [M.MemberInfo],
                               args :: [TypeVariableInfo],
                               result :: TypeVariableInfo,
                               ownershipinfos :: [M.OwnershipInfo],
-                              max :: Int,
+                              allocator :: Allocator,
                             } deriving (PartialEq, Eq, PartialOrd, Ord, Show)
 
 data TypeLoweringInfo = { members :: [M.MemberInfo],
                           root :: TypeVariableInfo,
                           ownershipinfos :: [M.OwnershipInfo],
-                          max :: Int,
+                          allocator :: Allocator,
                         } deriving (PartialEq, Eq, PartialOrd, Ord, Show)
 
 data LoweringInfo = Function FunctionLoweringInfo
                   | Type TypeLoweringInfo
                   deriving (PartialEq, Eq, PartialOrd, Ord, Show)
 
-createFunctionLoweringInfo :: [TypeVariableInfo] -> TypeVariableInfo -> LoweringInfo
-createFunctionLoweringInfo args result = Function (FunctionLoweringInfo [] args result [] 0)
-
 convertToFunctionLoweringInfo :: Config -> InferenceInfo -> [TypeVariableInfo] -> TypeVariableInfo -> LoweringInfo
 convertToFunctionLoweringInfo config inference_info args result = do
     //println "Creating function lowering info"
     lowering_info <- Function (FunctionLoweringInfo inference_info.members args result
-            (toOwnershipInfo inference_info.ownership_values False) 0)
+            (toOwnershipInfo inference_info.ownership_values) inference_info.allocator)
     //println "Unfiltered {}" % lowering_info
     sources <- List.push args result
     filterInfo config lowering_info sources
@@ -44,7 +42,7 @@ createTypeLoweringInfoFromInferenceInfo :: Config -> InferenceInfo -> TypeVariab
 createTypeLoweringInfoFromInferenceInfo config inference_info root = do
     //println "Creating type lowering info"
     lowering_info <- Type (TypeLoweringInfo inference_info.members root
-            (toOwnershipInfo inference_info.ownership_values False) 0)
+            (toOwnershipInfo inference_info.ownership_values) inference_info.allocator)
     filterInfo config lowering_info [root]
 
 createTypeLoweringInfoFromLoweringInfo :: Config -> LoweringInfo -> TypeVariableInfo -> LoweringInfo
@@ -52,34 +50,35 @@ createTypeLoweringInfoFromLoweringInfo config lowering_info root = do
     //println "Creating type lowering info"
     case lowering_info of
         Function info -> do
-            output <- Type (TypeLoweringInfo info.members root info.ownershipinfos 0)
+            output <- Type (TypeLoweringInfo info.members root info.ownershipinfos info.allocator)
             filterInfo config output [root]
         Type info -> do
-            output <- Type (TypeLoweringInfo info.members root info.ownershipinfos 0)
+            output <- Type (TypeLoweringInfo info.members root info.ownershipinfos info.allocator)
             filterInfo config output [root]
 
-normalizeRef :: LoweringInfo -> (LoweringInfo, Bool)
+normalizeRef :: LoweringInfo -> (LoweringInfo, Option BorrowId)
 normalizeRef lowering_info =
     case lowering_info of
         Function _ -> panic "normalizeRef called on function lower info"
         Type type -> do
             ownershipinfos <- type.ownershipinfos
-            (ownershipinfos, is_ref, found) <- List.fold ([], False, False) ownershipinfos
-                (\(ownershipinfos, is_ref, found), ownershipinfo ->
+            (ownershipinfos, ref, found) <- List.fold ([], None, False) ownershipinfos
+                (\(ownershipinfos, ref, found), ownershipinfo ->
                     case ownershipinfo of
-                        M.Borrower v _ -> if v == type.root.ownership_var
-                            then (List.push ownershipinfos (M.Owner v), True, True)
-                            else (List.push ownershipinfos ownershipinfo, is_ref, found)
+                        M.Unknown v -> panic "unknown found in normalizeRef"
+                        M.Borrower v id -> if v == type.root.ownership_var
+                            then (List.push ownershipinfos (M.Owner v), Some id, True)
+                            else (List.push ownershipinfos ownershipinfo, ref, found)
                         M.Owner v ->
                             if v == type.root.ownership_var
-                            then (List.push ownershipinfos ownershipinfo, False, True)
-                            else (List.push ownershipinfos ownershipinfo, is_ref, found))
+                            then (List.push ownershipinfos ownershipinfo, None, True)
+                            else (List.push ownershipinfos ownershipinfo, ref, found))
             ownershipinfos <- if not found
             then List.push ownershipinfos (M.Owner type.root.ownership_var)
             else ownershipinfos
             lowering_info <- Type (type { ownershipinfos = ownershipinfos })
             lowering_info <- normalizeLoweringInfo lowering_info
-            (lowering_info, is_ref)
+            (lowering_info, ref)
 
 normalizeLoweringInfo :: LoweringInfo -> LoweringInfo
 normalizeLoweringInfo lowering_info =
@@ -94,7 +93,7 @@ normalizeLoweringInfo lowering_info =
             (duplicator, ownershipinfos) <- List.mapS duplicator info.ownershipinfos duplicate
             members <- members |> sort
             ownershipinfos <- ownershipinfos |> sort
-            Function (FunctionLoweringInfo members args result ownershipinfos (getMax duplicator))
+            Function (FunctionLoweringInfo members args result ownershipinfos duplicator.allocator)
         Type info -> do
             duplicator <- createNormalizer
             (duplicator, root) <- duplicate duplicator info.root
@@ -102,7 +101,7 @@ normalizeLoweringInfo lowering_info =
             (duplicator, ownershipinfos) <- List.mapS duplicator info.ownershipinfos duplicate
             members <- members |> sort
             ownershipinfos <- ownershipinfos |> sort
-            Type (TypeLoweringInfo members root ownershipinfos (getMax duplicator))
+            Type (TypeLoweringInfo members root ownershipinfos duplicator.allocator)
 
 getLoweringInfoForArg :: Config -> LoweringInfo -> Int -> LoweringInfo
 getLoweringInfoForArg config lowering_info index = do
@@ -130,8 +129,9 @@ getLoweringInfoForMember config lowering_info name = do
                 Some (M.Member name root member_info) -> createTypeLoweringInfoFromLoweringInfo config lowering_info member_info
                 Some _ -> panic "member is not a member"
                 None -> do
-                    root <- createRoot
-                    Type (TypeLoweringInfo [] root [M.Owner root.ownership_var] 0)
+                    allocator <- createAllocator
+                    (allocator, root) <- getNextTypeVariableInfo allocator
+                    Type (TypeLoweringInfo [] root [M.Owner root.ownership_var] allocator)
 
 getLoweringInfoForVariant :: Config -> LoweringInfo -> Int -> LoweringInfo
 getLoweringInfoForVariant config lowering_info index = do
@@ -145,5 +145,6 @@ getLoweringInfoForVariant config lowering_info index = do
                 Some (M.Variant index root member_info) -> createTypeLoweringInfoFromLoweringInfo config lowering_info member_info
                 Some _ -> panic "variant is not a variant"
                 None -> do
-                    root <- createRoot
-                    Type (TypeLoweringInfo [] root [M.Owner root.ownership_var] 0)
+                    allocator <- createAllocator
+                    (allocator, root) <- getNextTypeVariableInfo allocator
+                    Type (TypeLoweringInfo [] root [M.Owner root.ownership_var] allocator)

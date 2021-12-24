@@ -1,0 +1,26 @@
+module Siko.MIR.Backend.Ownership.V3.Allocator where
+
+import Siko.MIR.Backend.Ownership.V3.TypeVariableInfo
+import Siko.MIR.Backend.Ownership.V3.BorrowId
+
+data Allocator = { type_var :: Int,
+                   borrow :: Int } deriving (PartialEq, Eq, PartialOrd, Ord, Show)
+
+createAllocator :: Allocator
+createAllocator = Allocator 0 0
+
+getNextTypeVariable :: Allocator -> (Allocator, TypeVariable)
+getNextTypeVariable allocator = do
+    (type_var, v) <- (allocator.type_var + 1, TypeVariable allocator.type_var)
+    (allocator { type_var = type_var }, v)
+
+getNextTypeVariableInfo :: Allocator -> (Allocator, TypeVariableInfo)
+getNextTypeVariableInfo allocator = do
+    (allocator, var1) <- getNextTypeVariable allocator
+    (allocator, var2) <- getNextTypeVariable allocator
+    (allocator, TypeVariableInfo var1 var2)
+
+getNextBorrowId :: Allocator -> (Allocator, BorrowId)
+getNextBorrowId allocator = do
+    (borrow, id) <- (allocator.borrow + 1, BorrowId allocator.borrow)
+    (allocator { borrow = borrow }, id)

@@ -3,7 +3,7 @@ module Siko.MIR.Backend.Ownership.V3.ExternProcessor(createExternFunctionInfo) w
 import Siko.MIR.Function as F
 
 import Siko.MIR.Backend.Ownership.V3.TypeVariableInfo
-import Siko.MIR.Backend.Ownership.V3.TypeVariableAllocator
+import Siko.MIR.Backend.Ownership.V3.Allocator
 import Siko.MIR.Backend.Ownership.V3.MemberInfo as M
 import Siko.MIR.Backend.Ownership.V3.EqualitySolver
 import Siko.MIR.Backend.Ownership.V3.FunctionInfo
@@ -11,7 +11,7 @@ import Siko.MIR.Backend.Ownership.V3.FunctionInfo
 import Map
 
 data Context = { args :: [F.Step],
-                 allocator :: TypeVariableAllocator,
+                 allocator :: Allocator,
                  info_map :: Map F.Position TypeVariableInfo,
                  members :: [M.MemberInfo],
                  ownershipinfos :: [M.OwnershipInfo],
@@ -78,14 +78,16 @@ processStep context parent step =
 
 createExternFunctionInfo :: F.TypeMapping -> FunctionInfo
 createExternFunctionInfo type_mapping = do
-    context <- Context [] (createTypeVariableAllocator 0) Map.empty [] []
+    allocator <- createAllocator
+    (allocator, borrow_id) <- getNextBorrowId allocator // FIXME
+    context <- Context [] allocator Map.empty [] []
     (context, var_infos) <- Map.mapS context type_mapping.var_mappings (\context, (n, positions) -> do
         (context, infos) <- List.mapS context positions processPosition
         (context, n, infos))
     (context, owner_infos) <- List.mapS context type_mapping.owner_positions processPosition
     (context, ref_infos) <- List.mapS context type_mapping.ref_positions processPosition
     owner_infos <- List.map owner_infos (\info -> M.Owner info.ownership_var)
-    ref_infos <- List.map ref_infos (\info -> M.Borrower info.ownership_var 0) // FIXME
+    ref_infos <- List.map ref_infos (\info -> M.Borrower info.ownership_var borrow_id) // FIXME
     context <- context { ownershipinfos = owner_infos + ref_infos }
     equals <- Map.fold [] var_infos (\equals, (_, infos) -> do
         if getLength infos > 1

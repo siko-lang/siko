@@ -2,7 +2,7 @@ module Siko.MIR.Backend.Ownership.V3.FunctionInfo(FunctionInfo(..), normalizeFun
 
 import Siko.MIR.Backend.Ownership.V3.InferenceInfo
 import Siko.MIR.Backend.Ownership.V3.TypeVariableInfo
-import Siko.MIR.Backend.Ownership.V3.TypeVariableAllocator
+import Siko.MIR.Backend.Ownership.V3.Allocator
 import Siko.MIR.Backend.Ownership.V3.MemberInfo as M
 import Siko.MIR.Backend.Ownership.V3.Duplicator
 
@@ -25,7 +25,7 @@ normalizeFunctionInfo function_info = do
     (duplicator, ownershipinfos) <- List.mapS duplicator function_info.ownershipinfos duplicate
     FunctionInfo args result members converters ownershipinfos
 
-duplicateFunctionInfo :: TypeVariableAllocator -> FunctionInfo -> (TypeVariableAllocator, FunctionInfo)
+duplicateFunctionInfo :: Allocator -> FunctionInfo -> (Allocator, FunctionInfo)
 duplicateFunctionInfo allocator function_info = do
     duplicator <- createDuplicator allocator
     (duplicator, args) <- List.mapS duplicator function_info.args duplicate

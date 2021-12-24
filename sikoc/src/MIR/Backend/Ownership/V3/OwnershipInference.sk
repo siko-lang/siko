@@ -48,7 +48,13 @@ processConverter context borrowed_var from to = do
     to_kind <- getOwnershipValue context to
     case (from_kind, to_kind) of
         (Owner, Owner) -> context
-        (Owner, Borrower _) -> context
+        (Owner, Borrower id2) -> case borrowed_var of
+            Some var -> do
+                (inference_info, id1) <- createBorrowSetForVar context.inference_info var
+                (inference_info, id) <- mergeBorrowSets inference_info id1 id2
+                context <- context { inference_info = inference_info }
+                addOwnershipValue context to (Borrower id)
+            None -> context
         (Owner, Unknown) -> case borrowed_var of
             Some var -> do
                 (inference_info, id) <- createBorrowSetForVar context.inference_info var
