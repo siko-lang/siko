@@ -70,6 +70,7 @@ processFunctionInfo :: Context -> FunctionInfo -> P.Identity -> (Context, Bool)
 processFunctionInfo context function_info function_id = do
     function_info <- normalizeFunctionInfo function_info
     function_info_store <- context.function_info_store
+    //println "Function info added for {}/ converters:{}" % (function_id, getLength function_info.converters)
     (function_info_store, added) <- addFunctionInfo function_info_store function_id function_info
     context <- context { function_info_store = function_info_store }
     (context, added)
@@ -97,7 +98,7 @@ processFunction context group function_id = do
             function_info <- createRecordCtorFunctionInfo context function.type.result
             processFunctionInfo context function_info function_id
         F.Extern type_mapping -> do
-            function_info <- createExternFunctionInfo type_mapping
+            function_info <- createExternFunctionInfo function_id type_mapping
             processFunctionInfo context function_info function_id
 
 processFunctionGroup :: Context -> [P.Identity] -> Context

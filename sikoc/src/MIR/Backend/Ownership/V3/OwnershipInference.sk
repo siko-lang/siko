@@ -82,20 +82,13 @@ preCaseCheck context expr = do
             List.fold context cases (\context, c -> case c.checker of
                 E.VariantChecker index var _ -> do
                     var_info <- getTypeVariableInfoByVar context.inference_info var
-                    //println "var_info {}" % var_info
-                    variant <- List.find context.inference_info.members (\member -> case member of
-                        M.Variant i root member_info -> i == index && member_info == var_info
-                        _ -> False)
-                    case variant of
-                        Some (M.Variant i root member_info) -> do
-                            body_kind <- getOwnershipValue context body_info.ownership_var
-                            member_kind <- case getOwnership context.inference_info member_info.ownership_var of
-                                Some o -> o
-                                None -> Unknown
-                            case (body_kind, member_kind) of
-                                (body_o, Unknown) -> addOwnershipValue context member_info.ownership_var body_o
-                                _ -> context
-                        _ -> panic "No variant found for variant checker's var {}" % var
+                    body_kind <- getOwnershipValue context body_info.ownership_var
+                    var_kind <- case getOwnership context.inference_info var_info.ownership_var of
+                        Some o -> o
+                        None -> Unknown
+                    case (body_kind, var_kind) of
+                        (body_o, Unknown) -> addOwnershipValue context var_info.ownership_var body_o
+                        _ -> context
                 _ -> context)
         _ -> context
 
