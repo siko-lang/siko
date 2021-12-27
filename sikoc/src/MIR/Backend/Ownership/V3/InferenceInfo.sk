@@ -222,6 +222,8 @@ toFunctionInfo :: InferenceInfo -> FunctionInfo
 toFunctionInfo inference_info = do
         members <- inference_info.members
         converters <- inference_info.converters
+        converter_map <- List.fold Map.empty converters (\converter_map, converter ->
+            Map.put converter_map converter.from converter.to)
         input_vars <- Set.empty
         input_vars <- List.fold input_vars inference_info.args (\input_vars, info -> do
             input_vars <- Set.put input_vars info.ownership_var
@@ -232,20 +234,32 @@ toFunctionInfo inference_info = do
         output_vars <- Set.put output_vars inference_info.result.arg_group_var
         input_vars <- collectRelevantVars inference_info.members input_vars
         output_vars <- collectRelevantVars inference_info.members output_vars
-        same_vars <- Set.intersection input_vars output_vars
-        members <- List.filter members (\member_info -> case member_info of
-                 M.Variant index root info ->
-                        not (Set.contains same_vars info.ownership_var)
-                        || not (Set.contains same_vars info.arg_group_var)
-                 M.Member name root info ->
-                        not (Set.contains same_vars info.ownership_var)
-                        || not (Set.contains same_vars info.arg_group_var)
-                 M.Extern index root info ->
-                        not (Set.contains same_vars info.ownership_var)
-                        || not (Set.contains same_vars info.arg_group_var)
+        filtered_converters <- List.fold [] converters (\filtered_converters, converter -> do
+            if Set.contains input_vars converter.from
+            then do
+                converter <- loop converter <- converter do
+                    converter :: Converter <- converter // FIXME
+                    case Map.get converter_map converter.to of
+                        Some another_to -> converter { to = another_to }
+                        None -> break converter
+                if Set.contains output_vars converter.to
+                then List.push filtered_converters converter
+                else filtered_converters
+            else filtered_converters)
+        converted_vars <- List.fold Set.empty filtered_converters (\converted_vars, converter ->
+            Set.put converted_vars converter.from)
+        filtered_members <- List.filter members (\member_info -> case member_info of
+                 M.Variant index root info -> Set.contains converted_vars info.ownership_var
+                 M.Member name root info -> Set.contains converted_vars info.ownership_var
+                 M.Extern index root info ->  Set.contains converted_vars info.ownership_var
             )
         ownershipinfos <- toOwnershipInfo inference_info.ownership_values
-        FunctionInfo inference_info.args inference_info.result members converters ownershipinfos
+        filtered_ownershipinfos <- List.filter ownershipinfos (\ownershipinfo -> case ownershipinfo of
+            M.Unknown v -> Set.contains input_vars v || Set.contains output_vars v
+            M.Owner v -> Set.contains input_vars v || Set.contains output_vars v
+            M.Borrower v _ -> Set.contains input_vars v || Set.contains output_vars v)
+        FunctionInfo inference_info.args inference_info.result
+            filtered_members filtered_converters filtered_ownershipinfos
 
 instance Apply Converter where
     apply equal converter = Converter (apply equal converter.from) (apply equal converter.to)
