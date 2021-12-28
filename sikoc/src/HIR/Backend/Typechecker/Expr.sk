@@ -666,11 +666,12 @@ checkExprType context orig_expr = do
             context
         E.Loop pattern initializer body continues breaks -> do
             E.Expr _ initializer_id _ _ <- initializer
-            E.Expr _ body_id _ _ <- body
+            E.Expr _ body_id _ body_location <- body
             P.Pattern _ pattern_id _ pattern_location <- pattern
             pattern_sig <- TS.getPatternEffectSignature context.type_store pattern_id
             expr_sigs <- TEff.getExprEffectSignatures context [initializer_id, body_id]
             context <- TEff.setExprEffect context id ([pattern_sig] + expr_sigs) location
+            (context, _) <- matchExprs context initializer_id body_id body_location
             (context, _) <- matchExprWithPattern context initializer_id pattern_id pattern_location
             context <- continues |> List.iter |> Iterator.fold (\context, (E.ExprRef source ref_location) -> do
                 (context, _) <- matchExprs context initializer_id source ref_location

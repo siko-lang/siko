@@ -8,6 +8,7 @@ import Siko.MIR.Backend.Ownership.V3.TypeVariableInfo
 import Siko.MIR.Backend.Ownership.V3.FunctionInfoStore
 import Siko.MIR.Backend.Traversal
 import Siko.MIR.Expr as E
+import Siko.MIR.Type as T
 import Siko.MIR.Function as F
 
 import Map
@@ -94,7 +95,7 @@ preCaseCheck context expr = do
 
 processExpr :: Context -> E.Expr -> (Context, E.Expr)
 processExpr context expr = do
-    E.Expr s_expr _ expr_id <- expr
+    E.Expr s_expr expr_type expr_id <- expr
     info <- getTypeVariableInfoByExprId context.inference_info expr_id
     context <- case s_expr of
         E.Do _ -> context
@@ -162,7 +163,10 @@ processExpr context expr = do
         E.Continue arg -> addOwnershipValue context info.ownership_var Owner
         E.Break arg -> addOwnershipValue context info.ownership_var Owner
         E.RecordUpdate var updates -> panic "RecordUpdate in InferOwnership"
-        E.Loop _ _ _ _ _ -> context
+        E.Loop _ _ _ _ _ -> do
+            case expr_type of
+                T.Never -> addOwnershipValue context info.ownership_var Owner
+                _ -> context
         E.CaseOf body cases -> context
         E.Clone arg -> panic "Clone in InferOwnership"
         E.Deref arg -> panic "Deref in InferOwnership"
