@@ -34,6 +34,7 @@ data AlgebraicDataType = { id :: Identity,
 
 data RecordField = { name :: String,
                      type :: Type,
+                     grouped :: Bool,
                    }
 
 data ExternalRecordInfo = { type_args :: [Type] }
@@ -45,6 +46,9 @@ data Record = { id :: Identity,
                 ownership_vars :: List2 OwnershipKind,
                 boxed_vars :: List2 OwnershipKind,
               }
+
+getFieldByName :: Record -> String -> Option RecordField
+getFieldByName record name = List.find record.fields (\RecordField field_name _ _ -> field_name == name)
 
 dumpAdt :: AlgebraicDataType -> String
 dumpAdt adt = do

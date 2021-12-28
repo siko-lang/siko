@@ -10,15 +10,19 @@ import Siko.MIR.Function as F
 import Set
 import Map
 
-data Path = Whole | Partial [String]
+data Path = Whole | Partial [String] deriving (Show)
 
 data Usage = { expr_id :: E.ExprId, path :: Path }
 
 data UsageStore = { usages :: Map E.Var [Usage] }
 
+data Invalidation = { subject :: E.ExprId, object :: E.ExprId } deriving (Show)
+
 data Context = { program :: P.Program,
                  borrows :: [E.ExprId],
-                 forbidden_borrows :: Map E.Var [E.Var] }
+                 forbidden_borrows :: Map E.Var [E.Var],
+                 forbidden_borrows2 :: Map E.ExprId [E.ExprId],
+                 invalidations :: [Invalidation] }
 
 data ExecutionMode = Normal
                    | DoesNotReturn
@@ -36,12 +40,15 @@ invalidates current other = do
             (o_start, _) <- List.split other_path min_len
             c_start == o_start
 
-checkUsages :: [Usage] -> Usage -> [E.ExprId]
-checkUsages usages usage = do
-    List.fold [] usages (\borrows, prev_usage ->
+checkUsages :: [Usage] -> Usage ->  E.ExprId -> ([E.ExprId], [Invalidation])
+checkUsages usages usage expr_id = do
+    List.fold ([], []) usages (\(borrows, invalidations), prev_usage ->
         if invalidates usage.path prev_usage.path
-        then push borrows prev_usage.expr_id
-        else borrows)
+        then do
+            borrows <- push borrows prev_usage.expr_id
+            invalidations <- push invalidations (Invalidation expr_id prev_usage.expr_id)
+            (borrows, invalidations)
+        else (borrows, invalidations))
 
 addUsage :: Context -> UsageStore -> E.Var -> E.ExprId -> Path -> (Context, UsageStore)
 addUsage context usage_store var expr_id path = do
@@ -49,9 +56,10 @@ addUsage context usage_store var expr_id path = do
     usages <- case Map.get usage_store.usages var of
         Some usages -> usages
         None -> []
-    borrows <- checkUsages usages usage
+    (borrows, invalidations) <- checkUsages usages usage expr_id
     borrows <- context.borrows + borrows
-    context <- context { borrows = borrows |> sort |> dedup }
+    invalidations <- context.invalidations + invalidations
+    context <- context { borrows = borrows |> sort |> dedup, invalidations = invalidations }
     usages <- push usages usage
     (usages, _) <- Map.insert usage_store.usages var usages
     (context, usage_store { usages = usages })
@@ -90,7 +98,16 @@ collectBorrows context usage_store expr = do
             path <- Whole
             (context, usage_store) <- addUsage context usage_store var expr_id path
             (context, usage_store, Normal)
-        E.FieldAccess name receiver -> collectBorrows context usage_store receiver
+        E.FieldAccess name receiver -> do
+            loop (context, usage_store, path, receiver) <- (context, usage_store, [name], receiver) do
+                E.Expr s_receiver _ _ <- receiver
+                case s_receiver of
+                    E.FieldAccess name receiver ->
+                        continue (context, usage_store, List.push path name, receiver)
+                    E.VarRef var -> do
+                        (context, usage_store) <- addUsage context usage_store var expr_id (Partial path)
+                        break (context, usage_store, Normal)
+                    _ -> break collectBorrows context usage_store receiver
         E.If cond true_branch false_branch -> do
             (context, usage_store, exec_mode) <- collectBorrows context usage_store cond
             processBranches context usage_store [true_branch, false_branch]
@@ -206,10 +223,15 @@ checkVars context live_set expr = do
 
 checkBorrows :: P.Program -> E.Expr -> BorrowInfo
 checkBorrows program body = do
-    context <- Context program [] Map.empty
+    context <- Context program [] Map.empty Map.empty []
     usage_store <- UsageStore Map.empty
     (context, usage_store, exec_mode) <- collectBorrows context usage_store body
     live_set <- LiveSet Set.empty
     (context, live_set) <- checkVars context live_set body
-    //println "forbidden {}" % (context.forbidden_borrows)
-    BorrowInfo context.borrows context.forbidden_borrows
+    invalidations <- List.filter context.invalidations (\invalidation -> not (List.contains context.borrows invalidation.subject))
+    invalidations <- List.fold Map.empty invalidations (\invalidations, invalidation -> do
+        (invalidations, _) <- alter (\old -> case old of
+            Some invalidations -> Some (push invalidations invalidation.object)
+            None -> Some [invalidation.object]) invalidation.subject invalidations
+        invalidations)
+    BorrowInfo context.borrows context.forbidden_borrows invalidations

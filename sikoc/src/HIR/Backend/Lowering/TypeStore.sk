@@ -194,7 +194,7 @@ processAdt context hir_type adt module_name mir_type = do
             (context, mir_fields) <- variant.items |> List.iter |> Iterator.fold (\(context, mir_fields), type -> do
                     (context, mir_type) <- processType context type
                     name <- getFieldName (getLength mir_fields)
-                    mir_field <- MD.RecordField name mir_type
+                    mir_field <- MD.RecordField name mir_type False
                     mir_fields <- mir_fields + [mir_field]
                     (context, mir_fields)) (context, [])
             mir_record <- MD.Record identity mir_fields None [] List2.empty List2.empty
@@ -205,7 +205,7 @@ processAdt context hir_type adt module_name mir_type = do
                 (context, mir_fields) <- variant.items |> List.iter |> Iterator.fold (\(context, mir_fields), type -> do
                     (context, mir_type) <- processType context type
                     name <- getFieldName (getLength mir_fields)
-                    mir_field <- MD.RecordField name mir_type
+                    mir_field <- MD.RecordField name mir_type False
                     mir_fields <- mir_fields + [mir_field]
                     (context, mir_fields)) (context, [])
                 (context, identity) <- getIdentity context module_name variant.name
@@ -233,7 +233,7 @@ processRecord context hir_type record type_args mir_type = do
             (context, record) <- instantiateRecord context record hir_type
             (context, mir_fields) <- record.fields |> List.iter |> Iterator.fold (\(context, mir_fields), (HD.RecordField field_name field_type) -> do
                 (context, mir_type) <- processType context field_type
-                mir_field <- MD.RecordField field_name mir_type
+                mir_field <- MD.RecordField field_name mir_type False
                 mir_fields <- mir_fields + [mir_field]
                 (context, mir_fields)) (context, [])
             (context, external_record_info) <- if record.external
@@ -284,7 +284,7 @@ processTuple context hir_type args mir_type = do
             (context, mir_fields) <- args |> List.iter |> Iterator.fold (\(context, mir_fields), type -> do
                 name <- getFieldName (getLength mir_fields)
                 (context, mir_type) <- processType context type
-                mir_field <- MD.RecordField name mir_type
+                mir_field <- MD.RecordField name mir_type False
                 mir_fields <- mir_fields + [mir_field]
                 (context, mir_fields)) (context, [])
             mir_record <- MD.Record identity mir_fields None [] List2.empty List2.empty

@@ -169,7 +169,7 @@ compileClosureInstance (ClosureName name) context closure_instance = do
     (context, mir_args) <- List.mapS context closure_instance.args TS.processType
     variant_name <- getVariantName closure_instance
     record_identity <- getVariantRecordIdentity closure_instance
-    mir_fields <- List.mapE mir_args (\index, mir_arg_type -> MD.RecordField (getFieldName index) mir_arg_type)
+    mir_fields <- List.mapE mir_args (\index, mir_arg_type -> MD.RecordField (getFieldName index) mir_arg_type False)
     type_store <- context.type_store
     mir_variant_record <- MD.Record record_identity mir_fields None [] List2.empty List2.empty
     (records, _) <- insert type_store.records record_identity mir_variant_record

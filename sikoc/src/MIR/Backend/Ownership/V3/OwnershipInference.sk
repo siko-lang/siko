@@ -19,7 +19,8 @@ data Context = { inference_info :: InferenceInfo,
                  borrow_info :: BorrowInfo,
                  function_info_store :: FunctionInfoStore,
                  group :: [P.Identity],
-                 strict :: Bool, }
+                 strict :: Bool,
+                 invalid_borrows :: Set E.ExprId }
 
 addOwnershipValue :: Context -> TypeVariable -> OwnershipKind -> Context
 addOwnershipValue context var kind = do
@@ -191,6 +192,13 @@ processExpr context expr = do
                 panic "Unknown found in strict mode"
             _ -> ()
     else ()
+    context <- case Map.get context.borrow_info.invalidations expr_id of
+        Some invalidations -> do
+            invalid_borrows <- List.fold context.invalid_borrows invalidations (\invalid_borrows, invalidation ->
+                Set.put invalid_borrows invalidation)
+            context { invalid_borrows = invalid_borrows }
+        None -> context
+    println "Invalid borrows {} = {}" % (expr_id, context.invalid_borrows)
     (context, expr)
 
 dumpExpr :: Context -> E.Expr -> (Context, E.Expr)
@@ -203,7 +211,7 @@ dumpExpr context expr = do
 
 inferOwnership :: [P.Identity] -> FunctionInfoStore -> InferenceInfo -> P.Program -> E.Expr -> BorrowInfo -> Bool -> InferenceInfo
 inferOwnership group function_info_store inference_info program body borrow_info strict = do
-    context <- Context inference_info program borrow_info function_info_store group strict
+    context <- Context inference_info program borrow_info function_info_store group strict Set.empty
     (context, body) <- traverse context body (Some initializeExpr) None None
     (context, body) <- traverse context body (Some processExpr) None (Some preCaseCheck)
     //(context, body) <- traverse context body (Some dumpExpr) None None

@@ -36,12 +36,6 @@ collectDataDeps mir_program = do
     dependencies <- mir_program.records |> Map.iter |> Iterator.fold (\dependencies, (id, record) -> do
             deps <- record.fields |> List.iter |> Iterator.fold (\deps, field -> do
                 deps + [T.getIdentity field.type]) []
-            deps <- case record.external_info of
-                Some external_info -> do
-                    external_info :: ExternalRecordInfo <- external_info // FIXME
-                    external_info.type_args |> List.iter |> Iterator.fold (\deps, type_arg -> do
-                        deps + [T.getIdentity type_arg]) deps
-                None -> deps
             (dependencies, _) <- insert dependencies id deps
             dependencies
         ) dependencies
@@ -97,6 +91,24 @@ createGroups config mir_program = do
     function_groups <- processDependencies config function_dependencies
     (data_groups, function_groups)
 
+processDataGroups :: MP.Program -> [DependencyGroup MP.Identity] -> MP.Program
+processDataGroups mir_program data_groups =
+    List.fold mir_program data_groups processDataGroup
+    where
+        processDataGroup :: MP.Program -> DependencyGroup MP.Identity -> MP.Program
+        processDataGroup mir_program data_group = do
+            List.fold mir_program data_group.items (\mir_program, id -> do
+                case get mir_program.records id of
+                    Some record -> do
+                        record :: Record <- record // FIXME
+                        fields <- List.map record.fields (\field -> do
+                            id <- T.getIdentity field.type
+                            if List.contains data_group.items id
+                            then field { grouped = True }
+                            else field)
+                        MP.updateRecordFields mir_program id fields
+                    None -> mir_program)
+
 processProgram :: Config -> MP.Program -> LP.Program
 processProgram config mir_program = do
     trace config "Rebinder.."
@@ -108,6 +120,7 @@ processProgram config mir_program = do
     mir_program <- TransformUpdates.processProgram mir_program
     dumpProgram config mir_program (MIR "transformupdates")
     (data_groups, function_groups) <- createGroups config mir_program
+    mir_program <- processDataGroups mir_program data_groups
     //trace config "Inliner.."
     //mir_program <- Inliner.processProgram mir_program function_groups
     //dumpProgram config mir_program (MIR "inliner")

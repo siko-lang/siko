@@ -50,6 +50,14 @@ getRecordCtor program record_id = case get program.record_ctors record_id of
     Some record_ctor -> record_ctor
     None -> panic "MIR Record ctor not found {}" % record_id
 
+updateRecordFields :: Program -> Identity -> [D.RecordField] -> Program
+updateRecordFields program record_id fields = do
+    (records, _) <- alter (\r -> case r of
+                Some r -> Some r { fields = fields }
+                None -> panic "Record not found during field update"
+            ) record_id program.records
+    program { records = records }
+
 updateFunctionKind :: Program -> Identity -> F.FunctionKind -> Program
 updateFunctionKind program function_id kind = do
     (functions, _) <- alter (\f -> case f of

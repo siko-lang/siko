@@ -7,7 +7,10 @@ import Siko.MIR.Backend.Ownership.V3.Lowering.Type
 import Siko.MIR.Backend.Ownership.V3.InferenceInfo
 import Siko.MIR.Backend.Ownership.V3.TypeVariableInfo
 import Siko.MIR.Expr as ME
+import Siko.MIR.Data as MD
+import Siko.MIR.Function as MF
 import Siko.MIR.Type as MT
+import Siko.MIR.Program as MP
 import Siko.LIR.Type as LT
 import Siko.LIR.Expr as LE
 
@@ -73,6 +76,32 @@ lowerExpr inference_info context expr = do
             (context, lir_id) <- getLIRId context lir_key
             context <- addItem context lir_key
             (context, lir_args) <- List.mapS context args (lowerExpr inference_info)
+            function <- MP.getFunction context.mir_program f_id
+            lir_args <- case function.kind of
+                    MF.VariantCtor index -> do
+                        adt_id <- MT.getIdentity function.type.result
+                        adt <- MP.getAdt context.mir_program adt_id
+                        variant <- atIndex adt.variants index
+                        record_id <- MT.getIdentity variant.type
+                        record <- MP.getRecord context.mir_program record_id
+                        List.zipS [] lir_args record.fields (\lir_args, arg, field -> do
+                            if field.grouped
+                            then do
+                                LE.Expr _ arg_type _ <- arg
+                                arg <- LE.Expr (LE.Box arg) (LT.Box arg_type) (LE.ExprId 0)
+                                List.push lir_args arg
+                            else List.push lir_args arg)
+                    MF.RecordCtor -> do
+                        record_id <- MT.getIdentity function.type.result
+                        record <- MP.getRecord context.mir_program record_id
+                        List.zipS [] lir_args record.fields (\lir_args, arg, field -> do
+                            if field.grouped
+                            then do
+                                LE.Expr _ arg_type _ <- arg
+                                arg <- LE.Expr (LE.Box arg) (LT.Box arg_type) (LE.ExprId 0)
+                                List.push lir_args arg
+                            else List.push lir_args arg)
+                    _ -> lir_args
             (context, LE.StaticFunctionCall lir_id lir_args)
         ME.IntegerLiteral lit -> (context, LE.IntegerLiteral lit)
         ME.StringLiteral lit -> (context, LE.StringLiteral lit)
@@ -86,8 +115,16 @@ lowerExpr inference_info context expr = do
             lir_var <- lowerVar var
             (context, LE.VarRef lir_var)
         ME.FieldAccess name receiver -> do
+            ME.Expr _ receiver_type _ <- receiver
+            record_id <- MT.getIdentity receiver_type
+            record <- MP.getRecord context.mir_program record_id
+            field <- Option.unwrap (MD.getFieldByName record name)
             (context, lir_receiver) <- lowerExpr inference_info context receiver
-            case lir_type of
+            if field.grouped
+            then do
+                field_access <- LE.Expr (LE.FieldAccess name lir_receiver) lir_type (LE.ExprId 0)
+                (context, LE.Deref field_access)
+            else case lir_type of
                 LT.Ref _ _ -> do
                     field_access <- LE.Expr (LE.FieldAccess name lir_receiver) lir_type (LE.ExprId 0)
                     (context, LE.Ref field_access)

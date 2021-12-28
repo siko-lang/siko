@@ -27,6 +27,9 @@ lowerField :: LoweringInfo -> Context -> MD.RecordField -> (Context, LD.RecordFi
 lowerField lowering_info context mir_field = do
     lowering_info <- getLoweringInfoForMember context.config lowering_info mir_field.name
     (context, lir_type) <- lowerType context lowering_info mir_field.type
+    lir_type <- if mir_field.grouped
+    then LT.Box lir_type
+    else lir_type
     (context, LD.RecordField mir_field.name lir_type)
 
 lowerVariant :: LoweringInfo -> Context -> Int -> MD.Variant -> (Context, LD.Variant)
