@@ -8,6 +8,7 @@ import Siko.MIR.Backend.Ownership.V3.InferenceInfo
 import Siko.MIR.Backend.Ownership.V3.TypeVariableInfo
 import Siko.MIR.Expr as ME
 import Siko.MIR.Type as MT
+import Siko.LIR.Type as LT
 import Siko.LIR.Expr as LE
 
 lowerVar :: ME.Var -> LE.Var
@@ -86,7 +87,11 @@ lowerExpr inference_info context expr = do
             (context, LE.VarRef lir_var)
         ME.FieldAccess name receiver -> do
             (context, lir_receiver) <- lowerExpr inference_info context receiver
-            (context, LE.FieldAccess name lir_receiver)
+            case lir_type of
+                LT.Ref _ _ -> do
+                    field_access <- LE.Expr (LE.FieldAccess name lir_receiver) lir_type (LE.ExprId 0)
+                    (context, LE.Ref field_access)
+                _ -> (context, LE.FieldAccess name lir_receiver)
         ME.If cond true_branch false_branch -> do
             (context, lir_cond) <- lowerExpr inference_info context cond
             (context, lir_true_branch) <- lowerExpr inference_info context true_branch

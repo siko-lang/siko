@@ -132,8 +132,11 @@ processExpr context expr = do
             (context, expr)
         E.FieldAccess name receiver -> do
             inference_info <- context.inference_info
+            (allocator, type_var) <- getNextTypeVariable inference_info.allocator
+            inference_info <- inference_info { allocator = allocator }
             receiver_info <- getTypeVariableInfoByExprId inference_info (getExprId receiver)
             info <- getTypeVariableInfoByExprId inference_info expr_id
+            info <- info { ownership_var = type_var }
             inference_info <- addMemberInfo inference_info (M.Member name receiver_info.arg_group_var info)
             (context { inference_info = inference_info }, expr)
         E.Return arg -> do
@@ -162,8 +165,11 @@ processExpr context expr = do
                             case ty of
                                 T.Adt _ _ -> do
                                     inference_info <- context.inference_info
+                                    (allocator, type_var) <- getNextTypeVariable inference_info.allocator
+                                    inference_info <- inference_info { allocator = allocator }
                                     body_info <- getTypeVariableInfoByExprId inference_info body_id
                                     var_info <- getTypeVariableInfoByVar inference_info var
+                                    var_info <- var_info { ownership_var = type_var }
                                     inference_info <- addMemberInfo inference_info (M.Variant index body_info.arg_group_var var_info)
                                     context { inference_info = inference_info }
                                 T.Record _ _ -> do
