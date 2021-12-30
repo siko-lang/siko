@@ -44,22 +44,22 @@ initializeExpr context expr = do
             context <- addOwnershipValue context info.ownership_var Unknown
             (context, expr)
 
-processConverter :: Context -> Option E.Var -> TypeVariable -> TypeVariable -> Context
-processConverter context borrowed_var from to = do
+processConverter :: Context -> Option E.ExprId -> TypeVariable -> TypeVariable -> Context
+processConverter context borrowed_expr from to = do
     from_kind <- getOwnershipValue context from
     to_kind <- getOwnershipValue context to
     case (from_kind, to_kind) of
         (Owner, Owner) -> context
-        (Owner, Borrower id2) -> case borrowed_var of
-            Some var -> do
-                (inference_info, id1) <- createBorrowSetForVar context.inference_info var
+        (Owner, Borrower id2) -> case borrowed_expr of
+            Some expr_id -> do
+                (inference_info, id1) <- createBorrowSetForExpr context.inference_info expr_id
                 (inference_info, id) <- mergeBorrowSets inference_info id1 id2
                 context <- context { inference_info = inference_info }
                 addOwnershipValue context to (Borrower id)
             None -> context
-        (Owner, Unknown) -> case borrowed_var of
-            Some var -> do
-                (inference_info, id) <- createBorrowSetForVar context.inference_info var
+        (Owner, Unknown) -> case borrowed_expr of
+            Some expr_id -> do
+                (inference_info, id) <- createBorrowSetForExpr context.inference_info expr_id
                 context <- context { inference_info = inference_info }
                 addOwnershipValue context to (Borrower id)
             None -> addOwnershipValue context to from_kind
@@ -124,25 +124,7 @@ processExpr context expr = do
         E.VarDecl var rhs -> do
             //println "VarDecl {}" % var
             context <- addOwnershipValue context info.ownership_var Owner
-            E.Expr _ _ rhs_id <- rhs
-            rhs_info <- getTypeVariableInfoByExprId context.inference_info rhs_id
-            rhs_kind <- getOwnershipValue context rhs_info.ownership_var
-            var_info <- getTypeVariableInfoByVar context.inference_info var
-            case rhs_kind of
-                Owner -> addOwnershipValue context var_info.ownership_var Owner
-                Borrower borrow_set_id -> do
-                    borrow_set <- getBorrowSet context.inference_info borrow_set_id
-                    is_borrow_allowed <- Set.fold True borrow_set.borrows (\is_borrow_allowed, borrow ->
-                        case borrow of
-                            BorrowedVar b -> is_borrow_allowed && isBorrowAllowed context.borrow_info b var
-                            _ -> is_borrow_allowed)
-                    if is_borrow_allowed
-                    then addOwnershipValue context var_info.ownership_var (Borrower borrow_set_id)
-                    else do
-                        //println "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! {} {}" % (var, b)
-                        context <- addOwnershipValue context rhs_info.ownership_var Owner
-                        addOwnershipValue context var_info.ownership_var Owner
-                _ -> context
+            context
         E.VarRef _ -> do
             //expr_kind <- getOwnershipValue context info.ownership_var
             //println "varref {} {}" % (info, expr_kind)
@@ -179,7 +161,10 @@ processExpr context expr = do
             arg_info <- getTypeVariableInfoByExprId context.inference_info arg_id
             borrowed_var <- case arg_s_expr of
                 E.VarRef var -> if isBorrow context.borrow_info arg_id
-                        then Some var
+                        then Some arg_id
+                        else None
+                E.FieldAccess n _ -> if isBorrow context.borrow_info arg_id
+                        then Some arg_id
                         else None
                 _ -> None
             processConverter context borrowed_var arg_info.ownership_var info.ownership_var
@@ -198,7 +183,7 @@ processExpr context expr = do
                 Set.put invalid_borrows invalidation)
             context { invalid_borrows = invalid_borrows }
         None -> context
-    println "Invalid borrows {} = {}" % (expr_id, context.invalid_borrows)
+    //println "Invalid borrows {} = {}" % (expr_id, context.invalid_borrows)
     (context, expr)
 
 dumpExpr :: Context -> E.Expr -> (Context, E.Expr)

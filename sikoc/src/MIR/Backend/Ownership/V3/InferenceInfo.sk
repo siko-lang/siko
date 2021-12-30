@@ -16,7 +16,7 @@ data Converter = { from :: TypeVariable,
                    to :: TypeVariable,
                  } deriving (PartialEq, Eq, Show)
 
-data Borrow = BorrowedVar E.Var
+data Borrow = Local E.ExprId
             | External BorrowId
             deriving (PartialEq, Eq, PartialOrd, Ord, Show)
 
@@ -91,23 +91,20 @@ createInferenceInfo arg_count = do
             inference_info <- addVar inference_info (E.Arg index)
             (inference_info, index + 1)
 
-createBorrowSetForVar :: InferenceInfo -> E.Var -> (InferenceInfo, BorrowId)
-createBorrowSetForVar inference_info var = do
+createBorrowSet :: InferenceInfo -> Borrow -> (InferenceInfo, BorrowId)
+createBorrowSet inference_info borrow = do
     allocator <- inference_info.allocator
     (allocator, id) <- getNextBorrowId allocator
     borrows <- Set.empty
-    borrow_set <- BorrowSet (Set.put borrows (BorrowedVar var))
+    borrow_set <- BorrowSet (Set.put borrows borrow)
     borrow_sets <- Map.put inference_info.borrow_sets id borrow_set
     (inference_info { allocator = allocator, borrow_sets = borrow_sets }, id)
 
+createBorrowSetForExpr :: InferenceInfo -> E.ExprId -> (InferenceInfo, BorrowId)
+createBorrowSetForExpr inference_info expr_id = createBorrowSet inference_info (Local expr_id)
+
 createBorrowSetForExternal :: InferenceInfo -> BorrowId -> (InferenceInfo, BorrowId)
-createBorrowSetForExternal inference_info external_id = do
-    allocator <- inference_info.allocator
-    (allocator, id) <- getNextBorrowId allocator
-    borrows <- Set.empty
-    borrow_set <- BorrowSet (Set.put borrows (External external_id))
-    borrow_sets <- Map.put inference_info.borrow_sets id borrow_set
-    (inference_info { allocator = allocator, borrow_sets = borrow_sets }, id)
+createBorrowSetForExternal inference_info external_id = createBorrowSet inference_info (External external_id)
 
 mergeBorrowSets :: InferenceInfo -> BorrowId -> BorrowId -> (InferenceInfo, BorrowId)
 mergeBorrowSets inference_info id1 id2 = do

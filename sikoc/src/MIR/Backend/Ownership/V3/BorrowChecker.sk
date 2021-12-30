@@ -20,8 +20,6 @@ data Invalidation = { subject :: E.ExprId, object :: E.ExprId } deriving (Show)
 
 data Context = { program :: P.Program,
                  borrows :: [E.ExprId],
-                 forbidden_borrows :: Map E.Var [E.Var],
-                 forbidden_borrows2 :: Map E.ExprId [E.ExprId],
                  invalidations :: [Invalidation] }
 
 data ExecutionMode = Normal
@@ -139,99 +137,15 @@ collectBorrows context usage_store expr = do
         E.Converter arg _ -> collectBorrows context usage_store arg
     (context, usage_store, exec_mode)
 
-addForbiddenBorrow :: Context -> E.Var -> E.Var -> Context
-addForbiddenBorrow context dying_var live_var = do
-        (forbidden_borrows, _) <- alter (add dying_var) live_var context.forbidden_borrows
-        context { forbidden_borrows = forbidden_borrows }
-    where
-        add :: E.Var -> Option [E.Var] -> Option [E.Var]
-        add new old_vars = case old_vars of
-            Some old_vars -> Some ((push old_vars new) |> sort |> dedup)
-            None -> Some [new]
-
-data LiveSet = { live_vars :: Set E.Var } deriving (Show)
-
-addLiveVar :: LiveSet -> E.Var -> LiveSet
-addLiveVar live_set var = do
-    live_vars <- Set.put live_set.live_vars var
-    live_set { live_vars = live_vars }
-
-removeLiveVar :: LiveSet -> E.Var -> LiveSet
-removeLiveVar live_set var = do
-    live_vars <- Set.remove live_set.live_vars var
-    live_set { live_vars = live_vars }
-
-checkVar :: Context -> LiveSet -> E.Var -> E.ExprId -> (Context, LiveSet)
-checkVar context live_set var expr_id = do
-    if List.contains context.borrows expr_id
-    then (context, live_set)
-    else do
-        live_set <- removeLiveVar live_set var
-        context <- live_set.live_vars |> Set.iter |> Iterator.fold (\context, live_var -> addForbiddenBorrow context var live_var) context
-        (context, live_set)
-
-checkVarsInBlock :: Context -> LiveSet -> [E.Expr] -> (Context, LiveSet,)
-checkVarsInBlock context live_set items =
-    List.fold (context, live_set) items (\(context, live_set), item -> checkVars context live_set item)
-
-checkVars :: Context -> LiveSet -> E.Expr -> (Context, LiveSet)
-checkVars context live_set expr = do
-    E.Expr s_expr _ expr_id <- expr
-    (context, live_set) <- case s_expr of
-        E.Do items -> checkVarsInBlock context live_set items
-        E.Multi _ -> panic "Multi in borrow checker"
-        E.StaticFunctionCall f_id args -> checkVarsInBlock context live_set args
-        E.IntegerLiteral _ -> (context, live_set)
-        E.StringLiteral _ -> (context, live_set)
-        E.FloatLiteral _ -> (context, live_set)
-        E.CharLiteral _ -> (context, live_set)
-        E.VarDecl var rhs -> do
-            (context, live_set) <- checkVars context live_set rhs
-            live_set <- addLiveVar live_set var
-            (context, live_set)
-        E.VarRef var -> checkVar context live_set var expr_id
-        E.FieldAccess name receiver -> checkVars context live_set receiver
-        E.If cond true_branch false_branch -> do
-            // FIXME, TODO: double check this!!
-            (context, live_set) <- checkVars context live_set cond
-            (context, live_set) <- checkVars context live_set true_branch
-            (context, live_set) <- checkVars context live_set false_branch
-            (context, live_set)
-        E.List args -> checkVarsInBlock context live_set args
-        E.Return arg -> checkVars context live_set arg
-        E.Continue arg -> checkVars context live_set arg
-        E.Break arg -> checkVars context live_set arg
-        E.RecordUpdate var updates -> panic "RecordUpdate in MIR borrow checker"
-        E.Loop var initializer body _ _ -> do
-            (context, live_set) <- checkVars context live_set initializer
-            live_set <- addLiveVar live_set var
-            (context, live_set) <- checkVars context live_set body
-            (context, live_set)
-        E.CaseOf body cases -> do
-            // FIXME, TODO: double check this!!
-            (context, live_set) <- checkVars context live_set body
-            (context, live_set) <- List.fold (context, live_set) cases (\(context, live_set), c ->
-                checkVars context live_set c.body)
-            (context, live_set)
-        E.Clone arg -> panic "Clone in MIR borrow checker"
-        E.Deref arg -> panic "Deref in MIR borrow checker"
-        E.Ref arg -> panic "Ref in MIR borrow checker"
-        E.Move arg -> panic "Move in MIR borrow checker"
-        E.Box arg -> panic "Box in MIR borrow checker"
-        E.Converter arg _ -> checkVars context live_set arg
-    (context, live_set)
-
 checkBorrows :: P.Program -> E.Expr -> BorrowInfo
 checkBorrows program body = do
-    context <- Context program [] Map.empty Map.empty []
+    context <- Context program [] []
     usage_store <- UsageStore Map.empty
     (context, usage_store, exec_mode) <- collectBorrows context usage_store body
-    live_set <- LiveSet Set.empty
-    (context, live_set) <- checkVars context live_set body
     invalidations <- List.filter context.invalidations (\invalidation -> not (List.contains context.borrows invalidation.subject))
     invalidations <- List.fold Map.empty invalidations (\invalidations, invalidation -> do
         (invalidations, _) <- alter (\old -> case old of
             Some invalidations -> Some (push invalidations invalidation.object)
             None -> Some [invalidation.object]) invalidation.subject invalidations
         invalidations)
-    BorrowInfo context.borrows context.forbidden_borrows invalidations
+    BorrowInfo context.borrows invalidations
