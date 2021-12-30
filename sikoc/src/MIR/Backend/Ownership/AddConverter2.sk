@@ -26,11 +26,14 @@ packExpr :: Context -> E.Expr -> (Context, E.Expr)
 packExpr context orig_expr = do
     (context, expr_id) <- getNextExprId context
     E.Expr orig_s_expr orig_type orig_id <- orig_expr
-    type <- case orig_type of
-        T.Owner t -> t
-        T.Ref _ t -> t
-        _ -> orig_type
-    (context, E.Expr (E.Converter orig_expr E.NormalConverter) type expr_id)
+    case orig_s_expr of
+        E.Converter _ _ -> (context, orig_expr)
+        _ -> do
+            type <- case orig_type of
+                T.Owner t -> t
+                T.Ref _ t -> t
+                _ -> orig_type
+            (context, E.Expr (E.Converter orig_expr E.NormalConverter) type expr_id)
 
 getBothIds :: E.Expr -> (E.ExprId, E.ExprId)
 getBothIds expr = do
