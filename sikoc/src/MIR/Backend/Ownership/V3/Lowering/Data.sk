@@ -19,7 +19,8 @@ import Map
 
 lowerExternalRecordInfo :: LoweringInfo -> Context -> MD.ExternalRecordInfo -> (Context, LD.ExternalRecordInfo)
 lowerExternalRecordInfo lowering_info context mir_external_record_info = do
-    (context, lir_type_args) <- List.mapS context mir_external_record_info.type_args (\context, type_arg ->
+    (context, lir_type_args) <- List.mapSE context mir_external_record_info.type_args (\context, index, type_arg -> do
+        lowering_info <- getLoweringInfoForExtern context.config lowering_info index
         lowerType context lowering_info type_arg)
     (context, LD.ExternalRecordInfo lir_type_args)
 

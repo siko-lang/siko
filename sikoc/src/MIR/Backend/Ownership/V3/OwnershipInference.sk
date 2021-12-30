@@ -52,7 +52,14 @@ processConverter context converter_expr borrowed_expr from to = do
     from_kind <- getOwnershipValue context from
     to_kind <- getOwnershipValue context to
     case (from_kind, to_kind) of
-        (Owner, Owner) -> context
+        (Owner, Owner) ->
+            case borrowed_expr of
+                Some _ -> case converter_expr of
+                            Some converter_expr -> do
+                                cloning_converters <- Set.put context.cloning_converters converter_expr
+                                context { cloning_converters = cloning_converters }
+                            None -> context
+                None -> context
         (Owner, Borrower id2) ->
             if Set.contains context.forced_clones to
             then do

@@ -148,3 +148,19 @@ getLoweringInfoForVariant config lowering_info index = do
                     allocator <- createAllocator
                     (allocator, root) <- getNextTypeVariableInfo allocator
                     Type (TypeLoweringInfo [] root [M.Owner root.ownership_var] allocator)
+
+getLoweringInfoForExtern :: Config -> LoweringInfo -> Int -> LoweringInfo
+getLoweringInfoForExtern config lowering_info index = do
+    case lowering_info of
+        Function info -> panic "getLoweringInfoForExtern called on function lowering info"
+        Type info -> do
+            variant <- List.filter info.members (\constraint -> case constraint of
+                    M.Extern i root member_info -> i == index && info.root.arg_group_var == root
+                    _ -> False)
+            case head variant of
+                Some (M.Extern index root member_info) -> createTypeLoweringInfoFromLoweringInfo config lowering_info member_info
+                Some _ -> panic "extern is not a extern"
+                None -> do
+                    allocator <- createAllocator
+                    (allocator, root) <- getNextTypeVariableInfo allocator
+                    Type (TypeLoweringInfo [] root [M.Owner root.ownership_var] allocator)
