@@ -12,7 +12,7 @@ import Map
 
 data Path = Whole | Partial [String] deriving (Show)
 
-data Usage = { expr_id :: E.ExprId, path :: Path }
+data Usage = { expr_id :: E.ExprId, path :: Path } deriving (Show)
 
 data UsageStore = { usages :: Map E.Var [Usage] }
 
@@ -48,6 +48,11 @@ checkUsages usages usage expr_id = do
             (borrows, invalidations)
         else (borrows, invalidations))
 
+addUsageVar :: UsageStore -> E.Var -> UsageStore
+addUsageVar usage_store var = do
+    usages <- Map.put usage_store.usages var []
+    usage_store { usages = usages }
+
 addUsage :: Context -> UsageStore -> E.Var -> E.ExprId -> Path -> (Context, UsageStore)
 addUsage context usage_store var expr_id path = do
     usage <- Usage expr_id path
@@ -71,10 +76,11 @@ collectBlockBorrows context usage_store items =
                     _ -> DoesNotReturn
                 (context, usage_store, exec_mode))
 
-processBranches :: Context -> UsageStore -> [E.Expr] -> (Context, UsageStore, ExecutionMode)
+processBranches :: Context -> UsageStore -> [([E.Var], E.Expr)] -> (Context, UsageStore, ExecutionMode)
 processBranches context usage_store branches =
-    List.fold (context, usage_store, DoesNotReturn) branches (\(context, usage_store, exec_mode), branch -> do
+    List.fold (context, usage_store, DoesNotReturn) branches (\(context, usage_store, exec_mode), (vars, branch) -> do
             saved <- usage_store
+            usage_store <- List.fold usage_store vars addUsageVar
             (context, usage_store, exec_mode) <- collectBorrows context usage_store branch
             case exec_mode of
                 Normal -> (context, usage_store, Normal)
@@ -91,7 +97,10 @@ collectBorrows context usage_store expr = do
         E.StringLiteral _ -> (context, usage_store, Normal)
         E.FloatLiteral _ -> (context, usage_store, Normal)
         E.CharLiteral _ -> (context, usage_store, Normal)
-        E.VarDecl var rhs -> collectBorrows context usage_store rhs
+        E.VarDecl var rhs -> do
+            (context, usage_store, exec_mode) <- collectBorrows context usage_store rhs
+            usage_store <- addUsageVar usage_store var
+            (context, usage_store, exec_mode)
         E.VarRef var -> do
             path <- Whole
             (context, usage_store) <- addUsage context usage_store var expr_id path
@@ -108,7 +117,7 @@ collectBorrows context usage_store expr = do
                     _ -> break collectBorrows context usage_store receiver
         E.If cond true_branch false_branch -> do
             (context, usage_store, exec_mode) <- collectBorrows context usage_store cond
-            processBranches context usage_store [true_branch, false_branch]
+            processBranches context usage_store [([], true_branch), ([], false_branch)]
         E.List args -> collectBlockBorrows context usage_store args
         E.Return arg -> do
             (context, usage_store, exec_mode) <- collectBorrows context usage_store arg
@@ -122,12 +131,16 @@ collectBorrows context usage_store expr = do
         E.RecordUpdate var updates -> panic "RecordUpdate in MIR borrow checker"
         E.Loop var initializer body _ _ -> do
             (context, usage_store, exec_mode) <- collectBorrows context usage_store initializer
+            usage_store <- addUsageVar usage_store var
             (context, usage_store, exec_mode) <- collectBorrows context usage_store body
+            usage_store <- addUsageVar usage_store var
             (context, usage_store, exec_mode) <- collectBorrows context usage_store body
             (context, usage_store, exec_mode)
         E.CaseOf body cases -> do
             (context, usage_store, exec_mode) <- collectBorrows context usage_store body
-            branches <- List.map cases (\c -> c.body)
+            branches <- List.map cases (\c -> case c.checker of
+                E.VariantChecker _ var _ -> ([var], c.body)
+                _ -> ([], c.body))
             processBranches context usage_store branches
         E.Clone arg -> panic "Clone in MIR borrow checker"
         E.Deref arg -> panic "Deref in MIR borrow checker"
