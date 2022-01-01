@@ -91,7 +91,6 @@ isBorrowerGroup borrower_map deps_map group lowering_info = do
 filterInfo :: Config -> LoweringInfo -> [TypeVariableInfo] -> LoweringInfo
 filterInfo config lowering_info sources = do
         //println "------------ start filterInfo {} / {}-----------" % (lowering_info, sources)
-
         source_group_vars <- List.fold Set.empty sources (\vars, source -> Set.put vars source.arg_group_var)
         all_group_vars <- case lowering_info of
             Function function -> Set.collect function.members source_group_vars collectFromSource
@@ -103,7 +102,6 @@ filterInfo config lowering_info sources = do
             Type type -> do
                 members <- List.filter type.members (filterConstraint all_group_vars)
                 Type (type { members = members })
-
         deps_map <- getDependencyMap lowering_info
         groups <- processDependencies config deps_map
         //println "Groups {}, {}" % (groups, deps_map)

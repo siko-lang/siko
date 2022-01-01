@@ -6,6 +6,8 @@ data Foo = Foo
 
 data Rec = { foo :: Foo }
 
+data Adt = Adt Foo
+
 test1 = do
     a <- Foo
     r <- Rec a
@@ -37,8 +39,27 @@ test4 = do
     f r
     sink r.foo
 
+fieldAccess :: Rec -> Foo
+fieldAccess a = a.foo
+
+variantAccess :: Adt -> Foo
+variantAccess a = case a of
+            Adt a -> a
+
+test5 = do
+    r <- Rec Foo
+    a <- fieldAccess r
+    a <- fieldAccess r
+
+test6 = do
+    r <- Adt Foo
+    a <- variantAccess r
+    a <- variantAccess r
+
 main = do
     test1
     test2
     test3
     test4
+    test5
+    test6

@@ -211,10 +211,15 @@ processExpr context expr = do
             context { invalid_borrows = invalid_borrows }
         None -> context
     //println "Invalid borrows {} = {}" % (expr_id, context.invalid_borrows)
+    relevants <- Set.empty
+    relevants <- Set.put relevants info.ownership_var
+    relevants <- Set.put relevants info.arg_group_var
+    relevants <- collectRelevantVars context.inference_info.members relevants
     context <- if not context.needs_restart
     then do
         new_forced_clones <- Map.fold [] context.inference_info.ownership_values (\forced_clones, (var, ownership) ->
-            case ownership of
+            if Set.contains relevants var
+            then case ownership of
                 Borrower id -> do
                     borrow_set <- getBorrowSet context.inference_info id
                     Set.fold forced_clones borrow_set.borrows (\forced_clones, borrow ->
@@ -224,7 +229,8 @@ processExpr context expr = do
                                 then List.push forced_clones var
                                 else forced_clones
                             _ -> forced_clones)
-                _ -> forced_clones)
+                _ -> forced_clones
+            else forced_clones)
         new_forced_clones <- new_forced_clones |> sort |> dedup
         new_forced_clones <- List.filter new_forced_clones (\v -> not (Set.contains context.forced_clones v))
         case head new_forced_clones of
@@ -274,7 +280,9 @@ inferOwnership group function_info_store inference_info program body borrow_info
                            function_info_store group strict Set.empty forced_clones cloning_converters False
         (context, body) <- traverse context body (Some initializeExpr) None None
         (context, body) <- traverse context body (Some processExpr) None (Some preCaseCheck)
-        //(context, body) <- traverse context body (Some dumpExpr) None None
+        // println "----------- BEGIN"
+        // (context, body) <- traverse context body (Some dumpExpr) None None
+        // println "----------- END"
         if strict
         then do
             found <- Map.fold False context.inference_info.expr_type_variables (\found, (_, info) -> do

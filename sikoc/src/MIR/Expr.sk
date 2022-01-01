@@ -8,6 +8,7 @@ import Json
 data Var = Named String
          | Temp Int
          | Arg Int
+         | FnArg Int
          deriving (PartialEq, Eq, PartialOrd, Ord)
 
 instance Show Var where
@@ -15,6 +16,7 @@ instance Show Var where
         Named v -> "_{}" % v
         Temp v -> "tmp_{}" % v
         Arg i -> "arg{}" % i
+        FnArg i -> "fn_arg{}" % i
 
 data RecordUpdateItem = { field_name :: String,
                           body :: Expr }
@@ -81,13 +83,13 @@ short expr = do
     case s of
         Do args -> "Do"
         Multi args -> "Multi"
-        StaticFunctionCall id args -> "StaticFunctionCall"
+        StaticFunctionCall id args -> "StaticFunctionCall({})" % id
         IntegerLiteral lit -> "IntegerLiteral"
         StringLiteral lit -> "StringLiteral"
         FloatLiteral lit -> "FloatLiteral"
         CharLiteral lit -> "CharLiteral"
         VarDecl v arg -> "VarDecl"
-        VarRef v -> "VarRef"
+        VarRef v -> "VarRef({})" % v
         FieldAccess n rhs -> "FieldAccess"
         If cond true_branch false_branch -> "If"
         List args -> "List"

@@ -11,6 +11,7 @@ import Siko.MIR.Backend.Rebinder as Rebinder
 import Siko.MIR.Backend.Simplifier as Simplifier
 import Siko.MIR.Backend.Simplification.TransformUpdates as TransformUpdates
 import Siko.MIR.Backend.Inliner as Inliner
+import Siko.MIR.Backend.FnArgVarCreator as FnArgVarCreator
 import Siko.MIR.Backend.Traversal
 import Siko.MIR.Program as MP
 import Siko.LIR.Program as LP
@@ -111,6 +112,7 @@ processDataGroups mir_program data_groups =
 
 processProgram :: Config -> MP.Program -> LP.Program
 processProgram config mir_program = do
+    mir_program <- FnArgVarCreator.processProgram mir_program
     trace config "Rebinder.."
     mir_program <- Rebinder.processProgram mir_program
     dumpProgram config mir_program (MIR "rebinder")

@@ -12,7 +12,9 @@ import Map
 data Context = { vars :: Map E.Var E.Var,
                  exprs :: Map E.ExprId E.ExprId,
                  expr_id_gen :: Counter E.ExprId,
-                 temp_var_gen :: Counter E.Var, }
+                 temp_var_gen :: Counter E.Var,
+                 continues :: [E.ExprId],
+                 breaks :: [E.ExprId] }
 
 getNextExprId :: Context -> (Context, E.ExprId)
 getNextExprId context = do
@@ -89,9 +91,13 @@ processExpr context expr = do
             (context, E.Expr (E.Return arg) type id)
         E.Continue arg -> do
             (context, arg) <- processExpr context arg
+            E.Expr _ _ arg_id <- arg
+            context <- context { continues = List.push context.continues arg_id }
             (context, E.Expr (E.Continue arg) type id)
         E.Break arg -> do
             (context, arg) <- processExpr context arg
+            E.Expr _ _ arg_id <- arg
+            context <- context { breaks = List.push context.breaks arg_id }
             (context, E.Expr (E.Break arg) type id)
         E.RecordUpdate v updates -> do
             v <- case get context.vars v of
@@ -105,9 +111,12 @@ processExpr context expr = do
         E.Loop v initializer body continues breaks -> do
             (context, v) <- addVar context v
             (context, initializer) <- processExpr context initializer
+            saved_continues <- context.continues
+            saved_breaks <- context.breaks
             (context, body) <- processExpr context body
-            continues <- List.map continues (getExpr context)
-            breaks <- List.map breaks (getExpr context)
+            continues <- context.continues
+            breaks <- context.breaks
+            context <- context { continues = saved_continues, breaks = saved_breaks }
             (context, E.Expr (E.Loop v initializer body continues breaks) type id)
         E.CaseOf body cases -> do
             (context, body) <- processExpr context body
@@ -142,7 +151,7 @@ processExpr context expr = do
             (context, E.Expr (E.Converter arg kind) type id)
 
 createContext :: Counter E.ExprId -> Counter E.Var -> Context
-createContext expr_id_gen temp_var_gen = Context Map.empty Map.empty expr_id_gen temp_var_gen
+createContext expr_id_gen temp_var_gen = Context Map.empty Map.empty expr_id_gen temp_var_gen [] []
 
 processFunction :: F.Function -> F.Function
 processFunction function = case function.kind of

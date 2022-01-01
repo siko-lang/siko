@@ -24,6 +24,7 @@ lowerVar var = case var of
     ME.Named n -> LE.Named n
     ME.Temp i -> LE.Temp i
     ME.Arg i -> LE.Arg i
+    ME.FnArg _ -> panic "FnArg found in lowering"
 
 lowerRangeKind :: ME.RangeKind -> LE.RangeKind
 lowerRangeKind range_kind = case range_kind of
@@ -31,20 +32,17 @@ lowerRangeKind range_kind = case range_kind of
     ME.Exclusive -> LE.Exclusive
 
 lowerChecker :: LoweringInfo -> Context -> ME.Checker -> (Context, LE.Checker)
-lowerChecker lowering_info context checker = case checker of
-    ME.IntegerChecker lit -> (context, LE.IntegerChecker lit)
-    ME.StringChecker lit -> (context, LE.StringChecker lit)
-    ME.CharChecker lit -> (context, LE.CharChecker lit)
-    ME.CharRangeChecker s e kind -> (context, LE.CharRangeChecker s e (lowerRangeKind kind))
-    ME.VariantChecker index var ty -> do
-        lowering_info <- case ty of
-            MT.Adt _ _ -> getLoweringInfoForVariant context.config lowering_info index
-            MT.Record _ _ -> lowering_info
-            _ -> panic "VariantCheckers' type is nor adt nor record"
-        //println "VariantChecker: {}" % lowering_info
-        (context, type) <- lowerType context lowering_info ty
-        (context, LE.VariantChecker index (lowerVar var) type)
-    ME.WildcardChecker -> (context, LE.WildcardChecker)
+lowerChecker lowering_info context checker = do
+    case checker of
+        ME.IntegerChecker lit -> (context, LE.IntegerChecker lit)
+        ME.StringChecker lit -> (context, LE.StringChecker lit)
+        ME.CharChecker lit -> (context, LE.CharChecker lit)
+        ME.CharRangeChecker s e kind -> (context, LE.CharRangeChecker s e (lowerRangeKind kind))
+        ME.VariantChecker index var ty -> do
+            (lowering_info, _) <- normalizeRef lowering_info
+            (context, type) <- lowerType context lowering_info ty
+            (context, LE.VariantChecker index (lowerVar var) type)
+        ME.WildcardChecker -> (context, LE.WildcardChecker)
 
 lowerCase :: LoweringContext -> LoweringInfo -> Context -> ME.Case -> (Context, LE.Case)
 lowerCase lowering_context lowering_info context c = do
@@ -58,7 +56,7 @@ lowerExpr lowering_context context expr = do
     expr_info <- getTypeVariableInfoByExprId lowering_context.inference_info expr_id
     lowering_info <- createTypeLoweringInfoFromInferenceInfo context.config lowering_context.inference_info expr_info
     lowering_info <- normalizeLoweringInfo lowering_info
-    //println "expr type {} {}" % (expr_type, lowering_info)
+    //println "expr {} type {} {}" % (ME.short expr, expr_type, lowering_info)
     (context, lir_type) <- lowerType context lowering_info expr_type
     (context, lir_s_expr) <- case s_expr of
         ME.Do items -> do
