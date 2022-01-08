@@ -93,17 +93,17 @@ getEqualsFromMemberInfos members = do
             None -> Some [info]
 
 class EqualityStore a where
-    getEqualities a :: a -> [MemberInfo]
-    putEqualities a :: a -> [MemberInfo] -> a
+    getMemberInfos a :: a -> [MemberInfo]
+    putMemberInfos a :: a -> [MemberInfo] -> a
 
 merge a :: (EqualityStore a, Apply a) => a -> a
 merge store =
     loop store <- store do
-        equals <- getEqualsFromMemberInfos (getEqualities store)
+        equals <- getEqualsFromMemberInfos (getMemberInfos store)
         if isEmpty equals
         then break store
         else do
             store <- applyEquals equals store
-            members <- getEqualities store |> sort |> dedup
-            store <- putEqualities store members
+            members <- getMemberInfos store |> sort |> dedup
+            store <- putMemberInfos store members
             store

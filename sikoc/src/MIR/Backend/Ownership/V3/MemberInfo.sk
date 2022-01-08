@@ -1,6 +1,6 @@
 module Siko.MIR.Backend.Ownership.V3.MemberInfo where
 
-import Map
+import Set
 
 import Siko.MIR.Backend.Ownership.V3.TypeVariableInfo
 import Siko.MIR.Backend.Ownership.V3.BorrowId
@@ -14,3 +14,30 @@ data OwnershipInfo = Unknown TypeVariable
                    | Owner TypeVariable
                    | Borrower TypeVariable BorrowId
                    deriving (PartialEq, Eq, PartialOrd, Ord, Show)
+
+collectMember :: Set TypeVariable -> MemberInfo -> Set TypeVariable
+collectMember vars constraint =
+    case constraint of
+        Variant index root info -> addMember vars root info
+        Member name root info -> addMember vars root info
+        Extern index root info -> addMember vars root info
+    where
+        addMember :: Set TypeVariable -> TypeVariable -> TypeVariableInfo -> Set TypeVariable
+        addMember vars root info =
+            if Set.contains vars root
+            then Set.put vars info.arg_group_var
+            else vars
+
+isSubMember :: Set TypeVariable -> MemberInfo -> Bool
+isSubMember vars constraint =
+    case constraint of
+        Variant index root info -> Set.contains vars root
+        Member name root info -> Set.contains vars root
+        Extern index root info -> Set.contains vars root
+
+filterOwnershipInfo :: [TypeVariable] -> OwnershipInfo -> Bool
+filterOwnershipInfo vars ownershipinfo =
+    case ownershipinfo of
+        Unknown v -> List.fold False vars (\found, var -> found || var == v)
+        Owner v -> List.fold False vars (\found, var -> found || var == v)
+        Borrower v _ -> List.fold False vars (\found, var -> found || var == v)

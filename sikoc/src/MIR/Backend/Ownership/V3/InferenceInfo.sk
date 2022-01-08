@@ -27,6 +27,8 @@ data OwnershipKind = Unknown
                    | Borrower BorrowId
                    deriving (Show)
 
+data TypeIdentity = { var :: TypeVariable, id :: P.Identity } deriving (Show, PartialEq, Eq, PartialOrd, Ord)
+
 data InferenceInfo = { expr_type_variables :: Map E.ExprId TypeVariableInfo,
                        var_type_variables :: Map E.Var TypeVariableInfo,
                        ownership_values :: Map TypeVariable OwnershipKind,
@@ -37,6 +39,7 @@ data InferenceInfo = { expr_type_variables :: Map E.ExprId TypeVariableInfo,
                        allocator :: Allocator,
                        function_converters :: Map E.ExprId [Converter],
                        borrow_sets :: Map BorrowId BorrowSet,
+                       type_ids :: [TypeIdentity],
                      } deriving (Show)
 
 createInferenceInfoFromLoweringInfo :: LoweringInfo -> InferenceInfo
@@ -52,9 +55,10 @@ createInferenceInfoFromLoweringInfo lowering_info = case lowering_info of
         converters <- []
         function_converters <- Map.empty
         borrow_sets <- Map.empty
+        type_ids <- []
         inference_info <- InferenceInfo expr_type_variables var_type_variables
             ownership_values args result members converters allocator
-            function_converters borrow_sets
+            function_converters borrow_sets type_ids
         inference_info <- List.foldE (\inference_info, index, arg -> do
             var <- E.Arg index
             (var_type_variables, _) <- Map.insert inference_info.var_type_variables var arg
@@ -80,10 +84,11 @@ createInferenceInfo arg_count = do
     args <- []
     function_converters <- Map.empty
     borrow_sets <- Map.empty
+    type_ids <- []
     (allocator, result) <- getNextTypeVariableInfo allocator
     inference_info <- InferenceInfo expr_type_variables var_type_variables
             ownership_values args result [] [] allocator
-            function_converters borrow_sets
+            function_converters borrow_sets type_ids
     loop (inference_info, index) <- (inference_info, 0) do
         if index >= arg_count
         then break inference_info
@@ -149,6 +154,14 @@ addConverter :: InferenceInfo -> Converter -> InferenceInfo
 addConverter inference_info converter = do
     converters <- push inference_info.converters converter
     inference_info { converters = converters }
+
+addTypeIdentity  :: InferenceInfo -> TypeIdentity -> InferenceInfo
+addTypeIdentity inference_info type_id = do
+    type_ids <- push inference_info.type_ids type_id
+    inference_info { type_ids = type_ids }
+
+getTypeIdentity :: InferenceInfo -> TypeVariable -> Option TypeIdentity
+getTypeIdentity inference_info var = find inference_info.type_ids (\type_id -> type_id.var == var)
 
 addOwnership :: InferenceInfo -> TypeVariable -> OwnershipKind -> InferenceInfo
 addOwnership inference_info var kind = do
@@ -230,37 +243,64 @@ toFunctionInfo inference_info = do
         output_vars <- Set.empty
         output_vars <- Set.put output_vars inference_info.result.ownership_var
         output_vars <- Set.put output_vars inference_info.result.arg_group_var
-        input_vars <- collectRelevantVars inference_info.members input_vars
-        output_vars <- collectRelevantVars inference_info.members output_vars
+        input_group_vars <- List.fold Set.empty inference_info.args
+            (\input_group_vars, info -> Set.put input_group_vars info.arg_group_var)
+        output_group_vars <- Set.put Set.empty inference_info.result.arg_group_var
+        input_group_vars <- Set.collect inference_info.members input_group_vars M.collectMember
+        output_group_vars <- Set.collect inference_info.members output_group_vars M.collectMember
+        input_members <- List.filter inference_info.members (M.isSubMember input_group_vars)
+        output_members <- List.filter inference_info.members (M.isSubMember output_group_vars)
+        filtered_input_members <- List.filter input_members (\m -> not (List.contains output_members m))
+        filtered_output_members <- List.filter output_members (\m -> not (List.contains input_members m))
+        input_members <- filtered_input_members
+        output_members <- filtered_output_members
+        output_ownership_vars <- [inference_info.result.ownership_var]
+        input_ownership_vars <- List.fold [] inference_info.args
+            (\ownership_vars, info -> List.push ownership_vars info.ownership_var)
+        ownershipinfos <- toOwnershipInfo inference_info.ownership_values
+        input_ownership_vars <- List.fold input_ownership_vars input_members (\vars, member ->
+            case member of
+                M.Variant _ _ info -> List.push vars info.ownership_var
+                M.Member _ _ info -> List.push vars info.ownership_var
+                M.Extern _ _ info -> List.push vars info.ownership_var)
+        output_ownership_vars <- List.fold output_ownership_vars output_members (\vars, member ->
+            case member of
+                M.Variant _ _ info -> List.push vars info.ownership_var
+                M.Member _ _ info -> List.push vars info.ownership_var
+                M.Extern _ _ info -> List.push vars info.ownership_var)
+        filtered_ownershipinfos <- List.filter ownershipinfos (M.filterOwnershipInfo (input_ownership_vars + output_ownership_vars))
         filtered_converters <- List.fold [] converters (\filtered_converters, converter -> do
-            if Set.contains input_vars converter.from
+            if List.contains input_ownership_vars converter.from
             then do
                 converter <- loop converter <- converter do
                     converter :: Converter <- converter // FIXME
                     case Map.get converter_map converter.to of
                         Some another_to -> converter { to = another_to }
                         None -> break converter
-                if Set.contains output_vars converter.to
+                if List.contains output_ownership_vars converter.to
                 then List.push filtered_converters converter
                 else filtered_converters
             else filtered_converters)
-        converted_vars <- List.fold Set.empty filtered_converters (\converted_vars, converter ->
-            Set.put converted_vars converter.from)
-        filtered_members <- List.filter members (\member_info -> case member_info of
-                 M.Variant index root info -> Set.contains converted_vars info.ownership_var
-                 M.Member name root info -> Set.contains converted_vars info.ownership_var
-                 M.Extern index root info ->  Set.contains converted_vars info.ownership_var
-            )
-        ownershipinfos <- toOwnershipInfo inference_info.ownership_values
-        filtered_ownershipinfos <- List.filter ownershipinfos (\ownershipinfo -> case ownershipinfo of
-            M.Unknown v -> Set.contains input_vars v || Set.contains output_vars v
-            M.Owner v -> Set.contains input_vars v || Set.contains output_vars v
-            M.Borrower v _ -> Set.contains input_vars v || Set.contains output_vars v)
+
+        //println "Full inference info: {}" % inference_info
+
+        println "Input group vars {}" % Set.getSize input_group_vars
+        println "Output group vars {}" % Set.getSize output_group_vars
+        println "Input members: {}" % getLength input_members
+        println "Output members: {}" % getLength output_members
+        println "Ownership infos: {}" % getLength filtered_ownershipinfos
+        println "Input ownership vars: {}" % getLength input_ownership_vars
+        println "Output ownership vars: {}" % getLength output_ownership_vars
+        println "Filtered converters: {}" % getLength filtered_converters
+
         FunctionInfo inference_info.args inference_info.result
-            filtered_members filtered_converters filtered_ownershipinfos
+            (input_members + output_members) filtered_converters filtered_ownershipinfos
 
 instance Apply Converter where
     apply equal converter = Converter (apply equal converter.from) (apply equal converter.to)
+
+instance Apply TypeIdentity where
+    apply equal type_id = TypeIdentity (apply equal type_id.var) type_id.id
 
 instance Apply InferenceInfo where
     apply equal inference_info = do
@@ -272,10 +312,11 @@ instance Apply InferenceInfo where
         members <- apply equal inference_info.members
         converters <- apply equal inference_info.converters
         function_converters <- apply equal inference_info.function_converters
+        type_ids <- apply equal inference_info.type_ids
         InferenceInfo expr_type_variables var_type_variables ownership_values
             args result members converters inference_info.allocator
-            function_converters inference_info.borrow_sets
+            function_converters inference_info.borrow_sets type_ids
 
 instance EqualityStore InferenceInfo where
-    getEqualities inference_info = inference_info.members
-    putEqualities inference_info members = inference_info { members = members }
+    getMemberInfos inference_info = inference_info.members
+    putMemberInfos inference_info members = inference_info { members = members }

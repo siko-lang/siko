@@ -96,9 +96,14 @@ processConverter context converter_expr borrowed_expr from to = do
             context <- context { inference_info = inference_info }
             addOwnershipValue context to (Borrower id)
         (Borrower a, Unknown) -> addOwnershipValue context to from_kind
-        (Unknown, Owner) -> context
-        (Unknown, Unknown) -> context
-        (Unknown, Borrower _) -> context
+        (Unknown, _) -> do
+                    // if context.strict
+                    // then do
+                    //     println "Unknown found in from! {} -> {}" % (from, to)
+                    //     println "inference info {}" % context.inference_info
+                    //     panic "Boo"
+                    // else ()
+                    context
 
 preCaseCheck :: Context -> E.Expr -> Context
 preCaseCheck context expr = do
@@ -134,9 +139,11 @@ processExpr context expr = do
                     F.Normal _ | F.Extern _ -> do
                         case getFunctionInfo context.function_info_store f_id of
                             Some function_info -> do
+                                //println "{}/function info {}" % (f_id, function_info)
                                 case Map.get context.inference_info.function_converters expr_id of
                                     Some function_converters -> do
                                         List.fold context function_converters (\context, converter -> do
+                                            //println "Running function converter"
                                             processConverter context None None converter.from converter.to)
                                     None -> panic "No function converters found for {} {}" % (f_id, expr_id)
                             None -> if List.contains context.group f_id
@@ -161,12 +168,31 @@ processExpr context expr = do
             receiver_info <- getTypeVariableInfoByExprId context.inference_info receiver_id
             receiver_kind <- getOwnershipValue context receiver_info.ownership_var
             expr_kind <- getOwnershipValue context info.ownership_var
-            //println "Field access {} {} {} {}" % (receiver_kind, expr_kind, receiver_info, info)
-            case (receiver_kind, expr_kind) of
-                (Borrower _, Owner) -> addOwnershipValue context info.ownership_var receiver_kind
-                (Borrower _, Unknown) -> addOwnershipValue context info.ownership_var receiver_kind
-                (Owner, Unknown) -> addOwnershipValue context info.ownership_var receiver_kind
-                _ -> context
+            member <- List.filter context.inference_info.members (\m -> case m of
+                    M.Member n root member_info -> n == name && receiver_info.arg_group_var == root
+                    _ -> False)
+            case head member of
+                Some (M.Member name root member_info) -> do
+                    //println "Looking for ownership for {}" % info.ownership_var
+                    case getOwnership context.inference_info member_info.ownership_var of
+                        Some member_kind -> do
+                            case (receiver_kind, member_kind) of
+                                (_, Borrower _) -> addOwnershipValue context info.ownership_var member_kind
+                                (Borrower _, Owner) -> addOwnershipValue context info.ownership_var receiver_kind
+                                (Owner, _) -> addOwnershipValue context info.ownership_var receiver_kind
+                                _ -> context
+                        None -> case (receiver_kind, expr_kind) of
+                            (Borrower _, Owner) -> addOwnershipValue context info.ownership_var receiver_kind
+                            (Borrower _, Unknown) -> addOwnershipValue context info.ownership_var receiver_kind
+                            (Owner, Unknown) -> addOwnershipValue context info.ownership_var receiver_kind
+                            _ -> context
+                Some _ -> panic "member is not a member"
+                None -> do
+                    case (receiver_kind, expr_kind) of
+                        (Borrower _, Owner) -> addOwnershipValue context info.ownership_var receiver_kind
+                        (Borrower _, Unknown) -> addOwnershipValue context info.ownership_var receiver_kind
+                        (Owner, Unknown) -> addOwnershipValue context info.ownership_var receiver_kind
+                        _ -> context
         E.If _ _ _ -> context
         E.List args -> addOwnershipValue context info.ownership_var Owner
         E.Return arg -> addOwnershipValue context info.ownership_var Owner

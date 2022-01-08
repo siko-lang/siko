@@ -93,14 +93,14 @@ filterInfo config lowering_info sources = do
         //println "------------ start filterInfo {} / {}-----------" % (lowering_info, sources)
         source_group_vars <- List.fold Set.empty sources (\vars, source -> Set.put vars source.arg_group_var)
         all_group_vars <- case lowering_info of
-            Function function -> Set.collect function.members source_group_vars collectFromSource
-            Type type -> Set.collect type.members source_group_vars collectFromSource
+            Function function -> Set.collect function.members source_group_vars M.collectMember
+            Type type -> Set.collect type.members source_group_vars M.collectMember
         lowering_info <- case lowering_info of
             Function function -> do
-                members <- List.filter function.members (filterConstraint all_group_vars)
+                members <- List.filter function.members (M.isSubMember all_group_vars)
                 Function (function { members = members })
             Type type -> do
-                members <- List.filter type.members (filterConstraint all_group_vars)
+                members <- List.filter type.members (M.isSubMember all_group_vars)
                 Type (type { members = members })
         deps_map <- getDependencyMap lowering_info
         groups <- processDependencies config deps_map
@@ -111,15 +111,16 @@ filterInfo config lowering_info sources = do
         borrowers <- Map.getKeys (Map.filter borrower_map (\(k, v) -> v))
         relevants <- borrowers + sources
         //println "relevants {}" % relevants
-        vars <- List.map relevants (\info -> info.arg_group_var)
+        group_vars <- List.map relevants (\info -> info.arg_group_var)
+        ownership_vars <- List.map relevants (\info -> info.ownership_var)
         lowering_info <- case lowering_info of
             Function function -> do
-                members <- List.filter function.members (filterMember relevants vars)
-                ownershipinfos <- List.filter function.ownershipinfos (filterOwnershipInfo relevants)
+                members <- List.filter function.members (filterMember relevants group_vars)
+                ownershipinfos <- List.filter function.ownershipinfos (M.filterOwnershipInfo ownership_vars)
                 Function (function { members = members, ownershipinfos = ownershipinfos})
             Type type -> do
-                members <- List.filter type.members (filterMember relevants vars)
-                ownershipinfos <- List.filter type.ownershipinfos (filterOwnershipInfo relevants)
+                members <- List.filter type.members (filterMember relevants group_vars)
+                ownershipinfos <- List.filter type.ownershipinfos (M.filterOwnershipInfo ownership_vars)
                 Type (type { members = members, ownershipinfos = ownershipinfos })
         //println "------------ end filterInfo {} / {}-----------" % (lowering_info, sources)
         lowering_info
@@ -130,30 +131,3 @@ filterInfo config lowering_info sources = do
                 M.Variant index root info -> List.contains infos info && List.contains vars root
                 M.Member name root info -> List.contains infos info && List.contains vars root
                 M.Extern index root info -> List.contains infos info && List.contains vars root
-
-        filterConstraint :: Set TypeVariable -> M.MemberInfo -> Bool
-        filterConstraint vars constraint =
-            case constraint of
-                M.Variant index root info -> Set.contains vars root
-                M.Member name root info -> Set.contains vars root
-                M.Extern index root info -> Set.contains vars root
-
-        filterOwnershipInfo :: [TypeVariableInfo] -> M.OwnershipInfo -> Bool
-        filterOwnershipInfo vars ownershipinfo =
-            case ownershipinfo of
-                M.Unknown v -> List.fold False vars (\found, var -> found || var.ownership_var == v)
-                M.Owner v -> List.fold False vars (\found, var -> found || var.ownership_var == v)
-                M.Borrower v _ -> List.fold False vars (\found, var -> found || var.ownership_var == v)
-
-        collectFromSource :: Set TypeVariable -> M.MemberInfo -> Set TypeVariable
-        collectFromSource vars constraint =
-            case constraint of
-                M.Variant index root info -> add vars root info
-                M.Member name root info -> add vars root info
-                M.Extern index root info -> add vars root info
-            where
-                add :: Set TypeVariable -> TypeVariable -> TypeVariableInfo -> Set TypeVariable
-                add vars root info =
-                    if Set.contains vars root
-                    then Set.put vars info.arg_group_var
-                    else vars
