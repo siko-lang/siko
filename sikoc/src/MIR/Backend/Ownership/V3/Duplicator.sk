@@ -10,28 +10,34 @@ import Map
 
 data Duplicator = { vars :: Map TypeVariable TypeVariable,
                     borrows :: Map BorrowId BorrowId,
+                    inverse_borrows :: Map Int Int,
                     allocator :: Allocator }
 
 class Duplicable a where
     duplicate a :: Duplicator -> a -> (Duplicator, a)
 
 createDuplicator :: Allocator -> Duplicator
-createDuplicator allocator = Duplicator Map.empty Map.empty allocator
+createDuplicator allocator = Duplicator Map.empty Map.empty Map.empty allocator
 
 createNormalizer :: Duplicator
 createNormalizer = createDuplicator createAllocator
 
 instance Duplicable BorrowId where
     //duplicate :: Duplicator -> BorrowId -> (Duplicator, BorrowId)
-    duplicate duplicator id = do
+    duplicate duplicator orig_id = do
         borrows <- duplicator.borrows
         allocator <- duplicator.allocator
         ((allocator, id), borrows, _) <- Map.alterS (\allocator, old -> case old of
             Some old -> ((allocator, old), Some old)
             None -> do
                 (allocator, next) <- getNextBorrowId allocator
-                ((allocator, next), Some next)) allocator id borrows
-        (duplicator { borrows = borrows, allocator = allocator }, id)
+                ((allocator, next), Some next)) allocator orig_id borrows
+        BorrowId id_num <- id
+        BorrowId orig_id_num <- orig_id
+        inverse_borrows <- Map.put duplicator.inverse_borrows id_num orig_id_num
+        (duplicator { borrows = borrows,
+                      inverse_borrows = inverse_borrows,
+                      allocator = allocator }, id)
 
 instance Duplicable TypeVariable where
     //duplicate :: Duplicator -> TypeVariable -> (Duplicator, TypeVariable)

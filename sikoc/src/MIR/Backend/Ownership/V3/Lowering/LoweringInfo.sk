@@ -22,7 +22,6 @@ data FunctionLoweringInfo = { members :: [M.MemberInfo],
 data TypeLoweringInfo = { members :: [M.MemberInfo],
                           root :: TypeVariableInfo,
                           ownershipinfos :: [M.OwnershipInfo],
-                          allocator :: Allocator,
                         } deriving (PartialEq, Eq, PartialOrd, Ord, Show)
 
 data LoweringInfo = Function FunctionLoweringInfo
@@ -42,7 +41,7 @@ createTypeLoweringInfoFromInferenceInfo :: Config -> InferenceInfo -> TypeVariab
 createTypeLoweringInfoFromInferenceInfo config inference_info root = do
     //println "Creating type lowering info"
     lowering_info <- Type (TypeLoweringInfo inference_info.members root
-            (toOwnershipInfo inference_info.ownership_values) inference_info.allocator)
+            (toOwnershipInfo inference_info.ownership_values))
     filterInfo config lowering_info [root]
 
 createTypeLoweringInfoFromLoweringInfo :: Config -> LoweringInfo -> TypeVariableInfo -> LoweringInfo
@@ -50,10 +49,10 @@ createTypeLoweringInfoFromLoweringInfo config lowering_info root = do
     //println "Creating type lowering info"
     case lowering_info of
         Function info -> do
-            output <- Type (TypeLoweringInfo info.members root info.ownershipinfos info.allocator)
+            output <- Type (TypeLoweringInfo info.members root info.ownershipinfos)
             filterInfo config output [root]
         Type info -> do
-            output <- Type (TypeLoweringInfo info.members root info.ownershipinfos info.allocator)
+            output <- Type (TypeLoweringInfo info.members root info.ownershipinfos)
             filterInfo config output [root]
 
 normalizeRef :: LoweringInfo -> (LoweringInfo, Option BorrowId)
@@ -77,10 +76,9 @@ normalizeRef lowering_info =
             then List.push ownershipinfos (M.Owner type.root.ownership_var)
             else ownershipinfos
             lowering_info <- Type (type { ownershipinfos = ownershipinfos })
-            lowering_info <- normalizeLoweringInfo lowering_info
             (lowering_info, ref)
 
-normalizeLoweringInfo :: LoweringInfo -> LoweringInfo
+normalizeLoweringInfo :: LoweringInfo -> (LoweringInfo, Duplicator)
 normalizeLoweringInfo lowering_info =
     // FIXME: we need a better normalization algorithm
     // that is more robust and does not care about ordering
@@ -93,7 +91,7 @@ normalizeLoweringInfo lowering_info =
             (duplicator, ownershipinfos) <- List.mapS duplicator info.ownershipinfos duplicate
             members <- members |> sort
             ownershipinfos <- ownershipinfos |> sort
-            Function (FunctionLoweringInfo members args result ownershipinfos duplicator.allocator)
+            (Function (FunctionLoweringInfo members args result ownershipinfos duplicator.allocator), duplicator)
         Type info -> do
             duplicator <- createNormalizer
             (duplicator, root) <- duplicate duplicator info.root
@@ -101,7 +99,7 @@ normalizeLoweringInfo lowering_info =
             (duplicator, ownershipinfos) <- List.mapS duplicator info.ownershipinfos duplicate
             members <- members |> sort
             ownershipinfos <- ownershipinfos |> sort
-            Type (TypeLoweringInfo members root ownershipinfos duplicator.allocator)
+            (Type (TypeLoweringInfo members root ownershipinfos), duplicator)
 
 getLoweringInfoForArg :: Config -> LoweringInfo -> Int -> LoweringInfo
 getLoweringInfoForArg config lowering_info index = do
@@ -131,7 +129,7 @@ getLoweringInfoForMember config lowering_info name = do
                 None -> do
                     allocator <- createAllocator
                     (allocator, root) <- getNextTypeVariableInfo allocator
-                    Type (TypeLoweringInfo [] root [M.Owner root.ownership_var] allocator)
+                    Type (TypeLoweringInfo [] root [M.Owner root.ownership_var])
 
 getLoweringInfoForVariant :: Config -> LoweringInfo -> Int -> LoweringInfo
 getLoweringInfoForVariant config lowering_info index = do
@@ -147,7 +145,7 @@ getLoweringInfoForVariant config lowering_info index = do
                 None -> do
                     allocator <- createAllocator
                     (allocator, root) <- getNextTypeVariableInfo allocator
-                    Type (TypeLoweringInfo [] root [M.Owner root.ownership_var] allocator)
+                    Type (TypeLoweringInfo [] root [M.Owner root.ownership_var])
 
 getLoweringInfoForExtern :: Config -> LoweringInfo -> Int -> LoweringInfo
 getLoweringInfoForExtern config lowering_info index = do
@@ -163,4 +161,4 @@ getLoweringInfoForExtern config lowering_info index = do
                 None -> do
                     allocator <- createAllocator
                     (allocator, root) <- getNextTypeVariableInfo allocator
-                    Type (TypeLoweringInfo [] root [M.Owner root.ownership_var] allocator)
+                    Type (TypeLoweringInfo [] root [M.Owner root.ownership_var])

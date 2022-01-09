@@ -5,40 +5,48 @@ import Siko.MIR.Backend.Ownership.V3.Lowering.Naming
 import Siko.MIR.Backend.Ownership.V3.Lowering.LoweringInfo
 import Siko.MIR.Backend.Ownership.V3.TypeVariableInfo
 import Siko.MIR.Backend.Ownership.V3.BorrowId
+import Siko.MIR.Backend.Ownership.V3.Duplicator
 import Siko.MIR.Backend.Ownership.V3.MemberInfo as M
 import Siko.LIR.Type as LT
 import Siko.MIR.Type as MT
 import Siko.LIR.Function as LF
 import Siko.MIR.Function as MF
+import Map
+
+remapLifetime :: Duplicator -> LT.Lifetime -> LT.Lifetime
+remapLifetime  duplicator LT.Lifetime id =
+    case get duplicator.inverse_borrows id of
+        Some id -> LT.Lifetime id
+        None -> panic "Could not find lifetime id in inverse_borrows map of duplicator"
 
 lowerType :: Context -> LoweringInfo -> MT.Type -> (Context, LT.Type)
 lowerType context lowering_info mir_type = do
     case mir_type of
         MT.Record id _ -> do
             //println "Record input {}" % lowering_info
-            normalized_li <- normalizeLoweringInfo lowering_info
-            (normalized_li, _) <- normalizeRef normalized_li
+            (lowering_info, duplicator) <- normalizeLoweringInfo lowering_info
             (lowering_info, ref) <- normalizeRef lowering_info
-            lir_key <- RecordKey id normalized_li
+            lir_key <- RecordKey id lowering_info
             context <- addItem context lir_key
             (context, lir_id) <- getLIRId context lir_key
             //println "lowerType: {} {} {}" % (lir_id, lir_key, lowering_info)
             lifetimes <- collectLifetimes lowering_info
+            lifetimes <- List.map lifetimes (remapLifetime duplicator)
             case ref of
-                Some (BorrowId id) -> (context, LT.Ref (LT.Lifetime id) (LT.Record lir_id lifetimes))
+                Some (BorrowId id) -> (context, LT.Ref (remapLifetime duplicator (LT.Lifetime id)) (LT.Record lir_id lifetimes))
                 None -> (context, LT.Record lir_id lifetimes)
         MT.Adt id _ -> do
             //println "Adt input {}" % lowering_info
-            normalized_li <- normalizeLoweringInfo lowering_info
-            (normalized_li, _) <- normalizeRef normalized_li
+            (lowering_info, duplicator) <- normalizeLoweringInfo lowering_info
             (lowering_info, ref) <- normalizeRef lowering_info
-            lir_key <- AdtKey id normalized_li
+            lir_key <- AdtKey id lowering_info
             context <- addItem context lir_key
             (context, lir_id) <- getLIRId context lir_key
             //println "lowerType: {} {}" % (lir_id, lir_key)
             lifetimes <- collectLifetimes lowering_info
+            lifetimes <- List.map lifetimes (remapLifetime duplicator)
             case ref of
-                Some (BorrowId id) -> (context, LT.Ref (LT.Lifetime id) (LT.Adt lir_id lifetimes))
+                Some (BorrowId id) -> (context, LT.Ref (remapLifetime duplicator (LT.Lifetime id)) (LT.Adt lir_id lifetimes))
                 None -> (context, LT.Adt lir_id lifetimes)
         _ -> (context, LT.Never)
 

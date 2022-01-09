@@ -55,7 +55,7 @@ lowerExpr lowering_context context expr = do
     ME.Expr s_expr expr_type expr_id <- expr
     expr_info <- getTypeVariableInfoByExprId lowering_context.inference_info expr_id
     lowering_info <- createTypeLoweringInfoFromInferenceInfo context.config lowering_context.inference_info expr_info
-    lowering_info <- normalizeLoweringInfo lowering_info
+    (lowering_info, _) <- normalizeLoweringInfo lowering_info
     //println "expr {} type {} {}" % (ME.short expr, expr_type, lowering_info)
     (context, lir_type) <- lowerType context lowering_info expr_type
     (context, lir_s_expr) <- case s_expr of
@@ -74,7 +74,7 @@ lowerExpr lowering_context context expr = do
             // println "Full inference info {}" % lowering_context.inference_info
             // println "Calling {} Lowering info {}" % (f_id, lowering_info)
             // println "-----------------------------------------"
-            lowering_info <- normalizeLoweringInfo lowering_info
+            (lowering_info, _) <- normalizeLoweringInfo lowering_info
             lir_key <- FunctionKey f_id lowering_info
             (context, lir_id) <- getLIRId context lir_key
             context <- addItem context lir_key
@@ -159,7 +159,7 @@ lowerExpr lowering_context context expr = do
             ME.Expr _ _ body_id <- body
             body_info <- getTypeVariableInfoByExprId lowering_context.inference_info body_id
             lowering_info <- createTypeLoweringInfoFromInferenceInfo context.config lowering_context.inference_info body_info
-            lowering_info <- normalizeLoweringInfo lowering_info
+            (lowering_info, _) <- normalizeLoweringInfo lowering_info
             (context, lir_body) <- lowerExpr lowering_context context body
             (context, lir_cases) <- List.mapS context cases (lowerCase lowering_context lowering_info)
             (context, LE.CaseOf lir_body lir_cases)
