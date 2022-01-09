@@ -57,9 +57,12 @@ processExpr :: Context -> E.Expr -> (Context, E.Expr)
 processExpr context expr = do
     E.Expr s_expr expr_type expr_id <- expr
     inference_info <- context.inference_info
-    info <- getTypeVariableInfoByExprId inference_info expr_id
-    inference_info <- addTypeIdentity inference_info (TypeIdentity info.ownership_var (T.getIdentity expr_type))
-    context <- context { inference_info = inference_info }
+    context <- case expr_type of
+        T.Adt _ _ | T.Record _ _ -> do
+            info <- getTypeVariableInfoByExprId inference_info expr_id
+            inference_info <- addTypeIdentity inference_info (TypeIdentity info.ownership_var (T.getIdentity expr_type))
+            context { inference_info = inference_info }
+        _ -> context
     case s_expr of
         E.Do items -> do
             last_item_id <- getExprId (last items)
@@ -222,7 +225,6 @@ data ChainMember = { id :: P.Identity, info :: TypeVariableInfo }
 
 buildChain :: P.Program -> InferenceInfo -> [Equal] -> TypeVariableInfo -> P.Identity -> [ChainMember] -> (InferenceInfo, [Equal])
 buildChain program inference_info equals info id chain = do
-    //println "Entering loop"
     (equals, changed) <- loop (equals, changed, index) <- (equals, False, 0) do
         if index >= getLength chain
         then break (equals, changed)
@@ -232,7 +234,6 @@ buildChain program inference_info equals info id chain = do
             then (push equals (Equal info.arg_group_var chain_member.info.arg_group_var), True)
             else (equals, changed)
             (equals, changed, index + 1)
-    //println "After loop"
     if changed
     then (inference_info, equals)
     else do
@@ -241,8 +242,6 @@ buildChain program inference_info equals info id chain = do
             M.Variant _ root m_info -> root == info.arg_group_var
             M.Member _ root m_info -> root == info.arg_group_var
             M.Extern _ root m_info -> root == info.arg_group_var)
-        //println "all members: {}" % inference_info.members
-        //println "members: {}" % members
         List.fold (inference_info, equals) members (\(inference_info, equals), m -> case m of
             M.Variant index root m_info -> do
                 adt <- P.getAdt program id
@@ -263,18 +262,13 @@ fuseCycles program inference_info = do
         M.Variant _ _ info -> List.push infos info
         M.Member _ _ info -> List.push infos info
         M.Extern _ _ info -> List.push infos info)
-    //println "fuseCycles: all infos {}/{}" % (getLength infos, infos)
     (inference_info, equals) <- List.fold (inference_info, []) infos (\(inference_info, equals), info -> do
-        //println "Checking info {}" % info
         case getTypeIdentity inference_info info.ownership_var of
             Some type_id -> do
                 type_id :: TypeIdentity <- type_id // FIXME
-                //println "{} has type {}" % (info, type_id.id)
                 buildChain program inference_info equals info type_id.id []
             None -> (inference_info, equals))
-    println "before processEquals {}" % equals
     inference_info <- processEquals equals inference_info
-    //println "after processEquals"
     inference_info
 
 processEqualities :: [P.Identity] -> InferenceInfo -> FunctionInfoStore -> P.Program -> E.Expr -> InferenceInfo
@@ -288,8 +282,7 @@ processEqualities group inference_info function_info_store program body = do
     equals <- context.equals
     inference_info <- processEquals equals inference_info
     type_ids <- inference_info.type_ids |> sort |> dedup
-    inference_info <- inference_info { type_ids = type_ids }
-    println "Before fuseCycles"
+    converters <- inference_info.converters |> sort |> dedup
+    inference_info <- inference_info { type_ids = type_ids, converters = converters }
     inference_info <- fuseCycles program inference_info
-    println "After fuseCycles"
     inference_info

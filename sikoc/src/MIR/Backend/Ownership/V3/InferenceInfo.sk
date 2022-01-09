@@ -14,7 +14,7 @@ import Siko.MIR.Backend.Ownership.V3.EqualitySolver
 
 data Converter = { from :: TypeVariable,
                    to :: TypeVariable,
-                 } deriving (PartialEq, Eq, Show)
+                 } deriving (PartialEq, Eq, PartialOrd, Ord, Show)
 
 data Borrow = Local E.ExprId
             | External BorrowId
@@ -231,6 +231,14 @@ collectRelevantVars members vars =
 
 toFunctionInfo :: InferenceInfo -> FunctionInfo
 toFunctionInfo inference_info = do
+        // println "toFunctionInfo"
+        // println "members: {}" % getLength inference_info.members
+        // println "converters: {}" % getLength inference_info.converters
+        // println "expr_type_variables: {}" % Map.getSize inference_info.expr_type_variables
+        // println "var_type_variables: {}" % Map.getSize inference_info.var_type_variables
+        // println "ownership_values: {}" % Map.getSize inference_info.ownership_values
+        // println "borrow_sets: {}" % Map.getSize inference_info.borrow_sets
+
         members <- inference_info.members
         converters <- inference_info.converters
         converter_map <- List.fold Map.empty converters (\converter_map, converter ->
@@ -275,23 +283,27 @@ toFunctionInfo inference_info = do
                 converter <- loop converter <- converter do
                     converter :: Converter <- converter // FIXME
                     case Map.get converter_map converter.to of
-                        Some another_to -> converter { to = another_to }
+                        Some another_to -> do
+                            if another_to == converter.to // FIXME: why does this happen?? investigate/fix
+                            then break converter
+                            else do
+                                //println "Switching to {} -> {}" % (converter.to, another_to)
+                                converter { to = another_to }
                         None -> break converter
                 if List.contains output_ownership_vars converter.to
                 then List.push filtered_converters converter
                 else filtered_converters
             else filtered_converters)
-
         //println "Full inference info: {}" % inference_info
 
-        println "Input group vars {}" % Set.getSize input_group_vars
-        println "Output group vars {}" % Set.getSize output_group_vars
-        println "Input members: {}" % getLength input_members
-        println "Output members: {}" % getLength output_members
-        println "Ownership infos: {}" % getLength filtered_ownershipinfos
-        println "Input ownership vars: {}" % getLength input_ownership_vars
-        println "Output ownership vars: {}" % getLength output_ownership_vars
-        println "Filtered converters: {}" % getLength filtered_converters
+        // println "Input group vars {}" % Set.getSize input_group_vars
+        // println "Output group vars {}" % Set.getSize output_group_vars
+        // println "Input members: {}" % getLength input_members
+        // println "Output members: {}" % getLength output_members
+        // println "Ownership infos: {}" % getLength filtered_ownershipinfos
+        // println "Input ownership vars: {}" % getLength input_ownership_vars
+        // println "Output ownership vars: {}" % getLength output_ownership_vars
+        // println "Filtered converters: {}" % getLength filtered_converters
 
         FunctionInfo inference_info.args inference_info.result
             (input_members + output_members) filtered_converters filtered_ownershipinfos

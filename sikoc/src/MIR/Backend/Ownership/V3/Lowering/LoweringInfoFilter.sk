@@ -71,20 +71,23 @@ isBorrower lowering_info info =
                 _ -> is_borrower
             )
 
-isDepBorrower :: Map TypeVariableInfo Bool -> Map TypeVariableInfo [TypeVariableInfo] -> TypeVariableInfo -> LoweringInfo -> Bool
-isDepBorrower borrower_map deps_map item lowering_info = do
+isDepBorrower :: [TypeVariableInfo] -> Map TypeVariableInfo Bool -> Map TypeVariableInfo [TypeVariableInfo] -> TypeVariableInfo -> LoweringInfo -> Bool
+isDepBorrower group borrower_map deps_map item lowering_info = do
     case get deps_map item of
         Some deps -> do
             List.fold False deps (\is_borrower, dep ->
-                case get borrower_map dep of
-                    Some b -> is_borrower || b
-                    None -> panic "dep {} not found in borrower_map" % dep)
+                if List.contains group dep
+                then is_borrower
+                else do
+                    case get borrower_map dep of
+                        Some b -> is_borrower || b
+                        None -> panic "dep {} not found in borrower_map" % dep)
         None -> panic "{} not found in deps_map" % item
 
 isBorrowerGroup :: Map TypeVariableInfo Bool -> Map TypeVariableInfo [TypeVariableInfo] -> [TypeVariableInfo] -> LoweringInfo -> Bool
 isBorrowerGroup borrower_map deps_map group lowering_info = do
     List.fold False group (\is_borrower, item -> do
-        if isBorrower lowering_info item || isDepBorrower borrower_map deps_map item lowering_info
+        if isBorrower lowering_info item || isDepBorrower group borrower_map deps_map item lowering_info
         then True
         else is_borrower)
 
