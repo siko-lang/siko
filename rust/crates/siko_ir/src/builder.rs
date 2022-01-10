@@ -634,7 +634,7 @@ impl<'a> Builder<'a> {
                 let tuple_pattern_id = self.add_pattern(tuple_pattern, location, tuple_ty.clone());
                 let case_branch = if index0 == index1 {
                     let mut true_branch = eq_fn(self, location);
-                    for (value_0, value_1) in values0.iter().zip(values1.iter()) {
+                    for (value_0, value_1) in values0.iter().rev().zip(values1.iter().rev()) {
                         true_branch = cmp_fn(
                             self,
                             class_member_id,
