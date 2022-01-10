@@ -64,7 +64,7 @@ normalizeRef lowering_info =
             (ownershipinfos, ref, found) <- List.fold ([], None, False) ownershipinfos
                 (\(ownershipinfos, ref, found), ownershipinfo ->
                     case ownershipinfo of
-                        M.Unknown v -> panic "unknown found in normalizeRef"
+                        M.Unknown v -> (List.push ownershipinfos (M.Owner v), ref, found)
                         M.Borrower v id -> if v == type.root.ownership_var
                             then (List.push ownershipinfos (M.Owner v), Some id, True)
                             else (List.push ownershipinfos ownershipinfo, ref, found)
