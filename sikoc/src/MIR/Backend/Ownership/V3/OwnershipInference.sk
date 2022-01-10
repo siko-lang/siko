@@ -19,7 +19,6 @@ data Context = { inference_info :: InferenceInfo,
                  borrow_info :: BorrowInfo,
                  function_info_store :: FunctionInfoStore,
                  group :: [P.Identity],
-                 strict :: Bool,
                  invalid_borrows :: Set E.ExprId,
                  forced_clones :: Set TypeVariable,
                  cloning_converters :: Set E.ExprId,
@@ -51,6 +50,7 @@ processConverter :: Context -> Option E.ExprId -> Option E.ExprId -> TypeVariabl
 processConverter context converter_expr borrowed_expr from to = do
     from_kind <- getOwnershipValue context from
     to_kind <- getOwnershipValue context to
+    //println "Checking converter {} {} / {} {}" % (from, to, from_kind, to_kind)
     case (from_kind, to_kind) of
         (Owner, Owner) ->
             case borrowed_expr of
@@ -92,18 +92,29 @@ processConverter context converter_expr borrowed_expr from to = do
                 None -> addOwnershipValue context to from_kind
         (Borrower a, Owner) -> context
         (Borrower a, Borrower b) -> do
-            (inference_info, id) <- mergeBorrowSets context.inference_info a b
-            context <- context { inference_info = inference_info }
-            addOwnershipValue context to (Borrower id)
-        (Borrower a, Unknown) -> addOwnershipValue context to from_kind
-        (Unknown, _) -> do
-                    // if context.strict
-                    // then do
-                    //     println "Unknown found in from! {} -> {}" % (from, to)
-                    //     println "inference info {}" % context.inference_info
-                    //     panic "Boo"
-                    // else ()
-                    context
+            if Set.contains context.forced_clones to
+            then do
+                context <- case converter_expr of
+                    Some converter_expr -> do
+                        cloning_converters <- Set.put context.cloning_converters converter_expr
+                        context { cloning_converters = cloning_converters }
+                    None -> context
+                addOwnershipValue context to Owner
+            else do
+                (inference_info, id) <- mergeBorrowSets context.inference_info a b
+                context <- context { inference_info = inference_info }
+                addOwnershipValue context to (Borrower id)
+        (Borrower a, Unknown) -> do
+            if Set.contains context.forced_clones to
+            then do
+                context <- case converter_expr of
+                    Some converter_expr -> do
+                        cloning_converters <- Set.put context.cloning_converters converter_expr
+                        context { cloning_converters = cloning_converters }
+                    None -> context
+                addOwnershipValue context to Owner
+            else addOwnershipValue context to from_kind
+        (Unknown, _) -> context
 
 preCaseCheck :: Context -> E.Expr -> Context
 preCaseCheck context expr = do
@@ -221,15 +232,6 @@ processExpr context expr = do
                         else None
                 _ -> None
             processConverter context (Some expr_id) borrowed_var arg_info.ownership_var info.ownership_var
-    if context.strict
-    then do
-        o1 <- getOwnershipValue context info.ownership_var
-        case o1 of
-            Unknown -> do
-                println "InferOwnership {} {} {}" % (E.short expr, info, o1)
-                panic "Unknown found in strict mode"
-            _ -> ()
-    else ()
     context <- case Map.get context.borrow_info.invalidations expr_id of
         Some invalidations -> do
             invalid_borrows <- List.fold context.invalid_borrows invalidations (\invalid_borrows, invalidation ->
@@ -281,12 +283,11 @@ inferOwnership :: [P.Identity] ->
                   P.Program ->
                   E.Expr ->
                   BorrowInfo ->
-                  Bool ->
                   (InferenceInfo, Set E.ExprId)
-inferOwnership group function_info_store inference_info program body borrow_info strict =
+inferOwnership group function_info_store inference_info program body borrow_info =
     loop (forced_clones, cloning_converters) <- (Set.empty, Set.empty) do
         (inference_info, new_forced_clones, cloning_converters) <- infer group function_info_store inference_info
-                                                     program body borrow_info strict forced_clones cloning_converters
+                                                     program body borrow_info forced_clones cloning_converters
         if new_forced_clones != forced_clones
         then (new_forced_clones, cloning_converters)
         else break (inference_info, cloning_converters)
@@ -297,32 +298,15 @@ inferOwnership group function_info_store inference_info program body borrow_info
                  P.Program ->
                  E.Expr ->
                  BorrowInfo ->
-                 Bool ->
                  Set TypeVariable ->
                  Set E.ExprId ->
                  (InferenceInfo, Set TypeVariable, Set E.ExprId)
-        infer group function_info_store inference_info program body borrow_info strict forced_clones cloning_converters = do
+        infer group function_info_store inference_info program body borrow_info forced_clones cloning_converters = do
         context <- Context inference_info program borrow_info
-                           function_info_store group strict Set.empty forced_clones cloning_converters False
+                           function_info_store group Set.empty forced_clones cloning_converters False
         (context, body) <- traverse context body (Some initializeExpr) None None
         (context, body) <- traverse context body (Some processExpr) None (Some preCaseCheck)
         // println "----------- BEGIN"
         // (context, body) <- traverse context body (Some dumpExpr) None None
         // println "----------- END"
-        if strict
-        then do
-            found <- Map.fold False context.inference_info.expr_type_variables (\found, (_, info) -> do
-            case getOwnership context.inference_info info.ownership_var of
-                Some Unknown -> True
-                _ -> found)
-            found <- Map.fold found context.inference_info.var_type_variables (\found, (_, info) -> do
-            case getOwnership context.inference_info info.ownership_var of
-                Some Unknown -> True
-                _ -> found)
-            if found
-            then do
-                (context, body) <- traverse context body (Some dumpExpr) None None
-                panic "unknown found in strict inferOwnership {}" % context.inference_info
-            else ()
-        else ()
         (context.inference_info, context.forced_clones, context.cloning_converters)
