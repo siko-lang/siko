@@ -243,14 +243,6 @@ toFunctionInfo inference_info = do
         converters <- inference_info.converters
         converter_map <- List.fold Map.empty converters (\converter_map, converter ->
             Map.put converter_map converter.from converter.to)
-        input_vars <- Set.empty
-        input_vars <- List.fold input_vars inference_info.args (\input_vars, info -> do
-            input_vars <- Set.put input_vars info.ownership_var
-            input_vars <- Set.put input_vars info.arg_group_var
-            input_vars)
-        output_vars <- Set.empty
-        output_vars <- Set.put output_vars inference_info.result.ownership_var
-        output_vars <- Set.put output_vars inference_info.result.arg_group_var
         input_group_vars <- List.fold Set.empty inference_info.args
             (\input_group_vars, info -> Set.put input_group_vars info.arg_group_var)
         output_group_vars <- Set.put Set.empty inference_info.result.arg_group_var
