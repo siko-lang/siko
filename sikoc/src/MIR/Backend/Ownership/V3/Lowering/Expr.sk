@@ -125,8 +125,13 @@ lowerExpr lowering_context context expr = do
             (context, lir_receiver) <- lowerExpr lowering_context context receiver
             if field.grouped
             then do
-                field_access <- LE.Expr (LE.FieldAccess name lir_receiver) lir_type (LE.ExprId 0)
-                (context, LE.Deref field_access)
+                case lir_type of
+                    LT.Ref _ _ -> do
+                        field_access <- LE.Expr (LE.FieldAccess name lir_receiver) lir_type (LE.ExprId 0)
+                        (context, LE.Ref field_access)
+                    _ -> do
+                        field_access <- LE.Expr (LE.FieldAccess name lir_receiver) lir_type (LE.ExprId 0)
+                        (context, LE.Deref field_access)
             else case lir_type of
                 LT.Ref _ _ -> do
                     field_access <- LE.Expr (LE.FieldAccess name lir_receiver) lir_type (LE.ExprId 0)
