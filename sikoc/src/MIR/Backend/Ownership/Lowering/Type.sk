@@ -1,12 +1,12 @@
-module Siko.MIR.Backend.Ownership.V3.Lowering.Type where
+module Siko.MIR.Backend.Ownership.Lowering.Type where
 
-import Siko.MIR.Backend.Ownership.V3.Lowering.Context
-import Siko.MIR.Backend.Ownership.V3.Lowering.Naming
-import Siko.MIR.Backend.Ownership.V3.Lowering.LoweringInfo
-import Siko.MIR.Backend.Ownership.V3.TypeVariableInfo
-import Siko.MIR.Backend.Ownership.V3.BorrowId
-import Siko.MIR.Backend.Ownership.V3.Duplicator
-import Siko.MIR.Backend.Ownership.V3.MemberInfo as M
+import Siko.MIR.Backend.Ownership.Lowering.Context
+import Siko.MIR.Backend.Ownership.Lowering.Naming
+import Siko.MIR.Backend.Ownership.Lowering.LoweringInfo
+import Siko.MIR.Backend.Ownership.TypeVariableInfo
+import Siko.MIR.Backend.Ownership.BorrowId
+import Siko.MIR.Backend.Ownership.Duplicator
+import Siko.MIR.Backend.Ownership.MemberInfo as M
 import Siko.LIR.Type as LT
 import Siko.MIR.Type as MT
 import Siko.LIR.Function as LF
@@ -22,7 +22,7 @@ remapLifetime  duplicator LT.Lifetime id =
 lowerType :: Context -> LoweringInfo -> MT.Type -> (Context, LT.Type)
 lowerType context lowering_info mir_type = do
     case mir_type of
-        MT.Record id _ -> do
+        MT.Record id -> do
             //println "Record input {}" % lowering_info
             (lowering_info, duplicator) <- normalizeLoweringInfo lowering_info
             (lowering_info, ref) <- normalizeRef lowering_info
@@ -35,7 +35,7 @@ lowerType context lowering_info mir_type = do
             case ref of
                 Some (BorrowId id) -> (context, LT.Ref (remapLifetime duplicator (LT.Lifetime id)) (LT.Record lir_id lifetimes))
                 None -> (context, LT.Record lir_id lifetimes)
-        MT.Adt id _ -> do
+        MT.Adt id -> do
             //println "Adt input {}" % lowering_info
             (lowering_info, duplicator) <- normalizeLoweringInfo lowering_info
             (lowering_info, ref) <- normalizeRef lowering_info

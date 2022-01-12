@@ -1,11 +1,7 @@
 module Siko.MIR.Backend where
 
-import Siko.MIR.Backend.Ownership.Initialization as Initialization
 import Siko.MIR.Backend.Ownership.Inference as Inference
-import Siko.MIR.Backend.Ownership.V3.Inference as InferenceV3
-import Siko.MIR.Backend.Ownership.AddConverter as AddConverter
-import Siko.MIR.Backend.Ownership.AddConverter2 as AddConverter2
-import Siko.MIR.Backend.Instantiation as Instantiation
+import Siko.MIR.Backend.Ownership.AddConverter2 as AddConverter
 import Siko.MIR.Backend.SanityCheck as SanityCheck
 import Siko.MIR.Backend.Rebinder as Rebinder
 import Siko.MIR.Backend.Simplifier as Simplifier
@@ -134,26 +130,9 @@ processProgram config mir_program = do
     trace config "SanityCheck2.."
     SanityCheck.processProgram mir_program
     (data_groups, function_groups) <- createGroups config mir_program
-    trace config "AddConverter2.."
-    v3_mir_program <- AddConverter2.processProgram config mir_program
-    trace config "InferenceV3 start.."
-    v3_lir_program <- InferenceV3.processProgram config v3_mir_program function_groups
-    trace config "InferenceV3 end.."
-    return v3_lir_program
     trace config "AddConverter.."
     mir_program <- AddConverter.processProgram config mir_program
-    dumpProgram config mir_program (MIR "addconverter")
-    //writeTextFile (getOutputFileName config (MIRJson "base")) (MP.dumpJson mir_program)
-    trace config "Initialization.."
-    (context, mir_program) <- Initialization.initializeOwnership config mir_program data_groups
-    dumpProgram config mir_program (MIR "initialization")
-    trace config "Inference.."
-    (inference_info_store, context) <- Inference.processProgram config mir_program context function_groups
-    trace config "Instantiation.."
-    lir_program <- Instantiation.processProgram config mir_program inference_info_store context
-    if config.dump
-    then do
-        s <- LP.dump lir_program
-        writeTextFile (getOutputFileName config (LIR 0)) s
-    else ()
-    lir_program
+    trace config "Inference start.."
+    lir_program <- Inference.processProgram config mir_program function_groups
+    trace config "Inference end.."
+    return lir_program

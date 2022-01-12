@@ -1,4 +1,4 @@
-module Siko.MIR.Backend.Ownership.V3.Inference where
+module Siko.MIR.Backend.Ownership.Inference where
 
 import Siko.MIR.Program as P
 import Siko.LIR.Program as LP
@@ -10,18 +10,18 @@ import Siko.Config
 import Siko.Trace
 import Siko.Util.DependencyProcessor
 
-import Siko.MIR.Backend.Ownership.V3.Lowering
-import Siko.MIR.Backend.Ownership.V3.InferenceInfo
-import Siko.MIR.Backend.Ownership.V3.Initializer
-import Siko.MIR.Backend.Ownership.V3.EqualityGeneration
-import Siko.MIR.Backend.Ownership.V3.OwnershipInference
-import Siko.MIR.Backend.Ownership.V3.BorrowChecker
-import Siko.MIR.Backend.Ownership.V3.FunctionInfoStore
-import Siko.MIR.Backend.Ownership.V3.FunctionInfo
-import Siko.MIR.Backend.Ownership.V3.ExternProcessor
-import Siko.MIR.Backend.Ownership.V3.Allocator
-import Siko.MIR.Backend.Ownership.V3.TypeVariableInfo
-import Siko.MIR.Backend.Ownership.V3.MemberInfo
+import Siko.MIR.Backend.Ownership.Lowering
+import Siko.MIR.Backend.Ownership.InferenceInfo
+import Siko.MIR.Backend.Ownership.Initializer
+import Siko.MIR.Backend.Ownership.EqualityGeneration
+import Siko.MIR.Backend.Ownership.OwnershipInference
+import Siko.MIR.Backend.Ownership.BorrowChecker
+import Siko.MIR.Backend.Ownership.FunctionInfoStore
+import Siko.MIR.Backend.Ownership.FunctionInfo
+import Siko.MIR.Backend.Ownership.ExternProcessor
+import Siko.MIR.Backend.Ownership.Allocator
+import Siko.MIR.Backend.Ownership.TypeVariableInfo
+import Siko.MIR.Backend.Ownership.MemberInfo
 
 data Context = { config :: Config,
                  program :: P.Program,
@@ -30,7 +30,7 @@ data Context = { config :: Config,
 createRecordCtorFunctionInfo :: Context -> T.Type -> FunctionInfo
 createRecordCtorFunctionInfo context type =
     case type of
-        T.Record id _ -> do
+        T.Record id -> do
             record <- P.getRecord context.program id
             allocator <- createAllocator
             (allocator, result) <- getNextTypeVariableInfo allocator
@@ -46,11 +46,11 @@ createRecordCtorFunctionInfo context type =
 createVariantctorFunctionInfo :: Context -> Int -> T.Type -> FunctionInfo
 createVariantctorFunctionInfo context index type =
     case type of
-        T.Adt id _ -> do
+        T.Adt id -> do
             adt <- P.getAdt context.program id
             variant <- atIndex adt.variants index
             case variant.type of
-                T.Record id _ -> do
+                T.Record id -> do
                     record <- P.getRecord context.program id
                     allocator <- createAllocator
                     (allocator, adt_result) <- getNextTypeVariableInfo allocator
@@ -122,7 +122,7 @@ processFunctionGroup context group =
 
 processProgram :: Config -> P.Program -> [DependencyGroup P.Identity] -> LP.Program
 processProgram config program function_groups = do
-    trace config "InferenceV3"
+    trace config "Inference"
     context <- Context config program createFunctionInfoStore
     context <- List.fold context function_groups (\context, group -> processFunctionGroup context group.items)
     lir_program <- lowerProgram program context.config context.function_info_store

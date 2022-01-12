@@ -1,74 +1,26 @@
 module Siko.MIR.Type where
 
 import Siko.MIR.Program
-import List2
 
-data OwnershipVar = OwnershipVar Int deriving (PartialEq, Eq, PartialOrd, Ord)
-
-data OwnershipKind = VarKind OwnershipVar
-                   | BorrowKind Int
-                   | OwnerKind
-                   | BoxedKind
-                   deriving (PartialEq, Eq, PartialOrd, Ord)
-
-data Type = Adt Identity (List2 OwnershipKind)
-          | Record Identity (List2 OwnershipKind)
+data Type = Adt Identity
+          | Record Identity
           | Ref Int Type
           | Owner Type
-          | Boxed Type
           | Never
-          | Var OwnershipKind Type
           deriving (PartialEq, Eq, PartialOrd, Ord)
-
-instance Show OwnershipVar where
-    show (OwnershipVar i) = "{}" % i
-
-instance Show OwnershipKind where
-    show k = case k of
-        VarKind v -> "v{}" % v
-        BorrowKind index -> "&^l{}" % index
-        OwnerKind -> "~"
-        BoxedKind -> "*"
-
-printArgs :: List2 OwnershipKind -> String
-printArgs args = if isEmpty args then "" else " " + join args " "
 
 instance Show Type where
     show t = case t of
-        Adt id args -> "{}{}" % (id, printArgs args)
-        Record id args -> "{}{}" % (id, printArgs args)
+        Adt id -> "{}" % id
+        Record id -> "{}" % id
         Ref index t -> "&^{} {}" % (index, t)
         Owner t -> "~{}" % t
-        Boxed t -> "*{}" % t
         Never -> "!"
-        Var i t -> "{} {}" % (i, t)
 
 getIdentity :: Type -> Identity
 getIdentity type = case type of
-    Adt id _ -> id
-    Record id _ -> id
+    Adt id -> id
+    Record id -> id
     Ref _ t -> getIdentity t
     Owner t -> getIdentity t
-    Boxed t -> getIdentity t
     Never -> panic "getIdentity called on Never!"
-    Var i t -> getIdentity t
-
-collectOwnershipKinds :: Type -> List2 OwnershipKind
-collectOwnershipKinds type = case type of
-    Adt id args -> args
-    Record id args -> args
-    Ref i t -> single (BorrowKind i) + collectOwnershipKinds t
-    Owner t -> single OwnerKind + collectOwnershipKinds t
-    Boxed t -> single BoxedKind + collectOwnershipKinds t
-    Never -> List2.empty
-    Var i t -> single i + collectOwnershipKinds t
-
-collectOwnershipArgs :: Type -> List2 OwnershipKind
-collectOwnershipArgs type = case type of
-    Adt id args -> args
-    Record id args -> args
-    Ref _ t -> collectOwnershipKinds t
-    Owner t -> collectOwnershipKinds t
-    Boxed t -> collectOwnershipKinds t
-    Never -> List2.empty
-    Var i t -> collectOwnershipKinds t

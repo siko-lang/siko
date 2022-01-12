@@ -11,9 +11,6 @@ import Map2 (Map2)
 import Map
 import Set
 
-import List2 as List2
-import List2 (List2)
-
 data Command = SelectCase Int E.Var deriving (Show)
 
 data Context = { program :: P.Program,
@@ -365,7 +362,7 @@ updateValueType context value orig_type =
                 Record id fields variant_info -> do
                     case variant_info of
                         Some (VariantInfo adt_id index) -> do
-                            new_type <- T.Record id List2.empty
+                            new_type <- T.Record id
                             adt <- P.getAdt context.program adt_id
                             variant <- atIndex adt.variants index
                             orig_record_id <- T.getIdentity variant.type
@@ -379,7 +376,7 @@ updateValueType context value orig_type =
                             context <- addRecord context id fields
                             (context, new_type)
                         None -> do
-                            new_type <- T.Record id List2.empty
+                            new_type <- T.Record id
                             orig_record_id <- T.getIdentity orig_type
                             record <- P.getRecord context.program orig_record_id
                             (context, fields) <- List.zipS (context, []) fields record.fields (\(context, fields), value, field -> do

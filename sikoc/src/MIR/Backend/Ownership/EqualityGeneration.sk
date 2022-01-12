@@ -1,17 +1,17 @@
-module Siko.MIR.Backend.Ownership.V3.EqualityGeneration(processEqualities) where
+module Siko.MIR.Backend.Ownership.EqualityGeneration(processEqualities) where
 
 import Siko.MIR.Expr as E
 import Siko.MIR.Type as T
 import Siko.MIR.Function as F
 import Siko.MIR.Data as D
 import Siko.MIR.Program as P
-import Siko.MIR.Backend.Ownership.V3.FunctionInfo
-import Siko.MIR.Backend.Ownership.V3.MemberInfo as M
-import Siko.MIR.Backend.Ownership.V3.InferenceInfo
-import Siko.MIR.Backend.Ownership.V3.FunctionInfoStore
-import Siko.MIR.Backend.Ownership.V3.EqualitySolver
-import Siko.MIR.Backend.Ownership.V3.TypeVariableInfo
-import Siko.MIR.Backend.Ownership.V3.Allocator
+import Siko.MIR.Backend.Ownership.FunctionInfo
+import Siko.MIR.Backend.Ownership.MemberInfo as M
+import Siko.MIR.Backend.Ownership.InferenceInfo
+import Siko.MIR.Backend.Ownership.FunctionInfoStore
+import Siko.MIR.Backend.Ownership.EqualitySolver
+import Siko.MIR.Backend.Ownership.TypeVariableInfo
+import Siko.MIR.Backend.Ownership.Allocator
 import Siko.MIR.Backend.Traversal
 
 import Map
@@ -58,7 +58,7 @@ processExpr context expr = do
     E.Expr s_expr expr_type expr_id <- expr
     inference_info <- context.inference_info
     context <- case expr_type of
-        T.Adt _ _ | T.Record _ _ -> do
+        T.Adt _ | T.Record _ -> do
             info <- getTypeVariableInfoByExprId inference_info expr_id
             inference_info <- addTypeIdentity inference_info (TypeIdentity info.ownership_var (T.getIdentity expr_type))
             context { inference_info = inference_info }
@@ -183,7 +183,7 @@ processExpr context expr = do
                     case c.checker of
                         E.VariantChecker index var ty -> do
                             case ty of
-                                T.Adt _ _ -> do
+                                T.Adt _ -> do
                                     inference_info <- context.inference_info
                                     (allocator, type_var) <- getNextTypeVariable inference_info.allocator
                                     inference_info <- inference_info { allocator = allocator }
@@ -197,7 +197,7 @@ processExpr context expr = do
                                     inference_info <- addConverter inference_info converter
                                     inference_info <- addMemberInfo inference_info (M.Variant index body_info.arg_group_var var_info)
                                     context { inference_info = inference_info }
-                                T.Record _ _ -> do
+                                T.Record _ -> do
                                     inference_info <- context.inference_info
                                     body_info <- getTypeVariableInfoByExprId inference_info body_id
                                     var_info <- getTypeVariableInfoByVar inference_info var

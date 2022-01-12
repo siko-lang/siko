@@ -27,8 +27,6 @@ import Siko.Util.Counter
 import Hack
 import Map
 
-import List2
-
 data Key = { module_name :: String, name :: String } deriving (PartialEq, Eq, PartialOrd, Ord)
 
 data Context = { hir_program :: HP.Program HT.Type,
@@ -169,10 +167,10 @@ generateExternalImpl context hir_type impl_kind = case impl_kind of
         (context, call_expr) <- callOpShow context hir_type arg_ref_expr
         call_id <- unpackCall call_expr
         case mir_type of
-            MT.Adt adt_id _ -> do
+            MT.Adt adt_id -> do
                 type_store <- addExternalClassImplForAdt context.type_store adt_id (MD.Show call_id)
                 context { type_store = type_store }
-            MT.Record record_id _ -> do
+            MT.Record record_id -> do
                 type_store <- addExternalClassImplForRecord context.type_store record_id (MD.Show call_id)
                 context { type_store = type_store }
             _ -> panic "Not yet implemented"
@@ -185,20 +183,20 @@ generateExternalImpl context hir_type impl_kind = case impl_kind of
         (context, call_expr) <- callOpEq context hir_type arg_ref0_expr arg_ref1_expr
         call_id <- unpackCall call_expr
         case mir_type of
-            MT.Adt adt_id _ -> do
+            MT.Adt adt_id -> do
                 type_store <- addExternalClassImplForAdt context.type_store adt_id (MD.PartialEq call_id)
                 context { type_store = type_store }
-            MT.Record record_id _ -> do
+            MT.Record record_id -> do
                 type_store <- addExternalClassImplForRecord context.type_store record_id (MD.PartialEq call_id)
                 context { type_store = type_store }
             _ -> panic "Not yet implemented"
     MD.EqKind -> do
         (context, mir_type) <- processType context hir_type
         case mir_type of
-            MT.Adt adt_id _ -> do
+            MT.Adt adt_id -> do
                 type_store <- addExternalClassImplForAdt context.type_store adt_id MD.Eq
                 context { type_store = type_store }
-            MT.Record record_id _ -> do
+            MT.Record record_id -> do
                 type_store <- addExternalClassImplForRecord context.type_store record_id MD.Eq
                 context { type_store = type_store }
             _ -> panic "Not yet implemented"
@@ -211,10 +209,10 @@ generateExternalImpl context hir_type impl_kind = case impl_kind of
         (context, call_expr) <- callOpPartialCmp context hir_type arg_ref0_expr arg_ref1_expr
         call_id <- unpackCall call_expr
         case mir_type of
-            MT.Adt adt_id _ -> do
+            MT.Adt adt_id -> do
                 type_store <- addExternalClassImplForAdt context.type_store adt_id (MD.PartialOrd call_id)
                 context { type_store = type_store }
-            MT.Record record_id _ -> do
+            MT.Record record_id -> do
                 type_store <- addExternalClassImplForRecord context.type_store record_id (MD.PartialOrd call_id)
                 context { type_store = type_store }
             _ -> panic "Not yet implemented "
@@ -227,10 +225,10 @@ generateExternalImpl context hir_type impl_kind = case impl_kind of
         (context, call_expr) <- callOpCmp context hir_type arg_ref0_expr arg_ref1_expr
         call_id <- unpackCall call_expr
         case mir_type of
-            MT.Adt adt_id _ -> do
+            MT.Adt adt_id -> do
                 type_store <- addExternalClassImplForAdt context.type_store adt_id (MD.Ord call_id)
                 context { type_store = type_store }
-            MT.Record record_id _ -> do
+            MT.Record record_id -> do
                 type_store <- addExternalClassImplForRecord context.type_store record_id (MD.Ord call_id)
                 context { type_store = type_store }
             _ -> panic "Not yet implemented"

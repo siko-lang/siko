@@ -9,8 +9,6 @@ import Siko.Util.Counter
 import Siko.MIR.Backend.Traversal
 import Map
 
-import List2 as List2
-
 data SpecifiedVarInfo = { wrapper_call :: E.Expr, variant_index :: Int }
 
 data Context = { program :: P.Program,
@@ -77,7 +75,7 @@ processExpr context expr = do
                                 record_id <- T.getIdentity variant.type
                                 record <- P.getRecord program record_id
                                 ctor <- P.getRecordCtor program record_id
-                                new_rhs_type <- T.Record record_id List2.empty
+                                new_rhs_type <- T.Record record_id
                                 new_rhs <- E.Expr (E.StaticFunctionCall ctor f_args) new_rhs_type rhs_id
                                 (context, expr_id) <- getNextExprId context
                                 (context, wrapper_args) <- List.mapS context record.fields (\context, field -> do
@@ -164,7 +162,7 @@ processExpr context expr = do
                                         return (context, c_body)
                                     E.VariantChecker index v v_type -> do
                                         case v_type of
-                                            T.Record _ _ -> do
+                                            T.Record _ -> do
                                                 context <- replaceVar context v body_var
                                                 (context, c_body) <- processExpr context c.body
                                                 return (context, c_body)

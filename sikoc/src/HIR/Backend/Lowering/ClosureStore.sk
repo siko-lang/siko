@@ -13,7 +13,6 @@ import Siko.MIR.Program
 import Siko.MIR.Data as MD
 import Siko.MIR.Type as MT
 import Siko.Constants
-import List2 as List2
 import Map
 
 data ClosureName = ClosureName String deriving (PartialEq, Eq, PartialOrd, Ord)
@@ -119,7 +118,7 @@ compileClosure context closure closure_call_identity = do
     context <- setExprIdCounter context expr_id_gen
     temp_var_gen <- getTempVarCounter
     context <- setTempVarCounter context temp_var_gen
-    mir_closure_type <- MT.Adt adt_identity List2.empty
+    mir_closure_type <- MT.Adt adt_identity
     adt <- TS.getAdt context.type_store adt_identity
     (context, cases, _) <- closure.instances |> List.iter |> Iterator.fold (\(context, cases, index), closure_instance -> do
         variant <- atIndex adt.variants index
@@ -171,10 +170,10 @@ compileClosureInstance (ClosureName name) context closure_instance = do
     record_identity <- getVariantRecordIdentity closure_instance
     mir_fields <- List.mapE mir_args (\index, mir_arg_type -> MD.RecordField (getFieldName index) mir_arg_type False)
     type_store <- context.type_store
-    mir_variant_record <- MD.Record record_identity mir_fields None [] List2.empty List2.empty
+    mir_variant_record <- MD.Record record_identity mir_fields None []
     (records, _) <- insert type_store.records record_identity mir_variant_record
     type_store <- type_store { records = records }
-    mir_variant <- MD.Variant variant_name (MT.Record record_identity List2.empty)
+    mir_variant <- MD.Variant variant_name (MT.Record record_identity)
     adt_identity <- Identity getInternalModuleName name 0
     type_store <- TS.addVariant type_store adt_identity mir_variant
     context { type_store = type_store }
