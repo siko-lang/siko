@@ -187,7 +187,7 @@ lowerExpr lowering_context context expr = do
                 (Owner, Borrower _) -> (context, LE.Ref lir_arg)
                 (Borrower _, Borrower _) -> (context, LE.Move lir_arg)
                 (Borrower _, Owner) -> (context, LE.Clone lir_arg)
-                _ -> panic "Unexpected converter in lowering {} => {}" % (from, to)
+                (_, _) -> (context, LE.Move lir_arg)
     //println "Transforming EXPR {} {}" % ((ME.short expr), expr_info)
     lir_expr <- LE.Expr lir_s_expr lir_type (LE.ExprId 0)
     (context, lir_expr)

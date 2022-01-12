@@ -560,11 +560,12 @@ checkExprType context orig_expr = do
             then context
             else do
                 (E.Expr _ first_id _ location) <- atIndex args 0
-                first_ty <- getExprType context first_id
                 context <- args |> List.iter |> Iterator.fold (\context, (E.Expr _ arg_id _ arg_location) -> do
+                    first_ty <- getExprType context first_id
                     arg_ty <- getExprType context arg_id
                     (context, _) <- matchExprWith context arg_id first_ty arg_location
                     context) context
+                first_ty <- getExprType context first_id
                 (context, _) <- matchExprWith context id (Util.getListType first_ty) location
                 context
         E.IntegerLiteral _ -> addExprEffectSignatureSet context id TEff.emptyEffectSignatureSet
