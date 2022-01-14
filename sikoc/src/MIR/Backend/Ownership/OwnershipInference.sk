@@ -10,6 +10,8 @@ import Siko.MIR.Backend.Traversal
 import Siko.MIR.Expr as E
 import Siko.MIR.Type as T
 import Siko.MIR.Function as F
+import Siko.Config
+import Siko.Trace
 
 import Map
 import Set
@@ -277,22 +279,26 @@ dumpExpr context expr = do
     println "dumpOwnership {}/{} {} {}" % (expr_id, E.short expr, info, o1)
     (context, expr)
 
-inferOwnership :: [P.Identity] ->
+inferOwnership :: Config ->
+                  [P.Identity] ->
                   FunctionInfoStore ->
                   InferenceInfo ->
                   P.Program ->
                   E.Expr ->
                   BorrowInfo ->
                   (InferenceInfo, Set E.ExprId)
-inferOwnership group function_info_store inference_info program body borrow_info =
-    loop (forced_clones, cloning_converters) <- (Set.empty, Set.empty) do
-        (inference_info, new_forced_clones, cloning_converters) <- infer group function_info_store inference_info
+inferOwnership config group function_info_store inference_info program body borrow_info =
+    loop (forced_clones, cloning_converters, count) <- (Set.empty, Set.empty, 0) do
+        trace config "inferOwnership: loop count {}" % count
+        dumpInferenceInfoStats config inference_info
+        (inference_info, new_forced_clones, cloning_converters) <- infer config group function_info_store inference_info
                                                      program body borrow_info forced_clones cloning_converters
         if new_forced_clones != forced_clones
-        then (new_forced_clones, cloning_converters)
+        then (new_forced_clones, cloning_converters, count + 1)
         else break (inference_info, cloning_converters)
     where
-        infer :: [P.Identity] ->
+        infer :: Config ->
+                 [P.Identity] ->
                  FunctionInfoStore ->
                  InferenceInfo ->
                  P.Program ->
@@ -301,7 +307,7 @@ inferOwnership group function_info_store inference_info program body borrow_info
                  Set TypeVariable ->
                  Set E.ExprId ->
                  (InferenceInfo, Set TypeVariable, Set E.ExprId)
-        infer group function_info_store inference_info program body borrow_info forced_clones cloning_converters = do
+        infer config group function_info_store inference_info program body borrow_info forced_clones cloning_converters = do
         context <- Context inference_info program borrow_info
                            function_info_store group Set.empty forced_clones cloning_converters False
         (context, body) <- traverse context body (Some initializeExpr) None None

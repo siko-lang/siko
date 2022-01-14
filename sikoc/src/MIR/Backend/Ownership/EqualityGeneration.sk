@@ -5,6 +5,8 @@ import Siko.MIR.Type as T
 import Siko.MIR.Function as F
 import Siko.MIR.Data as D
 import Siko.MIR.Program as P
+import Siko.Config
+import Siko.Trace
 import Siko.MIR.Backend.Ownership.FunctionInfo
 import Siko.MIR.Backend.Ownership.MemberInfo as M
 import Siko.MIR.Backend.Ownership.InferenceInfo
@@ -271,18 +273,22 @@ fuseCycles program inference_info = do
     inference_info <- processEquals equals inference_info
     inference_info
 
-processEqualities :: [P.Identity] -> InferenceInfo -> FunctionInfoStore -> P.Program -> E.Expr -> InferenceInfo
-processEqualities group inference_info function_info_store program body = do
+processEqualities :: Config -> [P.Identity] -> InferenceInfo -> FunctionInfoStore -> P.Program -> E.Expr -> InferenceInfo
+processEqualities config group inference_info function_info_store program body = do
     context <- Context [] inference_info function_info_store program group
+    trace config "processEqualities - traverse"
     (context, body) <- traverse context body (Some processExpr) None None
     body_info <- getTypeVariableInfoByExprId context.inference_info (getExprId body)
     result_info <- context.inference_info.result
     context <- addEqualInfo context body_info result_info
     inference_info <- context.inference_info
     equals <- context.equals
+    dumpInferenceInfoStats config inference_info
+    trace config "processEqualities - processEquals ({})" % (getLength equals)
     inference_info <- processEquals equals inference_info
     type_ids <- inference_info.type_ids |> sort |> dedup
     converters <- inference_info.converters |> sort |> dedup
     inference_info <- inference_info { type_ids = type_ids, converters = converters }
+    trace config "processEqualities - fuseCycles ({})" % (getLength equals)
     inference_info <- fuseCycles program inference_info
     inference_info

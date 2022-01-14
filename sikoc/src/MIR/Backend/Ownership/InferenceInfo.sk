@@ -2,6 +2,8 @@ module Siko.MIR.Backend.Ownership.InferenceInfo where
 
 import Siko.MIR.Expr as E
 import Siko.MIR.Program as P
+import Siko.Trace
+import Siko.Config
 import Map
 import Set
 import Siko.MIR.Backend.Ownership.FunctionInfo
@@ -228,6 +230,15 @@ collectRelevantVars members vars = do
         if Set.getSize vars != start_size
         then vars
         else break vars
+
+dumpInferenceInfoStats :: Config -> InferenceInfo -> ()
+dumpInferenceInfoStats config inference_info = do
+    trace config "members: {}" % getLength inference_info.members
+    trace config  "converters: {}" % getLength inference_info.converters
+    trace config  "expr_type_variables: {}" % Map.getSize inference_info.expr_type_variables
+    trace config  "var_type_variables: {}" % Map.getSize inference_info.var_type_variables
+    trace config  "ownership_values: {}" % Map.getSize inference_info.ownership_values
+    trace config  "borrow_sets: {}" % Map.getSize inference_info.borrow_sets
 
 toFunctionInfo :: InferenceInfo -> FunctionInfo
 toFunctionInfo inference_info = do
