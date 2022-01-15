@@ -22,6 +22,8 @@ import Siko.LIR.Function as LF
 import Siko.LIR.Type as LT
 
 import Set
+import List2 as List2
+import List2 (List2)
 
 lowerFunction :: Context -> LoweringInfo -> MP.Identity -> LP.Identity -> Context
 lowerFunction context lowering_info mir_id lir_id = do
@@ -76,7 +78,7 @@ unpackOwnerships inference_info = do
     // the ownerships, i.e. fill out member ownerships which are implied from
     // the arguments, result.
     vars <- Set.empty
-    vars <- List.fold vars inference_info.args (\vars, info -> do
+    vars <- List2.fold vars inference_info.args (\vars, info -> do
         vars <- Set.put vars info.ownership_var
         vars <- Set.put vars info.arg_group_var
         vars)
@@ -84,7 +86,7 @@ unpackOwnerships inference_info = do
     vars <- Set.put vars inference_info.result.arg_group_var
     relevants <- collectRelevantVars inference_info.members vars
     members <- inference_info.members
-    inference_info <- List.fold inference_info members (\inference_info, m -> case m of
+    inference_info <- List2.fold inference_info members (\inference_info, m -> case m of
         M.Variant _ _ info -> maybeAddOwnership inference_info info.ownership_var Owner
         M.Member _ _ info -> maybeAddOwnership inference_info info.ownership_var Owner
         M.Extern _ _ info -> maybeAddOwnership inference_info info.ownership_var Owner)

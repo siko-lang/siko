@@ -15,6 +15,10 @@ import Siko.Trace
 
 import Map
 import Set
+import List2 as List2
+import List2 (List2)
+import Map2 as Map2
+import Map2 (Map2)
 
 data Context = { inference_info :: InferenceInfo,
                  program :: P.Program,
@@ -42,7 +46,7 @@ initializeExpr context expr = do
     E.Expr s_expr _ expr_id <- expr
     info <- getTypeVariableInfoByExprId context.inference_info expr_id
     TypeVariable index <- info.ownership_var
-    case Map.get context.inference_info.ownership_values info.ownership_var of
+    case Map2.get context.inference_info.ownership_values info.ownership_var of
         Some _ -> (context, expr)
         None -> do
             context <- addOwnershipValue context info.ownership_var Unknown
@@ -153,9 +157,9 @@ processExpr context expr = do
                         case getFunctionInfo context.function_info_store f_id of
                             Some function_info -> do
                                 //println "{}/function info {}" % (f_id, function_info)
-                                case Map.get context.inference_info.function_converters expr_id of
+                                case Map2.get context.inference_info.function_converters expr_id of
                                     Some function_converters -> do
-                                        List.fold context function_converters (\context, converter -> do
+                                        List2.fold context function_converters (\context, converter -> do
                                             //println "Running function converter"
                                             processConverter context None None converter.from converter.to)
                                     None -> panic "No function converters found for {} {}" % (f_id, expr_id)
@@ -181,10 +185,10 @@ processExpr context expr = do
             receiver_info <- getTypeVariableInfoByExprId context.inference_info receiver_id
             receiver_kind <- getOwnershipValue context receiver_info.ownership_var
             expr_kind <- getOwnershipValue context info.ownership_var
-            member <- List.filter context.inference_info.members (\m -> case m of
+            member <- List2.filter context.inference_info.members (\m -> case m of
                     M.Member n root member_info -> n == name && receiver_info.arg_group_var == root
                     _ -> False)
-            case head member of
+            case List2.head member of
                 Some (M.Member name root member_info) -> do
                     //println "Looking for ownership for {}" % info.ownership_var
                     case getOwnership context.inference_info member_info.ownership_var of
@@ -247,7 +251,7 @@ processExpr context expr = do
     relevants <- collectRelevantVars context.inference_info.members relevants
     context <- if not context.needs_restart
     then do
-        new_forced_clones <- Map.fold [] context.inference_info.ownership_values (\forced_clones, (var, ownership) ->
+        new_forced_clones <- Map2.fold [] context.inference_info.ownership_values (\forced_clones, (var, ownership) ->
             if Set.contains relevants var
             then case ownership of
                 Borrower id -> do

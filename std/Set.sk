@@ -1,5 +1,7 @@
 module Set where
 
+import List2
+
 data Set a = { items :: [a] }
 
 instance (Show a) => Show Set a where
@@ -9,7 +11,7 @@ instance (PartialEq a) => PartialEq Set a where
     opEq a b = a.items == b.items
 
 instance (PartialEq a, Ord a) => Add Set a where
-    opAdd a b = Set ((a.items + b.items) |> sort |> dedup)
+    opAdd a b = Set ((a.items + b.items) |> List.sort |> List.dedup)
 
 instance (PartialEq a, Ord a) => Sub Set a where
     opSub a b = Set (List.filter a.items (\item -> not (List.contains b.items item)))
@@ -23,10 +25,10 @@ contains set item = List.contains set.items item
 // FIXME: Ord should imply PartialEq!
 insert a :: (PartialEq a, Ord a) => Set a -> a -> (Set a, Bool)
 insert set item = do
-    len <- getLength set.items
+    len <- List.getLength set.items
     items <- set.items + [item]
-    items <- items |> sort |> dedup
-    inserted <- len != getLength items
+    items <- items |> List.sort |> List.dedup
+    inserted <- len != List.getLength items
     (set { items = items }, inserted)
 
 put a :: (PartialEq a, Ord a) => Set a -> a -> Set a
@@ -36,14 +38,14 @@ put set item = do
 
 remove a :: (PartialEq a) => Set a -> a -> Set a
 remove set item = do
-    items <- set.items |> List.iter |> Iterator.filter (\i -> i != item) |> toList
+    items <- set.items |> List.iter |> Iterator.filter (\i -> i != item) |> List.toList
     set { items = items }
 
 iter a :: Set a -> Iterator a
 iter set = set.items |> List.iter
 
 toSet a :: (Ord a, PartialEq a) => Iterator a -> Set a
-toSet items = Set (toList items |> sort |> dedup)
+toSet items = Set (List.toList items |> List.sort |> List.dedup)
 
 isEmpty a :: Set a -> Bool
 isEmpty set = List.isEmpty set.items
@@ -53,20 +55,20 @@ getSize set = List.getLength set.items
 
 intersection a :: (PartialEq a) => Set a -> Set a -> Set a
 intersection s1 s2 = do
-    items <- s1.items |> List.iter |> Iterator.filter (\i -> contains s2 i) |> toList
+    items <- s1.items |> List.iter |> Iterator.filter (\i -> Set.contains s2 i) |> List.toList
     Set { items = items }
 
-collect a b :: [b] -> Set a -> (Set a -> b -> Set a) -> Set a
+collect a b :: List2 b -> Set a -> (Set a -> b -> Set a) -> Set a
 collect sources result f =
     loop result <- result do
         start_size <- Set.getSize result
-        result <- List.fold result sources f
+        result <- List2.fold result sources f
         if Set.getSize result != start_size
         then result
         else break result
 
 map a b :: (Ord a, PartialEq a, Ord b, PartialEq b) => Set a -> (a -> b) -> Set b
-map set f = set |> iter |> Iterator.map f |> toSet
+map set f = set |> Set.iter |> Iterator.map f |> toSet
 
 fold a s :: (Ord a, PartialEq a) => s -> Set a -> (s -> a -> s) -> s
-fold init set f = set |> iter |> Iterator.fold f init
+fold init set f = set |> Set.iter |> Iterator.fold f init

@@ -7,30 +7,32 @@ import Siko.MIR.Backend.Ownership.MemberInfo as M
 import Siko.MIR.Backend.Ownership.Duplicator
 
 import Map
+import List2 as List2
+import List2 (List2)
 
-data FunctionInfo = { args :: [TypeVariableInfo],
+data FunctionInfo = { args :: List2 TypeVariableInfo,
                       result :: TypeVariableInfo,
-                      members :: [M.MemberInfo],
-                      converters :: [Converter],
-                      ownershipinfos :: [M.OwnershipInfo],
+                      members :: List2 M.MemberInfo,
+                      converters :: List2 Converter,
+                      ownershipinfos :: List2 M.OwnershipInfo,
                     } deriving (PartialEq, Eq, Show)
 
 normalizeFunctionInfo :: FunctionInfo -> FunctionInfo
 normalizeFunctionInfo function_info = do
     duplicator <- createNormalizer
-    (duplicator, args) <- List.mapS duplicator function_info.args duplicate
+    (duplicator, args) <- List2.mapS duplicator function_info.args duplicate
     (duplicator, result) <- duplicate duplicator function_info.result
-    (duplicator, members) <- List.mapS duplicator function_info.members duplicate
-    (duplicator, converters) <- List.mapS duplicator function_info.converters duplicate
-    (duplicator, ownershipinfos) <- List.mapS duplicator function_info.ownershipinfos duplicate
+    (duplicator, members) <- List2.mapS duplicator function_info.members duplicate
+    (duplicator, converters) <- List2.mapS duplicator function_info.converters duplicate
+    (duplicator, ownershipinfos) <- List2.mapS duplicator function_info.ownershipinfos duplicate
     FunctionInfo args result members converters ownershipinfos
 
 duplicateFunctionInfo :: Allocator -> FunctionInfo -> (Allocator, FunctionInfo)
 duplicateFunctionInfo allocator function_info = do
     duplicator <- createDuplicator allocator
-    (duplicator, args) <- List.mapS duplicator function_info.args duplicate
+    (duplicator, args) <- List2.mapS duplicator function_info.args duplicate
     (duplicator, result) <- duplicate duplicator function_info.result
-    (duplicator, members) <- List.mapS duplicator function_info.members duplicate
-    (duplicator, converters) <- List.mapS duplicator function_info.converters duplicate
-    (duplicator, ownershipinfos) <- List.mapS duplicator function_info.ownershipinfos duplicate
+    (duplicator, members) <- List2.mapS duplicator function_info.members duplicate
+    (duplicator, converters) <- List2.mapS duplicator function_info.converters duplicate
+    (duplicator, ownershipinfos) <- List2.mapS duplicator function_info.ownershipinfos duplicate
     (duplicator.allocator, FunctionInfo args result members converters ownershipinfos)

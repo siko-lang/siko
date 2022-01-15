@@ -191,7 +191,10 @@ fold s a :: s -> [a] -> (s -> a -> s) -> s
 fold init list f = list |> List.iter |> Iterator.fold f init
 
 map a b :: [a] -> (a -> b) -> [b]
-map input f = input |> List.iter |> Iterator.map f |> toList
+map input f = loop (result, index) <- (List.withCapacity (getLength input), 0) do
+    if index >= getLength input
+    then break result
+    else (push result (f (atIndex input index) ), index + 1)
 
 filter a :: [a] -> (a -> Bool) -> [a]
 filter list f = list |> List.iter |> Iterator.filter f |> toList

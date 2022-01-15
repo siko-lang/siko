@@ -13,6 +13,9 @@ import Siko.LIR.Function as LF
 import Siko.MIR.Function as MF
 import Map
 
+import List2 as List2
+import List2 (List2)
+
 remapLifetime :: Duplicator -> LT.Lifetime -> LT.Lifetime
 remapLifetime  duplicator LT.Lifetime id =
     case get duplicator.inverse_borrows id of
@@ -63,8 +66,8 @@ lowerFunctionType context lowering_info mir_function_type = do
 collectLifetimes :: LoweringInfo -> [LT.Lifetime]
 collectLifetimes lowering_info = do
         lifetimes <- case lowering_info of
-                Function function -> List.fold [] function.ownershipinfos addLifetime
-                Type type -> List.fold [] type.ownershipinfos addLifetime
+                Function function -> List2.fold [] function.ownershipinfos addLifetime
+                Type type -> List2.fold [] type.ownershipinfos addLifetime
         lifetimes |> sort |> dedup
     where
         addLifetime :: [LT.Lifetime] -> M.OwnershipInfo -> [LT.Lifetime]

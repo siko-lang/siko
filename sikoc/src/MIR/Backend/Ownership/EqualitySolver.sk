@@ -3,23 +3,35 @@ module Siko.MIR.Backend.Ownership.EqualitySolver(processEquals, addEqual, Equal(
 import Siko.MIR.Backend.Ownership.TypeVariableInfo
 import Siko.MIR.Backend.Ownership.MemberInfo
 import Map
+import List2 as List2
+import List2 (List2)
+import Map2 as Map2
+import Map2 (Map2)
 
 data Equal = Equal TypeVariable TypeVariable deriving (Show)
 
 class Apply a where
     apply a :: Equal -> a -> a
 
-instance (Apply a) => Apply [a] where
-    //apply a :: Equal -> [a] -> [a]
-    apply equal items = List.map items (apply equal)
+// instance (Apply a) => Apply [a] where
+//     //apply a :: Equal -> [a] -> [a]
+//     apply equal items = List.map items (apply equal)
+
+instance (Apply a) => Apply (List2 a) where
+    //apply a :: Equal -> List2 a -> List2 a
+    //FIXME: apply equal items = List2.map items (apply equal)
+    apply equal items = List2.updateAll items (apply equal)
 
 instance Apply Equal where
     apply c equal =
         case equal of
             Equal id1 id2 -> Equal (apply c id1) (apply c id2)
 
-instance (Apply v, Ord k) => Apply Map k v where
-    apply c items = Map.map items (\(k, v) -> (k, apply c v))
+// instance (Apply v, Ord k) => Apply Map k v where
+//     apply c items = Map.map items (\(k, v) -> (k, apply c v))
+
+instance (Apply v, Ord k) => Apply Map2 k v where
+    apply c items = Map2.update items (\(k, v) -> (apply c v))
 
 instance Apply MemberInfo where
     apply c info = case info of
@@ -43,13 +55,13 @@ instance Apply TypeVariable where
 instance Apply TypeVariableInfo where
     apply c info = TypeVariableInfo (apply c info.ownership_var) (apply c info.arg_group_var)
 
-applyEquals a :: (Apply a) => [Equal] -> a -> a
+applyEquals a :: (Apply a) => List2 Equal -> a -> a
 applyEquals equals target = do
     loop (equals, target) <- (equals, target) do
-        if isEmpty equals
+        if List2.isEmpty equals
         then break target
         else do
-            (equal, equals) <- List.remove equals 0
+            (equal, equals) <- List2.remove equals 0
             equals <- apply equal equals
             target <- apply equal target
             (equals, target)
@@ -58,20 +70,20 @@ data MergeKey b = VariantKey Int b
                 | MemberKey String b
                 | ExternKey Int b deriving (PartialEq, Eq, PartialOrd, Ord)
 
-addEqual :: [Equal] -> TypeVariableInfo -> TypeVariableInfo -> [Equal]
+addEqual :: List2 Equal -> TypeVariableInfo -> TypeVariableInfo -> List2 Equal
 addEqual equals info1 info2 = do
-    equals <- push equals (Equal info1.ownership_var info2.ownership_var)
-    equals <- push equals (Equal info1.arg_group_var info2.arg_group_var)
+    equals <- List2.push equals (Equal info1.ownership_var info2.ownership_var)
+    equals <- List2.push equals (Equal info1.arg_group_var info2.arg_group_var)
     equals
 
-processEquals a :: (EqualityStore a, Apply a) => [Equal] -> a -> a
+processEquals a :: (EqualityStore a, Apply a) => List2 Equal -> a -> a
 processEquals equals store = do
     store <- applyEquals equals store
     merge store
 
-getEqualsFromMemberInfos :: [MemberInfo] -> [Equal]
+getEqualsFromMemberInfos :: List2 MemberInfo -> List2 Equal
 getEqualsFromMemberInfos members = do
-        root_map <- List.fold Map.empty members (\root_map, member_info -> case member_info of
+        root_map <- List2.fold Map.empty members (\root_map, member_info -> case member_info of
                 Variant index root info -> do
                     (root_map, _) <- alter (add info) (VariantKey index root) root_map
                     root_map
@@ -81,29 +93,29 @@ getEqualsFromMemberInfos members = do
                 Extern index root info -> do
                     (root_map, _) <- alter (add info) (ExternKey index root) root_map
                     root_map)
-        Map.fold [] root_map (\equals, (_, infos) -> do
-            if getLength infos > 1
+        Map.fold List2.empty root_map (\equals, (_, infos) -> do
+            if List2.getLength infos > 1
             then do
-                first <- atIndex infos 0
-                List.fold equals infos (\equals, info -> addEqual equals info first)
+                first <- List2.atIndex infos 0
+                List2.fold equals infos (\equals, info -> addEqual equals info first)
             else equals)
     where
         add info old = case old of
-            Some infos -> Some (push infos info)
-            None -> Some [info]
+            Some infos -> Some (List2.push infos info)
+            None -> Some (List2.single info)
 
 class EqualityStore a where
-    getMemberInfos a :: a -> [MemberInfo]
-    putMemberInfos a :: a -> [MemberInfo] -> a
+    getMemberInfos a :: a -> List2 MemberInfo
+    putMemberInfos a :: a -> List2 MemberInfo -> a
 
 merge a :: (EqualityStore a, Apply a) => a -> a
 merge store =
     loop store <- store do
         equals <- getEqualsFromMemberInfos (getMemberInfos store)
-        if isEmpty equals
+        if List2.isEmpty equals
         then break store
         else do
             store <- applyEquals equals store
-            members <- getMemberInfos store |> sort |> dedup
+            members <- getMemberInfos store |> List2.sort |> List2.dedup
             store <- putMemberInfos store members
             store

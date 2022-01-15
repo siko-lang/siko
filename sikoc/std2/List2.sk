@@ -5,64 +5,120 @@ import Map
 data List2 a = extern
 
 instance (Show a) => Show (List2 a) where
-    show a = extern
+    show l = do
+        subs <- List2.map l show
+        "[" + join subs ", " + "]"
 
 instance (PartialEq a) => PartialEq (List2 a) where
-    opEq a b = extern
+    opEq a b =
+        if getLength a != getLength b
+        then False
+        else loop (iter_a, iter_b) <- (List2.iter a, List2.iter b) do
+            case Iterator.getNext iter_a of
+                Some (iter_a, item_a) -> do
+                    (iter_b, item_b) <- Option.unwrap(Iterator.getNext iter_b)
+                    if item_a != item_b
+                    then break False
+                    else (iter_a, iter_b)
+                None -> break True
 
 instance (Eq a) => Eq (List2 a)
 
 instance (PartialOrd a) => PartialOrd (List2 a) where
-    partialCmp a b = extern
+    partialCmp a b = do
+        len_a <- getLength a
+        len_b <- getLength b
+        if len_a != len_b
+        then partialCmp len_a len_b
+        else loop (iter_a, iter_b) <- (List2.iter a, List2.iter b) do
+            case Iterator.getNext iter_a of
+                Some (iter_a, item_a) -> do
+                    (iter_b, item_b) <- Option.unwrap(Iterator.getNext iter_b)
+                    case partialCmp item_a item_b of
+                        Some Equal -> (iter_a, iter_b)
+                        e -> break e
+                None -> break Some Equal
 
 instance (Ord a) => Ord (List2 a) where
-    cmp a b = extern
+    cmp a b = do
+        len_a <- getLength a
+        len_b <- getLength b
+        if len_a != len_b
+        then cmp len_a len_b
+        else loop (iter_a, iter_b) <- (List2.iter a, List2.iter b) do
+            case Iterator.getNext iter_a of
+                Some (iter_a, item_a) -> do
+                    (iter_b, item_b) <- Option.unwrap(Iterator.getNext iter_b)
+                    case cmp item_a item_b of
+                        Equal -> (iter_a, iter_b)
+                        e -> break e
+                None -> break Equal
 
-instance Add (List2 a) where
-    opAdd a b = extern
+instance Add List2 a where
+    opAdd a b = addList a b
+
+cmpList a :: ~List2 a -> ~List2 a -> ~Ordering
+cmpList a b = extern
+
+addList a :: ~List2 a -> ~List2 a -> ~List2 a
+addList a b = extern
 
 empty a :: List2 a
 empty = withCapacity 0
-
-push a :: List2 a -> a -> List2 a
-push l item = extern
 
 single a :: a -> List2 a
 single item = do
     l <- List2.empty
     push l item
 
-withCapacity a :: Int -> List2 a
+push a :: ~List2 a -> ~a -> ~List2 a
+push l item = extern
+
+withCapacity a :: ~Int -> ~List2 a
 withCapacity capacity = extern
 
-atIndex a :: List2 a -> Int -> a
+atIndex a :: ~List2 a -> ~Int -> a
 atIndex index l = extern
 
-iter a :: List2 a -> Iterator a
-iter l = extern
+iter a :: ~List2 a -> ~Iterator a
+iter l = createIterator (List2.intoIter l) List2.nextItem
 
-toList a :: Iterator a -> List2 a
-toList i = extern
+data ListIterator a = extern
 
-getLength a :: List2 a -> Int
+intoIter a :: ~List2 a -> ~ListIterator a
+intoIter list = extern
+
+nextItem a :: ~ListIterator a -> ~Option (~ListIterator a, a)
+nextItem iter = extern
+
+toList a :: ~Iterator a -> ~List2 a
+toList iter = Iterator.fold (\list, item -> push list item) List2.empty iter
+
+getLength a :: ~List2 a -> ~Int
 getLength l = extern
 
-isEmpty a :: List2 a -> Bool
+isEmpty a :: ~List2 a -> ~Bool
 isEmpty l = extern
 
 contains a :: (PartialEq a) => List2 a -> a -> Bool
-contains l i = isSome (containsAtIndex l i)
+contains l i = do
+    isSome (containsAtIndex l i)
 
 containsAtIndex a :: (PartialEq a) => List2 a -> a -> Option Int
-containsAtIndex l i =
+containsAtIndex l i = do
     loop index <- 0 do
         if index >= getLength l
-        then break None
-        else do
-            e <- atIndex l index
-            if e == i
-            then break Some index
-            else index + 1
+            then
+                break None
+            else
+                do
+                e <- atIndex l index
+                if e == i
+                    then
+                        break Some index
+                    else
+                        index + 1
+    None
 
 find a :: List2 a -> (a -> Bool) -> Option a
 find l f = do
@@ -100,7 +156,7 @@ tail l = extern
 remove a :: List2 a -> Int -> (a, List2 a)
 remove l index = extern
 
-pop a :: List2 a -> Option(a, List2 a)
+pop a :: List2 a -> Option (a, List2 a)
 pop l = if isEmpty l
         then None
         else Some (List2.remove l 0)
@@ -149,7 +205,7 @@ mapS s a b :: s -> List2 a -> (s -> a -> (s, b)) -> (s, List2 b)
 mapS s l f = do
     l |> List2.iter |> Iterator.fold (\(s, items), i -> do
         (s, i) <- f s i
-        (s, push items i)) (s, List2.empty)
+        (s, push items i)) (s, withCapacity (getLength l))
 
 mapSE s a b :: s -> List2 a -> (s -> Int -> a -> (s, b)) -> (s, List2 b)
 mapSE s l f = do
@@ -176,13 +232,10 @@ fold s a :: s -> List2 a -> (s -> a -> s) -> s
 fold init list f = list |> List2.iter |> Iterator.fold f init
 
 map a b :: List2 a -> (a -> b) -> List2 b
-map input f = loop (result, index) <- (List2.withCapacity (getLength input), 0) do
-    if index >= getLength input
-    then break result
-    else (List2.push result (f (atIndex input index) ), index + 1)
+map input f = input |> List2.iter |> Iterator.map f |> toList
 
 filter a :: List2 a -> (a -> Bool) -> List2 a
-filter list f = list |> List2.iter |> Iterator.filter f |> List2.toList
+filter list f = list |> List2.iter |> Iterator.filter f |> toList
 
 foldM a k v :: (Ord k) => Map k v -> List2 a -> (a -> (k, v)) -> Map k v
 foldM init list f = List2.fold init list (\m, item -> do
@@ -198,15 +251,14 @@ filterMap list f = List2.fold (withCapacity (getLength list)) list (\all, item -
 
 repeat a :: a -> Int -> List2 a
 repeat item count = do
-    (items, _) <- loop (items, c) <- (List2.empty, 0) do
+    (items, _) <- loop (items, c) <- (withCapacity count, 0) do
                 if c < count
-                then (push items item, c + 1)
-                else break (items, 0)
+                    then (push items item, c + 1) else break (items, 0)
     items
 
 repeatS s a :: s -> (s -> (s, a)) -> Int -> (s, List2 a)
 repeatS state fn count = do
-    loop (state, items, c) <- (state, List2.empty, 0) do
+    loop (state, items, c) <- (state, withCapacity count, 0) do
         if c < count
             then do
                 (state, item) <- fn state
@@ -217,10 +269,7 @@ flatten a :: List2 (List2 a) -> List2 a
 flatten lists = List2.fold List2.empty lists (\s, l -> s + l)
 
 updateAll a :: List2 a -> (a -> a) -> List2 a
-updateAll input f = extern
+updateAll input f = List2.map input f
 
 updateSpecifics a :: (PartialEq a) => List2 a -> a -> a -> List2 a
-updateSpecifics list from to = extern
-
-toList2 a :: [a] -> List2 a
-toList2 l = List.fold List2.empty l (\xs, x -> List2.push xs x)
+updateSpecifics list from to = List2.updateAll list (\i -> if i == from then to else i)

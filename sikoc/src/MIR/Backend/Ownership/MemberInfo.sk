@@ -5,6 +5,9 @@ import Set
 import Siko.MIR.Backend.Ownership.TypeVariableInfo
 import Siko.MIR.Backend.Ownership.BorrowId
 
+import List2 as List2
+import List2 (List2)
+
 data MemberInfo = Variant Int TypeVariable TypeVariableInfo
                 | Member String TypeVariable TypeVariableInfo
                 | Extern Int TypeVariable TypeVariableInfo
@@ -35,9 +38,9 @@ isSubMember vars constraint =
         Member name root info -> Set.contains vars root
         Extern index root info -> Set.contains vars root
 
-filterOwnershipInfo :: [TypeVariable] -> OwnershipInfo -> Bool
+filterOwnershipInfo :: List2 TypeVariable -> OwnershipInfo -> Bool
 filterOwnershipInfo vars ownershipinfo =
     case ownershipinfo of
-        Unknown v -> List.fold False vars (\found, var -> found || var == v)
-        Owner v -> List.fold False vars (\found, var -> found || var == v)
-        Borrower v _ -> List.fold False vars (\found, var -> found || var == v)
+        Unknown v -> List2.fold False vars (\found, var -> found || var == v)
+        Owner v -> List2.fold False vars (\found, var -> found || var == v)
+        Borrower v _ -> List2.fold False vars (\found, var -> found || var == v)

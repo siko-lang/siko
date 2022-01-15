@@ -12,16 +12,19 @@ import Siko.MIR.Backend.Ownership.Lowering.LoweringInfo.Filter
 import Map
 import Set
 
-data FunctionLoweringInfo = { members :: [M.MemberInfo],
-                              args :: [TypeVariableInfo],
+import List2 as List2
+import List2 (List2)
+
+data FunctionLoweringInfo = { members :: List2 M.MemberInfo,
+                              args :: List2 TypeVariableInfo,
                               result :: TypeVariableInfo,
-                              ownershipinfos :: [M.OwnershipInfo],
+                              ownershipinfos :: List2 M.OwnershipInfo,
                               allocator :: Allocator,
                             } deriving (PartialEq, Eq, PartialOrd, Ord, Show)
 
-data TypeLoweringInfo = { members :: [M.MemberInfo],
+data TypeLoweringInfo = { members :: List2 M.MemberInfo,
                           root :: TypeVariableInfo,
-                          ownershipinfos :: [M.OwnershipInfo],
+                          ownershipinfos :: List2 M.OwnershipInfo,
                         } deriving (PartialEq, Eq, PartialOrd, Ord, Show)
 
 data LoweringInfo = Function FunctionLoweringInfo
@@ -31,10 +34,11 @@ data LoweringInfo = Function FunctionLoweringInfo
 convertToFunctionLoweringInfo :: Config -> InferenceInfo -> [TypeVariableInfo] -> TypeVariableInfo -> LoweringInfo
 convertToFunctionLoweringInfo config inference_info args result = do
     //println "Creating function lowering info"
+    args <- List2.toList2 args
     lowering_info <- Function (FunctionLoweringInfo inference_info.members args result
             (toOwnershipInfo inference_info.ownership_values) inference_info.allocator)
     //println "Unfiltered {}" % lowering_info
-    sources <- List.push args result
+    sources <- List2.push args result
     filterInfo config lowering_info sources
 
 createTypeLoweringInfoFromInferenceInfo :: Config -> InferenceInfo -> TypeVariableInfo -> LoweringInfo
@@ -42,7 +46,7 @@ createTypeLoweringInfoFromInferenceInfo config inference_info root = do
     //println "Creating type lowering info"
     lowering_info <- Type (TypeLoweringInfo inference_info.members root
             (toOwnershipInfo inference_info.ownership_values))
-    filterInfo config lowering_info [root]
+    filterInfo config lowering_info (List2.single root)
 
 createTypeLoweringInfoFromLoweringInfo :: Config -> LoweringInfo -> TypeVariableInfo -> LoweringInfo
 createTypeLoweringInfoFromLoweringInfo config lowering_info root = do
@@ -50,10 +54,10 @@ createTypeLoweringInfoFromLoweringInfo config lowering_info root = do
     case lowering_info of
         Function info -> do
             output <- Type (TypeLoweringInfo info.members root info.ownershipinfos)
-            filterInfo config output [root]
+            filterInfo config output (List2.single root)
         Type info -> do
             output <- Type (TypeLoweringInfo info.members root info.ownershipinfos)
-            filterInfo config output [root]
+            filterInfo config output (List2.single root)
 
 normalizeRef :: LoweringInfo -> (LoweringInfo, Option BorrowId)
 normalizeRef lowering_info =
@@ -61,21 +65,22 @@ normalizeRef lowering_info =
         Function _ -> panic "normalizeRef called on function lower info"
         Type type -> do
             ownershipinfos <- type.ownershipinfos
-            (ownershipinfos, ref, found) <- List.fold ([], None, False) ownershipinfos
+            (ownershipinfos, ref, found) <- List2.fold ((List2.withCapacity (List2.getLength ownershipinfos)), None, False)
+                                                       ownershipinfos
                 (\(ownershipinfos, ref, found), ownershipinfo ->
                     case ownershipinfo of
                         M.Unknown v -> if v == type.root.ownership_var
-                            then (List.push ownershipinfos (M.Owner v), None, True)
-                            else (List.push ownershipinfos (M.Owner v), ref, found)
+                            then (List2.push ownershipinfos (M.Owner v), None, True)
+                            else (List2.push ownershipinfos (M.Owner v), ref, found)
                         M.Borrower v id -> if v == type.root.ownership_var
-                            then (List.push ownershipinfos (M.Owner v), Some id, True)
-                            else (List.push ownershipinfos ownershipinfo, ref, found)
+                            then (List2.push ownershipinfos (M.Owner v), Some id, True)
+                            else (List2.push ownershipinfos ownershipinfo, ref, found)
                         M.Owner v ->
                             if v == type.root.ownership_var
-                            then (List.push ownershipinfos ownershipinfo, None, True)
-                            else (List.push ownershipinfos ownershipinfo, ref, found))
+                            then (List2.push ownershipinfos ownershipinfo, None, True)
+                            else (List2.push ownershipinfos ownershipinfo, ref, found))
             ownershipinfos <- if not found
-            then List.push ownershipinfos (M.Owner type.root.ownership_var)
+            then List2.push ownershipinfos (M.Owner type.root.ownership_var)
             else ownershipinfos
             lowering_info <- Type (type { ownershipinfos = ownershipinfos })
             (lowering_info, ref)
@@ -87,27 +92,27 @@ normalizeLoweringInfo lowering_info =
     case lowering_info of
         Function info -> do
             duplicator <- createNormalizer
-            (duplicator, args) <- List.mapS duplicator info.args duplicate
+            (duplicator, args) <- List2.mapS duplicator info.args duplicate
             (duplicator, result) <- duplicate duplicator info.result
-            (duplicator, members) <- List.mapS duplicator info.members duplicate
-            (duplicator, ownershipinfos) <- List.mapS duplicator info.ownershipinfos duplicate
-            members <- members |> sort
-            ownershipinfos <- ownershipinfos |> sort
+            (duplicator, members) <- List2.mapS duplicator info.members duplicate
+            (duplicator, ownershipinfos) <- List2.mapS duplicator info.ownershipinfos duplicate
+            members <- members |> List2.sort
+            ownershipinfos <- ownershipinfos |> List2.sort
             (Function (FunctionLoweringInfo members args result ownershipinfos duplicator.allocator), duplicator)
         Type info -> do
             duplicator <- createNormalizer
             (duplicator, root) <- duplicate duplicator info.root
-            (duplicator, members) <- List.mapS duplicator info.members duplicate
-            (duplicator, ownershipinfos) <- List.mapS duplicator info.ownershipinfos duplicate
-            members <- members |> sort
-            ownershipinfos <- ownershipinfos |> sort
+            (duplicator, members) <- List2.mapS duplicator info.members duplicate
+            (duplicator, ownershipinfos) <- List2.mapS duplicator info.ownershipinfos duplicate
+            members <- members |> List2.sort
+            ownershipinfos <- ownershipinfos |> List2.sort
             (Type (TypeLoweringInfo members root ownershipinfos), duplicator)
 
 getLoweringInfoForArg :: Config -> LoweringInfo -> Int -> LoweringInfo
 getLoweringInfoForArg config lowering_info index = do
     case lowering_info of
         Function info -> do
-            arg <- atIndex info.args index
+            arg <- List2.atIndex info.args index
             createTypeLoweringInfoFromLoweringInfo config lowering_info arg
         Type info -> panic "getLoweringInfoForArg called on type lowering info"
 
@@ -122,45 +127,45 @@ getLoweringInfoForMember config lowering_info name = do
     case lowering_info of
         Function info -> panic "getLoweringInfoForMember called on function lowering info"
         Type info -> do
-            member <- List.filter info.members (\constraint -> case constraint of
+            member <- List2.filter info.members (\constraint -> case constraint of
                     M.Member n root member_info -> n == name && info.root.arg_group_var == root
                     _ -> False)
-            case head member of
+            case List2.head member of
                 Some (M.Member name root member_info) -> createTypeLoweringInfoFromLoweringInfo config lowering_info member_info
                 Some _ -> panic "member is not a member"
                 None -> do
                     allocator <- createAllocator
                     (allocator, root) <- getNextTypeVariableInfo allocator
-                    Type (TypeLoweringInfo [] root [M.Owner root.ownership_var])
+                    Type (TypeLoweringInfo List2.empty root (List2.single (M.Owner root.ownership_var)))
 
 getLoweringInfoForVariant :: Config -> LoweringInfo -> Int -> LoweringInfo
 getLoweringInfoForVariant config lowering_info index = do
     case lowering_info of
         Function info -> panic "getLoweringInfoForVariant called on function lowering info"
         Type info -> do
-            variant <- List.filter info.members (\constraint -> case constraint of
+            variant <- List2.filter info.members (\constraint -> case constraint of
                     M.Variant i root member_info -> i == index && info.root.arg_group_var == root
                     _ -> False)
-            case head variant of
+            case List2.head variant of
                 Some (M.Variant index root member_info) -> createTypeLoweringInfoFromLoweringInfo config lowering_info member_info
                 Some _ -> panic "variant is not a variant"
                 None -> do
                     allocator <- createAllocator
                     (allocator, root) <- getNextTypeVariableInfo allocator
-                    Type (TypeLoweringInfo [] root [M.Owner root.ownership_var])
+                    Type (TypeLoweringInfo List2.empty root (List2.single (M.Owner root.ownership_var)))
 
 getLoweringInfoForExtern :: Config -> LoweringInfo -> Int -> LoweringInfo
 getLoweringInfoForExtern config lowering_info index = do
     case lowering_info of
         Function info -> panic "getLoweringInfoForExtern called on function lowering info"
         Type info -> do
-            variant <- List.filter info.members (\constraint -> case constraint of
+            variant <- List2.filter info.members (\constraint -> case constraint of
                     M.Extern i root member_info -> i == index && info.root.arg_group_var == root
                     _ -> False)
-            case head variant of
+            case List2.head variant of
                 Some (M.Extern index root member_info) -> createTypeLoweringInfoFromLoweringInfo config lowering_info member_info
                 Some _ -> panic "extern is not a extern"
                 None -> do
                     allocator <- createAllocator
                     (allocator, root) <- getNextTypeVariableInfo allocator
-                    Type (TypeLoweringInfo [] root [M.Owner root.ownership_var])
+                    Type (TypeLoweringInfo List2.empty root (List2.single (M.Owner root.ownership_var)))

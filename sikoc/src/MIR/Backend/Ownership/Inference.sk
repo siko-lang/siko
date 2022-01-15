@@ -23,6 +23,9 @@ import Siko.MIR.Backend.Ownership.Allocator
 import Siko.MIR.Backend.Ownership.TypeVariableInfo
 import Siko.MIR.Backend.Ownership.MemberInfo
 
+import List2 as List2
+import List2 (List2)
+
 data Context = { config :: Config,
                  program :: P.Program,
                  function_info_store :: FunctionInfoStore }
@@ -34,13 +37,13 @@ createRecordCtorFunctionInfo context type =
             record <- P.getRecord context.program id
             allocator <- createAllocator
             (allocator, result) <- getNextTypeVariableInfo allocator
-            (allocator, args, members) <- List.fold (allocator, [], []) record.fields (\(allocator, args, members), field -> do
+            (allocator, args, members) <- List.fold (allocator, List2.empty, List2.empty) record.fields (\(allocator, args, members), field -> do
                     (allocator, arg_info) <- getNextTypeVariableInfo allocator
                     member <- Member field.name result.arg_group_var arg_info
-                    members <- push members member
-                    args <- push args arg_info
+                    members <- List2.push members member
+                    args <- List2.push args arg_info
                     (allocator, args, members))
-            FunctionInfo args result members [] []
+            FunctionInfo args result members List2.empty List2.empty
         _ -> panic "createRecordCtorFunctionInfo: not a record"
 
 createVariantctorFunctionInfo :: Context -> Int -> T.Type -> FunctionInfo
@@ -55,14 +58,14 @@ createVariantctorFunctionInfo context index type =
                     allocator <- createAllocator
                     (allocator, adt_result) <- getNextTypeVariableInfo allocator
                     (allocator, record_result) <- getNextTypeVariableInfo allocator
-                    (allocator, args, members) <- List.fold (allocator, [], []) record.fields (\(allocator, args, members), field -> do
+                    (allocator, args, members) <- List.fold (allocator, List2.empty, List2.empty) record.fields (\(allocator, args, members), field -> do
                             (allocator, arg_info) <- getNextTypeVariableInfo allocator
                             member <- Member field.name record_result.arg_group_var arg_info
-                            members <- push members member
-                            args <- push args arg_info
+                            members <- List2.push members member
+                            args <- List2.push args arg_info
                             (allocator, args, members))
-                    variants <- [Variant index adt_result.arg_group_var record_result]
-                    FunctionInfo args adt_result (members + variants) [] []
+                    variants <- List2.single (Variant index adt_result.arg_group_var record_result)
+                    FunctionInfo args adt_result (members + variants) List2.empty List2.empty
                 _ -> panic "createVariantctorFunctionInfo: not a record"
         _ -> panic "createVariantctorFunctionInfo: not an adt"
 

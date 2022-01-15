@@ -1202,6 +1202,19 @@ fn generate_list_builtins(
                 indent, result_ty_str
             )?;
         }
+        "withCapacity" => {
+            write!(output_file, "{}let size = arg0.value as usize;\n", indent)?;
+            write!(
+                output_file,
+                "{}let new = Vec::with_capacity(size);\n",
+                indent
+            )?;
+            write!(
+                output_file,
+                "{} {} {{ value : std::rc::Rc::new(new) }}\n",
+                indent, result_ty_str
+            )?;
+        }
         "push" => {
             write!(
                 output_file,
