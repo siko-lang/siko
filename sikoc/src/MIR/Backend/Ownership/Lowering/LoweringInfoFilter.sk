@@ -15,45 +15,11 @@ getDependencyMap :: LoweringInfo -> Map TypeVariableInfo [TypeVariableInfo]
 getDependencyMap lowering_info =
     case lowering_info of
         Function function -> do
-            deps_map <- Map.empty
-            deps_map <- List2.fold deps_map function.args (\deps_map, info -> addInfo deps_map info)
-            deps_map <- addInfo deps_map function.result
-            deps_map <- List2.fold deps_map function.members (\deps_map, member -> case member of
-                M.Variant index root info -> addInfo deps_map info
-                M.Member name root info -> addInfo deps_map info
-                M.Extern index root info -> addInfo deps_map info)
-            processMembers function.members deps_map
+            sources <- List2.push function.args function.result
+            M.getDependencyMap sources function.members
         Type type -> do
-            deps_map <- Map.empty
-            deps_map <- addInfo deps_map type.root
-            deps_map <- List2.fold deps_map type.members (\deps_map, member -> case member of
-                M.Variant index root info -> addInfo deps_map info
-                M.Member name root info -> addInfo deps_map info
-                M.Extern index root info -> addInfo deps_map info)
-            processMembers type.members deps_map
-    where
-        processMembers :: List2 M.MemberInfo -> Map TypeVariableInfo [TypeVariableInfo] -> Map TypeVariableInfo [TypeVariableInfo]
-        processMembers members deps_map =
-            List2.fold deps_map members (\deps_map, member ->
-                case member of
-                    M.Variant index root info -> addDependency deps_map root info
-                    M.Member name root info -> addDependency deps_map root info
-                    M.Extern index root info -> addDependency deps_map root info)
-
-        addInfo :: Map TypeVariableInfo [TypeVariableInfo] -> TypeVariableInfo -> Map TypeVariableInfo [TypeVariableInfo]
-        addInfo deps_map info = do
-            (deps_map, _) <- alter (\old -> case old of
-                Some deps -> Some deps
-                None -> Some []) info deps_map
-            deps_map
-
-        addDependency :: Map TypeVariableInfo [TypeVariableInfo] -> TypeVariable -> TypeVariableInfo -> Map TypeVariableInfo [TypeVariableInfo]
-        addDependency deps_map root info = do
-            Map.map deps_map (\(key, deps) -> do
-                deps <- if key.arg_group_var == root
-                then List.push deps info
-                else deps
-                (key, deps))
+            sources <- List2.single type.root
+            M.getDependencyMap sources type.members
 
 isBorrower :: LoweringInfo -> TypeVariableInfo -> Bool
 isBorrower lowering_info info =

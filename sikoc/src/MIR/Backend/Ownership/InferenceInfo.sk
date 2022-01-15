@@ -120,8 +120,8 @@ createBorrowSetForExternal inference_info external_id = createBorrowSet inferenc
 
 mergeBorrowSets :: InferenceInfo -> BorrowId -> BorrowId -> (InferenceInfo, BorrowId)
 mergeBorrowSets inference_info id1 id2 = do
-    set1 <- getBorrowSet inference_info id1
-    set2 <- getBorrowSet inference_info id2
+    (inference_info, set1) <- getBorrowSet inference_info id1
+    (inference_info, set2) <- getBorrowSet inference_info id2
     allocator <- inference_info.allocator
     (allocator, id) <- getNextBorrowId allocator
     merged <- set1.borrows + set2.borrows
@@ -129,10 +129,10 @@ mergeBorrowSets inference_info id1 id2 = do
     borrow_sets <- Map2.put inference_info.borrow_sets id merged_set
     (inference_info { allocator = allocator, borrow_sets = borrow_sets }, id)
 
-getBorrowSet :: InferenceInfo -> BorrowId -> BorrowSet
+getBorrowSet :: InferenceInfo -> BorrowId -> (InferenceInfo, BorrowSet) // FIXME
 getBorrowSet inference_info id =
     case Map2.get inference_info.borrow_sets id of
-        Some borrow_set -> borrow_set
+        Some borrow_set -> (inference_info, borrow_set)
         None -> panic "No borrow set found for {}" % id
 
 addVar :: InferenceInfo -> E.Var -> InferenceInfo
@@ -185,16 +185,16 @@ maybeAddOwnership inference_info var kind = do
 getOwnership :: InferenceInfo -> TypeVariable -> Option OwnershipKind
 getOwnership inference_info var = Map2.get inference_info.ownership_values var
 
-getTypeVariableInfoByExprId :: InferenceInfo -> E.ExprId -> TypeVariableInfo
+getTypeVariableInfoByExprId :: InferenceInfo -> E.ExprId -> (InferenceInfo, TypeVariableInfo) // FIXME
 getTypeVariableInfoByExprId inference_info expr_id =
     case Map2.get inference_info.expr_type_variables expr_id of
-        Some i -> i
+        Some i -> (inference_info, i)
         None -> panic "TypeVariableInfo not found for expr {}" % expr_id
 
-getTypeVariableInfoByVar :: InferenceInfo -> E.Var -> TypeVariableInfo
+getTypeVariableInfoByVar :: InferenceInfo -> E.Var -> (InferenceInfo, TypeVariableInfo) // FIXME
 getTypeVariableInfoByVar inference_info var =
     case Map2.get inference_info.var_type_variables var of
-        Some i -> i
+        Some i -> (inference_info, i)
         None -> panic "TypeVariableInfo not found for var {}" % var
 
 toOwnershipInfo :: Map2 TypeVariable OwnershipKind -> List2 M.OwnershipInfo

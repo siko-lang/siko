@@ -53,7 +53,8 @@ lowerCase lowering_context lowering_info context c = do
 lowerExpr :: LoweringContext -> Context -> ME.Expr -> (Context, LE.Expr)
 lowerExpr lowering_context context expr = do
     ME.Expr s_expr expr_type expr_id <- expr
-    expr_info <- getTypeVariableInfoByExprId lowering_context.inference_info expr_id
+    (inference_info, expr_info) <- getTypeVariableInfoByExprId lowering_context.inference_info expr_id
+    lowering_context <- lowering_context { inference_info = inference_info }
     lowering_info <- createTypeLoweringInfoFromInferenceInfo context.config lowering_context.inference_info expr_info
     (lowering_info, _) <- normalizeLoweringInfo lowering_info
     //println "expr {} type {} {}" % (ME.short expr, expr_type, lowering_info)
@@ -64,9 +65,10 @@ lowerExpr lowering_context context expr = do
             (context, LE.Do items)
         ME.Multi _ -> panic "Multi in MIR -> LIR lowering"
         ME.StaticFunctionCall f_id args -> do
-            args_info <- List.map args (\arg -> do
+            (lowering_context, args_info) <- List.mapS lowering_context args (\lowering_context, arg -> do
                 ME.Expr _ arg_type arg_id <- arg
-                getTypeVariableInfoByExprId lowering_context.inference_info arg_id)
+                (inference_info, info) <- getTypeVariableInfoByExprId lowering_context.inference_info arg_id
+                (lowering_context { inference_info = inference_info }, info))
             lowering_info <- convertToFunctionLoweringInfo context.config lowering_context.inference_info args_info expr_info
             // println "-----------------------------------------"
             // println "---------------{}---------------" % f_id
@@ -162,7 +164,8 @@ lowerExpr lowering_context context expr = do
             (context, LE.Loop lir_var lir_initializer lir_body)
         ME.CaseOf body cases -> do
             ME.Expr _ _ body_id <- body
-            body_info <- getTypeVariableInfoByExprId lowering_context.inference_info body_id
+            (inference_info, body_info) <- getTypeVariableInfoByExprId lowering_context.inference_info body_id
+            lowering_context <- lowering_context { inference_info = inference_info }
             lowering_info <- createTypeLoweringInfoFromInferenceInfo context.config lowering_context.inference_info body_info
             (lowering_info, _) <- normalizeLoweringInfo lowering_info
             (context, lir_body) <- lowerExpr lowering_context context body
@@ -175,7 +178,8 @@ lowerExpr lowering_context context expr = do
         ME.Box arg -> panic "Box in MIR -> LIR lowering"
         ME.Converter arg _ -> do
             ME.Expr _ _ arg_id <- arg
-            arg_info <- getTypeVariableInfoByExprId lowering_context.inference_info arg_id
+            (inference_info, arg_info) <- getTypeVariableInfoByExprId lowering_context.inference_info arg_id
+            lowering_context <- lowering_context { inference_info = inference_info }
             from <- Option.unwrap (getOwnership lowering_context.inference_info arg_info.ownership_var)
             to <- Option.unwrap (getOwnership lowering_context.inference_info expr_info.ownership_var)
             (context, lir_arg) <- lowerExpr lowering_context context arg

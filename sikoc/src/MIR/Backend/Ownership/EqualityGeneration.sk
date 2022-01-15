@@ -36,14 +36,18 @@ addEqualInfo context info1 info2 = do
 
 addEqualExprs :: Context -> E.ExprId -> E.ExprId -> Context
 addEqualExprs context expr_id1 expr_id2 = do
-    info1 <- getTypeVariableInfoByExprId context.inference_info expr_id1
-    info2 <- getTypeVariableInfoByExprId context.inference_info expr_id2
+    inference_info <- context.inference_info
+    (inference_info, info1) <- getTypeVariableInfoByExprId inference_info expr_id1
+    (inference_info, info2) <- getTypeVariableInfoByExprId inference_info expr_id2
+    context <- context { inference_info = inference_info }
     addEqualInfo context info1 info2
 
 addEqualExprVar :: Context -> E.ExprId -> E.Var -> Context
 addEqualExprVar context expr_id var = do
-    info1 <- getTypeVariableInfoByExprId context.inference_info expr_id
-    info2 <- getTypeVariableInfoByVar context.inference_info var
+    inference_info <- context.inference_info
+    (inference_info, info1) <- getTypeVariableInfoByExprId inference_info expr_id
+    (inference_info, info2) <- getTypeVariableInfoByVar inference_info var
+    context <- context { inference_info = inference_info }
     addEqualInfo context info1 info2
 
 getExprId :: E.Expr -> E.ExprId
@@ -66,7 +70,7 @@ processExpr context expr = do
     inference_info <- context.inference_info
     context <- case expr_type of
         T.Adt _ | T.Record _ -> do
-            info <- getTypeVariableInfoByExprId inference_info expr_id
+            (inference_info, info) <- getTypeVariableInfoByExprId inference_info expr_id
             inference_info <- addTypeIdentity inference_info (TypeIdentity info.ownership_var (T.getIdentity expr_type))
             context { inference_info = inference_info }
         _ -> context
@@ -93,10 +97,11 @@ processExpr context expr = do
             args <- List2.toList2 args
             context <- List2.zipS context function_info.args args (\context, info_arg, arg_expr -> do
                 E.Expr _ _ arg_id <- arg_expr
-                expr_info <- getTypeVariableInfoByExprId context.inference_info arg_id
+                (inference_info, expr_info) <- getTypeVariableInfoByExprId context.inference_info arg_id
+                context <- context { inference_info = inference_info }
                 addEqualInfo context expr_info info_arg)
             // result equality
-            result_info <- getTypeVariableInfoByExprId context.inference_info expr_id
+            (inference_info, result_info) <- getTypeVariableInfoByExprId context.inference_info expr_id
             context <- addEqualInfo context result_info function_info.result
 
             inference_info <- context.inference_info
@@ -147,8 +152,8 @@ processExpr context expr = do
                 Some first -> do
                     first <- getExprId first
                     inference_info <- context.inference_info
-                    first_info <- getTypeVariableInfoByExprId inference_info first
-                    info <- getTypeVariableInfoByExprId inference_info expr_id
+                    (inference_info, first_info) <- getTypeVariableInfoByExprId inference_info first
+                    (inference_info, info) <- getTypeVariableInfoByExprId inference_info expr_id
                     inference_info <- addMemberInfo inference_info (M.Extern 0 info.arg_group_var first_info)
                     context <- context { inference_info = inference_info }
                     List.fold context items (\context, item -> addEqualExprs context first (getExprId item))
@@ -158,8 +163,8 @@ processExpr context expr = do
             inference_info <- context.inference_info
             (allocator, type_var) <- getNextTypeVariable inference_info.allocator
             inference_info <- inference_info { allocator = allocator }
-            receiver_info <- getTypeVariableInfoByExprId inference_info (getExprId receiver)
-            info <- getTypeVariableInfoByExprId inference_info expr_id
+            (inference_info, receiver_info) <- getTypeVariableInfoByExprId inference_info (getExprId receiver)
+            (inference_info, info) <- getTypeVariableInfoByExprId inference_info expr_id
             orig <- info.ownership_var
             info <- info { ownership_var = type_var }
             converter <- Converter info.ownership_var orig
@@ -169,7 +174,8 @@ processExpr context expr = do
         E.Return arg -> do
             inference_info <- context.inference_info
             result_info <- inference_info.result
-            arg_info <- getTypeVariableInfoByExprId inference_info (getExprId arg)
+            (inference_info, arg_info) <- getTypeVariableInfoByExprId inference_info (getExprId arg)
+            context <- context { inference_info = inference_info }
             context <- addEqualInfo context result_info arg_info
             (context, expr)
         E.Continue _ -> (context, expr)
@@ -194,8 +200,8 @@ processExpr context expr = do
                                     inference_info <- context.inference_info
                                     (allocator, type_var) <- getNextTypeVariable inference_info.allocator
                                     inference_info <- inference_info { allocator = allocator }
-                                    body_info <- getTypeVariableInfoByExprId inference_info body_id
-                                    var_info <- getTypeVariableInfoByVar inference_info var
+                                    (inference_info, body_info) <- getTypeVariableInfoByExprId inference_info body_id
+                                    (inference_info, var_info) <- getTypeVariableInfoByVar inference_info var
                                     orig <- var_info.ownership_var
                                     var_info <- var_info { ownership_var = type_var }
                                     converter <- Converter body_info.ownership_var var_info.ownership_var
@@ -206,8 +212,8 @@ processExpr context expr = do
                                     context { inference_info = inference_info }
                                 T.Record _ -> do
                                     inference_info <- context.inference_info
-                                    body_info <- getTypeVariableInfoByExprId inference_info body_id
-                                    var_info <- getTypeVariableInfoByVar inference_info var
+                                    (inference_info, body_info) <- getTypeVariableInfoByExprId inference_info body_id
+                                    (inference_info, var_info) <- getTypeVariableInfoByVar inference_info var
                                     addEqualInfo context body_info var_info
                                 _ -> panic "VariantCheckers' type is nor adt nor record"
                         _ -> context
@@ -221,8 +227,8 @@ processExpr context expr = do
         E.Converter arg _ -> do
             inference_info <- context.inference_info
             equals <- context.equals
-            info1 <- getTypeVariableInfoByExprId inference_info (getExprId arg)
-            info2 <- getTypeVariableInfoByExprId inference_info expr_id
+            (inference_info, info1) <- getTypeVariableInfoByExprId inference_info (getExprId arg)
+            (inference_info, info2) <- getTypeVariableInfoByExprId inference_info expr_id
             converter <- Converter info1.ownership_var info2.ownership_var
             inference_info <- addConverter inference_info converter
             equals <- List2.push equals (Equal info1.arg_group_var info2.arg_group_var)
@@ -283,7 +289,8 @@ processEqualities config group inference_info function_info_store program body =
     context <- Context List2.empty inference_info function_info_store program group
     trace config "processEqualities - traverse"
     (context, body) <- traverse context body (Some processExpr) None None
-    body_info <- getTypeVariableInfoByExprId context.inference_info (getExprId body)
+    (inference_info, body_info) <- getTypeVariableInfoByExprId context.inference_info (getExprId body)
+    context <- context { inference_info = inference_info }
     result_info <- context.inference_info.result
     context <- addEqualInfo context body_info result_info
     inference_info <- context.inference_info
