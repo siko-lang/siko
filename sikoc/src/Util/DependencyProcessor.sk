@@ -5,6 +5,9 @@ import Siko.Config
 import Siko.Trace
 import Siko.Util.SCC as SCC
 
+import List2 as List2
+import List2 (List2)
+
 data DependencyGroup a = { items :: [a] } deriving (Show)
 
 createIdMaps a :: (PartialEq a, Ord a) => SCC.Graph -> Map a [a] -> (SCC.Graph, Map a SCC.NodeId, Map SCC.NodeId a)
@@ -42,11 +45,13 @@ processDependencies config all_dependencies = do
         (graph, item_id_map, id_item_map) <- createIdMaps graph all_dependencies
         graph <- initGraph graph item_id_map all_dependencies
         sccs <- SCC.collectSCCs graph
-        ordered_groups <- List.map sccs (mapSCC id_item_map)
+        ordered_groups <- List2.map sccs (mapSCC id_item_map)
+        ordered_groups <- ordered_groups |> List2.iter |> List.toList
         //trace config "new processDependencies done"
         ordered_groups
     where
-        mapSCC a :: Map SCC.NodeId a -> [SCC.NodeId] -> DependencyGroup a
+        mapSCC a :: Map SCC.NodeId a -> List2 SCC.NodeId -> DependencyGroup a
         mapSCC id_item_map scc = do
-            items <- List.map scc (\id -> Option.unwrap (get id_item_map id))
+            items <- List2.map scc (\id -> Option.unwrap (get id_item_map id))
+            items <- items |> List2.iter |> List.toList
             DependencyGroup items
