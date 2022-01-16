@@ -263,10 +263,6 @@ processExpr context expr = do
             context { invalid_borrows = invalid_borrows }
         None -> context
     //println "Invalid borrows {} = {}" % (expr_id, context.invalid_borrows)
-    // relevants <- Set.empty
-    // relevants <- Set.put relevants info.ownership_var
-    // relevants <- Set.put relevants info.arg_group_var
-    // relevants <- collectRelevantVars context.inference_info.members relevants
     relevants <- case Map.get context.ownership_dep_map info.arg_group_var of
         Some vars -> List.push vars info.ownership_var
         None -> do
@@ -325,7 +321,9 @@ calculateDepMap config inference_info = do
             ownership_vars :: [TypeVariable] <- List.fold [] group.items (\ownership_vars, item -> do
                 ownership_vars <- List.push ownership_vars item.ownership_var
                 case Map.get deps_map item of
-                    Some deps -> List.fold ownership_vars deps (\ownership_vars, dep -> case Map.get ownership_dep_map dep.arg_group_var of
+                    Some deps -> List.fold ownership_vars deps (\ownership_vars, dep -> do
+                                    ownership_vars <- List.push ownership_vars dep.ownership_var
+                                    case Map.get ownership_dep_map dep.arg_group_var of
                                         Some vars -> do
                                             vars :: [TypeVariable] <- vars
                                             List.fold ownership_vars vars (\ownership_vars, var -> List.push ownership_vars var)
