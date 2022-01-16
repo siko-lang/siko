@@ -51,7 +51,7 @@ isEmpty a :: List2 a -> Bool
 isEmpty l = extern
 
 contains a :: (PartialEq a) => List2 a -> a -> Bool
-contains l i = isSome (containsAtIndex l i)
+contains l i = extern
 
 containsAtIndex a :: (PartialEq a) => List2 a -> a -> Option Int
 containsAtIndex l i =
@@ -173,7 +173,13 @@ foldE f s l = do
     s
 
 fold s a :: s -> List2 a -> (s -> a -> s) -> s
-fold init list f = list |> List2.iter |> Iterator.fold f init
+fold init input f = loop (result, index) <- (init, 0) do
+    if index >= List2.getLength input
+    then break result
+    else do
+        elem <- List2.atIndex input index
+        result <- f result elem
+        (result, index + 1)
 
 map a b :: List2 a -> (a -> b) -> List2 b
 map input f = loop (result, index) <- (List2.withCapacity (getLength input), 0) do
@@ -182,7 +188,14 @@ map input f = loop (result, index) <- (List2.withCapacity (getLength input), 0) 
     else (List2.push result (f (atIndex input index) ), index + 1)
 
 filter a :: List2 a -> (a -> Bool) -> List2 a
-filter list f = list |> List2.iter |> Iterator.filter f |> List2.toList
+filter input f = loop (result, index) <- (List2.withCapacity (List2.getLength input), 0) do
+    if index >= List2.getLength input
+    then break result
+    else do
+        elem <- List2.atIndex input index
+        if f elem
+        then (List2.push result elem, index + 1)
+        else (result, index + 1)
 
 foldM a k v :: (Ord k) => Map k v -> List2 a -> (a -> (k, v)) -> Map k v
 foldM init list f = List2.fold init list (\m, item -> do
@@ -218,6 +231,9 @@ flatten lists = List2.fold List2.empty lists (\s, l -> s + l)
 
 updateAll a :: List2 a -> (a -> a) -> List2 a
 updateAll input f = extern
+
+updateAllS s a :: s -> List2 a -> (s -> a -> (s, a)) -> (s, List2 a)
+updateAllS s input f = extern
 
 updateSpecifics a :: (PartialEq a) => List2 a -> a -> a -> List2 a
 updateSpecifics list from to = extern

@@ -27,12 +27,12 @@ data Borrow = Local E.ExprId
             | External BorrowId
             deriving (PartialEq, Eq, PartialOrd, Ord, Show)
 
-data BorrowSet = { borrows :: Set Borrow } deriving (Show)
+data BorrowSet = { borrows :: Set Borrow } deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
 data OwnershipKind = Unknown
                    | Owner
                    | Borrower BorrowId
-                   deriving (Show)
+                   deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
 data TypeIdentity = { var :: TypeVariable, id :: P.Identity } deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
@@ -317,25 +317,36 @@ toFunctionInfo inference_info = do
             (input_members + output_members) filtered_converters filtered_ownershipinfos
 
 instance Apply Converter where
-    apply equal converter = Converter (apply equal converter.from) (apply equal converter.to)
+    apply applier converter = do
+        (applier, from) <- apply applier converter.from
+        (applier, to) <- apply applier converter.to
+        (applier, Converter from to)
 
 instance Apply TypeIdentity where
-    apply equal type_id = TypeIdentity (apply equal type_id.var) type_id.id
+    apply applier type_id = do
+        (applier, var) <- apply applier type_id.var
+        (applier, TypeIdentity var type_id.id)
 
 instance Apply InferenceInfo where
-    apply equal inference_info = do
-        expr_type_variables <- apply equal inference_info.expr_type_variables
-        var_type_variables <- apply equal inference_info.var_type_variables
-        ownership_values <- Map2.map inference_info.ownership_values (\(k, v) -> (apply equal k, v))
-        args <- apply equal inference_info.args
-        result <- apply equal inference_info.result
-        members <- apply equal inference_info.members
-        converters <- apply equal inference_info.converters
-        function_converters <- apply equal inference_info.function_converters
-        type_ids <- apply equal inference_info.type_ids
-        InferenceInfo expr_type_variables var_type_variables ownership_values
+    apply applier inference_info = do
+        (applier, expr_type_variables) <- apply applier inference_info.expr_type_variables
+        (applier, var_type_variables) <- apply applier inference_info.var_type_variables
+        (applier, ownership_values) <- Map2.mapS applier inference_info.ownership_values (\applier, (k, v) -> do
+            (applier, k) <- apply applier k
+            (applier, k, v))
+        (applier, args) <- apply applier inference_info.args
+        (applier, result) <- apply applier inference_info.result
+        (applier, members) <- apply applier inference_info.members
+        (applier, converters) <- apply applier inference_info.converters
+        (applier, function_converters) <- apply applier inference_info.function_converters
+        (applier, type_ids) <- apply applier inference_info.type_ids
+        members <- List2.dedup (List2.sort members)
+        converters <- List2.dedup (List2.sort converters)
+        type_ids <- List2.dedup (List2.sort type_ids)
+        inference_info <- InferenceInfo expr_type_variables var_type_variables ownership_values
             args result members converters inference_info.allocator
             function_converters inference_info.borrow_sets type_ids
+        (applier, inference_info)
 
 instance EqualityStore InferenceInfo where
     getMemberInfos inference_info = inference_info.members

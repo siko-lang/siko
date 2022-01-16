@@ -12,6 +12,12 @@ instance (PartialEq k, PartialEq v) => PartialEq Map2 k v where
 
 instance (Eq k, Eq v) => Eq Map2 k v
 
+instance (PartialOrd k, PartialOrd v) => PartialOrd Map2 k v where
+    partialCmp a b = extern
+
+instance (Ord k, Ord v) => Ord Map2 k v where
+    cmp a b = extern
+
 empty k v :: (Ord k) => Map2 k v
 empty = extern
 
@@ -30,7 +36,7 @@ remove k v :: (Ord k) => Map2 k v -> k -> (Map2 k v, Option v)
 remove m k = extern
 
 getKeys k v :: Map2 k v -> List2 k
-getKeys m = m |> Map2.iter |> Iterator.fold (\keys, (k, _) -> List2.push keys k) List2.empty
+getKeys m = extern
 
 alter k v :: (Ord k) => (Option v -> Option v) -> k -> Map2 k v -> (Map2 k v, Option v)
 alter f k m = case f (Map2.get m k) of

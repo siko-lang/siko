@@ -13,9 +13,12 @@ use std::io::Result;
 use std::io::Write;
 
 pub fn is_hacked_function(module: &str, name: &str) -> bool {
-    if (module == "Map" || module == "Map2") && (name == "get") || (name == "getSize") {
+    if (module == "Map" || module == "Map2") && (name == "get")
+        || (name == "getSize" || (name == "getKeys"))
+    {
         true
-    } else if (module == "List" || module == "List2") && (name == "getLength" || name == "atIndex")
+    } else if (module == "List" || module == "List2")
+        && (name == "getLength" || name == "atIndex" || name == "contains")
     {
         true
     } else {

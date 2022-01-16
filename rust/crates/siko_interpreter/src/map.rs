@@ -170,6 +170,21 @@ impl ExternFunction for GetSize {
     }
 }
 
+pub struct GetKeys {}
+
+impl ExternFunction for GetKeys {
+    fn call(
+        &self,
+        environment: &Environment,
+        _: Option<ExprId>,
+        _: &NamedFunctionKind,
+        ty: Type,
+    ) -> Value {
+        let map = environment.get_arg_by_index(0).core.as_map();
+        let keys = map.keys().cloned().collect();
+        return Value::new(ValueCore::List(keys), ty);
+    }
+}
 pub struct Update {}
 
 impl ExternFunction for Update {
@@ -190,13 +205,48 @@ impl ExternFunction for Update {
                 ExprResult::Ok(v) => {
                     *m_v = v;
                 }
-                e => { return e; }
+                e => {
+                    return e;
+                }
             }
         }
         return ExprResult::Ok(Value::new(ValueCore::Map(map), ty));
     }
 }
 
+pub struct UpdateS {}
+
+impl ExternFunction for UpdateS {
+    fn call2(
+        &self,
+        environment: &Environment,
+        expr_id: Option<ExprId>,
+        _: &NamedFunctionKind,
+        ty: Type,
+    ) -> ExprResult {
+        let mut state = environment.get_arg_by_index(0).clone();
+        let map2 = environment.get_arg_by_index(1);
+        let mut map = map2.core.as_map();
+        let f = environment.get_arg_by_index(2);
+        for (m_k, m_v) in &mut map {
+            let tuple_core = ValueCore::Tuple(vec![m_k.clone(), m_v.clone()]);
+            let tuple = Value::new(tuple_core, Type::Tuple(vec![]));
+            let r = Interpreter::call_func(f.clone(), vec![state.clone(), tuple], expr_id);
+            match r {
+                ExprResult::Ok(v) => {
+                    let tuple = v.core.as_tuple();
+                    state = tuple[0].clone();
+                    *m_v = tuple[1].clone();
+                }
+                e => {
+                    return e;
+                }
+            }
+        }
+        let map = Value::new(ValueCore::Map(map), map2.ty.clone());
+        return ExprResult::Ok(Value::new(ValueCore::Tuple(vec![state, map]), ty));
+    }
+}
 
 pub struct UpdateValues {}
 
@@ -305,5 +355,7 @@ pub fn register_extern_functions(interpreter: &mut Interpreter) {
     interpreter.add_extern_function(MAP_MODULE_NAME, "opEq", Box::new(MapPartialEq {}));
     interpreter.add_extern_function(MAP_MODULE_NAME, "cmp", Box::new(MapOrd {}));
     interpreter.add_extern_function(MAP_MODULE_NAME, "update", Box::new(Update {}));
+    interpreter.add_extern_function(MAP_MODULE_NAME, "updateS", Box::new(UpdateS {}));
     interpreter.add_extern_function(MAP_MODULE_NAME, "updateValues", Box::new(UpdateValues {}));
+    interpreter.add_extern_function(MAP_MODULE_NAME, "getKeys", Box::new(GetKeys {}));
 }

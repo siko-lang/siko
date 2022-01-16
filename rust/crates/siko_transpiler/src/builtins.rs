@@ -778,6 +778,18 @@ fn generate_map2_builtins(
                 indent, result_ty_str
             )?;
         }
+        "getKeys" => {
+            write!(
+                output_file,
+                "{}let keys = arg0.value.keys().cloned().collect();\n",
+                indent
+            )?;
+            write!(
+                output_file,
+                "{}{} {{ value : keys }}",
+                indent, result_ty_str
+            )?;
+        }
         "updateS" => {
             let f_type = &arg_type_types[2];
             let m_type = &arg_type_types[1];
@@ -806,7 +818,7 @@ fn generate_map2_builtins(
             )?;
             write!(output_file, "{}let call = arg2.call_ro(state);\n", indent)?;
             write!(output_file, "{}let tuple = call.call_ro(input);\n", indent)?;
-            write!(output_file, "{}state  = tupl;e._siko_field_0;\n", indent)?;
+            write!(output_file, "{}state  = tuple._siko_field_0;\n", indent)?;
             write!(output_file, "{}*v  = tuple._siko_field_1;\n", indent)?;
             write!(output_file, "{}}}\n", indent)?;
             write!(
@@ -1475,6 +1487,31 @@ fn generate_list2_builtins(
             write!(output_file, "*item  = t;")?;
             write!(output_file, "}}")?;
             write!(output_file, "{}{} {{ value : v }}\n", indent, result_ty_str,)?;
+        }
+        "updateAllS" => {
+            let id = result_ty.get_typedef_id();
+            let tuple_record = program.typedefs.get(&id).get_record();
+            write!(output_file, "let mut s = arg0;")?;
+            write!(output_file, "let mut v = arg1.value;")?;
+            write!(output_file, "for item in &mut v {{")?;
+            write!(
+                output_file,
+                "let mut r = arg2.call_ro(s);"
+            )?;
+            write!(
+                output_file,
+                "let tuple = r.call(item.clone());"
+            )?;
+            write!(output_file, "s  = tuple._siko_field_0;")?;
+            write!(output_file, "*item  = tuple._siko_field_1;")?;
+            write!(output_file, "}}")?;
+            write!(
+                output_file,
+                "{}{} {{ _siko_field_0: s, _siko_field_1: {} {{ value : v }} }}\n",
+                indent,
+                result_ty_str,
+                ir_type_to_rust_type(&tuple_record.fields[1].ty, program)
+            )?;
         }
         "updateSpecifics" => {
             write!(output_file, "let mut v = arg0.value;")?;

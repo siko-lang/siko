@@ -22,7 +22,8 @@ import List2 (List2)
 import Map2 as Map2
 import Map2 (Map2)
 
-data Context = { ownership_dep_map :: Map2 TypeVariable (List2 TypeVariable),
+data Context = { config :: Config,
+                 ownership_dep_map :: Map2 TypeVariable (List2 TypeVariable),
                  inference_info :: InferenceInfo,
                  program :: P.Program,
                  borrow_info :: BorrowInfo,
@@ -54,16 +55,16 @@ getTypeVariableInfoByVar2 context var = do
     (inference_info, info) <- getTypeVariableInfoByVar context.inference_info var
     (context { inference_info = inference_info }, info)
 
-initializeExpr :: Context -> E.Expr -> (Context, E.Expr)
-initializeExpr context expr = do
-    E.Expr s_expr _ expr_id <- expr
-    (context, info) <- getTypeVariableInfoByExprId2 context expr_id
-    TypeVariable index <- info.ownership_var
-    case Map2.get context.inference_info.ownership_values info.ownership_var of
-        Some _ -> (context, expr)
-        None -> do
-            context <- addOwnershipValue context info.ownership_var Unknown
-            (context, expr)
+initializeExprOwnerships :: Context -> Context
+initializeExprOwnerships context = do
+    expr_ids <- Map2.getKeys context.inference_info.expr_type_variables
+    List2.fold context expr_ids (\context, expr_id -> do
+            (context, info) <- getTypeVariableInfoByExprId2 context expr_id
+            TypeVariable index <- info.ownership_var
+            case Map2.get context.inference_info.ownership_values info.ownership_var of
+                Some _ -> context
+                None -> addOwnershipValue context info.ownership_var Unknown
+        )
 
 processConverter :: Context -> Option E.ExprId -> Option E.ExprId -> TypeVariable -> TypeVariable -> Context
 processConverter context converter_expr borrowed_expr from to = do
@@ -135,40 +136,20 @@ processConverter context converter_expr borrowed_expr from to = do
             else addOwnershipValue context to from_kind
         (Unknown, _) -> context
 
-preCaseCheck :: Context -> E.Expr -> Context
-preCaseCheck context expr = do
-    E.Expr s_expr _ expr_id <- expr
-    (context, info) <- getTypeVariableInfoByExprId2 context expr_id
-    case s_expr of
-        E.CaseOf body cases -> do
-            E.Expr _ _ body_id <- body
-            (context, body_info) <- getTypeVariableInfoByExprId2 context body_id
-            List.fold context cases (\context, c -> case c.checker of
-                E.VariantChecker index var _ -> do
-                    (context, var_info) <- getTypeVariableInfoByVar2 context var
-                    (context, body_kind) <- getOwnershipValue context body_info.ownership_var
-                    var_kind <- case getOwnership context.inference_info var_info.ownership_var of
-                        Some o -> o
-                        None -> Unknown
-                    case (body_kind, var_kind) of
-                        (body_o, Unknown) -> addOwnershipValue context var_info.ownership_var body_o
-                        _ -> context
-                _ -> context)
-        _ -> context
-
 getBorrowSet2 :: Context -> BorrowId -> (Context, BorrowSet) // FIXME
 getBorrowSet2 context id = do
     (inference_info, id) <- getBorrowSet context.inference_info id
     (context { inference_info = inference_info }, id)
 
-processExpr :: Context -> E.Expr -> (Context, E.Expr)
+processExpr :: Context -> E.Expr -> Context
 processExpr context expr = do
     E.Expr s_expr expr_type expr_id <- expr
     (context, info) <- getTypeVariableInfoByExprId2 context expr_id
     context <- case s_expr of
-        E.Do _ -> context
+        E.Do items -> List.fold context items processExpr
         E.Multi _ -> context
         E.StaticFunctionCall f_id args -> do
+                context <- List.fold context args processExpr
                 function <- P.getFunction context.program f_id
                 case function.kind of
                     F.Normal _ | F.Extern _ -> do
@@ -191,14 +172,12 @@ processExpr context expr = do
         E.FloatLiteral _ -> addOwnershipValue context info.ownership_var Owner
         E.CharLiteral _ -> addOwnershipValue context info.ownership_var Owner
         E.VarDecl var rhs -> do
-            //println "VarDecl {}" % var
+            context <- processExpr context rhs
             context <- addOwnershipValue context info.ownership_var Owner
             context
-        E.VarRef _ -> do
-            //expr_kind <- getOwnershipValue context info.ownership_var
-            //println "varref {} {}" % (info, expr_kind)
-            context
+        E.VarRef _ -> context
         E.FieldAccess name receiver -> do
+            context <- processExpr context receiver
             E.Expr _ _ receiver_id <- receiver
             (context, receiver_info) <- getTypeVariableInfoByExprId2 context receiver_id
             (context, receiver_kind) <- getOwnershipValue context receiver_info.ownership_var
@@ -228,23 +207,55 @@ processExpr context expr = do
                         (Borrower _, Unknown) -> addOwnershipValue context info.ownership_var receiver_kind
                         (Owner, Unknown) -> addOwnershipValue context info.ownership_var receiver_kind
                         _ -> context
-        E.If _ _ _ -> context
-        E.List args -> addOwnershipValue context info.ownership_var Owner
-        E.Return arg -> addOwnershipValue context info.ownership_var Owner
-        E.Continue arg -> addOwnershipValue context info.ownership_var Owner
-        E.Break arg -> addOwnershipValue context info.ownership_var Owner
+        E.If cond true_branch false_branch -> do
+            context <- processExpr context cond
+            context <- processExpr context true_branch
+            context <- processExpr context false_branch
+            context
+        E.List args -> do
+            context <- List.fold context args processExpr
+            addOwnershipValue context info.ownership_var Owner
+        E.Return arg -> do
+            context <- processExpr context arg
+            addOwnershipValue context info.ownership_var Owner
+        E.Continue arg -> do
+            context <- processExpr context arg
+            addOwnershipValue context info.ownership_var Owner
+        E.Break arg -> do
+            context <- processExpr context arg
+            addOwnershipValue context info.ownership_var Owner
         E.RecordUpdate var updates -> panic "RecordUpdate in InferOwnership"
-        E.Loop _ _ _ _ _ -> do
+        E.Loop var initializer body _ _ -> do
+            context <- processExpr context initializer
+            context <- processExpr context body
             case expr_type of
                 T.Never -> addOwnershipValue context info.ownership_var Owner
                 _ -> context
-        E.CaseOf body cases -> context
+        E.CaseOf body cases -> do
+            context <- processExpr context body
+            E.Expr _ _ body_id <- body
+            (context, body_info) <- getTypeVariableInfoByExprId2 context body_id
+            List.fold context cases (\context, c -> do
+                    context <- case c.checker of
+                        E.VariantChecker index var _ -> do
+                            (context, var_info) <- getTypeVariableInfoByVar2 context var
+                            (context, body_kind) <- getOwnershipValue context body_info.ownership_var
+                            var_kind <- case getOwnership context.inference_info var_info.ownership_var of
+                                Some o -> o
+                                None -> Unknown
+                            case (body_kind, var_kind) of
+                                (body_o, Unknown) -> addOwnershipValue context var_info.ownership_var body_o
+                                _ -> context
+                        _ -> context
+                    processExpr context c.body
+                )
         E.Clone arg -> panic "Clone in InferOwnership"
         E.Deref arg -> panic "Deref in InferOwnership"
         E.Ref arg -> panic "Ref in InferOwnership"
         E.Move arg -> panic "Move in InferOwnership"
         E.Box arg -> panic "Box in InferOwnership"
         E.Converter arg _  -> do
+            context <- processExpr context arg
             E.Expr arg_s_expr _ arg_id <- arg
             (context, arg_info) <- getTypeVariableInfoByExprId2 context arg_id
             borrowed_var <- case arg_s_expr of
@@ -256,6 +267,15 @@ processExpr context expr = do
                         else None
                 _ -> None
             processConverter context (Some expr_id) borrowed_var arg_info.ownership_var info.ownership_var
+    // trace context.config "updateInvalidBorrows"
+    context <- updateInvalidBorrows context expr_id
+    // trace context.config "checkBorrows"
+    context <- checkBorrows context info
+    // trace context.config "processExpr done"
+    context
+
+updateInvalidBorrows :: Context -> E.ExprId -> Context
+updateInvalidBorrows context expr_id = do
     context <- case Map.get context.borrow_info.invalidations expr_id of
         Some invalidations -> do
             invalid_borrows <- List.fold context.invalid_borrows invalidations (\invalid_borrows, invalidation ->
@@ -263,41 +283,47 @@ processExpr context expr = do
             context { invalid_borrows = invalid_borrows }
         None -> context
     //println "Invalid borrows {} = {}" % (expr_id, context.invalid_borrows)
-    relevants <- case Map2.get context.ownership_dep_map info.arg_group_var of
-        Some vars -> List2.push vars info.ownership_var
-        None -> do
-            println "depmap: {}" % context.ownership_dep_map
-            panic "info.arg_group_var {} not found in context's ownership_dep_map" % info.arg_group_var
-    context <- if not context.needs_restart
-    then do
-        invalid_borrows <- context.invalid_borrows
-        (context, new_forced_clones) <- List2.fold (context, []) relevants (\(context, forced_clones), var ->
+    context
+
+checkBorrows :: Context -> TypeVariableInfo -> Context
+checkBorrows context expr_info = do
+        relevants <- case Map2.get context.ownership_dep_map expr_info.arg_group_var of
+            Some vars -> List2.push vars expr_info.ownership_var
+            None -> do
+                println "depmap: {}" % context.ownership_dep_map
+                panic "info.arg_group_var {} not found in context's ownership_dep_map" % expr_info.arg_group_var
+        context <- if not context.needs_restart
+        then do
+            (context, new_forced_clones) <- List2.fold (context, List2.empty) relevants checkBorrowingVar
+            new_forced_clones <- List2.dedup (List2.sort new_forced_clones)
+            old_forced_clones <- context.forced_clones
+            new_forced_clones <- List2.filter new_forced_clones (\v -> not (Set.contains old_forced_clones v))
+            case List2.head new_forced_clones of
+                Some first -> do
+                    forced_clones <- Set.put context.forced_clones first
+                    context { needs_restart = True, forced_clones = forced_clones }
+                None -> context
+        else context
+        context
+    where
+        checkBorrowingVar :: (Context, List2 TypeVariable) -> TypeVariable -> (Context, List2 TypeVariable)
+        checkBorrowingVar (context, forced_clones) var =
             case Map2.get context.inference_info.ownership_values var of
-                Some ownership -> do
-                    (context, forced_clones) <- case ownership of
+                Some ownership -> case ownership of
                         Borrower id -> do
                             (context, borrow_set) <- getBorrowSet2 context id
-                            forced_clones <- Set.fold forced_clones borrow_set.borrows (\forced_clones, borrow ->
-                                case borrow of
-                                    Local borrowed_expr -> do
-                                        if Set.contains invalid_borrows borrowed_expr
-                                        then List.push forced_clones var
-                                        else forced_clones
-                                    _ -> forced_clones)
-                            (context, forced_clones)
+                            Set.fold (context, forced_clones) borrow_set.borrows (promoteBorrow var)
                         _ -> (context, forced_clones)
-                    (context, forced_clones)
-                None -> (context, forced_clones))
-        new_forced_clones <- new_forced_clones |> sort |> dedup
-        old_forced_clones <- context.forced_clones
-        new_forced_clones <- List.filter new_forced_clones (\v -> not (Set.contains old_forced_clones v))
-        case head new_forced_clones of
-            Some first -> do
-                forced_clones <- Set.put context.forced_clones first
-                context { needs_restart = True, forced_clones = forced_clones }
-            None -> context
-    else context
-    (context, expr)
+                None -> (context, forced_clones)
+
+        promoteBorrow :: TypeVariable -> (Context, List2 TypeVariable) -> Borrow -> (Context, List2 TypeVariable)
+        promoteBorrow var (context, forced_clones) borrow =
+            case borrow of
+                Local borrowed_expr -> do
+                    if Set.contains context.invalid_borrows borrowed_expr
+                    then (context, List2.push forced_clones var)
+                    else (context, forced_clones)
+                _ -> (context, forced_clones)
 
 dumpExpr :: Context -> E.Expr -> (Context, E.Expr)
 dumpExpr context expr = do
@@ -307,37 +333,56 @@ dumpExpr context expr = do
     println "dumpOwnership {}/{} {} {}" % (expr_id, E.short expr, info, o1)
     (context, expr)
 
-calculateDepMap :: Config -> InferenceInfo -> Map2 TypeVariable (List2 TypeVariable)
-calculateDepMap config inference_info = do
+calculateDepMap :: Config -> String -> InferenceInfo -> Map2 TypeVariable (List2 TypeVariable)
+calculateDepMap config name inference_info = do
         sources <- List2.push inference_info.args inference_info.result
         sources <- Map2.fold sources inference_info.expr_type_variables (\sources, (_, info) -> List2.push sources info)
-        trace config "calculateDepMap: getDependencyMap ({})" % (List2.getLength sources)
+        //trace config "calculateDepMap: getDependencyMap ({})" % (List2.getLength sources)
         deps_map <- M.getDependencyMap sources inference_info.members
-        trace config "calculateDepMap: processDependencies"
+        //trace config "calculateDepMap: processDependencies"
         groups <- processDependencies config deps_map
-        trace config "calculateDepMap: create ownership_dep_map"
+        if name == "Siko.Transpiler.convertExpr_0"
+        then do
+            println "groups: {}" % (getLength groups)
+            dumpInferenceInfoStats config inference_info
+        else ()
+        groups <- List2.toList2 groups
+        groups <- List2.map groups (\group -> List2.toList2 group.items)
+        //trace config "calculateDepMap: create ownership_dep_map"
         ownership_dep_map <- Map2.empty
-        ownership_dep_map <- List.fold ownership_dep_map groups (\ownership_dep_map, group -> do
-            (ownership_dep_map, group, ownership_vars) <- List.fold (ownership_dep_map, group, List2.empty) group.items (\(ownership_dep_map, group, ownership_vars), item -> do
-                ownership_vars <- List2.push ownership_vars item.ownership_var
-                case Map.get deps_map item of
-                    Some deps -> List.fold (ownership_dep_map, group, ownership_vars) deps (\(ownership_dep_map, group, ownership_vars), dep -> do
-                                    ownership_vars <- List2.push ownership_vars dep.ownership_var
-                                    ownership_vars <- case Map2.get ownership_dep_map dep.arg_group_var of
-                                        Some vars -> ownership_vars + vars
-                                        None -> if List.contains group.items dep
-                                                then ownership_vars
-                                                else panic "dep not found in ownership_dep_map {}" % dep
-                                    (ownership_dep_map, group, ownership_vars))
-                    None -> (ownership_dep_map, group, ownership_vars))
-            List.fold ownership_dep_map group.items (\ownership_dep_map, item -> Map2.put ownership_dep_map item.arg_group_var ownership_vars))
+        ownership_dep_map <- List2.fold ownership_dep_map groups (\ownership_dep_map, group -> do
+            (ownership_dep_map, group, ownership_vars) <- List2.fold (ownership_dep_map, group, List2.empty) group (processGroupItem deps_map)
+            List2.fold ownership_dep_map group (\ownership_dep_map, item -> Map2.put ownership_dep_map item.arg_group_var ownership_vars))
         // println "members: {}" % inference_info.members
         // println "deps_map: {}" % deps_map
         // println "groups {}" % groups
         // println "ownership_dep_map: {}" % ownership_dep_map
         ownership_dep_map
+    where
+        processGroupItem :: Map TypeVariableInfo [TypeVariableInfo]
+                            -> (Map2 TypeVariable (List2 TypeVariable), List2 TypeVariableInfo, List2 TypeVariable)
+                            -> TypeVariableInfo
+                            -> (Map2 TypeVariable (List2 TypeVariable), List2 TypeVariableInfo, List2 TypeVariable)
+        processGroupItem deps_map (ownership_dep_map, group, ownership_vars) item = do
+                ownership_vars <- List2.push ownership_vars item.ownership_var
+                case Map.get deps_map item of
+                    Some deps -> List.fold (ownership_dep_map, group, ownership_vars) deps copyDepVars
+                    None -> (ownership_dep_map, group, ownership_vars)
+
+        copyDepVars :: (Map2 TypeVariable (List2 TypeVariable), List2 TypeVariableInfo, List2 TypeVariable)
+                       -> TypeVariableInfo
+                       -> (Map2 TypeVariable (List2 TypeVariable), List2 TypeVariableInfo, List2 TypeVariable)
+        copyDepVars (ownership_dep_map, group, ownership_vars) dep = do
+            ownership_vars <- List2.push ownership_vars dep.ownership_var
+            ownership_vars <- case Map2.get ownership_dep_map dep.arg_group_var of
+                Some vars -> List2.dedup (List2.sort (ownership_vars + vars))
+                None -> if List2.contains group dep
+                        then ownership_vars
+                        else panic "dep not found in ownership_dep_map {}" % dep
+            (ownership_dep_map, group, ownership_vars)
 
 inferOwnership :: Config ->
+                  String ->
                   [P.Identity] ->
                   FunctionInfoStore ->
                   InferenceInfo ->
@@ -345,11 +390,11 @@ inferOwnership :: Config ->
                   E.Expr ->
                   BorrowInfo ->
                   (InferenceInfo, Set E.ExprId)
-inferOwnership config group function_info_store inference_info program body borrow_info = do
-        ownership_dep_map <- calculateDepMap config inference_info
+inferOwnership config name group function_info_store inference_info program body borrow_info = do
+        ownership_dep_map <- calculateDepMap config name inference_info
         loop (forced_clones, cloning_converters, count) <- (Set.empty, Set.empty, 0) do
-            trace config "inferOwnership: loop count {}" % count
-            dumpInferenceInfoStats config inference_info
+            //trace config "inferOwnership: loop count {}" % count
+            //dumpInferenceInfoStats config inference_info
             (inference_info, new_forced_clones, cloning_converters) <- infer config ownership_dep_map group function_info_store inference_info
                                                         program body borrow_info forced_clones cloning_converters
             if new_forced_clones != forced_clones
@@ -368,10 +413,10 @@ inferOwnership config group function_info_store inference_info program body borr
                  Set E.ExprId ->
                  (InferenceInfo, Set TypeVariable, Set E.ExprId)
         infer config ownership_dep_map group function_info_store inference_info program body borrow_info forced_clones cloning_converters = do
-        context <- Context ownership_dep_map inference_info program borrow_info
+        context <- Context config ownership_dep_map inference_info program borrow_info
                            function_info_store group Set.empty forced_clones cloning_converters False
-        (context, body) <- traverse context body (Some initializeExpr) None None
-        (context, body) <- traverse context body (Some processExpr) None (Some preCaseCheck)
+        context <- initializeExprOwnerships context
+        context <- processExpr context body
         // println "----------- BEGIN"
         // (context, body) <- traverse context body (Some dumpExpr) None None
         // println "----------- END"

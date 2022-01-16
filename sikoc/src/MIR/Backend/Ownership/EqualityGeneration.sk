@@ -287,7 +287,7 @@ fuseCycles program inference_info = do
 processEqualities :: Config -> [P.Identity] -> InferenceInfo -> FunctionInfoStore -> P.Program -> E.Expr -> InferenceInfo
 processEqualities config group inference_info function_info_store program body = do
     context <- Context List2.empty inference_info function_info_store program group
-    trace config "processEqualities - traverse"
+    //trace config "processEqualities - traverse"
     (context, body) <- traverse context body (Some processExpr) None None
     (inference_info, body_info) <- getTypeVariableInfoByExprId context.inference_info (getExprId body)
     context <- context { inference_info = inference_info }
@@ -295,12 +295,12 @@ processEqualities config group inference_info function_info_store program body =
     context <- addEqualInfo context body_info result_info
     inference_info <- context.inference_info
     equals <- context.equals
-    dumpInferenceInfoStats config inference_info
-    trace config "processEqualities - processEquals ({})" % (List2.getLength equals)
+    //dumpInferenceInfoStats config inference_info
+    //trace config "processEqualities - processEquals ({})" % (List2.getLength equals)
     inference_info <- processEquals equals inference_info
     type_ids <- inference_info.type_ids |> List2.sort |> List2.dedup
     converters <- inference_info.converters |> List2.sort |> List2.dedup
     inference_info <- inference_info { type_ids = type_ids, converters = converters }
-    trace config "processEqualities - fuseCycles ({})" % (List2.getLength equals)
+    //trace config "processEqualities - fuseCycles ({})" % (List2.getLength equals)
     inference_info <- fuseCycles program inference_info
     inference_info

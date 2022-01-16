@@ -6,7 +6,6 @@ import Siko.MIR.Program as P
 import Siko.MIR.Backend.Ownership.TypeVariableInfo
 import Siko.MIR.Backend.Ownership.Allocator
 import Siko.MIR.Backend.Ownership.MemberInfo as M
-import Siko.MIR.Backend.Ownership.EqualitySolver
 import Siko.MIR.Backend.Ownership.FunctionInfo
 
 import Map
@@ -22,17 +21,6 @@ data Context = { args :: List2 F.Step,
                  members :: List2 M.MemberInfo,
                  ownershipinfos :: List2 M.OwnershipInfo,
                }
-
-instance Apply Context where
-    apply equal context = do
-        info_map <- apply equal context.info_map
-        members <- apply equal context.members
-        ownershipinfos <- apply equal context.ownershipinfos |> List2.sort |> List2.dedup
-        Context context.args context.allocator info_map members ownershipinfos
-
-instance EqualityStore Context where
-    getMemberInfos context = context.members
-    putMemberInfos context members = context { members = members }
 
 getNext :: Context -> (Context, TypeVariableInfo)
 getNext context = do

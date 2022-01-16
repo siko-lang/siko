@@ -330,6 +330,23 @@ impl ExternFunction for IsEmpty {
     }
 }
 
+pub struct Contains {}
+
+impl ExternFunction for Contains {
+    fn call(
+        &self,
+        environment: &Environment,
+        _: Option<ExprId>,
+        _: &NamedFunctionKind,
+        _: Type,
+    ) -> Value {
+        let list = environment.get_arg_by_index(0);
+        let elem = environment.get_arg_by_index(1);
+        let c = list.core.as_list().contains(elem);
+        return Interpreter::get_bool_value(c);
+    }
+}
+
 pub struct Head {}
 
 impl ExternFunction for Head {
@@ -429,17 +446,10 @@ impl ExternFunction for Write {
     }
 }
 
-
 pub struct WithCapacity {}
 
 impl ExternFunction for WithCapacity {
-    fn call(
-        &self,
-        _: &Environment,
-        _: Option<ExprId>,
-        _: &NamedFunctionKind,
-        ty: Type,
-    ) -> Value {
+    fn call(&self, _: &Environment, _: Option<ExprId>, _: &NamedFunctionKind, ty: Type) -> Value {
         return Value::new(ValueCore::List(Vector::new()), ty);
     }
 }
@@ -463,7 +473,6 @@ impl ExternFunction for Split {
     }
 }
 
-
 pub struct UpdateAll {}
 
 impl ExternFunction for UpdateAll {
@@ -482,13 +491,46 @@ impl ExternFunction for UpdateAll {
                 ExprResult::Ok(v) => {
                     *l_v = v;
                 }
-                e => { return e; }
+                e => {
+                    return e;
+                }
             }
         }
         return ExprResult::Ok(Value::new(ValueCore::List(list), ty));
     }
 }
 
+pub struct UpdateAllS {}
+
+impl ExternFunction for UpdateAllS {
+    fn call2(
+        &self,
+        environment: &Environment,
+        expr_id: Option<ExprId>,
+        _: &NamedFunctionKind,
+        ty: Type,
+    ) -> ExprResult {
+        let mut state = environment.get_arg_by_index(0).clone();
+        let list2 = environment.get_arg_by_index(1);
+        let mut list = list2.core.as_list().clone();
+        let f = environment.get_arg_by_index(2);
+        for l_v in list.iter_mut() {
+            let r = Interpreter::call_func(f.clone(), vec![state.clone(), l_v.clone()], expr_id);
+            match r {
+                ExprResult::Ok(v) => {
+                    let tuple = v.core.as_tuple();
+                    state = tuple[0].clone();
+                    *l_v = tuple[1].clone();
+                }
+                e => {
+                    return e;
+                }
+            }
+        }
+        let list = Value::new(ValueCore::List(list), list2.ty.clone());
+        return ExprResult::Ok(Value::new(ValueCore::Tuple(vec![state, list]), ty));
+    }
+}
 
 pub fn register_extern_functions(interpreter: &mut Interpreter) {
     interpreter.add_extern_function(LIST_MODULE_NAME, "show", Box::new(Show {}));
@@ -511,6 +553,8 @@ pub fn register_extern_functions(interpreter: &mut Interpreter) {
     interpreter.add_extern_function(LIST_MODULE_NAME, "split", Box::new(Split {}));
     interpreter.add_extern_function(LIST_MODULE_NAME, "remove", Box::new(Remove {}));
     interpreter.add_extern_function(LIST_MODULE_NAME, "push", Box::new(Push {}));
+    interpreter.add_extern_function(LIST_MODULE_NAME, "contains", Box::new(Contains {}));
     interpreter.add_extern_function(LIST_MODULE_NAME, "withCapacity", Box::new(WithCapacity {}));
     interpreter.add_extern_function(LIST_MODULE_NAME, "updateAll", Box::new(UpdateAll {}));
+    interpreter.add_extern_function(LIST_MODULE_NAME, "updateAllS", Box::new(UpdateAllS {}));
 }

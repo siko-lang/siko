@@ -8,63 +8,88 @@ import List2 (List2)
 import Map2 as Map2
 import Map2 (Map2)
 
-data Equal = Equal TypeVariable TypeVariable deriving (Show)
+data Applier = { equals :: Map2 TypeVariable TypeVariable } deriving (Show)
+
+addSingleEqual :: Applier -> Equal -> Applier
+addSingleEqual applier (Equal id1 id2) = do
+    min_id <- min id1 id2
+    max_id <- max id1 id2
+    if id1 != id2
+    then do
+        equals <- Map2.put applier.equals max_id min_id
+        applier { equals = equals }
+    else applier
 
 class Apply a where
-    apply a :: Equal -> a -> a
-
-// instance (Apply a) => Apply [a] where
-//     //apply a :: Equal -> [a] -> [a]
-//     apply equal items = List.map items (apply equal)
-
-instance (Apply a) => Apply (List2 a) where
-    //apply a :: Equal -> List2 a -> List2 a
-    //FIXME: apply equal items = List2.map items (apply equal)
-    apply equal items = List2.updateAll items (apply equal)
-
-instance Apply Equal where
-    apply c equal =
-        case equal of
-            Equal id1 id2 -> Equal (apply c id1) (apply c id2)
-
-// instance (Apply v, Ord k) => Apply Map k v where
-//     apply c items = Map.map items (\(k, v) -> (k, apply c v))
-
-instance (Apply v, Ord k) => Apply Map2 k v where
-    apply c items = Map2.update items (\(k, v) -> (apply c v))
-
-instance Apply MemberInfo where
-    apply c info = case info of
-        Variant index root info -> Variant index (apply c root) (apply c info)
-        Member name root info -> Member name (apply c root) (apply c info)
-        Extern index root info -> Extern index (apply c root) (apply c info)
-
-instance Apply OwnershipInfo where
-    apply c info = case info of
-        Unknown v -> Unknown (apply c v)
-        Owner v -> Owner (apply c v)
-        Borrower v i -> Borrower (apply c v) i
+    apply a :: Applier -> a -> (Applier, a)
 
 instance Apply TypeVariable where
-    apply equal type_variable = case equal of
+    apply applier type_variable = do
+        loop (applier, type_variable) <- (applier, type_variable) do
+            applier :: Applier <- applier // FIXME
+            case Map2.get applier.equals type_variable of
+                Some t -> (applier, t)
+                None -> do
+                    break (applier, type_variable)
+
+instance Apply Equal where
+    apply applier equal =
+        case equal of
             Equal id1 id2 -> do
-                min_id <- min id1 id2
-                max_id <- max id1 id2
-                if type_variable == max_id then min_id else type_variable
+                (applier, id1) <- apply applier id1
+                (applier, id2) <- apply applier id2
+                (applier, Equal id1 id2)
+
+instance (Apply a) => Apply (List2 a) where
+    apply applier items = List2.updateAllS applier items (\applier, item -> apply applier item)
 
 instance Apply TypeVariableInfo where
-    apply c info = TypeVariableInfo (apply c info.ownership_var) (apply c info.arg_group_var)
+    apply applier info = do
+        (applier, ownership_var) <- apply applier info.ownership_var
+        (applier, arg_group_var) <- apply applier info.arg_group_var
+        (applier, TypeVariableInfo ownership_var arg_group_var)
 
-applyEquals a :: (Apply a) => List2 Equal -> a -> a
-applyEquals equals target = do
-    loop (equals, target) <- (equals, target) do
+instance Apply MemberInfo where
+    apply applier info = case info of
+        Variant index root info -> do
+            (applier, root) <- apply applier root
+            (applier, info) <- apply applier info
+            (applier, Variant index root info)
+        Member name root info -> do
+            (applier, root) <- apply applier root
+            (applier, info) <- apply applier info
+            (applier, Member name root info)
+        Extern index root info -> do
+            (applier, root) <- apply applier root
+            (applier, info) <- apply applier info
+            (applier, Extern index root info)
+
+instance Apply OwnershipInfo where
+    apply applier info = case info of
+        Unknown v -> do
+            (applier, v) <- apply applier v
+            (applier, Unknown v)
+        Owner v -> do
+            (applier, v) <- apply applier v
+            (applier, Owner v)
+        Borrower v i -> do
+            (applier, v) <- apply applier v
+            (applier, Borrower v i)
+
+instance (Apply v, Ord k) => Apply Map2 k v where
+    apply applier items = Map2.updateS applier items (\applier, (k, v) -> apply applier v)
+
+data Equal = Equal TypeVariable TypeVariable deriving (Show)
+
+addEquals :: List2 Equal -> Applier -> Applier
+addEquals equals applier = do
+    loop (applier, equals) <- (applier, equals) do
         if List2.isEmpty equals
-        then break target
+        then break applier
         else do
             (equal, equals) <- List2.remove equals 0
-            equals <- apply equal equals
-            target <- apply equal target
-            (equals, target)
+            applier <- addSingleEqual applier equal
+            apply applier equals
 
 data MergeKey b = VariantKey Int b
                 | MemberKey String b
@@ -78,8 +103,15 @@ addEqual equals info1 info2 = do
 
 processEquals a :: (EqualityStore a, Apply a) => List2 Equal -> a -> a
 processEquals equals store = do
-    store <- applyEquals equals store
-    merge store
+    applier <- addEquals equals (Applier Map2.empty)
+    loop (member_infos, applier) <- (getMemberInfos store, applier) do
+        (applier, member_infos) <- apply applier member_infos
+        equals <- getEqualsFromMemberInfos member_infos
+        if List2.isEmpty equals
+        then do
+            (applier, store) <- apply applier store
+            break store
+        else (member_infos, addEquals equals applier)
 
 getEqualsFromMemberInfos :: List2 MemberInfo -> List2 Equal
 getEqualsFromMemberInfos members = do
@@ -101,21 +133,9 @@ getEqualsFromMemberInfos members = do
             else equals)
     where
         add info old = case old of
-            Some infos -> Some (List2.push infos info)
+            Some infos -> Some (List2.dedup (List2.sort (List2.push infos info)))
             None -> Some (List2.single info)
 
 class EqualityStore a where
     getMemberInfos a :: a -> List2 MemberInfo
     putMemberInfos a :: a -> List2 MemberInfo -> a
-
-merge a :: (EqualityStore a, Apply a) => a -> a
-merge store =
-    loop store <- store do
-        equals <- getEqualsFromMemberInfos (getMemberInfos store)
-        if List2.isEmpty equals
-        then break store
-        else do
-            store <- applyEquals equals store
-            members <- getMemberInfos store |> List2.sort |> List2.dedup
-            store <- putMemberInfos store members
-            store

@@ -10,6 +10,15 @@ instance (Ord a) => Add Set a where
 instance (PartialEq a) => PartialEq Set a where
     opEq a b = a.items == b.items
 
+instance (Eq a) => Eq Set a
+
+instance (PartialOrd a) => PartialOrd Set a where
+    partialCmp a b = partialCmp a.items b.items
+
+// FIXME: Ord should imply the rest!
+instance (Ord a, PartialEq a, PartialOrd a, Eq a) => Ord Set a where
+    cmp a b = cmp a.items b.items
+
 empty a :: Set a
 empty = Set []
 

@@ -86,17 +86,17 @@ processFunction context group function_id = do
             trace context.config "Ownership inference - processing {}" % function_id
             arg_count <- getLength function.type.args
             inference_info <- createInferenceInfo arg_count
-            trace context.config "initializeTypeVariables {}" % function_id
+            //trace context.config "initializeTypeVariables {}" % function_id
             inference_info <- initializeTypeVariables inference_info info.body
             function_info_store <- context.function_info_store
-            trace context.config "processEqualities {}" % function_id
+            //trace context.config "processEqualities {}" % function_id
             inference_info <- processEqualities context.config group inference_info function_info_store context.program info.body
-            trace context.config "checkBorrows {}" % function_id
+            //trace context.config "checkBorrows {}" % function_id
             borrow_info <- checkBorrows context.program info.body
-            trace context.config "inferOwnership {}" % function_id
-            (inference_info, _) <- inferOwnership context.config group context.function_info_store inference_info
+            //trace context.config "inferOwnership {}" % function_id
+            (inference_info, _) <- inferOwnership context.config ("{}" % function_id) group context.function_info_store inference_info
                               context.program info.body borrow_info
-            trace context.config "Processing {}" % function_id
+            //trace context.config "Processing {}" % function_id
             function_info <- toFunctionInfo inference_info
             //println "id: {}" % function_id
             //println "inference_info {}" % inference_info
