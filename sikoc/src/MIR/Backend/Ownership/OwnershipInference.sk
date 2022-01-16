@@ -22,7 +22,7 @@ import List2 (List2)
 import Map2 as Map2
 import Map2 (Map2)
 
-data Context = { ownership_dep_map :: Map TypeVariable [TypeVariable],
+data Context = { ownership_dep_map :: Map2 TypeVariable [TypeVariable],
                  inference_info :: InferenceInfo,
                  program :: P.Program,
                  borrow_info :: BorrowInfo,
@@ -263,7 +263,7 @@ processExpr context expr = do
             context { invalid_borrows = invalid_borrows }
         None -> context
     //println "Invalid borrows {} = {}" % (expr_id, context.invalid_borrows)
-    relevants <- case Map.get context.ownership_dep_map info.arg_group_var of
+    relevants <- case Map2.get context.ownership_dep_map info.arg_group_var of
         Some vars -> List.push vars info.ownership_var
         None -> do
             println "depmap: {}" % context.ownership_dep_map
@@ -307,7 +307,7 @@ dumpExpr context expr = do
     println "dumpOwnership {}/{} {} {}" % (expr_id, E.short expr, info, o1)
     (context, expr)
 
-calculateDepMap :: Config -> InferenceInfo -> Map TypeVariable [TypeVariable]
+calculateDepMap :: Config -> InferenceInfo -> Map2 TypeVariable [TypeVariable]
 calculateDepMap config inference_info = do
         sources <- List2.push inference_info.args inference_info.result
         sources <- Map2.fold sources inference_info.expr_type_variables (\sources, (_, info) -> List2.push sources info)
@@ -316,14 +316,14 @@ calculateDepMap config inference_info = do
         trace config "calculateDepMap: processDependencies"
         groups <- processDependencies config deps_map
         trace config "calculateDepMap: create ownership_dep_map"
-        ownership_dep_map <- Map.empty
+        ownership_dep_map <- Map2.empty
         ownership_dep_map <- List.fold ownership_dep_map groups (\ownership_dep_map, group -> do
             ownership_vars :: [TypeVariable] <- List.fold [] group.items (\ownership_vars, item -> do
                 ownership_vars <- List.push ownership_vars item.ownership_var
                 case Map.get deps_map item of
                     Some deps -> List.fold ownership_vars deps (\ownership_vars, dep -> do
                                     ownership_vars <- List.push ownership_vars dep.ownership_var
-                                    case Map.get ownership_dep_map dep.arg_group_var of
+                                    case Map2.get ownership_dep_map dep.arg_group_var of
                                         Some vars -> do
                                             vars :: [TypeVariable] <- vars
                                             List.fold ownership_vars vars (\ownership_vars, var -> List.push ownership_vars var)
@@ -331,7 +331,7 @@ calculateDepMap config inference_info = do
                                                 then ownership_vars
                                                 else panic "dep not found in ownership_dep_map {}" % dep)
                     None -> ownership_vars)
-            List.fold ownership_dep_map group.items (\ownership_dep_map, item -> Map.put ownership_dep_map item.arg_group_var ownership_vars))
+            List.fold ownership_dep_map group.items (\ownership_dep_map, item -> Map2.put ownership_dep_map item.arg_group_var ownership_vars))
         // println "members: {}" % inference_info.members
         // println "deps_map: {}" % deps_map
         // println "groups {}" % groups
@@ -358,7 +358,7 @@ inferOwnership config group function_info_store inference_info program body borr
             else break (inference_info, cloning_converters)
     where
         infer :: Config ->
-                 Map TypeVariable [TypeVariable] ->
+                 Map2 TypeVariable [TypeVariable] ->
                  [P.Identity] ->
                  FunctionInfoStore ->
                  InferenceInfo ->
