@@ -11,7 +11,9 @@ import Map2 (Map2)
 data Applier = { equals :: Map2 TypeVariable TypeVariable } deriving (Show)
 
 addSingleEqual :: Applier -> Equal -> Applier
-addSingleEqual applier (Equal id1 id2) = do
+addSingleEqual applier equal = do
+    (applier, equal) <- apply applier equal
+    (Equal id1 id2) <- equal
     min_id <- min id1 id2
     max_id <- max id1 id2
     if id1 != id2
@@ -89,7 +91,7 @@ addEquals equals applier = do
         else do
             (equal, equals) <- List2.remove equals 0
             applier <- addSingleEqual applier equal
-            apply applier equals
+            (applier, equals)
 
 data MergeKey b = VariantKey Int b
                 | MemberKey String b

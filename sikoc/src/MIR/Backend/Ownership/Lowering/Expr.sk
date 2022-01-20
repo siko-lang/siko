@@ -19,6 +19,14 @@ import Set
 data LoweringContext = { inference_info :: InferenceInfo,
                          forced_clones :: Set ME.ExprId }
 
+getOwnershipValue :: LoweringContext -> TypeVariable -> (LoweringContext, OwnershipKind) // FIXME
+getOwnershipValue lowering_context var = do
+    (inference_info, result) <- getOwnership lowering_context.inference_info var
+    lowering_context <- lowering_context { inference_info = inference_info }
+    case result of
+        Some o -> (lowering_context, o)
+        None -> panic "Ownership value not found for {}" % var
+
 lowerVar :: ME.Var -> LE.Var
 lowerVar var = case var of
     ME.Named n -> LE.Named n
@@ -180,8 +188,8 @@ lowerExpr lowering_context context expr = do
             ME.Expr _ _ arg_id <- arg
             (inference_info, arg_info) <- getTypeVariableInfoByExprId lowering_context.inference_info arg_id
             lowering_context <- lowering_context { inference_info = inference_info }
-            from <- Option.unwrap (getOwnership lowering_context.inference_info arg_info.ownership_var)
-            to <- Option.unwrap (getOwnership lowering_context.inference_info expr_info.ownership_var)
+            (lowering_context, from) <- getOwnershipValue lowering_context arg_info.ownership_var
+            (lowering_context, to) <- getOwnershipValue lowering_context expr_info.ownership_var
             (context, lir_arg) <- lowerExpr lowering_context context arg
             case (from, to) of
                 (Owner, Owner) ->

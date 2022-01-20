@@ -167,8 +167,11 @@ addTypeIdentity inference_info type_id = do
     type_ids <- List2.push inference_info.type_ids type_id
     inference_info { type_ids = type_ids }
 
-getTypeIdentity :: InferenceInfo -> TypeVariable -> Option TypeIdentity
-getTypeIdentity inference_info var = List2.find inference_info.type_ids (\type_id -> type_id.var == var)
+getTypeIdentity :: InferenceInfo -> TypeVariable -> (InferenceInfo, Option TypeIdentity)
+getTypeIdentity inference_info var = do
+    type_ids <- inference_info.type_ids
+    result <- List2.find type_ids (\type_id -> type_id.var == var)
+    (inference_info, result)
 
 addOwnership :: InferenceInfo -> TypeVariable -> OwnershipKind -> InferenceInfo
 addOwnership inference_info var kind = do
@@ -182,8 +185,10 @@ maybeAddOwnership inference_info var kind = do
         None -> Some kind) var inference_info.ownership_values
     inference_info { ownership_values = ownership_values }
 
-getOwnership :: InferenceInfo -> TypeVariable -> Option OwnershipKind
-getOwnership inference_info var = Map2.get inference_info.ownership_values var
+getOwnership :: InferenceInfo -> TypeVariable -> (InferenceInfo, Option OwnershipKind)
+getOwnership inference_info var = do
+    result <- Map2.get inference_info.ownership_values var
+    (inference_info, result)
 
 getTypeVariableInfoByExprId :: InferenceInfo -> E.ExprId -> (InferenceInfo, TypeVariableInfo) // FIXME
 getTypeVariableInfoByExprId inference_info expr_id =
