@@ -106,16 +106,16 @@ processEquals equals store = do
     applier <- addEquals equals (Applier Map2.empty)
     loop (member_infos, applier) <- (getMemberInfos store, applier) do
         (applier, member_infos) <- apply applier member_infos
-        equals <- getEqualsFromMemberInfos member_infos
+        (member_infos, equals) <- getEqualsFromMemberInfos member_infos
         if List2.isEmpty equals
         then do
             (applier, store) <- apply applier store
             break store
         else (member_infos, addEquals equals applier)
 
-getEqualsFromMemberInfos :: List2 MemberInfo -> List2 Equal
+getEqualsFromMemberInfos :: List2 MemberInfo -> (List2 MemberInfo, List2 Equal)
 getEqualsFromMemberInfos members = do
-        root_map <- List2.fold Map.empty members (\root_map, member_info -> case member_info of
+        (members, root_map) <- List2.foldLinear Map.empty members (\root_map, member_info -> case member_info of
                 Variant index root info -> do
                     (root_map, _) <- alter (add info) (VariantKey index root) root_map
                     root_map
@@ -125,12 +125,13 @@ getEqualsFromMemberInfos members = do
                 Extern index root info -> do
                     (root_map, _) <- alter (add info) (ExternKey index root) root_map
                     root_map)
-        Map.fold List2.empty root_map (\equals, (_, infos) -> do
+        equals <- Map.fold List2.empty root_map (\equals, (_, infos) -> do
             if List2.getLength infos > 1
             then do
                 first <- List2.atIndex infos 0
                 List2.fold equals infos (\equals, info -> addEqual equals info first)
             else equals)
+        (members, equals)
     where
         add info old = case old of
             Some infos -> Some (List2.dedup (List2.sort (List2.push infos info)))

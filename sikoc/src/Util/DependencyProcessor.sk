@@ -14,9 +14,7 @@ createIdMaps a :: (PartialEq a, Ord a) => SCC.Graph -> Map a [a] -> (SCC.Graph, 
 createIdMaps graph all_dependencies = do
         keys <- getKeys all_dependencies
         (graph, item_id_map) <- List.fold (graph, Map.empty) keys mapKey
-        id_item_map <- Map.fold Map.empty item_id_map (\id_item_map, (k, v) -> do
-            (id_item_map, _) <- insert id_item_map v k
-            id_item_map)
+        id_item_map <- Map.fold Map.empty item_id_map (\id_item_map, (k, v) -> Map.put id_item_map v k)
         (graph, item_id_map, id_item_map)
     where
         mapKey a :: (PartialEq a, Ord a) => (SCC.Graph, Map a SCC.NodeId) -> a -> (SCC.Graph, Map a SCC.NodeId)

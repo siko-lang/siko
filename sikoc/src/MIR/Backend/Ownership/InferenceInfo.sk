@@ -259,13 +259,13 @@ toFunctionInfo inference_info = do
         converters <- inference_info.converters
         converter_map <- List2.fold Map2.empty converters (\converter_map, converter ->
             Map2.put converter_map converter.from converter.to)
-        input_group_vars <- List2.fold Set.empty inference_info.args
-            (\input_group_vars, info -> Set.put input_group_vars info.arg_group_var)
-        output_group_vars <- Set.put Set.empty inference_info.result.arg_group_var
-        input_group_vars <- Set.collect inference_info.members input_group_vars M.collectMember
-        output_group_vars <- Set.collect inference_info.members output_group_vars M.collectMember
-        input_members <- List2.filter inference_info.members (M.isSubMember input_group_vars)
-        output_members <- List2.filter inference_info.members (M.isSubMember output_group_vars)
+        input_group_vars <- List2.fold List2.empty inference_info.args
+            (\input_group_vars, info -> List2.push input_group_vars info.arg_group_var)
+        output_group_vars <- List2.push List2.empty inference_info.result.arg_group_var
+        (members, input_group_vars) <- M.collect members input_group_vars
+        (members, output_group_vars) <- M.collect members output_group_vars
+        (input_group_vars, input_members) <- List2.filterS input_group_vars members M.isSubMember
+        (output_group_vars, output_members) <- List2.filterS output_group_vars members M.isSubMember
         filtered_input_members <- List2.filter input_members (\m -> not (List2.contains output_members m))
         filtered_output_members <- List2.filter output_members (\m -> not (List2.contains input_members m))
         input_members <- filtered_input_members
@@ -284,7 +284,7 @@ toFunctionInfo inference_info = do
                 M.Variant _ _ info -> List2.push vars info.ownership_var
                 M.Member _ _ info -> List2.push vars info.ownership_var
                 M.Extern _ _ info -> List2.push vars info.ownership_var)
-        filtered_ownershipinfos <- List2.filter ownershipinfos (M.filterOwnershipInfo (input_ownership_vars + output_ownership_vars))
+        (_, filtered_ownershipinfos) <- List2.filterS (input_ownership_vars + output_ownership_vars) ownershipinfos M.filterOwnershipInfo
         filtered_converters <- List2.fold List2.empty converters (\filtered_converters, converter -> do
             if List2.contains input_ownership_vars converter.from
             then do

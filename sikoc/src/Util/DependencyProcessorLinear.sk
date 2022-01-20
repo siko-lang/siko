@@ -1,0 +1,55 @@
+module Siko.Util.DependencyProcessorLinear where
+
+import Map2
+import Siko.Config
+import Siko.Trace
+import Siko.Util.SCC as SCC
+
+import List2 as List2
+import List2 (List2)
+
+data DependencyGroup a = { items :: List2 a } deriving (Show)
+
+createIdMaps a :: (PartialEq a, Ord a) => SCC.Graph -> Map2 a (List2 a) -> (SCC.Graph, Map2 a SCC.NodeId, Map2 SCC.NodeId a)
+createIdMaps graph all_dependencies = do
+        keys <- getKeys all_dependencies
+        (graph, item_id_map) <- List2.fold (graph, Map2.empty) keys mapKey
+        id_item_map <- Map2.fold Map2.empty item_id_map (\id_item_map, (k, v) -> Map2.put id_item_map v k)
+        (graph, item_id_map, id_item_map)
+    where
+        mapKey a :: (PartialEq a, Ord a) => (SCC.Graph, Map2 a SCC.NodeId) -> a -> (SCC.Graph, Map2 a SCC.NodeId)
+        mapKey (graph, id_map) id = do
+            (graph, _, id_map) <- Map2.addS graph id id_map (\graph, id -> SCC.addNode graph)
+            (graph, id_map)
+
+initGraph a :: (PartialEq a, Ord a) => SCC.Graph -> Map2 a SCC.NodeId -> Map2 a (List2 a) -> (Map2 a SCC.NodeId, SCC.Graph)
+initGraph graph item_id_map all_dependencies =
+    Map2.fold (item_id_map, graph) all_dependencies processDeps
+        where
+            processDeps a :: (PartialEq a, Ord a) => (Map2 a SCC.NodeId, SCC.Graph) -> (a, List2 a) -> (Map2 a SCC.NodeId, SCC.Graph)
+            processDeps (item_id_map, graph) (item, deps) = do
+                List2.fold (item_id_map, graph) deps (processDep item)
+
+            processDep a :: (PartialEq a, Ord a) => a -> (Map2 a SCC.NodeId, SCC.Graph) -> a -> (Map2 a SCC.NodeId, SCC.Graph)
+            processDep item (item_id_map, graph) dep = do
+                item <- Option.unwrap (get item_id_map item)
+                dep <- Option.unwrap (get item_id_map dep)
+                (item_id_map, SCC.addNeighbour graph item dep)
+
+processDependencies a :: (PartialEq a, Ord a, Show a) => Config -> Map2 a (List2 a) -> List2 (DependencyGroup a)
+processDependencies config all_dependencies = do
+        //trace config "new processDependencies {}" % getSize all_dependencies
+        graph <- SCC.createGraph
+        (graph, item_id_map, id_item_map) <- createIdMaps graph all_dependencies
+        (_, graph) <- initGraph graph item_id_map all_dependencies
+        sccs <- SCC.collectSCCs graph
+        (_, ordered_groups) <- List2.mapS id_item_map sccs mapSCC
+        //trace config "new processDependencies done"
+        ordered_groups
+    where
+        mapSCC a :: Map2 SCC.NodeId a -> List2 SCC.NodeId -> (Map2 SCC.NodeId a, DependencyGroup a)
+        mapSCC id_item_map scc = do
+            (id_item_map, items) <- List2.mapS id_item_map scc (\id_item_map, id -> do
+                item <- Option.unwrap (Map2.get id_item_map id)
+                (id_item_map, item))
+            (id_item_map, DependencyGroup items)

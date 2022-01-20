@@ -5,7 +5,7 @@ import Set
 import Siko.MIR.Backend.Ownership.TypeVariableInfo
 import Siko.MIR.Backend.Ownership.BorrowId
 
-import Map
+import Map2
 import List2 as List2
 import List2 (List2)
 
@@ -19,36 +19,53 @@ data OwnershipInfo = Unknown TypeVariable
                    | Borrower TypeVariable BorrowId
                    deriving (PartialEq, Eq, PartialOrd, Ord, Show)
 
-collectMember :: Set TypeVariable -> MemberInfo -> Set TypeVariable
+collect :: List2 MemberInfo -> List2 TypeVariable -> (List2 MemberInfo, List2 TypeVariable)
+collect sources result =
+    loop (sources, result) <- (sources, result) do
+        start_size <- List2.getLength result
+        (sources, result) <- List2.foldLinear result sources collectMember
+        if List2.getLength result != start_size
+        then (sources, result)
+        else break (sources, result)
+
+collectMember :: List2 TypeVariable -> MemberInfo -> List2 TypeVariable
 collectMember vars constraint =
     case constraint of
         Variant index root info -> addMember vars root info
         Member name root info -> addMember vars root info
         Extern index root info -> addMember vars root info
     where
-        addMember :: Set TypeVariable -> TypeVariable -> TypeVariableInfo -> Set TypeVariable
+        addMember :: List2 TypeVariable -> TypeVariable -> TypeVariableInfo -> List2 TypeVariable
         addMember vars root info =
-            if Set.contains vars root
-            then Set.put vars info.arg_group_var
+            if List2.contains vars root
+            then do
+                vars <- List2.push vars info.arg_group_var
+                List2.dedup (List2.sort vars)
             else vars
 
-isSubMember :: Set TypeVariable -> MemberInfo -> Bool
+isSubMember :: List2 TypeVariable -> MemberInfo -> (List2 TypeVariable, Bool)
 isSubMember vars constraint =
     case constraint of
-        Variant index root info -> Set.contains vars root
-        Member name root info -> Set.contains vars root
-        Extern index root info -> Set.contains vars root
+        Variant index root info -> do
+            r <- List2.contains vars root
+            (vars, r)
+        Member name root info -> do
+            r <- List2.contains vars root
+            (vars, r)
+        Extern index root info -> do
+            r <- List2.contains vars root
+            (vars, r)
 
-filterOwnershipInfo :: List2 TypeVariable -> OwnershipInfo -> Bool
+filterOwnershipInfo :: List2 TypeVariable -> OwnershipInfo -> (List2 TypeVariable, Bool)
 filterOwnershipInfo vars ownershipinfo =
     case ownershipinfo of
-        Unknown v -> List2.fold False vars (\found, var -> found || var == v)
-        Owner v -> List2.fold False vars (\found, var -> found || var == v)
-        Borrower v _ -> List2.fold False vars (\found, var -> found || var == v)
+        Unknown v -> List2.foldLinear False vars (\found, var -> found || var == v)
+        Owner v -> List2.foldLinear False vars (\found, var -> found || var == v)
+        Borrower v _ -> List2.foldLinear False vars (\found, var -> found || var == v)
 
-getDependencyMap :: List2 TypeVariableInfo -> List2 MemberInfo -> Map TypeVariableInfo [TypeVariableInfo]
+getDependencyMap :: List2 TypeVariableInfo -> List2 MemberInfo -> Map2 TypeVariableInfo (List2 TypeVariableInfo)
 getDependencyMap sources members = do
-        deps_map <- Map.empty
+        deps_map <- Map2.empty
         deps_map <- List2.fold deps_map sources (\deps_map, info -> addInfo deps_map info)
         deps_map <- List2.fold deps_map members (\deps_map, member -> case member of
             Variant index root info -> addInfo deps_map info
@@ -56,7 +73,7 @@ getDependencyMap sources members = do
             Extern index root info -> addInfo deps_map info)
         processMembers members deps_map
     where
-        processMembers :: List2 MemberInfo -> Map TypeVariableInfo [TypeVariableInfo] -> Map TypeVariableInfo [TypeVariableInfo]
+        processMembers :: List2 MemberInfo -> Map2 TypeVariableInfo (List2 TypeVariableInfo) -> Map2 TypeVariableInfo (List2 TypeVariableInfo)
         processMembers members deps_map =
             List2.fold deps_map members (\deps_map, member ->
                 case member of
@@ -64,17 +81,16 @@ getDependencyMap sources members = do
                     Member name root info -> addDependency deps_map root info
                     Extern index root info -> addDependency deps_map root info)
 
-        addInfo :: Map TypeVariableInfo [TypeVariableInfo] -> TypeVariableInfo -> Map TypeVariableInfo [TypeVariableInfo]
+        addInfo :: Map2 TypeVariableInfo (List2 TypeVariableInfo) -> TypeVariableInfo -> Map2 TypeVariableInfo (List2 TypeVariableInfo)
         addInfo deps_map info = do
             (deps_map, _) <- alter (\old -> case old of
                 Some deps -> Some deps
-                None -> Some []) info deps_map
+                None -> Some (List2.empty)) info deps_map
             deps_map
 
-        addDependency :: Map TypeVariableInfo [TypeVariableInfo] -> TypeVariable -> TypeVariableInfo -> Map TypeVariableInfo [TypeVariableInfo]
+        addDependency :: Map2 TypeVariableInfo (List2 TypeVariableInfo) -> TypeVariable -> TypeVariableInfo -> Map2 TypeVariableInfo (List2 TypeVariableInfo)
         addDependency deps_map root info = do
-            Map.map deps_map (\(key, deps) -> do
-                deps <- if key.arg_group_var == root
-                then List.push deps info
-                else deps
-                (key, deps))
+            Map2.update deps_map (\(key, deps) ->
+                if key.arg_group_var == root
+                then List2.push deps info
+                else deps)

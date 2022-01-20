@@ -181,6 +181,15 @@ fold init input f = loop (result, index) <- (init, 0) do
         result <- f result elem
         (result, index + 1)
 
+foldLinear s a :: s -> List2 a -> (s -> a -> s) -> (List2 a, s)
+foldLinear init input f = loop (result, index) <- (init, 0) do
+    if index >= List2.getLength input
+    then break (input, result)
+    else do
+        elem <- List2.atIndex input index
+        result <- f result elem
+        (result, index + 1)
+
 map a b :: List2 a -> (a -> b) -> List2 b
 map input f = loop (result, index) <- (List2.withCapacity (getLength input), 0) do
     if index >= getLength input
@@ -196,6 +205,17 @@ filter input f = loop (result, index) <- (List2.withCapacity (List2.getLength in
         if f elem
         then (List2.push result elem, index + 1)
         else (result, index + 1)
+
+filterS s a :: s -> List2 a -> (s -> a -> (s, Bool)) -> (s, List2 a)
+filterS state input f = loop (state, result, index) <- (state, List2.withCapacity (List2.getLength input), 0) do
+    if index >= List2.getLength input
+    then break (state, result)
+    else do
+        elem <- List2.atIndex input index
+        (state, match) <- f state elem
+        if match
+        then (state, List2.push result elem, index + 1)
+        else (state, result, index + 1)
 
 foldM a k v :: (Ord k) => Map k v -> List2 a -> (a -> (k, v)) -> Map k v
 foldM init list f = List2.fold init list (\m, item -> do
