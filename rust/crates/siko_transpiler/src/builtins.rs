@@ -748,18 +748,20 @@ fn generate_map2_builtins(
                 _ => unreachable!(),
             };
             write!(output_file, "{}let mut arg0 = arg0.value;\n", indent)?;
-            write!(output_file, "{}for (k, v) in arg0.iter_mut() {{\n", indent)?;
+            write!(output_file, "{}let mut result = std::collections::BTreeMap::new();\n", indent)?;
+            write!(output_file, "{}for (k, v) in arg0.into_iter() {{\n", indent)?;
             write!(
                 output_file,
-                "{}let input = {} {{ _siko_field_0 : k.clone(), _siko_field_1 : v.clone() }};\n",
+                "{}let input = {} {{ _siko_field_0 : k.clone(), _siko_field_1 : v }};\n",
                 indent,
                 ir_type_to_rust_type(&from, program)
             )?;
-            write!(output_file, "{}*v = arg1.call_ro(input);\n", indent)?;
+            write!(output_file, "{}let new_v = arg1.call_ro(input);\n", indent)?;
+            write!(output_file, "{}result.insert(k, new_v);\n", indent)?;
             write!(output_file, "{}}}\n", indent)?;
             write!(
                 output_file,
-                "{}{} {{ value : arg0 }}",
+                "{}{} {{ value : result }}",
                 indent, result_ty_str
             )?;
         }

@@ -39,7 +39,9 @@ getKeys k v :: Map2 k v -> List2 k
 getKeys m = extern
 
 alter k v :: (Ord k) => (Option v -> Option v) -> k -> Map2 k v -> (Map2 k v, Option v)
-alter f k m = case f (Map2.get m k) of
+alter f k m = do
+    (m, v) <- Map2.remove m k
+    case f v of
         Some v -> Map2.insert m k v
         None -> Map2.remove m k
 

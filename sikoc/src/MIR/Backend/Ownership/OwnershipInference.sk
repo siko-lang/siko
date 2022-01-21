@@ -343,19 +343,14 @@ dumpExpr context expr = do
     println "dumpOwnership {}/{} {} {}" % (expr_id, E.short expr, info, o1)
     (context, expr)
 
-calculateDepMap :: Config -> String -> InferenceInfo -> Map2 TypeVariable (List2 TypeVariable)
-calculateDepMap config name inference_info = do
+calculateDepMap :: Config -> InferenceInfo -> Map2 TypeVariable (List2 TypeVariable)
+calculateDepMap config inference_info = do
         sources <- List2.push inference_info.args inference_info.result
         sources <- Map2.fold sources inference_info.expr_type_variables (\sources, (_, info) -> List2.push sources info)
         //trace config "calculateDepMap: getDependencyMap ({})" % (List2.getLength sources)
         deps_map <- M.getDependencyMap sources inference_info.members
         //trace config "calculateDepMap: processDependencies"
         groups <- processDependencies config deps_map
-        if name == "Siko.Transpiler.convertExpr_0"
-        then do
-            println "groups: {}" % (List2.getLength groups)
-            dumpInferenceInfoStats config inference_info
-        else ()
         //trace config "calculateDepMap: create ownership_dep_map"
         ownership_dep_map <- Map2.empty
         (ownership_dep_map, deps_map) <- List2.fold (ownership_dep_map, deps_map) groups (\(ownership_dep_map, deps_map), group -> do
@@ -390,7 +385,6 @@ calculateDepMap config name inference_info = do
             (ownership_dep_map, group, ownership_vars, deps_map)
 
 inferOwnership :: Config ->
-                  String ->
                   [P.Identity] ->
                   FunctionInfoStore ->
                   InferenceInfo ->
@@ -398,8 +392,8 @@ inferOwnership :: Config ->
                   E.Expr ->
                   BorrowInfo ->
                   (InferenceInfo, Set E.ExprId)
-inferOwnership config name group function_info_store inference_info program body borrow_info = do
-        ownership_dep_map <- calculateDepMap config name inference_info
+inferOwnership config  group function_info_store inference_info program body borrow_info = do
+        ownership_dep_map <- calculateDepMap config inference_info
         loop (forced_clones, cloning_converters, ownership_dep_map, count) <- (Set.empty, Set.empty, ownership_dep_map, 0) do
             //trace config "inferOwnership: loop count {}" % count
             //dumpInferenceInfoStats config inference_info
