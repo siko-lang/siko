@@ -63,6 +63,28 @@ filterOwnershipInfo vars ownershipinfo =
         Owner v -> List2.foldLinear False vars (\found, var -> found || var == v)
         Borrower v _ -> List2.foldLinear False vars (\found, var -> found || var == v)
 
+getDependencyMap2 :: List2 MemberInfo -> (List2 MemberInfo, Map2 TypeVariable (List2 TypeVariable))
+getDependencyMap2 members = do
+        deps_map <- Map2.empty
+        (members, deps_map) <- List2.foldLinear deps_map members (\deps_map, member -> case member of
+                Variant index root info -> Map2.put deps_map info.arg_group_var List2.empty
+                Member name root info -> Map2.put deps_map info.arg_group_var List2.empty
+                Extern index root info -> Map2.put deps_map info.arg_group_var List2.empty
+            )
+        (members, deps_map) <- List2.foldLinear deps_map members (\deps_map, member -> case member of
+                Variant index root info -> addDep deps_map root info.arg_group_var
+                Member name root info -> addDep deps_map root info.arg_group_var
+                Extern index root info -> addDep deps_map root info.arg_group_var
+            )
+        (members, deps_map)
+    where
+        addDep :: Map2 TypeVariable (List2 TypeVariable) -> TypeVariable -> TypeVariable -> Map2 TypeVariable (List2 TypeVariable)
+        addDep deps_map root dep = do
+            (deps_map, _) <- alter (\old -> case old of
+                Some deps -> Some (List2.push deps dep)
+                None -> Some (List2.single dep)) root deps_map
+            deps_map
+
 getDependencyMap :: List2 TypeVariableInfo -> List2 MemberInfo -> Map2 TypeVariableInfo (List2 TypeVariableInfo)
 getDependencyMap sources members = do
         deps_map <- Map2.empty

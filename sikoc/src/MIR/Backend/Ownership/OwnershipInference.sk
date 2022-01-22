@@ -299,9 +299,7 @@ checkBorrows :: Context -> TypeVariableInfo -> Context
 checkBorrows context expr_info = do
         relevants <- case Map2.get context.ownership_dep_map expr_info.arg_group_var of
             Some vars -> List2.push vars expr_info.ownership_var
-            None -> do
-                println "depmap: {}" % context.ownership_dep_map
-                panic "info.arg_group_var {} not found in context's ownership_dep_map" % expr_info.arg_group_var
+            None -> List2.single expr_info.ownership_var
         context <- if not context.needs_restart
         then do
             (context, new_forced_clones) <- List2.fold (context, List2.empty) relevants checkBorrowingVar
@@ -342,6 +340,52 @@ dumpExpr context expr = do
     (context, o1) <- getOwnershipValue context info.ownership_var
     println "dumpOwnership {}/{} {} {}" % (expr_id, E.short expr, info, o1)
     (context, expr)
+
+calculateDepsForGroup :: List2 M.MemberInfo
+                         -> Map2 TypeVariable (List2 TypeVariable)
+                         -> Map2 TypeVariable (List2 TypeVariable)
+                         -> List2 TypeVariable
+                         ->  (List2 M.MemberInfo, Map2 TypeVariable (List2 TypeVariable), Map2 TypeVariable (List2 TypeVariable))
+calculateDepsForGroup members ownership_dep_map deps_map group = do
+    ownership_vars <- List2.empty
+    (_, (members, ownership_dep_map, deps_map, group, ownership_vars)) <- List2.foldLinear (members, ownership_dep_map, deps_map, group, ownership_vars) group (\(members, ownership_dep_map, deps_map, group, ownership_vars), item -> do
+        (members, ownership_vars) <- List2.foldLinear ownership_vars members (\ownership_vars, member ->
+            case member of
+                M.Variant index root info -> if root == item
+                    then List2.push ownership_vars info.ownership_var
+                    else ownership_vars
+                M.Member name root info -> if root == item
+                    then List2.push ownership_vars info.ownership_var
+                    else ownership_vars
+                M.Extern index root info -> if root == item
+                    then List2.push ownership_vars info.ownership_var
+                    else ownership_vars)
+        (ownership_dep_map, ownership_vars) <- case Map2.get deps_map item of
+            Some deps -> do
+                (_, (ownership_dep_map, ownership_vars)) <- List2.foldLinear (ownership_dep_map, ownership_vars) deps (\(ownership_dep_map, ownership_vars), dep -> do
+                    ownership_vars <- case Map2.get ownership_dep_map dep of
+                        Some deps_ownership_vars -> ownership_vars + deps_ownership_vars
+                        None -> if List2.contains group item
+                                then ownership_vars
+                                else panic "Dep not found in ownership_dep_map"
+                    (ownership_dep_map, ownership_vars))
+                (ownership_dep_map, ownership_vars)
+            None -> panic "Dep not found in deps map"
+        (members, ownership_dep_map, deps_map, group, ownership_vars))
+    (group, (ownership_dep_map, ownership_vars)) <- List2.foldLinear (ownership_dep_map, ownership_vars) group (\(ownership_dep_map, ownership_vars), item -> do
+        ownership_dep_map <- Map2.put ownership_dep_map item ownership_vars
+        (ownership_dep_map, ownership_vars))
+    (members, ownership_dep_map, deps_map)
+
+calculateDepMap2 :: Config -> InferenceInfo -> (InferenceInfo, Map2 TypeVariable (List2 TypeVariable))
+calculateDepMap2 config inference_info = do
+    (members, deps_map) <- M.getDependencyMap2 inference_info.members
+    groups <- processDependencies config deps_map
+    ownership_dep_map <- Map2.empty
+    (groups, (members, ownership_dep_map, deps_map)) <- List2.foldLinear (members, ownership_dep_map, deps_map) groups (\(members, ownership_dep_map, deps_map), group ->
+        calculateDepsForGroup members ownership_dep_map deps_map group.items)
+    inference_info <- inference_info { members = members }
+    (inference_info, ownership_dep_map)
 
 calculateDepMap :: Config -> InferenceInfo -> Map2 TypeVariable (List2 TypeVariable)
 calculateDepMap config inference_info = do
@@ -392,8 +436,10 @@ inferOwnership :: Config ->
                   E.Expr ->
                   BorrowInfo ->
                   (InferenceInfo, Set E.ExprId)
-inferOwnership config  group function_info_store inference_info program body borrow_info = do
-        ownership_dep_map <- calculateDepMap config inference_info
+inferOwnership config group function_info_store inference_info program body borrow_info = do
+        trace config "calculateDepMap: calculateDepMap2 start"
+        (inference_info, ownership_dep_map) <- calculateDepMap2 config inference_info
+        trace config "calculateDepMap: calculateDepMap2 end"
         loop (forced_clones, cloning_converters, ownership_dep_map, count) <- (Set.empty, Set.empty, ownership_dep_map, 0) do
             //trace config "inferOwnership: loop count {}" % count
             //dumpInferenceInfoStats config inference_info
