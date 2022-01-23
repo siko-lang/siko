@@ -112,25 +112,27 @@ processFunction context group function_id = do
             function_info <- createExternFunctionInfo function_id type_mapping
             processFunctionInfo context function_info function_id
 
-processFunctionGroup :: Context -> [P.Identity] -> Context
-processFunctionGroup context group =
+processFunctionGroup :: Int -> Int -> Context -> [P.Identity] -> (Int, Context)
+processFunctionGroup index group_count context group = do
+    trace context.config "processFunctionGroup {}/{} ({}%) {}" % (index, group_count, index * 100 / group_count, group)
     if getLength group == 1
         then do
             function_id <- atIndex group 0
             (context, _) <- processFunction context group function_id
-            context
+            (index + 1, context)
         else do
             loop context <- context do
                 (context, more) <- group |> List.iter |> Iterator.fold (\(context, more), function_id -> do
                     (context, added) <- processFunction context group function_id
                     more <- if added then True else more
                     (context, more)) (context, False)
-                if more then context else break context
+                if more then context else break (index + 1, context)
 
 processProgram :: Config -> P.Program -> [DependencyGroup P.Identity] -> LP.Program
 processProgram config program function_groups = do
     trace config "Inference"
     context <- Context config program createFunctionInfoStore
-    context <- List.fold context function_groups (\context, group -> processFunctionGroup context group.items)
+    group_count <- getLength function_groups
+    (_, context) <- List.fold (1, context) function_groups (\(index, context), group -> processFunctionGroup index group_count context group.items)
     lir_program <- lowerProgram program context.config context.function_info_store
     lir_program
