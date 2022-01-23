@@ -1,0 +1,29 @@
+module HL where
+
+data Expr = Call [Expr]
+          | If Expr Expr Expr
+          | List [Expr]
+          | Integer Int
+
+module LL where
+
+data Expr = Call [Expr]
+          | If Expr Expr Expr
+          | List [Expr]
+          | Integer Int
+
+module Main where
+
+import HL as HL
+import LL as LL
+
+lower h_expr =
+    case h_expr of
+        HL.Call args -> LL.Call (List.map args lower)
+        HL.If cond true false -> LL.If (lower cond) (lower true) (lower false)
+        HL.List args -> LL.List (List.map args lower)
+        HL.Integer v -> LL.Integer v
+
+main = do
+    lower (HL.Integer 5)
+    ()
