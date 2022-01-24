@@ -1,0 +1,108 @@
+module Siko.HIR.Backend.Inliner where
+
+import Siko.HIR.Program as PO
+import Siko.HIR.Type as T
+import Siko.HIR.Function as F
+import Siko.HIR.Expr as E
+import Siko.HIR.Pattern as P
+import Siko.HIR.Backend.Traversal
+import Siko.HIR.Backend.ExprIdGenerator
+import Siko.HIR.Backend.PatternIdGenerator
+
+data Context = { program :: PO.Program T.Type,
+                 expr_id_gen :: ExprIdGenerator,
+                 pattern_id_gen :: PatternIdGenerator,
+                 arg_refs :: [P.BindRef] }
+
+getNextExprId :: Context -> (Context, E.ExprId)
+getNextExprId context = do
+    (expr_id_gen, id) <- getNewExprId context.expr_id_gen
+    context <- context { expr_id_gen = expr_id_gen }
+    (context, id)
+
+getNextPatternId :: Context -> (Context, P.PatternId)
+getNextPatternId context = do
+    (pattern_id_gen, id) <- getNewPatternId context.pattern_id_gen
+    context <- context { pattern_id_gen = pattern_id_gen }
+    (context, id)
+
+processFunctionBody :: Context -> E.Expr T.Type -> [P.BindRef] -> (Context, E.Expr T.Type)
+processFunctionBody context body arg_refs = do
+    saved_arg_refs <- context.arg_refs
+    context <- context { arg_refs = arg_refs }
+    traversal_context <- createTraversalContext context processExpr processPattern
+    //traversal_context <- setPreWithHook traversal_context preWithHook
+    (context, body) <- traverse traversal_context body
+    (context { arg_refs = saved_arg_refs }, body)
+
+createArgExprs :: Context -> [E.Expr T.Type] -> (Context, [P.BindRef], [E.Expr T.Type])
+createArgExprs context args =
+    List.fold (context, [], []) args createArg
+    where
+        createArg (context, arg_map, do_items) arg = do
+            E.Expr _ _ arg_type location <- arg
+            (context, id) <- getNextExprId context
+            (context, pattern_id) <- getNextPatternId context
+            var_name <- ".inline_arg_{}" % pattern_id
+            bind_ref <- P.BindRef var_name pattern_id
+            arg_map <- List.push arg_map bind_ref
+            bind_pattern <- P.Pattern (P.Binding bind_ref) pattern_id arg_type location
+            arg_bind_expr <- E.Bind bind_pattern arg
+            arg_bind <- E.Expr arg_bind_expr id (T.Tuple []) location
+            do_items <- List.push do_items arg_bind
+            (context, arg_map, do_items)
+
+processExpr :: Context -> E.Expr T.Type -> (Context, E.Expr T.Type)
+processExpr context expr = do
+    E.Expr s_expr id type location <- expr
+    case s_expr of
+        E.StaticFunctionCall qn args -> do
+            case PO.getFunctionOpt context.program qn of
+                Some called_fn -> do
+                    if F.isInlined called_fn
+                    then do
+                        if called_fn.arg_count != getLength args
+                        then (context, expr)
+                        else do
+                            case called_fn.body of
+                                Some called_body -> do
+                                    (context, arg_map, do_items) <- createArgExprs context args
+                                    (context, inlined_body) <- processFunctionBody context called_body arg_map
+                                    do_items <- List.push do_items inlined_body
+                                    do_s_expr <- E.Do do_items
+                                    (context, do_id) <- getNextExprId context
+                                    do_expr <- E.Expr do_s_expr do_id type location
+                                    (context, do_expr)
+                                None -> (context, expr)
+                    else (context, expr)
+                _ -> (context, expr)
+        E.ArgRef index -> if isEmpty context.arg_refs
+            then (context, expr)
+            else do
+                bind_ref <- atIndex context.arg_refs index
+                (context, E.Expr (E.ValueRef bind_ref) id type location)
+        _ -> (context, expr)
+
+processPattern :: Context -> P.Pattern T.Type -> (Context, P.Pattern T.Type)
+processPattern context pattern = (context, pattern)
+
+processFunction :: Context -> F.Function T.Type -> (Context, F.Function T.Type)
+processFunction context function = do
+    case function.body of
+        Some body -> do
+            case function.name of
+                PO.Effectless _ _ -> do
+                    (context, body) <- processFunctionBody context body []
+                    (context, function { body = Some body })
+                _ -> (context, function)
+        None -> (context, function)
+
+processProgram :: PO.Program T.Type -> ExprIdGenerator -> PatternIdGenerator -> (PO.Program T.Type, ExprIdGenerator, PatternIdGenerator)
+processProgram program expr_id_gen pattern_id_gen = do
+    functions <- PO.getFunctions program
+    context <- Context program expr_id_gen pattern_id_gen []
+    (context, functions) <- List.mapS context functions processFunction
+    program <- List.fold program functions (\program, fn -> do
+        (program, _) <- PO.addItem program fn.name (PO.Function fn)
+        program)
+    (program, context.expr_id_gen, context.pattern_id_gen)

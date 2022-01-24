@@ -333,7 +333,7 @@ processItem queue context key = do
             None -> None
         (fn.arg_count + 1, fn_type)
     else (fn.arg_count, fn.type)
-    fn <- fn { arg_count = arg_count, type = fn_type, body = body, effects = Some [] }
+    fn <- fn { name = effectless_id, arg_count = arg_count, type = fn_type, body = body, effects = Some [] }
     (functions, _) <- Map.insert context.functions effectless_id fn
     (queue, context { functions = functions })
 
@@ -362,7 +362,7 @@ processProgram config program expr_id_gen pattern_id_gen var_gen class_info_stor
     (context, _, _) <- getFunctionName context main_key
     (queue, context) <- Q.processItems queue context processItem
     trace config "HIR processing effect handlers"
-    program <- Map.fold context.program context.functions (\program, (name, fn) -> do
+    program <- Map.fold program context.functions (\program, (name, fn) -> do
         (program, _) <- PO.addItem program name (PO.Function fn)
         program)
     trace config "HIR processing effect handlers done"

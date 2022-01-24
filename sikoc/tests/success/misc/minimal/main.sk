@@ -2,10 +2,14 @@ module Main where
 
 data Foo = Foo
 
-test a b = (a, b)
+@Inlined
+fn2 :: Foo -> Foo -> (Foo, Foo)
+fn2 a b = (a, b)
+
+fn1 :: Foo -> (Foo, Foo)
+fn1 a = fn2 a a
 
 main = do
-    f <- Foo
-    c <- test f
-    c f
+    foo <- Foo
+    foo |> fn1
     ()

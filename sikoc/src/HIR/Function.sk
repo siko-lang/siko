@@ -25,7 +25,7 @@ getEffectName kind = case kind of
     EffectMember qn -> qn
     _ -> panic "{} is not an effect member" % kind
 
-data Attribute = Inlined deriving (Show)
+data Attribute = Inlined deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
 data Function a = { location :: Location,
                     name :: FullyQualifiedName,
@@ -37,6 +37,9 @@ data Function a = { location :: Location,
                     effects :: Option [Type],
                     attributes :: [Attribute]
                   }
+
+isInlined a :: Function a -> Bool
+isInlined function = List.contains function.attributes Inlined
 
 instance Show Function a where
     show f = do

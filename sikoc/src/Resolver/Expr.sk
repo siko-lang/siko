@@ -249,7 +249,11 @@ processBinaryOp context op lhs rhs = do
             SE.Sub -> HPO.FullPath module_name "opSub"
             SE.Mul -> HPO.FullPath module_name "opMul"
             SE.Div -> HPO.FullPath module_name "opDiv"
-            SE.PipeForward -> return HE.DynamicFunctionCall rhs [lhs]
+            SE.PipeForward -> do
+                HE.Expr s_expr type id location <- rhs
+                case s_expr of
+                    HE.StaticFunctionCall qn args -> return HE.StaticFunctionCall qn (List.push args lhs)
+                    _ -> return HE.DynamicFunctionCall rhs [lhs]
     if op == SE.And || op == SE.Or
         then HE.StaticFunctionCall qn [lhs, rhs]
         else HE.ClassMemberCall qn [lhs, rhs]
