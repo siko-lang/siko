@@ -41,6 +41,7 @@ get m k = extern
 remove k v :: (Ord k) => Map2 k v -> k -> (Map2 k v, Option v)
 remove m k = extern
 
+@Inline
 alter k v :: (Ord k) => (Option v -> Option v) -> k -> Map2 k v -> (Map2 k v, Option v)
 alter f k m = do
     (m, v) <- Map2.remove m k
@@ -48,6 +49,7 @@ alter f k m = do
         Some v -> Map2.insert m k v
         None -> Map2.remove m k
 
+@Inline
 alterS si so k v :: (Ord k) => (si -> Option v -> (so, Option v)) -> si -> k -> Map2 k v -> (so, Map2 k v, Option v)
 alterS f s k m = do
     (s, v) <- f s (get m k)
@@ -59,6 +61,7 @@ alterS f s k m = do
             (m, v) <- Map2.remove m k
             (s, m, v)
 
+@Inline
 addS s k v :: (Ord k) => s -> k -> Map2 k v -> (s -> k -> (s, v)) -> (s, v, Map2 k v)
 addS s k m f = do
     ((s, v), m, _) <- alterS (\s, old -> case old of
@@ -68,6 +71,7 @@ addS s k m f = do
                 ((s, v), Some v)) s k m
     (s, v, m)
 
+@Inline
 iter k v :: Map2 k v -> Iterator (k, v)
 iter m = createIterator (Map2.intoIter m) Map2.nextItem
 
@@ -79,43 +83,52 @@ intoIter m = extern
 nextItem k v :: MapIterator k v -> Option (MapIterator k v, (k, v))
 nextItem iter = extern
 
+@Inline
 toMap2 k v :: (Ord k) => Iterator (k, v) -> Map2 k v
 toMap2 iter = Iterator.fold (\m, (k, v) -> do
     (m, _) <- insert m k v
     m) Map2.empty iter
 
+@Inline
 toMap k v :: (Ord k) => Iterator (k, v) -> Map2 k v
 toMap iter = Iterator.fold (\m, (k, v) -> do
     (m, _) <- insert m k v
     m) Map2.empty iter
 
+@Inline
 update k v :: (Ord k) => Map2 k v -> ((k, v) -> v) -> Map2 k v
 update m f = Map2.map m (\(k, v) -> do
     v <- f (k, v)
     (k, v))
 // TODO, FIXME: make this extern
 
+@Inline
 updateS s k v :: (Ord k) => s -> Map2 k v -> (s -> (k, v) -> (s, v)) -> (s, Map2 k v)
 updateS s m f = Map2.mapS s m (\s, (k, v) -> do
     (s, v) <- f s (k, v)
     (s, k, v))
 // TODO, FIXME: make this extern
 
+@Inline
 updateValues k v :: (Ord k, PartialEq v) => Map2 k v -> v -> v -> Map2 k v
 updateValues m old new = Map2.update m (\(k, v) -> if old == v then new else old)
 
 getSize k v :: Map2 k v -> Int
 getSize m = extern
 
+@Inline
 getKeys k v :: Map2 k v -> List2 k
 getKeys m = m |> Map2.iter |> Iterator.fold (\keys, (k, _) -> List2.push keys k) List2.empty
 
+@Inline
 fold s k v :: s -> Map2 k v -> (s -> (k, v) -> s) -> s
 fold init m f = m |> Map2.iter |> Iterator.fold f init
 
+@Inline
 map k1 v1 k2 v2 :: (Ord k1, Ord k2) => Map2 k1 v1 -> ((k1, v1) -> (k2, v2)) -> Map2 k2 v2
 map input f = input |> Map2.iter |> Iterator.map f |> toMap
 
+@Inline
 mapS s k1 v1 k2 v2 :: (Ord k1, Ord k2) => s -> Map2 k1 v1 -> (s -> (k1, v1) -> (s, k2, v2)) -> (s, Map2 k2 v2)
 mapS s m f = do
     m |> Map2.iter |> Iterator.fold (\(s, m2), (k, v) -> do
@@ -123,9 +136,11 @@ mapS s m f = do
         (m2, _) <-insert m2 k v
         (s, m2)) (s, Map2.empty)
 
+@Inline
 filter k v :: (Ord k) => Map2 k v -> ((k, v) -> Bool) -> Map2 k v
 filter map f = map |> Map2.iter |> Iterator.filter f |> toMap2
 
+@Inline
 filterMap k v :: (Ord k) => Map2 k v -> ((k, v) -> Option (k, v)) -> Map2 k v
 filterMap m f = m |> Map2.iter |> Iterator.fold (\m2, (k, v) -> do
         case f (k, v) of

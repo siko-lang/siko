@@ -11,7 +11,12 @@ data UnificationConstraint = UnificationConstraint P.FullyQualifiedName Type der
 
 data Substitution = { vars :: Map TypeVar Type,
                       constraints :: [UnificationConstraint]
-                    } deriving (Show)
+                    }
+
+instance Show Substitution where
+    show sub = do
+        entries <- Map.fold [] sub.vars (\entries, (var, ty) -> List.push entries ("{} => {}" % (var, TF.toString ty)))
+        "[{}, {}]" % (entries, sub.constraints)
 
 createSubstitution = Substitution empty []
 

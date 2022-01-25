@@ -2,6 +2,7 @@ module Iterator where
 
 data Iterator a = extern
 
+@Inline
 map a b :: (a -> b) -> Iterator a -> Iterator b
 map f iter = createIterator iter (\iter -> do
     case getNext iter of
@@ -10,6 +11,7 @@ map f iter = createIterator iter (\iter -> do
             Some (iter, n)
         None -> None)
 
+@Inline
 filter a :: (a -> Bool) -> Iterator a -> Iterator a
 filter f iter = createIterator iter (\iter -> do
     loop iter <- iter do
@@ -20,6 +22,7 @@ filter f iter = createIterator iter (\iter -> do
                     else iter
             None -> break None)
 
+@Inline
 filterMap a b :: (a -> Option b) -> Iterator a -> Iterator b
 filterMap f iter = createIterator iter (\iter -> do
     loop iter <- iter do
@@ -30,6 +33,7 @@ filterMap f iter = createIterator iter (\iter -> do
                     None -> iter
             None -> break None)
 
+@Inline
 fold a b :: (a -> b -> a) -> a -> Iterator b -> a
 fold f s iter = do
     loop (s, iter) <- (s, iter) do
@@ -39,6 +43,7 @@ fold f s iter = do
                 (s, iter)
             None -> break s
 
+@Inline
 forEach a :: (a -> ()) -> Iterator a -> ()
 forEach f iter = do
     loop iter <- iter do
@@ -54,6 +59,7 @@ createIterator s f = extern
 getNext a :: Iterator a -> Option (Iterator a, a)
 getNext iterator = extern
 
+@Inline
 zip a b :: Iterator a -> Iterator b -> Iterator (a, b)
 zip iter_a iter_b = createIterator (iter_a, iter_b) (\(iter_a, iter_b) ->
     case getNext iter_a of

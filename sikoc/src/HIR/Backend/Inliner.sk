@@ -2,17 +2,68 @@ module Siko.HIR.Backend.Inliner where
 
 import Siko.HIR.Program as PO
 import Siko.HIR.Type as T
+import Siko.HIR.Backend.TypeFormatter as TF
 import Siko.HIR.Function as F
 import Siko.HIR.Expr as E
 import Siko.HIR.Pattern as P
 import Siko.HIR.Backend.Traversal
 import Siko.HIR.Backend.ExprIdGenerator
 import Siko.HIR.Backend.PatternIdGenerator
+import Siko.HIR.Backend.Unification as U
+import Siko.HIR.Backend.Unification.Util as Util
+import Siko.HIR.Backend.ClassInfoStore as CDS
+import Siko.HIR.Backend.Unification.Substitution as S
+import Siko.HIR.Backend.Unification.TypeVarGenerator as TVG
+import Siko.Trace
+import Siko.Config
+
+import Map
+
+data InlinedArg = ArgRef P.BindRef
+                | FnCall PO.FullyQualifiedName [E.Expr T.Type] deriving (Show)
 
 data Context = { program :: PO.Program T.Type,
                  expr_id_gen :: ExprIdGenerator,
                  pattern_id_gen :: PatternIdGenerator,
-                 arg_refs :: [P.BindRef] }
+                 var_gen :: TVG.TypeVarGenerator,
+                 class_info_store :: CDS.ClassInfoStore,
+                 arg_refs :: [InlinedArg],
+                 static_calls :: Map P.PatternId (E.Expr T.Type),
+                 removed_binds :: [E.ExprId],
+                 sub :: S.Substitution }
+
+instance U.TypeVarGenerator Context where
+    getNewTypeVar context = do
+        (var_gen, var) <- TVG.getNewTypeVar context.var_gen
+        context <- context { var_gen = var_gen }
+        (context, var)
+
+    getNewTypeVarType context = do
+        (var_gen, t) <- TVG.getNewTypeVarType context.var_gen
+        context <- context { var_gen = var_gen }
+        (context, t)
+
+instance U.Context Context where
+    ignoreConstraints context = True
+
+instance U.DataProvider Context where
+    getRecord context qn = PO.getRecordOpt context.program qn
+
+instance U.ClassProvider Context where
+    getAllClassDependencies context qn = CDS.getDependencies context.class_info_store qn
+
+canBeInlined :: E.Expr T.Type -> Bool
+canBeInlined body = do
+        traversal_context <- createTraversalContext True checkExpr processPattern
+        (can_be_inlined, body) <- traverse traversal_context body
+        can_be_inlined
+    where
+        checkExpr :: Bool -> E.Expr T.Type -> (Bool, E.Expr T.Type)
+        checkExpr can_be_inlined expr = do
+            E.Expr s_expr id type location <- expr
+            case s_expr of
+                E.Return _ -> (False, expr)
+                _ -> (can_be_inlined, expr)
 
 getNextExprId :: Context -> (Context, E.ExprId)
 getNextExprId context = do
@@ -26,65 +77,142 @@ getNextPatternId context = do
     context <- context { pattern_id_gen = pattern_id_gen }
     (context, id)
 
-processFunctionBody :: Context -> E.Expr T.Type -> [P.BindRef] -> (Context, E.Expr T.Type)
-processFunctionBody context body arg_refs = do
-    saved_arg_refs <- context.arg_refs
-    context <- context { arg_refs = arg_refs }
-    traversal_context <- createTraversalContext context processExpr processPattern
-    //traversal_context <- setPreWithHook traversal_context preWithHook
-    (context, body) <- traverse traversal_context body
-    (context { arg_refs = saved_arg_refs }, body)
+typeConverter :: S.Substitution -> T.Type -> T.Type
+typeConverter sub type = S.apply type sub
 
-createArgExprs :: Context -> [E.Expr T.Type] -> (Context, [P.BindRef], [E.Expr T.Type])
+processFunctionBody :: Context -> S.Substitution -> E.Expr T.Type -> [InlinedArg] -> (Context, E.Expr T.Type)
+processFunctionBody context sub body arg_refs = do
+    saved_arg_refs <- context.arg_refs
+    saved_removed_binds <- context.removed_binds
+    saved_sub <- context.sub
+    context <- context { arg_refs = arg_refs, removed_binds = [] , sub = sub }
+    traversal_context <- createTraversalContext context processExpr processPattern
+    traversal_context <- setTypeConverter traversal_context (typeConverter sub)
+    (context, body) <- traverse traversal_context body
+    (context { arg_refs = saved_arg_refs,
+               removed_binds = saved_removed_binds,
+               sub = saved_sub }, body)
+
+createArgExprs :: Context -> [E.Expr T.Type] -> (Context, [InlinedArg], [E.Expr T.Type])
 createArgExprs context args =
     List.fold (context, [], []) args createArg
     where
+        createArg :: (Context, [InlinedArg], [E.Expr T.Type])
+                     -> E.Expr T.Type -> (Context, [InlinedArg], [E.Expr T.Type])
         createArg (context, arg_map, do_items) arg = do
-            E.Expr _ _ arg_type location <- arg
+            E.Expr arg_s_expr _ arg_type location <- arg
+            case arg_s_expr of
+                E.StaticFunctionCall qn fn_args -> do
+                    fn <- PO.getFunction context.program qn
+                    if getLength fn_args < fn.arg_count // partially applied static function
+                    then do
+                        arg_map <- List.push arg_map (FnCall qn fn_args)
+                        return (context, arg_map, do_items)
+                    else ()
+                _ -> ()
             (context, id) <- getNextExprId context
             (context, pattern_id) <- getNextPatternId context
             var_name <- ".inline_arg_{}" % pattern_id
             bind_ref <- P.BindRef var_name pattern_id
-            arg_map <- List.push arg_map bind_ref
+            arg_map <- List.push arg_map (ArgRef bind_ref)
             bind_pattern <- P.Pattern (P.Binding bind_ref) pattern_id arg_type location
             arg_bind_expr <- E.Bind bind_pattern arg
             arg_bind <- E.Expr arg_bind_expr id (T.Tuple []) location
             do_items <- List.push do_items arg_bind
             (context, arg_map, do_items)
 
+remapBody :: S.Substitution -> E.Expr T.Type -> E.Expr T.Type
+remapBody sub body = do
+    traversal_context <- createTraversalContext () (\c, e -> (c, e)) (\c, p -> (c, p))
+    traversal_context <- setTypeConverter traversal_context (typeConverter sub)
+    (_, body) <- traverse traversal_context body
+    body
+
 processExpr :: Context -> E.Expr T.Type -> (Context, E.Expr T.Type)
 processExpr context expr = do
     E.Expr s_expr id type location <- expr
     case s_expr of
-        E.StaticFunctionCall qn args -> do
+        E.Do items -> do
+            items <- List.filter items (\E.Expr _ id _ _ -> not (List.contains context.removed_binds id))
+            (context, E.Expr (E.Do items) id type location)
+        E.Bind lhs rhs -> do
+            P.Pattern lhs_s_pattern pattern_id _ _ <- lhs
+            E.Expr rhs_s_expr _ _ _ <- rhs
+            case (lhs_s_pattern, rhs_s_expr) of
+                (P.Binding bind_ref, E.StaticFunctionCall qn fn_args) -> do
+                    fn <- PO.getFunction context.program qn
+                    if getLength fn_args < fn.arg_count // partially applied static function
+                    then do
+                        static_calls <- Map.put context.static_calls pattern_id rhs
+                        removed_binds <- List.push context.removed_binds id
+                        (context { static_calls = static_calls, removed_binds = removed_binds }, expr)
+                    else (context, expr)
+                _ -> (context, expr)
+        E.StaticFunctionCall qn fn_args -> do
             case PO.getFunctionOpt context.program qn of
                 Some called_fn -> do
                     if F.isInlined called_fn
                     then do
-                        if called_fn.arg_count != getLength args
+                        if called_fn.arg_count != getLength fn_args
                         then (context, expr)
                         else do
                             case called_fn.body of
                                 Some called_body -> do
-                                    (context, arg_map, do_items) <- createArgExprs context args
-                                    (context, inlined_body) <- processFunctionBody context called_body arg_map
-                                    do_items <- List.push do_items inlined_body
-                                    do_s_expr <- E.Do do_items
-                                    (context, do_id) <- getNextExprId context
-                                    do_expr <- E.Expr do_s_expr do_id type location
-                                    (context, do_expr)
+                                    if canBeInlined called_body
+                                    then do
+                                        fn_type <- T.removeFixed (Option.unwrap called_fn.type)
+                                        arg_types <- List.map fn_args (\E.Expr _ id type _ -> type)
+                                        (context, _, sub) <- Util.getFunctionType context arg_types type fn_type
+                                        (context, arg_map, do_items) <- createArgExprs context fn_args
+                                        (context, inlined_body) <- processFunctionBody context sub called_body arg_map
+                                        //dumpBody inlined_body "before remap"
+                                        inlined_body <- remapBody context.sub inlined_body
+                                        //dumpBody inlined_body "after remap"
+                                        do_items <- List.push do_items inlined_body
+                                        do_s_expr <- E.Do do_items
+                                        (context, do_id) <- getNextExprId context
+                                        do_expr <- E.Expr do_s_expr do_id type location
+                                        (context, do_expr)
+                                    else (context, expr)
                                 None -> (context, expr)
                     else (context, expr)
                 _ -> (context, expr)
+        E.DynamicFunctionCall receiver args -> do
+            E.Expr receiver_s_expr _ _ _ <- receiver
+            case receiver_s_expr of
+                E.StaticFunctionCall qn static_args -> (context, E.Expr (E.StaticFunctionCall qn (static_args + args)) id type location)
+                _ -> (context, expr)
         E.ArgRef index -> if isEmpty context.arg_refs
             then (context, expr)
-            else do
-                bind_ref <- atIndex context.arg_refs index
-                (context, E.Expr (E.ValueRef bind_ref) id type location)
+            else case atIndex context.arg_refs index of
+                    ArgRef bind_ref -> (context, E.Expr (E.ValueRef bind_ref) id type location)
+                    FnCall qn args -> (context, E.Expr (E.StaticFunctionCall qn args) id type location)
+        E.ValueRef (P.BindRef _ pattern_id) ->
+            case Map.get context.static_calls pattern_id of
+                Some expr -> (context, expr)
+                None -> (context, expr)
         _ -> (context, expr)
 
-processPattern :: Context -> P.Pattern T.Type -> (Context, P.Pattern T.Type)
+processPattern a :: a -> P.Pattern T.Type -> (a, P.Pattern T.Type)
 processPattern context pattern = (context, pattern)
+
+dumpExpr a :: a -> E.Expr T.Type -> (a, E.Expr T.Type)
+dumpExpr context expr = do
+    E.Expr s_expr id type _ <- expr
+    println "dumpExpr: {}/{}/{}" % (s_expr, id, TF.toString type)
+    (context, expr)
+
+dumpPattern a :: a -> P.Pattern T.Type -> (a, P.Pattern T.Type)
+dumpPattern context pattern = do
+    P.Pattern s_pattern id type _ <- pattern
+    println "dumpPattern: {}/{}/{}" % (s_pattern, id, TF.toString type)
+    (context, pattern)
+
+dumpBody :: E.Expr T.Type -> String -> ()
+dumpBody body msg = do
+    println "Dump: {}" % msg
+    traversal_context <- createTraversalContext () dumpExpr dumpPattern
+    (_, body) <- traverse traversal_context body
 
 processFunction :: Context -> F.Function T.Type -> (Context, F.Function T.Type)
 processFunction context function = do
@@ -92,17 +220,24 @@ processFunction context function = do
         Some body -> do
             case function.name of
                 PO.Effectless _ _ -> do
-                    (context, body) <- processFunctionBody context body []
+                    //println "processing {}" % function.name
+                    context <- context { arg_refs = [], static_calls = Map.empty, removed_binds = [], sub = S.createSubstitution }
+                    //dumpBody body "before inline"
+                    (context, body) <- processFunctionBody context (S.createSubstitution) body []
+                    //dumpBody body "after inline"
                     (context, function { body = Some body })
                 _ -> (context, function)
         None -> (context, function)
 
-processProgram :: PO.Program T.Type -> ExprIdGenerator -> PatternIdGenerator -> (PO.Program T.Type, ExprIdGenerator, PatternIdGenerator)
-processProgram program expr_id_gen pattern_id_gen = do
+processProgram :: Config -> PO.Program T.Type -> ExprIdGenerator -> PatternIdGenerator -> TVG.TypeVarGenerator ->
+                  CDS.ClassInfoStore -> (PO.Program T.Type, ExprIdGenerator, PatternIdGenerator, TVG.TypeVarGenerator)
+processProgram config program expr_id_gen pattern_id_gen var_gen class_info_store = do
+    trace config "Inliner started.."
     functions <- PO.getFunctions program
-    context <- Context program expr_id_gen pattern_id_gen []
+    context <- Context program expr_id_gen pattern_id_gen var_gen class_info_store [] Map.empty [] S.createSubstitution
     (context, functions) <- List.mapS context functions processFunction
     program <- List.fold program functions (\program, fn -> do
         (program, _) <- PO.addItem program fn.name (PO.Function fn)
         program)
-    (program, context.expr_id_gen, context.pattern_id_gen)
+    trace config "Inliner finished.."
+    (program, context.expr_id_gen, context.pattern_id_gen, context.var_gen)

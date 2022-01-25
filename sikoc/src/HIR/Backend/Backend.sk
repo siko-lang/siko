@@ -31,6 +31,6 @@ processProgram config program expr_id_gen pattern_id_gen var_gen file_manager = 
     trace config "Typechecking.."
     (typed_program, var_gen, class_info_store, instance_resolver) <- try TC.processProgram config program var_gen
     (expr_id_gen, pattern_id_gen, var_gen, typed_program) <- ER.processProgram config typed_program expr_id_gen pattern_id_gen var_gen class_info_store
-    (typed_program, expr_id_gen, pattern_id_gen) <- Inliner.processProgram typed_program expr_id_gen pattern_id_gen
+    (typed_program, expr_id_gen, pattern_id_gen, var_gen) <- Inliner.processProgram config typed_program expr_id_gen pattern_id_gen var_gen class_info_store
     mir_program <- L.lowerProgram config file_manager var_gen class_info_store typed_program instance_resolver
     Ok mir_program

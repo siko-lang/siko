@@ -57,6 +57,7 @@ instance (Ord a) => Ord [a] where
 instance Add [a] where
     opAdd a b = addList a b
 
+@Inline
 empty a :: [a]
 empty = withCapacity 0
 
@@ -66,6 +67,7 @@ addList a b = extern
 push a :: ~[a] -> a -> ~[a]
 push l item = extern
 
+@Inline
 last a :: [a] -> a
 last l = atIndex l (getLength l - 1)
 
@@ -75,6 +77,7 @@ withCapacity capacity = extern
 atIndex a :: ~[~a] -> ~Int -> ~a
 atIndex index l = extern
 
+@Inline
 iter a :: [a] -> Iterator a
 iter l = createIterator (List.intoIter l) List.nextItem
 
@@ -86,6 +89,7 @@ intoIter list = extern
 nextItem a :: ~ListIterator a -> ~Option ~(~ListIterator ~a, ~a)
 nextItem iter = extern
 
+@Inline
 toList a :: Iterator a -> [a]
 toList iter = Iterator.fold (\list, item -> list + [item]) [] iter
 
@@ -95,9 +99,11 @@ getLength l = extern
 isEmpty a :: ~[a] -> ~Bool
 isEmpty l = extern
 
+@Inline
 contains a :: (PartialEq a) => [a] -> a -> Bool
 contains l i = isSome (containsAtIndex l i)
 
+@Inline
 containsAtIndex a :: (PartialEq a) => [a] -> a -> Option Int
 containsAtIndex l i = do
     loop index <- 0 do
@@ -109,20 +115,17 @@ containsAtIndex l i = do
             then break Some index
             else index + 1
 
+@Inline
 find a :: [a] -> (a -> Bool) -> Option a
 find l f = do
     loop index <- 0 do
-            if index >= getLength l
-                then
-                    return None
-                else
-                    do
-                    e <- atIndex l index
-                    if f e
-                        then
-                            return Some e
-                        else
-                            index + 1
+        if index >= getLength l
+        then break None
+        else do
+            e <- atIndex l index
+            if f e
+            then break Some e
+            else index + 1
 
 join a :: (Show a) => [a] -> String -> String
 join items separator = List.foldE (joiner separator) "" items
@@ -158,6 +161,7 @@ write l index item = extern
 split a :: ~[~a] -> ~Int -> ~(~[~a], ~[~a])
 split l n = extern
 
+@Inline
 zip a b c :: [a] -> [b] -> (a -> b -> c) -> [c]
 zip l1 l2 f = do
     if getLength l1 != getLength l2
@@ -172,6 +176,7 @@ zip l1 l2 f = do
                 c <- f item1 item2
                 (push cs c, index + 1)
 
+@Inline
 zipS s a b :: s -> [a] -> [b] -> (s -> a -> b -> s) -> s
 zipS s l1 l2 f = do
     if getLength l1 != getLength l2
@@ -186,6 +191,7 @@ zipS s l1 l2 f = do
                 s <- f s item1 item2
                 (s, index + 1)
 
+@Inline
 zipSE s a b :: s -> [a] -> [b] -> (s -> Int -> a -> b -> s) -> s
 zipSE s l1 l2 f = do
     if getLength l1 != getLength l2
@@ -200,12 +206,14 @@ zipSE s l1 l2 f = do
                 s <- f s index item1 item2
                 (s, index + 1)
 
+@Inline
 mapS s a b :: s -> [a] -> (s -> a -> (s, b)) -> (s, [b])
 mapS s l f = do
     l |> List.iter |> Iterator.fold (\(s, items), i -> do
         (s, i) <- f s i
         (s, items + [i])) (s, [])
 
+@Inline
 mapSE s a b :: s -> [a] -> (s -> Int -> a -> (s, b)) -> (s, [b])
 mapSE s l f = do
     (s, index, l) <- l |> List.iter |> Iterator.fold (\(s, index, items), i -> do
@@ -213,6 +221,7 @@ mapSE s l f = do
         (s, index + 1, items + [i])) (s, 0, [])
     (s, l)
 
+@Inline
 mapE a b :: [a] -> (Int -> a -> b) -> [b]
 mapE l f = do
     (index, l) <- l |> List.iter |> Iterator.fold (\(index, items), i -> do
@@ -220,6 +229,7 @@ mapE l f = do
         (index + 1, items + [i])) (0, [])
     l
 
+@Inline
 foldE a b :: (a -> Int -> b -> a) -> a -> [b] -> a
 foldE f s l = do
     (s, i) <- l |> List.iter |> Iterator.fold (\(s, index), i -> do
@@ -227,27 +237,33 @@ foldE f s l = do
         (s, index + 1)) (s, 0)
     s
 
+@Inline
 fold s a :: s -> [a] -> (s -> a -> s) -> s
 fold init list f = list |> List.iter |> Iterator.fold f init
 
+@Inline
 map a b :: [a] -> (a -> b) -> [b]
 map input f = input |> List.iter |> Iterator.map f |> toList
 
+@Inline
 filter a :: [a] -> (a -> Bool) -> [a]
 filter list f = list |> List.iter |> Iterator.filter f |> toList
 
+@Inline
 foldM a k v :: (Ord k) => Map k v -> [a] -> (a -> (k, v)) -> Map k v
 foldM init list f = List.fold init list (\m, item -> do
     (k, v) <- f item
     (m, _) <- Map.insert m k v
     m)
 
+@Inline
 filterMap a b :: [a] -> (a -> Option b) -> [b]
 filterMap list f = List.fold [] list (\all, item -> do
     case f item of
         Some item -> all + [item]
         None -> all)
 
+@Inline
 filterMapS s a b :: s -> [a] -> (s -> a -> (s, Option b)) -> (s, [b])
 filterMapS s list f = List.fold (s, []) list (\(s, all), item -> do
     (s, r) <- f s item
@@ -255,5 +271,6 @@ filterMapS s list f = List.fold (s, []) list (\(s, all), item -> do
         Some item -> (s, all + [item])
         None -> (s, all))
 
+@Inline
 flatten a :: [[a]] -> [a]
 flatten lists = List.fold [] lists (\s, l -> s + l)

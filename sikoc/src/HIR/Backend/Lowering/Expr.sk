@@ -4,7 +4,7 @@ import Siko.HIR.Backend.Lowering
 import Siko.HIR.Backend.Lowering.FunctionQueue as FQ
 import Siko.HIR.Backend.Lowering.TypeStore
 import Siko.HIR.Backend.Lowering.ClosureStore as CS
-import Siko.HIR.Backend.Lowering.Util
+import Siko.HIR.Backend.Unification.Util
 import Siko.HIR.Backend.Lowering.ClassMemberCalls
 import Siko.HIR.Backend.ClassInfoStore
 import Siko.HIR.Backend.Unification as U
@@ -41,7 +41,10 @@ processArgs context sub args = do
 getMonomorphizedType :: S.Substitution -> HT.Type -> HT.Type
 getMonomorphizedType sub type = do
     type <- HT.removeFixed type
-    S.apply type sub
+    type <- S.apply type sub
+    if HT.isConcreteType type
+    then type
+    else panic "getMonomorphizedType: monomorphized type is not concrete! {}" % TF.toString type
 
 processArgTypes :: S.Substitution -> [HE.Expr HT.Type] -> [HT.Type]
 processArgTypes sub args =

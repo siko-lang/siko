@@ -20,7 +20,8 @@ class DataProvider a where
 class ClassProvider a where
     getAllClassDependencies a :: a -> P.FullyQualifiedName -> [P.FullyQualifiedName]
 
-class (TypeVarGenerator a, DataProvider a, ClassProvider a) => Context a
+class (TypeVarGenerator a, DataProvider a, ClassProvider a) => Context a where
+    ignoreConstraints a :: a -> Bool
 
 unifyArgs a :: (TypeVarGenerator a, DataProvider a, ClassProvider a, Context a) => a -> Substitution -> [Type] -> [Type] -> Result (a, Substitution) () // FIXME
 unifyArgs context sub args1 args2 = do
@@ -133,7 +134,7 @@ unify context sub type1 type2 = do
                     else ()
                     Ok (context, sub)
                 else do
-                    if constraints1 == constraints2
+                    if constraints1 == constraints2 || ignoreConstraints context
                         then do
                             sub <- try add sub var1 type2
                             Ok (context, sub)

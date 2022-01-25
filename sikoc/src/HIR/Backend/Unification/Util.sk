@@ -1,4 +1,4 @@
-module Siko.HIR.Backend.Lowering.Util where
+module Siko.HIR.Backend.Unification.Util where
 
 import Siko.HIR.Backend.Unification as U
 import Siko.HIR.Backend.Unification.Substitution as S
@@ -22,7 +22,7 @@ getFunctionType context arg_types expected_result_type function_type = do
                 arg_type <- atIndex arg_types index
                 fn_arg_types <- T.getArgs function_type
                 fn_arg_type <- atIndex fn_arg_types index
-                (context, sub) <- unify context sub arg_type fn_arg_type
+                (context, sub) <- unify context sub fn_arg_type arg_type
                 function_type <- S.apply function_type sub
                 (context, function_type, sub, index + 1)
     result_type <- T.getResultType function_type (getLength arg_types)

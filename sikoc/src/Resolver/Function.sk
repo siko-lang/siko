@@ -36,7 +36,7 @@ processAttributes state function_info = do
             List.fold (state, []) attributes (\(state, attributes), attribute -> do
                     Ident name _ <- attribute.name
                     case name of
-                        "Inlined" -> (state, List.push attributes HF.Inlined)
+                        "Inline" -> (state, List.push attributes HF.Inline)
                         _ -> (addError state (InvalidAttribute attribute.name), attributes)
                 )
 
@@ -121,7 +121,7 @@ processLambdas lambdas qn =
                     kind <- (HF.Lambda lambda.id)
                     arg_count <- lambda.arg_count
                     HE.Expr _ _ _ location <- lambda.body
-                    HF.Function location lambda_qn arg_count kind None None (Some lambda.body) None []) |> toList
+                    HF.Function location lambda_qn arg_count kind None None (Some lambda.body) None [HF.Inline]) |> toList
 
 processSubFunctions :: ResolverState ->
                        HP.Program () ->
