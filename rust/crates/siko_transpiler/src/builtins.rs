@@ -818,8 +818,8 @@ fn generate_map2_builtins(
                 indent,
                 ir_type_to_rust_type(from, program)
             )?;
-            write!(output_file, "{}let call = arg2.call_ro(state);\n", indent)?;
-            write!(output_file, "{}let tuple = call.call_ro(input);\n", indent)?;
+            write!(output_file, "{}let mut call = arg2.call_ro(state);\n", indent)?;
+            write!(output_file, "{}let tuple = call.call(input);\n", indent)?;
             write!(output_file, "{}state  = tuple._siko_field_0;\n", indent)?;
             write!(output_file, "{}*v  = tuple._siko_field_1;\n", indent)?;
             write!(output_file, "{}}}\n", indent)?;

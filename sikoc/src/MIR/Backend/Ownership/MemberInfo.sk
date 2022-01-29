@@ -1,9 +1,12 @@
 module Siko.MIR.Backend.Ownership.MemberInfo where
 
 import Set
+import Siko.Trace
+import Siko.Config
 
 import Siko.MIR.Backend.Ownership.TypeVariableInfo
 import Siko.MIR.Backend.Ownership.BorrowId
+import Siko.Util.DependencyProcessorLinear
 
 import Map2
 import List2 as List2
@@ -59,9 +62,15 @@ isSubMember vars constraint =
 filterOwnershipInfo :: List2 TypeVariable -> OwnershipInfo -> (List2 TypeVariable, Bool)
 filterOwnershipInfo vars ownershipinfo =
     case ownershipinfo of
-        Unknown v -> List2.foldLinear False vars (\found, var -> found || var == v)
-        Owner v -> List2.foldLinear False vars (\found, var -> found || var == v)
-        Borrower v _ -> List2.foldLinear False vars (\found, var -> found || var == v)
+        Unknown v -> do
+            res <- List2.contains vars v
+            (vars, res)
+        Owner v -> do
+            res <- List2.contains vars v
+            (vars, res)
+        Borrower v _ -> do
+            res <- List2.contains vars v
+            (vars, res)
 
 getDependencyMap2 :: List2 MemberInfo -> (List2 MemberInfo, Map2 TypeVariable (List2 TypeVariable))
 getDependencyMap2 members = do
