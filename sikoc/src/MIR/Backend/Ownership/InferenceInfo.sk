@@ -330,19 +330,16 @@ toFunctionInfo config inference_info = do
                     (\(converter_map, input_ownership_vars, output_ownership_vars, filtered_converters), converter -> do
                             filtered_converters <- if List2.contains input_ownership_vars converter.from
                             then do
-                                converter <- loop converter <- converter do
+                                converter <- loop (visited, converter) <- (List2.single converter.from, converter) do
                                     converter :: Converter <- converter // FIXME
                                     case Map2.get converter_map converter.to of
                                         Some another_to -> do
-                                            if another_to == converter.from
-                                            then //panic "Loop in converters! {} {}" % (converters, converter_map)
-                                                break converter
+                                            if List2.contains visited another_to
+                                            then break converter
                                             else do
-                                                if another_to == converter.to // FIXME: why does this happen?? investigate/fix
-                                                then break converter
-                                                else do
-                                                    //println "Switching to {} -> {}" % (converter.to, another_to)
-                                                    converter { to = another_to }
+                                                visited <- List2.push visited another_to
+                                                //println "Switching to {} -> {}" % (converter.to, another_to)
+                                                (visited, converter { to = another_to })
                                         None -> break converter
                                 if List2.contains output_ownership_vars converter.to
                                 then List2.push filtered_converters converter

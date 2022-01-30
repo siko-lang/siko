@@ -18,16 +18,16 @@ instance (PartialOrd k, PartialOrd v) => PartialOrd Map2 k v where
 instance (Ord k, Ord v) => Ord Map2 k v where
     cmp a b = extern
 
-showMap k v :: Map2 k v -> String
+showMap k v :: ~Map2 k v -> ~String
 showMap a = extern
 
-eqMap k v :: Map2 k v -> Map2 k v -> Bool
+eqMap k v :: Map2 k v -> ~Map2 k v -> ~Bool
 eqMap a b = extern
 
-empty k v :: (Ord k) => Map2 k v
+empty k v :: (Ord k) => ~Map2 k v
 empty = extern
 
-insert k v :: (Ord k) => Map2 k v -> k -> v -> (Map2 k v, Option v)
+insert k v :: (Ord k) => ~Map2 k v -> k -> v -> ~(~Map2 k v, ~Option v)
 insert m k v = extern
 
 put k v :: (Ord k) => Map2 k v -> k -> v -> Map2 k v
@@ -35,10 +35,10 @@ put m k v = do
     (m, _) <- insert m k v
     m
 
-get k v :: (Ord k) => Map2 k v -> k -> Option v
+get k v :: (Ord k) => ~Map2 k v -> k -> ~Option v
 get m k = extern
 
-remove k v :: (Ord k) => Map2 k v -> k -> (Map2 k v, Option v)
+remove k v :: (Ord k) => ~Map2 k v -> k -> ~(~Map2 k v, ~Option v)
 remove m k = extern
 
 @Inline
@@ -113,7 +113,7 @@ updateS s m f = Map2.mapS s m (\s, (k, v) -> do
 updateValues k v :: (Ord k, PartialEq v) => Map2 k v -> v -> v -> Map2 k v
 updateValues m old new = Map2.update m (\(k, v) -> if old == v then new else old)
 
-getSize k v :: Map2 k v -> Int
+getSize k v :: ~Map2 k v -> ~Int
 getSize m = extern
 
 @Inline
