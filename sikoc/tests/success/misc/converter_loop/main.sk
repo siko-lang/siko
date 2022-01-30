@@ -1,0 +1,33 @@
+module Main where
+
+import List2
+import Map2
+
+data TypeVariable = TypeVariable deriving (PartialEq, Eq, PartialOrd, Ord)
+
+collectDepOwnershipVarsForGroupVar :: Map2 TypeVariable (List2 TypeVariable)
+                                      -> Map2 TypeVariable (List2 TypeVariable)
+                                      -> List2 TypeVariable
+                                      -> (Map2 TypeVariable (List2 TypeVariable),
+                                          Map2 TypeVariable (List2 TypeVariable),
+                                          List2 TypeVariable)
+collectDepOwnershipVarsForGroupVar deps_map ownership_dep_map ownership_vars = do
+    //group <- List2.empty
+    case Map2.get deps_map TypeVariable of
+        Some deps -> do
+            loop (ownership_vars, index) <- (ownership_vars, 0) do
+                if index >= List2.getLength deps
+                then break (ownership_dep_map, deps_map, ownership_vars)
+                else do
+                    dep <- List2.atIndex deps index
+                    // ownership_vars <- case Map2.get ownership_dep_map dep of
+                    //     Some deps_ownership_vars -> ownership_vars + deps_ownership_vars
+                    //     None -> if List2.contains group TypeVariable
+                    //             then ownership_vars
+                    //             else panic "Dep not found in ownership_dep_map"
+                    (ownership_vars, index + 1)
+        None -> panic "Dep not found in deps map"
+
+main = do
+    collectDepOwnershipVarsForGroupVar Map2.empty Map2.empty List2.empty
+    ()
