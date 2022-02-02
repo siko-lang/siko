@@ -66,15 +66,15 @@ processExpr context expr = do
             (context, rhs) <- case rhs_s_expr of
                     E.StaticFunctionCall f_id f_args -> do
                         program <- context.program
-                        function <- P.getFunction program f_id
+                        (program, function) <- P.getFunction program f_id
                         case function.kind of
                             F.VariantCtor index -> do
                                 adt_id <- T.getIdentity function.type.result
-                                adt <- P.getAdt program adt_id
+                                (program, adt) <- P.getAdt program adt_id
                                 variant <- atIndex adt.variants index
                                 record_id <- T.getIdentity variant.type
-                                record <- P.getRecord program record_id
-                                ctor <- P.getRecordCtor program record_id
+                                (program, record) <- P.getRecord program record_id
+                                (program, ctor) <- P.getRecordCtor program record_id
                                 new_rhs_type <- T.Record record_id
                                 new_rhs <- E.Expr (E.StaticFunctionCall ctor f_args) new_rhs_type rhs_id
                                 (context, expr_id) <- getNextExprId context

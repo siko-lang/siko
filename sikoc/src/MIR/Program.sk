@@ -30,24 +30,24 @@ addFunction program function_id function = do
 getUnitType :: Program -> Type
 getUnitType program = Option.unwrap program.unit_type
 
-getFunction :: Program -> Identity -> F.Function
+getFunction :: Program -> Identity -> (Program, F.Function)
 getFunction program function_id = case get program.functions function_id of
-    Some function -> function
+    Some function -> (program, function)
     None -> panic "MIR Function not found {}" % function_id
 
-getAdt :: Program -> Identity -> D.AlgebraicDataType
+getAdt :: Program -> Identity -> (Program, D.AlgebraicDataType)
 getAdt program adt_id = case get program.adts adt_id of
-    Some adt -> adt
+    Some adt -> (program, adt)
     None -> panic "MIR Adt not found {}" % adt_id
 
-getRecord :: Program -> Identity -> D.Record
+getRecord :: Program -> Identity -> (Program, D.Record)
 getRecord program record_id = case get program.records record_id of
-    Some record -> record
+    Some record -> (program, record)
     None -> panic "MIR Record not found {}" % record_id
 
-getRecordCtor :: Program -> Identity -> Identity
+getRecordCtor :: Program -> Identity -> (Program, Identity)
 getRecordCtor program record_id = case get program.record_ctors record_id of
-    Some record_ctor -> record_ctor
+    Some record_ctor -> (program, record_ctor)
     None -> panic "MIR Record ctor not found {}" % record_id
 
 updateRecordFields :: Program -> Identity -> [D.RecordField] -> Program

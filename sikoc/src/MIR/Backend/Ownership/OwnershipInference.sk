@@ -158,7 +158,8 @@ processExpr context expr = do
         E.Multi _ -> context
         E.StaticFunctionCall f_id args -> do
                 context <- List.fold context args processExpr
-                function <- P.getFunction context.program f_id
+                (program, function) <- P.getFunction context.program f_id
+                context <- context { program = program }
                 case function.kind of
                     F.Normal _ | F.Extern _ -> do
                         case getFunctionInfo context.function_info_store f_id of

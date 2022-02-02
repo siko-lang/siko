@@ -113,7 +113,8 @@ getClosureIdentity (ClosureName closure_name) = do
 compileClosure :: Context -> Closure -> Identity -> Context
 compileClosure context closure closure_call_identity = do
     adt_identity <- (getClosureIdentity closure.name)
-    closure_call_function <- getFunction context.mir_program closure_call_identity
+    (mir_program, closure_call_function) <- getFunction context.mir_program closure_call_identity
+    context <- context { mir_program = mir_program }
     expr_id_gen <- getExprIdCounter
     context <- setExprIdCounter context expr_id_gen
     temp_var_gen <- getTempVarCounter
@@ -142,7 +143,8 @@ compileClosure context closure closure_call_identity = do
         (context, arg_ref1_expr) <- getExpr context (ME.Expr arg_ref1 arg_ref1_type)
         args <- args + [arg_ref1_expr]
         (context, body_expr) <- do
-                mir_function <- getFunction context.mir_program next_fn
+                (mir_program, mir_function) <- getFunction context.mir_program next_fn
+                context <- context { mir_program = mir_program }
                 body <- ME.StaticFunctionCall next_fn args
                 (context, body_expr) <- getExpr context (ME.Expr body mir_function.type.result)
                 getExpr context (ME.Expr (ME.Do [body_expr]) mir_function.type.result)

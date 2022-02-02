@@ -45,7 +45,8 @@ processExpr context expr = do
     E.Expr s_expr _ _ <- expr
     case s_expr of
         E.StaticFunctionCall id args -> do
-            function <- P.getFunction context.program id
+            (program, function) <- P.getFunction context.program id
+            context <- context { program = program }
             case function.kind of
                 F.Normal info if False -> do
                     //println "{} should be inline" % id
@@ -65,7 +66,7 @@ processExpr context expr = do
 
 processFunction :: [P.Identity] -> (P.Program, Set P.Identity) -> P.Identity -> (P.Program, Set P.Identity)
 processFunction group (program, kept_functions) function_id = do
-    function <- P.getFunction program function_id
+    (program, function) <- P.getFunction program function_id
     //println "Processing {}" % function_id
     case function.kind of
         F.Normal info -> do

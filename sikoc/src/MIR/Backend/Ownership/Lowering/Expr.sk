@@ -89,14 +89,16 @@ lowerExpr lowering_context context expr = do
             (context, lir_id) <- getLIRId context lir_key
             context <- addItem context lir_key
             (context, lir_args) <- List.mapS context args (lowerExpr lowering_context)
-            function <- MP.getFunction context.mir_program f_id
+            (mir_program, function) <- MP.getFunction context.mir_program f_id
+            context <- context { mir_program = mir_program }
             lir_args <- case function.kind of
                     MF.VariantCtor index -> do
                         adt_id <- MT.getIdentity function.type.result
-                        adt <- MP.getAdt context.mir_program adt_id
+                        (mir_program, adt) <- MP.getAdt context.mir_program adt_id
                         variant <- atIndex adt.variants index
                         record_id <- MT.getIdentity variant.type
-                        record <- MP.getRecord context.mir_program record_id
+                        (mir_program, record) <- MP.getRecord mir_program record_id
+                        context <- context { mir_program = mir_program }
                         List.zipS [] lir_args record.fields (\lir_args, arg, field -> do
                             if field.grouped
                             then do
@@ -106,7 +108,8 @@ lowerExpr lowering_context context expr = do
                             else List.push lir_args arg)
                     MF.RecordCtor -> do
                         record_id <- MT.getIdentity function.type.result
-                        record <- MP.getRecord context.mir_program record_id
+                        (mir_program, record) <- MP.getRecord context.mir_program record_id
+                        context <- context { mir_program = mir_program }
                         List.zipS [] lir_args record.fields (\lir_args, arg, field -> do
                             if field.grouped
                             then do
@@ -130,7 +133,8 @@ lowerExpr lowering_context context expr = do
         ME.FieldAccess name receiver -> do
             ME.Expr _ receiver_type _ <- receiver
             record_id <- MT.getIdentity receiver_type
-            record <- MP.getRecord context.mir_program record_id
+            (mir_program, record) <- MP.getRecord context.mir_program record_id
+            context <- context { mir_program = mir_program }
             field <- Option.unwrap (MD.getFieldByName record name)
             (context, lir_receiver) <- lowerExpr lowering_context context receiver
             if field.grouped

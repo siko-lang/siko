@@ -130,7 +130,8 @@ getVariantType context index adt_type = do
 
 createGetNextFunctionBody :: Context -> IteratorInfo -> MP.Identity -> Context
 createGetNextFunctionBody context iterator function_id = do
-    mir_get_next_function <- MP.getFunction context.mir_program function_id
+    (mir_program, mir_get_next_function) <- MP.getFunction context.mir_program function_id
+    context <- context { mir_program = mir_program }
     expr_id_gen <- getExprIdCounter
     context <- setExprIdCounter context expr_id_gen
     temp_var_gen <- getTempVarCounter
@@ -154,7 +155,8 @@ createGetNextFunctionBody context iterator function_id = do
         closure_field_access2 <- ME.FieldAccess closure_field_name iter_var_ref_expr3
         (context, closure_field_access_expr) <- getExpr context (ME.Expr closure_field_access1 mir_closure_type)
         (context, closure_field_access_expr2) <- getExpr context (ME.Expr closure_field_access2 mir_closure_type)
-        closure_call_function <- MP.getFunction context.mir_program closure_call_id
+        (mir_program, closure_call_function) <- MP.getFunction context.mir_program closure_call_id
+        context <- context { mir_program = mir_program }
         closure_call_function_result <- closure_call_function.type.result
         mir_option_type <- case closure_call_function_result of
             MT.Adt id -> getAdt context.type_store id

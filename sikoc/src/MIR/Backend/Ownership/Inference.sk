@@ -34,7 +34,8 @@ createRecordCtorFunctionInfo :: Context -> T.Type -> FunctionInfo
 createRecordCtorFunctionInfo context type =
     case type of
         T.Record id -> do
-            record <- P.getRecord context.program id
+            (program, record) <- P.getRecord context.program id
+            context <- context { program = program }
             allocator <- createAllocator
             (allocator, result) <- getNextTypeVariableInfo allocator
             (allocator, args, members) <- List.fold (allocator, List2.empty, List2.empty) record.fields (\(allocator, args, members), field -> do
@@ -50,11 +51,13 @@ createVariantctorFunctionInfo :: Context -> Int -> T.Type -> FunctionInfo
 createVariantctorFunctionInfo context index type =
     case type of
         T.Adt id -> do
-            adt <- P.getAdt context.program id
+            (program, adt) <- P.getAdt context.program id
+            context <- context { program = program }
             variant <- atIndex adt.variants index
             case variant.type of
                 T.Record id -> do
-                    record <- P.getRecord context.program id
+                    (program, record) <- P.getRecord context.program id
+                    context <- context { program = program }
                     allocator <- createAllocator
                     (allocator, adt_result) <- getNextTypeVariableInfo allocator
                     (allocator, record_result) <- getNextTypeVariableInfo allocator
@@ -80,7 +83,8 @@ processFunctionInfo context function_info function_id = do
 
 processFunction :: Context -> [P.Identity] -> P.Identity -> (Context, Bool)
 processFunction context group function_id = do
-    function <- P.getFunction context.program function_id
+    (program, function) <- P.getFunction context.program function_id
+    context <- context { program = program }
     case function.kind of
         F.Normal info -> do
             //trace context.config "Ownership inference - processing {}" % function_id
@@ -90,7 +94,8 @@ processFunction context group function_id = do
             inference_info <- initializeTypeVariables inference_info info.body
             function_info_store <- context.function_info_store
             //trace context.config "processEqualities {}" % function_id
-            inference_info <- processEqualities context.config group inference_info function_info_store context.program info.body
+            (program, inference_info) <- processEqualities context.config group inference_info function_info_store context.program info.body
+            context <- context { program = program }
             //trace context.config "checkBorrows {}" % function_id
             borrow_info <- checkBorrows context.program info.body
             //trace context.config "inferOwnership {}" % function_id
