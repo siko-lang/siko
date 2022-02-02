@@ -210,36 +210,6 @@ toOwnershipInfo ownership_values =
                     Borrower id -> List2.push ownershipinfos (M.Borrower var id)
             )
 
-collectRelevantVars :: List2 M.MemberInfo -> Set TypeVariable -> Set TypeVariable
-collectRelevantVars members vars = do
-    loop vars <- vars do
-        start_size <- Set.getSize vars
-        vars <- List2.fold vars members (\vars, member_info -> case member_info of
-            M.Variant index root info ->
-                if Set.contains vars root
-                then do
-                    vars <- Set.put vars info.ownership_var
-                    vars <- Set.put vars info.arg_group_var
-                    vars
-                else vars
-            M.Member name root info ->
-                if Set.contains vars root
-                then do
-                    vars <- Set.put vars info.ownership_var
-                    vars <- Set.put vars info.arg_group_var
-                    vars
-                else vars
-            M.Extern index root info ->
-                if Set.contains vars root
-                then do
-                    vars <- Set.put vars info.ownership_var
-                    vars <- Set.put vars info.arg_group_var
-                    vars
-                else vars)
-        if Set.getSize vars != start_size
-        then vars
-        else break vars
-
 dumpInferenceInfoStats :: Config -> InferenceInfo -> ()
 dumpInferenceInfoStats config inference_info = do
     trace config "members: {}" % List2.getLength inference_info.members

@@ -15,13 +15,14 @@ import Siko.MIR.Backend.Ownership.Initializer
 import Siko.MIR.Backend.Ownership.InferenceInfo
 import Siko.MIR.Backend.Ownership.MemberInfo as M
 import Siko.MIR.Backend.Ownership.TypeVariableInfo
+import Siko.MIR.Backend.Ownership.OwnershipDependencyMap
 import Siko.MIR.Program as MP
 import Siko.LIR.Program as LP
 import Siko.MIR.Function as MF
 import Siko.LIR.Function as LF
 import Siko.LIR.Type as LT
 
-import Set
+import Map2
 import List2 as List2
 import List2 (List2)
 
@@ -39,7 +40,7 @@ lowerFunction context lowering_info mir_id lir_id = do
                     function_info_store context.mir_program info.body
             context <- context { mir_program = mir_program }
             borrow_info <- checkBorrows context.mir_program info.body
-            inference_info <- unpackOwnerships inference_info
+            inference_info <- unpackOwnerships context.config inference_info
             (inference_info, cloning_converters) <- inferOwnership context.config [] context.function_info_store inference_info
                               context.mir_program info.body borrow_info
             lowering_context <- LoweringContext inference_info cloning_converters
@@ -71,25 +72,21 @@ lowerFunction context lowering_info mir_id lir_id = do
     //trace context.config "Lowering done"
     context
 
-unpackOwnerships :: InferenceInfo -> InferenceInfo
-unpackOwnerships inference_info = do
+unpackOwnerships :: Config -> InferenceInfo -> InferenceInfo
+unpackOwnerships config inference_info = do
     // Ownership information is present in the lowering info
     // in a packed way. For example an owned record implies
     // that every field of the record is also owned.
     // The ownership inference does not know this, thus we 'unpack'
     // the ownerships, i.e. fill out member ownerships which are implied from
     // the arguments, result.
-    vars <- Set.empty
-    vars <- List2.fold vars inference_info.args (\vars, info -> do
-        vars <- Set.put vars info.ownership_var
-        vars <- Set.put vars info.arg_group_var
+    (members, ownership_dep_map) <- calculateOwnershipDepMap config inference_info.members
+    vars <- List2.fold List2.empty inference_info.args (\vars, info -> do
+        vars <- List2.push vars info.arg_group_var
         vars)
-    vars <- Set.put vars inference_info.result.ownership_var
-    vars <- Set.put vars inference_info.result.arg_group_var
-    relevants <- collectRelevantVars inference_info.members vars
-    members <- inference_info.members
-    inference_info <- List2.fold inference_info members (\inference_info, m -> case m of
-        M.Variant _ _ info -> maybeAddOwnership inference_info info.ownership_var Owner
-        M.Member _ _ info -> maybeAddOwnership inference_info info.ownership_var Owner
-        M.Extern _ _ info -> maybeAddOwnership inference_info info.ownership_var Owner)
+    vars <- List2.push vars inference_info.result.arg_group_var
+    inference_info <- List2.fold inference_info vars (\inference_info, var -> do
+        case Map2.get ownership_dep_map var of
+            Some ownership_vars -> List2.fold inference_info ownership_vars (\inference_info, var -> maybeAddOwnership inference_info var Owner)
+            None -> inference_info)
     inference_info

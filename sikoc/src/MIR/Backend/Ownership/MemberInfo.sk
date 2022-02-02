@@ -22,30 +22,6 @@ data OwnershipInfo = Unknown TypeVariable
                    | Borrower TypeVariable BorrowId
                    deriving (PartialEq, Eq, PartialOrd, Ord, Show)
 
-collect :: List2 MemberInfo -> List2 TypeVariable -> (List2 MemberInfo, List2 TypeVariable)
-collect sources result =
-    loop (sources, result) <- (sources, result) do
-        start_size <- List2.getLength result
-        (sources, result) <- List2.foldLinear result sources collectMember
-        if List2.getLength result != start_size
-        then (sources, result)
-        else break (sources, result)
-
-collectMember :: List2 TypeVariable -> MemberInfo -> List2 TypeVariable
-collectMember vars constraint =
-    case constraint of
-        Variant index root info -> addMember vars root info
-        Member name root info -> addMember vars root info
-        Extern index root info -> addMember vars root info
-    where
-        addMember :: List2 TypeVariable -> TypeVariable -> TypeVariableInfo -> List2 TypeVariable
-        addMember vars root info =
-            if List2.contains vars root
-            then do
-                vars <- List2.push vars info.arg_group_var
-                List2.dedup (List2.sort vars)
-            else vars
-
 isSubMember :: List2 TypeVariable -> MemberInfo -> (List2 TypeVariable, Bool)
 isSubMember vars constraint =
     case constraint of
