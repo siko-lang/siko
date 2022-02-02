@@ -27,7 +27,7 @@ data TypeLoweringInfo = { members :: List2 M.MemberInfo,
                           ownershipinfos :: List2 M.OwnershipInfo,
                         } deriving (PartialEq, Eq, PartialOrd, Ord, Show)
 
-convertToFunctionLoweringInfo :: Config -> InferenceInfo -> [TypeVariableInfo] -> TypeVariableInfo -> FunctionLoweringInfo
+convertToFunctionLoweringInfo :: Config -> InferenceInfo -> [TypeVariableInfo] -> TypeVariableInfo -> (InferenceInfo, FunctionLoweringInfo)
 convertToFunctionLoweringInfo config inference_info args result = do
     //println "Creating function lowering info"
     args <- List2.toList2 args
@@ -35,14 +35,16 @@ convertToFunctionLoweringInfo config inference_info args result = do
             (toOwnershipInfo inference_info.ownership_values) inference_info.allocator
     //println "Unfiltered {}" % lowering_info
     sources <- List2.push args result
-    filterFunctionLoweringInfo config lowering_info sources
+    lowering_info <- filterFunctionLoweringInfo config lowering_info sources
+    (inference_info, lowering_info)
 
-createTypeLoweringInfoFromInferenceInfo :: Config -> InferenceInfo -> TypeVariableInfo -> TypeLoweringInfo
+createTypeLoweringInfoFromInferenceInfo :: Config -> InferenceInfo -> TypeVariableInfo -> (InferenceInfo, TypeLoweringInfo)
 createTypeLoweringInfoFromInferenceInfo config inference_info root = do
     //println "Creating type lowering info"
     lowering_info <- TypeLoweringInfo inference_info.members root
             (toOwnershipInfo inference_info.ownership_values)
-    filterTypeLoweringInfo config lowering_info (List2.single root)
+    lowering_info <- filterTypeLoweringInfo config lowering_info (List2.single root)
+    (inference_info, lowering_info)
 
 createTypeLoweringInfoFromFunctionLoweringInfo :: Config -> FunctionLoweringInfo -> TypeVariableInfo -> TypeLoweringInfo
 createTypeLoweringInfoFromFunctionLoweringInfo config lowering_info root = do
