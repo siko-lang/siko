@@ -83,20 +83,20 @@ processFunction context group function_id = do
     function <- P.getFunction context.program function_id
     case function.kind of
         F.Normal info -> do
-            trace context.config "Ownership inference - processing {}" % function_id
+            //trace context.config "Ownership inference - processing {}" % function_id
             arg_count <- getLength function.type.args
             inference_info <- createInferenceInfo arg_count
-            trace context.config "initializeTypeVariables {}" % function_id
+            //trace context.config "initializeTypeVariables {}" % function_id
             inference_info <- initializeTypeVariables inference_info info.body
             function_info_store <- context.function_info_store
-            trace context.config "processEqualities {}" % function_id
+            //trace context.config "processEqualities {}" % function_id
             inference_info <- processEqualities context.config group inference_info function_info_store context.program info.body
-            trace context.config "checkBorrows {}" % function_id
+            //trace context.config "checkBorrows {}" % function_id
             borrow_info <- checkBorrows context.program info.body
-            trace context.config "inferOwnership {}" % function_id
+            //trace context.config "inferOwnership {}" % function_id
             (inference_info, _) <- inferOwnership context.config group context.function_info_store inference_info
                               context.program info.body borrow_info
-            trace context.config "Processing {}" % function_id
+            //trace context.config "Processing {}" % function_id
             function_info <- toFunctionInfo context.config inference_info
             //println "id: {}" % function_id
             //println "inference_info {}" % inference_info
@@ -114,7 +114,7 @@ processFunction context group function_id = do
 
 processFunctionGroup :: Int -> Int -> Context -> [P.Identity] -> (Int, Context)
 processFunctionGroup index group_count context group = do
-    trace context.config "processFunctionGroup {}/{} ({}%) {}" % (index, group_count, index * 100 / group_count, group)
+    //trace context.config "processFunctionGroup {}/{} ({}%) {}" % (index, group_count, index * 100 / group_count, group)
     if getLength group == 1
         then do
             function_id <- atIndex group 0
@@ -130,9 +130,12 @@ processFunctionGroup index group_count context group = do
 
 processProgram :: Config -> P.Program -> [DependencyGroup P.Identity] -> LP.Program
 processProgram config program function_groups = do
-    trace config "Inference"
+    trace config "Ownership inference started"
     context <- Context config program createFunctionInfoStore
     group_count <- getLength function_groups
     (_, context) <- List.fold (1, context) function_groups (\(index, context), group -> processFunctionGroup index group_count context group.items)
+    trace config "Ownership inference ended"
+    trace config "Lowering started"
     lir_program <- lowerProgram program context.config context.function_info_store
+    trace config "Lowering ended"
     lir_program

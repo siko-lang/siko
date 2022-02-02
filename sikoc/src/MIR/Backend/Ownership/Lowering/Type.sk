@@ -22,52 +22,50 @@ remapLifetime  duplicator LT.Lifetime id =
         Some id -> LT.Lifetime id
         None -> panic "Could not find lifetime id in inverse_borrows map of duplicator"
 
-lowerType :: Context -> LoweringInfo -> MT.Type -> (Context, LT.Type)
+lowerType :: Context -> TypeLoweringInfo -> MT.Type -> (Context, LT.Type)
 lowerType context lowering_info mir_type = do
     case mir_type of
         MT.Record id -> do
             //println "Record input {}" % lowering_info
-            (lowering_info, duplicator) <- normalizeLoweringInfo lowering_info
+            (lowering_info, duplicator) <- normalizeTypeLoweringInfo lowering_info
             (lowering_info, ref) <- normalizeRef lowering_info
             lir_key <- RecordKey id lowering_info
             context <- addItem context lir_key
             (context, lir_id) <- getLIRId context lir_key
             //println "lowerType: {} {} {}" % (lir_id, lir_key, lowering_info)
-            lifetimes <- collectLifetimes lowering_info
+            lifetimes <- collectLifetimes lowering_info.ownershipinfos
             lifetimes <- List.map lifetimes (remapLifetime duplicator)
             case ref of
                 Some (BorrowId id) -> (context, LT.Ref (remapLifetime duplicator (LT.Lifetime id)) (LT.Record lir_id lifetimes))
                 None -> (context, LT.Record lir_id lifetimes)
         MT.Adt id -> do
             //println "Adt input {}" % lowering_info
-            (lowering_info, duplicator) <- normalizeLoweringInfo lowering_info
+            (lowering_info, duplicator) <- normalizeTypeLoweringInfo lowering_info
             (lowering_info, ref) <- normalizeRef lowering_info
             lir_key <- AdtKey id lowering_info
             context <- addItem context lir_key
             (context, lir_id) <- getLIRId context lir_key
             //println "lowerType: {} {}" % (lir_id, lir_key)
-            lifetimes <- collectLifetimes lowering_info
+            lifetimes <- collectLifetimes lowering_info.ownershipinfos
             lifetimes <- List.map lifetimes (remapLifetime duplicator)
             case ref of
                 Some (BorrowId id) -> (context, LT.Ref (remapLifetime duplicator (LT.Lifetime id)) (LT.Adt lir_id lifetimes))
                 None -> (context, LT.Adt lir_id lifetimes)
         _ -> (context, LT.Never)
 
-lowerFunctionType :: Context -> LoweringInfo -> MF.FunctionType -> (Context, LF.FunctionType, [LT.Lifetime])
+lowerFunctionType :: Context -> FunctionLoweringInfo -> MF.FunctionType -> (Context, LF.FunctionType, [LT.Lifetime])
 lowerFunctionType context lowering_info mir_function_type = do
     //println "lowerFunctionType {}" % lowering_info
     (context, args) <- List.mapSE context mir_function_type.args (\context, index, arg_type -> do
         lowering_info <- getLoweringInfoForArg context.config lowering_info index
         lowerType context lowering_info arg_type)
     (context, result) <- lowerType context (getLoweringInfoForResult context.config lowering_info) mir_function_type.result
-    lifetimes <- collectLifetimes lowering_info
+    lifetimes <- collectLifetimes lowering_info.ownershipinfos
     (context, LF.FunctionType args result, lifetimes)
 
-collectLifetimes :: LoweringInfo -> [LT.Lifetime]
-collectLifetimes lowering_info = do
-        lifetimes <- case lowering_info of
-                Function function -> List2.fold [] function.ownershipinfos addLifetime
-                Type type -> List2.fold [] type.ownershipinfos addLifetime
+collectLifetimes :: List2 M.OwnershipInfo -> [LT.Lifetime]
+collectLifetimes ownershipinfos = do
+        lifetimes <- List2.fold [] ownershipinfos addLifetime
         lifetimes |> sort |> dedup
     where
         addLifetime :: [LT.Lifetime] -> M.OwnershipInfo -> [LT.Lifetime]

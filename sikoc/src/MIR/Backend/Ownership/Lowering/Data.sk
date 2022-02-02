@@ -17,14 +17,14 @@ import Siko.LIR.Type as LT
 
 import Map
 
-lowerExternalRecordInfo :: LoweringInfo -> Context -> MD.ExternalRecordInfo -> (Context, LD.ExternalRecordInfo)
+lowerExternalRecordInfo :: TypeLoweringInfo -> Context -> MD.ExternalRecordInfo -> (Context, LD.ExternalRecordInfo)
 lowerExternalRecordInfo lowering_info context mir_external_record_info = do
     (context, lir_type_args) <- List.mapSE context mir_external_record_info.type_args (\context, index, type_arg -> do
         lowering_info <- getLoweringInfoForExtern context.config lowering_info index
         lowerType context lowering_info type_arg)
     (context, LD.ExternalRecordInfo lir_type_args)
 
-lowerField :: LoweringInfo -> Context -> MD.RecordField -> (Context, LD.RecordField)
+lowerField :: TypeLoweringInfo -> Context -> MD.RecordField -> (Context, LD.RecordField)
 lowerField lowering_info context mir_field = do
     lowering_info <- getLoweringInfoForMember context.config lowering_info mir_field.name
     (context, lir_type) <- lowerType context lowering_info mir_field.type
@@ -33,18 +33,18 @@ lowerField lowering_info context mir_field = do
     else lir_type
     (context, LD.RecordField mir_field.name lir_type)
 
-lowerVariant :: LoweringInfo -> Context -> Int -> MD.Variant -> (Context, LD.Variant)
+lowerVariant :: TypeLoweringInfo -> Context -> Int -> MD.Variant -> (Context, LD.Variant)
 lowerVariant lowering_info context index mir_variant = do
     lowering_info <- getLoweringInfoForVariant context.config lowering_info index
     (context, lir_type) <- lowerType context lowering_info mir_variant.type
     (context, LD.Variant mir_variant.name lir_type)
 
-lowerRecord :: Context -> LoweringInfo -> MP.Identity -> LP.Identity -> Context
+lowerRecord :: Context -> TypeLoweringInfo -> MP.Identity -> LP.Identity -> Context
 lowerRecord context lowering_info mir_id lir_id = do
     trace context.config "Lowering record {} {} {}" % (mir_id, lir_id, lowering_info)
     mir_record <- MP.getRecord context.mir_program mir_id
     (context, fields) <- List.mapS context mir_record.fields (lowerField lowering_info)
-    lifetimes <- collectLifetimes lowering_info
+    lifetimes <- collectLifetimes lowering_info.ownershipinfos
     (context, external_info) <- case mir_record.external_info of
         Some external_info -> do
             (context, external_info) <- lowerExternalRecordInfo lowering_info context external_info
@@ -55,12 +55,12 @@ lowerRecord context lowering_info mir_id lir_id = do
     context <- addRecord context lir_record
     context
 
-lowerAdt :: Context -> LoweringInfo -> MP.Identity -> LP.Identity -> Context
+lowerAdt :: Context -> TypeLoweringInfo -> MP.Identity -> LP.Identity -> Context
 lowerAdt context lowering_info mir_id lir_id = do
     trace context.config "Lowering adt {} {} {}" % (mir_id, lir_id, lowering_info)
     mir_adt <- MP.getAdt context.mir_program mir_id
     (context, variants) <- List.mapSE context mir_adt.variants (lowerVariant lowering_info)
-    lifetimes <- collectLifetimes lowering_info
+    lifetimes <- collectLifetimes lowering_info.ownershipinfos
     external_class_impls <- []
     lir_adt <- LD.AlgebraicDataType lir_id lifetimes variants external_class_impls
     context <- addAdt context lir_adt

@@ -60,11 +60,11 @@ collectDepsForGroupVar group deps_map group_dep_map group_vars item =
 
 calculateGroupDepMap :: Config -> List2 MemberInfo -> (List2 MemberInfo, Map2 TypeVariable (List2 TypeVariable))
 calculateGroupDepMap config members = do
-    trace config "calculateGroupDepMap: calculateOwnershipDepMap start ({})" % (List2.getLength members)
+    //trace config "calculateGroupDepMap: calculateOwnershipDepMap start ({})" % (List2.getLength members)
     (members, deps_map) <- getDependencyMap2 members
-    trace config "calculateGroupDepMap: calculateOwnershipDepMap got deps_map"
+    //trace config "calculateGroupDepMap: calculateOwnershipDepMap got deps_map"
     groups <- processDependencies config deps_map
-    trace config "calculateGroupDepMap: calculateOwnershipDepMap got groups {}" % (List2.getLength groups)
+    //trace config "calculateGroupDepMap: calculateOwnershipDepMap got groups {}" % (List2.getLength groups)
     group_dep_map <- Map2.empty
     group_dep_map <- loop (group_dep_map, deps_map, index) <- (group_dep_map, deps_map, 0) do
         if index >= List2.getLength groups
@@ -73,5 +73,5 @@ calculateGroupDepMap config members = do
             group <- List2.atIndex groups index
             (group_dep_map, deps_map) <- calculateDepsForGroup group_dep_map deps_map group.items
             (group_dep_map, deps_map, index + 1)
-    trace config "calculateGroupDepMap: done"
+    //trace config "calculateGroupDepMap: done"
     (members, group_dep_map)

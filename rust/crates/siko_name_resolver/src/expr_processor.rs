@@ -773,6 +773,7 @@ pub fn process_expr(
             return add_expr(ir_expr, id, ir_program, program);
         }
         Expr::Do(items) => {
+            let mut env = Environment::child(environment);
             let ir_items: Vec<IrExprId> = items
                 .iter()
                 .map(|id| {
@@ -780,7 +781,7 @@ pub fn process_expr(
                         *id,
                         program,
                         module,
-                        environment,
+                        &mut env,
                         ir_program,
                         errors,
                         lambda_helper.clone(),

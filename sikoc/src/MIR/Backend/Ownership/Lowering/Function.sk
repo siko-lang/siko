@@ -25,7 +25,7 @@ import Set
 import List2 as List2
 import List2 (List2)
 
-lowerFunction :: Context -> LoweringInfo -> MP.Identity -> LP.Identity -> Context
+lowerFunction :: Context -> FunctionLoweringInfo -> MP.Identity -> LP.Identity -> Context
 lowerFunction context lowering_info mir_id lir_id = do
     trace context.config "Lowering function {} {}" % (mir_id, lowering_info)
     function <- MP.getFunction context.mir_program mir_id
@@ -42,7 +42,7 @@ lowerFunction context lowering_info mir_id lir_id = do
                               context.mir_program info.body borrow_info
             lowering_context <- LoweringContext inference_info cloning_converters
             (context, lir_body) <- lowerExpr lowering_context context info.body
-            trace context.config "Processing expr done"
+            //trace context.config "Processing expr done"
             lir_kind <- LF.Normal lir_body
             (context, lir_function_type, lifetimes) <- lowerFunctionType context lowering_info function.type
             lir_function <- LF.Function lir_id lifetimes lir_kind lir_function_type
@@ -66,7 +66,7 @@ lowerFunction context lowering_info mir_id lir_id = do
             lir_function <- LF.Function lir_id lifetimes lir_kind lir_function_type
             context <- addFunction context lir_function
             context
-    trace context.config "Lowering done"
+    //trace context.config "Lowering done"
     context
 
 unpackOwnerships :: InferenceInfo -> InferenceInfo
