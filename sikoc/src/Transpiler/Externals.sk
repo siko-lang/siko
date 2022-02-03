@@ -490,6 +490,19 @@ generateListAdd program type_store arg_types result_type = do
     struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef new0)]
     R.Block [new0_decl, new1_decl, add_call, struct_ctor]
 
+generateListPush :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
+generateListPush program type_store arg_types result_type = do
+    rust_type <- convertType result_type
+    field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
+    field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
+    new0 <- "new0"
+    new0_decl <- R.VarDeclMut new0 (R.MethodCall field_access0 cloneName []) None
+    new1 <- "new1"
+    new1_decl <- R.VarDecl new1 (R.MethodCall field_access1 cloneName []) None
+    add_call <- R.MethodCall (R.VarRef new0) "push" [R.VarRef new1]
+    struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef new0)]
+    R.Block [new0_decl, new1_decl, add_call, struct_ctor]
+
 generateListIntoIter :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateListIntoIter program type_store arg_types result_type = do
     rust_type <- convertType result_type
@@ -549,6 +562,13 @@ generateListWrite program type_store arg_types result_type = do
     new_decl <- R.VarDeclMut new (R.MethodCall inner0 cloneName []) None
     assign0 <- R.Assign (R.Deref (R.FunctionCall "std::ops::IndexMut::index_mut" [R.MutRef (R.VarRef new), R.As inner1 "usize"])) arg2
     R.Block [new_decl, assign0, R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef new)]]
+
+generateListWithCapacity :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
+generateListWithCapacity program type_store arg_types result_type = do
+    rust_type <- convertType result_type
+    arg0 <- R.VarRef (getArgName 0)
+    inner0 <- R.FieldAccess innerValueField arg0
+    R.Block [R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.FunctionCall "std::vec::Vec::with_capacity" [ R.As inner0 "usize"])]]
 
 generateStringChars :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateStringChars program type_store arg_types result_type = do
@@ -818,6 +838,8 @@ initializeExternalFunctions = do
     (externals, _) <- insert externals (ExternalId "Char" "showChar") (ExternFnBuilder generateShow)
 
     (externals, _) <- insert externals (ExternalId "List" "addList") (ExternFnBuilder generateListAdd)
+    (externals, _) <- insert externals (ExternalId "List" "push") (ExternFnBuilder generateListPush)
+    (externals, _) <- insert externals (ExternalId "List" "withCapacity") (ExternFnBuilder generateListWithCapacity)
     (externals, _) <- insert externals (ExternalId "List" "atIndex") (ExternFnBuilder generateListAtIndex)
     (externals, _) <- insert externals (ExternalId "List" "getLength") (ExternFnBuilder generateListGetLength)
     (externals, _) <- insert externals (ExternalId "List" "dedup") (ExternFnBuilder generateListDedup)
@@ -828,6 +850,19 @@ initializeExternalFunctions = do
     (externals, _) <- insert externals (ExternalId "List" "intoIter") (ExternFnBuilder generateListIntoIter)
     (externals, _) <- insert externals (ExternalId "List" "nextItem") (ExternFnBuilder generateListNextItem)
 
+    (externals, _) <- insert externals (ExternalId "List2" "addList") (ExternFnBuilder generateListAdd)
+    (externals, _) <- insert externals (ExternalId "List2" "push") (ExternFnBuilder generateListPush)
+    (externals, _) <- insert externals (ExternalId "List2" "withCapacity") (ExternFnBuilder generateListWithCapacity)
+    (externals, _) <- insert externals (ExternalId "List2" "atIndex") (ExternFnBuilder generateListAtIndex)
+    (externals, _) <- insert externals (ExternalId "List2" "getLength") (ExternFnBuilder generateListGetLength)
+    (externals, _) <- insert externals (ExternalId "List2" "dedup") (ExternFnBuilder generateListDedup)
+    (externals, _) <- insert externals (ExternalId "List2" "isEmpty") (ExternFnBuilder generateListIsEmpty)
+    (externals, _) <- insert externals (ExternalId "List2" "sort") (ExternFnBuilder generateListSort)
+    (externals, _) <- insert externals (ExternalId "List2" "tail") (ExternFnBuilder generateListTail)
+    (externals, _) <- insert externals (ExternalId "List2" "write") (ExternFnBuilder generateListWrite)
+    (externals, _) <- insert externals (ExternalId "List2" "intoIter") (ExternFnBuilder generateListIntoIter)
+    (externals, _) <- insert externals (ExternalId "List2" "nextItem") (ExternFnBuilder generateListNextItem)
+
     (externals, _) <- insert externals (ExternalId "Map" "empty") (ExternFnBuilder generateMapEmpty)
     (externals, _) <- insert externals (ExternalId "Map" "insert") (ExternFnBuilder generateMapInsert)
     (externals, _) <- insert externals (ExternalId "Map" "getSize") (ExternFnBuilder generateMapGetSize)
@@ -835,6 +870,14 @@ initializeExternalFunctions = do
     (externals, _) <- insert externals (ExternalId "Map" "remove") (ExternFnBuilder generateMapRemove)
     (externals, _) <- insert externals (ExternalId "Map" "intoIter") (ExternFnBuilder generateMapIntoIter)
     (externals, _) <- insert externals (ExternalId "Map" "nextItem") (ExternFnBuilder generateMapNextItem)
+
+    (externals, _) <- insert externals (ExternalId "Map2" "empty") (ExternFnBuilder generateMapEmpty)
+    (externals, _) <- insert externals (ExternalId "Map2" "insert") (ExternFnBuilder generateMapInsert)
+    (externals, _) <- insert externals (ExternalId "Map2" "getSize") (ExternFnBuilder generateMapGetSize)
+    (externals, _) <- insert externals (ExternalId "Map2" "get") (ExternFnBuilder generateMapGet)
+    (externals, _) <- insert externals (ExternalId "Map2" "remove") (ExternFnBuilder generateMapRemove)
+    (externals, _) <- insert externals (ExternalId "Map2" "intoIter") (ExternFnBuilder generateMapIntoIter)
+    (externals, _) <- insert externals (ExternalId "Map2" "nextItem") (ExternFnBuilder generateMapNextItem)
 
     externals
 
@@ -886,7 +929,11 @@ initializeExternalStructFields = do
     (externals, _) <- insert externals (ExternalId "Float" "Float") (ExternStructBuilder generateFloatFields)
     (externals, _) <- insert externals (ExternalId "Char" "Char") (ExternStructBuilder generateCharFields)
     (externals, _) <- insert externals (ExternalId "List" "List") (ExternStructBuilder generateListFields)
+    (externals, _) <- insert externals (ExternalId "List2" "List2") (ExternStructBuilder generateListFields)
     (externals, _) <- insert externals (ExternalId "List" "ListIterator") (ExternStructBuilder generateListIteratorFields)
+    (externals, _) <- insert externals (ExternalId "List2" "ListIterator") (ExternStructBuilder generateListIteratorFields)
     (externals, _) <- insert externals (ExternalId "Map" "Map") (ExternStructBuilder generateMapFields)
+    (externals, _) <- insert externals (ExternalId "Map2" "Map2") (ExternStructBuilder generateMapFields)
     (externals, _) <- insert externals (ExternalId "Map" "MapIterator") (ExternStructBuilder generateMapIteratorFields)
+    (externals, _) <- insert externals (ExternalId "Map2" "MapIterator") (ExternStructBuilder generateMapIteratorFields)
     externals
