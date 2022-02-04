@@ -9,13 +9,17 @@ import Siko.MIR.Backend.Ownership.Lowering.Naming
 import Siko.MIR.Backend.Ownership.Lowering.Expr
 import Siko.MIR.Backend.Ownership.FunctionInfoStore
 import Siko.MIR.Backend.Ownership.Lowering.Type
+import Siko.MIR.Backend.Ownership.Allocator
+import Siko.MIR.Backend.Ownership.TypeVariableInfo
 import Siko.MIR.Program as MP
 import Siko.LIR.Program as LP
 import Siko.MIR.Data as MD
+import Siko.MIR.Type as MT
 import Siko.LIR.Data as LD
 import Siko.LIR.Type as LT
 
 import Map
+import List2
 
 lowerExternalRecordInfo :: TypeLoweringInfo -> Context -> MD.ExternalRecordInfo -> (Context, LD.ExternalRecordInfo)
 lowerExternalRecordInfo lowering_info context mir_external_record_info = do
@@ -39,6 +43,40 @@ lowerVariant lowering_info context index mir_variant = do
     (context, lir_type) <- lowerType context lowering_info mir_variant.type
     (context, LD.Variant mir_variant.name lir_type)
 
+processExternalClassImpl :: MP.Identity -> TypeLoweringInfo -> Context -> MD.ExternalClassImpl -> (Context, LD.ExternalClassImpl)
+processExternalClassImpl mir_id lowering_info context mir_class_impl =
+    case mir_class_impl of
+        MD.Show id -> do
+            (context, lir_id) <- processClassImplCall context mir_id lowering_info id
+            (context, LD.Show lir_id)
+        MD.PartialEq id -> do
+            (context, lir_id) <- processClassImplCall context mir_id lowering_info id
+            (context, LD.PartialEq lir_id)
+        MD.Eq -> do
+            (context, LD.Eq)
+        MD.PartialOrd id -> do
+            (context, lir_id) <- processClassImplCall context mir_id lowering_info id
+            (context, LD.PartialOrd lir_id)
+        MD.Ord id -> do
+            (context, lir_id) <- processClassImplCall context mir_id lowering_info id
+            (context, LD.Ord lir_id)
+    where
+        processClassImplCall :: Context -> MP.Identity -> TypeLoweringInfo -> MP.Identity -> (Context, LP.Identity)
+        processClassImplCall context mir_id lowering_info id = do
+            (allocator, result) <- getNextTypeVariableInfo lowering_info.allocator
+            (allocator, arg) <- getNextTypeVariableInfo lowering_info.allocator
+            (allocator, borrow_id) <- getNextBorrowId allocator
+            arg <- arg { arg_group_var = lowering_info.root.arg_group_var }
+            args <- List2.single arg
+            args <- List2.push args arg
+            ownershipinfos <- List2.push lowering_info.ownershipinfos (Borrower arg.ownership_var borrow_id)
+            ownershipinfos <- List2.push ownershipinfos (Owner result.ownership_var)
+            lowering_info <- FunctionLoweringInfo lowering_info.members args result ownershipinfos allocator
+            lir_key <- FunctionKey id lowering_info
+            (context, lir_id) <- getLIRId context lir_key
+            context <- addItem context lir_key
+            (context, lir_id)
+
 lowerRecord :: Context -> TypeLoweringInfo -> MP.Identity -> LP.Identity -> Context
 lowerRecord context lowering_info mir_id lir_id = do
     trace context.config "Lowering record {} {} {}" % (mir_id, lir_id, lowering_info)
@@ -51,7 +89,7 @@ lowerRecord context lowering_info mir_id lir_id = do
             (context, external_info) <- lowerExternalRecordInfo lowering_info context external_info
             (context, Some external_info)
         None -> (context, None)
-    external_class_impls <- []
+    (context, external_class_impls) <- List.mapS context mir_record.external_class_impls (processExternalClassImpl mir_id lowering_info)
     lir_record <- LD.Record lir_id lifetimes fields external_info external_class_impls
     context <- addRecord context lir_record
     context

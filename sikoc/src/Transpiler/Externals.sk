@@ -503,6 +503,53 @@ generateListPush program type_store arg_types result_type = do
     struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef new0)]
     R.Block [new0_decl, new1_decl, add_call, struct_ctor]
 
+generateListRemove :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
+generateListRemove program type_store arg_types result_type = do
+    rust_type <- convertType result_type
+    result_record <- case result_type of
+        LT.Record i _ -> getRecord program i
+        _ -> panic "Result is not a record in generateListRemove"
+    item_field <- atIndex result_record.fields 0
+    list_field <- atIndex result_record.fields 1
+    field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
+    field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
+    list <- "list"
+    list_decl <- R.VarDeclMut list field_access0 None
+    index <- "index"
+    index_decl <- R.VarDecl index field_access1 None
+    remove_call <- R.MethodCall (R.VarRef list) "remove" [R.As (R.VarRef index) "usize"]
+    removed <- "removed"
+    remove_decl <- R.VarDecl removed remove_call None
+    list_type <- convertType (atIndex arg_types 0)
+    list_ctor <- R.StructCtor (RT.showBase list_type) [R.FieldInitItem innerValueField (R.VarRef list)]
+    struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem list_field.name list_ctor,
+                                                         R.FieldInitItem item_field.name (R.VarRef removed)]
+    R.Block [list_decl, index_decl, remove_decl, struct_ctor]
+
+generateListSplit :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
+generateListSplit program type_store arg_types result_type = do
+    rust_type <- convertType result_type
+    result_record <- case result_type of
+        LT.Record i _ -> getRecord program i
+        _ -> panic "Result is not a record in generateListSplit"
+    item_field <- atIndex result_record.fields 0
+    list_field <- atIndex result_record.fields 1
+    field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
+    field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
+    list <- "list"
+    list_decl <- R.VarDeclMut list field_access0 None
+    index <- "index"
+    index_decl <- R.VarDecl index field_access1 None
+    split_call <- R.MethodCall (R.VarRef list) "split_off" [R.As (R.VarRef index) "usize"]
+    second <- "second"
+    second_decl <- R.VarDecl second split_call None
+    list_type <- convertType (atIndex arg_types 0)
+    list_ctor <- R.StructCtor (RT.showBase list_type) [R.FieldInitItem innerValueField (R.VarRef list)]
+    second_ctor <- R.StructCtor (RT.showBase list_type) [R.FieldInitItem innerValueField (R.VarRef second)]
+    struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem list_field.name list_ctor,
+                                                         R.FieldInitItem item_field.name second_ctor]
+    R.Block [list_decl, index_decl, second_decl, struct_ctor]
+
 generateListIntoIter :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateListIntoIter program type_store arg_types result_type = do
     rust_type <- convertType result_type
@@ -839,6 +886,8 @@ initializeExternalFunctions = do
 
     (externals, _) <- insert externals (ExternalId "List" "addList") (ExternFnBuilder generateListAdd)
     (externals, _) <- insert externals (ExternalId "List" "push") (ExternFnBuilder generateListPush)
+    (externals, _) <- insert externals (ExternalId "List" "remove") (ExternFnBuilder generateListRemove)
+    (externals, _) <- insert externals (ExternalId "List" "split") (ExternFnBuilder generateListSplit)
     (externals, _) <- insert externals (ExternalId "List" "withCapacity") (ExternFnBuilder generateListWithCapacity)
     (externals, _) <- insert externals (ExternalId "List" "atIndex") (ExternFnBuilder generateListAtIndex)
     (externals, _) <- insert externals (ExternalId "List" "getLength") (ExternFnBuilder generateListGetLength)
@@ -852,6 +901,8 @@ initializeExternalFunctions = do
 
     (externals, _) <- insert externals (ExternalId "List2" "addList") (ExternFnBuilder generateListAdd)
     (externals, _) <- insert externals (ExternalId "List2" "push") (ExternFnBuilder generateListPush)
+    (externals, _) <- insert externals (ExternalId "List2" "remove") (ExternFnBuilder generateListRemove)
+    (externals, _) <- insert externals (ExternalId "List2" "split") (ExternFnBuilder generateListSplit)
     (externals, _) <- insert externals (ExternalId "List2" "withCapacity") (ExternFnBuilder generateListWithCapacity)
     (externals, _) <- insert externals (ExternalId "List2" "atIndex") (ExternFnBuilder generateListAtIndex)
     (externals, _) <- insert externals (ExternalId "List2" "getLength") (ExternFnBuilder generateListGetLength)

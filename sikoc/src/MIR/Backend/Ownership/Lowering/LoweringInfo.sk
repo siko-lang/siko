@@ -25,6 +25,7 @@ data FunctionLoweringInfo = { members :: List2 M.MemberInfo,
 data TypeLoweringInfo = { members :: List2 M.MemberInfo,
                           root :: TypeVariableInfo,
                           ownershipinfos :: List2 M.OwnershipInfo,
+                          allocator :: Allocator,
                         } deriving (PartialEq, Eq, PartialOrd, Ord, Show)
 
 convertToFunctionLoweringInfo :: Config -> InferenceInfo -> [TypeVariableInfo] -> TypeVariableInfo -> (InferenceInfo, FunctionLoweringInfo)
@@ -42,20 +43,20 @@ createTypeLoweringInfoFromInferenceInfo :: Config -> InferenceInfo -> TypeVariab
 createTypeLoweringInfoFromInferenceInfo config inference_info root = do
     //println "Creating type lowering info"
     lowering_info <- TypeLoweringInfo inference_info.members root
-            (toOwnershipInfo inference_info.ownership_values)
+            (toOwnershipInfo inference_info.ownership_values) inference_info.allocator
     lowering_info <- filterTypeLoweringInfo config lowering_info (List2.single root)
     (inference_info, lowering_info)
 
 createTypeLoweringInfoFromFunctionLoweringInfo :: Config -> FunctionLoweringInfo -> TypeVariableInfo -> TypeLoweringInfo
 createTypeLoweringInfoFromFunctionLoweringInfo config lowering_info root = do
     //println "Creating type lowering info"
-    output <- TypeLoweringInfo lowering_info.members root lowering_info.ownershipinfos
+    output <- TypeLoweringInfo lowering_info.members root lowering_info.ownershipinfos lowering_info.allocator
     filterTypeLoweringInfo config output (List2.single root)
 
 createTypeLoweringInfoFromTypeLoweringInfo :: Config -> TypeLoweringInfo -> TypeVariableInfo -> TypeLoweringInfo
 createTypeLoweringInfoFromTypeLoweringInfo config lowering_info root = do
     //println "Creating type lowering info"
-    output <- TypeLoweringInfo lowering_info.members root lowering_info.ownershipinfos
+    output <- TypeLoweringInfo lowering_info.members root lowering_info.ownershipinfos lowering_info.allocator
     filterTypeLoweringInfo config output (List2.single root)
 
 normalizeRef :: TypeLoweringInfo -> (TypeLoweringInfo, Option BorrowId)
@@ -103,7 +104,7 @@ normalizeTypeLoweringInfo lowering_info = do
     (duplicator, ownershipinfos) <- List2.mapS duplicator lowering_info.ownershipinfos duplicate
     members <- members |> List2.sort
     ownershipinfos <- ownershipinfos |> List2.sort
-    (TypeLoweringInfo members root ownershipinfos, duplicator)
+    (TypeLoweringInfo members root ownershipinfos duplicator.allocator, duplicator)
 
 getLoweringInfoForArg :: Config -> FunctionLoweringInfo -> Int -> TypeLoweringInfo
 getLoweringInfoForArg config lowering_info index = do
@@ -114,6 +115,12 @@ getLoweringInfoForResult :: Config -> FunctionLoweringInfo -> TypeLoweringInfo
 getLoweringInfoForResult config lowering_info = do
     createTypeLoweringInfoFromFunctionLoweringInfo config lowering_info lowering_info.result
 
+createEmptyTypeLoweringInfo :: TypeLoweringInfo
+createEmptyTypeLoweringInfo = do
+    allocator <- createAllocator
+    (allocator, root) <- getNextTypeVariableInfo allocator
+    TypeLoweringInfo List2.empty root (List2.single (M.Owner root.ownership_var)) allocator
+
 getLoweringInfoForMember :: Config -> TypeLoweringInfo -> String -> TypeLoweringInfo
 getLoweringInfoForMember config lowering_info name = do
     member <- List2.filter lowering_info.members (\constraint -> case constraint of
@@ -122,10 +129,7 @@ getLoweringInfoForMember config lowering_info name = do
     case List2.head member of
         Some (M.Member name root member_info) -> createTypeLoweringInfoFromTypeLoweringInfo config lowering_info member_info
         Some _ -> panic "member is not a member"
-        None -> do
-            allocator <- createAllocator
-            (allocator, root) <- getNextTypeVariableInfo allocator
-            TypeLoweringInfo List2.empty root (List2.single (M.Owner root.ownership_var))
+        None -> createEmptyTypeLoweringInfo
 
 getLoweringInfoForVariant :: Config -> TypeLoweringInfo -> Int -> TypeLoweringInfo
 getLoweringInfoForVariant config lowering_info index = do
@@ -135,10 +139,7 @@ getLoweringInfoForVariant config lowering_info index = do
     case List2.head variant of
         Some (M.Variant index root member_info) -> createTypeLoweringInfoFromTypeLoweringInfo config lowering_info member_info
         Some _ -> panic "variant is not a variant"
-        None -> do
-            allocator <- createAllocator
-            (allocator, root) <- getNextTypeVariableInfo allocator
-            TypeLoweringInfo List2.empty root (List2.single (M.Owner root.ownership_var))
+        None -> createEmptyTypeLoweringInfo
 
 getLoweringInfoForExtern :: Config -> TypeLoweringInfo -> Int -> TypeLoweringInfo
 getLoweringInfoForExtern config lowering_info index = do
@@ -148,7 +149,4 @@ getLoweringInfoForExtern config lowering_info index = do
     case List2.head variant of
         Some (M.Extern index root member_info) -> createTypeLoweringInfoFromTypeLoweringInfo config lowering_info member_info
         Some _ -> panic "extern is not a extern"
-        None -> do
-            allocator <- createAllocator
-            (allocator, root) <- getNextTypeVariableInfo allocator
-            TypeLoweringInfo List2.empty root (List2.single (M.Owner root.ownership_var))
+        None -> createEmptyTypeLoweringInfo
