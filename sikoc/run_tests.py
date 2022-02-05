@@ -112,3 +112,6 @@ for (index, (name, path)) in enumerate(tests):
         failure += 1
 if not silent:
     print("Success %d, failure %d" % (success, failure))
+if failure > 0:
+    print("Tests failed")
+    sys.exit(1)

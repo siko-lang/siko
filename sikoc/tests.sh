@@ -1,2 +1,3 @@
-./run_tests.py $@
-rm -f apple.txt
+#!/bin/bash
+
+exec ./run_tests.py $@
