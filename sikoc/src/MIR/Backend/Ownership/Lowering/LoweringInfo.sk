@@ -78,7 +78,13 @@ normalizeRef lowering_info = do
     ownershipinfos <- if not found
     then List2.push ownershipinfos (M.Owner lowering_info.root.ownership_var)
     else ownershipinfos
-    lowering_info <- lowering_info { ownershipinfos = ownershipinfos }
+    allocator <- lowering_info.allocator
+    allocator <- allocator { borrow = 0 }
+    (ownershipinfos, allocator) <- List2.foldLinear allocator ownershipinfos (\allocator, o -> case o of
+        M.Borrower v id -> addBorrowId allocator id
+        M.Owner _ -> allocator
+        M.Unknown _ -> allocator)
+    lowering_info <- lowering_info { ownershipinfos = ownershipinfos, allocator = allocator }
     (lowering_info, ref)
 
 normalizeFunctionLoweringInfo :: FunctionLoweringInfo -> (FunctionLoweringInfo, Duplicator)

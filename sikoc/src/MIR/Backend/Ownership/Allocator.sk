@@ -24,3 +24,19 @@ getNextBorrowId :: Allocator -> (Allocator, BorrowId)
 getNextBorrowId allocator = do
     (borrow, id) <- (allocator.borrow + 1, BorrowId allocator.borrow)
     (allocator { borrow = borrow }, id)
+
+addTypeVariable :: Allocator -> TypeVariable -> Allocator
+addTypeVariable allocator (TypeVariable v) = do
+    type_var <- max allocator.type_var (v + 1)
+    allocator { type_var = type_var }
+
+addTypeVariableInfo :: Allocator -> TypeVariableInfo -> Allocator
+addTypeVariableInfo allocator info = do
+    allocator <- addTypeVariable allocator info.ownership_var
+    allocator <- addTypeVariable allocator info.arg_group_var
+    allocator
+
+addBorrowId :: Allocator -> BorrowId -> Allocator
+addBorrowId allocator (BorrowId id) = do
+    borrow <- max allocator.borrow (id + 1)
+    allocator { borrow = borrow }

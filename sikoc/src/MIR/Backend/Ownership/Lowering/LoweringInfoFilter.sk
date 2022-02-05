@@ -6,6 +6,7 @@ import Siko.MIR.Backend.Ownership.GroupDependencyMap
 import Siko.MIR.Backend.Ownership.TypeVariableInfo
 import Siko.MIR.Backend.Ownership.MemberInfo as M
 import Siko.MIR.Backend.Ownership.Lowering.LoweringInfo
+import Siko.MIR.Backend.Ownership.Allocator
 
 import Map
 import Map2
@@ -53,21 +54,23 @@ filterMember infos vars member =
 filterTypeLoweringInfo :: Config -> TypeLoweringInfo -> List2 TypeVariableInfo -> TypeLoweringInfo
 filterTypeLoweringInfo config lowering_info sources = do
     //println "------------ start filterInfo {} / {}-----------" % (lowering_info, sources)
-    (members, ownershipinfos) <- filterLoweringInfo config sources lowering_info.members lowering_info.ownershipinfos (List2.single lowering_info.root)
-    lowering_info <- lowering_info { members = members, ownershipinfos = ownershipinfos }
+    (members, ownershipinfos, allocator) <- filterLoweringInfo config sources lowering_info.members lowering_info.ownershipinfos
+    lowering_info <- lowering_info { members = members, ownershipinfos = ownershipinfos, allocator = allocator }
     //println "------------ end filterInfo {} / {}-----------" % (lowering_info, sources)
     lowering_info
 
 filterFunctionLoweringInfo :: Config -> FunctionLoweringInfo -> List2 TypeVariableInfo -> FunctionLoweringInfo
 filterFunctionLoweringInfo config lowering_info sources = do
     //println "------------ start filterInfo {} / {}-----------" % (lowering_info, sources)
-    (members, ownershipinfos) <- filterLoweringInfo config sources lowering_info.members lowering_info.ownershipinfos (List2.push lowering_info.args lowering_info.result)
-    lowering_info <- lowering_info { members = members, ownershipinfos = ownershipinfos }
+    (members, ownershipinfos, allocator) <- filterLoweringInfo config sources lowering_info.members lowering_info.ownershipinfos
+    lowering_info <- lowering_info { members = members, ownershipinfos = ownershipinfos, allocator = allocator }
     //println "------------ end filterInfo {} / {}-----------" % (lowering_info, sources)
     lowering_info
 
-filterLoweringInfo :: Config -> List2 TypeVariableInfo -> List2 M.MemberInfo -> List2 M.OwnershipInfo -> List2 TypeVariableInfo -> (List2 M.MemberInfo, List2 M.OwnershipInfo)
-filterLoweringInfo config sources members ownershipinfos dep_sources = do
+filterLoweringInfo :: Config -> List2 TypeVariableInfo ->
+                      List2 M.MemberInfo -> List2 M.OwnershipInfo ->
+                      (List2 M.MemberInfo, List2 M.OwnershipInfo, Allocator)
+filterLoweringInfo config sources members ownershipinfos = do
     source_group_vars <- List2.fold List2.empty sources (\vars, source -> List2.push vars source.arg_group_var)
     (members, group_dep_map) <- calculateGroupDepMap config members
     all_group_vars <- List2.fold source_group_vars source_group_vars
@@ -78,7 +81,7 @@ filterLoweringInfo config sources members ownershipinfos dep_sources = do
             List2.push all_group_vars var)
     all_group_vars <- all_group_vars |> List2.sort |> List2.dedup
     (_, members) <- List2.filterS all_group_vars members M.isSubMember
-    deps_map <- M.getDependencyMap dep_sources members
+    deps_map <- M.getDependencyMap sources members
     groups <- processDependencies config deps_map
     //println "Groups {}, {}" % (groups, deps_map)
     borrower_map <- List2.fold Map2.empty groups (\borrower_map, group -> do
@@ -91,4 +94,22 @@ filterLoweringInfo config sources members ownershipinfos dep_sources = do
     ownership_vars <- List2.map relevants (\info -> info.ownership_var)
     members <- List2.filter members (filterMember relevants group_vars)
     (_, ownershipinfos) <- List2.filterS ownership_vars ownershipinfos M.filterOwnershipInfo
-    (members, ownershipinfos)
+    (members, allocator) <- List2.foldLinear createAllocator members (\allocator, m -> case m of
+        M.Variant _ root info -> do
+            allocator <- addTypeVariable allocator root
+            allocator <- addTypeVariableInfo allocator info
+            allocator
+        M.Member _ root info -> do
+            allocator <- addTypeVariable allocator root
+            allocator <- addTypeVariableInfo allocator info
+            allocator
+        M.Extern _ root info -> do
+            allocator <- addTypeVariable allocator root
+            allocator <- addTypeVariableInfo allocator info
+            allocator)
+    (sources, allocator) <- List2.foldLinear allocator sources (\allocator, info -> addTypeVariableInfo allocator info)
+    (ownershipinfos, allocator) <- List2.foldLinear allocator ownershipinfos (\allocator, o -> case o of
+        M.Borrower v id -> addBorrowId allocator id
+        M.Owner _ -> allocator
+        M.Unknown _ -> allocator)
+    (members, ownershipinfos, allocator)
