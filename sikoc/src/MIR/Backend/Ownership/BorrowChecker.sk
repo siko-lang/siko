@@ -53,6 +53,16 @@ addUsageVar usage_store var = do
     usages <- Map.put usage_store.usages var []
     usage_store { usages = usages }
 
+invalidateAll :: Context -> UsageStore -> E.Var -> E.ExprId -> (Context, UsageStore)
+invalidateAll context usage_store var expr_id = do
+    case Map.get usage_store.usages var of
+        Some usages -> do
+            context <- List.fold context usages (\context, usage -> do
+                invalidations <- push context.invalidations (Invalidation expr_id usage.expr_id)
+                context { invalidations = invalidations })
+            (context, usage_store)
+        None -> (context, usage_store)
+
 addUsage :: Context -> UsageStore -> E.Var -> E.ExprId -> Path -> (Context, UsageStore)
 addUsage context usage_store var expr_id path = do
     usage <- Usage expr_id path
@@ -76,12 +86,15 @@ collectBlockBorrows context usage_store items =
                     _ -> DoesNotReturn
                 (context, usage_store, exec_mode))
 
-processBranches :: Context -> UsageStore -> [([E.Var], E.Expr)] -> (Context, UsageStore, ExecutionMode)
-processBranches context usage_store branches =
+processBranches :: Context -> UsageStore -> [([E.Var], E.Expr)] -> E.ExprId -> (Context, UsageStore, ExecutionMode)
+processBranches context usage_store branches expr_id =
     List.fold (context, usage_store, DoesNotReturn) branches (\(context, usage_store, exec_mode), (vars, branch) -> do
             saved <- usage_store
             usage_store <- List.fold usage_store vars addUsageVar
             (context, usage_store, exec_mode) <- collectBorrows context usage_store branch
+            (context, usage_store) <- List.fold (context, usage_store) vars (\(context, usage_store), var ->
+                    invalidateAll context usage_store var expr_id)
+            (context, usage_store, exec_mode)
             case exec_mode of
                 Normal -> (context, usage_store, Normal)
                 DoesNotReturn -> (context, saved, exec_mode))
@@ -90,7 +103,14 @@ collectBorrows :: Context -> UsageStore -> E.Expr -> (Context, UsageStore, Execu
 collectBorrows context usage_store expr = do
     E.Expr s_expr _ expr_id <- expr
     (context, usage_store, exec_mode) <- case s_expr of
-        E.Do items -> collectBlockBorrows context usage_store items
+        E.Do items -> do
+            pre_vars <- Map.getKeys usage_store.usages
+            (context, usage_store, exec_mode) <- collectBlockBorrows context usage_store items
+            all_vars <- Map.getKeys usage_store.usages
+            new_vars <- List.filter all_vars (\var -> not (List.contains pre_vars var))
+            (context, usage_store) <- List.fold (context, usage_store) new_vars (\(context, usage_store), var ->
+                                            invalidateAll context usage_store var expr_id)
+            (context, usage_store, exec_mode)
         E.Multi _ -> panic "Multi in borrow checker"
         E.StaticFunctionCall f_id args -> collectBlockBorrows context usage_store args
         E.IntegerLiteral _ -> (context, usage_store, Normal)
@@ -117,7 +137,7 @@ collectBorrows context usage_store expr = do
                     _ -> break collectBorrows context usage_store receiver
         E.If cond true_branch false_branch -> do
             (context, usage_store, exec_mode) <- collectBorrows context usage_store cond
-            processBranches context usage_store [([], true_branch), ([], false_branch)]
+            processBranches context usage_store [([], true_branch), ([], false_branch)] expr_id
         E.List args -> collectBlockBorrows context usage_store args
         E.Return arg -> do
             (context, usage_store, exec_mode) <- collectBorrows context usage_store arg
@@ -135,13 +155,14 @@ collectBorrows context usage_store expr = do
             (context, usage_store, exec_mode) <- collectBorrows context usage_store body
             usage_store <- addUsageVar usage_store var
             (context, usage_store, exec_mode) <- collectBorrows context usage_store body
+            (context, usage_store) <- invalidateAll context usage_store var expr_id
             (context, usage_store, exec_mode)
         E.CaseOf body cases -> do
             (context, usage_store, exec_mode) <- collectBorrows context usage_store body
             branches <- List.map cases (\c -> case c.checker of
                 E.VariantChecker _ var _ -> ([var], c.body)
                 _ -> ([], c.body))
-            processBranches context usage_store branches
+            processBranches context usage_store branches expr_id
         E.Clone arg -> panic "Clone in MIR borrow checker"
         E.Deref arg -> panic "Deref in MIR borrow checker"
         E.Ref arg -> panic "Ref in MIR borrow checker"

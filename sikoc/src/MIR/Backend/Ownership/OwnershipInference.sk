@@ -74,59 +74,74 @@ initializeExprOwnerships context = do
                 None -> addOwnershipValue context info.ownership_var Unknown
         )
 
-processConverter :: Context -> Option E.ExprId -> Option E.ExprId -> TypeVariable -> TypeVariable -> Context
-processConverter context converter_expr borrowed_expr from to = do
+processFunctionConverter :: Context -> TypeVariable -> TypeVariable -> Context
+processFunctionConverter context from to = do
+    (context, from_kind) <- getOwnershipValue context from
+    (context, to_kind) <- getOwnershipValue context to
+    //println "Checking converter {} {} / {} {}" % (from, to, from_kind, to_kind)
+    case (from_kind, to_kind) of
+        (Owner, Owner) -> context
+        (Owner, Borrower id2) ->
+            if Set.contains context.forced_clones to
+            then addOwnershipValue context to Owner
+            else context
+        (Owner, Unknown) -> if Set.contains context.forced_clones to
+            then addOwnershipValue context to Owner
+            else addOwnershipValue context to from_kind
+        (Borrower a, Owner) -> context
+        (Borrower a, Borrower b) -> do
+            if Set.contains context.forced_clones to
+            then addOwnershipValue context to Owner
+            else do
+                (inference_info, id) <- mergeBorrowSets context.inference_info a b
+                context <- context { inference_info = inference_info }
+                addOwnershipValue context to (Borrower id)
+        (Borrower a, Unknown) -> do
+            if Set.contains context.forced_clones to
+            then addOwnershipValue context to Owner
+            else addOwnershipValue context to from_kind
+        (Unknown, _) -> context
+
+processConverter :: Context -> E.ExprId -> E.ExprId -> Bool -> TypeVariable -> TypeVariable -> Context
+processConverter context converter_expr arg_expr borrowed_expr from to = do
     (context, from_kind) <- getOwnershipValue context from
     (context, to_kind) <- getOwnershipValue context to
     //println "Checking converter {} {} / {} {}" % (from, to, from_kind, to_kind)
     case (from_kind, to_kind) of
         (Owner, Owner) ->
-            case borrowed_expr of
-                Some _ -> case converter_expr of
-                            Some converter_expr -> do
-                                cloning_converters <- Set.put context.cloning_converters converter_expr
-                                context { cloning_converters = cloning_converters }
-                            None -> context
-                None -> context
+            if borrowed_expr
+            then do
+                cloning_converters <- Set.put context.cloning_converters converter_expr
+                context { cloning_converters = cloning_converters }
+            else context
         (Owner, Borrower id2) ->
             if Set.contains context.forced_clones to
             then do
-                context <- case converter_expr of
-                    Some converter_expr -> do
-                        cloning_converters <- Set.put context.cloning_converters converter_expr
-                        context { cloning_converters = cloning_converters }
-                    None -> context
+                cloning_converters <- Set.put context.cloning_converters converter_expr
+                context <- context { cloning_converters = cloning_converters }
                 addOwnershipValue context to Owner
-            else case borrowed_expr of
-                Some expr_id -> do
-                    (inference_info, id1) <- createBorrowSetForExpr context.inference_info expr_id
-                    (inference_info, id) <- mergeBorrowSets inference_info id1 id2
-                    context <- context { inference_info = inference_info }
-                    addOwnershipValue context to (Borrower id)
-                None -> context
+            else do
+                (inference_info, id1) <- createBorrowSetForExpr context.inference_info arg_expr
+                (inference_info, id) <- mergeBorrowSets inference_info id1 id2
+                context <- context { inference_info = inference_info }
+                addOwnershipValue context to (Borrower id)
         (Owner, Unknown) -> if Set.contains context.forced_clones to
             then do
-                context <- case converter_expr of
-                    Some converter_expr -> do
-                        cloning_converters <- Set.put context.cloning_converters converter_expr
-                        context { cloning_converters = cloning_converters }
-                    None -> context
+                cloning_converters <- Set.put context.cloning_converters converter_expr
+                context <- context { cloning_converters = cloning_converters }
                 addOwnershipValue context to Owner
-            else case borrowed_expr of
-                Some expr_id -> do
-                    (inference_info, id) <- createBorrowSetForExpr context.inference_info expr_id
+            else if borrowed_expr
+                then do
+                    (inference_info, id) <- createBorrowSetForExpr context.inference_info arg_expr
                     context <- context { inference_info = inference_info }
                     addOwnershipValue context to (Borrower id)
-                None -> addOwnershipValue context to from_kind
+                else addOwnershipValue context to from_kind
         (Borrower a, Owner) -> context
         (Borrower a, Borrower b) -> do
             if Set.contains context.forced_clones to
             then do
-                context <- case converter_expr of
-                    Some converter_expr -> do
-                        cloning_converters <- Set.put context.cloning_converters converter_expr
-                        context { cloning_converters = cloning_converters }
-                    None -> context
+                cloning_converters <- Set.put context.cloning_converters converter_expr
+                context <- context { cloning_converters = cloning_converters }
                 addOwnershipValue context to Owner
             else do
                 (inference_info, id) <- mergeBorrowSets context.inference_info a b
@@ -135,11 +150,8 @@ processConverter context converter_expr borrowed_expr from to = do
         (Borrower a, Unknown) -> do
             if Set.contains context.forced_clones to
             then do
-                context <- case converter_expr of
-                    Some converter_expr -> do
-                        cloning_converters <- Set.put context.cloning_converters converter_expr
-                        context { cloning_converters = cloning_converters }
-                    None -> context
+                cloning_converters <- Set.put context.cloning_converters converter_expr
+                context <- context { cloning_converters = cloning_converters }
                 addOwnershipValue context to Owner
             else addOwnershipValue context to from_kind
         (Unknown, _) -> context
@@ -169,7 +181,7 @@ processExpr context expr = do
                                     Some function_converters -> do
                                         List2.fold context function_converters (\context, converter -> do
                                             //println "Running function converter"
-                                            processConverter context None None converter.from converter.to)
+                                            processFunctionConverter context converter.from converter.to)
                                     None -> panic "No function converters found for {} {}" % (f_id, expr_id)
                             None -> if List.contains context.group f_id
                                 then context
@@ -270,14 +282,10 @@ processExpr context expr = do
             E.Expr arg_s_expr _ arg_id <- arg
             (context, arg_info) <- getTypeVariableInfoByExprId2 context arg_id
             borrowed_var <- case arg_s_expr of
-                E.VarRef var -> if isBorrow context.borrow_info arg_id
-                        then Some arg_id
-                        else None
-                E.FieldAccess n _ -> if isBorrow context.borrow_info arg_id
-                        then Some arg_id
-                        else None
-                _ -> None
-            processConverter context (Some expr_id) borrowed_var arg_info.ownership_var info.ownership_var
+                E.VarRef var -> isBorrow context.borrow_info arg_id
+                E.FieldAccess n _ -> isBorrow context.borrow_info arg_id
+                _ -> False
+            processConverter context expr_id arg_id borrowed_var arg_info.ownership_var info.ownership_var
     // trace context.config "updateInvalidBorrows"
     context <- updateInvalidBorrows context expr_id
     // trace context.config "checkBorrows"
