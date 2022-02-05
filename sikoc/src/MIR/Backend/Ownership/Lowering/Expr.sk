@@ -1,6 +1,7 @@
 module Siko.MIR.Backend.Ownership.Lowering.Expr where
 
 import Siko.MIR.Backend.Ownership.Lowering.LoweringInfo
+import Siko.MIR.Backend.Ownership.Lowering.LoweringInfo.Filter
 import Siko.MIR.Backend.Ownership.Lowering.Context
 import Siko.MIR.Backend.Ownership.Lowering.Naming
 import Siko.MIR.Backend.Ownership.Lowering.Type
@@ -17,7 +18,8 @@ import Siko.LIR.Expr as LE
 import Set
 
 data LoweringContext = { inference_info :: InferenceInfo,
-                         forced_clones :: Set ME.ExprId }
+                         forced_clones :: Set ME.ExprId,
+                         filter_info :: FilterInfo }
 
 getOwnershipValue :: LoweringContext -> TypeVariable -> (LoweringContext, OwnershipKind) // FIXME
 getOwnershipValue lowering_context var = do
@@ -63,8 +65,9 @@ lowerExpr lowering_context context expr = do
     ME.Expr s_expr expr_type expr_id <- expr
     (inference_info, expr_info) <- getTypeVariableInfoByExprId lowering_context.inference_info expr_id
     lowering_context <- lowering_context { inference_info = inference_info }
-    (inference_info, lowering_info) <- createTypeLoweringInfoFromInferenceInfo context.config lowering_context.inference_info expr_info
-    lowering_context <- lowering_context { inference_info = inference_info }
+    (inference_info, lowering_info, filter_info) <- createTypeLoweringInfoFromInferenceInfo context.config
+                                       lowering_context.inference_info expr_info lowering_context.filter_info
+    lowering_context <- lowering_context { inference_info = inference_info, filter_info = filter_info }
     (lowering_info, _) <- normalizeTypeLoweringInfo lowering_info
     //println "expr {} type {} {}" % (ME.short expr, expr_type, lowering_info)
     (context, lir_type) <- lowerType context lowering_info expr_type
@@ -78,8 +81,9 @@ lowerExpr lowering_context context expr = do
                 ME.Expr _ arg_type arg_id <- arg
                 (inference_info, info) <- getTypeVariableInfoByExprId lowering_context.inference_info arg_id
                 (lowering_context { inference_info = inference_info }, info))
-            (inference_info, lowering_info) <- convertToFunctionLoweringInfo context.config lowering_context.inference_info args_info expr_info
-            lowering_context <- lowering_context { inference_info = inference_info }
+            (inference_info, lowering_info, filter_info) <- convertToFunctionLoweringInfo context.config lowering_context.inference_info args_info
+                                               expr_info lowering_context.filter_info
+            lowering_context <- lowering_context { inference_info = inference_info, filter_info = filter_info }
             // println "-----------------------------------------"
             // println "---------------{}---------------" % f_id
             // println "-----------------------------------------"
@@ -180,8 +184,9 @@ lowerExpr lowering_context context expr = do
             ME.Expr _ _ body_id <- body
             (inference_info, body_info) <- getTypeVariableInfoByExprId lowering_context.inference_info body_id
             lowering_context <- lowering_context { inference_info = inference_info }
-            (inference_info, lowering_info) <- createTypeLoweringInfoFromInferenceInfo context.config lowering_context.inference_info body_info
-            lowering_context <- lowering_context { inference_info = inference_info }
+            (inference_info, lowering_info, filter_info) <- createTypeLoweringInfoFromInferenceInfo context.config
+                                                lowering_context.inference_info body_info lowering_context.filter_info
+            lowering_context <- lowering_context { inference_info = inference_info, filter_info = filter_info }
             (lowering_info, _) <- normalizeTypeLoweringInfo lowering_info
             (context, lir_body) <- lowerExpr lowering_context context body
             (context, lir_cases) <- List.mapS context cases (lowerCase lowering_context lowering_info)

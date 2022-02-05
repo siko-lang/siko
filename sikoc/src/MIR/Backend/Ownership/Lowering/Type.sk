@@ -3,6 +3,7 @@ module Siko.MIR.Backend.Ownership.Lowering.Type where
 import Siko.MIR.Backend.Ownership.Lowering.Context
 import Siko.MIR.Backend.Ownership.Lowering.Naming
 import Siko.MIR.Backend.Ownership.Lowering.LoweringInfo
+import Siko.MIR.Backend.Ownership.Lowering.LoweringInfo.Filter
 import Siko.MIR.Backend.Ownership.TypeVariableInfo
 import Siko.MIR.Backend.Ownership.BorrowId
 import Siko.MIR.Backend.Ownership.Duplicator
@@ -55,11 +56,14 @@ lowerType context lowering_info mir_type = do
 
 lowerFunctionType :: Context -> FunctionLoweringInfo -> MF.FunctionType -> (Context, LF.FunctionType, [LT.Lifetime])
 lowerFunctionType context lowering_info mir_function_type = do
+    (lowering_info, filter_info) <- getFilterInfoFromFunctionLoweringInfo context.config lowering_info
     //println "lowerFunctionType {} {}" % (lowering_info, mir_function_type)
-    (context, args) <- List.mapSE context mir_function_type.args (\context, index, arg_type -> do
-        lowering_info <- getLoweringInfoForArg context.config lowering_info index
-        lowerType context lowering_info arg_type)
-    (context, result) <- lowerType context (getLoweringInfoForResult context.config lowering_info) mir_function_type.result
+    ((context, filter_info), args) <- List.mapSE (context, filter_info) mir_function_type.args (\(context, filter_info), index, arg_type -> do
+        (lowering_info, filter_info) <- getLoweringInfoForArg context.config lowering_info index filter_info
+        (context, ty) <- lowerType context lowering_info arg_type
+        ((context, filter_info), ty))
+    (result_lowering_info, filter_info) <- getLoweringInfoForResult context.config lowering_info filter_info
+    (context, result) <- lowerType context result_lowering_info mir_function_type.result
     lifetimes <- collectLifetimes lowering_info.ownershipinfos
     (context, LF.FunctionType args result, lifetimes)
 

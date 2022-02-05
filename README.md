@@ -37,18 +37,18 @@ Status: ![](https://github.com/siko-lang/siko/workflows/Master/badge.svg)
 
 ## Compiler progress
 - [X] Parser
+- [X] Auto derive instances
 - [X] Name resolver
   - [X] HIR lowering
+     - [X] Effects
+     - [X] Inlining
 - [X] Type checker
 - [X] MIR lowering
   - [X] Monomorphization
   - [X] Defunctionalization
-  - [X] Auto derive instances
-  - [ ] Inlining
-  - [X] Effects
   - [ ] Class objects
 - [X] Backend
-  - [ ] Ownership inference
+  - [X] Ownership inference
 - [X] Rust transpiler
 
 

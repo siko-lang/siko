@@ -4,6 +4,7 @@ import Siko.Config
 import Siko.Trace
 import Siko.MIR.Backend.Ownership.Lowering.Context
 import Siko.MIR.Backend.Ownership.Lowering.LoweringInfo
+import Siko.MIR.Backend.Ownership.Lowering.LoweringInfo.Filter
 import Siko.MIR.Backend.Ownership.Lowering.Naming
 import Siko.MIR.Backend.Ownership.Lowering.Expr
 import Siko.MIR.Backend.Ownership.Lowering.Type
@@ -16,6 +17,7 @@ import Siko.MIR.Backend.Ownership.InferenceInfo
 import Siko.MIR.Backend.Ownership.MemberInfo as M
 import Siko.MIR.Backend.Ownership.TypeVariableInfo
 import Siko.MIR.Backend.Ownership.OwnershipDependencyMap
+import Siko.MIR.Backend.Ownership.GroupDependencyMap
 import Siko.MIR.Program as MP
 import Siko.LIR.Program as LP
 import Siko.MIR.Function as MF
@@ -43,7 +45,9 @@ lowerFunction context lowering_info mir_id lir_id = do
             inference_info <- unpackOwnerships context.config inference_info
             (inference_info, cloning_converters) <- inferOwnership context.config [] context.function_info_store inference_info
                               context.mir_program info.body borrow_info
-            lowering_context <- LoweringContext inference_info cloning_converters
+            (members, group_dep_map) <- calculateGroupDepMap context.config inference_info.members
+            inference_info <- inference_info { members = members }
+            lowering_context <- LoweringContext inference_info cloning_converters (FilterInfo group_dep_map)
             (context, lir_body) <- lowerExpr lowering_context context info.body
             //trace context.config "Processing expr done"
             lir_kind <- LF.Normal lir_body

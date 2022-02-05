@@ -28,36 +28,36 @@ data TypeLoweringInfo = { members :: List2 M.MemberInfo,
                           allocator :: Allocator,
                         } deriving (PartialEq, Eq, PartialOrd, Ord, Show)
 
-convertToFunctionLoweringInfo :: Config -> InferenceInfo -> [TypeVariableInfo] -> TypeVariableInfo -> (InferenceInfo, FunctionLoweringInfo)
-convertToFunctionLoweringInfo config inference_info args result = do
+convertToFunctionLoweringInfo :: Config -> InferenceInfo -> [TypeVariableInfo] -> TypeVariableInfo -> FilterInfo -> (InferenceInfo, FunctionLoweringInfo, FilterInfo)
+convertToFunctionLoweringInfo config inference_info args result filter_info = do
     //println "Creating function lowering info"
     args <- List2.toList2 args
     lowering_info <- FunctionLoweringInfo inference_info.members args result
             (toOwnershipInfo inference_info.ownership_values) inference_info.allocator
     //println "Unfiltered {}" % lowering_info
     sources <- List2.push args result
-    lowering_info <- filterFunctionLoweringInfo config lowering_info sources
-    (inference_info, lowering_info)
+    (lowering_info, filter_info) <- filterFunctionLoweringInfo config lowering_info sources filter_info
+    (inference_info, lowering_info, filter_info)
 
-createTypeLoweringInfoFromInferenceInfo :: Config -> InferenceInfo -> TypeVariableInfo -> (InferenceInfo, TypeLoweringInfo)
-createTypeLoweringInfoFromInferenceInfo config inference_info root = do
+createTypeLoweringInfoFromInferenceInfo :: Config -> InferenceInfo -> TypeVariableInfo -> FilterInfo -> (InferenceInfo, TypeLoweringInfo, FilterInfo)
+createTypeLoweringInfoFromInferenceInfo config inference_info root filter_info = do
     //println "Creating type lowering info"
     lowering_info <- TypeLoweringInfo inference_info.members root
             (toOwnershipInfo inference_info.ownership_values) inference_info.allocator
-    lowering_info <- filterTypeLoweringInfo config lowering_info (List2.single root)
-    (inference_info, lowering_info)
+    (lowering_info, filter_info) <- filterTypeLoweringInfo config lowering_info (List2.single root) filter_info
+    (inference_info, lowering_info, filter_info)
 
-createTypeLoweringInfoFromFunctionLoweringInfo :: Config -> FunctionLoweringInfo -> TypeVariableInfo -> TypeLoweringInfo
-createTypeLoweringInfoFromFunctionLoweringInfo config lowering_info root = do
+createTypeLoweringInfoFromFunctionLoweringInfo :: Config -> FunctionLoweringInfo -> TypeVariableInfo -> FilterInfo -> (TypeLoweringInfo, FilterInfo)
+createTypeLoweringInfoFromFunctionLoweringInfo config lowering_info root filter_info = do
     //println "Creating type lowering info"
     output <- TypeLoweringInfo lowering_info.members root lowering_info.ownershipinfos lowering_info.allocator
-    filterTypeLoweringInfo config output (List2.single root)
+    filterTypeLoweringInfo config output (List2.single root) filter_info
 
-createTypeLoweringInfoFromTypeLoweringInfo :: Config -> TypeLoweringInfo -> TypeVariableInfo -> TypeLoweringInfo
-createTypeLoweringInfoFromTypeLoweringInfo config lowering_info root = do
+createTypeLoweringInfoFromTypeLoweringInfo :: Config -> TypeLoweringInfo -> TypeVariableInfo -> FilterInfo -> (TypeLoweringInfo, FilterInfo)
+createTypeLoweringInfoFromTypeLoweringInfo config lowering_info root filter_info = do
     //println "Creating type lowering info"
     output <- TypeLoweringInfo lowering_info.members root lowering_info.ownershipinfos lowering_info.allocator
-    filterTypeLoweringInfo config output (List2.single root)
+    filterTypeLoweringInfo config output (List2.single root) filter_info
 
 normalizeRef :: TypeLoweringInfo -> (TypeLoweringInfo, Option BorrowId)
 normalizeRef lowering_info = do
@@ -112,14 +112,14 @@ normalizeTypeLoweringInfo lowering_info = do
     ownershipinfos <- ownershipinfos |> List2.sort
     (TypeLoweringInfo members root ownershipinfos duplicator.allocator, duplicator)
 
-getLoweringInfoForArg :: Config -> FunctionLoweringInfo -> Int -> TypeLoweringInfo
-getLoweringInfoForArg config lowering_info index = do
+getLoweringInfoForArg :: Config -> FunctionLoweringInfo -> Int -> FilterInfo -> (TypeLoweringInfo, FilterInfo)
+getLoweringInfoForArg config lowering_info index filter_info = do
     arg <- List2.atIndex lowering_info.args index
-    createTypeLoweringInfoFromFunctionLoweringInfo config lowering_info arg
+    createTypeLoweringInfoFromFunctionLoweringInfo config lowering_info arg filter_info
 
-getLoweringInfoForResult :: Config -> FunctionLoweringInfo -> TypeLoweringInfo
-getLoweringInfoForResult config lowering_info = do
-    createTypeLoweringInfoFromFunctionLoweringInfo config lowering_info lowering_info.result
+getLoweringInfoForResult :: Config -> FunctionLoweringInfo -> FilterInfo -> (TypeLoweringInfo, FilterInfo)
+getLoweringInfoForResult config lowering_info filter_info = do
+    createTypeLoweringInfoFromFunctionLoweringInfo config lowering_info lowering_info.result filter_info
 
 createEmptyTypeLoweringInfo :: TypeLoweringInfo
 createEmptyTypeLoweringInfo = do
@@ -127,32 +127,32 @@ createEmptyTypeLoweringInfo = do
     (allocator, root) <- getNextTypeVariableInfo allocator
     TypeLoweringInfo List2.empty root (List2.single (M.Owner root.ownership_var)) allocator
 
-getLoweringInfoForMember :: Config -> TypeLoweringInfo -> String -> TypeLoweringInfo
-getLoweringInfoForMember config lowering_info name = do
+getLoweringInfoForMember :: Config -> TypeLoweringInfo -> String -> FilterInfo -> (TypeLoweringInfo, FilterInfo)
+getLoweringInfoForMember config lowering_info name filter_info = do
     member <- List2.filter lowering_info.members (\constraint -> case constraint of
             M.Member n root member_info -> n == name && lowering_info.root.arg_group_var == root
             _ -> False)
     case List2.head member of
-        Some (M.Member name root member_info) -> createTypeLoweringInfoFromTypeLoweringInfo config lowering_info member_info
+        Some (M.Member name root member_info) -> createTypeLoweringInfoFromTypeLoweringInfo config lowering_info member_info filter_info
         Some _ -> panic "member is not a member"
-        None -> createEmptyTypeLoweringInfo
+        None -> (createEmptyTypeLoweringInfo, filter_info)
 
-getLoweringInfoForVariant :: Config -> TypeLoweringInfo -> Int -> TypeLoweringInfo
-getLoweringInfoForVariant config lowering_info index = do
+getLoweringInfoForVariant :: Config -> TypeLoweringInfo -> Int -> FilterInfo -> (TypeLoweringInfo, FilterInfo)
+getLoweringInfoForVariant config lowering_info index filter_info = do
     variant <- List2.filter lowering_info.members (\constraint -> case constraint of
             M.Variant i root member_info -> i == index && lowering_info.root.arg_group_var == root
             _ -> False)
     case List2.head variant of
-        Some (M.Variant index root member_info) -> createTypeLoweringInfoFromTypeLoweringInfo config lowering_info member_info
+        Some (M.Variant index root member_info) -> createTypeLoweringInfoFromTypeLoweringInfo config lowering_info member_info filter_info
         Some _ -> panic "variant is not a variant"
-        None -> createEmptyTypeLoweringInfo
+        None -> (createEmptyTypeLoweringInfo, filter_info)
 
-getLoweringInfoForExtern :: Config -> TypeLoweringInfo -> Int -> TypeLoweringInfo
-getLoweringInfoForExtern config lowering_info index = do
+getLoweringInfoForExtern :: Config -> TypeLoweringInfo -> Int -> FilterInfo -> (TypeLoweringInfo, FilterInfo)
+getLoweringInfoForExtern config lowering_info index filter_info = do
     variant <- List2.filter lowering_info.members (\constraint -> case constraint of
             M.Extern i root member_info -> i == index && lowering_info.root.arg_group_var == root
             _ -> False)
     case List2.head variant of
-        Some (M.Extern index root member_info) -> createTypeLoweringInfoFromTypeLoweringInfo config lowering_info member_info
+        Some (M.Extern index root member_info) -> createTypeLoweringInfoFromTypeLoweringInfo config lowering_info member_info filter_info
         Some _ -> panic "extern is not a extern"
-        None -> createEmptyTypeLoweringInfo
+        None -> (createEmptyTypeLoweringInfo, filter_info)
