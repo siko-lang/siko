@@ -12,15 +12,27 @@ import Map2
 import List2 as List2
 import List2 (List2)
 
+data OwnershipKind = Unknown
+                   | Owner
+                   | Borrower BorrowId
+                   deriving (Show, PartialEq, Eq, PartialOrd, Ord)
+
 data MemberInfo = Variant Int TypeVariable TypeVariableInfo
                 | Member String TypeVariable TypeVariableInfo
                 | Extern Int TypeVariable TypeVariableInfo
                 deriving (PartialEq, Eq, PartialOrd, Ord, Show)
 
-data OwnershipInfo = Unknown TypeVariable
-                   | Owner TypeVariable
-                   | Borrower TypeVariable BorrowId
+data OwnershipInfo = { var :: TypeVariable, kind :: OwnershipKind }
                    deriving (PartialEq, Eq, PartialOrd, Ord, Show)
+
+toOwnershipInfo :: Map2 TypeVariable OwnershipKind -> List2 OwnershipInfo
+toOwnershipInfo kinds =
+    Map2.fold (List2.withCapacity (Map2.getSize kinds)) kinds (\infos, (var, kind) ->
+            List2.push infos (OwnershipInfo var kind)
+        )
+
+toOwnershipKind :: List2 OwnershipInfo -> Map2 TypeVariable OwnershipKind
+toOwnershipKind infos = List2.fold Map2.empty infos (\kinds, info -> Map2.put kinds info.var info.kind)
 
 isSubMember :: List2 TypeVariable -> MemberInfo -> (List2 TypeVariable, Bool)
 isSubMember vars constraint =
@@ -36,17 +48,9 @@ isSubMember vars constraint =
             (vars, r)
 
 filterOwnershipInfo :: List2 TypeVariable -> OwnershipInfo -> (List2 TypeVariable, Bool)
-filterOwnershipInfo vars ownershipinfo =
-    case ownershipinfo of
-        Unknown v -> do
-            res <- List2.contains vars v
-            (vars, res)
-        Owner v -> do
-            res <- List2.contains vars v
-            (vars, res)
-        Borrower v _ -> do
-            res <- List2.contains vars v
-            (vars, res)
+filterOwnershipInfo vars ownershipinfo = do
+    res <- List2.contains vars ownershipinfo.var
+    (vars, res)
 
 getDependencyMap2 :: List2 MemberInfo -> (List2 MemberInfo, Map2 TypeVariable (List2 TypeVariable))
 getDependencyMap2 members = do

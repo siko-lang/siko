@@ -30,16 +30,11 @@ data Borrow = Local E.ExprId
 
 data BorrowSet = { borrows :: Set Borrow } deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
-data OwnershipKind = Unknown
-                   | Owner
-                   | Borrower BorrowId
-                   deriving (Show, PartialEq, Eq, PartialOrd, Ord)
-
 data TypeIdentity = { var :: TypeVariable, id :: P.Identity } deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
 data InferenceInfo = { expr_type_variables :: Map2 E.ExprId TypeVariableInfo,
                        var_type_variables :: Map2 E.Var TypeVariableInfo,
-                       ownership_values :: Map2 TypeVariable OwnershipKind,
+                       ownership_values :: Map2 TypeVariable M.OwnershipKind,
                        args :: List2 TypeVariableInfo,
                        result :: TypeVariableInfo,
                        members :: List2 M.MemberInfo,
@@ -72,11 +67,11 @@ createInferenceInfoFromLoweringInfo lowering_info = do
         inference_info { var_type_variables = var_type_variables }) inference_info args
     List2.fold inference_info lowering_info.ownershipinfos (\inference_info, ownershipinfo -> do
             (inference_info, v, kind) <- case ownershipinfo of
-                M.Unknown v -> (inference_info, v, Unknown)
-                M.Owner v -> (inference_info, v, Owner)
-                M.Borrower v external_id -> do
+                M.OwnershipInfo v M.Unknown -> (inference_info, v, M.Unknown)
+                M.OwnershipInfo v M.Owner -> (inference_info, v, M.Owner)
+                M.OwnershipInfo v (M.Borrower external_id) -> do
                     (inference_info, id) <- createBorrowSetForExternal inference_info external_id
-                    (inference_info, v, Borrower id)
+                    (inference_info, v, M.Borrower id)
             (ownership_values, _) <- Map2.insert inference_info.ownership_values v kind
             inference_info { ownership_values = ownership_values }
         )
@@ -172,19 +167,19 @@ getTypeIdentity inference_info var = do
     result <- List2.find type_ids (\type_id -> type_id.var == var)
     (inference_info, result)
 
-addOwnership :: InferenceInfo -> TypeVariable -> OwnershipKind -> InferenceInfo
+addOwnership :: InferenceInfo -> TypeVariable -> M.OwnershipKind -> InferenceInfo
 addOwnership inference_info var kind = do
     (ownership_values, _) <- Map2.insert inference_info.ownership_values var kind
     inference_info { ownership_values = ownership_values }
 
-maybeAddOwnership :: InferenceInfo -> TypeVariable -> OwnershipKind -> InferenceInfo
+maybeAddOwnership :: InferenceInfo -> TypeVariable -> M.OwnershipKind -> InferenceInfo
 maybeAddOwnership inference_info var kind = do
     (ownership_values, _) <- Map2.alter (\old -> case old of
         Some old -> Some old
         None -> Some kind) var inference_info.ownership_values
     inference_info { ownership_values = ownership_values }
 
-getOwnership :: InferenceInfo -> TypeVariable -> (InferenceInfo, Option OwnershipKind)
+getOwnership :: InferenceInfo -> TypeVariable -> (InferenceInfo, Option M.OwnershipKind)
 getOwnership inference_info var = do
     result <- Map2.get inference_info.ownership_values var
     (inference_info, result)
@@ -201,15 +196,6 @@ getTypeVariableInfoByVar inference_info var =
         Some i -> (inference_info, i)
         None -> panic "TypeVariableInfo not found for var {}" % var
 
-toOwnershipInfo :: Map2 TypeVariable OwnershipKind -> List2 M.OwnershipInfo
-toOwnershipInfo ownership_values =
-    Map2.fold (List2.withCapacity (Map2.getSize ownership_values)) ownership_values (\ownershipinfos, (var, kind) -> do
-                case kind of
-                    Unknown -> List2.push ownershipinfos (M.Unknown var)
-                    Owner -> List2.push ownershipinfos (M.Owner var)
-                    Borrower id -> List2.push ownershipinfos (M.Borrower var id)
-            )
-
 dumpInferenceInfoStats :: Config -> InferenceInfo -> ()
 dumpInferenceInfoStats config inference_info = do
     trace config "members: {}" % List2.getLength inference_info.members
@@ -221,7 +207,7 @@ dumpInferenceInfoStats config inference_info = do
 
 toFunctionInfo :: Config -> InferenceInfo -> FunctionInfo
 toFunctionInfo config inference_info = do
-        // println "toFunctionInfo"
+        //println "toFunctionInfo"
         // println "members: {}" % List2.getLength inference_info.members
         // println "converters: {}" % List2.getLength inference_info.converters
         // println "expr_type_variables: {}" % Map2.getSize inference_info.expr_type_variables
@@ -258,7 +244,7 @@ toFunctionInfo config inference_info = do
         (output_members, filtered_input_members) <- List2.filterS output_members input_members (\output_members, m -> do
             res <- not (List2.contains output_members m)
             (output_members, res))
-        //trace config "toFunctionInfo: filter output members"
+        trace config "toFunctionInfo: filter output members"
         (input_members, filtered_output_members) <- List2.filterS input_members output_members (\input_members, m -> do
             res <- not (List2.contains input_members m)
             (input_members, res))
@@ -287,10 +273,7 @@ toFunctionInfo config inference_info = do
             else do
                 var <- List2.atIndex relevant_ownership_vars index
                 filtered_ownershipinfos <- case Map2.get ownership_values var of
-                    Some kind -> case kind of
-                        Unknown -> List2.push filtered_ownershipinfos (M.Unknown var)
-                        Owner -> List2.push filtered_ownershipinfos (M.Owner var)
-                        Borrower id -> List2.push filtered_ownershipinfos (M.Borrower var id)
+                    Some kind -> List2.push filtered_ownershipinfos (M.OwnershipInfo var kind)
                     None -> filtered_ownershipinfos // FIXME: investigate, why is this possible??
                 (filtered_ownershipinfos, relevant_ownership_vars, ownership_values, index + 1)
         //trace config "toFunctionInfo: processing converters {}" % List2.getLength converters
@@ -359,7 +342,3 @@ instance Apply InferenceInfo where
             args result members converters inference_info.allocator
             function_converters inference_info.borrow_sets type_ids
         (applier, inference_info)
-
-instance EqualityStore InferenceInfo where
-    getMemberInfos inference_info = inference_info.members
-    putMemberInfos inference_info members = inference_info { members = members }

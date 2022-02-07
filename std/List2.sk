@@ -146,10 +146,15 @@ zipSE s l1 l2 f = do
                 (s, index + 1)
 
 mapS s a b :: s -> List2 a -> (s -> a -> (s, b)) -> (s, List2 b)
-mapS s l f = do
-    l |> List2.iter |> Iterator.fold (\(s, items), i -> do
-        (s, i) <- f s i
-        (s, push items i)) (s, List2.empty)
+mapS s l f =
+    loop (result, s, index) <- (List2.withCapacity (List2.getLength l), s, 0) do
+        if index >= List2.getLength l
+        then break (s, result)
+        else do
+            i <- atIndex l index
+            (s, i) <- f s i
+            (List2.push result i, s, index + 1)
+
 
 mapSE s a b :: s -> List2 a -> (s -> Int -> a -> (s, b)) -> (s, List2 b)
 mapSE s l f = do

@@ -2,7 +2,7 @@ module Siko.MIR.Backend.Ownership.Lowering.Data where
 
 import Siko.Config
 import Siko.Trace
-import Siko.MIR.Backend.Ownership.MemberInfo
+import Siko.MIR.Backend.Ownership.MemberInfo as M
 import Siko.MIR.Backend.Ownership.Lowering.LoweringInfo
 import Siko.MIR.Backend.Ownership.Lowering.LoweringInfo.Filter
 import Siko.MIR.Backend.Ownership.Lowering.Context
@@ -71,9 +71,11 @@ processExternalClassImpl lowering_info context mir_class_impl =
             arg <- arg { arg_group_var = lowering_info.root.arg_group_var }
             args <- List2.single arg
             args <- List2.push args arg
-            ownershipinfos <- List2.push lowering_info.ownershipinfos (Borrower arg.ownership_var borrow_id)
-            ownershipinfos <- List2.push ownershipinfos (Owner result.ownership_var)
+            ownershipinfos <- List2.push lowering_info.ownershipinfos (M.OwnershipInfo arg.ownership_var (M.Borrower borrow_id))
+            ownershipinfos <- List2.push ownershipinfos (M.OwnershipInfo result.ownership_var M.Owner)
             lowering_info <- FunctionLoweringInfo lowering_info.members args result ownershipinfos allocator
+            (lowering_info, filter_info) <- getFilterInfoFromFunctionLoweringInfo context.config lowering_info
+            (lowering_info, _) <- normalizeFunctionLoweringInfo context.config lowering_info
             lir_key <- FunctionKey id lowering_info
             (context, lir_id) <- getLIRId context lir_key
             context <- addItem context lir_key

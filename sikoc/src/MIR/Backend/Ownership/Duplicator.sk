@@ -11,7 +11,7 @@ import Map
 data Duplicator = { vars :: Map TypeVariable TypeVariable,
                     borrows :: Map BorrowId BorrowId,
                     inverse_borrows :: Map Int Int,
-                    allocator :: Allocator }
+                    allocator :: Allocator } deriving (Show)
 
 class Duplicable a where
     duplicate a :: Duplicator -> a -> (Duplicator, a)
@@ -73,19 +73,20 @@ instance Duplicable M.MemberInfo where
                 (duplicator, info) <- duplicate duplicator info
                 (duplicator, M.Extern index root info)
 
-instance Duplicable M.OwnershipInfo where
-    duplicate duplicator ownershipinfo =
-        case ownershipinfo of
-            M.Unknown v -> do
-                (duplicator, v) <- duplicate duplicator v
-                (duplicator, M.Unknown v)
-            M.Owner v -> do
-                (duplicator, v) <- duplicate duplicator v
-                (duplicator, M.Owner v)
-            M.Borrower v i -> do
+instance Duplicable M.OwnershipKind where
+    duplicate duplicator kind =
+        case kind of
+            M.Unknown -> (duplicator, M.Unknown)
+            M.Owner -> (duplicator, M.Owner)
+            M.Borrower i -> do
                 (duplicator, i) <- duplicate duplicator i
-                (duplicator, v) <- duplicate duplicator v
-                (duplicator, M.Borrower v i)
+                (duplicator, M.Borrower i)
+
+instance Duplicable M.OwnershipInfo where
+    duplicate duplicator info = do
+        (duplicator, v) <- duplicate duplicator info.var
+        (duplicator, kind) <- duplicate duplicator info.kind
+        (duplicator, M.OwnershipInfo v kind)
 
 instance Duplicable Converter where
     duplicate duplicator converter = do

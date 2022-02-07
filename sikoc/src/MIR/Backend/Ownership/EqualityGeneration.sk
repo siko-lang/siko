@@ -118,15 +118,15 @@ processExpr context expr = do
             // add ownershipinfos
             inference_info <- List2.fold inference_info function_info.ownershipinfos (
                     \inference_info, ownershipinfo -> case ownershipinfo of
-                        M.Unknown v -> addOwnership inference_info v Unknown
-                        M.Owner v -> addOwnership inference_info v Owner
-                        M.Borrower v external_id -> do
+                        M.OwnershipInfo v M.Unknown -> addOwnership inference_info v M.Unknown
+                        M.OwnershipInfo v M.Owner -> addOwnership inference_info v M.Owner
+                        M.OwnershipInfo v (M.Borrower external_id) -> do
                             (inference_info, id) <- createBorrowSetForExternal inference_info external_id
-                            addOwnership inference_info v (Borrower id))
+                            addOwnership inference_info v (M.Borrower id))
 
             inference_info <- List2.fold inference_info function_info.converters (\inference_info, converter -> do
-                inference_info <- maybeAddOwnership inference_info converter.from Unknown
-                inference_info <- maybeAddOwnership inference_info converter.to Unknown
+                inference_info <- maybeAddOwnership inference_info converter.from M.Unknown
+                inference_info <- maybeAddOwnership inference_info converter.to M.Unknown
                 inference_info)
             context <- context { inference_info = inference_info }
             (context, expr)
@@ -152,12 +152,20 @@ processExpr context expr = do
                 Some first -> do
                     first <- getExprId first
                     inference_info <- context.inference_info
-                    (inference_info, first_info) <- getTypeVariableInfoByExprId inference_info first
+                    (inference_info, item_info) <- getTypeVariableInfoByExprId inference_info first
                     (inference_info, info) <- getTypeVariableInfoByExprId inference_info expr_id
-                    inference_info <- addMemberInfo inference_info (M.Extern 0 info.arg_group_var first_info)
+                    inference_info <- addMemberInfo inference_info (M.Extern 0 info.arg_group_var item_info)
                     context <- context { inference_info = inference_info }
                     List.fold context items (\context, item -> addEqualExprs context first (getExprId item))
-                None -> context
+                None -> do
+                    inference_info <- context.inference_info
+                    allocator <- inference_info.allocator
+                    (allocator, item_info) <- getNextTypeVariableInfo allocator
+                    (inference_info, info) <- getTypeVariableInfoByExprId inference_info expr_id
+                    inference_info <- addMemberInfo inference_info (M.Extern 0 info.arg_group_var item_info)
+                    inference_info <- inference_info { allocator = allocator }
+                    context <- context { inference_info = inference_info }
+                    context
             (context, expr)
         E.FieldAccess name receiver -> do
             inference_info <- context.inference_info
@@ -234,7 +242,7 @@ processExpr context expr = do
             equals <- List2.push equals (Equal info1.arg_group_var info2.arg_group_var)
             (context { inference_info = inference_info, equals = equals }, expr)
 
-data ChainMember = { id :: P.Identity, info :: TypeVariableInfo }
+data ChainMember = { id :: P.Identity, info :: TypeVariableInfo } deriving (Show)
 
 buildChain :: P.Program -> InferenceInfo -> List2 Equal -> TypeVariableInfo -> P.Identity -> [ChainMember] -> (P.Program, InferenceInfo, List2 Equal)
 buildChain program inference_info equals info id chain = do
@@ -244,7 +252,9 @@ buildChain program inference_info equals info id chain = do
         else do
             chain_member <- atIndex chain index
             (equals, changed) <- if chain_member.id == id
-            then (List2.push equals (Equal info.arg_group_var chain_member.info.arg_group_var), True)
+            then if info.arg_group_var == chain_member.info.arg_group_var
+                then return (program, inference_info, equals)
+                else (List2.push equals (Equal info.arg_group_var chain_member.info.arg_group_var), True)
             else (equals, changed)
             (equals, changed, index + 1)
     if changed
@@ -255,36 +265,43 @@ buildChain program inference_info equals info id chain = do
             M.Variant _ root m_info -> root == info.arg_group_var
             M.Member _ root m_info -> root == info.arg_group_var
             M.Extern _ root m_info -> root == info.arg_group_var)
-        (_, (program, inference_info, equals)) <- List2.foldLinear (program, inference_info, equals) members (\(program, inference_info, equals), m -> case m of
-            M.Variant index root m_info -> do
-                (program, adt) <- P.getAdt program id
-                variant <- atIndex adt.variants index
-                id <- T.getIdentity variant.type
-                buildChain program inference_info equals m_info id chain
-            M.Member name root m_info -> do
-                (program, record) <- P.getRecord program id
-                field <- Option.unwrap (D.getFieldByName record name)
-                id <- T.getIdentity field.type
-                buildChain program inference_info equals m_info id chain
-            M.Extern _ _ _ -> (program, inference_info, equals))
+        (_, (program, inference_info, equals)) <- List2.foldLinear (program, inference_info, equals) members (\(program, inference_info, equals), m -> do
+            case m of
+                M.Variant index root m_info -> do
+                    (program, adt) <- P.getAdt program id
+                    variant <- atIndex adt.variants index
+                    id <- T.getIdentity variant.type
+                    buildChain program inference_info equals m_info id chain
+                M.Member name root m_info -> do
+                    (program, record) <- P.getRecord program id
+                    field <- Option.unwrap (D.getFieldByName record name)
+                    id <- T.getIdentity field.type
+                    buildChain program inference_info equals m_info id chain
+                M.Extern _ _ _ -> (program, inference_info, equals))
         (program, inference_info, equals)
 
-fuseCycles :: P.Program -> InferenceInfo -> (P.Program, InferenceInfo)
-fuseCycles program inference_info = do
-    infos <- List2.push inference_info.args inference_info.result
-    infos <- List2.fold infos inference_info.members (\infos, m -> case m of
-        M.Variant _ _ info -> List2.push infos info
-        M.Member _ _ info -> List2.push infos info
-        M.Extern _ _ info -> List2.push infos info)
-    (program, inference_info, equals) <- List2.fold (program, inference_info, List2.empty) infos (\(program, inference_info, equals), info -> do
-        (inference_info, result) <- getTypeIdentity inference_info info.ownership_var
-        case result of
-            Some type_id -> do
-                type_id :: TypeIdentity <- type_id // FIXME
-                buildChain program inference_info equals info type_id.id []
-            None -> (program, inference_info, equals))
-    inference_info <- processEquals equals inference_info
-    (program, inference_info)
+fuseCycles :: Config -> P.Program -> InferenceInfo -> (P.Program, InferenceInfo)
+fuseCycles config program inference_info = do
+    loop (program, inference_info) <- (program, inference_info) do
+        inference_info :: InferenceInfo <- inference_info // FIXME: type annotation
+        infos <- List2.push inference_info.args inference_info.result
+        infos <- List2.fold infos inference_info.members (\infos, m -> case m of
+            M.Variant _ _ info -> List2.push infos info
+            M.Member _ _ info -> List2.push infos info
+            M.Extern _ _ info -> List2.push infos info)
+        (program, inference_info, equals) <- List2.fold (program, inference_info, List2.empty) infos (\(program, inference_info, equals), info -> do
+            (inference_info, result) <- getTypeIdentity inference_info info.ownership_var
+            case result of
+                Some type_id -> do
+                    type_id :: TypeIdentity <- type_id // FIXME
+                    buildChain program inference_info equals info type_id.id []
+                None -> (program, inference_info, equals))
+        if List2.isEmpty equals
+        then do
+            break (program, inference_info)
+        else do
+            inference_info <- processEquals equals inference_info
+            (program, inference_info)
 
 processEqualities :: Config -> [P.Identity] -> InferenceInfo -> FunctionInfoStore -> P.Program -> E.Expr -> (P.Program, InferenceInfo)
 processEqualities config group inference_info function_info_store program body = do
@@ -304,5 +321,5 @@ processEqualities config group inference_info function_info_store program body =
     converters <- inference_info.converters |> List2.sort |> List2.dedup
     inference_info <- inference_info { type_ids = type_ids, converters = converters }
     //trace config "processEqualities - fuseCycles ({})" % (List2.getLength equals)
-    (program, inference_info) <- fuseCycles program inference_info
+    (program, inference_info) <- fuseCycles config program inference_info
     (program, inference_info)

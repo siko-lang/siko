@@ -1,7 +1,8 @@
-module Siko.MIR.Backend.Ownership.EqualitySolver(processEquals, addEqual, Equal(..), EqualityStore, Apply, apply) where
+module Siko.MIR.Backend.Ownership.EqualitySolver(processEquals, addEqual, Equal(..), Apply, apply) where
 
 import Siko.MIR.Backend.Ownership.TypeVariableInfo
-import Siko.MIR.Backend.Ownership.MemberInfo
+import Siko.MIR.Backend.Ownership.MemberInfo as M
+import Siko.MIR.Backend.Ownership.InferenceInfo
 import Map
 import List2 as List2
 import List2 (List2)
@@ -51,32 +52,25 @@ instance Apply TypeVariableInfo where
         (applier, arg_group_var) <- apply applier info.arg_group_var
         (applier, TypeVariableInfo ownership_var arg_group_var)
 
-instance Apply MemberInfo where
+instance Apply M.MemberInfo where
     apply applier info = case info of
-        Variant index root info -> do
+        M.Variant index root info -> do
             (applier, root) <- apply applier root
             (applier, info) <- apply applier info
-            (applier, Variant index root info)
-        Member name root info -> do
+            (applier, M.Variant index root info)
+        M.Member name root info -> do
             (applier, root) <- apply applier root
             (applier, info) <- apply applier info
-            (applier, Member name root info)
-        Extern index root info -> do
+            (applier, M.Member name root info)
+        M.Extern index root info -> do
             (applier, root) <- apply applier root
             (applier, info) <- apply applier info
-            (applier, Extern index root info)
+            (applier, M.Extern index root info)
 
-instance Apply OwnershipInfo where
-    apply applier info = case info of
-        Unknown v -> do
-            (applier, v) <- apply applier v
-            (applier, Unknown v)
-        Owner v -> do
-            (applier, v) <- apply applier v
-            (applier, Owner v)
-        Borrower v i -> do
-            (applier, v) <- apply applier v
-            (applier, Borrower v i)
+instance Apply M.OwnershipInfo where
+    apply applier info = do
+        (applier, var) <- apply applier info.var
+        (applier, info { var = var })
 
 instance (Apply v, Ord k) => Apply Map2 k v where
     apply applier items = Map2.updateS applier items (\applier, (k, v) -> apply applier v)
@@ -85,13 +79,13 @@ data Equal = Equal TypeVariable TypeVariable deriving (Show)
 
 addEquals :: List2 Equal -> Applier -> Applier
 addEquals equals applier = do
-    loop (applier, equals) <- (applier, equals) do
-        if List2.isEmpty equals
+    loop (applier, equals, index) <- (applier, equals, 0) do
+        if index >= List2.getLength equals
         then break applier
         else do
-            (equal, equals) <- List2.remove equals 0
+            equal <- List2.atIndex equals index
             applier <- addSingleEqual applier equal
-            (applier, equals)
+            (applier, equals, index + 1)
 
 data MergeKey b = VariantKey Int b
                 | MemberKey String b
@@ -103,31 +97,32 @@ addEqual equals info1 info2 = do
     equals <- List2.push equals (Equal info1.arg_group_var info2.arg_group_var)
     equals
 
-processEquals a :: (EqualityStore a, Apply a) => List2 Equal -> a -> a
-processEquals equals store = do
+processEquals :: List2 Equal -> InferenceInfo -> InferenceInfo
+processEquals equals inference_info = do
     applier <- addEquals equals (Applier Map2.empty)
-    loop (member_infos, applier) <- (getMemberInfos store, applier) do
-        (applier, member_infos) <- apply applier member_infos
-        (member_infos, equals) <- getEqualsFromMemberInfos member_infos
+    members <- inference_info.members
+    loop (members, applier, count) <- (members, applier, 0) do
+        (applier, members) <- apply applier members
+        (members, equals) <- getEqualsFromMemberInfos members
         if List2.isEmpty equals
         then do
-            (applier, store) <- apply applier store
-            break store
-        else (member_infos, addEquals equals applier)
+            (applier, inference_info) <- apply applier inference_info
+            break inference_info
+        else (members, addEquals equals applier, count + 1)
 
-getEqualsFromMemberInfos :: List2 MemberInfo -> (List2 MemberInfo, List2 Equal)
+getEqualsFromMemberInfos :: List2 M.MemberInfo -> (List2 M.MemberInfo, List2 Equal)
 getEqualsFromMemberInfos members = do
-        (members, root_map) <- List2.foldLinear Map.empty members (\root_map, member_info -> case member_info of
-                Variant index root info -> do
-                    (root_map, _) <- alter (add info) (VariantKey index root) root_map
+        (members, root_map) <- List2.foldLinear Map2.empty members (\root_map, member_info -> case member_info of
+                M.Variant index root info -> do
+                    (root_map, _) <- Map2.alter (add info) (VariantKey index root) root_map
                     root_map
-                Member name root info -> do
-                    (root_map, _) <- alter (add info) (MemberKey name root) root_map
+                M.Member name root info -> do
+                    (root_map, _) <- Map2.alter (add info) (MemberKey name root) root_map
                     root_map
-                Extern index root info -> do
-                    (root_map, _) <- alter (add info) (ExternKey index root) root_map
+                M.Extern index root info -> do
+                    (root_map, _) <- Map2.alter (add info) (ExternKey index root) root_map
                     root_map)
-        equals <- Map.fold List2.empty root_map (\equals, (_, infos) -> do
+        equals <- Map2.fold List2.empty root_map (\equals, (_, infos) -> do
             if List2.getLength infos > 1
             then do
                 first <- List2.atIndex infos 0
@@ -139,7 +134,3 @@ getEqualsFromMemberInfos members = do
         add info old = case old of
             Some infos -> Some (List2.dedup (List2.sort (List2.push infos info)))
             None -> Some (List2.single info)
-
-class EqualityStore a where
-    getMemberInfos a :: a -> List2 MemberInfo
-    putMemberInfos a :: a -> List2 MemberInfo -> a

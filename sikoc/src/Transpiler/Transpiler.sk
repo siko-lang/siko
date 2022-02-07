@@ -227,6 +227,9 @@ convertExpr context lir_expr = do
         LE.Deref expr -> do
             expr <- convertExpr context expr
             R.Deref expr
+        LE.DerefClone expr -> do
+            expr <- convertExpr context expr
+            R.MethodCall (R.Deref expr) cloneName []
         LE.Ref expr -> do
             expr <- convertExpr context expr
             R.Ref expr
@@ -262,8 +265,8 @@ convertAdt adt = do
                 R.Variant (getRustFriendlyName variant.name) (convertType variant.type)) |> toList
     R.Enum name lifetimes rust_variants [R.Clone]
 
-processImpl :: Program -> R.Program -> Context -> String -> LD.ExternalClassImpl -> R.Program
-processImpl lir_program program context type_name impl = do
+processImpl :: Program -> R.Program -> Context -> String -> LD.ExternalClassImpl -> [RT.Lifetime] -> R.Program
+processImpl lir_program program context type_name impl lifetimes = do
     rust_type_name <- RT.Named type_name []
     (name, methods) <- case impl of
             LD.Show fn_id -> do
@@ -301,7 +304,7 @@ processImpl lir_program program context type_name impl = do
                 method <- R.Function "cmp" [] True args result body
                 ("std::cmp::Ord", [method])
     //println "processImpl: {} {}" % (name, rust_type_name)
-    trait_impl <- R.TraitImpl name rust_type_name methods
+    trait_impl <- R.TraitImpl name rust_type_name methods lifetimes
     impls <- program.impls + [trait_impl]
     program { impls = impls }
 
@@ -357,13 +360,15 @@ transpile program = do
     context <- Context type_store None constructors
     rust_program <- program.adts |> Map.iter |> Iterator.fold (\rust_program, (_, adt) -> do
             name <- getRustIdentity adt.id
+            lifetimes <- convertLifetimes adt.lifetimes
             adt.external_class_impls |> List.iter |> Iterator.fold (\rust_program, external_class_impl -> do
-                processImpl program rust_program context name external_class_impl) rust_program
+                processImpl program rust_program context name external_class_impl lifetimes) rust_program
         ) rust_program
     rust_program <- program.records |> Map.iter |> Iterator.fold (\rust_program, (_, record) -> do
             name <- getRustIdentity record.id
+            lifetimes <- convertLifetimes record.lifetimes
             record.external_class_impls |> List.iter |> Iterator.fold (\rust_program, external_class_impl -> do
-                processImpl program rust_program context name external_class_impl) rust_program
+                processImpl program rust_program context name external_class_impl lifetimes) rust_program
         ) rust_program
     rust_program <- program.functions |> Map.iter |> Iterator.fold (\rust_program, (_, lir_function) -> do
         rust_function_name <- getRustIdentity lir_function.id

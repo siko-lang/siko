@@ -21,7 +21,7 @@ data FieldInitItem = { name :: String,
 
 data RangeKind = Inclusive | Exclusive deriving (Show)
 
-data TraitImpl = { trait_name :: String, type :: T.Type, methods :: [Function] }
+data TraitImpl = { trait_name :: String, type :: T.Type, methods :: [Function], lifetimes :: [T.Lifetime] }
 
 data Pattern = IntegerPattern String
                | StringPattern String
@@ -219,7 +219,7 @@ generateFunction function indent = do
 
 generateTraitImpl :: TraitImpl -> String
 generateTraitImpl impl = do
-    signature <- "impl {} for {}" % (impl.trait_name, T.showAll impl.type) + " {"
+    signature <- "impl<{}> {} for {}<{}>" % (join impl.lifetimes ", ", impl.trait_name, T.showAll impl.type, join impl.lifetimes ", ") + " {"
     indent <- Indent 2
     body <- impl.methods |> List.iter |> Iterator.fold (\body, method -> do
         m <- generateFunction method indent

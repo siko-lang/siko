@@ -42,12 +42,14 @@ lowerFunction context lowering_info mir_id lir_id = do
                     function_info_store context.mir_program info.body
             context <- context { mir_program = mir_program }
             borrow_info <- checkBorrows context.mir_program info.body
-            inference_info <- unpackOwnerships context.config inference_info
+            (members, ownership_dep_map) <- calculateOwnershipDepMap context.config inference_info.members
+            (members, group_dep_map) <- calculateGroupDepMap context.config inference_info.members
+            filter_info <- (FilterInfo group_dep_map ownership_dep_map)
+            (inference_info, filter_info) <- unpackOwnerships context.config inference_info filter_info
+            inference_info <- inference_info { members = members }
             (inference_info, cloning_converters) <- inferOwnership context.config [] context.function_info_store inference_info
                               context.mir_program info.body borrow_info
-            (members, group_dep_map) <- calculateGroupDepMap context.config inference_info.members
-            inference_info <- inference_info { members = members }
-            lowering_context <- LoweringContext inference_info cloning_converters (FilterInfo group_dep_map)
+            lowering_context <- LoweringContext inference_info cloning_converters filter_info
             (context, lir_body) <- lowerExpr lowering_context context info.body
             //trace context.config "Processing expr done"
             lir_kind <- LF.Normal lir_body
@@ -76,21 +78,20 @@ lowerFunction context lowering_info mir_id lir_id = do
     //trace context.config "Lowering done"
     context
 
-unpackOwnerships :: Config -> InferenceInfo -> InferenceInfo
-unpackOwnerships config inference_info = do
+unpackOwnerships :: Config -> InferenceInfo -> FilterInfo -> (InferenceInfo, FilterInfo)
+unpackOwnerships config inference_info filter_info = do
     // Ownership information is present in the lowering info
     // in a packed way. For example an owned record implies
     // that every field of the record is also owned.
     // The ownership inference does not know this, thus we 'unpack'
     // the ownerships, i.e. fill out member ownerships which are implied from
     // the arguments, result.
-    (members, ownership_dep_map) <- calculateOwnershipDepMap config inference_info.members
     vars <- List2.fold List2.empty inference_info.args (\vars, info -> do
         vars <- List2.push vars info.arg_group_var
         vars)
     vars <- List2.push vars inference_info.result.arg_group_var
-    inference_info <- List2.fold inference_info vars (\inference_info, var -> do
-        case Map2.get ownership_dep_map var of
-            Some ownership_vars -> List2.fold inference_info ownership_vars (\inference_info, var -> maybeAddOwnership inference_info var Owner)
-            None -> inference_info)
-    inference_info
+    List2.fold (inference_info, filter_info) vars (\(inference_info, filter_info), var -> do
+        case Map2.get filter_info.ownership_dep_map var of
+            Some ownership_vars -> List2.fold (inference_info, filter_info) ownership_vars (\(inference_info, filter_info), var ->
+                (maybeAddOwnership inference_info var M.Owner, filter_info))
+            None -> (inference_info, filter_info))

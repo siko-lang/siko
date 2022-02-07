@@ -8,8 +8,10 @@ import Siko.MIR.Backend.Ownership.MemberInfo as M
 import Siko.MIR.Backend.Ownership.InferenceInfo
 import Siko.MIR.Backend.Ownership.Duplicator
 import Siko.MIR.Backend.Ownership.Lowering.LoweringInfo.Filter
+import Siko.MIR.Backend.Ownership.OwnershipDependencyMap
 
 import Map
+import Map2
 import Set
 
 import List2 as List2
@@ -33,7 +35,7 @@ convertToFunctionLoweringInfo config inference_info args result filter_info = do
     //println "Creating function lowering info"
     args <- List2.toList2 args
     lowering_info <- FunctionLoweringInfo inference_info.members args result
-            (toOwnershipInfo inference_info.ownership_values) inference_info.allocator
+            (M.toOwnershipInfo inference_info.ownership_values) inference_info.allocator
     //println "Unfiltered {}" % lowering_info
     sources <- List2.push args result
     (lowering_info, filter_info) <- filterFunctionLoweringInfo config lowering_info sources filter_info
@@ -43,7 +45,7 @@ createTypeLoweringInfoFromInferenceInfo :: Config -> InferenceInfo -> TypeVariab
 createTypeLoweringInfoFromInferenceInfo config inference_info root filter_info = do
     //println "Creating type lowering info"
     lowering_info <- TypeLoweringInfo inference_info.members root
-            (toOwnershipInfo inference_info.ownership_values) inference_info.allocator
+            (M.toOwnershipInfo inference_info.ownership_values) inference_info.allocator
     (lowering_info, filter_info) <- filterTypeLoweringInfo config lowering_info (List2.single root) filter_info
     (inference_info, lowering_info, filter_info)
 
@@ -66,32 +68,30 @@ normalizeRef lowering_info = do
                                                 ownershipinfos
         (\(ownershipinfos, ref, found), ownershipinfo ->
             case ownershipinfo of
-                M.Unknown v -> if v == lowering_info.root.ownership_var
-                    then (List2.push ownershipinfos (M.Owner v), None, True)
-                    else (List2.push ownershipinfos (M.Owner v), ref, found)
-                M.Borrower v id -> if v == lowering_info.root.ownership_var
-                    then (List2.push ownershipinfos (M.Owner v), Some id, True)
+                M.OwnershipInfo v M.Unknown -> if v == lowering_info.root.ownership_var
+                    then (List2.push ownershipinfos (M.OwnershipInfo v M.Owner), None, True)
+                    else (List2.push ownershipinfos (M.OwnershipInfo v M.Owner), ref, found)
+                M.OwnershipInfo v (M.Borrower id) -> if v == lowering_info.root.ownership_var
+                    then (List2.push ownershipinfos (M.OwnershipInfo v M.Owner), Some id, True)
                     else (List2.push ownershipinfos ownershipinfo, ref, found)
-                M.Owner v -> if v == lowering_info.root.ownership_var
+                M.OwnershipInfo v M.Owner -> if v == lowering_info.root.ownership_var
                     then (List2.push ownershipinfos ownershipinfo, None, True)
                     else (List2.push ownershipinfos ownershipinfo, ref, found))
     ownershipinfos <- if not found
-    then List2.push ownershipinfos (M.Owner lowering_info.root.ownership_var)
+    then List2.push ownershipinfos (M.OwnershipInfo lowering_info.root.ownership_var M.Owner)
     else ownershipinfos
-    allocator <- lowering_info.allocator
-    allocator <- allocator { borrow = 0 }
-    (ownershipinfos, allocator) <- List2.foldLinear allocator ownershipinfos (\allocator, o -> case o of
-        M.Borrower v id -> addBorrowId allocator id
-        M.Owner _ -> allocator
-        M.Unknown _ -> allocator)
-    lowering_info <- lowering_info { ownershipinfos = ownershipinfos, allocator = allocator }
+    lowering_info <- lowering_info { ownershipinfos = ownershipinfos }
     (lowering_info, ref)
 
-normalizeFunctionLoweringInfo :: FunctionLoweringInfo -> (FunctionLoweringInfo, Duplicator)
-normalizeFunctionLoweringInfo lowering_info = do
-    // FIXME: we need a better normalization algorithm
-    // that is more robust and does not care about ordering
+normalizeFunctionLoweringInfo :: Config -> FunctionLoweringInfo -> (FunctionLoweringInfo, Duplicator)
+normalizeFunctionLoweringInfo config lowering_info = do
     duplicator <- createNormalizer
+    (lowering_info, filter_info) <- getFilterInfoFromFunctionLoweringInfo config lowering_info
+    (ownership_dep_map, ownership_vars) <- getOwnershipVars filter_info.ownership_dep_map lowering_info.result
+    (ownership_dep_map, ownership_vars) <- List2.fold (ownership_dep_map, ownership_vars) lowering_info.args (\(ownership_dep_map, ownership_vars), arg -> do
+        (ownership_dep_map, vars) <- getOwnershipVars ownership_dep_map arg
+        (ownership_dep_map, ownership_vars + vars))
+    filter_info <- filter_info { ownership_dep_map = ownership_dep_map }
     (duplicator, args) <- List2.mapS duplicator lowering_info.args duplicate
     (duplicator, result) <- duplicate duplicator lowering_info.result
     (duplicator, members) <- List2.mapS duplicator lowering_info.members duplicate
@@ -100,12 +100,14 @@ normalizeFunctionLoweringInfo lowering_info = do
     ownershipinfos <- ownershipinfos |> List2.sort
     (FunctionLoweringInfo members args result ownershipinfos duplicator.allocator, duplicator)
 
-normalizeTypeLoweringInfo :: TypeLoweringInfo -> (TypeLoweringInfo, Duplicator)
-normalizeTypeLoweringInfo lowering_info = do
-    // FIXME: we need a better normalization algorithm
-    // that is more robust and does not care about ordering
+normalizeTypeLoweringInfo :: Config -> TypeLoweringInfo -> (TypeLoweringInfo, Duplicator)
+normalizeTypeLoweringInfo config lowering_info = do
     duplicator <- createNormalizer
+    (lowering_info, filter_info) <- getFilterInfoFromTypeLoweringInfo config lowering_info
     (duplicator, root) <- duplicate duplicator lowering_info.root
+    (ownership_dep_map, ownership_vars) <- getOwnershipVars filter_info.ownership_dep_map lowering_info.root
+    filter_info <- filter_info { ownership_dep_map = ownership_dep_map }
+    (duplicator, ownership_vars_) <- List2.mapS duplicator ownership_vars duplicate
     (duplicator, members) <- List2.mapS duplicator lowering_info.members duplicate
     (duplicator, ownershipinfos) <- List2.mapS duplicator lowering_info.ownershipinfos duplicate
     members <- members |> List2.sort
@@ -125,7 +127,7 @@ createEmptyTypeLoweringInfo :: TypeLoweringInfo
 createEmptyTypeLoweringInfo = do
     allocator <- createAllocator
     (allocator, root) <- getNextTypeVariableInfo allocator
-    TypeLoweringInfo List2.empty root (List2.single (M.Owner root.ownership_var)) allocator
+    TypeLoweringInfo List2.empty root (List2.single (M.OwnershipInfo root.ownership_var M.Owner)) allocator
 
 getLoweringInfoForMember :: Config -> TypeLoweringInfo -> String -> FilterInfo -> (TypeLoweringInfo, FilterInfo)
 getLoweringInfoForMember config lowering_info name filter_info = do

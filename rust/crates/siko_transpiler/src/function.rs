@@ -18,7 +18,7 @@ pub fn is_hacked_function(module: &str, name: &str) -> bool {
     {
         true
     } else if (module == "List" || module == "List2")
-        && (name == "getLength" || name == "atIndex" || name == "contains")
+        && (name == "getLength" || name == "atIndex" || name == "contains" || name == "isEmpty")
     {
         true
     } else {

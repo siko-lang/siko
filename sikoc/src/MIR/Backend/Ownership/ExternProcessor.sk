@@ -57,8 +57,9 @@ processStep context parent step =
             (context, info) <- getNext context
             parent <- Option.unwrap parent
             variant <- M.Variant index parent.arg_group_var info
+            ownershipinfos <- List2.push context.ownershipinfos (M.OwnershipInfo info.ownership_var M.Owner)
             members <- List2.push context.members variant
-            (context { members = members }, info)
+            (context { members = members, ownershipinfos = ownershipinfos }, info)
         F.Field name index -> do
             (context, info) <- getNext context
             parent <- Option.unwrap parent
@@ -82,9 +83,9 @@ createExternFunctionInfo id type_mapping = do
     owner_infos <- List2.toList2 owner_infos
     (context, ref_infos) <- List.mapS context type_mapping.ref_positions processPosition
     ref_infos <- List2.toList2 ref_infos
-    owner_infos <- List2.map owner_infos (\info -> M.Owner info.ownership_var)
-    ref_infos <- List2.map ref_infos (\info -> M.Borrower info.ownership_var borrow_id) // FIXME
-    context <- context { ownershipinfos = owner_infos + ref_infos }
+    owner_infos <- List2.map owner_infos (\info -> M.OwnershipInfo info.ownership_var M.Owner)
+    ref_infos <- List2.map ref_infos (\info -> M.OwnershipInfo info.ownership_var (M.Borrower borrow_id)) // FIXME
+    context <- context { ownershipinfos = context.ownershipinfos + owner_infos + ref_infos }
     args <- context.args |> List2.sort |> List2.dedup
     args <- List2.map args (\arg_step -> case Map2.get context.info_map (F.Position [arg_step]) of
                         Some info -> info

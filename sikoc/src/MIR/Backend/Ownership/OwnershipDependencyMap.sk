@@ -12,6 +12,12 @@ import Map2
 import List2 as List2
 import List2 (List2)
 
+getOwnershipVars :: Map2 TypeVariable (List2 TypeVariable) -> TypeVariableInfo -> (Map2 TypeVariable (List2 TypeVariable), List2 TypeVariable)
+getOwnershipVars ownership_dep_map info =
+    case Map2.get ownership_dep_map info.arg_group_var of
+        Some vars -> (ownership_dep_map, List2.push vars info.ownership_var)
+        None -> (ownership_dep_map, List2.single info.ownership_var)
+
 collectDepOwnershipVarsForGroupVar :: List2 TypeVariable
                                       -> Map2 TypeVariable (List2 TypeVariable)
                                       -> Map2 TypeVariable (List2 TypeVariable)
@@ -84,13 +90,13 @@ calculateChildOwnershipVars members =
 
 calculateOwnershipDepMap :: Config -> List2 MemberInfo -> (List2 MemberInfo, Map2 TypeVariable (List2 TypeVariable))
 calculateOwnershipDepMap config members = do
-    //trace config "calculateOwnershipDepMap: calculateOwnershipDepMap start ({})" % (List2.getLength members)
+    //trace config "calculateOwnershipDepMap: start ({})" % (List2.getLength members)
     (members, deps_map) <- getDependencyMap2 members
-    //trace config "calculateOwnershipDepMap: calculateOwnershipDepMap got deps_map"
+    //trace config "calculateOwnershipDepMap: got deps_map"
     groups <- processDependencies config deps_map
-    //trace config "calculateOwnershipDepMap: calculateOwnershipDepMap got groups {}" % (List2.getLength groups)
+    //trace config "calculateOwnershipDepMap: got groups {}" % (List2.getLength groups)
     (members, child_ownership_vars) <- calculateChildOwnershipVars members
-    //trace config "calculateOwnershipDepMap: calculateOwnershipDepMap child ownership vars done"
+    //trace config "calculateOwnershipDepMap: child ownership vars done"
     ownership_dep_map <- Map2.empty
     (child_ownership_vars, ownership_dep_map) <- loop (child_ownership_vars, ownership_dep_map, deps_map, index) <- (child_ownership_vars, ownership_dep_map, deps_map, 0) do
         if index >= List2.getLength groups
