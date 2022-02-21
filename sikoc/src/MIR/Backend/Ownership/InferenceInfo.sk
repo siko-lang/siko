@@ -43,6 +43,7 @@ data InferenceInfo = { expr_type_variables :: Map2 E.ExprId TypeVariableInfo,
                        function_converters :: Map2 E.ExprId (List2 Converter),
                        borrow_sets :: Map2 BorrowId BorrowSet,
                        type_ids :: List2 TypeIdentity,
+                       external_borrows :: Map2 BorrowId BorrowId,
                      } deriving (Show)
 
 createInferenceInfoFromLoweringInfo :: FunctionLoweringInfo -> InferenceInfo
@@ -60,7 +61,7 @@ createInferenceInfoFromLoweringInfo lowering_info = do
     type_ids <- List2.empty
     inference_info <- InferenceInfo expr_type_variables var_type_variables
         ownership_values args result members converters allocator
-        function_converters borrow_sets type_ids
+        function_converters borrow_sets type_ids Map2.empty
     inference_info <- List2.foldE (\inference_info, index, arg -> do
         var <- E.Arg index
         (var_type_variables, _) <- Map2.insert inference_info.var_type_variables var arg
@@ -89,7 +90,7 @@ createInferenceInfo arg_count = do
     (allocator, result) <- getNextTypeVariableInfo allocator
     inference_info <- InferenceInfo expr_type_variables var_type_variables
             ownership_values args result List2.empty List2.empty allocator
-            function_converters borrow_sets type_ids
+            function_converters borrow_sets type_ids Map2.empty
     loop (inference_info, index) <- (inference_info, 0) do
         if index >= arg_count
         then break inference_info
@@ -110,7 +111,13 @@ createBorrowSetForExpr :: InferenceInfo -> E.ExprId -> (InferenceInfo, BorrowId)
 createBorrowSetForExpr inference_info expr_id = createBorrowSet inference_info (Local expr_id)
 
 createBorrowSetForExternal :: InferenceInfo -> BorrowId -> (InferenceInfo, BorrowId)
-createBorrowSetForExternal inference_info external_id = createBorrowSet inference_info (External external_id)
+createBorrowSetForExternal inference_info external_id = do
+    case Map2.get inference_info.external_borrows external_id of
+        Some id -> (inference_info, id)
+        None -> do
+    (inference_info, id) <- createBorrowSet inference_info (External external_id)
+    external_borrows <- Map2.put inference_info.external_borrows external_id id
+    (inference_info { external_borrows = external_borrows }, id)
 
 mergeBorrowSets :: InferenceInfo -> BorrowId -> BorrowId -> (InferenceInfo, BorrowId)
 mergeBorrowSets inference_info id1 id2 = do
@@ -340,5 +347,5 @@ instance Apply InferenceInfo where
         type_ids <- List2.dedup (List2.sort type_ids)
         inference_info <- InferenceInfo expr_type_variables var_type_variables ownership_values
             args result members converters inference_info.allocator
-            function_converters inference_info.borrow_sets type_ids
+            function_converters inference_info.borrow_sets type_ids inference_info.external_borrows
         (applier, inference_info)

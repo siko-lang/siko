@@ -93,9 +93,12 @@ processFunctionConverter context from to = do
             if Set.contains context.forced_clones to
             then addOwnershipValue context to M.Owner
             else do
-                (inference_info, id) <- mergeBorrowSets context.inference_info a b
-                context <- context { inference_info = inference_info }
-                addOwnershipValue context to (M.Borrower id)
+                if a == b
+                then context
+                else do
+                    (inference_info, id) <- mergeBorrowSets context.inference_info a b
+                    context <- context { inference_info = inference_info }
+                    addOwnershipValue context to (M.Borrower id)
         (M.Borrower a, M.Unknown) -> do
             if Set.contains context.forced_clones to
             then addOwnershipValue context to M.Owner
@@ -106,7 +109,7 @@ processConverter :: Context -> E.ExprId -> E.ExprId -> Bool -> TypeVariable -> T
 processConverter context converter_expr arg_expr borrowed_expr from to = do
     (context, from_kind) <- getOwnershipValue context from
     (context, to_kind) <- getOwnershipValue context to
-    //println "Checking converter {} {} / {} {}" % (from, to, from_kind, to_kind)
+    //println "Checking converter ({}, {}) {} {} / {} {}" % (converter_expr, arg_expr, from, to, from_kind, to_kind)
     case (from_kind, to_kind) of
         (M.Owner, M.Owner) ->
             if borrowed_expr
@@ -123,6 +126,7 @@ processConverter context converter_expr arg_expr borrowed_expr from to = do
             else do
                 (inference_info, id1) <- createBorrowSetForExpr context.inference_info arg_expr
                 (inference_info, id) <- mergeBorrowSets inference_info id1 id2
+                //println "Borrowing owner {}, {} to {}" % (id1, id2, id)
                 context <- context { inference_info = inference_info }
                 addOwnershipValue context to (M.Borrower id)
         (M.Owner, M.Unknown) -> if Set.contains context.forced_clones to
@@ -133,6 +137,7 @@ processConverter context converter_expr arg_expr borrowed_expr from to = do
             else if borrowed_expr
                 then do
                     (inference_info, id) <- createBorrowSetForExpr context.inference_info arg_expr
+                    //println "Borrowing owner {}" % (id)
                     context <- context { inference_info = inference_info }
                     addOwnershipValue context to (M.Borrower id)
                 else addOwnershipValue context to from_kind
@@ -144,9 +149,13 @@ processConverter context converter_expr arg_expr borrowed_expr from to = do
                 context <- context { cloning_converters = cloning_converters }
                 addOwnershipValue context to M.Owner
             else do
-                (inference_info, id) <- mergeBorrowSets context.inference_info a b
-                context <- context { inference_info = inference_info }
-                addOwnershipValue context to (M.Borrower id)
+                if a == b
+                then context
+                else do
+                    (inference_info, id) <- mergeBorrowSets context.inference_info a b
+                    //println "Merging borrows {}, {} => {}" % (a, b, id)
+                    context <- context { inference_info = inference_info }
+                    addOwnershipValue context to (M.Borrower id)
         (M.Borrower a, M.Unknown) -> do
             if Set.contains context.forced_clones to
             then do
@@ -215,6 +224,7 @@ processExpr context expr = do
                     case (receiver_kind, member_kind) of
                         (_, M.Borrower _) -> addOwnershipValue context info.ownership_var member_kind
                         (M.Borrower _, M.Owner) -> addOwnershipValue context info.ownership_var receiver_kind
+                        (M.Borrower _, M.Unknown) -> addOwnershipValue context info.ownership_var receiver_kind
                         (M.Owner, _) -> addOwnershipValue context info.ownership_var receiver_kind
                         _ -> context
                 None -> case (receiver_kind, expr_kind) of
@@ -260,7 +270,8 @@ processExpr context expr = do
                                 Some o -> o
                                 None -> M.Unknown
                             case (body_kind, var_kind) of
-                                (body_o, M.Unknown) -> addOwnershipValue context var_info.ownership_var body_o
+                                (_, M.Unknown) -> addOwnershipValue context var_info.ownership_var body_kind
+                                (M.Borrower a, M.Owner) -> addOwnershipValue context var_info.ownership_var body_kind
                                 _ -> context
                         _ -> context
                     processExpr context c.body
