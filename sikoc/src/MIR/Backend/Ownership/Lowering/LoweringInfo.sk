@@ -132,29 +132,29 @@ createEmptyTypeLoweringInfo = do
 getLoweringInfoForMember :: Config -> TypeLoweringInfo -> String -> FilterInfo -> (TypeLoweringInfo, FilterInfo)
 getLoweringInfoForMember config lowering_info name filter_info = do
     member <- List2.filter lowering_info.members (\constraint -> case constraint of
-            M.Member n root member_info -> n == name && lowering_info.root.arg_group_var == root
+            M.Member n _ root member_info -> n == name && lowering_info.root.arg_group_var == root
             _ -> False)
     case List2.head member of
-        Some (M.Member name root member_info) -> createTypeLoweringInfoFromTypeLoweringInfo config lowering_info member_info filter_info
+        Some (M.Member name _ root member_info) -> createTypeLoweringInfoFromTypeLoweringInfo config lowering_info member_info filter_info
         Some _ -> panic "member is not a member"
         None -> (createEmptyTypeLoweringInfo, filter_info)
 
 getLoweringInfoForVariant :: Config -> TypeLoweringInfo -> Int -> FilterInfo -> (TypeLoweringInfo, FilterInfo)
 getLoweringInfoForVariant config lowering_info index filter_info = do
     variant <- List2.filter lowering_info.members (\constraint -> case constraint of
-            M.Variant i root member_info -> i == index && lowering_info.root.arg_group_var == root
+            M.Variant i _ root member_info -> i == index && lowering_info.root.arg_group_var == root
             _ -> False)
     case List2.head variant of
-        Some (M.Variant index root member_info) -> createTypeLoweringInfoFromTypeLoweringInfo config lowering_info member_info filter_info
+        Some (M.Variant index _ root member_info) -> createTypeLoweringInfoFromTypeLoweringInfo config lowering_info member_info filter_info
         Some _ -> panic "variant is not a variant"
         None -> (createEmptyTypeLoweringInfo, filter_info)
 
 getLoweringInfoForExtern :: Config -> TypeLoweringInfo -> Int -> FilterInfo -> (TypeLoweringInfo, FilterInfo)
 getLoweringInfoForExtern config lowering_info index filter_info = do
     variant <- List2.filter lowering_info.members (\constraint -> case constraint of
-            M.Extern i root member_info -> i == index && lowering_info.root.arg_group_var == root
+            M.Extern i _ root member_info -> i == index && lowering_info.root.arg_group_var == root
             _ -> False)
     case List2.head variant of
-        Some (M.Extern index root member_info) -> createTypeLoweringInfoFromTypeLoweringInfo config lowering_info member_info filter_info
+        Some (M.Extern index _ root member_info) -> createTypeLoweringInfoFromTypeLoweringInfo config lowering_info member_info filter_info
         Some _ -> panic "extern is not a extern"
         None -> (createEmptyTypeLoweringInfo, filter_info)

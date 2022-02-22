@@ -74,9 +74,9 @@ isBorrowerGroup borrower_map deps_map group ownershipinfos = do
 filterMember :: List2 TypeVariableInfo -> List2 TypeVariable -> M.MemberInfo -> Bool
 filterMember infos vars member =
     case member of
-        M.Variant index root info -> List2.contains infos info && List2.contains vars root
-        M.Member name root info -> List2.contains infos info && List2.contains vars root
-        M.Extern index root info -> List2.contains infos info && List2.contains vars root
+        M.Variant index ty root info -> List2.contains infos info && List2.contains vars root
+        M.Member name ty root info -> List2.contains infos info && List2.contains vars root
+        M.Extern index ty root info -> List2.contains infos info && List2.contains vars root
 
 filterTypeLoweringInfo :: Config -> TypeLoweringInfo -> List2 TypeVariableInfo -> FilterInfo -> (TypeLoweringInfo, FilterInfo)
 filterTypeLoweringInfo config lowering_info sources filter_info = do
@@ -127,20 +127,20 @@ filterLoweringInfo config sources members ownershipinfos filter_info = do
     ownership_vars <- List2.map relevants (\info -> info.ownership_var)
     members <- List2.filter members (filterMember relevants group_vars)
     (members, ownership_vars) <- List2.foldLinear ownership_vars members (\ownership_vars, m -> case m of
-        M.Variant _ root info -> List2.push ownership_vars info.ownership_var
-        M.Member _ root info -> List2.push ownership_vars info.ownership_var
-        M.Extern _ root info -> List2.push ownership_vars info.ownership_var)
+        M.Variant _ _ root info -> List2.push ownership_vars info.ownership_var
+        M.Member _ _ root info -> List2.push ownership_vars info.ownership_var
+        M.Extern _ _ root info -> List2.push ownership_vars info.ownership_var)
     (_, ownershipinfos) <- List2.filterS ownership_vars ownershipinfos M.filterOwnershipInfo
     (members, allocator) <- List2.foldLinear createAllocator members (\allocator, m -> case m of
-        M.Variant _ root info -> do
+        M.Variant _ _ root info -> do
             allocator <- addTypeVariable allocator root
             allocator <- addTypeVariableInfo allocator info
             allocator
-        M.Member _ root info -> do
+        M.Member _ _ root info -> do
             allocator <- addTypeVariable allocator root
             allocator <- addTypeVariableInfo allocator info
             allocator
-        M.Extern _ root info -> do
+        M.Extern _ _ root info -> do
             allocator <- addTypeVariable allocator root
             allocator <- addTypeVariableInfo allocator info
             allocator)

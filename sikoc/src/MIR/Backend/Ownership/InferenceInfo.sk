@@ -42,7 +42,6 @@ data InferenceInfo = { expr_type_variables :: Map2 E.ExprId TypeVariableInfo,
                        allocator :: Allocator,
                        function_converters :: Map2 E.ExprId (List2 Converter),
                        borrow_sets :: Map2 BorrowId BorrowSet,
-                       type_ids :: List2 TypeIdentity,
                        external_borrows :: Map2 BorrowId BorrowId,
                      } deriving (Show)
 
@@ -58,10 +57,9 @@ createInferenceInfoFromLoweringInfo lowering_info = do
     converters <- List2.empty
     function_converters <- Map2.empty
     borrow_sets <- Map2.empty
-    type_ids <- List2.empty
     inference_info <- InferenceInfo expr_type_variables var_type_variables
         ownership_values args result members converters allocator
-        function_converters borrow_sets type_ids Map2.empty
+        function_converters borrow_sets Map2.empty
     inference_info <- List2.foldE (\inference_info, index, arg -> do
         var <- E.Arg index
         (var_type_variables, _) <- Map2.insert inference_info.var_type_variables var arg
@@ -86,11 +84,10 @@ createInferenceInfo arg_count = do
     args <- List2.empty
     function_converters <- Map2.empty
     borrow_sets <- Map2.empty
-    type_ids <- List2.empty
     (allocator, result) <- getNextTypeVariableInfo allocator
     inference_info <- InferenceInfo expr_type_variables var_type_variables
             ownership_values args result List2.empty List2.empty allocator
-            function_converters borrow_sets type_ids Map2.empty
+            function_converters borrow_sets Map2.empty
     loop (inference_info, index) <- (inference_info, 0) do
         if index >= arg_count
         then break inference_info
@@ -162,17 +159,6 @@ addConverter :: InferenceInfo -> Converter -> InferenceInfo
 addConverter inference_info converter = do
     converters <- List2.push inference_info.converters converter
     inference_info { converters = converters }
-
-addTypeIdentity  :: InferenceInfo -> TypeIdentity -> InferenceInfo
-addTypeIdentity inference_info type_id = do
-    type_ids <- List2.push inference_info.type_ids type_id
-    inference_info { type_ids = type_ids }
-
-getTypeIdentity :: InferenceInfo -> TypeVariable -> (InferenceInfo, Option TypeIdentity)
-getTypeIdentity inference_info var = do
-    type_ids <- inference_info.type_ids
-    result <- List2.find type_ids (\type_id -> type_id.var == var)
-    (inference_info, result)
 
 addOwnership :: InferenceInfo -> TypeVariable -> M.OwnershipKind -> InferenceInfo
 addOwnership inference_info var kind = do
@@ -263,15 +249,15 @@ toFunctionInfo config inference_info = do
         //trace config "toFunctionInfo: to ownership infos"
         (input_members, input_ownership_vars) <- List2.foldLinear input_ownership_vars input_members (\vars, member ->
             case member of
-                M.Variant _ _ info -> List2.push vars info.ownership_var
-                M.Member _ _ info -> List2.push vars info.ownership_var
-                M.Extern _ _ info -> List2.push vars info.ownership_var)
+                M.Variant _ _ _ info -> List2.push vars info.ownership_var
+                M.Member _ _ _ info -> List2.push vars info.ownership_var
+                M.Extern _ _ _ info -> List2.push vars info.ownership_var)
         //trace config "toFunctionInfo: collecting output_ownership_vars"
         (output_members, output_ownership_vars) <- List2.foldLinear output_ownership_vars output_members (\vars, member ->
             case member of
-                M.Variant _ _ info -> List2.push vars info.ownership_var
-                M.Member _ _ info -> List2.push vars info.ownership_var
-                M.Extern _ _ info -> List2.push vars info.ownership_var)
+                M.Variant _ _ _ info -> List2.push vars info.ownership_var
+                M.Member _ _ _ info -> List2.push vars info.ownership_var
+                M.Extern _ _ _ info -> List2.push vars info.ownership_var)
         relevant_ownership_vars <- input_ownership_vars + output_ownership_vars
         //trace config "toFunctionInfo: collecting filtered ownership vars"
         (filtered_ownershipinfos, ownership_values) <- loop (filtered_ownershipinfos, relevant_ownership_vars, ownership_values, index) <- (List2.empty, relevant_ownership_vars, inference_info.ownership_values, 0) do
@@ -341,11 +327,9 @@ instance Apply InferenceInfo where
         (applier, members) <- apply applier inference_info.members
         (applier, converters) <- apply applier inference_info.converters
         (applier, function_converters) <- apply applier inference_info.function_converters
-        (applier, type_ids) <- apply applier inference_info.type_ids
         members <- List2.dedup (List2.sort members)
         converters <- List2.dedup (List2.sort converters)
-        type_ids <- List2.dedup (List2.sort type_ids)
         inference_info <- InferenceInfo expr_type_variables var_type_variables ownership_values
             args result members converters inference_info.allocator
-            function_converters inference_info.borrow_sets type_ids inference_info.external_borrows
+            function_converters inference_info.borrow_sets inference_info.external_borrows
         (applier, inference_info)

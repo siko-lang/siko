@@ -40,7 +40,7 @@ createRecordCtorFunctionInfo context type =
             (allocator, result) <- getNextTypeVariableInfo allocator
             (allocator, args, members) <- List.fold (allocator, List2.empty, List2.empty) record.fields (\(allocator, args, members), field -> do
                     (allocator, arg_info) <- getNextTypeVariableInfo allocator
-                    member <- M.Member field.name result.arg_group_var arg_info
+                    member <- M.Member field.name type result.arg_group_var arg_info
                     members <- List2.push members member
                     args <- List2.push args arg_info
                     (allocator, args, members))
@@ -63,11 +63,11 @@ createVariantctorFunctionInfo context index type =
                     (allocator, record_result) <- getNextTypeVariableInfo allocator
                     (allocator, args, members) <- List.fold (allocator, List2.empty, List2.empty) record.fields (\(allocator, args, members), field -> do
                             (allocator, arg_info) <- getNextTypeVariableInfo allocator
-                            member <- M.Member field.name record_result.arg_group_var arg_info
+                            member <- M.Member field.name variant.type record_result.arg_group_var arg_info
                             members <- List2.push members member
                             args <- List2.push args arg_info
                             (allocator, args, members))
-                    variants <- List2.single (M.Variant index adt_result.arg_group_var record_result)
+                    variants <- List2.single (M.Variant index type adt_result.arg_group_var record_result)
                     ownershipinfos <- List2.single (M.OwnershipInfo record_result.ownership_var M.Owner)
                     FunctionInfo args adt_result (members + variants) List2.empty ownershipinfos
                 _ -> panic "createVariantctorFunctionInfo: not a record"
@@ -118,7 +118,7 @@ processFunction context group function_id = do
             function_info <- createRecordCtorFunctionInfo context function.type.result
             processFunctionInfo context function_info function_id
         F.Extern type_mapping -> do
-            function_info <- createExternFunctionInfo function_id type_mapping
+            function_info <- createExternFunctionInfo context.program function_id function.type type_mapping
             processFunctionInfo context function_info function_id
 
 processFunctionGroup :: Int -> Int -> Context -> [P.Identity] -> (Int, Context)

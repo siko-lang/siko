@@ -54,18 +54,18 @@ instance Apply TypeVariableInfo where
 
 instance Apply M.MemberInfo where
     apply applier info = case info of
-        M.Variant index root info -> do
+        M.Variant index ty root info -> do
             (applier, root) <- apply applier root
             (applier, info) <- apply applier info
-            (applier, M.Variant index root info)
-        M.Member name root info -> do
+            (applier, M.Variant index ty root info)
+        M.Member name ty root info -> do
             (applier, root) <- apply applier root
             (applier, info) <- apply applier info
-            (applier, M.Member name root info)
-        M.Extern index root info -> do
+            (applier, M.Member name ty root info)
+        M.Extern index ty root info -> do
             (applier, root) <- apply applier root
             (applier, info) <- apply applier info
-            (applier, M.Extern index root info)
+            (applier, M.Extern index ty root info)
 
 instance Apply M.OwnershipInfo where
     apply applier info = do
@@ -113,13 +113,13 @@ processEquals equals inference_info = do
 getEqualsFromMemberInfos :: List2 M.MemberInfo -> (List2 M.MemberInfo, List2 Equal)
 getEqualsFromMemberInfos members = do
         (members, root_map) <- List2.foldLinear Map2.empty members (\root_map, member_info -> case member_info of
-                M.Variant index root info -> do
+                M.Variant index ty root info -> do
                     (root_map, _) <- Map2.alter (add info) (VariantKey index root) root_map
                     root_map
-                M.Member name root info -> do
+                M.Member name ty root info -> do
                     (root_map, _) <- Map2.alter (add info) (MemberKey name root) root_map
                     root_map
-                M.Extern index root info -> do
+                M.Extern index ty root info -> do
                     (root_map, _) <- Map2.alter (add info) (ExternKey index root) root_map
                     root_map)
         equals <- Map2.fold List2.empty root_map (\equals, (_, infos) -> do

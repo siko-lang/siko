@@ -6,6 +6,7 @@ import Siko.Config
 
 import Siko.MIR.Backend.Ownership.TypeVariableInfo
 import Siko.MIR.Backend.Ownership.BorrowId
+import Siko.MIR.Type as T
 import Siko.Util.DependencyProcessorLinear
 
 import Map2
@@ -17,9 +18,9 @@ data OwnershipKind = Unknown
                    | Borrower BorrowId
                    deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
-data MemberInfo = Variant Int TypeVariable TypeVariableInfo
-                | Member String TypeVariable TypeVariableInfo
-                | Extern Int TypeVariable TypeVariableInfo
+data MemberInfo = Variant Int T.Type TypeVariable TypeVariableInfo
+                | Member String T.Type TypeVariable TypeVariableInfo
+                | Extern Int T.Type TypeVariable TypeVariableInfo
                 deriving (PartialEq, Eq, PartialOrd, Ord, Show)
 
 data OwnershipInfo = { var :: TypeVariable, kind :: OwnershipKind }
@@ -37,13 +38,13 @@ toOwnershipKind infos = List2.fold Map2.empty infos (\kinds, info -> Map2.put ki
 isSubMember :: List2 TypeVariable -> MemberInfo -> (List2 TypeVariable, Bool)
 isSubMember vars constraint =
     case constraint of
-        Variant index root info -> do
+        Variant index ty root info -> do
             r <- List2.contains vars root
             (vars, r)
-        Member name root info -> do
+        Member name ty root info -> do
             r <- List2.contains vars root
             (vars, r)
-        Extern index root info -> do
+        Extern index ty root info -> do
             r <- List2.contains vars root
             (vars, r)
 
@@ -56,14 +57,14 @@ getDependencyMap2 :: List2 MemberInfo -> (List2 MemberInfo, Map2 TypeVariable (L
 getDependencyMap2 members = do
         deps_map <- Map2.empty
         (members, deps_map) <- List2.foldLinear deps_map members (\deps_map, member -> case member of
-                Variant index root info -> Map2.put deps_map info.arg_group_var List2.empty
-                Member name root info -> Map2.put deps_map info.arg_group_var List2.empty
-                Extern index root info -> Map2.put deps_map info.arg_group_var List2.empty
+                Variant index ty root info -> Map2.put deps_map info.arg_group_var List2.empty
+                Member name ty root info -> Map2.put deps_map info.arg_group_var List2.empty
+                Extern index ty root info -> Map2.put deps_map info.arg_group_var List2.empty
             )
         (members, deps_map) <- List2.foldLinear deps_map members (\deps_map, member -> case member of
-                Variant index root info -> addDep deps_map root info.arg_group_var
-                Member name root info -> addDep deps_map root info.arg_group_var
-                Extern index root info -> addDep deps_map root info.arg_group_var
+                Variant index ty root info -> addDep deps_map root info.arg_group_var
+                Member name ty root info -> addDep deps_map root info.arg_group_var
+                Extern index ty root info -> addDep deps_map root info.arg_group_var
             )
         (members, deps_map)
     where
@@ -79,18 +80,18 @@ getDependencyMap sources members = do
         deps_map <- Map2.empty
         deps_map <- List2.fold deps_map sources (\deps_map, info -> addInfo deps_map info)
         deps_map <- List2.fold deps_map members (\deps_map, member -> case member of
-            Variant index root info -> addInfo deps_map info
-            Member name root info -> addInfo deps_map info
-            Extern index root info -> addInfo deps_map info)
+            Variant index ty root info -> addInfo deps_map info
+            Member name ty root info -> addInfo deps_map info
+            Extern index ty root info -> addInfo deps_map info)
         processMembers members deps_map
     where
         processMembers :: List2 MemberInfo -> Map2 TypeVariableInfo (List2 TypeVariableInfo) -> Map2 TypeVariableInfo (List2 TypeVariableInfo)
         processMembers members deps_map =
             List2.fold deps_map members (\deps_map, member ->
                 case member of
-                    Variant index root info -> addDependency deps_map root info
-                    Member name root info -> addDependency deps_map root info
-                    Extern index root info -> addDependency deps_map root info)
+                    Variant index ty root info -> addDependency deps_map root info
+                    Member name ty root info -> addDependency deps_map root info
+                    Extern index ty root info -> addDependency deps_map root info)
 
         addInfo :: Map2 TypeVariableInfo (List2 TypeVariableInfo) -> TypeVariableInfo -> Map2 TypeVariableInfo (List2 TypeVariableInfo)
         addInfo deps_map info = do
