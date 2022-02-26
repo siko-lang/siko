@@ -5,6 +5,7 @@ import Siko.MIR.Backend.Ownership.TypeVariableInfo
 import Siko.MIR.Backend.Ownership.Allocator
 import Siko.MIR.Backend.Ownership.MemberInfo as M
 import Siko.MIR.Backend.Ownership.Duplicator
+import Siko.MIR.Backend.Ownership.EqualitySolver
 
 import Map
 import List2 as List2
@@ -36,3 +37,18 @@ duplicateFunctionInfo allocator function_info = do
     (duplicator, converters) <- List2.mapS duplicator function_info.converters duplicate
     (duplicator, ownershipinfos) <- List2.mapS duplicator function_info.ownershipinfos duplicate
     (duplicator.allocator, FunctionInfo args result members converters ownershipinfos)
+
+instance Apply FunctionInfo where
+    apply applier function_info = do
+        (applier, args) <- apply applier function_info.args
+        (applier, result) <- apply applier function_info.result
+        (applier, members) <- apply applier function_info.members
+        (applier, converters) <- apply applier function_info.converters
+        (applier, ownershipinfos) <- apply applier function_info.ownershipinfos
+        members <- List2.dedup (List2.sort members)
+        converters <- List2.dedup (List2.sort converters)
+        function_info <- FunctionInfo args result members converters ownershipinfos
+        (applier, function_info)
+
+instance MemberOwner FunctionInfo where
+    getMembers function_info = function_info.members

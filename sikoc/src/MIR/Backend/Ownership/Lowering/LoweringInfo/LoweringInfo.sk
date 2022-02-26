@@ -83,37 +83,6 @@ normalizeRef lowering_info = do
     lowering_info <- lowering_info { ownershipinfos = ownershipinfos }
     (lowering_info, ref)
 
-normalizeFunctionLoweringInfo :: Config -> FunctionLoweringInfo -> (FunctionLoweringInfo, Duplicator)
-normalizeFunctionLoweringInfo config lowering_info = do
-    duplicator <- createNormalizer
-    (lowering_info, filter_info) <- getFilterInfoFromFunctionLoweringInfo config lowering_info
-    (ownership_dep_map, ownership_vars) <- getOwnershipVars filter_info.ownership_dep_map lowering_info.result
-    (ownership_dep_map, ownership_vars) <- List2.fold (ownership_dep_map, ownership_vars) lowering_info.args (\(ownership_dep_map, ownership_vars), arg -> do
-        (ownership_dep_map, vars) <- getOwnershipVars ownership_dep_map arg
-        (ownership_dep_map, ownership_vars + vars))
-    filter_info <- filter_info { ownership_dep_map = ownership_dep_map }
-    (duplicator, args) <- List2.mapS duplicator lowering_info.args duplicate
-    (duplicator, result) <- duplicate duplicator lowering_info.result
-    (duplicator, members) <- List2.mapS duplicator lowering_info.members duplicate
-    (duplicator, ownershipinfos) <- List2.mapS duplicator lowering_info.ownershipinfos duplicate
-    members <- members |> List2.sort
-    ownershipinfos <- ownershipinfos |> List2.sort
-    (FunctionLoweringInfo members args result ownershipinfos duplicator.allocator, duplicator)
-
-normalizeTypeLoweringInfo :: Config -> TypeLoweringInfo -> (TypeLoweringInfo, Duplicator)
-normalizeTypeLoweringInfo config lowering_info = do
-    duplicator <- createNormalizer
-    (lowering_info, filter_info) <- getFilterInfoFromTypeLoweringInfo config lowering_info
-    (duplicator, root) <- duplicate duplicator lowering_info.root
-    (ownership_dep_map, ownership_vars) <- getOwnershipVars filter_info.ownership_dep_map lowering_info.root
-    filter_info <- filter_info { ownership_dep_map = ownership_dep_map }
-    (duplicator, ownership_vars_) <- List2.mapS duplicator ownership_vars duplicate
-    (duplicator, members) <- List2.mapS duplicator lowering_info.members duplicate
-    (duplicator, ownershipinfos) <- List2.mapS duplicator lowering_info.ownershipinfos duplicate
-    members <- members |> List2.sort
-    ownershipinfos <- ownershipinfos |> List2.sort
-    (TypeLoweringInfo members root ownershipinfos duplicator.allocator, duplicator)
-
 getLoweringInfoForArg :: Config -> FunctionLoweringInfo -> Int -> FilterInfo -> (TypeLoweringInfo, FilterInfo)
 getLoweringInfoForArg config lowering_info index filter_info = do
     arg <- List2.atIndex lowering_info.args index
@@ -132,10 +101,10 @@ createEmptyTypeLoweringInfo = do
 getLoweringInfoForMember :: Config -> TypeLoweringInfo -> String -> FilterInfo -> (TypeLoweringInfo, FilterInfo)
 getLoweringInfoForMember config lowering_info name filter_info = do
     member <- List2.filter lowering_info.members (\constraint -> case constraint of
-            M.Member n _ root member_info -> n == name && lowering_info.root.arg_group_var == root
+            M.Field n _ root member_info -> n == name && lowering_info.root.arg_group_var == root
             _ -> False)
     case List2.head member of
-        Some (M.Member name _ root member_info) -> createTypeLoweringInfoFromTypeLoweringInfo config lowering_info member_info filter_info
+        Some (M.Field name _ root member_info) -> createTypeLoweringInfoFromTypeLoweringInfo config lowering_info member_info filter_info
         Some _ -> panic "member is not a member"
         None -> (createEmptyTypeLoweringInfo, filter_info)
 

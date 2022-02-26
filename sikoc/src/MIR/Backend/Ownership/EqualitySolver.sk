@@ -1,13 +1,14 @@
-module Siko.MIR.Backend.Ownership.EqualitySolver(processEquals, addEqual, Equal(..), Apply, apply) where
+module Siko.MIR.Backend.Ownership.EqualitySolver(processEquals, addEqual, Equal(..), Apply, apply, MemberOwner, getMembers) where
 
 import Siko.MIR.Backend.Ownership.TypeVariableInfo
 import Siko.MIR.Backend.Ownership.MemberInfo as M
-import Siko.MIR.Backend.Ownership.InferenceInfo
 import Map
 import List2 as List2
 import List2 (List2)
 import Map2 as Map2
 import Map2 (Map2)
+
+data Equal = Equal TypeVariable TypeVariable deriving (Show)
 
 data Applier = { equals :: Map2 TypeVariable TypeVariable } deriving (Show)
 
@@ -22,6 +23,9 @@ addSingleEqual applier equal = do
         equals <- Map2.put applier.equals max_id min_id
         applier { equals = equals }
     else applier
+
+class MemberOwner a where
+    getMembers a :: a -> List2 M.MemberInfo
 
 class Apply a where
     apply a :: Applier -> a -> (Applier, a)
@@ -58,10 +62,10 @@ instance Apply M.MemberInfo where
             (applier, root) <- apply applier root
             (applier, info) <- apply applier info
             (applier, M.Variant index ty root info)
-        M.Member name ty root info -> do
+        M.Field name ty root info -> do
             (applier, root) <- apply applier root
             (applier, info) <- apply applier info
-            (applier, M.Member name ty root info)
+            (applier, M.Field name ty root info)
         M.Extern index ty root info -> do
             (applier, root) <- apply applier root
             (applier, info) <- apply applier info
@@ -74,8 +78,6 @@ instance Apply M.OwnershipInfo where
 
 instance (Apply v, Ord k) => Apply Map2 k v where
     apply applier items = Map2.updateS applier items (\applier, (k, v) -> apply applier v)
-
-data Equal = Equal TypeVariable TypeVariable deriving (Show)
 
 addEquals :: List2 Equal -> Applier -> Applier
 addEquals equals applier = do
@@ -97,30 +99,30 @@ addEqual equals info1 info2 = do
     equals <- List2.push equals (Equal info1.arg_group_var info2.arg_group_var)
     equals
 
-processEquals :: List2 Equal -> InferenceInfo -> InferenceInfo
-processEquals equals inference_info = do
+processEquals a :: (MemberOwner a, Apply a) => List2 Equal -> a -> a
+processEquals equals owner = do
     applier <- addEquals equals (Applier Map2.empty)
-    members <- inference_info.members
+    members <- getMembers owner
     loop (members, applier, count) <- (members, applier, 0) do
         (applier, members) <- apply applier members
         (members, equals) <- getEqualsFromMemberInfos members
         if List2.isEmpty equals
         then do
-            (applier, inference_info) <- apply applier inference_info
-            break inference_info
+            (applier, owner) <- apply applier owner
+            break owner
         else (members, addEquals equals applier, count + 1)
 
 getEqualsFromMemberInfos :: List2 M.MemberInfo -> (List2 M.MemberInfo, List2 Equal)
 getEqualsFromMemberInfos members = do
         (members, root_map) <- List2.foldLinear Map2.empty members (\root_map, member_info -> case member_info of
                 M.Variant index ty root info -> do
-                    (root_map, _) <- Map2.alter (add info) (VariantKey index root) root_map
+                    (root_map, _) <- Map2.alter (addInfo info) (VariantKey index root) root_map
                     root_map
-                M.Member name ty root info -> do
-                    (root_map, _) <- Map2.alter (add info) (MemberKey name root) root_map
+                M.Field name ty root info -> do
+                    (root_map, _) <- Map2.alter (addInfo info) (MemberKey name root) root_map
                     root_map
                 M.Extern index ty root info -> do
-                    (root_map, _) <- Map2.alter (add info) (ExternKey index root) root_map
+                    (root_map, _) <- Map2.alter (addInfo info) (ExternKey index root) root_map
                     root_map)
         equals <- Map2.fold List2.empty root_map (\equals, (_, infos) -> do
             if List2.getLength infos > 1
@@ -131,6 +133,6 @@ getEqualsFromMemberInfos members = do
             else equals)
         (members, equals)
     where
-        add info old = case old of
+        addInfo info old = case old of
             Some infos -> Some (List2.dedup (List2.sort (List2.push infos info)))
             None -> Some (List2.single info)

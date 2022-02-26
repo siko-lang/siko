@@ -43,8 +43,8 @@ getImportsForSourceFile import_map source_file =
                 module_imports <- List.filterMap mod.items M.toImport
                 (module_name, module_imports)
 
-add :: ResolvedItem -> Option [ResolvedItem] -> Option [ResolvedItem]
-add resolved_item items = case items of
+addResolvedItem :: ResolvedItem -> Option [ResolvedItem] -> Option [ResolvedItem]
+addResolvedItem resolved_item items = case items of
     Some items -> if contains items resolved_item
             then Some items
             else Some (items + [resolved_item])
@@ -53,14 +53,14 @@ add resolved_item items = case items of
 addTypeName :: ModuleResolver -> ItemRef -> ResolvedItem -> ModuleResolver
 addTypeName module_resolver item_ref resolved_item = do
         name <- unpackItemRef item_ref
-        (type_names, _) <- alter (add resolved_item) name module_resolver.type_names
+        (type_names, _) <- alter (addResolvedItem resolved_item) name module_resolver.type_names
         module_resolver <- module_resolver { type_names = type_names }
         module_resolver
 
 addTermName :: ModuleResolver -> ItemRef -> ResolvedItem -> ModuleResolver
 addTermName module_resolver item_ref resolved_item = do
         name <- unpackItemRef item_ref
-        (term_names, _) <- alter (add resolved_item) name module_resolver.term_names
+        (term_names, _) <- alter (addResolvedItem resolved_item) name module_resolver.term_names
         module_resolver <- module_resolver { term_names = term_names }
         module_resolver
 

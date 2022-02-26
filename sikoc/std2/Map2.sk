@@ -62,6 +62,14 @@ alterS f s k m = do
             (s, m, v)
 
 @Inline
+add k v :: (Ord k) => Map2 k (List2 v) -> k -> v -> Map2 k (List2 v)
+add m k v = do
+    (m, _) <- Map2.alter (\old -> case old of
+                        Some vs -> Some (List2.push vs v)
+                        None -> Some (List2.single v)) k m
+    m
+
+@Inline
 addS s k v :: (Ord k) => s -> k -> Map2 k v -> (s -> k -> (s, v)) -> (s, v, Map2 k v)
 addS s k m f = do
     ((s, v), m, _) <- alterS (\s, old -> case old of

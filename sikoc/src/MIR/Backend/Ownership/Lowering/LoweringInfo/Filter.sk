@@ -8,6 +8,7 @@ import Siko.MIR.Backend.Ownership.TypeVariableInfo
 import Siko.MIR.Backend.Ownership.MemberInfo as M
 import Siko.MIR.Backend.Ownership.Lowering.LoweringInfo
 import Siko.MIR.Backend.Ownership.Allocator
+import Siko.MIR.Backend.Ownership.Lowering.LoweringInfo.DependencyMap
 
 import Map
 import Map2
@@ -75,7 +76,7 @@ filterMember :: List2 TypeVariableInfo -> List2 TypeVariable -> M.MemberInfo -> 
 filterMember infos vars member =
     case member of
         M.Variant index ty root info -> List2.contains infos info && List2.contains vars root
-        M.Member name ty root info -> List2.contains infos info && List2.contains vars root
+        M.Field name ty root info -> List2.contains infos info && List2.contains vars root
         M.Extern index ty root info -> List2.contains infos info && List2.contains vars root
 
 filterTypeLoweringInfo :: Config -> TypeLoweringInfo -> List2 TypeVariableInfo -> FilterInfo -> (TypeLoweringInfo, FilterInfo)
@@ -94,41 +95,73 @@ filterFunctionLoweringInfo config lowering_info sources filter_info = do
     //println "------------ end filterInfo {} / {}-----------" % (lowering_info, sources)
     (lowering_info, filter_info)
 
+processTypeVariableInfo :: List2 TypeVariableInfo
+                           -> Map2 TypeVariable (List2 TypeVariableInfo)
+                           -> Map2 TypeVariable M.OwnershipKind
+                           -> List2 TypeVariableInfo
+                           -> TypeVariableInfo ->
+                           (List2 TypeVariableInfo, Map2 TypeVariable (List2 TypeVariableInfo), Map2 TypeVariable M.OwnershipKind, List2 TypeVariableInfo)
+processTypeVariableInfo visited deps_map kind_map relevants info = do
+    if List2.contains visited info
+    then (visited, deps_map, kind_map, relevants)
+    else do
+        visited <- List2.push visited info
+        (visited, deps_map, kind_map, relevants, child_relevant) <- case Map2.get deps_map info.arg_group_var of
+            Some deps -> do
+                List2.fold (visited, deps_map, kind_map, relevants, False) deps (\(visited, deps_map, kind_map, relevants, child_relevant), info -> do
+                    (visited, deps_map, kind_map, relevants) <- processTypeVariableInfo visited deps_map kind_map relevants info
+                    (visited, deps_map, kind_map, relevants, child_relevant || List2.contains relevants info))
+            None -> (visited, deps_map, kind_map, relevants, False)
+        borrower <- case Map2.get kind_map info.ownership_var of
+            Some ownership ->
+                case ownership of
+                    M.Borrower _ -> True
+                    _ -> False
+            None -> False
+        relevants <- if borrower || child_relevant
+        then List2.push relevants info
+        else relevants
+        (visited, deps_map, kind_map, relevants)
+
 filterLoweringInfo :: Config -> List2 TypeVariableInfo ->
                       List2 M.MemberInfo -> List2 M.OwnershipInfo ->
                       FilterInfo ->
                       (List2 M.MemberInfo, List2 M.OwnershipInfo, Allocator, FilterInfo)
 filterLoweringInfo config sources members ownershipinfos filter_info = do
-    source_group_vars <- List2.fold List2.empty sources (\vars, source -> List2.push vars source.arg_group_var)
-    (_, (all_group_vars, filter_info)) <- List2.foldLinear (source_group_vars, filter_info) source_group_vars
-        (\(all_group_vars, filter_info), var -> do
-            all_group_vars <- case Map2.get filter_info.group_dep_map var of
-                Some group_vars -> all_group_vars + group_vars
-                None -> all_group_vars
-            (List2.push all_group_vars var, filter_info))
-    all_group_vars <- all_group_vars |> List2.sort |> List2.dedup
-    //println "group_dep_map: {}" % filter_info.group_dep_map
-    //println "all_group_vars {}" % all_group_vars
-    (_, members) <- List2.filterS all_group_vars members M.isSubMember
-    //println "filtered_members {}" % members
-    deps_map <- M.getDependencyMap sources members
-    groups <- processDependencies config deps_map
-    //println "Groups {}, {}" % (groups, deps_map)
-    (groups, (deps_map, borrower_map, ownershipinfos)) <- List2.foldLinear (deps_map, Map2.empty, ownershipinfos) groups (\(deps_map, borrower_map, ownershipinfos), group -> do
-        (borrower_map, deps_map, ownershipinfos, is_borrower) <- isBorrowerGroup borrower_map deps_map group.items ownershipinfos
-        borrower_map <- List2.fold borrower_map group.items (\borrower_map, item -> Map2.put borrower_map item is_borrower)
-        (deps_map, borrower_map, ownershipinfos))
-    borrowers <- Map2.getKeys (Map2.filter borrower_map (\(k, v) -> v))
-    relevants <- borrowers + sources
+    (members, deps_map) <- getDependencyMap members
+    kind_map <- M.toOwnershipKind ownershipinfos
+    (visited, deps_map, kind_map, relevants) <- List2.fold (List2.empty, deps_map, kind_map, List2.empty) sources (\(visited, deps_map, kind_map, relevants), source ->
+         processTypeVariableInfo visited deps_map kind_map relevants source)
+    //println "boo Relevants {}" % relevants
+    // source_group_vars <- List2.fold List2.empty sources (\vars, source -> List2.push vars source.arg_group_var)
+    // (_, (all_group_vars, filter_info)) <- List2.foldLinear (source_group_vars, filter_info) source_group_vars
+    //     (\(all_group_vars, filter_info), var -> do
+    //         all_group_vars <- case Map2.get filter_info.group_dep_map var of
+    //             Some group_vars -> all_group_vars + group_vars
+    //             None -> all_group_vars
+    //         (List2.push all_group_vars var, filter_info))
+    // all_group_vars <- all_group_vars |> List2.sort |> List2.dedup
+    // //println "group_dep_map: {}" % filter_info.group_dep_map
+    // //println "all_group_vars {}" % all_group_vars
+    // (_, members) <- List2.filterS all_group_vars members M.isSubMember
+    // //println "filtered_members {}" % members
+    // deps_map <- M.getDependencyMap sources members
+    // groups <- processDependencies config deps_map
+    // println "Groups {}, {}" % (groups, deps_map)
+    // (groups, (deps_map, borrower_map, ownershipinfos)) <- List2.foldLinear (deps_map, Map2.empty, ownershipinfos) groups (\(deps_map, borrower_map, ownershipinfos), group -> do
+    //     (borrower_map, deps_map, ownershipinfos, is_borrower) <- isBorrowerGroup borrower_map deps_map group.items ownershipinfos
+    //     borrower_map <- List2.fold borrower_map group.items (\borrower_map, item -> Map2.put borrower_map item is_borrower)
+    //     (deps_map, borrower_map, ownershipinfos))
+    // borrowers <- Map2.getKeys (Map2.filter borrower_map (\(k, v) -> v))
+    relevants <- relevants + sources
     //println "borrower_map {}" % borrower_map
-    //println "borrowers {}" % borrowers
     //println "relevants {}" % relevants
     group_vars <- List2.map relevants (\info -> info.arg_group_var)
     ownership_vars <- List2.map relevants (\info -> info.ownership_var)
     members <- List2.filter members (filterMember relevants group_vars)
     (members, ownership_vars) <- List2.foldLinear ownership_vars members (\ownership_vars, m -> case m of
         M.Variant _ _ root info -> List2.push ownership_vars info.ownership_var
-        M.Member _ _ root info -> List2.push ownership_vars info.ownership_var
+        M.Field _ _ root info -> List2.push ownership_vars info.ownership_var
         M.Extern _ _ root info -> List2.push ownership_vars info.ownership_var)
     (_, ownershipinfos) <- List2.filterS ownership_vars ownershipinfos M.filterOwnershipInfo
     (members, allocator) <- List2.foldLinear createAllocator members (\allocator, m -> case m of
@@ -136,7 +169,7 @@ filterLoweringInfo config sources members ownershipinfos filter_info = do
             allocator <- addTypeVariable allocator root
             allocator <- addTypeVariableInfo allocator info
             allocator
-        M.Member _ _ root info -> do
+        M.Field _ _ root info -> do
             allocator <- addTypeVariable allocator root
             allocator <- addTypeVariableInfo allocator info
             allocator

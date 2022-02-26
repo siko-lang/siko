@@ -104,6 +104,14 @@ alterS f s k m = do
             (s, m, v)
 
 @Inline
+add k v :: (Ord k) => Map k [v] -> k -> v -> Map k ([v])
+add m k v = do
+    (m, _) <- alter (\old -> case old of
+                        Some vs -> Some (push vs v)
+                        None -> Some ([v])) k m
+    m
+
+@Inline
 addS s k v :: (Ord k) => s -> k -> Map k v -> (s -> k -> (s, v)) -> (s, v, Map k v)
 addS s k m f = do
     ((s, v), m, _) <- alterS (\s, old -> case old of

@@ -211,13 +211,8 @@ addHandler context info index (E.EffectHandler qn _ location) = do
 
         addEffectHandler :: HandledEffect -> PO.FullyQualifiedName -> Location -> Int -> HandledEffect
         addEffectHandler handled_effect qn location index = do
-                (handlers, _) <- alter (add (HandlerInfo location index)) qn handled_effect.handlers
-                handled_effect { handlers = handlers }
-            where
-                add :: HandlerInfo -> Option [HandlerInfo] -> Option [HandlerInfo]
-                add info old_info = case old_info of
-                    Some infos -> Some (List.push infos info)
-                    None -> Some [info]
+            handlers <- add handled_effect.handlers qn (HandlerInfo location index)
+            handled_effect { handlers = handlers }
 
 checkHandlerConsistency :: Context -> Location -> HandledEffectInfo -> Context
 checkHandlerConsistency context location info = do

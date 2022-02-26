@@ -44,6 +44,13 @@ alter f k m =
         Some v -> Map2.insert m k v
         None -> Map2.remove m k
 
+add k v :: (Ord k) => Map2 k (List2 v) -> k -> v -> Map2 k (List2 v)
+add m k v = do
+    (m, _) <- Map2.alter (\old -> case old of
+                        Some vs -> Some (List2.push vs v)
+                        None -> Some (List2.single v)) k m
+    m
+
 alterS si so k v :: (Ord k) => (si -> Option v -> (so, Option v)) -> si -> k -> Map2 k v -> (so, Map2 k v, Option v)
 alterS f s k m = do
     (s, v) <- f s (get m k)

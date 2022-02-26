@@ -19,7 +19,7 @@ data OwnershipKind = Unknown
                    deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
 data MemberInfo = Variant Int T.Type TypeVariable TypeVariableInfo
-                | Member String T.Type TypeVariable TypeVariableInfo
+                | Field String T.Type TypeVariable TypeVariableInfo
                 | Extern Int T.Type TypeVariable TypeVariableInfo
                 deriving (PartialEq, Eq, PartialOrd, Ord, Show)
 
@@ -41,7 +41,7 @@ isSubMember vars constraint =
         Variant index ty root info -> do
             r <- List2.contains vars root
             (vars, r)
-        Member name ty root info -> do
+        Field name ty root info -> do
             r <- List2.contains vars root
             (vars, r)
         Extern index ty root info -> do
@@ -58,12 +58,12 @@ getDependencyMap2 members = do
         deps_map <- Map2.empty
         (members, deps_map) <- List2.foldLinear deps_map members (\deps_map, member -> case member of
                 Variant index ty root info -> Map2.put deps_map info.arg_group_var List2.empty
-                Member name ty root info -> Map2.put deps_map info.arg_group_var List2.empty
+                Field name ty root info -> Map2.put deps_map info.arg_group_var List2.empty
                 Extern index ty root info -> Map2.put deps_map info.arg_group_var List2.empty
             )
         (members, deps_map) <- List2.foldLinear deps_map members (\deps_map, member -> case member of
                 Variant index ty root info -> addDep deps_map root info.arg_group_var
-                Member name ty root info -> addDep deps_map root info.arg_group_var
+                Field name ty root info -> addDep deps_map root info.arg_group_var
                 Extern index ty root info -> addDep deps_map root info.arg_group_var
             )
         (members, deps_map)
@@ -81,7 +81,7 @@ getDependencyMap sources members = do
         deps_map <- List2.fold deps_map sources (\deps_map, info -> addInfo deps_map info)
         deps_map <- List2.fold deps_map members (\deps_map, member -> case member of
             Variant index ty root info -> addInfo deps_map info
-            Member name ty root info -> addInfo deps_map info
+            Field name ty root info -> addInfo deps_map info
             Extern index ty root info -> addInfo deps_map info)
         processMembers members deps_map
     where
@@ -90,7 +90,7 @@ getDependencyMap sources members = do
             List2.fold deps_map members (\deps_map, member ->
                 case member of
                     Variant index ty root info -> addDependency deps_map root info
-                    Member name ty root info -> addDependency deps_map root info
+                    Field name ty root info -> addDependency deps_map root info
                     Extern index ty root info -> addDependency deps_map root info)
 
         addInfo :: Map2 TypeVariableInfo (List2 TypeVariableInfo) -> TypeVariableInfo -> Map2 TypeVariableInfo (List2 TypeVariableInfo)

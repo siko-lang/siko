@@ -213,10 +213,10 @@ processExpr context expr = do
             (context, receiver_kind) <- getOwnershipValue context receiver_info.ownership_var
             (context, expr_kind) <- getOwnershipValue context info.ownership_var
             member <- List2.filter context.inference_info.members (\m -> case m of
-                    M.Member n ty root member_info -> n == name && receiver_info.arg_group_var == root
+                    M.Field n ty root member_info -> n == name && receiver_info.arg_group_var == root
                     _ -> False)
             member_info <- case List2.head member of
-                Some (M.Member name ty root member_info) -> member_info
+                Some (M.Field name ty root member_info) -> member_info
                 _ -> panic "member info for field access not found!"
             (context, ownership) <- getOwnershipValueMaybe context member_info.ownership_var
             case ownership of

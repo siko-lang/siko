@@ -1,0 +1,35 @@
+module Siko.MIR.Backend.Ownership.TypeMerger where
+
+import Siko.MIR.Backend.Ownership.MemberInfo as M
+import Siko.MIR.Backend.Ownership.TypeVariableInfo
+import Siko.MIR.Backend.Ownership.EqualitySolver
+import Siko.MIR.Type as T
+
+import Map2
+import List2 as List2
+import List2 (List2)
+
+data TypeInfo = TypeInfo T.Type TypeVariableInfo deriving (PartialEq, Eq, PartialOrd, Ord, Show)
+
+getTypeInfoMap :: List2 M.MemberInfo  -> (List2 M.MemberInfo , Map2 TypeVariable (List2 TypeInfo))
+getTypeInfoMap members = do
+    type_info_map <- Map2.empty
+    (members, type_info_map) <- List2.foldLinear type_info_map members (\type_info_map, m -> case m of
+        M.Variant _ ty root info -> Map2.add type_info_map root (TypeInfo ty info)
+        M.Field _ ty root info -> Map2.add type_info_map root (TypeInfo ty info)
+        M.Extern _ ty root info -> Map2.add type_info_map root (TypeInfo ty info))
+    (members, type_info_map)
+
+mergeTypes :: List2 M.MemberInfo -> (List2 M.MemberInfo, List2 Equal)
+mergeTypes members = do
+    (members, type_info_map) <- getTypeInfoMap members
+    inverse_type_info_map <- Map2.fold Map2.empty type_info_map (\inverse_type_info_map, (root, type_infos) -> Map2.add inverse_type_info_map type_infos root)
+    equals <- Map2.fold List2.empty inverse_type_info_map (\equals, (type_infos, roots) -> do
+        first <- List2.atIndex roots 0
+        if List2.getLength roots > 1
+        then List2.fold equals roots (\equals, var ->
+            if first != var
+            then List2.push equals (Equal first var)
+            else equals)
+        else equals)
+    (members, equals)

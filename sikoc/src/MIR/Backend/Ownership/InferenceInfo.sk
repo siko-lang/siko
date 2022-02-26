@@ -43,7 +43,7 @@ data InferenceInfo = { expr_type_variables :: Map2 E.ExprId TypeVariableInfo,
                        function_converters :: Map2 E.ExprId (List2 Converter),
                        borrow_sets :: Map2 BorrowId BorrowSet,
                        external_borrows :: Map2 BorrowId BorrowId,
-                     } deriving (Show)
+                     } deriving (PartialEq, Eq, PartialOrd, Ord, Show)
 
 createInferenceInfoFromLoweringInfo :: FunctionLoweringInfo -> InferenceInfo
 createInferenceInfoFromLoweringInfo lowering_info = do
@@ -242,7 +242,7 @@ toFunctionInfo config inference_info = do
             res <- not (List2.contains input_members m)
             (input_members, res))
         input_members <- filtered_input_members
-        output_members <- filtered_output_members
+        //output_members <- filtered_output_members
         output_ownership_vars <- List2.single inference_info.result.ownership_var
         input_ownership_vars <- List2.fold List2.empty inference_info.args
             (\ownership_vars, info -> List2.push ownership_vars info.ownership_var)
@@ -250,13 +250,13 @@ toFunctionInfo config inference_info = do
         (input_members, input_ownership_vars) <- List2.foldLinear input_ownership_vars input_members (\vars, member ->
             case member of
                 M.Variant _ _ _ info -> List2.push vars info.ownership_var
-                M.Member _ _ _ info -> List2.push vars info.ownership_var
+                M.Field _ _ _ info -> List2.push vars info.ownership_var
                 M.Extern _ _ _ info -> List2.push vars info.ownership_var)
         //trace config "toFunctionInfo: collecting output_ownership_vars"
         (output_members, output_ownership_vars) <- List2.foldLinear output_ownership_vars output_members (\vars, member ->
             case member of
                 M.Variant _ _ _ info -> List2.push vars info.ownership_var
-                M.Member _ _ _ info -> List2.push vars info.ownership_var
+                M.Field _ _ _ info -> List2.push vars info.ownership_var
                 M.Extern _ _ _ info -> List2.push vars info.ownership_var)
         relevant_ownership_vars <- input_ownership_vars + output_ownership_vars
         //trace config "toFunctionInfo: collecting filtered ownership vars"
@@ -333,3 +333,6 @@ instance Apply InferenceInfo where
             args result members converters inference_info.allocator
             function_converters inference_info.borrow_sets inference_info.external_borrows
         (applier, inference_info)
+
+instance MemberOwner InferenceInfo where
+    getMembers inference_info = inference_info.members
