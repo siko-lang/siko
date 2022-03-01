@@ -1,6 +1,7 @@
 module Siko.MIR.Backend.Ownership.Lowering.LoweringInfo.Filter where
 
 import Siko.Config
+import Siko.Trace
 import Siko.Util.DependencyProcessorLinear
 import Siko.MIR.Backend.Ownership.GroupDependencyMap
 import Siko.MIR.Backend.Ownership.OwnershipDependencyMap
@@ -81,47 +82,48 @@ filterMember infos vars member =
 
 filterTypeLoweringInfo :: Config -> TypeLoweringInfo -> List2 TypeVariableInfo -> FilterInfo -> (TypeLoweringInfo, FilterInfo)
 filterTypeLoweringInfo config lowering_info sources filter_info = do
-    //println "------------ start filterInfo {} / {}-----------" % (lowering_info, sources)
+    //trace config "------------ start filterInfo {} / {}-----------" % (lowering_info, sources)
     (members, ownershipinfos, allocator, filter_info) <- filterLoweringInfo config sources lowering_info.members lowering_info.ownershipinfos filter_info
     lowering_info <- lowering_info { members = members, ownershipinfos = ownershipinfos, allocator = allocator }
-    //println "------------ end filterInfo {} / {}-----------" % (lowering_info, sources)
+    //trace config "------------ end filterInfo {} / {}-----------" % (lowering_info, sources)
     (lowering_info, filter_info)
 
 filterFunctionLoweringInfo :: Config -> FunctionLoweringInfo -> List2 TypeVariableInfo -> FilterInfo -> (FunctionLoweringInfo, FilterInfo)
 filterFunctionLoweringInfo config lowering_info sources filter_info = do
-    //println "------------ start filterInfo {} / {}-----------" % (lowering_info, sources)
+    //trace config "------------ start filterInfo {} / {}-----------" % (lowering_info, sources)
     (members, ownershipinfos, allocator, filter_info) <- filterLoweringInfo config sources lowering_info.members lowering_info.ownershipinfos filter_info
     lowering_info <- lowering_info { members = members, ownershipinfos = ownershipinfos, allocator = allocator }
-    //println "------------ end filterInfo {} / {}-----------" % (lowering_info, sources)
+    //trace config "------------ end filterInfo {} / {}-----------" % (lowering_info, sources)
     (lowering_info, filter_info)
 
-processTypeVariableInfo :: List2 TypeVariableInfo
+processTypeVariableInfo :: List2 TypeVariable
                            -> Map2 TypeVariable (List2 TypeVariableInfo)
                            -> Map2 TypeVariable M.OwnershipKind
                            -> List2 TypeVariableInfo
                            -> TypeVariableInfo ->
-                           (List2 TypeVariableInfo, Map2 TypeVariable (List2 TypeVariableInfo), Map2 TypeVariable M.OwnershipKind, List2 TypeVariableInfo)
+                           (Map2 TypeVariable (List2 TypeVariableInfo), Map2 TypeVariable M.OwnershipKind, List2 TypeVariableInfo)
 processTypeVariableInfo visited deps_map kind_map relevants info = do
-    if List2.contains visited info
-    then (visited, deps_map, kind_map, relevants)
+    if List2.contains visited info.arg_group_var
+    then (deps_map, kind_map, relevants)
     else do
-        visited <- List2.push visited info
-        (visited, deps_map, kind_map, relevants, child_relevant) <- case Map2.get deps_map info.arg_group_var of
+        visited <- List2.push visited info.arg_group_var
+        before <- List2.getLength relevants
+        (deps_map, kind_map, relevants) <- case Map2.get deps_map info.arg_group_var of
             Some deps -> do
-                List2.fold (visited, deps_map, kind_map, relevants, False) deps (\(visited, deps_map, kind_map, relevants, child_relevant), info -> do
-                    (visited, deps_map, kind_map, relevants) <- processTypeVariableInfo visited deps_map kind_map relevants info
-                    (visited, deps_map, kind_map, relevants, child_relevant || List2.contains relevants info))
-            None -> (visited, deps_map, kind_map, relevants, False)
+                List2.fold (deps_map, kind_map, relevants) deps (\(deps_map, kind_map, relevants), info -> do
+                    processTypeVariableInfo visited deps_map kind_map relevants info)
+            None -> (deps_map, kind_map, relevants)
+        after <- List2.getLength relevants
         borrower <- case Map2.get kind_map info.ownership_var of
             Some ownership ->
                 case ownership of
                     M.Borrower _ -> True
                     _ -> False
             None -> False
-        relevants <- if borrower || child_relevant
+        relevants <- if borrower || (after > before)
         then List2.push relevants info
         else relevants
-        (visited, deps_map, kind_map, relevants)
+        (deps_map, kind_map, relevants)
 
 filterLoweringInfo :: Config -> List2 TypeVariableInfo ->
                       List2 M.MemberInfo -> List2 M.OwnershipInfo ->
@@ -130,8 +132,8 @@ filterLoweringInfo :: Config -> List2 TypeVariableInfo ->
 filterLoweringInfo config sources members ownershipinfos filter_info = do
     (members, deps_map) <- getDependencyMap members
     kind_map <- M.toOwnershipKind ownershipinfos
-    (visited, deps_map, kind_map, relevants) <- List2.fold (List2.empty, deps_map, kind_map, List2.empty) sources (\(visited, deps_map, kind_map, relevants), source ->
-         processTypeVariableInfo visited deps_map kind_map relevants source)
+    (deps_map, kind_map, relevants) <- List2.fold (deps_map, kind_map, List2.empty) sources (\(deps_map, kind_map, relevants), source -> do
+         processTypeVariableInfo List2.empty deps_map kind_map relevants source)
     //println "boo Relevants {}" % relevants
     // source_group_vars <- List2.fold List2.empty sources (\vars, source -> List2.push vars source.arg_group_var)
     // (_, (all_group_vars, filter_info)) <- List2.foldLinear (source_group_vars, filter_info) source_group_vars

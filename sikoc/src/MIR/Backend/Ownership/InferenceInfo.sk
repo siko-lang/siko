@@ -168,7 +168,9 @@ addOwnership inference_info var kind = do
 maybeAddOwnership :: InferenceInfo -> TypeVariable -> M.OwnershipKind -> InferenceInfo
 maybeAddOwnership inference_info var kind = do
     (ownership_values, _) <- Map2.alter (\old -> case old of
-        Some old -> Some old
+        Some old -> case old of
+            M.Unknown -> Some kind
+            old -> Some old
         None -> Some kind) var inference_info.ownership_values
     inference_info { ownership_values = ownership_values }
 
