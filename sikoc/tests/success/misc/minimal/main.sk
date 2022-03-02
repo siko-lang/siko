@@ -1,4 +1,30 @@
 module Main where
 
+data Option a = Some a | None
+
+class Other a
+
+class Iterator2 a > b where
+    next a b :: a -> (a, Option b)
+    next a = (a, None)
+
+data Foo = Foo
+
+data Bar = Bar
+
+instance Iterator2 Foo > Bar where
+    next :: Foo -> (Foo, Option Bar)
+    next f = (f, Some Bar)
+
+someFunc1 = do
+    a <- Foo
+    next a
+
+someFunc2 a = next a
+
+someFunc3 e f :: (Iterator2 e > f) => e -> f -> (e, Option Foo)
+someFunc3 a b = next a
+
 main = do
-    a <- ()
+    a <- someFunc1
+    ()

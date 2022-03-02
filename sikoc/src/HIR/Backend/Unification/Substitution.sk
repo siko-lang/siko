@@ -1,13 +1,16 @@
 module Siko.HIR.Backend.Unification.Substitution where
 
 import Siko.HIR.Type
-import Siko.HIR.Backend.TypeFormatter as TF
+import Siko.HIR.TypeFormatter as TF
 import Siko.HIR.Program as P
 import Siko.HIR.Backend.Unification.TypeVarGenerator
 import Siko.HIR.Data as D
 import Map
 
-data UnificationConstraint = UnificationConstraint P.FullyQualifiedName Type deriving (Show)
+data UnificationConstraint = { class_name :: P.FullyQualifiedName,
+                               type :: Type,
+                               associated_types :: [Type]
+                             } deriving (Show)
 
 data Substitution = { vars :: Map TypeVar Type,
                       constraints :: [UnificationConstraint]
@@ -33,7 +36,7 @@ instance Apply Type where
             Some t -> apply t sub
             None -> do
                 constraints <- constraints |> List.iter |> Iterator.map (\c -> case c of
-                    ClassConstraint s -> c
+                    ClassConstraint s associated_types -> ClassConstraint s (List.map associated_types (\ty -> apply ty sub))
                     RowConstraint name ty -> RowConstraint name (apply ty sub)) |> toList
                 (Var var constraints)
         FixedTypeArg _ var _ -> case get sub.vars var of
@@ -56,20 +59,20 @@ instance Apply Type where
             Tuple args
 
 constraintsContainsVar :: [Constraint] -> TypeVar -> Bool
-constraintsContainsVar constraints var = constraints |> List.iter |> Iterator.fold (\contains, constraint -> contains || case constraint of
-    ClassConstraint _ -> False
-    RowConstraint _ row_type -> containsVar row_type var) False
+constraintsContainsVar constraints var = List.fold False constraints (\contains, constraint -> contains || case constraint of
+    ClassConstraint _  associated_types -> List.fold contains associated_types (\contains, ty -> contains || containsVar ty var)
+    RowConstraint _ row_type -> containsVar row_type var)
 
 containsVar :: Type -> TypeVar -> Bool
 containsVar type var = case type of
     Var v constraints -> v == var || constraintsContainsVar constraints var
     FixedTypeArg _ v constraints -> v == var || constraintsContainsVar constraints var
-    Named _ args -> args |> List.iter |> Iterator.fold (\contains, arg -> contains || containsVar arg var) False
+    Named _ args -> List.fold False args (\contains, arg -> contains || containsVar arg var)
     Function from to -> containsVar from var || containsVar to var
     Never v -> v == var
     Ref t -> containsVar t var
     Owner t -> containsVar t var
-    Tuple args -> args |> List.iter |> Iterator.fold (\contains, arg -> contains || containsVar arg var) False
+    Tuple args -> List.fold False args (\contains, arg -> contains || containsVar arg var)
 
 add :: Substitution -> TypeVar -> Type -> Result Substitution ()
 add sub var type = do

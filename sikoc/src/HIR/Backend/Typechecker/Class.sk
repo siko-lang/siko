@@ -6,14 +6,15 @@ import Siko.HIR.Backend.Typechecker.Error
 import Siko.HIR.Backend.Unification as U
 import Siko.HIR.Backend.Unification.Substitution as S
 import Siko.HIR.Backend.InstanceResolver as IR
-import Siko.HIR.Backend.Util as Util
+import Siko.HIR.Backend.Util as BUtil
+import Siko.HIR.Util as Util
 import Siko.HIR.Backend.Typechecker.ClassStore
 import Siko.HIR.Backend.TypeIsomorphism
 import Siko.HIR.Program as P
 import Siko.HIR.Function as F
 import Siko.HIR.Backend.Traversal
 import Siko.HIR.Type as T
-import Siko.HIR.Backend.TypeFormatter as TF
+import Siko.HIR.TypeFormatter as TF
 import Siko.HIR.Class as C
 import Siko.HIR.Backend.ClassInfoStore as CIS
 import Siko.Util.DependencyProcessor
@@ -26,6 +27,7 @@ data ClassMemberInfo = { type :: T.Type,
                          has_default_impl :: Bool }
 
 data ClassTypeInfo = {  arg_type :: T.Type,
+                        associated_types :: [T.Type],
                         members :: Map String ClassMemberInfo }
 
 addMemberInfo :: ClassTypeInfo -> String -> T.Type -> Bool -> ClassTypeInfo
@@ -48,7 +50,7 @@ processClass state c class_dependency_map = do
                     state <- addError state (ClassMemberWithoutType short_name member.location)
                     (state, class_type_info)
             (state, class_type_info)
-        ) (state, ClassTypeInfo c.arg_type Map.empty)
+        ) (state, ClassTypeInfo c.arg_type c.associated_types Map.empty)
     (state, class_type_info, class_dependency_map)
 
 isVar :: T.Type -> Bool
@@ -72,8 +74,8 @@ processInstance state class_info_store instance_resolver i = do
             state <- addError state (SpecializedInstance i.location)
             return (state, instance_resolver, [])
         else ()
-    (instantiated_instance_type, state) <- Util.instantiateType i.type state
-    instance_resolver <- case IR.addUserDefinedInstance instance_resolver i.class_name instantiated_instance_type i.id i.location of
+    (instantiated_instance_type, state) <- BUtil.instantiateType i.type state
+    instance_resolver <- case IR.addUserDefinedInstance instance_resolver i.class_name instantiated_instance_type i.associated_types i.id i.location of
         Ok instance_resolver -> instance_resolver
         Err location -> do
             state <- addError state (ConflictingInstances ("{}" % i.class_name) i.location location)
@@ -89,22 +91,30 @@ processInstance state class_info_store instance_resolver i = do
                         sub <- S.createSubstitution
                         class_vars <- Util.collectVars [] class_type_info.arg_type
                         class_vars <- Util.collectVars class_vars member_data.type
-                        (class_mapper, state) <- Util.initMapper class_vars state
-                        class_arg_type <- Util.remap class_mapper class_type_info.arg_type
-                        class_member_type <- Util.remap class_mapper member_data.type
+                        class_vars <- List.fold class_vars class_type_info.associated_types Util.collectVars
+                        (class_mapper, state) <- BUtil.initMapper class_vars state
+                        class_arg_type <- BUtil.remap class_mapper class_type_info.arg_type
+                        class_member_type <- BUtil.remap class_mapper member_data.type
+                        class_associated_types <- List.map class_type_info.associated_types (BUtil.remap class_mapper)
                         instance_vars <- Util.collectVars [] i.type
                         instance_vars <- case instance_member.type of
                             Some instance_member_type -> Util.collectVars instance_vars instance_member_type
                             None -> instance_vars
-                        (instance_mapper, state) <- Util.initMapper instance_vars state
-                        instance_type <- Util.remap instance_mapper i.type
+                        (instance_mapper, state) <- BUtil.initMapper instance_vars state
+                        instance_type <- BUtil.remap instance_mapper i.type
                         (state, sub) <- case U.unify state sub class_arg_type instance_type of
                             Ok (state, sub) -> (state, sub)
                             Err _ -> panic "Class arg unification failed!"
+                        (state, sub) <- List.zipS (state, sub) class_associated_types i.associated_types (
+                                \(state, sub), class_associated_type, instance_associated_type -> do
+                                case U.unify state sub class_associated_type instance_associated_type of
+                                    Ok (state, sub) -> (state, sub)
+                                    Err _ -> panic "Associated type unification failed! {} {}" % (TF.toString class_associated_type, TF.toString instance_associated_type)
+                            )
                         inferred_instance_member_type <- S.apply class_member_type sub
                         state <- case instance_member.type of
                             Some instance_member_type -> do
-                                instance_member_type <- Util.remap instance_mapper instance_member_type
+                                instance_member_type <- BUtil.remap instance_mapper instance_member_type
                                 state <- if checkIsomorphicType inferred_instance_member_type instance_member_type state
                                     then state
                                     else do
@@ -142,7 +152,7 @@ initializeClassInfoStore state = do
         members <- Map.map class_type_info.members (\(qn, member) -> (qn, CIS.ClassMemberInfo member.type member.has_default_impl))
         info <- Option.unwrap (get state.class_store.classes class_name)
         dependencies <- info.all_dependencies
-        class_info <- CIS.ClassInfo arg_type members dependencies
+        class_info <- CIS.ClassInfo arg_type class_type_info.associated_types members dependencies
         CIS.addClassInfo store class_name class_info)
 
 processClassesAndInstances :: Config -> TypecheckerState -> IR.InstanceResolver -> (TypecheckerState, IR.InstanceResolver, CIS.ClassInfoStore)

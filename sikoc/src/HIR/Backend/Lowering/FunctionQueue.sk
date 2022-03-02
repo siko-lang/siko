@@ -1,7 +1,7 @@
 module Siko.HIR.Backend.Lowering.FunctionQueue where
 
 import Siko.HIR.Type as HT
-import Siko.HIR.Backend.TypeFormatter as TF
+import Siko.HIR.TypeFormatter as TF
 import Siko.HIR.Data as HD
 import Siko.HIR.Program as HP
 import Siko.HIR.Function as HF
@@ -80,6 +80,11 @@ getFunctionType context hir_type arg_count = do
             (context, mir_result_type) <- TS.processType context hir_result_type
             (context, mir_args, mir_result_type)
 
+convertAttribute :: HF.Attribute -> MF.Attribute
+convertAttribute attr =
+    case attr of
+        HF.Inline -> MF.Inline
+
 processNormalFunction :: Context -> MP.Identity -> HT.Type -> HP.FullyQualifiedName -> HF.Function HT.Type -> Context
 processNormalFunction context mir_function_id hir_type qn hir_function =
     case hir_function.body of
@@ -100,7 +105,7 @@ processNormalFunction context mir_function_id hir_type qn hir_function =
             (context, expr_id_gen) <- resetExprIdCounter context
             (context, temp_var_gen) <- resetTempVarCounter context
             (context, mir_arg_types, mir_result_type) <- getFunctionType context hir_type hir_function.arg_count
-            info <- MF.FunctionInfo mir_body expr_id_gen temp_var_gen
+            info <- MF.FunctionInfo mir_body expr_id_gen temp_var_gen (List.map hir_fn.attributes convertAttribute)
             mir_function_type <- MF.FunctionType mir_arg_types mir_result_type
             mir_function <- MF.Function mir_function_id (MF.Normal info) mir_function_type
             mir_program <- MP.addFunction context.mir_program mir_function_id mir_function
@@ -132,7 +137,7 @@ processNormalFunction context mir_function_id hir_type qn hir_function =
                             (context, mir_body_expr) <- getExpr context (ME.Expr mir_body mir_result_type)
                             (context, expr_id_gen) <- resetExprIdCounter context
                             (context, temp_var_gen) <- resetTempVarCounter context
-                            info <- MF.FunctionInfo mir_body_expr expr_id_gen temp_var_gen
+                            info <- MF.FunctionInfo mir_body_expr expr_id_gen temp_var_gen [MF.Inline]
                             mir_function_type <- MF.FunctionType mir_arg_types mir_result_type
                             mir_function <- MF.Function mir_function_id (MF.Normal info) mir_function_type
                             mir_program <- MP.addFunction context.mir_program mir_function_id mir_function
@@ -153,7 +158,7 @@ processNormalFunction context mir_function_id hir_type qn hir_function =
                                 (context, mir_body) <- getExpr context (ME.Expr (ME.Do []) mir_result_type)
                                 (context, expr_id_gen) <- resetExprIdCounter context
                                 (context, temp_var_gen) <- resetTempVarCounter context
-                                info <- MF.FunctionInfo mir_body expr_id_gen temp_var_gen
+                                info <- MF.FunctionInfo mir_body expr_id_gen temp_var_gen []
                                 mir_function <- MF.Function mir_function_id (MF.Normal info)
                                                 (MF.FunctionType mir_arg_types mir_result_type)
                                 mir_program <- MP.addFunction context.mir_program mir_function_id mir_function
@@ -220,7 +225,7 @@ processItem item mir_function_id context = do
                     (context, mir_body) <- getExpr context (ME.Expr (ME.Do []) mir_result_type)
                     (context, expr_id_gen) <- resetExprIdCounter context
                     (context, temp_var_gen) <- resetTempVarCounter context
-                    info <- MF.FunctionInfo mir_body expr_id_gen temp_var_gen
+                    info <- MF.FunctionInfo mir_body expr_id_gen temp_var_gen []
                     mir_function_type <- MF.FunctionType mir_arg_types mir_result_type
                     mir_function <- MF.Function mir_function_id (MF.Normal info) mir_function_type
                     mir_program <- MP.addFunction context.mir_program mir_function_id mir_function

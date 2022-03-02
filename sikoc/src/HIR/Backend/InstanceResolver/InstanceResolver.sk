@@ -2,7 +2,7 @@ module Siko.HIR.Backend.InstanceResolver where
 
 import Siko.HIR.Class
 import Siko.HIR.Type as T
-import Siko.HIR.Backend.TypeFormatter as TF
+import Siko.HIR.TypeFormatter as TF
 import Siko.HIR.Program as P
 import Siko.Syntax.Location
 import Siko.HIR.Backend.Unification as U
@@ -26,16 +26,11 @@ getBaseType type = case type of
     T.Owner t -> getBaseType t
     T.Never _ -> Generic
 
-data InstanceInfo = UserDefinedInstanceInfo T.Type InstanceId Location
-                    deriving (Show)
-
-getType :: InstanceInfo -> InstanceResolver -> T.Type
-getType instance_info instance_resolver = case instance_info of
-    UserDefinedInstanceInfo t _ _ -> t
-
-getLocation :: InstanceInfo -> InstanceResolver -> Location
-getLocation instance_info instance_resolver = case instance_info of
-    UserDefinedInstanceInfo _ _ l -> l
+data InstanceInfo = { instance_type :: T.Type,
+                      associated_types :: [T.Type],
+                      id :: InstanceId,
+                      location :: Location
+                    } deriving (Show)
 
 data CacheEntry = CacheEntry T.Type P.FullyQualifiedName deriving (PartialEq, Eq, PartialOrd, Ord)
 
@@ -49,7 +44,9 @@ addInstanceInfoToResolver :: InstanceResolver -> P.FullyQualifiedName -> BaseTyp
 addInstanceInfoToResolver instance_resolver class_name base_type instance_info = do
     case get instance_resolver.instance_map class_name of
         Some instance_info_map -> case get instance_info_map base_type of
-            Some instance_info -> return Err (getLocation instance_info instance_resolver)
+            Some instance_info -> do
+                instance_info :: InstanceInfo <- instance_info // FIXME
+                return Err instance_info.location
             _ -> ()
         _ -> ()
     (instance_map, _) <- alter (\instance_info_map -> case instance_info_map of
@@ -61,10 +58,10 @@ addInstanceInfoToResolver instance_resolver class_name base_type instance_info =
                 Some instance_info_map) class_name instance_resolver.instance_map
     Ok (instance_resolver { instance_map = instance_map })
 
-addUserDefinedInstance :: InstanceResolver -> P.FullyQualifiedName -> T.Type -> InstanceId -> Location -> Result InstanceResolver Location
-addUserDefinedInstance instance_resolver class_name instance_type instance_id location = do
+addUserDefinedInstance :: InstanceResolver -> P.FullyQualifiedName -> T.Type -> [T.Type] -> InstanceId -> Location -> Result InstanceResolver Location
+addUserDefinedInstance instance_resolver class_name instance_type associated_types instance_id location = do
     //println "Added user defined instance for {} {}" % (class_name, T.toLongString instance_type)
-    instance_info <- UserDefinedInstanceInfo instance_type instance_id location
+    instance_info <- InstanceInfo instance_type associated_types instance_id location
     base_type <- getBaseType instance_type
     addInstanceInfoToResolver instance_resolver class_name base_type instance_info
 
@@ -82,41 +79,38 @@ checkInstancesForBaseType a :: (U.DataProvider a, U.ClassProvider a, U.TypeVarGe
                              T.Type ->
                              BaseType ->
                              Map BaseType InstanceInfo ->
-                             P.FullyQualifiedName -> (InstanceResolver, a, S.Substitution, Bool)
+                             P.FullyQualifiedName ->
+                             Result (InstanceResolver, a, S.Substitution, InstanceInfo) ()
 checkInstancesForBaseType context instance_resolver sub type base_type instance_info_map class_name = do
-    //println "checkInstancesForBaseType {} {}" % (T.toLongString type, base_type)
+    //println "checkInstancesForBaseType {} {}" % (TF.toLongString type, base_type)
     case get instance_info_map base_type of
         Some instance_info -> do
-                (context, sub, success) <- case instance_info of
-                        UserDefinedInstanceInfo instance_type _ _ ->
-                            unifyTypes context sub type instance_type
+                instance_info :: InstanceInfo <- instance_info // FIXME
+                (context, sub, success) <- unifyTypes context sub type instance_info.instance_type
                 instance_resolver <- if success && T.isConcreteType type
                     then do
                         entry <- CacheEntry type class_name
                         (cache, _) <- insert instance_resolver.cache entry instance_info
                         instance_resolver { cache = cache }
                     else instance_resolver
-                (instance_resolver, context, sub, success)
+                Ok (instance_resolver, context, sub, instance_info)
         None -> do
             //println "checkInstancesForBaseType: not found"
-            (instance_resolver, context, sub, False)
+            Err ()
 
 hasInstance a :: (U.DataProvider a, U.ClassProvider a, U.TypeVarGenerator a, U.Context a) => a ->
                  InstanceResolver ->
                  S.Substitution ->
                  T.Type ->
                  P.FullyQualifiedName ->
-                 Result (InstanceResolver, a, S.Substitution) ()
+                 Result (InstanceResolver, a, S.Substitution, InstanceInfo) ()
 hasInstance context instance_resolver sub type class_name = do
     base_type <- getBaseType type
     case get instance_resolver.instance_map class_name of
         Some instance_info_map -> do
-            (instance_resolver, context, sub, success) <- checkInstancesForBaseType context instance_resolver sub type base_type instance_info_map class_name
-            if success
-                then Ok (instance_resolver, context, sub)
-                else do
-                    (instance_resolver, context, sub, success) <- checkInstancesForBaseType context instance_resolver sub type Generic instance_info_map class_name
-                    if success then Ok (instance_resolver, context, sub) else Err ()
+            case checkInstancesForBaseType context instance_resolver sub type base_type instance_info_map class_name of
+                Ok (instance_resolver, context, sub, instance_info) -> Ok (instance_resolver, context, sub, instance_info)
+                Err _ -> checkInstancesForBaseType context instance_resolver sub type Generic instance_info_map class_name
         None -> do
             //println "Class {} has no instances, at all" % (class_name)
             Err ()
@@ -125,30 +119,31 @@ checkInstance a :: (U.DataProvider a, U.ClassProvider a, U.TypeVarGenerator a, U
                     InstanceResolver ->
                     T.Type ->
                     P.FullyQualifiedName ->
-                    Result (InstanceResolver, a, [(T.TypeVar, P.FullyQualifiedName)]) ()
+                    Result (InstanceResolver, a, InstanceInfo) ()
 checkInstance context instance_resolver type class_name = do
-    //println "checkInstance: type: {}, class_name: {}" % (T.toLongString type, class_name)
+    //println "checkInstance: type: {}, class_name: {}" % (TF.toLongString type, class_name)
     case type of
-        T.Var var _ -> Ok (instance_resolver, context, [(var, class_name)])
-        T.Never var -> Ok (instance_resolver, context, [(var, class_name)])
+        T.Var var _ -> panic "Check instance called on var"
+        T.Never var -> panic "Check instance called on never"
         _ -> do
             sub <- S.createSubstitution
             case hasInstance context instance_resolver sub type class_name of
-                Ok (instance_resolver, context, sub) -> do
+                Ok (instance_resolver, context, sub, instance_info) -> do
                     sub :: S.Substitution <- sub // FIXME
-                    (instance_resolver, context, cs, success) <- sub.constraints |> List.iter |> Iterator.fold (\(instance_resolver, var_gen, cs, success), c -> do
-                            S.UnificationConstraint c_name c_type <- c
-                            if c_name == class_name && c_type == type
-                                then (instance_resolver, context, cs, success)
-                                else do
-                                    case checkInstance context instance_resolver c_type c_name of
-                                        Ok (instance_resolver, context, sub_cs) -> (instance_resolver, context, cs + sub_cs, success)
-                                        Err _ -> do
-                                            //println "Sub checkInstance failed: {} {}" % (T.toLongString c_type, c_name)
-                                            (instance_resolver, context, cs, False)
-                        ) (instance_resolver, context, [], True)
+                    (instance_resolver, context, success) <- List.fold (instance_resolver, context, True)
+                            sub.constraints (\(instance_resolver, var_gen, success), c -> do
+                                    S.UnificationConstraint c_name c_type c_associated_types <- c
+                                    if c_name == class_name && c_type == type
+                                        then (instance_resolver, context, success)
+                                        else do
+                                            case checkInstance context instance_resolver c_type c_name of
+                                                Ok (instance_resolver, context, _) -> (instance_resolver, context, success)
+                                                Err _ -> do
+                                                    //println "Sub checkInstance failed: {} {}" % (T.toLongString c_type, c_name)
+                                                    (instance_resolver, context, False)
+                                )
                     if success
-                        then Ok (instance_resolver, context, cs)
+                        then Ok (instance_resolver, context, instance_info)
                         else Err ()
                 Err _ -> do
                     //println "checkInstance: hasInstance failed"

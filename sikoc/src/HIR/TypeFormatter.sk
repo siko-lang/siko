@@ -1,11 +1,11 @@
-module Siko.HIR.Backend.TypeFormatter(fixedType,
-                                      toString,
-                                      toLongString,
-                                      toStringTypes) where
+module Siko.HIR.TypeFormatter(fixedType,
+                              toString,
+                              toLongString,
+                              toStringTypes) where
 
 import Siko.Constants
 import Siko.HIR.Type
-import Siko.HIR.Backend.Util as Util
+import Siko.HIR.Util as Util
 import Siko.HIR.Program as HP
 import Map
 
@@ -19,9 +19,9 @@ fixedType type = do
     convertToFixed var_map type
 
 convertConstraintsToFixed :: [Constraint] -> Map TypeVar (String, TypeVar) -> [Constraint]
-convertConstraintsToFixed constraints var_map = constraints |> List.iter |> Iterator.map (\c -> case c of
-    ClassConstraint s -> c
-    RowConstraint row_name row_type -> RowConstraint row_name (convertToFixed var_map row_type)) |> toList
+convertConstraintsToFixed constraints var_map = List.map constraints (\c -> case c of
+    ClassConstraint s associated_types -> ClassConstraint s (List.map associated_types (convertToFixed var_map))
+    RowConstraint row_name row_type -> RowConstraint row_name (convertToFixed var_map row_type))
 
 convertToFixed :: Map TypeVar (String, TypeVar) -> Type -> Type
 convertToFixed var_map type =
@@ -79,22 +79,42 @@ convertType type names = case type of
             then "({},)" % (join args ", ")
             else "({})" % (join args ", ")
 
+formatTypeInner :: Type -> Bool -> ([String], String)
+formatTypeInner type short = do
+        limit <- if short then 1 else 0
+        (names, constraint_map) <- collectNames type Map.empty
+        conflicting_names <- List.fold Map.empty names (\short_names, name -> do
+                    short <- getShortName name
+                    (short_names, _) <- alter (addShortName name) short short_names
+                    short_names)
+        conflicting_names <- Map.map conflicting_names (\(short, names) -> (short, getLength names > limit))
+        constraints <- constraint_map |> Map.iter |> Iterator.map (\(name, constraints) -> do
+                                    constraints <- List.fold [] constraints (\constraints, c -> do
+                                        (sub_cs, constraint) <- formatConstraint short conflicting_names name c
+                                        constraints <- constraints + sub_cs
+                                        List.push constraints constraint)
+                                    constraints) |> Iterator.fold (\all, constraints -> all + constraints) []
+        string_type <- convertType type conflicting_names
+        (constraints, string_type)
+    where
+        formatConstraint short conflicting_names name constraint = case constraint of
+            ClassConstraint s associated_types -> do
+                if isEmpty associated_types
+                then ([], "{} {}" % (getNiceName (HP.getResolvableName s) conflicting_names, name))
+                else do
+                    (cs, string_types) <- processAssociatedTypes short associated_types
+                    (cs, "{} {} > {}" % (getNiceName (HP.getResolvableName s) conflicting_names, name, join string_types " "))
+            RowConstraint (NamedRow row_name) row_type -> ([], "#{} :: {} {}" % (row_name, toString row_type, name))
+            RowConstraint (IndexedRow index) row_type -> ([], "#{} :: {} {}" % (index, toString row_type, name))
+
+        processAssociatedTypes short types = List.fold ([], []) types (\(constraints, string_types), ty -> do
+            (cs, string_type) <- formatTypeInner ty short
+            constraints <- constraints + cs
+            (constraints, List.push string_types string_type))
+
 formatType :: Type -> Bool -> String
 formatType type short = do
-    limit <- if short then 1 else 0
-    (names, constraint_map) <- collectNames type empty
-    conflicting_names <- names |> List.iter |> Iterator.fold (\short_names, name -> do
-                short <- getShortName name
-                (short_names, _) <- alter (addShortName name) short short_names
-                short_names) empty
-    conflicting_names <- conflicting_names |> Map.iter |> Iterator.map (\(short, names) -> if getLength names > limit then (short, True) else (short, False)) |> toMap
-    constraints <- constraint_map |> Map.iter |> Iterator.map (\(name, constraints) -> do
-                                constraints <- constraints |> List.iter |> Iterator.map (\c -> case c of
-                                                    ClassConstraint s -> "{} {}" % (getNiceName (HP.getResolvableName s) conflicting_names, name)
-                                                    RowConstraint (NamedRow row_name) row_type -> "#{} :: {} {}" % (row_name, toString row_type, name)
-                                                    RowConstraint (IndexedRow index) row_type -> "#{} :: {} {}" % (index, toString row_type, name)) |> toList
-                                constraints) |> Iterator.fold (\all, constraints -> all + constraints) []
-    string_type <- convertType type conflicting_names
+    (constraints, string_type) <- formatTypeInner type short
     if isEmpty constraints
         then string_type
         else "({}) => {}" % (join constraints ", ", string_type)
@@ -127,7 +147,7 @@ getNiceName full_name conflicting_names = do
 
 collectNamesFromConstraints :: [Constraint] -> [String]
 collectNamesFromConstraints constraints = constraints |> List.iter |> Iterator.map (\c -> case c of
-                ClassConstraint s -> HP.getResolvableName s
+                ClassConstraint s _ -> HP.getResolvableName s
                 RowConstraint (NamedRow name) row_type -> name
                 RowConstraint (IndexedRow i) row_type -> "{}"  % i) |> toList
 

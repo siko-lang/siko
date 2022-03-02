@@ -14,7 +14,7 @@ module Siko.HIR.Type(Type(..),
                      getNameFromType) where
 
 import Siko.HIR.Program as HP
-import Siko.HIR.Backend.TypeFormatter as TF
+import Siko.HIR.TypeFormatter as TF
 import Map
 
 data TypeVar = TypeVar Int deriving (Show, PartialEq, Eq, PartialOrd, Ord)
@@ -23,7 +23,7 @@ data RowKind = NamedRow String
              | IndexedRow Int
              deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
-data Constraint = ClassConstraint HP.FullyQualifiedName
+data Constraint = ClassConstraint HP.FullyQualifiedName [Type]
                 | RowConstraint RowKind Type
                 deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
@@ -43,9 +43,9 @@ isFunction type = case type of
     _ -> False
 
 collectVarsFromConstraints :: [Constraint] -> [TypeVar]
-collectVarsFromConstraints constraints = constraints |> List.iter |> Iterator.fold (\all, c -> case c of
-                ClassConstraint _ -> all
-                RowConstraint _ row_type -> all + collectVars row_type) []
+collectVarsFromConstraints constraints = List.fold [] constraints (\all, c -> case c of
+                ClassConstraint _ associated_types -> List.fold all associated_types (\all, ty -> all + collectVars ty)
+                RowConstraint _ row_type -> all + collectVars row_type)
 
 collectVars :: Type -> [TypeVar]
 collectVars type = case type of
@@ -95,7 +95,7 @@ isConcreteType type = case type of
 
 traverseConstraints :: (Type -> Type) -> Constraint -> Constraint
 traverseConstraints f constraint = case constraint of
-    ClassConstraint qn -> ClassConstraint qn
+    ClassConstraint qn associated_types -> ClassConstraint qn (List.map associated_types (traverse f))
     RowConstraint kind type -> RowConstraint kind (traverse f type)
 
 traverse :: (Type -> Type) -> Type -> Type

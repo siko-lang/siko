@@ -40,6 +40,9 @@ getInlinedBody unit_type context body args = do
     context <- context { expr_id_gen = r_context.expr_id_gen, temp_var_gen = r_context.temp_var_gen }
     (context, do_expr)
 
+inlined :: F.FunctionInfo -> Bool
+inlined info = List.contains info.attributes F.Inline
+
 processExpr :: Context -> E.Expr -> (Context, E.Expr)
 processExpr context expr = do
     E.Expr s_expr _ _ <- expr
@@ -48,9 +51,8 @@ processExpr context expr = do
             (program, function) <- P.getFunction context.program id
             context <- context { program = program }
             case function.kind of
-                F.Normal info if False -> do
-                    //println "{} should be inline" % id
-                    if False //List.contains context.group id
+                F.Normal info -> do
+                    if not (inlined info) || List.contains context.group id
                     then do
                         //println "{} cannot be inline" % id
                         kept_functions <- Set.put context.kept_functions id

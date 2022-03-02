@@ -18,7 +18,7 @@ deriveRecordToJson record derive_location = do
     type_signature <- T.TypeSignature (T.Named record.name type_arguments) derive_location
     constraints <- List.fold [] record.type_arguments (\constraints, record_type_arg -> do
         Ident type_arg _ <- record_type_arg
-        constraint <- C.Constraint class_name (Ident type_arg derive_location)
+        constraint <- C.Constraint class_name (Ident type_arg derive_location) []
         List.push constraints constraint)
     fn_name <- Ident "toJson" derive_location
     fn_args <- [P.Pattern (P.Binding (Ident "record" derive_location)) derive_location]
@@ -37,7 +37,7 @@ deriveRecordToJson record derive_location = do
     body <- Some body
     sub_items <- []
     op_fn <- F.Function fn_name fn_args body sub_items []
-    C.Instance class_name type_signature constraints [op_fn] []
+    C.Instance class_name type_signature [] constraints [op_fn] []
 
 deriveAdtToJson :: D.AlgebraicDataType -> Location -> C.Instance
 deriveAdtToJson adt derive_location = do
@@ -46,7 +46,7 @@ deriveAdtToJson adt derive_location = do
     type_signature <- T.TypeSignature (T.Named adt.name type_arguments) derive_location
     constraints <- List.fold [] adt.type_arguments (\constraints, adt_type_arg -> do
         Ident type_arg _ <- adt_type_arg
-        constraint <- C.Constraint class_name (Ident type_arg derive_location)
+        constraint <- C.Constraint class_name (Ident type_arg derive_location) []
         List.push constraints constraint)
     fn_name <- Ident "toJson" derive_location
     fn_args <- [P.Pattern (P.Binding (Ident "adt" derive_location)) derive_location]
@@ -78,4 +78,4 @@ deriveAdtToJson adt derive_location = do
     body <- Some body
     sub_items <- []
     op_fn <- F.Function fn_name fn_args body sub_items []
-    C.Instance class_name type_signature constraints [op_fn] []
+    C.Instance class_name type_signature [] constraints [op_fn] []

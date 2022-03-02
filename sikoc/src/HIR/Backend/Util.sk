@@ -1,39 +1,13 @@
 module Siko.HIR.Backend.Util where
 
 import Siko.HIR.Type as T
+import Siko.HIR.Util as Util
 import Siko.HIR.Program as P
 import Siko.HIR.Backend.Unification as U
 import Siko.HIR.Backend.Unification.Substitution as S
 import Siko.Constants
 
 import Map
-
-getIntType :: T.Type
-getIntType = T.Named (P.FullPath getIntModuleName getIntTypeName) []
-
-getFloatType :: T.Type
-getFloatType = T.Named (P.FullPath getFloatModuleName getFloatTypeName) []
-
-getStringType :: T.Type
-getStringType = T.Named (P.FullPath getStringModuleName getStringTypeName) []
-
-getCharType :: T.Type
-getCharType = T.Named (P.FullPath getCharModuleName getCharTypeName) []
-
-getBoolType :: T.Type
-getBoolType = T.Named (P.FullPath getBoolModuleName getBoolTypeName) []
-
-getListType :: T.Type -> T.Type
-getListType arg = T.Named (P.FullPath getListModuleName getListTypeName) [arg]
-
-getOrderingType :: T.Type
-getOrderingType = T.Named (P.FullPath getOrderingModuleName getOrderingTypeName) []
-
-getOptionType :: T.Type -> T.Type
-getOptionType arg = T.Named (P.FullPath getOptionModuleName getOptionTypeName) [arg]
-
-getOptionalOrderingType :: T.Type
-getOptionalOrderingType = getOptionType getOrderingType
 
 createGeneralFunction a :: (U.TypeVarGenerator a) => Int -> a -> (a, T.Type)
 createGeneralFunction arg_count var_gen =
@@ -43,9 +17,6 @@ createGeneralFunction arg_count var_gen =
         (var_gen, from) <- U.getNewTypeVarType var_gen
         (var_gen, to) <- createGeneralFunction (arg_count - 1) var_gen
         (var_gen, T.Function from to)
-
-collectVars :: [T.TypeVar] -> T.Type -> [T.TypeVar]
-collectVars vars type = (T.collectVars type + vars) |> sort |> dedup
 
 data Mapper = Mapper (Map T.TypeVar T.TypeVar) deriving (Show)
 
@@ -59,7 +30,7 @@ initMapper vars var_gen = do
 
 instantiateType a :: (U.TypeVarGenerator a) => T.Type -> a -> (T.Type, a)
 instantiateType type var_gen = do
-    vars <- collectVars [] type
+    vars <- Util.collectVars [] type
     (mapper, var_gen) <- initMapper vars var_gen
     type <- remap mapper type
     (type, var_gen)
@@ -80,27 +51,9 @@ remap mapper type =  T.traverse (remap_ mapper) type
                 None -> panic "old var {} not found" % var
             _ -> type
 
-collectClassesFromClassConstraints :: [T.Constraint] -> [P.FullyQualifiedName]
-collectClassesFromClassConstraints constraints = constraints |> List.iter |> Iterator.filter (\c -> case c of
-        T.ClassConstraint _ -> True
-        _ -> False) |> Iterator.map (\c -> case c of
-            T.ClassConstraint n -> n
-            _ -> panic "RowConstraint found while collecting classes") |> toList
-
-isSimple :: T.Type -> Bool
-isSimple type = case type of
-    T.Var _  _ -> True
-    T.FixedTypeArg _ _ _ -> True
-    T.Named n args -> getLength args == 0
-    T.Function _ _ -> False
-    T.Never _ -> True
-    T.Ref _ -> True
-    T.Owner _ -> True
-    T.Tuple _ -> True
-
 newSub a :: (U.TypeVarGenerator a) => [T.Type] -> a -> (S.Substitution, a)
 newSub types var_gen = do
-    vars <- List.fold [] types (\vars, t -> collectVars vars t)
+    vars <- List.fold [] types (\vars, t -> Util.collectVars vars t)
     (var_gen, new_vars) <- repeatS var_gen (\var_gen -> U.getNewTypeVar var_gen) (getLength vars)
     sub <- S.createSubstitution
     sub <- List.zipS sub vars new_vars (\sub, var, new_var -> do

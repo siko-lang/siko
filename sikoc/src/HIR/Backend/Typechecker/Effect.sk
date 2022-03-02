@@ -10,7 +10,7 @@ import Siko.HIR.Backend.Typechecker.Error
 import Siko.HIR.Backend.Typechecker
 import Siko.HIR.Backend.Unification.Substitution as S
 import Siko.HIR.Type as T
-import Siko.HIR.Backend.TypeFormatter as TF
+import Siko.HIR.TypeFormatter as TF
 
 import Map
 
@@ -42,7 +42,7 @@ removeEffects context sig effects location =
         (signatures, inferred_eff_type) <- Map.remove sig.signatures qn
         context <- case inferred_eff_type of
             Some inferred_eff_type -> do
-                (context, sub) <- TExpr.unify context eff inferred_eff_type location
+                (context, sub) <- TExpr.unify context S.createSubstitution eff inferred_eff_type location
                 context
             None -> do
                 err <- UnnecessaryEffect (show qn) location
@@ -102,7 +102,7 @@ mergeEffectSignatureSets context set1 set2 location = do
             t2 <- get set2.signatures key
             case (t1, t2) of
                 (Some type1, Some type2) -> do
-                    (context, sub) <- TExpr.unify context type1 type2 location
+                    (context, sub) <- TExpr.unify context S.createSubstitution type1 type2 location
                     type <- S.apply type1 sub
                     (signatures, _) <- Map.insert signatures key type
                     (context, signatures)

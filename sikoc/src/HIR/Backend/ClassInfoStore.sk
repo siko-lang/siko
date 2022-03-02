@@ -11,6 +11,7 @@ data ClassMemberInfo = { type :: T.Type,
                          has_default_impl :: Bool }
 
 data ClassInfo = {  arg_type :: T.Type,
+                    associated_types :: [T.Type],
                     members :: Map String ClassMemberInfo,
                     dependencies :: [P.FullyQualifiedName] }
 
@@ -38,6 +39,7 @@ getClassInfo store class_name = case get store.classes class_name of
 
 instance U.ClassProvider ClassInfoStore where
     getAllClassDependencies store qn = getDependencies store qn
+    getAssociatedTypeCount store qn = getLength (getClassInfo store qn).associated_types
 
 instance HTI.DependencyProvider ClassInfoStore where
     getAllDependencies store qn = getDependencies store qn

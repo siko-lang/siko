@@ -8,11 +8,11 @@ import Siko.HIR.Backend.Typechecker.Effect as TEff
 import Siko.HIR.Backend.Unification as U
 import Siko.HIR.Backend.Unification.Substitution as S
 import Siko.HIR.Backend.Unification.Data as UD
-import Siko.HIR.Backend.Util as Util
+import Siko.HIR.Util as Util
 import Siko.HIR.Pattern as P
 import Siko.HIR.Program as HP
 import Siko.HIR.Type as T
-import Siko.HIR.Backend.TypeFormatter as TF
+import Siko.HIR.TypeFormatter as TF
 import Siko.HIR.Expr as E
 import Siko.HIR.Data as D
 
@@ -32,13 +32,13 @@ getPatternType context pattern_id = TS.getPatternType context.type_store pattern
 matchPatternWith :: Context -> P.PatternId -> T.Type -> Location -> (Context, S.Substitution)
 matchPatternWith context pattern_id type location = do
     pattern_type <- getPatternType context pattern_id
-    unify context type pattern_type location
+    unify context S.createSubstitution type pattern_type location
 
 matchPatterns :: Context -> P.PatternId -> P.PatternId -> Location -> (Context, S.Substitution)
 matchPatterns context pattern_id1 pattern_id2 location = do
     pattern_type1 <- getPatternType context pattern_id1
     pattern_type2 <- getPatternType context pattern_id2
-    unify context pattern_type1 pattern_type2 location
+    unify context S.createSubstitution pattern_type1 pattern_type2 location
 
 initializePatternType :: Context -> P.Pattern () -> (Context, P.Pattern ())
 initializePatternType context pat = do

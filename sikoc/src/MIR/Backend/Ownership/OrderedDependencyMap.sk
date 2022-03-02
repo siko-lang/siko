@@ -1,5 +1,5 @@
 
-module Siko.MIR.Backend.Ownership.Lowering.LoweringInfo.DependencyMap where
+module Siko.MIR.Backend.Ownership.OrderedDependencyMap where
 
 import Siko.MIR.Backend.Ownership.TypeVariableInfo
 import Siko.MIR.Backend.Ownership.MemberInfo as M
@@ -16,8 +16,8 @@ data DepMapEntry = Variant Int TypeVariableInfo
                  | Extern Int TypeVariableInfo
                  deriving (PartialEq, Eq, PartialOrd, Ord, Show)
 
-getDependencyMap :: List2 M.MemberInfo -> (List2 M.MemberInfo, Map2 TypeVariable (List2 TypeVariableInfo))
-getDependencyMap members = do
+getOrderedDependencyMap :: List2 M.MemberInfo -> (List2 M.MemberInfo, Map2 TypeVariable (List2 TypeVariableInfo))
+getOrderedDependencyMap members = do
     (members, deps_map) <- List2.foldLinear Map2.empty members (\deps_map, m ->
         case m of
             M.Variant index ty root info -> Map2.add deps_map root (Variant index info)

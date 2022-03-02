@@ -3,8 +3,8 @@ module Siko.HIR.Backend.Unification where
 import Siko.HIR.Backend.Unification.Substitution
 import Siko.HIR.Backend.Unification.Data as UD
 import Siko.HIR.Type
-import Siko.HIR.Backend.TypeFormatter as TF
-import Siko.HIR.Backend.Util as Util
+import Siko.HIR.TypeFormatter as TF
+import Siko.HIR.Util as Util
 import Siko.HIR.Program as P
 import Siko.HIR.Data as D
 import Map as Map
@@ -19,6 +19,7 @@ class DataProvider a where
 
 class ClassProvider a where
     getAllClassDependencies a :: a -> P.FullyQualifiedName -> [P.FullyQualifiedName]
+    getAssociatedTypeCount a :: a -> P.FullyQualifiedName -> Int
 
 class (TypeVarGenerator a, DataProvider a, ClassProvider a) => Context a where
     ignoreConstraints a :: a -> Bool
@@ -36,17 +37,16 @@ unifyArgs context sub args1 args2 = do
 
 getClassConstraints :: [Constraint] -> [P.FullyQualifiedName]
 getClassConstraints constraints = constraints |> List.iter |> Iterator.fold (\class_constraints, c -> case c of
-    ClassConstraint s -> class_constraints + [s]
+    ClassConstraint s _ -> class_constraints + [s]
     RowConstraint _ _ -> class_constraints) []
 
 getRowConstraints :: [Constraint] -> [(RowKind, Type)]
 getRowConstraints constraints = constraints |> List.iter |> Iterator.fold (\row_constraints, c -> case c of
-    ClassConstraint _ -> row_constraints
+    ClassConstraint _ _ -> row_constraints
     RowConstraint kind row_type -> row_constraints + [(kind, row_type)]) []
 
 unifyVarWithType a :: (TypeVarGenerator a, DataProvider a, ClassProvider a, Context a) => a -> TypeVar -> [Constraint] -> Substitution -> Type -> Result (a, Substitution) () // FIXME DataProvider, TypeVarGenerator
 unifyVarWithType context var constraints sub type = do
-    class_constraints <- getClassConstraints constraints
     row_constraints <- getRowConstraints constraints
     //println "Row constraints before unification"
     //row_constraints |> List.iter |> forEach (\(k, t) -> println "{} {}" % (k, toString t))
@@ -91,9 +91,12 @@ unifyVarWithType context var constraints sub type = do
                         ) (True, args, sub, context)
                     if success then (sub, context) else return Err ()
             _ -> return Err ()
-    sub <- class_constraints |> List.iter |> Iterator.fold (\sub, class_name -> do
-                c <- UnificationConstraint class_name type
-                addUnificationConstraint sub c) sub
+    sub <- List.fold sub constraints (\sub, constraint ->
+            case constraint of
+                ClassConstraint class_name associated_types -> do
+                    c <- UnificationConstraint class_name type associated_types
+                    addUnificationConstraint sub c
+                _ -> sub)
     sub <- try add sub var type
     Ok (context, sub)
 
@@ -101,7 +104,7 @@ unifyVarWithFixedArg a :: (ClassProvider a, TypeVarGenerator a, DataProvider a, 
 unifyVarWithFixedArg context sub var var_constraints fixed_arg_constraints fixed_arg_type = do
     fixed_classes <- Util.collectClassesFromClassConstraints fixed_arg_constraints
     ok <- var_constraints |> List.iter |> Iterator.fold (\ok, constraint -> ok && case constraint of
-        ClassConstraint class_name -> do
+        ClassConstraint class_name _ -> do // FIXME: associated_types
             if contains fixed_classes class_name
                 then True
                 else do

@@ -5,7 +5,7 @@ import Siko.Syntax.Ident
 import Siko.HIR.Expr as E
 import Siko.HIR.Effect as Eff
 import Siko.HIR.Type as T
-import Siko.HIR.Backend.TypeFormatter as TF
+import Siko.HIR.TypeFormatter as TF
 import Siko.HIR.Data as D
 import Siko.HIR.Function
 import Siko.HIR.Pattern as P
@@ -14,7 +14,8 @@ import Siko.HIR.Backend.Unification.TypeVarGenerator
 import Siko.HIR.Backend.Typechecker
 import Siko.HIR.Backend.Typechecker.Function
 import Siko.HIR.Backend.Typechecker.Pattern
-import Siko.HIR.Backend.Util as Util
+import Siko.HIR.Backend.Util as BUtil
+import Siko.HIR.Util as Util
 import Siko.HIR.Backend.Unification as U
 import Siko.HIR.Backend.Unification.Substitution as S
 import Siko.HIR.Backend.Typechecker.TypeStore as TS
@@ -52,6 +53,7 @@ instance U.DataProvider Context where
 
 instance U.ClassProvider Context where
     getAllClassDependencies context qn = U.getAllClassDependencies context.state qn
+    getAssociatedTypeCount context qn = U.getAssociatedTypeCount context.state qn
 
 initializeContext :: TypecheckerState -> IR.InstanceResolver -> FS.FunctionStore -> [PO.FullyQualifiedName] -> Context
 initializeContext state instance_resolver function_store group_items = Context TS.initializeTypeStore function_store instance_resolver state [] group_items
@@ -88,32 +90,34 @@ applyToContext context sub = do
     function_store <- FS.apply context.function_store context.group_items sub
     context { type_store = type_store, function_store = function_store }
 
-processClassConstraints :: Context -> S.Substitution -> Result (Context, S.Substitution) (Context, S.Substitution)
-processClassConstraints context sub = do
+processClassConstraints :: Context -> S.Substitution -> Location -> Result (Context, S.Substitution) (Context, S.Substitution)
+processClassConstraints context sub location = do
     constraints <- sub.constraints
     sub <- sub { constraints = [] }
-    (context, sub, success) <- constraints |> List.iter |> Iterator.fold (\(context, sub, success), S.UnificationConstraint class_name type -> do
+    (context, sub, success) <- List.fold (context, sub, True) constraints (\(context, sub, success), S.UnificationConstraint class_name type associated_types -> do
             case IR.checkInstance context context.instance_resolver type class_name of // FIXME: put instance resolver behind type class!
-                Ok (instance_resolver, context, cs) -> do
-                    (context, sub) <- IRChecks.mergeResolverConstraintsIntoSubstitution context cs sub
+                Ok (instance_resolver, context, instance_info) -> do
                     context <- context { instance_resolver = instance_resolver }
-                    context <- applyToContext context sub
-                    (context, sub, success)
+                    instance_info :: IR.InstanceInfo <- instance_info
+                    List.zipS (context, sub, success) associated_types instance_info.associated_types (\(context, sub, success), ty1, ty2 -> do
+                            (context, sub) <- unify context sub ty1 ty2 location
+                            context <- applyToContext context sub
+                            (context, sub, success)
+                        )
                 Err _ -> do
                     //println "processClassConstraints failed: {} {}" % (TF.toString type, class_name)
                     (context, sub, False)
-        ) (context, sub, True)
+        )
     if success then Ok (context, sub) else Err (context, sub)
 
-unify :: Context -> T.Type -> T.Type -> Location -> (Context, S.Substitution)
-unify context ty1 ty2 location = do
+unify :: Context -> S.Substitution -> T.Type -> T.Type -> Location -> (Context, S.Substitution)
+unify context sub ty1 ty2 location = do
     //println "Unifying {} {}" % (TF.toString ty1, TF.toString ty2)
-    sub <- S.createSubstitution
     case U.unify context sub ty1 ty2 of
         Ok (context, sub) -> do
             //println "Ok! Sub: {}" % sub
             context <- applyToContext context sub
-            case processClassConstraints context sub of
+            case processClassConstraints context sub location of
                 Ok (context, sub) -> (context, sub)
                 Err (context, sub) -> do
                     context :: Context <- context // FIXME
@@ -131,23 +135,23 @@ unify context ty1 ty2 location = do
 matchExprWith :: Context -> E.ExprId -> T.Type -> Location -> (Context, S.Substitution)
 matchExprWith context expr_id type location = do
     expr_type <- getExprType context expr_id
-    unify context type expr_type location
+    unify context S.createSubstitution type expr_type location
 
 matchExprs :: Context -> E.ExprId -> E.ExprId -> Location -> (Context, S.Substitution)
 matchExprs context expr_id1 expr_id2 location = do
     expr_type1 <- getExprType context expr_id1
     expr_type2 <- getExprType context expr_id2
-    unify context expr_type1 expr_type2 location
+    unify context S.createSubstitution expr_type1 expr_type2 location
 
 matchExprWithPattern :: Context -> E.ExprId -> P.PatternId -> Location -> (Context, S.Substitution)
 matchExprWithPattern context expr_id pattern_id location = do
     expr_type <- getExprType context expr_id
     patter_type <- getPatternType context pattern_id
-    unify context patter_type expr_type location
+    unify context S.createSubstitution patter_type expr_type location
 
 instantiateType :: Context -> T.Type -> (Context, T.Type)
 instantiateType context type = do
-    (new_type, context) <- Util.instantiateType type context
+    (new_type, context) <- BUtil.instantiateType type context
     (new_type) <- T.removeOwnership new_type
     (context, new_type)
 
@@ -171,7 +175,7 @@ instance S.Transform EffectTypeInfo where
 remapEffectTypeInfo a :: (U.TypeVarGenerator a, U.Context a) => EffectTypeInfo -> a -> (EffectTypeInfo, a) // FIXME!
 remapEffectTypeInfo eff_type_info context = do
     types <- Map.fold [eff_type_info.effect_type] eff_type_info.members (\types, (qn, t) -> List.push types t)
-    (sub, context) <- Util.newSub types context
+    (sub, context) <- BUtil.newSub types context
     eff_type_info <- S.transform eff_type_info (\t -> S.apply (T.removeFixed t) sub)
     (eff_type_info, context)
 
@@ -266,7 +270,7 @@ getEffectType info handlers context effect_name handled_effect  = do
             HandlerInfo location index <- atIndex handler_infos 0
             (context, handler_type) <- getEffectHandlerType context (atIndex handlers index)
             eff_type_info_member_type <- Option.unwrap (get eff_type_info.members handler_name)
-            (context, sub) <- unify context handler_type eff_type_info_member_type location
+            (context, sub) <- unify context S.createSubstitution handler_type eff_type_info_member_type location
             eff_type_info <- S.apply eff_type_info sub
             (context, eff_type_info)
 
@@ -294,7 +298,7 @@ initializeExprType current_fn_name context orig_expr = do
             context <- addExprType context id (TS.FunctionCall var function_type)
             context
         E.DynamicFunctionCall receiver args -> do
-            (context, function_type) <- Util.createGeneralFunction (getLength args) context
+            (context, function_type) <- BUtil.createGeneralFunction (getLength args) context
             (context, var) <- U.getNewTypeVarType context
             context <- addExprType context id (TS.FunctionCall var function_type)
             context
@@ -486,12 +490,15 @@ checkExprType context orig_expr = do
                     (context, _) <- matchExprWith context id result_ty location
                     context
                 None -> context
-        E.ClassMemberCall _ args -> do
+        E.ClassMemberCall qn args -> do
             sub_ids <- List.map args (\E.Expr _ id _ _ -> id)
             sub_signatures <- TEff.getExprEffectSignatures context sub_ids
             context <- TEff.setExprEffect context id sub_signatures location
             (ty, fn_ty) <- getExprAndFunctionCallType context id
+            //println "check function call {}" % (qn)
             (context, result_ty) <- checkFunctionCall context args fn_ty location
+            (ty, fn_ty) <- getExprAndFunctionCallType context id
+            //println "class member call {} ty {} fty {}" % (qn, ty, fn_ty)
             case result_ty of
                 Some result_ty -> do
                     (context, _) <- matchExprWith context id result_ty location
@@ -605,7 +612,7 @@ checkExprType context orig_expr = do
             sub_signatures <- TEff.getExprEffectSignatures context sub_ids
             context <- TEff.setExprEffect context id sub_signatures location
             show_class <- PO.FullPath getStdOpsModuleName getShowClassName
-            constraints <- [T.ClassConstraint show_class]
+            constraints <- [T.ClassConstraint show_class []]
             context <- args |> List.iter |> Iterator.fold (\context, arg -> do
                 (E.Expr _ arg_id _ arg_location) <- arg
                 (context, expected_arg_ty) <- getNewVarWithConstraints context constraints

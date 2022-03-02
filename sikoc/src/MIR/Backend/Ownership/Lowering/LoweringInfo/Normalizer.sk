@@ -6,7 +6,8 @@ import Siko.MIR.Backend.Ownership.TypeVariableInfo
 import Siko.MIR.Backend.Ownership.MemberInfo as M
 import Siko.MIR.Backend.Ownership.Duplicator
 import Siko.MIR.Backend.Ownership.Lowering.LoweringInfo
-import Siko.MIR.Backend.Ownership.Lowering.LoweringInfo.DependencyMap
+import Siko.MIR.Backend.Ownership.OrderedDependencyMap
+import Siko.MIR.Backend.Ownership.Lowering.Normalizer
 
 import Map
 import Map2
@@ -15,25 +16,9 @@ import Set
 import List2 as List2
 import List2 (List2)
 
-processTypeVariableInfo :: List2 TypeVariable -> Map2 TypeVariable (List2 TypeVariableInfo) -> Duplicator -> TypeVariableInfo -> (List2 TypeVariable, Duplicator, Map2 TypeVariable (List2 TypeVariableInfo))
-processTypeVariableInfo visited deps_map duplicator info = do
-    (duplicator, new_info) <- duplicate duplicator info
-    //println "processTypeVariableInfo: info {} new info {}" % (info, new_info)
-    if List2.contains visited info.arg_group_var
-    then (visited, duplicator, deps_map)
-    else do
-        visited <- List2.push visited info.arg_group_var
-        (visited, duplicator, deps_map) <- case Map2.get deps_map info.arg_group_var of
-            Some deps -> do
-                //println "processTypeVariableInfo: deps {}" % deps
-                List2.fold (visited, duplicator, deps_map) deps (\(visited, duplicator, deps_map), info ->
-                    processTypeVariableInfo visited deps_map duplicator info)
-            None -> (visited, duplicator, deps_map)
-        (visited, duplicator, deps_map)
-
 normalizeFunctionLoweringInfo :: Config -> FunctionLoweringInfo -> (FunctionLoweringInfo, Duplicator)
 normalizeFunctionLoweringInfo config lowering_info = do
-    (members, deps_map) <- getDependencyMap lowering_info.members
+    (members, deps_map) <- getOrderedDependencyMap lowering_info.members
     duplicator <- createNormalizer
     (visited, duplicator, deps_map) <- processTypeVariableInfo List2.empty deps_map duplicator lowering_info.result
     (visited, duplicator, deps_map) <- List2.fold (visited, duplicator, deps_map) lowering_info.args (\(visited, duplicator, deps_map), arg -> do
@@ -49,7 +34,7 @@ normalizeFunctionLoweringInfo config lowering_info = do
 normalizeTypeLoweringInfo :: Config -> TypeLoweringInfo -> (TypeLoweringInfo, Duplicator)
 normalizeTypeLoweringInfo config lowering_info = do
     //trace config "normalizeTypeLoweringInfo: input {}" % lowering_info
-    (members, deps_map) <- getDependencyMap lowering_info.members
+    (members, deps_map) <- getOrderedDependencyMap lowering_info.members
     //trace config "normalizeTypeLoweringInfo: deps_map {}" % deps_map
     duplicator <- createNormalizer
     (visited, duplicator, deps_map) <- processTypeVariableInfo List2.empty deps_map duplicator lowering_info.root

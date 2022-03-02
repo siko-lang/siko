@@ -17,7 +17,7 @@ import Siko.MIR.Backend.Ownership.InferenceInfo
 import Siko.MIR.Backend.Ownership.MemberInfo as M
 import Siko.MIR.Backend.Ownership.TypeVariableInfo
 import Siko.MIR.Backend.Ownership.OwnershipDependencyMap
-import Siko.MIR.Backend.Ownership.GroupDependencyMap
+import Siko.MIR.Backend.Ownership.OrderedDependencyMap
 import Siko.MIR.Program as MP
 import Siko.LIR.Program as LP
 import Siko.MIR.Function as MF
@@ -42,9 +42,9 @@ lowerFunction context lowering_info mir_id lir_id = do
                     function_info_store context.mir_program info.body
             context <- context { mir_program = mir_program }
             borrow_info <- checkBorrows context.mir_program info.body
+            (members, ordered_dep_map) <- getOrderedDependencyMap inference_info.members
             (members, ownership_dep_map) <- calculateOwnershipDepMap context.config inference_info.members
-            (members, group_dep_map) <- calculateGroupDepMap context.config inference_info.members
-            filter_info <- (FilterInfo group_dep_map ownership_dep_map)
+            filter_info <- (FilterInfo ordered_dep_map ownership_dep_map)
             (inference_info, filter_info) <- unpackOwnerships context.config inference_info filter_info
             inference_info <- inference_info { members = members }
             (inference_info, cloning_converters) <- inferOwnership context.config [] context.function_info_store inference_info

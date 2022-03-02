@@ -6,6 +6,8 @@ import Siko.MIR.Backend.Ownership.Allocator
 import Siko.MIR.Backend.Ownership.MemberInfo as M
 import Siko.MIR.Backend.Ownership.Duplicator
 import Siko.MIR.Backend.Ownership.EqualitySolver
+import Siko.MIR.Backend.Ownership.OrderedDependencyMap
+import Siko.MIR.Backend.Ownership.Lowering.Normalizer
 
 import Map
 import List2 as List2
@@ -20,10 +22,14 @@ data FunctionInfo = { args :: List2 TypeVariableInfo,
 
 normalizeFunctionInfo :: FunctionInfo -> FunctionInfo
 normalizeFunctionInfo function_info = do
+    (members, deps_map) <- getOrderedDependencyMap function_info.members
     duplicator <- createNormalizer
+    (visited, duplicator, deps_map) <- processTypeVariableInfo List2.empty deps_map duplicator function_info.result
+    (visited, duplicator, deps_map) <- List2.fold (visited, duplicator, deps_map) function_info.args (\(visited, duplicator, deps_map), arg -> do
+        processTypeVariableInfo visited deps_map duplicator arg)
     (duplicator, args) <- List2.mapS duplicator function_info.args duplicate
     (duplicator, result) <- duplicate duplicator function_info.result
-    (duplicator, members) <- List2.mapS duplicator function_info.members duplicate
+    (duplicator, members) <- List2.mapS duplicator members duplicate
     (duplicator, converters) <- List2.mapS duplicator function_info.converters duplicate
     (duplicator, ownershipinfos) <- List2.mapS duplicator function_info.ownershipinfos duplicate
     FunctionInfo args result members converters ownershipinfos

@@ -15,7 +15,14 @@ getFunctionInfo function_info_store id = Map.get function_info_store.functions i
 addFunctionInfo :: FunctionInfoStore -> P.Identity -> FunctionInfo -> (FunctionInfoStore, Bool)
 addFunctionInfo function_info_store id function_info = do
     (added, functions, _) <- alterS (\_, old -> case old of
-        Some old -> (old != function_info, Some function_info)
+        Some old -> do
+            // if old != function_info
+            // then do
+            //     println "addFunctionInfo: info changed"
+            //     println "addFunctionInfo: old {}" % old
+            //     println "addFunctionInfo: new {}" % function_info
+            // else ()
+            (old != function_info, Some function_info)
         None -> (True, Some function_info)) True id function_info_store.functions
     function_info_store <- function_info_store { functions = functions }
     (function_info_store, added)

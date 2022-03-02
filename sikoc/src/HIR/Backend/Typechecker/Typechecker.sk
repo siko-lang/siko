@@ -10,8 +10,8 @@ import Siko.HIR.Backend.Typechecker.FunctionStore as FS
 import Siko.HIR.Backend.InstanceResolver as IR
 import Siko.HIR.Backend.Typechecker.InstanceResolver.Checks as IRChecks
 import Siko.HIR.Backend.Typechecker.Class
-import Siko.HIR.Backend.TypeFormatter as TF
-import Siko.HIR.Backend.Util
+import Siko.HIR.TypeFormatter as TF
+import Siko.HIR.Util
 import Siko.HIR.Backend.Unification as U
 import Siko.HIR.Backend.Unification.Substitution as S
 import Siko.HIR.Backend.Unification.TypeVarGenerator as TVG
@@ -60,6 +60,12 @@ instance U.ClassProvider TypecheckerState where
                                         Some class_info -> do
                                             class_info :: CS.ClassInfo <- class_info // FIXME
                                             class_info.all_dependencies
+                                        None -> panic "Class not found in class store"
+
+    getAssociatedTypeCount state qn = case get state.class_store.class_type_info_map qn of
+                                        Some class_type_info -> do
+                                            class_type_info :: ClassTypeInfo <- class_type_info // FIXME
+                                            getLength class_type_info.associated_types
                                         None -> panic "Class not found in class store"
 
 instance HTI.DependencyProvider TypecheckerState where
@@ -115,7 +121,7 @@ checkFunctionType context fn = do
                         qn <- T.getNameFromType declared_effect
                         case get eff_signature.signatures qn of
                             Some inferred_effect -> do
-                                (context, sub) <- unify context declared_effect inferred_effect fn.location
+                                (context, sub) <- unify context S.createSubstitution declared_effect inferred_effect fn.location
                                 eff_signature <- S.apply eff_signature sub
                                 (context, eff_signature)
                             None -> (context, eff_signature))

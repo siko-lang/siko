@@ -6,14 +6,26 @@ import Siko.Parser.Function
 import Siko.Parser.Token as T
 import Siko.Parser.Token.Kind as Kind
 import Siko.Syntax.Class
+import Siko.Syntax.Ident
 import Siko.Syntax.Function
+import Siko.Syntax.TypeSignature
 import Siko.Parser.Error
 
 parseClassConstraint :: ParserState -> Result (ParserState, Constraint) (ParserState, ParserError)
 parseClassConstraint state = do
     (state, name) <- try parseQualifiedTypeName state "class name"
     (state, arg) <- try expectVarIdent state "type argument"
-    Ok (state, Constraint name arg)
+    (state, associated_types) <- if check state Kind.GreaterThan
+    then do
+        state <- try expect state Kind.GreaterThan
+        loop (state, associated_types) <- (state, []) do
+            (state, ty) <- try expectVarIdent state "class associated type"
+            associated_types <- List.push associated_types ty
+            if check state Kind.RParen
+            then break (state, associated_types)
+            else (state, associated_types)
+    else (state, [])
+    Ok (state, Constraint name arg associated_types)
 
 parseClassConstraints :: ParserState -> Result (ParserState, [Constraint]) (ParserState, ParserError)
 parseClassConstraints state =
@@ -30,7 +42,6 @@ parseClassConstraints state =
                 ti <- peekAt state index
                 case ti.token of
                     T.EndOfItem -> return False
-                    T.RightArrow -> return False
                     T.DoubleRightArrow -> return True
                     _ -> continue index + 1
 
@@ -46,12 +57,37 @@ parseBody state = do
     state <- try expect state Kind.EndOfBlock
     Ok (state, fns, fn_sigs)
 
+parseAssociatedTypeArgs :: ParserState -> Result (ParserState, [Ident]) (ParserState, ParserError)
+parseAssociatedTypeArgs state = do
+    state <- try expect state Kind.GreaterThan
+    (state, associated_types) <- loop (state, associated_types) <- (state, []) do
+        (state, ty) <- try expectVarIdent state "class associated type"
+        associated_types <- List.push associated_types ty
+        if check state Kind.KeywordWhere
+        then break (state, associated_types)
+        else (state, associated_types)
+    Ok (state, associated_types)
+
+parseAssociatedTypes :: ParserState -> Result (ParserState, [TypeSignature]) (ParserState, ParserError)
+parseAssociatedTypes state = do
+    state <- try expect state Kind.GreaterThan
+    (state, associated_types) <- loop (state, associated_types) <- (state, []) do
+        (state, ty) <- try parseTypeSignature state False False
+        associated_types <- List.push associated_types ty
+        if check state Kind.KeywordWhere
+        then break (state, associated_types)
+        else (state, associated_types)
+    Ok (state, associated_types)
+
 parseClass :: ParserState -> Result (ParserState, Class) (ParserState, ParserError)
 parseClass state = do
     state <- try expect state Kind.KeywordClass
     (state, constraints) <- try parseClassConstraints state
     (state, name) <- try expectTypeIdent state "class name"
     (state, argument) <- try expectVarIdent state "class argument"
+    (state, associated_types) <- if check state Kind.GreaterThan
+    then try parseAssociatedTypeArgs state
+    else (state, [])
     (state, functions, function_type_signatures) <- if check state Kind.KeywordWhere
         then try parseBody state
         else (state, [], [])
@@ -59,6 +95,7 @@ parseClass state = do
     clazz <- Class {
                 name = name,
                 argument = argument,
+                associated_types = associated_types,
                 constraints = constraints,
                 member_functions = functions,
                 member_function_type_signatures = function_type_signatures,
@@ -76,6 +113,9 @@ parseInstance state = do
         else (state, [])
     (state, class_name) <- try parseQualifiedTypeName state "class name"
     (state, type_signature) <- try parseTypeSignature state False False
+    (state, associated_types) <- if check state Kind.GreaterThan
+        then try parseAssociatedTypes state
+        else (state, [])
     (state, functions, function_type_signatures) <- if check state Kind.KeywordWhere
         then try parseBody state
         else (state, [], [])
@@ -83,6 +123,7 @@ parseInstance state = do
     inst <- Instance {
                 class_name = class_name,
                 type_signature = type_signature,
+                associated_types = associated_types,
                 constraints = constraints,
                 member_functions = functions,
                 member_function_type_signatures = function_type_signatures,

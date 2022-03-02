@@ -9,7 +9,7 @@ import Siko.MIR.Backend.Ownership.TypeVariableInfo
 import Siko.MIR.Backend.Ownership.MemberInfo as M
 import Siko.MIR.Backend.Ownership.Lowering.LoweringInfo
 import Siko.MIR.Backend.Ownership.Allocator
-import Siko.MIR.Backend.Ownership.Lowering.LoweringInfo.DependencyMap
+import Siko.MIR.Backend.Ownership.OrderedDependencyMap
 
 import Map
 import Map2
@@ -17,61 +17,21 @@ import Set
 import List2 as List2
 import List2 (List2)
 
-data FilterInfo = { group_dep_map :: Map2 TypeVariable (List2 TypeVariable),
+data FilterInfo = { ordered_dep_map :: Map2 TypeVariable (List2 TypeVariableInfo),
                     ownership_dep_map :: Map2 TypeVariable (List2 TypeVariable)
                    }
 
 getFilterInfoFromTypeLoweringInfo :: Config -> TypeLoweringInfo -> (TypeLoweringInfo, FilterInfo)
 getFilterInfoFromTypeLoweringInfo config lowering_info = do
-    (members, group_dep_map) <- calculateGroupDepMap config lowering_info.members
+    (members, ordered_dep_map) <- getOrderedDependencyMap lowering_info.members
     (members, ownership_dep_map) <- calculateOwnershipDepMap config lowering_info.members
-    (lowering_info { members = members }, FilterInfo group_dep_map ownership_dep_map)
+    (lowering_info { members = members }, FilterInfo ordered_dep_map ownership_dep_map)
 
 getFilterInfoFromFunctionLoweringInfo :: Config -> FunctionLoweringInfo -> (FunctionLoweringInfo, FilterInfo)
 getFilterInfoFromFunctionLoweringInfo config lowering_info = do
-    (members, group_dep_map) <- calculateGroupDepMap config lowering_info.members
+    (members, ordered_dep_map) <- getOrderedDependencyMap lowering_info.members
     (members, ownership_dep_map) <- calculateOwnershipDepMap config lowering_info.members
-    (lowering_info { members = members }, FilterInfo group_dep_map ownership_dep_map)
-
-isBorrower :: List2 M.OwnershipInfo -> TypeVariableInfo -> (List2 M.OwnershipInfo, Bool)
-isBorrower ownershipinfos info =
-    List2.foldLinear False ownershipinfos (\is_borrower, ownershipinfo ->
-        case ownershipinfo of
-            M.OwnershipInfo v (M.Borrower _) -> if v == info.ownership_var
-                then True
-                else is_borrower
-            _ -> is_borrower
-        )
-
-isDepBorrower :: List2 TypeVariableInfo -> Map2 TypeVariableInfo Bool ->
-                 Map2 TypeVariableInfo (List2 TypeVariableInfo) -> TypeVariableInfo ->
-                 (Map2 TypeVariableInfo Bool, Map2 TypeVariableInfo (List2 TypeVariableInfo), Bool)
-isDepBorrower group borrower_map deps_map item = do
-    case Map2.get deps_map item of
-        Some deps -> do
-            (borrower_map, is_borrower) <- List2.fold (borrower_map, False) deps (\(borrower_map, is_borrower), dep ->
-                if List2.contains group dep
-                then (borrower_map, is_borrower)
-                else do
-                    case Map2.get borrower_map dep of
-                        Some b -> (borrower_map, is_borrower || b)
-                        None -> panic "dep {} not found in borrower_map" % dep)
-            (borrower_map, deps_map, is_borrower)
-        None -> panic "{} not found in deps_map" % item
-
-isBorrowerGroup :: Map2 TypeVariableInfo Bool -> Map2 TypeVariableInfo (List2 TypeVariableInfo) ->
-                   List2 TypeVariableInfo -> List2 M.OwnershipInfo ->
-                   (Map2 TypeVariableInfo Bool,
-                    Map2 TypeVariableInfo (List2 TypeVariableInfo),
-                    List2 M.OwnershipInfo,
-                    Bool)
-isBorrowerGroup borrower_map deps_map group ownershipinfos = do
-    List2.fold (borrower_map, deps_map, ownershipinfos, False) group (\(borrower_map, deps_map, ownershipinfos, is_borrower), item -> do
-        (ownershipinfos, is_item_borrower) <- isBorrower ownershipinfos item
-        (borrower_map, deps_map, is_dep_borrower) <- isDepBorrower group borrower_map deps_map item
-        if is_item_borrower || is_dep_borrower
-        then (borrower_map, deps_map, ownershipinfos, True)
-        else (borrower_map, deps_map, ownershipinfos, is_borrower))
+    (lowering_info { members = members }, FilterInfo ordered_dep_map ownership_dep_map)
 
 filterMember :: List2 TypeVariableInfo -> List2 TypeVariable -> M.MemberInfo -> Bool
 filterMember infos vars member =
@@ -130,31 +90,9 @@ filterLoweringInfo :: Config -> List2 TypeVariableInfo ->
                       FilterInfo ->
                       (List2 M.MemberInfo, List2 M.OwnershipInfo, Allocator, FilterInfo)
 filterLoweringInfo config sources members ownershipinfos filter_info = do
-    (members, deps_map) <- getDependencyMap members
     kind_map <- M.toOwnershipKind ownershipinfos
-    (deps_map, kind_map, relevants) <- List2.fold (deps_map, kind_map, List2.empty) sources (\(deps_map, kind_map, relevants), source -> do
+    (deps_map, kind_map, relevants) <- List2.fold (filter_info.ordered_dep_map, kind_map, List2.empty) sources (\(deps_map, kind_map, relevants), source -> do
          processTypeVariableInfo List2.empty deps_map kind_map relevants source)
-    //println "boo Relevants {}" % relevants
-    // source_group_vars <- List2.fold List2.empty sources (\vars, source -> List2.push vars source.arg_group_var)
-    // (_, (all_group_vars, filter_info)) <- List2.foldLinear (source_group_vars, filter_info) source_group_vars
-    //     (\(all_group_vars, filter_info), var -> do
-    //         all_group_vars <- case Map2.get filter_info.group_dep_map var of
-    //             Some group_vars -> all_group_vars + group_vars
-    //             None -> all_group_vars
-    //         (List2.push all_group_vars var, filter_info))
-    // all_group_vars <- all_group_vars |> List2.sort |> List2.dedup
-    // //println "group_dep_map: {}" % filter_info.group_dep_map
-    // //println "all_group_vars {}" % all_group_vars
-    // (_, members) <- List2.filterS all_group_vars members M.isSubMember
-    // //println "filtered_members {}" % members
-    // deps_map <- M.getDependencyMap sources members
-    // groups <- processDependencies config deps_map
-    // println "Groups {}, {}" % (groups, deps_map)
-    // (groups, (deps_map, borrower_map, ownershipinfos)) <- List2.foldLinear (deps_map, Map2.empty, ownershipinfos) groups (\(deps_map, borrower_map, ownershipinfos), group -> do
-    //     (borrower_map, deps_map, ownershipinfos, is_borrower) <- isBorrowerGroup borrower_map deps_map group.items ownershipinfos
-    //     borrower_map <- List2.fold borrower_map group.items (\borrower_map, item -> Map2.put borrower_map item is_borrower)
-    //     (deps_map, borrower_map, ownershipinfos))
-    // borrowers <- Map2.getKeys (Map2.filter borrower_map (\(k, v) -> v))
     relevants <- relevants + sources
     //println "borrower_map {}" % borrower_map
     //println "relevants {}" % relevants
