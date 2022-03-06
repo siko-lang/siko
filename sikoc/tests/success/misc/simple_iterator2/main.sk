@@ -1,0 +1,16 @@
+module Main where
+
+import Std.Util
+
+import Iterator2
+
+data Counter = Counter Int
+
+instance Iterator Counter > Int where
+     next (Counter i) = if i > 10
+            then (Counter i, None)
+            else (Counter (i + 1), Some i)
+
+main = do
+    sum <- Counter 0 |> Iterator2.filter (\elem -> elem > 3) |> Iterator2.map show |> Iterator2.fold (\sum, i -> sum + "-" + i) ""
+    assert (sum == "-4-5-6-7-8-9-10")

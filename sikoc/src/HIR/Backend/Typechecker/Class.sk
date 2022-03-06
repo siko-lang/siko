@@ -74,8 +74,12 @@ processInstance state class_info_store instance_resolver i = do
             state <- addError state (SpecializedInstance i.location)
             return (state, instance_resolver, [])
         else ()
-    (instantiated_instance_type, state) <- BUtil.instantiateType i.type state
-    instance_resolver <- case IR.addUserDefinedInstance instance_resolver i.class_name instantiated_instance_type i.associated_types i.id i.location of
+    instance_vars <- Util.collectVars [] i.type
+    instance_vars <- List.fold instance_vars i.associated_types Util.collectVars
+    (instance_mapper, state) <- BUtil.initMapper instance_vars state
+    instance_type <- BUtil.remap instance_mapper i.type
+    instance_associated_types <- List.map i.associated_types (BUtil.remap instance_mapper)
+    instance_resolver <- case IR.addUserDefinedInstance instance_resolver i.class_name instance_type instance_associated_types i.id i.location of
         Ok instance_resolver -> instance_resolver
         Err location -> do
             state <- addError state (ConflictingInstances ("{}" % i.class_name) i.location location)
@@ -102,17 +106,18 @@ processInstance state class_info_store instance_resolver i = do
                             None -> instance_vars
                         (instance_mapper, state) <- BUtil.initMapper instance_vars state
                         instance_type <- BUtil.remap instance_mapper i.type
+                        instance_associated_types <- List.map i.associated_types (BUtil.remap instance_mapper)
                         (state, sub) <- case U.unify state sub class_arg_type instance_type of
                             Ok (state, sub) -> (state, sub)
                             Err _ -> panic "Class arg unification failed!"
-                        (state, sub) <- List.zipS (state, sub) class_associated_types i.associated_types (
+                        (state, sub) <- List.zipS (state, sub) class_associated_types instance_associated_types (
                                 \(state, sub), class_associated_type, instance_associated_type -> do
                                 case U.unify state sub class_associated_type instance_associated_type of
                                     Ok (state, sub) -> (state, sub)
                                     Err _ -> panic "Associated type unification failed! {} {}" % (TF.toString class_associated_type, TF.toString instance_associated_type)
                             )
                         inferred_instance_member_type <- S.apply class_member_type sub
-                        state <- case instance_member.type of
+                        (final_member_type, state) <- case instance_member.type of
                             Some instance_member_type -> do
                                 instance_member_type <- BUtil.remap instance_mapper instance_member_type
                                 state <- if checkIsomorphicType inferred_instance_member_type instance_member_type state
@@ -121,9 +126,9 @@ processInstance state class_info_store instance_resolver i = do
                                         expected <- inferred_instance_member_type |> TF.fixedType |> TF.toString
                                         found <- instance_member_type |> TF.fixedType |> TF.toString
                                         addError state (InstanceMemberTypeMismatch expected found instance_member.location)
-                                state
-                            None -> state
-                        (state, Some (TF.fixedType inferred_instance_member_type))
+                                (instance_member_type, state)
+                            None -> (TF.fixedType inferred_instance_member_type, state)
+                        (state, Some final_member_type)
                     None -> do
                         state <- addError state (InstanceMemberNotClassMember short_name instance_member.location)
                         (state, None)

@@ -116,34 +116,38 @@ hasInstance context instance_resolver sub type class_name = do
             Err ()
 
 checkInstance a :: (U.DataProvider a, U.ClassProvider a, U.TypeVarGenerator a, U.Context a) => a ->
+                    S.Substitution ->
                     InstanceResolver ->
                     T.Type ->
                     P.FullyQualifiedName ->
-                    Result (InstanceResolver, a, InstanceInfo) ()
-checkInstance context instance_resolver type class_name = do
+                    Result (InstanceResolver, a, S.Substitution, InstanceInfo) ()
+checkInstance context sub instance_resolver type class_name = do
+    constraints <- sub.constraints
+    sub <- sub { constraints = [] }
     //println "checkInstance: type: {}, class_name: {}" % (TF.toLongString type, class_name)
     case type of
         T.Var var _ -> panic "Check instance called on var"
         T.Never var -> panic "Check instance called on never"
         _ -> do
-            sub <- S.createSubstitution
             case hasInstance context instance_resolver sub type class_name of
                 Ok (instance_resolver, context, sub, instance_info) -> do
                     sub :: S.Substitution <- sub // FIXME
-                    (instance_resolver, context, success) <- List.fold (instance_resolver, context, True)
-                            sub.constraints (\(instance_resolver, var_gen, success), c -> do
+                    (instance_resolver, context, sub, success) <- List.fold (instance_resolver, context, sub, True)
+                            sub.constraints (\(instance_resolver, context, sub, success), c -> do
                                     S.UnificationConstraint c_name c_type c_associated_types <- c
                                     if c_name == class_name && c_type == type
-                                        then (instance_resolver, context, success)
+                                        then (instance_resolver, context, sub, success)
                                         else do
-                                            case checkInstance context instance_resolver c_type c_name of
-                                                Ok (instance_resolver, context, _) -> (instance_resolver, context, success)
+                                            case checkInstance context sub instance_resolver c_type c_name of
+                                                Ok (instance_resolver, context, sub, _) -> (instance_resolver, context, sub, success)
                                                 Err _ -> do
                                                     //println "Sub checkInstance failed: {} {}" % (T.toLongString c_type, c_name)
-                                                    (instance_resolver, context, False)
+                                                    (instance_resolver, context, sub, False)
                                 )
                     if success
-                        then Ok (instance_resolver, context, instance_info)
+                        then do
+                            sub <- sub { constraints = sub.constraints + constraints }
+                            Ok (instance_resolver, context, sub, instance_info)
                         else Err ()
                 Err _ -> do
                     //println "checkInstance: hasInstance failed"

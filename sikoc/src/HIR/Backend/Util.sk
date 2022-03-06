@@ -35,13 +35,19 @@ instantiateType type var_gen = do
     type <- remap mapper type
     (type, var_gen)
 
+remapConstraint :: Mapper -> T.Constraint -> T.Constraint
+remapConstraint mapper constraint =
+    case constraint of
+        T.ClassConstraint qn associated_types -> T.ClassConstraint qn (List.map associated_types (remap mapper))
+        c -> c
+
 remap :: Mapper -> T.Type -> T.Type
 remap mapper type =  T.traverse (remap_ mapper) type
     where remap_ mapper type = do
         (Mapper vars) <- mapper
         case type of
             T.Var var constraints -> case get vars var of
-                Some new_var -> T.Var new_var constraints
+                Some new_var -> T.Var new_var (List.map constraints (remapConstraint mapper))
                 None -> panic "old var {} not found" % var
             T.FixedTypeArg _ var constraints -> case get vars var of
                 Some new_var -> T.Var new_var constraints

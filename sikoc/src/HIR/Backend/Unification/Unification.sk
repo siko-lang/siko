@@ -131,6 +131,23 @@ unifyVarWithFixedArg context sub var var_constraints fixed_arg_constraints fixed
         Ok (context, sub)
     else Err ()
 
+mergeConstraints a :: (ClassProvider a, TypeVarGenerator a, DataProvider a, Context a) => a -> Substitution -> [Constraint] -> [Constraint] -> Result (a, Substitution) () // FIXME ClassProvider
+mergeConstraints context sub var1_constraints var2_constraints = do
+    var1_associated_type_map <- createAssociatedTypeMap var1_constraints
+    var2_associated_type_map <- createAssociatedTypeMap var2_constraints
+    (context, ok, sub) <- Map.fold (context, True, sub) var1_associated_type_map (\(context, ok, sub), (class_name, associated_types) ->
+        case Map.get var2_associated_type_map class_name of
+            Some var2_associated_types ->
+                List.zipS (context, ok, sub) var2_associated_types associated_types (\(context, ok, sub), ty1, ty2 -> do
+                    case unify context sub ty1 ty2 of
+                        Ok (context, sub) -> (context, ok, sub)
+                        Err _ -> (context, False, sub))
+            None -> (context, ok, sub))
+    if ok
+    then do
+        Ok (context, sub)
+    else Err ()
+
 unify a :: (TypeVarGenerator a, DataProvider a, ClassProvider a, Context a) => a -> Substitution -> Type -> Type -> Result (a, Substitution) () // FIXME TypeVarGenerator, DataProvider
 unify context sub type1 type2 = do
     //println "UNIFICATION {} {}" % (TF.toString type1, TF.toString type2)
@@ -154,6 +171,10 @@ unify context sub type1 type2 = do
                             sub <- try add sub var1 type2
                             Ok (context, sub)
                         else do
+                            // FIXME: this is wrong, lost of cases are not covered, like row constraints?
+                            (context, sub) <- try mergeConstraints context sub constraints1 constraints2
+                            constraints1 <- List.map constraints1 (\c -> apply c sub)
+                            constraints2 <- List.map constraints2 (\c -> apply c sub)
                             constraints <- constraints1 + constraints2
                             constraints <- constraints |> sort |> dedup
                             (context, new_type_var) <- getNewTypeVar context

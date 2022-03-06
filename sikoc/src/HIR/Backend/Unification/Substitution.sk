@@ -29,16 +29,18 @@ class Transform a where
 class Apply a where
     apply a :: a -> Substitution -> a
 
+instance Apply Constraint where
+    apply constraint sub =
+        case constraint of
+            ClassConstraint s associated_types -> ClassConstraint s (List.map associated_types (\ty -> apply ty sub))
+            RowConstraint name ty -> RowConstraint name (apply ty sub)
+
 instance Apply Type where
     //apply :: Type -> Substitution -> Type
     apply type sub = case type of
         Var var constraints -> case get sub.vars var of
             Some t -> apply t sub
-            None -> do
-                constraints <- constraints |> List.iter |> Iterator.map (\c -> case c of
-                    ClassConstraint s associated_types -> ClassConstraint s (List.map associated_types (\ty -> apply ty sub))
-                    RowConstraint name ty -> RowConstraint name (apply ty sub)) |> toList
-                (Var var constraints)
+            None -> (Var var (List.map constraints (\c -> apply c sub)))
         FixedTypeArg _ var _ -> case get sub.vars var of
             Some t -> apply t sub
             None -> type

@@ -42,9 +42,10 @@ checkInstanceDependenciesForInstance state instance_resolver type class_name loc
             class_info :: ClassInfo <- class_info // FIXME:
             class_info.direct_dependencies
         None -> panic "Class {} not found in class store" % class_name
-    List.fold (state, instance_resolver) deps (\(state, instance_resolver), dep ->
-        case checkInstance state instance_resolver type dep of
-            Ok (instance_resolver, state, instance_info) -> do
+    List.fold (state, instance_resolver) deps (\(state, instance_resolver), dep -> do
+        sub <- S.createSubstitution
+        case checkInstance state sub instance_resolver type dep of
+            Ok (instance_resolver, state, sub, instance_info) -> do
                 (state, instance_resolver)
             Err _ -> do
                 state <- addError state (MissingInstance ("{}" % dep) location)

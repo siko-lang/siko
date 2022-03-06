@@ -39,21 +39,21 @@ setFunctionEffects store name effects = do
         None -> panic "setFunctionEffects info not found") name store.functions
     store { functions = functions }
 
-applyTypeInfo :: FunctionTypeInfo -> S.Substitution -> FunctionTypeInfo
-applyTypeInfo func_type_info sub = do
-    args <- List.map func_type_info.args (\t -> S.apply t sub)
-    function_type <- S.apply func_type_info.function_type sub
-    result_type <- S.apply func_type_info.result_type sub
-    effects <- case func_type_info.effects of
-        Some effects -> Some (List.map effects (\t -> S.apply t sub))
-        None -> None
-    FunctionTypeInfo func_type_info.name args function_type result_type effects func_type_info.defined
+instance S.Apply FunctionTypeInfo where
+    apply func_type_info sub = do
+        args <- S.apply func_type_info.args sub
+        function_type <- S.apply func_type_info.function_type sub
+        result_type <- S.apply func_type_info.result_type sub
+        effects <- case func_type_info.effects of
+            Some effects -> Some (List.map effects (\t -> S.apply t sub))
+            None -> None
+        FunctionTypeInfo func_type_info.name args function_type result_type effects func_type_info.defined
 
 apply :: FunctionStore -> [FullyQualifiedName] -> S.Substitution -> FunctionStore
 apply store group_items sub = do
     functions <- group_items |> List.iter |> Iterator.fold (\functions, name -> do
             (functions, _) <- alter (\func_type_info -> case func_type_info of
-                Some f -> Some (applyTypeInfo f sub)
+                Some f -> Some (S.apply f sub)
                 None -> None) name functions
             functions) store.functions
     store { functions = functions }

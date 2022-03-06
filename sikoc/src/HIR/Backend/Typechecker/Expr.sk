@@ -96,13 +96,13 @@ processClassConstraints context sub location = do
     sub <- sub { constraints = [] }
     (context, sub, success) <- List.fold (context, sub, True) constraints (\(context, sub, success), S.UnificationConstraint class_name type associated_types -> do
             //println "processClassConstraints: {} {} {}" % (class_name, TF.toString type, TF.toStringTypes associated_types)
-            case IR.checkInstance context context.instance_resolver type class_name of // FIXME: put instance resolver behind type class!
-                Ok (instance_resolver, context, instance_info) -> do
+            case IR.checkInstance context sub context.instance_resolver type class_name of // FIXME: put instance resolver behind type class!
+                Ok (instance_resolver, context, sub, instance_info) -> do
                     context <- context { instance_resolver = instance_resolver }
                     instance_info :: IR.InstanceInfo <- instance_info
+                    //println "processClassConstraints2: {} {} {}" % (class_name, TF.toStringTypes associated_types, TF.toStringTypes instance_info.associated_types)
                     List.zipS (context, sub, success) associated_types instance_info.associated_types (\(context, sub, success), ty1, ty2 -> do
                             (context, sub) <- unify context sub ty1 ty2 location
-                            context <- applyToContext context sub
                             (context, sub, success)
                         )
                 Err _ -> do
@@ -295,6 +295,7 @@ initializeExprType current_fn_name context orig_expr = do
             (context, function_type) <- if contains context.group_items qn && not func_type_info.defined
                 then (context, func_type_info.function_type)
                 else instantiateType context func_type_info.function_type
+            //println "static function call {} {}" % (qn, TF.toString function_type)
             (context, var) <- U.getNewTypeVarType context
             context <- addExprType context id (TS.FunctionCall var function_type)
             context
@@ -306,6 +307,7 @@ initializeExprType current_fn_name context orig_expr = do
         E.ClassMemberCall qn args -> do
             function <- PO.getFunction context.state.program qn
             (context, function_type) <- instantiateType context (Option.unwrap function.type)
+            //println "class member call {} {}" % (qn, TF.toString function_type)
             (context, var) <- U.getNewTypeVarType context
             context <- addExprType context id (TS.FunctionCall var function_type)
             context
@@ -496,10 +498,7 @@ checkExprType context orig_expr = do
             sub_signatures <- TEff.getExprEffectSignatures context sub_ids
             context <- TEff.setExprEffect context id sub_signatures location
             (ty, fn_ty) <- getExprAndFunctionCallType context id
-            //println "check function call {}" % (qn)
             (context, result_ty) <- checkFunctionCall context args fn_ty location
-            (ty, fn_ty) <- getExprAndFunctionCallType context id
-            //println "class member call {} ty {} fty {}" % (qn, TF.toString ty, TF.toString fn_ty)
             case result_ty of
                 Some result_ty -> do
                     (context, _) <- matchExprWith context id result_ty location
@@ -711,6 +710,7 @@ addUndefinedVarToContext context undefined_vars var location =
     if contains undefined_vars var
         then (context, undefined_vars)
         else do
+            //println "TypeAnnotationNeeded"
             state <- addError context.state (TypeAnnotationNeeded location)
             context <- context { state = state }
             undefined_vars <- undefined_vars + [var]

@@ -140,17 +140,9 @@ createTypedExpr context (E.Expr s_expr id _ location) = do
 
 createTypedFunction :: Context -> F.Function () -> F.Function T.Type
 createTypedFunction context function = do
-    type <- case function.type of
-        Some type -> type
-        None -> do
-            function_type_info <- getFunctionTypeInfo context.function_store function.name
-            function_type_info.function_type
-    effects <- case function.effects of
-        Some effects -> Some effects
-        None -> do
-            function_type_info <- getFunctionTypeInfo context.function_store function.name
-            function_type_info.effects
-    //println "!!!!!!!!!{} === {}" % (function.name, TF.toString type)
+    function_type_info <- getFunctionTypeInfo context.function_store function.name
+    type <- function_type_info.function_type
+    effects <- function_type_info.effects
     F.Function {
         location = function.location,
         name = function.name,

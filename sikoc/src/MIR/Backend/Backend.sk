@@ -108,15 +108,15 @@ processDataGroups mir_program data_groups =
 
 processProgram :: Config -> MP.Program -> LP.Program
 processProgram config mir_program = do
+    trace config "TransformUpdates.."
+    mir_program <- TransformUpdates.processProgram mir_program
+    dumpProgram config mir_program (MIR "transformupdates")
     mir_program <- FnArgVarCreator.processProgram mir_program
     trace config "Rebinder.."
     mir_program <- Rebinder.processProgram mir_program
     dumpProgram config mir_program (MIR "rebinder")
     trace config "SanityCheck1.."
     SanityCheck.processProgram mir_program
-    trace config "TransformUpdates.."
-    mir_program <- TransformUpdates.processProgram mir_program
-    dumpProgram config mir_program (MIR "transformupdates")
     (data_groups, function_groups) <- createGroups config mir_program
     mir_program <- processDataGroups mir_program data_groups
     trace config "Inliner.."
