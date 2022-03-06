@@ -8,6 +8,7 @@ import Siko.HIR.Util as Util
 import Siko.HIR.Program as P
 import Siko.HIR.Data as D
 import Map as Map
+import Map (Map)
 import Std.Util
 
 class TypeVarGenerator a where
@@ -100,24 +101,35 @@ unifyVarWithType context var constraints sub type = do
     sub <- try add sub var type
     Ok (context, sub)
 
+createAssociatedTypeMap :: [Constraint] -> Map P.FullyQualifiedName [Type]
+createAssociatedTypeMap constraints = List.fold Map.empty constraints
+    (\associated_type_map, constraint -> case constraint of
+        ClassConstraint qn associated_types -> Map.put associated_type_map qn associated_types
+        _ -> associated_type_map)
+
 unifyVarWithFixedArg a :: (ClassProvider a, TypeVarGenerator a, DataProvider a, Context a) => a -> Substitution -> TypeVar -> [Constraint] -> [Constraint] -> Type -> Result (a, Substitution) () // FIXME ClassProvider
 unifyVarWithFixedArg context sub var var_constraints fixed_arg_constraints fixed_arg_type = do
+    fixed_associated_type_map <- createAssociatedTypeMap fixed_arg_constraints
     fixed_classes <- Util.collectClassesFromClassConstraints fixed_arg_constraints
-    ok <- var_constraints |> List.iter |> Iterator.fold (\ok, constraint -> ok && case constraint of
-        ClassConstraint class_name _ -> do // FIXME: associated_types
-            if contains fixed_classes class_name
-                then True
-                else do
-                    all <- fixed_classes |> List.iter |> Iterator.fold (\all, c -> do
+    var_associated_type_map <- createAssociatedTypeMap var_constraints
+    (context, ok, sub) <- Map.fold (context, True, sub) var_associated_type_map (\(context, ok, sub), (class_name, associated_types) ->
+        case Map.get fixed_associated_type_map class_name of
+            Some fixed_associated_types ->
+                List.zipS (context, ok, sub) fixed_associated_types associated_types (\(context, ok, sub), ty1, ty2 -> do
+                    case unify context sub ty1 ty2 of
+                        Ok (context, sub) -> (context, ok, sub)
+                        Err _ -> (context, False, sub))
+            None -> do
+                all <- fixed_classes |> List.iter |> Iterator.fold (\all, c -> do
                         all <- all + (getAllClassDependencies context c)
                         all) []
-                    contains all class_name
-        RowConstraint _ _ -> contains fixed_arg_constraints constraint) True
+                ok <- ok && contains all class_name
+                (context, ok, sub))
     if ok
-        then do
-            sub <- try add sub var fixed_arg_type
-            Ok (context, sub)
-        else Err ()
+    then do
+        sub <- try add sub var fixed_arg_type
+        Ok (context, sub)
+    else Err ()
 
 unify a :: (TypeVarGenerator a, DataProvider a, ClassProvider a, Context a) => a -> Substitution -> Type -> Type -> Result (a, Substitution) () // FIXME TypeVarGenerator, DataProvider
 unify context sub type1 type2 = do

@@ -19,9 +19,9 @@ parseClassConstraint state = do
     then do
         state <- try expect state Kind.GreaterThan
         loop (state, associated_types) <- (state, []) do
-            (state, ty) <- try expectVarIdent state "class associated type"
+            (state, ty) <- try parseTypeSignature state False False
             associated_types <- List.push associated_types ty
-            if check state Kind.RParen
+            if check state Kind.RParen || check state Kind.Comma
             then break (state, associated_types)
             else (state, associated_types)
     else (state, [])

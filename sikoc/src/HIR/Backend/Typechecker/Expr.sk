@@ -95,6 +95,7 @@ processClassConstraints context sub location = do
     constraints <- sub.constraints
     sub <- sub { constraints = [] }
     (context, sub, success) <- List.fold (context, sub, True) constraints (\(context, sub, success), S.UnificationConstraint class_name type associated_types -> do
+            //println "processClassConstraints: {} {} {}" % (class_name, TF.toString type, TF.toStringTypes associated_types)
             case IR.checkInstance context context.instance_resolver type class_name of // FIXME: put instance resolver behind type class!
                 Ok (instance_resolver, context, instance_info) -> do
                     context <- context { instance_resolver = instance_resolver }
@@ -498,7 +499,7 @@ checkExprType context orig_expr = do
             //println "check function call {}" % (qn)
             (context, result_ty) <- checkFunctionCall context args fn_ty location
             (ty, fn_ty) <- getExprAndFunctionCallType context id
-            //println "class member call {} ty {} fty {}" % (qn, ty, fn_ty)
+            //println "class member call {} ty {} fty {}" % (qn, TF.toString ty, TF.toString fn_ty)
             case result_ty of
                 Some result_ty -> do
                     (context, _) <- matchExprWith context id result_ty location

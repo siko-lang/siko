@@ -83,11 +83,9 @@ addFunctionSignature signature info = case info of
 
 processFunctionSignature :: ResolverState -> ModuleResolver -> TypeResolverState -> SF.FunctionSignature -> (ResolverState, TypeResolverState, Option [HT.Type], HT.Type)
 processFunctionSignature state module_resolver type_resolver signature = do
-    (type_resolver, state) <- addTypeArguments type_resolver state signature.type_arguments
+    ((type_resolver, state), _) <- addTypeArguments type_resolver state signature.type_arguments
     state <- checkTypeArguments state signature.type_arguments
-    (state, type_resolver) <- signature.constraints |> List.iter |> Iterator.fold (\(state, type_resolver), c ->
-            processClassConstraint state type_resolver module_resolver c
-        ) (state, type_resolver)
+    (state, type_resolver) <- processClassConstraints state type_resolver signature.constraints
     (type_resolver, state, type) <- processTypeSignature type_resolver state signature.type_signature
     (state, type_resolver, effects) <- case signature.effects of
         Some effects -> do
@@ -110,7 +108,6 @@ processFunctionSignature state module_resolver type_resolver signature = do
                         (state, type_resolver, effects))
             (state, type_resolver, Some effects)
         None -> (state, type_resolver, None)
-    (state, type_args) <- processTypeArgs state type_resolver signature.type_arguments True
     (state, type_resolver, effects, type)
 
 processLambdas :: [LambdaInfo] -> HP.FullyQualifiedName -> [HF.Function ()]

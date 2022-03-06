@@ -748,7 +748,11 @@ fn generate_map2_builtins(
                 _ => unreachable!(),
             };
             write!(output_file, "{}let mut arg0 = arg0.value;\n", indent)?;
-            write!(output_file, "{}let mut result = std::collections::BTreeMap::new();\n", indent)?;
+            write!(
+                output_file,
+                "{}let mut result = std::collections::BTreeMap::new();\n",
+                indent
+            )?;
             write!(output_file, "{}for (k, v) in arg0.into_iter() {{\n", indent)?;
             write!(
                 output_file,
@@ -818,7 +822,11 @@ fn generate_map2_builtins(
                 indent,
                 ir_type_to_rust_type(from, program)
             )?;
-            write!(output_file, "{}let mut call = arg2.call_ro(state);\n", indent)?;
+            write!(
+                output_file,
+                "{}let mut call = arg2.call_ro(state);\n",
+                indent
+            )?;
             write!(output_file, "{}let tuple = call.call(input);\n", indent)?;
             write!(output_file, "{}state  = tuple._siko_field_0;\n", indent)?;
             write!(output_file, "{}*v  = tuple._siko_field_1;\n", indent)?;
@@ -1496,14 +1504,8 @@ fn generate_list2_builtins(
             write!(output_file, "let mut s = arg0;")?;
             write!(output_file, "let mut v = arg1.value;")?;
             write!(output_file, "for item in &mut v {{")?;
-            write!(
-                output_file,
-                "let mut r = arg2.call_ro(s);"
-            )?;
-            write!(
-                output_file,
-                "let tuple = r.call(item.clone());"
-            )?;
+            write!(output_file, "let mut r = arg2.call_ro(s);")?;
+            write!(output_file, "let tuple = r.call(item.clone());")?;
             write!(output_file, "s  = tuple._siko_field_0;")?;
             write!(output_file, "*item  = tuple._siko_field_1;")?;
             write!(output_file, "}}")?;

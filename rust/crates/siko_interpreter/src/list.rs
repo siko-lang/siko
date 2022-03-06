@@ -456,20 +456,23 @@ impl ExternFunction for WithCapacity {
 pub struct Split {}
 
 impl ExternFunction for Split {
-    fn call(
+    fn call2(
         &self,
         environment: &Environment,
         _: Option<ExprId>,
         _: &NamedFunctionKind,
         ty: Type,
-    ) -> Value {
+    ) -> ExprResult {
         let orig_list = environment.get_arg_by_index(0);
         let index = environment.get_arg_by_index(1).core.as_int();
         let mut list: Vector<_> = orig_list.core.as_list().clone();
+        if index as usize > list.len() {
+            return ExprResult::Abort;
+        }
         let rest = list.split_off(index as usize);
         let v1 = Value::new(ValueCore::List(list), orig_list.ty.clone());
         let v2 = Value::new(ValueCore::List(rest), orig_list.ty.clone());
-        return Value::new(ValueCore::Tuple(vec![v1, v2]), ty);
+        return ExprResult::Ok(Value::new(ValueCore::Tuple(vec![v1, v2]), ty));
     }
 }
 

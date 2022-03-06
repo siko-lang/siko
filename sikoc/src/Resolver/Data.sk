@@ -64,7 +64,7 @@ processAdt state hir_program module_resolver (SD.AlgebraicDataType name type_arg
                 (state, type_resolver, variant) <- processVariant state type_resolver variant
                 variants <- variants + [variant]
                 (state, type_resolver, variants)) (state, type_resolver, [])
-    (state, type_args) <- processTypeArgs state type_resolver type_arguments True
+    type_args <- processTypeArgs type_resolver type_arguments
     (state, derived_classes) <- processDerivedClasses state module_resolver derived_classes
     (Ident n location) <- name
     qn <- HP.FullPath module_resolver.module_name n
@@ -94,7 +94,7 @@ processRecord state hir_program module_resolver (SD.Record name type_arguments f
     state <- field_names |> Map.iter |> Iterator.fold (\state, (name, instances) -> if getLength instances > 1
                             then addError state (RecordFieldConflict instances)
                             else state) state
-    (state, type_args) <- processTypeArgs state type_resolver type_arguments (not external)
+    type_args <- processTypeArgs type_resolver type_arguments
     (state, derived_classes) <- processDerivedClasses state module_resolver derived_classes
     (Ident n location) <- name
     qn <- HP.FullPath module_resolver.module_name n
