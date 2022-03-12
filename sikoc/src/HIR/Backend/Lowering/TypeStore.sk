@@ -13,7 +13,6 @@ import Siko.MIR.Program as MP
 import Siko.HIR.Backend.Unification.Util
 import Siko.HIR.Backend.Lowering.ClosureStore
 import Siko.HIR.Backend.Lowering.FunctionQueue as FQ
-import Siko.HIR.Backend.Lowering.IteratorStore as IS
 import Siko.HIR.Backend.Lowering
 import Siko.HIR.Backend.Unification as U
 import Siko.HIR.Backend.Unification.Data as UD
@@ -165,24 +164,6 @@ instantiateRecord context record record_type = do
     sub <- S.createSubstitution
     Result.unwrap (UD.instantiateRecord context record record_type)
 
-processIteratorType :: Context -> HT.Type -> MT.Type -> Context
-processIteratorType context hir_type mir_type = do
-    case mir_type of
-        MT.Adt identity -> do
-            mir_adt <- MD.AlgebraicDataType identity [] []
-            context <- addAdt context identity mir_adt
-            context
-        _ -> panic "Iterator is not an ADT"
-
-getMIRIteratorType :: Context -> HT.Type -> (Context, MT.Type)
-getMIRIteratorType context hir_type = do
-    iterator_type <- hir_type
-    (iterator_store, iterator_name) <- IS.getIteratorName context.iterator_store iterator_type
-    context <- context { iterator_store = iterator_store }
-    identity <- MP.Identity getInternalModuleName iterator_name 0
-    mir_type <- MT.Adt identity
-    (context, mir_type)
-
 processAdt :: Context -> HT.Type -> HD.AlgebraicDataType -> String -> MT.Type -> Context
 processAdt context hir_type adt module_name mir_type = do
     identity <- MT.getIdentity mir_type
@@ -309,13 +290,10 @@ getMIRType context hir_type = case hir_type of
     HT.Named qn args -> do
         module_name <- HP.getModuleName qn
         short_name <- HP.getShortName qn
-        if module_name == getIteratorModuleName &&
-            short_name == getIteratorTypeName
-            then getMIRIteratorType context hir_type
-            else case HP.getItem context.hir_program qn of
-                HP.Adt adt -> getMIRAdt context hir_type adt module_name short_name
-                HP.Record record -> getMIRRecord context hir_type module_name short_name
-                _ -> panic "Named type is not an adt nor a record"
+        case HP.getItem context.hir_program qn of
+            HP.Adt adt -> getMIRAdt context hir_type adt module_name short_name
+            HP.Record record -> getMIRRecord context hir_type module_name short_name
+            _ -> panic "Named type is not an adt nor a record"
     HT.Function from to -> getMIRClosure context hir_type
     HT.Never _ -> (context, MT.Never)
     HT.Ref t -> do
@@ -333,13 +311,10 @@ processQueuedType context hir_type mir_type = case hir_type of
     HT.Named qn args -> do
         module_name <- HP.getModuleName qn
         short_name <- HP.getShortName qn
-        if module_name == getIteratorModuleName &&
-            short_name == getIteratorTypeName
-            then processIteratorType context hir_type mir_type
-            else case HP.getItem context.hir_program qn of
-                HP.Adt adt -> processAdt context hir_type adt module_name mir_type
-                HP.Record record -> processRecord context hir_type record args mir_type
-                _ -> panic "Named type is not an adt nor a record!"
+        case HP.getItem context.hir_program qn of
+            HP.Adt adt -> processAdt context hir_type adt module_name mir_type
+            HP.Record record -> processRecord context hir_type record args mir_type
+            _ -> panic "Named type is not an adt nor a record!"
     HT.Function from to -> processClosure context hir_type mir_type
     HT.Never _ -> context
     HT.Ref t -> context

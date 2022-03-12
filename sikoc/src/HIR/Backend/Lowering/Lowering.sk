@@ -18,7 +18,6 @@ import Siko.HIR.Backend.Lowering.FunctionQueue as FQ
 import Siko.HIR.Backend.Lowering.TypeStore
 import Siko.HIR.Backend.Lowering.ClassMemberCalls
 import Siko.HIR.Backend.Lowering.ClosureStore as CS
-import Siko.HIR.Backend.Lowering.IteratorStore as IS
 import Siko.Constants
 import Siko.FileManager
 import Siko.Config
@@ -33,7 +32,6 @@ data Context = { hir_program :: HP.Program HT.Type,
                  mir_program :: MP.Program,
                  type_store :: TypeStore,
                  closure_store :: CS.ClosureStore,
-                 iterator_store :: IS.IteratorStore,
                  instance_resolver :: IR.InstanceResolver,
                  keys :: Map Key Int,
                  function_queue :: FQ.FunctionQueue,
@@ -253,7 +251,7 @@ lowerProgram config file_manager var_gen class_info_store hir_program instance_r
     type_store <- createTypeStore
     mir_program <- MP.createProgram
     context <- Context hir_program mir_program
-               type_store CS.createClosureStore IS.createIteratorStore instance_resolver Map.empty
+               type_store CS.createClosureStore instance_resolver Map.empty
                FQ.createFunctionQueue getExternalClassNames Map.empty Map.empty [] [] None None var_gen class_info_store
                file_manager
     context <- case HP.getFunctionOpt hir_program main_qn of
@@ -268,9 +266,6 @@ lowerProgram config file_manager var_gen class_info_store hir_program instance_r
     context <- FQ.processItems context
     trace config "Lowering.. createClosures"
     context <- CS.createClosures context
-    context <- FQ.processItems context
-    trace config "Lowering.. createIterators"
-    context <- IS.createIterators context
     context <- FQ.processItems context
     trace config "Lowering.. mostly done"
     (context, unit_type) <- processType context (HT.Tuple [])

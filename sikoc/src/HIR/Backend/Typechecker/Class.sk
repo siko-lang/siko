@@ -74,12 +74,9 @@ processInstance state class_info_store instance_resolver i = do
             state <- addError state (SpecializedInstance i.location)
             return (state, instance_resolver, [])
         else ()
-    instance_vars <- Util.collectVars [] i.type
-    instance_vars <- List.fold instance_vars i.associated_types Util.collectVars
-    (instance_mapper, state) <- BUtil.initMapper instance_vars state
-    instance_type <- BUtil.remap instance_mapper i.type
-    instance_associated_types <- List.map i.associated_types (BUtil.remap instance_mapper)
-    instance_resolver <- case IR.addUserDefinedInstance instance_resolver i.class_name instance_type instance_associated_types i.id i.location of
+    instance_info <- IR.InstanceInfo i.type i.associated_types i.id i.location
+    (state, instance_info) <- IR.instantiateInstanceInfo state instance_info
+    instance_resolver <- case IR.addUserDefinedInstance instance_resolver i.class_name instance_info of
         Ok instance_resolver -> instance_resolver
         Err location -> do
             state <- addError state (ConflictingInstances ("{}" % i.class_name) i.location location)

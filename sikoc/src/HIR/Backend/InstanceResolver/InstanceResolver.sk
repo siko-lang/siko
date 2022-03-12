@@ -6,6 +6,8 @@ import Siko.HIR.TypeFormatter as TF
 import Siko.HIR.Program as P
 import Siko.Syntax.Location
 import Siko.HIR.Backend.Unification as U
+import Siko.HIR.Backend.Util as BUtil
+import Siko.HIR.Util as Util
 import Siko.HIR.Backend.Unification.Substitution as S
 import Map
 
@@ -31,6 +33,15 @@ data InstanceInfo = { instance_type :: T.Type,
                       id :: InstanceId,
                       location :: Location
                     } deriving (Show)
+
+instantiateInstanceInfo a :: (U.TypeVarGenerator a, U.DataProvider a, U.ClassProvider a, U.Context a) => a -> InstanceInfo -> (a, InstanceInfo)
+instantiateInstanceInfo context instance_info = do
+    vars <- Util.collectVars [] instance_info.instance_type
+    vars <- List.fold vars instance_info.associated_types Util.collectVars
+    (mapper, context) <- BUtil.initMapper vars context
+    type <- BUtil.remap mapper instance_info.instance_type
+    associated_types <- List.map instance_info.associated_types (BUtil.remap mapper)
+    (context, InstanceInfo type associated_types instance_info.id instance_info.location)
 
 data CacheEntry = CacheEntry T.Type P.FullyQualifiedName deriving (PartialEq, Eq, PartialOrd, Ord)
 
@@ -58,11 +69,10 @@ addInstanceInfoToResolver instance_resolver class_name base_type instance_info =
                 Some instance_info_map) class_name instance_resolver.instance_map
     Ok (instance_resolver { instance_map = instance_map })
 
-addUserDefinedInstance :: InstanceResolver -> P.FullyQualifiedName -> T.Type -> [T.Type] -> InstanceId -> Location -> Result InstanceResolver Location
-addUserDefinedInstance instance_resolver class_name instance_type associated_types instance_id location = do
-    //println "Added user defined instance for {} {}" % (class_name, T.toLongString instance_type)
-    instance_info <- InstanceInfo instance_type associated_types instance_id location
-    base_type <- getBaseType instance_type
+addUserDefinedInstance :: InstanceResolver -> P.FullyQualifiedName -> InstanceInfo -> Result InstanceResolver Location
+addUserDefinedInstance instance_resolver class_name instance_info = do
+    //println "Added user defined instance for {} {}" % (class_name, T.toLongString instance_info.instance_type)
+    base_type <- getBaseType instance_info.instance_type
     addInstanceInfoToResolver instance_resolver class_name base_type instance_info
 
 unifyTypes a :: (U.DataProvider a, U.ClassProvider a, U.TypeVarGenerator a, U.Context a) => a -> S.Substitution -> T.Type -> T.Type -> (a, S.Substitution, Bool)
@@ -85,7 +95,7 @@ checkInstancesForBaseType context instance_resolver sub type base_type instance_
     //println "checkInstancesForBaseType {} {}" % (TF.toLongString type, base_type)
     case get instance_info_map base_type of
         Some instance_info -> do
-                instance_info :: InstanceInfo <- instance_info // FIXME
+                (context, instance_info) <- instantiateInstanceInfo context instance_info
                 (context, sub, success) <- unifyTypes context sub type instance_info.instance_type
                 instance_resolver <- if success && T.isConcreteType type
                     then do

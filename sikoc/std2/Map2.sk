@@ -85,9 +85,19 @@ addS s k m f = do
                 ((s, v), Some v)) s k m
     (s, v, m)
 
+data MapIter k v = { inner :: MapIterator k v }
+
+instance Iterator (MapIter k v) > (k, v) where
+    next iter =
+        case Map2.nextItem iter.inner of
+            Some (inner, a) -> do
+                iter <- iter { inner = inner }
+                (iter, Some a)
+            None -> (iter, None)
+
 @Inline
-iter k v :: Map2 k v -> Iterator (k, v)
-iter m = createIterator (Map2.intoIter m) Map2.nextItem
+iter k v :: Map2 k v -> MapIter k v
+iter m = MapIter (Map2.intoIter m)
 
 data MapIterator k v = extern
 
@@ -98,13 +108,13 @@ nextItem k v :: MapIterator k v -> Option (MapIterator k v, (k, v))
 nextItem iter = extern
 
 @Inline
-toMap2 k v :: (Ord k) => Iterator (k, v) -> Map2 k v
+toMap2 it k v :: (Iterator it > (k, v), Ord k) => it -> Map2 k v
 toMap2 iter = Iterator.fold (\m, (k, v) -> do
     (m, _) <- insert m k v
     m) Map2.empty iter
 
 @Inline
-toMap k v :: (Ord k) => Iterator (k, v) -> Map2 k v
+toMap it k v :: (Iterator it > (k, v), Ord k) => it -> Map2 k v
 toMap iter = Iterator.fold (\m, (k, v) -> do
     (m, _) <- insert m k v
     m) Map2.empty iter

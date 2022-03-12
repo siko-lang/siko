@@ -10,13 +10,18 @@ instance (Show a) => Show [a] where
         "[" + join subs ", " + "]"
 
 instance (PartialEq a) => PartialEq [a] where
+    opEq a :: [a] -> [a] -> Bool
     opEq a b =
         if getLength a != getLength b
         then False
         else do
-            loop zipper <- Iterator.zip (List.iter a) (List.iter b) do
-                case Iterator.getNext zipper of
-                    Some (zipper, (item_a, item_b)) ->
+            iter_a :: ListIter a <- List.iter a
+            iter_b :: ListIter a <- List.iter b
+            loop zipper <- Iterator.zip iter_a iter_b do
+                zipper :: IteratorZip (ListIter a) (ListIter a) <- zipper // FIXME
+                (zipper, item) <- Iterator.next zipper
+                case item of
+                    Some (item_a, item_b) ->
                         if item_a != item_b
                         then break False
                         else zipper
@@ -25,30 +30,40 @@ instance (PartialEq a) => PartialEq [a] where
 instance (Eq a) => Eq [a]
 
 instance (PartialOrd a) => PartialOrd [a] where
+    partialCmp a :: [a] -> [a] -> Option Ordering
     partialCmp a b = do
         len_a <- getLength a
         len_b <- getLength b
         if len_a != len_b
         then partialCmp len_a len_b
         else do
-            loop zipper <- Iterator.zip (List.iter a) (List.iter b) do
-                case Iterator.getNext zipper of
-                    Some (zipper, (item_a, item_b)) ->
+            iter_a :: ListIter a <- List.iter a
+            iter_b :: ListIter a <- List.iter b
+            loop zipper <- Iterator.zip iter_a iter_b do
+                zipper :: IteratorZip (ListIter a) (ListIter a) <- zipper // FIXME
+                (zipper, item) <- Iterator.next zipper
+                case item of
+                    Some (item_a, item_b) ->
                         case partialCmp item_a item_b of
                             Some Equal -> zipper
                             e -> break e
                     None -> break (Some Equal)
 
 instance (Ord a) => Ord [a] where
+    cmp a :: [a] -> [a] -> Ordering
     cmp a b = do
         len_a <- getLength a
         len_b <- getLength b
         if len_a != len_b
         then cmp len_a len_b
         else do
-            loop zipper <- Iterator.zip (List.iter a) (List.iter b) do
-                case Iterator.getNext zipper of
-                    Some (zipper, (item_a, item_b)) ->
+            iter_a :: ListIter a <- List.iter a
+            iter_b :: ListIter a <- List.iter b
+            loop zipper <- Iterator.zip iter_a iter_b do
+                zipper :: IteratorZip (ListIter a) (ListIter a) <- zipper // FIXME
+                (zipper, item) <- Iterator.next zipper
+                case item of
+                    Some (item_a, item_b) ->
                         case cmp item_a item_b of
                             Equal -> zipper
                             e -> break e
@@ -77,9 +92,19 @@ withCapacity capacity = extern
 atIndex a :: ~[~a] -> ~Int -> ~a
 atIndex index l = extern
 
+data ListIter a = { inner :: ListIterator a }
+
+instance Iterator (ListIter a) > a where
+    next iter =
+        case List.nextItem iter.inner of
+            Some (inner, a) -> do
+                 iter <- iter { inner = inner }
+                 (iter, Some a)
+            None -> (iter, None)
+
 @Inline
-iter a :: [a] -> Iterator a
-iter l = createIterator (List.intoIter l) List.nextItem
+iter it a :: [a] -> ListIter a
+iter l = ListIter (List.intoIter l)
 
 data ListIterator a = extern
 
@@ -90,7 +115,7 @@ nextItem a :: ~ListIterator ~a -> ~Option ~(~ListIterator ~a, ~a)
 nextItem iter = extern
 
 @Inline
-toList a :: Iterator a -> [a]
+toList it a :: (Iterator it > a) => it -> [a]
 toList iter = Iterator.fold (\list, item -> list + [item]) [] iter
 
 getLength a :: ~[a] -> ~Int

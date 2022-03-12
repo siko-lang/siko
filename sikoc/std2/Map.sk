@@ -13,16 +13,20 @@ instance (Show k, Show v, Ord k) => Show Map k v where
         s + "}"
 
 instance (PartialEq k, PartialEq v) => PartialEq Map k v where
+    opEq k v  :: Map k v -> Map k v -> Bool
     opEq a b = do
         len_a <- getSize a
         len_b <- getSize b
         if len_a != len_b
-        then opEq len_a len_b
+        then False
         else do
-            zipper <- Iterator.zip (Map.iter a) (Map.iter b)
-            loop zipper <- zipper do
-                case Iterator.getNext zipper of
-                    Some (zipper, ((key_a, value_a), (key_b, value_b))) ->
+            iter_a :: MapIter k v <- Map.iter a
+            iter_b :: MapIter k v <- Map.iter b
+            loop zipper <- Iterator.zip iter_a iter_b do
+                zipper :: IteratorZip (MapIter k v) (MapIter k v) <- zipper // FIXME
+                (zipper, item) <- Iterator.next zipper
+                case item of
+                    Some ((key_a, value_a), (key_b, value_b)) ->
                         if opEq key_a key_b
                         then if opEq value_a value_b
                             then zipper
@@ -31,32 +35,42 @@ instance (PartialEq k, PartialEq v) => PartialEq Map k v where
                     None -> break True
 
 instance (PartialOrd k, PartialOrd v) => PartialOrd Map k v where
+    partialCmp k v  :: Map k v -> Map k v -> Option Ordering
     partialCmp a b = do
         len_a <- getSize a
         len_b <- getSize b
         if len_a != len_b
         then partialCmp len_a len_b
         else do
-            loop zipper <- Iterator.zip (Map.iter a) (Map.iter b) do
-                case Iterator.getNext zipper of
-                    Some (zipper, ((key_a, value_a), (key_b, value_b))) ->
+            iter_a :: MapIter k v <- Map.iter a
+            iter_b :: MapIter k v <- Map.iter b
+            loop zipper <- Iterator.zip iter_a iter_b do
+                zipper :: IteratorZip (MapIter k v) (MapIter k v) <- zipper // FIXME
+                (zipper, item) <- Iterator.next zipper
+                case item of
+                    Some ((key_a, value_a), (key_b, value_b)) ->
                         case partialCmp key_a key_b of
                             Some Equal -> case partialCmp value_a value_b of
                                 Some Equal -> zipper
                                 e -> break e
                             e -> break e
-                    None -> break (Some Equal)
+                    None -> break Some Equal
 
 instance (Ord k, Ord v) => Ord Map k v where
+    cmp k v  :: Map k v -> Map k v -> Ordering
     cmp a b = do
         len_a <- getSize a
         len_b <- getSize b
         if len_a != len_b
         then cmp len_a len_b
         else do
-            loop zipper <- Iterator.zip (Map.iter a) (Map.iter b) do
-                case Iterator.getNext zipper of
-                    Some (zipper, ((key_a, value_a), (key_b, value_b))) ->
+            iter_a :: MapIter k v <- Map.iter a
+            iter_b :: MapIter k v <- Map.iter b
+            loop zipper <- Iterator.zip iter_a iter_b do
+                zipper :: IteratorZip (MapIter k v) (MapIter k v) <- zipper // FIXME
+                (zipper, item) <- Iterator.next zipper
+                case item of
+                    Some ((key_a, value_a), (key_b, value_b)) ->
                         case cmp key_a key_b of
                             Equal -> case cmp value_a value_b of
                                 Equal -> zipper
@@ -121,9 +135,19 @@ addS s k m f = do
                 ((s, v), Some v)) s k m
     (s, v, m)
 
+data MapIter k v = { inner :: MapIterator k v }
+
+instance Iterator (MapIter k v) > (k, v) where
+    next iter =
+        case Map.nextItem iter.inner of
+            Some (inner, a) -> do
+                iter <- iter { inner = inner }
+                (iter, Some a)
+            None -> (iter, None)
+
 @Inline
-iter k v :: Map k v -> Iterator (k, v)
-iter m = createIterator (intoIter m) nextItem
+iter k v :: Map k v -> MapIter k v
+iter m = MapIter (intoIter m)
 
 data MapIterator k v = extern
 
@@ -134,7 +158,7 @@ nextItem k v :: ~MapIterator ~k ~v -> ~Option ~(~MapIterator ~k ~v, ~(~k, ~v))
 nextItem iter = extern
 
 @Inline
-toMap k v :: (Ord k) => Iterator (k, v) -> Map k v
+toMap it k v :: (Iterator it > (k, v), Ord k) => it -> Map k v
 toMap iter = Iterator.fold (\m, (k, v) -> do
     (m, _) <- insert m k v
     m) empty iter
