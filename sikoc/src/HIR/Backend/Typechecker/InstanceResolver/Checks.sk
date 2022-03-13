@@ -35,26 +35,22 @@ checkConflicts state instance_resolver = do
         state) state
     state
 
-checkInstanceDependenciesForInstance :: TypecheckerState -> InstanceResolver -> T.Type -> P.FullyQualifiedName -> Location -> (TypecheckerState, InstanceResolver)
+checkInstanceDependenciesForInstance :: TypecheckerState -> InstanceResolver -> T.Type -> P.FullyQualifiedName -> Location -> TypecheckerState
 checkInstanceDependenciesForInstance state instance_resolver type class_name location = do
     deps <- case get state.class_store.classes class_name of
         Some class_info -> do
             class_info :: ClassInfo <- class_info // FIXME:
             class_info.direct_dependencies
         None -> panic "Class {} not found in class store" % class_name
-    List.fold (state, instance_resolver) deps (\(state, instance_resolver), dep -> do
-        sub <- S.createSubstitution
-        case checkInstance state sub instance_resolver type dep of
-            Ok (instance_resolver, state, sub, instance_info) -> do
-                (state, instance_resolver)
-            Err _ -> do
-                state <- addError state (MissingInstance ("{}" % dep) location)
-                (state, instance_resolver))
+    List.fold state deps (\state, dep -> do
+        case checkInstance state instance_resolver type dep of
+            Ok (state, sub, instance_info) -> state
+            Err _ -> addError state (MissingInstance ("{}" % dep) location))
 
-checkInstanceDependencies :: TypecheckerState -> InstanceResolver -> (TypecheckerState, InstanceResolver)
+checkInstanceDependencies :: TypecheckerState -> InstanceResolver -> TypecheckerState
 checkInstanceDependencies state instance_resolver =
-    Map.fold (state, instance_resolver) instance_resolver.instance_map (\(state, instance_resolver), (class_name, instance_info_map) -> do
-        Map.fold (state, instance_resolver) instance_info_map (\(state, instance_resolver), (_, i) -> do
+    Map.fold state instance_resolver.instance_map (\state, (class_name, instance_info_map) -> do
+        Map.fold state instance_info_map (\state, (_, i) -> do
                 checkInstanceDependenciesForInstance state instance_resolver i.instance_type class_name i.location
             )
     )

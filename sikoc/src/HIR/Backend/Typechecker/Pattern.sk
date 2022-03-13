@@ -29,16 +29,18 @@ addPatternEffectSignatureSet context pattern_id effects = do
 getPatternType :: Context -> P.PatternId -> T.Type
 getPatternType context pattern_id = TS.getPatternType context.type_store pattern_id
 
-matchPatternWith :: Context -> P.PatternId -> T.Type -> Location -> (Context, S.Substitution)
+matchPatternWith :: Context -> P.PatternId -> T.Type -> Location -> Context
 matchPatternWith context pattern_id type location = do
     pattern_type <- getPatternType context pattern_id
-    unify context S.createSubstitution type pattern_type location
+    context <- unify context S.createSubstitution type pattern_type location
+    context
 
-matchPatterns :: Context -> P.PatternId -> P.PatternId -> Location -> (Context, S.Substitution)
+matchPatterns :: Context -> P.PatternId -> P.PatternId -> Location -> Context
 matchPatterns context pattern_id1 pattern_id2 location = do
     pattern_type1 <- getPatternType context pattern_id1
     pattern_type2 <- getPatternType context pattern_id2
-    unify context S.createSubstitution pattern_type1 pattern_type2 location
+    context <- unify context S.createSubstitution pattern_type1 pattern_type2 location
+    context
 
 initializePatternType :: Context -> P.Pattern () -> (Context, P.Pattern ())
 initializePatternType context pat = do
@@ -104,7 +106,7 @@ checkPatternType context pat = do
             sub_signatures <- TEff.getPatternEffectSignatures context sub_ids
             context <- TEff.setPatternEffect context id sub_signatures location
             arg_types <- args |> List.iter |> Iterator.map (\(P.Pattern _ arg _ _) -> getPatternType context arg) |> toList
-            (context, _) <- matchPatternWith context id (T.Tuple arg_types) location
+            context <- matchPatternWith context id (T.Tuple arg_types) location
             context
         P.Guarded p expr -> do
             P.Pattern _ sub_pattern_id _ _ <- p
@@ -113,8 +115,8 @@ checkPatternType context pat = do
             expr_sig <- TS.getExprEffectSignature context.type_store expr_id
             context <- TEff.setPatternEffect context id [pattern_sig, expr_sig] location
             bool_ty <- Util.getBoolType
-            (context, _) <- matchExprWith context expr_id bool_ty expr_location
-            (context, _) <- matchPatterns context id sub_pattern_id location
+            context <- matchExprWith context expr_id bool_ty expr_location
+            context <- matchPatterns context id sub_pattern_id location
             context
         P.Wildcard -> addPatternEffectSignatureSet context id TEff.emptyEffectSignatureSet
         P.IntegerLiteral lit -> addPatternEffectSignatureSet context id TEff.emptyEffectSignatureSet
@@ -124,30 +126,28 @@ checkPatternType context pat = do
         P.Typed p _ -> do
             P.Pattern _ sub_pattern_id _ location <- p
             context <- TEff.copyPatternEffect context sub_pattern_id id
-            (context, _) <- matchPatterns context id sub_pattern_id location
+            context <- matchPatterns context id sub_pattern_id location
             context
         P.Record _ args -> do
             sub_ids <- List.map args (\P.Pattern _ id _ _ -> id)
             sub_signatures <- TEff.getPatternEffectSignatures context sub_ids
             context <- TEff.setPatternEffect context id sub_signatures location
-            record <- TS.getRecord context.type_store id
-            (context, record) <- List.foldE (\(context, record), index, (P.Pattern _ arg_id _ arg_location) -> do
+            context <- List.foldE (\context, index, (P.Pattern _ arg_id _ arg_location) -> do
+                    record <- TS.getRecord context.type_store id
                     D.RecordField name field_type <- atIndex record.fields index
-                    (context, sub) <- matchPatternWith context arg_id field_type arg_location
-                    record <- S.apply record sub
-                    (context, record)) (context, record) args
+                    context <- matchPatternWith context arg_id field_type arg_location
+                    context) context args
             context
         P.Variant _ index args -> do
             sub_ids <- List.map args (\P.Pattern _ id _ _ -> id)
             sub_signatures <- TEff.getPatternEffectSignatures context sub_ids
             context <- TEff.setPatternEffect context id sub_signatures location
-            adt <- TS.getAdt context.type_store id
-            (context, adt) <- List.foldE (\(context, adt), arg_index, (P.Pattern _ arg_id _ arg_location) -> do
+            context <- List.foldE (\context, arg_index, (P.Pattern _ arg_id _ arg_location) -> do
+                    adt <- TS.getAdt context.type_store id
                     variant <- atIndex adt.variants index
                     item_type <- atIndex variant.items arg_index
-                    (context, sub) <- matchPatternWith context arg_id item_type arg_location
-                    adt <- S.apply adt sub
-                    (context, adt)) (context, adt) args
+                    context <- matchPatternWith context arg_id item_type arg_location
+                    context) context args
             context
     (context, pat)
 

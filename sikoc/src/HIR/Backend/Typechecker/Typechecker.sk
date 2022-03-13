@@ -36,7 +36,13 @@ data TypecheckerState = { program :: P.Program (),
                           var_gen :: TVG.TypeVarGenerator,
                           class_store :: CS.ClassStore,
                           config :: Config,
+                          instance_resolver_history :: IR.InstanceResolverHistory
                         }
+
+instance IR.HistoryProvider TypecheckerState where
+    addEntry state ty qn = do
+        instance_resolver_history <- IR.addToHistory state.instance_resolver_history ty qn
+        state { instance_resolver_history = instance_resolver_history }
 
 instance U.Context TypecheckerState where
     ignoreConstraints context = False
@@ -121,7 +127,7 @@ checkFunctionType context fn = do
                         qn <- T.getNameFromType declared_effect
                         case get eff_signature.signatures qn of
                             Some inferred_effect -> do
-                                (context, sub) <- unify context S.createSubstitution declared_effect inferred_effect fn.location
+                                (context, sub) <- unify2 context S.createSubstitution declared_effect inferred_effect fn.location
                                 eff_signature <- S.apply eff_signature sub
                                 (context, eff_signature)
                             None -> (context, eff_signature))
@@ -130,10 +136,10 @@ checkFunctionType context fn = do
                     inferred_effects <- eff_signature.signatures |> Map.iter |> Iterator.map (\(_, eff) -> eff) |> toList
                     function_store <- FS.setFunctionEffects context.function_store fn.name inferred_effects
                     context { function_store = function_store }
-            (context, _) <- matchExprWith context body_id func_type_info.result_type location
+            context <- matchExprWith context body_id func_type_info.result_type location
             context <- context.returns |> List.iter |> Iterator.fold (\context, (arg_id, arg_location) -> do
                     func_type_info <- getFunctionTypeInfo context fn.name
-                    (context, _) <- matchExprWith context arg_id func_type_info.result_type arg_location
+                    context <- matchExprWith context arg_id func_type_info.result_type arg_location
                     context) context
             main <- P.FullPath getMainModuleName getMainFunctionName
             context <- if fn.name == main
@@ -210,17 +216,17 @@ processGroup state instance_resolver group function_store type_store = do
     (context.state, context.instance_resolver, context.function_store, type_store)
 
 processProgram :: Config -> P.Program () -> TVG.TypeVarGenerator ->
-                  Result (P.Program T.Type, TVG.TypeVarGenerator, ClassInfoStore, IR.InstanceResolver) [TypecheckerError]
+                  Result (P.Program T.Type, TVG.TypeVarGenerator, ClassInfoStore, IR.InstanceResolver, IR.InstanceResolverHistory) [TypecheckerError]
 processProgram config program var_gen = do
     instance_resolver <- IR.createInstanceResolver
-    state <- TypecheckerState program [] var_gen CS.initializeEmptyClassStore config
+    state <- TypecheckerState program [] var_gen CS.initializeEmptyClassStore config IR.createInstanceResolverHistory
     trace config "TYCHK processData"
     type_store <- TP.TypeStore Map.empty Map.empty Map.empty
     trace config "TYCHK processClassesAndInstances"
     (state, instance_resolver, class_info_store) <- processClassesAndInstances config state instance_resolver
     trace config "TYCHK processAutoDerivedInstances"
     state <- IRChecks.checkConflicts state instance_resolver
-    (state, instance_resolver) <- IRChecks.checkInstanceDependencies state instance_resolver
+    state <- IRChecks.checkInstanceDependencies state instance_resolver
     trace config "TYCHK processFunctions"
     (state, function_store, groups) <- processFunctions config state
     //println "Functions: {}" % (getSize function_store.functions)
@@ -234,5 +240,5 @@ processProgram config program var_gen = do
     if isEmpty state.errors
         then do
             typed_program <- TP.createTypedProgram type_store function_store state.program
-            Ok (typed_program, state.var_gen, class_info_store, instance_resolver)
+            Ok (typed_program, state.var_gen, class_info_store, instance_resolver, state.instance_resolver_history)
         else Err state.errors

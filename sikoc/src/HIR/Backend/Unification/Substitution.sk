@@ -29,6 +29,18 @@ class Transform a where
 class Apply a where
     apply a :: a -> Substitution -> a
 
+instance Apply UnificationConstraint where
+    apply constraint sub = do
+        type <- apply constraint.type sub
+        associated_types <- apply constraint.associated_types sub
+        constraint { type = type, associated_types = associated_types }
+
+instance Apply Substitution where
+    apply sub1 sub2 = do
+        vars <- Map.map sub1.vars (\(var, ty) -> (var, apply ty sub2))
+        constraints <- apply sub1.constraints sub2
+        sub1 { vars = vars, constraints = constraints }
+
 instance Apply Constraint where
     apply constraint sub =
         case constraint of

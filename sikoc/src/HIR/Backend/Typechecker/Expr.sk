@@ -32,7 +32,13 @@ data Context = { type_store :: TS.TypeStore,
                  instance_resolver :: IR.InstanceResolver,
                  state :: TypecheckerState,
                  returns :: [(E.ExprId, Location)],
-                 group_items :: [PO.FullyQualifiedName] }
+                 group_items :: [PO.FullyQualifiedName],
+                 class_constraints :: [S.UnificationConstraint] }
+
+instance IR.HistoryProvider Context where
+    addEntry context ty qn = do
+        state <- IR.addEntry context.state ty qn
+        context { state = state }
 
 instance U.TypeVarGenerator Context where
     getNewTypeVar context = do
@@ -56,7 +62,8 @@ instance U.ClassProvider Context where
     getAssociatedTypeCount context qn = U.getAssociatedTypeCount context.state qn
 
 initializeContext :: TypecheckerState -> IR.InstanceResolver -> FS.FunctionStore -> [PO.FullyQualifiedName] -> Context
-initializeContext state instance_resolver function_store group_items = Context TS.initializeTypeStore function_store instance_resolver state [] group_items
+initializeContext state instance_resolver function_store group_items =
+    Context TS.initializeTypeStore function_store instance_resolver state [] group_items []
 
 addExprType :: Context -> E.ExprId -> TS.ExprTypeState -> Context
 addExprType context expr_id expr_type = do
@@ -88,45 +95,71 @@ applyToContext :: Context -> S.Substitution -> Context
 applyToContext context sub = do
     type_store <- S.apply context.type_store sub
     function_store <- FS.apply context.function_store context.group_items sub
-    context { type_store = type_store, function_store = function_store }
+    class_constraints <- S.apply context.class_constraints sub
+    context { type_store = type_store,
+              function_store = function_store,
+              class_constraints = class_constraints }
 
-processClassConstraints :: Context -> S.Substitution -> Location -> Result (Context, S.Substitution) (Context, S.Substitution)
-processClassConstraints context sub location = do
-    constraints <- sub.constraints
-    sub <- sub { constraints = [] }
-    (context, sub, success) <- List.fold (context, sub, True) constraints (\(context, sub, success), S.UnificationConstraint class_name type associated_types -> do
+addClassConstraints :: Context -> [S.UnificationConstraint] -> Context
+addClassConstraints context constraints = context { class_constraints = context.class_constraints + constraints }
+
+processClassConstraints :: Context -> Location -> Result Context Context
+processClassConstraints context location = do
+    loop context <- context do
+        context :: Context <- context // FIXME
+        if isEmpty context.class_constraints
+        then break Ok context
+        else do
+            (constraint, class_constraints) <- List.remove context.class_constraints (List.getLength context.class_constraints - 1)
+            context <- context { class_constraints = class_constraints }
+            S.UnificationConstraint class_name type associated_types <- constraint
             //println "processClassConstraints: {} {} {}" % (class_name, TF.toString type, TF.toStringTypes associated_types)
-            case IR.checkInstance context sub context.instance_resolver type class_name of // FIXME: put instance resolver behind type class!
-                Ok (instance_resolver, context, sub, instance_info) -> do
-                    context <- context { instance_resolver = instance_resolver }
+            case IR.checkInstance context context.instance_resolver type class_name of // FIXME: put instance resolver behind type class!
+                Ok (context, sub, instance_info) -> do
+                    sub :: S.Substitution <- sub // FIXME
+                    instance_info :: IR.InstanceInfo <- instance_info // FIXME
+                    //println "processClassConstraints: sub {}" % sub
                     context <- applyToContext context sub
-                    instance_info :: IR.InstanceInfo <- instance_info
+                    context <- addClassConstraints context sub.constraints
                     //println "processClassConstraints2: {} {} {}" % (class_name, TF.toStringTypes associated_types, TF.toStringTypes instance_info.associated_types)
-                    List.zipS (context, sub, success) associated_types instance_info.associated_types (\(context, sub, success), ty1, ty2 -> do
-                            (context, sub) <- unify context sub ty1 ty2 location
-                            (context, sub, success)
-                        )
+                    List.zipS context associated_types instance_info.associated_types (\context, ty1, ty2 -> do
+                            unify context S.createSubstitution ty1 ty2 location)
                 Err _ -> do
                     //println "processClassConstraints failed: {} {}" % (TF.toString type, class_name)
-                    (context, sub, False)
-        )
-    if success then Ok (context, sub) else Err (context, sub)
+                    break Err context
 
-unify :: Context -> S.Substitution -> T.Type -> T.Type -> Location -> (Context, S.Substitution)
+unify :: Context -> S.Substitution -> T.Type -> T.Type -> Location -> Context
 unify context sub ty1 ty2 location = do
     //println "Unifying {} {}" % (TF.toString ty1, TF.toString ty2)
     case U.unify context sub ty1 ty2 of
         Ok (context, sub) -> do
             //println "Ok! Sub: {}" % sub
             context <- applyToContext context sub
-            case processClassConstraints context sub location of
-                Ok (context, sub) -> (context, sub)
-                Err (context, sub) -> do
+            context <- addClassConstraints context sub.constraints
+            case processClassConstraints context location of
+                Ok context -> context
+                Err context -> do
                     context :: Context <- context // FIXME
                     err <- TypeMismatch (ty1 |> TF.fixedType |> TF.toString) (ty2 |> TF.fixedType |> TF.toString) location
                     state <- addError context.state err
                     context <- context { state = state }
-                    (context, sub)
+                    context
+        Err _ -> do
+            //println "Not Ok! {}, {}" % (TF.toString ty1, TF.toString ty2)
+            err <- TypeMismatch (ty1 |> TF.fixedType |> TF.toString) (ty2 |> TF.fixedType |> TF.toString) location
+            state <- addError context.state err
+            context <- context { state = state }
+            context
+
+// FIXME: is this really needed??
+unify2 :: Context -> S.Substitution -> T.Type -> T.Type -> Location -> (Context, S.Substitution)
+unify2 context sub ty1 ty2 location = do
+    //println "Unifying {} {}" % (TF.toString ty1, TF.toString ty2)
+    case U.unify context sub ty1 ty2 of
+        Ok (context, sub) -> do
+            //println "Ok! Sub: {}" % sub
+            context <- applyToContext context sub
+            (context, sub)
         Err _ -> do
             //println "Not Ok! {}, {}" % (TF.toString ty1, TF.toString ty2)
             err <- TypeMismatch (ty1 |> TF.fixedType |> TF.toString) (ty2 |> TF.fixedType |> TF.toString) location
@@ -134,22 +167,25 @@ unify context sub ty1 ty2 location = do
             context <- context { state = state }
             (context, sub)
 
-matchExprWith :: Context -> E.ExprId -> T.Type -> Location -> (Context, S.Substitution)
+matchExprWith :: Context -> E.ExprId -> T.Type -> Location -> Context
 matchExprWith context expr_id type location = do
     expr_type <- getExprType context expr_id
-    unify context S.createSubstitution type expr_type location
+    context <- unify context S.createSubstitution type expr_type location
+    context
 
-matchExprs :: Context -> E.ExprId -> E.ExprId -> Location -> (Context, S.Substitution)
+matchExprs :: Context -> E.ExprId -> E.ExprId -> Location -> Context
 matchExprs context expr_id1 expr_id2 location = do
     expr_type1 <- getExprType context expr_id1
     expr_type2 <- getExprType context expr_id2
-    unify context S.createSubstitution expr_type1 expr_type2 location
+    context <- unify context S.createSubstitution expr_type1 expr_type2 location
+    context
 
-matchExprWithPattern :: Context -> E.ExprId -> P.PatternId -> Location -> (Context, S.Substitution)
+matchExprWithPattern :: Context -> E.ExprId -> P.PatternId -> Location -> Context
 matchExprWithPattern context expr_id pattern_id location = do
     expr_type <- getExprType context expr_id
     patter_type <- getPatternType context pattern_id
-    unify context S.createSubstitution patter_type expr_type location
+    context <- unify context S.createSubstitution patter_type expr_type location
+    context
 
 instantiateType :: Context -> T.Type -> (Context, T.Type)
 instantiateType context type = do
@@ -272,7 +308,7 @@ getEffectType info handlers context effect_name handled_effect  = do
             HandlerInfo location index <- atIndex handler_infos 0
             (context, handler_type) <- getEffectHandlerType context (atIndex handlers index)
             eff_type_info_member_type <- Option.unwrap (get eff_type_info.members handler_name)
-            (context, sub) <- unify context S.createSubstitution handler_type eff_type_info_member_type location
+            (context, sub) <- unify2 context S.createSubstitution handler_type eff_type_info_member_type location
             eff_type_info <- S.apply eff_type_info sub
             (context, eff_type_info)
 
@@ -425,31 +461,32 @@ initializeExprType current_fn_name context orig_expr = do
             context
     (context, orig_expr)
 
-checkSingleArgCall :: Context -> E.Expr () -> T.Type -> (Context, Option T.Type)
-checkSingleArgCall context (E.Expr _ id _ location) fn_ty = case fn_ty of
-    T.Function from to -> do
-        (context, sub) <- matchExprWith context id from location
-        to <- S.apply to sub
-        (context, Some to)
-    _ -> (context, None)
-
-checkFunctionCall :: Context -> [E.Expr ()] -> T.Type -> Location -> (Context, Option T.Type)
-checkFunctionCall context args fn_ty call_location = do
-    (context, result_ty) <- args |> List.iter
-            |> Iterator.fold (\(context, result_ty), arg -> case result_ty of
-                    Some result_ty -> checkSingleArgCall context arg result_ty
-                    None -> (context, None)
-                ) (context, Some fn_ty)
-    context <- case result_ty of
-        Some _ -> context
-        None -> do
-            arg_type_strings <- args |> List.iter
-                            |> Iterator.map (\(E.Expr _ arg _ _) -> TF.toString (getExprType context arg)) |> toList
-            arg_strings <- "{}" % (join arg_type_strings ", ")
-            err <- TooManyArguments arg_strings (TF.toString fn_ty) call_location
-            state <- addError context.state err
-            context { state = state }
-    (context, result_ty)
+checkFunctionCall :: Context -> Option PO.FullyQualifiedName -> E.ExprId -> [E.Expr ()] -> Location -> Context
+checkFunctionCall context qn expr_id args call_location =
+    loop (context, index) <- (context, 0) do
+        (ty, fn_ty) <- getExprAndFunctionCallType context expr_id
+        //println "[{}] Checking {}. arg of {}" % (qn, index, TF.toString fn_ty)
+        fn_args <- T.getArgs fn_ty
+        if getLength args <= index
+        then do
+            result_ty <- T.getResultType fn_ty (getLength args)
+            //println "result ty {} " % TF.toString result_ty
+            context <- matchExprWith context expr_id result_ty call_location
+            break context
+        else do
+            if getLength fn_args <= index
+            then do
+                arg_type_strings <- List.map args (\(E.Expr _ arg _ _) -> TF.toString (getExprType context arg))
+                arg_strings <- "{}" % (join arg_type_strings ", ")
+                err <- TooManyArguments arg_strings (TF.toString fn_ty) call_location
+                state <- addError context.state err
+                break context { state = state }
+            else do
+                arg_ty <- atIndex fn_args index
+                E.Expr _ arg_id _ location <- atIndex args index
+                //println "arg ty {}" % TF.toString arg_ty
+                context <- matchExprWith context arg_id arg_ty location
+                (context, index + 1)
 
 checkExprType :: Context -> E.Expr () -> (Context, E.Expr ())
 checkExprType context orig_expr = do
@@ -472,13 +509,8 @@ checkExprType context orig_expr = do
                             (context, sub_signatures + sigs)
                         None -> panic "Effects not found for called fn {}" % qn
             context <- TEff.setExprEffect context id sub_signatures location
-            (ty, fn_ty) <- getExprAndFunctionCallType context id
-            (context, result_ty) <- checkFunctionCall context args fn_ty location
-            case result_ty of
-                Some result_ty -> do
-                    (context, _) <- matchExprWith context id result_ty location
-                    context
-                None -> context
+            context <- checkFunctionCall context (Some qn) id args location
+            context
         E.DynamicFunctionCall receiver args -> do
             sub_ids <- List.map args (\E.Expr _ id _ _ -> id)
             E.Expr _ receiver_id _ receiver_location <- receiver
@@ -486,58 +518,33 @@ checkExprType context orig_expr = do
             context <- TEff.setExprEffect context id sub_signatures location
             (ty, fn_ty) <- getExprAndFunctionCallType context id
             recv_ty <- getExprType context receiver_id
-            (context, sub) <- matchExprWith context receiver_id fn_ty receiver_location
-            fn_ty <- S.apply fn_ty sub
-            (context, result_ty) <- checkFunctionCall context args fn_ty location
-            case result_ty of
-                Some result_ty -> do
-                    (context, _) <- matchExprWith context id result_ty location
-                    context
-                None -> context
+            context <- matchExprWith context receiver_id fn_ty receiver_location
+            context <- checkFunctionCall context None id args location
+            context
         E.ClassMemberCall qn args -> do
             sub_ids <- List.map args (\E.Expr _ id _ _ -> id)
             sub_signatures <- TEff.getExprEffectSignatures context sub_ids
             context <- TEff.setExprEffect context id sub_signatures location
-            (ty, fn_ty) <- getExprAndFunctionCallType context id
-            (context, result_ty) <- checkFunctionCall context args fn_ty location
-            case result_ty of
-                Some result_ty -> do
-                    (context, _) <- matchExprWith context id result_ty location
-                    context
-                None -> context
+            context <- checkFunctionCall context (Some qn) id args location
+            context
         E.EffectMemberCall qn args -> do
             sub_ids <- List.map args (\E.Expr _ id _ _ -> id)
             sub_signatures <- TEff.getExprEffectSignatures context sub_ids
             context <- TEff.updateExprEffect context id sub_signatures location
-            (ty, fn_ty) <- getExprAndFunctionCallType context id
-            (context, result_ty) <- checkFunctionCall context args fn_ty location
-            case result_ty of
-                Some result_ty -> do
-                    (context, _) <- matchExprWith context id result_ty location
-                    context
-                None -> context
-        E.VariantConstructorCall _ args -> do
+            context <- checkFunctionCall context (Some qn) id args location
+            context
+        E.VariantConstructorCall qn args -> do
             sub_ids <- List.map args (\E.Expr _ id _ _ -> id)
             sub_signatures <- TEff.getExprEffectSignatures context sub_ids
             context <- TEff.setExprEffect context id sub_signatures location
-            (ty, fn_ty) <- getExprAndFunctionCallType context id
-            (context, result_ty) <- checkFunctionCall context args fn_ty location
-            case result_ty of
-                Some result_ty -> do
-                    (context, _) <- matchExprWith context id result_ty location
-                    context
-                None -> context
-        E.RecordConstructorCall _ args -> do
+            context <- checkFunctionCall context (Some qn) id args location
+            context
+        E.RecordConstructorCall qn args -> do
             sub_ids <- List.map args (\E.Expr _ id _ _ -> id)
             sub_signatures <- TEff.getExprEffectSignatures context sub_ids
             context <- TEff.setExprEffect context id sub_signatures location
-            (ty, fn_ty) <- getExprAndFunctionCallType context id
-            (context, result_ty) <- checkFunctionCall context args fn_ty location
-            case result_ty of
-                Some result_ty -> do
-                    (context, _) <- matchExprWith context id result_ty location
-                    context
-                None -> context
+            context <- checkFunctionCall context (Some qn) id args location
+            context
         E.If cond true false -> do
             E.Expr _ cond_id _ cond_location <- cond
             E.Expr _ true_id _ true_location <- true
@@ -545,16 +552,16 @@ checkExprType context orig_expr = do
             sub_ids <- [cond_id, true_id, false_id]
             sub_signatures <- TEff.getExprEffectSignatures context sub_ids
             context <- TEff.setExprEffect context id sub_signatures location
-            (context, _) <- matchExprWith context cond_id Util.getBoolType cond_location
-            (context, _) <- matchExprs context true_id false_id false_location
-            (context, _) <- matchExprs context id false_id false_location
+            context <- matchExprWith context cond_id Util.getBoolType cond_location
+            context <- matchExprs context true_id false_id false_location
+            context <- matchExprs context id false_id false_location
             context
         E.Tuple args -> do
             sub_ids <- List.map args (\E.Expr _ id _ _ -> id)
             sub_signatures <- TEff.getExprEffectSignatures context sub_ids
             context <- TEff.setExprEffect context id sub_signatures location
             arg_types <- args |> List.iter |> Iterator.map (\(E.Expr _ arg _ _) -> getExprType context arg) |> toList
-            (context, _) <- matchExprWith context id (T.Tuple arg_types) location
+            context <- matchExprWith context id (T.Tuple arg_types) location
             context
         E.List args -> do
             sub_ids <- List.map args (\E.Expr _ id _ _ -> id)
@@ -567,10 +574,10 @@ checkExprType context orig_expr = do
                 context <- args |> List.iter |> Iterator.fold (\context, (E.Expr _ arg_id _ arg_location) -> do
                     first_ty <- getExprType context first_id
                     arg_ty <- getExprType context arg_id
-                    (context, _) <- matchExprWith context arg_id first_ty arg_location
+                    context <- matchExprWith context arg_id first_ty arg_location
                     context) context
                 first_ty <- getExprType context first_id
-                (context, _) <- matchExprWith context id (Util.getListType first_ty) location
+                context <- matchExprWith context id (Util.getListType first_ty) location
                 context
         E.IntegerLiteral _ -> addExprEffectSignatureSet context id TEff.emptyEffectSignatureSet
         E.FloatLiteral _ -> addExprEffectSignatureSet context id TEff.emptyEffectSignatureSet
@@ -581,7 +588,7 @@ checkExprType context orig_expr = do
             sub_signatures <- TEff.getExprEffectSignatures context sub_ids
             context <- TEff.setExprEffect context id sub_signatures location
             E.Expr _ last_id _ _ <- atIndex args ((getLength args) - 1)
-            (context, _) <- matchExprs context id last_id location
+            context <- matchExprs context id last_id location
             context
         E.Bind p rhs -> do
             P.Pattern _ pattern_id _ pattern_location <- p
@@ -589,8 +596,8 @@ checkExprType context orig_expr = do
             pattern_sig <- TS.getPatternEffectSignature context.type_store pattern_id
             rhs_sig <- TS.getExprEffectSignature context.type_store rhs_id
             context <- TEff.setExprEffect context id [pattern_sig, rhs_sig] location
-            (context, _) <- matchExprWithPattern context rhs_id pattern_id pattern_location
-            (context, _) <- matchExprWith context id (T.Tuple []) location
+            context <- matchExprWithPattern context rhs_id pattern_id pattern_location
+            context <- matchExprWith context id (T.Tuple []) location
             context
         E.FieldAccess field_name receiver -> do
             E.Expr _ receiver_id _ receiver_location <- receiver
@@ -598,7 +605,7 @@ checkExprType context orig_expr = do
             field_ty <- getExprType context id
             constraints <- [T.RowConstraint (T.NamedRow (getString field_name)) field_ty]
             (context, expected_receiver_ty) <- getNewVarWithConstraints context constraints
-            (context, _) <- matchExprWith context receiver_id expected_receiver_ty receiver_location
+            context <- matchExprWith context receiver_id expected_receiver_ty receiver_location
             context
         E.TupleFieldAccess index receiver -> do
             E.Expr _ receiver_id _ receiver_location <- receiver
@@ -606,7 +613,7 @@ checkExprType context orig_expr = do
             field_ty <- getExprType context id
             constraints <- [T.RowConstraint (T.IndexedRow index) field_ty]
             (context, expected_receiver_ty) <- getNewVarWithConstraints context constraints
-            (context, _) <- matchExprWith context receiver_id expected_receiver_ty receiver_location
+            context <- matchExprWith context receiver_id expected_receiver_ty receiver_location
             context
         E.Formatter fmt args -> do
             sub_ids <- List.map args (\E.Expr _ id _ _ -> id)
@@ -617,7 +624,7 @@ checkExprType context orig_expr = do
             context <- args |> List.iter |> Iterator.fold (\context, arg -> do
                 (E.Expr _ arg_id _ arg_location) <- arg
                 (context, expected_arg_ty) <- getNewVarWithConstraints context constraints
-                (context, _) <- matchExprWith context arg_id expected_arg_ty arg_location
+                context <- matchExprWith context arg_id expected_arg_ty arg_location
                 context) context
             context
         E.CaseOf body cases bind_groups -> do
@@ -629,17 +636,17 @@ checkExprType context orig_expr = do
                 case_sigs + [case_pattern_sig, case_body_sig])
             context <- TEff.setExprEffect context id ([body_sig] + case_sigs) location
             E.Case (P.Pattern _ pattern_id () pattern_location) (E.Expr _ case_body_id () case_body_location) <- atIndex cases 0
-            (context, _) <- matchExprs context id case_body_id location
+            context <- matchExprs context id case_body_id location
             context <- cases |> List.iter |> Iterator.fold (\context, (E.Case (P.Pattern _ pattern_id () pattern_location) (E.Expr _ case_body_id () case_body_location)) -> do
-                (context, _) <- matchExprWithPattern context body_id pattern_id pattern_location
-                (context, _) <- matchExprs context id case_body_id case_body_location
+                context <- matchExprWithPattern context body_id pattern_id pattern_location
+                context <- matchExprs context id case_body_id case_body_location
                 context) context
             context <- bind_groups |> List.iter |> Iterator.fold (\context, bind_group -> do
                     bind_group.bindings |> Map.iter |> Iterator.fold (\context, (name, instances) -> do
                             P.BindRef _ first_pattern_id <- atIndex instances 0
                             instances |> List.iter |> Iterator.fold (\context, P.BindRef _ pattern_id -> do
                                     pattern_location <- TS.getPatternLocation context.type_store pattern_id
-                                    (context, _) <- matchPatterns context pattern_id first_pattern_id pattern_location
+                                    context <- matchPatterns context pattern_id first_pattern_id pattern_location
                                     context
                                 ) context
                         ) context
@@ -653,7 +660,7 @@ checkExprType context orig_expr = do
                     id)
             sub_signatures <- TEff.getExprEffectSignatures context sub_ids
             context <- TEff.setExprEffect context id sub_signatures location
-            (context, _) <- matchExprs context id ref_id location
+            context <- matchExprs context id ref_id location
             context
         E.Return arg -> do
             E.Expr _ arg_id _ arg_location <- arg
@@ -676,18 +683,16 @@ checkExprType context orig_expr = do
             pattern_sig <- TS.getPatternEffectSignature context.type_store pattern_id
             expr_sigs <- TEff.getExprEffectSignatures context [initializer_id, body_id]
             context <- TEff.setExprEffect context id ([pattern_sig] + expr_sigs) location
-            (context, _) <- matchExprs context initializer_id body_id body_location
-            (context, _) <- matchExprWithPattern context initializer_id pattern_id pattern_location
-            context <- continues |> List.iter |> Iterator.fold (\context, (E.ExprRef source ref_location) -> do
-                (context, _) <- matchExprs context initializer_id source ref_location
-                context) context
-            context <- breaks |> List.iter |> Iterator.fold (\context, (E.ExprRef source ref_location) -> do
-                (context, _) <- matchExprs context id source ref_location
-                context) context
+            context <- matchExprs context initializer_id body_id body_location
+            context <- matchExprWithPattern context initializer_id pattern_id pattern_location
+            context <- List.fold context continues (\context, (E.ExprRef source ref_location) ->
+                            matchExprs context initializer_id source ref_location)
+            context <- List.fold context breaks (\context, (E.ExprRef source ref_location) ->
+                            matchExprs context id source ref_location)
             context
         E.ArgRef _ -> addExprEffectSignatureSet context id TEff.emptyEffectSignatureSet
         E.ValueRef (P.BindRef _ pattern_id) -> do
-            (context, _) <- matchExprWithPattern context id pattern_id location
+            context <- matchExprWithPattern context id pattern_id location
             context <- addExprEffectSignatureSet context id TEff.emptyEffectSignatureSet
             context
         E.With handlers body _ -> do
@@ -702,7 +707,7 @@ checkExprType context orig_expr = do
             body_sig <- TS.getExprEffectSignature context.type_store body_id
             (context, body_sig) <- TEff.removeEffects context body_sig effects location
             context <- TEff.setExprEffect context id ([body_sig] + handler_sigs) location
-            (context, _) <- matchExprs context id body_id location
+            context <- matchExprs context id body_id location
             context
     (context, orig_expr)
 

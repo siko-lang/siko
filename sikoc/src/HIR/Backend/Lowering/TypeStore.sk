@@ -107,19 +107,20 @@ getDependencies impl = case impl of
 
 checkExternalImpl :: Context -> HT.Type -> HP.FullyQualifiedName -> MD.ExternalClassImplKind -> Context
 checkExternalImpl context hir_type class_name external_class_impl = do
-    entry <- IR.CacheEntry hir_type class_name
-    context <- case get context.instance_resolver.cache entry of
-        Some instance_info -> do
-            //println "checkExternalImpl: {}/{}" % (TF.toString hir_type, external_class_impl)
-            added_impls <- [external_class_impl] + (getDependencies external_class_impl)
-            (external_class_impls, _) <- alter (\external_class_impls -> case external_class_impls of
-                Some external_class_impls -> do
-                    impls <- (external_class_impls + added_impls) |> sort |> dedup
-                    Some impls
-                None -> Some added_impls) hir_type context.external_class_impls
-            context { external_class_impls = external_class_impls }
-        None -> context
-    context
+    if IR.wasChecked context.instance_resolver_history hir_type class_name
+    then case IR.checkInstance context context.instance_resolver hir_type class_name of
+            Ok (context, sub, instance_info) -> do
+                context :: Context <- context // FIXME
+                //println "checkExternalImpl: {}/{}" % (TF.toString hir_type, external_class_impl)
+                added_impls <- [external_class_impl] + (getDependencies external_class_impl)
+                (external_class_impls, _) <- alter (\external_class_impls -> case external_class_impls of
+                    Some external_class_impls -> do
+                        impls <- (external_class_impls + added_impls) |> sort |> dedup
+                        Some impls
+                    None -> Some added_impls) hir_type context.external_class_impls
+                context { external_class_impls = external_class_impls }
+            Err _ -> context
+    else context
 
 checkExternalImpls :: Context -> HT.Type -> Context
 checkExternalImpls context hir_type = do

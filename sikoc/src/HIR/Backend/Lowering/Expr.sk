@@ -315,13 +315,9 @@ processClassMemberCall :: Context ->
                          (Context, ME.Expr)
 processClassMemberCall context function_type arg_type class_name qn mir_args has_default_impl = do
     member_name <- HPO.getShortName qn
-    entry <- IR.CacheEntry arg_type class_name
     (context, instance_info) <- do
-            sub <- S.createSubstitution
-            case IR.checkInstance context sub context.instance_resolver arg_type class_name of
-                Ok (instance_resolver, context, sub, instance_info) -> do
-                    context <- context { instance_resolver = instance_resolver }
-                    (context, instance_info)
+            case IR.checkInstance context context.instance_resolver arg_type class_name of
+                Ok (context, sub, instance_info) -> (context, instance_info)
                 Err _ -> panic "{}/{} no instance found" % (TF.toString arg_type, class_name)
     user_instance <- HPO.getInstance context.hir_program instance_info.id
     selected_member_name <- user_instance.members |> List.iter |> Iterator.fold (\selected_member_name, member -> do

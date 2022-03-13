@@ -29,8 +29,8 @@ dumpProgram config program type =
 processProgram :: Config -> P.Program () -> ExprIdGenerator -> PatternIdGenerator -> TVG.TypeVarGenerator -> FileManager -> Result MP.Program [TypecheckerError]
 processProgram config program expr_id_gen pattern_id_gen var_gen file_manager = do
     trace config "Typechecking.."
-    (typed_program, var_gen, class_info_store, instance_resolver) <- try TC.processProgram config program var_gen
+    (typed_program, var_gen, class_info_store, instance_resolver, instance_resolver_history) <- try TC.processProgram config program var_gen
     (expr_id_gen, pattern_id_gen, var_gen, typed_program) <- ER.processProgram config typed_program expr_id_gen pattern_id_gen var_gen class_info_store
     (typed_program, expr_id_gen, pattern_id_gen, var_gen) <- Inliner.processProgram config typed_program expr_id_gen pattern_id_gen var_gen class_info_store
-    mir_program <- L.lowerProgram config file_manager var_gen class_info_store typed_program instance_resolver
+    mir_program <- L.lowerProgram config file_manager var_gen class_info_store typed_program instance_resolver instance_resolver_history
     Ok mir_program

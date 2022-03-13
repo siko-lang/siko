@@ -44,8 +44,14 @@ data Context = { hir_program :: HP.Program HT.Type,
                  temp_var_gen :: Option (Counter ME.Var),
                  var_gen :: TVG.TypeVarGenerator,
                  class_info_store :: CDS.ClassInfoStore,
-                 file_manager :: FileManager
+                 file_manager :: FileManager,
+                 instance_resolver_history :: IR.InstanceResolverHistory
                }
+
+instance IR.HistoryProvider Context where
+    addEntry context ty qn = do
+        instance_resolver_history <- IR.addToHistory context.instance_resolver_history ty qn
+        context { instance_resolver_history = instance_resolver_history }
 
 instance U.TypeVarGenerator Context where
     getNewTypeVar context = do
@@ -244,8 +250,8 @@ generateExternalImpls context = do
                 context) context
         ) context
 
-lowerProgram :: Config -> FileManager -> TVG.TypeVarGenerator -> CDS.ClassInfoStore -> HP.Program HT.Type -> IR.InstanceResolver -> MP.Program
-lowerProgram config file_manager var_gen class_info_store hir_program instance_resolver = do
+lowerProgram :: Config -> FileManager -> TVG.TypeVarGenerator -> CDS.ClassInfoStore -> HP.Program HT.Type -> IR.InstanceResolver -> IR.InstanceResolverHistory -> MP.Program
+lowerProgram config file_manager var_gen class_info_store hir_program instance_resolver instance_resolver_history = do
     trace config "Lowering to MIR.."
     main_qn <- HP.Effectless getMainModuleName getMainFunctionName
     type_store <- createTypeStore
@@ -253,7 +259,7 @@ lowerProgram config file_manager var_gen class_info_store hir_program instance_r
     context <- Context hir_program mir_program
                type_store CS.createClosureStore instance_resolver Map.empty
                FQ.createFunctionQueue getExternalClassNames Map.empty Map.empty [] [] None None var_gen class_info_store
-               file_manager
+               file_manager instance_resolver_history
     context <- case HP.getFunctionOpt hir_program main_qn of
         Some main -> do
             item <- FQ.Normal main_qn (HT.Tuple [])
