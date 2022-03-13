@@ -1,30 +1,19 @@
 module Main where
 
-data Option a = Some a | None
+data ImportedItem = ImportedItem
+data Item = Item
 
-class Other a
+importLocalItem :: String -> Item -> [ImportedItem]
+importLocalItem module_name item = do
+    [ImportedItem]
 
-class Iterator2 a > b where
-    next a b :: a -> (a, Option b)
-    next a = (a, None)
+adder :: [ImportedItem] -> [ImportedItem] -> [ImportedItem]
+adder a b = a + b
 
-data Foo = Foo
+processLocals :: String -> [Item] -> [ImportedItem]
+processLocals module_name locals = do
+    imported_items <- locals |> List.iter |> Iterator.map (importLocalItem module_name) |> Iterator.fold (\total, items -> total + items)  []
+    //imported_items <- locals |> List.iter |> Iterator.map (importLocalItem module_name) |> Iterator.fold adder  []
+    imported_items
 
-data Bar = Bar
-
-instance Iterator2 Foo > Bar where
-    next :: Foo -> (Foo, Option Bar)
-    next f = (f, Some Bar)
-
-someFunc1 = do
-    a <- Foo
-    next a
-
-someFunc2 a = next a
-
-someFunc3 e f :: (Iterator2 e > f) => e -> (e, Option f)
-someFunc3 a = next a
-
-main = do
-    a <- someFunc1
-    ()
+main = ()

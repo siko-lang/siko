@@ -99,6 +99,7 @@ processClassConstraints context sub location = do
             case IR.checkInstance context sub context.instance_resolver type class_name of // FIXME: put instance resolver behind type class!
                 Ok (instance_resolver, context, sub, instance_info) -> do
                     context <- context { instance_resolver = instance_resolver }
+                    context <- applyToContext context sub
                     instance_info :: IR.InstanceInfo <- instance_info
                     //println "processClassConstraints2: {} {} {}" % (class_name, TF.toStringTypes associated_types, TF.toStringTypes instance_info.associated_types)
                     List.zipS (context, sub, success) associated_types instance_info.associated_types (\(context, sub, success), ty1, ty2 -> do

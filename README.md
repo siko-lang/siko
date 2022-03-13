@@ -24,7 +24,7 @@ Status: ![](https://github.com/siko-lang/siko/workflows/Master/badge.svg)
 - [X] Type classes
   - [X] Single parameter type classes
   - [X] Dependencies
-  - [ ] Associated types
+  - [X] Associated types
 - [X] Instances
 - [X] Auto currying
 - [X] Iterators

@@ -96,6 +96,8 @@ checkInstancesForBaseType context instance_resolver sub type base_type instance_
     case get instance_info_map base_type of
         Some instance_info -> do
                 (context, instance_info) <- instantiateInstanceInfo context instance_info
+                //println "Cloned instance info {}/{}" % (TF.toString instance_info.instance_type, TF.toStringTypes instance_info.associated_types)
+                //println "Cloned instance info {}/{}" % (instance_info.instance_type, instance_info.associated_types)
                 (context, sub, success) <- unifyTypes context sub type instance_info.instance_type
                 instance_resolver <- if success && T.isConcreteType type
                     then do
@@ -103,6 +105,9 @@ checkInstancesForBaseType context instance_resolver sub type base_type instance_
                         (cache, _) <- insert instance_resolver.cache entry instance_info
                         instance_resolver { cache = cache }
                     else instance_resolver
+                instance_type <- S.apply instance_info.instance_type sub
+                associated_types <- S.apply instance_info.associated_types sub
+                instance_info <- instance_info { instance_type = instance_type, associated_types = associated_types }
                 Ok (instance_resolver, context, sub, instance_info)
         None -> do
             //println "checkInstancesForBaseType: not found"
