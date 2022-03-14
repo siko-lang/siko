@@ -22,7 +22,10 @@ import Map2 (Map2)
 
 data Converter = { from :: TypeVariable,
                    to :: TypeVariable,
-                 } deriving (PartialEq, Eq, PartialOrd, Ord, Show)
+                 } deriving (PartialEq, Eq, PartialOrd, Ord)
+
+instance Show Converter where
+    show converter = "{} -> {}" % (converter.from, converter.to)
 
 data Borrow = Local E.ExprId
             | External BorrowId
@@ -244,7 +247,7 @@ toFunctionInfo config inference_info = do
             res <- not (List2.contains input_members m)
             (input_members, res))
         input_members <- filtered_input_members
-        //output_members <- filtered_output_members
+        output_members <- filtered_output_members
         output_ownership_vars <- List2.single inference_info.result.ownership_var
         input_ownership_vars <- List2.fold List2.empty inference_info.args
             (\ownership_vars, info -> List2.push ownership_vars info.ownership_var)

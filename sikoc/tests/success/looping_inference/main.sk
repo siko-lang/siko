@@ -1,0 +1,45 @@
+module Siko.HIR.Expr where
+
+data Expr a = Expr (SimpleExpr a) a
+
+data SimpleExpr a = Do [Expr a]
+                  | Bind (Pattern a) (Expr a)
+
+data Pattern a = Pattern (SimplePattern a) a
+
+data SimplePattern a = Tuple [Pattern a]
+                     | Guarded (Pattern a) (Expr a)
+
+module Main where
+
+import Siko.HIR.Expr as E
+
+data Type = Type
+
+createTypedSimplePattern :: E.SimplePattern () -> E.SimplePattern Type
+createTypedSimplePattern s_pattern = case s_pattern of
+    E.Tuple patterns -> E.Tuple (List.map patterns (createTypedPattern))
+    E.Guarded pattern body -> E.Guarded (createTypedPattern pattern) (createTypedExpr body)
+
+createTypedPattern :: E.Pattern () -> E.Pattern Type
+createTypedPattern (E.Pattern s_pattern _) = do
+    type <- Type
+    s_pattern <- createTypedSimplePattern s_pattern
+    E.Pattern s_pattern type
+
+processExprs :: [E.Expr ()] -> [E.Expr Type]
+processExprs exprs = List.map exprs (createTypedExpr)
+
+createTypedSimpleExpr :: E.SimpleExpr () -> E.SimpleExpr Type
+createTypedSimpleExpr s_expr = case s_expr of
+    E.Do items -> E.Do (processExprs items)
+    E.Bind pattern rhs -> E.Bind (createTypedPattern pattern) (createTypedExpr rhs)
+
+createTypedExpr :: E.Expr () -> E.Expr Type
+createTypedExpr (E.Expr s_expr _) = do
+    type <- Type
+    s_expr <- createTypedSimpleExpr s_expr
+    E.Expr s_expr type
+
+main = do
+    other <- createTypedExpr (E.Expr (E.Do []) ())
