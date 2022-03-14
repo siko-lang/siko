@@ -178,6 +178,9 @@ impl InstanceResolver {
                 return true;
             }
         }
+        if let Type::Tuple(_) = ty {
+            return true;
+        }
         if let Some(unifier) = self.has_instance(&ty, class_id) {
             let constraints = unifier.get_substitution().get_constraints();
             for constraint in constraints {

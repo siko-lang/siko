@@ -56,6 +56,9 @@ impl Typechecker {
                     let mut unifiers = Vec::new();
                     for variant_type in &adt_type_info.variant_types {
                         for item_type in &variant_type.item_types {
+                            if let Type::Tuple(_) = item_type.0 {
+                                continue;
+                            }
                             if program.instance_resolver.check_instance(
                                 derive_info.class_id,
                                 class.name.clone(),
@@ -109,6 +112,9 @@ impl Typechecker {
                     //println!("Processing derived_class {} for {}", class.name, record.name);
                     let mut unifiers = Vec::new();
                     for field_type in &record_type_info.field_types {
+                        if let Type::Tuple(_) = field_type.0 {
+                            continue;
+                        }
                         if program.instance_resolver.check_instance(
                             derive_info.class_id,
                             class.name.clone(),
