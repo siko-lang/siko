@@ -35,38 +35,45 @@ data BorrowSet = { borrows :: Set Borrow } deriving (Show, PartialEq, Eq, Partia
 
 data TypeIdentity = { var :: TypeVariable, id :: P.Identity } deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
-data InferenceInfo = { expr_type_variables :: Map2 E.ExprId TypeVariableInfo,
-                       var_type_variables :: Map2 E.Var TypeVariableInfo,
+data FunctionInferenceInfo = { expr_type_variables :: Map2 E.ExprId TypeVariableInfo,
+                               var_type_variables :: Map2 E.Var TypeVariableInfo,
+                               args :: List2 TypeVariableInfo,
+                               result :: TypeVariableInfo,
+                             } deriving (PartialEq, Eq, PartialOrd, Ord, Show)
+
+data InferenceInfo = { group :: List2 P.Identity,
+                       function_infos :: Map2 P.Identity FunctionInferenceInfo,
                        ownership_values :: Map2 TypeVariable M.OwnershipKind,
-                       args :: List2 TypeVariableInfo,
-                       result :: TypeVariableInfo,
                        members :: List2 M.MemberInfo,
                        converters :: List2 Converter,
                        allocator :: Allocator,
                        function_converters :: Map2 E.ExprId (List2 Converter),
+                       group_function_converters :: Map2 P.Identity (List2 Converter),
                        borrow_sets :: Map2 BorrowId BorrowSet,
                        external_borrows :: Map2 BorrowId BorrowId,
                      } deriving (PartialEq, Eq, PartialOrd, Ord, Show)
 
-createInferenceInfoFromLoweringInfo :: FunctionLoweringInfo -> InferenceInfo
-createInferenceInfoFromLoweringInfo lowering_info = do
+createInferenceInfoFromLoweringInfo :: FunctionLoweringInfo -> P.Identity -> InferenceInfo
+createInferenceInfoFromLoweringInfo lowering_info function_id = do
     expr_type_variables <- Map2.empty
     var_type_variables <- Map2.empty
     ownership_values <- Map2.empty
     args <- lowering_info.args
+    var_type_variables <- List2.foldE (\var_type_variables, index, arg ->
+            Map2.put var_type_variables (E.Arg index) arg) var_type_variables args
     result <- lowering_info.result
+    function_inference_info <- FunctionInferenceInfo expr_type_variables var_type_variables args result
+    function_infos <- Map2.put Map2.empty function_id function_inference_info
     allocator <- lowering_info.allocator
     members <- lowering_info.members
     converters <- List2.empty
     function_converters <- Map2.empty
+    group_function_converters <- Map2.empty
     borrow_sets <- Map2.empty
-    inference_info <- InferenceInfo expr_type_variables var_type_variables
-        ownership_values args result members converters allocator
-        function_converters borrow_sets Map2.empty
-    inference_info <- List2.foldE (\inference_info, index, arg -> do
-        var <- E.Arg index
-        (var_type_variables, _) <- Map2.insert inference_info.var_type_variables var arg
-        inference_info { var_type_variables = var_type_variables }) inference_info args
+    group <- List2.single function_id
+    inference_info <- InferenceInfo group
+        function_infos ownership_values members converters allocator
+        function_converters group_function_converters borrow_sets Map2.empty
     List2.fold inference_info lowering_info.ownershipinfos (\inference_info, ownershipinfo -> do
             (inference_info, v, kind) <- case ownershipinfo of
                 M.OwnershipInfo v M.Unknown -> (inference_info, v, M.Unknown)
@@ -78,25 +85,37 @@ createInferenceInfoFromLoweringInfo lowering_info = do
             inference_info { ownership_values = ownership_values }
         )
 
-createInferenceInfo :: Int -> InferenceInfo
-createInferenceInfo arg_count = do
-    allocator <- createAllocator
+addFunctionInferenceInfo :: InferenceInfo -> P.Identity -> Int -> InferenceInfo
+addFunctionInferenceInfo inference_info id arg_count = do
     expr_type_variables <- Map2.empty
     var_type_variables <- Map2.empty
-    ownership_values <- Map2.empty
     args <- List2.empty
-    function_converters <- Map2.empty
-    borrow_sets <- Map2.empty
-    (allocator, result) <- getNextTypeVariableInfo allocator
-    inference_info <- InferenceInfo expr_type_variables var_type_variables
-            ownership_values args result List2.empty List2.empty allocator
-            function_converters borrow_sets Map2.empty
-    loop (inference_info, index) <- (inference_info, 0) do
+    allocator <- inference_info.allocator
+    (var_type_variables, args, allocator) <- loop (var_type_variables, args, allocator, index) <- (var_type_variables, args, allocator, 0) do
         if index >= arg_count
-        then break inference_info
+        then break (var_type_variables, args, allocator)
         else do
-            inference_info <- addVar inference_info (E.Arg index)
-            (inference_info, index + 1)
+            (allocator, info) <- getNextTypeVariableInfo allocator
+            arg <- E.Arg index
+            var_type_variables <- Map2.put var_type_variables arg info
+            args <- List2.push args info
+            (var_type_variables, args, allocator, index + 1)
+    (allocator, result) <- getNextTypeVariableInfo allocator
+    function_inference_info <- FunctionInferenceInfo expr_type_variables var_type_variables args result
+    function_infos <- Map2.put inference_info.function_infos id function_inference_info
+    group <- List2.push inference_info.group id
+    inference_info { group = group, allocator = allocator, function_infos = function_infos }
+
+createInferenceInfo :: InferenceInfo
+createInferenceInfo = do
+    allocator <- createAllocator
+    function_infos <- Map2.empty
+    ownership_values <- Map2.empty
+    function_converters <- Map2.empty
+    group_function_converters <- Map2.empty
+    borrow_sets <- Map2.empty
+    InferenceInfo List2.empty function_infos ownership_values List2.empty List2.empty allocator
+            function_converters group_function_converters borrow_sets Map2.empty
 
 createBorrowSet :: InferenceInfo -> Borrow -> (InferenceInfo, BorrowId)
 createBorrowSet inference_info borrow = do
@@ -136,21 +155,22 @@ getBorrowSet inference_info id =
         Some borrow_set -> (inference_info, borrow_set)
         None -> panic "No borrow set found for {}" % id
 
-addVar :: InferenceInfo -> E.Var -> InferenceInfo
-addVar inference_info var = do
+addVar :: InferenceInfo -> P.Identity -> E.Var -> InferenceInfo
+addVar inference_info function_id var = do
     (allocator, info) <- getNextTypeVariableInfo inference_info.allocator
-    args <- case var of
-        E.Arg _ -> List2.push inference_info.args info
-        _ -> inference_info.args
-    (var_type_variables, _) <- Map2.insert inference_info.var_type_variables var info
-    inference_info <- inference_info { args = args, var_type_variables = var_type_variables, allocator = allocator }
+    function_infos <- Map2.updateValue inference_info.function_infos function_id (\function_inference_info -> do
+        var_type_variables <- Map2.put function_inference_info.var_type_variables var info
+        function_inference_info { var_type_variables = var_type_variables })
+    inference_info <- inference_info { function_infos = function_infos, allocator = allocator }
     inference_info
 
-addExpr :: InferenceInfo -> E.ExprId -> InferenceInfo
-addExpr inference_info expr_id = do
+addExpr :: InferenceInfo -> P.Identity -> E.ExprId -> InferenceInfo
+addExpr inference_info function_id expr_id = do
     (allocator, info) <- getNextTypeVariableInfo inference_info.allocator
-    (expr_type_variables, _) <- Map2.insert inference_info.expr_type_variables expr_id info
-    inference_info <- inference_info { expr_type_variables = expr_type_variables, allocator = allocator }
+    function_infos <- Map2.updateValue inference_info.function_infos function_id (\function_inference_info -> do
+        expr_type_variables <- Map2.put function_inference_info.expr_type_variables expr_id info
+        function_inference_info { expr_type_variables = expr_type_variables })
+    inference_info <- inference_info { function_infos = function_infos, allocator = allocator }
     inference_info
 
 addMemberInfo :: InferenceInfo -> M.MemberInfo -> InferenceInfo
@@ -182,132 +202,194 @@ getOwnership inference_info var = do
     result <- Map2.get inference_info.ownership_values var
     (inference_info, result)
 
-getTypeVariableInfoByExprId :: InferenceInfo -> E.ExprId -> (InferenceInfo, TypeVariableInfo) // FIXME
-getTypeVariableInfoByExprId inference_info expr_id =
-    case Map2.get inference_info.expr_type_variables expr_id of
+getFunctionInferenceInfo :: InferenceInfo -> P.Identity -> (InferenceInfo, FunctionInferenceInfo)
+getFunctionInferenceInfo inference_info function_id =
+    case Map2.get inference_info.function_infos function_id of
+        Some function_inference_info -> (inference_info, function_inference_info)
+        None -> panic "function_inference_info not found in getFunctionInferenceInfo"
+
+getTypeVariableInfoByExprId :: InferenceInfo -> E.ExprId -> P.Identity -> (InferenceInfo, TypeVariableInfo) // FIXME
+getTypeVariableInfoByExprId inference_info expr_id function_id = do
+    (inference_info, function_inference_info) <- getFunctionInferenceInfo inference_info function_id
+    case Map2.get function_inference_info.expr_type_variables expr_id of
         Some i -> (inference_info, i)
         None -> panic "TypeVariableInfo not found for expr {}" % expr_id
 
-getTypeVariableInfoByVar :: InferenceInfo -> E.Var -> (InferenceInfo, TypeVariableInfo) // FIXME
-getTypeVariableInfoByVar inference_info var =
-    case Map2.get inference_info.var_type_variables var of
+getTypeVariableInfoByVar :: InferenceInfo -> E.Var -> P.Identity -> (InferenceInfo, TypeVariableInfo) // FIXME
+getTypeVariableInfoByVar inference_info var function_id = do
+    (inference_info, function_inference_info) <- getFunctionInferenceInfo inference_info function_id
+    case Map2.get function_inference_info.var_type_variables var of
         Some i -> (inference_info, i)
         None -> panic "TypeVariableInfo not found for var {}" % var
 
-dumpInferenceInfoStats :: Config -> InferenceInfo -> ()
-dumpInferenceInfoStats config inference_info = do
-    trace config "members: {}" % List2.getLength inference_info.members
-    trace config  "converters: {}" % List2.getLength inference_info.converters
-    trace config  "expr_type_variables: {}" % Map2.getSize inference_info.expr_type_variables
-    trace config  "var_type_variables: {}" % Map2.getSize inference_info.var_type_variables
-    trace config  "ownership_values: {}" % Map2.getSize inference_info.ownership_values
-    trace config  "borrow_sets: {}" % Map2.getSize inference_info.borrow_sets
+getFunctionConverters :: Config -> InferenceInfo -> P.Identity -> List2 Converter
+getFunctionConverters config inference_info function_id = do
+    (inference_info, function_inference_info) <- getFunctionInferenceInfo inference_info function_id
+    members <- inference_info.members
+    converters <- inference_info.converters
+    (converters, converter_map) <- List2.foldLinear Map2.empty converters (\converter_map, converter ->
+        Map2.put converter_map converter.from converter.to)
+    (members, group_dep_map) <- calculateGroupDepMap config members
+    input_group_vars <- List2.fold List2.empty function_inference_info.args
+        (\input_group_vars, info -> do
+            input_group_vars <- case Map2.get group_dep_map info.arg_group_var of
+                Some group_vars -> input_group_vars + group_vars
+                None -> input_group_vars
+            List2.push input_group_vars info.arg_group_var)
+    input_group_vars <- input_group_vars |> List2.sort |> List2.dedup
+    //trace config "toFunctionInfo: collecting input group vars"
+    output_group_vars <- case Map2.get group_dep_map function_inference_info.result.arg_group_var of
+        Some group_vars -> group_vars
+        None -> List2.empty
+    output_group_vars <- List2.push output_group_vars function_inference_info.result.arg_group_var
+    output_group_vars <- output_group_vars |> List2.sort |> List2.dedup
+    (input_group_vars, input_members) <- List2.filterS input_group_vars members M.isSubMember
+    //trace config "toFunctionInfo: filter output group vars"
+    (output_group_vars, output_members) <- List2.filterS output_group_vars members M.isSubMember
+    //trace config "toFunctionInfo: filter input members"
+    output_ownership_vars <- List2.single function_inference_info.result.ownership_var
+    input_ownership_vars <- List2.fold List2.empty function_inference_info.args
+        (\ownership_vars, info -> List2.push ownership_vars info.ownership_var)
+    //trace config "toFunctionInfo: to ownership infos"
+    (input_members, input_ownership_vars) <- List2.foldLinear input_ownership_vars input_members (\vars, member ->
+        case member of
+            M.Variant _ _ _ info -> List2.push vars info.ownership_var
+            M.Field _ _ _ info -> List2.push vars info.ownership_var
+            M.Extern _ _ _ info -> List2.push vars info.ownership_var)
+    //trace config "toFunctionInfo: collecting output_ownership_vars"
+    (output_members, output_ownership_vars) <- List2.foldLinear output_ownership_vars output_members (\vars, member ->
+        case member of
+            M.Variant _ _ _ info -> List2.push vars info.ownership_var
+            M.Field _ _ _ info -> List2.push vars info.ownership_var
+            M.Extern _ _ _ info -> List2.push vars info.ownership_var)
+    (converters, (converter_map, input_ownership_vars, output_ownership_vars, filtered_converters)) <- List2.foldLinear (converter_map, input_ownership_vars, output_ownership_vars, List2.empty) converters
+        (\(converter_map, input_ownership_vars, output_ownership_vars, filtered_converters), converter -> do
+            filtered_converters <- if List2.contains input_ownership_vars converter.from
+            then do
+                converter <- loop (visited, converter) <- (List2.single converter.from, converter) do
+                    converter :: Converter <- converter // FIXME
+                    case Map2.get converter_map converter.to of
+                        Some another_to -> do
+                            if List2.contains visited another_to
+                            then break converter
+                            else do
+                                visited <- List2.push visited another_to
+                                //println "Switching to {} -> {}" % (converter.to, another_to)
+                                (visited, converter { to = another_to })
+                        None -> break converter
+                if List2.contains output_ownership_vars converter.to
+                then List2.push filtered_converters converter
+                else filtered_converters
+            else filtered_converters
+            (converter_map, input_ownership_vars, output_ownership_vars, filtered_converters))
+    filtered_converters
 
-toFunctionInfo :: Config -> InferenceInfo -> FunctionInfo
-toFunctionInfo config inference_info = do
-        //println "toFunctionInfo"
-        // println "members: {}" % List2.getLength inference_info.members
-        // println "converters: {}" % List2.getLength inference_info.converters
-        // println "expr_type_variables: {}" % Map2.getSize inference_info.expr_type_variables
-        // println "var_type_variables: {}" % Map2.getSize inference_info.var_type_variables
-        // println "ownership_values: {}" % Map2.getSize inference_info.ownership_values
-        // println "borrow_sets: {}" % Map2.getSize inference_info.borrow_sets
+toFunctionInfo :: Config -> InferenceInfo -> P.Identity -> FunctionInfo
+toFunctionInfo config inference_info function_id = do
+    (inference_info, function_inference_info) <- getFunctionInferenceInfo inference_info function_id
+    //println "toFunctionInfo"
+    // println "members: {}" % List2.getLength inference_info.members
+    // println "converters: {}" % List2.getLength inference_info.converters
+    // println "expr_type_variables: {}" % Map2.getSize function_inference_info.expr_type_variables
+    // println "var_type_variables: {}" % Map2.getSize function_inference_info.var_type_variables
+    // println "ownership_values: {}" % Map2.getSize inference_info.ownership_values
+    // println "borrow_sets: {}" % Map2.getSize inference_info.borrow_sets
 
-        members <- inference_info.members
-        converters <- inference_info.converters
-        (members, group_dep_map) <- calculateGroupDepMap config members
-        //trace config "toFunctionInfo: creating converter map"
-        (converters, converter_map) <- List2.foldLinear Map2.empty converters (\converter_map, converter ->
-            Map2.put converter_map converter.from converter.to)
-        //trace config "toFunctionInfo: done"
-        //trace config "toFunctionInfo: collecting input group vars"
-        input_group_vars <- List2.fold List2.empty inference_info.args
-            (\input_group_vars, info -> do
-                input_group_vars <- case Map2.get group_dep_map info.arg_group_var of
-                    Some group_vars -> input_group_vars + group_vars
-                    None -> input_group_vars
-                List2.push input_group_vars info.arg_group_var)
-        input_group_vars <- input_group_vars |> List2.sort |> List2.dedup
-        //trace config "toFunctionInfo: collecting input group vars"
-        output_group_vars <- case Map2.get group_dep_map inference_info.result.arg_group_var of
-            Some group_vars -> group_vars
-            None -> List2.empty
-        output_group_vars <- List2.push output_group_vars inference_info.result.arg_group_var
-        output_group_vars <- output_group_vars |> List2.sort |> List2.dedup
-        //trace config "toFunctionInfo: filter input group vars"
-        (input_group_vars, input_members) <- List2.filterS input_group_vars members M.isSubMember
-        //trace config "toFunctionInfo: filter output group vars"
-        (output_group_vars, output_members) <- List2.filterS output_group_vars members M.isSubMember
-        //trace config "toFunctionInfo: filter input members"
-        (output_members, filtered_input_members) <- List2.filterS output_members input_members (\output_members, m -> do
-            res <- not (List2.contains output_members m)
-            (output_members, res))
-        trace config "toFunctionInfo: filter output members"
-        (input_members, filtered_output_members) <- List2.filterS input_members output_members (\input_members, m -> do
-            res <- not (List2.contains input_members m)
-            (input_members, res))
-        input_members <- filtered_input_members
-        output_members <- filtered_output_members
-        output_ownership_vars <- List2.single inference_info.result.ownership_var
-        input_ownership_vars <- List2.fold List2.empty inference_info.args
-            (\ownership_vars, info -> List2.push ownership_vars info.ownership_var)
-        //trace config "toFunctionInfo: to ownership infos"
-        (input_members, input_ownership_vars) <- List2.foldLinear input_ownership_vars input_members (\vars, member ->
-            case member of
-                M.Variant _ _ _ info -> List2.push vars info.ownership_var
-                M.Field _ _ _ info -> List2.push vars info.ownership_var
-                M.Extern _ _ _ info -> List2.push vars info.ownership_var)
-        //trace config "toFunctionInfo: collecting output_ownership_vars"
-        (output_members, output_ownership_vars) <- List2.foldLinear output_ownership_vars output_members (\vars, member ->
-            case member of
-                M.Variant _ _ _ info -> List2.push vars info.ownership_var
-                M.Field _ _ _ info -> List2.push vars info.ownership_var
-                M.Extern _ _ _ info -> List2.push vars info.ownership_var)
-        relevant_ownership_vars <- input_ownership_vars + output_ownership_vars
-        //trace config "toFunctionInfo: collecting filtered ownership vars"
-        (filtered_ownershipinfos, ownership_values) <- loop (filtered_ownershipinfos, relevant_ownership_vars, ownership_values, index) <- (List2.empty, relevant_ownership_vars, inference_info.ownership_values, 0) do
-            if index >= List2.getLength relevant_ownership_vars
-            then break (filtered_ownershipinfos, ownership_values)
-            else do
-                var <- List2.atIndex relevant_ownership_vars index
-                filtered_ownershipinfos <- case Map2.get ownership_values var of
-                    Some kind -> List2.push filtered_ownershipinfos (M.OwnershipInfo var kind)
-                    None -> filtered_ownershipinfos // FIXME: investigate, why is this possible??
-                (filtered_ownershipinfos, relevant_ownership_vars, ownership_values, index + 1)
-        //trace config "toFunctionInfo: processing converters {}" % List2.getLength converters
-        (converters, (converter_map, input_ownership_vars, output_ownership_vars, filtered_converters)) <- List2.foldLinear (converter_map, input_ownership_vars, output_ownership_vars, List2.empty) converters
-                    (\(converter_map, input_ownership_vars, output_ownership_vars, filtered_converters), converter -> do
-                            filtered_converters <- if List2.contains input_ownership_vars converter.from
-                            then do
-                                converter <- loop (visited, converter) <- (List2.single converter.from, converter) do
-                                    converter :: Converter <- converter // FIXME
-                                    case Map2.get converter_map converter.to of
-                                        Some another_to -> do
-                                            if List2.contains visited another_to
-                                            then break converter
-                                            else do
-                                                visited <- List2.push visited another_to
-                                                //println "Switching to {} -> {}" % (converter.to, another_to)
-                                                (visited, converter { to = another_to })
-                                        None -> break converter
-                                if List2.contains output_ownership_vars converter.to
-                                then List2.push filtered_converters converter
-                                else filtered_converters
+    members <- inference_info.members
+    converters <- inference_info.converters
+    (members, group_dep_map) <- calculateGroupDepMap config members
+    //trace config "toFunctionInfo: creating converter map"
+    (converters, converter_map) <- List2.foldLinear Map2.empty converters (\converter_map, converter ->
+        Map2.put converter_map converter.from converter.to)
+    //trace config "toFunctionInfo: done"
+    //trace config "toFunctionInfo: collecting input group vars"
+    input_group_vars <- List2.fold List2.empty function_inference_info.args
+        (\input_group_vars, info -> do
+            input_group_vars <- case Map2.get group_dep_map info.arg_group_var of
+                Some group_vars -> input_group_vars + group_vars
+                None -> input_group_vars
+            List2.push input_group_vars info.arg_group_var)
+    input_group_vars <- input_group_vars |> List2.sort |> List2.dedup
+    //trace config "toFunctionInfo: collecting input group vars"
+    output_group_vars <- case Map2.get group_dep_map function_inference_info.result.arg_group_var of
+        Some group_vars -> group_vars
+        None -> List2.empty
+    output_group_vars <- List2.push output_group_vars function_inference_info.result.arg_group_var
+    output_group_vars <- output_group_vars |> List2.sort |> List2.dedup
+    //trace config "toFunctionInfo: filter input group vars"
+    (input_group_vars, input_members) <- List2.filterS input_group_vars members M.isSubMember
+    //trace config "toFunctionInfo: filter output group vars"
+    (output_group_vars, output_members) <- List2.filterS output_group_vars members M.isSubMember
+    //trace config "toFunctionInfo: filter input members"
+    (output_members, filtered_input_members) <- List2.filterS output_members input_members (\output_members, m -> do
+        res <- not (List2.contains output_members m)
+        (output_members, res))
+    trace config "toFunctionInfo: filter output members"
+    (input_members, filtered_output_members) <- List2.filterS input_members output_members (\input_members, m -> do
+        res <- not (List2.contains input_members m)
+        (input_members, res))
+    input_members <- filtered_input_members
+    output_members <- filtered_output_members
+    output_ownership_vars <- List2.single function_inference_info.result.ownership_var
+    input_ownership_vars <- List2.fold List2.empty function_inference_info.args
+        (\ownership_vars, info -> List2.push ownership_vars info.ownership_var)
+    //trace config "toFunctionInfo: to ownership infos"
+    (input_members, input_ownership_vars) <- List2.foldLinear input_ownership_vars input_members (\vars, member ->
+        case member of
+            M.Variant _ _ _ info -> List2.push vars info.ownership_var
+            M.Field _ _ _ info -> List2.push vars info.ownership_var
+            M.Extern _ _ _ info -> List2.push vars info.ownership_var)
+    //trace config "toFunctionInfo: collecting output_ownership_vars"
+    (output_members, output_ownership_vars) <- List2.foldLinear output_ownership_vars output_members (\vars, member ->
+        case member of
+            M.Variant _ _ _ info -> List2.push vars info.ownership_var
+            M.Field _ _ _ info -> List2.push vars info.ownership_var
+            M.Extern _ _ _ info -> List2.push vars info.ownership_var)
+    relevant_ownership_vars <- input_ownership_vars + output_ownership_vars
+    //trace config "toFunctionInfo: collecting filtered ownership vars"
+    (filtered_ownershipinfos, ownership_values) <- loop (filtered_ownershipinfos, relevant_ownership_vars, ownership_values, index) <- (List2.empty, relevant_ownership_vars, inference_info.ownership_values, 0) do
+        if index >= List2.getLength relevant_ownership_vars
+        then break (filtered_ownershipinfos, ownership_values)
+        else do
+            var <- List2.atIndex relevant_ownership_vars index
+            filtered_ownershipinfos <- case Map2.get ownership_values var of
+                Some kind -> List2.push filtered_ownershipinfos (M.OwnershipInfo var kind)
+                None -> filtered_ownershipinfos // FIXME: investigate, why is this possible??
+            (filtered_ownershipinfos, relevant_ownership_vars, ownership_values, index + 1)
+    //trace config "toFunctionInfo: processing converters {}" % List2.getLength converters
+    (converters, (converter_map, input_ownership_vars, output_ownership_vars, filtered_converters)) <- List2.foldLinear (converter_map, input_ownership_vars, output_ownership_vars, List2.empty) converters
+                (\(converter_map, input_ownership_vars, output_ownership_vars, filtered_converters), converter -> do
+                        filtered_converters <- if List2.contains input_ownership_vars converter.from
+                        then do
+                            converter <- loop (visited, converter) <- (List2.single converter.from, converter) do
+                                converter :: Converter <- converter // FIXME
+                                case Map2.get converter_map converter.to of
+                                    Some another_to -> do
+                                        if List2.contains visited another_to
+                                        then break converter
+                                        else do
+                                            visited <- List2.push visited another_to
+                                            //println "Switching to {} -> {}" % (converter.to, another_to)
+                                            (visited, converter { to = another_to })
+                                    None -> break converter
+                            if List2.contains output_ownership_vars converter.to
+                            then List2.push filtered_converters converter
                             else filtered_converters
-                            (converter_map, input_ownership_vars, output_ownership_vars, filtered_converters))
-        //println "Full inference info: {}" % inference_info
+                        else filtered_converters
+                        (converter_map, input_ownership_vars, output_ownership_vars, filtered_converters))
+    //println "Full inference info: {}" % inference_info
 
-        // println "Input group vars {}" % Set.getSize input_group_vars
-        // println "Output group vars {}" % Set.getSize output_group_vars
-        // println "Input members: {}" % List2.getLength input_members
-        // println "Output members: {}" % List2.getLength output_members
-        // println "Ownership infos: {}" % List2.getLength filtered_ownershipinfos
-        // println "Input ownership vars: {}" % List2.getLength input_ownership_vars
-        // println "Output ownership vars: {}" % List2.getLength output_ownership_vars
-        // println "Filtered converters: {}" % List2.getLength filtered_converters
-        //trace config "toFunctionInfo: done"
-        FunctionInfo inference_info.args inference_info.result
-            (input_members + output_members) filtered_converters filtered_ownershipinfos
+    // println "Input group vars {}" % Set.getSize input_group_vars
+    // println "Output group vars {}" % Set.getSize output_group_vars
+    // println "Input members: {}" % List2.getLength input_members
+    // println "Output members: {}" % List2.getLength output_members
+    // println "Ownership infos: {}" % List2.getLength filtered_ownershipinfos
+    // println "Input ownership vars: {}" % List2.getLength input_ownership_vars
+    // println "Output ownership vars: {}" % List2.getLength output_ownership_vars
+    // println "Filtered converters: {}" % List2.getLength filtered_converters
+    //trace config "toFunctionInfo: done"
+    FunctionInfo function_inference_info.args function_inference_info.result
+        (input_members + output_members) filtered_converters filtered_ownershipinfos
 
 instance Apply Converter where
     apply applier converter = do
@@ -320,23 +402,29 @@ instance Apply TypeIdentity where
         (applier, var) <- apply applier type_id.var
         (applier, TypeIdentity var type_id.id)
 
+instance Apply FunctionInferenceInfo where
+    apply applier function_inference_info = do
+        (applier, expr_type_variables) <- apply applier function_inference_info.expr_type_variables
+        (applier, var_type_variables) <- apply applier function_inference_info.var_type_variables
+        (applier, args) <- apply applier function_inference_info.args
+        (applier, result) <- apply applier function_inference_info.result
+        function_inference_info <- FunctionInferenceInfo expr_type_variables var_type_variables args result
+        (applier, function_inference_info)
+
 instance Apply InferenceInfo where
     apply applier inference_info = do
-        (applier, expr_type_variables) <- apply applier inference_info.expr_type_variables
-        (applier, var_type_variables) <- apply applier inference_info.var_type_variables
+        (applier, function_infos) <- apply applier inference_info.function_infos
         (applier, ownership_values) <- Map2.mapS applier inference_info.ownership_values (\applier, (k, v) -> do
             (applier, k) <- apply applier k
             (applier, k, v))
-        (applier, args) <- apply applier inference_info.args
-        (applier, result) <- apply applier inference_info.result
         (applier, members) <- apply applier inference_info.members
         (applier, converters) <- apply applier inference_info.converters
         (applier, function_converters) <- apply applier inference_info.function_converters
+        (applier, group_function_converters) <- apply applier inference_info.group_function_converters
         members <- List2.dedup (List2.sort members)
         converters <- List2.dedup (List2.sort converters)
-        inference_info <- InferenceInfo expr_type_variables var_type_variables ownership_values
-            args result members converters inference_info.allocator
-            function_converters inference_info.borrow_sets inference_info.external_borrows
+        inference_info <- InferenceInfo inference_info.group function_infos ownership_values members converters inference_info.allocator
+            function_converters group_function_converters inference_info.borrow_sets inference_info.external_borrows
         (applier, inference_info)
 
 instance MemberOwner InferenceInfo where

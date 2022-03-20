@@ -35,21 +35,26 @@ lowerFunction context lowering_info mir_id lir_id = do
     context <- context { mir_program = mir_program }
     context <- case function.kind of
         MF.Normal info -> do
-            inference_info <- createInferenceInfoFromLoweringInfo lowering_info
-            inference_info <- initializeTypeVariables inference_info info.body
+            inference_info <- createInferenceInfoFromLoweringInfo lowering_info mir_id
+            inference_info <- initializeTypeVariables inference_info mir_id info.body
             function_info_store <- context.function_info_store
-            (mir_program, inference_info) <- processEqualities function.id context.config [] inference_info
-                    function_info_store context.mir_program info.body
+            (mir_program, equals, inference_info) <- processFunctionEqualities mir_id context.config [mir_id]
+                List2.empty inference_info function_info_store context.mir_program info.body
+            (mir_program, inference_info) <- processEqualities context.config equals inference_info context.mir_program
+            converters <- getFunctionConverters context.config inference_info mir_id
+            group_function_converters <- Map2.put inference_info.group_function_converters mir_id converters
+            trace context.config "added function converter for {}" % mir_id
+            inference_info <- inference_info { group_function_converters = group_function_converters }
             context <- context { mir_program = mir_program }
             borrow_info <- checkBorrows context.mir_program info.body
             (members, ordered_dep_map) <- getOrderedDependencyMap inference_info.members
             (members, ownership_dep_map) <- calculateOwnershipDepMap context.config inference_info.members
             filter_info <- (FilterInfo ordered_dep_map ownership_dep_map)
-            (inference_info, filter_info) <- unpackOwnerships context.config inference_info filter_info
+            (inference_info, filter_info) <- unpackOwnerships context.config mir_id inference_info filter_info
             inference_info <- inference_info { members = members }
-            (inference_info, cloning_converters) <- inferOwnership context.config [] context.function_info_store inference_info
+            (inference_info, cloning_converters) <- inferOwnership context.config mir_id [mir_id] context.function_info_store inference_info
                               context.mir_program info.body borrow_info
-            lowering_context <- LoweringContext inference_info cloning_converters filter_info
+            lowering_context <- LoweringContext mir_id inference_info cloning_converters filter_info
             (context, lir_body) <- lowerExpr lowering_context context info.body
             //trace context.config "Processing expr done"
             lir_kind <- LF.Normal lir_body
@@ -78,18 +83,19 @@ lowerFunction context lowering_info mir_id lir_id = do
     //trace context.config "Lowering done"
     context
 
-unpackOwnerships :: Config -> InferenceInfo -> FilterInfo -> (InferenceInfo, FilterInfo)
-unpackOwnerships config inference_info filter_info = do
+unpackOwnerships :: Config -> MP.Identity -> InferenceInfo -> FilterInfo -> (InferenceInfo, FilterInfo)
+unpackOwnerships config function_id inference_info filter_info = do
     // Ownership information is present in the lowering info
     // in a packed way. For example an owned record implies
     // that every field of the record is also owned.
     // The ownership inference does not know this, thus we 'unpack'
     // the ownerships, i.e. fill out member ownerships which are implied from
     // the arguments, result.
-    vars <- List2.fold List2.empty inference_info.args (\vars, info -> do
+    (inference_info, function_inference_info) <- getFunctionInferenceInfo inference_info function_id
+    vars <- List2.fold List2.empty function_inference_info.args (\vars, info -> do
         vars <- List2.push vars info.arg_group_var
         vars)
-    vars <- List2.push vars inference_info.result.arg_group_var
+    vars <- List2.push vars function_inference_info.result.arg_group_var
     List2.fold (inference_info, filter_info) vars (\(inference_info, filter_info), var -> do
         case Map2.get filter_info.ownership_dep_map var of
             Some ownership_vars -> List2.fold (inference_info, filter_info) ownership_vars (\(inference_info, filter_info), var ->

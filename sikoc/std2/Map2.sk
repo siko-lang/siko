@@ -137,6 +137,14 @@ updateS s m f = Map2.mapS s m (\s, (k, v) -> do
 updateValues k v :: (Ord k, PartialEq v) => Map2 k v -> v -> v -> Map2 k v
 updateValues m old new = Map2.update m (\(k, v) -> if old == v then new else old)
 
+@Inline
+updateValue k v :: (Ord k) => Map2 k v -> k -> (v -> v) -> Map2 k v
+updateValue m k f = do
+    (m, _) <- alter (\old -> case old of
+                    Some v -> Some (f v)
+                    None -> panic "updateValue: missing item") k m
+    m
+
 getSize k v :: ~Map2 k v -> ~Int
 getSize m = extern
 

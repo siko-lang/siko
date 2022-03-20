@@ -86,6 +86,13 @@ update m f = extern
 updateS s k v :: (Ord k) => s -> Map2 k v -> (s -> (k, v) -> (s, v)) -> (s, Map2 k v)
 updateS s m f = extern
 
+updateValue k v :: (Ord k) => Map2 k v -> k -> (v -> v) -> Map2 k v
+updateValue m k f = do
+    (m, _) <- alter (\old -> case old of
+                    Some v -> Some (f v)
+                    None -> panic "updateValue: missing item") k m
+    m
+
 updateValues k v :: (PartialEq v) => Map2 k v -> v -> v -> Map2 k v
 updateValues m old new = extern
 

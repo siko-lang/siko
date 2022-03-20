@@ -23,6 +23,7 @@ import Map2 as Map2
 import Map2 (Map2)
 
 data Context = { config :: Config,
+                 function_id :: P.Identity,
                  ownership_dep_map :: Map2 TypeVariable (List2 TypeVariable),
                  inference_info :: InferenceInfo,
                  program :: P.Program,
@@ -55,17 +56,19 @@ getOwnershipValueMaybe context var = do
 
 getTypeVariableInfoByExprId2 :: Context -> E.ExprId -> (Context, TypeVariableInfo) // FIXME:
 getTypeVariableInfoByExprId2 context expr_id = do
-    (inference_info, info) <- getTypeVariableInfoByExprId context.inference_info expr_id
+    (inference_info, info) <- getTypeVariableInfoByExprId context.inference_info expr_id context.function_id
     (context { inference_info = inference_info }, info)
 
 getTypeVariableInfoByVar2 :: Context -> E.Var -> (Context, TypeVariableInfo) // FIXME:
 getTypeVariableInfoByVar2 context var = do
-    (inference_info, info) <- getTypeVariableInfoByVar context.inference_info var
+    (inference_info, info) <- getTypeVariableInfoByVar context.inference_info var context.function_id
     (context { inference_info = inference_info }, info)
 
 initializeExprOwnerships :: Context -> Context
 initializeExprOwnerships context = do
-    expr_ids <- Map2.getKeys context.inference_info.expr_type_variables
+    (inference_info, function_inference_info) <- getFunctionInferenceInfo context.inference_info context.function_id
+    context <- context { inference_info = inference_info }
+    expr_ids <- Map2.getKeys function_inference_info.expr_type_variables
     List2.fold context expr_ids (\context, expr_id -> do
             (context, info) <- getTypeVariableInfoByExprId2 context expr_id
             TypeVariable index <- info.ownership_var
@@ -191,7 +194,14 @@ processExpr context expr = do
                                         List2.fold context function_converters (\context, converter -> do
                                             //println "Running function converter"
                                             processFunctionConverter context converter.from converter.to)
-                                    None -> panic "No function converters found for {} {}" % (f_id, expr_id)
+                                    None -> if List.contains context.group f_id
+                                    then case Map2.get context.inference_info.group_function_converters f_id of
+                                        Some function_converters -> do
+                                            List2.fold context function_converters (\context, converter -> do
+                                                //println "Running function converter"
+                                                processFunctionConverter context converter.from converter.to)
+                                        None -> panic "No group function converters found for {} {}" % (f_id, expr_id)
+                                    else panic "No function converters found for {} {}" % (f_id, expr_id)
                             None -> if List.contains context.group f_id
                                 then context
                                 else panic "No function info found for called fn {}" % f_id
@@ -354,6 +364,7 @@ dumpExpr context expr = do
     (context, expr)
 
 inferOwnership :: Config ->
+                  P.Identity ->
                   [P.Identity] ->
                   FunctionInfoStore ->
                   InferenceInfo ->
@@ -361,20 +372,21 @@ inferOwnership :: Config ->
                   E.Expr ->
                   BorrowInfo ->
                   (InferenceInfo, Set E.ExprId)
-inferOwnership config group function_info_store inference_info program body borrow_info = do
+inferOwnership config function_id group function_info_store inference_info program body borrow_info = do
         (members, ownership_dep_map) <- calculateOwnershipDepMap config inference_info.members
         inference_info <- inference_info { members = members }
         //trace config "calculateOwnershipDepMap: calculateOwnershipDepMap end"
         loop (forced_clones, cloning_converters, ownership_dep_map, count) <- (Set.empty, Set.empty, ownership_dep_map, 0) do
             //trace config "inferOwnership: loop count {}" % count
             //dumpInferenceInfoStats config inference_info
-            (inference_info, new_forced_clones, cloning_converters, ownership_dep_map) <- infer config ownership_dep_map group function_info_store inference_info
+            (inference_info, new_forced_clones, cloning_converters, ownership_dep_map) <- infer config function_id ownership_dep_map group function_info_store inference_info
                                                         program body borrow_info forced_clones cloning_converters
             if new_forced_clones != forced_clones
             then (new_forced_clones, cloning_converters, ownership_dep_map, count + 1)
             else break (inference_info, cloning_converters)
     where
         infer :: Config ->
+                 P.Identity ->
                  Map2 TypeVariable (List2 TypeVariable) ->
                  [P.Identity] ->
                  FunctionInfoStore ->
@@ -385,8 +397,8 @@ inferOwnership config group function_info_store inference_info program body borr
                  Set TypeVariable ->
                  Set E.ExprId ->
                  (InferenceInfo, Set TypeVariable, Set E.ExprId, Map2 TypeVariable (List2 TypeVariable))
-        infer config ownership_dep_map group function_info_store inference_info program body borrow_info forced_clones cloning_converters = do
-        context <- Context config ownership_dep_map inference_info program borrow_info
+        infer config function_id ownership_dep_map group function_info_store inference_info program body borrow_info forced_clones cloning_converters = do
+        context <- Context config function_id ownership_dep_map inference_info program borrow_info
                            function_info_store group Set.empty forced_clones cloning_converters False
         context <- initializeExprOwnerships context
         context <- processExpr context body
