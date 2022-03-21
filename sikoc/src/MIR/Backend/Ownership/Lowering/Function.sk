@@ -43,15 +43,12 @@ lowerFunction context lowering_info mir_id lir_id = do
             (mir_program, inference_info) <- processEqualities context.config equals inference_info context.mir_program
             converters <- getFunctionConverters context.config inference_info mir_id
             group_function_converters <- Map2.put inference_info.group_function_converters mir_id converters
-            trace context.config "added function converter for {}" % mir_id
             inference_info <- inference_info { group_function_converters = group_function_converters }
             context <- context { mir_program = mir_program }
             borrow_info <- checkBorrows context.mir_program info.body
-            (members, ordered_dep_map) <- getOrderedDependencyMap inference_info.members
-            (members, ownership_dep_map) <- calculateOwnershipDepMap context.config inference_info.members
-            filter_info <- (FilterInfo ordered_dep_map ownership_dep_map)
-            (inference_info, filter_info) <- unpackOwnerships context.config mir_id inference_info filter_info
+            (members, filter_info) <- buildFilterInfo context.config inference_info.members
             inference_info <- inference_info { members = members }
+            (inference_info, filter_info) <- unpackOwnerships context.config mir_id inference_info filter_info
             (inference_info, cloning_converters) <- inferOwnership context.config mir_id [mir_id] context.function_info_store inference_info
                               context.mir_program info.body borrow_info
             lowering_context <- LoweringContext mir_id inference_info cloning_converters filter_info

@@ -18,9 +18,9 @@ data OwnershipKind = Unknown
                    | Borrower BorrowId
                    deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
-data MemberInfo = Variant Int T.Type TypeVariable TypeVariableInfo
-                | Field String T.Type TypeVariable TypeVariableInfo
-                | Extern Int T.Type TypeVariable TypeVariableInfo
+data MemberInfo = Variant Int T.Type GroupTypeVariable TypeVariableInfo
+                | Field String T.Type GroupTypeVariable TypeVariableInfo
+                | Extern Int T.Type GroupTypeVariable TypeVariableInfo
                 deriving (PartialEq, Eq, PartialOrd, Ord)
 
 instance Show MemberInfo where
@@ -30,7 +30,7 @@ instance Show MemberInfo where
             Field name ty root info -> "F{}.{}/{}" % (root, name, info)
             Extern index ty root info -> "E{}.{}/{}" % (root, index, info)
 
-data OwnershipInfo = { var :: TypeVariable, kind :: OwnershipKind }
+data OwnershipInfo = { var :: OwnershipTypeVariable, kind :: OwnershipKind }
                    deriving (PartialEq, Eq, PartialOrd, Ord)
 
 instance Show OwnershipInfo where
@@ -40,16 +40,16 @@ instance Show OwnershipInfo where
             Owner -> "o{}" % info.var
             Borrower id -> "b{}/{}" % (id, info.var)
 
-toOwnershipInfo :: Map2 TypeVariable OwnershipKind -> List2 OwnershipInfo
+toOwnershipInfo :: Map2 OwnershipTypeVariable OwnershipKind -> List2 OwnershipInfo
 toOwnershipInfo kinds =
     Map2.fold (List2.withCapacity (Map2.getSize kinds)) kinds (\infos, (var, kind) ->
             List2.push infos (OwnershipInfo var kind)
         )
 
-toOwnershipKind :: List2 OwnershipInfo -> Map2 TypeVariable OwnershipKind
+toOwnershipKind :: List2 OwnershipInfo -> Map2 OwnershipTypeVariable OwnershipKind
 toOwnershipKind infos = List2.fold Map2.empty infos (\kinds, info -> Map2.put kinds info.var info.kind)
 
-isSubMember :: List2 TypeVariable -> MemberInfo -> (List2 TypeVariable, Bool)
+isSubMember :: List2 GroupTypeVariable -> MemberInfo -> (List2 GroupTypeVariable, Bool)
 isSubMember vars constraint =
     case constraint of
         Variant index ty root info -> do
@@ -62,13 +62,13 @@ isSubMember vars constraint =
             r <- List2.contains vars root
             (vars, r)
 
-filterOwnershipInfo :: List2 TypeVariable -> OwnershipInfo -> (List2 TypeVariable, Bool)
+filterOwnershipInfo :: List2 OwnershipTypeVariable -> OwnershipInfo -> (List2 OwnershipTypeVariable, Bool)
 filterOwnershipInfo vars ownershipinfo = do
     res <- List2.contains vars ownershipinfo.var
     (vars, res)
 
-getDependencyMap :: List2 MemberInfo -> (List2 MemberInfo, Map2 TypeVariable (List2 TypeVariable))
-getDependencyMap members = do
+getGroupDependencyMap :: List2 MemberInfo -> (List2 MemberInfo, Map2 GroupTypeVariable (List2 GroupTypeVariable))
+getGroupDependencyMap members = do
         deps_map <- Map2.empty
         (members, deps_map) <- List2.foldLinear deps_map members (\deps_map, member -> case member of
                 Variant index ty root info -> Map2.put deps_map info.arg_group_var List2.empty
@@ -82,8 +82,30 @@ getDependencyMap members = do
             )
         (members, deps_map)
     where
-        addDep :: Map2 TypeVariable (List2 TypeVariable) -> TypeVariable -> TypeVariable -> Map2 TypeVariable (List2 TypeVariable)
+        addDep :: Map2 GroupTypeVariable (List2 GroupTypeVariable) -> GroupTypeVariable -> GroupTypeVariable -> Map2 GroupTypeVariable (List2 GroupTypeVariable)
         addDep deps_map root dep = do
+            (deps_map, _) <- alter (\old -> case old of
+                Some deps -> Some (List2.push deps dep)
+                None -> Some (List2.single dep)) root deps_map
+            deps_map
+
+getInfoDependencyMap :: List2 MemberInfo -> (List2 MemberInfo, Map2 GroupTypeVariable (List2 TypeVariableInfo))
+getInfoDependencyMap members = do
+        deps_map <- Map2.empty
+        (members, deps_map) <- List2.foldLinear deps_map members (\deps_map, member -> case member of
+                Variant index ty root info -> Map2.put deps_map info.arg_group_var List2.empty
+                Field name ty root info -> Map2.put deps_map info.arg_group_var List2.empty
+                Extern index ty root info -> Map2.put deps_map info.arg_group_var List2.empty
+            )
+        (members, deps_map) <- List2.foldLinear deps_map members (\deps_map, member -> case member of
+                Variant index ty root info -> addInfoDep deps_map root info
+                Field name ty root info -> addInfoDep deps_map root info
+                Extern index ty root info -> addInfoDep deps_map root info
+            )
+        (members, deps_map)
+    where
+        addInfoDep :: Map2 GroupTypeVariable (List2 TypeVariableInfo) -> GroupTypeVariable -> TypeVariableInfo -> Map2 GroupTypeVariable (List2 TypeVariableInfo)
+        addInfoDep deps_map root dep = do
             (deps_map, _) <- alter (\old -> case old of
                 Some deps -> Some (List2.push deps dep)
                 None -> Some (List2.single dep)) root deps_map

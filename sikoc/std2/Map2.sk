@@ -4,31 +4,83 @@ import List2
 
 data Map2 k v = extern
 
-instance (Show k, Show v) => Show Map2 k v where
-    show a = showMap a
+instance (Show k, Show v, Ord k) => Show Map2 k v where
+    show m = do
+        size <- getSize m
+        (s, _) <- Map2.fold ("{", 0) m (\(s, index), (k, v) -> do
+            item <- if index + 1 == size
+                then "{}:{}" % (k, v)
+                else "{}:{}," % (k, v)
+            (s + item, index + 1))
+        s + "}"
 
 instance (PartialEq k, PartialEq v) => PartialEq Map2 k v where
-    opEq a b = eqMap a b
-
-instance (Eq k, Eq v) => Eq Map2 k v
+    opEq k v  :: Map2 k v -> Map2 k v -> Bool
+    opEq a b = do
+        len_a <- getSize a
+        len_b <- getSize b
+        if len_a != len_b
+        then False
+        else do
+            iter_a :: MapIter k v <- Map2.iter a
+            iter_b :: MapIter k v <- Map2.iter b
+            loop zipper <- Iterator.zip iter_a iter_b do
+                zipper :: IteratorZip (MapIter k v) (MapIter k v) <- zipper // FIXME
+                (zipper, item) <- Iterator.next zipper
+                case item of
+                    Some ((key_a, value_a), (key_b, value_b)) ->
+                        if opEq key_a key_b
+                        then if opEq value_a value_b
+                            then zipper
+                            else break False
+                        else break False
+                    None -> break True
 
 instance (PartialOrd k, PartialOrd v) => PartialOrd Map2 k v where
-    partialCmp a b = partialCmpMap a b
+    partialCmp k v  :: Map2 k v -> Map2 k v -> Option Ordering
+    partialCmp a b = do
+        len_a <- getSize a
+        len_b <- getSize b
+        if len_a != len_b
+        then partialCmp len_a len_b
+        else do
+            iter_a :: MapIter k v <- Map2.iter a
+            iter_b :: MapIter k v <- Map2.iter b
+            loop zipper <- Iterator.zip iter_a iter_b do
+                zipper :: IteratorZip (MapIter k v) (MapIter k v) <- zipper // FIXME
+                (zipper, item) <- Iterator.next zipper
+                case item of
+                    Some ((key_a, value_a), (key_b, value_b)) ->
+                        case partialCmp key_a key_b of
+                            Some Equal -> case partialCmp value_a value_b of
+                                Some Equal -> zipper
+                                e -> break e
+                            e -> break e
+                    None -> break Some Equal
 
 instance (Ord k, Ord v) => Ord Map2 k v where
-    cmp a b = cmpMap a b
+    cmp k v  :: Map2 k v -> Map2 k v -> Ordering
+    cmp a b = do
+        len_a <- getSize a
+        len_b <- getSize b
+        if len_a != len_b
+        then cmp len_a len_b
+        else do
+            iter_a :: MapIter k v <- Map2.iter a
+            iter_b :: MapIter k v <- Map2.iter b
+            loop zipper <- Iterator.zip iter_a iter_b do
+                zipper :: IteratorZip (MapIter k v) (MapIter k v) <- zipper // FIXME
+                (zipper, item) <- Iterator.next zipper
+                case item of
+                    Some ((key_a, value_a), (key_b, value_b)) ->
+                        case cmp key_a key_b of
+                            Equal -> case cmp value_a value_b of
+                                Equal -> zipper
+                                e -> break e
+                            e -> break e
+                    None -> break Equal
 
-showMap k v :: ~Map2 k v -> ~String
-showMap a = extern
-
-eqMap k v :: Map2 k v -> ~Map2 k v -> ~Bool
-eqMap a b = extern
-
-partialCmpMap k v :: Map2 k v -> ~Map2 k v -> ~Option ~Ordering
-partialCmpMap a b = extern
-
-cmpMap k v :: Map2 k v -> ~Map2 k v -> ~Ordering
-cmpMap a b = extern
+instance (Eq k, Eq v) => Eq Map2 k v
 
 empty k v :: (Ord k) => ~Map2 k v
 empty = extern

@@ -2,25 +2,36 @@ module Siko.MIR.Backend.Ownership.Duplicator where
 
 import Siko.MIR.Backend.Ownership.MemberInfo as M
 import Siko.MIR.Backend.Ownership.TypeVariableInfo
-import Siko.MIR.Backend.Ownership.Allocator
+import Siko.MIR.Backend.Ownership.Allocator as A
 import Siko.MIR.Backend.Ownership.BorrowId
 import Siko.MIR.Backend.Ownership.InferenceInfo
 import Siko.Util.Counter
 import Map
 
-data Duplicator = { vars :: Map TypeVariable TypeVariable,
+data Duplicator = { ownership_vars :: Map OwnershipTypeVariable OwnershipTypeVariable,
+                    group_vars :: Map GroupTypeVariable GroupTypeVariable,
                     borrows :: Map BorrowId BorrowId,
-                    inverse_borrows :: Map Int Int,
-                    allocator :: Allocator } deriving (Show)
+                    inverse_borrows :: Map BorrowId BorrowId,
+                    allocator :: A.Allocator } deriving (Show)
 
 class Duplicable a where
     duplicate a :: Duplicator -> a -> (Duplicator, a)
 
-createDuplicator :: Allocator -> Duplicator
-createDuplicator allocator = Duplicator Map.empty Map.empty Map.empty allocator
+remapBorrow :: Duplicator -> BorrowId -> BorrowId
+remapBorrow  duplicator id =
+    case get duplicator.inverse_borrows id of
+        Some id -> id
+        None -> panic "Could not find borrow id in inverse_borrows map of duplicator"
+
+createDuplicator :: A.Allocator -> Duplicator
+createDuplicator allocator = Duplicator Map.empty Map.empty Map.empty Map.empty allocator
 
 createNormalizer :: Duplicator
-createNormalizer = createDuplicator createAllocator
+createNormalizer = createDuplicator A.createAllocator
+
+resetBorrows :: Duplicator -> Duplicator
+resetBorrows duplicator = do
+    duplicator { allocator = A.resetBorrows duplicator.allocator, borrows = Map.empty, inverse_borrows = Map.empty }
 
 instance Duplicable BorrowId where
     //duplicate :: Duplicator -> BorrowId -> (Duplicator, BorrowId)
@@ -30,26 +41,36 @@ instance Duplicable BorrowId where
         ((allocator, id), borrows, _) <- Map.alterS (\allocator, old -> case old of
             Some old -> ((allocator, old), Some old)
             None -> do
-                (allocator, next) <- getNextBorrowId allocator
+                (allocator, next) <- A.getNextBorrowId allocator
                 ((allocator, next), Some next)) allocator orig_id borrows
-        BorrowId id_num <- id
-        BorrowId orig_id_num <- orig_id
-        inverse_borrows <- Map.put duplicator.inverse_borrows id_num orig_id_num
+        inverse_borrows <- Map.put duplicator.inverse_borrows id orig_id
         (duplicator { borrows = borrows,
                       inverse_borrows = inverse_borrows,
                       allocator = allocator }, id)
 
-instance Duplicable TypeVariable where
-    //duplicate :: Duplicator -> TypeVariable -> (Duplicator, TypeVariable)
+instance Duplicable GroupTypeVariable where
+    //duplicate :: Duplicator -> GroupTypeVariable -> (Duplicator, GroupTypeVariable)
     duplicate duplicator var = do
-        vars <- duplicator.vars
+        vars <- duplicator.group_vars
         allocator <- duplicator.allocator
         ((allocator, var), vars, _) <- Map.alterS (\allocator, old -> case old of
             Some old -> ((allocator, old), Some old)
             None -> do
-                (allocator, next) <- getNextTypeVariable allocator
+                (allocator, next) <- A.getNextGroupTypeVariable allocator
                 ((allocator, next), Some next)) allocator var vars
-        (duplicator { vars = vars, allocator = allocator }, var)
+        (duplicator { group_vars = vars, allocator = allocator }, var)
+
+instance Duplicable OwnershipTypeVariable where
+    //duplicate :: Duplicator -> OwnershipTypeVariable -> (Duplicator, OwnershipTypeVariable)
+    duplicate duplicator var = do
+        vars <- duplicator.ownership_vars
+        allocator <- duplicator.allocator
+        ((allocator, var), vars, _) <- Map.alterS (\allocator, old -> case old of
+            Some old -> ((allocator, old), Some old)
+            None -> do
+                (allocator, next) <- A.getNextOwnershipTypeVariable allocator
+                ((allocator, next), Some next)) allocator var vars
+        (duplicator { ownership_vars = vars, allocator = allocator }, var)
 
 instance Duplicable TypeVariableInfo where
     duplicate duplicator type_variable_info = do

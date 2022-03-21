@@ -181,7 +181,7 @@ processExpr context expr = do
         E.FieldAccess name receiver -> do
             E.Expr _ receiver_type _ <- receiver
             inference_info <- context.inference_info
-            (allocator, type_var) <- getNextTypeVariable inference_info.allocator
+            (allocator, type_var) <- getNextOwnershipTypeVariable inference_info.allocator
             inference_info <- inference_info { allocator = allocator }
             (inference_info, receiver_info) <- getTypeVariableInfoByExprId inference_info (getExprId receiver) context.function_id
             (inference_info, info) <- getTypeVariableInfoByExprId inference_info expr_id context.function_id
@@ -220,7 +220,7 @@ processExpr context expr = do
                             case ty of
                                 T.Adt _ -> do
                                     inference_info <- context.inference_info
-                                    (allocator, type_var) <- getNextTypeVariable inference_info.allocator
+                                    (allocator, type_var) <- getNextOwnershipTypeVariable inference_info.allocator
                                     inference_info <- inference_info { allocator = allocator }
                                     (inference_info, body_info) <- getTypeVariableInfoByExprId inference_info body_id context.function_id
                                     (inference_info, var_info) <- getTypeVariableInfoByVar inference_info var context.function_id
@@ -253,10 +253,10 @@ processExpr context expr = do
             (inference_info, info2) <- getTypeVariableInfoByExprId inference_info expr_id context.function_id
             converter <- Converter info1.ownership_var info2.ownership_var
             inference_info <- addConverter inference_info converter
-            equals <- List2.push equals (Equal info1.arg_group_var info2.arg_group_var)
+            equals <- List2.push equals (EqualGroup info1.arg_group_var info2.arg_group_var)
             (context { inference_info = inference_info, equals = equals }, expr)
 
-getMemberMap :: InferenceInfo -> (InferenceInfo, Map2 TypeVariable (List2 M.MemberInfo))
+getMemberMap :: InferenceInfo -> (InferenceInfo, Map2 GroupTypeVariable (List2 M.MemberInfo))
 getMemberMap inference_info = do
     member_map <- Map2.empty
     (members, member_map) <- List2.foldLinear member_map inference_info.members (\member_map, m -> case m of
@@ -283,7 +283,7 @@ fuseCycles config program inference_info =
                     if List2.getLength vars > 1
                     then List2.fold equals vars (\equals, var ->
                         if first != var
-                        then List2.push equals (Equal first var)
+                        then List2.push equals (EqualGroup first var)
                         else equals)
                     else equals)
                 (visited, equals, member_map, program)
@@ -296,13 +296,13 @@ fuseCycles config program inference_info =
             inference_info <- processEquals equals inference_info
             (program, inference_info)
     where
-        walk :: TypeVariable ->
+        walk :: GroupTypeVariable ->
                 T.Type ->
-                List2 TypeVariable ->
-                Map2 P.Identity (List2 TypeVariable) ->
-                Map2 TypeVariable (List2 M.MemberInfo) ->
+                List2 GroupTypeVariable ->
+                Map2 P.Identity (List2 GroupTypeVariable) ->
+                Map2 GroupTypeVariable (List2 M.MemberInfo) ->
                 P.Program ->
-                (List2 TypeVariable, Map2 P.Identity (List2 TypeVariable), Map2 TypeVariable (List2 M.MemberInfo), P.Program)
+                (List2 GroupTypeVariable, Map2 P.Identity (List2 GroupTypeVariable), Map2 GroupTypeVariable (List2 M.MemberInfo), P.Program)
         walk root ty visited type_map member_map program =
             if List2.contains visited root
             then (visited, type_map, member_map, program)

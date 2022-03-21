@@ -1,0 +1,49 @@
+module Siko.MIR.Backend.Ownership.Lowering.LoweringInfo.Singularizer where
+
+import Siko.Config
+import Siko.Trace
+import Siko.MIR.Backend.Ownership.TypeVariableInfo
+import Siko.MIR.Backend.Ownership.MemberInfo as M
+import Siko.MIR.Backend.Ownership.Lowering.LoweringInfo
+import Siko.MIR.Backend.Ownership.Allocator
+
+import Map
+import Map2
+import Set
+
+import List2 as List2
+import List2 (List2)
+
+data Singularizer = { allocator :: Allocator,
+                      uniques :: Map2 OwnershipTypeVariable (List2 OwnershipTypeVariable) }
+
+createSingularizer :: Singularizer
+createSingularizer = Singularizer createAllocator Map2.empty
+
+processOwnerVar :: Singularizer -> TypeVariableInfo -> (Singularizer, TypeVariableInfo)
+processOwnerVar singularizer info = do
+    (allocator, next) <- getNextOwnershipTypeVariable singularizer.allocator
+    uniques <- Map2.add singularizer.uniques info.ownership_var next
+    singularizer <- singularizer { allocator = allocator, uniques = uniques }
+    (singularizer, info { ownership_var = next })
+
+processMembers :: Singularizer -> List2 M.MemberInfo -> (Singularizer, List2 M.MemberInfo)
+processMembers singularizer members = List2.mapS singularizer members (\singularizer, m ->
+    case m of
+        M.Variant index ty root info -> do
+            (singularizer, info) <- processOwnerVar singularizer info
+            (singularizer, M.Variant index ty root info)
+        M.Field name ty root info -> do
+            (singularizer, info) <- processOwnerVar singularizer info
+            (singularizer, M.Field name ty root info)
+        M.Extern index ty root info -> do
+            (singularizer, info) <- processOwnerVar singularizer info
+            (singularizer, M.Extern index ty root info))
+
+buildOwnershipinfos :: Singularizer -> List2 M.OwnershipInfo -> List2 M.OwnershipInfo
+buildOwnershipinfos singularizer ownershipinfos = List2.fold List2.empty ownershipinfos (\ownershipinfos, info -> do
+    case Map2.get singularizer.uniques info.var of
+        Some new_vars -> do
+            infos <- List2.map new_vars (\var -> M.OwnershipInfo var info.kind)
+            ownershipinfos + infos
+        None -> panic "Ownership var not found in uniques")

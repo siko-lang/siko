@@ -34,6 +34,7 @@ lowerExternalRecordInfo lowering_info context mir_external_record_info filter_in
 lowerField :: TypeLoweringInfo -> (Context, FilterInfo) -> MD.RecordField -> ((Context, FilterInfo), LD.RecordField)
 lowerField lowering_info (context, filter_info) mir_field  = do
     (lowering_info, filter_info) <- getLoweringInfoForMember context.config lowering_info mir_field.name filter_info
+    //println "field_lowering_info: {}/{}" % (mir_field.name, lowering_info)
     (context, lir_type) <- lowerType context lowering_info mir_field.type
     lir_type <- if mir_field.grouped
     then LT.Box lir_type
@@ -43,6 +44,7 @@ lowerField lowering_info (context, filter_info) mir_field  = do
 lowerVariant :: TypeLoweringInfo -> (Context, FilterInfo) -> Int -> MD.Variant -> ((Context, FilterInfo), LD.Variant)
 lowerVariant lowering_info (context, filter_info) index mir_variant = do
     (lowering_info, filter_info) <- getLoweringInfoForVariant context.config lowering_info index filter_info
+    //println "variant_lowering_info: {}/{}" % (mir_variant.name, lowering_info)
     (context, lir_type) <- lowerType context lowering_info mir_variant.type
     ((context, filter_info), LD.Variant mir_variant.name lir_type)
 
@@ -75,7 +77,8 @@ processExternalClassImpl lowering_info context mir_class_impl =
             ownershipinfos <- List2.push lowering_info.ownershipinfos (M.OwnershipInfo arg.ownership_var (M.Borrower borrow_id))
             ownershipinfos <- List2.push ownershipinfos (M.OwnershipInfo result.ownership_var M.Owner)
             lowering_info <- FunctionLoweringInfo lowering_info.members args result ownershipinfos allocator
-            (lowering_info, filter_info) <- getFilterInfoFromFunctionLoweringInfo context.config lowering_info
+            (members, filter_info) <- buildFilterInfo context.config lowering_info.members
+            lowering_info <- lowering_info { members = members }
             (lowering_info, _) <- normalizeFunctionLoweringInfo context.config lowering_info
             lir_key <- FunctionKey id lowering_info
             (context, lir_id) <- getLIRId context lir_key
@@ -87,7 +90,8 @@ lowerRecord context lowering_info mir_id lir_id = do
     trace context.config "Lowering record {} {} {}" % (mir_id, lir_id, lowering_info)
     (mir_program, mir_record) <- MP.getRecord context.mir_program mir_id
     context <- context { mir_program = mir_program }
-    (lowering_info, filter_info) <- getFilterInfoFromTypeLoweringInfo context.config lowering_info
+    (members, filter_info) <- buildFilterInfo context.config lowering_info.members
+    lowering_info <- lowering_info { members = members }
     ((context, filter_info), fields) <- List.mapS (context, filter_info) mir_record.fields (lowerField lowering_info)
     lifetimes <- collectLifetimes lowering_info.ownershipinfos
     (context, external_info) <- case mir_record.external_info of
@@ -105,7 +109,8 @@ lowerAdt context lowering_info mir_id lir_id = do
     trace context.config "Lowering adt {} {} {}" % (mir_id, lir_id, lowering_info)
     (mir_program, mir_adt) <- MP.getAdt context.mir_program mir_id
     context <- context { mir_program = mir_program }
-    (lowering_info, filter_info) <- getFilterInfoFromTypeLoweringInfo context.config lowering_info
+    (members, filter_info) <- buildFilterInfo context.config lowering_info.members
+    lowering_info <- lowering_info { members = members }
     ((context, filter_info), variants) <- List.mapSE (context, filter_info) mir_adt.variants (lowerVariant lowering_info)
     lifetimes <- collectLifetimes lowering_info.ownershipinfos
     external_class_impls <- []

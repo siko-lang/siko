@@ -24,23 +24,23 @@ import Map2 (Map2)
 
 data Context = { config :: Config,
                  function_id :: P.Identity,
-                 ownership_dep_map :: Map2 TypeVariable (List2 TypeVariable),
+                 ownership_dep_map :: Map2 GroupTypeVariable (List2 OwnershipTypeVariable),
                  inference_info :: InferenceInfo,
                  program :: P.Program,
                  borrow_info :: BorrowInfo,
                  function_info_store :: FunctionInfoStore,
                  group :: [P.Identity],
                  invalid_borrows :: Set E.ExprId,
-                 forced_clones :: Set TypeVariable,
+                 forced_clones :: Set OwnershipTypeVariable,
                  cloning_converters :: Set E.ExprId,
                  needs_restart :: Bool }
 
-addOwnershipValue :: Context -> TypeVariable -> M.OwnershipKind -> Context
+addOwnershipValue :: Context -> OwnershipTypeVariable -> M.OwnershipKind -> Context
 addOwnershipValue context var kind = do
     inference_info <- addOwnership context.inference_info var kind
     context { inference_info = inference_info }
 
-getOwnershipValue :: Context -> TypeVariable -> (Context, M.OwnershipKind) // FIXME
+getOwnershipValue :: Context -> OwnershipTypeVariable -> (Context, M.OwnershipKind) // FIXME
 getOwnershipValue context var = do
     (inference_info, result) <- getOwnership context.inference_info var
     context <- context { inference_info = inference_info }
@@ -48,7 +48,7 @@ getOwnershipValue context var = do
         Some o -> (context, o)
         None -> panic "Ownership value not found for {}" % var
 
-getOwnershipValueMaybe :: Context -> TypeVariable -> (Context, Option M.OwnershipKind) // FIXME
+getOwnershipValueMaybe :: Context -> OwnershipTypeVariable -> (Context, Option M.OwnershipKind) // FIXME
 getOwnershipValueMaybe context var = do
     (inference_info, result) <- getOwnership context.inference_info var
     context <- context { inference_info = inference_info }
@@ -71,13 +71,12 @@ initializeExprOwnerships context = do
     expr_ids <- Map2.getKeys function_inference_info.expr_type_variables
     List2.fold context expr_ids (\context, expr_id -> do
             (context, info) <- getTypeVariableInfoByExprId2 context expr_id
-            TypeVariable index <- info.ownership_var
             case Map2.get context.inference_info.ownership_values info.ownership_var of
                 Some _ -> context
                 None -> addOwnershipValue context info.ownership_var M.Unknown
         )
 
-processFunctionConverter :: Context -> TypeVariable -> TypeVariable -> Context
+processFunctionConverter :: Context -> OwnershipTypeVariable -> OwnershipTypeVariable -> Context
 processFunctionConverter context from to = do
     (context, from_kind) <- getOwnershipValue context from
     (context, to_kind) <- getOwnershipValue context to
@@ -108,7 +107,7 @@ processFunctionConverter context from to = do
             else addOwnershipValue context to from_kind
         (M.Unknown, _) -> context
 
-processConverter :: Context -> E.ExprId -> E.ExprId -> Bool -> TypeVariable -> TypeVariable -> Context
+processConverter :: Context -> E.ExprId -> E.ExprId -> Bool -> OwnershipTypeVariable -> OwnershipTypeVariable -> Context
 processConverter context converter_expr arg_expr borrowed_expr from to = do
     (context, from_kind) <- getOwnershipValue context from
     (context, to_kind) <- getOwnershipValue context to
@@ -336,7 +335,7 @@ checkBorrows context expr_info = do
         else context
         context
     where
-        checkBorrowingVar :: (Context, List2 TypeVariable) -> TypeVariable -> (Context, List2 TypeVariable)
+        checkBorrowingVar :: (Context, List2 OwnershipTypeVariable) -> OwnershipTypeVariable -> (Context, List2 OwnershipTypeVariable)
         checkBorrowingVar (context, forced_clones) var =
             case Map2.get context.inference_info.ownership_values var of
                 Some ownership -> case ownership of
@@ -346,7 +345,7 @@ checkBorrows context expr_info = do
                         _ -> (context, forced_clones)
                 None -> (context, forced_clones)
 
-        promoteBorrow :: TypeVariable -> (Context, List2 TypeVariable) -> Borrow -> (Context, List2 TypeVariable)
+        promoteBorrow :: OwnershipTypeVariable -> (Context, List2 OwnershipTypeVariable) -> Borrow -> (Context, List2 OwnershipTypeVariable)
         promoteBorrow var (context, forced_clones) borrow =
             case borrow of
                 Local borrowed_expr -> do
@@ -387,16 +386,16 @@ inferOwnership config function_id group function_info_store inference_info progr
     where
         infer :: Config ->
                  P.Identity ->
-                 Map2 TypeVariable (List2 TypeVariable) ->
+                 Map2 GroupTypeVariable (List2 OwnershipTypeVariable) ->
                  [P.Identity] ->
                  FunctionInfoStore ->
                  InferenceInfo ->
                  P.Program ->
                  E.Expr ->
                  BorrowInfo ->
-                 Set TypeVariable ->
+                 Set OwnershipTypeVariable ->
                  Set E.ExprId ->
-                 (InferenceInfo, Set TypeVariable, Set E.ExprId, Map2 TypeVariable (List2 TypeVariable))
+                 (InferenceInfo, Set OwnershipTypeVariable, Set E.ExprId, Map2 GroupTypeVariable (List2 OwnershipTypeVariable))
         infer config function_id ownership_dep_map group function_info_store inference_info program body borrow_info forced_clones cloning_converters = do
         context <- Context config function_id ownership_dep_map inference_info program borrow_info
                            function_info_store group Set.empty forced_clones cloning_converters False

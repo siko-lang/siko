@@ -11,7 +11,7 @@ import List2 (List2)
 
 data TypeInfo = TypeInfo T.Type TypeVariableInfo deriving (PartialEq, Eq, PartialOrd, Ord, Show)
 
-getTypeInfoMap :: List2 M.MemberInfo  -> (List2 M.MemberInfo , Map2 TypeVariable (List2 TypeInfo))
+getTypeInfoMap :: List2 M.MemberInfo  -> (List2 M.MemberInfo , Map2 GroupTypeVariable (List2 TypeInfo))
 getTypeInfoMap members = do
     type_info_map <- Map2.empty
     (members, type_info_map) <- List2.foldLinear type_info_map members (\type_info_map, m -> case m of
@@ -29,7 +29,7 @@ mergeTypes members = do
         if List2.getLength roots > 1
         then List2.fold equals roots (\equals, var ->
             if first != var
-            then List2.push equals (Equal first var)
+            then List2.push equals (EqualGroup first var)
             else equals)
         else equals)
     (members, equals)

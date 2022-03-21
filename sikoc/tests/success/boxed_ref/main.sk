@@ -1,0 +1,22 @@
+module Main where
+
+data FullyQualifiedName = FullPath String String
+
+data TypeVar = TypeVar Int
+
+data Type = Named FullyQualifiedName [Type]
+
+collectVars :: Type -> [TypeVar]
+collectVars type = case type of
+    Named _ args -> List.fold [] args (\vars, arg -> do
+        vs <- collectVars arg
+        vars + vs)
+
+main = do
+    mod <- "mod"
+    name <- "name"
+    qn <- FullPath mod name
+    type <- Named qn []
+    stuff <- collectVars type
+    stuff <- collectVars type
+    a <- mod
