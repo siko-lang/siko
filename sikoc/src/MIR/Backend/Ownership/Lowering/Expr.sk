@@ -60,10 +60,10 @@ lowerChecker lowering_info context checker = do
 lowerCase :: (LoweringContext, TypeLoweringInfo, Context) -> ME.Case -> ((LoweringContext, TypeLoweringInfo, Context), LE.Case)
 lowerCase (lowering_context, lowering_info, context) c = do
     (context, checker) <- lowerChecker lowering_info context c.checker
-    (context, body) <- lowerExpr lowering_context context c.body
+    (lowering_context, context, body) <- lowerExpr lowering_context context c.body
     ((lowering_context, lowering_info, context), LE.Case checker body)
 
-lowerExpr :: LoweringContext -> Context -> ME.Expr -> (Context, LE.Expr)
+lowerExpr :: LoweringContext -> Context -> ME.Expr -> (LoweringContext, Context, LE.Expr)
 lowerExpr lowering_context context expr = do
     ME.Expr s_expr expr_type expr_id <- expr
     (inference_info, expr_info) <- getTypeVariableInfoByExprId lowering_context.inference_info expr_id lowering_context.function_id
@@ -74,10 +74,12 @@ lowerExpr lowering_context context expr = do
     //println "expr {} type {} {}" % (ME.short expr, expr_type, lowering_info)
     (context, lir_type) <- lowerType context lowering_info expr_type
     lowering_context <- lowering_context { inference_info = inference_info, filter_info = filter_info }
-    (context, lir_s_expr) <- case s_expr of
+    (lowering_context, context, lir_s_expr) <- case s_expr of
         ME.Do items -> do
-            (context, items) <- List.mapS context items (lowerExpr lowering_context)
-            (context, LE.Do items)
+            ((lowering_context, context), items) <- List.mapS (lowering_context, context) items (\(lowering_context, context), item -> do
+                (lowering_context, context, item) <- lowerExpr lowering_context context item
+                ((lowering_context, context), item))
+            (lowering_context, context, LE.Do items)
         ME.Multi _ -> panic "Multi in MIR -> LIR lowering"
         ME.StaticFunctionCall f_id args -> do
             (lowering_context, args_info) <- List.mapS lowering_context args (\lowering_context, arg -> do
@@ -97,7 +99,9 @@ lowerExpr lowering_context context expr = do
             lir_key <- FunctionKey f_id lowering_info
             (context, lir_id) <- getLIRId context lir_key
             context <- addItem context lir_key
-            (context, lir_args) <- List.mapS context args (lowerExpr lowering_context)
+            ((lowering_context, context), lir_args) <- List.mapS (lowering_context, context) args (\(lowering_context, context), arg -> do
+                (lowering_context, context, arg) <- lowerExpr lowering_context context arg
+                ((lowering_context, context), arg))
             (mir_program, function) <- MP.getFunction context.mir_program f_id
             context <- context { mir_program = mir_program }
             lir_args <- case function.kind of
@@ -127,62 +131,64 @@ lowerExpr lowering_context context expr = do
                                 List.push lir_args arg
                             else List.push lir_args arg)
                     _ -> lir_args
-            (context, LE.StaticFunctionCall lir_id lir_args)
-        ME.IntegerLiteral lit -> (context, LE.IntegerLiteral lit)
-        ME.StringLiteral lit -> (context, LE.StringLiteral lit)
-        ME.FloatLiteral lit -> (context, LE.FloatLiteral lit)
-        ME.CharLiteral lit -> (context, LE.CharLiteral lit)
+            (lowering_context, context, LE.StaticFunctionCall lir_id lir_args)
+        ME.IntegerLiteral lit -> (lowering_context, context, LE.IntegerLiteral lit)
+        ME.StringLiteral lit -> (lowering_context, context, LE.StringLiteral lit)
+        ME.FloatLiteral lit -> (lowering_context, context, LE.FloatLiteral lit)
+        ME.CharLiteral lit -> (lowering_context, context, LE.CharLiteral lit)
         ME.VarDecl var rhs -> do
-            (context, lir_rhs) <- lowerExpr lowering_context context rhs
+            (lowering_context, context, lir_rhs) <- lowerExpr lowering_context context rhs
             lir_var <- lowerVar var
-            (context, LE.VarDecl lir_var lir_rhs)
+            (lowering_context, context, LE.VarDecl lir_var lir_rhs)
         ME.VarRef var -> do
             lir_var <- lowerVar var
-            (context, LE.VarRef lir_var)
+            (lowering_context, context, LE.VarRef lir_var)
         ME.FieldAccess name receiver -> do
             ME.Expr _ receiver_type _ <- receiver
             record_id <- MT.getIdentity receiver_type
             (mir_program, record) <- MP.getRecord context.mir_program record_id
             context <- context { mir_program = mir_program }
             field <- Option.unwrap (MD.getFieldByName record name)
-            (context, lir_receiver) <- lowerExpr lowering_context context receiver
+            (lowering_context, context, lir_receiver) <- lowerExpr lowering_context context receiver
             if field.grouped
             then do
                 case lir_type of
                     LT.Ref _ _ -> do
                         field_access <- LE.Expr (LE.FieldAccess name lir_receiver) lir_type (LE.ExprId 0)
-                        (context, LE.Ref field_access)
+                        (lowering_context, context, LE.Ref field_access)
                     _ -> do
                         field_access <- LE.Expr (LE.FieldAccess name lir_receiver) lir_type (LE.ExprId 0)
-                        (context, LE.Deref field_access)
+                        (lowering_context, context, LE.Deref field_access)
             else case lir_type of
                 LT.Ref _ _ -> do
                     field_access <- LE.Expr (LE.FieldAccess name lir_receiver) lir_type (LE.ExprId 0)
-                    (context, LE.Ref field_access)
-                _ -> (context, LE.FieldAccess name lir_receiver)
+                    (lowering_context, context, LE.Ref field_access)
+                _ -> (lowering_context, context, LE.FieldAccess name lir_receiver)
         ME.If cond true_branch false_branch -> do
-            (context, lir_cond) <- lowerExpr lowering_context context cond
-            (context, lir_true_branch) <- lowerExpr lowering_context context true_branch
-            (context, lir_false_branch) <- lowerExpr lowering_context context false_branch
-            (context, LE.If lir_cond lir_true_branch lir_false_branch)
+            (lowering_context, context, lir_cond) <- lowerExpr lowering_context context cond
+            (lowering_context, context, lir_true_branch) <- lowerExpr lowering_context context true_branch
+            (lowering_context, context, lir_false_branch) <- lowerExpr lowering_context context false_branch
+            (lowering_context, context, LE.If lir_cond lir_true_branch lir_false_branch)
         ME.List args -> do
-            (context, args) <- List.mapS context args (lowerExpr lowering_context)
-            (context, LE.List args)
+            ((lowering_context, context), lir_args) <- List.mapS (lowering_context, context) args (\(lowering_context, context), arg -> do
+                (lowering_context, context, arg) <- lowerExpr lowering_context context arg
+                ((lowering_context, context), arg))
+            (lowering_context, context, LE.List lir_args)
         ME.Return arg -> do
-            (context, lir_arg) <- lowerExpr lowering_context context arg
-            (context, LE.Return lir_arg)
+            (lowering_context, context, lir_arg) <- lowerExpr lowering_context context arg
+            (lowering_context, context, LE.Return lir_arg)
         ME.Continue arg -> do
-            (context, lir_arg) <- lowerExpr lowering_context context arg
-            (context, LE.Continue lir_arg)
+            (lowering_context, context, lir_arg) <- lowerExpr lowering_context context arg
+            (lowering_context, context, LE.Continue lir_arg)
         ME.Break arg -> do
-            (context, lir_arg) <- lowerExpr lowering_context context arg
-            (context, LE.Break lir_arg)
+            (lowering_context, context, lir_arg) <- lowerExpr lowering_context context arg
+            (lowering_context, context, LE.Break lir_arg)
         ME.RecordUpdate _ _ ->  panic "RecordUpdate in MIR -> LIR lowering"
         ME.Loop var initializer body _ _ -> do
             lir_var <- lowerVar var
-            (context, lir_initializer) <- lowerExpr lowering_context context initializer
-            (context, lir_body) <- lowerExpr lowering_context context body
-            (context, LE.Loop lir_var lir_initializer lir_body)
+            (lowering_context, context, lir_initializer) <- lowerExpr lowering_context context initializer
+            (lowering_context, context, lir_body) <- lowerExpr lowering_context context body
+            (lowering_context, context, LE.Loop lir_var lir_initializer lir_body)
         ME.CaseOf body cases -> do
             ME.Expr _ _ body_id <- body
             (inference_info, body_info) <- getTypeVariableInfoByExprId lowering_context.inference_info body_id lowering_context.function_id
@@ -191,9 +197,9 @@ lowerExpr lowering_context context expr = do
                                                 lowering_context.inference_info body_info lowering_context.filter_info
             (lowering_info, _) <- normalizeTypeLoweringInfo context.config lowering_info
             lowering_context <- lowering_context { inference_info = inference_info, filter_info = filter_info }
-            (context, lir_body) <- lowerExpr lowering_context context body
+            (lowering_context, context, lir_body) <- lowerExpr lowering_context context body
             ((lowering_context, lowering_info, context), lir_cases) <- List.mapS (lowering_context, lowering_info, context) cases lowerCase
-            (context, LE.CaseOf lir_body lir_cases)
+            (lowering_context, context, LE.CaseOf lir_body lir_cases)
         ME.Clone arg -> panic "Clone in MIR -> LIR lowering"
         ME.Deref arg -> panic "Deref in MIR -> LIR lowering"
         ME.Ref arg -> panic "Ref in MIR -> LIR lowering"
@@ -205,16 +211,16 @@ lowerExpr lowering_context context expr = do
             lowering_context <- lowering_context { inference_info = inference_info }
             (lowering_context, from) <- getOwnershipValue lowering_context arg_info.ownership_var
             (lowering_context, to) <- getOwnershipValue lowering_context expr_info.ownership_var
-            (context, lir_arg) <- lowerExpr lowering_context context arg
+            (lowering_context, context, lir_arg) <- lowerExpr lowering_context context arg
             case (from, to) of
                 (M.Owner, M.Owner) ->
                     if Set.contains lowering_context.forced_clones expr_id
-                    then (context, LE.Clone lir_arg)
-                    else (context, LE.Move lir_arg)
-                (M.Owner, M.Borrower _) -> (context, LE.Ref lir_arg)
-                (M.Borrower _, M.Borrower _) -> (context, LE.Move lir_arg)
-                (M.Borrower _, M.Owner) -> (context, LE.DerefClone lir_arg)
-                (_, _) -> (context, LE.Move lir_arg)
+                    then (lowering_context, context, LE.Clone lir_arg)
+                    else (lowering_context, context, LE.Move lir_arg)
+                (M.Owner, M.Borrower _) -> (lowering_context, context, LE.Ref lir_arg)
+                (M.Borrower _, M.Borrower _) -> (lowering_context, context, LE.Move lir_arg)
+                (M.Borrower _, M.Owner) -> (lowering_context, context, LE.DerefClone lir_arg)
+                (_, _) -> (lowering_context, context, LE.Move lir_arg)
     //println "Transforming EXPR {} {}" % ((ME.short expr), expr_info)
     lir_expr <- LE.Expr lir_s_expr lir_type (LE.ExprId 0)
-    (context, lir_expr)
+    (lowering_context, context, lir_expr)
