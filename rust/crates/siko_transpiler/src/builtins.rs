@@ -887,7 +887,9 @@ fn generate_map2_builtins(
             indent.dec();
             write!(output_file, "{}}}\n", indent)?;
         }
-        _ => panic!("Map2/{} not implemented", original_name),
+        _ => {
+            write!(output_file, "{}unimplemented!();\n", indent)?;
+        }
     }
     indent.dec();
     Ok(())

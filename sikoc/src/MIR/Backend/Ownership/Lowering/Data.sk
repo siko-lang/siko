@@ -4,7 +4,7 @@ import Siko.Config
 import Siko.Trace
 import Siko.MIR.Backend.Ownership.MemberInfo as M
 import Siko.MIR.Backend.Ownership.Lowering.LoweringInfo
-import Siko.MIR.Backend.Ownership.Lowering.LoweringInfo.Filter
+import Siko.MIR.Backend.Ownership.Lowering.LoweringInfo.FilterInfo
 import Siko.MIR.Backend.Ownership.Lowering.LoweringInfo.Normalizer
 import Siko.MIR.Backend.Ownership.Lowering.Context
 import Siko.MIR.Backend.Ownership.Lowering.Naming
@@ -77,8 +77,6 @@ processExternalClassImpl lowering_info context mir_class_impl =
             ownershipinfos <- List2.push lowering_info.ownershipinfos (M.OwnershipInfo arg.ownership_var (M.Borrower borrow_id))
             ownershipinfos <- List2.push ownershipinfos (M.OwnershipInfo result.ownership_var M.Owner)
             lowering_info <- FunctionLoweringInfo lowering_info.members args result ownershipinfos allocator
-            (members, filter_info) <- buildFilterInfo context.config lowering_info.members
-            lowering_info <- lowering_info { members = members }
             (lowering_info, _) <- normalizeFunctionLoweringInfo context.config lowering_info
             lir_key <- FunctionKey id lowering_info
             (context, lir_id) <- getLIRId context lir_key
@@ -90,8 +88,7 @@ lowerRecord context lowering_info mir_id lir_id = do
     trace context.config "Lowering record {} {} {}" % (mir_id, lir_id, lowering_info)
     (mir_program, mir_record) <- MP.getRecord context.mir_program mir_id
     context <- context { mir_program = mir_program }
-    (members, filter_info) <- buildFilterInfo context.config lowering_info.members
-    lowering_info <- lowering_info { members = members }
+    (lowering_info, filter_info) <- buildFilterInfoFromTypeLoweringInfo context.config lowering_info
     ((context, filter_info), fields) <- List.mapS (context, filter_info) mir_record.fields (lowerField lowering_info)
     lifetimes <- collectLifetimes lowering_info.ownershipinfos
     (context, external_info) <- case mir_record.external_info of
@@ -109,8 +106,7 @@ lowerAdt context lowering_info mir_id lir_id = do
     trace context.config "Lowering adt {} {} {}" % (mir_id, lir_id, lowering_info)
     (mir_program, mir_adt) <- MP.getAdt context.mir_program mir_id
     context <- context { mir_program = mir_program }
-    (members, filter_info) <- buildFilterInfo context.config lowering_info.members
-    lowering_info <- lowering_info { members = members }
+    (lowering_info, filter_info) <- buildFilterInfoFromTypeLoweringInfo context.config lowering_info
     ((context, filter_info), variants) <- List.mapSE (context, filter_info) mir_adt.variants (lowerVariant lowering_info)
     lifetimes <- collectLifetimes lowering_info.ownershipinfos
     external_class_impls <- []

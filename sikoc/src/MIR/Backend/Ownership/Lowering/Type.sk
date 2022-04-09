@@ -3,7 +3,7 @@ module Siko.MIR.Backend.Ownership.Lowering.Type where
 import Siko.MIR.Backend.Ownership.Lowering.Context
 import Siko.MIR.Backend.Ownership.Lowering.Naming
 import Siko.MIR.Backend.Ownership.Lowering.LoweringInfo
-import Siko.MIR.Backend.Ownership.Lowering.LoweringInfo.Filter
+import Siko.MIR.Backend.Ownership.Lowering.LoweringInfo.FilterInfo
 import Siko.MIR.Backend.Ownership.Lowering.LoweringInfo.Normalizer
 import Siko.MIR.Backend.Ownership.TypeVariableInfo
 import Siko.MIR.Backend.Ownership.BorrowId
@@ -57,8 +57,7 @@ lowerType context lowering_info mir_type = do
 
 lowerFunctionType :: Context -> FunctionLoweringInfo -> MF.FunctionType -> (Context, LF.FunctionType, [LT.Lifetime])
 lowerFunctionType context lowering_info mir_function_type = do
-    (members, filter_info) <- buildFilterInfo context.config lowering_info.members
-    lowering_info <- lowering_info { members = members }
+    (lowering_info, filter_info) <- buildFilterInfoFromFunctionLoweringInfo context.config lowering_info
     //println "lowerFunctionType {} {}" % (lowering_info, mir_function_type)
     ((context, filter_info), args) <- List.mapSE (context, filter_info) mir_function_type.args (\(context, filter_info), index, arg_type -> do
         (arg_lowering_info, filter_info) <- getLoweringInfoForArg context.config lowering_info index filter_info

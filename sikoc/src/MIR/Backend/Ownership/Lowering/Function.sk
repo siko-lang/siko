@@ -4,7 +4,7 @@ import Siko.Config
 import Siko.Trace
 import Siko.MIR.Backend.Ownership.Lowering.Context
 import Siko.MIR.Backend.Ownership.Lowering.LoweringInfo
-import Siko.MIR.Backend.Ownership.Lowering.LoweringInfo.Filter
+import Siko.MIR.Backend.Ownership.Lowering.LoweringInfo.FilterInfo
 import Siko.MIR.Backend.Ownership.Lowering.Naming
 import Siko.MIR.Backend.Ownership.Lowering.Expr
 import Siko.MIR.Backend.Ownership.Lowering.Type
@@ -46,11 +46,12 @@ lowerFunction context lowering_info mir_id lir_id = do
             inference_info <- inference_info { group_function_converters = group_function_converters }
             context <- context { mir_program = mir_program }
             borrow_info <- checkBorrows context.mir_program info.body
-            (members, filter_info) <- buildFilterInfo context.config inference_info.members
+            (members, ownership_dep_map) <- calculateOwnershipDepMap context.config inference_info.members
             inference_info <- inference_info { members = members }
-            (inference_info, filter_info) <- unpackOwnerships context.config mir_id inference_info filter_info
+            (inference_info, ownership_dep_map) <- unpackOwnerships context.config mir_id inference_info ownership_dep_map
             (inference_info, cloning_converters) <- inferOwnership context.config mir_id [mir_id] context.function_info_store inference_info
                               context.mir_program info.body borrow_info
+            (inference_info, filter_info) <- buildFilterInfoFromInferenceInfo context.config inference_info
             lowering_context <- LoweringContext mir_id inference_info cloning_converters filter_info
             (context, lir_body) <- lowerExpr lowering_context context info.body
             //trace context.config "Processing expr done"
@@ -80,8 +81,8 @@ lowerFunction context lowering_info mir_id lir_id = do
     //trace context.config "Lowering done"
     context
 
-unpackOwnerships :: Config -> MP.Identity -> InferenceInfo -> FilterInfo -> (InferenceInfo, FilterInfo)
-unpackOwnerships config function_id inference_info filter_info = do
+unpackOwnerships :: Config -> MP.Identity -> InferenceInfo -> Map2 GroupTypeVariable (List2 OwnershipTypeVariable) -> (InferenceInfo, Map2 GroupTypeVariable (List2 OwnershipTypeVariable))
+unpackOwnerships config function_id inference_info ownership_dep_map = do
     // Ownership information is present in the lowering info
     // in a packed way. For example an owned record implies
     // that every field of the record is also owned.
@@ -93,8 +94,8 @@ unpackOwnerships config function_id inference_info filter_info = do
         vars <- List2.push vars info.arg_group_var
         vars)
     vars <- List2.push vars function_inference_info.result.arg_group_var
-    List2.fold (inference_info, filter_info) vars (\(inference_info, filter_info), var -> do
-        case Map2.get filter_info.ownership_dep_map var of
-            Some ownership_vars -> List2.fold (inference_info, filter_info) ownership_vars (\(inference_info, filter_info), var ->
-                (maybeAddOwnership inference_info var M.Owner, filter_info))
-            None -> (inference_info, filter_info))
+    List2.fold (inference_info, ownership_dep_map) vars (\(inference_info, ownership_dep_map), var -> do
+        case Map2.get ownership_dep_map var of
+            Some ownership_vars -> List2.fold (inference_info, ownership_dep_map) ownership_vars (\(inference_info, ownership_dep_map), var ->
+                (maybeAddOwnership inference_info var M.Owner, ownership_dep_map))
+            None -> (inference_info, ownership_dep_map))

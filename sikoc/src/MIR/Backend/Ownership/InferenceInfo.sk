@@ -8,6 +8,7 @@ import Map
 import Set
 import Siko.MIR.Backend.Ownership.FunctionInfo
 import Siko.MIR.Backend.Ownership.Lowering.LoweringInfo
+import Siko.MIR.Backend.Ownership.Lowering.LoweringInfo.FilterInfo
 import Siko.MIR.Backend.Ownership.TypeVariableInfo
 import Siko.MIR.Backend.Ownership.Allocator
 import Siko.MIR.Backend.Ownership.BorrowId
@@ -445,3 +446,15 @@ instance Apply InferenceInfo where
 
 instance MemberOwner InferenceInfo where
     getMembers inference_info = inference_info.members
+
+buildFilterInfoFromInferenceInfo :: Config -> InferenceInfo -> (InferenceInfo, FilterInfo)
+buildFilterInfoFromInferenceInfo config inference_info = do
+    ownershipinfos <- M.toOwnershipInfo inference_info.ownership_values
+    sources <- Map2.fold List2.empty inference_info.function_infos (\sources, (_, function_info) -> do
+        sources <- List2.push sources function_info.result
+        sources <- sources + function_info.args
+        sources <- Map2.fold sources function_info.expr_type_variables (\sources, (_, info) -> List2.push sources info)
+        sources <- Map2.fold sources function_info.var_type_variables (\sources, (_, info) -> List2.push sources info)
+        sources)
+    (members, ownershipinfos, filter_info) <- buildFilterInfo config inference_info.members ownershipinfos sources
+    (inference_info { members = members }, filter_info)
