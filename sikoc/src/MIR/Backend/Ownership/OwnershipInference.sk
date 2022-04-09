@@ -66,9 +66,8 @@ getTypeVariableInfoByVar2 context var = do
 
 initializeExprOwnerships :: Context -> Context
 initializeExprOwnerships context = do
-    (inference_info, function_inference_info) <- getFunctionInferenceInfo context.inference_info context.function_id
-    context <- context { inference_info = inference_info }
-    expr_ids <- Map2.getKeys function_inference_info.expr_type_variables
+    expr_ids <- Map2.getKeys context.inference_info.expr_type_variables
+    expr_ids <- List2.filterMap expr_ids (\(GlobalExprId f_id expr_id) -> if f_id == context.function_id then Some expr_id else None)
     List2.fold context expr_ids (\context, expr_id -> do
             (context, info) <- getTypeVariableInfoByExprId2 context expr_id
             case Map2.get context.inference_info.ownership_values info.ownership_var of

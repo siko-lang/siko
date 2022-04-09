@@ -35,13 +35,19 @@ data Borrow = Local E.ExprId
 
 data BorrowSet = { borrows :: Set Borrow } deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
-data FunctionInferenceInfo = { expr_type_variables :: Map2 E.ExprId TypeVariableInfo,
-                               var_type_variables :: Map2 E.Var TypeVariableInfo,
-                               args :: List2 TypeVariableInfo,
+data FunctionInferenceInfo = { args :: List2 TypeVariableInfo,
                                result :: TypeVariableInfo,
                              } deriving (PartialEq, Eq, PartialOrd, Ord, Show)
 
-data InferenceInfo = { group :: List2 P.Identity,
+data GlobalExprId = { function_id :: P.Identity,
+                      expr_id :: E.ExprId } deriving (PartialEq, Eq, PartialOrd, Ord, Show)
+
+data GlobalVar = { function_id :: P.Identity,
+                   var :: E.Var } deriving (PartialEq, Eq, PartialOrd, Ord, Show)
+
+data InferenceInfo = { expr_type_variables :: Map2 GlobalExprId TypeVariableInfo,
+                       var_type_variables :: Map2 GlobalVar TypeVariableInfo,
+                       group :: List2 P.Identity,
                        function_infos :: Map2 P.Identity FunctionInferenceInfo,
                        ownership_values :: Map2 OwnershipTypeVariable M.OwnershipKind,
                        members :: List2 M.MemberInfo,
@@ -60,9 +66,9 @@ createInferenceInfoFromLoweringInfo lowering_info function_id = do
     ownership_values <- Map2.empty
     args <- lowering_info.args
     var_type_variables <- List2.foldE (\var_type_variables, index, arg ->
-            Map2.put var_type_variables (E.Arg index) arg) var_type_variables args
+            Map2.put var_type_variables (GlobalVar function_id (E.Arg index)) arg) var_type_variables args
     result <- lowering_info.result
-    function_inference_info <- FunctionInferenceInfo expr_type_variables var_type_variables args result
+    function_inference_info <- FunctionInferenceInfo args result
     function_infos <- Map2.put Map2.empty function_id function_inference_info
     allocator <- lowering_info.allocator
     members <- lowering_info.members
@@ -71,7 +77,7 @@ createInferenceInfoFromLoweringInfo lowering_info function_id = do
     group_function_converters <- Map2.empty
     borrow_sets <- Map2.empty
     group <- List2.single function_id
-    inference_info <- InferenceInfo group
+    inference_info <- InferenceInfo expr_type_variables var_type_variables group
         function_infos ownership_values members converters allocator
         function_converters group_function_converters borrow_sets Map2.empty
     List2.fold inference_info lowering_info.ownershipinfos (\inference_info, ownershipinfo -> do
@@ -87,8 +93,7 @@ createInferenceInfoFromLoweringInfo lowering_info function_id = do
 
 addFunctionInferenceInfo :: InferenceInfo -> P.Identity -> Int -> InferenceInfo
 addFunctionInferenceInfo inference_info id arg_count = do
-    expr_type_variables <- Map2.empty
-    var_type_variables <- Map2.empty
+    var_type_variables <- inference_info.var_type_variables
     args <- List2.empty
     allocator <- inference_info.allocator
     (var_type_variables, args, allocator) <- loop (var_type_variables, args, allocator, index) <- (var_type_variables, args, allocator, 0) do
@@ -97,14 +102,15 @@ addFunctionInferenceInfo inference_info id arg_count = do
         else do
             (allocator, info) <- getNextTypeVariableInfo allocator
             arg <- E.Arg index
-            var_type_variables <- Map2.put var_type_variables arg info
+            var_type_variables <- Map2.put var_type_variables (GlobalVar id arg) info
             args <- List2.push args info
             (var_type_variables, args, allocator, index + 1)
     (allocator, result) <- getNextTypeVariableInfo allocator
-    function_inference_info <- FunctionInferenceInfo expr_type_variables var_type_variables args result
+    function_inference_info <- FunctionInferenceInfo args result
     function_infos <- Map2.put inference_info.function_infos id function_inference_info
     group <- List2.push inference_info.group id
-    inference_info { group = group, allocator = allocator, function_infos = function_infos }
+    inference_info { var_type_variables = var_type_variables,
+                     group = group, allocator = allocator, function_infos = function_infos }
 
 createInferenceInfo :: InferenceInfo
 createInferenceInfo = do
@@ -114,7 +120,7 @@ createInferenceInfo = do
     function_converters <- Map2.empty
     group_function_converters <- Map2.empty
     borrow_sets <- Map2.empty
-    InferenceInfo List2.empty function_infos ownership_values List2.empty List2.empty allocator
+    InferenceInfo Map2.empty Map2.empty List2.empty function_infos ownership_values List2.empty List2.empty allocator
             function_converters group_function_converters borrow_sets Map2.empty
 
 createBorrowSet :: InferenceInfo -> Borrow -> (InferenceInfo, BorrowId)
@@ -158,19 +164,15 @@ getBorrowSet inference_info id =
 addVar :: InferenceInfo -> P.Identity -> E.Var -> InferenceInfo
 addVar inference_info function_id var = do
     (allocator, info) <- getNextTypeVariableInfo inference_info.allocator
-    function_infos <- Map2.updateValue inference_info.function_infos function_id (\function_inference_info -> do
-        var_type_variables <- Map2.put function_inference_info.var_type_variables var info
-        function_inference_info { var_type_variables = var_type_variables })
-    inference_info <- inference_info { function_infos = function_infos, allocator = allocator }
+    var_type_variables <- Map2.put inference_info.var_type_variables (GlobalVar function_id var) info
+    inference_info <- inference_info { var_type_variables = var_type_variables, allocator = allocator }
     inference_info
 
 addExpr :: InferenceInfo -> P.Identity -> E.ExprId -> InferenceInfo
 addExpr inference_info function_id expr_id = do
     (allocator, info) <- getNextTypeVariableInfo inference_info.allocator
-    function_infos <- Map2.updateValue inference_info.function_infos function_id (\function_inference_info -> do
-        expr_type_variables <- Map2.put function_inference_info.expr_type_variables expr_id info
-        function_inference_info { expr_type_variables = expr_type_variables })
-    inference_info <- inference_info { function_infos = function_infos, allocator = allocator }
+    expr_type_variables <- Map2.put inference_info.expr_type_variables (GlobalExprId function_id expr_id) info
+    inference_info <- inference_info { expr_type_variables = expr_type_variables, allocator = allocator }
     inference_info
 
 addMemberInfo :: InferenceInfo -> M.MemberInfo -> InferenceInfo
@@ -214,15 +216,13 @@ getFunctionInferenceInfo inference_info function_id =
 
 getTypeVariableInfoByExprId :: InferenceInfo -> E.ExprId -> P.Identity -> (InferenceInfo, TypeVariableInfo) // FIXME
 getTypeVariableInfoByExprId inference_info expr_id function_id = do
-    (inference_info, function_inference_info) <- getFunctionInferenceInfo inference_info function_id
-    case Map2.get function_inference_info.expr_type_variables expr_id of
+    case Map2.get inference_info.expr_type_variables (GlobalExprId function_id expr_id) of
         Some i -> (inference_info, i)
         None -> panic "TypeVariableInfo not found for expr {}" % expr_id
 
 getTypeVariableInfoByVar :: InferenceInfo -> E.Var -> P.Identity -> (InferenceInfo, TypeVariableInfo) // FIXME
 getTypeVariableInfoByVar inference_info var function_id = do
-    (inference_info, function_inference_info) <- getFunctionInferenceInfo inference_info function_id
-    case Map2.get function_inference_info.var_type_variables var of
+    case Map2.get inference_info.var_type_variables (GlobalVar function_id var) of
         Some i -> (inference_info, i)
         None -> panic "TypeVariableInfo not found for var {}" % var
 
@@ -421,15 +421,15 @@ instance Apply Converter where
 
 instance Apply FunctionInferenceInfo where
     apply applier function_inference_info = do
-        (applier, expr_type_variables) <- apply applier function_inference_info.expr_type_variables
-        (applier, var_type_variables) <- apply applier function_inference_info.var_type_variables
         (applier, args) <- apply applier function_inference_info.args
         (applier, result) <- apply applier function_inference_info.result
-        function_inference_info <- FunctionInferenceInfo expr_type_variables var_type_variables args result
+        function_inference_info <- FunctionInferenceInfo args result
         (applier, function_inference_info)
 
 instance Apply InferenceInfo where
     apply applier inference_info = do
+        (applier, expr_type_variables) <- apply applier inference_info.expr_type_variables
+        (applier, var_type_variables) <- apply applier inference_info.var_type_variables
         (applier, function_infos) <- apply applier inference_info.function_infos
         (applier, ownership_values) <- Map2.mapS applier inference_info.ownership_values (\applier, (k, v) -> do
             (applier, k) <- apply applier k
@@ -440,7 +440,7 @@ instance Apply InferenceInfo where
         (applier, group_function_converters) <- apply applier inference_info.group_function_converters
         members <- List2.dedup (List2.sort members)
         converters <- List2.dedup (List2.sort converters)
-        inference_info <- InferenceInfo inference_info.group function_infos ownership_values members converters inference_info.allocator
+        inference_info <- InferenceInfo expr_type_variables var_type_variables inference_info.group function_infos ownership_values members converters inference_info.allocator
             function_converters group_function_converters inference_info.borrow_sets inference_info.external_borrows
         (applier, inference_info)
 
@@ -453,8 +453,8 @@ buildFilterInfoFromInferenceInfo config inference_info = do
     sources <- Map2.fold List2.empty inference_info.function_infos (\sources, (_, function_info) -> do
         sources <- List2.push sources function_info.result
         sources <- sources + function_info.args
-        sources <- Map2.fold sources function_info.expr_type_variables (\sources, (_, info) -> List2.push sources info)
-        sources <- Map2.fold sources function_info.var_type_variables (\sources, (_, info) -> List2.push sources info)
         sources)
+    sources <- Map2.fold sources inference_info.expr_type_variables (\sources, (_, info) -> List2.push sources info)
+    sources <- Map2.fold sources inference_info.var_type_variables (\sources, (_, info) -> List2.push sources info)
     (members, ownershipinfos, filter_info) <- buildFilterInfo config inference_info.members ownershipinfos sources
     (inference_info { members = members }, filter_info)
