@@ -256,16 +256,10 @@ getFunctionConverters config inference_info function_id = do
         (\ownership_vars, info -> List2.push ownership_vars info.ownership_var)
     //trace config "toFunctionInfo: to ownership infos"
     (input_members, input_ownership_vars) <- List2.foldLinear input_ownership_vars input_members (\vars, member ->
-        case member of
-            M.Variant _ _ _ info -> List2.push vars info.ownership_var
-            M.Field _ _ _ info -> List2.push vars info.ownership_var
-            M.Extern _ _ _ info -> List2.push vars info.ownership_var)
+            List2.push vars member.info.ownership_var)
     //trace config "toFunctionInfo: collecting output_ownership_vars"
     (output_members, output_ownership_vars) <- List2.foldLinear output_ownership_vars output_members (\vars, member ->
-        case member of
-            M.Variant _ _ _ info -> List2.push vars info.ownership_var
-            M.Field _ _ _ info -> List2.push vars info.ownership_var
-            M.Extern _ _ _ info -> List2.push vars info.ownership_var)
+            List2.push vars member.info.ownership_var)
     (converters, (converter_map, input_ownership_vars, output_ownership_vars, filtered_converters)) <- List2.foldLinear (converter_map, input_ownership_vars, output_ownership_vars, List2.empty) converters
         (\(converter_map, input_ownership_vars, output_ownership_vars, filtered_converters), converter -> do
             filtered_converters <- if List2.contains input_ownership_vars converter.from
@@ -357,16 +351,10 @@ toFunctionInfo config inference_info function_id = do
         (\ownership_vars, info -> List2.push ownership_vars info.ownership_var)
     //trace config "toFunctionInfo: to ownership infos"
     (input_members, input_ownership_vars) <- List2.foldLinear input_ownership_vars input_members (\vars, member ->
-        case member of
-            M.Variant _ _ _ info -> List2.push vars info.ownership_var
-            M.Field _ _ _ info -> List2.push vars info.ownership_var
-            M.Extern _ _ _ info -> List2.push vars info.ownership_var)
+            List2.push vars member.info.ownership_var)
     //trace config "toFunctionInfo: collecting output_ownership_vars"
     (output_members, output_ownership_vars) <- List2.foldLinear output_ownership_vars output_members (\vars, member ->
-        case member of
-            M.Variant _ _ _ info -> List2.push vars info.ownership_var
-            M.Field _ _ _ info -> List2.push vars info.ownership_var
-            M.Extern _ _ _ info -> List2.push vars info.ownership_var)
+            List2.push vars member.info.ownership_var)
     relevant_ownership_vars <- input_ownership_vars + output_ownership_vars
     //trace config "toFunctionInfo: collecting filtered ownership vars"
     (filtered_ownershipinfos, ownership_values) <- loop (filtered_ownershipinfos, relevant_ownership_vars, ownership_values, index) <- (List2.empty, relevant_ownership_vars, inference_info.ownership_values, 0) do

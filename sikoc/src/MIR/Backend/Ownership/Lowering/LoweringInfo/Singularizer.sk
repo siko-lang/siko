@@ -28,17 +28,9 @@ processOwnerVar singularizer info = do
     (singularizer, info { ownership_var = next })
 
 processMembers :: Singularizer -> List2 M.MemberInfo -> (Singularizer, List2 M.MemberInfo)
-processMembers singularizer members = List2.mapS singularizer members (\singularizer, m ->
-    case m of
-        M.Variant index ty root info -> do
-            (singularizer, info) <- processOwnerVar singularizer info
-            (singularizer, M.Variant index ty root info)
-        M.Field name ty root info -> do
-            (singularizer, info) <- processOwnerVar singularizer info
-            (singularizer, M.Field name ty root info)
-        M.Extern index ty root info -> do
-            (singularizer, info) <- processOwnerVar singularizer info
-            (singularizer, M.Extern index ty root info))
+processMembers singularizer members = List2.mapS singularizer members (\singularizer, m -> do
+        (singularizer, info) <- processOwnerVar singularizer m.info
+        (singularizer, m { info = info }))
 
 buildOwnershipinfos :: Singularizer -> List2 M.OwnershipInfo -> List2 M.OwnershipInfo
 buildOwnershipinfos singularizer ownershipinfos = List2.fold List2.empty ownershipinfos (\ownershipinfos, info -> do

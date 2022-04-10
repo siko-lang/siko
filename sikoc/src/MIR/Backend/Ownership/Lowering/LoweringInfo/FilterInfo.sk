@@ -86,10 +86,7 @@ getInfoDependencyMap sources members deps_map = do
             None -> Map2.put full_info_deps_map source List2.empty
         (deps_map, full_info_deps_map))
     (members, (deps_map, full_info_deps_map)) <- List2.foldLinear (deps_map, full_info_deps_map) members (\(deps_map, full_info_deps_map), member -> do
-        info <- case member of
-            M.Variant index ty root info -> info
-            M.Field name ty root info -> info
-            M.Extern index ty root info -> info
+        info <- member.info
         full_info_deps_map <- case Map2.get deps_map info.arg_group_var of
             Some deps -> Map2.put full_info_deps_map info deps
             None -> Map2.put full_info_deps_map info List2.empty

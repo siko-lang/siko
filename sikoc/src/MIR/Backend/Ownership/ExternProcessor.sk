@@ -84,21 +84,21 @@ processStep :: P.Program -> TypeVariableInfo -> T.Type -> TypeVariableInfo -> F.
 processStep program info ty parent step =
     case step of
         F.External index -> do
-            member <- M.Extern index ty parent.arg_group_var info
+            member <- M.MemberInfo (M.Extern index) ty parent.arg_group_var info
             id <- T.getIdentity ty
             (program, record) <- P.getRecord program id
             external_record_info <- Option.unwrap record.external_info
             external_ty <- List.atIndex external_record_info.type_args index
             (external_ty, Some member, None)
         F.Variant index -> do
-            member <- M.Variant index ty parent.arg_group_var info
+            member <- M.MemberInfo (M.Variant index) ty parent.arg_group_var info
             ownershipinfo <- M.OwnershipInfo info.ownership_var M.Owner
             id <- T.getIdentity ty
             (program, adt) <- P.getAdt program id
             variant <- List.atIndex adt.variants index
             (variant.type, Some member, Some ownershipinfo)
         F.Field name index -> do
-            member <- M.Field name ty parent.arg_group_var info
+            member <- M.MemberInfo (M.Field name) ty parent.arg_group_var info
             id <- T.getIdentity ty
             (program, record) <- P.getRecord program id
             field <- Option.unwrap (D.getFieldByName record name)

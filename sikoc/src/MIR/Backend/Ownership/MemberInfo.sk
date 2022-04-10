@@ -18,17 +18,23 @@ data OwnershipKind = Unknown
                    | Borrower BorrowId
                    deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
-data MemberInfo = Variant Int T.Type GroupTypeVariable TypeVariableInfo
-                | Field String T.Type GroupTypeVariable TypeVariableInfo
-                | Extern Int T.Type GroupTypeVariable TypeVariableInfo
+data MemberKind = Variant Int
+                | Field String
+                | Extern Int
                 deriving (PartialEq, Eq, PartialOrd, Ord)
+
+data MemberInfo = { kind :: MemberKind,
+                    type :: T.Type,
+                    root :: GroupTypeVariable,
+                    info :: TypeVariableInfo
+                } deriving (PartialEq, Eq, PartialOrd, Ord)
 
 instance Show MemberInfo where
     show member =
-        case member of
-            Variant index ty root info -> "V{}.{}/{}" % (root, index, info)
-            Field name ty root info -> "F{}.{}/{}" % (root, name, info)
-            Extern index ty root info -> "E{}.{}/{}" % (root, index, info)
+        case member.kind of
+            Variant index -> "V{}.{}/{}" % (member.root, index, member.info)
+            Field name -> "F{}.{}/{}" % (member.root, name, member.info)
+            Extern index -> "E{}.{}/{}" % (member.root, index, member.info)
 
 data OwnershipInfo = { var :: OwnershipTypeVariable, kind :: OwnershipKind }
                    deriving (PartialEq, Eq, PartialOrd, Ord)
@@ -50,17 +56,9 @@ toOwnershipKind :: List2 OwnershipInfo -> Map2 OwnershipTypeVariable OwnershipKi
 toOwnershipKind infos = List2.fold Map2.empty infos (\kinds, info -> Map2.put kinds info.var info.kind)
 
 isSubMember :: List2 GroupTypeVariable -> MemberInfo -> (List2 GroupTypeVariable, Bool)
-isSubMember vars constraint =
-    case constraint of
-        Variant index ty root info -> do
-            r <- List2.contains vars root
-            (vars, r)
-        Field name ty root info -> do
-            r <- List2.contains vars root
-            (vars, r)
-        Extern index ty root info -> do
-            r <- List2.contains vars root
-            (vars, r)
+isSubMember vars member = do
+    r <- List2.contains vars member.root
+    (vars, r)
 
 filterOwnershipInfo :: List2 OwnershipTypeVariable -> OwnershipInfo -> (List2 OwnershipTypeVariable, Bool)
 filterOwnershipInfo vars ownershipinfo = do
@@ -70,16 +68,10 @@ filterOwnershipInfo vars ownershipinfo = do
 getGroupDependencyMap :: List2 MemberInfo -> (List2 MemberInfo, Map2 GroupTypeVariable (List2 GroupTypeVariable))
 getGroupDependencyMap members = do
         deps_map <- Map2.empty
-        (members, deps_map) <- List2.foldLinear deps_map members (\deps_map, member -> case member of
-                Variant index ty root info -> Map2.put deps_map info.arg_group_var List2.empty
-                Field name ty root info -> Map2.put deps_map info.arg_group_var List2.empty
-                Extern index ty root info -> Map2.put deps_map info.arg_group_var List2.empty
-            )
-        (members, deps_map) <- List2.foldLinear deps_map members (\deps_map, member -> case member of
-                Variant index ty root info -> addDep deps_map root info.arg_group_var
-                Field name ty root info -> addDep deps_map root info.arg_group_var
-                Extern index ty root info -> addDep deps_map root info.arg_group_var
-            )
+        (members, deps_map) <- List2.foldLinear deps_map members (\deps_map, member ->
+                Map2.put deps_map member.info.arg_group_var List2.empty)
+        (members, deps_map) <- List2.foldLinear deps_map members (\deps_map, member ->
+                addDep deps_map member.root member.info.arg_group_var)
         (members, deps_map)
     where
         addDep :: Map2 GroupTypeVariable (List2 GroupTypeVariable) -> GroupTypeVariable -> GroupTypeVariable -> Map2 GroupTypeVariable (List2 GroupTypeVariable)
@@ -92,16 +84,10 @@ getGroupDependencyMap members = do
 getInfoDependencyMap :: List2 MemberInfo -> (List2 MemberInfo, Map2 GroupTypeVariable (List2 TypeVariableInfo))
 getInfoDependencyMap members = do
         deps_map <- Map2.empty
-        (members, deps_map) <- List2.foldLinear deps_map members (\deps_map, member -> case member of
-                Variant index ty root info -> Map2.put deps_map info.arg_group_var List2.empty
-                Field name ty root info -> Map2.put deps_map info.arg_group_var List2.empty
-                Extern index ty root info -> Map2.put deps_map info.arg_group_var List2.empty
-            )
-        (members, deps_map) <- List2.foldLinear deps_map members (\deps_map, member -> case member of
-                Variant index ty root info -> addInfoDep deps_map root info
-                Field name ty root info -> addInfoDep deps_map root info
-                Extern index ty root info -> addInfoDep deps_map root info
-            )
+        (members, deps_map) <- List2.foldLinear deps_map members (\deps_map, member ->
+                Map2.put deps_map member.info.arg_group_var List2.empty)
+        (members, deps_map) <- List2.foldLinear deps_map members (\deps_map, member ->
+                addInfoDep deps_map member.root member.info)
         (members, deps_map)
     where
         addInfoDep :: Map2 GroupTypeVariable (List2 TypeVariableInfo) -> GroupTypeVariable -> TypeVariableInfo -> Map2 GroupTypeVariable (List2 TypeVariableInfo)

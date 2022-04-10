@@ -76,11 +76,8 @@ calculateChildOwnershipVars members =
         if index >= List2.getLength members
         then break (members, child_ownership_vars)
         else do
-            member <- List2.atIndex members index
-            child_ownership_vars <- case member of
-                Variant index ty root info -> addChildOwnershipVars child_ownership_vars root info
-                Field name ty root info -> addChildOwnershipVars child_ownership_vars root info
-                Extern index ty root info -> addChildOwnershipVars child_ownership_vars root info
+            member :: MemberInfo <- List2.atIndex members index // FIXME: type annotation
+            child_ownership_vars <- addChildOwnershipVars child_ownership_vars member.root member.info
             (members, child_ownership_vars, index + 1)
     where
         addChildOwnershipVars :: Map2 GroupTypeVariable (List2 OwnershipTypeVariable) -> GroupTypeVariable -> TypeVariableInfo -> Map2 GroupTypeVariable (List2 OwnershipTypeVariable)

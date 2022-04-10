@@ -56,10 +56,7 @@ normalizeTypeLoweringInfo config lowering_info = do
         (duplicator, ownershipinfo { kind = kind }))
     kinds <- M.toOwnershipKind ownershipinfos
     (members, (kinds, ownershipinfos)) <- List2.foldLinear (kinds, ownershipinfos) members (\(kinds, ownershipinfos), m -> do
-            info <- case m of
-                M.Variant _ _ _ info -> info
-                M.Field _ _ _ info -> info
-                M.Extern _ _ _ info -> info
+            info <- m.info
             case Map2.get kinds info.ownership_var of
                 Some _ -> (kinds, ownershipinfos)
                 None -> (kinds, List2.push ownershipinfos (M.OwnershipInfo info.ownership_var M.Owner)))

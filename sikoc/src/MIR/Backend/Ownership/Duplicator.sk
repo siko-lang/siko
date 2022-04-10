@@ -79,20 +79,11 @@ instance Duplicable TypeVariableInfo where
         (duplicator, TypeVariableInfo ownership_var arg_group_var)
 
 instance Duplicable M.MemberInfo where
-    duplicate duplicator member_info =
-        case member_info of
-            M.Variant index ty root info -> do
-                (duplicator, root) <- duplicate duplicator root
-                (duplicator, info) <- duplicate duplicator info
-                (duplicator, M.Variant index ty root info)
-            M.Field name ty root info -> do
-                (duplicator, root) <- duplicate duplicator root
-                (duplicator, info) <- duplicate duplicator info
-                (duplicator, M.Field name ty root info)
-            M.Extern index ty root info -> do
-                (duplicator, root) <- duplicate duplicator root
-                (duplicator, info) <- duplicate duplicator info
-                (duplicator, M.Extern index ty root info)
+    duplicate duplicator member_info = do
+        M.MemberInfo kind ty root info <- member_info
+        (duplicator, root) <- duplicate duplicator root
+        (duplicator, info) <- duplicate duplicator info
+        (duplicator, M.MemberInfo kind ty root info)
 
 instance Duplicable M.OwnershipKind where
     duplicate duplicator kind =

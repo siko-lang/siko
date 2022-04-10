@@ -41,7 +41,7 @@ createRecordCtorFunctionInfo context type =
             (allocator, result) <- getNextTypeVariableInfo allocator
             (allocator, args, members) <- List.fold (allocator, List2.empty, List2.empty) record.fields (\(allocator, args, members), field -> do
                     (allocator, arg_info) <- getNextTypeVariableInfo allocator
-                    member <- M.Field field.name type result.arg_group_var arg_info
+                    member <- M.MemberInfo (M.Field field.name) type result.arg_group_var arg_info
                     members <- List2.push members member
                     args <- List2.push args arg_info
                     (allocator, args, members))
@@ -64,11 +64,11 @@ createVariantctorFunctionInfo context index type =
                     (allocator, record_result) <- getNextTypeVariableInfo allocator
                     (allocator, args, members) <- List.fold (allocator, List2.empty, List2.empty) record.fields (\(allocator, args, members), field -> do
                             (allocator, arg_info) <- getNextTypeVariableInfo allocator
-                            member <- M.Field field.name variant.type record_result.arg_group_var arg_info
+                            member <- M.MemberInfo (M.Field field.name) variant.type record_result.arg_group_var arg_info
                             members <- List2.push members member
                             args <- List2.push args arg_info
                             (allocator, args, members))
-                    variants <- List2.single (M.Variant index type adt_result.arg_group_var record_result)
+                    variants <- List2.single (M.MemberInfo (M.Variant index) type adt_result.arg_group_var record_result)
                     ownershipinfos <- List2.single (M.OwnershipInfo record_result.ownership_var M.Owner)
                     FunctionInfo args adt_result (members + variants) List2.empty ownershipinfos
                 _ -> panic "createVariantctorFunctionInfo: not a record"

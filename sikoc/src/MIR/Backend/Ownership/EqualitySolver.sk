@@ -82,19 +82,11 @@ instance Apply TypeVariableInfo where
         (applier, TypeVariableInfo ownership_var arg_group_var)
 
 instance Apply M.MemberInfo where
-    apply applier info = case info of
-        M.Variant index ty root info -> do
-            (applier, root) <- apply applier root
-            (applier, info) <- apply applier info
-            (applier, M.Variant index ty root info)
-        M.Field name ty root info -> do
-            (applier, root) <- apply applier root
-            (applier, info) <- apply applier info
-            (applier, M.Field name ty root info)
-        M.Extern index ty root info -> do
-            (applier, root) <- apply applier root
-            (applier, info) <- apply applier info
-            (applier, M.Extern index ty root info)
+    apply applier member = do
+        M.MemberInfo kind ty root info <- member
+        (applier, root) <- apply applier root
+        (applier, info) <- apply applier info
+        (applier, M.MemberInfo kind ty root info)
 
 instance Apply M.OwnershipInfo where
     apply applier info = do
@@ -114,9 +106,7 @@ addEquals equals applier = do
             applier <- addSingleEqual applier equal
             (applier, equals, index + 1)
 
-data MergeKey b = VariantKey Int b
-                | MemberKey String b
-                | ExternKey Int b deriving (PartialEq, Eq, PartialOrd, Ord)
+data MergeKey b = MergeKey M.MemberKind b deriving (PartialEq, Eq, PartialOrd, Ord)
 
 addEqual :: List2 Equal -> TypeVariableInfo -> TypeVariableInfo -> List2 Equal
 addEqual equals info1 info2 = do
@@ -139,16 +129,9 @@ processEquals equals owner = do
 
 getEqualsFromMemberInfos :: List2 M.MemberInfo -> (List2 M.MemberInfo, List2 Equal)
 getEqualsFromMemberInfos members = do
-        (members, root_map) <- List2.foldLinear Map2.empty members (\root_map, member_info -> case member_info of
-                M.Variant index ty root info -> do
-                    (root_map, _) <- Map2.alter (addInfo info) (VariantKey index root) root_map
-                    root_map
-                M.Field name ty root info -> do
-                    (root_map, _) <- Map2.alter (addInfo info) (MemberKey name root) root_map
-                    root_map
-                M.Extern index ty root info -> do
-                    (root_map, _) <- Map2.alter (addInfo info) (ExternKey index root) root_map
-                    root_map)
+        (members, root_map) <- List2.foldLinear Map2.empty members (\root_map, member_info -> do
+                (root_map, _) <- Map2.alter (addInfo member_info.info) (MergeKey member_info.kind member_info.root) root_map
+                root_map)
         equals <- Map2.fold List2.empty root_map (\equals, (_, infos) -> do
             if List2.getLength infos > 1
             then do
