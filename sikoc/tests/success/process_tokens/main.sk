@@ -1,0 +1,73 @@
+module Main where
+
+data TokenInfo = TokenInfo
+
+data ParserError = ParserError
+
+data Module = Module
+
+data TokenKind = TokenKind
+
+data Item = Item
+
+data SourceFile = SourceFile String [Module]
+
+data Token = Token
+
+data LexerError = LexerError
+
+data FileId = FileId
+
+lex :: String -> ([TokenInfo], [LexerError])
+lex input = ([], [])
+
+data ParserState =
+    {
+        tokens :: [TokenInfo],
+        index :: Int,
+        errors :: [ParserError],
+        modules :: [Module],
+        file_id :: FileId,
+        ops_table :: [[TokenKind]],
+        sub_items :: [Item],
+    }
+
+initState :: FileId -> [TokenInfo] -> ParserState
+initState file_id tokens = do
+    ParserState tokens 0 [] [] file_id [] []
+
+isDone :: ParserState -> Bool
+isDone state = True
+
+parseModule :: ParserState -> Result ParserState (ParserState, ParserError)
+parseModule state = Ok state
+
+addError :: ParserState -> ParserError -> ParserState
+addError state error = state
+
+processTokens :: ParserState -> String -> (SourceFile, [ParserError])
+processTokens state file_name = do
+    state <- loop state <- state do
+        if not (isDone state)
+        then do
+            case parseModule state of
+                Ok state -> state
+                Err (state, err) -> do
+                    state <- addError state err
+                    break state
+        else break state
+    (SourceFile file_name state.modules, state.errors)
+
+parse :: FileId -> String -> String -> (SourceFile, [LexerError], [ParserError])
+parse file_id file_name input = do
+    (tokens, lexer_errors) <- lex input
+    state <- initState file_id tokens
+    (source_file, parser_errors) <- processTokens state file_name
+    (source_file, lexer_errors, parser_errors)
+
+boo file_id = ()
+
+main = do
+    file_id <- FileId
+    (source_file, lexer_errors, parser_errors) <- parse file_id "name" "input"
+    boo file_id
