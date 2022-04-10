@@ -494,14 +494,11 @@ generateListPush :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateListPush program type_store arg_types result_type = do
     rust_type <- convertType result_type
     field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
-    field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
     new0 <- "new0"
-    new0_decl <- R.VarDeclMut new0 (R.MethodCall field_access0 cloneName []) None
-    new1 <- "new1"
-    new1_decl <- R.VarDecl new1 (R.MethodCall field_access1 cloneName []) None
-    add_call <- R.MethodCall (R.VarRef new0) "push" [R.VarRef new1]
+    new0_decl <- R.VarDeclMut new0 (field_access0) None
+    add_call <- R.MethodCall (R.VarRef new0) "push" [R.VarRef (getArgName 1)]
     struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef new0)]
-    R.Block [new0_decl, new1_decl, add_call, struct_ctor]
+    R.Block [new0_decl, add_call, struct_ctor]
 
 generateListRemove :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateListRemove program type_store arg_types result_type = do
