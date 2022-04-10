@@ -1,0 +1,2314 @@
+module Siko.Syntax.Attribute where
+
+import Siko.Syntax.Ident
+
+data Attribute = { name :: Ident } deriving (Show)
+
+module Siko.Syntax.Class where
+
+import Siko.Syntax.Ident
+import Siko.Syntax.Function
+import Siko.Syntax.TypeSignature (TypeSignature)
+
+data Constraint = {
+                    class_name :: Ident,
+                    argument :: Ident,
+                    associated_types :: [TypeSignature],
+                  } deriving (Show)
+
+data Class = {
+                name :: Ident,
+                argument :: Ident,
+                associated_types :: [Ident],
+                constraints :: [Constraint],
+                member_functions :: [Function],
+                member_function_type_signatures :: [FunctionSignature],
+             } deriving (Show)
+
+data Instance = {
+                  class_name :: Ident,
+                  type_signature :: TypeSignature,
+                  associated_types :: [TypeSignature],
+                  constraints :: [Constraint],
+                  member_functions :: [Function],
+                  member_function_type_signatures :: [FunctionSignature],
+                } deriving (Show)
+module Siko.Syntax.Data where
+
+import Siko.Syntax.Ident
+import Siko.Syntax.TypeSignature (TypeSignature)
+
+data Variant = {
+                 name :: Ident,
+                 items :: [TypeSignature],
+                } deriving (Show)
+
+data AlgebraicDataType = {
+                          name :: Ident,
+                          type_arguments :: [Ident],
+                          variants :: [Variant],
+                          derived_classes :: [Ident],
+                        } deriving (Show)
+
+data Record = {
+                name :: Ident,
+                type_arguments :: [Ident],
+                fields :: [RecordField],
+                external :: Bool,
+                derived_classes :: [Ident],
+               } deriving (Show)
+
+data RecordField = {
+                     name :: Ident,
+                     type_signature :: TypeSignature,
+                   } deriving (Show)
+module Siko.Syntax.Effect where
+
+import Siko.Syntax.Ident
+import Siko.Syntax.Class
+import Siko.Syntax.Function
+import Siko.Syntax.TypeSignature (TypeSignature)
+
+data Effect = { name :: Ident,
+                arguments :: [Ident],
+                constraints :: [Constraint],
+                member_functions :: [Function],
+                member_function_type_signatures :: [FunctionSignature],
+              } deriving (Show)
+module Siko.Parser.Error where
+
+import Siko.Syntax.Location
+
+data ParserError = UnexpectedToken String String Span
+                   | InvalidTypeArgument Span
+                   deriving (Show)
+
+data LexerError = InvalidEscapeSequence Span
+                  | UnsupportedCharacter Span
+                  | InvalidOperator Span
+                  | InvalidIdent Span
+            deriving (Show)
+module Siko.Syntax.Expr where
+
+import Siko.Syntax.Ident
+import Siko.Syntax.Pattern as P
+import Siko.Syntax.Location
+
+data Case = { pattern :: P.Pattern,
+              body :: Expr,
+            } deriving (Show)
+
+data RecordConstructionItem = { field_name :: Ident,
+                                body :: Expr,
+                              } deriving (Show)
+
+data Op = Equal
+        | NotEqual
+        | And
+        | Or
+        | LessThan
+        | GreaterThan
+        | LessOrEqualThan
+        | GreaterOrEqualThan
+        | Add
+        | Sub
+        | Mul
+        | Div
+        | PipeForward
+        deriving (Show, PartialEq)
+
+data Expr = Expr SimpleExpr Location
+
+data EffectHandler = { name :: Ident,
+                       value :: Expr
+                     } deriving (Show)
+
+instance Show Expr where
+    show (Expr s _) = show s
+
+data SimpleExpr = Lambda [P.Pattern] Expr
+                | Paren Expr
+                | FunctionCall Expr [Expr]
+                | BinaryOp Op Expr Expr
+                | If Expr Expr Expr
+                | Tuple [Expr]
+                | List [Expr]
+                | Path Ident
+                | IntegerLiteral String
+                | FloatLiteral String
+                | StringLiteral String
+                | CharLiteral Char
+                | Do [Expr]
+                | Bind P.Pattern Expr
+                | FieldAccess Ident Expr
+                | TupleFieldAccess String Expr
+                | Formatter String [Expr]
+                | CaseOf Expr [Case]
+                | Not Expr
+                | Negative Expr
+                | RecordInitialization Ident [RecordConstructionItem]
+                | RecordUpdate Ident [RecordConstructionItem]
+                | Return Expr
+                | Try Expr
+                | Continue Expr
+                | Break Expr
+                | Loop P.Pattern Expr Expr
+                | ArgRef Int
+                | With [EffectHandler] Expr
+                deriving (Show)
+module Siko.Syntax.Function where
+
+import Siko.Syntax.TypeSignature
+import Siko.Syntax.Class
+import Siko.Syntax.Ident
+import Siko.Syntax.Expr
+import Siko.Syntax.Attribute
+import Siko.Syntax.Pattern
+import Siko.Syntax.Module as M
+
+data EffectSignature = { name :: Ident,
+                         arguments :: [Ident],
+                       } deriving (Show)
+
+data FunctionSignature = { name :: Ident,
+                           type_arguments :: [Ident],
+                           constraints :: [Constraint],
+                           type_signature :: TypeSignature,
+                           attributes :: [Attribute],
+                           effects :: Option [EffectSignature]
+                         } deriving (Show)
+
+data Function = { name :: Ident,
+                  arguments :: [Pattern],
+                  body :: Option Expr,
+                  sub_items :: [M.Item],
+                  attributes :: [Attribute],
+                } deriving (Show)
+module Siko.Syntax.Ident where
+
+import Siko.Syntax.Location
+
+data Ident = Ident String.String Location deriving (PartialEq)
+
+getString :: Ident -> String
+getString (Ident s _) = s
+
+mergeIdents :: Ident -> Ident -> Ident
+mergeIdents (Ident n1 l1) (Ident n2 l2) =
+    Ident (n1 + n2) (mergeLocations l1 l2)
+
+instance Show Ident where
+    show (Ident s _) = s
+module Siko.Syntax.Import where
+
+import Siko.Syntax.Ident
+import Siko.Syntax.Class
+import Siko.Syntax.Location
+import Siko.Syntax.Function
+import Siko.Syntax.TypeSignature (TypeSignature)
+import Siko.Syntax.Data
+
+data Export = ExportAll
+            | ExportSpecific [Filter]
+            deriving (Show)
+
+data Import = Hiding Ident [Ident]
+            | ImportAll Ident (Option Ident)
+            | Implicit String
+            | ImportSpecific Ident [Filter] (Option Ident)
+            deriving (Show)
+
+data MemberSpecification = Specific Ident | All deriving (Show)
+
+data Filter = Single Ident | Group Ident [MemberSpecification] deriving (Show)
+module Siko.Parser.Layout(processLayout) where
+
+import Siko.Syntax.Location
+import Siko.Parser.Token
+import Siko.Parser.Lexer
+import Siko.Parser.Error
+
+data LayoutProcessorState =
+    {
+        input :: [TokenInfo],
+        index :: Int,
+        output :: [TokenInfo],
+        errors :: [LexerError],
+    }
+
+emptyState :: [TokenInfo] -> LayoutProcessorState
+emptyState input = LayoutProcessorState input 0 [] []
+
+isDone :: LayoutProcessorState -> Bool
+isDone state = state.index >= getLength state.input
+
+peek :: LayoutProcessorState -> TokenInfo
+peek state = atIndex state.input state.index
+
+lastSpan :: LayoutProcessorState -> Span
+lastSpan state = (atIndex state.input (state.index - 1)).span
+
+addToken :: LayoutProcessorState -> TokenInfo -> LayoutProcessorState
+addToken state token = do
+        output <- state.output + [token]
+        state { output = output }
+
+advance :: LayoutProcessorState -> LayoutProcessorState
+advance state = do
+    state <- addToken state (peek state)
+    state { index = state.index + 1 }
+
+data ItemState = { state :: LayoutProcessorState,
+                   paren_level :: Int,
+                   end_of_block :: Bool,
+                   first :: Bool,
+                 }
+
+processItem :: LayoutProcessorState -> Span -> (LayoutProcessorState, Bool)
+processItem state first_span = do
+    item_state <- ItemState state 0 False True
+    item_state <- loop item_state <- item_state do
+        item_state :: ItemState <- item_state // FIXME: type annotation
+        if not (isDone item_state.state)
+        then do
+            token <- peek item_state.state
+            item_ended <- if token.span.start.offset <= first_span.start.offset && not item_state.first
+                then do
+                    same <- token.span.start.offset == first_span.start.offset
+                    case token.token of
+                        KeywordThen if same -> False
+                        KeywordElse if same -> False
+                        _ -> True
+                else False
+            item_state <- item_state { first = False }
+            if item_ended
+            then break item_state { end_of_block = token.span.start.offset < first_span.start.offset }
+            else do
+                case token.token of
+                    KeywordDo | KeywordWhere | KeywordOf -> item_state { state = processBlock item_state.state }
+                    KeywordModule -> break item_state { end_of_block = True }
+                    LParen | LCurly | LBracket -> item_state { state = advance item_state.state, paren_level = item_state.paren_level + 1}
+                    RParen | RCurly | RBracket -> do
+                        paren_level <- item_state.paren_level - 1
+                        if paren_level < 0
+                        then break item_state { end_of_block = True }
+                        else item_state { state = advance item_state.state, paren_level = paren_level }
+                    _ -> do
+                        item_state { state = advance item_state.state }
+        else break item_state { end_of_block = True }
+    state <- item_state.state
+    state <- addToken state (TokenInfo EndOfItem (lastSpan state))
+    (state, item_state.end_of_block)
+
+processBlock :: LayoutProcessorState -> LayoutProcessorState
+processBlock state = do
+    state <- advance state
+    state <- if not (isDone state)
+        then do
+            block_start <- peek state
+            block_start_span <- block_start.span
+            loop state <- state do
+                if not (isDone state)
+                then do
+                    first <- peek state
+                    if first.span.start.offset < block_start.span.start.offset
+                    then break state
+                    else case first.token of
+                            KeywordDo | KeywordWhere | KeywordOf -> do
+                                state <- processBlock state
+                                state <- addToken state (TokenInfo EndOfItem (lastSpan state))
+                                state
+                            KeywordModule -> break state
+                            _ -> do
+                                (state, end_of_block) <- processItem state block_start_span
+                                if end_of_block
+                                then break state
+                                else state
+                else break state
+        else state
+    state <- addToken state (TokenInfo EndOfBlock (lastSpan state))
+    state
+
+processModule :: LayoutProcessorState -> LayoutProcessorState
+processModule state = do
+    state <- advance state
+    state <- loop state <- state do
+        if not (isDone state)
+        then do
+            token <- peek state
+            case token.token of
+                KeywordWhere -> processBlock state
+                KeywordModule -> break state
+                _ -> advance state
+        else break state
+    state <- addToken state (TokenInfo EndOfModule (lastSpan state))
+    state
+
+processLayout :: [TokenInfo] -> ([TokenInfo], [LexerError])
+processLayout input = do
+    state <- emptyState input
+    state <- loop state <- state do
+        if not (isDone state)
+        then do
+            token <- peek state
+            case token.token of
+                KeywordModule -> processModule state
+                _ -> advance state
+        else break state
+    (state.output, state.errors)
+module Siko.Parser.Lexer(lex) where
+
+import Siko.Syntax.Location
+import Siko.Parser.Token
+import Siko.Parser.Error
+import Siko.Parser.Layout
+
+data LexerState =
+    {
+        chars :: [Char],
+        index :: Int,
+        line_offset :: Int,
+        line_index :: Int,
+        tokens :: [TokenInfo],
+        errors :: [LexerError],
+    }
+
+data SpannedString = { value :: String, span :: Span }
+
+startSpannedString :: Span -> SpannedString
+startSpannedString span = SpannedString "" span
+
+updateSpan :: LexerState -> SpannedString -> SpannedString
+updateSpan state s = do
+    span <- s.span
+    span { end = (Position state.line_index state.line_offset) }
+    s { span = span }
+
+addChar :: LexerState -> SpannedString -> Char -> (LexerState, SpannedString)
+addChar state s c = do
+    v <- s.value + "{}" % c // FIXME: optimize this!
+    s <- s { value = v }
+    s <- updateSpan state s
+    state <- step state
+    (state, s)
+
+emptyState :: [Char] -> LexerState
+emptyState cs = LexerState cs 0 0 1 [] []
+
+isDone :: LexerState -> Bool
+isDone state = state.index >= getLength state.chars
+
+peek :: LexerState -> Char
+peek state = atIndex state.chars state.index
+
+step :: LexerState -> LexerState
+step state = do
+    c <- peek state
+    (line_offset, line_index) <- if c == '\n'
+                    then (0, state.line_index + 1)
+                    else (state.line_offset + 1, state.line_index)
+    state { index = state.index + 1, line_offset = line_offset, line_index = line_index }
+
+startSpan :: LexerState -> Span
+startSpan state = Span (Position state.line_index state.line_offset) (Position state.line_index state.line_offset)
+
+addToken :: LexerState -> Token -> Span -> LexerState
+addToken state token span = do
+    state { tokens = state.tokens + [TokenInfo token span] }
+
+addError :: LexerState -> LexerError -> LexerState
+addError state error = state { errors = state.errors + [error] }
+
+isIdentifier :: Char -> Bool
+isIdentifier c = case c of
+    'a'..='z' | 'A'..='Z' | '0'..='9' | '_' -> True
+    _ -> False
+
+isOperator :: Char -> Bool
+isOperator c = case c of
+    '|' | '>' | '<' | '&' | '*' | '+' | '-' | '/' | '=' | '!' | '\\' | ':' | '.' | '%' -> True
+    _ -> False
+
+isInteger :: Char -> Bool
+isInteger c = case c of
+    '0'..='9' -> True
+    _ -> False
+
+isIntegerLiteral :: String -> Bool
+isIntegerLiteral s = chars s |> List.iter |> Iterator.fold (\is_integer, c -> if isInteger c then is_integer else False) True
+
+consumeWhile :: LexerState -> (Char -> Bool) -> (LexerState, SpannedString)
+consumeWhile state cond = do
+    s <- startSpannedString (startSpan state)
+    loop (state, s) <- (state, s) do
+        if not (isDone state)
+        then do
+             c <- peek state
+             case c of
+                _ if cond c -> addChar state s c
+                _ -> break (state, s)
+        else break (state, s)
+
+consumeSingle :: LexerState -> Token -> LexerState
+consumeSingle state token = do
+    span <- startSpan state
+    state <- step state
+    addToken state token span
+
+consumeString :: LexerState -> LexerState
+consumeString state = do
+    s <- startSpannedString (startSpan state)
+    state <- step state
+    (state, s) <- loop (state, s) <- (state, s) do
+        if not (isDone state)
+        then do
+            c <- peek state
+            case c of
+                '"' -> do
+                    state <- step state
+                    s <- updateSpan state s
+                    break (state, s)
+                '\\' -> do
+                    state <- step state
+                    c <- peek state
+                    c <- case c of
+                        'n' -> Some '\n'
+                        't' -> Some '\t'
+                        'r' -> Some '\r'
+                        '\\' -> Some '\\'
+                        '"' -> Some '"'
+                        _ -> None
+                    (state, s) <- case c of
+                        Some c -> addChar state s c
+                        None -> do
+                            span <- startSpan state
+                            state <- addError state (InvalidEscapeSequence span)
+                            (step state, s)
+                    (state, s)
+                _  -> addChar state s c
+        else break (state, s)
+    addToken state (StringLiteral s.value) s.span
+
+consumeChar :: LexerState -> LexerState
+consumeChar state = do
+    s <- startSpannedString (startSpan state)
+    state <- step state
+    (state, s) <- loop (state, s) <- (state, s) do
+        if not (isDone state)
+        then do
+            c <- peek state
+            case c of
+                '\'' -> do
+                    state <- step state
+                    s <- updateSpan state s
+                    break (state, s)
+                '\\' -> do
+                    state <- step state
+                    c <- peek state
+                    c <- case c of
+                        'n' -> Some '\n'
+                        't' -> Some '\t'
+                        'r' -> Some '\r'
+                        '\\' -> Some '\\'
+                        '\'' -> Some '\''
+                        _ -> None
+                    (state, s) <- case c of
+                        Some c -> addChar state s c
+                        None -> do
+                            span <- startSpan state
+                            state <- addError state (InvalidEscapeSequence span)
+                            (step state, s)
+                    (state, s)
+                _  -> addChar state s c
+        else break (state, s)
+    cs <- chars s.value
+    c <- atIndex cs 0
+    // TODO: check for invalid length
+    addToken state (CharLiteral c) s.span
+
+consumeIdentifier :: LexerState -> LexerState
+consumeIdentifier state = do
+    first <- peek state
+    starts_with_number <- case first of
+        '0'..'9' -> True
+        _ -> False
+    starts_with_upper_case <- isUppercase first
+    (state, s) <- consumeWhile state isIdentifier
+    special <- case s.value of
+        "module" -> KeywordModule
+        "where" -> KeywordWhere
+        "do" -> KeywordDo
+        "class" -> KeywordClass
+        "instance" -> KeywordInstance
+        "extern" -> KeywordExtern
+        "data" -> KeywordData
+        "deriving" -> KeywordDeriving
+        "import" -> KeywordImport
+        "hiding" -> KeywordHiding
+        "as" -> KeywordAs
+        "if" -> KeywordIf
+        "then" -> KeywordThen
+        "else" -> KeywordElse
+        "return" -> KeywordReturn
+        "try" -> KeywordTry
+        "loop" -> KeywordLoop
+        "continue" -> KeywordContinue
+        "break" -> KeywordBreak
+        "case" -> KeywordCase
+        "of" -> KeywordOf
+        "effect" -> KeywordEffect
+        "with" -> KeywordWith
+        "using" -> KeywordUsing
+        "_" -> Wildcard
+        _ -> if isIntegerLiteral s.value
+                then return addToken state (IntegerLiteral s.value) s.span
+                else if starts_with_number
+                    then return addError state (InvalidIdent s.span)
+                    else if starts_with_upper_case
+                            then return addToken state (TypeIdentifier s.value) s.span
+                            else return addToken state (VarIdentifier s.value) s.span
+    addToken state special s.span
+
+consumeOperator :: LexerState -> LexerState
+consumeOperator state = do
+    (state, s) <- consumeWhile state isOperator
+    op <- case s.value of
+        "=" -> Equal
+        "==" -> DoubleEqual
+        "!=" -> NotEqual
+        "->" -> RightArrow
+        "<-" -> LeftArrow
+        "!" -> ExclamationMark
+        "&" -> Ampersand
+        "." -> Dot
+        ".." -> DoubleDot
+        "..=" -> InclusiveRange
+        ":" -> Colon
+        "::" -> DoubleColon
+        "=>" -> DoubleRightArrow
+        "|" -> Pipe
+        "&&" -> And
+        "||" -> Or
+        "<" -> LessThan
+        ">" -> GreaterThan
+        "<=" -> LessOrEqualThan
+        ">=" -> GreaterOrEqualThan
+        "+" -> Add
+        "-" -> Sub
+        "*" -> Mul
+        "/" -> Div
+        "|>" -> PipeForward
+        "%" -> Percent
+        "\\" -> Backslash
+        "//" -> do
+            (state, _) <- consumeWhile state \c -> c != '\n'
+            return state
+        "--" -> do
+            (state, _) <- consumeWhile state \c -> c != '\n'
+            return state
+        _ -> return addError state (InvalidOperator s.span)
+    addToken state op s.span
+
+processNextChar :: LexerState -> LexerState
+processNextChar state = do
+    c <- peek state
+    case c of
+        _ if isIdentifier c -> consumeIdentifier state
+        _ if isOperator c -> consumeOperator state
+        '"' -> consumeString state
+        '\'' -> consumeChar state
+        '(' -> consumeSingle state LParen
+        ')' -> consumeSingle state RParen
+        '[' -> consumeSingle state LBracket
+        ']' -> consumeSingle state RBracket
+        '{' -> consumeSingle state LCurly
+        '}' -> consumeSingle state RCurly
+        ',' -> consumeSingle state Comma
+        '~' -> consumeSingle state Tilde
+        '@' -> consumeSingle state At
+        '\n' -> step state
+        '\r' -> step state
+        ' ' -> step state
+        '\t' -> step state
+        _ -> do
+                span <- startSpan state
+                state <- step state
+                addError state (UnsupportedCharacter span)
+
+lex :: String -> ([TokenInfo], [LexerError])
+lex input = do
+    cs <- String.chars input
+    state <- emptyState cs
+    state <- loop state <- state do
+        if not (isDone state)
+        then processNextChar state
+        else break state
+    (tokens, errors) <- processLayout state.tokens
+    errors <- errors + state.errors
+    (tokens, errors)
+module Siko.Syntax.Location where
+
+import Std.Util
+
+data FileId = FileId Int deriving (Show, PartialEq, Eq, PartialOrd, Ord)
+
+data Position = {
+              line :: Int,
+              offset :: Int
+            } deriving (Show, PartialEq, Eq, PartialOrd, Ord)
+
+data Span = {
+                start :: Position,
+                end :: Position
+            } deriving (Show, PartialEq)
+
+data Location = {
+                  file_id :: FileId,
+                  span :: Span,
+                } deriving (Show, PartialEq)
+
+mergeSpan :: Span -> Span -> Span
+mergeSpan (Span s1 e1) (Span s2 e2) = do
+    assert (s1 <= s2)
+    assert (e1 <= e2)
+    Span s1 e2
+
+mergeLocations :: Location -> Location -> Location
+mergeLocations (Location f1 span1) (Location f2 span2) = do
+    assert (f1 == f2)
+    Location f1 (mergeSpan span1 span2)
+module Main where
+
+import Siko.Parser
+import Siko.Syntax.Location
+
+boo a = ()
+
+main = do
+    file_id <- FileId 0
+    (source_file, lexer_errors, parser_errors) <- parse file_id "name" "source"
+    boo file_id
+    ()
+module Siko.Syntax.Module where
+
+import Siko.Syntax.Ident
+import Siko.Syntax.Class as C
+import Siko.Syntax.Function as F
+import Siko.Syntax.Effect as E
+import Siko.Syntax.Data as D
+import Siko.Syntax.Import as I
+
+data Item = Function F.Function
+          | FunctionSignature F.FunctionSignature
+          | Adt D.AlgebraicDataType
+          | Record D.Record
+          | Import I.Import
+          | Class C.Class
+          | Instance C.Instance
+          | Effect E.Effect
+          deriving (Show)
+
+toImport :: Item -> Option I.Import
+toImport item = case item of
+    Import i -> Some i
+    _ -> None
+
+data Module = {
+                name :: Ident,
+                items :: [Item],
+                export :: I.Export,
+              } deriving (Show)
+module Siko.Parser where
+
+import Siko.Parser.Type
+import Siko.Parser.Class
+import Siko.Parser.Function
+import Siko.Parser.Module
+
+import Siko.Syntax.Ident
+import Siko.Syntax.SourceFile
+import Siko.Syntax.Module as M
+import Siko.Syntax.TypeSignature
+import Siko.Syntax.Location
+import Siko.Parser.Token
+import Siko.Parser.Token.Kind as Kind
+import Siko.Parser.Layout
+import Siko.Parser.Lexer
+import Siko.Parser.Error
+
+data ParserState =
+    {
+        tokens :: [TokenInfo],
+        index :: Int,
+        errors :: [ParserError],
+        modules :: [M.Module],
+        file_id :: FileId,
+        ops_table :: [[Kind.TokenKind]],
+        sub_items :: [M.Item],
+    }
+
+initState :: FileId -> [TokenInfo] -> ParserState
+initState file_id tokens = do
+    ops_table <- [[Kind.And, Kind.Or],
+                  [Kind.DoubleEqual, Kind.NotEqual],
+                  [Kind.LessThan, Kind.GreaterThan, Kind.LessOrEqualThan, Kind.GreaterOrEqualThan],
+                  [Kind.Add, Kind.Sub],
+                  [Kind.Mul, Kind.Div],
+                  [Kind.PipeForward]
+                 ]
+    ParserState tokens 0 [] [] file_id ops_table []
+
+parseSubItems :: ParserState -> Result (ParserState, [M.Item]) (ParserState, ParserError)
+parseSubItems state = do
+    state <- try expect state Kind.KeywordWhere
+    (state, sub_items) <- loop (state, sub_items) <- (state, []) do
+        ti <- peek state
+        (state, item) <- case getKind ti.token of
+            Kind.EndOfBlock -> break (state, sub_items)
+            _ -> case parseFunction state of
+                    Ok (state, f) -> case f of
+                            Left function -> (state, M.Function function)
+                            Right function_signature -> (state, M.FunctionSignature function_signature)
+                    Err (state, err) -> return Err (state, err)
+        sub_items <- sub_items + [item]
+        (state, sub_items)
+    state <- try expect state Kind.EndOfBlock
+    Ok (state, sub_items)
+
+buildLocation :: Int -> ParserState -> Location
+buildLocation index state = do
+    start_span <- (atIndex state.tokens index).span
+    end_span <- (atIndex state.tokens state.index).span
+    span <- mergeSpan start_span end_span
+    getLocation span state
+
+getLocation :: Span -> ParserState -> Location
+getLocation span state = Location state.file_id span
+
+isDone :: ParserState -> Bool
+isDone state = state.index >= getLength state.tokens
+
+peek :: ParserState -> TokenInfo
+peek state = atIndex state.tokens state.index
+
+peekAt :: ParserState -> Int -> TokenInfo
+peekAt state index = atIndex state.tokens index
+
+step :: ParserState -> ParserState
+step state = do
+    state { index = state.index + 1 }
+
+addError :: ParserState -> ParserError -> ParserState
+addError state error = state { errors = state.errors + [error] }
+
+addModule :: ParserState -> M.Module -> ParserState
+addModule state mod = state { modules = state.modules + [mod] }
+
+unexpectedToken :: ParserState -> String -> ParserError
+unexpectedToken state expected = do
+    ti <- peek state
+    found <- show ti.token
+    UnexpectedToken expected found ti.span
+
+expect :: ParserState -> Kind.TokenKind -> Result ParserState (ParserState, ParserError)
+expect state kind = do
+    ti <- peek state
+    if getKind ti.token == kind
+    then Ok (step state)
+    else Err (state, unexpectedToken state (show kind))
+
+check :: ParserState -> Kind.TokenKind -> Bool
+check state kind = do
+    ti <- peek state
+    getKind ti.token == kind
+
+expectTypeIdent :: ParserState -> String -> Result (ParserState, Ident) (ParserState, ParserError)
+expectTypeIdent state msg = do
+    ti <- peek state
+    case ti.token of
+        TypeIdentifier id -> Ok (step state, Ident id (getLocation ti.span state))
+        _ -> Err (state, unexpectedToken state msg)
+
+expectVarIdent :: ParserState -> String -> Result (ParserState, Ident) (ParserState, ParserError)
+expectVarIdent state msg = do
+    ti <- peek state
+    case ti.token of
+        VarIdentifier id -> Ok (step state, Ident id (getLocation ti.span state))
+        _ -> Err (state, unexpectedToken state msg)
+
+expectAnyIdent :: ParserState -> String -> Result (ParserState, Ident) (ParserState, ParserError)
+expectAnyIdent state msg = do
+    ti <- peek state
+    case ti.token of
+        VarIdentifier id -> Ok (step state, Ident id (getLocation ti.span state))
+        TypeIdentifier id -> Ok (step state, Ident id (getLocation ti.span state))
+        _ -> Err (state, unexpectedToken state msg)
+
+parseQualifiedTypeName :: ParserState -> String -> Result (ParserState, Ident) (ParserState, ParserError)
+parseQualifiedTypeName state msg = do
+    (state, name) <- try expectTypeIdent state msg
+    (state, name) <- loop (state, name) <- (state, name) do
+        ti <- peek state
+        case ti.token of
+            Dot -> do
+                dot <- Ident "." (getLocation ti.span state)
+                name <- mergeIdents name dot
+                state <- step state
+                (state, n) <- try expectTypeIdent state msg
+                name <- mergeIdents name n
+                (state, name)
+            _ -> break (state, name)
+    Ok (state, name)
+
+parseQualifiedName :: ParserState -> String -> Result (ParserState, Ident) (ParserState, ParserError)
+parseQualifiedName state msg = do
+    if check state Kind.VarIdentifier
+    then expectVarIdent state msg
+    else do
+        (state, name) <- try expectTypeIdent state msg
+        (state, name) <- loop (state, name) <- (state, name) do
+            ti <- peek state
+            case ti.token of
+                Dot -> do
+                    dot <- Ident "." (getLocation ti.span state)
+                    name <- mergeIdents name dot
+                    state <- step state
+                    ti <- peek state
+                    case ti.token of
+                        TypeIdentifier id -> do
+                            (state, n) <- try expectTypeIdent state msg
+                            name <- mergeIdents name n
+                            continue (state, name)
+                        VarIdentifier id -> do
+                            (state, n) <- try expectVarIdent state msg
+                            name <- mergeIdents name n
+                            break (state, name)
+                        _ -> return Err (state, unexpectedToken state "identifier")
+                _ -> break (state, name)
+        Ok (state, name)
+
+data ParenParse a = Single a | Multi [a]
+
+parseParens a :: ParserState -> (ParserState -> Result (ParserState, a) (ParserState, ParserError)) -> String -> Result (ParserState, ParenParse a) (ParserState, ParserError)
+parseParens state parser msg = do
+    state <- try expect state Kind.LParen
+    (state, items, comma_found) <- loop (state, items, comma_found) <- (state, [], False) do
+        if check state Kind.RParen
+        then break (state, items, comma_found)
+        else do
+            (state, item) <- try parser state
+            items <- items + [item]
+            if check state Kind.Comma
+            then do
+                state <- try expect state Kind.Comma
+                (state, items, True)
+            else if check state Kind.RParen
+                then break (state, items, comma_found)
+                else return Err (state, unexpectedToken state msg)
+    state <- try expect state Kind.RParen
+    if comma_found || isEmpty items
+    then Ok (state, Multi items)
+    else Ok (state, Single (atIndex items 0))
+
+parseList a :: ParserState -> (ParserState -> Result (ParserState, a) (ParserState, ParserError)) -> Kind.TokenKind -> Kind.TokenKind -> Result (ParserState, [a]) (ParserState, ParserError)
+parseList state parser start end = do
+    state <- try expect state start
+    (state, items) <- loop (state, items) <- (state, []) do
+        if check state end
+        then break (state, items)
+        else do
+            (state, item) <- try parser state
+            items <- items + [item]
+            if check state Kind.Comma
+            then do
+                state <- try expect state Kind.Comma
+                (state, items)
+            else break (state, items)
+    state <- try expect state end
+    Ok (state, items)
+
+processTokens :: ParserState -> String -> (SourceFile, [ParserError])
+processTokens state file_name = do
+    state <- loop state <- state do
+        if not (isDone state)
+        then do
+            case parseModule state of
+                Ok state -> state
+                Err (state, err) -> do
+                    state <- addError state err
+                    break state
+        else break state
+    (SourceFile file_name state.modules, state.errors)
+
+parse :: FileId -> String -> String -> (SourceFile, [LexerError], [ParserError])
+parse file_id file_name input = do
+    (tokens, lexer_errors) <- lex input
+    //println "Tokens: {}" % tokens
+    state <- initState file_id tokens
+    (source_file, parser_errors) <- processTokens state file_name
+    (source_file, lexer_errors, parser_errors)
+module Siko.Syntax.Pattern where
+
+import Siko.Syntax.Location
+import Siko.Syntax.Ident
+import Siko.Syntax.Expr as E
+import Siko.Syntax.TypeSignature as T
+
+data RangeKind = Exclusive
+               | Inclusive deriving (Show)
+
+data RecordFieldPattern = {
+                            name :: Ident,
+                            pattern :: Pattern,
+                          } deriving (Show)
+
+data Pattern = Pattern SimplePattern Location
+
+instance Show Pattern where
+  show (Pattern p _) = show p
+
+data SimplePattern = Binding Ident
+                   | Tuple [Pattern]
+                   | Constructor Ident [Pattern]
+                   | Guarded Pattern E.Expr
+                   | Wildcard
+                   | IntegerLiteral String
+                   | StringLiteral String
+                   | CharLiteral Char
+                   | CharRange Char Char RangeKind
+                   | Typed Pattern T.TypeSignature
+                   | Record Ident [RecordFieldPattern]
+                   | Or [Pattern]
+                   deriving (Show)
+module Siko.Parser.Class where
+
+import Siko.Parser
+import Siko.Parser.Type
+import Siko.Parser.Function
+import Siko.Parser.Token as T
+import Siko.Parser.Token.Kind as Kind
+import Siko.Syntax.Class
+import Siko.Syntax.Ident
+import Siko.Syntax.Function
+import Siko.Syntax.TypeSignature
+import Siko.Parser.Error
+
+parseClassConstraint :: ParserState -> Result (ParserState, Constraint) (ParserState, ParserError)
+parseClassConstraint state = do
+    (state, name) <- try parseQualifiedTypeName state "class name"
+    (state, arg) <- try expectVarIdent state "type argument"
+    (state, associated_types) <- if check state Kind.GreaterThan
+    then do
+        state <- try expect state Kind.GreaterThan
+        loop (state, associated_types) <- (state, []) do
+            (state, ty) <- try parseTypeSignature state False False
+            associated_types <- List.push associated_types ty
+            if check state Kind.RParen || check state Kind.Comma
+            then break (state, associated_types)
+            else (state, associated_types)
+    else (state, [])
+    Ok (state, Constraint name arg associated_types)
+
+parseClassConstraints :: ParserState -> Result (ParserState, [Constraint]) (ParserState, ParserError)
+parseClassConstraints state =
+        if check state Kind.LParen && classConstraintFollows state
+        then do
+            (state, constraints) <- try parseList state parseClassConstraint Kind.LParen Kind.RParen
+            state <- try expect state Kind.DoubleRightArrow
+            Ok (state, constraints)
+        else Ok (state, [])
+    where
+        classConstraintFollows :: ParserState -> Bool
+        classConstraintFollows state = do
+            loop index <- state.index do
+                ti <- peekAt state index
+                case ti.token of
+                    T.EndOfItem -> return False
+                    T.DoubleRightArrow -> return True
+                    _ -> continue index + 1
+
+parseBody :: ParserState -> Result (ParserState, [Function], [FunctionSignature]) (ParserState, ParserError)
+parseBody state = do
+    state <- try expect state Kind.KeywordWhere
+    (state, fns, fn_sigs) <- loop (state, fns, fns_sigs) <- (state, [], []) do
+            if check state Kind.EndOfBlock
+            then break (state, fns, fns_sigs)
+            else case try parseFunction state of
+                    (state, Left fn) -> (state, fns + [fn], fns_sigs)
+                    (state, Right fn_sig) -> (state, fns, fns_sigs + [fn_sig])
+    state <- try expect state Kind.EndOfBlock
+    Ok (state, fns, fn_sigs)
+
+parseAssociatedTypeArgs :: ParserState -> Result (ParserState, [Ident]) (ParserState, ParserError)
+parseAssociatedTypeArgs state = do
+    state <- try expect state Kind.GreaterThan
+    (state, associated_types) <- loop (state, associated_types) <- (state, []) do
+        (state, ty) <- try expectVarIdent state "class associated type"
+        associated_types <- List.push associated_types ty
+        if check state Kind.KeywordWhere
+        then break (state, associated_types)
+        else (state, associated_types)
+    Ok (state, associated_types)
+
+parseAssociatedTypes :: ParserState -> Result (ParserState, [TypeSignature]) (ParserState, ParserError)
+parseAssociatedTypes state = do
+    state <- try expect state Kind.GreaterThan
+    (state, associated_types) <- loop (state, associated_types) <- (state, []) do
+        (state, ty) <- try parseTypeSignature state False False
+        associated_types <- List.push associated_types ty
+        if check state Kind.KeywordWhere
+        then break (state, associated_types)
+        else (state, associated_types)
+    Ok (state, associated_types)
+
+parseClass :: ParserState -> Result (ParserState, Class) (ParserState, ParserError)
+parseClass state = do
+    state <- try expect state Kind.KeywordClass
+    (state, constraints) <- try parseClassConstraints state
+    (state, name) <- try expectTypeIdent state "class name"
+    (state, argument) <- try expectVarIdent state "class argument"
+    (state, associated_types) <- if check state Kind.GreaterThan
+    then try parseAssociatedTypeArgs state
+    else (state, [])
+    (state, functions, function_type_signatures) <- if check state Kind.KeywordWhere
+        then try parseBody state
+        else (state, [], [])
+    state <- try expect state Kind.EndOfItem
+    clazz <- Class {
+                name = name,
+                argument = argument,
+                associated_types = associated_types,
+                constraints = constraints,
+                member_functions = functions,
+                member_function_type_signatures = function_type_signatures,
+            }
+    Ok (state, clazz)
+
+parseInstance :: ParserState -> Result (ParserState, Instance) (ParserState, ParserError)
+parseInstance state = do
+    state <- try expect state Kind.KeywordInstance
+    (state, constraints) <- if check state Kind.LParen
+        then do
+            (state, constraints) <- try parseList state parseClassConstraint Kind.LParen Kind.RParen
+            state <- try expect state Kind.DoubleRightArrow
+            (state, constraints)
+        else (state, [])
+    (state, class_name) <- try parseQualifiedTypeName state "class name"
+    (state, type_signature) <- try parseTypeSignature state False False
+    (state, associated_types) <- if check state Kind.GreaterThan
+        then try parseAssociatedTypes state
+        else (state, [])
+    (state, functions, function_type_signatures) <- if check state Kind.KeywordWhere
+        then try parseBody state
+        else (state, [], [])
+    state <- try expect state Kind.EndOfItem
+    inst <- Instance {
+                class_name = class_name,
+                type_signature = type_signature,
+                associated_types = associated_types,
+                constraints = constraints,
+                member_functions = functions,
+                member_function_type_signatures = function_type_signatures,
+            }
+    Ok (state, inst)
+module Siko.Parser.Data where
+
+import Siko.Syntax.Data
+import Siko.Syntax.Ident
+import Siko.Syntax.TypeSignature as T
+import Siko.Parser
+import Siko.Parser.Type
+import Siko.Parser.Token.Kind as Kind
+import Siko.Parser.Token
+import Siko.Parser.Error
+
+parseRecordField :: ParserState -> Result (ParserState, RecordField) (ParserState, ParserError)
+parseRecordField state = do
+    (state, name) <- try expectVarIdent state "record field"
+    state <- try expect state Kind.DoubleColon
+    (state, type_signature) <- try parseTypeSignature state False False
+    Ok (state, RecordField name type_signature)
+
+parseDerivedClass :: ParserState -> Result (ParserState, Ident) (ParserState, ParserError)
+parseDerivedClass state = do
+    (state, derived_class) <- try expectTypeIdent state "class name"
+    Ok (state, derived_class)
+
+parseVariant :: ParserState -> Result (ParserState, Variant) (ParserState, ParserError)
+parseVariant state = do
+    (state, variant_type) <- try parseTypeSignature state True False
+    T.TypeSignature t _ <- variant_type
+    case t of
+        T.Named name args -> Ok (state, Variant name args)
+        _ -> panic "Variant parsing error"
+
+parseAdt :: ParserState -> [Ident] -> Ident -> Result (ParserState, AlgebraicDataType) (ParserState, ParserError)
+parseAdt state args name = do
+    (state, variants) <- loop (state, variants) <- (state, []) do
+        (state, variant) <- try parseVariant state
+        variants <- variants + [variant]
+        if check state Kind.Pipe
+        then (try expect state Kind.Pipe, variants)
+        else break (state, variants)
+    (state, derived_classes) <- if check state Kind.KeywordDeriving
+        then do
+            state <- try expect state Kind.KeywordDeriving
+            (state, derived_classes) <- try parseList state parseDerivedClass Kind.LParen Kind.RParen
+            (state, derived_classes)
+        else (state, [])
+    adt <- AlgebraicDataType { name = name,
+                               type_arguments = args,
+                               variants = variants,
+                               derived_classes = derived_classes }
+    Ok (state, adt)
+
+parseRecord :: ParserState -> [Ident] -> Ident -> Result (ParserState, Record) (ParserState, ParserError)
+parseRecord state args name = do
+    (state, fields) <- try parseList state parseRecordField Kind.LCurly Kind.RCurly
+    (state, derived_classes) <- if check state Kind.KeywordDeriving
+        then do
+            state <- try expect state Kind.KeywordDeriving
+            try parseList state parseDerivedClass Kind.LParen Kind.RParen
+        else (state, [])
+    record <- Record { name = name,
+                       type_arguments = args,
+                       fields = fields,
+                       external = False,
+                       derived_classes = derived_classes }
+    Ok (state, record)
+
+parseData :: ParserState -> Result (ParserState, Either AlgebraicDataType Record) (ParserState, ParserError)
+parseData state = do
+    state <- try expect state Kind.KeywordData
+    (state, name) <- try expectTypeIdent state "type identifier"
+    (state, args) <- loop (state, args) <- (state, []) do
+        ti <- peek state
+        case ti.token of
+            Equal -> break (state, args)
+            EndOfItem -> break (state, args)
+            KeywordDeriving -> break (state, args)
+            _ -> do
+                (state, arg) <- try expectVarIdent state "type argument"
+                args <- args + [arg]
+                (state, args)
+    (state, data_definition) <- if check state Kind.Equal
+        then do
+            state <- try expect state Kind.Equal
+            if check state Kind.KeywordExtern
+            then do
+                state <- try expect state Kind.KeywordExtern
+                record <- Record { name = name,
+                                   type_arguments = args,
+                                   fields = [],
+                                   external = True,
+                                   derived_classes = [] }
+                (state, Right record)
+            else do
+                    (state, data_definition) <- if check state Kind.LCurly
+                        then do
+                            (state, record) <- try parseRecord state args name
+                            (state, Right record)
+                        else do
+                            (state, adt) <- try parseAdt state args name
+                            (state, Left adt)
+                    (state, data_definition)
+        else do
+            (state, derived_classes) <- if check state Kind.KeywordDeriving
+                then do
+                    state <- try expect state Kind.KeywordDeriving
+                    try parseList state parseDerivedClass Kind.LParen Kind.RParen
+                else (state, [])
+            adt <- AlgebraicDataType { name = name,
+                                       type_arguments = [],
+                                       variants = [],
+                                       derived_classes = derived_classes }
+            (state, Left adt)
+    state <- try expect state Kind.EndOfItem
+    Ok (state, data_definition)
+module Siko.Parser.Effect where
+
+import Siko.Parser
+import Siko.Parser.Type
+import Siko.Parser.Function
+import Siko.Parser.Token as T
+import Siko.Parser.Token.Kind as Kind
+import Siko.Parser.Class (parseClassConstraints)
+import Siko.Syntax.Effect
+import Siko.Syntax.Function
+import Siko.Parser.Error
+
+parseBody :: ParserState -> Result (ParserState, [Function], [FunctionSignature]) (ParserState, ParserError)
+parseBody state = do
+    state <- try expect state Kind.KeywordWhere
+    (state, fns, fn_sigs) <- loop (state, fns, fns_sigs) <- (state, [], []) do
+            if check state Kind.EndOfBlock
+            then break (state, fns, fns_sigs)
+            else case try parseFunction state of
+                    (state, Left fn) -> (state, fns + [fn], fns_sigs)
+                    (state, Right fn_sig) -> (state, fns, fns_sigs + [fn_sig])
+    state <- try expect state Kind.EndOfBlock
+    Ok (state, fns, fn_sigs)
+
+parseEffect :: ParserState -> Result (ParserState, Effect) (ParserState, ParserError)
+parseEffect state = do
+    state <- try expect state Kind.KeywordEffect
+    (state, constraints) <- try parseClassConstraints state
+    (state, name) <- try expectTypeIdent state "effect name"
+    (state, arguments) <- loop (state, arguments) <- (state, []) do
+        if check state Kind.KeywordWhere
+        then break (state, arguments)
+        else do
+            (state, argument) <- try expectVarIdent state "effect argument"
+            (state, List.push arguments argument)
+    (state, functions, function_type_signatures) <- try parseBody state
+    state <- try expect state Kind.EndOfItem
+    eff <- Effect {
+                name = name,
+                arguments = arguments,
+                constraints = constraints,
+                member_functions = functions,
+                member_function_type_signatures = function_type_signatures,
+            }
+    Ok (state, eff)
+module Siko.Parser.Expr where
+
+import Siko.Parser
+import Siko.Parser.Type
+import Siko.Parser.Pattern
+import Siko.Parser.Class
+import Siko.Parser.Function
+import Siko.Parser.Token as T
+import Siko.Parser.Token.Kind as Kind
+import Siko.Syntax.Expr
+import Siko.Parser.Error
+
+buildExpr :: SimpleExpr -> Int -> ParserState -> (ParserState, Expr)
+buildExpr expr start_index state = do
+    expr <- Expr expr (buildLocation start_index state)
+    (state, expr)
+
+parseDoBlock :: ParserState -> Result (ParserState, Expr) (ParserState, ParserError)
+parseDoBlock state = do
+    start_index <- state.index
+    state <- try expect state Kind.KeywordDo
+    (state, items) <- loop (state, items) <- (state, []) do
+        if check state Kind.EndOfBlock
+        then break (state, items)
+        else do
+            start_index <- state.index
+            (state, item) <- if irrefutablePatternFollows state
+                then do
+                    (state, pattern) <- try parseBindPattern state
+                    state <- try expect state Kind.LeftArrow
+                    (state, expr) <- try parseExpr state
+                    buildExpr (Bind pattern expr) start_index state
+                else try parseExpr state
+            items <- items + [item]
+            state <- if check state Kind.KeywordWhere
+                then do
+                    (state, sub_items) <- try parseSubItems state
+                    sub_items <- state.sub_items + sub_items
+                    state { sub_items = sub_items }
+                else state
+            state <- try expect state Kind.EndOfItem
+            (state, items)
+    state <- try expect state Kind.EndOfBlock
+    Ok (buildExpr (Do items) start_index state)
+
+parseEffectHandler :: ParserState -> Result (ParserState, EffectHandler) (ParserState, ParserError)
+parseEffectHandler state = do
+    (state, name) <- try parseQualifiedName state "effect member name"
+    state <- try expect state Kind.Equal
+    (state, expr) <- try parseExpr state
+    Ok (state, EffectHandler name expr)
+
+parseWithBlock :: ParserState -> Result (ParserState, Expr) (ParserState, ParserError)
+parseWithBlock state = do
+    start_index <- state.index
+    state <- try expect state Kind.KeywordWith
+    (state, handlers) <- try parseList state parseEffectHandler Kind.LCurly Kind.RCurly
+    (state, body) <- try parseDoBlock state
+    Ok (buildExpr (With handlers body) start_index state)
+
+parseRecordFieldExpr :: ParserState -> Result (ParserState, RecordConstructionItem) (ParserState, ParserError)
+parseRecordFieldExpr state = do
+    (state, name) <- try expectVarIdent state "record field"
+    state <- try expect state Kind.Equal
+    (state, expr) <- try parseExpr state
+    Ok (state, RecordConstructionItem name expr)
+
+parseUnary :: ParserState -> Result (ParserState, Expr) (ParserState, ParserError)
+parseUnary state = do
+    start_index <- state.index
+    ti <- peek state
+    case ti.token of
+        T.VarIdentifier id -> do
+            (state, name) <- try expectVarIdent state "expression"
+            if check state Kind.LCurly
+            then do
+                (state, fields) <- try parseList state parseRecordFieldExpr Kind.LCurly Kind.RCurly
+                Ok (buildExpr (RecordUpdate name fields) start_index state)
+            else Ok (buildExpr (Path name) start_index state)
+        T.TypeIdentifier id -> do
+            (state, name) <- try parseQualifiedName state "expression"
+            if check state Kind.LCurly
+            then do
+                (state, fields) <- try parseList state parseRecordFieldExpr Kind.LCurly Kind.RCurly
+                Ok (buildExpr (RecordInitialization name fields) start_index state)
+            else Ok (buildExpr (Path name) start_index state)
+        T.IntegerLiteral i -> do
+            state <- step state
+            if check state Kind.Dot
+            then do
+                state <- try expect state Kind.Dot
+                ti <- peek state
+                case ti.token of
+                    T.IntegerLiteral i2 -> do
+                        state <- step state
+                        Ok (buildExpr (FloatLiteral "{}.{}" % (i, i2)) start_index state)
+                    _ -> Err (state, unexpectedToken state "numeric literal")
+            else Ok (buildExpr (IntegerLiteral i) start_index state)
+        T.StringLiteral s -> do
+            state <- step state
+            if check state Kind.Percent
+            then do
+                state <- try expect state Kind.Percent
+                if check state Kind.LParen
+                then do
+                    (state, exprs) <- try parseList state parseExpr Kind.LParen Kind.RParen
+                    Ok (buildExpr (Formatter s exprs) start_index state)
+                else do
+                    (state, expr) <- try parseExpr state
+                    Ok (buildExpr (Formatter s [expr]) start_index state)
+            else Ok (buildExpr (StringLiteral s) start_index state)
+        T.CharLiteral c -> do
+            state <- step state
+            Ok (buildExpr (CharLiteral c) start_index state)
+        T.Sub -> do
+            state <- step state
+            (state, expr) <- try parseUnary state
+            Ok (buildExpr (Negative expr) start_index state)
+        T.ExclamationMark -> do
+            state <- step state
+            (state, expr) <- try parseUnary state
+            Ok (buildExpr (Not expr) start_index state)
+        T.KeywordIf -> do
+            state <- try expect state Kind.KeywordIf
+            (state, cond) <- try parseExpr state
+            state <- try expect state Kind.KeywordThen
+            (state, true_branch) <- try parseExpr state
+            state <- try expect state Kind.KeywordElse
+            (state, false_branch) <- try parseExpr state
+            Ok (buildExpr (If cond true_branch false_branch) start_index state)
+        T.LParen -> do
+            (state, result) <- try parseParens state parseExpr "expression"
+            case result of
+                Single e -> Ok (buildExpr (Paren e) start_index state)
+                Multi exprs -> Ok (buildExpr (Tuple exprs) start_index state)
+        T.LBracket -> do
+            (state, exprs) <- try parseList state parseExpr Kind.LBracket Kind.RBracket
+            Ok (buildExpr (List exprs) start_index state)
+        T.KeywordReturn -> do
+            state <- step state
+            (state, expr) <- try parseExpr state
+            Ok (buildExpr (Return expr) start_index state)
+        T.KeywordTry -> do
+            state <- step state
+            (state, expr) <- try parseExpr state
+            Ok (buildExpr (Try expr) start_index state)
+        T.KeywordContinue -> do
+            state <- step state
+            (state, expr) <- try parseExpr state
+            Ok (buildExpr (Continue expr) start_index state)
+        T.KeywordBreak -> do
+            state <- step state
+            (state, expr) <- try parseExpr state
+            Ok (buildExpr (Break expr) start_index state)
+        T.Backslash -> do
+            (state, args) <- try parseList state parsePattern Kind.Backslash Kind.RightArrow
+            (state, body) <- try parseExpr state
+            Ok (buildExpr (Lambda args body) start_index state)
+        T.KeywordCase -> do
+            state <- step state
+            (state, body) <- try parseExpr state
+            state <- try expect state Kind.KeywordOf
+            (state, cases) <- loop (state, cases) <- (state, []) do
+                if check state Kind.EndOfBlock
+                then break (state, cases)
+                else do
+                    (state, pattern) <- try parseExtendedPattern state
+                    state <- try expect state Kind.RightArrow
+                    (state, case_body) <- try parseExpr state
+                    cases <- cases + [Case pattern case_body]
+                    state <- try expect state Kind.EndOfItem
+                    (state, cases)
+            state <- try expect state Kind.EndOfBlock
+            Ok (buildExpr (CaseOf body cases) start_index state)
+        T.KeywordDo -> parseDoBlock state
+        T.KeywordLoop -> do
+            state <- try expect state Kind.KeywordLoop
+            (state, pattern) <- try parsePattern state
+            state <- try expect state Kind.LeftArrow
+            (state, start_expr) <- try parseBinaryOps state True 0
+            (state, body) <- try parseDoBlock state
+            Ok (buildExpr (Loop pattern start_expr body) start_index state)
+        T.KeywordWith -> parseWithBlock state
+        _ -> Err (state, unexpectedToken state "expression")
+
+parseFieldAccess :: ParserState -> Result (ParserState, Expr) (ParserState, ParserError)
+parseFieldAccess state = do
+    (state, expr) <- try parseUnary state
+    (state, expr) <- loop (state, expr) <- (state, expr) do
+        if check state Kind.Dot
+        then do
+            state <- try expect state Kind.Dot
+            ti <- peek state
+            case ti.token of
+                T.IntegerLiteral i -> do
+                    start_index <- state.index
+                    state <- step state
+                    buildExpr (TupleFieldAccess i expr) start_index state
+                T.VarIdentifier i -> do
+                    start_index <- state.index
+                    (state, name) <- try expectVarIdent state "field"
+                    buildExpr (FieldAccess name expr) start_index state
+                _ -> return Err (state, unexpectedToken state "field")
+        else break (state, expr)
+    Ok (state, expr)
+
+parsePrimary :: ParserState -> Bool -> Result (ParserState, Expr) (ParserState, ParserError)
+parsePrimary state for_initializer = do
+    start_index <- state.index
+    (state, fn) <- try parseFieldAccess state
+    (state, args) <- loop (state, args) <- (state, []) do
+        ti <- peek state
+        case T.getKind ti.token of
+            Kind.ExclamationMark
+             | Kind.TypeIdentifier
+             | Kind.VarIdentifier
+             | Kind.IntegerLiteral
+             | Kind.StringLiteral
+             | Kind.CharLiteral
+             | Kind.LParen
+             | Kind.KeywordIf
+             | Kind.Backslash
+             | Kind.LBracket
+              -> ()
+            Kind.KeywordDo if !for_initializer -> ()
+            _ -> break (state, args)
+        (state, arg) <- try parseFieldAccess state
+        args <- args + [arg]
+        (state, args)
+    if isEmpty args
+    then Ok (state, fn)
+    else Ok (buildExpr (FunctionCall fn args) start_index state)
+
+createBinaryOpExpr :: Expr -> Expr -> Kind.TokenKind -> SimpleExpr
+createBinaryOpExpr left right matching_op = do
+    op <- case matching_op of
+        Kind.And -> And
+        Kind.Or -> Or
+        Kind.DoubleEqual -> Equal
+        Kind.NotEqual -> NotEqual
+        Kind.LessThan -> LessThan
+        Kind.GreaterThan -> GreaterThan
+        Kind.LessOrEqualThan -> LessOrEqualThan
+        Kind.GreaterOrEqualThan -> GreaterOrEqualThan
+        Kind.Add -> Add
+        Kind.Sub -> Sub
+        Kind.Mul -> Mul
+        Kind.Div -> Div
+        Kind.PipeForward -> PipeForward
+        _ -> panic "Unexpected binary op"
+    BinaryOp op left right
+
+callNext :: ParserState -> Bool -> Int -> Result (ParserState, Expr) (ParserState, ParserError)
+callNext state for_initializer index =
+    if index + 1 < getLength state.ops_table
+    then parseBinaryOps state for_initializer (index + 1)
+    else parsePrimary state for_initializer
+
+parseBinaryOps :: ParserState -> Bool -> Int -> Result (ParserState, Expr) (ParserState, ParserError)
+parseBinaryOps state for_initializer index = do
+    start_index <- state.index
+    (state, left) <- try callNext state for_initializer index
+    (state, expr) <- loop (state, left) <- (state, left) do
+        state :: ParserState <- state // FIXME
+        current_ops <- atIndex state.ops_table index
+        ti <- peek state
+        matching_op <- List.fold None current_ops (\result, kind -> if kind == T.getKind ti.token then Some kind else result)
+        case matching_op of
+            Some matching_op -> do
+                state <- step state
+                (state, right) <- try callNext state for_initializer index
+                left <- createBinaryOpExpr left right matching_op
+                buildExpr left start_index state
+            None -> break (state, left)
+    Ok (state, expr)
+
+parseExpr :: ParserState -> Result (ParserState, Expr) (ParserState, ParserError)
+parseExpr state = parseBinaryOps state False 0
+
+module Siko.Parser.Function where
+
+import Siko.Parser
+import Siko.Parser.Class
+import Siko.Parser.Type
+import Siko.Parser.Expr
+import Siko.Parser.Token.Kind as Kind
+import Siko.Parser.Token
+import Siko.Parser.Pattern
+import Siko.Syntax.Function
+import Siko.Syntax.Ident
+import Siko.Syntax.Pattern
+import Siko.Syntax.Location
+import Siko.Syntax.Attribute
+import Siko.Syntax.Module as M
+import Siko.Parser.Error
+
+checkTypeArgs :: ([Ident], [ParserError]) -> Pattern -> ([Ident], [ParserError])
+checkTypeArgs (args, errors) (Pattern pattern (Location _ span)) = do
+    case pattern of
+        Binding arg -> (args + [arg], errors)
+        _ -> (args, errors + [InvalidTypeArgument span])
+
+parseAttributes :: ParserState -> Result (ParserState, [Attribute]) (ParserState, ParserError)
+parseAttributes state = do
+    loop (state, attributes) <- (state, []) do
+        ti <- peek state
+        case ti.token of
+            At -> do
+                state <- try expect state Kind.At
+                (state, name) <- try expectTypeIdent state "attribute name"
+                state <- try expect state Kind.EndOfItem
+                (state, List.push attributes (Attribute name))
+            _ -> break Ok (state, attributes)
+
+parseEffectSignatures :: ParserState -> Result (ParserState, Option [EffectSignature]) (ParserState, ParserError)
+parseEffectSignatures state = do
+    (state, effects) <- if check state Kind.KeywordUsing
+        then do
+            state <- try expect state Kind.KeywordUsing
+            state <- try expect state Kind.LParen
+            (state, effects) <- loop (state, effects) <- (state, []) do
+                if check state Kind.RParen
+                then break (state, effects)
+                else do
+                    (state, name) <- try expectTypeIdent state "effect name"
+                    (state, arguments) <- loop (state, arguments) <- (state, []) do
+                        if (check state Kind.RParen) || (check state Kind.Comma)
+                        then break (state, arguments)
+                        else do
+                            (state, argument) <- try expectVarIdent state "effect argument"
+                            (state, List.push arguments argument)
+                    eff <- EffectSignature name arguments
+                    effects <- List.push effects eff
+                    if check state Kind.RParen
+                    then break (state, effects)
+                    else do
+                        state <- try expect state Kind.Comma
+                        (state, effects)
+            state <- try expect state Kind.RParen
+            (state, Some effects)
+        else (state, None)
+    Ok (state, effects)
+
+parseFunction :: ParserState -> Result (ParserState, Either Function FunctionSignature) (ParserState, ParserError)
+parseFunction state = do
+    (state, attributes) <- try parseAttributes state
+    ti <- peek state
+    case ti.token of
+        VarIdentifier id -> do
+            (state, name) <- try expectVarIdent state "function name"
+            (state, args, sep) <- loop (state, args) <- (state, []) do
+                ti <- peek state
+                case ti.token of
+                    Equal -> break (state, args, Some Equal)
+                    DoubleColon -> break (state, args, Some DoubleColon)
+                    _ -> do
+                        (state, arg) <- try parsePattern state
+                        args <- args + [arg]
+                        (state, args)
+            case sep of
+                Some Equal -> do
+                    state <- try expect state Kind.Equal
+                    (state, body) <- if check state Kind.KeywordExtern
+                        then do
+                            state <- try expect state Kind.KeywordExtern
+                            (state, None)
+                        else do
+                            (state, body) <- try parseExpr state
+                            (state, Some body)
+                    (state, sub_items) <- if check state Kind.KeywordWhere
+                        then try parseSubItems state
+                        else (state, [])
+                    state <- try expect state Kind.EndOfItem
+                    sub_items <- sub_items + state.sub_items
+                    state <- state { sub_items = [] }
+                    function <- Function { name = name,
+                                           arguments = args,
+                                           body = body,
+                                           sub_items = sub_items,
+                                           attributes = attributes }
+                    Ok (state, Left function)
+                Some DoubleColon -> do
+                    state <- try expect state Kind.DoubleColon
+                    (args, errors) <- Iterator.fold checkTypeArgs ([], []) (args |> List.iter)
+                    state <- state { errors = state.errors + errors }
+                    (state, constraints) <- try parseClassConstraints state
+                    (state, type_signature) <- try parseTypeSignature state False False
+                    (state, effects) <- try parseEffectSignatures state
+                    state <- try expect state Kind.EndOfItem
+                    function_signature <- FunctionSignature { name = name,
+                                                              type_arguments = args,
+                                                              constraints = constraints,
+                                                              type_signature = type_signature,
+                                                              attributes = attributes,
+                                                              effects = effects }
+                    Ok (state, Right function_signature)
+                _ -> panic "Unexpected separator"
+        _ -> Err (state, unexpectedToken state "function name")
+module Siko.Parser.Import(parseImport, parseExport) where
+
+import Siko.Parser
+import Siko.Parser hiding (Single)
+import Siko.Syntax.Ident
+import Siko.Parser.Token
+import Siko.Parser.Token.Kind as Kind
+import Siko.Syntax.Import
+import Siko.Parser.Error
+
+parseMember :: ParserState -> String -> Result (ParserState, MemberSpecification) (ParserState, ParserError)
+parseMember state msg =
+    if check state Kind.DoubleDot
+    then do
+        state <- try expect state Kind.DoubleDot
+        Ok (state, All)
+    else do
+        (state, name) <- try expectAnyIdent state msg
+        Ok (state, Specific name)
+
+parseFilter :: ParserState -> String -> Result (ParserState, Filter) (ParserState, ParserError)
+parseFilter state msg = do
+    (state, name) <- try expectAnyIdent state msg
+    if check state Kind.LParen
+    then do
+        (state, members) <- try parseList state (\state -> parseMember state (msg + " member")) Kind.LParen Kind.RParen
+        Ok (state, Group name members)
+    else Ok (state, Single name)
+
+parseExport :: ParserState -> Result (ParserState, Export) (ParserState, ParserError)
+parseExport state =
+    if check state Kind.LParen
+    then do
+        (state, exported_filters) <- try parseList state (\state -> parseFilter state "exported item") Kind.LParen Kind.RParen
+        Ok (state, ExportSpecific exported_filters)
+    else Ok (state, ExportAll)
+
+parseAlternativeName :: ParserState -> Result (ParserState, Option Ident) (ParserState, ParserError)
+parseAlternativeName state =
+    if check state Kind.KeywordAs
+    then do
+        state <- try expect state Kind.KeywordAs
+        (state, alternative_name) <- try expectTypeIdent state "module name"
+        Ok (state, Some alternative_name)
+    else Ok (state, None)
+
+parseImport :: ParserState -> Result (ParserState, Import) (ParserState, ParserError)
+parseImport state = do
+    state <- try expect state Kind.KeywordImport
+    (state, name) <- try parseQualifiedTypeName state "module name"
+    if check state Kind.KeywordHiding
+    then do
+        state <- try expect state Kind.KeywordHiding
+        (state, hidden_items) <- try parseList state (\state -> expectAnyIdent state "hidden item") Kind.LParen Kind.RParen
+        state <- try expect state Kind.EndOfItem
+        Ok (state, Hiding name hidden_items)
+    else do
+        (state, import_def) <- if check state Kind.LParen
+            then do
+                (state, imported_filters) <- try parseList state (\state -> parseFilter state "imported item") Kind.LParen Kind.RParen
+                (state, alternative_name) <- try parseAlternativeName state
+                (state, ImportSpecific name imported_filters alternative_name)
+            else do
+                (state, alternative_name) <- try parseAlternativeName state
+                (state, ImportAll name alternative_name)
+        state <- try expect state Kind.EndOfItem
+        Ok (state, import_def)
+
+module Siko.Parser.Module where
+
+import Siko.Parser
+import Siko.Parser.Class
+import Siko.Parser.Effect
+import Siko.Parser.Function
+import Siko.Parser.Data
+import Siko.Syntax.Ident
+import Siko.Parser.Token
+import Siko.Parser.Token.Kind as Kind
+import Siko.Syntax.Module
+import Siko.Parser.Import
+import Siko.Parser.Error
+import Siko.Syntax.Import
+
+parseModule :: ParserState -> Result ParserState (ParserState, ParserError)
+parseModule state = do
+    state <- try expect state Kind.KeywordModule
+    (state, name) <- try parseQualifiedTypeName state "module name"
+    (state, export) <- try parseExport state
+    mod <- Module {
+                name = name,
+                items = [],
+                export = export
+            }
+    state <- try expect state Kind.KeywordWhere
+    (state, mod) <- loop (state, mod) <- (state, mod) do
+        ti <- peek state
+        (state, item) <- case getKind ti.token of
+            Kind.EndOfBlock -> break (state, mod)
+            Kind.KeywordClass -> case parseClass state of
+                                    Ok (state, c) -> (state, Class c)
+                                    Err (state, err) -> return Err (state, err)
+            Kind.KeywordEffect -> case parseEffect state of
+                                    Ok (state, eff) -> (state, Effect eff)
+                                    Err (state, err) -> return Err (state, err)
+            Kind.KeywordData -> case parseData state of
+                                    Ok (state, d) -> case d of
+                                        Left adt -> (state, Adt adt)
+                                        Right record -> (state, Record record)
+                                    Err (state, err) -> return Err (state, err)
+            Kind.KeywordInstance -> case parseInstance state of
+                                    Ok (state, i) -> (state, Instance i)
+                                    Err (state, err) -> return Err (state, err)
+            Kind.KeywordImport -> case parseImport state of
+                                    Ok (state, i) -> (state, Import i)
+                                    Err (state, err) -> return Err (state, err)
+            _ -> case parseFunction state of
+                    Ok (state, f) -> case f of
+                            Left function -> (state, Function function)
+                            Right function_signature -> (state, FunctionSignature function_signature)
+                    Err (state, err) -> return Err (state, err)
+        mod :: Module <- mod // FIXME: fix type inference
+        mod <- mod { items = mod.items + [item] }
+        (state, mod)
+    state <- try expect state Kind.EndOfBlock
+    state <- try expect state Kind.EndOfModule
+    mod <- List.fold mod [] (\mod, implicit -> do
+        item <- Import (Implicit implicit)
+        mod <- mod { items = mod.items + [item] }
+        mod)
+    state <- addModule state mod
+    Ok state
+module Siko.Parser.Pattern(parsePattern,
+                           parseExtendedPattern,
+                           irrefutablePatternFollows,
+                           parseBindPattern) where
+
+import Siko.Parser
+import Siko.Parser.Expr
+import Siko.Parser.Type
+import Siko.Syntax.Ident
+import Siko.Syntax.Pattern
+import Siko.Parser.Token as T
+import Siko.Parser.Token.Kind as Kind
+import Siko.Parser.Error
+
+irrefutablePatternFollows :: ParserState -> Bool
+irrefutablePatternFollows state = do
+    loop index <- state.index do
+        ti <- peekAt state index
+        case ti.token of
+            T.EndOfItem -> return False
+            T.KeywordIf -> return False
+            T.KeywordCase -> return False
+            T.KeywordLoop -> return False
+            T.KeywordDo -> return False
+            T.LeftArrow -> return True
+            _ -> continue index + 1
+
+buildPattern :: SimplePattern -> Int -> ParserState -> Pattern
+buildPattern p start_index state =
+    Pattern p (buildLocation start_index state)
+
+parseBindPattern :: ParserState -> Result (ParserState, Pattern) (ParserState, ParserError)
+parseBindPattern state = do
+    start_index <- state.index
+    (state, pattern) <- try parsePattern state
+    (state, pattern) <- if check state Kind.DoubleColon
+        then do
+            state <- step state
+            (state, type_signature) <- try parseTypeSignature state False True
+            (state, buildPattern (Typed pattern type_signature) start_index state)
+        else (state, pattern)
+    Ok (state, pattern)
+
+parseTuplePattern :: ParserState -> Result (ParserState, Pattern) (ParserState, ParserError)
+parseTuplePattern state = do
+    start_index <- state.index
+    case try parseParens state (\state -> parsePatternL state False) "pattern" of
+        (state, Single ty) -> Ok (state, ty)
+        (state, Multi types) -> Ok (state, buildPattern (Tuple types) start_index state)
+
+parseRecordFieldPattern :: ParserState -> Result (ParserState, RecordFieldPattern) (ParserState, ParserError)
+parseRecordFieldPattern state = do
+    (state, name) <- try expectVarIdent state "record field"
+    state <- try expect state Kind.Equal
+    (state, pattern) <- try parsePatternL state True
+    Ok (state, RecordFieldPattern name pattern)
+
+parseConstructorPattern :: ParserState -> Bool -> Int -> Result (ParserState, Pattern) (ParserState, ParserError)
+parseConstructorPattern state inner start_index = do
+    if inner
+    then do
+        (state, name) <- try parseQualifiedTypeName state "type constructor"
+        Ok (state, buildPattern (Constructor name []) start_index state)
+    else do
+        (state, name) <- try parseQualifiedTypeName state "type constructor"
+        if check state Kind.LCurly
+        then do
+            (state, fields) <- try parseList state parseRecordFieldPattern Kind.LCurly Kind.RCurly
+            Ok (state, buildPattern (Record name fields) start_index state)
+        else do
+            (state, args) <- loop (state, args) <- (state, []) do
+                ti  <- peek state
+                case T.getKind ti.token of
+                    Kind.LParen
+                        | Kind.IntegerLiteral
+                        | Kind.CharLiteral
+                        | Kind.StringLiteral
+                        | Kind.TypeIdentifier
+                        | Kind.VarIdentifier
+                        | Kind.Wildcard -> do
+                            (state, ty) <- try (parsePatternL state True)
+                            args <- args + [ty]
+                            (state, args)
+                    _ -> break (state, args)
+            Ok (state, buildPattern (Constructor name args) start_index state)
+
+parsePattern :: ParserState -> Result (ParserState, Pattern) (ParserState, ParserError)
+parsePattern state = parsePatternL state False
+
+parseExtendedPattern :: ParserState -> Result (ParserState, Pattern) (ParserState, ParserError)
+parseExtendedPattern state = do
+    start_index <- state.index
+    (state, patterns) <- loop (state, patterns) <- (state, []) do
+        (state, pattern) <- try parsePattern state
+        patterns <- patterns + [pattern]
+        if check state Kind.Pipe
+        then do
+            state <- step state
+            (state, patterns)
+        else break (state, patterns)
+    pattern <- if getLength patterns == 1
+        then atIndex patterns 0
+        else (buildPattern (Or patterns) start_index state)
+    (state, pattern) <- if check state Kind.KeywordIf
+        then do
+            state <- step state
+            (state, expr) <- try parseExpr state
+            (state, buildPattern (Guarded pattern expr) start_index state)
+        else (state, pattern)
+    Ok (state, pattern)
+
+parsePatternL :: ParserState -> Bool -> Result (ParserState, Pattern) (ParserState, ParserError)
+parsePatternL state inner = do
+    start_index <- state.index
+    ti <- peek state
+    case ti.token of
+        T.LParen -> parseTuplePattern state
+        T.IntegerLiteral v -> do
+                        state <- try expect state Kind.IntegerLiteral
+                        Ok (state, buildPattern (IntegerLiteral v) start_index state)
+        T.CharLiteral v1 -> do
+            state <- try expect state Kind.CharLiteral
+            ti <- peek state
+            case ti.token of
+                T.DoubleDot -> do
+                        state <- try expect state Kind.DoubleDot
+                        ti <- peek state
+                        case ti.token of
+                            T.CharLiteral v2 -> do
+                                state <- try expect state Kind.CharLiteral
+                                Ok (state, buildPattern (CharRange v1 v2 Exclusive) start_index state)
+                            _ -> return Err (state, unexpectedToken state "char literal")
+                T.InclusiveRange -> do
+                        state <- try expect state Kind.InclusiveRange
+                        ti <- peek state
+                        case ti.token of
+                            T.CharLiteral v2 -> do
+                                state <- try expect state Kind.CharLiteral
+                                Ok (state, buildPattern (CharRange v1 v2 Inclusive) start_index state)
+                            _ -> return Err (state, unexpectedToken state "char literal")
+                _ -> Ok (state, buildPattern (CharLiteral v1) start_index state)
+        T.StringLiteral v -> do
+                            state <- try expect state Kind.StringLiteral
+                            Ok (state, buildPattern (StringLiteral v) start_index state)
+        T.TypeIdentifier _ -> parseConstructorPattern state inner start_index
+        T.VarIdentifier _ -> do
+                            (state, ident) <- try expectVarIdent state "type argument pattern"
+                            Ok (state, buildPattern (Binding ident) start_index state)
+        T.Wildcard -> do
+                        state <- try expect state Kind.Wildcard
+                        Ok (state, buildPattern Wildcard start_index state)
+        _ -> return Err (state, unexpectedToken state "pattern")
+
+module Siko.Syntax.SourceFile where
+
+import Siko.Syntax.Module
+
+data SourceFile =
+  {
+    name :: String,
+    modules :: [Module]
+  }
+
+instance Show SourceFile where
+    show s = s.name
+
+module Siko.Parser.Token.Kind where
+
+data TokenKind = VarIdentifier
+    | TypeIdentifier
+    | Equal
+    | DoubleEqual
+    | NotEqual
+    | LessThan
+    | GreaterThan
+    | LessOrEqualThan
+    | GreaterOrEqualThan
+    | Add
+    | Sub
+    | Mul
+    | Div
+    | LParen
+    | RParen
+    | LBracket
+    | RBracket
+    | LCurly
+    | RCurly
+    | StringLiteral
+    | IntegerLiteral
+    | CharLiteral
+    | Dot
+    | DoubleDot
+    | Comma
+    | Colon
+    | DoubleColon
+    | ExclamationMark
+    | Ampersand
+    | Pipe
+    | Percent
+    | Backslash
+    | Tilde
+    | Wildcard
+    | At
+    | And
+    | Or
+    | KeywordModule
+    | KeywordWhere
+    | KeywordDo
+    | KeywordClass
+    | KeywordInstance
+    | KeywordExtern
+    | KeywordData
+    | KeywordDeriving
+    | KeywordImport
+    | KeywordHiding
+    | KeywordAs
+    | KeywordIf
+    | KeywordThen
+    | KeywordElse
+    | KeywordReturn
+    | KeywordTry
+    | KeywordLoop
+    | KeywordContinue
+    | KeywordBreak
+    | KeywordCase
+    | KeywordOf
+    | KeywordEffect
+    | KeywordWith
+    | KeywordUsing
+    | RightArrow
+    | LeftArrow
+    | InclusiveRange
+    | DoubleRightArrow
+    | PipeForward
+    | EndOfItem
+    | EndOfBlock
+    | EndOfModule
+    deriving (Show, PartialEq, Eq)
+
+module Siko.Parser.Token where
+
+import Siko.Syntax.Location
+import Siko.Parser.Token.Kind as Kind
+
+data Token = VarIdentifier String
+    | TypeIdentifier String
+    | Equal
+    | DoubleEqual
+    | NotEqual
+    | LessThan
+    | GreaterThan
+    | LessOrEqualThan
+    | GreaterOrEqualThan
+    | Add
+    | Sub
+    | Mul
+    | Div
+    | LParen
+    | RParen
+    | LBracket
+    | RBracket
+    | LCurly
+    | RCurly
+    | StringLiteral String
+    | IntegerLiteral String
+    | CharLiteral Char
+    | Dot
+    | DoubleDot
+    | Comma
+    | Colon
+    | DoubleColon
+    | ExclamationMark
+    | Ampersand
+    | Pipe
+    | Percent
+    | Backslash
+    | Tilde
+    | Wildcard
+    | At
+    | And
+    | Or
+    | KeywordModule
+    | KeywordWhere
+    | KeywordDo
+    | KeywordClass
+    | KeywordInstance
+    | KeywordExtern
+    | KeywordData
+    | KeywordDeriving
+    | KeywordImport
+    | KeywordHiding
+    | KeywordAs
+    | KeywordIf
+    | KeywordThen
+    | KeywordElse
+    | KeywordReturn
+    | KeywordTry
+    | KeywordLoop
+    | KeywordContinue
+    | KeywordBreak
+    | KeywordCase
+    | KeywordOf
+    | KeywordEffect
+    | KeywordWith
+    | KeywordUsing
+    | RightArrow
+    | LeftArrow
+    | InclusiveRange
+    | DoubleRightArrow
+    | PipeForward
+    | EndOfItem
+    | EndOfBlock
+    | EndOfModule
+    deriving (Show)
+
+
+data TokenInfo = {
+        token :: Token,
+        span :: Span
+    }
+
+instance Show TokenInfo where
+    show a = show a.token
+
+getKind :: Token -> Kind.TokenKind
+getKind token = case token of
+    VarIdentifier _ -> Kind.VarIdentifier
+    TypeIdentifier _ -> Kind.TypeIdentifier
+    Equal -> Kind.Equal
+    DoubleEqual -> Kind.DoubleEqual
+    NotEqual -> Kind.NotEqual
+    LessThan -> Kind.LessThan
+    GreaterThan -> Kind.GreaterThan
+    LessOrEqualThan -> Kind.LessOrEqualThan
+    GreaterOrEqualThan -> Kind.GreaterOrEqualThan
+    Add -> Kind.Add
+    Sub -> Kind.Sub
+    Mul -> Kind.Mul
+    Div -> Kind.Div
+    LParen -> Kind.LParen
+    RParen -> Kind.RParen
+    LBracket -> Kind.LBracket
+    RBracket -> Kind.RBracket
+    LCurly -> Kind.LCurly
+    RCurly -> Kind.RCurly
+    StringLiteral _ -> Kind.StringLiteral
+    IntegerLiteral _ -> Kind.IntegerLiteral
+    CharLiteral _ -> Kind.CharLiteral
+    Dot -> Kind.Dot
+    DoubleDot -> Kind.DoubleDot
+    Comma -> Kind.Comma
+    Colon -> Kind.Colon
+    DoubleColon -> Kind.DoubleColon
+    ExclamationMark -> Kind.ExclamationMark
+    Ampersand -> Kind.Ampersand
+    Pipe -> Kind.Pipe
+    Percent -> Kind.Percent
+    Backslash -> Kind.Backslash
+    Tilde -> Kind.Tilde
+    Wildcard -> Kind.Wildcard
+    At -> Kind.At
+    And -> Kind.And
+    Or -> Kind.Or
+    KeywordModule -> Kind.KeywordModule
+    KeywordWhere -> Kind.KeywordWhere
+    KeywordDo -> Kind.KeywordDo
+    KeywordClass -> Kind.KeywordClass
+    KeywordInstance -> Kind.KeywordInstance
+    KeywordExtern -> Kind.KeywordExtern
+    KeywordData -> Kind.KeywordData
+    KeywordDeriving -> Kind.KeywordDeriving
+    KeywordImport -> Kind.KeywordImport
+    KeywordHiding -> Kind.KeywordHiding
+    KeywordAs -> Kind.KeywordAs
+    KeywordIf -> Kind.KeywordIf
+    KeywordThen -> Kind.KeywordThen
+    KeywordElse -> Kind.KeywordElse
+    KeywordReturn -> Kind.KeywordReturn
+    KeywordTry -> Kind.KeywordTry
+    KeywordLoop -> Kind.KeywordLoop
+    KeywordContinue -> Kind.KeywordContinue
+    KeywordBreak -> Kind.KeywordBreak
+    KeywordCase -> Kind.KeywordCase
+    KeywordOf -> Kind.KeywordOf
+    KeywordEffect -> Kind.KeywordEffect
+    KeywordWith -> Kind.KeywordWith
+    KeywordUsing -> Kind.KeywordUsing
+    RightArrow -> Kind.RightArrow
+    LeftArrow -> Kind.LeftArrow
+    InclusiveRange -> Kind.InclusiveRange
+    DoubleRightArrow -> Kind.DoubleRightArrow
+    PipeForward -> Kind.PipeForward
+    EndOfItem -> Kind.EndOfItem
+    EndOfBlock -> Kind.EndOfBlock
+    EndOfModule -> Kind.EndOfModule
+module Siko.Syntax.TypeSignature where
+
+import Siko.Syntax.Location
+import Siko.Syntax.Ident
+
+data TypeSignature = TypeSignature SimpleTypeSignature Location deriving (Show)
+
+data SimpleTypeSignature = TypeArg Ident
+                  | Named Ident [TypeSignature]
+                  | Variant Ident [TypeSignature]
+                  | List TypeSignature
+                  | Tuple [TypeSignature]
+                  | Function TypeSignature TypeSignature
+                  | Never
+                  | Ref TypeSignature
+                  | Owner TypeSignature
+                  | Wildcard
+                  deriving (Show)
+module Siko.Parser.Type(parseTypeSignature) where
+
+import Siko.Parser
+import Siko.Syntax.TypeSignature
+import Siko.Syntax.Ident
+import Siko.Parser.Token as T
+import Siko.Parser.Token.Kind as Kind
+import Siko.Parser.Error
+
+buildTypeSignature :: SimpleTypeSignature -> Int -> ParserState -> (ParserState, TypeSignature)
+buildTypeSignature ty start_index state = do
+    ty <- TypeSignature ty (buildLocation start_index state)
+    (state, ty)
+
+parseTypeSignature :: ParserState -> Bool -> Bool -> Result (ParserState, TypeSignature) (ParserState, ParserError)
+parseTypeSignature state parsingVariant allow_wildcard = do
+    start_index <- state.index
+    if parsingVariant
+    then do
+        (state, name) <- try expectTypeIdent state "variant name"
+        (state, items) <- loop (state, items) <- (state, []) do
+                if isValidTypeSignaturePart state
+                then do
+                    (state, item) <- try parseTypeSignaturePart state False False
+                    (state, items + [item])
+                else break (state, items)
+        Ok (buildTypeSignature (Named name items) start_index state)
+    else do
+        (state, from) <- try parseTypeSignaturePart state True allow_wildcard
+        loop (state, from) <- (state, from) do
+                ti <- peek state
+                case ti.token of
+                    T.RightArrow -> do
+                        state <- try expect state Kind.RightArrow
+                        (state, to) <- try parseTypeSignature state False allow_wildcard
+                        buildTypeSignature (Function from to) start_index state
+                    _ -> break Ok (state, from)
+
+parseTupleType :: ParserState -> Bool -> Result (ParserState, TypeSignature) (ParserState, ParserError)
+parseTupleType state allow_wildcard = do
+    start_index <- state.index
+    case try parseParens state (\state -> parseTypeSignature state False allow_wildcard) "type signature" of
+        (state, Single ty) -> Ok (state, ty)
+        (state, Multi types) -> Ok (buildTypeSignature (Tuple types) start_index state)
+
+isValidTypeSignaturePart :: ParserState -> Bool
+isValidTypeSignaturePart state = do
+    ti <- peek state
+    case ti.token of
+        T.LParen
+         | T.LBracket
+         | T.VarIdentifier _
+         | T.TypeIdentifier _
+         | T.Wildcard
+         | T.ExclamationMark
+         | T.Ampersand
+         | T.Tilde -> True
+        _ -> False
+
+parseTypeSignaturePart :: ParserState -> Bool -> Bool -> Result (ParserState, TypeSignature) (ParserState, ParserError)
+parseTypeSignaturePart state with_args allow_wildcard = do
+    start_index <- state.index
+    ti <- peek state
+    case ti.token of
+        T.LParen -> parseTupleType state allow_wildcard
+        T.LBracket -> do
+            state <- try expect state Kind.LBracket
+            (state, ty) <- try parseTypeSignature state False allow_wildcard
+            state <- try expect state Kind.RBracket
+            Ok (buildTypeSignature (List ty) start_index state)
+        T.VarIdentifier id -> do
+            (state, ident) <- try expectVarIdent state "type argument"
+            Ok (buildTypeSignature (TypeArg ident) start_index state)
+        T.TypeIdentifier id -> do
+            (state, name) <- try parseQualifiedTypeName state "type name"
+            (state, args) <- if with_args
+                then loop (state, args) <- (state, []) do
+                        if isValidTypeSignaturePart state
+                        then do
+                            (state, arg) <- try parseTypeSignaturePart state False allow_wildcard
+                            args <- args + [arg]
+                            (state, args)
+                        else break (state, args)
+                else (state, [])
+            Ok (buildTypeSignature (Named name args) start_index state)
+        T.Wildcard -> do
+            state <- try expect state Kind.Wildcard
+            Ok (buildTypeSignature Wildcard start_index state)
+        T.ExclamationMark -> do
+            state <- try expect state Kind.ExclamationMark
+            Ok (buildTypeSignature Never start_index state)
+        T.Ampersand -> do
+            state <- try expect state Kind.Ampersand
+            (state, ty) <- try parseTypeSignaturePart state with_args allow_wildcard
+            Ok (buildTypeSignature (Ref ty) start_index state)
+        T.Tilde -> do
+            state <- try expect state Kind.Tilde
+            (state, ty) <- try parseTypeSignaturePart state with_args allow_wildcard
+            Ok (buildTypeSignature (Owner ty) start_index state)
+        _ -> return Err (state, unexpectedToken state "type signature")

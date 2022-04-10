@@ -419,9 +419,22 @@ instance Apply InferenceInfo where
         (applier, expr_type_variables) <- apply applier inference_info.expr_type_variables
         (applier, var_type_variables) <- apply applier inference_info.var_type_variables
         (applier, function_infos) <- apply applier inference_info.function_infos
-        (applier, ownership_values) <- Map2.mapS applier inference_info.ownership_values (\applier, (k, v) -> do
-            (applier, k) <- apply applier k
-            (applier, k, v))
+        (applier, merged_ownership_values) <- Map2.fold (applier, Map2.empty) inference_info.ownership_values (\(applier, merged_ownership_values), (var, kind) -> do
+            (applier, var) <- apply applier var
+            merged_ownership_values <- Map2.add merged_ownership_values var kind
+            (applier, merged_ownership_values))
+        ownership_values <- Map2.fold Map2.empty merged_ownership_values (\ownership_values, (var, kinds) -> do
+            kinds <- kinds |> List2.sort |> List2.dedup
+            kinds <- List2.filter kinds (\kind -> case kind of
+                                                M.Unknown -> False
+                                                _ -> True)
+            kind <- if List2.contains kinds M.Owner
+            then M.Owner
+            else case List2.getLength kinds of
+                    0 -> M.Unknown
+                    1 -> List2.atIndex kinds 0
+                    _ -> panic "borrows need to be merged during equal apply, NYI"
+            Map2.put ownership_values var kind)
         (applier, members) <- apply applier inference_info.members
         (applier, converters) <- apply applier inference_info.converters
         (applier, function_converters) <- apply applier inference_info.function_converters
