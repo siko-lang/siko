@@ -8,6 +8,7 @@ import Siko.MIR.Backend.Simplifier as Simplifier
 import Siko.MIR.Backend.Simplification.TransformUpdates as TransformUpdates
 import Siko.MIR.Backend.Inliner as Inliner
 import Siko.MIR.Backend.FnArgVarCreator as FnArgVarCreator
+import Siko.MIR.Backend.ConverterVarCreator as ConverterVarCreator
 import Siko.MIR.Backend.Traversal
 import Siko.MIR.Program as MP
 import Siko.LIR.Program as LP
@@ -130,6 +131,11 @@ processProgram config mir_program = do
     trace config "SanityCheck2.."
     SanityCheck.processProgram mir_program
     (data_groups, function_groups) <- createGroups config mir_program
+    trace config "ConverterVarCreator.."
+    mir_program <- ConverterVarCreator.processProgram mir_program
+    dumpProgram config mir_program (MIR "convertervarcreator")
+    mir_program <- Rebinder.processProgram mir_program
+    dumpProgram config mir_program (MIR "rebinder3")
     trace config "AddConverter.."
     mir_program <- AddConverter.processProgram config mir_program
     dumpProgram config mir_program (MIR "addconverter")

@@ -21,13 +21,20 @@ def processFile(file):
 def collect_tests(path, tests, parent):
     if os.path.isdir(path):
         files = os.listdir(path)
+        found = None
+        skip = False
         for f in files:
             full_path = os.path.join(path, f)
             if os.path.isdir(full_path):
                 collect_tests(full_path, tests, f)
             else:
                 if f == "main.sk":
-                    tests.append((parent, path))
+                    found = (parent, path)
+                if f == "SKIP":
+                    print("Skipping %s" % parent)
+                    skip = True
+        if found and not skip:
+            tests.append(found)
 
 def mkdir_safe(folder_name):
     try:

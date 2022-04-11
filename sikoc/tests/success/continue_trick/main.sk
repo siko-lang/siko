@@ -1,0 +1,24 @@
+module Main where
+
+data ParserState = { index :: Int }
+
+data Token = EndOfItem
+           | RightArrow
+           | LeftArrow
+
+peekAt :: ParserState -> Int -> Token
+peekAt state index = EndOfItem
+
+irrefutablePatternFollows :: ParserState -> Bool
+irrefutablePatternFollows state = do
+    loop index <- state.index do
+        token <- peekAt state index
+        case token of
+            EndOfItem -> return False
+            LeftArrow -> return True
+            _ -> continue index + 1
+
+main = do
+    state <- ParserState 0
+    irrefutablePatternFollows state
+    ()
