@@ -14,7 +14,7 @@ data Path = Whole | Partial [String] deriving (Show)
 
 data Usage = { expr_id :: E.ExprId, path :: Path } deriving (Show)
 
-data UsageStore = { usages :: Map E.Var [Usage] }
+data UsageStore = { usages :: Map E.Var [Usage] } deriving (Show)
 
 data Invalidation = { subject :: E.ExprId, object :: E.ExprId } deriving (Show)
 
@@ -23,7 +23,7 @@ data Context = { program :: P.Program,
                  invalidations :: [Invalidation] }
 
 data ExecutionMode = Normal
-                   | DoesNotReturn
+                   | DoesNotReturn deriving (Show)
 
 invalidates :: Path -> Path -> Bool
 invalidates current other = do
@@ -79,23 +79,25 @@ addUsage context usage_store var expr_id path = do
 
 collectBlockBorrows :: Context -> UsageStore -> [E.Expr] -> (Context, UsageStore, ExecutionMode)
 collectBlockBorrows context usage_store items =
-    List.fold (context, usage_store, Normal) items (\(context, usage_store,  mode), item -> do
+    List.fold (context, usage_store, Normal) items (\(context, usage_store, mode), item -> do
                 (context, usage_store, exec_mode) <- collectBorrows context usage_store item
                 exec_mode <- case (exec_mode, mode) of
                     (Normal, Normal) -> Normal
                     _ -> DoesNotReturn
                 (context, usage_store, exec_mode))
 
-processBranches :: Context -> UsageStore -> [([E.Var], E.Expr)] -> E.ExprId -> (Context, UsageStore, ExecutionMode)
+processBranches :: Context -> UsageStore -> [(Option E.Var, E.Expr)] -> E.ExprId -> (Context, UsageStore, ExecutionMode)
 processBranches context usage_store branches expr_id =
-    List.fold (context, usage_store, DoesNotReturn) branches (\(context, usage_store, exec_mode), (vars, branch) -> do
+    List.fold (context, usage_store, DoesNotReturn) branches (\(context, usage_store, exec_mode), (var, branch) -> do
             saved <- usage_store
-            usage_store <- List.fold usage_store vars addUsageVar
-            (context, usage_store, exec_mode) <- collectBorrows context usage_store branch
-            (context, usage_store) <- List.fold (context, usage_store) vars (\(context, usage_store), var ->
-                    invalidateAll context usage_store var expr_id)
-            (context, usage_store, exec_mode)
-            case exec_mode of
+            usage_store <- case var of
+                Some var -> addUsageVar usage_store var
+                None -> usage_store
+            (context, usage_store, mode) <- collectBorrows context usage_store branch
+            (context, usage_store) <- case var of
+                Some var -> invalidateAll context usage_store var expr_id
+                None -> (context, usage_store)
+            case mode of
                 Normal -> (context, usage_store, Normal)
                 DoesNotReturn -> (context, saved, exec_mode))
 
@@ -137,7 +139,8 @@ collectBorrows context usage_store expr = do
                     _ -> break collectBorrows context usage_store receiver
         E.If cond true_branch false_branch -> do
             (context, usage_store, exec_mode) <- collectBorrows context usage_store cond
-            processBranches context usage_store [([], true_branch), ([], false_branch)] expr_id
+            (context, usage_store, exec_mode) <- processBranches context usage_store [(None, true_branch), (None, false_branch)] expr_id
+            (context, usage_store, exec_mode)
         E.List args -> collectBlockBorrows context usage_store args
         E.Return arg -> do
             (context, usage_store, exec_mode) <- collectBorrows context usage_store arg
@@ -160,9 +163,10 @@ collectBorrows context usage_store expr = do
         E.CaseOf body cases -> do
             (context, usage_store, exec_mode) <- collectBorrows context usage_store body
             branches <- List.map cases (\c -> case c.checker of
-                E.VariantChecker _ var _ -> ([var], c.body)
-                _ -> ([], c.body))
-            processBranches context usage_store branches expr_id
+                E.VariantChecker _ var _ -> (Some var, c.body)
+                _ -> (None, c.body))
+            (context, usage_store, exec_mode) <- processBranches context usage_store branches expr_id
+            (context, usage_store, exec_mode)
         E.Clone arg -> panic "Clone in MIR borrow checker"
         E.Deref arg -> panic "Deref in MIR borrow checker"
         E.Ref arg -> panic "Ref in MIR borrow checker"

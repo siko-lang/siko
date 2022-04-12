@@ -139,7 +139,7 @@ processConverter context converter_expr arg_expr borrowed_expr from to = do
             else if borrowed_expr
                 then do
                     (inference_info, id) <- createBorrowSetForExpr context.inference_info arg_expr
-                    //println "Borrowing owner {}" % (id)
+                    //println "Borrowing owner at {} {}" % (arg_expr, id)
                     context <- context { inference_info = inference_info }
                     addOwnershipValue context to (M.Borrower id)
                 else addOwnershipValue context to from_kind
@@ -164,7 +164,9 @@ processConverter context converter_expr arg_expr borrowed_expr from to = do
                 cloning_converters <- Set.put context.cloning_converters converter_expr
                 context <- context { cloning_converters = cloning_converters }
                 addOwnershipValue context to M.Owner
-            else addOwnershipValue context to from_kind
+            else do
+                //println "Setting unknown to borrow"
+                addOwnershipValue context to from_kind
         (M.Unknown, _) -> context
 
 getBorrowSet2 :: Context -> BorrowId -> (Context, BorrowSet) // FIXME
@@ -332,6 +334,7 @@ checkBorrows context expr_info = do
             case List2.head new_forced_clones of
                 Some first -> do
                     forced_clones <- Set.put context.forced_clones first
+                    //println "Forced clone {}" % first
                     context { needs_restart = True, forced_clones = forced_clones }
                 None -> context
         else context
@@ -355,6 +358,36 @@ checkBorrows context expr_info = do
                     then (context, List2.push forced_clones var)
                     else (context, forced_clones)
                 _ -> (context, forced_clones)
+
+checkExpr :: Context -> E.Expr -> (Context, E.Expr)
+checkExpr context expr = do
+    E.Expr s_expr _ expr_id <- expr
+    case s_expr of
+        E.Converter arg _ -> do
+            E.Expr arg_s_expr _ arg_id <- arg
+            (context, arg_info) <- getTypeVariableInfoByExprId2 context arg_id
+            (context, info) <- getTypeVariableInfoByExprId2 context expr_id
+            (context, from_kind) <- getOwnershipValue context arg_info.ownership_var
+            (context, to_kind) <- getOwnershipValue context info.ownership_var
+            case (from_kind, to_kind) of
+                (M.Owner, M.Borrower id) -> do
+                    //println "checkExpr: converter {}" % expr_id
+                    //println "arg_id {} from_kind {} to_kind {}" % (arg_id, from_kind, to_kind)
+                    (context, borrow_set) <- getBorrowSet2 context id
+                    //println "borrow_set {}" % borrow_set
+                    found <- Set.fold False borrow_set.borrows (\found, borrow -> case borrow of
+                        Local id -> found || id == arg_id
+                        External _ -> found)
+                    if not found
+                    then if not context.needs_restart
+                        then do
+                            forced_clones <- Set.put context.forced_clones info.ownership_var
+                            context <- context { needs_restart = True, forced_clones = forced_clones }
+                            (context, expr)
+                        else (context, expr)
+                    else (context, expr)
+                _ -> (context, expr)
+        _ -> (context, expr)
 
 dumpExpr :: Context -> E.Expr -> (Context, E.Expr)
 dumpExpr context expr = do
@@ -403,6 +436,7 @@ inferOwnership config function_id group function_info_store inference_info progr
                            function_info_store group Set.empty forced_clones cloning_converters False
         context <- initializeExprOwnerships context
         context <- processExpr context body
+        (context, body) <- traverse context body (Some checkExpr) None None
         // println "----------- BEGIN"
         // (context, body) <- traverse context body (Some dumpExpr) None None
         // println "----------- END"

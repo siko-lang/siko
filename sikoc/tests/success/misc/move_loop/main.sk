@@ -1,0 +1,110 @@
+module Siko.Parser.Error where
+
+import Siko.Syntax.Location
+
+data ParserError = UnexpectedToken String String
+                   | InvalidTypeArgument
+
+
+module Siko.Syntax.Ident where
+
+import Siko.Syntax.Location
+
+data Ident = Ident String.String Location
+
+module Siko.Syntax.Location where
+
+import Std.Util
+
+data FileId = FileId Int
+
+createDummyLocation = Location (FileId 0)
+
+data Location = {
+                  file_id :: FileId,
+                }
+
+module Main where
+
+import Siko.Parser
+import Siko.Parser.Type
+import Siko.Parser.Token
+import Siko.Syntax.Location
+
+boo a = ()
+
+main = do
+    file_id <- FileId 0
+    state <- ParserState [TokenInfo (VarIdentifier "a")] 0 [] file_id
+    stuff <- parseTypeSignaturePart state True True
+    boo file_id
+    ()
+
+module Siko.Parser where
+
+import Siko.Parser.Type
+
+import Siko.Syntax.Ident
+import Siko.Syntax.TypeSignature
+import Siko.Syntax.Location
+import Siko.Parser.Token
+import Siko.Parser.Error
+
+data ParserState =
+    {
+        tokens :: [TokenInfo],
+        index :: Int,
+        errors :: [ParserError],
+        file_id :: FileId,
+    }
+
+peek :: ParserState -> TokenInfo
+peek state = atIndex state.tokens state.index
+
+module Siko.Parser.Token where
+
+import Siko.Syntax.Location
+
+data Token = VarIdentifier String
+    | TypeIdentifier String
+
+data TokenInfo = {
+        token :: Token,
+    }
+
+module Siko.Syntax.TypeSignature where
+
+import Siko.Syntax.Location
+import Siko.Syntax.Ident
+
+data TypeSignature = TypeSignature SimpleTypeSignature Location
+
+data SimpleTypeSignature = Named Ident [TypeSignature]
+
+module Siko.Parser.Type where
+
+import Siko.Parser
+import Siko.Syntax.TypeSignature
+import Siko.Syntax.Ident
+import Siko.Syntax.Location
+import Siko.Parser.Token as T
+import Siko.Parser.Error
+
+parseTypeSignaturePart :: ParserState -> Bool -> Bool -> Result (ParserState, TypeSignature) (ParserState, ParserError)
+parseTypeSignaturePart state with_args allow_wildcard = do
+    start_index <- state.index
+    ti <- peek state
+    case ti.token of
+        T.TypeIdentifier id -> do
+            (state, name) <- (state, Ident "a" createDummyLocation)
+            (state, args) <- if with_args
+                then loop (state, args) <- (state, []) do
+                        if True
+                        then do
+                            (state, arg) <- try parseTypeSignaturePart state False allow_wildcard
+                            args <- args + [arg]
+                            (state, args)
+                        else break (state, args)
+                else (state, [])
+            Ok (state, TypeSignature (Named name args) createDummyLocation)
+        _ -> return Err (state, UnexpectedToken "alma" "type signature")
