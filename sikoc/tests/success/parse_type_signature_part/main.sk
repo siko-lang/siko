@@ -878,7 +878,7 @@ parseQualifiedName state msg = do
                         TypeIdentifier id -> do
                             (state, n) <- try expectTypeIdent state msg
                             name <- mergeIdents name n
-                            continue (state, name)
+                            (state, name)
                         VarIdentifier id -> do
                             (state, n) <- try expectVarIdent state msg
                             name <- mergeIdents name n
@@ -1025,7 +1025,7 @@ parseClassConstraints state =
                 case ti.token of
                     T.EndOfItem -> return False
                     T.DoubleRightArrow -> return True
-                    _ -> continue index + 1
+                    _ -> index + 1
 
 parseBody :: ParserState -> Result (ParserState, [Function], [FunctionSignature]) (ParserState, ParserError)
 parseBody state = do
@@ -1824,7 +1824,7 @@ irrefutablePatternFollows state = do
             T.KeywordLoop -> return False
             T.KeywordDo -> return False
             T.LeftArrow -> return True
-            _ -> continue index + 1
+            _ -> index + 1
 
 buildPattern :: SimplePattern -> Int -> ParserState -> Pattern
 buildPattern p start_index state =
