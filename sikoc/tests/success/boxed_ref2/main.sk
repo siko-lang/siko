@@ -1,0 +1,23 @@
+module Main where
+
+data Name = Name
+
+data Lifetime = Lifetime
+
+data Type = Named Name
+            | Box Type
+            | Rc Type
+            | Ref Lifetime Type
+            | Never
+
+getInnerType :: Type -> Type
+getInnerType t = case t of
+    Named _ -> t
+    Box t -> getInnerType t
+    Rc t -> getInnerType t
+    Ref _ t -> getInnerType t
+    Never -> Never
+
+main = do
+    getInnerType Never
+    ()
