@@ -109,7 +109,7 @@ lowerAdt context lowering_info mir_id lir_id = do
     (lowering_info, filter_info) <- buildFilterInfoFromTypeLoweringInfo context.config lowering_info
     ((context, filter_info), variants) <- List.mapSE (context, filter_info) mir_adt.variants (lowerVariant lowering_info)
     lifetimes <- collectLifetimes lowering_info.ownershipinfos
-    external_class_impls <- []
+    (context, external_class_impls) <- List.mapS context mir_adt.external_class_impls (processExternalClassImpl lowering_info)
     lir_adt <- LD.AlgebraicDataType lir_id lifetimes variants external_class_impls
     context <- addAdt context lir_adt
     context
