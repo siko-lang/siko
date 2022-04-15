@@ -133,7 +133,8 @@ data Constructor = { fn :: Context -> [R.Expr] -> R.Expr }
 
 data Context = { type_store :: TypeStore,
                  loop_var :: Option String,
-                 constructors :: Map Identity Constructor
+                 constructors :: Map Identity Constructor,
+                 external_functions :: Map ExternalId ExternFnBuilder,
                }
 
 convertExpr :: Context -> LE.Expr -> R.Expr
@@ -196,7 +197,7 @@ convertExpr context lir_expr = do
         LE.Loop v initializer body -> do
             n <- show v
             var_decl <- R.VarDeclMut n (convertExpr context initializer) None
-            inner_context <- Context context.type_store (Some n) context.constructors
+            inner_context <- Context context.type_store (Some n) context.constructors context.external_functions
             loop_body <- R.Assign (R.VarRef n) (convertExpr inner_context body)
             loop_expr <- R.Loop [loop_body]
             R.Block [var_decl, loop_expr]
@@ -339,66 +340,69 @@ createConstructors program = do
         constructors) Map.empty
     constructors
 
+processFunction :: (Context, Program, TypeStore, R.Program) -> (Identity, Function) -> (Context, Program, TypeStore, R.Program)
+processFunction (context, program, type_store, rust_program) (_, lir_function) = do
+    rust_function_name <- getRustIdentity lir_function.id
+    (rust_args, _) <- lir_function.type.args |> List.iter |> Iterator.fold (\(args, index), arg -> do
+        arg_type <- convertType arg
+        arg_name <- getArgName index
+        args <- args + [(arg_name, arg_type)]
+        (args, index + 1)) ([], 0)
+    rust_result <- convertType lir_function.type.result
+    rust_body <- case lir_function.kind of
+        Normal lir_body -> do
+                LE.Expr b _ _ <- lir_body
+                case b of
+                    LE.Do _ -> convertExpr context lir_body
+                    _ -> R.Block [convertExpr context lir_body]
+        Extern -> do
+                Identity mod name _ <- lir_function.id
+                id <- ExternalId mod name
+                case get context.external_functions id of
+                    Some external_gen -> do
+                        ExternFnBuilder external_gen <- external_gen
+                        external_gen program type_store lir_function.type.args lir_function.type.result
+                    None -> do
+                        println "Extern function {}/{} is not implemented" % (mod, name)
+                        R.Block [R.FunctionCall "unimplemented!" []]
+        VariantCtor index -> return (context, program, type_store, rust_program)
+        RecordCtor -> return (context, program, type_store, rust_program)
+    lifetimes <- convertLifetimes lir_function.lifetimes
+    rust_function <- R.Function rust_function_name lifetimes False rust_args rust_result rust_body
+    functions <- rust_program.functions + [rust_function]
+    (context, program, type_store, rust_program { functions = functions })
+
 transpile :: Program -> String
 transpile program = do
     external_functions <- initializeExternalFunctions
     external_structs <- initializeExternalStructFields
     type_store <- createTypeStore
     rust_program <- R.Program [] [] [] [] (getRustIdentity getMainIdentity)
-    (type_store, rust_program) <- program.adts |> Map.iter |> Iterator.fold (\(type_store, rust_program), (_, adt) -> do
+    (type_store, rust_program) <- Map.fold (type_store, rust_program) program.adts (\(type_store, rust_program), (_, adt) -> do
         enum <- convertAdt adt
         type_store <- addEnum type_store enum
         enums <- rust_program.enums + [enum]
         rust_program <- rust_program { enums = enums }
-        (type_store, rust_program)) (type_store, rust_program)
-    (type_store, rust_program) <- program.records |> Map.iter |> Iterator.fold (\(type_store, rust_program), (_, record) -> do
+        (type_store, rust_program))
+    (type_store, rust_program) <- Map.fold (type_store, rust_program) program.records (\(type_store, rust_program), (_, record) -> do
         struct <- convertRecord record external_structs
         type_store <- addStruct type_store struct
         structs <- rust_program.structs + [struct]
         rust_program <- rust_program { structs = structs }
-        (type_store, rust_program)) (type_store, rust_program)
+        (type_store, rust_program))
     constructors <- createConstructors program
-    context <- Context type_store None constructors
-    rust_program <- program.adts |> Map.iter |> Iterator.fold (\rust_program, (_, adt) -> do
+    context <- Context type_store None constructors external_functions
+    rust_program <- Map.fold rust_program program.adts (\rust_program, (_, adt) -> do
             name <- getRustIdentity adt.id
             lifetimes <- convertLifetimes adt.lifetimes
-            adt.external_class_impls |> List.iter |> Iterator.fold (\rust_program, external_class_impl -> do
-                processImpl program rust_program context name external_class_impl lifetimes) rust_program
-        ) rust_program
-    rust_program <- program.records |> Map.iter |> Iterator.fold (\rust_program, (_, record) -> do
+            List.fold rust_program adt.external_class_impls (\rust_program, external_class_impl -> do
+                processImpl program rust_program context name external_class_impl lifetimes)
+        )
+    rust_program <- Map.fold rust_program program.records (\rust_program, (_, record) -> do
             name <- getRustIdentity record.id
             lifetimes <- convertLifetimes record.lifetimes
-            record.external_class_impls |> List.iter |> Iterator.fold (\rust_program, external_class_impl -> do
-                processImpl program rust_program context name external_class_impl lifetimes) rust_program
-        ) rust_program
-    rust_program <- program.functions |> Map.iter |> Iterator.fold (\rust_program, (_, lir_function) -> do
-        rust_function_name <- getRustIdentity lir_function.id
-        (rust_args, _) <- lir_function.type.args |> List.iter |> Iterator.fold (\(args, index), arg -> do
-            arg_type <- convertType arg
-            arg_name <- getArgName index
-            args <- args + [(arg_name, arg_type)]
-            (args, index + 1)) ([], 0)
-        rust_result <- convertType lir_function.type.result
-        rust_body <- case lir_function.kind of
-            Normal lir_body -> do
-                    LE.Expr b _ _ <- lir_body
-                    case b of
-                        LE.Do _ -> convertExpr context lir_body
-                        _ -> R.Block [convertExpr context lir_body]
-            Extern -> do
-                    Identity mod name _ <- lir_function.id
-                    id <- ExternalId mod name
-                    case get external_functions id of
-                        Some external_gen -> do
-                            ExternFnBuilder external_gen <- external_gen
-                            external_gen program type_store lir_function.type.args lir_function.type.result
-                        None -> do
-                            println "Extern function {}/{} is not implemented" % (mod, name)
-                            R.Block [R.FunctionCall "unimplemented!" []]
-            VariantCtor index -> return rust_program
-            RecordCtor -> return rust_program
-        lifetimes <- convertLifetimes lir_function.lifetimes
-        rust_function <- R.Function rust_function_name lifetimes False rust_args rust_result rust_body
-        functions <- rust_program.functions + [rust_function]
-        rust_program { functions = functions }) rust_program
+            List.fold rust_program record.external_class_impls (\rust_program, external_class_impl -> do
+                processImpl program rust_program context name external_class_impl lifetimes)
+        )
+    (context, program, type_store, rust_program) <- Map.fold (context, program, type_store, rust_program) program.functions processFunction
     R.generateProgram rust_program
