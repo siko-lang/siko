@@ -188,32 +188,6 @@ collectBorrows filter_info relevants group_index = do
                 None -> (filter_info, relevants)
         _ -> (filter_info, relevants)
 
-// buildFilterInfoExtended :: Config -> FilterInfo ->  List2 M.MemberInfo -> List2 TypeVariableInfo -> List2 M.OwnershipInfo -> (FilterInfo, List2 M.OwnershipInfo, FilterInfoExtended)
-// buildFilterInfoExtended config filter_info members sources ownershipinfos = do
-//     kind_map <- M.toOwnershipKind ownershipinfos
-//     (members, info_dep_map, deps_map) <- getInfoDependencyMap sources members filter_info.deps_map
-//     filter_info <- filter_info { deps_map = deps_map }
-//     groups <- processDependencies config info_dep_map
-//     // println "-------------"
-//     // println "sources {}" % sources
-//     // println "members {}" % members
-//     // println "kind_map {}" % kind_map
-//     // println "Groups {}" % groups
-//     (groups, group_index_map) <- getGroupIndexMap groups
-//     //println "group_index_map {}" % group_index_map
-//     (kind_map, info_dep_map, group_index_map, group_borrow_map) <- getGroupBorrowMap groups info_dep_map kind_map group_index_map
-//     //println "group_borrow_map {}" % group_borrow_map
-//     (group_index_map, info_dep_map, group_dep_map) <- loop (group_index_map, info_dep_map, group_dep_map, group_index) <- (group_index_map, info_dep_map, Map2.empty, 0) do
-//         if group_index >= List2.getLength groups
-//         then break (group_index_map, info_dep_map, group_dep_map)
-//         else do
-//             group <- List2.atIndex groups group_index
-//             (group_index_map, info_dep_map, group_dep_map) <- getGroupDepMap group group_index info_dep_map group_index_map group_dep_map
-//             (group_index_map, info_dep_map, group_dep_map, group_index + 1)
-//     group_dep_map <- Map2.map group_dep_map (\(k, v) -> (k, v |> List2.sort |> List2.dedup))
-//     //println "group_dep_map {}" % group_dep_map
-//     (filter_info, ownershipinfos, FilterInfoExtended group_index_map group_borrow_map group_dep_map groups)
-
 getRelevants :: FilterInfo -> List2 TypeVariableInfo -> (FilterInfo, List2 TypeVariableInfo)
 getRelevants filter_info sources = do
     (filter_info, relevants) <- List2.fold (filter_info, sources) sources (\(filter_info, relevants), source -> do

@@ -52,28 +52,30 @@ processExternalClassImpl ::TypeLoweringInfo -> Context -> MD.ExternalClassImpl -
 processExternalClassImpl lowering_info context mir_class_impl =
     case mir_class_impl of
         MD.Show id -> do
-            (context, lir_id) <- processClassImplCall context lowering_info id
+            (context, lir_id) <- processClassImplCall context lowering_info id 1
             (context, LD.Show lir_id)
         MD.PartialEq id -> do
-            (context, lir_id) <- processClassImplCall context lowering_info id
+            (context, lir_id) <- processClassImplCall context lowering_info id 2
             (context, LD.PartialEq lir_id)
         MD.Eq -> do
             (context, LD.Eq)
         MD.PartialOrd id -> do
-            (context, lir_id) <- processClassImplCall context lowering_info id
+            (context, lir_id) <- processClassImplCall context lowering_info id 2
             (context, LD.PartialOrd lir_id)
         MD.Ord id -> do
-            (context, lir_id) <- processClassImplCall context lowering_info id
+            (context, lir_id) <- processClassImplCall context lowering_info id 2
             (context, LD.Ord lir_id)
     where
-        processClassImplCall :: Context -> TypeLoweringInfo -> MP.Identity -> (Context, LP.Identity)
-        processClassImplCall context lowering_info id = do
+        processClassImplCall :: Context -> TypeLoweringInfo -> MP.Identity -> Int -> (Context, LP.Identity)
+        processClassImplCall context lowering_info id arg_count = do
             (allocator, result) <- getNextTypeVariableInfo lowering_info.allocator
             (allocator, arg) <- getNextTypeVariableInfo allocator
             (allocator, borrow_id) <- getNextBorrowId allocator
             arg <- arg { arg_group_var = lowering_info.root.arg_group_var }
-            args <- List2.single arg
-            args <- List2.push args arg
+            args <- case arg_count of
+                1 -> List2.single arg
+                2 -> List2.push (List2.single arg) arg
+                _ -> panic "External class impl with {} arg count" % arg_count
             ownershipinfos <- List2.push lowering_info.ownershipinfos (M.OwnershipInfo arg.ownership_var (M.Borrower borrow_id))
             ownershipinfos <- List2.push ownershipinfos (M.OwnershipInfo result.ownership_var M.Owner)
             lowering_info <- FunctionLoweringInfo lowering_info.members args result ownershipinfos allocator

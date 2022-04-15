@@ -20,6 +20,7 @@ import List2 (List2)
 
 normalizeFunctionLoweringInfo :: Config -> FunctionLoweringInfo -> (FunctionLoweringInfo, Duplicator)
 normalizeFunctionLoweringInfo config lowering_info = do
+    //trace config "normalizeFunctionLoweringInfo: input {}" % lowering_info
     (members, deps_map) <- getOrderedDependencyMap lowering_info.members
     duplicator <- createNormalizer
     (visited, duplicator, deps_map) <- processTypeVariableInfo List2.empty deps_map duplicator lowering_info.result
@@ -31,7 +32,9 @@ normalizeFunctionLoweringInfo config lowering_info = do
     (duplicator, ownershipinfos) <- List2.mapS duplicator lowering_info.ownershipinfos duplicate
     members <- members |> List2.sort
     ownershipinfos <- ownershipinfos |> List2.sort
-    (FunctionLoweringInfo members args result ownershipinfos duplicator.allocator, duplicator)
+    output <- FunctionLoweringInfo members args result ownershipinfos duplicator.allocator
+    //trace config "normalizeFunctionLoweringInfo: output {}" % output
+    (output, duplicator)
 
 normalizeTypeLoweringInfo :: Config -> TypeLoweringInfo -> (TypeLoweringInfo, Duplicator)
 normalizeTypeLoweringInfo config lowering_info = do
