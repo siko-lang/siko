@@ -297,23 +297,6 @@ toFunctionInfo config inference_info function_id = do
     members <- inference_info.members
     converters <- inference_info.converters
     (members, group_dep_map, deps_map, groups) <- calculateGroupDepMap config members
-    (groups, group_index_map) <- loop (groups, group_index_map, index) <- (groups, Map2.empty, 0) do
-        if index >= List2.getLength groups
-        then break (groups, group_index_map)
-        else do
-            group :: DependencyGroup GroupTypeVariable <- List2.atIndex groups index // FIXME: type annotation
-            group_index_map <- List2.fold group_index_map group.items (\group_index_map, item -> do
-                Map2.put group_index_map item index)
-            (groups, group_index_map, index + 1)
-    inverse_deps_map <- Map2.fold Map2.empty deps_map (\inverse_deps_map, (var, deps) -> do
-        var <- Option.unwrap (Map2.get group_index_map var)
-        List2.fold inverse_deps_map deps (\inverse_deps_map, dep -> do
-            dep <- Option.unwrap (Map2.get group_index_map dep)
-            Map2.add inverse_deps_map dep var))
-    singles <- Map2.fold List2.empty inverse_deps_map (\singles, (group, parents) -> do
-        if List2.getLength parents > 1
-        then singles
-        else List2.push singles group)
     //println "Singles {}" % singles
     //trace config "toFunctionInfo: creating converter map"
     (converters, converter_map) <- List2.foldLinear Map2.empty converters (\converter_map, converter ->
