@@ -30,7 +30,7 @@ data Context = { config :: Config,
                  borrow_info :: BorrowInfo,
                  function_info_store :: FunctionInfoStore,
                  group :: [P.Identity],
-                 invalid_borrows :: Set E.ExprId,
+                 invalid_borrows :: List2 E.ExprId,
                  forced_clones :: Set OwnershipTypeVariable,
                  cloning_converters :: Set E.ExprId,
                  needs_restart :: Bool }
@@ -312,10 +312,10 @@ processExpr context expr = do
 
 updateInvalidBorrows :: Context -> E.ExprId -> Context
 updateInvalidBorrows context expr_id = do
-    context <- case Map.get context.borrow_info.invalidations expr_id of
+    context <- case Map2.get context.borrow_info.invalidations expr_id of
         Some invalidations -> do
-            invalid_borrows <- List.fold context.invalid_borrows invalidations (\invalid_borrows, invalidation ->
-                Set.put invalid_borrows invalidation)
+            invalid_borrows <- context.invalid_borrows + invalidations
+            invalid_borrows <- invalid_borrows |> List2.sort |> List2.dedup
             context { invalid_borrows = invalid_borrows }
         None -> context
     //println "Invalid borrows {} = {}" % (expr_id, context.invalid_borrows)
@@ -354,7 +354,7 @@ checkBorrows context expr_info = do
         promoteBorrow var (context, forced_clones) borrow =
             case borrow of
                 Local borrowed_expr -> do
-                    if Set.contains context.invalid_borrows borrowed_expr
+                    if List2.contains context.invalid_borrows borrowed_expr
                     then (context, List2.push forced_clones var)
                     else (context, forced_clones)
                 _ -> (context, forced_clones)
@@ -433,7 +433,7 @@ inferOwnership config function_id group function_info_store inference_info progr
                  (InferenceInfo, Set OwnershipTypeVariable, Set E.ExprId, Map2 GroupTypeVariable (List2 OwnershipTypeVariable))
         infer config function_id ownership_dep_map group function_info_store inference_info program body borrow_info forced_clones cloning_converters = do
         context <- Context config function_id ownership_dep_map inference_info program borrow_info
-                           function_info_store group Set.empty forced_clones cloning_converters False
+                           function_info_store group List2.empty forced_clones cloning_converters False
         context <- initializeExprOwnerships context
         context <- processExpr context body
         (context, body) <- traverse context body (Some checkExpr) None None
