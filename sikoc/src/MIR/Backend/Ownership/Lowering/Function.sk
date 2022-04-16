@@ -52,6 +52,10 @@ lowerFunction context lowering_info mir_id lir_id = do
             (inference_info, cloning_converters) <- inferOwnership context.config mir_id [mir_id] context.function_info_store inference_info
                               context.mir_program info.body borrow_info
             (inference_info, filter_info) <- buildFilterInfoFromInferenceInfo context.config inference_info
+            (inference_info, filter_info) <- mergeExternalLifetimes inference_info filter_info mir_id
+            (inference_info, function_inference_info) <- getFunctionInferenceInfo inference_info mir_id
+            (inference_info, lowering_info, filter_info) <- convertToFunctionLoweringInfo context.config inference_info
+                (List2.asList function_inference_info.args) function_inference_info.result filter_info
             lowering_context <- LoweringContext mir_id inference_info cloning_converters filter_info
             (lowering_context, context, lir_body) <- lowerExpr lowering_context context info.body
             //trace context.config "Processing expr done"

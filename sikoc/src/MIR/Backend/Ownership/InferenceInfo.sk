@@ -14,6 +14,7 @@ import Siko.MIR.Backend.Ownership.Allocator
 import Siko.MIR.Backend.Ownership.BorrowId
 import Siko.MIR.Backend.Ownership.MemberInfo as M
 import Siko.MIR.Backend.Ownership.GroupDependencyMap
+import Siko.MIR.Backend.Ownership.OwnershipDependencyMap
 import Siko.MIR.Backend.Ownership.EqualitySolver
 import Siko.Util.DependencyProcessorLinear
 
@@ -459,3 +460,41 @@ buildFilterInfoFromInferenceInfo config inference_info = do
     sources <- Map2.fold sources inference_info.var_type_variables (\sources, (_, info) -> List2.push sources info)
     (members, ownershipinfos, filter_info) <- buildFilterInfo config inference_info.members ownershipinfos sources
     (inference_info { members = members }, filter_info)
+
+mergeExternalLifetimes :: InferenceInfo -> FilterInfo -> P.Identity -> (InferenceInfo, FilterInfo)
+mergeExternalLifetimes inference_info filter_info function_id = do
+    //println "mergeExternalLifetimes: {}" % inference_info
+    (inference_info, function_inference_info) <- getFunctionInferenceInfo inference_info function_id
+    (ownership_dep_map, vars) <- getOwnershipVars filter_info.ownership_dep_map function_inference_info.result
+    filter_info <- filter_info { ownership_dep_map = ownership_dep_map }
+    inference_info <- List2.fold inference_info vars (\inference_info, var -> do
+            (inference_info, ownership) <- getOwnership inference_info var
+            case ownership of
+                Some (M.Borrower id) -> do
+                    (allocator, merged_id) <- getNextBorrowId inference_info.allocator
+                    inference_info <- inference_info { allocator = allocator }
+                    (inference_info, borrow_set) <- getBorrowSet inference_info id
+                    externals :: List Borrow <- List.filterMap borrow_set.borrows.items (\borrow -> case borrow of
+                                    External a -> Some (External a)
+                                    _ -> None)
+                    borrow_sets <- Map2.map inference_info.borrow_sets (\(id, set) -> do
+                        borrows <- Set.map set.borrows (\borrow -> if List.contains externals borrow
+                            then External merged_id
+                            else borrow)
+                        (id, set { borrows = borrows }))
+                    inverse_map <- Map2.fold Map2.empty borrow_sets (\inverse_map, (id, set) -> Map2.add inverse_map set id)
+                    kind_map <- Map2.fold Map2.empty inverse_map (\kind_map, (_, ids) -> do
+                        first <- List2.atIndex ids 0
+                        List2.fold kind_map ids (\kind_map, id -> if id != first then Map2.put kind_map id first else kind_map))
+                    ownership_values <- Map2.map inference_info.ownership_values (\(var, kind) -> do
+                        kind <- case kind of
+                            M.Borrower id -> case Map2.get kind_map id of
+                                        Some new_id -> M.Borrower new_id
+                                        None -> M.Borrower id
+                            kind -> kind
+                        (var, kind))
+                    inference_info { borrow_sets = borrow_sets, ownership_values = ownership_values }
+                _  -> inference_info
+        )
+    //println "mergeExternalLifetimes: after {}" % inference_info
+    (inference_info, filter_info)
