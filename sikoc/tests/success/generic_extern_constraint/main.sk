@@ -1,0 +1,36 @@
+module Main where
+
+import List2
+import Map2
+
+data OwnershipTypeVariable = OwnershipTypeVariable Int deriving (PartialEq, Eq, PartialOrd, Ord)
+data GroupTypeVariable = GroupTypeVariable Int deriving (PartialEq, Eq, PartialOrd, Ord)
+
+data TypeVariableInfo = { ownership_var :: OwnershipTypeVariable,
+                          arg_group_var :: GroupTypeVariable,
+                        } deriving (PartialEq, Eq, PartialOrd, Ord)
+
+data MemberKind = Variant Int
+                | Field String
+                | Extern Int
+                deriving (PartialEq, Eq, PartialOrd, Ord)
+
+data Type = Type deriving (PartialEq, Eq, PartialOrd, Ord)
+
+data MemberInfo = { kind :: MemberKind,
+                    type :: Type,
+                    root :: GroupTypeVariable,
+                    info :: TypeVariableInfo
+                } deriving (PartialEq, Eq, PartialOrd, Ord)
+
+data MergeKey b = MergeKey MemberKind b deriving (PartialEq, Eq, PartialOrd, Ord)
+
+addInfo info old = case old of
+    Some infos -> Some (List2.dedup (List2.sort (List2.push infos info)))
+    None -> Some (List2.single info)
+
+main = do
+    members :: List2 MemberInfo <- List2.empty
+    (members, root_map) <- List2.foldLinear Map2.empty members (\root_map, member_info -> do
+                (root_map, _) <- Map2.alter (addInfo member_info.info) (MergeKey member_info.kind member_info.root) root_map
+                root_map)

@@ -105,12 +105,26 @@ getDependencies impl = case impl of
     MD.PartialOrdKind -> [MD.PartialEqKind]
     MD.OrdKind -> [MD.PartialEqKind, MD.EqKind, MD.PartialOrdKind]
 
+checkImpl :: Context -> HT.Type -> HP.FullyQualifiedName -> (Context, Bool)
+checkImpl context type class_name = do
+    case IR.checkInstance context context.instance_resolver type class_name of
+        Ok (context, sub, instance_info) -> do
+            sub :: S.Substitution <- sub // FIXME
+            List.fold (context, True) sub.constraints (\(context, exists), constraint -> do
+                constraint :: S.UnificationConstraint <- constraint // FIXME
+                (context, c_exists) <- checkImpl context constraint.type constraint.class_name
+                exists <- exists && c_exists
+                (context, exists))
+        Err _ -> (context, False)
+
 checkExternalImpl :: Context -> HT.Type -> HP.FullyQualifiedName -> MD.ExternalClassImplKind -> Context
 checkExternalImpl context hir_type class_name external_class_impl = do
-    if IR.wasChecked context.instance_resolver_history hir_type class_name
-    then case IR.checkInstance context context.instance_resolver hir_type class_name of
-            Ok (context, sub, instance_info) -> do
-                context :: Context <- context // FIXME
+    case hir_type of
+        HT.Never _ -> context
+        _ -> do
+            (context, exists) <- checkImpl context hir_type class_name
+            if exists
+            then do
                 //println "checkExternalImpl: {}/{}" % (TF.toString hir_type, external_class_impl)
                 added_impls <- [external_class_impl] + (getDependencies external_class_impl)
                 (external_class_impls, _) <- alter (\external_class_impls -> case external_class_impls of
@@ -119,8 +133,7 @@ checkExternalImpl context hir_type class_name external_class_impl = do
                         Some impls
                     None -> Some added_impls) hir_type context.external_class_impls
                 context { external_class_impls = external_class_impls }
-            Err _ -> context
-    else context
+            else context
 
 checkExternalImpls :: Context -> HT.Type -> Context
 checkExternalImpls context hir_type = do

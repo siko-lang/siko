@@ -318,7 +318,7 @@ processClassMemberCall context function_type arg_type class_name qn mir_args has
     (context, instance_info) <- do
             case IR.checkInstance context context.instance_resolver arg_type class_name of
                 Ok (context, sub, instance_info) -> (context, instance_info)
-                Err _ -> panic "{}/{} no instance found" % (TF.toString arg_type, class_name)
+                Err _ -> panic "{}/{}/{} no instance found" % (TF.toString arg_type, class_name, qn)
     user_instance <- HPO.getInstance context.hir_program instance_info.id
     selected_member_name <- user_instance.members |> List.iter |> Iterator.fold (\selected_member_name, member -> do
         name <- HPO.getShortName member
