@@ -9,5 +9,7 @@ data BorrowInfo = {  borrows :: List2 E.ExprId,
                      invalidations :: Map2 E.ExprId (List2 E.ExprId),
                   } deriving (Show)
 
-isBorrow :: BorrowInfo -> E.ExprId -> Bool
-isBorrow borrow_info expr_id = List2.contains borrow_info.borrows expr_id
+isBorrow :: BorrowInfo -> E.ExprId -> (BorrowInfo, Bool)
+isBorrow borrow_info expr_id = do
+    r <- List2.contains borrow_info.borrows expr_id
+    (borrow_info, r)

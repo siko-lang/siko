@@ -298,10 +298,11 @@ processExpr context expr = do
             context <- processExpr context arg
             E.Expr arg_s_expr _ arg_id <- arg
             (context, arg_info) <- getTypeVariableInfoByExprId2 context arg_id
-            borrowed_var <- case arg_s_expr of
+            (borrow_info, borrowed_var) <- case arg_s_expr of
                 E.VarRef var -> isBorrow context.borrow_info arg_id
                 E.FieldAccess n _ -> isBorrow context.borrow_info arg_id
-                _ -> False
+                _ -> (context.borrow_info, False)
+            context <- context { borrow_info = borrow_info }
             processConverter context expr_id arg_id borrowed_var arg_info.ownership_var info.ownership_var
     // trace context.config "updateInvalidBorrows"
     context <- updateInvalidBorrows context expr_id
