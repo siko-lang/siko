@@ -283,6 +283,35 @@ getFunctionConverters config inference_info function_id = do
             (converter_map, input_ownership_vars, output_ownership_vars, filtered_converters))
     filtered_converters
 
+mergeConverters :: OwnershipTypeVariable ->
+                   OwnershipTypeVariable ->
+                   List2 OwnershipTypeVariable ->
+                   List2 OwnershipTypeVariable ->
+                   List2 Converter ->
+                   Map2 OwnershipTypeVariable (List2 OwnershipTypeVariable) ->
+                   (List2 OwnershipTypeVariable, List2 Converter, Map2 OwnershipTypeVariable (List2 OwnershipTypeVariable))
+mergeConverters from to visited output_ownership_vars converters converter_map = do
+    if List2.contains output_ownership_vars to
+    then // found an input -> output converter
+        if from != to
+        then do
+            converters <- List2.push converters (Converter from to)
+            (output_ownership_vars, converters, converter_map)
+        else (output_ownership_vars, converters, converter_map)
+    else do
+        case Map2.get converter_map to of
+            Some results -> do
+                (visited, output_ownership_vars, converters, converter_map) <- List2.fold (visited, output_ownership_vars, converters, converter_map) results
+                    (\(visited, output_ownership_vars, converters, converter_map), result -> do
+                        if List2.contains visited result
+                        then (visited, output_ownership_vars, converters, converter_map)
+                        else do
+                            (output_ownership_vars, converters, converter_map) <-
+                                mergeConverters from result (List2.push visited result) output_ownership_vars converters converter_map
+                            (visited, output_ownership_vars, converters, converter_map))
+                (output_ownership_vars, converters, converter_map)
+            None -> (output_ownership_vars, converters, converter_map)
+
 toFunctionInfo :: Config -> InferenceInfo -> P.Identity -> FunctionInfo
 toFunctionInfo config inference_info function_id = do
     (inference_info, function_inference_info) <- getFunctionInferenceInfo inference_info function_id
@@ -300,7 +329,7 @@ toFunctionInfo config inference_info function_id = do
     //println "Singles {}" % singles
     //trace config "toFunctionInfo: creating converter map"
     (converters, converter_map) <- List2.foldLinear Map2.empty converters (\converter_map, converter ->
-        Map2.put converter_map converter.from converter.to)
+        Map2.add converter_map converter.from converter.to)
     //trace config "toFunctionInfo: done"
     //trace config "toFunctionInfo: collecting input group vars"
     input_group_vars <- List2.fold List2.empty function_inference_info.args
@@ -351,26 +380,15 @@ toFunctionInfo config inference_info function_id = do
                 None -> filtered_ownershipinfos // FIXME: investigate, why is this possible??
             (filtered_ownershipinfos, relevant_ownership_vars, ownership_values, index + 1)
     //trace config "toFunctionInfo: processing converters {}" % List2.getLength converters
-    (converters, (converter_map, input_ownership_vars, output_ownership_vars, filtered_converters)) <- List2.foldLinear (converter_map, input_ownership_vars, output_ownership_vars, List2.empty) converters
-                (\(converter_map, input_ownership_vars, output_ownership_vars, filtered_converters), converter -> do
-                        filtered_converters <- if List2.contains input_ownership_vars converter.from
-                        then do
-                            converter <- loop (visited, converter) <- (List2.single converter.from, converter) do
-                                converter :: Converter <- converter // FIXME
-                                case Map2.get converter_map converter.to of
-                                    Some another_to -> do
-                                        if List2.contains visited another_to
-                                        then break converter
-                                        else do
-                                            visited <- List2.push visited another_to
-                                            //println "Switching to {} -> {}" % (converter.to, another_to)
-                                            (visited, converter { to = another_to })
-                                    None -> break converter
-                            if List2.contains output_ownership_vars converter.to
-                            then List2.push filtered_converters converter
-                            else filtered_converters
-                        else filtered_converters
-                        (converter_map, input_ownership_vars, output_ownership_vars, filtered_converters))
+    // println "input_ownership_vars: {}" % input_group_vars
+    // println "output_ownership_vars: {}" % output_ownership_vars
+    // println "convertermap {}" % converter_map
+
+    (input_ownership_vars, (output_ownership_vars, filtered_converters, converter_map)) <- List2.foldLinear (output_ownership_vars, List2.empty, converter_map) input_ownership_vars (\(output_ownership_vars, converters, converter_map), from ->
+        mergeConverters from from List2.empty output_ownership_vars converters converter_map)
+
+
+    //println "resulting converters {}" % filtered_converters
     //println "Full inference info: {}" % inference_info
 
     // println "Input group vars {}" % Set.getSize input_group_vars
