@@ -1,0 +1,232 @@
+module Siko.MIR.Backend.Ownership.Inference.ConstraintProcessor(processConstraints, InferenceMode(..)) where
+
+import Siko.MIR.Backend.Ownership.Inference.Constraint as C
+import Siko.MIR.Backend.Ownership.MemberInfo as M
+import Siko.MIR.Backend.Ownership.InferenceInfo
+import Siko.MIR.Backend.Ownership.TypeVariableInfo
+import Siko.MIR.Backend.Ownership.BorrowId
+
+import Siko.MIR.Program as P
+import Siko.MIR.Expr as E
+import Siko.Config
+import Siko.Trace
+import List2 as List2
+import List2 (List2)
+import Map2
+import Set
+
+data InferenceMode = Partial
+                   | Full
+                   deriving (PartialEq, Eq, PartialOrd, Ord, Show)
+
+data Context = { inference_info :: InferenceInfo,
+                 function_id :: P.Identity,
+                 changed_ownership_vars :: Bool,
+                 invalid_borrow_map :: Map2 E.ExprId (List2 E.ExprId),
+                 ownership_expr_map :: Map2 OwnershipTypeVariable (List2 E.ExprId),
+                 mode :: InferenceMode,
+                 allow_guess :: Bool }
+
+getTypeVariableInfoByExprId2 :: Context -> E.ExprId -> (Context, TypeVariableInfo) // FIXME:
+getTypeVariableInfoByExprId2 context expr_id = do
+    (inference_info, info) <- getTypeVariableInfoByExprId context.inference_info expr_id context.function_id
+    (context { inference_info = inference_info }, info)
+
+dumpConstraints :: List2 C.Constraint -> ()
+dumpConstraints constraints = do
+    println "Constraints:"
+    constraints |> List2.iter |> Iterator.forEach (\c -> println c)
+
+getOwnershipValue :: Context -> OwnershipTypeVariable -> (Context, M.OwnershipKind) // FIXME
+getOwnershipValue context var = do
+    (inference_info, result) <- getOwnership context.inference_info var
+    context <- context { inference_info = inference_info }
+    case result of
+        Some o -> (context, o)
+        None -> (context, M.Unknown)
+
+updateOwnership :: Context -> OwnershipTypeVariable -> M.OwnershipKind -> Context
+updateOwnership context ownership_var kind = do
+    //println "UpdateOwnership {} {}" % (ownership_var, kind)
+    (context, old_kind) <- getOwnershipValue context ownership_var
+    if old_kind != kind
+    then do
+        inference_info <- addOwnership context.inference_info ownership_var kind
+        context <- context { inference_info = inference_info, changed_ownership_vars = True }
+        context
+    else context
+
+isValidBorrow :: Context -> OwnershipTypeVariable -> E.ExprId -> (Context, Bool)
+isValidBorrow context ownership_var expr_id = do
+    //println "isValidBorrow {} {}" % (ownership_var, expr_id)
+    case Map2.get context.ownership_expr_map ownership_var of
+        Some expr_ids -> List2.fold (context, True) expr_ids (\(context, is_valid_borrow), dep -> do
+            case Map2.get context.invalid_borrow_map dep of
+                Some invalid_borrows -> do
+                    is_valid_borrow <- is_valid_borrow && not (List2.contains invalid_borrows expr_id)
+                    (context, is_valid_borrow)
+                None -> (context, is_valid_borrow))
+        None -> (context, True)
+
+canPropagateBorrow :: Context -> OwnershipTypeVariable -> BorrowId -> (Context, Bool)
+canPropagateBorrow context ownership_var borrow_id = do
+    (inference_info, borrow_set) <- getBorrowSet context.inference_info borrow_id
+    context <- context { inference_info = inference_info }
+    borrows <- borrow_set.borrows |> Set.iter |> List2.toList
+    expr_ids <- List2.filterMap borrows (\borrow -> case borrow of
+        Local expr_id -> Some expr_id
+        _ -> None)
+    List2.fold (context, True) expr_ids (\(context, can_propagate), expr_id -> do
+        (context, is_valid) <- isValidBorrow context ownership_var expr_id
+        (context, can_propagate && is_valid))
+
+processFunctionConverter :: Context -> C.FunctionConverterConstraint -> Context
+processFunctionConverter context converter = do
+    from <- converter.from
+    to <- converter.to
+    (context, from_kind) <- getOwnershipValue context from
+    (context, to_kind) <- getOwnershipValue context to
+    //println "Checking function converter {} {} / {} {}" % (from, to, from_kind, to_kind)
+    case (from_kind, to_kind) of
+        (M.Owner, M.Unknown) -> updateOwnership context to M.Owner
+        (M.Borrower a, M.Borrower b) -> do
+            (context, can_propagate) <- canPropagateBorrow context to a
+            if can_propagate
+            then do
+                (inference_info, contains) <- containsBorrows context.inference_info a b
+                context <- context { inference_info = inference_info }
+                if contains
+                then context
+                else do
+                    (inference_info, id) <- mergeBorrowSets context.inference_info a b
+                    context <- context { inference_info = inference_info }
+                    updateOwnership context to (M.Borrower id)
+            else updateOwnership context to M.Owner
+        (M.Borrower a, M.Unknown) -> do
+            (context, can_propagate) <- canPropagateBorrow context to a
+            if can_propagate
+            then updateOwnership context to from_kind
+            else updateOwnership context to M.Owner
+        (_, _) -> context
+
+processFieldAccess :: Context -> C.FieldAccessConstraint -> Context
+processFieldAccess context access = do
+    receiver_info <- access.receiver_info
+    member_info <- access.member_info
+    expr_info <- access.expr_info
+    (context, receiver_kind) <- getOwnershipValue context receiver_info.ownership_var
+    (context, member_kind) <- getOwnershipValue context member_info.ownership_var
+    case (receiver_kind, member_kind) of
+        (M.Borrower _, M.Borrower _) -> updateOwnership context expr_info.ownership_var member_kind
+        (M.Owner, M.Borrower _) -> updateOwnership context expr_info.ownership_var member_kind
+        (M.Borrower _, M.Owner) -> updateOwnership context expr_info.ownership_var receiver_kind
+        (M.Owner, M.Owner) -> updateOwnership context expr_info.ownership_var receiver_kind
+        (_, M.Unknown) if context.allow_guess -> do
+            context <- context { allow_guess = False }
+            updateOwnership context member_info.ownership_var M.Owner
+        _ -> context
+
+processConverter :: Context -> C.ConverterConstraint -> Context
+processConverter context converter = do
+    arg_info <- converter.arg_info
+    expr_info <- converter.expr_info
+    (context, arg_kind) <- getOwnershipValue context arg_info.ownership_var
+    (context, expr_kind) <- getOwnershipValue context expr_info.ownership_var
+    //println "Converter {} {}" % (arg_kind, expr_kind)
+    case (arg_kind, expr_kind) of
+        (M.Owner, M.Unknown) ->
+            if converter.borrower
+            then do
+                (context, valid) <- isValidBorrow context expr_info.ownership_var converter.arg_id
+                if valid
+                then do
+                    (inference_info, id) <- createBorrowSetForExpr context.inference_info converter.arg_id
+                    //println "Borrowing owner at {} {}" % (converter.arg_id, id)
+                    context <- context { inference_info = inference_info }
+                    updateOwnership context expr_info.ownership_var (M.Borrower id)
+                else do
+                    updateOwnership context expr_info.ownership_var M.Owner
+            else updateOwnership context expr_info.ownership_var arg_kind
+        (M.Borrower a, M.Unknown) -> do
+            (context, can_propagate) <- canPropagateBorrow context expr_info.ownership_var a
+            if can_propagate
+            then updateOwnership context expr_info.ownership_var arg_kind
+            else updateOwnership context expr_info.ownership_var M.Owner
+        (M.Owner, M.Borrower _) -> do
+            (context, valid) <- isValidBorrow context expr_info.ownership_var converter.arg_id
+            if valid
+            then context
+            else updateOwnership context expr_info.ownership_var M.Owner
+        (M.Borrower a, M.Borrower b) -> do
+            (context, can_propagate) <- canPropagateBorrow context expr_info.ownership_var a
+            if can_propagate
+            then do
+                (inference_info, contains) <- containsBorrows context.inference_info a b
+                context <- context { inference_info = inference_info }
+                if contains
+                then context
+                else do
+                    (inference_info, id) <- mergeBorrowSets context.inference_info a b
+                    context <- context { inference_info = inference_info }
+                    updateOwnership context expr_info.ownership_var (M.Borrower id)
+            else updateOwnership context expr_info.ownership_var M.Owner
+        (M.Unknown, _) if context.allow_guess -> do
+            context <- context { allow_guess = False }
+            updateOwnership context arg_info.ownership_var M.Owner
+        _ -> context
+
+processVariantAccess :: Context -> C.VariantConstraint -> Context
+processVariantAccess context variant = do
+    var_info <- variant.var_info
+    body_info <- variant.body_info
+    expr_info <- variant.expr_info
+    (context, var_kind) <- getOwnershipValue context var_info.ownership_var
+    (context, body_kind) <- getOwnershipValue context body_info.ownership_var
+    case (body_kind, var_kind) of
+        (_, M.Unknown) -> updateOwnership context var_info.ownership_var body_kind
+        (M.Borrower _, M.Owner) -> updateOwnership context var_info.ownership_var body_kind
+        _ -> context
+
+processConstraint :: Context -> C.Constraint -> Context
+processConstraint context constraint = do
+    //println "Processing constraint {}" % constraint
+    case constraint of
+        C.FieldAccess access -> processFieldAccess context access
+        C.Converter converter -> processConverter context converter
+        C.Variant variant -> processVariantAccess context variant
+        C.FunctionConverter converter -> processFunctionConverter context converter
+
+dumpOwnership :: Context -> Context
+dumpOwnership context = do
+    expr_ids <- Map2.getKeys context.inference_info.expr_type_variables
+    function_id <- context.function_id
+    expr_ids <- List2.filterMap expr_ids (\(GlobalExprId f_id expr_id) -> if f_id == function_id then Some expr_id else None)
+    List2.fold context expr_ids (\context, expr_id -> do
+            (context, info) <- getTypeVariableInfoByExprId2 context expr_id
+            (context, o1) <- getOwnershipValue context info.ownership_var
+            println "dumpOwnership {} {} {}" % (expr_id, info, o1)
+            context
+        )
+
+processConstraints :: Config -> P.Identity -> InferenceInfo -> List2 C.Constraint -> Map2 E.ExprId (List2 E.ExprId) -> Map2 OwnershipTypeVariable (List2 E.ExprId) -> InferenceMode -> InferenceInfo
+processConstraints config function_id inference_info constraints invalid_borrow_map ownership_expr_map mode = do
+    // println "Invalid borrow map {}" % (invalid_borrow_map)
+    // println "InferenceInfo {}" % inference_info
+    context <- Context inference_info function_id True invalid_borrow_map ownership_expr_map mode False
+    //dumpConstraints constraints
+    context <- loop context <- context do
+        context :: Context <- context // FIXME
+        if not context.changed_ownership_vars
+        then case context.mode of
+                Partial -> break context
+                Full -> do
+                    if context.allow_guess
+                    then break context
+                    else context { allow_guess = True, changed_ownership_vars = True }
+        else do
+            context <- context { changed_ownership_vars = False }
+            List2.fold context constraints processConstraint
+    // println "----------- BEGIN"
+    // dumpOwnership context
+    // println "----------- END"
+    context.inference_info

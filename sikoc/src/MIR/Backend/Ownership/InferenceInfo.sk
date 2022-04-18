@@ -145,6 +145,15 @@ createBorrowSetForExternal inference_info external_id = do
     external_borrows <- Map2.put inference_info.external_borrows external_id id
     (inference_info { external_borrows = external_borrows }, id)
 
+containsBorrows :: InferenceInfo -> BorrowId -> BorrowId -> (InferenceInfo, Bool)
+containsBorrows inference_info id1 id2 = do
+    if id1 == id2 then (inference_info, True)
+    else do
+        (inference_info, set1) <- getBorrowSet inference_info id1
+        (inference_info, set2) <- getBorrowSet inference_info id2
+        rest <- set1.borrows - set2.borrows
+        (inference_info, Set.isEmpty rest)
+
 mergeBorrowSets :: InferenceInfo -> BorrowId -> BorrowId -> (InferenceInfo, BorrowId)
 mergeBorrowSets inference_info id1 id2 = do
     (inference_info, set1) <- getBorrowSet inference_info id1
@@ -353,7 +362,7 @@ toFunctionInfo config inference_info function_id = do
     (output_members, filtered_input_members) <- List2.filterS output_members input_members (\output_members, m -> do
         res <- not (List2.contains output_members m)
         (output_members, res))
-    trace config "toFunctionInfo: filter output members"
+    //trace config "toFunctionInfo: filter output members"
     (input_members, filtered_output_members) <- List2.filterS input_members output_members (\input_members, m -> do
         res <- not (List2.contains input_members m)
         (input_members, res))

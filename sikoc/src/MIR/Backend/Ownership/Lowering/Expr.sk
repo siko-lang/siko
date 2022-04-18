@@ -17,11 +17,11 @@ import Siko.MIR.Program as MP
 import Siko.LIR.Type as LT
 import Siko.LIR.Expr as LE
 
-import Set
+import List2
 
 data LoweringContext = { function_id :: MP.Identity,
                          inference_info :: InferenceInfo,
-                         forced_clones :: Set ME.ExprId,
+                         borrowers :: List2 ME.ExprId,
                          filter_info :: FilterInfo }
 
 getOwnershipValue :: LoweringContext -> OwnershipTypeVariable -> (LoweringContext, M.OwnershipKind) // FIXME
@@ -108,7 +108,7 @@ lowerExpr lowering_context context expr = do
                     MF.VariantCtor index -> do
                         adt_id <- MT.getIdentity function.type.result
                         (mir_program, adt) <- MP.getAdt context.mir_program adt_id
-                        variant <- atIndex adt.variants index
+                        variant <- List.atIndex adt.variants index
                         record_id <- MT.getIdentity variant.type
                         (mir_program, record) <- MP.getRecord mir_program record_id
                         context <- context { mir_program = mir_program }
@@ -215,13 +215,13 @@ lowerExpr lowering_context context expr = do
             (lowering_context, context, lir_arg) <- lowerExpr lowering_context context arg
             case (from, to) of
                 (M.Owner, M.Owner) ->
-                    if Set.contains lowering_context.forced_clones expr_id
+                    if List2.contains lowering_context.borrowers arg_id
                     then (lowering_context, context, LE.Clone lir_arg)
                     else (lowering_context, context, LE.Move lir_arg)
                 (M.Owner, M.Borrower _) -> (lowering_context, context, LE.Ref lir_arg)
                 (M.Borrower _, M.Borrower _) -> (lowering_context, context, LE.Move lir_arg)
                 (M.Borrower _, M.Owner) -> (lowering_context, context, LE.DerefClone lir_arg)
-                (_, _) -> (lowering_context, context, LE.Move lir_arg)
+                (from, to) -> panic "Invalid converter in LIR lowering {}/{}" % (from, to)
     //println "Transforming EXPR {} {}" % ((ME.short expr), expr_info)
     lir_expr <- LE.Expr lir_s_expr lir_type (LE.ExprId 0)
     (lowering_context, context, lir_expr)

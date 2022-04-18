@@ -7,6 +7,11 @@ data Set a = { items :: [a] } deriving (Show)
 instance (Ord a) => Add Set a where
     opAdd a b = Set ((a.items + b.items) |> List.sort |> List.dedup)
 
+instance (Ord a) => Sub Set a where
+    opSub a b = do
+        items <- a.items |> List.iter |> Iterator.filter (\i -> not (Set.contains b i)) |> List.toList
+        Set { items = items }
+
 instance (PartialEq a) => PartialEq Set a where
     opEq a b = a.items == b.items
 

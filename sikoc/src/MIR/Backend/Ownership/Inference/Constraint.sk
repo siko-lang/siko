@@ -1,0 +1,31 @@
+module Siko.MIR.Backend.Ownership.Inference.Constraint where
+
+import Siko.MIR.Backend.Ownership.TypeVariableInfo
+import Siko.MIR.Expr as E
+
+data FieldAccessConstraint = { receiver_info :: TypeVariableInfo,
+                               member_info :: TypeVariableInfo,
+                               expr_info :: TypeVariableInfo,
+                             } deriving (Show)
+
+data ConverterConstraint = { arg_info :: TypeVariableInfo,
+                             expr_info :: TypeVariableInfo,
+                             borrower :: Bool,
+                             arg_id :: E.ExprId,
+                             converter_id :: E.ExprId,
+                           } deriving (Show)
+
+data VariantConstraint = { var_info :: TypeVariableInfo,
+                           body_info :: TypeVariableInfo,
+                           expr_info :: TypeVariableInfo,
+                         } deriving (Show)
+
+data FunctionConverterConstraint = { from :: OwnershipTypeVariable,
+                                     to :: OwnershipTypeVariable,
+                                   } deriving (Show)
+
+data Constraint = FieldAccess FieldAccessConstraint
+                | Converter ConverterConstraint
+                | Variant VariantConstraint
+                | FunctionConverter FunctionConverterConstraint
+                deriving (Show)

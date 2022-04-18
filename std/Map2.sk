@@ -44,9 +44,17 @@ alter f k m =
         Some v -> Map2.insert m k v
         None -> Map2.remove m k
 
+alter2 k v :: (Ord k) => (Option v -> Option v) -> k -> Map2 k v -> (Map2 k v, Option v)
+alter2 f k m = do // FIXME: this is an ugly hack to make it faster (do not copy prev)
+    (m, prev) <- Map2.remove m k
+    v <- f prev
+    case v of
+        Some v -> Map2.insert m k v
+        None -> (m, None)
+
 add k v :: (Ord k) => Map2 k (List2 v) -> k -> v -> Map2 k (List2 v)
 add m k v = do
-    (m, _) <- Map2.alter (\old -> case old of
+    (m, _) <- Map2.alter2 (\old -> case old of
                         Some vs -> Some (List2.push vs v)
                         None -> Some (List2.single v)) k m
     m

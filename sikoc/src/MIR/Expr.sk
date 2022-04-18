@@ -88,7 +88,7 @@ short expr = do
         StringLiteral lit -> "StringLiteral"
         FloatLiteral lit -> "FloatLiteral"
         CharLiteral lit -> "CharLiteral"
-        VarDecl v arg -> "VarDecl"
+        VarDecl v arg -> "VarDecl({})" % v
         VarRef v -> "VarRef({})" % v
         FieldAccess n rhs -> "FieldAccess"
         If cond true_branch false_branch -> "If"
@@ -203,57 +203,3 @@ prettyPrint expr ind = do
             //(s, simple) <- prettyPrint expr ind
             //("(convert[{},{}]({}) :: {})" % (expr_id, kind, s, expr_type), False)
             prettyPrint expr ind
-
-build k args extras = do
-    arg_ids <- List.map args (\Expr _ _ (ExprId i) -> JsonString (show i))
-    args <- List.map args toJson
-    kind <- JsonObjectItem "kind" (JsonString k)
-    if isEmpty args
-    then ([kind] + extras, args)
-    else ([kind, JsonObjectItem "args" (JsonList arg_ids)] + extras, args)
-
-toJson :: Expr -> Json
-toJson expr = do
-    Expr s type (ExprId i) <- expr
-    type <- JsonObjectItem "type" (JsonString (show type))
-    id <- JsonObjectItem "id" (JsonString (show i))
-    (kinds, subs) <- case s of
-        Do args -> build "do" args []
-        Multi args -> panic "Multi in toJson"
-        StaticFunctionCall id args -> build "staticfunctioncall" args [JsonObjectItem "f_id" (JsonString (show id))]
-        IntegerLiteral lit -> build "integerliteral" [] [JsonObjectItem "value" (JsonString lit)]
-        StringLiteral lit -> build "stringliteral" [] [JsonObjectItem "value" (JsonString lit)]
-        FloatLiteral lit -> build "floatliteral" [] [JsonObjectItem "value" (JsonString lit)]
-        CharLiteral lit -> build "charliteral" [] [JsonObjectItem "value" (JsonString (show lit))]
-        VarDecl v arg -> build "vardecl" [arg] [JsonObjectItem "var" (JsonString (show v))]
-        VarRef v -> build "varref" [] [JsonObjectItem "var" (JsonString (show v))]
-        FieldAccess n rhs -> build "fieldaccess" [rhs] [JsonObjectItem "field" (JsonString n)]
-        If cond true_branch false_branch -> build "if" [cond, true_branch, false_branch] []
-        List args -> build "list" args []
-        Return arg -> build "return" [arg] []
-        Continue arg -> build "continue" [arg] []
-        Break arg -> build "break" [arg] []
-        RecordUpdate var updates -> panic "RecordUpdate in toJson"
-        Loop var initializer body _ _ -> build "loop" [initializer, body] [JsonObjectItem "var" (JsonString (show var))]
-        CaseOf body cases -> do
-            (case_bodies, cases) <- List.mapS [] cases (\case_bodies, c -> do
-                Expr _ _ (ExprId i) <- c.body
-                case_bodies <- List.push case_bodies (toJson c.body)
-                items <- [JsonObjectItem "checker" (JsonString (show c.checker)),
-                          JsonObjectItem "body" (JsonString (show i))]
-                (case_bodies, JsonObject items))
-            (kinds, subs) <- build "caseof" [body] [JsonObjectItem "cases" (JsonList cases)]
-            (kinds, subs + case_bodies)
-        Clone expr -> panic "Clone in toJson"
-        Deref expr -> panic "Deref in toJson"
-        Ref expr -> panic "Ref in toJson"
-        Move expr -> panic "Move in toJson"
-        Box expr -> panic "Box in toJson"
-        Converter arg _ -> build "converter" [arg] []
-    if isEmpty subs
-    then JsonObject ([id, type] + kinds)
-    else do
-        subs <- List.fold [] subs (\subs, sub -> case sub of
-            JsonList s -> subs + s
-            j -> List.push subs j)
-        JsonList ([JsonObject ([id, type] + kinds)] + subs)

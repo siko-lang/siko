@@ -1,0 +1,28 @@
+module Main where
+
+data Boo = Boo
+
+data Type = Var
+          | FixedTypeArg Boo
+          | Tuple
+
+traverse :: (Type -> Type) -> Type -> Type
+traverse f type = case type of
+    Var -> do
+        traverse f
+        type
+    FixedTypeArg name -> f (FixedTypeArg name)
+    Tuple -> do
+        f (Var)
+
+removeFixed :: Type -> Type
+removeFixed type = traverse removeFixed_ type
+    where removeFixed_ type = case type of
+            FixedTypeArg _ -> Var
+            _ -> type
+
+main = do
+    t <- Tuple
+    removeFixed t
+    t
+    ()

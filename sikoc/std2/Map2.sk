@@ -102,10 +102,19 @@ remove m k = extern
 @Inline
 alter k v :: (Ord k) => (Option v -> Option v) -> k -> Map2 k v -> (Map2 k v, Option v)
 alter f k m = do
-    (m, v) <- Map2.remove m k
+    v <- Map2.get m k
     case f v of
         Some v -> Map2.insert m k v
         None -> Map2.remove m k
+
+@Inline
+alter2 k v :: (Ord k) => (Option v -> Option v) -> k -> Map2 k v -> (Map2 k v, Option v)
+alter2 f k m = do // FIXME: this is an ugly hack to make it faster (do not copy prev)
+    (m, prev) <- Map2.remove m k
+    v <- f prev
+    case v of
+        Some v -> Map2.insert m k v
+        None -> (m, None)
 
 @Inline
 alterS si so k v :: (Ord k) => (si -> Option v -> (so, Option v)) -> si -> k -> Map2 k v -> (so, Map2 k v, Option v)
@@ -122,7 +131,7 @@ alterS f s k m = do
 @Inline
 add k v :: (Ord k) => Map2 k (List2 v) -> k -> v -> Map2 k (List2 v)
 add m k v = do
-    (m, _) <- Map2.alter (\old -> case old of
+    (m, _) <- Map2.alter2 (\old -> case old of
                         Some vs -> Some (List2.push vs v)
                         None -> Some (List2.single v)) k m
     m
@@ -153,10 +162,10 @@ iter m = MapIter (Map2.intoIter m)
 
 data MapIterator k v = extern
 
-intoIter k v :: Map2 k v -> MapIterator k v
+intoIter k v :: ~Map2 k v -> ~MapIterator k v
 intoIter m = extern
 
-nextItem k v :: MapIterator k v -> Option (MapIterator k v, (k, v))
+nextItem k v :: ~MapIterator k v -> ~Option (~MapIterator k v, ~(k, v))
 nextItem iter = extern
 
 @Inline

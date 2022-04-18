@@ -65,8 +65,8 @@ createDummyFunctionInfo context arg_count = do
     inference_info <- inference_info { allocator = allocator }
     (context { inference_info = inference_info }, function_info)
 
-mergeFunctionInfo :: Context -> List2 E.Expr -> E.ExprId -> FunctionInfo -> Context
-mergeFunctionInfo context args expr_id function_info = do
+mergeFunctionInfo :: Context -> List2 E.Expr -> E.ExprId -> FunctionInfo -> Bool -> Context
+mergeFunctionInfo context args expr_id function_info in_group = do
     // arg equality
     context <- List2.zipS context function_info.args args (\context, info_arg, arg_expr -> do
         E.Expr _ _ arg_id <- arg_expr
@@ -79,14 +79,22 @@ mergeFunctionInfo context args expr_id function_info = do
 
     inference_info <- context.inference_info
 
-    // add members
-    inference_info <- List2.fold inference_info function_info.members (
-            \inference_info, member_info -> addMemberInfo inference_info member_info)
-    // add converters
-    inference_info <- List2.fold inference_info function_info.converters (
-            \inference_info, converter -> addConverter inference_info converter)
-    (function_converters, _) <- Map2.insert inference_info.function_converters expr_id function_info.converters
-    inference_info <- inference_info { function_converters = function_converters }
+    inference_info <- if in_group
+    then inference_info
+    else do
+        // add members
+        inference_info <- List2.fold inference_info function_info.members (
+                \inference_info, member_info -> addMemberInfo inference_info member_info)
+        // add converters
+        inference_info <- List2.fold inference_info function_info.converters (
+                \inference_info, converter -> addConverter inference_info converter)
+        (function_converters, _) <- Map2.insert inference_info.function_converters expr_id function_info.converters
+        inference_info <- inference_info { function_converters = function_converters }
+        inference_info <- List2.fold inference_info function_info.converters (\inference_info, converter -> do
+            inference_info <- maybeAddOwnership inference_info converter.from M.Unknown
+            inference_info <- maybeAddOwnership inference_info converter.to M.Unknown
+            inference_info)
+        inference_info
 
     // add ownershipinfos
     inference_info <- List2.fold inference_info function_info.ownershipinfos (
@@ -97,10 +105,6 @@ mergeFunctionInfo context args expr_id function_info = do
                     (inference_info, id) <- createBorrowSetForExternal inference_info external_id
                     addOwnership inference_info v (M.Borrower id))
 
-    inference_info <- List2.fold inference_info function_info.converters (\inference_info, converter -> do
-        inference_info <- maybeAddOwnership inference_info converter.from M.Unknown
-        inference_info <- maybeAddOwnership inference_info converter.to M.Unknown
-        inference_info)
     context <- context { inference_info = inference_info }
     context
 
@@ -116,7 +120,21 @@ processExpr context expr = do
         E.Multi _ -> (context, expr)
         E.StaticFunctionCall f_id args -> do
             args <- List2.toList2 args
-            if List.contains context.group f_id
+            in_group <- List.contains context.group f_id
+            context <- case getFunctionInfo context.function_info_store f_id of
+                Some function_info -> do
+                    inference_info <- context.inference_info
+                    allocator <- inference_info.allocator
+                    (allocator, function_info) <- duplicateFunctionInfo allocator function_info
+                    //println "function_info {} {}" % (f_id, function_info)
+                    inference_info <- inference_info { allocator = allocator }
+                    context <- context { inference_info = inference_info }
+                    context <- mergeFunctionInfo context args expr_id function_info in_group
+                    context
+                None -> if in_group
+                    then context
+                    else panic "No function info found for function {}" % f_id
+            if in_group
             then do
                 (inference_info, function_inference_info) <- getFunctionInferenceInfo context.inference_info f_id
                 // arg equality
@@ -129,18 +147,7 @@ processExpr context expr = do
                 (inference_info, result_info) <- getTypeVariableInfoByExprId context.inference_info expr_id context.function_id
                 context <- addEqualInfo context result_info function_inference_info.result
                 (context, expr)
-            else do
-                case getFunctionInfo context.function_info_store f_id of
-                    Some function_info -> do
-                        inference_info <- context.inference_info
-                        allocator <- inference_info.allocator
-                        (allocator, function_info) <- duplicateFunctionInfo allocator function_info
-                        //println "function_info {} {}" % (f_id, function_info)
-                        inference_info <- inference_info { allocator = allocator }
-                        context <- context { inference_info = inference_info }
-                        context <- mergeFunctionInfo context args expr_id function_info
-                        (context, expr)
-                    None -> panic "No function info found for function {}" % f_id
+            else (context, expr)
         E.IntegerLiteral _ -> (context, expr)
         E.StringLiteral _ -> (context, expr)
         E.FloatLiteral _ -> (context, expr)
@@ -339,11 +346,11 @@ processFunctionEqualities function_id config group equals inference_info functio
 
 processEqualities :: Config -> List2 Equal -> InferenceInfo -> P.Program -> (P.Program, InferenceInfo)
 processEqualities config equals inference_info program = do
-    trace config "processEqualities - processEquals ({})" % (List2.getLength equals)
+    //trace config "processEqualities - processEquals ({})" % (List2.getLength equals)
     inference_info <- processEquals equals inference_info
     converters <- inference_info.converters |> List2.sort |> List2.dedup
     inference_info <- inference_info { converters = converters }
-    trace config "processEqualities - fuseCycles"
+    //trace config "processEqualities - fuseCycles"
     (program, inference_info) <- fuseCycles config program inference_info
     //println "inference_info {}" % inference_info
     (program, inference_info)
