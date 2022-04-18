@@ -83,7 +83,11 @@ isIsomorphicType type1 type2 dependency_provider = do
             if var1 == var2
                 then Ok ()
                 else Err (Reshape var1 var2)
-        (T.Ref t1, T.Ref t2) -> isIsomorphicType t1 t2 dependency_provider
+        (T.Ref l1 t1, T.Ref l2 t2) -> do
+            try isIsomorphicType t1 t2 dependency_provider
+            if l1 == l2
+            then Ok ()
+            else Err Mismatch
         (T.Owner t1, T.Owner t2) -> isIsomorphicType t1 t2 dependency_provider
         (T.Owner t1, t2) -> isIsomorphicType t1 t2 dependency_provider
         (t1, T.Owner t2) -> isIsomorphicType t1 t2 dependency_provider

@@ -42,7 +42,7 @@ convertToFixed var_map type =
         Never var -> case get var_map var of
             Some (_, new_var) -> Never new_var
             None -> panic "old var {} not found" % var
-        Ref t -> Ref (convertToFixed var_map t)
+        Ref l t -> Ref l (convertToFixed var_map t)
         Owner t -> Owner (convertToFixed var_map t)
         Tuple args -> do
             args <- args |> List.iter |> Iterator.map (\arg -> convertToFixed var_map arg) |> toList
@@ -71,7 +71,7 @@ convertType type names = case type of
         to <- convertType to names
         "{} -> {}" % (from, to)
     Never _ -> "!"
-    Ref t -> "&{}" % (toStringComplex t names)
+    Ref l t -> "&{} {}" % (l, toStringComplex t names)
     Owner t -> "~{}" % (toStringComplex t names)
     Tuple args -> do
         args <- args |> List.iter |> Iterator.map (\arg -> convertType arg names) |> toList
@@ -165,7 +165,7 @@ collectNames type constraint_map = case type of
         (args_to, constraint_map) <- collectNames to constraint_map
         (args_from + args_to, constraint_map)
     Never _ -> ([], constraint_map)
-    Ref t -> collectNames t constraint_map
+    Ref _ t -> collectNames t constraint_map
     Owner t -> collectNames t constraint_map
     Tuple args -> args |> List.iter |> Iterator.fold (\(all, constraint_map), arg -> do
                 (args, constraint_map) <- collectNames arg constraint_map

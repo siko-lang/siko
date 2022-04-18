@@ -5,7 +5,6 @@ import Siko.MIR.Expr as E
 import Siko.MIR.Type as T
 import Siko.Util.Format
 import Siko.Util.Counter
-import Json
 
 import Map
 
@@ -53,32 +52,6 @@ dump function = do
         RecordCtor -> s + "{} {} = <record_ctor>" % (function.id, args)
         Extern type_mapping -> s + "{} {} = extern" % (function.id, args)
 
-positionsToJson :: [Position] -> Json
-positionsToJson positions = do
-    JsonList (List.map positions (\p -> JsonString "{}" % p))
-
-toJson :: Function -> Json
-toJson function = do
-    name <- JsonObjectItem "name" (JsonString (show function.id))
-    args <- List.map function.type.args (\arg -> JsonString (show arg))
-    args <- JsonObjectItem "args" (JsonList args)
-    result <- JsonObjectItem "result" (JsonString (show function.type.result))
-    kinds <- case function.kind of
-        Normal info -> [JsonObjectItem "kind" (JsonString "normal"),
-                        JsonObjectItem "body" (E.toJson info.body)]
-        VariantCtor index -> [JsonObjectItem "kind" (JsonString "variant"), JsonObjectItem "index" (JsonString (show index))]
-        RecordCtor -> [JsonObjectItem "kind" (JsonString ("record"))]
-        Extern type_mapping -> do
-            kind <- JsonObjectItem "kind" (JsonString ("extern"))
-            owner_positions <- JsonObjectItem "owner_positions" (positionsToJson type_mapping.owner_positions)
-            ref_positions <- JsonObjectItem "ref_positions" (positionsToJson type_mapping.ref_positions)
-            var_mappings <- type_mapping.var_mappings |> Map.iter |> Iterator.map
-                (\(name, positions) -> JsonObjectItem name (positionsToJson positions)) |> toList
-            var_mappings <- JsonObject var_mappings
-            var_mappings <- JsonObjectItem "var_mappings" var_mappings
-            [kind, owner_positions, ref_positions, var_mappings]
-    JsonObject ([name, args, result] + kinds)
-
 data Step = External Int
           | Variant Int
           | Field String Int
@@ -101,5 +74,5 @@ instance Show Step where
 
 data TypeMapping = { var_mappings :: Map String [Position],
                      owner_positions :: [Position],
-                     ref_positions :: [Position],
+                     ref_positions :: Map Int [Position],
                    } deriving (Show)

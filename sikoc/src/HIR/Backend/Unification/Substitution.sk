@@ -66,7 +66,7 @@ instance Apply Type where
         Never var -> case get sub.vars var of
             Some t -> apply t sub
             None -> type
-        Ref t -> Ref (apply t sub)
+        Ref lifetime t -> Ref lifetime (apply t sub)
         Owner t -> Owner (apply t sub)
         Tuple args -> do
             args <- args |> List.iter |> Iterator.map (\arg -> apply arg sub) |> toList
@@ -84,7 +84,7 @@ containsVar type var = case type of
     Named _ args -> List.fold False args (\contains, arg -> contains || containsVar arg var)
     Function from to -> containsVar from var || containsVar to var
     Never v -> v == var
-    Ref t -> containsVar t var
+    Ref _ t -> containsVar t var
     Owner t -> containsVar t var
     Tuple args -> List.fold False args (\contains, arg -> contains || containsVar arg var)
 

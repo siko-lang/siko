@@ -91,8 +91,9 @@ parseTypeSignaturePart state with_args allow_wildcard = do
             Ok (buildTypeSignature Never start_index state)
         T.Ampersand -> do
             state <- try expect state Kind.Ampersand
+            (state, lifetime) <- try expectVarIdent state "lifetime type"
             (state, ty) <- try parseTypeSignaturePart state with_args allow_wildcard
-            Ok (buildTypeSignature (Ref ty) start_index state)
+            Ok (buildTypeSignature (Ref lifetime ty) start_index state)
         T.Tilde -> do
             state <- try expect state Kind.Tilde
             (state, ty) <- try parseTypeSignaturePart state with_args allow_wildcard

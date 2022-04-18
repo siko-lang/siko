@@ -18,7 +18,8 @@ import Map
 data TypeResolverState = { args :: Map String TypeVar,
                            constraints :: Map TypeVar [Constraint],
                            module_resolver :: ModuleResolver,
-                           used_type_args :: [Ident]
+                           used_type_args :: [Ident],
+                           lifetimes :: Map String Int,
                          }
 
 processClassConstraints :: ResolverState -> TypeResolverState -> [SC.Constraint] -> (ResolverState, TypeResolverState)
@@ -119,7 +120,7 @@ resolveTypeName state name = do
 
 createTypeResolverState :: ModuleResolver -> TypeResolverState
 createTypeResolverState module_resolver =
-    TypeResolverState empty empty module_resolver []
+    TypeResolverState empty empty module_resolver [] empty
 
 initTypeResolver :: ModuleResolver -> ResolverState -> [Ident] -> (TypeResolverState, ResolverState)
 initTypeResolver module_resolver resolver_state type_arguments = do
@@ -182,9 +183,9 @@ updateTypeConstraints state type = case type of
         to <- updateTypeConstraints state to
         Function from to
     Never var -> Never var
-    Ref item -> do
+    Ref lifetime item -> do
         item <- updateTypeConstraints state item
-        Ref item
+        Ref lifetime item
     Owner item -> do
         item <- updateTypeConstraints state item
         Owner item
@@ -254,9 +255,17 @@ processTypeSignature state resolver_state (ST.TypeSignature type_signature locat
     ST.Never -> do
         (resolver_state, var) <- getTypeVar resolver_state
         (state, resolver_state, Never var)
-    ST.Ref arg -> do
+    ST.Ref lifetime arg -> do
+        lifetimes <- state.lifetimes
+        lifetime_name <- getString lifetime
+        (lifetimes, lifetime) <- case Map.get lifetimes lifetime_name of
+            Some lifetime -> (lifetimes, lifetime)
+            None -> do
+                next_lifetime_index <- Map.getSize lifetimes
+                (Map.put lifetimes lifetime_name next_lifetime_index, next_lifetime_index)
+        state <- state { lifetimes = lifetimes }
         (state, resolver_state, arg) <- processTypeSignature state resolver_state arg
-        (state, resolver_state, Ref arg)
+        (state, resolver_state, Ref lifetime arg)
     ST.Owner arg -> do
         (state, resolver_state, arg) <- processTypeSignature state resolver_state arg
         (state, resolver_state, Owner arg)

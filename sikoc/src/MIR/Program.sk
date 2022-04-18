@@ -5,8 +5,6 @@ import Siko.MIR.Data as D
 import Siko.MIR.Type
 import Siko.Constants
 import Map
-import Json
-import Json.Writer
 
 getMainIdentity :: Identity
 getMainIdentity = Identity getMainModuleName getMainFunctionName 0
@@ -86,13 +84,3 @@ dump program = do
     s <- program.functions |> Map.iter |> Iterator.fold (\s, (id, f) -> do
         s + F.dump f + "\n\n") s
     s
-
-dumpJson :: Program -> String
-dumpJson program = do
-    adts <- program.adts |> Map.iter |> Iterator.map (\(k, v) -> D.adtToJson v) |> toList
-    adts <- JsonObjectItem "adts" (JsonList adts)
-    records <- program.records |> Map.iter |> Iterator.map (\(k, v) -> D.recordToJson v) |> toList
-    records <- JsonObjectItem "records" (JsonList records)
-    functions <- program.functions |> Map.iter |> Iterator.map (\(k, v) -> F.toJson v) |> toList
-    functions <- JsonObjectItem "functions" (JsonList functions)
-    write (JsonObject [adts, records, functions])

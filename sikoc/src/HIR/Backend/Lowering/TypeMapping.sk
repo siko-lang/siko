@@ -12,7 +12,7 @@ import Map
 
 data Context = { var_mappings :: Map String [MF.Position],
                  owner_positions :: [MF.Position],
-                 ref_positions :: [MF.Position],
+                 ref_positions :: Map Int [MF.Position],
                  lowering_context :: L.Context }
 
 createTypeMap :: L.Context -> HT.Type -> Int -> MF.TypeMapping
@@ -20,7 +20,7 @@ createTypeMap lowering_context type arg_count = do
     args <- HT.getArgs type
     (args, _) <- List.split args arg_count
     result_type <- HT.getResultType type arg_count
-    context <- Context empty [] [] lowering_context
+    context <- Context empty [] empty lowering_context
     (context, _ ) <- args |> List.iter |> Iterator.fold (\(context, index), arg -> do
         steps <- [MF.FunctionArg index]
         context <- mapType context steps arg
@@ -42,10 +42,10 @@ addOwnerPosition context steps = do
     owner_positions <- context.owner_positions + [pos]
     context { owner_positions = owner_positions }
 
-addRefPosition :: Context -> [MF.Step] -> Context
-addRefPosition context steps = do
+addRefPosition :: Context -> Int -> [MF.Step] -> Context
+addRefPosition context lifetime steps = do
     pos <- MF.Position steps
-    ref_positions <- context.ref_positions + [pos]
+    ref_positions <- Map.add context.ref_positions lifetime pos
     context { ref_positions = ref_positions }
 
 mapType :: Context -> [MF.Step] -> HT.Type -> Context
@@ -83,8 +83,8 @@ mapType context steps type = case type of
             _ -> panic "Named type is not an adt nor a record in type mapping"
     HT.Function from to -> panic "Function type in type mapping!"
     HT.Never var -> context
-    HT.Ref t -> do
-        context <- addRefPosition context steps
+    HT.Ref lifetime t -> do
+        context <- addRefPosition context lifetime steps
         mapType context steps t
     HT.Owner t -> do
         context <- addOwnerPosition context steps

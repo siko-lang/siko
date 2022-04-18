@@ -31,7 +31,7 @@ data Type = Var TypeVar [Constraint]
           | Named HP.FullyQualifiedName [Type]
           | Function Type Type
           | Never TypeVar
-          | Ref Type
+          | Ref Int Type
           | Owner Type
           | Tuple [Type]
           deriving (Show, PartialEq, Eq, PartialOrd, Ord)
@@ -55,7 +55,7 @@ collectVars type = case type of
         vars + vs)
     Function from to -> collectVars from + collectVars to
     Never var -> [var]
-    Ref t -> collectVars t
+    Ref _ t -> collectVars t
     Owner t -> collectVars t
     Tuple args -> List.fold [] args (\vars, arg -> do
         vs <- collectVars arg
@@ -87,7 +87,7 @@ isConcreteType type = case type of
         concrete && isConcreteType arg) True
     Function from to -> isConcreteType from && isConcreteType to
     Never var -> True
-    Ref t -> isConcreteType t
+    Ref _ t -> isConcreteType t
     Owner t -> isConcreteType t
     Tuple args -> args |> List.iter |> Iterator.fold (\concrete, arg -> do
         concrete && isConcreteType arg) True
@@ -109,7 +109,7 @@ traverse f type = case type of
         to <- traverse f to
         f (Function from to)
     Never var -> f type
-    Ref t -> f (Ref (traverse f t))
+    Ref lifetime t -> f (Ref lifetime (traverse f t))
     Owner t -> f (Owner (traverse f t))
     Tuple args -> do
         args <- List.map args (traverse f)
@@ -124,7 +124,7 @@ removeFixed type = traverse removeFixed_ type // FIXME: name!
 removeOwnership :: Type -> Type
 removeOwnership type = traverse removeOwnership_ type // FIXME: name!
     where removeOwnership_ type = case type of
-        Ref t -> t
+        Ref _ t -> t
         Owner t -> t
         _ -> type
 

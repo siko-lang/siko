@@ -310,9 +310,9 @@ getMIRType context hir_type = case hir_type of
             _ -> panic "Named type is not an adt nor a record"
     HT.Function from to -> getMIRClosure context hir_type
     HT.Never _ -> (context, MT.Never)
-    HT.Ref t -> do
+    HT.Ref lifetime t -> do
         (context, t) <- processType context t
-        (context, MT.Ref 0 t)
+        (context, MT.Ref lifetime t)
     HT.Owner t -> do
         (context, t) <- processType context t
         (context, MT.Owner t)
@@ -331,6 +331,6 @@ processQueuedType context hir_type mir_type = case hir_type of
             _ -> panic "Named type is not an adt nor a record!"
     HT.Function from to -> processClosure context hir_type mir_type
     HT.Never _ -> context
-    HT.Ref t -> context
+    HT.Ref _ t -> context
     HT.Owner t -> context
     HT.Tuple args -> processTuple context hir_type args mir_type

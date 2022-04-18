@@ -109,26 +109,31 @@ processStep program info ty parent step =
 createExternFunctionInfo :: P.Program -> P.Identity -> F.FunctionType -> F.TypeMapping -> FunctionInfo
 createExternFunctionInfo program id function_type type_mapping = do
     allocator <- createAllocator
-    (allocator, borrow_id) <- getNextBorrowId allocator // FIXME
     context <- Context program List2.empty allocator Map2.empty List2.empty List2.empty
     (context, var_infos) <- Map.mapS context type_mapping.var_mappings (\context, (n, positions) -> do
         (context, info) <- getNext context
         (context, infos) <- List.mapS context positions (processMainPosition (Some info) function_type)
         (context, n, infos))
+    (context, ref_infos) <- Map.mapS context type_mapping.ref_positions (\context, (lifetime, positions) -> do
+        (context, info) <- getNext context
+        (allocator, borrow_id) <- getNextBorrowId context.allocator
+        ownership <- M.OwnershipInfo info.ownership_var (M.Borrower borrow_id)
+        context <- context { ownershipinfos = List2.push context.ownershipinfos ownership, allocator = allocator }
+        (context, infos) <- List.mapS context positions (processMainPosition (Some info) function_type)
+        (context, lifetime, infos))
     (context, owner_infos) <- List.mapS context type_mapping.owner_positions (processMainPosition None function_type)
     owner_infos <- List2.toList2 owner_infos
-    (context, ref_infos) <- List.mapS context type_mapping.ref_positions (processMainPosition None function_type)
-    ref_infos <- List2.toList2 ref_infos
     owner_infos <- List2.map owner_infos (\info -> M.OwnershipInfo info.ownership_var M.Owner)
-    ref_infos <- List2.map ref_infos (\info -> M.OwnershipInfo info.ownership_var (M.Borrower borrow_id)) // FIXME
-    context <- context { ownershipinfos = context.ownershipinfos + owner_infos + ref_infos }
+    context <- context { ownershipinfos = context.ownershipinfos + owner_infos }
     args <- context.args |> List2.sort |> List2.dedup
     args <- List2.map args (\arg_step -> case Map2.get context.info_map (F.Position [arg_step]) of
                         Some (info, _) -> info
                         None -> panic "No type variable info for arg step")
-    result <- case Map2.get context.info_map (F.Position [F.FunctionResult]) of
-        Some (info, _) -> info
-        None -> panic "No type variable info for result step for {}" % id
+    (context, result) <- case Map2.get context.info_map (F.Position [F.FunctionResult]) of
+        Some (info, _) -> (context, info)
+        None -> if Map.getSize type_mapping.var_mappings == 0
+            then getNext context
+            else panic "No type variable info for result step for {}" % id
     (members, equals) <- mergeTypes context.members
     function_info <- FunctionInfo args result members List2.empty context.ownershipinfos
     function_info <- processEquals equals function_info
