@@ -267,6 +267,13 @@ convertAdt adt = do
                 R.Variant (getRustFriendlyName variant.name) (convertType variant.type)) |> toList
     R.Enum name lifetimes rust_variants [R.Clone]
 
+convertImplArg :: Program -> Identity -> R.Expr -> R.Expr
+convertImplArg lir_program fn_id arg = do
+    fn <- getFunction lir_program fn_id
+    if LT.isRef (atIndex fn.type.args 0)
+    then R.Ref arg
+    else R.MethodCall arg "clone" []
+
 processImpl :: Program -> R.Program -> Context -> String -> LD.ExternalClassImpl -> [RT.Lifetime] -> R.Program
 processImpl lir_program program context type_name impl lifetimes = do
     rust_type_name <- RT.Named type_name []
@@ -274,7 +281,8 @@ processImpl lir_program program context type_name impl lifetimes = do
             LD.Show fn_id -> do
                 args <- [("fmt", RT.Named "&mut std::fmt::Formatter" [])]
                 result <- RT.Named "std::fmt::Result" []
-                show_call <- R.FunctionCall (getRustIdentity fn_id) [R.Ref (R.VarRef "self")]
+                fn <- getFunction lir_program fn_id
+                show_call <- R.FunctionCall (getRustIdentity fn_id) [convertImplArg lir_program fn_id (R.VarRef "self")]
                 fmt_call <- R.FunctionCall "write!" [R.VarRef "fmt", R.StringLiteral "{}", R.FieldAccess innerValueField show_call]
                 body <- R.Block [fmt_call]
                 method <- R.Function "fmt" [] True args result body
@@ -282,7 +290,8 @@ processImpl lir_program program context type_name impl lifetimes = do
             LD.PartialEq fn_id -> do
                 args <- [(getArgName 1, (RT.Named "&{}" % type_name) [])]
                 result <- RT.Named "bool" []
-                op_call <- R.FunctionCall (getRustIdentity fn_id) [R.Ref (R.VarRef "self"), R.VarRef (getArgName 1)]
+                op_call <- R.FunctionCall (getRustIdentity fn_id) [convertImplArg lir_program fn_id (R.VarRef "self"),
+                                                                   convertImplArg lir_program fn_id (R.VarRef (getArgName 1))]
                 body <- R.Block [sikoBoolToRustBool op_call (RT.Named boolTypeName [])]
                 method <- R.Function "eq" [] True args result body
                 ("std::cmp::PartialEq", [method])
@@ -291,7 +300,8 @@ processImpl lir_program program context type_name impl lifetimes = do
             LD.PartialOrd fn_id -> do
                 args <- [(getArgName 1, (RT.Named "&{}" % type_name) [])]
                 result <- RT.Named "Option<std::cmp::Ordering>" []
-                op_call <- R.FunctionCall (getRustIdentity fn_id) [R.Ref (R.VarRef "self"), R.VarRef (getArgName 1)]
+                op_call <- R.FunctionCall (getRustIdentity fn_id) [convertImplArg lir_program fn_id (R.VarRef "self"),
+                                                                   convertImplArg lir_program fn_id (R.VarRef (getArgName 1))]
                 fn <- getFunction lir_program fn_id
                 body <- R.Block [sikoOptionalOrderingToRustOptionalOrdering lir_program op_call fn.type.result]
                 method <- R.Function "partial_cmp" [] True args result body
@@ -299,7 +309,8 @@ processImpl lir_program program context type_name impl lifetimes = do
             LD.Ord fn_id -> do
                 args <- [(getArgName 1, (RT.Named "&{}" % type_name) [])]
                 result <- RT.Named "std::cmp::Ordering" []
-                op_call <- R.FunctionCall (getRustIdentity fn_id) [R.Ref (R.VarRef "self"), R.VarRef (getArgName 1)]
+                op_call <- R.FunctionCall (getRustIdentity fn_id) [convertImplArg lir_program fn_id (R.VarRef "self"),
+                                                                   convertImplArg lir_program fn_id (R.VarRef (getArgName 1))]
                 fn <- getFunction lir_program fn_id
                 ordering_result <- convertType fn.type.result
                 body <- R.Block [sikoOrderingToRustOrdering op_call ordering_result]

@@ -1,0 +1,72 @@
+module Siko.Resolver.Expr where
+
+import Siko.Syntax.Ident
+import Siko.Syntax.Expr as SE
+import Siko.Syntax.Pattern as SP
+import Siko.HIR.Expr as HE
+import Siko.HIR.Pattern as HP
+import Siko.HIR.Program as HPO
+import Siko.Resolver.Pattern
+import Siko.Resolver
+import Siko.Resolver.Error
+import Siko.Syntax.Location
+import Siko.Resolver.Environment
+import Siko.Resolver.ModuleResolver
+import Map
+import Std.Util
+
+data Context = {
+                    function_name :: HPO.FullyQualifiedName,
+                    state :: ResolverState,
+                    module_resolver :: ModuleResolver,
+                    program :: HPO.Program (),
+                    next_lambda_id :: Int
+               }
+
+createContext :: HPO.FullyQualifiedName ->
+                 ResolverState ->
+                 ModuleResolver ->
+                 HPO.Program () ->
+                 Context
+createContext function_name state module_resolver program = Context {
+    function_name = function_name,
+    state = state,
+    module_resolver = module_resolver,
+    program = program,
+    next_lambda_id = 1 }
+
+getExprId :: Context -> (Context, HE.ExprId)
+getExprId context = do
+    (context, HE.ExprId 0)
+
+getPatternId :: Context -> (Context, HP.PatternId)
+getPatternId context = do
+    (context, HP.PatternId 0)
+
+addErrorToContext :: Context -> ResolverError -> Context
+addErrorToContext context err = do
+    state <- addError context.state err
+    context <- context { state = state }
+    context
+
+processExprs :: Context -> Environment -> [SE.Expr] -> (Context, [HE.Expr ()])
+processExprs context env exprs = do
+    (context, hir_exprs) <- exprs |> List.iter |> Iterator.fold (\(context, hir_exprs), expr -> do
+                (context, _, hir_expr) <- processExpr context env expr
+                hir_exprs <- hir_exprs + [hir_expr]
+                (context, hir_exprs)) (context, [])
+    (context, hir_exprs)
+
+processExpr :: Context -> Environment -> SE.Expr -> (Context, Environment, HE.Expr ())
+processExpr context env (SE.Expr expr location) = do
+    (context, env, hir_expr) <- case expr of
+        SE.Tuple items -> do
+            (context, hir_items) <- processExprs context env items
+            (context, env, HE.Tuple hir_items)
+        SE.Bind p rhs -> do
+            (context, env, hir_rhs) <- processExpr context env rhs
+            pattern_env <- createPatternEnvironment True
+            (context, pattern_env, env, hir_p) <- processPattern context pattern_env env p
+            (context, env, HE.Bind hir_p hir_rhs)
+    (context, expr_id) <- getExprId context
+    (context, env, HE.Expr hir_expr expr_id () location)

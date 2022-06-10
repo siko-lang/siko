@@ -23,6 +23,7 @@ import Siko.MIR.Backend.Ownership.TypeVariableInfo
 import Siko.MIR.Backend.Ownership.MemberInfo as M
 import Siko.MIR.Backend.Ownership.Inference.ConstraintCollection
 import Siko.MIR.Backend.Ownership.Inference.ConstraintProcessor
+import Siko.MIR.Backend.Ownership.DumpOwnership
 
 import List2 as List2
 import List2 (List2)
@@ -87,7 +88,7 @@ processFunctionInfo context function_info function_id = do
     context <- context { function_info_store = function_info_store }
     (context, added)
 
-processFunction :: Context -> [P.Identity] -> Option InferenceInfo -> P.Identity -> (Context, Bool)
+processFunction :: Context -> [P.Identity] -> Option InferenceInfo -> P.Identity -> (Context, Bool, Option InferenceInfo)
 processFunction context group inference_info function_id = do
     (program, function) <- P.getFunction context.program function_id
     context <- context { program = program }
@@ -113,24 +114,26 @@ processFunction context group inference_info function_id = do
             //trace context.config "inferOwnership {}" % function_id
             (inference_info, constraints, invalid_borrow_map, ownership_expr_map) <- collectConstraints context.config function_id context.program borrow_info inference_info info.body
             inference_info <- processConstraints context.config function_id inference_info constraints invalid_borrow_map ownership_expr_map Partial
+            //dumpOwnership inference_info function_id info.body
             //trace context.config "Processing {}" % function_id
             function_info <- toFunctionInfo context.config inference_info function_id
-            // println "id: {}" % function_id
-            // println "inference_info {}" % inference_info
-            // println "function_info {}" % function_info
-            processFunctionInfo context function_info function_id
+            (context, added) <- processFunctionInfo context function_info function_id
+            (context, added, Some inference_info)
         F.VariantCtor index -> do
             function_info <- createVariantctorFunctionInfo context index function.type.result
             //trace context.config "Variant ctor {} = {}" % (function_id, function_info)
-            processFunctionInfo context function_info function_id
+            (context, added) <- processFunctionInfo context function_info function_id
+            (context, added, None)
         F.RecordCtor -> do
             function_info <- createRecordCtorFunctionInfo context function.type.result
             //trace context.config "Record ctor {} = {}" % (function_id, function_info)
-            processFunctionInfo context function_info function_id
+            (context, added) <- processFunctionInfo context function_info function_id
+            (context, added, None)
         F.Extern type_mapping -> do
             function_info <- createExternFunctionInfo context.program function_id function.type type_mapping
             //trace context.config "Extern {} = {}" % (function_id, function_info)
-            processFunctionInfo context function_info function_id
+            (context, added) <- processFunctionInfo context function_info function_id
+            (context, added, None)
 
 processFunctionGroup :: Int -> Int -> Context -> [P.Identity] -> (Int, Context)
 processFunctionGroup index group_count context group = do
@@ -138,16 +141,16 @@ processFunctionGroup index group_count context group = do
         if getLength group == 1
             then do
                 function_id <- atIndex group 0
-                (context, _) <- processFunction context group None function_id
+                (context, _, _) <- processFunction context group None function_id
                 (index + 1, context)
-            else
-                loop context <- context do
-                    (context, inference_info) <- prepareInferenceInfo context group
-                    (context, more) <- List.fold (context, False) group (\(context, more), function_id -> do
-                        (context, added) <- processFunction context group (Some inference_info) function_id
+            else do
+                (context, inference_info) <- prepareInferenceInfo context group
+                loop (context, inference_info) <- (context, Some inference_info) do
+                    (context, more, inference_info) <- List.fold (context, False, inference_info) group (\(context, more, inference_info), function_id -> do
+                        (context, added, inference_info) <- processFunction context group inference_info function_id
                         more <- if added then True else more
-                        (context, more))
-                    if more then context else break (index + 1, context)
+                        (context, more, inference_info))
+                    if more then (context, inference_info) else break (index + 1, context)
     where
         prepareInferenceInfo :: Context -> [P.Identity] -> (Context, InferenceInfo)
         prepareInferenceInfo context group = do

@@ -1,0 +1,49 @@
+module Siko.HIR.Function where
+
+import Siko.HIR.Type
+import Siko.HIR.TypeFormatter as TF
+import Siko.HIR.Expr
+import Siko.HIR.Program
+import Siko.HIR.Class
+import Siko.Syntax.Location
+
+data LambdaId = LambdaId Int deriving (Show, PartialEq, Eq, PartialOrd, Ord)
+
+data FunctionKind = Normal
+                  | ClassMember FullyQualifiedName
+                  | EffectMember FullyQualifiedName
+                  | InstanceMember InstanceId
+                  | Lambda LambdaId
+                  deriving (Show)
+
+isNormal kind = case kind of
+    Normal -> True
+    _ -> False
+
+getEffectName :: FunctionKind -> FullyQualifiedName
+getEffectName kind = case kind of
+    EffectMember qn -> qn
+    _ -> panic "{} is not an effect member" % kind
+
+data Attribute = Inline deriving (Show, PartialEq, Eq, PartialOrd, Ord)
+
+data Function a = { location :: Location,
+                    name :: FullyQualifiedName,
+                    arg_count :: Int,
+                    kind :: FunctionKind,
+                    type :: Option Type,
+                    type_with_ownership :: Option Type,
+                    body :: Option (Expr a),
+                    effects :: Option [Type],
+                    attributes :: [Attribute]
+                  }
+
+isInlined a :: Function a -> Bool
+isInlined function = List.contains function.attributes Inline
+
+instance (Show a) => Show Function a where
+    show f = do
+        ty <- case f.type of
+            Some t -> TF.toString t
+            None -> "<unknown>"
+        "{} - {} :: {}" % (f.name, ty, f.body)

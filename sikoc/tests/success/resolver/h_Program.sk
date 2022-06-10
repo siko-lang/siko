@@ -1,0 +1,57 @@
+module Siko.HIR.Program where
+
+import Siko.Syntax.Location
+import Map
+
+data FullyQualifiedName = FullPath String String
+                        | FullPathWithVariant String String String
+                        | ModulePath String
+                        | SubItem FullyQualifiedName String
+                        deriving (PartialEq, Eq, PartialOrd, Ord)
+
+instance Show FullyQualifiedName where
+    show qn = "a"
+
+getResolvableName :: FullyQualifiedName -> String
+getResolvableName f = case f of
+        FullPath m n -> "{}.{}" % (m, n)
+        FullPathWithVariant m n v -> "{}.{}" % (m, v)
+        ModulePath m -> panic "getResolvableName called for a module"
+        SubItem p n -> panic "getResolvableName called for a sub item"
+
+getShortName :: FullyQualifiedName -> String
+getShortName f = case f of
+        FullPath m n -> n
+        FullPathWithVariant m n v -> n
+        ModulePath m -> m
+        SubItem p n -> n
+
+getModuleName :: FullyQualifiedName -> String
+getModuleName f = case f of
+        FullPath m n -> m
+        FullPathWithVariant m n v -> m
+        ModulePath m -> m
+        SubItem p n -> getModuleName p
+
+data Item a = Module Location // dummy item, just for detecting name conflicts
+
+data Program a = { items :: Map FullyQualifiedName (Item a),
+                 }
+
+addItem a :: Program a -> FullyQualifiedName -> Item a -> (Program a, Option Location)
+addItem program name item = do
+    (items, old) <- insert program.items name item
+    program <- program { items = items }
+    location <- case old of
+        Some item -> Some (getLocation item)
+        None -> None
+    (program, location)
+
+getLocation a :: Item a -> Location
+getLocation item = case item of
+    Module location -> location
+
+getItem a :: Program a -> FullyQualifiedName -> Item a
+getItem program name = case get program.items name of
+    Some i -> i
+    None -> panic "No item found {}" % name

@@ -1,0 +1,19 @@
+module Siko.HIR.Pattern where
+
+import Siko.Syntax.Location
+import Siko.Syntax.Ident
+import Siko.HIR.Expr as E
+import Siko.HIR.Program as P
+import Map
+
+data BindRef = BindRef String PatternId deriving (PartialEq, Eq, PartialOrd, Ord)
+
+data BindGroup = { bindings :: Map String [BindRef] }
+
+data PatternId = PatternId Int deriving (PartialEq, Eq, PartialOrd, Ord)
+
+data Pattern a = Pattern (SimplePattern a) PatternId a Location
+
+data SimplePattern a = Binding BindRef
+                     | Guarded (Pattern a) (E.Expr a)
+                     | Wildcard

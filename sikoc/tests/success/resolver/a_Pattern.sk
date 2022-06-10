@@ -1,0 +1,33 @@
+module Siko.Resolver.Pattern where
+
+import Siko.Syntax.Pattern as SP
+import Siko.HIR.Pattern as HP
+import Siko.HIR.Program as HPO
+import Siko.Syntax.Location
+import Siko.Resolver.Expr
+import Siko.Resolver.Environment
+import Siko.Resolver.Error
+import Siko.Resolver.ModuleResolver
+import Siko.Syntax.Ident
+import Siko.Resolver
+
+resolveConstructor :: Context -> Ident -> Bool -> Result (Context, HPO.FullyQualifiedName) Context
+resolveConstructor context name mustBeRecord = do
+    err <- ResolverError
+    Err (addErrorToContext context err)
+
+processPattern :: Context -> PatternEnvironment -> Environment -> SP.Pattern -> (Context, PatternEnvironment, Environment, HP.Pattern ())
+processPattern context pattern_env env (SP.Pattern pattern location) = do
+    pattern_id <- HP.PatternId 0
+    (context, pattern_env, env, hir_pattern) <- case pattern of
+        SP.Binding name -> do
+            bind_ref <- HP.BindRef (getString name) pattern_id
+            pattern_env <- addBindingToPatternEnv pattern_env name
+            env <- addBinding env bind_ref
+            (context, pattern_env, env, HP.Binding bind_ref)
+        SP.Guarded p e -> do
+            (context, pattern_env, env, hir_p) <- processPattern context pattern_env env p
+            (context, env, hir_e) <- processExpr context env e
+            (context, pattern_env, env, HP.Guarded hir_p hir_e)
+        SP.Wildcard -> (context, pattern_env, env, HP.Wildcard)
+    (context, pattern_env, env, HP.Pattern hir_pattern pattern_id () location)

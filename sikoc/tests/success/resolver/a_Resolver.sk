@@ -1,0 +1,33 @@
+module Siko.Resolver where
+
+import Siko.Syntax.Location
+import Siko.Syntax.Expr as SE
+import Siko.Syntax.Pattern as SP
+import Siko.HIR.Program as HP
+import Siko.HIR.Expr as HE
+import Siko.HIR.Pattern as HP
+import Siko.Resolver.Environment
+import Siko.Resolver.Error
+import Siko.Resolver.Pattern
+import Siko.Resolver.Expr
+import Siko.Resolver.ModuleResolver
+import Map
+
+data ResolverState = { errors :: [ResolverError],
+                     }
+
+emptyState :: ResolverState
+emptyState = ResolverState []
+
+processProgram :: (HP.Program (), [ResolverError])
+processProgram = do
+    state <- emptyState
+    hir_program <- HP.Program empty
+    module_resolver <- ModuleResolver "alma"
+    context <- createContext (HP.FullPath "korte" "korte") state module_resolver hir_program
+    env <- createEnvironment  None
+    fileid <- FileId 0
+    span <- Span (Position 0 0) (Position 0 0)
+    location <- Location fileid span
+    processPattern context (createPatternEnvironment False) env (SP.Pattern SP.Wildcard location)
+    (hir_program, state.errors)
