@@ -1,0 +1,19 @@
+module Main where
+
+data Foo = Foo
+
+data Type = FixedTypeArg Foo
+          | Named Foo
+          | Function Type Type
+
+convertType :: Type -> Foo
+convertType type = case type of
+    FixedTypeArg n -> n
+    Named n -> convertType (FixedTypeArg Foo)
+    Function from to -> convertType from
+
+main = do
+    t <- FixedTypeArg Foo
+    convertType t
+    t
+    ()
