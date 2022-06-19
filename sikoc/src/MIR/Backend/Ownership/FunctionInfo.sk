@@ -1,4 +1,4 @@
-module Siko.MIR.Backend.Ownership.FunctionInfo(FunctionInfo(..), normalizeFunctionInfo, duplicateFunctionInfo) where
+module Siko.MIR.Backend.Ownership.FunctionInfo(FunctionInfo(..), normalizeFunctionInfo, enforceUnknownArgOwnership, duplicateFunctionInfo) where
 
 import Siko.MIR.Backend.Ownership.InferenceInfo
 import Siko.MIR.Backend.Ownership.TypeVariableInfo
@@ -35,6 +35,13 @@ normalizeFunctionInfo function_info = do
     members <- members |> List2.sort
     ownershipinfos <- ownershipinfos |> List2.sort
     FunctionInfo args result members converters ownershipinfos
+
+enforceUnknownArgOwnership :: FunctionInfo -> FunctionInfo
+enforceUnknownArgOwnership function_info = do
+    arg_ownership_vars <- List2.fold List2.empty function_info.args (\arg_ownership_vars, info -> List2.push arg_ownership_vars info.ownership_var)
+    ownershipinfos <- List2.map function_info.ownershipinfos (\info -> if List2.contains arg_ownership_vars info.var then info { kind = M.Unknown } else info)
+    ownershipinfos <- ownershipinfos |> List2.sort
+    function_info { ownershipinfos = ownershipinfos }
 
 duplicateFunctionInfo :: Allocator -> FunctionInfo -> (Allocator, FunctionInfo)
 duplicateFunctionInfo allocator function_info = do
