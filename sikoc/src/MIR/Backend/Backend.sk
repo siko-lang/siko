@@ -25,18 +25,23 @@ import Hack
 collectDataDeps :: MP.Program -> Map MP.Identity [MP.Identity]
 collectDataDeps mir_program = do
     dependencies <- empty
-    dependencies <- mir_program.adts |> Map.iter |> Iterator.fold (\dependencies, (id, adt) -> do
-            deps <- adt.variants |> List.iter |> Iterator.fold (\deps, variant -> do
-                deps + [T.getIdentity variant.type]) []
-            (dependencies, _) <- insert dependencies id deps
+    dependencies <- Map.fold dependencies mir_program.adts (\dependencies, (id, adt) -> do
+            dependencies <- Map.put dependencies id []
+            List.fold dependencies adt.variants (\dependencies, variant ->
+                Map.add dependencies id (T.getIdentity variant.type))
+        )
+    dependencies <- Map.fold dependencies mir_program.records (\dependencies, (id, record) -> do
+            dependencies <- Map.put dependencies id []
+            dependencies <- List.fold dependencies record.fields (\dependencies, field -> do
+                Map.add dependencies id (T.getIdentity field.type))
+            dependencies <- case record.external_info of
+                Some external_record_info -> do
+                    external_record_info :: ExternalRecordInfo <- external_record_info
+                    List.fold dependencies external_record_info.type_args (\dependencies, type -> do
+                        Map.add dependencies id (T.getIdentity type))
+                None -> dependencies
             dependencies
-        ) dependencies
-    dependencies <- mir_program.records |> Map.iter |> Iterator.fold (\dependencies, (id, record) -> do
-            deps <- record.fields |> List.iter |> Iterator.fold (\deps, field -> do
-                deps + [T.getIdentity field.type]) []
-            (dependencies, _) <- insert dependencies id deps
-            dependencies
-        ) dependencies
+        )
     dependencies
 
 data Context = { deps :: [MP.Identity] }
@@ -140,6 +145,6 @@ processProgram config mir_program = do
     mir_program <- AddConverter.processProgram config mir_program
     dumpProgram config mir_program (MIR "addconverter")
     trace config "Inference start.."
-    lir_program <- Inference.processProgram config mir_program function_groups
+    lir_program <- Inference.processProgram config mir_program data_groups function_groups
     trace config "Inference end.."
     return lir_program

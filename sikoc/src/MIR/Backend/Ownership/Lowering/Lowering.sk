@@ -8,6 +8,7 @@ import Siko.MIR.Backend.Ownership.TypeVariableInfo
 import Siko.MIR.Backend.Ownership.Allocator
 import Siko.MIR.Backend.Ownership.MemberInfo as M
 import Siko.MIR.Backend.Ownership.FunctionInfoStore
+import Siko.MIR.Backend.Ownership.DataGroupInfo
 import Siko.LIR.Program as LP
 import Siko.MIR.Program as MP
 
@@ -15,9 +16,9 @@ import Map2
 import List2 as List2
 import List2 (List2)
 
-lowerProgram :: MP.Program -> Config -> FunctionInfoStore -> LP.Program
-lowerProgram mir_program config function_info_store = do
-    context <- createContext function_info_store config mir_program
+lowerProgram :: MP.Program -> Config -> FunctionInfoStore -> DataGroupInfoStore -> LP.Program
+lowerProgram mir_program config function_info_store data_group_info_store = do
+    context <- createContext function_info_store config mir_program data_group_info_store
     allocator <- createAllocator
     (allocator, result) <- getNextTypeVariableInfo allocator
     main_key <- FunctionKey MP.getMainIdentity (FunctionLoweringInfo List2.empty List2.empty result (List2.single (M.OwnershipInfo result.ownership_var M.Owner)) allocator)

@@ -43,6 +43,13 @@ getRecord program record_id = case get program.records record_id of
     Some record -> (program, record)
     None -> panic "MIR Record not found {}" % record_id
 
+getAdtOrRecord :: Program -> Identity -> (Program, Either D.AlgebraicDataType D.Record)
+getAdtOrRecord program id = case get program.adts id of
+    Some adt -> (program, Left adt)
+    None -> case get program.records id of
+        Some record -> (program, Right record)
+        None -> panic "MIR id is not adt or record {}" % id
+
 getRecordCtor :: Program -> Identity -> (Program, Identity)
 getRecordCtor program record_id = case get program.record_ctors record_id of
     Some record_ctor -> (program, record_ctor)

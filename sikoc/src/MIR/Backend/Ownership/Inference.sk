@@ -24,6 +24,7 @@ import Siko.MIR.Backend.Ownership.MemberInfo as M
 import Siko.MIR.Backend.Ownership.Inference.ConstraintCollection
 import Siko.MIR.Backend.Ownership.Inference.ConstraintProcessor
 import Siko.MIR.Backend.Ownership.DumpOwnership
+import Siko.MIR.Backend.Ownership.DataGroupInfo
 
 import List2 as List2
 import List2 (List2)
@@ -31,7 +32,8 @@ import Map2 as Map2
 
 data Context = { config :: Config,
                  program :: P.Program,
-                 function_info_store :: FunctionInfoStore }
+                 function_info_store :: FunctionInfoStore,
+                 data_group_info_store :: DataGroupInfoStore }
 
 createRecordCtorFunctionInfo :: Context -> T.Type -> FunctionInfo
 createRecordCtorFunctionInfo context type =
@@ -105,9 +107,9 @@ processFunction context group inference_info function_id = do
                     inference_info <- initializeTypeVariables inference_info function_id info.body
                     function_info_store <- context.function_info_store
                     //trace context.config "processEqualities {}" % function_id
-                    (program, equals, inference_info) <- processFunctionEqualities function_id context.config group List2.empty inference_info function_info_store context.program info.body
+                    (program, equals, inference_info, data_group_info_store) <- processFunctionEqualities function_id context.config group List2.empty inference_info function_info_store context.program info.body context.data_group_info_store
                     (program, inference_info) <- processEqualities context.config equals inference_info context.program
-                    context <- context { program = program }
+                    context <- context { program = program, data_group_info_store = data_group_info_store }
                     (context, inference_info)
             //trace context.config "checkBorrows {}" % function_id
             borrow_info <- checkBorrows context.program info.body
@@ -172,9 +174,9 @@ processFunctionGroup index group_count context group = do
                     (program, function) <- P.getFunction context.program function_id
                     case function.kind of
                         F.Normal info -> do
-                            (program, equals, inference_info) <- processFunctionEqualities function_id context.config group equals inference_info
-                                function_info_store context.program info.body
-                            context <- context { program = program }
+                            (program, equals, inference_info, data_group_info_store) <- processFunctionEqualities function_id context.config group equals inference_info
+                                function_info_store context.program info.body context.data_group_info_store
+                            context <- context { program = program, data_group_info_store = data_group_info_store }
                             (context, inference_info, equals)
                         _ -> panic "Groupped function is not normal!")
             inference_info <- List.fold inference_info group
@@ -186,14 +188,15 @@ processFunctionGroup index group_count context group = do
             context <- context { program = program }
             (context, inference_info)
 
-processProgram :: Config -> P.Program -> [DependencyGroup P.Identity] -> LP.Program
-processProgram config program function_groups = do
+processProgram :: Config -> P.Program -> [DependencyGroup P.Identity] -> [DependencyGroup P.Identity] -> LP.Program
+processProgram config program data_groups function_groups = do
     trace config "Ownership inference started"
-    context <- Context config program createFunctionInfoStore
+    (program, data_group_info_store) <- initializeDataGroupInfoStore program data_groups
+    context <- Context config program createFunctionInfoStore data_group_info_store
     group_count <- getLength function_groups
     (_, context) <- List.fold (1, context) function_groups (\(index, context), group -> processFunctionGroup index group_count context group.items)
     trace config "Ownership inference ended"
     trace config "Lowering started"
-    lir_program <- lowerProgram program context.config context.function_info_store
+    lir_program <- lowerProgram program context.config context.function_info_store data_group_info_store
     trace config "Lowering ended"
     lir_program

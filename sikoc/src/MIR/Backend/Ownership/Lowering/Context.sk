@@ -9,6 +9,7 @@ import Siko.MIR.Backend.Ownership.Lowering.Expr
 import Siko.MIR.Backend.Ownership.FunctionInfoStore
 import Siko.MIR.Backend.Ownership.Lowering.Function
 import Siko.MIR.Backend.Ownership.Lowering.Data
+import Siko.MIR.Backend.Ownership.DataGroupInfo
 import Siko.MIR.Program as MP
 import Siko.LIR.Program as LP
 import Siko.LIR.Function as LF
@@ -26,6 +27,7 @@ data LIRKey = FunctionKey MP.Identity FunctionLoweringInfo
             deriving (PartialEq, Eq, PartialOrd, Ord, Show)
 
 data Context = { function_info_store :: FunctionInfoStore,
+                 data_group_info_store :: DataGroupInfoStore,
                  config :: Config,
                  mir_program :: MP.Program,
                  items :: List2 LIRKey,
@@ -36,9 +38,9 @@ data Context = { function_info_store :: FunctionInfoStore,
                  lir_adts :: Map2 LP.Identity LD.AlgebraicDataType,
                }
 
-createContext :: FunctionInfoStore -> Config -> MP.Program -> Context
-createContext function_info_store config mir_program =
-    Context function_info_store config mir_program List2.empty (NameMap Map2.empty)
+createContext :: FunctionInfoStore -> Config -> MP.Program -> DataGroupInfoStore -> Context
+createContext function_info_store config mir_program data_group_info_store =
+    Context function_info_store data_group_info_store config mir_program List2.empty (NameMap Map2.empty)
             Map2.empty Map2.empty Map2.empty Map2.empty
 
 addItem :: Context -> LIRKey -> Context

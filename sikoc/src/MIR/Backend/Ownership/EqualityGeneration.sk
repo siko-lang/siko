@@ -14,6 +14,7 @@ import Siko.MIR.Backend.Ownership.FunctionInfoStore
 import Siko.MIR.Backend.Ownership.EqualitySolver
 import Siko.MIR.Backend.Ownership.TypeVariableInfo
 import Siko.MIR.Backend.Ownership.Allocator
+import Siko.MIR.Backend.Ownership.DataGroupInfo
 import Siko.MIR.Backend.Traversal
 
 import Map
@@ -27,7 +28,8 @@ data Context = { function_id :: P.Identity,
                  inference_info :: InferenceInfo,
                  function_info_store :: FunctionInfoStore,
                  program :: P.Program,
-                 group :: [P.Identity] }
+                 group :: [P.Identity],
+                 data_group_info_store :: DataGroupInfoStore, }
 
 addEqualInfo :: Context -> TypeVariableInfo -> TypeVariableInfo -> Context
 addEqualInfo context info1 info2 = do
@@ -111,7 +113,24 @@ mergeFunctionInfo context args expr_id function_info in_group = do
 processExpr :: Context -> E.Expr -> (Context, E.Expr)
 processExpr context expr = do
     E.Expr s_expr expr_type expr_id <- expr
-    inference_info <- context.inference_info
+    context <- case expr_type of
+        T.Never -> context
+        _ -> do
+            type_id <- T.getIdentity expr_type
+            inference_info <- context.inference_info
+            (data_group_info_store, allocator, group_info) <- getDataGroupInfo context.data_group_info_store inference_info.allocator type_id
+            inference_info <- inference_info { allocator = allocator }
+            context <- context { data_group_info_store = data_group_info_store, inference_info = inference_info }
+            case group_info of
+                Some (data_group_info, var_info) -> do
+                    data_group_info :: DataGroupInfo <- data_group_info // FIXME
+                    var_info :: TypeVariableInfo <- var_info // FIXME
+                    inference_info <- context.inference_info
+                    (inference_info, expr_info) <- getTypeVariableInfoByExprId inference_info expr_id context.function_id
+                    inference_info <- List2.fold inference_info data_group_info.members addMemberInfo
+                    equals <- List2.push context.equals (EqualGroup expr_info.arg_group_var var_info.arg_group_var)
+                    context { inference_info = inference_info, equals = equals }
+                None -> context
     case s_expr of
         E.Do items -> do
             last_item_id <- getExprId (last items)
@@ -263,77 +282,9 @@ processExpr context expr = do
             equals <- List2.push equals (EqualGroup info1.arg_group_var info2.arg_group_var)
             (context { inference_info = inference_info, equals = equals }, expr)
 
-getMemberMap :: InferenceInfo -> (InferenceInfo, Map2 GroupTypeVariable (List2 M.MemberInfo))
-getMemberMap inference_info = do
-    member_map <- Map2.empty
-    (members, member_map) <- List2.foldLinear member_map inference_info.members (\member_map, m ->
-        Map2.add member_map m.root m)
-    inference_info <- inference_info { members = members }
-    (inference_info, member_map)
-
-fuseCycles :: Config -> P.Program -> InferenceInfo -> (P.Program, InferenceInfo)
-fuseCycles config program inference_info =
-    loop (program, inference_info) <- (program, inference_info) do
-        inference_info :: InferenceInfo <- inference_info // FIXME: type annotation
-        (inference_info, member_map) <- getMemberMap inference_info
-        (members, (visited, equals, member_map, program)) <- List2.foldLinear (List2.empty, List2.empty, member_map, program)
-                                                     inference_info.members (\(visited, equals, member_map, program), m -> do
-                type_map <- Map2.empty
-                (visited, type_map, member_map, program) <- walk m.root m.type visited type_map member_map program
-                equals <- Map2.fold equals type_map (\equals, (ty, vars) -> do
-                    first <- List2.atIndex vars 0
-                    if List2.getLength vars > 1
-                    then List2.fold equals vars (\equals, var ->
-                        if first != var
-                        then List2.push equals (EqualGroup first var)
-                        else equals)
-                    else equals)
-                (visited, equals, member_map, program)
-            )
-        inference_info <- inference_info { members = members }
-        if List2.isEmpty equals
-        then do
-            break (program, inference_info)
-        else do
-            inference_info <- processEquals equals inference_info
-            (program, inference_info)
-    where
-        walk :: GroupTypeVariable ->
-                T.Type ->
-                List2 GroupTypeVariable ->
-                Map2 P.Identity (List2 GroupTypeVariable) ->
-                Map2 GroupTypeVariable (List2 M.MemberInfo) ->
-                P.Program ->
-                (List2 GroupTypeVariable, Map2 P.Identity (List2 GroupTypeVariable), Map2 GroupTypeVariable (List2 M.MemberInfo), P.Program)
-        walk root ty visited type_map member_map program =
-            if List2.contains visited root
-            then (visited, type_map, member_map, program)
-            else do
-                type_map <- Map2.add type_map (T.getIdentity ty) root
-                visited <- List2.push visited root
-                case Map2.get member_map root of
-                    Some members -> do
-                        List2.fold (visited, type_map, member_map, program) members (\(visited, type_map, member_map, program), m ->
-                                case m.kind of
-                                    M.Variant index -> do
-                                        (program, adt) <- P.getAdt program (T.getIdentity m.type)
-                                        variant <- atIndex adt.variants index
-                                        walk m.info.arg_group_var variant.type visited type_map member_map program
-                                    M.Field name -> do
-                                        (program, record) <- P.getRecord program (T.getIdentity m.type)
-                                        field <- Option.unwrap (D.getFieldByName record name)
-                                        walk m.info.arg_group_var field.type visited type_map member_map program
-                                    M.Extern index -> do
-                                        (program, record) <- P.getRecord program (T.getIdentity m.type)
-                                        external_record_info <- Option.unwrap record.external_info
-                                        external_ty <- List.atIndex external_record_info.type_args index
-                                        walk m.info.arg_group_var external_ty visited type_map member_map program
-                            )
-                    None -> (visited, type_map, member_map, program)
-
-processFunctionEqualities :: P.Identity -> Config -> [P.Identity] -> List2 Equal -> InferenceInfo -> FunctionInfoStore -> P.Program -> E.Expr -> (P.Program, List2 Equal, InferenceInfo)
-processFunctionEqualities function_id config group equals inference_info function_info_store program body = do
-    context <- Context function_id equals inference_info function_info_store program group
+processFunctionEqualities :: P.Identity -> Config -> [P.Identity] -> List2 Equal -> InferenceInfo -> FunctionInfoStore -> P.Program -> E.Expr -> DataGroupInfoStore -> (P.Program, List2 Equal, InferenceInfo, DataGroupInfoStore)
+processFunctionEqualities function_id config group equals inference_info function_info_store program body data_group_info_store = do
+    context <- Context function_id equals inference_info function_info_store program group data_group_info_store
     //trace config "processEqualities - traverse"
     (context, body) <- traverse context body (Some processExpr) None None
     (inference_info, body_info) <- getTypeVariableInfoByExprId context.inference_info (getExprId body) context.function_id
@@ -342,7 +293,7 @@ processFunctionEqualities function_id config group equals inference_info functio
     result_info <- function_inference_info.result
     context <- addEqualInfo context body_info result_info
     inference_info <- context.inference_info
-    (program, context.equals, inference_info)
+    (program, context.equals, inference_info, context.data_group_info_store)
 
 processEqualities :: Config -> List2 Equal -> InferenceInfo -> P.Program -> (P.Program, InferenceInfo)
 processEqualities config equals inference_info program = do
@@ -350,7 +301,4 @@ processEqualities config equals inference_info program = do
     inference_info <- processEquals equals inference_info
     converters <- inference_info.converters |> List2.sort |> List2.dedup
     inference_info <- inference_info { converters = converters }
-    //trace config "processEqualities - fuseCycles"
-    (program, inference_info) <- fuseCycles config program inference_info
-    //println "inference_info {}" % inference_info
     (program, inference_info)
