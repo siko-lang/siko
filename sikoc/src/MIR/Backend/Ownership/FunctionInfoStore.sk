@@ -11,8 +11,10 @@ data FunctionInfoStore = { functions :: Map P.Identity FunctionInfo }
 createFunctionInfoStore :: FunctionInfoStore
 createFunctionInfoStore = FunctionInfoStore Map.empty
 
-getFunctionInfo :: FunctionInfoStore -> P.Identity -> Option FunctionInfo
-getFunctionInfo function_info_store id = Map.get function_info_store.functions id
+getFunctionInfo :: FunctionInfoStore -> P.Identity -> (FunctionInfoStore, Option FunctionInfo)
+getFunctionInfo function_info_store id = do
+    function_info <- Map.get function_info_store.functions id
+    (function_info_store, function_info)
 
 addFunctionInfo :: FunctionInfoStore -> P.Identity -> FunctionInfo -> (FunctionInfoStore, Bool)
 addFunctionInfo function_info_store id function_info = do

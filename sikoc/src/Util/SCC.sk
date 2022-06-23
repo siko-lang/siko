@@ -102,8 +102,15 @@ dfs graph node_id = do
 
 collectSCCs :: Graph -> List2 (List2 NodeId)
 collectSCCs graph = do
-    node_ids <- List2.map graph.nodes (\n -> n.id)
-    graph <- List2.fold graph node_ids dfs
+    (node_ids, graph) <- loop (node_ids, graph, index) <- (List2.withCapacity (List2.getLength graph.nodes), graph, 0) do
+        graph :: Graph <- graph // FIXME
+        if List2.getLength graph.nodes <= index
+        then break (node_ids, graph)
+        else do
+            node <- List2.atIndex graph.nodes index
+            node_ids <- List2.push node_ids node.id
+            (node_ids, graph, index + 1)
+    (node_ids, graph) <- List2.foldLinear graph node_ids dfs
     graph.sccs
 
 addNode :: Graph -> (Graph, NodeId)
