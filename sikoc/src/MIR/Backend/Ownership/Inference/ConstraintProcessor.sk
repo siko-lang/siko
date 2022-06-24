@@ -107,6 +107,13 @@ processFunctionConverter context converter = do
             if can_propagate
             then updateOwnership context to from_kind
             else updateOwnership context to M.Owner
+        (M.Owner, M.Borrower _) -> updateOwnership context to M.Owner
+        (M.Unknown, M.Unknown) if context.allow_guess -> do
+            context <- context { allow_guess = False }
+            updateOwnership context from M.Owner
+        (M.Unknown, _) if context.allow_guess -> do
+            context <- context { allow_guess = False }
+            updateOwnership context from to_kind
         (_, _) -> context
 
 processFieldAccess :: Context -> C.FieldAccessConstraint -> Context

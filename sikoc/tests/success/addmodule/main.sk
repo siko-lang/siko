@@ -1,0 +1,48 @@
+module Main where
+
+data ParserError = ParserError
+
+data FileId = FileId Int
+
+data ParserState =
+    {
+        index :: Int,
+        modules :: [Module],
+        file_id :: FileId,
+    }
+
+data Module = Module
+
+initState :: FileId -> ParserState
+initState file_id = do
+    ParserState 0 [] file_id
+
+step :: ParserState -> ParserState
+step state = do
+    state { index = state.index + 1 }
+
+addModule :: ParserState -> Module -> ParserState
+addModule state mod = state { modules = state.modules + [mod] }
+
+expect :: ParserState -> Result ParserState (ParserState, ParserError)
+expect state =
+    if True
+    then Ok (step state)
+    else Err (state, ParserError)
+
+parseModule :: ParserState -> Result ParserState (ParserState, ParserError)
+parseModule state = do
+    state <- try expect state
+    state <- addModule state Module
+    Ok state
+
+boo a = ()
+
+main = do
+    file_id <- FileId 0
+    state <- initState file_id
+    state <- case parseModule state of
+                Ok state -> state
+                Err (state, err) -> state
+    boo file_id
+    ()

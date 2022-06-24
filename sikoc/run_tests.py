@@ -4,6 +4,7 @@ import sys
 import os
 import errno
 import subprocess
+import time
 
 def processFile(file):
     content = ""
@@ -63,7 +64,7 @@ def getStd():
 
 def run(silent, verbose, interpret, nostd, debug, test_name, source_folder, index, total):
     if not silent:
-        print("--- Running %s - %d/%d" % (test_name, total, index))
+        print("--- Running %s - %d/%d - " % (test_name, total, index), end = "", flush=True)
     mkdir_safe("test_runs")
     target_folder = os.path.join("test_runs", test_name)
     mkdir_safe(target_folder)
@@ -113,7 +114,13 @@ total = len(tests)
 success = 0
 failure = 0
 for (index, (name, path)) in enumerate(tests):
-    if run(silent, verbose, interpret, nostd, debug, name, path, index + 1, total):
+    start_time = time.time()
+    result = run(silent, verbose, interpret, nostd, debug, name, path, index + 1, total)
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    if not silent:
+        print("{:.2f}s".format(elapsed_time))
+    if result:
         success += 1
     else:
         failure += 1
