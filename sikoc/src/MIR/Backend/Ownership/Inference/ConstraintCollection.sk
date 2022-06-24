@@ -131,9 +131,13 @@ processExpr context expr = do
             addOwnershipConstraint context (C.FieldAccess (C.FieldAccessConstraint receiver_info member_info info))
         E.If cond true_branch false_branch -> do
             context <- processExpr context cond
+            saved_invalid_borrows <- context.invalid_borrows
             context <- processExpr context true_branch
+            all_invalid_borrows <- context.invalid_borrows
+            context <- context { invalid_borrows = saved_invalid_borrows }
             context <- processExpr context false_branch
-            context
+            all_invalid_borrows <- all_invalid_borrows + context.invalid_borrows
+            context { invalid_borrows = all_invalid_borrows }
         E.List args -> do
             context <- List.fold context args processExpr
             addOwnershipValue context info.ownership_var M.Owner
@@ -156,16 +160,21 @@ processExpr context expr = do
         E.CaseOf body cases -> do
             context <- processExpr context body
             E.Expr _ _ body_id <- body
+            saved_invalid_borrows <- context.invalid_borrows
             (context, body_info) <- getTypeVariableInfoByExprId2 context body_id
-            List.fold context cases (\context, c -> do
+            (context, all_invalid_borrows) <- List.fold (context, List2.empty) cases (\(context, all_invalid_borrows), c -> do
                     context <- case c.checker of
                         E.VariantChecker index var _ -> do
                             (context, var_info) <- getTypeVariableInfoByVar2 context var
                             context <- addOwnershipValue context var_info.ownership_var M.Unknown
                             addOwnershipConstraint context (C.Variant (C.VariantConstraint var_info body_info info))
                         _ -> context
-                    processExpr context c.body
+                    context <- context { invalid_borrows = saved_invalid_borrows }
+                    context <- processExpr context c.body
+                    all_invalid_borrows <- all_invalid_borrows + context.invalid_borrows
+                    (context, all_invalid_borrows)
                 )
+            context { invalid_borrows = all_invalid_borrows }
         E.Clone arg -> panic "Clone in InferOwnership"
         E.Deref arg -> panic "Deref in InferOwnership"
         E.Ref arg -> panic "Ref in InferOwnership"
@@ -193,9 +202,9 @@ updateInvalidBorrows context expr_id expr_info = do
             invalid_borrows <- invalid_borrows |> List2.sort |> List2.dedup
             context { invalid_borrows = invalid_borrows }
         None -> context
-    //println "Invalid borrows {} = {}" % (expr_id, context.invalid_borrows)
     (ownership_dep_map, relevants) <- getOwnershipVars context.ownership_dep_map expr_info
-    //println "Relevants {}" % relevants
+    // println "Invalid borrows {} = {}" % (expr_id, context.invalid_borrows)
+    // println "Relevants {}" % relevants
     ownership_expr_map <- List2.fold context.ownership_expr_map relevants (\ownership_expr_map, ownership_var -> Map2.add ownership_expr_map ownership_var expr_id)
     invalid_borrow_map <- Map2.put context.invalid_borrow_map expr_id context.invalid_borrows
     context <- context { ownership_dep_map = ownership_dep_map,
