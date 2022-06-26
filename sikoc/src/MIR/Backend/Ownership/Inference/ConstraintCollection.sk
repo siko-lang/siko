@@ -11,6 +11,7 @@ import Siko.MIR.Backend.Ownership.FunctionInfoStore
 import Siko.MIR.Backend.Ownership.BorrowId // FIXME: needed only for the linear hack
 import Siko.MIR.Expr as E
 import Siko.MIR.Type as T
+import Siko.MIR.Data as D
 import Siko.MIR.Function as F
 import Siko.Config
 import Siko.Trace
@@ -116,7 +117,7 @@ processExpr context expr = do
         E.VarRef _ -> context
         E.FieldAccess name receiver -> do
             context <- processExpr context receiver
-            E.Expr _ _ receiver_id <- receiver
+            E.Expr _ receiver_type receiver_id <- receiver
             (context, receiver_info) <- getTypeVariableInfoByExprId2 context receiver_id
             (context, receiver_kind) <- getOwnershipValue context receiver_info.ownership_var
             (context, expr_kind) <- getOwnershipValue context info.ownership_var
@@ -128,6 +129,13 @@ processExpr context expr = do
                     m :: M.MemberInfo <- m // FIXME
                     m.info
                 _ -> panic "member info for field access not found!"
+            record_id <- T.getIdentity receiver_type
+            (program, record) <- P.getRecord context.program record_id
+            context <- context { program = program }
+            field <- Option.unwrap (D.getFieldByName record name)
+            context <- if field.grouped
+            then addOwnershipValue context member_info.ownership_var M.Owner
+            else context
             addOwnershipConstraint context (C.FieldAccess (C.FieldAccessConstraint receiver_info member_info info))
         E.If cond true_branch false_branch -> do
             context <- processExpr context cond
