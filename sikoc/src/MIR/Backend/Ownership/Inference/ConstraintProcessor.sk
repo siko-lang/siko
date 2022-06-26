@@ -123,11 +123,14 @@ processFieldAccess context access = do
     expr_info <- access.expr_info
     (context, receiver_kind) <- getOwnershipValue context receiver_info.ownership_var
     (context, member_kind) <- getOwnershipValue context member_info.ownership_var
+    (context, expr_kind) <- getOwnershipValue context expr_info.ownership_var
+    //println "processFieldAccess: receiverkind {} memberkind {} exprkind {}" % (receiver_kind, member_kind, expr_kind)
     case (receiver_kind, member_kind) of
         (M.Borrower _, M.Borrower _) -> updateOwnership context expr_info.ownership_var member_kind
         (M.Owner, M.Borrower _) -> updateOwnership context expr_info.ownership_var member_kind
         (M.Borrower _, M.Owner) -> updateOwnership context expr_info.ownership_var receiver_kind
         (M.Owner, M.Owner) -> updateOwnership context expr_info.ownership_var receiver_kind
+        (M.Owner, M.Unknown) if expr_kind != M.Unknown -> updateOwnership context member_info.ownership_var expr_kind
         (_, M.Unknown) if context.allow_guess -> do
             context <- context { allow_guess = False }
             updateOwnership context member_info.ownership_var M.Owner
@@ -177,6 +180,7 @@ processConverter context converter = do
                     context <- context { inference_info = inference_info }
                     updateOwnership context expr_info.ownership_var (M.Borrower id)
             else updateOwnership context expr_info.ownership_var M.Owner
+        (M.Unknown, M.Borrower a) -> updateOwnership context arg_info.ownership_var expr_kind
         (M.Unknown, _) if context.allow_guess -> do
             context <- context { allow_guess = False }
             updateOwnership context arg_info.ownership_var M.Owner

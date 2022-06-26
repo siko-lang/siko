@@ -1,0 +1,60 @@
+module Main where
+
+data Token = VarIdentifier String
+           | Other
+
+data TokenInfo = { token :: Token }
+
+data ParserError = ParserError
+
+data FileId = FileId Int
+
+data Item
+
+data ParserState =
+    {
+        file_id :: FileId,
+        sub_items :: [Item],
+    }
+
+data Ident = Ident String
+
+data Function = Function
+
+expectVarIdent :: ParserState -> String -> Result (ParserState, Ident) (ParserState, ParserError)
+expectVarIdent state msg = do
+    Err (state, ParserError)
+
+initState :: FileId -> [TokenInfo] -> ParserState
+initState file_id tokens = do
+    ParserState file_id []
+
+parseFunction :: ParserState -> Result (ParserState, Either Function ()) (ParserState, ParserError)
+parseFunction state = do
+    (state, name) <- try expectVarIdent state "function name"
+    sep <- None
+    case sep of
+        Some Equal -> do
+            state <- state { sub_items = [] }
+            function <- Function
+            Ok (state, Left function)
+        _ -> panic "Unexpected separator"
+
+parseBody :: ParserState -> Result (ParserState, [Function]) (ParserState, ParserError)
+parseBody state = do
+    (state, fns) <- loop (state, fns) <- (state, []) do
+            if False
+            then break (state, fns)
+            else case try parseFunction state of
+                    (state, Left fn) -> (state, fns + [fn])
+                    (state, Right fn_sig) -> (state, fns)
+    Ok (state, fns)
+
+boo a = ()
+
+main = do
+    file_id <- FileId 0
+    state <- initState file_id []
+    parseBody state
+    boo file_id
+    ()
