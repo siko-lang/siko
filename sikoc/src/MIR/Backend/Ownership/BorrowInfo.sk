@@ -7,7 +7,13 @@ import List2
 
 data BorrowInfo = {  borrows :: List2 E.ExprId,
                      invalidations :: Map2 E.ExprId (List2 E.ExprId),
-                  } deriving (Show)
+                  }
+
+instance Show BorrowInfo where
+    show info = do
+        borrows <- show info.borrows
+        s <- Map2.fold "" info.invalidations (\s, (expr_id, invalidations) -> s + "\n{}: {}" % (expr_id, invalidations))
+        borrows + "\n[" + s + "\n]"
 
 isBorrow :: BorrowInfo -> E.ExprId -> (BorrowInfo, Bool)
 isBorrow borrow_info expr_id = do
