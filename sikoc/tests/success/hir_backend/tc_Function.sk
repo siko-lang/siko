@@ -1,0 +1,53 @@
+module Siko.HIR.Backend.Typechecker.Function where
+
+import Siko.HIR.Backend.Typechecker
+import Siko.HIR.Backend.Util
+import Siko.HIR.Backend.Typechecker.Error
+import Siko.HIR.Backend.Typechecker.Class
+import Siko.HIR.Backend.Typechecker.FunctionStore
+import Siko.HIR.Backend.Typechecker.FunctionDependency
+import Siko.HIR.Program as P
+import Siko.HIR.Type as T
+import Siko.HIR.Function as F
+import Siko.HIR.Backend.Unification.TypeVarGenerator
+import Siko.Util.DependencyProcessor
+import Siko.Config
+import Map
+
+processFunction :: TypecheckerState -> F.Function () -> (TypecheckerState, FunctionTypeInfo)
+processFunction state f = do
+    (state, ty, defined) <- case f.type of
+        Some ty -> do
+            type_arg_count <- getLength (T.getArgs ty)
+            state <- if type_arg_count < f.arg_count
+                then do
+                    err <- IncorrectArgCount type_arg_count f.arg_count f.location
+                    addError state err
+                else state
+            (state, ty, True)
+        None -> do
+            (state, generated_func_type) <- createGeneralFunction f.arg_count state
+            (state, generated_func_type, False)
+    args <- T.getArgs ty
+    (args, _) <- List.split args f.arg_count
+    result_ty <- T.getResultType ty (getLength args)
+    func_type_info <- FunctionTypeInfo f.name args ty result_ty f.effects defined
+    (state, func_type_info)
+
+processFunctions :: Config -> TypecheckerState -> (TypecheckerState, FunctionStore, [DependencyGroup P.FullyQualifiedName])
+processFunctions config state = do
+    functions <- P.getFunctions state.program
+    (state, function_store) <- functions |> List.iter |> Iterator.fold (\(state, function_store), f -> do
+        (state, func_type_info) <- processFunction state f
+        function_store <- addFunctionTypeInfo function_store func_type_info
+        (state, function_store)) (state, createFunctionStore)
+    all_dependencies <- functions |> List.iter |> Iterator.fold (\all_dependencies, fn -> do
+        (deps, forced_deps) <- getFunctionDependencies fn
+        untyped_deps <- deps |> List.iter |> Iterator.filter (\qn -> do
+            case P.getItem state.program qn of
+                P.Function fn -> isNone fn.type || isNone fn.effects
+                _ -> False) |> toList
+        (all_dependencies, _) <- Map.insert all_dependencies fn.name (untyped_deps + forced_deps)
+        all_dependencies) Map.empty
+    groups <- processDependencies config all_dependencies
+    (state, function_store, groups)

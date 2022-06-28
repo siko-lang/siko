@@ -1,0 +1,336 @@
+module Siko.HIR.Backend.Lowering.TypeStore where
+
+import Siko.HIR.Expr as E
+import Siko.HIR.Type as HT
+import Siko.HIR.TypeFormatter as TF
+import Siko.HIR.Data as HD
+import Siko.HIR.Program as HP
+import Siko.HIR.Pattern as HPat
+import Siko.MIR.Type as MT
+import Siko.MIR.Expr as ME
+import Siko.MIR.Data as MD
+import Siko.MIR.Program as MP
+import Siko.HIR.Backend.Unification.Util
+import Siko.HIR.Backend.Lowering.ClosureStore
+import Siko.HIR.Backend.Lowering.FunctionQueue as FQ
+import Siko.HIR.Backend.Lowering
+import Siko.HIR.Backend.Unification as U
+import Siko.HIR.Backend.Unification.Data as UD
+import Siko.HIR.Backend.Unification.Substitution as S
+import Siko.HIR.Backend.InstanceResolver as IR
+import Siko.Constants
+import Map
+
+data TypeStore = { named_types :: Map HT.Type MT.Type,
+                   adts :: Map MP.Identity MD.AlgebraicDataType,
+                   records :: Map MP.Identity MD.Record,
+                   queue :: [(HT.Type, MT.Type)]
+                 }
+
+createTypeStore :: TypeStore
+createTypeStore = TypeStore empty empty empty []
+
+enqueueType :: Context -> HT.Type -> MT.Type -> Context
+enqueueType context hir_type mir_type = do
+    //println "enqueueType {} - {}" % (HT.toLongString hir_type, mir_type)
+    type_store <- context.type_store
+    queue <- type_store.queue + [(hir_type, mir_type)]
+    type_store <- type_store { queue = queue }
+    context <- context { type_store = type_store }
+    context
+
+processQueue :: Context -> Context
+processQueue context = do
+    loop context <- context do
+        context :: Context <- context // FIXME
+        type_store :: TypeStore <- context.type_store // FIXME
+        case pop type_store.queue of
+            Some (first, queue) -> do
+                (hir_type, mir_type) <- first
+                type_store <- type_store { queue = queue }
+                context <- context { type_store = type_store }
+                //println "Processing queued {} - {}" % (HT.toLongString hir_type, mir_type)
+                context <- processQueuedType context hir_type mir_type
+                context
+            None -> break context
+
+addVariant :: TypeStore -> MP.Identity -> MD.Variant -> TypeStore
+addVariant type_store identity variant = do
+    (adts, _) <- alter (\adt -> case adt of
+        Some adt -> do
+            adt :: MD.AlgebraicDataType <- adt // FIXME
+            variants <- adt.variants + [variant]
+            adt <- adt { variants = variants }
+            Some adt
+        None -> Some (MD.AlgebraicDataType identity [variant] [])) identity type_store.adts
+    type_store { adts = adts }
+
+addExternalClassImplForAdt :: TypeStore -> MP.Identity -> MD.ExternalClassImpl -> TypeStore
+addExternalClassImplForAdt type_store identity external_class_impl = do
+    (adts, _) <- alter (\adt -> case adt of
+        Some adt -> do
+            adt :: MD.AlgebraicDataType <- adt // FIXME
+            external_class_impls <- adt.external_class_impls + [external_class_impl]
+            adt <- adt { external_class_impls = external_class_impls }
+            Some adt
+        None -> panic "ADT not found in type store") identity type_store.adts
+    type_store { adts = adts }
+
+addExternalClassImplForRecord :: TypeStore -> MP.Identity -> MD.ExternalClassImpl -> TypeStore
+addExternalClassImplForRecord type_store identity external_class_impl = do
+    (records, _) <- alter (\record -> case record of
+        Some record -> do
+            record :: MD.Record <- record // FIXME
+            external_class_impls <- record.external_class_impls + [external_class_impl]
+            record <- record { external_class_impls = external_class_impls }
+            Some record
+        None -> panic "Record not found in type store {}" % identity) identity type_store.records
+    type_store { records = records }
+
+getRecord :: TypeStore -> MP.Identity -> MD.Record
+getRecord type_store identity = case get type_store.records identity of
+    Some r -> r
+    None -> panic "Record named {} is not found in lowering type type_store" % identity
+
+getAdt :: TypeStore -> MP.Identity -> MD.AlgebraicDataType
+getAdt type_store identity = case get type_store.adts identity of
+    Some r -> r
+    None -> panic "Adt named {} is not found in lowering type type_store" % identity
+
+getDependencies :: MD.ExternalClassImplKind -> [MD.ExternalClassImplKind]
+getDependencies impl = case impl of
+    MD.ShowKind -> []
+    MD.PartialEqKind -> []
+    MD.EqKind -> [MD.PartialEqKind]
+    MD.PartialOrdKind -> [MD.PartialEqKind]
+    MD.OrdKind -> [MD.PartialEqKind, MD.EqKind, MD.PartialOrdKind]
+
+checkImpl :: Context -> HT.Type -> HP.FullyQualifiedName -> (Context, Bool)
+checkImpl context type class_name = do
+    case IR.checkInstance context context.instance_resolver type class_name of
+        Ok (context, sub, instance_info) -> do
+            sub :: S.Substitution <- sub // FIXME
+            List.fold (context, True) sub.constraints (\(context, exists), constraint -> do
+                constraint :: S.UnificationConstraint <- constraint // FIXME
+                (context, c_exists) <- checkImpl context constraint.type constraint.class_name
+                exists <- exists && c_exists
+                (context, exists))
+        Err _ -> (context, False)
+
+checkExternalImpl :: Context -> HT.Type -> HP.FullyQualifiedName -> MD.ExternalClassImplKind -> Context
+checkExternalImpl context hir_type class_name external_class_impl = do
+    case hir_type of
+        HT.Never _ -> context
+        _ -> do
+            (context, exists) <- checkImpl context hir_type class_name
+            if exists
+            then do
+                //println "checkExternalImpl: {}/{}" % (TF.toString hir_type, external_class_impl)
+                added_impls <- [external_class_impl] + (getDependencies external_class_impl)
+                (external_class_impls, _) <- alter (\external_class_impls -> case external_class_impls of
+                    Some external_class_impls -> do
+                        impls <- (external_class_impls + added_impls) |> sort |> dedup
+                        Some impls
+                    None -> Some added_impls) hir_type context.external_class_impls
+                context { external_class_impls = external_class_impls }
+            else context
+
+checkExternalImpls :: Context -> HT.Type -> Context
+checkExternalImpls context hir_type = do
+    external_class_names <- context.external_class_names
+    external_class_names |> List.iter |> Iterator.fold (\context, (class_name, external_class_impl) ->
+        checkExternalImpl context hir_type class_name external_class_impl) context
+
+addNamedType :: Context -> HT.Type -> MT.Type -> Context
+addNamedType context hir_type mir_type = do
+    //println "addNamedType: {} - {}" % (HT.toLongString hir_type, mir_type)
+    context <- checkExternalImpls context hir_type
+    type_store <- context.type_store
+    (named_types, p) <- insert type_store.named_types hir_type mir_type
+    case p of
+        Some _ -> panic "addNamedType: duplicate added"
+        None -> do
+            type_store <- type_store { named_types = named_types }
+            context <- context { type_store = type_store }
+            context
+
+addRecord :: Context -> MP.Identity -> MD.Record -> Context
+addRecord context identity mir_record = do
+    type_store <- context.type_store
+    (records, _) <- insert type_store.records identity mir_record
+    type_store <- type_store { records = records }
+    context { type_store = type_store }
+
+addAdt :: Context -> MP.Identity -> MD.AlgebraicDataType -> Context
+addAdt context identity mir_adt = do
+    type_store <- context.type_store
+    (adts, _) <- insert type_store.adts identity mir_adt
+    type_store <- type_store { adts = adts }
+    context { type_store = type_store }
+
+instantiateAdt :: Context -> HD.AlgebraicDataType -> HT.Type -> (Context, HD.AlgebraicDataType)
+instantiateAdt context adt adt_type = do
+    sub <- S.createSubstitution
+    Result.unwrap (UD.instantiateAdt context adt adt_type)
+
+instantiateRecord :: Context -> HD.Record -> HT.Type -> (Context, HD.Record)
+instantiateRecord context record record_type = do
+    sub <- S.createSubstitution
+    Result.unwrap (UD.instantiateRecord context record record_type)
+
+processAdt :: Context -> HT.Type -> HD.AlgebraicDataType -> String -> MT.Type -> Context
+processAdt context hir_type adt module_name mir_type = do
+    identity <- MT.getIdentity mir_type
+    (context, adt) <- instantiateAdt context adt hir_type
+    if getLength adt.variants == 1
+        then do
+            variant <- atIndex adt.variants 0
+            (context, mir_fields) <- variant.items |> List.iter |> Iterator.fold (\(context, mir_fields), type -> do
+                    (context, mir_type) <- processType context type
+                    name <- getFieldName (getLength mir_fields)
+                    mir_field <- MD.RecordField name mir_type False
+                    mir_fields <- mir_fields + [mir_field]
+                    (context, mir_fields)) (context, [])
+            mir_record <- MD.Record identity mir_fields None []
+            context <- addRecord context identity mir_record
+            context
+        else do
+            (context, mir_variants) <- adt.variants |> List.iter |> Iterator.fold (\(context, mir_variants), variant -> do
+                (context, mir_fields) <- variant.items |> List.iter |> Iterator.fold (\(context, mir_fields), type -> do
+                    (context, mir_type) <- processType context type
+                    name <- getFieldName (getLength mir_fields)
+                    mir_field <- MD.RecordField name mir_type False
+                    mir_fields <- mir_fields + [mir_field]
+                    (context, mir_fields)) (context, [])
+                (context, identity) <- getIdentity context module_name variant.name
+                mir_record <- MD.Record identity mir_fields None []
+                context <- addRecord context identity mir_record
+                mir_variant <- MD.Variant variant.name (MT.Record identity)
+                mir_variants <- mir_variants + [mir_variant]
+                (context, mir_variants)) (context, [])
+            mir_adt <- MD.AlgebraicDataType identity mir_variants []
+            context <- addAdt context identity mir_adt
+            context
+
+getMIRAdt :: Context -> HT.Type -> HD.AlgebraicDataType -> String -> String -> (Context, MT.Type)
+getMIRAdt context hir_type adt module_name short_name = do
+    (context, identity) <- getIdentity context module_name short_name
+    mir_type <- if getLength adt.variants == 1
+        then MT.Record identity
+        else MT.Adt identity
+    (context, mir_type)
+
+processRecord :: Context -> HT.Type -> HD.Record -> [HT.Type] -> MT.Type -> Context
+processRecord context hir_type record type_args mir_type = do
+    case mir_type of
+        MT.Record identity -> do
+            (context, record) <- instantiateRecord context record hir_type
+            (context, mir_fields) <- record.fields |> List.iter |> Iterator.fold (\(context, mir_fields), (HD.RecordField field_name field_type) -> do
+                (context, mir_type) <- processType context field_type
+                mir_field <- MD.RecordField field_name mir_type False
+                mir_fields <- mir_fields + [mir_field]
+                (context, mir_fields)) (context, [])
+            (context, external_record_info) <- if record.external
+                then do
+                    (context, mir_args) <- type_args |> List.iter |> Iterator.fold (\(context, mir_args), arg -> do
+                        (context, mir_arg) <- processType context arg
+                        (context, mir_args + [mir_arg])) (context, [])
+                    (context, Some (MD.ExternalRecordInfo mir_args))
+                else (context, None)
+            mir_record <- MD.Record identity mir_fields external_record_info []
+            context <- addRecord context identity mir_record
+            context
+        _ -> panic "Record is not a record"
+
+getMIRRecord :: Context -> HT.Type -> String -> String -> (Context, MT.Type)
+getMIRRecord context hir_type module_name short_name = do
+    (context, identity) <- getIdentity context module_name short_name
+    mir_type <- MT.Record identity
+    (context, mir_type)
+
+getMIRClosure :: Context -> HT.Type -> (Context, MT.Type)
+getMIRClosure context hir_type = do
+    (closure_store, name) <- getClosureName context.closure_store hir_type
+    context <- context { closure_store = closure_store }
+    identity <- getClosureIdentity name
+    mir_type <- MT.Adt identity
+    (context, mir_type)
+
+processClosure :: Context -> HT.Type -> MT.Type -> Context
+processClosure context hir_type mir_type = do
+    case mir_type of
+        MT.Adt identity -> do
+            mir_adt <- MD.AlgebraicDataType identity [] []
+            context <- addAdt context identity mir_adt
+            context
+        _ -> panic "Closure is not an adt"
+
+getMIRTuple :: Context -> Int -> (Context, MT.Type)
+getMIRTuple context arg_count = do
+    (context, identity) <- getIdentity context getInternalModuleName ("Tuple{}" % arg_count)
+    mir_type <- MT.Record identity
+    (context, mir_type)
+
+processTuple :: Context -> HT.Type -> [HT.Type] -> MT.Type -> Context
+processTuple context hir_type args mir_type = do
+    case mir_type of
+        MT.Record identity -> do
+            (context, mir_fields) <- args |> List.iter |> Iterator.fold (\(context, mir_fields), type -> do
+                name <- getFieldName (getLength mir_fields)
+                (context, mir_type) <- processType context type
+                mir_field <- MD.RecordField name mir_type False
+                mir_fields <- mir_fields + [mir_field]
+                (context, mir_fields)) (context, [])
+            mir_record <- MD.Record identity mir_fields None []
+            context <- addRecord context identity mir_record
+            context
+        _ -> panic "Tuple is not a record"
+
+processType :: Context -> HT.Type -> (Context, MT.Type)
+processType context hir_type = do
+    case get context.type_store.named_types hir_type of
+        Some mir_type -> (context, mir_type)
+        None -> do
+            (context, mir_type) <- getMIRType context hir_type
+            context <- addNamedType context hir_type mir_type
+            context <- enqueueType context hir_type mir_type
+            context <- processQueue context
+            (context, mir_type)
+
+getMIRType :: Context -> HT.Type -> (Context, MT.Type)
+getMIRType context hir_type = case hir_type of
+    HT.Var _ _ -> panic "Type variable in MIR type, getMIRType"
+    HT.FixedTypeArg _ _ _ -> panic "Type variable in MIR type, getMIRType Fixed"
+    HT.Named qn args -> do
+        module_name <- HP.getModuleName qn
+        short_name <- HP.getShortName qn
+        case HP.getItem context.hir_program qn of
+            HP.Adt adt -> getMIRAdt context hir_type adt module_name short_name
+            HP.Record record -> getMIRRecord context hir_type module_name short_name
+            _ -> panic "Named type is not an adt nor a record"
+    HT.Function from to -> getMIRClosure context hir_type
+    HT.Never _ -> (context, MT.Never)
+    HT.Ref lifetime t -> do
+        (context, t) <- processType context t
+        (context, MT.Ref lifetime t)
+    HT.Owner t -> do
+        (context, t) <- processType context t
+        (context, MT.Owner t)
+    HT.Tuple args -> getMIRTuple context (getLength args)
+
+processQueuedType :: Context -> HT.Type -> MT.Type -> Context
+processQueuedType context hir_type mir_type = case hir_type of
+    HT.Var _ _ -> panic "Type variable in MIR type, processQueuedType"
+    HT.FixedTypeArg _ _ _ -> panic "Type variable in MIR type, processQueuedType fixed"
+    HT.Named qn args -> do
+        module_name <- HP.getModuleName qn
+        short_name <- HP.getShortName qn
+        case HP.getItem context.hir_program qn of
+            HP.Adt adt -> processAdt context hir_type adt module_name mir_type
+            HP.Record record -> processRecord context hir_type record args mir_type
+            _ -> panic "Named type is not an adt nor a record!"
+    HT.Function from to -> processClosure context hir_type mir_type
+    HT.Never _ -> context
+    HT.Ref _ t -> context
+    HT.Owner t -> context
+    HT.Tuple args -> processTuple context hir_type args mir_type

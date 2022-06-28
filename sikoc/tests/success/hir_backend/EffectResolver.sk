@@ -1,0 +1,371 @@
+module Siko.HIR.Backend.EffectResolver where
+
+import Siko.HIR.Backend.Queue as Q
+import Siko.HIR.Program as PO
+import Siko.HIR.Type as T
+import Siko.HIR.TypeFormatter as TF
+import Siko.HIR.Function as F
+import Siko.HIR.Expr as E
+import Siko.HIR.Pattern as P
+import Siko.HIR.Backend.Traversal
+import Siko.HIR.Backend.Unification as U
+import Siko.HIR.Backend.ClassInfoStore as CDS
+import Siko.HIR.Backend.Unification.Substitution as S
+import Siko.HIR.Backend.Unification.TypeVarGenerator as TVG
+import Siko.HIR.Backend.ExprIdGenerator
+import Siko.HIR.Backend.PatternIdGenerator
+import Siko.Syntax.Location
+import Siko.Config
+import Siko.Constants
+import Siko.Trace
+
+import Map
+
+data Name = { module_name :: String, name :: String } deriving (PartialEq, Eq, PartialOrd, Ord, Show)
+
+data NameMap = { names :: Map Name Int }
+
+getName :: NameMap -> PO.FullyQualifiedName -> (NameMap, PO.FullyQualifiedName)
+getName name_map effectfull_id = do
+    mod <- PO.getModuleName effectfull_id
+    name <- PO.getShortName effectfull_id
+    (names, id) <- alter (\old -> case old of
+        Some old_id -> Some (old_id + 1)
+        None -> Some 1) (Name mod name) name_map.names
+    effectless_id <- case id of
+        Some id -> PO.Effectless mod ("{}{}" % (name, id))
+        None -> PO.Effectless mod name
+    (name_map { names = names}, effectless_id)
+
+data MemberId = MemberId Int deriving (PartialEq, Eq, PartialOrd, Ord, Show)
+
+data Resolution = StaticResolution PO.FullyQualifiedName
+                | DynamicResolution MemberId T.Type
+                deriving (PartialEq, Eq, PartialOrd, Ord, Show)
+
+data EffectResolutionSet = { resolutions :: Map PO.FullyQualifiedName Resolution,
+                             effect_types :: Map PO.FullyQualifiedName T.Type,
+                           } deriving (PartialEq, Eq, PartialOrd, Ord, Show)
+
+data FunctionKey = { original_name :: PO.FullyQualifiedName,
+                     resolutions :: EffectResolutionSet,
+                   } deriving (PartialEq, Eq, PartialOrd, Ord, Show)
+
+data DynamicEffectRef = FromArg
+                      | Value P.BindRef
+
+data EffectContextInfo = { resolution :: EffectResolutionSet,
+                           dyn_ref :: Option DynamicEffectRef }
+
+data Context = { function_names :: Map FunctionKey PO.FullyQualifiedName,
+                 functions :: Map PO.FullyQualifiedName (F.Function T.Type),
+                 program :: PO.Program T.Type,
+                 effect_contexts :: [EffectContextInfo],
+                 name_map :: NameMap,
+                 expr_id_gen :: ExprIdGenerator,
+                 pattern_id_gen :: PatternIdGenerator,
+                 var_gen :: TVG.TypeVarGenerator,
+                 class_info_store :: CDS.ClassInfoStore,
+                 context_binds :: Map E.ExprId (E.Expr T.Type),
+                }
+
+getCurrentEffectContext :: Context -> EffectContextInfo
+getCurrentEffectContext context = List.last context.effect_contexts
+
+addEffectContext :: Context -> EffectResolutionSet -> Option DynamicEffectRef -> Context
+addEffectContext context resolution dyn_ref = do
+    effect_context <- EffectContextInfo resolution dyn_ref
+    effect_contexts <- List.push context.effect_contexts effect_context
+    context { effect_contexts = effect_contexts }
+
+removeEffectContext :: Context -> Context
+removeEffectContext context = do
+    (_, effect_contexts) <- List.remove context.effect_contexts 0
+    context { effect_contexts = effect_contexts }
+
+class IsDynamic a where
+    isDynamic a :: a -> Bool
+
+instance IsDynamic EffectContextInfo where
+    //isDynamic :: EffectContextInfo -> Bool
+    isDynamic effect_context = getDynamicResolutionCount effect_context.resolution > 0
+
+instance IsDynamic EffectResolutionSet where
+    //isDynamic :: EffectResolutionSet -> Bool
+    isDynamic resolution = getDynamicResolutionCount resolution > 0
+
+instance U.TypeVarGenerator Context where
+    getNewTypeVar context = do
+        (var_gen, var) <- TVG.getNewTypeVar context.var_gen
+        context <- context { var_gen = var_gen }
+        (context, var)
+
+    getNewTypeVarType context = do
+        (var_gen, t) <- TVG.getNewTypeVarType context.var_gen
+        context <- context { var_gen = var_gen }
+        (context, t)
+
+instance U.Context Context where
+    ignoreConstraints context = False
+
+instance U.DataProvider Context where
+    getRecord context qn = PO.getRecordOpt context.program qn
+
+instance U.ClassProvider Context where
+    getAllClassDependencies context qn = U.getAllClassDependencies context.class_info_store qn
+    getAssociatedTypeCount context qn = U.getAssociatedTypeCount context.class_info_store qn
+
+getNextExprId :: Context -> (Context, E.ExprId)
+getNextExprId context = do
+    (expr_id_gen, id) <- getNewExprId context.expr_id_gen
+    context <- context { expr_id_gen = expr_id_gen }
+    (context, id)
+
+getNextPatternId :: Context -> (Context, P.PatternId)
+getNextPatternId context = do
+    (pattern_id_gen, id) <- getNewPatternId context.pattern_id_gen
+    context <- context { pattern_id_gen = pattern_id_gen }
+    (context, id)
+
+getFunctionName :: Context -> FunctionKey -> (Context, PO.FullyQualifiedName, Bool)
+getFunctionName context key = do
+        ((name_map, effectless_id), function_names, old) <- alterS (createId key.original_name) (context.name_map, None) key context.function_names
+        (context { name_map = name_map, function_names = function_names }, Option.unwrap effectless_id, Option.isNone old)
+    where
+        createId :: PO.FullyQualifiedName ->
+                    (NameMap, Option PO.FullyQualifiedName) ->
+                    Option PO.FullyQualifiedName ->
+                    ((NameMap, Option PO.FullyQualifiedName), Option PO.FullyQualifiedName)
+        createId effectfull_id (name_map, _) old = case old of
+            Some name -> ((name_map, Some name), Some name)
+            None -> do
+                (name_map, effectless_id) <- getName name_map effectfull_id
+                ((name_map, Some effectless_id), Some effectless_id)
+
+getDynamicResolutionCount :: EffectResolutionSet -> Int
+getDynamicResolutionCount resolution =
+    Map.fold 0 resolution.resolutions (\count,  (_, r) -> case r of
+            StaticResolution _ -> count
+            DynamicResolution _ _ -> count + 1
+        )
+
+getDynamicResolutionTupleType :: EffectResolutionSet -> T.Type
+getDynamicResolutionTupleType resolution = do
+    args <- Map.fold [] resolution.resolutions (\args,  (_, r) -> case r of
+            StaticResolution _ -> args
+            DynamicResolution _ type -> args + [type]
+        )
+    T.Tuple args
+
+createEffectResolutionSet :: EffectResolutionSet -> [E.EffectHandler T.Type] -> [E.EffectType T.Type] -> (EffectResolutionSet, [E.Expr T.Type])
+createEffectResolutionSet base handlers effect_types = do
+    dyn_count <- getDynamicResolutionCount base
+    (resolution, dyn_args, _) <- List.fold (base, [], dyn_count) handlers (\(resolution, dyn_args, dyn_count), E.EffectHandler name selection location -> case selection of
+        E.Static qn -> do
+            (resolutions, _) <- Map.insert resolution.resolutions name (StaticResolution qn)
+            (resolution { resolutions = resolutions }, dyn_args, dyn_count)
+        E.Dynamic handler_body -> do
+            E.Expr _ _ type _ <- handler_body
+            dyn_args <- List.push dyn_args handler_body
+            (resolutions, _) <- Map.insert resolution.resolutions name (DynamicResolution (MemberId dyn_count) type)
+            (resolution { resolutions = resolutions }, dyn_args, dyn_count + 1)
+        E.Default -> panic "Default effect resolution NYI")
+    resolution <- List.fold resolution effect_types (\resolution, E.EffectType t -> do
+        name <- T.getNameFromType t
+        (effect_types, _) <- Map.insert resolution.effect_types name t
+        resolution { effect_types = effect_types })
+    (resolution, dyn_args)
+
+getFunctionKey :: Context -> PO.FullyQualifiedName -> FunctionKey
+getFunctionKey context qn = do
+    effect_context <- getCurrentEffectContext context
+    FunctionKey qn effect_context.resolution
+
+getDynRef :: EffectContextInfo -> E.SimpleExpr T.Type
+getDynRef effect_context =
+    case effect_context.dyn_ref of
+        Some dyn_ref -> case dyn_ref of
+                    FromArg -> E.ArgRef 0
+                    Value bind_ref -> E.ValueRef bind_ref
+        None -> panic "Dynamic effect context has no dyn ref!"
+
+preWithHook :: (Q.Queue FunctionKey, Context) -> E.ExprId -> [E.EffectHandler T.Type] -> [E.EffectType T.Type] -> Location -> (Q.Queue FunctionKey, Context)
+preWithHook (queue, context) with_id handlers effect_types location = do
+    effect_context <- getCurrentEffectContext context
+    (resolution_set, dyn_args) <- createEffectResolutionSet effect_context.resolution handlers effect_types
+    context <- if isDynamic resolution_set
+    then do
+        dynamic_context_type <- getDynamicResolutionTupleType resolution_set
+        (context, tuple_id) <- getNextExprId context
+        (context, bind_id) <- getNextExprId context
+        (context, pattern_id) <- getNextPatternId context
+        bind_ref <- P.BindRef ".dyn_effect_context" pattern_id
+        bind_pattern <- P.Pattern (P.Binding bind_ref) pattern_id dynamic_context_type location
+        tuple_args <- if isDynamic effect_context
+        then do
+            dyn_ref <- getDynRef effect_context
+            dynamic_context_type <- getDynamicResolutionTupleType effect_context.resolution
+            tuple_types <- case dynamic_context_type of
+                T.Tuple tuple_types -> tuple_types
+                _ -> panic "Dynamic effect context tuple type is not a tuple type!"
+            (context, dyn_ref_args) <- List.mapSE context tuple_types (\context, index, tuple_type -> do
+                (context, ref_id) <- getNextExprId context
+                ref_expr <- E.Expr dyn_ref ref_id dynamic_context_type location
+                (context, tuple_ref_id) <- getNextExprId context
+                tuple_ref_expr <- E.Expr (E.TupleFieldAccess index ref_expr) tuple_ref_id tuple_type location
+                (context, tuple_ref_expr))
+            dyn_ref_args + dyn_args
+        else dyn_args
+        tuple_expr <- E.Expr (E.Tuple tuple_args) tuple_id dynamic_context_type location
+        bind_expr <- E.Expr (E.Bind bind_pattern tuple_expr) bind_id (T.Tuple []) location
+        (context_binds, _) <- Map.insert context.context_binds with_id bind_expr
+        context <- context { context_binds = context_binds }
+        addEffectContext context resolution_set (Some (Value bind_ref))
+    else addEffectContext context resolution_set None
+    (queue, context)
+
+processExpr :: (Q.Queue FunctionKey, Context) -> E.Expr T.Type -> ((Q.Queue FunctionKey, Context), E.Expr T.Type)
+processExpr (queue, context) expr = do
+    E.Expr s_expr id type location <- expr
+    case s_expr of
+        E.ArgRef index -> do
+            effect_context <- getCurrentEffectContext context
+            if isDynamic effect_context
+            then ((queue, context), E.Expr (E.ArgRef (index + 1)) id type location)
+            else ((queue, context), E.Expr (E.ArgRef index) id type location)
+        E.With handlers body _ -> do
+            (context_binds, context_bind) <- Map.remove context.context_binds id
+            context <- context { context_binds = context_binds }
+            case context_bind of
+                Some bind_expr -> do
+                    (context, do_id) <- getNextExprId context
+                    E.Expr _ _ do_type _ <- body
+                    body <- E.Expr (E.Do [bind_expr, body]) do_id do_type location
+                    ((queue, context), body)
+                None -> ((queue, context), body)
+        E.StaticFunctionCall qn args -> do
+            fn <- PO.getFunction context.program qn
+            case fn.body of
+                Some _ -> do
+                    effects <- Option.unwrap fn.effects
+                    if isEmpty effects
+                    then do
+                        key <- FunctionKey qn (EffectResolutionSet Map.empty Map.empty)
+                        (context, effectless_id, newlyAdded) <- getFunctionName context key
+                        queue <- if newlyAdded
+                        then Q.addItem queue key
+                        else queue
+                        ((queue, context), E.Expr (E.StaticFunctionCall effectless_id args) id type location)
+                    else do
+                        key <- getFunctionKey context qn
+                        (context, effectless_id, newlyAdded) <- getFunctionName context key
+                        queue <- if newlyAdded
+                        then Q.addItem queue key
+                        else queue
+                        effect_context <- getCurrentEffectContext context
+                        args <- if isDynamic effect_context
+                        then do
+                            dyn_ref <- getDynRef effect_context
+                            (context, ref_id) <- getNextExprId context
+                            dynamic_context_type <- getDynamicResolutionTupleType effect_context.resolution
+                            arg_ref <- E.Expr dyn_ref ref_id dynamic_context_type location
+                            [arg_ref] + args
+                        else args
+                        ((queue, context), E.Expr (E.StaticFunctionCall effectless_id args) id type location)
+                None -> // extern function
+                    ((queue, context), E.Expr (E.StaticFunctionCall qn args) id type location)
+        E.EffectMemberCall qn args -> do
+            effect_context <- getCurrentEffectContext context
+            case get effect_context.resolution.resolutions qn of
+                Some (StaticResolution handler_qn) -> do
+                    //println "Replacing {} with {}" % (qn, handler_qn)
+                    ((queue, context), E.Expr (E.StaticFunctionCall handler_qn args) id type location)
+                Some (DynamicResolution member_id handler_type) -> do
+                    MemberId index <- member_id
+                    (context, arg_ref_id) <- getNextExprId context
+                    dyn_ref <- getDynRef effect_context
+                    dynamic_context_type <- getDynamicResolutionTupleType effect_context.resolution
+                    arg_ref <- E.Expr dyn_ref arg_ref_id dynamic_context_type location
+                    (context, field_access_id) <- getNextExprId context
+                    field_access <- E.Expr (E.TupleFieldAccess index arg_ref) field_access_id handler_type location
+                    ((queue, context), E.Expr (E.DynamicFunctionCall field_access args) id type location)
+                None -> panic "Effect member call not found in resolution set!"
+        _ -> ((queue, context), expr)
+
+processPattern :: (Q.Queue FunctionKey, Context) -> P.Pattern T.Type -> ((Q.Queue FunctionKey, Context), P.Pattern T.Type)
+processPattern (queue, context) pattern = ((queue, context), pattern)
+
+typeConverter :: S.Substitution -> T.Type -> T.Type
+typeConverter sub type = S.apply type sub
+
+processItem :: Q.Queue FunctionKey -> Context -> FunctionKey -> (Q.Queue FunctionKey, Context)
+processItem queue context key = do
+    (context, effectless_id, _) <- getFunctionName context key
+    //println "Processing key {} -> new id {}" % (key, effectless_id)
+    fn <- PO.getFunction context.program key.original_name
+    context <- addEffectContext context key.resolutions (Some FromArg)
+    (context, sub) <- case fn.effects of
+        Some effects -> do
+            List.fold (context, S.createSubstitution) effects (\(context, sub), eff -> do
+                    eff_name <- T.getNameFromType eff
+                    case get key.resolutions.effect_types eff_name of
+                        Some specific_eff -> do
+                            eff <- T.removeFixed eff
+                            case U.unify context sub specific_eff eff of
+                                Ok (context, sub) -> (context, sub)
+                                Err _ -> panic "EffectResolver: failed to unify {} {}" % (TF.toString specific_eff, TF.toString eff)
+                        None -> panic "Eff type {} not found in resolution" % eff_name
+                )
+        None -> (context, S.createSubstitution)
+    ((queue, context), body) <- case fn.body of
+        Some body -> do
+            traversal_context <- createTraversalContext (queue, context) processExpr processPattern
+            traversal_context <- setPreWithHook traversal_context preWithHook
+            traversal_context <- setTypeConverter traversal_context (typeConverter sub)
+            ((queue, context), body) <- traverse traversal_context body
+            ((queue, context), Some body)
+        None -> ((queue, context), None)
+    context <- removeEffectContext context
+    (arg_count, fn_type) <- if isDynamic key.resolutions
+    then do
+        fn_type <- case fn.type of
+            Some type -> do
+                dynamic_context_type <- getDynamicResolutionTupleType key.resolutions
+                Some (T.Function dynamic_context_type type)
+            None -> None
+        (fn.arg_count + 1, fn_type)
+    else (fn.arg_count, fn.type)
+    fn <- fn { name = effectless_id, arg_count = arg_count, type = fn_type, body = body, effects = Some [] }
+    (functions, _) <- Map.insert context.functions effectless_id fn
+    (queue, context { functions = functions })
+
+createContext :: PO.Program T.Type ->
+                 ExprIdGenerator ->
+                 PatternIdGenerator ->
+                 TVG.TypeVarGenerator ->
+                 CDS.ClassInfoStore -> Context
+createContext program expr_id_gen pattern_id_gen var_gen class_info_store =
+        Context Map.empty Map.empty program [] (NameMap Map.empty)
+            expr_id_gen pattern_id_gen var_gen class_info_store Map.empty
+
+processProgram :: Config ->
+                  PO.Program T.Type ->
+                  ExprIdGenerator ->
+                  PatternIdGenerator ->
+                  TVG.TypeVarGenerator ->
+                  CDS.ClassInfoStore ->
+                  (ExprIdGenerator, PatternIdGenerator, TVG.TypeVarGenerator, PO.Program T.Type)
+processProgram config program expr_id_gen pattern_id_gen var_gen class_info_store = do
+    main_qn <- PO.FullPath getMainModuleName getMainFunctionName
+    main_key <- FunctionKey main_qn (EffectResolutionSet Map.empty Map.empty)
+    queue :: Q.Queue FunctionKey <- Q.createQueue // FIXME: annotation!
+    queue <- Q.addItem queue main_key
+    context <- createContext program expr_id_gen pattern_id_gen var_gen class_info_store
+    (context, _, _) <- getFunctionName context main_key
+    (queue, context) <- Q.processItems queue context processItem
+    trace config "HIR processing effect handlers"
+    program <- Map.fold program context.functions (\program, (name, fn) -> do
+        (program, _) <- PO.addItem program name (PO.Function fn)
+        program)
+    trace config "HIR processing effect handlers done"
+    (context.expr_id_gen, context.pattern_id_gen, context.var_gen, program)

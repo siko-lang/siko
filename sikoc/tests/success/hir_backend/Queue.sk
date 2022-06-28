@@ -1,0 +1,22 @@
+module Siko.HIR.Backend.Queue where
+
+data Queue i = { item_queue :: [i] }
+
+createQueue i :: Queue i
+createQueue = Queue []
+
+addItem i :: Queue i -> i -> Queue i
+addItem queue item = do
+    item_queue <- queue.item_queue + [item]
+    queue { item_queue = item_queue }
+
+processItems i c :: Queue i -> c -> (Queue i -> c -> i -> (Queue i, c)) -> (Queue i, c)
+processItems queue context process_fn = do
+    loop (queue, context) <- (queue, context) do
+        queue :: Queue i <- queue // FIXME
+        if List.isEmpty queue.item_queue
+            then break (queue, context)
+            else do
+                items <- queue.item_queue
+                queue <- queue { item_queue = [] }
+                List.fold (queue, context) items (\(queue, context), item -> process_fn queue context item)

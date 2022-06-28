@@ -1,0 +1,22 @@
+module Main where
+
+import Siko.HIR.Program as P
+import Siko.HIR.Backend
+import Siko.HIR.Backend.Unification.TypeVarGenerator as TVG
+import Siko.HIR.Backend.ExprIdGenerator
+import Siko.HIR.Backend.PatternIdGenerator
+import Siko.Diagnostics
+import Siko.FileManager
+import Siko.Config
+
+import Map
+
+main = do
+    config <- getDefaultConfig
+    program <- P.Program Map.empty Map.empty
+    expr_id_gen <- createExprIdGenerator
+    pattern_id_gen <- createPatternIdGenerator
+    var_gen <- TVG.createTypeVarGenerator
+    file_manager <- createFileManager
+    processProgram config program expr_id_gen pattern_id_gen var_gen file_manager
+    ()

@@ -1,0 +1,63 @@
+module Siko.HIR.Backend.Typechecker.FunctionStore where
+
+import Siko.HIR.Type
+import Siko.HIR.TypeFormatter as TF
+import Siko.HIR.Program
+import Siko.HIR.Backend.Unification as U
+import Siko.HIR.Backend.Unification.Substitution as S
+import Map
+
+data FunctionTypeInfo = { name :: FullyQualifiedName,
+                          args :: [Type],
+                          function_type :: Type,
+                          result_type :: Type,
+                          effects :: Option [Type],
+                          defined :: Bool,
+                        } deriving (Show)
+
+data FunctionStore = {  functions :: Map FullyQualifiedName FunctionTypeInfo,
+                     } deriving (Show)
+
+createFunctionStore :: FunctionStore
+createFunctionStore = FunctionStore empty
+
+addFunctionTypeInfo :: FunctionStore -> FunctionTypeInfo -> FunctionStore
+addFunctionTypeInfo store func_type_info = do
+    (functions, _) <- insert store.functions func_type_info.name func_type_info
+    store { functions = functions }
+
+getFunctionTypeInfo :: FunctionStore -> FullyQualifiedName -> FunctionTypeInfo
+getFunctionTypeInfo store name =
+    case get store.functions name of
+        Some func_type_info -> func_type_info
+        None -> panic "FunctionTypeInfo for {} not found" % name
+
+setFunctionEffects :: FunctionStore -> FullyQualifiedName -> [Type] -> FunctionStore
+setFunctionEffects store name effects = do
+    (functions, _) <- alter (\info -> case info of
+        Some info -> Some (info { effects = Some effects })
+        None -> panic "setFunctionEffects info not found") name store.functions
+    store { functions = functions }
+
+instance S.Apply FunctionTypeInfo where
+    apply func_type_info sub = do
+        args <- S.apply func_type_info.args sub
+        function_type <- S.apply func_type_info.function_type sub
+        result_type <- S.apply func_type_info.result_type sub
+        effects <- case func_type_info.effects of
+            Some effects -> Some (List.map effects (\t -> S.apply t sub))
+            None -> None
+        FunctionTypeInfo func_type_info.name args function_type result_type effects func_type_info.defined
+
+apply :: FunctionStore -> [FullyQualifiedName] -> S.Substitution -> FunctionStore
+apply store group_items sub = do
+    functions <- group_items |> List.iter |> Iterator.fold (\functions, name -> do
+            (functions, _) <- alter (\func_type_info -> case func_type_info of
+                Some f -> Some (S.apply f sub)
+                None -> None) name functions
+            functions) store.functions
+    store { functions = functions }
+
+dump :: FunctionStore -> ()
+dump store = do
+    store.functions |> Map.iter |> forEach (\(name, func_type_info) -> println "F: {}: {}" % (name, TF.toString func_type_info.function_type))

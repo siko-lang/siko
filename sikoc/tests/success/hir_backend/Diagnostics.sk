@@ -1,0 +1,79 @@
+module Siko.Diagnostics where
+
+import Siko.Syntax.Location
+import Siko.Syntax.Ident
+import Siko.HIR.Backend.Typechecker.Error
+import Siko.HIR.Backend.CaseChecker.Error as CCE
+import Siko.FileManager
+
+printSpan :: String -> Span -> ()
+printSpan msg span = println "{} at {}" % (msg, fmtSpan span)
+
+fmtSpan :: Span -> String
+fmtSpan span = "{}:{}" % (span.start.line, span.start.offset + 1)
+
+fmtLocation :: Location -> String
+fmtLocation location = "{}" % (fmtSpan location.span)
+
+getLine :: Location -> Int
+getLine location = location.span.start.line
+
+getOffset :: Location -> Int
+getOffset location = location.span.start.offset + 1
+
+fmtIdent :: FileManager -> Ident -> String
+fmtIdent file_manager (Ident s location) = do
+    file_name <- getFile file_manager location.file_id
+    "-- {}:{}:{}\n" % (file_name, getLine location, getOffset location)
+
+fmtIdents :: FileManager -> [Ident] -> String
+fmtIdents file_manager idents = idents |> List.iter |> Iterator.fold (\r, i -> do
+                                s <- fmtIdent file_manager i
+                                r <- "{} {}" % (r, s)
+                                r) ""
+
+printSingle :: FileManager -> String -> Ident -> ()
+printSingle file_manager msg (Ident n location) = do
+    println "ERROR: {} - {}" % (msg, n)
+    file_name <- getFile file_manager location.file_id
+    println "-- {}:{}:{}" % (file_name, getLine location, getOffset location)
+
+printSingleL :: FileManager -> String -> Location -> ()
+printSingleL file_manager msg location = do
+    println "ERROR: {}" % msg
+    file_name <- getFile file_manager location.file_id
+    println "-- {}:{}:{}" % (file_name, getLine location, getOffset location)
+
+printMulti :: FileManager -> String -> [Ident] -> ()
+printMulti file_manager msg idents = do
+    println "ERROR: {}" % msg
+    idents |> List.iter |> forEach (\(Ident n location) -> do
+        file_name <- getFile file_manager location.file_id
+        println "-- {}:{}:{}" % (file_name, getLine location, getOffset location))
+
+printTypecheckerError file_manager error = case error of
+    TypeMismatch expected found location -> printSingleL file_manager "TypeMismatch expected: {} found: {}" % (expected, found) location
+    TooManyArguments args type location -> println "TooManyArguments args {} {} {}" % (args, type, fmtLocation location)
+    ClassMemberWithoutType name location -> println "ClassMemberWithoutType {} {}" % (name, fmtLocation location)
+    InstanceMemberNotClassMember name location -> println "InstanceMemberNotClassMember {} {}" % (name, fmtLocation location)
+    MissingInstanceMember name location -> printSingleL file_manager ("MissingInstanceMember {}" % name) location
+    InstanceMemberTypeMismatch expected found location -> println "InstanceMemberTypeMismatch expected: {} found: {} {}" % (expected, found, fmtLocation location)
+    IncorrectArgCount expected found location -> println "IncorrectArgCount {} {} {}" % (expected, found, fmtLocation location)
+    UnreachablePattern location -> println "UnreachablePattern {}" % (fmtLocation location)
+    CircularClassDependency names locations -> println "CircularClassDependency {} {}" % (names, locations)
+    ConflictingInstances class_name l1 l2 -> println "ConflictingInstances {} {} {}" % (class_name, fmtLocation l1, fmtLocation l2)
+    MissingInstance class_name location -> println "MissingInstance {} {}" % (class_name, fmtLocation location)
+    SpecializedInstance location -> println "SpecializedInstance {}" % (fmtLocation location)
+    AutoDeriveError type_name type class_name location -> println "AutoDeriveError {} {} {} {}" % (type_name, type, class_name, fmtLocation location)
+    TypeAnnotationNeeded location -> printSingleL file_manager "TypeAnnotationNeeded" location
+    IncorrectMainType type location -> println "IncorrectMainType {} {}" % (type, fmtLocation location)
+    MissingEffectMembers names location -> printSingleL file_manager ("MissingEffectMembers {}" % names) location
+    EffectMemberNotUnique name locations -> println "EffectMemberNotUnique {} {}" % (name, locations)
+    UndeclaredEffect name location -> printSingleL file_manager ("UndeclaredEffect {}" % name) location
+    UnnecessaryEffect name location -> printSingleL file_manager ("UnnecessaryEffect {}" % name) location
+    MainEffectFound names location -> printSingleL file_manager ("MainEffectFound {}" % names) location
+
+printCaseCheckerError :: FileManager -> CCE.CaseCheckerError -> ()
+printCaseCheckerError file_manager error = case error of
+    CCE.UnreachableCase location -> printSingleL file_manager "UnreachableCase" location
+    CCE.NonExhaustiveCase location -> printSingleL file_manager "NonExhaustiveCase" location

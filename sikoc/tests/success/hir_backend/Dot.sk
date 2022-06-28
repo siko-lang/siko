@@ -1,0 +1,76 @@
+module Siko.Dot where
+
+data NodeId = NodeId Int
+
+instance Show NodeId where
+    show (NodeId id) = show id
+
+data Graph = { name :: String,
+               next_id :: Int,
+               nodes :: [Node],
+               edges :: [Edge],
+             }
+
+data Node = { name :: String,
+              id :: NodeId,
+              elements :: [String],
+              color :: String,
+            }
+
+data Edge = { name :: Option String,
+              from :: NodeId,
+              to :: NodeId,
+            }
+
+createGraph :: String -> Graph
+createGraph name = Graph name 0 [] []
+
+addNode :: Graph -> String -> (Graph, NodeId)
+addNode graph name = do
+    id <- graph.next_id
+    node_id <- NodeId id
+    node <- Node name node_id [] "yellow"
+    nodes <- graph.nodes + [node]
+    graph <- graph { next_id = id + 1, nodes = nodes }
+    (graph, node_id)
+
+addColor :: Graph -> NodeId -> String -> Graph
+addColor graph (NodeId id) color = do
+    node <- atIndex graph.nodes id // FIXME: use update
+    node <- node { color = color }
+    nodes <- write graph.nodes id node
+    graph { nodes = nodes }
+
+addElement :: Graph -> NodeId -> String -> Graph
+addElement graph (NodeId id) element = do
+    node <- atIndex graph.nodes id // FIXME: use update
+    elements <- node.elements + [element]
+    node <- node { elements = elements }
+    nodes <- write graph.nodes id node
+    graph { nodes = nodes }
+
+addEdge :: Graph -> Option String -> NodeId -> NodeId -> Graph
+addEdge graph name from to = do
+    edge <- Edge name from to
+    edges <- graph.edges + [edge]
+    graph { edges = edges }
+
+generateDot :: Graph -> String
+generateDot graph = do
+    s <- "digraph D {\n"
+    s <- s + "node [shape=record fontname=Arial splines=ortho];\n"
+    s <- graph.nodes |> List.iter |> Iterator.fold (\s, node -> do
+            s <- if isEmpty node.elements
+                then s + "node{} [label=\"{}\" style=filled fillcolor={}]\n" % (node.id, node.name, node.color)
+                else do
+                    elements <- join node.elements "|"
+                    s + "node{} [label=\"{{{}|{}}}\" style=filled fillcolor={}]\n" % (node.id, node.name, elements, node.color)
+            s) s
+    s <- graph.edges |> List.iter |> Iterator.fold (\s, edge -> do
+            e <- case edge.name of
+                Some name -> "node{} -> node{} [label=\"{}\"]\n" % (edge.from, edge.to, name)
+                None -> "node{} -> node{}\n" % (edge.from, edge.to)
+            s <- s + e
+            s) s
+    s <- s + "}\n"
+    s

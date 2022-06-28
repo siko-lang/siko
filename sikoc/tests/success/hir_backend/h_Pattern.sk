@@ -1,0 +1,39 @@
+module Siko.HIR.Pattern where
+
+import Siko.Syntax.Location
+import Siko.Syntax.Ident
+import Siko.HIR.Expr as E
+import Siko.HIR.Type as T
+import Siko.HIR.Program as P
+import Map
+
+data BindRef = BindRef String PatternId deriving (Show, PartialEq, Eq, PartialOrd, Ord)
+
+data BindGroup = { bindings :: Map String [BindRef] } deriving (Show)
+
+data RangeKind = Exclusive
+               | Inclusive
+               deriving (Show, PartialEq, Eq, PartialOrd, Ord)
+
+data PatternId = PatternId Int deriving (PartialEq, Eq, PartialOrd, Ord)
+
+instance Show PatternId where
+  show (PatternId id) = "{}" % id
+
+data Pattern a = Pattern (SimplePattern a) PatternId a Location
+
+instance (Show a) => Show Pattern a where
+  show (Pattern p _ _ _) = show p
+
+data SimplePattern a = Binding BindRef
+                     | Tuple [Pattern a]
+                     | Guarded (Pattern a) (E.Expr a)
+                     | Wildcard
+                     | IntegerLiteral String
+                     | StringLiteral String
+                     | CharLiteral Char
+                     | CharRange Char Char RangeKind
+                     | Typed (Pattern a) T.Type
+                     | Record P.FullyQualifiedName [Pattern a]
+                     | Variant P.FullyQualifiedName Int [Pattern a]
+                     deriving (Show)
