@@ -209,15 +209,6 @@ convertExpr context lir_expr = do
                     R.Block [assign, R.Continue]
                 None -> panic "No loop var found for continue"
         LE.Return e -> R.Return (convertExpr context e)
-        LE.RecordUpdate v items -> do
-            n <- show v
-            new <- "new"
-            var_decl <- R.VarDeclMut new (R.VarRef n) None
-            assignments <- items |> List.iter |> Iterator.map (\update -> do
-            lhs <- (R.FieldAccess (getRustFriendlyName update.field_name) (R.VarRef new))
-            rhs <- (convertExpr context update.body)
-            R.Assign lhs rhs) |> toList
-            R.Block ([var_decl] + assignments + [R.VarRef new])
         LE.List args -> do
             rust_type <- convertType expr_type
             args <- args |> List.iter |> Iterator.map (\arg -> convertExpr context arg) |> toList

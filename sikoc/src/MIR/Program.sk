@@ -14,11 +14,10 @@ data Identity = { module_name :: String, name :: String, index :: Int } deriving
 data Program = { functions :: Map Identity F.Function,
                  adts :: Map Identity D.AlgebraicDataType,
                  records :: Map Identity D.Record,
-                 unit_type :: Option Type,
-                 record_ctors :: Map Identity Identity }
+                 unit_type :: Option Type }
 
 createProgram :: Program
-createProgram = Program empty empty empty None empty
+createProgram = Program empty empty empty None
 
 addFunction :: Program -> Identity -> F.Function -> Program
 addFunction program function_id function = do
@@ -49,11 +48,6 @@ getAdtOrRecord program id = case get program.adts id of
     None -> case get program.records id of
         Some record -> (program, Right record)
         None -> panic "MIR id is not adt or record {}" % id
-
-getRecordCtor :: Program -> Identity -> (Program, Identity)
-getRecordCtor program record_id = case get program.record_ctors record_id of
-    Some record_ctor -> (program, record_ctor)
-    None -> panic "MIR Record ctor not found {}" % record_id
 
 updateRecordFields :: Program -> Identity -> [D.RecordField] -> Program
 updateRecordFields program record_id fields = do

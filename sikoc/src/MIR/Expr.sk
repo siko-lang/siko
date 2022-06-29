@@ -18,10 +18,6 @@ instance Show Var where
         Arg i -> "arg{}" % i
         FnArg i -> "fn_arg{}" % i
 
-data RecordUpdateItem = { field_name :: String,
-                          body :: Expr }
-                        deriving (Show)
-
 data RangeKind = Inclusive | Exclusive deriving (Show)
 
 data Checker = IntegerChecker String
@@ -66,7 +62,6 @@ data SimpleExpr = Do [Expr]
                 | Return Expr
                 | Continue Expr
                 | Break Expr
-                | RecordUpdate Var [RecordUpdateItem]
                 | Loop Var Expr Expr [ExprId] [ExprId]
                 | CaseOf Expr [Case]
                 | Clone Expr
@@ -96,7 +91,6 @@ short expr = do
         Return arg -> "Return"
         Continue arg -> "Continue"
         Break arg -> "Break"
-        RecordUpdate var updates -> "RecordUpdate"
         Loop var initializer body _ _ -> "Loop"
         CaseOf body cases -> "CaseOf"
         Clone expr -> "Clone"
@@ -168,12 +162,6 @@ prettyPrint expr ind = do
             s <- if simple then s else "({})" % s
             s <- "break {}" % s
             (s, simple)
-        RecordUpdate var updates -> do
-            args <- updates |> List.iter |> Iterator.map (\update -> do
-                (s, simple) <- prettyPrint update.body ind
-                ("{} : {}" % (update.field_name, s))) |> toList
-            s <- "({} {{ {} }})" % (var, join args ", ")
-            (s, True)
         Loop var initializer body _ _ -> do
             (initializer, simple) <- prettyPrint initializer ind
             initializer <- if simple then initializer else "({})" % initializer

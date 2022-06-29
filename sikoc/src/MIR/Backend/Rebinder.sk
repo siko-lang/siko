@@ -99,15 +99,6 @@ processExpr context expr = do
             E.Expr _ _ arg_id <- arg
             context <- context { breaks = List.push context.breaks arg_id }
             (context, E.Expr (E.Break arg) type id)
-        E.RecordUpdate v updates -> do
-            v <- case get context.vars v of
-                Some v -> v
-                None -> panic "Rebinder cannot find mapping for {}" % v
-            (context, updates) <- List.mapS context updates (\context, update -> do
-                update :: E.RecordUpdateItem <- update // FIXME
-                (context, updated_body) <- processExpr context update.body
-                (context, update { body = updated_body }))
-            (context, E.Expr (E.RecordUpdate v updates) type id)
         E.Loop v initializer body continues breaks -> do
             (context, v) <- addVar context v
             (context, initializer) <- processExpr context initializer

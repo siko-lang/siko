@@ -277,15 +277,6 @@ lowerProgram config file_manager var_gen class_info_store hir_program instance_r
     (context, unit_type) <- processType context (HT.Tuple [])
     mir_program <- context.mir_program
     mir_program <- mir_program { adts = context.type_store.adts, records = context.type_store.records, unit_type = Some unit_type }
-    record_ctors <- mir_program.functions |> Map.iter |> Iterator.fold (\record_ctors, (id, function) -> do
-            case function.kind of
-                MF.RecordCtor -> do
-                    record_id <- MT.getIdentity function.type.result
-                    (record_ctors, _) <- Map.insert record_ctors record_id id
-                    record_ctors
-                _ -> record_ctors
-        ) Map.empty
-    mir_program <- mir_program { record_ctors = record_ctors }
     if config.dump
     then do
         s <- MP.dump mir_program

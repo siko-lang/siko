@@ -67,13 +67,6 @@ traverse context expr process_expr process_type preCaseCheck = do
         Break arg -> do
             (context, arg) <- traverse context arg process_expr process_type preCaseCheck
             (context, Expr (Break arg) type id)
-        RecordUpdate v updates -> do
-            (context, updates) <- updates |> List.iter |> Iterator.fold (\(context, updates), update -> do
-                (context, updated_body) <- traverse context update.body process_expr process_type preCaseCheck
-                update <- update { body = updated_body }
-                updates <- updates + [update]
-                (context, updates)) (context, [])
-            (context, Expr (RecordUpdate v updates) type id)
         Loop v initializer body continues breaks -> do
             (context, initializer) <- traverse context initializer process_expr process_type preCaseCheck
             (context, body) <- traverse context body process_expr process_type preCaseCheck
