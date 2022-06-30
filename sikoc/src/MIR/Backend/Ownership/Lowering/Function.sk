@@ -11,6 +11,7 @@ import Siko.MIR.Backend.Ownership.Lowering.Type
 import Siko.MIR.Backend.Ownership.FunctionInfoStore
 import Siko.MIR.Backend.Ownership.BorrowChecker
 import Siko.MIR.Backend.Ownership.BorrowInfo
+import Siko.MIR.Backend.Ownership.BorrowId
 import Siko.MIR.Backend.Ownership.EqualityGeneration
 import Siko.MIR.Backend.Ownership.Initializer
 import Siko.MIR.Backend.Ownership.InferenceInfo
@@ -38,13 +39,15 @@ lowerFunction context lowering_info mir_id lir_id = do
     context <- context { mir_program = mir_program }
     context <- case function.kind of
         MF.Normal info -> do
-            inference_info <- createInferenceInfoFromLoweringInfo lowering_info mir_id
+            (inference_info, external_borrows) <- createInferenceInfoFromLoweringInfo lowering_info mir_id
             inference_info <- initializeTypeVariables inference_info mir_id info.body
+            //println "lowerFunction1 {} {}" % (lir_id, inference_info)
             function_info_store <- context.function_info_store
             (mir_program, equals, inference_info, data_group_info_store) <- processFunctionEqualities mir_id context.config []
                 List2.empty inference_info function_info_store context.mir_program info.body context.data_group_info_store
             context <- context { data_group_info_store = data_group_info_store }
             (mir_program, inference_info) <- processEqualities context.config equals inference_info context.mir_program
+            //println "lowerFunction2 {} {}" % (lir_id, inference_info)
             converters <- getFunctionConverters context.config inference_info mir_id
             group_function_converters <- Map2.put inference_info.group_function_converters mir_id converters
             inference_info <- inference_info { group_function_converters = group_function_converters }
@@ -52,14 +55,17 @@ lowerFunction context lowering_info mir_id lir_id = do
             borrow_info <- checkBorrows context.mir_program info.body
             (members, ownership_dep_map) <- calculateOwnershipDepMap context.config inference_info.members
             inference_info <- inference_info { members = members }
-            (inference_info, ownership_dep_map) <- unpackOwnerships context.config mir_id inference_info ownership_dep_map
+            (inference_info, ownership_dep_map) <- unpackOwnerships context.config mir_id inference_info ownership_dep_map external_borrows
+            //println "lowerFunction3 {} {}" % (lir_id, inference_info)
             (inference_info, constraints, invalid_borrow_map, ownership_expr_map) <- collectConstraints context.config mir_id context.mir_program borrow_info inference_info info.body
             inference_info <- processConstraints context.config mir_id inference_info constraints invalid_borrow_map ownership_expr_map Full
+            //println "lowerFunction4 {} {}" % (lir_id, inference_info)
             // dumpOwnership inference_info mir_id info.body
             // println "Borrow info {}" % borrow_info
             // println "Inference info {}" % inference_info
             (inference_info, filter_info) <- buildFilterInfoFromInferenceInfo context.config inference_info
             (inference_info, filter_info) <- mergeExternalLifetimes inference_info filter_info mir_id
+            //println "lowerFunction5 {} {}" % (lir_id, inference_info)
             (inference_info, function_inference_info) <- getFunctionInferenceInfo inference_info mir_id
             (inference_info, lowering_info, filter_info) <- convertToFunctionLoweringInfo context.config inference_info
                 (List2.asList function_inference_info.args) function_inference_info.result filter_info
@@ -92,8 +98,11 @@ lowerFunction context lowering_info mir_id lir_id = do
     //trace context.config "Lowering done"
     context
 
-unpackOwnerships :: Config -> MP.Identity -> InferenceInfo -> Map2 GroupTypeVariable (List2 OwnershipTypeVariable) -> (InferenceInfo, Map2 GroupTypeVariable (List2 OwnershipTypeVariable))
-unpackOwnerships config function_id inference_info ownership_dep_map = do
+unpackOwnerships :: Config -> MP.Identity -> InferenceInfo ->
+                    Map2 GroupTypeVariable (List2 OwnershipTypeVariable) ->
+                    List2 BorrowId ->
+                    (InferenceInfo, Map2 GroupTypeVariable (List2 OwnershipTypeVariable))
+unpackOwnerships config function_id inference_info ownership_dep_map external_borrows = do
     // Ownership information is present in the lowering info
     // in a packed way. For example an owned record implies
     // that every field of the record is also owned.
@@ -108,5 +117,5 @@ unpackOwnerships config function_id inference_info ownership_dep_map = do
     List2.fold (inference_info, ownership_dep_map) vars (\(inference_info, ownership_dep_map), var -> do
         case Map2.get ownership_dep_map var of
             Some ownership_vars -> List2.fold (inference_info, ownership_dep_map) ownership_vars (\(inference_info, ownership_dep_map), var ->
-                (maybeAddOwnership inference_info var M.Owner, ownership_dep_map))
+                (enforceOwner inference_info var external_borrows, ownership_dep_map))
             None -> (inference_info, ownership_dep_map))

@@ -51,9 +51,11 @@ updateOwnership context ownership_var kind = do
     (context, old_kind) <- getOwnershipValue context ownership_var
     if old_kind != kind
     then do
-        inference_info <- addOwnership context.inference_info ownership_var kind
-        context <- context { inference_info = inference_info, changed_ownership_vars = True }
-        context
+        (inference_info, changed) <- addInferredOwnership context.inference_info ownership_var kind
+        context <- context { inference_info = inference_info }
+        if changed
+        then context { changed_ownership_vars = True }
+        else context
     else context
 
 isValidBorrow :: Context -> OwnershipTypeVariable -> E.ExprId -> (Context, Bool)

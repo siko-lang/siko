@@ -58,9 +58,10 @@ data InferenceInfo = { expr_type_variables :: Map2 GlobalExprId TypeVariableInfo
                        group_function_converters :: Map2 P.Identity (List2 Converter),
                        borrow_sets :: Map2 BorrowId BorrowSet,
                        external_borrows :: Map2 BorrowId BorrowId,
+                       initials :: List2 OwnershipTypeVariable,
                      } deriving (PartialEq, Eq, PartialOrd, Ord, Show)
 
-createInferenceInfoFromLoweringInfo :: FunctionLoweringInfo -> P.Identity -> InferenceInfo
+createInferenceInfoFromLoweringInfo :: FunctionLoweringInfo -> P.Identity -> (InferenceInfo, List2 BorrowId)
 createInferenceInfoFromLoweringInfo lowering_info function_id = do
     expr_type_variables <- Map2.empty
     var_type_variables <- Map2.empty
@@ -80,16 +81,18 @@ createInferenceInfoFromLoweringInfo lowering_info function_id = do
     group <- List2.single function_id
     inference_info <- InferenceInfo expr_type_variables var_type_variables group
         function_infos ownership_values members converters allocator
-        function_converters group_function_converters borrow_sets Map2.empty
-    List2.fold inference_info lowering_info.ownershipinfos (\inference_info, ownershipinfo -> do
-            (inference_info, v, kind) <- case ownershipinfo of
-                M.OwnershipInfo v M.Unknown -> (inference_info, v, M.Unknown)
-                M.OwnershipInfo v M.Owner -> (inference_info, v, M.Owner)
+        function_converters group_function_converters borrow_sets Map2.empty List2.empty
+    List2.fold (inference_info, List2.empty) lowering_info.ownershipinfos (\(inference_info, external_borrows), ownershipinfo -> do
+            (inference_info, external_borrows, v, kind) <- case ownershipinfo of
+                M.OwnershipInfo v M.Unknown -> (inference_info, external_borrows, v, M.Unknown)
+                M.OwnershipInfo v M.Owner -> (inference_info, external_borrows, v, M.Owner)
                 M.OwnershipInfo v (M.Borrower external_id) -> do
                     (inference_info, id) <- createBorrowSetForExternal inference_info external_id
-                    (inference_info, v, M.Borrower id)
+                    (inference_info, List2.push external_borrows id, v, M.Borrower id)
             (ownership_values, _) <- Map2.insert inference_info.ownership_values v kind
-            inference_info { ownership_values = ownership_values }
+            initials <- List2.push inference_info.initials v
+            inference_info <- inference_info { ownership_values = ownership_values, initials = initials }
+            (inference_info, external_borrows)
         )
 
 addFunctionInferenceInfo :: InferenceInfo -> P.Identity -> Int -> InferenceInfo
@@ -122,7 +125,7 @@ createInferenceInfo = do
     group_function_converters <- Map2.empty
     borrow_sets <- Map2.empty
     InferenceInfo Map2.empty Map2.empty List2.empty function_infos ownership_values List2.empty List2.empty allocator
-            function_converters group_function_converters borrow_sets Map2.empty
+            function_converters group_function_converters borrow_sets Map2.empty List2.empty
 
 createBorrowSet :: InferenceInfo -> Borrow -> (InferenceInfo, BorrowId)
 createBorrowSet inference_info borrow = do
@@ -200,6 +203,29 @@ addOwnership inference_info var kind = do
     (ownership_values, _) <- Map2.insert inference_info.ownership_values var kind
     inference_info { ownership_values = ownership_values }
 
+changeInitialOwnership :: Map2 OwnershipTypeVariable M.OwnershipKind -> List2 OwnershipTypeVariable ->
+                          OwnershipTypeVariable -> M.OwnershipKind ->
+                          (Map2 OwnershipTypeVariable M.OwnershipKind, Bool)
+changeInitialOwnership ownership_values initials var kind = do
+    update <- if List2.contains initials var
+    then do
+        case Map2.get ownership_values var of
+            Some (M.Borrower _) -> case kind of
+                M.Borrower _ -> True
+                _ -> False
+            Some old -> old == M.Unknown
+            None -> True
+    else True
+    ownership_values <- if update
+    then Map2.put ownership_values var kind
+    else ownership_values
+    (ownership_values, update)
+
+addInferredOwnership :: InferenceInfo -> OwnershipTypeVariable -> M.OwnershipKind -> (InferenceInfo, Bool)
+addInferredOwnership inference_info var kind = do
+    (ownership_values, update) <- changeInitialOwnership inference_info.ownership_values inference_info.initials var kind
+    (inference_info { ownership_values = ownership_values }, update)
+
 maybeAddOwnership :: InferenceInfo -> OwnershipTypeVariable -> M.OwnershipKind -> InferenceInfo
 maybeAddOwnership inference_info var kind = do
     (ownership_values, _) <- Map2.alter (\old -> case old of
@@ -212,6 +238,22 @@ maybeAddOwnership inference_info var kind = do
             //println "maybeAddOwnership: Added {} to {} 2" % (kind, var)
             Some kind) var inference_info.ownership_values
     inference_info { ownership_values = ownership_values }
+
+enforceOwner :: InferenceInfo -> OwnershipTypeVariable -> List2 BorrowId -> InferenceInfo
+enforceOwner inference_info var external_borrows = do
+    kind <- case Map2.get inference_info.ownership_values var of
+        Some old -> case old of
+            M.Unknown -> M.Owner
+            M.Borrower id -> if List2.contains external_borrows id
+                            then old
+                            else M.Owner
+            M.Owner -> M.Owner
+        None -> M.Owner
+    (inference_info, update) <- addInferredOwnership inference_info var kind
+    initials <- if update
+    then List2.push inference_info.initials var
+    else inference_info.initials
+    inference_info { initials = initials }
 
 getOwnership :: InferenceInfo -> OwnershipTypeVariable -> (InferenceInfo, Option M.OwnershipKind)
 getOwnership inference_info var = do
@@ -443,7 +485,7 @@ instance Apply InferenceInfo where
         members <- List2.dedup (List2.sort members)
         converters <- List2.dedup (List2.sort converters)
         inference_info <- InferenceInfo expr_type_variables var_type_variables inference_info.group function_infos inference_info.ownership_values members converters inference_info.allocator
-            function_converters group_function_converters inference_info.borrow_sets inference_info.external_borrows
+            function_converters group_function_converters inference_info.borrow_sets inference_info.external_borrows inference_info.initials
         (inference_info, ownership_values) <- Map2.fold (inference_info, Map2.empty) merged_ownership_values (\(inference_info, ownership_values), (var, kinds) -> do
             kinds <- kinds |> List2.sort |> List2.dedup
             kinds <- List2.filter kinds (\kind -> case kind of
@@ -469,7 +511,7 @@ instance Apply InferenceInfo where
                         borrow_sets <- Map2.put inference_info.borrow_sets id borrow_set
                         inference_info <- inference_info { borrow_sets = borrow_sets, allocator = allocator }
                         (inference_info, M.Borrower id)
-            ownership_values <- Map2.put ownership_values var kind
+            (ownership_values, update) <- changeInitialOwnership ownership_values inference_info.initials var kind
             (inference_info, ownership_values))
         inference_info <- inference_info { ownership_values = ownership_values }
         (applier, inference_info)
@@ -500,20 +542,26 @@ mergeExternalLifetimes inference_info filter_info function_id = do
             case ownership of
                 Some (M.Borrower id) -> do
                     (allocator, merged_id) <- getNextBorrowId inference_info.allocator
+                    //println "mergeExternalLifetimes: changing borrower {} to {}" % (id, merged_id)
                     inference_info <- inference_info { allocator = allocator }
                     (inference_info, borrow_set) <- getBorrowSet inference_info id
                     externals :: List Borrow <- List.filterMap borrow_set.borrows.items (\borrow -> case borrow of
                                     External a -> Some (External a)
                                     _ -> None)
+                    //println "mergeExternalLifetimes: externals {}" % externals
+                    //println "mergeExternalLifetimes: borrow_sets before {}" % inference_info.borrow_sets
                     borrow_sets <- Map2.map inference_info.borrow_sets (\(id, set) -> do
                         borrows <- Set.map set.borrows (\borrow -> if List.contains externals borrow
                             then External merged_id
                             else borrow)
                         (id, set { borrows = borrows }))
+                    //println "mergeExternalLifetimes: borrow_sets after {}" % borrow_sets
                     inverse_map <- Map2.fold Map2.empty borrow_sets (\inverse_map, (id, set) -> Map2.add inverse_map set id)
                     kind_map <- Map2.fold Map2.empty inverse_map (\kind_map, (_, ids) -> do
                         first <- List2.atIndex ids 0
                         List2.fold kind_map ids (\kind_map, id -> if id != first then Map2.put kind_map id first else kind_map))
+                    //println "mergeExternalLifetimes: kind_map {}" % kind_map
+                    //println "mergeExternalLifetimes: ownership_values before {}" % inference_info.ownership_values
                     ownership_values <- Map2.map inference_info.ownership_values (\(var, kind) -> do
                         kind <- case kind of
                             M.Borrower id -> case Map2.get kind_map id of
@@ -521,6 +569,7 @@ mergeExternalLifetimes inference_info filter_info function_id = do
                                         None -> M.Borrower id
                             kind -> kind
                         (var, kind))
+                    //println "mergeExternalLifetimes: ownership_values after {}" % ownership_values
                     inference_info { borrow_sets = borrow_sets, ownership_values = ownership_values }
                 _  -> inference_info
         )

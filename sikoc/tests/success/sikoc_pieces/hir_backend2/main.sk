@@ -1,0 +1,94 @@
+module Main where
+
+import Std.Util
+import Map
+
+data Context = Context
+
+unifyVarWithType :: Context-> TypeVar -> [Constraint] -> Substitution -> Type -> Result (Context, Substitution) () // FIXME DataProvider, TypeVarGenerator
+unifyVarWithType context var constraints sub type = do
+    field_type <- Tuple []
+    (success, sub, context) <- case unify context sub field_type (Tuple []) of
+                                Ok (context, sub) -> do
+                                    (True, sub, context)
+                                Err _ -> (False, sub, context)
+    sub <- List.fold sub constraints (\sub, constraint ->
+            case constraint of
+                ClassConstraint class_name associated_types -> do
+                    c <- UnificationConstraint class_name type associated_types
+                    addUnificationConstraint sub c
+                _ -> sub)
+    sub <- try addSub sub var type
+    Ok (context, sub)
+
+unifyVarWithFixedArg :: Context -> Substitution -> TypeVar -> [Constraint] -> [Constraint] -> Type -> Result (Context, Substitution) () // FIXME ClassProvider
+unifyVarWithFixedArg context sub var var_constraints fixed_arg_constraints fixed_arg_type = do
+    fixed_associated_type_map <- Map.empty
+    var_associated_type_map :: Map String [Type] <- Map.empty
+    (context, ok, sub) <- Map.fold (context, True, sub) var_associated_type_map (\(context, ok, sub), (class_name, associated_types) ->
+        case Map.get fixed_associated_type_map class_name of
+            Some fixed_associated_types ->
+                List.zipS (context, ok, sub) fixed_associated_types associated_types (\(context, ok, sub), ty1, ty2 -> do
+                    case unify context sub ty1 ty2 of
+                        Ok (context, sub) -> (context, ok, sub)
+                        Err _ -> (context, False, sub))
+            None -> (context, ok, sub))
+    sub <- try addSub sub var fixed_arg_type
+    Ok (context, sub)
+
+unify :: Context -> Substitution -> Type -> Type -> Result (Context, Substitution) () // FIXME TypeVarGenerator, DataProvider
+unify context sub type1 type2 = do
+    case (type1, type2) of
+        (FixedTypeArg _ var1 constraints1, Var var2 constraints2) -> unifyVarWithFixedArg context sub var2 constraints2 constraints1 type1
+        (Var var1 constraints1, FixedTypeArg _ var2 constraints2) -> unifyVarWithFixedArg context sub var1 constraints1 constraints2 type2
+        (Var var constraints, type2) -> unifyVarWithType context var constraints sub type2
+        _ -> Err ()
+
+data UnificationConstraint = { class_name :: String,
+                               type :: Type,
+                               associated_types :: [Type]
+                             }
+
+data Substitution = { vars :: Map TypeVar Type,
+                      constraints :: [UnificationConstraint]
+                    }
+
+createSubstitution = Substitution empty []
+
+addSub :: Substitution -> TypeVar -> Type -> Result Substitution ()
+addSub sub var type = do
+    (vars, old) <- insert sub.vars var type
+    sub <- sub { vars = vars }
+    Ok sub
+
+addUnificationConstraint :: Substitution -> UnificationConstraint -> Substitution
+addUnificationConstraint sub c = do
+    cs <- sub.constraints + [c]
+    sub { constraints = cs }
+
+data TypeVar = TypeVar Int deriving (PartialEq, Eq, PartialOrd, Ord)
+
+data RowKind = NamedRow String
+             | IndexedRow Int
+             deriving (PartialEq, Eq, PartialOrd, Ord)
+
+data Constraint = ClassConstraint String [Type]
+                | RowConstraint RowKind Type
+                deriving (PartialEq, Eq, PartialOrd, Ord)
+
+data Type = Var TypeVar [Constraint]
+          | FixedTypeArg String TypeVar [Constraint]
+          | Named String [Type]
+          | Function Type Type
+          | Never TypeVar
+          | Ref Int Type
+          | Owner Type
+          | Tuple [Type]
+          deriving (PartialEq, Eq, PartialOrd, Ord)
+
+main = do
+    sub <- createSubstitution
+    context <- Context
+    unify context sub (Tuple []) (Tuple [])
+    context
+    ()
