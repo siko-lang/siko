@@ -163,9 +163,12 @@ processConverter context converter = do
             then updateOwnership context expr_info.ownership_var arg_kind
             else updateOwnership context expr_info.ownership_var M.Owner
         (M.Owner, M.Borrower _) -> do
-            (context, valid) <- isValidBorrow context expr_info.ownership_var converter.arg_id
-            if valid
-            then context
+            if converter.borrower
+            then do
+                (context, valid) <- isValidBorrow context expr_info.ownership_var converter.arg_id
+                if valid
+                then context
+                else updateOwnership context expr_info.ownership_var M.Owner
             else updateOwnership context expr_info.ownership_var M.Owner
         (M.Borrower a, M.Borrower b) -> do
             (context, can_propagate) <- canPropagateBorrow context expr_info.ownership_var a
