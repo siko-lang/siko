@@ -25,7 +25,8 @@ data Context = { inference_info :: InferenceInfo,
                  invalid_borrow_map :: Map2 E.ExprId (List2 E.ExprId),
                  ownership_expr_map :: Map2 OwnershipTypeVariable (List2 E.ExprId),
                  mode :: InferenceMode,
-                 allow_guess :: Bool }
+                 allow_guess :: Bool,
+                 borrow_groups :: Map2 OwnershipTypeVariable (List2 OwnershipTypeVariable) }
 
 getTypeVariableInfoByExprId2 :: Context -> E.ExprId -> (Context, TypeVariableInfo) // FIXME:
 getTypeVariableInfoByExprId2 context expr_id = do
@@ -82,6 +83,19 @@ canPropagateBorrow context ownership_var borrow_id = do
         (context, is_valid) <- isValidBorrow context ownership_var expr_id
         (context, can_propagate && is_valid))
 
+updateBorrowGroup :: Context -> OwnershipTypeVariable -> OwnershipTypeVariable -> Context
+updateBorrowGroup context from to = do
+        borrow_groups <- addSorted context.borrow_groups from to
+        borrow_groups <- addSorted borrow_groups to from
+        context { borrow_groups = borrow_groups }
+    where
+        addSorted k v :: (Ord k, Ord v, PartialEq v) => Map2 k (List2 v) -> k -> v -> Map2 k (List2 v)
+        addSorted m k v = do
+            (m, _) <- Map2.alter2 (\old -> case old of
+                                Some vs -> Some (List2.push vs v |> List2.sort |> List2.dedup)
+                                None -> Some (List2.single v)) k m
+            m
+
 processFunctionConverter :: Context -> C.FunctionConverterConstraint -> Context
 processFunctionConverter context converter = do
     from <- converter.from
@@ -92,18 +106,19 @@ processFunctionConverter context converter = do
     case (from_kind, to_kind) of
         (M.Owner, M.Unknown) -> updateOwnership context to M.Owner
         (M.Borrower a, M.Borrower b) -> do
-            (context, can_propagate) <- canPropagateBorrow context to a
-            if can_propagate
-            then do
-                (inference_info, contains) <- containsBorrows context.inference_info a b
-                context <- context { inference_info = inference_info }
-                if contains
-                then context
-                else do
+            context <- updateBorrowGroup context from to
+            if a == b
+            then context
+            else do
+                (context, can_propagate) <- canPropagateBorrow context to a
+                if can_propagate
+                then do
                     (inference_info, id) <- mergeBorrowSets context.inference_info a b
                     context <- context { inference_info = inference_info }
-                    updateOwnership context to (M.Borrower id)
-            else updateOwnership context to M.Owner
+                    group <- Option.unwrap (Map2.get context.borrow_groups to)
+                    context <- updateOwnership context to (M.Borrower id)
+                    List2.fold context group (\context, item -> updateOwnership context item (M.Borrower id))
+                else updateOwnership context to M.Owner
         (M.Borrower a, M.Unknown) -> do
             (context, can_propagate) <- canPropagateBorrow context to a
             if can_propagate
@@ -228,7 +243,7 @@ processConstraints :: Config -> P.Identity -> InferenceInfo -> List2 C.Constrain
 processConstraints config function_id inference_info constraints invalid_borrow_map ownership_expr_map mode = do
     // println "Invalid borrow map {}" % (invalid_borrow_map)
     // println "InferenceInfo {}" % inference_info
-    context <- Context inference_info function_id True invalid_borrow_map ownership_expr_map mode False
+    context <- Context inference_info function_id True invalid_borrow_map ownership_expr_map mode False Map2.empty
     //dumpConstraints constraints
     context <- loop context <- context do
         context :: Context <- context // FIXME
