@@ -14,7 +14,15 @@ data StructField = { name :: String, type :: T.Type }
 
 data Struct = { name :: String, lifetimes :: [T.Lifetime], fields :: [StructField], attributes :: [Attribute] }
 
-data Function = { name :: String, lifetimes :: [T.Lifetime], is_method :: Bool, args :: [(String, T.Type)], result :: T.Type, body :: Expr }
+data LifetimeDependency = { from :: T.Lifetime, to :: T.Lifetime }
+
+data Function = { name :: String,
+                  lifetimes :: [T.Lifetime],
+                  is_method :: Bool,
+                  args :: [(String, T.Type)],
+                  result :: T.Type,
+                  body :: Expr,
+                  lifetime_dependencies :: [LifetimeDependency] }
 
 data FieldInitItem = { name :: String,
                        body :: Expr }
@@ -211,7 +219,12 @@ generateFunction function indent = do
     args <- if function.is_method
         then ["&self"] + args
         else args
-    signature <- "{}fn {}<{}>({}) -> {}" % (indent, function.name, join function.lifetimes ", ", join args ", ", T.showAll function.result)
+    deps <- List.map function.lifetime_dependencies (\dep -> "{}: {}" % (dep.from, dep.to))
+    froms <- List.fold [] function.lifetime_dependencies (\froms, dep -> List.push froms dep.from)
+    lifetimes <- List.filterMap function.lifetimes (\lifetime -> if List.contains froms lifetime
+        then None
+        else Some (show lifetime))
+    signature <- "{}fn {}<{}>({}) -> {}" % (indent, function.name, join (lifetimes + deps) ", ", join args ", ", T.showAll function.result)
     body <- generateExpr function.body indent
     signature + " " + body
 

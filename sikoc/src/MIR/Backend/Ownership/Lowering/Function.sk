@@ -32,6 +32,12 @@ import Map2
 import List2 as List2
 import List2 (List2)
 
+lowerLifetimeDependency :: LifetimeDependency -> LF.LifetimeDependency
+lowerLifetimeDependency dep = LF.LifetimeDependency (toLifetime dep.from) (toLifetime dep.to)
+    where
+        toLifetime :: BorrowId -> LT.Lifetime
+        toLifetime BorrowId i = LT.Lifetime i
+
 lowerFunction :: Context -> FunctionLoweringInfo -> MP.Identity -> LP.Identity -> Context
 lowerFunction context lowering_info mir_id lir_id = do
     trace context.config "Lowering function {}/{} {}" % (mir_id, lir_id, lowering_info)
@@ -65,33 +71,35 @@ lowerFunction context lowering_info mir_id lir_id = do
             // println "Inference info {}" % inference_info
             (inference_info, filter_info) <- buildFilterInfoFromInferenceInfo context.config inference_info
             //println "lowerFunction5 {} {}" % (lir_id, inference_info)
-            (inference_info, function_inference_info) <- getFunctionInferenceInfo inference_info mir_id
-            (inference_info, lowering_info, filter_info) <- convertToFunctionLoweringInfo context.config inference_info
-                (List2.asList function_inference_info.args) function_inference_info.result filter_info
             lowering_context <- LoweringContext mir_id inference_info borrow_info.borrows filter_info
             (lowering_context, context, lir_body) <- lowerExpr lowering_context context info.body
             //trace context.config "Processing expr done"
             lir_kind <- LF.Normal lir_body
             (context, lir_function_type, lifetimes) <- lowerFunctionType context lowering_info function.type
-            lir_function <- LF.Function lir_id lifetimes lir_kind lir_function_type
+            lifetime_dependencies <- List2.map lowering_info.lifetime_dependencies lowerLifetimeDependency
+            lifetime_dependencies <- List2.asList lifetime_dependencies
+            lir_function <- LF.Function lir_id lifetimes lifetime_dependencies lir_kind lir_function_type
             context <- addFunction context lir_function
             context
         MF.RecordCtor -> do
             lir_kind <- LF.RecordCtor
             (context, lir_function_type, lifetimes) <- lowerFunctionType context lowering_info function.type
-            lir_function <- LF.Function lir_id lifetimes lir_kind lir_function_type
+            lifetime_dependencies <- []
+            lir_function <- LF.Function lir_id lifetimes lifetime_dependencies lir_kind lir_function_type
             context <- addFunction context lir_function
             context
         MF.VariantCtor index -> do
             lir_kind <- LF.VariantCtor index
             (context, lir_function_type, lifetimes) <- lowerFunctionType context lowering_info function.type
-            lir_function <- LF.Function lir_id lifetimes lir_kind lir_function_type
+            lifetime_dependencies <- []
+            lir_function <- LF.Function lir_id lifetimes lifetime_dependencies lir_kind lir_function_type
             context <- addFunction context lir_function
             context
         MF.Extern type_mapping -> do
             lir_kind <- LF.Extern
             (context, lir_function_type, lifetimes) <- lowerFunctionType context lowering_info function.type
-            lir_function <- LF.Function lir_id lifetimes lir_kind lir_function_type
+            lifetime_dependencies <- []
+            lir_function <- LF.Function lir_id lifetimes lifetime_dependencies lir_kind lir_function_type
             context <- addFunction context lir_function
             context
     //trace context.config "Lowering done"

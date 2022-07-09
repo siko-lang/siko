@@ -18,11 +18,14 @@ import Set
 import List2 as List2
 import List2 (List2)
 
+data LifetimeDependency = { from :: BorrowId, to :: BorrowId } deriving (PartialEq, Eq, PartialOrd, Ord, Show)
+
 data FunctionLoweringInfo = { members :: List2 M.MemberInfo,
                               args :: List2 TypeVariableInfo,
                               result :: TypeVariableInfo,
                               ownershipinfos :: List2 M.OwnershipInfo,
                               allocator :: Allocator,
+                              lifetime_dependencies :: List2 LifetimeDependency,
                             } deriving (PartialEq, Eq, PartialOrd, Ord, Show)
 
 data TypeLoweringInfo = { members :: List2 M.MemberInfo,
@@ -31,12 +34,12 @@ data TypeLoweringInfo = { members :: List2 M.MemberInfo,
                           allocator :: Allocator,
                         } deriving (PartialEq, Eq, PartialOrd, Ord, Show)
 
-convertToFunctionLoweringInfo :: Config -> InferenceInfo -> [TypeVariableInfo] -> TypeVariableInfo -> FilterInfo -> (InferenceInfo, FunctionLoweringInfo, FilterInfo)
-convertToFunctionLoweringInfo config inference_info args result filter_info = do
+convertToFunctionLoweringInfo :: Config -> InferenceInfo -> [TypeVariableInfo] -> TypeVariableInfo -> FilterInfo -> List2 LifetimeDependency -> (InferenceInfo, FunctionLoweringInfo, FilterInfo)
+convertToFunctionLoweringInfo config inference_info args result filter_info lifetime_dependencies = do
     //println "Creating function lowering info"
     args <- List2.toList2 args
     lowering_info <- FunctionLoweringInfo inference_info.members args result
-            (M.toOwnershipInfo inference_info.ownership_values) inference_info.allocator
+            (M.toOwnershipInfo inference_info.ownership_values) inference_info.allocator lifetime_dependencies
     //println "Unfiltered {}" % lowering_info
     sources <- List2.push args result
     (lowering_info, filter_info) <- filterFunctionLoweringInfo config lowering_info sources filter_info

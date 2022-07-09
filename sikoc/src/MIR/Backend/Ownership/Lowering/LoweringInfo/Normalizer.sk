@@ -18,6 +18,12 @@ import Set
 import List2 as List2
 import List2 (List2)
 
+instance Duplicable LifetimeDependency where
+    duplicate duplicator dep = do
+        (duplicator, from) <- duplicate duplicator dep.from
+        (duplicator, to) <- duplicate duplicator dep.to
+        (duplicator, LifetimeDependency from to)
+
 normalizeFunctionLoweringInfo :: Config -> FunctionLoweringInfo -> (FunctionLoweringInfo, Duplicator)
 normalizeFunctionLoweringInfo config lowering_info = do
     //trace config "normalizeFunctionLoweringInfo: input {}" % lowering_info
@@ -30,9 +36,10 @@ normalizeFunctionLoweringInfo config lowering_info = do
     (duplicator, result) <- duplicate duplicator lowering_info.result
     (duplicator, members) <- List2.mapS duplicator members duplicate
     (duplicator, ownershipinfos) <- List2.mapS duplicator lowering_info.ownershipinfos duplicate
+    (duplicator, lifetime_dependencies) <- List2.mapS duplicator lowering_info.lifetime_dependencies duplicate
     members <- members |> List2.sort
     ownershipinfos <- ownershipinfos |> List2.sort
-    output <- FunctionLoweringInfo members args result ownershipinfos duplicator.allocator
+    output <- FunctionLoweringInfo members args result ownershipinfos duplicator.allocator lifetime_dependencies
     //trace config "normalizeFunctionLoweringInfo: output {}" % output
     (output, duplicator)
 
