@@ -1,0 +1,36 @@
+module Main where
+
+import Map
+
+data Type = FixedTypeArg String
+          | Named [Type]
+
+data Step = External Int
+
+data Position = Position [Step]
+
+data Context = { var_mappings :: Map String [Position] }
+
+addVarPosition :: Context -> String -> [Step] -> Context
+addVarPosition context name steps = do
+    pos <- Position steps
+    (var_mappings, _) <- alter (\positions -> case positions of
+        Some positions -> Some (positions + [pos])
+        None -> Some [pos]) name context.var_mappings
+    context { var_mappings = var_mappings }
+
+mapType :: Context -> [Step] -> Type -> Context
+mapType context steps type = case type of
+    FixedTypeArg name -> do
+        addVarPosition context name steps
+    Named  args -> do
+        context <- List.foldE (\context, index, arg -> do
+            steps <- steps + [External index]
+            context <- mapType context steps arg
+            context) context args
+        context
+
+main = do
+    context <- Context empty
+    mapType context [] (FixedTypeArg "a")
+    ()
