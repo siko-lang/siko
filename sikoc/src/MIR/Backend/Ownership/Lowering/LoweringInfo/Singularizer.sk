@@ -32,10 +32,10 @@ processMembers singularizer members = List2.mapS singularizer members (\singular
         (singularizer, info) <- processOwnerVar singularizer m.info
         (singularizer, m { info = info }))
 
-buildOwnershipinfos :: Singularizer -> List2 M.OwnershipInfo -> List2 M.OwnershipInfo
-buildOwnershipinfos singularizer ownershipinfos = List2.fold List2.empty ownershipinfos (\ownershipinfos, info -> do
+buildOwnershipinfos :: Singularizer -> List2 M.OwnershipInfo -> (Singularizer, List2 M.OwnershipInfo)
+buildOwnershipinfos singularizer ownershipinfos = List2.fold (singularizer, List2.empty) ownershipinfos (\(singularizer, ownershipinfos), info -> do
     case Map2.get singularizer.uniques info.var of
         Some new_vars -> do
             infos <- List2.map new_vars (\var -> M.OwnershipInfo var info.kind)
-            ownershipinfos + infos
+            (singularizer, ownershipinfos + infos)
         None -> panic "Ownership var not found in uniques")

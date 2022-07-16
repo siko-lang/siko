@@ -99,6 +99,7 @@ lowerExpr lowering_context context expr = do
                         else List2.push lifetime_dependencies (LifetimeDependency a b)
                     _ -> lifetime_dependencies
                 (inference_info, lifetime_dependencies))
+            lifetime_dependencies <- lifetime_dependencies |> List2.sort |> List2.dedup
             (inference_info, lowering_info, filter_info) <- convertToFunctionLoweringInfo context.config lowering_context.inference_info args_info
                                                expr_info lowering_context.filter_info lifetime_dependencies
             lowering_context <- lowering_context { inference_info = inference_info, filter_info = filter_info }
@@ -117,7 +118,7 @@ lowerExpr lowering_context context expr = do
                 ((lowering_context, context), arg))
             (mir_program, function) <- MP.getFunction context.mir_program f_id
             context <- context { mir_program = mir_program }
-            lir_args <- case function.kind of
+            (context, lir_args) <- case function.kind of
                     MF.VariantCtor index -> do
                         adt_id <- MT.getIdentity function.type.result
                         (mir_program, adt) <- MP.getAdt context.mir_program adt_id
@@ -125,25 +126,27 @@ lowerExpr lowering_context context expr = do
                         record_id <- MT.getIdentity variant.type
                         (mir_program, record) <- MP.getRecord mir_program record_id
                         context <- context { mir_program = mir_program }
-                        List.zipS [] lir_args record.fields (\lir_args, arg, field -> do
+                        lir_args <- List.zipS [] lir_args record.fields (\lir_args, arg, field -> do
                             if field.grouped
                             then do
                                 LE.Expr _ arg_type _ <- arg
                                 arg <- LE.Expr (LE.Box arg) (LT.Box arg_type) (LE.ExprId 0)
                                 List.push lir_args arg
                             else List.push lir_args arg)
+                        (context, lir_args)
                     MF.RecordCtor -> do
                         record_id <- MT.getIdentity function.type.result
                         (mir_program, record) <- MP.getRecord context.mir_program record_id
                         context <- context { mir_program = mir_program }
-                        List.zipS [] lir_args record.fields (\lir_args, arg, field -> do
+                        lir_args <- List.zipS [] lir_args record.fields (\lir_args, arg, field -> do
                             if field.grouped
                             then do
                                 LE.Expr _ arg_type _ <- arg
                                 arg <- LE.Expr (LE.Box arg) (LT.Box arg_type) (LE.ExprId 0)
                                 List.push lir_args arg
                             else List.push lir_args arg)
-                    _ -> lir_args
+                        (context, lir_args)
+                    _ -> (context, lir_args)
             (lowering_context, context, LE.StaticFunctionCall lir_id lir_args)
         ME.IntegerLiteral lit -> (lowering_context, context, LE.IntegerLiteral lit)
         ME.StringLiteral lit -> (lowering_context, context, LE.StringLiteral lit)

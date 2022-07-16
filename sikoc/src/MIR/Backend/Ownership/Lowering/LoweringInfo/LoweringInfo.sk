@@ -67,25 +67,28 @@ createTypeLoweringInfoFromTypeLoweringInfo config lowering_info root filter_info
 
 normalizeRef :: TypeLoweringInfo -> (TypeLoweringInfo, Option BorrowId)
 normalizeRef lowering_info = do
-    ownershipinfos <- lowering_info.ownershipinfos
-    (ownershipinfos, ref, found) <- List2.fold ((List2.withCapacity (List2.getLength ownershipinfos)), None, False)
-                                                ownershipinfos
-        (\(ownershipinfos, ref, found), ownershipinfo ->
+        ownershipinfos <- lowering_info.ownershipinfos
+        ownership_var <- lowering_info.root.ownership_var
+        (ownershipinfos, ref, found) <- List2.fold ((List2.withCapacity (List2.getLength ownershipinfos)), None, False)
+                                                    ownershipinfos
+            (\(ownershipinfos, ref, found), ownershipinfo -> normalize ownership_var (ownershipinfos, ref, found) ownershipinfo)
+        ownershipinfos <- if not found
+        then List2.push ownershipinfos (M.OwnershipInfo lowering_info.root.ownership_var M.Owner)
+        else ownershipinfos
+        lowering_info <- lowering_info { ownershipinfos = ownershipinfos }
+        (lowering_info, ref)
+    where
+        normalize ownership_var (ownershipinfos, ref, found) ownershipinfo =
             case ownershipinfo of
-                M.OwnershipInfo v M.Unknown -> if v == lowering_info.root.ownership_var
+                M.OwnershipInfo v M.Unknown -> if v == ownership_var
                     then (List2.push ownershipinfos (M.OwnershipInfo v M.Owner), None, True)
                     else (List2.push ownershipinfos (M.OwnershipInfo v M.Owner), ref, found)
-                M.OwnershipInfo v (M.Borrower id) -> if v == lowering_info.root.ownership_var
+                M.OwnershipInfo v (M.Borrower id) -> if v == ownership_var
                     then (List2.push ownershipinfos (M.OwnershipInfo v M.Owner), Some id, True)
                     else (List2.push ownershipinfos ownershipinfo, ref, found)
-                M.OwnershipInfo v M.Owner -> if v == lowering_info.root.ownership_var
+                M.OwnershipInfo v M.Owner -> if v == ownership_var
                     then (List2.push ownershipinfos ownershipinfo, None, True)
-                    else (List2.push ownershipinfos ownershipinfo, ref, found))
-    ownershipinfos <- if not found
-    then List2.push ownershipinfos (M.OwnershipInfo lowering_info.root.ownership_var M.Owner)
-    else ownershipinfos
-    lowering_info <- lowering_info { ownershipinfos = ownershipinfos }
-    (lowering_info, ref)
+                    else (List2.push ownershipinfos ownershipinfo, ref, found)
 
 getLoweringInfoForArg :: Config -> FunctionLoweringInfo -> Int -> FilterInfo -> (TypeLoweringInfo, FilterInfo)
 getLoweringInfoForArg config lowering_info index filter_info = do
