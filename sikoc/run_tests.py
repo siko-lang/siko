@@ -95,8 +95,8 @@ collect_tests(test_source_name, tests, None)
 if len(sys.argv) != 1:
     selected = set()
     for t in sys.argv[1:]:
-        if t == "-v":
-            verbose = "-v"
+        if t == "-v" or t == "-vv":
+            verbose = t
             continue
         elif t == "-d":
             debug = "-d"

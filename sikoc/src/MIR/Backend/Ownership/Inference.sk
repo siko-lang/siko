@@ -116,26 +116,29 @@ processFunction context group inference_info function_id = do
             //trace context.config "inferOwnership {}" % function_id
             (inference_info, constraints, invalid_borrow_map, ownership_expr_map, result_vars) <- collectConstraints context.config function_id context.program borrow_info inference_info info.body
             inference_info <- processConstraints context.config function_id inference_info constraints invalid_borrow_map ownership_expr_map result_vars Partial
-            //dumpOwnership inference_info function_id info.body
+            inference_info <- if context.config.trace_level == Level2
+            then dumpOwnership inference_info function_id info.body
+            else inference_info
             //trace context.config "Processing {}" % function_id
             function_info <- toFunctionInfo context.config inference_info function_id
             function_info <- enforceUnknownArgOwnership function_info
-            //println "{}: {}" % (function_id, function_info)
+            //trace2 context.config "{}: {}" % (function_id, function_info)
+            //trace2 context.config "{}: {}" % (function_id, inference_info)
             (context, added) <- processFunctionInfo context function_info function_id
             (context, added, Some inference_info)
         F.VariantCtor index -> do
             function_info <- createVariantctorFunctionInfo context index function.type.result
-            //trace context.config "Variant ctor {} = {}" % (function_id, function_info)
+            //trace2 context.config "Variant ctor {} = {}" % (function_id, function_info)
             (context, added) <- processFunctionInfo context function_info function_id
             (context, added, None)
         F.RecordCtor -> do
             function_info <- createRecordCtorFunctionInfo context function.type.result
-            //trace context.config "Record ctor {} = {}" % (function_id, function_info)
+            //trace2 context.config "Record ctor {} = {}" % (function_id, function_info)
             (context, added) <- processFunctionInfo context function_info function_id
             (context, added, None)
         F.Extern type_mapping -> do
             function_info <- createExternFunctionInfo context.program function_id function.type type_mapping
-            //trace context.config "Extern {} = {}" % (function_id, function_info)
+            //trace2 context.config "Extern {} = {}" % (function_id, function_info)
             (context, added) <- processFunctionInfo context function_info function_id
             (context, added, None)
 

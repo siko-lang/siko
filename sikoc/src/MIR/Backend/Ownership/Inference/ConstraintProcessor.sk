@@ -19,7 +19,8 @@ data InferenceMode = Partial
                    | Full
                    deriving (PartialEq, Eq, PartialOrd, Ord, Show)
 
-data Context = { inference_info :: InferenceInfo,
+data Context = { config :: Config,
+                 inference_info :: InferenceInfo,
                  function_id :: P.Identity,
                  changed_ownership_vars :: Bool,
                  invalid_borrow_map :: Map2 E.ExprId (List2 E.ExprId),
@@ -48,24 +49,14 @@ getOwnershipValue context var = do
 
 updateOwnership :: Context -> OwnershipTypeVariable -> M.OwnershipKind -> Context
 updateOwnership context ownership_var kind = do
-    //println "UpdateOwnership {} {}" % (ownership_var, kind)
+    //trace2 context.config "UpdateOwnership {} {}" % (ownership_var, kind)
     (context, kind) <- case context.mode of
         Partial -> do
             is_result_var <- List2.contains context.result_vars ownership_var
             case (is_result_var, kind) of
                 (True, M.Owner) -> (context, kind)
                 (True, M.Unknown) -> (context, kind)
-                (True, M.Borrower id) -> do
-                    (inference_info, borrow_set) <- getBorrowSet context.inference_info id
-                    context <- context { inference_info = inference_info }
-                    (context, found_function_local) <- Set.fold (context, False) borrow_set.borrows (\(context, found_function_local), borrow ->
-                        case borrow of
-                            Local expr_id ->
-                                case Map2.get context.invalid_borrow_map expr_id of
-                                    Some _ -> (context, True)
-                                    None -> (context, False)
-                            _ -> (context, False))
-                    (context, M.Owner)
+                (True, M.Borrower id) -> (context, M.Owner)
                 _ -> (context, kind)
         Full -> (context, kind)
     (context, old_kind) <- getOwnershipValue context ownership_var
@@ -108,7 +99,7 @@ processFunctionConverter context converter = do
     to <- converter.to
     (context, from_kind) <- getOwnershipValue context from
     (context, to_kind) <- getOwnershipValue context to
-    //println "Checking function converter {} {} / {} {}" % (from, to, from_kind, to_kind)
+    //trace2 context.config "Checking function converter {} {} / {} {}" % (from, to, from_kind, to_kind)
     case (from_kind, to_kind) of
         (M.Owner, M.Unknown) -> updateOwnership context to M.Owner
         (M.Borrower a, M.Borrower b) -> do
@@ -149,7 +140,7 @@ processFieldAccess context access = do
     (context, receiver_kind) <- getOwnershipValue context receiver_info.ownership_var
     (context, member_kind) <- getOwnershipValue context member_info.ownership_var
     (context, expr_kind) <- getOwnershipValue context expr_info.ownership_var
-    //println "processFieldAccess: receiverkind {} memberkind {} exprkind {}" % (receiver_kind, member_kind, expr_kind)
+    //trace2 context.config "processFieldAccess: receiverkind {} memberkind {} exprkind {}" % (receiver_kind, member_kind, expr_kind)
     case (receiver_kind, member_kind) of
         (M.Borrower _, M.Borrower _) -> updateOwnership context expr_info.ownership_var member_kind
         (M.Owner, M.Borrower _) -> updateOwnership context expr_info.ownership_var member_kind
@@ -167,7 +158,7 @@ processConverter context converter = do
     expr_info <- converter.expr_info
     (context, arg_kind) <- getOwnershipValue context arg_info.ownership_var
     (context, expr_kind) <- getOwnershipValue context expr_info.ownership_var
-    //println "Converter {} {}, {} -> {}" % (arg_kind, expr_kind, arg_info.ownership_var, expr_info.ownership_var)
+    //trace2 context.config "Converter {} {}, {} -> {}" % (arg_kind, expr_kind, arg_info.ownership_var, expr_info.ownership_var)
     case (arg_kind, expr_kind) of
         (M.Owner, M.Unknown) ->
             if converter.borrower
@@ -228,7 +219,7 @@ processVariantAccess context variant = do
 
 processConstraint :: Context -> C.Constraint -> Context
 processConstraint context constraint = do
-    //println "Processing constraint {}" % constraint
+    //trace2 context.config "Processing constraint {}" % constraint
     case constraint of
         C.FieldAccess access -> processFieldAccess context access
         C.Converter converter -> processConverter context converter
@@ -251,7 +242,7 @@ processConstraints :: Config -> P.Identity -> InferenceInfo -> List2 C.Constrain
 processConstraints config function_id inference_info constraints invalid_borrow_map ownership_expr_map result_vars mode = do
     // println "Invalid borrow map {}" % (invalid_borrow_map)
     // println "InferenceInfo {}" % inference_info
-    context <- Context inference_info function_id True invalid_borrow_map ownership_expr_map mode result_vars False
+    context <- Context config inference_info function_id True invalid_borrow_map ownership_expr_map mode result_vars False
     //dumpConstraints constraints
     context <- loop context <- context do
         context :: Context <- context // FIXME

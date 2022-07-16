@@ -47,13 +47,13 @@ lowerFunction context lowering_info mir_id lir_id = do
         MF.Normal info -> do
             (inference_info, external_borrows) <- createInferenceInfoFromLoweringInfo lowering_info mir_id
             inference_info <- initializeTypeVariables inference_info mir_id info.body
-            //println "lowerFunction1 {} {}" % (lir_id, inference_info)
+            //trace2 context.config "after initializeTypeVariables {} {}" % (lir_id, inference_info)
             function_info_store <- context.function_info_store
             (mir_program, equals, inference_info, data_group_info_store) <- processFunctionEqualities mir_id context.config []
                 List2.empty inference_info function_info_store context.mir_program info.body context.data_group_info_store
             context <- context { data_group_info_store = data_group_info_store }
             (mir_program, inference_info) <- processEqualities context.config equals inference_info context.mir_program
-            //println "lowerFunction2 {} {}" % (lir_id, inference_info)
+            //trace2 context.config "after processEqualities {} {}" % (lir_id, inference_info)
             converters <- getFunctionConverters context.config inference_info mir_id
             group_function_converters <- Map2.put inference_info.group_function_converters mir_id converters
             inference_info <- inference_info { group_function_converters = group_function_converters }
@@ -62,18 +62,18 @@ lowerFunction context lowering_info mir_id lir_id = do
             (members, ownership_dep_map) <- calculateOwnershipDepMap context.config inference_info.members
             inference_info <- inference_info { members = members }
             (inference_info, ownership_dep_map) <- unpackOwnerships context.config mir_id inference_info ownership_dep_map external_borrows
-            //println "lowerFunction3 {} {}" % (lir_id, inference_info)
+            //trace2 context.config "after unpackOwnerships {} {}" % (lir_id, inference_info)
             (inference_info, constraints, invalid_borrow_map, ownership_expr_map, result_vars) <- collectConstraints context.config mir_id context.mir_program borrow_info inference_info info.body
             inference_info <- processConstraints context.config mir_id inference_info constraints invalid_borrow_map ownership_expr_map result_vars Full
-            //println "lowerFunction4 {} {}" % (lir_id, inference_info)
-            // dumpOwnership inference_info mir_id info.body
+            //trace2 context.config "after processConstraints {} {}" % (lir_id, inference_info)
+            inference_info <- if context.config.trace_level == Level2
+            then dumpOwnership inference_info mir_id info.body
+            else inference_info
             // println "Borrow info {}" % borrow_info
             // println "Inference info {}" % inference_info
             (inference_info, filter_info) <- buildFilterInfoFromInferenceInfo context.config inference_info
-            //println "lowerFunction5 {} {}" % (lir_id, inference_info)
             lowering_context <- LoweringContext mir_id inference_info borrow_info.borrows filter_info
             (lowering_context, context, lir_body) <- lowerExpr lowering_context context info.body
-            //trace context.config "Processing expr done"
             lir_kind <- LF.Normal lir_body
             (context, lir_function_type, lifetimes) <- lowerFunctionType context lowering_info function.type
             lifetime_dependencies <- List2.map lowering_info.lifetime_dependencies lowerLifetimeDependency
