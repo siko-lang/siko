@@ -36,6 +36,9 @@ normalizeFunctionLoweringInfo config lowering_info = do
     (duplicator, result) <- duplicate duplicator lowering_info.result
     (duplicator, members) <- List2.mapS duplicator members duplicate
     (duplicator, ownershipinfos) <- List2.mapS duplicator lowering_info.ownershipinfos duplicate
+    ownershipinfos <- List2.filter ownershipinfos (\o -> case o.kind of
+        M.Borrower _ -> True
+        _ -> False)
     (duplicator, lifetime_dependencies) <- List2.mapS duplicator lowering_info.lifetime_dependencies duplicate
     members <- members |> List2.sort
     ownershipinfos <- ownershipinfos |> List2.sort
@@ -53,6 +56,9 @@ normalizeTypeLoweringInfo config lowering_info = do
     (duplicator, root) <- duplicate duplicator lowering_info.root
     (duplicator, members) <- List2.mapS duplicator members duplicate
     (duplicator, ownershipinfos) <- List2.mapS duplicator lowering_info.ownershipinfos duplicate
+    ownershipinfos <- List2.filter ownershipinfos (\o -> case o.kind of
+        M.Borrower _ -> True
+        _ -> False)
     singularizer <- S.createSingularizer
     members <- members |> List2.sort
     (singularizer, members) <- S.processMembers singularizer members
@@ -64,12 +70,6 @@ normalizeTypeLoweringInfo config lowering_info = do
     (duplicator, ownershipinfos) <- List2.mapS duplicator ownershipinfos (\duplicator, ownershipinfo -> do
         (duplicator, kind) <- duplicate duplicator ownershipinfo.kind
         (duplicator, ownershipinfo { kind = kind }))
-    kinds <- M.toOwnershipKind ownershipinfos
-    (members, (kinds, ownershipinfos)) <- List2.foldLinear (kinds, ownershipinfos) members (\(kinds, ownershipinfos), m -> do
-            info <- m.info
-            case Map2.get kinds info.ownership_var of
-                Some _ -> (kinds, ownershipinfos)
-                None -> (kinds, List2.push ownershipinfos (M.OwnershipInfo info.ownership_var M.Owner)))
     ownershipinfos <- ownershipinfos |> List2.sort |> List2.dedup
     allocator <- duplicator.allocator
     allocator <- allocator { ownership_type_var = singularizer.allocator.ownership_type_var }

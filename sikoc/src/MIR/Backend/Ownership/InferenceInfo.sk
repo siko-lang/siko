@@ -82,10 +82,10 @@ createInferenceInfoFromLoweringInfo lowering_info function_id = do
     inference_info <- InferenceInfo expr_type_variables var_type_variables group
         function_infos ownership_values members converters allocator
         function_converters group_function_converters borrow_sets Map2.empty List2.empty
-    List2.fold (inference_info, List2.empty) lowering_info.ownershipinfos (\(inference_info, external_borrows), ownershipinfo -> do
+    (inference_info, external_borrows) <- List2.fold (inference_info, List2.empty) lowering_info.ownershipinfos (\(inference_info, external_borrows), ownershipinfo -> do
             (inference_info, external_borrows, v, kind) <- case ownershipinfo of
-                M.OwnershipInfo v M.Unknown -> (inference_info, external_borrows, v, M.Unknown)
-                M.OwnershipInfo v M.Owner -> (inference_info, external_borrows, v, M.Owner)
+                M.OwnershipInfo v M.Unknown -> panic "Unknown ownership in createInferenceInfoFromLoweringInfo"
+                M.OwnershipInfo v M.Owner -> panic "Owner ownership in createInferenceInfoFromLoweringInfo"
                 M.OwnershipInfo v (M.Borrower external_id) -> do
                     (inference_info, id) <- createBorrowSetForExternal inference_info external_id
                     (inference_info, List2.push external_borrows id, v, M.Borrower id)
@@ -94,6 +94,21 @@ createInferenceInfoFromLoweringInfo lowering_info function_id = do
             inference_info <- inference_info { ownership_values = ownership_values, initials = initials }
             (inference_info, external_borrows)
         )
+    (ownership_values, initials) <- List2.fold (inference_info.ownership_values, inference_info.initials) members (\(ownership_values, initials), member -> do
+            case Map2.get ownership_values member.info.ownership_var of
+                Some _ -> (ownership_values, initials)
+                None -> (Map2.put ownership_values member.info.ownership_var M.Owner, List2.push initials member.info.ownership_var)
+        )
+    (ownership_values, initials) <- List2.fold (ownership_values, initials) args (\(ownership_values, initials), arg -> do
+            case Map2.get ownership_values arg.ownership_var of
+                Some _ -> (ownership_values, initials)
+                None -> (Map2.put ownership_values arg.ownership_var M.Owner, List2.push initials arg.ownership_var)
+        )
+    (ownership_values, initials) <- case Map2.get ownership_values result.ownership_var of
+                Some _ -> (ownership_values, initials)
+                None -> (Map2.put ownership_values result.ownership_var M.Owner, List2.push initials result.ownership_var)
+    inference_info <- inference_info { ownership_values = ownership_values, initials = initials }
+    (inference_info, external_borrows)
 
 addFunctionInferenceInfo :: InferenceInfo -> P.Identity -> Int -> InferenceInfo
 addFunctionInferenceInfo inference_info id arg_count = do
@@ -339,7 +354,7 @@ mergeConverters :: OwnershipTypeVariable ->
                    Map2 OwnershipTypeVariable (List2 OwnershipTypeVariable) ->
                    (List2 OwnershipTypeVariable, List2 Converter, Map2 OwnershipTypeVariable (List2 OwnershipTypeVariable))
 mergeConverters from to visited output_ownership_vars converters converter_map = do
-    if List2.contains output_ownership_vars to
+    if List2.contains output_ownership_vars to && (from != to)
     then // found an input -> output converter
         if from != to
         then do
@@ -381,11 +396,6 @@ toFunctionInfo config inference_info function_id = do
 
     members <- inference_info.members
     (members, group_dep_map, deps_map, groups) <- calculateGroupDepMap config members
-    //println "Singles {}" % singles
-    //trace config "toFunctionInfo: creating converter map"
-    (inference_info, converter_map) <- getConverterMap inference_info
-    //trace config "toFunctionInfo: done"
-    //trace config "toFunctionInfo: collecting input group vars"
     input_group_vars <- List2.fold List2.empty function_inference_info.args
         (\input_group_vars, info -> do
             input_group_vars <- case Map2.get group_dep_map info.arg_group_var of
@@ -393,37 +403,21 @@ toFunctionInfo config inference_info function_id = do
                 None -> input_group_vars
             List2.push input_group_vars info.arg_group_var)
     input_group_vars <- input_group_vars |> List2.sort |> List2.dedup
-    //trace config "toFunctionInfo: collecting input group vars"
     output_group_vars <- case Map2.get group_dep_map function_inference_info.result.arg_group_var of
         Some group_vars -> group_vars
         None -> List2.empty
     output_group_vars <- List2.push output_group_vars function_inference_info.result.arg_group_var
     output_group_vars <- output_group_vars |> List2.sort |> List2.dedup
-    //trace config "toFunctionInfo: filter input group vars"
     (input_group_vars, input_members) <- List2.filterS input_group_vars members M.isSubMember
-    //trace config "toFunctionInfo: filter output group vars"
     (output_group_vars, output_members) <- List2.filterS output_group_vars members M.isSubMember
-    //trace config "toFunctionInfo: filter input members"
-    (output_members, filtered_input_members) <- List2.filterS output_members input_members (\output_members, m -> do
-        res <- not (List2.contains output_members m)
-        (output_members, res))
-    //trace config "toFunctionInfo: filter output members"
-    (input_members, filtered_output_members) <- List2.filterS input_members output_members (\input_members, m -> do
-        res <- not (List2.contains input_members m)
-        (input_members, res))
-    //input_members <- filtered_input_members
-    //output_members <- filtered_output_members
     output_ownership_vars <- List2.single function_inference_info.result.ownership_var
     input_ownership_vars <- List2.fold List2.empty function_inference_info.args
         (\ownership_vars, info -> List2.push ownership_vars info.ownership_var)
-    //trace config "toFunctionInfo: to ownership infos"
     (input_members, input_ownership_vars) <- List2.foldLinear input_ownership_vars input_members (\vars, member ->
             List2.push vars member.info.ownership_var)
-    //trace config "toFunctionInfo: collecting output_ownership_vars"
     (output_members, output_ownership_vars) <- List2.foldLinear output_ownership_vars output_members (\vars, member ->
             List2.push vars member.info.ownership_var)
     relevant_ownership_vars <- input_ownership_vars + output_ownership_vars
-    //trace config "toFunctionInfo: collecting filtered ownership vars"
     (filtered_ownershipinfos, ownership_values) <- loop (filtered_ownershipinfos, relevant_ownership_vars, ownership_values, index) <- (List2.empty, relevant_ownership_vars, inference_info.ownership_values, 0) do
         if index >= List2.getLength relevant_ownership_vars
         then break (filtered_ownershipinfos, ownership_values)
@@ -433,28 +427,16 @@ toFunctionInfo config inference_info function_id = do
                 Some kind -> List2.push filtered_ownershipinfos (M.OwnershipInfo var kind)
                 None -> filtered_ownershipinfos // FIXME: investigate, why is this possible??
             (filtered_ownershipinfos, relevant_ownership_vars, ownership_values, index + 1)
-    //trace config "toFunctionInfo: processing converters {}" % List2.getLength converters
-    // println "input_ownership_vars: {}" % input_group_vars
-    // println "output_ownership_vars: {}" % output_ownership_vars
-    // println "convertermap {}" % converter_map
 
     (input_ownership_vars, (output_ownership_vars, filtered_converters, converter_map)) <- List2.foldLinear (output_ownership_vars, List2.empty, converter_map) input_ownership_vars (\(output_ownership_vars, converters, converter_map), from ->
         mergeConverters from from List2.empty output_ownership_vars converters converter_map)
 
-    //println "resulting converters {}" % filtered_converters
-    //println "Full inference info: {}" % inference_info
+    filtered_converters <- filtered_converters |> List2.sort |> List2.dedup
+    members <- (input_members + output_members) |> List2.sort |> List2.dedup
+    filtered_ownershipinfos <- filtered_ownershipinfos |> List2.sort |> List2.dedup
 
-    // println "Input group vars {}" % Set.getSize input_group_vars
-    // println "Output group vars {}" % Set.getSize output_group_vars
-    // println "Input members: {}" % List2.getLength input_members
-    // println "Output members: {}" % List2.getLength output_members
-    // println "Ownership infos: {}" % List2.getLength filtered_ownershipinfos
-    // println "Input ownership vars: {}" % List2.getLength input_ownership_vars
-    // println "Output ownership vars: {}" % List2.getLength output_ownership_vars
-    // println "Filtered converters: {}" % List2.getLength filtered_converters
-    //trace config "toFunctionInfo: done"
     FunctionInfo function_inference_info.args function_inference_info.result
-        (input_members + output_members) filtered_converters filtered_ownershipinfos
+        members filtered_converters filtered_ownershipinfos
 
 instance Apply Converter where
     apply applier converter = do
