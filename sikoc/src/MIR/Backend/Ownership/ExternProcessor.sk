@@ -9,8 +9,6 @@ import Siko.MIR.Backend.Ownership.TypeVariableInfo
 import Siko.MIR.Backend.Ownership.Allocator
 import Siko.MIR.Backend.Ownership.MemberInfo as M
 import Siko.MIR.Backend.Ownership.FunctionInfo
-import Siko.MIR.Backend.Ownership.TypeMerger
-import Siko.MIR.Backend.Ownership.EqualitySolver
 
 import Map
 
@@ -84,21 +82,21 @@ processStep :: P.Program -> TypeVariableInfo -> T.Type -> TypeVariableInfo -> F.
 processStep program info ty parent step =
     case step of
         F.External index -> do
-            member <- M.MemberInfo (M.Extern index) ty parent.arg_group_var info
+            member <- M.MemberInfo (M.Extern index) parent.arg_group_var info
             id <- T.getIdentity ty
             (program, record) <- P.getRecord program id
             external_record_info <- Option.unwrap record.external_info
             external_ty <- List.atIndex external_record_info.type_args index
             (external_ty, Some member, None)
         F.Variant index -> do
-            member <- M.MemberInfo (M.Variant index) ty parent.arg_group_var info
+            member <- M.MemberInfo (M.Variant index) parent.arg_group_var info
             ownershipinfo <- M.OwnershipInfo info.ownership_var M.Owner
             id <- T.getIdentity ty
             (program, adt) <- P.getAdt program id
             variant <- List.atIndex adt.variants index
             (variant.type, Some member, Some ownershipinfo)
         F.Field name index -> do
-            member <- M.MemberInfo (M.Field name) ty parent.arg_group_var info
+            member <- M.MemberInfo (M.Field name) parent.arg_group_var info
             id <- T.getIdentity ty
             (program, record) <- P.getRecord program id
             field <- Option.unwrap (D.getFieldByName record name)
@@ -134,7 +132,5 @@ createExternFunctionInfo program id function_type type_mapping = do
         None -> if Map.getSize type_mapping.var_mappings == 0
             then getNext context
             else panic "No type variable info for result step for {}" % id
-    (members, equals) <- mergeTypes context.members
-    function_info <- FunctionInfo args result members List2.empty context.ownershipinfos
-    function_info <- processEquals equals function_info
+    function_info <- FunctionInfo args result context.members List2.empty context.ownershipinfos
     function_info

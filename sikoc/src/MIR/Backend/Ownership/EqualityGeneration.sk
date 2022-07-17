@@ -201,7 +201,7 @@ processExpr context expr = do
                     (allocator, item_info) <- getNextTypeVariableInfo allocator
                     inference_info <- inference_info { allocator = allocator }
                     (inference_info, info) <- getTypeVariableInfoByExprId inference_info expr_id context.function_id
-                    inference_info <- addMemberInfo inference_info (M.MemberInfo (M.Extern 0) expr_type info.arg_group_var item_info)
+                    inference_info <- addMemberInfo inference_info (M.MemberInfo (M.Extern 0) info.arg_group_var item_info)
                     context <- context { inference_info = inference_info }
                     context
                 else do
@@ -210,12 +210,12 @@ processExpr context expr = do
                     inference_info <- context.inference_info
                     (inference_info, item_info) <- getTypeVariableInfoByExprId inference_info first context.function_id
                     (inference_info, info) <- getTypeVariableInfoByExprId inference_info expr_id context.function_id
-                    inference_info <- addMemberInfo inference_info (M.MemberInfo (M.Extern 0) expr_type info.arg_group_var item_info)
+                    inference_info <- addMemberInfo inference_info (M.MemberInfo (M.Extern 0) info.arg_group_var item_info)
                     context <- context { inference_info = inference_info }
                     List.fold context items (\context, item -> addEqualExprs context first (getExprId item))
             context
         E.FieldAccess name receiver -> do
-            E.Expr _ receiver_type receiver_id <- receiver
+            E.Expr _ _ receiver_id <- receiver
             context <- processExpr context receiver
             inference_info <- context.inference_info
             (allocator, type_var) <- getNextOwnershipTypeVariable inference_info.allocator
@@ -226,7 +226,7 @@ processExpr context expr = do
             info <- info { ownership_var = type_var }
             converter <- Converter info.ownership_var orig
             inference_info <- addConverter inference_info converter
-            inference_info <- addMemberInfo inference_info (M.MemberInfo (M.Field name) receiver_type receiver_info.arg_group_var info)
+            inference_info <- addMemberInfo inference_info (M.MemberInfo (M.Field name) receiver_info.arg_group_var info)
             context { inference_info = inference_info }
         E.Return arg -> do
             context <- processExpr context arg
@@ -270,7 +270,7 @@ processExpr context expr = do
                                     inference_info <- addConverter inference_info converter
                                     converter <- Converter var_info.ownership_var orig
                                     inference_info <- addConverter inference_info converter
-                                    inference_info <- addMemberInfo inference_info (M.MemberInfo (M.Variant index) body_type body_info.arg_group_var var_info)
+                                    inference_info <- addMemberInfo inference_info (M.MemberInfo (M.Variant index) body_info.arg_group_var var_info)
                                     context { inference_info = inference_info }
                                 T.Record _ -> do
                                     inference_info <- context.inference_info

@@ -70,7 +70,7 @@ processType context id = do
                             variant_type_id <- T.getIdentity variant.type
                             (context, member_info) <- processType context variant_type_id
                             context <- case member_info of
-                                Some member_info -> addMemberInfo context (M.MemberInfo (M.Variant index) (T.Adt id) info.arg_group_var member_info)
+                                Some member_info -> addMemberInfo context (M.MemberInfo (M.Variant index) info.arg_group_var member_info)
                                 None -> context
                             (context, index + 1))
                         context
@@ -80,7 +80,7 @@ processType context id = do
                             field_type_id <- T.getIdentity field.type
                             (context, member_info) <- processType context field_type_id
                             context <- case member_info of
-                                Some member_info -> addMemberInfo context (M.MemberInfo (M.Field field.name) (T.Record id) info.arg_group_var member_info)
+                                Some member_info -> addMemberInfo context (M.MemberInfo (M.Field field.name) info.arg_group_var member_info)
                                 None -> context
                             context)
                         case record.external_info of
@@ -90,7 +90,7 @@ processType context id = do
                                     arg_id <- T.getIdentity arg
                                     (context, member_info) <- processType context arg_id
                                     context <- case member_info of
-                                        Some member_info -> addMemberInfo context (M.MemberInfo (M.Extern index) (T.Record id) info.arg_group_var member_info)
+                                        Some member_info -> addMemberInfo context (M.MemberInfo (M.Extern index) info.arg_group_var member_info)
                                         None -> context
                                     (context, index + 1))
                                 context
