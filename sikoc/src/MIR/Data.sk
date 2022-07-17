@@ -31,6 +31,7 @@ data AlgebraicDataType = { id :: Identity,
                          }
 
 data RecordField = { name :: String,
+                     index :: Int,
                      type :: Type,
                      grouped :: Bool,
                    }
@@ -43,40 +44,10 @@ data Record = { id :: Identity,
                 external_class_impls :: [ExternalClassImpl],
               }
 
-getFieldByName :: Record -> String -> Option RecordField
-getFieldByName record name = List.find record.fields (\RecordField field_name _ _ -> field_name == name)
-
 dumpAdt :: AlgebraicDataType -> String
 dumpAdt adt = do
     variants <- adt.variants |> List.iter |> Iterator.map (\v -> "{} {}" % (v.name, v.type)) |> toList
     "adt {} = {}" % (adt.id, join variants " | ")
-
-adtToJson :: AlgebraicDataType -> Json
-adtToJson adt = do
-    name <- JsonObjectItem "name" (JsonString (show adt.id))
-    variants <- List.map adt.variants (\v -> do
-        name <- JsonObjectItem "name" (JsonString v.name)
-        type <- JsonObjectItem "type" (JsonString (show v.type))
-        JsonObject [name, type])
-    variants <- JsonObjectItem "variants" (JsonList variants)
-    JsonObject [name, variants]
-
-recordToJson :: Record -> Json
-recordToJson record = do
-    name <- JsonObjectItem "name" (JsonString (show record.id))
-    externals <- case record.external_info of
-        Some external_record_info -> do
-            external_record_info :: ExternalRecordInfo <- external_record_info // FIXME
-            externals <- List.map external_record_info.type_args (\arg -> do
-                JsonString (show arg))
-            [JsonObjectItem "externals" (JsonList externals)]
-        None -> []
-    fields <- List.map record.fields (\f -> do
-        name <- JsonObjectItem "name" (JsonString f.name)
-        type <- JsonObjectItem "type" (JsonString (show f.type))
-        JsonObject [name, type])
-    fields <- JsonObjectItem "fields" (JsonList fields)
-    JsonObject ([name, fields] + externals)
 
 dumpRecord :: Record -> String
 dumpRecord record = do

@@ -68,6 +68,9 @@ getRustFriendlyName input = case input of
         output <- replace input "." "_"
         output
 
+getFieldName :: Int -> String
+getFieldName index = "field{}" % index
+
 getRustIdentity :: Identity -> String
 getRustIdentity id = do
     Identity mod name index <- id
@@ -189,7 +192,7 @@ convertExpr context lir_expr = do
                 R.MatchCase case_pattern case_body case_guard) |> toList
             body <- convertExpr context body
             R.Match body cases
-        LE.FieldAccess name receiver -> R.FieldAccess (getRustFriendlyName name) (convertExpr context receiver)
+        LE.FieldAccess index receiver -> R.FieldAccess (getFieldName index) (convertExpr context receiver)
         LE.If cond true_branch false_branch -> do
             true_pattern <- R.VariantPattern ("{}::True" % boolTypeName) (Some "_")
             false_pattern <- R.VariantPattern ("{}::False" % boolTypeName) (Some "_")
@@ -249,8 +252,7 @@ convertRecord record external_struct_gens = do
                     struct_gen info.type_args
                 None -> panic "Extern struct {}/{} is not implemented" % (mod, name)
         None ->
-            record.fields |> List.iter |> Iterator.map (\field -> do
-                R.StructField (getRustFriendlyName field.name) (convertType field.type)) |> toList
+            List.mapE record.fields (\index, field -> R.StructField (getFieldName index) (convertType field.type))
     R.Struct name lifetimes rust_fields [R.Clone]
 
 convertAdt :: LD.AlgebraicDataType -> R.Enum

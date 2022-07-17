@@ -115,14 +115,14 @@ processExpr context expr = do
             context <- addOwnershipValue context info.ownership_var M.Owner
             context
         E.VarRef _ -> context
-        E.FieldAccess name receiver -> do
+        E.FieldAccess index receiver -> do
             context <- processExpr context receiver
             E.Expr _ receiver_type receiver_id <- receiver
             (context, receiver_info) <- getTypeVariableInfoByExprId2 context receiver_id
             (context, receiver_kind) <- getOwnershipValue context receiver_info.ownership_var
             (context, expr_kind) <- getOwnershipValue context info.ownership_var
             member <- List2.filter context.inference_info.members (\m -> case m.kind of
-                    M.Field n -> n == name && receiver_info.arg_group_var == m.root
+                    M.Field n -> n == index && receiver_info.arg_group_var == m.root
                     _ -> False)
             member_info <- case List2.head member of
                 Some m -> do
@@ -132,7 +132,7 @@ processExpr context expr = do
             record_id <- T.getIdentity receiver_type
             (program, record) <- P.getRecord context.program record_id
             context <- context { program = program }
-            field <- Option.unwrap (D.getFieldByName record name)
+            field <- List.atIndex record.fields index
             context <- if field.grouped
             then addOwnershipValue context member_info.ownership_var M.Owner
             else context

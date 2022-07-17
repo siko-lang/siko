@@ -147,12 +147,12 @@ collectBorrows context usage_store expr = do
             path <- Whole
             (context, usage_store) <- addUsage context usage_store var expr_id path
             (context, usage_store, Normal)
-        E.FieldAccess name receiver -> do
-            loop (context, usage_store, path, receiver) <- (context, usage_store, [name], receiver) do
+        E.FieldAccess index receiver -> do
+            loop (context, usage_store, path, receiver) <- (context, usage_store, [show index], receiver) do
                 E.Expr s_receiver _ _ <- receiver
                 case s_receiver of
-                    E.FieldAccess name receiver ->
-                        (context, usage_store, [name] + path, receiver)
+                    E.FieldAccess index receiver ->
+                        (context, usage_store, [show index] + path, receiver)
                     E.VarRef var -> do
                         (context, usage_store) <- addUsage context usage_store var expr_id (Partial path)
                         break (context, usage_store, Normal)

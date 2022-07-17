@@ -62,7 +62,7 @@ processBindArgs context sub args var_ref_expr mir_record = do
     (context, arg_exprs, _) <- args |> List.iter |> Iterator.fold (\(context, arg_exprs, index), arg -> do
         field <- atIndex mir_record.fields index
         (context, var_ref_expr) <- getExpr context var_ref_expr
-        field_access <- ME.FieldAccess field.name var_ref_expr
+        field_access <- ME.FieldAccess field.index var_ref_expr
         (context, field_access_expr) <- getExpr context (ME.Expr field_access field.type)
         (context, exprs) <- processBind context sub arg field_access_expr
         arg_exprs <- arg_exprs + exprs
@@ -191,7 +191,7 @@ processChoiceTree context sub choice path_info_map hir_case_bodies hir_guards = 
                         _ -> panic "Indexed type is not a record!"
                     field <- atIndex record.fields index
                     (context, normal) <- getExpr context parent_expr.normal
-                    body <- ME.FieldAccess field.name normal
+                    body <- ME.FieldAccess index normal
                     getExpr context (ME.Expr body field.type)
                 CC.VariantPath _ _ variant_index index _ -> do
                     case parent_type of
@@ -200,12 +200,12 @@ processChoiceTree context sub choice path_info_map hir_case_bodies hir_guards = 
                             variant <- atIndex adt.variants variant_index
                             variant_type <- getRecord context.type_store (MT.getIdentity variant.type)
                             field <- atIndex variant_type.fields index
-                            body <- ME.FieldAccess field.name internal
+                            body <- ME.FieldAccess index internal
                             getExpr context (ME.Expr body field.type)
                         MT.Record name -> do
                             record <- getRecord context.type_store name
                             field <- atIndex record.fields index
-                            body <- ME.FieldAccess field.name internal
+                            body <- ME.FieldAccess index internal
                             getExpr context (ME.Expr body field.type)
                         _ -> panic "Indexed adt is not a record nor an adt"
                 _ ->  (context, internal)
@@ -564,13 +564,20 @@ processExpr context sub hir_expr = do
             (context, multi_expr)
         HE.FieldAccess name receiver -> do
             Ident name _ <- name
+            HE.Expr _ _ receiver_type _ <- receiver
+            qn <- HT.getNameFromType receiver_type
+            record <- HPO.getRecord context.hir_program qn
+            index <- loop index <- 0 do
+                HD.RecordField fname _ <- atIndex record.fields index
+                if fname == name
+                then break index
+                else index + 1
             (context, mir_receiver) <- processExpr context sub receiver
-            (context, field_access_expr) <- getExpr context (ME.Expr (ME.FieldAccess name mir_receiver) mir_expr_type)
+            (context, field_access_expr) <- getExpr context (ME.Expr (ME.FieldAccess index mir_receiver) mir_expr_type)
             (context, field_access_expr)
         HE.TupleFieldAccess index receiver -> do
-            name <- getFieldName index
             (context, mir_receiver) <- processExpr context sub receiver
-            (context, field_access_expr) <- getExpr context (ME.Expr (ME.FieldAccess name mir_receiver) mir_expr_type)
+            (context, field_access_expr) <- getExpr context (ME.Expr (ME.FieldAccess index mir_receiver) mir_expr_type)
             (context, field_access_expr)
         HE.Formatter fmt args -> do
             (context, exprs, mir_args) <- args |> List.iter |> Iterator.fold (\(context, exprs, mir_args), arg -> do

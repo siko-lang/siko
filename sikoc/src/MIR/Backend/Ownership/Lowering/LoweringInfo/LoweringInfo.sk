@@ -105,10 +105,10 @@ createEmptyTypeLoweringInfo = do
     (allocator, root) <- getNextTypeVariableInfo allocator
     TypeLoweringInfo List2.empty root (List2.single (M.OwnershipInfo root.ownership_var M.Owner)) allocator
 
-getLoweringInfoForMember :: Config -> TypeLoweringInfo -> String -> FilterInfo -> (TypeLoweringInfo, FilterInfo)
-getLoweringInfoForMember config lowering_info name filter_info = do
+getLoweringInfoForField :: Config -> TypeLoweringInfo -> Int -> FilterInfo -> (TypeLoweringInfo, FilterInfo)
+getLoweringInfoForField config lowering_info index filter_info = do
     member <- List2.filter lowering_info.members (\member -> case member.kind of
-            M.Field n -> n == name && lowering_info.root.arg_group_var == member.root
+            M.Field i -> i == index && lowering_info.root.arg_group_var == member.root
             _ -> False)
     case List2.head member of
         Some m -> do

@@ -67,7 +67,7 @@ mapType context steps type = case type of
                         (lowering_context, record) <- TS.instantiateRecord context.lowering_context record type
                         context <- context { lowering_context = lowering_context }
                         List.foldE (\context, index, (HD.RecordField name field_type) -> do
-                            steps <- steps + [MF.Field name index]
+                            steps <- steps + [MF.Field index]
                             context <- mapType context steps field_type
                             context) context record.fields
             HP.Adt adt -> do
@@ -76,7 +76,7 @@ mapType context steps type = case type of
                 List.foldE (\context, index, v -> do
                     steps <- steps + [MF.Variant index]
                     context <- List.foldE (\context, index, t -> do
-                            steps <- steps + [MF.Field (getFieldName index) index]
+                            steps <- steps + [MF.Field index]
                             context <- mapType context steps t
                             context) context v.items
                     context) context adt.variants
@@ -91,7 +91,7 @@ mapType context steps type = case type of
         mapType context steps t
     HT.Tuple args -> do
         (context, _) <- args |> List.iter |> Iterator.fold (\(context, index), arg -> do
-            steps <- steps + [MF.Field (getFieldName index) index]
+            steps <- steps + [MF.Field index]
             context <- mapType context steps arg
             (context, index + 1)) (context, 0)
         context

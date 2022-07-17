@@ -20,7 +20,7 @@ data AlgebraicDataType = { id :: Identity,
                            external_class_impls :: [ExternalClassImpl]
                          }
 
-data RecordField = { name :: String,
+data RecordField = { index :: Int,
                      type :: Type,
                    }
 
@@ -40,7 +40,7 @@ dumpAdt adt = do
 
 dumpRecord :: Record -> String
 dumpRecord record = do
-    fields <- record.fields |> List.iter |> Iterator.map (\field -> "{} :: {}" % (field.name, field.type)) |> toList
+    fields <- record.fields |> List.iter |> Iterator.map (\field -> "field{} :: {}" % (field.index, field.type)) |> toList
     if isEmpty fields
         then if isSome record.external_info
             then "record {} = extern" % record.id

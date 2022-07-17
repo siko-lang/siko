@@ -124,7 +124,7 @@ generatePartialCmp program type_store arg_types result_type = do
     greater_case <- R.MatchCase (R.VariantPattern "std::cmp::Ordering::Greater" None) greater_ctor None
     equal_case <- R.MatchCase (R.VariantPattern "std::cmp::Ordering::Equal" None) equal_ctor None
     less_case <- R.MatchCase (R.VariantPattern "std::cmp::Ordering::Less" None) less_ctor None
-    init <- R.FieldInitItem ordering_field.name (R.Match (R.VarRef ordering_var) [greater_case, equal_case, less_case])
+    init <- R.FieldInitItem (getFieldName 0) (R.Match (R.VarRef ordering_var) [greater_case, equal_case, less_case])
     some_struct_ctor <- R.StructCtor (RT.showBase rust_some_record_type) [init]
     none_struct_ctor <- R.StructCtor (RT.showBase rust_none_record_type) []
     result_some_ctor <- R.FunctionCall ("{}::Some" % RT.showBase rust_result_type) [some_struct_ctor]
@@ -201,7 +201,7 @@ sikoOptionalOrderingToRustOptionalOrdering program partial_ord_expr optional_ord
     some_record <- getRecord program some_record_type
     ordering_type_field <- atIndex some_record.fields 0
     rust_some_record_type <- convertType ordering_type_field.type
-    field_access <- R.FieldAccess ordering_type_field.name (R.VarRef some_ordering)
+    field_access <- R.FieldAccess (getFieldName 0) (R.VarRef some_ordering)
     some_match <- sikoOrderingToRustOrdering (R.Ref field_access) rust_some_record_type
     some_case <- R.MatchCase some_pattern (R.FunctionCall "Some" [some_match]) None
     none_case <- R.MatchCase none_pattern (R.EnumCtor "None") None
@@ -395,7 +395,7 @@ generateIntParse program type_store arg_types result_type = do
     int_field <- atIndex some_record.fields 0
     rust_int_type <- convertType int_field.type
     int_ctor <- R.StructCtor (RT.showBase rust_int_type) [R.FieldInitItem innerValueField (R.VarRef "v")]
-    some_ctor <- R.StructCtor (RT.showBase rust_some_record_type) [R.FieldInitItem int_field.name (int_ctor)]
+    some_ctor <- R.StructCtor (RT.showBase rust_some_record_type) [R.FieldInitItem (getFieldName 0) (int_ctor)]
     none_ctor <- R.StructCtor (RT.showBase rust_none_record_type) []
     ok_pattern <- R.VariantPattern ("Ok") (Some "v")
     err_pattern <- R.VariantPattern ("Err") (Some "_")
@@ -519,8 +519,8 @@ generateListRemove program type_store arg_types result_type = do
     remove_decl <- R.VarDecl removed remove_call None
     list_type <- convertType (atIndex arg_types 0)
     list_ctor <- R.StructCtor (RT.showBase list_type) [R.FieldInitItem innerValueField (R.VarRef list)]
-    struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem list_field.name list_ctor,
-                                                         R.FieldInitItem item_field.name (R.VarRef removed)]
+    struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem (getFieldName 1) list_ctor,
+                                                         R.FieldInitItem (getFieldName 0) (R.VarRef removed)]
     R.Block [list_decl, index_decl, remove_decl, struct_ctor]
 
 generateListSplit :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
@@ -543,8 +543,8 @@ generateListSplit program type_store arg_types result_type = do
     list_type <- convertType (atIndex arg_types 0)
     list_ctor <- R.StructCtor (RT.showBase list_type) [R.FieldInitItem innerValueField (R.VarRef list)]
     second_ctor <- R.StructCtor (RT.showBase list_type) [R.FieldInitItem innerValueField (R.VarRef second)]
-    struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem list_field.name list_ctor,
-                                                         R.FieldInitItem item_field.name second_ctor]
+    struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem (getFieldName 1) list_ctor,
+                                                         R.FieldInitItem (getFieldName 0) second_ctor]
     R.Block [list_decl, index_decl, second_decl, struct_ctor]
 
 generateListIntoIter :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
@@ -584,9 +584,9 @@ generateListNextItem program type_store arg_types result_type = do
     rust_state_type <- convertType state_field.type
     clone_call <- R.MethodCall (R.VarRef item) cloneName []
     state_ctor <- R.StructCtor (RT.showBase rust_state_type) [R.FieldInitItem innerValueField (R.VarRef state)]
-    tuple_ctor <- R.StructCtor (RT.showBase rust_item_type) [R.FieldInitItem state_field.name state_ctor,
-                                                      R.FieldInitItem value_field.name (R.VarRef item)]
-    some_ctor <- R.StructCtor (RT.showBase rust_some_record_type) [R.FieldInitItem item_field.name tuple_ctor]
+    tuple_ctor <- R.StructCtor (RT.showBase rust_item_type) [R.FieldInitItem (getFieldName 0) state_ctor,
+                                                      R.FieldInitItem (getFieldName 1) (R.VarRef item)]
+    some_ctor <- R.StructCtor (RT.showBase rust_some_record_type) [R.FieldInitItem (getFieldName 0) tuple_ctor]
     none_ctor <- R.StructCtor (RT.showBase rust_none_record_type) []
     some_case <- R.MatchCase some_pattern (R.FunctionCall ("{}::Some" % RT.showBase rust_result_type) [some_ctor]) None
     none_case <- R.MatchCase none_pattern (R.FunctionCall ("{}::None" % RT.showBase rust_result_type) [none_ctor]) None
@@ -689,15 +689,15 @@ generateMapInsert program type_store arg_types result_type = do
     rust_none_record_type <- convertType (LT.Record none_record_type [])
     some_record <- getRecord program some_record_type
     item_field <- atIndex some_record.fields 0
-    some_ctor <- R.StructCtor (RT.showBase rust_some_record_type) [R.FieldInitItem item_field.name (R.VarRef value)]
+    some_ctor <- R.StructCtor (RT.showBase rust_some_record_type) [R.FieldInitItem (getFieldName 0) (R.VarRef value)]
     none_ctor <- R.StructCtor (RT.showBase rust_none_record_type) []
     some_case <- R.MatchCase some_pattern (R.FunctionCall ("{}::Some" % RT.showBase rust_value_type) [some_ctor]) None
     none_case <- R.MatchCase none_pattern (R.FunctionCall ("{}::None" % RT.showBase rust_value_type) [none_ctor]) None
     match <- R.Match insert_call [some_case, none_case]
     value_decl <- R.VarDecl value match None
     map_ctor <- R.Block [R.StructCtor (RT.showBase rust_map_type) [R.FieldInitItem innerValueField (R.VarRef map)]]
-    field0_init <- R.FieldInitItem map_field.name map_ctor
-    field1_init <- R.FieldInitItem value_field.name (R.VarRef value)
+    field0_init <- R.FieldInitItem (getFieldName 0) map_ctor
+    field1_init <- R.FieldInitItem (getFieldName 1) (R.VarRef value)
     result_ctor <- R.StructCtor (RT.showBase rust_type) [field0_init, field1_init]
     R.Block [map_decl, value_decl, result_ctor]
 
@@ -718,7 +718,7 @@ generateMapGet program type_store arg_types result_type = do
     some_record <- getRecord program some_record_type
     item_field <- atIndex some_record.fields 0
     value_clone <- R.MethodCall (R.VarRef value) cloneName []
-    some_ctor <- R.StructCtor (RT.showBase rust_some_record_type) [R.FieldInitItem item_field.name (value_clone)]
+    some_ctor <- R.StructCtor (RT.showBase rust_some_record_type) [R.FieldInitItem (getFieldName 0) (value_clone)]
     none_ctor <- R.StructCtor (RT.showBase rust_none_record_type) []
     some_case <- R.MatchCase some_pattern (R.FunctionCall ("{}::Some" % RT.showBase rust_type) [some_ctor]) None
     none_case <- R.MatchCase none_pattern (R.FunctionCall ("{}::None" % RT.showBase rust_type) [none_ctor]) None
@@ -755,15 +755,15 @@ generateMapRemove program type_store arg_types result_type = do
     rust_none_record_type <- convertType (LT.Record none_record_type [])
     some_record <- getRecord program some_record_type
     item_field <- atIndex some_record.fields 0
-    some_ctor <- R.StructCtor (RT.showBase rust_some_record_type) [R.FieldInitItem item_field.name (R.VarRef value)]
+    some_ctor <- R.StructCtor (RT.showBase rust_some_record_type) [R.FieldInitItem (getFieldName 0) (R.VarRef value)]
     none_ctor <- R.StructCtor (RT.showBase rust_none_record_type) []
     some_case <- R.MatchCase some_pattern (R.FunctionCall ("{}::Some" % RT.showBase rust_value_type) [some_ctor]) None
     none_case <- R.MatchCase none_pattern (R.FunctionCall ("{}::None" % RT.showBase rust_value_type) [none_ctor]) None
     match <- R.Match remove_call [some_case, none_case]
     value_decl <- R.VarDecl value match None
     map_ctor <- R.Block [R.StructCtor (RT.showBase rust_map_type) [R.FieldInitItem innerValueField (R.VarRef map)]]
-    field0_init <- R.FieldInitItem map_field.name map_ctor
-    field1_init <- R.FieldInitItem value_field.name (R.VarRef value)
+    field0_init <- R.FieldInitItem (getFieldName 0) map_ctor
+    field1_init <- R.FieldInitItem (getFieldName 1) (R.VarRef value)
     result_ctor <- R.StructCtor (RT.showBase rust_type) [field0_init, field1_init]
     R.Block [map_decl, value_decl, result_ctor]
 
@@ -815,12 +815,12 @@ generateMapNextItem program type_store arg_types result_type = do
     value_field1 <- atIndex value_tuple_record.fields 1
     key_ctor <- R.FieldAccess "0" (R.VarRef item)
     value_ctor <- R.FieldAccess "1" (R.VarRef item)
-    value_tuple_ctor <- R.StructCtor (RT.showBase rust_value_type) [R.FieldInitItem value_field0.name key_ctor,
-                                                           R.FieldInitItem value_field1.name value_ctor]
+    value_tuple_ctor <- R.StructCtor (RT.showBase rust_value_type) [R.FieldInitItem (getFieldName 0) key_ctor,
+                                                           R.FieldInitItem (getFieldName 1) value_ctor]
     state_ctor <- R.StructCtor (RT.showBase rust_state_type) [R.FieldInitItem innerValueField (R.VarRef state)]
-    tuple_ctor <- R.StructCtor (RT.showBase rust_item_type) [R.FieldInitItem state_field.name state_ctor,
-                                                      R.FieldInitItem value_field.name value_tuple_ctor]
-    some_ctor <- R.StructCtor (RT.showBase rust_some_record_type) [R.FieldInitItem item_field.name (tuple_ctor)]
+    tuple_ctor <- R.StructCtor (RT.showBase rust_item_type) [R.FieldInitItem (getFieldName 0) state_ctor,
+                                                      R.FieldInitItem (getFieldName 1) value_tuple_ctor]
+    some_ctor <- R.StructCtor (RT.showBase rust_some_record_type) [R.FieldInitItem (getFieldName 0) (tuple_ctor)]
     none_ctor <- R.StructCtor (RT.showBase rust_none_record_type) []
     some_case <- R.MatchCase some_pattern (R.FunctionCall ("{}::Some" % RT.showBase rust_result_type) [some_ctor]) None
     none_case <- R.MatchCase none_pattern (R.FunctionCall ("{}::None" % RT.showBase rust_result_type) [none_ctor]) None

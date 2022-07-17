@@ -179,28 +179,28 @@ lowerExpr lowering_context context expr = do
         ME.VarRef var -> do
             lir_var <- lowerVar var
             (lowering_context, context, LE.VarRef lir_var)
-        ME.FieldAccess name receiver -> do
+        ME.FieldAccess index receiver -> do
             ME.Expr _ receiver_type _ <- receiver
             record_id <- MT.getIdentity receiver_type
             (mir_program, record) <- MP.getRecord context.mir_program record_id
             context <- context { mir_program = mir_program }
-            field <- Option.unwrap (MD.getFieldByName record name)
+            field <- List.atIndex record.fields index
             (lowering_context, context, lir_receiver) <- lowerExpr lowering_context context receiver
             if field.grouped
             then do
                 case lir_type of
                     LT.Ref _ _ -> do
-                        field_access <- LE.Expr (LE.FieldAccess name lir_receiver) lir_type (LE.ExprId 0)
+                        field_access <- LE.Expr (LE.FieldAccess index lir_receiver) lir_type (LE.ExprId 0)
                         field_access <- LE.Expr (LE.Deref field_access) lir_type (LE.ExprId 0)
                         (lowering_context, context, LE.Ref field_access)
                     _ -> do
-                        field_access <- LE.Expr (LE.FieldAccess name lir_receiver) lir_type (LE.ExprId 0)
+                        field_access <- LE.Expr (LE.FieldAccess index lir_receiver) lir_type (LE.ExprId 0)
                         (lowering_context, context, LE.Deref field_access)
             else case lir_type of
                 LT.Ref _ _ -> do
-                    field_access <- LE.Expr (LE.FieldAccess name lir_receiver) lir_type (LE.ExprId 0)
+                    field_access <- LE.Expr (LE.FieldAccess index lir_receiver) lir_type (LE.ExprId 0)
                     (lowering_context, context, LE.Ref field_access)
-                _ -> (lowering_context, context, LE.FieldAccess name lir_receiver)
+                _ -> (lowering_context, context, LE.FieldAccess index lir_receiver)
         ME.If cond true_branch false_branch -> do
             (lowering_context, context, lir_cond) <- lowerExpr lowering_context context cond
             (lowering_context, context, lir_true_branch) <- lowerExpr lowering_context context true_branch

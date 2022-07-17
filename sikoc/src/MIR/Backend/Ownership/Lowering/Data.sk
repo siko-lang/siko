@@ -31,15 +31,14 @@ lowerExternalRecordInfo lowering_info context mir_external_record_info filter_in
         ((context, filter_info), ty))
     (context, LD.ExternalRecordInfo lir_type_args, filter_info)
 
-lowerField :: TypeLoweringInfo -> (Context, FilterInfo) -> MD.RecordField -> ((Context, FilterInfo), LD.RecordField)
-lowerField lowering_info (context, filter_info) mir_field  = do
-    (lowering_info, filter_info) <- getLoweringInfoForMember context.config lowering_info mir_field.name filter_info
-    //println "field_lowering_info: {}/{}" % (mir_field.name, lowering_info)
+lowerField :: TypeLoweringInfo -> (Context, FilterInfo) -> Int -> MD.RecordField -> ((Context, FilterInfo), LD.RecordField)
+lowerField lowering_info (context, filter_info) index mir_field  = do
+    (lowering_info, filter_info) <- getLoweringInfoForField context.config lowering_info index filter_info
     (context, lir_type) <- lowerType context lowering_info mir_field.type
     lir_type <- if mir_field.grouped
     then LT.Box lir_type
     else lir_type
-    ((context, filter_info), LD.RecordField mir_field.name lir_type)
+    ((context, filter_info), LD.RecordField index lir_type)
 
 lowerVariant :: TypeLoweringInfo -> (Context, FilterInfo) -> Int -> MD.Variant -> ((Context, FilterInfo), LD.Variant)
 lowerVariant lowering_info (context, filter_info) index mir_variant = do
@@ -91,7 +90,7 @@ lowerRecord context lowering_info mir_id lir_id = do
     (mir_program, mir_record) <- MP.getRecord context.mir_program mir_id
     context <- context { mir_program = mir_program }
     (lowering_info, filter_info) <- buildFilterInfoFromTypeLoweringInfo context.config lowering_info
-    ((context, filter_info), fields) <- List.mapS (context, filter_info) mir_record.fields (lowerField lowering_info)
+    ((context, filter_info), fields) <- List.mapSE (context, filter_info) mir_record.fields (lowerField lowering_info)
     lifetimes <- collectLifetimes lowering_info.ownershipinfos
     (context, external_info) <- case mir_record.external_info of
         Some external_info -> do

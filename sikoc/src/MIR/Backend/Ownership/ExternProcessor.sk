@@ -95,11 +95,11 @@ processStep program info ty parent step =
             (program, adt) <- P.getAdt program id
             variant <- List.atIndex adt.variants index
             (variant.type, Some member, Some ownershipinfo)
-        F.Field name index -> do
-            member <- M.MemberInfo (M.Field name) parent.arg_group_var info
+        F.Field index -> do
+            member <- M.MemberInfo (M.Field index) parent.arg_group_var info
             id <- T.getIdentity ty
             (program, record) <- P.getRecord program id
-            field <- Option.unwrap (D.getFieldByName record name)
+            field <- List.atIndex record.fields index
             (field.type, Some member, None)
         F.FunctionArg index -> panic "FunctionArg in processStep"
         F.FunctionResult -> panic "FunctionResult in processStep"

@@ -132,7 +132,7 @@ compileClosure context closure closure_call_identity = do
             field_index <- getLength arg_refs
             field <- atIndex variant_type.fields field_index
             (context, prev_var_ref_expr) <- getExpr context prev_var_ref_expr
-            arg_ref <- ME.FieldAccess field.name prev_var_ref_expr
+            arg_ref <- ME.FieldAccess field_index prev_var_ref_expr
             (context, arg_ref_expr) <- getExpr context (ME.Expr arg_ref field.type)
             (context, arg_refs + [arg_ref_expr])) (context, [])
         next_fn <- case Option.unwrap (get context.closure_store.successors closure_instance) of
@@ -170,7 +170,7 @@ compileClosureInstance (ClosureName name) context closure_instance = do
     (context, mir_args) <- List.mapS context closure_instance.args TS.processType
     variant_name <- getVariantName closure_instance
     record_identity <- getVariantRecordIdentity closure_instance
-    mir_fields <- List.mapE mir_args (\index, mir_arg_type -> MD.RecordField (getFieldName index) mir_arg_type False)
+    mir_fields <- List.mapE mir_args (\index, mir_arg_type -> MD.RecordField (getFieldName index) index mir_arg_type False)
     type_store <- context.type_store
     mir_variant_record <- MD.Record record_identity mir_fields None []
     (records, _) <- insert type_store.records record_identity mir_variant_record
