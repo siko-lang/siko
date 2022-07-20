@@ -1,0 +1,48 @@
+module Siko.MIR.Backend.Ownership.DumpOwnership(dumpOwnership) where
+
+import Siko.MIR.Program as P
+import Siko.MIR.Backend.Ownership.InferenceInfo
+import Siko.MIR.Backend.Ownership.BorrowInfo
+import Siko.MIR.Backend.Ownership.MemberInfo as M
+import Siko.MIR.Backend.Ownership.OwnershipDependencyMap
+import Siko.MIR.Backend.Ownership.TypeVariableInfo
+import Siko.MIR.Backend.Ownership.FunctionInfoStore
+import Siko.MIR.Backend.Traversal
+import Siko.MIR.Backend.Ownership.BorrowId // FIXME: needed only for the linear hack
+import Siko.MIR.Expr as E
+import Siko.MIR.Type as T
+import Siko.MIR.Function as F
+import Siko.Config
+import Siko.Trace
+
+data Context = { function_id :: P.Identity,
+                 inference_info :: InferenceInfo }
+
+getOwnershipValue :: Context -> OwnershipTypeVariable -> (Context, M.OwnershipKind) // FIXME
+getOwnershipValue context var = do
+    (inference_info, result) <- getOwnership context.inference_info var
+    context <- context { inference_info = inference_info }
+    case result of
+        Some o -> (context, o)
+        None -> (context, M.Unknown)
+
+getTypeVariableInfoByExprId2 :: Context -> E.ExprId -> (Context, TypeVariableInfo) // FIXME:
+getTypeVariableInfoByExprId2 context expr_id = do
+    (inference_info, info) <- getTypeVariableInfoByExprId context.inference_info expr_id context.function_id
+    (context { inference_info = inference_info }, info)
+
+dumpExpr :: Context -> E.Expr -> (Context, E.Expr)
+dumpExpr context expr = do
+    E.Expr s_expr _ expr_id <- expr
+    (context, info) <- getTypeVariableInfoByExprId2 context expr_id
+    (context, o1) <- getOwnershipValue context info.ownership_var
+    println "dumpOwnership {}/{} {} {}" % (expr_id, E.short expr, info, o1)
+    (context, expr)
+
+dumpOwnership :: InferenceInfo -> P.Identity -> E.Expr -> InferenceInfo
+dumpOwnership inference_info identity body = do
+    context <- Context identity inference_info
+    println "----------- BEGIN"
+    (context, body) <- traverse context body (Some dumpExpr) None None
+    println "----------- END"
+    context.inference_info

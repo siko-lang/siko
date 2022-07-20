@@ -1,0 +1,32 @@
+module Siko.MIR.Backend.Ownership.Lowering where
+
+import Siko.Config
+import Siko.MIR.Backend.Ownership.Lowering.Context
+import Siko.MIR.Backend.Ownership.Lowering.Naming
+import Siko.MIR.Backend.Ownership.Lowering.LoweringInfo
+import Siko.MIR.Backend.Ownership.TypeVariableInfo
+import Siko.MIR.Backend.Ownership.Allocator
+import Siko.MIR.Backend.Ownership.MemberInfo as M
+import Siko.MIR.Backend.Ownership.FunctionInfoStore
+import Siko.MIR.Backend.Ownership.DataGroupInfo
+import Siko.LIR.Program as LP
+import Siko.MIR.Program as MP
+
+import Map2
+import List2 as List2
+import List2 (List2)
+
+lowerProgram :: MP.Program -> Config -> FunctionInfoStore -> DataGroupInfoStore -> LP.Program
+lowerProgram mir_program config function_info_store data_group_info_store = do
+    context <- createContext function_info_store config mir_program data_group_info_store
+    allocator <- createAllocator
+    (allocator, result) <- getNextTypeVariableInfo allocator
+    main_key <- FunctionKey MP.getMainIdentity (FunctionLoweringInfo List2.empty List2.empty result (List2.single (M.OwnershipInfo result.ownership_var M.Owner)) allocator List2.empty)
+    (context, main_lir_id) <- getLIRId context main_key
+    context <- addItem context main_key
+    context <- processQueue context
+    lir_program <- LP.createProgram
+    lir_program <- Map2.fold lir_program context.lir_functions (\lir_program, (id, f) -> LP.addFunction lir_program id f)
+    lir_program <- Map2.fold lir_program context.lir_records (\lir_program, (id, r) -> LP.addRecord lir_program id r)
+    lir_program <- Map2.fold lir_program context.lir_adts (\lir_program, (id, a) -> LP.addAdt lir_program id a)
+    lir_program

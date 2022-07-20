@@ -1,0 +1,21 @@
+module Siko.MIR.Backend.Ownership.BorrowInfo where
+
+import Map2
+import Siko.MIR.Expr as E
+
+import List2
+
+data BorrowInfo = {  borrows :: List2 E.ExprId,
+                     invalidations :: Map2 E.ExprId (List2 E.ExprId),
+                  }
+
+instance Show BorrowInfo where
+    show info = do
+        borrows <- show info.borrows
+        s <- Map2.fold "" info.invalidations (\s, (expr_id, invalidations) -> s + "\n{}: {}" % (expr_id, invalidations))
+        borrows + "\n[" + s + "\n]"
+
+isBorrow :: BorrowInfo -> E.ExprId -> (BorrowInfo, Bool)
+isBorrow borrow_info expr_id = do
+    r <- List2.contains borrow_info.borrows expr_id
+    (borrow_info, r)

@@ -1,0 +1,140 @@
+module Siko.MIR.Backend.Ownership.ExternProcessor(createExternFunctionInfo) where
+
+import Siko.MIR.Function as F
+import Siko.MIR.Program as P
+import Siko.MIR.Data as D
+import Siko.MIR.Type as T
+
+import Siko.MIR.Backend.Ownership.TypeVariableInfo
+import Siko.MIR.Backend.Ownership.Allocator
+import Siko.MIR.Backend.Ownership.MemberInfo as M
+import Siko.MIR.Backend.Ownership.FunctionInfo
+import Siko.MIR.Backend.Ownership.TypeMerger
+import Siko.MIR.Backend.Ownership.EqualitySolver
+
+import Map
+
+import List2 as List2
+import List2 (List2)
+import Map2 as Map2
+import Map2 (Map2)
+
+data Context = { program :: P.Program,
+                 args :: List2 F.Step,
+                 allocator :: Allocator,
+                 info_map :: Map2 F.Position (TypeVariableInfo, T.Type),
+                 members :: List2 M.MemberInfo,
+                 ownershipinfos :: List2 M.OwnershipInfo,
+               }
+
+getNext :: Context -> (Context, TypeVariableInfo)
+getNext context = do
+    (allocator, info) <- getNextTypeVariableInfo context.allocator
+    (context { allocator = allocator }, info)
+
+processPosition :: F.FunctionType -> TypeVariableInfo -> Context -> F.Position -> (Context, TypeVariableInfo, T.Type)
+processPosition function_type info context pos = do
+    F.Position steps <- pos
+    (context, info, ty) <- case Map2.get context.info_map pos of
+        Some (info, ty) -> (context, info, ty)
+        None -> do
+            (context, (ty, member, ownershipinfo)) <- if getLength steps == 1
+                            then do
+                                step <- (atIndex steps 0)
+                                case step of
+                                    F.FunctionArg index -> (context, (atIndex function_type.args index, None, None))
+                                    F.FunctionResult -> (context, (function_type.result, None, None))
+                                    _ -> panic "unexpected last step"
+                            else do
+                                (last_step, parent) <- List.remove steps (getLength steps - 1)
+                                (context, parent_info) <- getNext context
+                                (context, parent_info, ty) <- processPosition function_type parent_info context (F.Position parent)
+                                (context, processStep context.program info ty parent_info last_step)
+            members <- case member of
+                Some member -> List2.push context.members member
+                None -> context.members
+            ownershipinfos <- case ownershipinfo of
+                Some info -> List2.push context.ownershipinfos info
+                None -> context.ownershipinfos
+            info_map <- Map2.put context.info_map pos (info, ty)
+            (context { info_map = info_map,
+                       members = members,
+                       ownershipinfos = ownershipinfos, }, info, ty)
+    //println "Processing position {} -> {}" % (steps, info)
+    (context, info, ty)
+
+processMainPosition :: Option TypeVariableInfo -> F.FunctionType -> Context -> F.Position -> (Context, TypeVariableInfo)
+processMainPosition info function_type context pos = do
+    F.Position steps <- pos
+    step <- List.atIndex steps 0
+    (context, info) <- case info of
+        Some info -> (context, info)
+        None -> getNext context
+    case step of
+        F.FunctionArg index -> do
+            context <- context { args = List2.push context.args step }
+            (context, info, ty) <- processPosition function_type info context (F.Position steps)
+            (context, info)
+        F.FunctionResult -> do
+            (context, info, ty) <- processPosition function_type info context (F.Position steps)
+            (context, info)
+        _ -> panic "processMainPosition unexpected first position"
+
+processStep :: P.Program -> TypeVariableInfo -> T.Type -> TypeVariableInfo -> F.Step -> (T.Type, Option M.MemberInfo, Option M.OwnershipInfo)
+processStep program info ty parent step =
+    case step of
+        F.External index -> do
+            member <- M.MemberInfo (M.Extern index) ty parent.arg_group_var info
+            id <- T.getIdentity ty
+            (program, record) <- P.getRecord program id
+            external_record_info <- Option.unwrap record.external_info
+            external_ty <- List.atIndex external_record_info.type_args index
+            (external_ty, Some member, None)
+        F.Variant index -> do
+            member <- M.MemberInfo (M.Variant index) ty parent.arg_group_var info
+            ownershipinfo <- M.OwnershipInfo info.ownership_var M.Owner
+            id <- T.getIdentity ty
+            (program, adt) <- P.getAdt program id
+            variant <- List.atIndex adt.variants index
+            (variant.type, Some member, Some ownershipinfo)
+        F.Field name index -> do
+            member <- M.MemberInfo (M.Field name) ty parent.arg_group_var info
+            id <- T.getIdentity ty
+            (program, record) <- P.getRecord program id
+            field <- Option.unwrap (D.getFieldByName record name)
+            (field.type, Some member, None)
+        F.FunctionArg index -> panic "FunctionArg in processStep"
+        F.FunctionResult -> panic "FunctionResult in processStep"
+
+createExternFunctionInfo :: P.Program -> P.Identity -> F.FunctionType -> F.TypeMapping -> FunctionInfo
+createExternFunctionInfo program id function_type type_mapping = do
+    allocator <- createAllocator
+    context <- Context program List2.empty allocator Map2.empty List2.empty List2.empty
+    (context, var_infos) <- Map.mapS context type_mapping.var_mappings (\context, (n, positions) -> do
+        (context, info) <- getNext context
+        (context, infos) <- List.mapS context positions (processMainPosition (Some info) function_type)
+        (context, n, infos))
+    (context, ref_infos) <- Map.mapS context type_mapping.ref_positions (\context, (lifetime, positions) -> do
+        (context, info) <- getNext context
+        (allocator, borrow_id) <- getNextBorrowId context.allocator
+        ownership <- M.OwnershipInfo info.ownership_var (M.Borrower borrow_id)
+        context <- context { ownershipinfos = List2.push context.ownershipinfos ownership, allocator = allocator }
+        (context, infos) <- List.mapS context positions (processMainPosition (Some info) function_type)
+        (context, lifetime, infos))
+    (context, owner_infos) <- List.mapS context type_mapping.owner_positions (processMainPosition None function_type)
+    owner_infos <- List2.toList2 owner_infos
+    owner_infos <- List2.map owner_infos (\info -> M.OwnershipInfo info.ownership_var M.Owner)
+    context <- context { ownershipinfos = context.ownershipinfos + owner_infos }
+    args <- context.args |> List2.sort |> List2.dedup
+    args <- List2.map args (\arg_step -> case Map2.get context.info_map (F.Position [arg_step]) of
+                        Some (info, _) -> info
+                        None -> panic "No type variable info for arg step")
+    (context, result) <- case Map2.get context.info_map (F.Position [F.FunctionResult]) of
+        Some (info, _) -> (context, info)
+        None -> if Map.getSize type_mapping.var_mappings == 0
+            then getNext context
+            else panic "No type variable info for result step for {}" % id
+    (members, equals) <- mergeTypes context.members
+    function_info <- FunctionInfo args result members List2.empty context.ownershipinfos
+    function_info <- processEquals equals function_info
+    function_info

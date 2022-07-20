@@ -1,0 +1,73 @@
+module Siko.MIR.Backend.Ownership.AddConverter2 where
+
+import Siko.MIR.Program as P
+import Siko.MIR.Expr as E
+import Siko.MIR.Data as D
+import Siko.MIR.Type as T
+import Siko.MIR.Function as F
+import Siko.Util.Counter
+import Siko.MIR.Backend.Traversal
+import Siko.Trace
+import Siko.Config
+
+import Map
+import Set
+
+data Context = { expr_id_gen :: Counter E.ExprId }
+
+getNextExprId :: Context -> (Context, E.ExprId)
+getNextExprId context = do
+    (expr_id_gen, next_id) <- getNext context.expr_id_gen
+    (context { expr_id_gen = expr_id_gen }, next_id)
+
+packExpr :: Context -> E.Expr -> (Context, E.Expr)
+packExpr context orig_expr = do
+    (context, expr_id) <- getNextExprId context
+    E.Expr orig_s_expr orig_type orig_id <- orig_expr
+    case orig_s_expr of
+        E.Converter _ _ -> (context, orig_expr)
+        _ -> do
+            type <- case orig_type of
+                T.Owner t -> t
+                T.Ref _ t -> t
+                _ -> orig_type
+            (context, E.Expr (E.Converter orig_expr E.NormalConverter) type expr_id)
+
+unpackReceiver :: E.Expr -> E.Expr
+unpackReceiver receiver = do
+    E.Expr s_expr type id <- receiver
+    case s_expr of
+        E.Converter arg _ -> return unpackReceiver arg
+        E.FieldAccess name receiver -> do
+            receiver <- unpackReceiver receiver
+            E.Expr (E.FieldAccess name receiver) type id
+        e -> E.Expr e type id
+
+processExpr :: Context -> E.Expr -> (Context, E.Expr)
+processExpr context expr = do
+    E.Expr s_expr type id <- expr
+    case s_expr of
+        E.VarRef v -> do
+            (context, expr) <- packExpr context expr
+            packExpr context expr
+        E.FieldAccess name receiver -> do
+            receiver <- unpackReceiver receiver
+            (context, expr) <- packExpr context (E.Expr (E.FieldAccess name receiver) type id)
+            packExpr context expr
+        _ -> (context, expr)
+
+processFunction :: Config -> P.Identity -> F.Function -> (P.Identity, F.Function)
+processFunction config id function = do
+    case function.kind of
+        F.Normal info -> do
+            context <- Context info.expr_id_gen
+            (context, new_body) <- traverse context info.body (Some processExpr) None None
+            info <- info { body = new_body, expr_id_gen = context.expr_id_gen }
+            new_kind <- F.Normal info
+            (id, function { kind = new_kind })
+        _ -> (id, function)
+
+processProgram :: Config -> P.Program -> P.Program
+processProgram config program = do
+    functions <- program.functions |> Map.iter |> Iterator.map (\(id, function) -> processFunction config id function) |> toMap
+    program { functions = functions }

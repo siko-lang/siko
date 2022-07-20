@@ -1,0 +1,146 @@
+module Siko.MIR.Backend.Ownership.EqualitySolver(processEquals, addEqual, Equal(..), Apply, apply, MemberOwner, getMembers) where
+
+import Siko.MIR.Backend.Ownership.TypeVariableInfo
+import Siko.MIR.Backend.Ownership.MemberInfo as M
+import Map
+import List2 as List2
+import List2 (List2)
+import Map2 as Map2
+import Map2 (Map2)
+
+data Equal = EqualGroup GroupTypeVariable GroupTypeVariable
+           | EqualOwnership OwnershipTypeVariable OwnershipTypeVariable
+           deriving (Show)
+
+data Applier = { ownership_equals :: Map2 OwnershipTypeVariable OwnershipTypeVariable,
+                 group_equals :: Map2 GroupTypeVariable GroupTypeVariable } deriving (Show)
+
+addSingleEqual :: Applier -> Equal -> Applier
+addSingleEqual applier equal = do
+    (applier, equal) <- apply applier equal
+    case equal of
+        EqualGroup id1 id2 -> do
+            min_id <- min id1 id2
+            max_id <- max id1 id2
+            if id1 != id2
+            then do
+                group_equals <- Map2.put applier.group_equals max_id min_id
+                applier { group_equals = group_equals }
+            else applier
+        EqualOwnership id1 id2 -> do
+            min_id <- min id1 id2
+            max_id <- max id1 id2
+            if id1 != id2
+            then do
+                ownership_equals <- Map2.put applier.ownership_equals max_id min_id
+                applier { ownership_equals = ownership_equals }
+            else applier
+
+class MemberOwner a where
+    getMembers a :: a -> List2 M.MemberInfo
+
+class Apply a where
+    apply a :: Applier -> a -> (Applier, a)
+
+instance Apply GroupTypeVariable where
+    apply applier type_variable = do
+        loop (applier, type_variable) <- (applier, type_variable) do
+            applier :: Applier <- applier // FIXME
+            case Map2.get applier.group_equals type_variable of
+                Some t -> (applier, t)
+                None -> do
+                    break (applier, type_variable)
+
+instance Apply OwnershipTypeVariable where
+    apply applier type_variable = do
+        loop (applier, type_variable) <- (applier, type_variable) do
+            applier :: Applier <- applier // FIXME
+            case Map2.get applier.ownership_equals type_variable of
+                Some t -> (applier, t)
+                None -> do
+                    break (applier, type_variable)
+
+instance Apply Equal where
+    apply applier equal =
+        case equal of
+            EqualGroup id1 id2 -> do
+                (applier, id1) <- apply applier id1
+                (applier, id2) <- apply applier id2
+                (applier, EqualGroup id1 id2)
+            EqualOwnership id1 id2 -> do
+                (applier, id1) <- apply applier id1
+                (applier, id2) <- apply applier id2
+                (applier, EqualOwnership id1 id2)
+
+instance (Apply a) => Apply (List2 a) where
+    apply applier items = List2.updateAllS applier items (\applier, item -> apply applier item)
+
+instance Apply TypeVariableInfo where
+    apply applier info = do
+        (applier, ownership_var) <- apply applier info.ownership_var
+        (applier, arg_group_var) <- apply applier info.arg_group_var
+        (applier, TypeVariableInfo ownership_var arg_group_var)
+
+instance Apply M.MemberInfo where
+    apply applier member = do
+        M.MemberInfo kind ty root info <- member
+        (applier, root) <- apply applier root
+        (applier, info) <- apply applier info
+        (applier, M.MemberInfo kind ty root info)
+
+instance Apply M.OwnershipInfo where
+    apply applier info = do
+        (applier, var) <- apply applier info.var
+        (applier, info { var = var })
+
+instance (Apply v, Ord k) => Apply Map2 k v where
+    apply applier items = Map2.updateS applier items (\applier, (k, v) -> apply applier v)
+
+addEquals :: List2 Equal -> Applier -> Applier
+addEquals equals applier = do
+    loop (applier, equals, index) <- (applier, equals, 0) do
+        if index >= List2.getLength equals
+        then break applier
+        else do
+            equal <- List2.atIndex equals index
+            applier <- addSingleEqual applier equal
+            (applier, equals, index + 1)
+
+data MergeKey b = MergeKey M.MemberKind b deriving (PartialEq, Eq, PartialOrd, Ord)
+
+addEqual :: List2 Equal -> TypeVariableInfo -> TypeVariableInfo -> List2 Equal
+addEqual equals info1 info2 = do
+    equals <- List2.push equals (EqualOwnership info1.ownership_var info2.ownership_var)
+    equals <- List2.push equals (EqualGroup info1.arg_group_var info2.arg_group_var)
+    equals
+
+processEquals a :: (MemberOwner a, Apply a) => List2 Equal -> a -> a
+processEquals equals owner = do
+    applier <- addEquals equals (Applier Map2.empty Map2.empty)
+    members <- getMembers owner
+    loop (members, applier, count) <- (members, applier, 0) do
+        (applier, members) <- apply applier members
+        (members, equals) <- getEqualsFromMemberInfos members
+        if List2.isEmpty equals
+        then do
+            (applier, owner) <- apply applier owner
+            break owner
+        else (members, addEquals equals applier, count + 1)
+
+getEqualsFromMemberInfos :: List2 M.MemberInfo -> (List2 M.MemberInfo, List2 Equal)
+getEqualsFromMemberInfos members = do
+        (members, root_map) <- List2.foldLinear Map2.empty members (\root_map, member_info -> do
+                (root_map, _) <- Map2.alter (addInfo member_info.info) (MergeKey member_info.kind member_info.root) root_map
+                root_map)
+        equals <- Map2.fold List2.empty root_map (\equals, (_, infos) -> do
+            if List2.getLength infos > 1
+            then do
+                first <- List2.atIndex infos 0
+                (_, equals) <- List2.foldLinear equals infos (\equals, info -> addEqual equals info first)
+                equals
+            else equals)
+        (members, equals)
+    where
+        addInfo info old = case old of
+            Some infos -> Some (List2.dedup (List2.sort (List2.push infos info)))
+            None -> Some (List2.single info)
