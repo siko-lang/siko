@@ -151,11 +151,14 @@ getExternalClassNames = do
     eq <- HP.FullPath getStdOpsModuleName getEqClassName
     partial_ord <- HP.FullPath getStdOpsModuleName getPartialOrdClassName
     ord <- HP.FullPath getStdOpsModuleName getOrdClassName
+    copy <- HP.FullPath getStdIntrinsicsModuleName getCopyClassName
     [(show, MD.ShowKind),
      (partial_eq, MD.PartialEqKind),
      (eq, MD.EqKind),
      (partial_ord, MD.PartialOrdKind),
-     (ord, MD.OrdKind)]
+     (ord, MD.OrdKind),
+     (copy, MD.CopyKind)]
+
 
 unpackCall :: ME.Expr -> MP.Identity
 unpackCall expr = do
@@ -204,6 +207,16 @@ generateExternalImpl context hir_type impl_kind = case impl_kind of
                 context { type_store = type_store }
             MT.Record record_id -> do
                 type_store <- addExternalClassImplForRecord context.type_store record_id MD.Eq
+                context { type_store = type_store }
+            _ -> panic "Not yet implemented"
+    MD.CopyKind -> do
+        (context, mir_type) <- processType context hir_type
+        case mir_type of
+            MT.Adt adt_id -> do
+                type_store <- addExternalClassImplForAdt context.type_store adt_id MD.Copy
+                context { type_store = type_store }
+            MT.Record record_id -> do
+                type_store <- addExternalClassImplForRecord context.type_store record_id MD.Copy
                 context { type_store = type_store }
             _ -> panic "Not yet implemented"
     MD.PartialOrdKind -> do

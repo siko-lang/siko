@@ -14,10 +14,11 @@ data Identity = { module_name :: String, name :: String, index :: Int } deriving
 data Program = { functions :: Map Identity F.Function,
                  adts :: Map Identity D.AlgebraicDataType,
                  records :: Map Identity D.Record,
-                 unit_type :: Option Type }
+                 unit_type :: Option Type,
+                 copyables :: [Identity] }
 
 createProgram :: Program
-createProgram = Program empty empty empty None
+createProgram = Program empty empty empty None []
 
 addFunction :: Program -> Identity -> F.Function -> Program
 addFunction program function_id function = do
@@ -56,6 +57,26 @@ updateRecordFields program record_id fields = do
                 None -> panic "Record not found during field update"
             ) record_id program.records
     program { records = records }
+
+updateRecordAttributes :: Program -> Identity -> [D.Attribute] -> Program
+updateRecordAttributes program record_id attributes = do
+    (records, _) <- alter (\r -> case r of
+                Some r -> do
+                    r :: D.Record <- r // FIXME
+                    Some r { attributes = attributes }
+                None -> panic "Record not found during attribute update"
+            ) record_id program.records
+    program { records = records }
+
+updateAdtAttributes :: Program -> Identity -> [D.Attribute] -> Program
+updateAdtAttributes program adt_id attributes = do
+    (adts, _) <- alter (\a -> case a of
+                Some a -> do
+                    a :: D.AlgebraicDataType <- a // FIXME
+                    Some a { attributes = attributes }
+                None -> panic "Adt not found during attribute update"
+            ) adt_id program.adts
+    program { adts = adts }
 
 updateFunctionKind :: Program -> Identity -> F.FunctionKind -> Program
 updateFunctionKind program function_id kind = do

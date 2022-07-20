@@ -1,0 +1,25 @@
+module Siko.AutoDerive.Copy where
+
+import Siko.Constants
+import Siko.Syntax.Location
+import Siko.Syntax.Ident
+import Siko.Syntax.Data as D
+import Siko.Syntax.Class as C
+import Siko.Syntax.TypeSignature as T
+import Siko.Syntax.Function as F
+import Siko.Syntax.Expr as E
+import Siko.Syntax.Pattern as P
+
+deriveCopy :: Ident -> [Ident] -> Location -> C.Instance
+deriveCopy name type_args location = do
+    class_name <- Ident (getStdIntrinsicsModuleName + "." + getCopyClassName) location
+    type_arguments <- List.map type_args (\type_arg -> T.TypeSignature (T.TypeArg type_arg) location)
+    type_signature <- T.TypeSignature (T.Named name type_arguments) location
+    constraints <- []
+    C.Instance class_name type_signature [] constraints [] []
+
+deriveRecordCopy :: D.Record -> Location -> C.Instance
+deriveRecordCopy record derive_location = deriveCopy record.name record.type_arguments derive_location
+
+deriveAdtCopy :: D.AlgebraicDataType -> Location -> C.Instance
+deriveAdtCopy adt derive_location = deriveCopy adt.name adt.type_arguments derive_location

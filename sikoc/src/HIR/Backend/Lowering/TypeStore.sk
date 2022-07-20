@@ -62,7 +62,7 @@ addVariant type_store identity variant = do
             variants <- adt.variants + [variant]
             adt <- adt { variants = variants }
             Some adt
-        None -> Some (MD.AlgebraicDataType identity [variant] [])) identity type_store.adts
+        None -> Some (MD.AlgebraicDataType identity [variant] [] [])) identity type_store.adts
     type_store { adts = adts }
 
 addExternalClassImplForAdt :: TypeStore -> MP.Identity -> MD.ExternalClassImpl -> TypeStore
@@ -70,8 +70,13 @@ addExternalClassImplForAdt type_store identity external_class_impl = do
     (adts, _) <- alter (\adt -> case adt of
         Some adt -> do
             adt :: MD.AlgebraicDataType <- adt // FIXME
-            external_class_impls <- adt.external_class_impls + [external_class_impl]
-            adt <- adt { external_class_impls = external_class_impls }
+            adt <- case external_class_impl of
+                MD.Copy -> do
+                    attributes <- List.push adt.attributes MD.Copyable
+                    adt { attributes = attributes }
+                _ -> do
+                    external_class_impls <- adt.external_class_impls + [external_class_impl]
+                    adt { external_class_impls = external_class_impls }
             Some adt
         None -> panic "ADT not found in type store") identity type_store.adts
     type_store { adts = adts }
@@ -81,8 +86,13 @@ addExternalClassImplForRecord type_store identity external_class_impl = do
     (records, _) <- alter (\record -> case record of
         Some record -> do
             record :: MD.Record <- record // FIXME
-            external_class_impls <- record.external_class_impls + [external_class_impl]
-            record <- record { external_class_impls = external_class_impls }
+            record <- case external_class_impl of
+                MD.Copy -> do
+                    attributes <- List.push record.attributes MD.Copyable
+                    record { attributes = attributes }
+                _ -> do
+                    external_class_impls <- record.external_class_impls + [external_class_impl]
+                    record { external_class_impls = external_class_impls }
             Some record
         None -> panic "Record not found in type store {}" % identity) identity type_store.records
     type_store { records = records }
@@ -104,6 +114,7 @@ getDependencies impl = case impl of
     MD.EqKind -> [MD.PartialEqKind]
     MD.PartialOrdKind -> [MD.PartialEqKind]
     MD.OrdKind -> [MD.PartialEqKind, MD.EqKind, MD.PartialOrdKind]
+    MD.CopyKind -> []
 
 checkImpl :: Context -> HT.Type -> HP.FullyQualifiedName -> (Context, Bool)
 checkImpl context type class_name = do
@@ -192,7 +203,7 @@ processAdt context hir_type adt module_name mir_type = do
                     mir_field <- MD.RecordField name index mir_type False
                     mir_fields <- mir_fields + [mir_field]
                     (context, mir_fields)) (context, [])
-            mir_record <- MD.Record identity mir_fields None []
+            mir_record <- MD.Record identity mir_fields None [] []
             context <- addRecord context identity mir_record
             context
         else do
@@ -205,12 +216,12 @@ processAdt context hir_type adt module_name mir_type = do
                     mir_fields <- mir_fields + [mir_field]
                     (context, mir_fields)) (context, [])
                 (context, identity) <- getIdentity context module_name variant.name
-                mir_record <- MD.Record identity mir_fields None []
+                mir_record <- MD.Record identity mir_fields None [] []
                 context <- addRecord context identity mir_record
                 mir_variant <- MD.Variant variant.name (MT.Record identity)
                 mir_variants <- mir_variants + [mir_variant]
                 (context, mir_variants)) (context, [])
-            mir_adt <- MD.AlgebraicDataType identity mir_variants []
+            mir_adt <- MD.AlgebraicDataType identity mir_variants [] []
             context <- addAdt context identity mir_adt
             context
 
@@ -240,7 +251,7 @@ processRecord context hir_type record type_args mir_type = do
                         (context, mir_args + [mir_arg])) (context, [])
                     (context, Some (MD.ExternalRecordInfo mir_args))
                 else (context, None)
-            mir_record <- MD.Record identity mir_fields external_record_info []
+            mir_record <- MD.Record identity mir_fields external_record_info [] []
             context <- addRecord context identity mir_record
             context
         _ -> panic "Record is not a record"
@@ -263,7 +274,7 @@ processClosure :: Context -> HT.Type -> MT.Type -> Context
 processClosure context hir_type mir_type = do
     case mir_type of
         MT.Adt identity -> do
-            mir_adt <- MD.AlgebraicDataType identity [] []
+            mir_adt <- MD.AlgebraicDataType identity [] [] []
             context <- addAdt context identity mir_adt
             context
         _ -> panic "Closure is not an adt"
@@ -285,7 +296,7 @@ processTuple context hir_type args mir_type = do
                 mir_field <- MD.RecordField name index mir_type False
                 mir_fields <- mir_fields + [mir_field]
                 (context, mir_fields)) (context, [])
-            mir_record <- MD.Record identity mir_fields None []
+            mir_record <- MD.Record identity mir_fields None [] []
             context <- addRecord context identity mir_record
             context
         _ -> panic "Tuple is not a record"

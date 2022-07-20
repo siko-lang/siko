@@ -21,6 +21,9 @@ import Siko.Util.DependencyProcessor
 import Map
 import Hack
 
+import List2 as List2
+import List2 (List2)
+
 collectDataDeps :: MP.Program -> Map MP.Identity [MP.Identity]
 collectDataDeps mir_program = do
     dependencies <- empty
@@ -93,6 +96,11 @@ createGroups config mir_program = do
     function_groups <- processDependencies config function_dependencies
     (data_groups, function_groups)
 
+addCopyable :: [Attribute] -> [Attribute]
+addCopyable attributes = if List.contains attributes Copyable
+    then attributes
+    else List.push attributes Copyable
+
 processDataGroups :: MP.Program -> [DependencyGroup MP.Identity] -> MP.Program
 processDataGroups mir_program data_groups =
     List.fold mir_program data_groups processDataGroup
@@ -111,6 +119,50 @@ processDataGroups mir_program data_groups =
                         MP.updateRecordFields mir_program id fields
                     None -> mir_program)
 
+processCopyables :: MP.Program -> [DependencyGroup MP.Identity] -> MP.Program
+processCopyables mir_program data_groups = do
+        (mir_program, copyables) <- List.fold (mir_program, List2.empty) data_groups processCopyable
+        mir_program { copyables = List2.asList copyables }
+    where
+        processCopyable :: (MP.Program, List2 MP.Identity) -> DependencyGroup MP.Identity -> (MP.Program, List2 MP.Identity)
+        processCopyable (mir_program, copyables) data_group = do
+            if List.getLength data_group.items > 1
+            then (mir_program, copyables)
+            else do
+                id <- List.atIndex data_group.items 0
+                (mir_program, item) <- MP.getAdtOrRecord mir_program id
+                case item of
+                    Left adt -> do
+                        adt :: AlgebraicDataType <- adt // FIXME
+                        is_copyable <- False
+                        is_copyable <- is_copyable || List.contains adt.attributes Copyable
+                        is_copyable <- is_copyable || List.fold True adt.variants (\is_copyable, variant -> do
+                            variant_id <- T.getIdentity variant.type
+                            if List2.contains copyables variant_id
+                            then is_copyable
+                            else False)
+                        if is_copyable
+                        then do
+                            attributes <- addCopyable adt.attributes
+                            mir_program <- MP.updateAdtAttributes mir_program id attributes
+                            (mir_program, List2.push copyables id)
+                        else (mir_program, copyables)
+                    Right record -> do
+                        record :: Record <- record // FIXME
+                        is_copyable <- False
+                        is_copyable <- is_copyable || List.contains record.attributes Copyable
+                        is_copyable <- is_copyable || List.fold (isNone record.external_info) record.fields (\is_copyable, field -> do
+                            field_id <- T.getIdentity field.type
+                            if List2.contains copyables field_id
+                            then is_copyable
+                            else False)
+                        if is_copyable
+                        then do
+                            attributes <- addCopyable record.attributes
+                            mir_program <- MP.updateRecordAttributes mir_program id attributes
+                            (mir_program, List2.push copyables id)
+                        else (mir_program, copyables)
+
 processProgram :: Config -> MP.Program -> LP.Program
 processProgram config mir_program = do
     mir_program <- FnArgVarCreator.processProgram mir_program
@@ -121,6 +173,7 @@ processProgram config mir_program = do
     SanityCheck.processProgram mir_program
     (data_groups, function_groups) <- createGroups config mir_program
     mir_program <- processDataGroups mir_program data_groups
+    mir_program <- processCopyables mir_program data_groups
     trace config "Inliner.."
     mir_program <- Inliner.processProgram mir_program function_groups
     dumpProgram config mir_program (MIR "inliner")
