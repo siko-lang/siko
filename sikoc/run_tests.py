@@ -113,6 +113,7 @@ if len(sys.argv) != 1:
 total = len(tests)
 success = 0
 failure = 0
+tests = sorted(tests)
 for (index, (name, path)) in enumerate(tests):
     start_time = time.time()
     result = run(silent, verbose, interpret, nostd, debug, name, path, index + 1, total)
