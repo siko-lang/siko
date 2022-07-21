@@ -196,6 +196,13 @@ processFunctionGroup index group_count context group = do
                     group_function_converters <- Map2.put inference_info.group_function_converters function_id converters
                     inference_info { group_function_converters = group_function_converters })
             (program, inference_info) <- processEqualities context.config equals inference_info context.program
+            config <- context.config
+            inference_info <- List.fold inference_info group
+                (\inference_info, function_id -> do
+                    function_info_base <- createFunctionInfoBase config inference_info function_id
+                    function_info_bases <- Map2.put inference_info.function_info_bases function_id function_info_base
+                    inference_info { function_info_bases = function_info_bases }
+                )
             context <- context { program = program }
             (context, inference_info)
 
