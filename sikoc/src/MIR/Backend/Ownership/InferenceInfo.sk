@@ -358,32 +358,33 @@ mergeConverters :: OwnershipTypeVariable ->
                    OwnershipTypeVariable ->
                    List2 OwnershipTypeVariable ->
                    List2 OwnershipTypeVariable ->
-                   List2 Converter ->
+                   Map2 Converter () ->
                    Map2 OwnershipTypeVariable (List2 OwnershipTypeVariable) ->
-                   (List2 OwnershipTypeVariable, List2 Converter, Map2 OwnershipTypeVariable (List2 OwnershipTypeVariable))
+                   (List2 OwnershipTypeVariable, Map2 Converter (), Map2 OwnershipTypeVariable (List2 OwnershipTypeVariable), List2 OwnershipTypeVariable)
 mergeConverters from to visited output_ownership_vars converters converter_map = do
     if List2.contains output_ownership_vars to && (from != to)
     then // found an input -> output converter
         if from != to
         then do
-            converters <- List2.push converters (Converter from to)
-            (output_ownership_vars, converters, converter_map)
-        else (output_ownership_vars, converters, converter_map)
+            converters <- Map2.put converters (Converter from to) ()
+            (output_ownership_vars, converters, converter_map, visited)
+        else (output_ownership_vars, converters, converter_map, visited)
     else do
         case Map2.get converter_map to of
             Some results -> do
                 loop (visited, output_ownership_vars, converters, converter_map, results, index) <- (visited, output_ownership_vars, converters, converter_map, results, 0) do
                     if index >= List2.getLength results
-                    then break (output_ownership_vars, converters, converter_map)
+                    then break (output_ownership_vars, converters, converter_map, visited)
                     else do
                         result <- List2.atIndex results index
                         if List2.contains visited result
                         then (visited, output_ownership_vars, converters, converter_map, results, index + 1)
                         else do
-                            (output_ownership_vars, converters, converter_map) <-
+                            (output_ownership_vars, converters, converter_map, visited) <-
                                 mergeConverters from result (List2.push visited result) output_ownership_vars converters converter_map
+                            (_, visited) <- List2.removeLast visited
                             (visited, output_ownership_vars, converters, converter_map, results, index + 1)
-            None -> (output_ownership_vars, converters, converter_map)
+            None -> (output_ownership_vars, converters, converter_map, visited)
 
 getConverterMap :: InferenceInfo -> (InferenceInfo, Map2 OwnershipTypeVariable (List2 OwnershipTypeVariable))
 getConverterMap inference_info = do
@@ -391,7 +392,7 @@ getConverterMap inference_info = do
         Map2.add converter_map converter.from converter.to)
     (inference_info { converters = converters }, converter_map)
 
-createFunctionInfoBase :: Config -> InferenceInfo -> P.Identity -> FunctionInfoBase
+createFunctionInfoBase :: Config -> InferenceInfo -> P.Identity -> (InferenceInfo, FunctionInfoBase)
 createFunctionInfoBase config inference_info function_id = do
     (inference_info, function_inference_info) <- getFunctionInferenceInfo inference_info function_id
     // println "createFunctionInfoBase"
@@ -429,19 +430,19 @@ createFunctionInfoBase config inference_info function_id = do
             List2.push vars member.info.ownership_var)
     relevant_ownership_vars <- input_ownership_vars + output_ownership_vars
 
-    (input_ownership_vars, (output_ownership_vars, filtered_converters, converter_map)) <- List2.foldLinear (output_ownership_vars, List2.empty, converter_map) input_ownership_vars (\(output_ownership_vars, converters, converter_map), from ->
-        mergeConverters from from List2.empty output_ownership_vars converters converter_map)
+    (input_ownership_vars, (output_ownership_vars, filtered_converters, converter_map, _)) <- List2.foldLinear (output_ownership_vars, Map2.empty, converter_map, List2.withCapacity (Map2.getSize converter_map)) input_ownership_vars (\(output_ownership_vars, converters, converter_map, visited), from ->
+        mergeConverters from from visited output_ownership_vars converters converter_map)
 
-    filtered_converters <- filtered_converters |> List2.sort |> List2.dedup
+    filtered_converters <- Map2.getKeys filtered_converters
     members <- (input_members + output_members) |> List2.sort |> List2.dedup
 
-    FunctionInfoBase function_inference_info.args function_inference_info.result
-        members filtered_converters relevant_ownership_vars
+    (inference_info, FunctionInfoBase function_inference_info.args function_inference_info.result
+        members filtered_converters relevant_ownership_vars)
 
-toFunctionInfo :: Config -> InferenceInfo -> P.Identity -> FunctionInfo
+toFunctionInfo :: Config -> InferenceInfo -> P.Identity -> (InferenceInfo, FunctionInfo)
 toFunctionInfo config inference_info function_id = do
-    function_info_base <- case Map2.get inference_info.function_info_bases function_id of
-        Some function_info_base -> function_info_base
+    (inference_info, function_info_base) <- case Map2.get inference_info.function_info_bases function_id of
+        Some function_info_base -> (inference_info, function_info_base)
         None -> createFunctionInfoBase config inference_info function_id
 
     (filtered_ownershipinfos, ownership_values) <- loop (filtered_ownershipinfos, relevant_ownership_vars, ownership_values, index) <- (List2.empty, function_info_base.relevant_ownership_vars, inference_info.ownership_values, 0) do
@@ -456,8 +457,8 @@ toFunctionInfo config inference_info function_id = do
 
     filtered_ownershipinfos <- filtered_ownershipinfos |> List2.sort |> List2.dedup
 
-    FunctionInfo function_info_base.args function_info_base.result
-        function_info_base.members function_info_base.converters filtered_ownershipinfos
+    (inference_info, FunctionInfo function_info_base.args function_info_base.result
+        function_info_base.members function_info_base.converters filtered_ownershipinfos)
 
 instance Apply Converter where
     apply applier converter = do

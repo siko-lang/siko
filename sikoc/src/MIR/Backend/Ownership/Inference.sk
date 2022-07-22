@@ -127,7 +127,7 @@ processFunction context group inference_info function_id = do
             then dumpOwnership inference_info function_id info.body
             else inference_info
             //trace context.config "Processing {}" % function_id
-            function_info <- toFunctionInfo context.config inference_info function_id
+            (inference_info, function_info) <- toFunctionInfo context.config inference_info function_id
             function_info <- enforceUnknownArgOwnership function_info
             //trace2 context.config "{}: {}" % (function_id, function_info)
             //trace2 context.config "{}: {}" % (function_id, inference_info)
@@ -199,7 +199,7 @@ processFunctionGroup index group_count context group = do
             config <- context.config
             inference_info <- List.fold inference_info group
                 (\inference_info, function_id -> do
-                    function_info_base <- createFunctionInfoBase config inference_info function_id
+                    (inference_info, function_info_base) <- createFunctionInfoBase config inference_info function_id
                     function_info_bases <- Map2.put inference_info.function_info_bases function_id function_info_base
                     inference_info { function_info_bases = function_info_bases }
                 )
