@@ -19,7 +19,7 @@ def processFile(file):
         content += "\n"
     return content
 
-def collect_tests(path, tests, parent):
+def collect_tests(path, tests, parent, selected):
     if os.path.isdir(path):
         files = os.listdir(path)
         found = None
@@ -27,15 +27,21 @@ def collect_tests(path, tests, parent):
         for f in files:
             full_path = os.path.join(path, f)
             if os.path.isdir(full_path):
-                collect_tests(full_path, tests, f)
+                collect_tests(full_path, tests, f, selected)
             else:
                 if f == "main.sk":
                     found = (parent, path)
                 if f == "SKIP":
-                    print("Skipping %s" % parent)
                     skip = True
-        if found and not skip:
-            tests.append(found)
+        if found:
+            if len(selected) == 0:
+                if not skip:
+                    tests.append(found)
+                else:
+                    print("Skipping %s" % parent)
+            else:
+                if parent in selected:
+                    tests.append(found)
 
 def mkdir_safe(folder_name):
     try:
@@ -91,9 +97,8 @@ debug = ""
 nostd = False
 interpret = False
 silent = False
-collect_tests(test_source_name, tests, None)
+selected = set()
 if len(sys.argv) != 1:
-    selected = set()
     for t in sys.argv[1:]:
         if t == "-v" or t == "-vv":
             verbose = t
@@ -109,7 +114,7 @@ if len(sys.argv) != 1:
             silent = True
         else:
             selected.add(t)
-    tests = list(filter(lambda test: test[0] in selected, tests))
+collect_tests(test_source_name, tests, None, selected)
 total = len(tests)
 success = 0
 failure = 0
