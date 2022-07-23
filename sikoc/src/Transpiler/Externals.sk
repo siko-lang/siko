@@ -413,7 +413,9 @@ generateListAtIndex program type_store arg_types result_type = do
     inner0 <- R.FieldAccess innerValueField arg0
     inner1 <- R.FieldAccess innerValueField arg1
     index <- R.FunctionCall "std::ops::Index::index" [R.Ref inner0, R.As inner1 "usize"]
-    R.Block [R.MethodCall index cloneName []]
+    if RT.isRef rust_type
+    then R.Block [index]
+    else R.Block [R.MethodCall index cloneName []]
 
 generateListGetLength :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateListGetLength program type_store arg_types result_type = do

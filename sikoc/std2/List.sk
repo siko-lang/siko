@@ -95,7 +95,7 @@ removeLast list = do
 withCapacity a :: ~Int -> ~[~a]
 withCapacity capacity = extern
 
-atIndex a :: ~[~a] -> ~Int -> ~a
+atIndex a :: &l0 [a] -> ~Int -> &l0 a
 atIndex index l = extern
 
 data ListIter a = { inner :: ListIterator a }
@@ -114,20 +114,20 @@ iter l = ListIter (List.intoIter l)
 
 data ListIterator a = extern
 
-intoIter a :: ~[~a] -> ~ListIterator ~a
+intoIter a :: ~[a] -> ~ListIterator a
 intoIter list = extern
 
-nextItem a :: ~ListIterator ~a -> ~Option ~(~ListIterator ~a, ~a)
+nextItem a :: ~ListIterator a -> ~Option ~(~ListIterator a, a)
 nextItem iter = extern
 
 @Inline
 toList it a :: (Iterator it > a) => it -> [a]
 toList iter = Iterator.fold (\list, item -> list + [item]) [] iter
 
-getLength a :: ~[a] -> ~Int
+getLength a :: &l0 [a] -> ~Int
 getLength l = extern
 
-isEmpty a :: ~[a] -> ~Bool
+isEmpty a :: &l0 [a] -> ~Bool
 isEmpty l = extern
 
 @Inline
@@ -175,21 +175,21 @@ tail l = extern
 remove a :: ~[~a] -> ~Int -> ~(~a, ~[~a])
 remove l index = extern
 
-pop a :: ~[~a] -> ~Option ~(~a, ~[~a])
+pop a :: ~[a] -> ~Option ~(a, ~[a])
 pop l = if isEmpty l
         then None
         else Some (List.remove l 0)
 
-sort a :: (Ord a) => ~[~a] -> ~[~a]
+sort a :: (Ord a) => ~[a] -> ~[a]
 sort l = extern
 
-dedup a :: (PartialEq a) => ~[~a] -> ~[~a]
+dedup a :: (PartialEq a) => ~[a] -> ~[a]
 dedup l = extern
 
-write a :: ~[~a] -> ~Int -> ~a -> ~[~a]
+write a :: ~[a] -> ~Int -> ~a -> ~[a]
 write l index item = extern
 
-split a :: ~[~a] -> ~Int -> ~(~[~a], ~[~a])
+split a :: ~[a] -> ~Int -> ~(~[a], ~[a])
 split l n = extern
 
 @Inline

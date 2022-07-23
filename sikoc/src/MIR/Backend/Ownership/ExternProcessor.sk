@@ -30,11 +30,18 @@ getNext context = do
     (allocator, info) <- getNextTypeVariableInfo context.allocator
     (context { allocator = allocator }, info)
 
-processPosition :: F.FunctionType -> TypeVariableInfo -> Context -> F.Position -> (Context, TypeVariableInfo, T.Type)
-processPosition function_type info context pos = do
+processPosition :: F.FunctionType -> TypeVariableInfo -> Context -> F.Position -> Bool -> (Context, TypeVariableInfo, T.Type)
+processPosition function_type info context pos override = do
     F.Position steps <- pos
     (context, info, ty) <- case Map2.get context.info_map pos of
-        Some (info, ty) -> (context, info, ty)
+        Some (old_info, ty) -> if override
+            then do
+                old_info :: TypeVariableInfo <- old_info // FIXME
+                info <- TypeVariableInfo info.ownership_var old_info.arg_group_var
+                info_map <- Map2.put context.info_map pos (info, ty)
+                context <- context { info_map = info_map }
+                (context, info, ty)
+            else (context, old_info, ty)
         None -> do
             (context, (ty, member, ownershipinfo)) <- if getLength steps == 1
                             then do
@@ -44,9 +51,9 @@ processPosition function_type info context pos = do
                                     F.FunctionResult -> (context, (function_type.result, None, None))
                                     _ -> panic "unexpected last step"
                             else do
-                                (last_step, parent) <- List.remove steps (getLength steps - 1)
+                                (last_step, parent) <- List.removeLast steps
                                 (context, parent_info) <- getNext context
-                                (context, parent_info, ty) <- processPosition function_type parent_info context (F.Position parent)
+                                (context, parent_info, ty) <- processPosition function_type parent_info context (F.Position parent) override
                                 (context, processStep context.program info ty parent_info last_step)
             members <- case member of
                 Some member -> List2.push context.members member
@@ -61,8 +68,8 @@ processPosition function_type info context pos = do
     //println "Processing position {} -> {}" % (steps, info)
     (context, info, ty)
 
-processMainPosition :: Option TypeVariableInfo -> F.FunctionType -> Context -> F.Position -> (Context, TypeVariableInfo)
-processMainPosition info function_type context pos = do
+processMainPosition :: Option TypeVariableInfo -> F.FunctionType -> Bool -> Context -> F.Position -> (Context, TypeVariableInfo)
+processMainPosition info function_type override context pos = do
     F.Position steps <- pos
     step <- List.atIndex steps 0
     (context, info) <- case info of
@@ -71,10 +78,10 @@ processMainPosition info function_type context pos = do
     case step of
         F.FunctionArg index -> do
             context <- context { args = List2.push context.args step }
-            (context, info, ty) <- processPosition function_type info context (F.Position steps)
+            (context, info, ty) <- processPosition function_type info context (F.Position steps) override
             (context, info)
         F.FunctionResult -> do
-            (context, info, ty) <- processPosition function_type info context (F.Position steps)
+            (context, info, ty) <- processPosition function_type info context (F.Position steps) override
             (context, info)
         _ -> panic "processMainPosition unexpected first position"
 
@@ -110,16 +117,16 @@ createExternFunctionInfo program id function_type type_mapping = do
     context <- Context program List2.empty allocator Map2.empty List2.empty List2.empty
     (context, var_infos) <- Map.mapS context type_mapping.var_mappings (\context, (n, positions) -> do
         (context, info) <- getNext context
-        (context, infos) <- List.mapS context positions (processMainPosition (Some info) function_type)
+        (context, infos) <- List.mapS context positions (processMainPosition (Some info) function_type False)
         (context, n, infos))
     (context, ref_infos) <- Map.mapS context type_mapping.ref_positions (\context, (lifetime, positions) -> do
         (context, info) <- getNext context
         (allocator, borrow_id) <- getNextBorrowId context.allocator
         ownership <- M.OwnershipInfo info.ownership_var (M.Borrower borrow_id)
         context <- context { ownershipinfos = List2.push context.ownershipinfos ownership, allocator = allocator }
-        (context, infos) <- List.mapS context positions (processMainPosition (Some info) function_type)
+        (context, infos) <- List.mapS context positions (processMainPosition (Some info) function_type True)
         (context, lifetime, infos))
-    (context, owner_infos) <- List.mapS context type_mapping.owner_positions (processMainPosition None function_type)
+    (context, owner_infos) <- List.mapS context type_mapping.owner_positions (processMainPosition None function_type False)
     owner_infos <- List2.toList2 owner_infos
     owner_infos <- List2.map owner_infos (\info -> M.OwnershipInfo info.ownership_var M.Owner)
     context <- context { ownershipinfos = context.ownershipinfos + owner_infos }
