@@ -1,4 +1,4 @@
-module Siko.MIR.Backend.Ownership.AddConverter2 where
+module Siko.MIR.Backend.Ownership.AddConverter where
 
 import Siko.MIR.Program as P
 import Siko.MIR.Expr as E
@@ -53,6 +53,8 @@ processExpr context expr = do
         E.FieldAccess name receiver -> do
             receiver <- unpackReceiver receiver
             (context, expr) <- packExpr context (E.Expr (E.FieldAccess name receiver) type id)
+            packExpr context expr
+        E.StaticFunctionCall _ _ -> do
             packExpr context expr
         _ -> (context, expr)
 

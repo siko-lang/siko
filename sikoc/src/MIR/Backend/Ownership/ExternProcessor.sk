@@ -4,11 +4,13 @@ import Siko.MIR.Function as F
 import Siko.MIR.Program as P
 import Siko.MIR.Data as D
 import Siko.MIR.Type as T
+import Siko.Constants
 
 import Siko.MIR.Backend.Ownership.TypeVariableInfo
 import Siko.MIR.Backend.Ownership.Allocator
 import Siko.MIR.Backend.Ownership.MemberInfo as M
 import Siko.MIR.Backend.Ownership.FunctionInfo
+import Siko.MIR.Backend.Ownership.Converter
 
 import Map
 
@@ -139,5 +141,15 @@ createExternFunctionInfo program id function_type type_mapping = do
         None -> if Map.getSize type_mapping.var_mappings == 0
             then getNext context
             else panic "No type variable info for result step for {}" % id
-    function_info <- FunctionInfo args result context.members List2.empty context.ownershipinfos
+    function_info <- FunctionInfo args result context.members List2.empty List2.empty context.ownershipinfos
+    // HACK, FIXME, TODO: generalize this or make it a syntax
+    P.Identity mod name _ <- id
+    function_info <- if mod == getListModuleName && name == "atIndex"
+    then do
+        result <- function_info.result
+        result <- result { ownership_var = OwnershipTypeVariable 1 }
+        member_access_converters <- List2.push function_info.member_access_converters (MemberAccessConverter (OwnershipTypeVariable 2) (OwnershipTypeVariable 0) (OwnershipTypeVariable 1))
+        function_info <- function_info { result = result , member_access_converters = member_access_converters }
+        function_info
+    else function_info
     function_info

@@ -239,6 +239,13 @@ filterMap list f = List2.fold (withCapacity (getLength list)) list (\all, item -
         Some item -> push all item
         None -> all)
 
+filterMapS s a b :: s -> List2 a -> (s -> a -> (s, Option b)) -> (s, List2 b)
+filterMapS s list f = List2.fold (s, List2.empty) list (\(s, all), item -> do
+    (s, r) <- f s item
+    case r of
+        Some item -> (s, List2.push all item)
+        None -> (s, all))
+
 repeat a :: a -> Int -> List2 a
 repeat item count = do
     (items, _) <- loop (items, c) <- (List2.empty, 0) do

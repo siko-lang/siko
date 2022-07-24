@@ -217,6 +217,15 @@ processVariantAccess context variant = do
         (M.Borrower _, M.Owner) -> updateOwnership context var_info.ownership_var body_kind
         _ -> context
 
+processMemberAccessConverterConstraint :: Context -> C.MemberAccessConverterConstraint -> Context
+processMemberAccessConverterConstraint context converter = do
+    (context, container_kind) <- getOwnershipValue context converter.container
+    (context, member_kind) <- getOwnershipValue context converter.member
+    case (container_kind, member_kind) of
+        (_, M.Unknown) -> updateOwnership context converter.result container_kind
+        (M.Borrower _, M.Owner) -> updateOwnership context converter.result container_kind
+        _ -> context
+
 processConstraint :: Context -> C.Constraint -> Context
 processConstraint context constraint = do
     //trace2 context.config "Processing constraint {}" % constraint
@@ -225,6 +234,7 @@ processConstraint context constraint = do
         C.Converter converter -> processConverter context converter
         C.Variant variant -> processVariantAccess context variant
         C.FunctionConverter converter -> processFunctionConverter context converter
+        C.MemberAccessConverter converter -> processMemberAccessConverterConstraint context converter
 
 dumpOwnership :: Context -> Context
 dumpOwnership context = do

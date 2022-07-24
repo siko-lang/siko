@@ -9,6 +9,7 @@ import Siko.MIR.Backend.Ownership.TypeVariableInfo
 import Siko.MIR.Backend.Ownership.Inference.Constraint as C
 import Siko.MIR.Backend.Ownership.FunctionInfoStore
 import Siko.MIR.Backend.Ownership.BorrowId // FIXME: needed only for the linear hack
+import Siko.MIR.Backend.Ownership.Converter
 import Siko.MIR.Expr as E
 import Siko.MIR.Type as T
 import Siko.MIR.Data as D
@@ -227,6 +228,9 @@ collectConstraints config function_id program borrow_info inference_info body = 
     context <- Context config function_id inference_info program borrow_info List2.empty
                List2.empty ownership_dep_map Map2.empty Map2.empty
     context <- processExpr context body
+    context <- List2.fold context context.inference_info.member_access_converters (\context, converter -> do
+        member_access <- C.MemberAccessConverterConstraint converter.container converter.member converter.result
+        addOwnershipConstraint context (C.MemberAccessConverter member_access))
     E.Expr _ _ body_id <- body
     (context, body_info) <- getTypeVariableInfoByExprId2 context body_id
     (ownership_dep_map, result_vars) <- getOwnershipVars context.ownership_dep_map body_info

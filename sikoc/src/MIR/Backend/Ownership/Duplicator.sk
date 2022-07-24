@@ -5,6 +5,7 @@ import Siko.MIR.Backend.Ownership.TypeVariableInfo
 import Siko.MIR.Backend.Ownership.Allocator as A
 import Siko.MIR.Backend.Ownership.BorrowId
 import Siko.MIR.Backend.Ownership.InferenceInfo
+import Siko.MIR.Backend.Ownership.Converter
 import Siko.Util.Counter
 import Map
 
@@ -105,3 +106,10 @@ instance Duplicable Converter where
         (duplicator, from) <- duplicate duplicator converter.from
         (duplicator, to) <- duplicate duplicator converter.to
         (duplicator, Converter from to)
+
+instance Duplicable MemberAccessConverter where
+    duplicate duplicator converter = do
+        (duplicator, container) <- duplicate duplicator converter.container
+        (duplicator, member) <- duplicate duplicator converter.member
+        (duplicator, result) <- duplicate duplicator converter.result
+        (duplicator, MemberAccessConverter container member result)

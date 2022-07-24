@@ -1,0 +1,32 @@
+module Siko.MIR.Backend.Ownership.Converter where
+
+import Siko.MIR.Backend.Ownership.TypeVariableInfo
+import Siko.MIR.Backend.Ownership.EqualitySolver
+
+data Converter = { from :: OwnershipTypeVariable,
+                   to :: OwnershipTypeVariable,
+                 } deriving (PartialEq, Eq, PartialOrd, Ord)
+
+data MemberAccessConverter = { container :: OwnershipTypeVariable,
+                               member :: OwnershipTypeVariable,
+                               result :: OwnershipTypeVariable,
+                             } deriving (PartialEq, Eq, PartialOrd, Ord)
+
+instance Apply Converter where
+    apply applier converter = do
+        (applier, from) <- apply applier converter.from
+        (applier, to) <- apply applier converter.to
+        (applier, Converter from to)
+
+instance Apply MemberAccessConverter where
+    apply applier converter = do
+        (applier, container) <- apply applier converter.container
+        (applier, member) <- apply applier converter.member
+        (applier, result) <- apply applier converter.result
+        (applier, MemberAccessConverter container member result)
+
+instance Show Converter where
+    show converter = "{} -> {}" % (converter.from, converter.to)
+
+instance Show MemberAccessConverter where
+    show c = "{},{} -> {}" % (c.container, c.member, c.result)
