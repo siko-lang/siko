@@ -2,6 +2,13 @@ module Siko.MIR.Backend.Ownership.Converter where
 
 import Siko.MIR.Backend.Ownership.TypeVariableInfo
 import Siko.MIR.Backend.Ownership.EqualitySolver
+import Siko.Util.DependencyProcessorLinear
+import Siko.Config
+
+import List2 as List2
+import List2 (List2)
+import Map2 as Map2
+import Map2 (Map2)
 
 data Converter = { from :: OwnershipTypeVariable,
                    to :: OwnershipTypeVariable,
@@ -30,3 +37,35 @@ instance Show Converter where
 
 instance Show MemberAccessConverter where
     show c = "{},{} -> {}" % (c.container, c.member, c.result)
+
+mergeConverters :: Config -> List2 Converter -> List2 Converter
+mergeConverters config converters = do
+        deps_map <- List2.fold Map2.empty converters (\deps_map, converter -> do
+            deps_map <- Map2.put deps_map converter.from List2.empty
+            Map2.put deps_map converter.to List2.empty)
+        (deps_map, converter_map) <- List2.fold (deps_map, Map2.empty) converters (\(deps_map, converter_map), converter -> do
+            deps_map <- Map2.add deps_map converter.to converter.from
+            converter_map <- Map2.add converter_map converter.from converter.to
+            (deps_map, converter_map))
+        groups <- processDependencies config deps_map
+        conversion_map <- Map2.empty
+        groups <- List2.filter groups (\group -> List2.getLength group.items == 1)
+        (converter_map, conversion_map) <- List2.fold (converter_map, conversion_map) groups (\(converter_map, conversion_map), group -> do
+            List2.fold (converter_map, conversion_map) group.items (\(converter_map, conversion_map), item -> do
+                    sources <- case Map2.get conversion_map item of
+                        Some sources -> sources
+                        None -> List2.single item
+                    case Map2.get converter_map item of
+                        Some targets -> do
+                            conversion_map <- List2.fold conversion_map targets (\conversion_map, target -> addSources conversion_map target sources)
+                            (converter_map ,conversion_map)
+                        None -> (converter_map, conversion_map)
+                ))
+        Map2.fold List2.empty conversion_map (\converters, (to, froms) -> List2.fold converters froms (\converters, from -> List2.push converters (Converter from to)))
+    where
+        addSources :: Map2 OwnershipTypeVariable (List2 OwnershipTypeVariable) -> OwnershipTypeVariable -> List2 OwnershipTypeVariable -> Map2 OwnershipTypeVariable (List2 OwnershipTypeVariable)
+        addSources conversion_map target sources = do
+            (conversion_map, _) <- Map2.alter2 (\old -> case old of
+                        Some vs -> Some ((vs + sources) |> List2.sort |> List2.dedup)
+                        None -> Some sources) target conversion_map
+            conversion_map
