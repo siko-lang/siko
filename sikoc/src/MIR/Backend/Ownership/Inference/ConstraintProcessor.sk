@@ -49,7 +49,6 @@ getOwnershipValue context var = do
 
 updateOwnership :: Context -> OwnershipTypeVariable -> M.OwnershipKind -> Context
 updateOwnership context ownership_var kind = do
-    //trace2 context.config "UpdateOwnership {} {}" % (ownership_var, kind)
     (context, kind) <- case context.mode of
         Partial -> do
             is_result_var <- List2.contains context.result_vars ownership_var
@@ -65,7 +64,9 @@ updateOwnership context ownership_var kind = do
         (inference_info, changed) <- addInferredOwnership context.inference_info ownership_var kind
         context <- context { inference_info = inference_info }
         if changed
-        then context { changed_ownership_vars = True }
+        then do
+            //trace2 context.config "UpdateOwnership {} {}" % (ownership_var, kind)
+            context { changed_ownership_vars = True }
         else context
     else context
 
@@ -221,9 +222,12 @@ processMemberAccessConverterConstraint :: Context -> C.MemberAccessConverterCons
 processMemberAccessConverterConstraint context converter = do
     (context, container_kind) <- getOwnershipValue context converter.container
     (context, member_kind) <- getOwnershipValue context converter.member
-    case (container_kind, member_kind) of
-        (_, M.Unknown) -> updateOwnership context converter.result container_kind
-        (M.Borrower _, M.Owner) -> updateOwnership context converter.result container_kind
+    (context, result_kind) <- getOwnershipValue context converter.result
+    //trace2 context.config "processMemberAccessConverterConstraint {} {} {}" % (container_kind, member_kind, result_kind)
+    case (container_kind, member_kind, result_kind) of
+        (M.Owner, M.Owner, M.Unknown) -> updateOwnership context converter.result container_kind
+        (M.Borrower _, M.Owner, M.Unknown) -> updateOwnership context converter.result container_kind
+        (_, M.Borrower _, M.Unknown) -> updateOwnership context converter.result member_kind
         _ -> context
 
 processConstraint :: Context -> C.Constraint -> Context

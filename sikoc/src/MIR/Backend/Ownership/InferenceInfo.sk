@@ -366,6 +366,7 @@ createFunctionInfoBase config inference_info function_id = do
     // println "var_type_variables: {}" % Map2.getSize inference_info.var_type_variables
     // println "ownership_values: {}" % Map2.getSize inference_info.ownership_values
     // println "borrow_sets: {}" % Map2.getSize inference_info.borrow_sets
+    // println "member_access_converters: {}" % List2.getLength inference_info.member_access_converters
 
     members <- inference_info.members
     (members, group_dep_map, deps_map, groups) <- calculateGroupDepMap config members
@@ -393,6 +394,12 @@ createFunctionInfoBase config inference_info function_id = do
     relevant_ownership_vars <- input_ownership_vars + output_ownership_vars
 
     filtered_member_access_converters <- inference_info.member_access_converters // FIXME: TODO
+
+    (relevant_ownership_vars, filtered_member_access_converters) <- List2.filterS relevant_ownership_vars inference_info.member_access_converters (\relevant_ownership_vars, converter -> do
+        match <- List2.contains relevant_ownership_vars converter.container &&
+          List2.contains relevant_ownership_vars converter.member &&
+          List2.contains relevant_ownership_vars converter.result
+        (relevant_ownership_vars, match))
 
     converters <- mergeConverters config inference_info.converters
     ((input_ownership_vars, output_ownership_vars), filtered_converters) <- List2.filterS (input_ownership_vars, output_ownership_vars) converters (\(input_ownership_vars, output_ownership_vars), converter -> do

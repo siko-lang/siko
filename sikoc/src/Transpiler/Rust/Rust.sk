@@ -4,6 +4,8 @@ import Siko.Transpiler.Rust.Type as T
 import Siko.Constants
 import Siko.Util.Format
 
+import Map
+
 data Attribute = Clone
 
 data Variant = { name :: String, type :: T.Type }
@@ -219,12 +221,13 @@ generateFunction function indent = do
     args <- if function.is_method
         then ["&self"] + args
         else args
-    deps <- List.map function.lifetime_dependencies (\dep -> "{}: {}" % (dep.from, dep.to))
-    froms <- List.fold [] function.lifetime_dependencies (\froms, dep -> List.push froms dep.from)
-    lifetimes <- List.filterMap function.lifetimes (\lifetime -> if List.contains froms lifetime
-        then None
-        else Some (show lifetime))
-    signature <- "{}fn {}<{}>({}) -> {}" % (indent, function.name, join (lifetimes + deps) ", ", join args ", ", T.showAll function.result)
+    lifetime_deps <- Map.empty
+    lifetime_deps <- List.fold lifetime_deps function.lifetimes (\lifetime_deps, l -> Map.put lifetime_deps l [])
+    lifetime_deps <- List.fold lifetime_deps function.lifetime_dependencies (\lifetime_deps, dep -> Map.add lifetime_deps dep.from dep.to)
+    lifetimes <- lifetime_deps |> Map.iter |> Iterator.map (\(lifetime, deps) -> if List.isEmpty deps
+        then show lifetime
+        else "{}: {}" % (lifetime, join (List.map deps show) " + ")) |> toList
+    signature <- "{}fn {}<{}>({}) -> {}" % (indent, function.name, join lifetimes ", ", join args ", ", T.showAll function.result)
     body <- generateExpr function.body indent
     signature + " " + body
 
