@@ -61,7 +61,7 @@ data InferenceInfo = { expr_type_variables :: Map2 GlobalExprId TypeVariableInfo
                        group_function_converters :: Map2 P.Identity (List2 Converter),
                        borrow_sets :: Map2 BorrowId BorrowSet,
                        external_borrows :: Map2 BorrowId BorrowId,
-                       initials :: List2 OwnershipTypeVariable,
+                       initials :: Map2 OwnershipTypeVariable M.OwnershipKind,
                        function_info_bases :: Map2 P.Identity FunctionInfoBase,
                      } deriving (Show)
 
@@ -86,7 +86,7 @@ createInferenceInfoFromLoweringInfo lowering_info function_id = do
     group <- List2.single function_id
     inference_info <- InferenceInfo expr_type_variables var_type_variables group
         function_infos ownership_values members converters member_access_converters allocator
-        function_converters group_function_converters borrow_sets Map2.empty List2.empty Map2.empty
+        function_converters group_function_converters borrow_sets Map2.empty Map2.empty Map2.empty
     (inference_info, external_borrows) <- List2.fold (inference_info, List2.empty) lowering_info.ownershipinfos (\(inference_info, external_borrows), ownershipinfo -> do
             (inference_info, external_borrows, v, kind) <- case ownershipinfo of
                 M.OwnershipInfo v M.Unknown -> panic "Unknown ownership in createInferenceInfoFromLoweringInfo"
@@ -95,23 +95,23 @@ createInferenceInfoFromLoweringInfo lowering_info function_id = do
                     (inference_info, id) <- createBorrowSetForExternal inference_info external_id
                     (inference_info, List2.push external_borrows id, v, M.Borrower id)
             (ownership_values, _) <- Map2.insert inference_info.ownership_values v kind
-            initials <- List2.push inference_info.initials v
+            initials <- Map2.put inference_info.initials v kind
             inference_info <- inference_info { ownership_values = ownership_values, initials = initials }
             (inference_info, external_borrows)
         )
     (ownership_values, initials) <- List2.fold (inference_info.ownership_values, inference_info.initials) members (\(ownership_values, initials), member -> do
             case Map2.get ownership_values member.info.ownership_var of
                 Some _ -> (ownership_values, initials)
-                None -> (Map2.put ownership_values member.info.ownership_var M.Owner, List2.push initials member.info.ownership_var)
+                None -> (Map2.put ownership_values member.info.ownership_var M.Owner, Map2.put initials member.info.ownership_var M.Owner)
         )
     (ownership_values, initials) <- List2.fold (ownership_values, initials) args (\(ownership_values, initials), arg -> do
             case Map2.get ownership_values arg.ownership_var of
                 Some _ -> (ownership_values, initials)
-                None -> (Map2.put ownership_values arg.ownership_var M.Owner, List2.push initials arg.ownership_var)
+                None -> (Map2.put ownership_values arg.ownership_var M.Owner, Map2.put initials arg.ownership_var M.Owner)
         )
     (ownership_values, initials) <- case Map2.get ownership_values result.ownership_var of
                 Some _ -> (ownership_values, initials)
-                None -> (Map2.put ownership_values result.ownership_var M.Owner, List2.push initials result.ownership_var)
+                None -> (Map2.put ownership_values result.ownership_var M.Owner, Map2.put initials result.ownership_var M.Owner)
     inference_info <- inference_info { ownership_values = ownership_values, initials = initials }
     (inference_info, external_borrows)
 
@@ -145,7 +145,7 @@ createInferenceInfo = do
     group_function_converters <- Map2.empty
     borrow_sets <- Map2.empty
     InferenceInfo Map2.empty Map2.empty List2.empty function_infos ownership_values List2.empty List2.empty List2.empty allocator
-            function_converters group_function_converters borrow_sets Map2.empty List2.empty Map2.empty
+            function_converters group_function_converters borrow_sets Map2.empty Map2.empty Map2.empty
 
 createBorrowSet :: InferenceInfo -> Borrow -> (InferenceInfo, BorrowId)
 createBorrowSet inference_info borrow = do
@@ -228,25 +228,23 @@ addOwnership inference_info var kind = do
     (ownership_values, _) <- Map2.insert inference_info.ownership_values var kind
     inference_info { ownership_values = ownership_values }
 
-changeInitialOwnership :: Map2 OwnershipTypeVariable M.OwnershipKind -> List2 OwnershipTypeVariable ->
-                          OwnershipTypeVariable -> M.OwnershipKind ->
-                          (Map2 OwnershipTypeVariable M.OwnershipKind, Bool)
-changeInitialOwnership ownership_values initials var kind = do
-    update <- if List2.contains initials var
-    then do
-        case Map2.get ownership_values var of
-            Some old -> old == M.Unknown
-            None -> True
-    else True
+changeInitialOwnership :: Map2 OwnershipTypeVariable M.OwnershipKind -> Map2 OwnershipTypeVariable M.OwnershipKind ->
+                          OwnershipTypeVariable -> M.OwnershipKind -> Bool ->
+                          (Map2 OwnershipTypeVariable M.OwnershipKind, Map2 OwnershipTypeVariable M.OwnershipKind, Bool)
+changeInitialOwnership ownership_values initials var kind force = do
+    (kind, update) <- case Map2.get initials var of
+        Some M.Unknown -> (kind, True)
+        Some kind -> (kind, force)
+        None -> (kind, True)
     ownership_values <- if update
     then Map2.put ownership_values var kind
     else ownership_values
-    (ownership_values, update)
+    (ownership_values, initials, update)
 
 addInferredOwnership :: InferenceInfo -> OwnershipTypeVariable -> M.OwnershipKind -> (InferenceInfo, Bool)
 addInferredOwnership inference_info var kind = do
-    (ownership_values, update) <- changeInitialOwnership inference_info.ownership_values inference_info.initials var kind
-    (inference_info { ownership_values = ownership_values }, update)
+    (ownership_values, initials, update) <- changeInitialOwnership inference_info.ownership_values inference_info.initials var kind False
+    (inference_info { ownership_values = ownership_values, initials = initials }, update)
 
 maybeAddOwnership :: InferenceInfo -> OwnershipTypeVariable -> M.OwnershipKind -> InferenceInfo
 maybeAddOwnership inference_info var kind = do
@@ -273,7 +271,7 @@ enforceOwner inference_info var external_borrows = do
         None -> M.Owner
     (inference_info, update) <- addInferredOwnership inference_info var kind
     initials <- if update
-    then List2.push inference_info.initials var
+    then Map2.put inference_info.initials var kind
     else inference_info.initials
     inference_info { initials = initials }
 
@@ -445,9 +443,23 @@ instance Apply InferenceInfo where
         (applier, var_type_variables) <- apply applier inference_info.var_type_variables
         (applier, function_infos) <- apply applier inference_info.function_infos
         (applier, merged_ownership_values) <- Map2.fold (applier, Map2.empty) inference_info.ownership_values (\(applier, merged_ownership_values), (var, kind) -> do
-            (applier, var) <- apply applier var
-            merged_ownership_values <- Map2.add merged_ownership_values var kind
+            (applier, new_var) <- apply applier var
+            //println "changed {} => {}" % (var, new_var)
+            merged_ownership_values <- Map2.add merged_ownership_values new_var kind
             (applier, merged_ownership_values))
+
+        (applier, merged_initials) <- Map2.fold (applier, Map2.empty) inference_info.initials (\(applier, merged_initials), (var, kind) -> do
+            (applier, new_var) <- apply applier var
+            merged_initials <- Map2.add merged_initials new_var kind
+            (applier, merged_initials))
+
+        initials <- Map2.fold Map2.empty merged_initials (\initials, (var, kinds) -> do
+            kinds <- kinds |> List2.sort |> List2.dedup
+            kind <- if List2.getLength kinds > 1
+            then panic "initials with multiple kinds {}" % kinds
+            else List2.atIndex kinds 0
+            Map2.put initials var kind)
+        inference_info <- inference_info { initials = initials }
 
         (applier, members) <- apply applier inference_info.members
         (applier, converters) <- apply applier inference_info.converters
@@ -484,7 +496,8 @@ instance Apply InferenceInfo where
                         borrow_sets <- Map2.put inference_info.borrow_sets id borrow_set
                         inference_info <- inference_info { borrow_sets = borrow_sets, allocator = allocator }
                         (inference_info, M.Borrower id)
-            (ownership_values, update) <- changeInitialOwnership ownership_values inference_info.initials var kind
+            (ownership_values, initials, update) <- changeInitialOwnership ownership_values inference_info.initials var kind True
+            inference_info <- inference_info { initials = initials }
             (inference_info, ownership_values))
         inference_info <- inference_info { ownership_values = ownership_values }
         (applier, inference_info)
@@ -503,3 +516,18 @@ buildFilterInfoFromInferenceInfo config inference_info = do
     sources <- Map2.fold sources inference_info.var_type_variables (\sources, (_, info) -> List2.push sources info)
     (members, ownershipinfos, filter_info) <- buildFilterInfo config inference_info.members ownershipinfos sources
     (inference_info { members = members }, filter_info)
+
+checkInitials :: InferenceInfo -> String -> InferenceInfo
+checkInitials inference_info phase = do
+    Map2.fold inference_info inference_info.initials (\inference_info, (var, kind) -> do
+        (inference_info, current) <- getOwnership inference_info var
+        case current of
+            Some current -> do
+                if current != kind
+                then do
+                    println inference_info
+                    panic "Initial {} changed ownership {} ! {} => {}" % (var, phase, kind, current)
+                else inference_info
+            None -> do
+                println inference_info
+                panic "Initial {} has no ownership {} ! {}" % (var, phase, kind))
