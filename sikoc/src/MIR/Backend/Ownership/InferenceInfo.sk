@@ -47,6 +47,7 @@ data FunctionInfoBase = { args :: List2 TypeVariableInfo,
                           converters :: List2 Converter,
                           member_access_converters :: List2 MemberAccessConverter,
                           relevant_ownership_vars :: List2 OwnershipTypeVariable,
+                          result_only_vars :: List2 OwnershipTypeVariable,
                         } deriving (Show)
 
 data InferenceInfo = { expr_type_variables :: Map2 GlobalExprId TypeVariableInfo,
@@ -402,8 +403,6 @@ createFunctionInfoBase config inference_info function_id = do
             List2.push vars member.info.ownership_var)
     relevant_ownership_vars <- input_ownership_vars + output_ownership_vars
 
-    filtered_member_access_converters <- inference_info.member_access_converters // FIXME: TODO
-
     (relevant_ownership_vars, filtered_member_access_converters) <- List2.filterS relevant_ownership_vars inference_info.member_access_converters (\relevant_ownership_vars, converter -> do
         match <- List2.contains relevant_ownership_vars converter.container &&
           List2.contains relevant_ownership_vars converter.member &&
@@ -417,8 +416,20 @@ createFunctionInfoBase config inference_info function_id = do
 
     members <- (input_members + output_members) |> List2.sort |> List2.dedup
 
+    result_only_vars <- output_ownership_vars
+
+    converter_results <- List2.fold List2.empty filtered_converters (\converter_results, converter -> List2.push converter_results converter.to)
+    converter_results <- List2.fold converter_results filtered_member_access_converters (\converter_results, converter -> List2.push converter_results converter.result)
+
+    (_, result_only_vars) <- List2.filterS input_ownership_vars result_only_vars (\input_ownership_vars, var -> do
+        r <- not (List2.contains input_ownership_vars var)
+        (input_ownership_vars, r))
+    (_, result_only_vars) <- List2.filterS converter_results result_only_vars (\converter_results, var -> do
+        r <- not (List2.contains converter_results var)
+        (converter_results, r))
+
     (inference_info, FunctionInfoBase function_inference_info.args function_inference_info.result
-        members filtered_converters filtered_member_access_converters relevant_ownership_vars)
+        members filtered_converters filtered_member_access_converters relevant_ownership_vars result_only_vars)
 
 toFunctionInfo :: Config -> InferenceInfo -> P.Identity -> (InferenceInfo, FunctionInfo)
 toFunctionInfo config inference_info function_id = do
@@ -437,6 +448,11 @@ toFunctionInfo config inference_info function_id = do
             (filtered_ownershipinfos, relevant_ownership_vars, ownership_values, index + 1)
 
     filtered_ownershipinfos <- filtered_ownershipinfos |> List2.sort |> List2.dedup
+
+    (_, filtered_ownershipinfos) <- List2.mapS function_info_base.result_only_vars filtered_ownershipinfos (\result_only_vars, info -> do
+        if List2.contains result_only_vars info.var
+        then (result_only_vars, info { kind = M.Owner })
+        else (result_only_vars, info))
 
     (inference_info, FunctionInfo function_info_base.args function_info_base.result
         function_info_base.members function_info_base.converters function_info_base.member_access_converters filtered_ownershipinfos)

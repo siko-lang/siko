@@ -1,0 +1,79 @@
+module Main where
+
+import Map
+
+data TypeVarGenerator = { next_type_id :: Int }
+
+createTypeVarGenerator = TypeVarGenerator 0
+
+getNewTypeVar :: TypeVarGenerator -> (TypeVarGenerator, TypeVar)
+getNewTypeVar gen = do
+    id <- gen.next_type_id
+    gen <- gen { next_type_id = id + 1 }
+    (gen, TypeVar id)
+
+getNewTypeVarType :: TypeVarGenerator -> (TypeVarGenerator, Type)
+getNewTypeVarType gen = do
+    (gen, var) <- getNewTypeVar gen
+    (gen, Var var)
+
+data TypeVar = TypeVar Int deriving (Show, PartialEq, Eq, PartialOrd, Ord)
+
+data Type = Var TypeVar
+          | Tuple [Type]
+
+collectVars :: Type -> [TypeVar]
+collectVars type = case type of
+    Var var  -> [var]
+    Tuple args -> List.fold [] args (\vars, arg -> do
+        vs <- collectVars arg
+        vars + vs)
+
+collectVars2 :: [TypeVar] -> Type -> [TypeVar]
+collectVars2 vars type = (collectVars type + vars) |> sort |> dedup
+
+data Substitution = { vars :: Map TypeVar Type }
+
+createSubstitution = Substitution empty
+
+containsVar :: Type -> TypeVar -> Bool
+containsVar type var = case type of
+    Var v -> v == var
+    Tuple args -> List.fold False args (\contains, arg -> contains || containsVar arg var)
+
+addSub :: Substitution -> TypeVar -> Type -> Result Substitution ()
+addSub sub var type = do
+    if containsVar type var
+        then return Err ()
+        else do
+            (vars, old) <- insert sub.vars var type
+            case old of
+                Some old -> Ok sub
+                None -> do
+                    sub <- sub { vars = vars }
+                    Ok sub
+
+newSub :: [Type] -> TypeVarGenerator -> Substitution
+newSub types var_gen = do
+    vars <- List.fold [] types (\vars, t -> collectVars2 vars t)
+    (var_gen, new_vars) <- repeatS var_gen (\var_gen -> getNewTypeVar var_gen) (getLength vars)
+    sub <- createSubstitution
+    sub <- List.zipS sub vars new_vars (\sub, var, new_var -> do
+        Result.unwrap (addSub sub var (Var new_var)))
+    sub
+
+main = do
+    ty <- Tuple []
+    old_var <- TypeVar 0
+    if True
+    then do
+        var_gen <- createTypeVarGenerator
+        sub <- createSubstitution
+        s <- Result.unwrap (addSub sub old_var (Var (TypeVar 1)))
+        s
+    else do
+        var_gen <- createTypeVarGenerator
+        types <- [ty]
+        newSub types var_gen
+    old_var
+    ()
