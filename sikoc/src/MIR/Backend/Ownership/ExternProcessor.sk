@@ -4,7 +4,6 @@ import Siko.MIR.Function as F
 import Siko.MIR.Program as P
 import Siko.MIR.Data as D
 import Siko.MIR.Type as T
-import Siko.Constants
 
 import Siko.MIR.Backend.Ownership.TypeVariableInfo
 import Siko.MIR.Backend.Ownership.Allocator
@@ -142,14 +141,25 @@ createExternFunctionInfo program id function_type type_mapping = do
             then getNext context
             else panic "No type variable info for result step for {}" % id
     function_info <- FunctionInfo args result context.members List2.empty List2.empty context.ownershipinfos
-    // HACK, FIXME, TODO: generalize this or make it a syntax
+    // HACK, FIXME, TODO: generalize this or make this into a syntax
     P.Identity mod name _ <- id
-    function_info <- if mod == getListModuleName && name == "atIndex"
+    function_info <- if (mod == "List" || mod == "List2") && name == "atIndex"
     then do
         result <- function_info.result
         result <- result { ownership_var = OwnershipTypeVariable 1 }
         member_access_converters <- List2.push function_info.member_access_converters (MemberAccessConverter (OwnershipTypeVariable 2) (OwnershipTypeVariable 0) (OwnershipTypeVariable 1))
         function_info <- function_info { result = result , member_access_converters = member_access_converters }
         function_info
-    else function_info
+    else if (mod == "Map" || mod == "Map2") && name == "get"
+        then do
+            members <- List2.empty
+            members <- List2.push members (M.MemberInfo (M.Extern 0) (GroupTypeVariable 1) (TypeVariableInfo (OwnershipTypeVariable 0) (GroupTypeVariable 0)))
+            members <- List2.push members (M.MemberInfo (M.Extern 1) (GroupTypeVariable 1) (TypeVariableInfo (OwnershipTypeVariable 2) (GroupTypeVariable 2)))
+            members <- List2.push members (M.MemberInfo (M.Variant 0) (GroupTypeVariable 5) (TypeVariableInfo (OwnershipTypeVariable 4) (GroupTypeVariable 4)))
+            members <- List2.push members (M.MemberInfo (M.Field 0) (GroupTypeVariable 4) (TypeVariableInfo (OwnershipTypeVariable 3) (GroupTypeVariable 2)))
+            // [E$1.0/(#0, $0), E$1.1/(#2, $2), V$5.0/(#4, $4), F$4.0/(#2, $2)
+            member_access_converters <- List2.push function_info.member_access_converters (MemberAccessConverter (OwnershipTypeVariable 6) (OwnershipTypeVariable 2) (OwnershipTypeVariable 3))
+            function_info <- function_info { members = members, member_access_converters = member_access_converters }
+            function_info
+        else function_info
     function_info
