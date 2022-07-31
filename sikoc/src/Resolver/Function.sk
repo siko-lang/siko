@@ -69,7 +69,7 @@ addFunction :: SF.Function -> Option FunctionInfo -> Option FunctionInfo
 addFunction function info = case info of
         Some info -> do
             info :: FunctionInfo <- info // FIXME: fix type inference
-            info <- info { functions = info.functions + [function] }
+            info <- info { functions = push info.functions function }
             Some info
         None -> Some (FunctionInfo [] [function])
 
@@ -77,7 +77,7 @@ addFunctionSignature :: SF.FunctionSignature -> Option FunctionInfo -> Option Fu
 addFunctionSignature signature info = case info of
         Some info -> do
             info :: FunctionInfo <- info // FIXME: fix type inference
-            info <- info { signatures = info.signatures + [signature] }
+            info <- info { signatures = push info.signatures signature }
             Some info
         None -> Some (FunctionInfo [signature] [])
 
@@ -96,7 +96,7 @@ processFunctionSignature state module_resolver type_resolver signature = do
                         (state, type_resolver, args) <- List.fold (state, type_resolver, []) eff.arguments (\(state, type_resolver, args), arg -> do
                             (type_resolver, state, var, constraints) <- resolveTypeArg type_resolver state arg
                             arg_type <- HT.FixedTypeArg (getString arg) var constraints
-                            (state, type_resolver, args + [arg_type]))
+                            (state, type_resolver, push args arg_type))
                         state <- if getLength args != count
                         then do
                             (Ident _ location) <- eff.name
@@ -238,7 +238,7 @@ processFunctionMulti state hir_program module_resolver function_scope_resolver t
 
 addArgCount :: Ident -> Option [Ident] -> Option [Ident]
 addArgCount name names = case names of
-    Some names -> Some (names + [name])
+    Some names -> Some (push names name)
     None -> Some [name]
 
 processFunctionInfo :: ResolverState ->
@@ -304,8 +304,8 @@ processFunctionsAndSignatures state hir_program module_resolver function_scope_r
 collectFunctionsAndFunctionSignatures :: [SM.Item] -> ([SF.Function], [SF.FunctionSignature])
 collectFunctionsAndFunctionSignatures items = do
     (functions, signatures) <- items |> List.iter |> Iterator.fold (\(functions, signatures), item -> case item of
-                                            SM.Function f -> (functions + [f], signatures)
-                                            SM.FunctionSignature s -> (functions, signatures + [s])
+                                            SM.Function f -> (push functions f, signatures)
+                                            SM.FunctionSignature s -> (functions, push signatures s)
                                             _ -> (functions, signatures)) ([], [])
     (functions, signatures)
 

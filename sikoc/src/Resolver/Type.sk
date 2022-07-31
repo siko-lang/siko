@@ -88,7 +88,7 @@ checkTypeArguments state args = do
     where
         addName :: Ident -> Option [Ident] -> Option [Ident]
         addName name names = case names of
-            Some names -> Some (names + [name])
+            Some names -> Some (push names name)
             None -> Some [name]
 
 resolveClass :: ModuleResolver -> Ident -> Result HP.FullyQualifiedName ResolverError
@@ -153,7 +153,7 @@ addTypeArgument state resolver_state arg = do
 
 addConstraint :: Constraint -> Option [Constraint] -> Option [Constraint]
 addConstraint constraint constraints = case constraints of
-    Some constraints -> Some (constraints + [constraint])
+    Some constraints -> Some (push constraints constraint)
     None -> Some [constraint]
 
 addTypeArgumentConstraint :: TypeResolverState -> ResolverState -> Ident -> Constraint -> (TypeResolverState, ResolverState)
@@ -202,7 +202,7 @@ getTypeVar resolver_state = do
 processArgs :: TypeResolverState -> ResolverState -> [ST.TypeSignature] -> (TypeResolverState, ResolverState, [Type])
 processArgs state resolver_state args = args |> List.iter |> Iterator.fold (\(state, resolver_state, args), arg -> do
                         (state, resolver_state, arg) <- processTypeSignature state resolver_state arg
-                        (state, resolver_state, args + [arg])) (state, resolver_state, [])
+                        (state, resolver_state, push args arg)) (state, resolver_state, [])
 
 resolveTypeArg :: TypeResolverState -> ResolverState -> Ident -> (TypeResolverState, ResolverState, TypeVar, [Constraint])
 resolveTypeArg state resolver_state name = do
@@ -212,7 +212,7 @@ resolveTypeArg state resolver_state name = do
                     constraints <- case get state.constraints var of
                         Some constraints -> constraints
                         None -> []
-                    used_type_args <- state.used_type_args + [name]
+                    used_type_args <- push state.used_type_args name
                     state <- state { used_type_args = used_type_args }
                     (state, resolver_state, var, constraints)
             None -> do

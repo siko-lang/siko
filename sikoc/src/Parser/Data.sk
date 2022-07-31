@@ -33,7 +33,7 @@ parseAdt :: ParserState -> [Ident] -> Ident -> Result (ParserState, AlgebraicDat
 parseAdt state args name = do
     (state, variants) <- loop (state, variants) <- (state, []) do
         (state, variant) <- try parseVariant state
-        variants <- variants + [variant]
+        variants <- push variants variant
         if check state Kind.Pipe
         then (try expect state Kind.Pipe, variants)
         else break (state, variants)
@@ -76,7 +76,7 @@ parseData state = do
             KeywordDeriving -> break (state, args)
             _ -> do
                 (state, arg) <- try expectVarIdent state "type argument"
-                args <- args + [arg]
+                args <- push args arg
                 (state, args)
     (state, data_definition) <- if check state Kind.Equal
         then do

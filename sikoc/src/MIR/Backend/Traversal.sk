@@ -7,7 +7,7 @@ processArgs a :: a -> [Expr] -> Option (a -> Expr -> (a, Expr)) -> Option (a -> 
 processArgs context args process_expr process_type preCaseCheck = do
     args |> List.iter |> Iterator.fold (\(context, args), arg -> do
         (context, arg) <- traverse context arg process_expr process_type preCaseCheck
-        args <- args + [arg]
+        args <- push args arg
         (context, args)) (context, [])
 
 processBlock a :: a -> [Expr] -> Option (a -> Expr -> (a, Expr)) -> Option (a -> T.Type -> (a, T.Type)) -> Option (a -> Expr -> a) -> (a, [Expr])
@@ -17,7 +17,7 @@ processBlock context exprs process_expr process_type preCaseCheck =
         Expr inner _ _ <- expr
         exprs <- case inner of
             Multi items -> exprs + items
-            _ -> exprs + [expr]
+            _ -> push exprs expr
         (context, exprs)) (context, [])
 
 traverse a :: a -> Expr ->
@@ -86,7 +86,7 @@ traverse context expr process_expr process_type preCaseCheck = do
                     _ -> (context, case_branch.checker)
                 (context, updated_body) <- traverse context case_branch.body process_expr process_type preCaseCheck
                 case_branch <- case_branch { checker = checker, body = updated_body }
-                cases <- cases + [case_branch]
+                cases <- push cases case_branch
                 (context, cases)) (context, [])
             (context, Expr (CaseOf body cases) type id)
         Clone arg -> do

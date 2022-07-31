@@ -52,8 +52,8 @@ parseBody state = do
             if check state Kind.EndOfBlock
             then break (state, fns, fns_sigs)
             else case try parseFunction state of
-                    (state, Left fn) -> (state, fns + [fn], fns_sigs)
-                    (state, Right fn_sig) -> (state, fns, fns_sigs + [fn_sig])
+                    (state, Left fn) -> (state, push fns fn, fns_sigs)
+                    (state, Right fn_sig) -> (state, fns, push fns_sigs fn_sig)
     state <- try expect state Kind.EndOfBlock
     Ok (state, fns, fn_sigs)
 

@@ -31,7 +31,7 @@ parseDoBlock state = do
                     (state, expr) <- try parseExpr state
                     buildExpr (Bind pattern expr) start_index state
                 else try parseExpr state
-            items <- items + [item]
+            items <- push items item
             state <- if check state Kind.KeywordWhere
                 then do
                     (state, sub_items) <- try parseSubItems state
@@ -167,7 +167,7 @@ parseUnary state = do
                     (state, pattern) <- try parseExtendedPattern state
                     state <- try expect state Kind.RightArrow
                     (state, case_body) <- try parseExpr state
-                    cases <- cases + [Case pattern case_body]
+                    cases <- push cases (Case pattern case_body)
                     state <- try expect state Kind.EndOfItem
                     (state, cases)
             state <- try expect state Kind.EndOfBlock
@@ -225,7 +225,7 @@ parsePrimary state for_initializer = do
             Kind.KeywordDo if !for_initializer -> ()
             _ -> break (state, args)
         (state, arg) <- try parseFieldAccess state
-        args <- args + [arg]
+        args <- push args arg
         (state, args)
     if isEmpty args
     then Ok (state, fn)

@@ -50,7 +50,7 @@ parseSubItems state = do
                             Left function -> (state, M.Function function)
                             Right function_signature -> (state, M.FunctionSignature function_signature)
                     Err (state, err) -> return Err (state, err)
-        sub_items <- sub_items + [item]
+        sub_items <- push sub_items item
         (state, sub_items)
     state <- try expect state Kind.EndOfBlock
     Ok (state, sub_items)
@@ -79,10 +79,10 @@ step state = do
     state { index = state.index + 1 }
 
 addError :: ParserState -> ParserError -> ParserState
-addError state error = state { errors = state.errors + [error] }
+addError state error = state { errors = push state.errors error }
 
 addModule :: ParserState -> M.Module -> ParserState
-addModule state mod = state { modules = state.modules + [mod] }
+addModule state mod = state { modules = push state.modules mod }
 
 unexpectedToken :: ParserState -> String -> ParserError
 unexpectedToken state expected = do
@@ -177,7 +177,7 @@ parseParens state parser msg = do
         then break (state, items, comma_found)
         else do
             (state, item) <- try parser state
-            items <- items + [item]
+            items <- push items item
             if check state Kind.Comma
             then do
                 state <- try expect state Kind.Comma
@@ -198,7 +198,7 @@ parseList state parser start end = do
         then break (state, items)
         else do
             (state, item) <- try parser state
-            items <- items + [item]
+            items <- push items item
             if check state Kind.Comma
             then do
                 state <- try expect state Kind.Comma

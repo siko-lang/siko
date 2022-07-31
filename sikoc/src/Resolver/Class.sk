@@ -70,7 +70,7 @@ processClass state hir_program module_resolver c = do
             HF.ClassMember _ -> do
                 (hir_program, other_item) <- HP.addItem hir_program member.name (HP.Function member)
                 state <- handleItemConflict state other_item location
-                class_members <- class_members + [member.name]
+                class_members <- push class_members member.name
                 (state, hir_program, class_members)
             _ -> do
                 (hir_program, other_item) <- HP.addItem hir_program member.name (HP.Function member)
@@ -115,7 +115,7 @@ processInstance state hir_program module_resolver i instance_id = do
             HF.InstanceMember _ -> do
                 (hir_program, other_item) <- HP.addItem hir_program member.name (HP.Function member)
                 state <- handleItemConflict state other_item class_location
-                instance_members <- instance_members + [member.name]
+                instance_members <- push instance_members member.name
                 (state, hir_program, instance_members)
             _ -> do
                 (hir_program, other_item) <- HP.addItem hir_program member.name (HP.Function member)

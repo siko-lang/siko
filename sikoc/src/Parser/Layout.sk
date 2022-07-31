@@ -27,12 +27,13 @@ lastSpan state = (atIndex state.input (state.index - 1)).span
 
 addToken :: LayoutProcessorState -> TokenInfo -> LayoutProcessorState
 addToken state token = do
-        output <- state.output + [token]
+        output <- push state.output token
         state { output = output }
 
 advance :: LayoutProcessorState -> LayoutProcessorState
 advance state = do
-    state <- addToken state (peek state)
+    info <- peek state
+    state <- addToken state info
     state { index = state.index + 1 }
 
 data ItemState = { state :: LayoutProcessorState,

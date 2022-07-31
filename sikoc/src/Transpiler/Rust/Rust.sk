@@ -190,7 +190,7 @@ generateStruct struct = do
     indent <- Indent 2
     fields <- struct.fields |> List.iter |> Iterator.fold (\fields, field -> do
         f <- "{}{}: {}," % (indent, field.name, T.showAll field.type)
-        fields <- fields + [f]
+        fields <- push fields f
         fields) []
     content <- ""
     content <- struct.attributes |> List.iter |> Iterator.fold (\content, attribute -> do
@@ -205,7 +205,7 @@ generateEnum enum = do
     indent <- Indent 2
     variants <- enum.variants |> List.iter |> Iterator.fold (\variants, variant -> do
         v <- "{}{}({})," % (indent, variant.name, T.showAll variant.type)
-        variants <- variants + [v]
+        variants <- push variants v
         variants) []
     content <- ""
     content <- enum.attributes |> List.iter |> Iterator.fold (\content, attribute -> do

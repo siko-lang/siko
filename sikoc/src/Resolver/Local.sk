@@ -18,13 +18,13 @@ getClassMemberFunctions :: C.Class -> [Item]
 getClassMemberFunctions c =
     c.member_function_type_signatures
       |> List.iter
-      |> Iterator.fold (\members, fs -> members + [ClassMember (getString c.name) (getString fs.name)]) []
+      |> Iterator.fold (\members, fs -> push members (ClassMember (getString c.name) (getString fs.name))) []
 
 getEffectMemberFunctions :: E.Effect -> [Item]
 getEffectMemberFunctions eff =
     eff.member_function_type_signatures
       |> List.iter
-      |> Iterator.fold (\members, fs -> members + [EffectMember (getString eff.name) (getString fs.name)]) []
+      |> Iterator.fold (\members, fs -> push members (EffectMember (getString eff.name) (getString fs.name))) []
 
 processItem :: M.Item -> [Item]
 processItem m_item = case m_item of

@@ -88,7 +88,7 @@ captureValue context bind_ref = do
         Some index -> (context, index)
         None -> do
             index <- getLength lambda_helper.captured_values
-            captured_values <- lambda_helper.captured_values + [bind_ref]
+            captured_values <- push lambda_helper.captured_values bind_ref
             lambda_helper <- lambda_helper { captured_values = captured_values }
             context <- context { lambda_helper = Some lambda_helper }
             (context, index)
@@ -98,7 +98,7 @@ addContinue context continue_expr location = do
     case context.loop_helper of
         Some loop_helper -> do
             loop_helper :: LoopHelper <- loop_helper // FIXME: type inference
-            continues <- loop_helper.continues + [HE.ExprRef continue_expr location]
+            continues <- push loop_helper.continues (HE.ExprRef continue_expr location)
             loop_helper <- Some (loop_helper { continues = continues })
             context { loop_helper = loop_helper }
         None -> do
@@ -109,7 +109,7 @@ addBreak context break_expr location = do
     case context.loop_helper of
         Some loop_helper -> do
             loop_helper :: LoopHelper <- loop_helper // FIXME: type inference
-            breaks <- loop_helper.breaks + [HE.ExprRef break_expr location]
+            breaks <- push loop_helper.breaks (HE.ExprRef break_expr location)
             loop_helper <- Some (loop_helper { breaks = breaks })
             context { loop_helper = loop_helper }
         None -> do
@@ -136,7 +136,7 @@ createCaseBody :: [SP.Pattern] -> Location -> SE.Expr
 createCaseBody patterns location = do
     (arg_refs, _) <- patterns |> List.iter |> Iterator.fold (\(arg_refs, index), _ -> do
                     arg_ref <- SE.Expr (SE.ArgRef index) location
-                    arg_refs <- arg_refs + [arg_ref]
+                    arg_refs <- push arg_refs arg_ref
                     (arg_refs, index + 1)) ([], 0)
     case_body <- SE.Expr (SE.Tuple arg_refs) location
     case_body
@@ -149,7 +149,7 @@ desugarFunctionArgs patterns orig_body = do
             arg_refs <- List.mapE patterns (\index, pattern -> do
                 arg <- SE.Expr (SE.ArgRef index) location
                 SE.Expr (SE.Bind pattern arg) location)
-            items <- arg_refs + [orig_body]
+            items <- push arg_refs orig_body
             SE.Expr (SE.Do items) location
         else do
             case_body <- createCaseBody patterns location
@@ -196,7 +196,7 @@ processCase context env (SE.Case pattern body) = do
                     context <- validatePatternEnv pattern_env context
                     bind_group <- envToBindGroup pattern_env block_env bind_group
                     (context, _, b) <- processExpr context block_env body
-                    cases <- cases + [HE.Case p b]
+                    cases <- push cases (HE.Case p b)
                     (context, cases, bind_group)
                 ) (context, [], HP.BindGroup empty)
             context <- bind_group.bindings |> Map.iter |> Iterator.fold (\context, (name, instances) -> do
@@ -262,7 +262,7 @@ processExprs :: Context -> Environment -> [SE.Expr] -> (Context, [HE.Expr ()])
 processExprs context env exprs = do
     (context, hir_exprs) <- exprs |> List.iter |> Iterator.fold (\(context, hir_exprs), expr -> do
                 (context, _, hir_expr) <- processExpr context env expr
-                hir_exprs <- hir_exprs + [hir_expr]
+                hir_exprs <- push hir_exprs hir_expr
                 (context, hir_exprs)) (context, [])
     (context, hir_exprs)
 
@@ -270,7 +270,7 @@ processDo :: Context -> Environment -> [SE.Expr] -> (Context, [HE.Expr ()])
 processDo context env exprs = do
     (context, _, hir_exprs) <- exprs |> List.iter |> Iterator.fold (\(context, env, hir_exprs), expr -> do
                 (context, env, hir_expr) <- processExpr context env expr
-                hir_exprs <- hir_exprs + [hir_expr]
+                hir_exprs <- push hir_exprs hir_expr
                 (context, env, hir_exprs)) (context, env, [])
     (context, hir_exprs)
 
@@ -296,7 +296,7 @@ processRecordFieldInit field_inits (context, env, args) (HD.RecordField field_na
     field_init <- field_inits |> List.iter |> Iterator.filter (\(SE.RecordConstructionItem name _) -> getString name == field_name) |> toList
     (SE.RecordConstructionItem name expr) <- atIndex field_init 0
     (context, env, hir_expr) <- processExpr context env expr
-    args <- args + [hir_expr]
+    args <- push args hir_expr
     (context, env, args)
 
 shiftLambdaArgs :: Context -> HE.Expr () -> Int -> Int -> (Context, HE.Expr ())
@@ -423,14 +423,14 @@ processExpr context env (SE.Expr expr location) = do
                                                 (context, index) <- captureValue context bind_ref
                                                 (context, HE.Expr (HE.ArgRef index) expr_id () location)
                                             else (context, HE.Expr (HE.ValueRef c) expr_id () location)
-                                        args <- args + [arg]
+                                        args <- push args arg
                                         (context, args)
                                 None -> panic "captured variable not found in parent scope"
                         ) (context, [])
             total_arg_count <- getLength args + getLength arg_patterns
             (context, final_lambda_body) <- shiftLambdaArgs context final_lambda_body (getLength args) (getLength arg_patterns)
             lambda <- F.LambdaInfo lambda_id total_arg_count context.function_name final_lambda_body
-            lambdas <- context.lambdas + [lambda]
+            lambdas <- push context.lambdas lambda
             context <- context { lambdas = lambdas }
             (context, env, HE.StaticFunctionCall lambda_name args)
         SE.Paren expr -> return processExpr context env expr
@@ -515,7 +515,7 @@ processExpr context env (SE.Expr expr location) = do
                 (context, hir_cases, bind_group) <- processCase context env c
                 cases <- cases + hir_cases
                 bind_groups <- case bind_group of
-                    Some bind_group -> bind_groups + [bind_group]
+                    Some bind_group -> push bind_groups bind_group
                     None -> bind_groups
                 (context, env, cases, bind_groups)) (context, env, [], [])
             (context, env, HE.CaseOf hir_body cases bind_groups)
@@ -564,9 +564,9 @@ processExpr context env (SE.Expr expr location) = do
                         (Ident f_name _) <- field_name
                         (context, env, hir_expr) <- processExpr context env expr
                         update <- HE.RecordConstructionItem field_name hir_expr
-                        updates <- updates + [update]
+                        updates <- push updates update
                         (fields, _) <- alter (\names -> case names of
-                                    Some names -> Some (names + [field_name])
+                                    Some names -> Some (push names field_name)
                                     None -> Some [field_name]) f_name fields
                         (context, env, updates, fields)
                     ) (context, env, [], empty)

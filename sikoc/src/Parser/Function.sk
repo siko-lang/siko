@@ -18,8 +18,8 @@ import Siko.Parser.Error
 checkTypeArgs :: ([Ident], [ParserError]) -> Pattern -> ([Ident], [ParserError])
 checkTypeArgs (args, errors) (Pattern pattern (Location _ span)) = do
     case pattern of
-        Binding arg -> (args + [arg], errors)
-        _ -> (args, errors + [InvalidTypeArgument span])
+        Binding arg -> (push args arg, errors)
+        _ -> (args, push errors (InvalidTypeArgument span))
 
 parseAttributes :: ParserState -> Result (ParserState, [Attribute]) (ParserState, ParserError)
 parseAttributes state = do
@@ -76,7 +76,7 @@ parseFunction state = do
                     DoubleColon -> break (state, args, Some DoubleColon)
                     _ -> do
                         (state, arg) <- try parsePattern state
-                        args <- args + [arg]
+                        args <- push args arg
                         (state, args)
             case sep of
                 Some Equal -> do

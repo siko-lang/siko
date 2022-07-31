@@ -271,7 +271,7 @@ checkHandlerConsistency context location info = do
             List.fold (context, missing_members) eff.members (\(context, missing_members), member_name -> do
                 case get handled_effect.handlers member_name of
                     Some _ -> (context, missing_members)
-                    None -> (context, missing_members + [show member_name]))
+                    None -> (context, push missing_members (show member_name)))
         )
     if isEmpty missing_members
     then context
@@ -378,7 +378,7 @@ initializeExprType current_fn_name context orig_expr = do
         E.Tuple args -> do
             (context, vars) <- args |> List.iter |> Iterator.fold (\(context, vars), arg -> do
                 (context, var) <- U.getNewTypeVarType context
-                vars <- vars + [var]
+                vars <- push vars var
                 (context, vars)) (context, [])
             context <- addExprType context id (TS.ExprType (T.Tuple vars))
             context
@@ -425,7 +425,7 @@ initializeExprType current_fn_name context orig_expr = do
             (context, constraints) <- updates |> List.iter |> Iterator.fold (\(context, constraints), update -> do
                 (E.Expr _ field_expr_id _ _) <- update.body
                 field_expr_ty <- getExprType context field_expr_id
-                constraints <- constraints + [T.RowConstraint (T.NamedRow (getString update.field_name)) field_expr_ty]
+                constraints <- push constraints (T.RowConstraint (T.NamedRow (getString update.field_name)) field_expr_ty)
                 (context, constraints)) (context, [])
             (context, var) <- getNewVarWithConstraints context constraints
             context <- addExprType context id (TS.ExprType var)
@@ -514,7 +514,7 @@ checkExprType context orig_expr = do
         E.DynamicFunctionCall receiver args -> do
             sub_ids <- List.map args (\E.Expr _ id _ _ -> id)
             E.Expr _ receiver_id _ receiver_location <- receiver
-            sub_signatures <- TEff.getExprEffectSignatures context (sub_ids + [receiver_id])
+            sub_signatures <- TEff.getExprEffectSignatures context (push sub_ids receiver_id)
             context <- TEff.setExprEffect context id sub_signatures location
             (ty, fn_ty) <- getExprAndFunctionCallType context id
             recv_ty <- getExprType context receiver_id
@@ -633,7 +633,8 @@ checkExprType context orig_expr = do
             case_sigs <- List.fold [] cases (\case_sigs, E.Case (P.Pattern _ pattern_id () _) (E.Expr _ case_body_id () _) -> do
                 case_pattern_sig <- TS.getPatternEffectSignature context.type_store pattern_id
                 case_body_sig <- TS.getExprEffectSignature context.type_store case_body_id
-                case_sigs + [case_pattern_sig, case_body_sig])
+                sigs <- push case_sigs case_pattern_sig
+                push sigs case_body_sig)
             context <- TEff.setExprEffect context id ([body_sig] + case_sigs) location
             E.Case (P.Pattern _ pattern_id () pattern_location) (E.Expr _ case_body_id () case_body_location) <- atIndex cases 0
             context <- matchExprs context id case_body_id location
@@ -665,7 +666,7 @@ checkExprType context orig_expr = do
         E.Return arg -> do
             E.Expr _ arg_id _ arg_location <- arg
             context <- TEff.copyExprEffect context arg_id id
-            returns <- context.returns + [(arg_id, arg_location)]
+            returns <- push context.returns (arg_id, arg_location)
             context <- context { returns = returns }
             context
         E.Continue arg -> do
@@ -719,7 +720,7 @@ addUndefinedVarToContext context undefined_vars var location =
             //println "TypeAnnotationNeeded"
             state <- addError context.state (TypeAnnotationNeeded location)
             context <- context { state = state }
-            undefined_vars <- undefined_vars + [var]
+            undefined_vars <- push undefined_vars var
             (context, undefined_vars)
 
 checkUndefinedVars :: Context -> [T.TypeVar] -> T.Type -> [T.TypeVar] -> Location -> (Context, [T.TypeVar])

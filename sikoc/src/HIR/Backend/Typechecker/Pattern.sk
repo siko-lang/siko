@@ -56,7 +56,7 @@ initializePatternType context pat = do
         P.Tuple args -> do
             (context, vars) <- args |> List.iter |> Iterator.fold (\(context, vars), arg -> do
                 (context, var) <- U.getNewTypeVarType context
-                vars <- vars + [var]
+                vars <- push vars var
                 (context, vars)) (context, [])
             context <- addPatternType context id (TS.PatternType (T.Tuple vars))
             context

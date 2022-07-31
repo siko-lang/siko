@@ -33,14 +33,14 @@ processRecordFieldPattern field_patterns (context, pattern_env, env, args) (HD.R
     field_pattern <- field_patterns |> List.iter |> Iterator.filter (\(SP.RecordFieldPattern name _) -> getString name == field_name) |> toList
     (SP.RecordFieldPattern name pattern) <- atIndex field_pattern 0
     (context, pattern_env, env, hir_pattern) <- processPattern context  pattern_env env pattern
-    args <- args + [hir_pattern]
+    args <- push args hir_pattern
     (context, pattern_env, env, args)
 
 processPatterns :: Context -> PatternEnvironment -> Environment -> [SP.Pattern] -> (Context, PatternEnvironment, Environment, [HP.Pattern ()])
 processPatterns context pattern_env env patterns = do
     (context, pattern_env, env, hir_patterns) <- patterns |> List.iter |> Iterator.fold (\(context, pattern_env, env, hir_patterns), pattern -> do
                 (context, pattern_env, env, hir_pattern) <- processPattern context pattern_env env pattern
-                hir_patterns <- hir_patterns + [hir_pattern]
+                hir_patterns <- push hir_patterns hir_pattern
                 (context, pattern_env, env, hir_patterns)) (context, pattern_env, env, [])
     (context, pattern_env, env, hir_patterns)
 
@@ -57,7 +57,7 @@ processPattern context pattern_env env (SP.Pattern pattern location) = do
         SP.Tuple items -> do
             (context, pattern_env, env, hir_items) <- items |> List.iter |> Iterator.fold (\(context, pattern_env, env, items), item -> do
                 (context, pattern_env, env, hir_item) <- processPattern context pattern_env env item
-                items <- items + [hir_item]
+                items <- push items hir_item
                 (context, pattern_env, env, items)) (context, pattern_env, env, [])
             (context, pattern_env, env, HP.Tuple hir_items)
         SP.Constructor name args -> do

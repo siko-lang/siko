@@ -79,7 +79,7 @@ parseConstructorPattern state inner start_index = do
                         | Kind.VarIdentifier
                         | Kind.Wildcard -> do
                             (state, ty) <- try (parsePatternL state True)
-                            args <- args + [ty]
+                            args <- push args ty
                             (state, args)
                     _ -> break (state, args)
             Ok (state, buildPattern (Constructor name args) start_index state)
@@ -92,7 +92,7 @@ parseExtendedPattern state = do
     start_index <- state.index
     (state, patterns) <- loop (state, patterns) <- (state, []) do
         (state, pattern) <- try parsePattern state
-        patterns <- patterns + [pattern]
+        patterns <- push patterns pattern
         if check state Kind.Pipe
         then do
             state <- step state

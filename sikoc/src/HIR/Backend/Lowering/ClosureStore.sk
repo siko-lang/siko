@@ -59,7 +59,7 @@ addClosureInstance store closure_type args = do
     (closures, _) <- alter (\closure -> case closure of
         Some closure -> do
             closure :: Closure <- closure
-            instances <- closure.instances + [closure_instance]
+            instances <- push closure.instances closure_instance
             Some closure { instances = instances }
         None -> Some (Closure name [closure_instance])) name store.closures
     (store { closures = closures }, closure_instance)
@@ -134,14 +134,14 @@ compileClosure context closure closure_call_identity = do
             (context, prev_var_ref_expr) <- getExpr context prev_var_ref_expr
             arg_ref <- ME.FieldAccess field_index prev_var_ref_expr
             (context, arg_ref_expr) <- getExpr context (ME.Expr arg_ref field.type)
-            (context, arg_refs + [arg_ref_expr])) (context, [])
+            (context, push arg_refs arg_ref_expr)) (context, [])
         next_fn <- case Option.unwrap (get context.closure_store.successors closure_instance) of
             NextClosureInstance fn -> fn
             RealFunctionCall fn -> fn
         arg_ref1 <- ME.VarRef (ME.Arg 1)
         arg_ref1_type <- atIndex closure_call_function.type.args 1
         (context, arg_ref1_expr) <- getExpr context (ME.Expr arg_ref1 arg_ref1_type)
-        args <- args + [arg_ref1_expr]
+        args <- push args arg_ref1_expr
         (context, body_expr) <- do
                 (mir_program, mir_function) <- getFunction context.mir_program next_fn
                 context <- context { mir_program = mir_program }
@@ -150,7 +150,7 @@ compileClosure context closure closure_call_identity = do
                 getExpr context (ME.Expr (ME.Do [body_expr]) mir_function.type.result)
         checker <- ME.VariantChecker id prev_var mir_closure_type
         c <- ME.Case checker body_expr
-        cases <- cases + [c]
+        cases <- push cases c
         (context, cases, index + 1)) (context, [], 0)
     arg_ref0 <- ME.VarRef (ME.Arg 0)
     arg_ref0_type <- atIndex closure_call_function.type.args 0

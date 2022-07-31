@@ -158,7 +158,7 @@ convertExpr context lir_expr = do
                 then do
                     rust_type <- convertType expr_type
                     unit <- R.StructCtor (RT.showBase rust_type) []
-                    R.Block (args + [unit])
+                    R.Block (push args unit)
                 else R.Block args
         LE.StaticFunctionCall id args -> do
             args <- args |> List.iter |> Iterator.map (\arg -> convertExpr context arg) |> toList
@@ -314,7 +314,7 @@ processImpl lir_program program context type_name impl lifetimes = do
                 ("std::cmp::Ord", [method])
     //println "processImpl: {} {}" % (name, rust_type_name)
     trait_impl <- R.TraitImpl name rust_type_name methods lifetimes
-    impls <- program.impls + [trait_impl]
+    impls <- push program.impls trait_impl
     program { impls = impls }
 
 createVariantCtor :: RT.Type -> Int -> Context -> [R.Expr] -> R.Expr
@@ -330,7 +330,7 @@ createRecordCtor result context args = do
     struct <- getStruct context.type_store result
     fields <- List.zipS [] struct.fields args (\fields, field, arg -> do
         field_init_item <- R.FieldInitItem field.name arg
-        fields <- fields + [field_init_item]
+        fields <- push fields field_init_item
         fields)
     R.StructCtor struct.name fields
 
@@ -353,7 +353,7 @@ processFunction (context, program, type_store, rust_program) (_, lir_function) =
     (rust_args, _) <- lir_function.type.args |> List.iter |> Iterator.fold (\(args, index), arg -> do
         arg_type <- convertType arg
         arg_name <- getArgName index
-        args <- args + [(arg_name, arg_type)]
+        args <- push args (arg_name, arg_type)
         (args, index + 1)) ([], 0)
     rust_result <- convertType lir_function.type.result
     rust_body <- case lir_function.kind of
@@ -377,7 +377,7 @@ processFunction (context, program, type_store, rust_program) (_, lir_function) =
     lifetimes <- convertLifetimes lir_function.lifetimes
     lifetime_dependencies <- List.map lir_function.lifetime_dependencies convertLifetimeDependency
     rust_function <- R.Function rust_function_name lifetimes False rust_args rust_result rust_body lifetime_dependencies
-    functions <- rust_program.functions + [rust_function]
+    functions <- push rust_program.functions rust_function
     (context, program, type_store, rust_program { functions = functions })
 
 transpile :: Program -> String
@@ -389,13 +389,13 @@ transpile program = do
     (type_store, rust_program) <- Map.fold (type_store, rust_program) program.adts (\(type_store, rust_program), (_, adt) -> do
         enum <- convertAdt adt
         type_store <- addEnum type_store enum
-        enums <- rust_program.enums + [enum]
+        enums <- push rust_program.enums enum
         rust_program <- rust_program { enums = enums }
         (type_store, rust_program))
     (type_store, rust_program) <- Map.fold (type_store, rust_program) program.records (\(type_store, rust_program), (_, record) -> do
         struct <- convertRecord record external_structs
         type_store <- addStruct type_store struct
-        structs <- rust_program.structs + [struct]
+        structs <- push rust_program.structs struct
         rust_program <- rust_program { structs = structs }
         (type_store, rust_program))
     constructors <- createConstructors program

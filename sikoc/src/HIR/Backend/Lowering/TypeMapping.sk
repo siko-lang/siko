@@ -32,14 +32,14 @@ addVarPosition :: Context -> String -> [MF.Step] -> Context
 addVarPosition context name steps = do
     pos <- MF.Position steps
     (var_mappings, _) <- alter (\positions -> case positions of
-        Some positions -> Some (positions + [pos])
+        Some positions -> Some (push positions pos)
         None -> Some [pos]) name context.var_mappings
     context { var_mappings = var_mappings }
 
 addOwnerPosition :: Context -> [MF.Step] -> Context
 addOwnerPosition context steps = do
     pos <- MF.Position steps
-    owner_positions <- context.owner_positions + [pos]
+    owner_positions <- push context.owner_positions pos
     context { owner_positions = owner_positions }
 
 addRefPosition :: Context -> Int -> [MF.Step] -> Context
@@ -59,7 +59,7 @@ mapType context steps type = case type of
                 if record.external
                     then do
                         context <- List.foldE (\context, index, arg -> do
-                            steps <- steps + [MF.External index]
+                            steps <- push steps (MF.External index)
                             context <- mapType context steps arg
                             context) context args
                         context
@@ -67,16 +67,16 @@ mapType context steps type = case type of
                         (lowering_context, record) <- TS.instantiateRecord context.lowering_context record type
                         context <- context { lowering_context = lowering_context }
                         List.foldE (\context, index, (HD.RecordField name field_type) -> do
-                            steps <- steps + [MF.Field index]
+                            steps <- push steps (MF.Field index)
                             context <- mapType context steps field_type
                             context) context record.fields
             HP.Adt adt -> do
                 (lowering_context, adt) <- TS.instantiateAdt context.lowering_context adt type
                 context <- context { lowering_context = lowering_context }
                 List.foldE (\context, index, v -> do
-                    steps <- steps + [MF.Variant index]
+                    steps <- push steps (MF.Variant index)
                     context <- List.foldE (\context, index, t -> do
-                            steps <- steps + [MF.Field index]
+                            steps <- push steps (MF.Field index)
                             context <- mapType context steps t
                             context) context v.items
                     context) context adt.variants
@@ -91,7 +91,7 @@ mapType context steps type = case type of
         mapType context steps t
     HT.Tuple args -> do
         (context, _) <- args |> List.iter |> Iterator.fold (\(context, index), arg -> do
-            steps <- steps + [MF.Field index]
+            steps <- push steps (MF.Field index)
             context <- mapType context steps arg
             (context, index + 1)) (context, 0)
         context

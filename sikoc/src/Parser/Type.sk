@@ -22,7 +22,7 @@ parseTypeSignature state parsingVariant allow_wildcard = do
                 if isValidTypeSignaturePart state
                 then do
                     (state, item) <- try parseTypeSignaturePart state False False
-                    (state, items + [item])
+                    (state, push items item)
                 else break (state, items)
         Ok (buildTypeSignature (Named name items) start_index state)
     else do
@@ -78,7 +78,7 @@ parseTypeSignaturePart state with_args allow_wildcard = do
                         if isValidTypeSignaturePart state
                         then do
                             (state, arg) <- try parseTypeSignaturePart state False allow_wildcard
-                            args <- args + [arg]
+                            args <- push args arg
                             (state, args)
                         else break (state, args)
                 else (state, [])

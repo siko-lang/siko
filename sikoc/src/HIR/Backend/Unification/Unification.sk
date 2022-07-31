@@ -38,13 +38,13 @@ unifyArgs context sub args1 args2 = do
 
 getClassConstraints :: [Constraint] -> [P.FullyQualifiedName]
 getClassConstraints constraints = constraints |> List.iter |> Iterator.fold (\class_constraints, c -> case c of
-    ClassConstraint s _ -> class_constraints + [s]
+    ClassConstraint s _ -> push class_constraints s
     RowConstraint _ _ -> class_constraints) []
 
 getRowConstraints :: [Constraint] -> [(RowKind, Type)]
 getRowConstraints constraints = constraints |> List.iter |> Iterator.fold (\row_constraints, c -> case c of
     ClassConstraint _ _ -> row_constraints
-    RowConstraint kind row_type -> row_constraints + [(kind, row_type)]) []
+    RowConstraint kind row_type -> push row_constraints (kind, row_type)) []
 
 unifyVarWithType a :: (TypeVarGenerator a, DataProvider a, ClassProvider a, Context a) => a -> TypeVar -> [Constraint] -> Substitution -> Type -> Result (a, Substitution) () // FIXME DataProvider, TypeVarGenerator
 unifyVarWithType context var constraints sub type = do

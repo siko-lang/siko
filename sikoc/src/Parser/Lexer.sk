@@ -56,10 +56,10 @@ startSpan state = Span (Position state.line_index state.line_offset) (Position s
 
 addToken :: LexerState -> Token -> Span -> LexerState
 addToken state token span = do
-    state { tokens = state.tokens + [TokenInfo token span] }
+    state { tokens = push state.tokens (TokenInfo token span) }
 
 addError :: LexerState -> LexerError -> LexerState
-addError state error = state { errors = state.errors + [error] }
+addError state error = state { errors = push state.errors error }
 
 isIdentifier :: Char -> Bool
 isIdentifier c = case c of

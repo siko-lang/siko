@@ -30,7 +30,7 @@ addNode graph name = do
     id <- graph.next_id
     node_id <- NodeId id
     node <- Node name node_id [] "yellow"
-    nodes <- graph.nodes + [node]
+    nodes <- push graph.nodes node
     graph <- graph { next_id = id + 1, nodes = nodes }
     (graph, node_id)
 
@@ -44,7 +44,7 @@ addColor graph (NodeId id) color = do
 addElement :: Graph -> NodeId -> String -> Graph
 addElement graph (NodeId id) element = do
     node <- atIndex graph.nodes id // FIXME: use update
-    elements <- node.elements + [element]
+    elements <- push node.elements element
     node <- node { elements = elements }
     nodes <- write graph.nodes id node
     graph { nodes = nodes }
@@ -52,7 +52,7 @@ addElement graph (NodeId id) element = do
 addEdge :: Graph -> Option String -> NodeId -> NodeId -> Graph
 addEdge graph name from to = do
     edge <- Edge name from to
-    edges <- graph.edges + [edge]
+    edges <- push graph.edges edge
     graph { edges = edges }
 
 generateDot :: Graph -> String

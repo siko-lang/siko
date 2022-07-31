@@ -91,14 +91,14 @@ processPattern context pendingPatterns = do
             P.BindRef s _ <- ref
             (additional_info, checks) <- processPattern context pendingPatterns
             checks <- [Check path (WildcardCondition)] + checks
-            binds <- additional_info.binds + [CaseBind path ref]
+            binds <- push additional_info.binds (CaseBind path ref)
             (additional_info { binds = binds }, checks)
         P.Tuple args -> do
             (args, _) <- args |> List.iter |> Iterator.fold (\(args, index), arg -> do
                     P.Pattern _ arg_id arg_type _ <- arg
                     p <- ItemIndex path index arg_type
                     arg <- PendingPattern p arg
-                    args <- args + [arg]
+                    args <- push args arg
                     (args, index + 1)) ([], 0)
             (additional_info, checks) <- processPattern context (args + pendingPatterns)
             checks <- [Check path WildcardCondition] + checks
@@ -136,7 +136,7 @@ processPattern context pendingPatterns = do
                     P.Pattern _ arg_id arg_type _ <- arg
                     p <- ItemIndex path index arg_type
                     arg <- PendingPattern p arg
-                    args <- args + [arg]
+                    args <- push args arg
                     (args, index + 1)) ([], 0)
             (additional_info, checks) <- processPattern context (args + pendingPatterns)
             checks <- [Check path WildcardCondition] + checks
@@ -146,7 +146,7 @@ processPattern context pendingPatterns = do
                     P.Pattern _ arg_id arg_type _ <- arg
                     p <- VariantPath path qn variant_index index arg_type
                     arg <- PendingPattern p arg
-                    args <- args + [arg]
+                    args <- push args arg
                     (args, index + 1)) ([], 0)
             (additional_info, checks) <- processPattern context (args + pendingPatterns)
             checks <- [Check path (VariantCondition variant_index)] + checks
@@ -302,7 +302,7 @@ finalizeCaseEnd match_infos = do
     (match_infos, _) <- match_infos |> List.iter |> Iterator.fold (\(match_infos, prev_guarded), match -> do
                             MatchInfo _ additional_info <- match
                             if prev_guarded
-                                then (match_infos + [match], additional_info.guarded)
+                                then (push match_infos match, additional_info.guarded)
                                 else (match_infos, prev_guarded)
                         ) ([], True)
     match_infos
@@ -317,7 +317,7 @@ processTree choice context case_info finalize = case choice of
                             then case get case_info.rule_set path of
                                     Some _ -> do
                                         (condition, node) <- buildBranch path case_info
-                                        news <- news + [(condition, node)]
+                                        news <- push news (condition, node)
                                         (choices, news, modified)
                                     None -> (choices, news, modified)
                             else (choices, news, modified)
@@ -344,7 +344,7 @@ processTree choice context case_info finalize = case choice of
             //MatchInfo index _ <- case_info.match_info
             //println "{}. context {}, rs: {}" % (index, context, case_info.rule_set)
             orig_len <- getLength match_infos
-            merged <- match_infos + [case_info.match_info]
+            merged <- push match_infos case_info.match_info
             merged <- merged |> sort |> dedup
             modified <- orig_len != getLength merged
             merged <- if finalize
@@ -402,7 +402,7 @@ checkBranches choice =
         CaseEnd matches -> do
             (guarded_only, found_cases) <- matches |> List.iter |> Iterator.fold (\(guarded_only, found_cases), MatchInfo id additional_info -> do
                 guarded_only <- guarded_only && additional_info.guarded
-                (guarded_only, found_cases + [id])) (True, [])
+                (guarded_only, push found_cases id)) (True, [])
             if guarded_only || isEmpty matches
                 then ([MissingCase], found_cases)
                 else ([], found_cases)
@@ -428,7 +428,7 @@ checkCase context expr_id case_body cases = do
     (case_infos, _) <- cases |> List.iter |> Iterator.fold (\(case_infos, case_index), c -> do
             P.Pattern p _ _ location <- c.pattern
             (case_index, case_info) <- processSinglePattern context c.pattern case_index
-            case_infos <- case_infos + [case_info]
+            case_infos <- push case_infos case_info
             (case_infos, case_index)
         ) ([], 0)
     init <- empty

@@ -130,9 +130,9 @@ processInstance state class_info_store instance_resolver i = do
                         state <- addError state (InstanceMemberNotClassMember short_name instance_member.location)
                         (state, None)
                 inferred_types <- case inferred_type of
-                    Some inferred_type -> inferred_types + [(instance_member_name, inferred_type)]
+                    Some inferred_type -> push inferred_types (instance_member_name, inferred_type)
                     None -> inferred_types
-                (state, member_names + [short_name], inferred_types)) (state, [], [])
+                (state, push member_names short_name, inferred_types)) (state, [], [])
             class_type_info :: ClassTypeInfo <- class_type_info // FIXME: type inference fix!
             state <- class_type_info.members |> Map.iter |> Iterator.fold (\state, (name, member_data) -> do
                     if member_data.has_default_impl
@@ -171,8 +171,8 @@ processClassesAndInstances config state instance_resolver = do
             then do
                 (names, locations) <- group.items |> List.iter |> Iterator.fold (\(names, locations), qn -> do
                     c <- P.getClass state.program qn
-                    names <- names + [P.getResolvableName c.name]
-                    locations <- locations + [c.location]
+                    names <- push names (P.getResolvableName c.name)
+                    locations <- push locations c.location
                     (names, locations)) ([], [])
                 err <- CircularClassDependency names locations
                 state <- addError state err

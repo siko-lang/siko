@@ -20,7 +20,7 @@ createEnvironment lambda_id parent = Environment lambda_id empty parent
 
 append :: Ident -> Option [Ident] -> Option [Ident]
 append name names = case names of
-    Some names -> Some (names + [name])
+    Some names -> Some (push names name)
     None -> Some [name]
 
 addBindingToPatternEnv :: PatternEnvironment -> Ident -> PatternEnvironment
@@ -45,7 +45,7 @@ getBinding env name = do
             None -> None
 
 getAllBindings :: PatternEnvironment -> [String]
-getAllBindings env = env.bindings |> Map.iter |> Iterator.fold (\names, (name, _) -> names + [name]) []
+getAllBindings env = env.bindings |> Map.iter |> Iterator.fold (\names, (name, _) -> push names name) []
 
 envToBindGroup :: PatternEnvironment -> Environment -> BindGroup -> BindGroup
 envToBindGroup pattern_env block_env bind_group = pattern_env.bindings |> Map.iter |> Iterator.fold (\bind_group, (name, _) -> do
@@ -53,7 +53,7 @@ envToBindGroup pattern_env block_env bind_group = pattern_env.bindings |> Map.it
                 Some (bind_ref, _) -> bind_ref
                 None -> panic "Bind {} not found in block env" % name
             (bindings, _) <- alter (\instances -> case instances of
-                    Some instances -> Some (instances + [bind_ref])
+                    Some instances -> Some (push instances bind_ref)
                     None -> Some [bind_ref]) name bind_group.bindings
             bind_group { bindings = bindings }
         ) bind_group

@@ -36,7 +36,7 @@ processArgs :: Context -> S.Substitution -> [HE.Expr HT.Type] -> (Context, [ME.E
 processArgs context sub args = do
     (context, mir_args) <- args |> List.iter |> Iterator.fold (\(context, mir_args), e -> do
                 (context, mir_arg) <- processExpr context sub e
-                (context, mir_args + [mir_arg])) (context, [])
+                (context, push mir_args mir_arg)) (context, [])
     (context, mir_args)
 
 getMonomorphizedType :: S.Substitution -> HT.Type -> HT.Type
@@ -140,7 +140,7 @@ processBindVars context additional_info path_info_map unit_type = do
         (context, ref_expr) <- getExpr context ref_expr
         var_decl <- ME.VarDecl var ref_expr
         (context, var_decl) <- getExpr context (ME.Expr var_decl unit_type)
-        var_decls <- var_decls + [var_decl]
+        var_decls <- push var_decls var_decl
         (context, var_decls)) (context, [])
     (context, var_decls)
 
@@ -153,7 +153,7 @@ processCaseEnds context sub match_infos hir_case_bodies hir_guards path_info_map
             (context, mir_case_body) <- processExpr context sub hir_case_body
             (context, var_decls) <- processBindVars context additional_info path_info_map unit_type
             ME.Expr _ case_type _ <- mir_case_body
-            (context, result) <- getExpr context (ME.Expr (ME.Do (var_decls + [mir_case_body])) case_type)
+            (context, result) <- getExpr context (ME.Expr (ME.Do (push var_decls mir_case_body)) case_type)
             (context, result)
         else do
             case pop match_infos of
@@ -169,7 +169,7 @@ processCaseEnds context sub match_infos hir_case_bodies hir_guards path_info_map
                     (context, else_expr) <- processCaseEnds context sub match_infos hir_case_bodies hir_guards path_info_map unit_type
                     ME.Expr _ then_type _ <- mir_case_body
                     (context, if_expr) <- getExpr context (ME.Expr (ME.If cond_expr mir_case_body else_expr) then_type)
-                    (context, result) <- getExpr context (ME.Expr (ME.Do (var_decls + [if_expr])) then_type)
+                    (context, result) <- getExpr context (ME.Expr (ME.Do (push var_decls if_expr)) then_type)
                     (context, result)
                 None -> panic "Matchinfos ran out!"
 
@@ -247,7 +247,7 @@ processChoiceTree context sub choice path_info_map hir_case_bodies hir_guards = 
                         (ME.WildcardChecker, choice_expr)
                     CC.Else -> panic "Else found"
                 c <- ME.Case cond expr
-                cases <- cases + [c]
+                cases <- push cases c
                 (context, cases)) (context, [])
             var_decl <- ME.VarDecl pattern_var body_expr
             (context, var_decl_expr) <- getExpr context (ME.Expr var_decl unit_type)
@@ -298,10 +298,10 @@ processDynamicFunctionCall context receiver_type mir_args mir_receiver = do
                         (context, decl_expr) <- getExpr context (ME.Expr decl unit_type)
                         receiver <- ME.VarRef var
                         (context, receiver_expr) <- getExpr context (ME.Expr receiver mir_expr_type)
-                        calls <- calls + [decl_expr]
+                        calls <- push calls decl_expr
                         (context, result_type, rest, receiver_expr, calls)
                     None -> do
-                        calls <- calls + [receiver]
+                        calls <- push calls receiver
                         break (context, calls)
     (context, calls)
 
@@ -346,7 +346,7 @@ processFormatExpr  context fmt exprs args = do
                 (context, head_expr) <- getExpr context (ME.Expr (ME.StringLiteral head) mir_string_type)
                 var_decl <- ME.VarDecl var head_expr
                 (context, var_decl_expr) <- getExpr context (ME.Expr var_decl unit_type)
-                exprs <- exprs + [var_decl_expr]
+                exprs <- push exprs var_decl_expr
                 (context, var_ref_expr) <- getExpr context (ME.Expr (ME.VarRef var) mir_string_type)
                 (context, rest, exprs, var_ref_expr)
             None -> panic "Subs ran out!"
@@ -356,7 +356,7 @@ processFormatExpr  context fmt exprs args = do
                 (context, var) <- getNextTempVar context
                 var_decl <- ME.VarDecl var prev
                 (context, var_decl_expr) <- getExpr context (ME.Expr var_decl unit_type)
-                exprs <- exprs + [var_decl_expr]
+                exprs <- push exprs var_decl_expr
                 (context, var_ref_expr) <- getExpr context (ME.Expr (ME.VarRef var) mir_string_type)
                 (context, exprs, var_ref_expr)
             None -> (context, exprs, sub_var)
@@ -366,18 +366,18 @@ processFormatExpr  context fmt exprs args = do
                 ME.Expr _ head_type _ <- head
                 var_decl <- ME.VarDecl var head
                 (context, var_decl_expr) <- getExpr context (ME.Expr var_decl unit_type)
-                exprs <- exprs + [var_decl_expr]
+                exprs <- push exprs var_decl_expr
                 (context, var_ref_expr) <- getExpr context (ME.Expr (ME.VarRef var) head_type)
                 (context, rest, exprs, var_ref_expr)
             None -> do
-                exprs <- exprs + [prev]
+                exprs <- push exprs prev
                 break (context, exprs)
         (context, prev) <- callOpAdd context string_type prev arg_var
         (context, var) <- getNextTempVar context
         ME.Expr _ prev_type _ <- prev
         var_decl <- ME.VarDecl var prev
         (context, var_decl_expr) <- getExpr context (ME.Expr var_decl unit_type)
-        exprs <- exprs + [var_decl_expr]
+        exprs <- push exprs var_decl_expr
         (context, var_ref_expr) <- getExpr context (ME.Expr (ME.VarRef var) prev_type)
         (context, subs, args, exprs, Some (var_ref_expr))
     (context, do_expr) <- getExpr context (ME.Expr (ME.Do exprs) mir_string_type)
@@ -403,11 +403,11 @@ processStaticFunctionCall context mir_args function_type function_id arg_count =
                     if getLength functions < diff
                         then do
                             (closure_store, closure_instance) <- CS.addClosureInstance context.closure_store closure_type arg_types
-                            closures <- closures + [closure_instance]
+                            closures <- push closures closure_instance
                             context <- context { closure_store = closure_store }
                             queue_item <- FQ.ClosureCtor (getLength arg_types) function_type closure_instance
                             (context, function_id) <- FQ.insert context queue_item
-                            functions <- functions + [function_id]
+                            functions <- push functions function_id
                             queue_item <- FQ.ClosureCall closure_instance.name (HT.Function closure_type closure_type)
                             (context, _) <- FQ.insert context queue_item
                             first_arg <- HT.getArgsLimited closure_type 1
@@ -452,7 +452,7 @@ removeMulti context exprs = exprs |> List.iter |> Iterator.fold (\(context, expr
                     ME.Multi args -> (context, exprs + args)
                     _ -> do
                         (context, expr) <- getExpr context (ME.Expr s_expr s_type)
-                        (context, exprs + [expr])) (context, [])
+                        (context, push exprs expr)) (context, [])
 
 processExpr :: Context -> S.Substitution -> HE.Expr HT.Type -> (Context, ME.Expr)
 processExpr context sub hir_expr = do
@@ -590,9 +590,9 @@ processExpr context sub hir_expr = do
                 ME.Expr _ show_result_type _ <- show_result
                 var_decl <- ME.VarDecl var show_result
                 (context, var_decl_expr) <- getExpr context (ME.Expr var_decl unit_type)
-                exprs <- exprs + [var_decl_expr]
+                exprs <- push exprs var_decl_expr
                 (context, var_ref_expr) <- getExpr context (ME.Expr (ME.VarRef var) show_result_type)
-                mir_args <- mir_args + [var_ref_expr]
+                mir_args <- push mir_args var_ref_expr
                 (context, exprs, mir_args)) (context, [], [])
             processFormatExpr context fmt exprs mir_args
         HE.CaseOf body hir_cases bind_groups -> do
