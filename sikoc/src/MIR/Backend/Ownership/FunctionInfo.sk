@@ -18,7 +18,6 @@ data FunctionInfo = { args :: List2 TypeVariableInfo,
                       result :: TypeVariableInfo,
                       members :: List2 M.MemberInfo,
                       converters :: List2 Converter,
-                      member_access_converters :: List2 MemberAccessConverter,
                       ownershipinfos :: List2 M.OwnershipInfo,
                     } deriving (PartialEq, Eq, Show)
 
@@ -33,11 +32,10 @@ normalizeFunctionInfo function_info = do
     (duplicator, result) <- duplicate duplicator function_info.result
     (duplicator, members) <- List2.mapS duplicator members duplicate
     (duplicator, converters) <- List2.mapS duplicator function_info.converters duplicate
-    (duplicator, member_access_converters) <- List2.mapS duplicator function_info.member_access_converters duplicate
     (duplicator, ownershipinfos) <- List2.mapS duplicator function_info.ownershipinfos duplicate
     members <- members |> List2.sort
     ownershipinfos <- ownershipinfos |> List2.sort
-    FunctionInfo args result members converters member_access_converters ownershipinfos
+    FunctionInfo args result members converters ownershipinfos
 
 enforceUnknownArgOwnership :: FunctionInfo -> FunctionInfo
 enforceUnknownArgOwnership function_info = do
@@ -53,9 +51,8 @@ duplicateFunctionInfo allocator function_info = do
     (duplicator, result) <- duplicate duplicator function_info.result
     (duplicator, members) <- List2.mapS duplicator function_info.members duplicate
     (duplicator, converters) <- List2.mapS duplicator function_info.converters duplicate
-    (duplicator, member_access_converters) <- List2.mapS duplicator function_info.member_access_converters duplicate
     (duplicator, ownershipinfos) <- List2.mapS duplicator function_info.ownershipinfos duplicate
-    (duplicator.allocator, FunctionInfo args result members converters member_access_converters ownershipinfos)
+    (duplicator.allocator, FunctionInfo args result members converters ownershipinfos)
 
 instance Apply FunctionInfo where
     apply applier function_info = do
@@ -63,11 +60,10 @@ instance Apply FunctionInfo where
         (applier, result) <- apply applier function_info.result
         (applier, members) <- apply applier function_info.members
         (applier, converters) <- apply applier function_info.converters
-        (applier, member_access_converters) <- apply applier function_info.member_access_converters
         (applier, ownershipinfos) <- apply applier function_info.ownershipinfos
         members <- List2.dedup (List2.sort members)
         converters <- List2.dedup (List2.sort converters)
-        function_info <- FunctionInfo args result members converters member_access_converters ownershipinfos
+        function_info <- FunctionInfo args result members converters ownershipinfos
         (applier, function_info)
 
 instance MemberOwner FunctionInfo where

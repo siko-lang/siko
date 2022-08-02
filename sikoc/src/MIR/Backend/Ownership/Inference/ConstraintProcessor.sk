@@ -235,34 +235,6 @@ processVariantAccess context variant = do
         (M.Borrower _, M.Owner) -> updateOwnership context var_info.ownership_var body_kind
         _ -> context
 
-processMemberAccessConverterConstraint :: Context -> C.MemberAccessConverterConstraint -> Context
-processMemberAccessConverterConstraint context converter = do
-    (context, container_kind) <- getOwnershipValue context converter.container
-    (context, member_kind) <- getOwnershipValue context converter.member
-    (context, result_kind) <- getOwnershipValue context converter.result
-    //trace2 context.config "processMemberAccessConverterConstraint {} {} {}" % (container_kind, member_kind, result_kind)
-    case (container_kind, member_kind, result_kind) of
-        (M.Owner, M.Owner, M.Unknown) -> updateOwnership context converter.result container_kind
-        (M.Owner, M.Owner, M.Borrower _) -> updateOwnership context converter.result M.Owner
-        (M.Borrower a, M.Owner, M.Unknown) -> do
-            (context, can_propagate) <- canPropagateBorrow context converter.result a
-            if can_propagate
-            then do updateOwnership context converter.result container_kind
-            else updateOwnership context converter.result M.Owner
-        (M.Borrower a, M.Owner, M.Borrower b) -> do
-            if a != b
-            then do updateOwnership context converter.result container_kind
-            else context
-        (_, M.Borrower a, M.Unknown) -> do
-            (context, can_propagate) <- canPropagateBorrow context converter.result a
-            if can_propagate
-            then do updateOwnership context converter.result member_kind
-            else updateOwnership context converter.result M.Owner
-        (_, M.Borrower a, M.Borrower b) -> do
-            if a != b
-            then do updateOwnership context converter.result member_kind
-            else context
-        _ -> context
 
 processConstraint :: Context -> C.Constraint -> Context
 processConstraint context constraint = do
@@ -272,7 +244,6 @@ processConstraint context constraint = do
         C.Converter converter -> processConverter context converter
         C.Variant variant -> processVariantAccess context variant
         C.FunctionConverter converter -> processFunctionConverter context converter
-        C.MemberAccessConverter converter -> processMemberAccessConverterConstraint context converter
 
 dumpOwnership :: Context -> Context
 dumpOwnership context = do

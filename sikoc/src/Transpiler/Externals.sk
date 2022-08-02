@@ -446,10 +446,14 @@ generateListIsEmpty program type_store arg_types result_type = do
 generateListSort :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateListSort program type_store arg_types result_type = do
     rust_type <- convertType result_type
+    list_type <- atIndex arg_types 0
     arg0 <- R.VarRef (getArgName 0)
-    inner0 <- R.FieldAccess innerValueField arg0
+    field_access0 <- R.FieldAccess innerValueField arg0
+    list_ref <- if LT.isRef list_type
+    then R.MethodCall field_access0 cloneName []
+    else field_access0
     new <- "new"
-    new_decl <- R.VarDeclMut new inner0 None
+    new_decl <- R.VarDeclMut new list_ref None
     sort_call <- R.MethodCall (R.VarRef new) "sort" []
     R.Block [new_decl, sort_call, R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef new)]]
 
@@ -481,12 +485,20 @@ generateListTail program type_store arg_types result_type = do
 generateListAdd :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateListAdd program type_store arg_types result_type = do
     rust_type <- convertType result_type
+    list_type0 <- atIndex arg_types 0
+    list_type1 <- atIndex arg_types 1
     field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
     field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
     new0 <- "new0"
-    new0_decl <- R.VarDeclMut new0 field_access0 None
+    list_ref0 <- if LT.isRef list_type0
+    then R.MethodCall field_access0 cloneName []
+    else field_access0
+    list_ref1 <- if LT.isRef list_type1
+    then R.MethodCall field_access1 cloneName []
+    else field_access1
+    new0_decl <- R.VarDeclMut new0 list_ref0 None
     new1 <- "new1"
-    new1_decl <- R.VarDecl new1 field_access1 None
+    new1_decl <- R.VarDecl new1 list_ref1 None
     add_call <- R.MethodCall (R.VarRef new0) "extend" [R.VarRef new1]
     struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef new0)]
     R.Block [new0_decl, new1_decl, add_call, struct_ctor]
@@ -494,9 +506,13 @@ generateListAdd program type_store arg_types result_type = do
 generateListPush :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateListPush program type_store arg_types result_type = do
     rust_type <- convertType result_type
+    list_type <- convertType (atIndex arg_types 0)
     field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
+    list_ref <- if RT.isRef list_type
+    then R.MethodCall field_access0 cloneName []
+    else field_access0
     new0 <- "new0"
-    new0_decl <- R.VarDeclMut new0 (field_access0) None
+    new0_decl <- R.VarDeclMut new0 list_ref None
     add_call <- R.MethodCall (R.VarRef new0) "push" [R.VarRef (getArgName 1)]
     struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef new0)]
     R.Block [new0_decl, add_call, struct_ctor]
@@ -504,6 +520,7 @@ generateListPush program type_store arg_types result_type = do
 generateListRemove :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateListRemove program type_store arg_types result_type = do
     rust_type <- convertType result_type
+    list_type <- convertType (atIndex arg_types 0)
     result_record <- case result_type of
         LT.Record i _ -> getRecord program i
         _ -> panic "Result is not a record in generateListRemove"
@@ -511,14 +528,16 @@ generateListRemove program type_store arg_types result_type = do
     list_field <- atIndex result_record.fields 1
     field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
     field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
+    list_ref <- if RT.isRef list_type
+    then R.MethodCall field_access0 cloneName []
+    else field_access0
     list <- "list"
-    list_decl <- R.VarDeclMut list field_access0 None
+    list_decl <- R.VarDeclMut list list_ref None
     index <- "index"
     index_decl <- R.VarDecl index field_access1 None
     remove_call <- R.MethodCall (R.VarRef list) "remove" [R.As (R.VarRef index) "usize"]
     removed <- "removed"
     remove_decl <- R.VarDecl removed remove_call None
-    list_type <- convertType (atIndex arg_types 0)
     list_ctor <- R.StructCtor (RT.showBase list_type) [R.FieldInitItem innerValueField (R.VarRef list)]
     struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem (getFieldName 1) list_ctor,
                                                          R.FieldInitItem (getFieldName 0) (R.VarRef removed)]
@@ -551,9 +570,13 @@ generateListSplit program type_store arg_types result_type = do
 generateListIntoIter :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateListIntoIter program type_store arg_types result_type = do
     rust_type <- convertType result_type
+    list_type <- atIndex arg_types 0
     field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
+    list_ref <- if LT.isRef list_type
+    then R.MethodCall field_access0 cloneName []
+    else field_access0
     new0 <- "new0"
-    new0_decl <- R.VarDecl new0 (R.MethodCall field_access0 cloneName []) None
+    new0_decl <- R.VarDecl new0 list_ref None
     into_iter_call <- R.MethodCall (R.VarRef new0) "into_iter" []
     struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField into_iter_call]
     R.Block [new0_decl, struct_ctor]
@@ -563,7 +586,7 @@ generateListNextItem program type_store arg_types result_type = do
     rust_type <- convertType result_type
     field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
     state <- "state"
-    state_decl <- R.VarDeclMut state (R.MethodCall field_access0 cloneName []) None
+    state_decl <- R.VarDeclMut state field_access0 None
     value <- "value"
     value_decl <- R.VarDecl value (R.MethodCall (R.VarRef state) "next" []) None
     item <- "item"
@@ -583,7 +606,6 @@ generateListNextItem program type_store arg_types result_type = do
     state_field <- atIndex tuple_record.fields 0
     value_field <- atIndex tuple_record.fields 1
     rust_state_type <- convertType state_field.type
-    clone_call <- R.MethodCall (R.VarRef item) cloneName []
     state_ctor <- R.StructCtor (RT.showBase rust_state_type) [R.FieldInitItem innerValueField (R.VarRef state)]
     tuple_ctor <- R.StructCtor (RT.showBase rust_item_type) [R.FieldInitItem (getFieldName 0) state_ctor,
                                                       R.FieldInitItem (getFieldName 1) (R.VarRef item)]
@@ -669,6 +691,21 @@ generateMapEmpty program type_store arg_types result_type = do
 
 generateMapInsert :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateMapInsert program type_store arg_types result_type = do
+    map_type <- atIndex arg_types 0
+    arg_key_type <- atIndex arg_types 1
+    arg_value_type <- atIndex arg_types 2
+    map_def <- getRecord program (LT.getIdentity map_type)
+    map_info <- Option.unwrap map_def.external_info
+    key_type <- atIndex map_info.type_args 0
+    value_type <- atIndex map_info.type_args 1
+    clone_key <- not (LT.isRef key_type) && LT.isRef arg_key_type
+    clone_value <- not (LT.isRef value_type) && LT.isRef arg_value_type
+    value_ref <- if clone_value
+    then R.MethodCall (R.VarRef (getArgName 2)) cloneName []
+    else R.VarRef (getArgName 2)
+    key_ref <- if clone_key
+    then R.MethodCall (R.VarRef (getArgName 1)) cloneName []
+    else R.VarRef (getArgName 1)
     rust_type <- convertType result_type
     result_record <- case result_type of
         LT.Record i _ -> getRecord program i
@@ -678,10 +715,13 @@ generateMapInsert program type_store arg_types result_type = do
     rust_map_type <- convertType map_field.type
     rust_value_type <- convertType value_field.type
     field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
+    map_ref <- if LT.isRef map_type
+    then R.MethodCall field_access0 cloneName []
+    else field_access0
     map <- "map"
     value <- "value"
-    map_decl <- R.VarDeclMut map (field_access0) None
-    insert_call <- R.MethodCall (R.VarRef map) "insert" [R.VarRef (getArgName 1), R.VarRef (getArgName 2)]
+    map_decl <- R.VarDeclMut map map_ref None
+    insert_call <- R.MethodCall (R.VarRef map) "insert" [key_ref, value_ref]
     some_pattern <- R.VariantPattern "Some" (Some value)
     none_pattern <- R.VariantPattern "None" None
     some_record_type <- getVariantRecordType program value_field.type "Some"
@@ -740,6 +780,7 @@ generateMapGetSize program type_store arg_types result_type = do
 generateMapRemove :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateMapRemove program type_store arg_types result_type = do
     rust_type <- convertType result_type
+    map_type <- atIndex arg_types 0
     result_record <- case result_type of
         LT.Record i _ -> getRecord program i
         _ -> panic "Result is not a record in generateMapInsert"
@@ -748,9 +789,12 @@ generateMapRemove program type_store arg_types result_type = do
     rust_map_type <- convertType map_field.type
     rust_value_type <- convertType value_field.type
     field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
+    map_ref <- if LT.isRef map_type
+    then R.MethodCall field_access0 cloneName []
+    else field_access0
     map <- "map"
     value <- "value"
-    map_decl <- R.VarDeclMut map field_access0 None
+    map_decl <- R.VarDeclMut map map_ref None
     remove_call <- R.MethodCall (R.VarRef map) "remove" [R.Ref (R.VarRef (getArgName 1))]
     some_pattern <- R.VariantPattern "Some" (Some value)
     none_pattern <- R.VariantPattern "None" None
@@ -775,9 +819,13 @@ generateMapRemove program type_store arg_types result_type = do
 generateMapIntoIter :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateMapIntoIter program type_store arg_types result_type = do
     rust_type <- convertType result_type
+    map_type <- atIndex arg_types 0
     field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
     new0 <- "new0"
-    new0_decl <- R.VarDecl new0 (R.MethodCall field_access0 cloneName []) None
+    map_ref <- if LT.isRef map_type
+    then (R.MethodCall field_access0 cloneName [])
+    else field_access0
+    new0_decl <- R.VarDecl new0 map_ref None
     into_iter_call <- R.MethodCall (R.VarRef new0) "into_iter" []
     collect <- R.MethodCall into_iter_call "collect" []
     v <- "v"
@@ -791,7 +839,7 @@ generateMapNextItem program type_store arg_types result_type = do
     rust_type <- convertType result_type
     field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
     state <- "state"
-    state_decl <- R.VarDeclMut state (R.MethodCall field_access0 cloneName []) None
+    state_decl <- R.VarDeclMut state field_access0 None
     value <- "value"
     value_decl <- R.VarDecl value (R.MethodCall (R.VarRef state) "next" []) None
     item <- "item"
@@ -812,7 +860,6 @@ generateMapNextItem program type_store arg_types result_type = do
     value_field <- atIndex tuple_record.fields 1
     rust_state_type <- convertType state_field.type
     rust_value_type <- convertType value_field.type
-    clone_call <- R.MethodCall (R.VarRef item) cloneName []
     value_tuple_record <- case value_field.type of
         LT.Record record_id _ -> getRecord program record_id
         _ -> panic "Item tuple is not a record"

@@ -53,7 +53,7 @@ createRecordCtorFunctionInfo context type =
                     then List2.push ownershipinfos (M.OwnershipInfo arg_info.ownership_var M.Owner)
                     else ownershipinfos
                     (allocator, args, members, ownershipinfos))
-            FunctionInfo args result members List2.empty List2.empty ownershipinfos
+            FunctionInfo args result members List2.empty ownershipinfos
         _ -> panic "createRecordCtorFunctionInfo: not a record"
 
 createVariantctorFunctionInfo :: Context -> Int -> T.Type -> FunctionInfo
@@ -62,27 +62,31 @@ createVariantctorFunctionInfo context index type =
         T.Adt id -> do
             (program, adt) <- P.getAdt context.program id
             context <- context { program = program }
-            variant <- atIndex adt.variants index
-            case variant.type of
-                T.Record id -> do
-                    (program, record) <- P.getRecord context.program id
-                    context <- context { program = program }
-                    allocator <- createAllocator
-                    (allocator, adt_result) <- getNextTypeVariableInfo allocator
-                    (allocator, record_result) <- getNextTypeVariableInfo allocator
-                    ownershipinfos <- List2.single (M.OwnershipInfo record_result.ownership_var M.Owner)
-                    (allocator, args, members, ownershipinfos) <- List.fold (allocator, List2.empty, List2.empty, ownershipinfos) record.fields (\(allocator, args, members, ownershipinfos), field -> do
-                            (allocator, arg_info) <- getNextTypeVariableInfo allocator
-                            member <- M.MemberInfo (M.Field field.index) record_result.arg_group_var arg_info
-                            members <- List2.push members member
-                            args <- List2.push args arg_info
-                            ownershipinfos <- if List.contains context.program.copyables (T.getIdentity field.type)
-                            then List2.push ownershipinfos (M.OwnershipInfo arg_info.ownership_var M.Owner)
-                            else ownershipinfos
-                            (allocator, args, members, ownershipinfos))
-                    variants <- List2.single (M.MemberInfo (M.Variant index) adt_result.arg_group_var record_result)
-                    FunctionInfo args adt_result (members + variants) List2.empty List2.empty ownershipinfos
-                _ -> panic "createVariantctorFunctionInfo: not a record"
+            allocator <- createAllocator
+            (allocator, result) <- getNextTypeVariableInfo allocator
+            (context, allocator, args, members, ownershipinfos, current) <- List.fold (context, allocator, List2.empty, List2.empty, List2.empty, 0) adt.variants (\(context, allocator, args, members, ownershipinfos, current), variant ->
+                case variant.type of
+                    T.Record id -> do
+                        (allocator, record_result) <- getNextTypeVariableInfo allocator
+                        ownershipinfos <- List2.push ownershipinfos (M.OwnershipInfo record_result.ownership_var M.Owner)
+                        members <- List2.push members (M.MemberInfo (M.Variant current) result.arg_group_var record_result)
+                        if current == index
+                        then do
+                            (program, record) <- P.getRecord context.program id
+                            context <- context { program = program }
+                            (allocator, args, members, ownershipinfos) <- List.fold (allocator, args, members, ownershipinfos) record.fields (\(allocator, args, members, ownershipinfos), field -> do
+                                (allocator, arg_info) <- getNextTypeVariableInfo allocator
+                                member <- M.MemberInfo (M.Field field.index) record_result.arg_group_var arg_info
+                                members <- List2.push members member
+                                args <- List2.push args arg_info
+                                ownershipinfos <- if List.contains context.program.copyables (T.getIdentity field.type)
+                                then List2.push ownershipinfos (M.OwnershipInfo arg_info.ownership_var M.Owner)
+                                else ownershipinfos
+                                (allocator, args, members, ownershipinfos))
+                            (context, allocator, args, members, ownershipinfos, current + 1)
+                        else (context, allocator, args, members, ownershipinfos, current + 1)
+                    _ -> panic "createVariantctorFunctionInfo: not a record")
+            FunctionInfo args result members List2.empty ownershipinfos
         _ -> panic "createVariantctorFunctionInfo: not an adt"
 
 processFunctionInfo :: Context -> FunctionInfo -> P.Identity -> (Context, Bool)

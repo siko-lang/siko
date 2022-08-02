@@ -45,7 +45,6 @@ data FunctionInfoBase = { args :: List2 TypeVariableInfo,
                           result :: TypeVariableInfo,
                           members :: List2 M.MemberInfo,
                           converters :: List2 Converter,
-                          member_access_converters :: List2 MemberAccessConverter,
                           relevant_ownership_vars :: List2 OwnershipTypeVariable,
                           result_only_vars :: List2 OwnershipTypeVariable,
                         } deriving (Show)
@@ -57,7 +56,6 @@ data InferenceInfo = { expr_type_variables :: Map2 GlobalExprId TypeVariableInfo
                        ownership_values :: Map2 OwnershipTypeVariable M.OwnershipKind,
                        members :: List2 M.MemberInfo,
                        converters :: List2 Converter,
-                       member_access_converters :: List2 MemberAccessConverter,
                        allocator :: Allocator,
                        function_converters :: Map2 E.ExprId (List2 Converter),
                        group_function_converters :: Map2 P.Identity (List2 Converter),
@@ -82,13 +80,12 @@ createInferenceInfoFromLoweringInfo lowering_info function_id = do
     allocator <- lowering_info.allocator
     members <- lowering_info.members
     converters <- List2.empty
-    member_access_converters <- List2.empty
     function_converters <- Map2.empty
     group_function_converters <- Map2.empty
     borrow_sets <- Map2.empty
     group <- List2.single function_id
     inference_info <- InferenceInfo expr_type_variables var_type_variables group
-        function_infos ownership_values members converters member_access_converters allocator
+        function_infos ownership_values members converters allocator
         function_converters group_function_converters borrow_sets  Map2.empty Map2.empty Map2.empty Map2.empty
     (inference_info, external_borrows) <- List2.fold (inference_info, List2.empty) lowering_info.ownershipinfos (\(inference_info, external_borrows), ownershipinfo -> do
             (inference_info, external_borrows, v, kind) <- case ownershipinfo of
@@ -147,7 +144,7 @@ createInferenceInfo = do
     function_converters <- Map2.empty
     group_function_converters <- Map2.empty
     borrow_sets <- Map2.empty
-    InferenceInfo Map2.empty Map2.empty List2.empty function_infos ownership_values List2.empty List2.empty List2.empty allocator
+    InferenceInfo Map2.empty Map2.empty List2.empty function_infos ownership_values List2.empty List2.empty allocator
             function_converters group_function_converters borrow_sets Map2.empty Map2.empty Map2.empty Map2.empty
 
 createBorrowSet :: InferenceInfo -> Borrow -> (InferenceInfo, BorrowId)
@@ -160,7 +157,9 @@ createBorrowSet inference_info borrow = do
     (inference_info { allocator = allocator, borrow_sets = borrow_sets }, id)
 
 createBorrowSetForExpr :: InferenceInfo -> E.ExprId -> (InferenceInfo, BorrowId)
-createBorrowSetForExpr inference_info expr_id = createBorrowSet inference_info (Local expr_id)
+createBorrowSetForExpr inference_info expr_id = do
+    (inference_info, id) <- createBorrowSet inference_info (Local expr_id)
+    (inference_info, id)
 
 createBorrowSetForExternal :: InferenceInfo -> BorrowId -> (InferenceInfo, BorrowId)
 createBorrowSetForExternal inference_info external_id = do
@@ -229,11 +228,6 @@ addConverter :: InferenceInfo -> Converter -> InferenceInfo
 addConverter inference_info converter = do
     converters <- List2.push inference_info.converters converter
     inference_info { converters = converters }
-
-addMemberAccessConverter :: InferenceInfo -> MemberAccessConverter -> InferenceInfo
-addMemberAccessConverter inference_info member_access_converter = do
-    member_access_converters <- List2.push inference_info.member_access_converters member_access_converter
-    inference_info { member_access_converters = member_access_converters }
 
 addOwnership :: InferenceInfo -> OwnershipTypeVariable -> M.OwnershipKind -> InferenceInfo
 addOwnership inference_info var kind = do
@@ -376,7 +370,6 @@ createFunctionInfoBase config inference_info function_id = do
     // println "var_type_variables: {}" % Map2.getSize inference_info.var_type_variables
     // println "ownership_values: {}" % Map2.getSize inference_info.ownership_values
     // println "borrow_sets: {}" % Map2.getSize inference_info.borrow_sets
-    // println "member_access_converters: {}" % List2.getLength inference_info.member_access_converters
 
     members <- inference_info.members
     (members, group_dep_map, deps_map, groups) <- calculateGroupDepMap config members
@@ -403,12 +396,6 @@ createFunctionInfoBase config inference_info function_id = do
             List2.push vars member.info.ownership_var)
     relevant_ownership_vars <- input_ownership_vars + output_ownership_vars
 
-    (relevant_ownership_vars, filtered_member_access_converters) <- List2.filterS relevant_ownership_vars inference_info.member_access_converters (\relevant_ownership_vars, converter -> do
-        match <- List2.contains relevant_ownership_vars converter.container &&
-          List2.contains relevant_ownership_vars converter.member &&
-          List2.contains relevant_ownership_vars converter.result
-        (relevant_ownership_vars, match))
-
     converters <- mergeConverters config inference_info.converters
     ((input_ownership_vars, output_ownership_vars), filtered_converters) <- List2.filterS (input_ownership_vars, output_ownership_vars) converters (\(input_ownership_vars, output_ownership_vars), converter -> do
         match <- List2.contains input_ownership_vars converter.from && List2.contains output_ownership_vars converter.to
@@ -419,7 +406,6 @@ createFunctionInfoBase config inference_info function_id = do
     result_only_vars <- output_ownership_vars
 
     converter_results <- List2.fold List2.empty filtered_converters (\converter_results, converter -> List2.push converter_results converter.to)
-    converter_results <- List2.fold converter_results filtered_member_access_converters (\converter_results, converter -> List2.push converter_results converter.result)
 
     (_, result_only_vars) <- List2.filterS input_ownership_vars result_only_vars (\input_ownership_vars, var -> do
         r <- not (List2.contains input_ownership_vars var)
@@ -429,7 +415,7 @@ createFunctionInfoBase config inference_info function_id = do
         (converter_results, r))
 
     (inference_info, FunctionInfoBase function_inference_info.args function_inference_info.result
-        members filtered_converters filtered_member_access_converters relevant_ownership_vars result_only_vars)
+        members filtered_converters relevant_ownership_vars result_only_vars)
 
 toFunctionInfo :: Config -> InferenceInfo -> P.Identity -> (InferenceInfo, FunctionInfo)
 toFunctionInfo config inference_info function_id = do
@@ -455,7 +441,7 @@ toFunctionInfo config inference_info function_id = do
         else (result_only_vars, info))
 
     (inference_info, FunctionInfo function_info_base.args function_info_base.result
-        function_info_base.members function_info_base.converters function_info_base.member_access_converters filtered_ownershipinfos)
+        function_info_base.members function_info_base.converters filtered_ownershipinfos)
 
 instance Apply FunctionInferenceInfo where
     apply applier function_inference_info = do
@@ -490,13 +476,12 @@ instance Apply InferenceInfo where
 
         (applier, members) <- apply applier inference_info.members
         (applier, converters) <- apply applier inference_info.converters
-        (applier, member_access_converters) <- apply applier inference_info.member_access_converters
         (applier, function_converters) <- apply applier inference_info.function_converters
         (applier, group_function_converters) <- apply applier inference_info.group_function_converters
 
         members <- List2.dedup (List2.sort members)
         converters <- List2.dedup (List2.sort converters)
-        inference_info <- InferenceInfo expr_type_variables var_type_variables inference_info.group function_infos inference_info.ownership_values members converters member_access_converters inference_info.allocator
+        inference_info <- InferenceInfo expr_type_variables var_type_variables inference_info.group function_infos inference_info.ownership_values members converters inference_info.allocator
             function_converters group_function_converters inference_info.borrow_sets inference_info.external_borrows inference_info.interrnal_borrows inference_info.initials inference_info.function_info_bases
         (inference_info, ownership_values) <- Map2.fold (inference_info, Map2.empty) merged_ownership_values (\(inference_info, ownership_values), (var, kinds) -> do
             kinds <- kinds |> List2.sort |> List2.dedup

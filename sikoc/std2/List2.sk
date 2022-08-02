@@ -72,10 +72,10 @@ instance (Ord a) => Ord (List2 a) where
 instance Add List2 a where
     opAdd a b = addList a b
 
-cmpList a :: ~List2 a -> ~List2 a -> ~Ordering
+cmpList a :: List2 a -> List2 a -> ~Ordering
 cmpList a b = extern
 
-addList a :: ~List2 a -> ~List2 a -> ~List2 a
+addList a :: List2 a -> List2 a -> ~List2 a
 addList a b = extern
 
 @Inline
@@ -88,13 +88,13 @@ single item = do
     l <- List2.empty
     push l item
 
-push a :: ~List2 a -> ~a -> ~List2 a
+push a :: List2 a -> a -> ~List2 a
 push l item = extern
 
-withCapacity a :: ~Int -> ~List2 a
+withCapacity a :: Int -> ~List2 a
 withCapacity capacity = extern
 
-atIndex a :: &l0 List2 a -> ~Int -> &l0 a
+atIndex a :: List2 a -> Int -> a
 atIndex index l = extern
 
 data ListIter a = { inner :: ListIterator a }
@@ -113,7 +113,7 @@ iter l = ListIter (List2.intoIter l)
 
 data ListIterator a = extern
 
-intoIter a :: ~List2 a -> ~ListIterator a
+intoIter a :: ~List2 ~a -> ~ListIterator a
 intoIter list = extern
 
 nextItem a :: ~ListIterator a -> ~Option (~ListIterator a, a)
@@ -129,10 +129,10 @@ removeLast list = do
     i <- List2.getLength list
     List2.remove list (i - 1)
 
-getLength a :: &l0 List2 a -> ~Int
+getLength a :: List2 a -> ~Int
 getLength l = extern
 
-isEmpty a :: &l0 List2 a -> ~Bool
+isEmpty a :: List2 a -> ~Bool
 isEmpty l = extern
 
 @Inline

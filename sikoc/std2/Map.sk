@@ -83,7 +83,7 @@ instance (Eq k, Eq v) => Eq Map k v
 empty k v :: (Ord k) => ~Map k v
 empty = extern
 
-insert k v :: (Ord k) => ~Map k v -> k -> v -> ~(~Map k v, ~Option v)
+insert k v :: (Ord k) => Map k v -> k -> v -> ~(~Map k v, ~Option v)
 insert m k v = extern
 
 @Inline
@@ -92,10 +92,10 @@ put m k v = do
     (m, _) <- insert m k v
     m
 
-get k v :: (Ord k) => &l0 Map k v -> k -> ~Option (&l0 v)
+get k v :: (Ord k) => Map k v -> k -> ~Option v
 get m k = extern
 
-remove k v :: (Ord k) => ~Map k v -> k -> ~(~Map k v, ~Option v)
+remove k v :: (Ord k) => Map k v -> k -> ~(~Map k v, ~Option v)
 remove m k = extern
 
 @Inline
@@ -163,7 +163,7 @@ toMap iter = Iterator.fold (\m, (k, v) -> do
     (m, _) <- insert m k v
     m) empty iter
 
-getSize k v :: ~Map k v -> ~Int
+getSize k v :: Map k v -> ~Int
 getSize m = extern
 
 @Inline
