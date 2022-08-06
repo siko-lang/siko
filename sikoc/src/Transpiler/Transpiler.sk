@@ -237,22 +237,60 @@ convertExpr context lir_expr = do
             expr <- convertExpr context expr
             boxExpr expr
 
-convertRecord :: LD.Record -> Map ExternalId ExternStructBuilder -> R.Struct
-convertRecord record external_struct_gens = do
-    name <- getRustIdentity record.id
+convertRecord :: Program -> LD.Record -> Map ExternalId ExternStructBuilder -> R.Struct
+convertRecord program record external_struct_gens = do
+    Identity mod name id <- record.id
     lifetimes <- convertLifetimes record.lifetimes
-    rust_fields <- case record.external_info of
-        Some info -> do
-            info :: LD.ExternalRecordInfo <- info
-            Identity mod name _ <- record.id
-            id <- ExternalId mod name
-            case get external_struct_gens id of
-                Some struct_gen -> do
-                    ExternStructBuilder struct_gen <- struct_gen
-                    struct_gen info.type_args
-                None -> panic "Extern struct {}/{} is not implemented" % (mod, name)
-        None ->
-            List.mapE record.fields (\index, field -> R.StructField (getFieldName index) (convertType field.type))
+    rust_fields <- if (mod == "List" || mod == "List2") && name == "ListIterator"
+    then do
+        field <- atIndex record.fields 0
+        case field.type of
+            LT.Ref lifetime ty -> do
+                list_id <- LT.getIdentity ty
+                list_record <- getRecord program list_id
+                info <- Option.unwrap list_record.external_info
+                member_ty <- atIndex info.type_args 0
+                member_ty <- case member_ty of
+                    LT.Ref old ty -> do
+                        member_lifetime <- atIndex record.lifetimes 1
+                        LT.Ref member_lifetime ty
+                    LT.Record i inner_lifetimes -> if List.isEmpty inner_lifetimes
+                        then LT.Record i inner_lifetimes
+                        else do
+                            (_, other_lifetimes) <- List.remove record.lifetimes 0
+                            LT.Record i other_lifetimes
+                    LT.Adt i inner_lifetimes -> if List.isEmpty inner_lifetimes
+                        then LT.Adt i inner_lifetimes
+                        else do
+                            (_, other_lifetimes) <- List.remove record.lifetimes 0
+                            LT.Adt i other_lifetimes
+                    ty -> ty
+                [R.StructField innerValueField (RT.Named ("std::slice::Iter<{}, {}>" % (lifetime, RT.showAll (convertType member_ty))) [])]
+            ty -> do
+                list_id <- LT.getIdentity ty
+                list_record <- getRecord program list_id
+                info <- Option.unwrap list_record.external_info
+                member_ty <- atIndex info.type_args 0
+                member_ty <- case member_ty of
+                    LT.Ref _ ty -> do
+                        member_lifetime <- atIndex record.lifetimes 0
+                        LT.Ref member_lifetime ty
+                    ty -> ty
+                [R.StructField innerValueField (RT.Named ("std::vec::IntoIter<{}>" % RT.showAll (convertType member_ty)) [])]
+    else do
+        case record.external_info of
+            Some info -> do
+                info :: LD.ExternalRecordInfo <- info
+                Identity mod name _ <- record.id
+                id <- ExternalId mod name
+                case get external_struct_gens id of
+                    Some struct_gen -> do
+                        ExternStructBuilder struct_gen <- struct_gen
+                        struct_gen info.type_args
+                    None -> panic "Extern struct {}/{} is not implemented" % (mod, name)
+            None ->
+                List.mapE record.fields (\index, field -> R.StructField (getFieldName index) (convertType field.type))
+    name <- getRustIdentity record.id
     R.Struct name lifetimes rust_fields [R.Clone]
 
 convertAdt :: LD.AlgebraicDataType -> R.Enum
@@ -392,12 +430,12 @@ transpile program = do
         enums <- push rust_program.enums enum
         rust_program <- rust_program { enums = enums }
         (type_store, rust_program))
-    (type_store, rust_program) <- Map.fold (type_store, rust_program) program.records (\(type_store, rust_program), (_, record) -> do
-        struct <- convertRecord record external_structs
+    (type_store, rust_program, program) <- Map.fold (type_store, rust_program, program) program.records (\(type_store, rust_program, program), (_, record) -> do
+        struct <- convertRecord program record external_structs
         type_store <- addStruct type_store struct
         structs <- push rust_program.structs struct
         rust_program <- rust_program { structs = structs }
-        (type_store, rust_program))
+        (type_store, rust_program, program))
     constructors <- createConstructors program
     context <- Context type_store None constructors external_functions
     rust_program <- Map.fold rust_program program.adts (\rust_program, (_, adt) -> do

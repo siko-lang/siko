@@ -102,7 +102,8 @@ lowerFunction context lowering_info mir_id lir_id = do
         MF.Extern type_mapping -> do
             lir_kind <- LF.Extern
             (context, lir_function_type, lifetimes) <- lowerFunctionType context lowering_info function.type
-            lifetime_dependencies <- []
+            lifetime_dependencies <- List2.map lowering_info.lifetime_dependencies lowerLifetimeDependency
+            lifetime_dependencies <- List2.asList lifetime_dependencies
             lir_function <- LF.Function lir_id lifetimes lifetime_dependencies lir_kind lir_function_type
             context <- addFunction context lir_function
             context

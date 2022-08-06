@@ -86,7 +86,7 @@ createInferenceInfoFromLoweringInfo lowering_info function_id = do
     group <- List2.single function_id
     inference_info <- InferenceInfo expr_type_variables var_type_variables group
         function_infos ownership_values members converters allocator
-        function_converters group_function_converters borrow_sets  Map2.empty Map2.empty Map2.empty Map2.empty
+        function_converters group_function_converters borrow_sets Map2.empty Map2.empty Map2.empty Map2.empty
     (inference_info, external_borrows) <- List2.fold (inference_info, List2.empty) lowering_info.ownershipinfos (\(inference_info, external_borrows), ownershipinfo -> do
             (inference_info, external_borrows, v, kind) <- case ownershipinfo of
                 M.OwnershipInfo v M.Unknown -> panic "Unknown ownership in createInferenceInfoFromLoweringInfo"
@@ -157,9 +157,7 @@ createBorrowSet inference_info borrow = do
     (inference_info { allocator = allocator, borrow_sets = borrow_sets }, id)
 
 createBorrowSetForExpr :: InferenceInfo -> E.ExprId -> (InferenceInfo, BorrowId)
-createBorrowSetForExpr inference_info expr_id = do
-    (inference_info, id) <- createBorrowSet inference_info (Local expr_id)
-    (inference_info, id)
+createBorrowSetForExpr inference_info expr_id = createBorrowSet inference_info (Local expr_id)
 
 createBorrowSetForExternal :: InferenceInfo -> BorrowId -> (InferenceInfo, BorrowId)
 createBorrowSetForExternal inference_info external_id = do

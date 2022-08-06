@@ -569,24 +569,42 @@ generateListSplit program type_store arg_types result_type = do
 
 generateListIntoIter :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateListIntoIter program type_store arg_types result_type = do
+    iterator_id <- LT.getIdentity result_type
+    iterator_record <- getRecord program iterator_id
+    iter_list_type <- (atIndex iterator_record.fields 0).type
     rust_type <- convertType result_type
     list_type <- atIndex arg_types 0
     field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
     list_ref <- if LT.isRef list_type
-    then R.MethodCall field_access0 cloneName []
+    then if LT.isRef iter_list_type
+        then R.Ref field_access0
+        else R.MethodCall field_access0 cloneName []
     else field_access0
     new0 <- "new0"
     new0_decl <- R.VarDecl new0 list_ref None
-    into_iter_call <- R.MethodCall (R.VarRef new0) "into_iter" []
-    struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField into_iter_call]
+    iter_call <- if LT.isRef iter_list_type
+    then R.MethodCall (R.VarRef new0) "iter" []
+    else R.MethodCall (R.VarRef new0) "into_iter" []
+    struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField iter_call]
     R.Block [new0_decl, struct_ctor]
 
 generateListNextItem :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateListNextItem program type_store arg_types result_type = do
     rust_type <- convertType result_type
+    iterator_type <- atIndex arg_types 0
+    iterator_id <- LT.getIdentity iterator_type
+    iterator_record <- getRecord program iterator_id
+    list_type <- (atIndex iterator_record.fields 0).type
+    list_id <- LT.getIdentity list_type
+    list_record <- getRecord program list_id
+    list_info <- Option.unwrap list_record.external_info
+    iterator_item_type <- atIndex list_info.type_args 0
     field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
+    iter_ref <- if LT.isRef iterator_type
+    then R.MethodCall field_access0 cloneName []
+    else field_access0
     state <- "state"
-    state_decl <- R.VarDeclMut state field_access0 None
+    state_decl <- R.VarDeclMut state iter_ref None
     value <- "value"
     value_decl <- R.VarDecl value (R.MethodCall (R.VarRef state) "next" []) None
     item <- "item"
@@ -602,13 +620,16 @@ generateListNextItem program type_store arg_types result_type = do
     rust_item_type <- convertType item_field.type
     tuple_record <- case item_field.type of
         LT.Record record_id _ -> getRecord program record_id
-        _ -> panic "Tuple is not a record"
+        ty -> panic "Tuple is not a record {}" % ty
     state_field <- atIndex tuple_record.fields 0
     value_field <- atIndex tuple_record.fields 1
     rust_state_type <- convertType state_field.type
+    item_ref <- if not (LT.isRef value_field.type) && (LT.isRef iterator_item_type || LT.isRef iterator_type)
+    then R.MethodCall (R.VarRef item) cloneName []
+    else R.VarRef item
     state_ctor <- R.StructCtor (RT.showBase rust_state_type) [R.FieldInitItem innerValueField (R.VarRef state)]
     tuple_ctor <- R.StructCtor (RT.showBase rust_item_type) [R.FieldInitItem (getFieldName 0) state_ctor,
-                                                      R.FieldInitItem (getFieldName 1) (R.VarRef item)]
+                                                      R.FieldInitItem (getFieldName 1) item_ref]
     some_ctor <- R.StructCtor (RT.showBase rust_some_record_type) [R.FieldInitItem (getFieldName 0) tuple_ctor]
     none_ctor <- R.StructCtor (RT.showBase rust_none_record_type) []
     some_case <- R.MatchCase some_pattern (R.FunctionCall ("{}::Some" % RT.showBase rust_result_type) [some_ctor]) None

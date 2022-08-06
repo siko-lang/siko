@@ -13,6 +13,8 @@ import Siko.MIR.Backend.Ownership.FunctionInfoStore
 import Siko.MIR.Backend.Ownership.Lowering.Type
 import Siko.MIR.Backend.Ownership.Allocator
 import Siko.MIR.Backend.Ownership.TypeVariableInfo
+import Siko.MIR.Backend.Ownership.DataGroupInfo
+import Siko.MIR.Backend.Ownership.EqualitySolver
 import Siko.MIR.Program as MP
 import Siko.LIR.Program as LP
 import Siko.MIR.Data as MD
@@ -22,6 +24,18 @@ import Siko.LIR.Type as LT
 
 import Map
 import List2
+
+data MemberMerger = { members :: List2 M.MemberInfo }
+
+instance Apply MemberMerger where
+    apply applier merger = do
+        (applier, members) <- apply applier merger.members
+        members <- List2.dedup (List2.sort members)
+        merger <- MemberMerger members
+        (applier, merger)
+
+instance MemberOwner MemberMerger where
+    getMembers merger = merger.members
 
 lowerExternalRecordInfo :: TypeLoweringInfo -> Context -> MD.ExternalRecordInfo -> FilterInfo -> (Context, LD.ExternalRecordInfo, FilterInfo)
 lowerExternalRecordInfo lowering_info context mir_external_record_info filter_info = do
@@ -47,27 +61,43 @@ lowerVariant lowering_info (context, filter_info) index mir_variant = do
     (context, lir_type) <- lowerType context lowering_info mir_variant.type
     ((context, filter_info), LD.Variant mir_variant.name lir_type)
 
-processExternalClassImpl ::TypeLoweringInfo -> Context -> MD.ExternalClassImpl -> (Context, LD.ExternalClassImpl)
-processExternalClassImpl lowering_info context mir_class_impl =
-    case mir_class_impl of
+expandMembers :: Context -> List2 M.MemberInfo -> Allocator -> MP.Identity -> GroupTypeVariable -> (Context, List2 M.MemberInfo, Allocator)
+expandMembers context members allocator type_id group_var = do
+    (data_group_info_store, allocator, group_info) <- getDataGroupInfo context.data_group_info_store allocator type_id
+    context <- context { data_group_info_store = data_group_info_store }
+    (members, equals) <- case (group_info) of
+        Some (data_group_info, var_info) -> do
+            data_group_info :: DataGroupInfo <- data_group_info // FIXME
+            var_info :: TypeVariableInfo <- var_info // FIXME
+            (members + data_group_info.members, List2.single (EqualGroup group_var var_info.arg_group_var))
+        None -> (members, List2.empty)
+    merger <- MemberMerger members
+    merger <- processEquals equals merger
+    (context, merger.members, allocator)
+
+processExternalClassImpl :: TypeLoweringInfo -> MP.Identity -> LP.Identity -> Context -> MD.ExternalClassImpl -> (Context, Option LD.ExternalClassImpl)
+processExternalClassImpl lowering_info mir_id lir_id context mir_class_impl =
+    if List2.contains context.external_member_List lir_id
+    then (context, None)
+    else case mir_class_impl of
         MD.Show id -> do
-            (context, lir_id) <- processClassImplCall context lowering_info id 1
-            (context, LD.Show lir_id)
+            (context, lir_id) <- processClassImplCall context lowering_info id mir_id 1
+            (context, Some (LD.Show lir_id))
         MD.PartialEq id -> do
-            (context, lir_id) <- processClassImplCall context lowering_info id 2
-            (context, LD.PartialEq lir_id)
+            (context, lir_id) <- processClassImplCall context lowering_info id mir_id 2
+            (context, Some (LD.PartialEq lir_id))
         MD.Eq -> do
-            (context, LD.Eq)
+            (context, Some LD.Eq)
         MD.PartialOrd id -> do
-            (context, lir_id) <- processClassImplCall context lowering_info id 2
-            (context, LD.PartialOrd lir_id)
+            (context, lir_id) <- processClassImplCall context lowering_info id mir_id 2
+            (context, Some (LD.PartialOrd lir_id))
         MD.Ord id -> do
-            (context, lir_id) <- processClassImplCall context lowering_info id 2
-            (context, LD.Ord lir_id)
+            (context, lir_id) <- processClassImplCall context lowering_info id mir_id 2
+            (context, Some (LD.Ord lir_id))
         MD.Copy -> panic "Copy class impl in LIR lowering!"
     where
-        processClassImplCall :: Context -> TypeLoweringInfo -> MP.Identity -> Int -> (Context, LP.Identity)
-        processClassImplCall context lowering_info id arg_count = do
+        processClassImplCall :: Context -> TypeLoweringInfo -> MP.Identity -> MP.Identity -> Int -> (Context, LP.Identity)
+        processClassImplCall context lowering_info impl_id mir_id arg_count = do
             (allocator, result) <- getNextTypeVariableInfo lowering_info.allocator
             (allocator, arg) <- getNextTypeVariableInfo allocator
             (allocator, borrow_id) <- getNextBorrowId allocator
@@ -78,9 +108,11 @@ processExternalClassImpl lowering_info context mir_class_impl =
                 _ -> panic "External class impl with {} arg count" % arg_count
             ownershipinfos <- List2.push lowering_info.ownershipinfos (M.OwnershipInfo arg.ownership_var (M.Borrower borrow_id))
             ownershipinfos <- List2.push ownershipinfos (M.OwnershipInfo result.ownership_var M.Owner)
-            lowering_info <- FunctionLoweringInfo lowering_info.members args result ownershipinfos allocator List2.empty
+            members <- lowering_info.members
+            (context, members, allocator) <- expandMembers context lowering_info.members allocator mir_id arg.arg_group_var
+            lowering_info <- FunctionLoweringInfo members args result ownershipinfos allocator List2.empty
             (lowering_info, _) <- normalizeFunctionLoweringInfo context.config lowering_info
-            lir_key <- FunctionKey id lowering_info
+            lir_key <- FunctionKey impl_id lowering_info
             (context, lir_id) <- getLIRId context lir_key
             context <- addItem context lir_key
             (context, lir_id)
@@ -88,17 +120,24 @@ processExternalClassImpl lowering_info context mir_class_impl =
 lowerRecord :: Context -> TypeLoweringInfo -> MP.Identity -> LP.Identity -> Context
 lowerRecord context lowering_info mir_id lir_id = do
     trace context.config "Lowering record {} {} {}" % (mir_id, lir_id, lowering_info)
+    MP.Identity mod name _ <- mir_id
+    external_member_holder <- (mod == "List" || mod == "List2") && (name == "ListIterator")
     (mir_program, mir_record) <- MP.getRecord context.mir_program mir_id
     context <- context { mir_program = mir_program }
     (lowering_info, filter_info) <- buildFilterInfoFromTypeLoweringInfo context.config lowering_info
     ((context, filter_info), fields) <- List.mapSE (context, filter_info) mir_record.fields (lowerField lowering_info)
+    context <- if external_member_holder
+    then List.fold context fields (\context, field -> do
+        external_member_List <- List2.push context.external_member_List (LT.getIdentity field.type)
+        context { external_member_List = external_member_List })
+    else context
     lifetimes <- collectLifetimes lowering_info.ownershipinfos
     (context, external_info) <- case mir_record.external_info of
         Some external_info -> do
             (context, external_info, filter_info) <- lowerExternalRecordInfo lowering_info context external_info filter_info
             (context, Some external_info)
         None -> (context, None)
-    (context, external_class_impls) <- List.mapS context mir_record.external_class_impls (processExternalClassImpl lowering_info)
+    (context, external_class_impls) <- List.filterMapS context mir_record.external_class_impls (processExternalClassImpl lowering_info mir_id lir_id)
     lir_record <- LD.Record lir_id lifetimes fields external_info external_class_impls
     context <- addRecord context lir_record
     context
@@ -111,7 +150,7 @@ lowerAdt context lowering_info mir_id lir_id = do
     (lowering_info, filter_info) <- buildFilterInfoFromTypeLoweringInfo context.config lowering_info
     ((context, filter_info), variants) <- List.mapSE (context, filter_info) mir_adt.variants (lowerVariant lowering_info)
     lifetimes <- collectLifetimes lowering_info.ownershipinfos
-    (context, external_class_impls) <- List.mapS context mir_adt.external_class_impls (processExternalClassImpl lowering_info)
+    (context, external_class_impls) <- List.filterMapS context mir_adt.external_class_impls (processExternalClassImpl lowering_info mir_id lir_id)
     lir_adt <- LD.AlgebraicDataType lir_id lifetimes variants external_class_impls
     context <- addAdt context lir_adt
     context
