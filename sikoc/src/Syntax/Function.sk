@@ -8,6 +8,19 @@ import Siko.Syntax.Attribute
 import Siko.Syntax.Pattern
 import Siko.Syntax.Module as M
 
+data ConstraintPath = Argument Int
+                    | Field Int ConstraintPath
+                    | Extern Int ConstraintPath
+                    | Variant Int ConstraintPath
+                    | Result
+                    deriving (Show)
+
+data Converter = { from :: ConstraintPath,
+                   to :: ConstraintPath,
+                 } deriving (Show)
+
+data ExternConstraint = ExternConverter Converter deriving (Show)
+
 data EffectSignature = { name :: Ident,
                          arguments :: [Ident],
                        } deriving (Show)
@@ -25,4 +38,5 @@ data Function = { name :: Ident,
                   body :: Option Expr,
                   sub_items :: [M.Item],
                   attributes :: [Attribute],
+                  extern_constraints :: [ExternConstraint],
                 } deriving (Show)

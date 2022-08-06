@@ -4,6 +4,7 @@ import Siko.HIR.Type as HT
 import Siko.HIR.Data as HD
 import Siko.HIR.Program as HP
 import Siko.MIR.Function as MF
+import Siko.HIR.Function as HF
 import Siko.HIR.Backend.Lowering.TypeStore as TS
 import Siko.HIR.Backend.Unification as U
 import Siko.HIR.Backend.Lowering as L
@@ -15,8 +16,26 @@ data Context = { var_mappings :: Map String [MF.Position],
                  ref_positions :: Map Int [MF.Position],
                  lowering_context :: L.Context }
 
-createTypeMap :: L.Context -> HT.Type -> Int -> MF.TypeMapping
-createTypeMap lowering_context type arg_count = do
+convertPath :: HF.ConstraintPath -> MF.Position
+convertPath path = MF.Position (helper path)
+    where
+        helper :: HF.ConstraintPath -> [MF.Step]
+        helper path = case path of
+            HF.Argument index -> [MF.FunctionArg index]
+            HF.Field index parent -> List.push (helper parent) (MF.Field index)
+            HF.Extern index parent -> List.push (helper parent) (MF.External index)
+            HF.Variant index parent -> List.push (helper parent) (MF.Variant index)
+            HF.Result -> [MF.FunctionResult]
+
+getConverters :: [HF.ExternConstraint] -> [MF.Converter]
+getConverters extern_constraints =  List.fold [] extern_constraints (\converters, c -> case c of
+    HF.ExternConverter hir_converter -> do
+        from <- convertPath hir_converter.from
+        to <- convertPath hir_converter.to
+        List.push converters (MF.Converter from to))
+
+createTypeMap :: L.Context -> HT.Type -> Int -> [HF.ExternConstraint] ->  MF.TypeMapping
+createTypeMap lowering_context type arg_count extern_constraints = do
     args <- HT.getArgs type
     (args, _) <- List.split args arg_count
     result_type <- HT.getResultType type arg_count
@@ -26,7 +45,8 @@ createTypeMap lowering_context type arg_count = do
         context <- mapType context steps arg
         (context, index + 1)) (context, 0)
     context <- mapType context [MF.FunctionResult] result_type
-    MF.TypeMapping context.var_mappings context.owner_positions context.ref_positions
+    converters <- getConverters extern_constraints
+    MF.TypeMapping context.var_mappings context.owner_positions context.ref_positions converters
 
 addVarPosition :: Context -> String -> [MF.Step] -> Context
 addVarPosition context name steps = do

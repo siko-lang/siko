@@ -7,6 +7,19 @@ import Siko.HIR.Program
 import Siko.HIR.Class
 import Siko.Syntax.Location
 
+data ConstraintPath = Argument Int
+                    | Field Int ConstraintPath
+                    | Extern Int ConstraintPath
+                    | Variant Int ConstraintPath
+                    | Result
+                    deriving (Show)
+
+data Converter = { from :: ConstraintPath,
+                   to :: ConstraintPath,
+                 } deriving (Show)
+
+data ExternConstraint = ExternConverter Converter deriving (Show)
+
 data LambdaId = LambdaId Int deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
 data FunctionKind = Normal
@@ -35,7 +48,8 @@ data Function a = { location :: Location,
                     type_with_ownership :: Option Type,
                     body :: Option (Expr a),
                     effects :: Option [Type],
-                    attributes :: [Attribute]
+                    attributes :: [Attribute],
+                    extern_constraints :: [ExternConstraint],
                   }
 
 isInlined a :: Function a -> Bool

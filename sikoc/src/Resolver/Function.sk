@@ -118,7 +118,7 @@ processLambdas lambdas qn =
                     kind <- (HF.Lambda lambda.id)
                     arg_count <- lambda.arg_count
                     HE.Expr _ _ _ location <- lambda.body
-                    HF.Function location lambda_qn arg_count kind None None (Some lambda.body) None [HF.Inline]) |> toList
+                    HF.Function location lambda_qn arg_count kind None None (Some lambda.body) None [HF.Inline] []) |> toList
 
 processSubFunctions :: ResolverState ->
                        HP.Program () ->
@@ -137,6 +137,21 @@ processSubFunctions state hir_program module_resolver function_scope_resolver ty
     function_scope_resolver <- FunctionScopeResolver local_functions_map (Some (function_scope_resolver))
     (state, sub_functions) <- processFunctionsAndSignatures state hir_program module_resolver function_scope_resolver type_resolver HF.Normal functions signatures (HP.SubItem qn)
     (state, sub_functions, function_scope_resolver)
+
+processExternConstraints :: [SF.ExternConstraint] -> [HF.ExternConstraint]
+processExternConstraints extern_constraints = List.map extern_constraints processExternConstraint
+    where
+        processExternConstraint :: SF.ExternConstraint -> HF.ExternConstraint
+        processExternConstraint extern_constraint = case extern_constraint of
+            SF.ExternConverter (SF.Converter from to) -> HF.ExternConverter (HF.Converter (processConstraintPath from) (processConstraintPath to))
+
+        processConstraintPath :: SF.ConstraintPath -> HF.ConstraintPath
+        processConstraintPath path = case path of
+            SF.Argument index -> HF.Argument index
+            SF.Result -> HF.Result
+            SF.Field index parent -> HF.Field index (processConstraintPath parent)
+            SF.Extern index parent -> HF.Extern index (processConstraintPath parent)
+            SF.Variant index parent -> HF.Variant index (processConstraintPath parent)
 
 processFunction :: ResolverState ->
                    HP.Program () ->
@@ -180,7 +195,7 @@ processFunction state hir_program module_resolver function_scope_resolver type_r
     simplified_type <- case type of
         Some type -> Some (HT.removeOwnership type)
         None -> None
-    function <- HF.Function location qn arg_count kind simplified_type type hir_body effects attributes
+    function <- HF.Function location qn arg_count kind simplified_type type hir_body effects attributes (processExternConstraints function.extern_constraints)
     lambdas <- processLambdas lambdas qn
     (state, [function] + lambdas + sub_functions)
 
@@ -229,11 +244,11 @@ processFunctionMulti state hir_program module_resolver function_scope_resolver t
                 (context, env, expr) <- processExpr context env desugared_body
                 (context.state, Some expr, context.lambdas, sub_functions)
             arg_count <- getLength (atIndex function_info.functions 0).arguments
-            function <- HF.Function location qn arg_count kind type type hir_body effects attributes
+            function <- HF.Function location qn arg_count kind type type hir_body effects attributes []
             lambdas <- processLambdas lambdas qn
             (state, [function] + lambdas + sub_functions)
         else do
-            function <- HF.Function location qn 0 kind type type None effects attributes
+            function <- HF.Function location qn 0 kind type type None effects attributes []
             (state, [function])
 
 addArgCount :: Ident -> Option [Ident] -> Option [Ident]
@@ -270,7 +285,7 @@ processFunctionInfo state hir_program module_resolver function_scope_resolver ty
             arg_count <- case type of
                 Some t -> getLength (HT.getArgs t)
                 None -> 0
-            function <- HF.Function location qn arg_count kind type type None effects attributes
+            function <- HF.Function location qn arg_count kind type type None effects attributes []
             (state, [function])
         1 -> processFunction state hir_program module_resolver function_scope_resolver type_resolver kind (atIndex function_info.functions 0) effects type qn_creator attributes
         _ -> processFunctionMulti state hir_program module_resolver function_scope_resolver type_resolver kind function_info effects type qn_creator attributes

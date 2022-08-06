@@ -96,7 +96,7 @@ withCapacity a :: Int -> ~[a]
 withCapacity capacity = extern
 
 atIndex a :: [a] -> Int -> a
-atIndex index l = extern
+atIndex index l = extern (arg[0].e[0] -> result)
 
 data ListIter a = { inner :: ListIterator a }
 
@@ -115,10 +115,10 @@ iter l = ListIter (List.intoIter l)
 data ListIterator a = { list :: [a] }
 
 intoIter a :: [a] -> ~ListIterator a
-intoIter list = extern
+intoIter list = extern (arg[0] -> result.f[0])
 
 nextItem a :: ListIterator a -> ~Option ~(~ListIterator a, a)
-nextItem iter = extern
+nextItem iter = extern (arg[0].f[0] -> result.v[0].f[1])
 
 @Inline
 toList it a :: (Iterator it > a) => it -> [a]

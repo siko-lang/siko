@@ -10,6 +10,7 @@ import Siko.MIR.Backend.Ownership.Allocator
 import Siko.MIR.Backend.Ownership.MemberInfo as M
 import Siko.MIR.Backend.Ownership.FunctionInfo
 import Siko.MIR.Backend.Ownership.Converter
+import Siko.MIR.Backend.Ownership.EqualitySolver
 
 import Map
 
@@ -24,6 +25,8 @@ data Context = { program :: P.Program,
                  info_map :: Map2 F.Position TypeVariableInfo,
                  members :: List2 M.MemberInfo,
                  ownershipinfos :: List2 M.OwnershipInfo,
+                 converter_vars :: List2 OwnershipTypeVariable,
+                 equals :: List2 Equal,
                }
 
 getNext :: Context -> (Context, TypeVariableInfo)
@@ -39,49 +42,6 @@ getInfoForPos context pos = case Map2.get context.info_map pos of
         info_map <- Map2.put context.info_map pos info
         (context { info_map = info_map }, info)
 
-processPosition :: F.FunctionType -> TypeVariableInfo -> Context -> F.Position -> (Context, TypeVariableInfo)
-processPosition function_type info context pos = do
-    F.Position steps <- pos
-    (context, info) <- case Map2.get context.info_map pos of
-        Some (old_info) -> (context, old_info)
-        None -> do
-            (context, (member, ownershipinfo)) <- if getLength steps == 1
-                            then do
-                                step <- (atIndex steps 0)
-                                case step of
-                                    F.FunctionArg index -> (context, (None, None))
-                                    F.FunctionResult -> (context, (None, None))
-                                    _ -> panic "unexpected last step"
-                            else do
-                                (last_step, parent) <- List.removeLast steps
-                                (context, parent_info) <- getNext context
-                                (context, parent_info) <- processPosition function_type parent_info context (F.Position parent)
-                                (context, processStep info parent_info last_step)
-            members <- case member of
-                Some member -> List2.push context.members member
-                None -> context.members
-            ownershipinfos <- case ownershipinfo of
-                Some info -> List2.push context.ownershipinfos info
-                None -> context.ownershipinfos
-            info_map <- Map2.put context.info_map pos info
-            (context { info_map = info_map,
-                       members = members,
-                       ownershipinfos = ownershipinfos, }, info)
-    //println "Processing position {} -> {}" % (steps, info)
-    (context, info)
-
-processMainPosition :: Option TypeVariableInfo -> F.FunctionType -> Context -> F.Position -> (Context, TypeVariableInfo)
-processMainPosition info function_type context pos = do
-    F.Position steps <- pos
-    step <- List.atIndex steps 0
-    (context, info) <- case info of
-        Some info -> (context, info)
-        None -> getNext context
-    case step of
-        F.FunctionArg index -> processPosition function_type info context (F.Position steps)
-        F.FunctionResult -> processPosition function_type info context (F.Position steps)
-        _ -> panic "processMainPosition unexpected first position"
-
 processStep :: TypeVariableInfo -> TypeVariableInfo -> F.Step -> (Option M.MemberInfo, Option M.OwnershipInfo)
 processStep info parent step =
     case step of
@@ -95,17 +55,63 @@ processStep info parent step =
         F.Field index -> do
             member <- M.MemberInfo (M.Field index) parent.arg_group_var info
             (Some member, None)
-        F.FunctionArg index -> panic "FunctionArg in processStep"
-        F.FunctionResult -> panic "FunctionResult in processStep"
+        F.FunctionArg index -> (None, None)
+        F.FunctionResult -> (None, None)
+
+processPos :: Context -> F.Position -> Context
+processPos context position = do
+    F.Position steps <- position
+    (first, rest) <- List.remove steps 0
+    (context, info) <- getNext context
+    loop (context, current, rest, parent) <- (context, [first], rest, info) do
+        (context, info) <- getInfoForPos context (F.Position current)
+        last <- List.last current
+        (member, ownershipinfo) <- processStep info parent last
+        members <- case member of
+                Some member -> List2.push context.members member
+                None -> context.members
+        ownershipinfos <- case ownershipinfo of
+                Some info -> List2.push context.ownershipinfos info
+                None -> context.ownershipinfos
+        context <- context { members = members,
+                             ownershipinfos = ownershipinfos }
+        if List.isEmpty rest
+        then break context
+        else do
+            (first, rest) <- List.remove rest 0
+            current <- List.push current first
+            (context, current, rest, info)
 
 createExternFunctionInfo :: P.Program -> P.Identity -> F.FunctionType -> F.TypeMapping -> FunctionInfo
 createExternFunctionInfo program id function_type type_mapping = do
+    //println "type_mapping {}" % type_mapping
     allocator <- createAllocator
-    context <- Context program List2.empty allocator Map2.empty List2.empty List2.empty
-    (context, var_infos) <- Map.mapS context type_mapping.var_mappings (\context, (n, positions) -> do
-        (context, info) <- getNext context
-        (context, infos) <- List.mapS context positions (processMainPosition (Some info) function_type)
-        (context, n, infos))
+    context <- Context program List2.empty allocator Map2.empty List2.empty List2.empty List2.empty List2.empty
+    (context, converters) <- List.fold (context, List2.empty) type_mapping.converters (\(context, converters), mir_converter -> do
+        (context, from_info) <- getInfoForPos context mir_converter.from
+        (context, to_info) <- getInfoForPos context mir_converter.to
+        converters <- List2.push converters (Converter from_info.ownership_var to_info.ownership_var)
+        converter_vars <- List2.push context.converter_vars from_info.ownership_var
+        converter_vars <- List2.push converter_vars to_info.ownership_var
+        context <- context { converter_vars  = converter_vars }
+        (context, converters))
+    context <- Map.fold context type_mapping.var_mappings (\context, (n, positions) -> do
+        context <- List.fold context positions processPos
+        (context, infos) <- List.mapS context positions getInfoForPos
+        group_vars <- List.map infos (\info -> info.arg_group_var)
+        first <- atIndex group_vars 0
+        context <- List.fold context group_vars (\context, var -> if var != first
+            then context { equals = List2.push context.equals (EqualGroup var first) }
+            else context)
+        (context, ownership_vars) <- List.fold (context, List.empty) infos (\(context, ownership_vars), info ->
+            if List2.contains context.converter_vars info.ownership_var
+            then (context, ownership_vars)
+            else (context, List.push ownership_vars info.ownership_var))
+        first <- atIndex ownership_vars 0
+        context <- List.fold context ownership_vars (\context, var -> if var != first
+            then context { equals = List2.push context.equals (EqualOwnership var first) }
+            else context)
+        context)
     (context, _) <- List.fold (context, 0) function_type.args (\(context, index), arg_ty-> do
         step <- F.FunctionArg index
         pos <- F.Position [step]
@@ -113,14 +119,7 @@ createExternFunctionInfo program id function_type type_mapping = do
         args <- List2.push context.args step
         (context { args = args }, index + 1))
     (context, info) <- getInfoForPos context (F.Position [F.FunctionResult])
-    (context, ref_infos) <- Map.mapS context type_mapping.ref_positions (\context, (lifetime, positions) -> do
-        (context, info) <- getNext context
-        (allocator, borrow_id) <- getNextBorrowId context.allocator
-        ownership <- M.OwnershipInfo info.ownership_var (M.Borrower borrow_id)
-        context <- context { ownershipinfos = List2.push context.ownershipinfos ownership, allocator = allocator }
-        (context, infos) <- List.mapS context positions (processMainPosition (Some info) function_type)
-        (context, lifetime, infos))
-    (context, owner_infos) <- List.mapS context type_mapping.owner_positions (processMainPosition None function_type)
+    (context, owner_infos) <- List.mapS context type_mapping.owner_positions getInfoForPos
     owner_infos <- List2.toList2 owner_infos
     owner_infos <- List2.map owner_infos (\info -> M.OwnershipInfo info.ownership_var M.Owner)
     context <- context { ownershipinfos = context.ownershipinfos + owner_infos }
@@ -133,34 +132,6 @@ createExternFunctionInfo program id function_type type_mapping = do
         None -> if Map.getSize type_mapping.var_mappings == 0
             then getNext context
             else panic "No type variable info for result step for {}" % id
-    function_info <- FunctionInfo args result context.members List2.empty context.ownershipinfos
-    // HACK, FIXME, TODO: generalize this or make this into a syntax
-    P.Identity mod name _ <- id
-    function_info <- if (mod == "List" || mod == "List2") && name == "atIndex"
-    then do
-        members <- function_info.members
-        (_, members) <- List2.removeLast members
-        members <- List2.push members (M.MemberInfo (M.Extern 0) (GroupTypeVariable 1) (TypeVariableInfo (OwnershipTypeVariable 3) (GroupTypeVariable 0)))
-        converters <- List2.push function_info.converters (Converter (OwnershipTypeVariable 3) (OwnershipTypeVariable 0))
-        function_info <- function_info { members = members, converters = converters }
-        function_info
-    else if (mod == "Map" || mod == "Map2") && name == "get"
-    then do
-            // members <- function_info.members
-            // (_, members) <- List2.removeLast members
-            // members <- List2.push members (M.MemberInfo (M.Field 0) (GroupTypeVariable 7) (TypeVariableInfo (OwnershipTypeVariable 8) (GroupTypeVariable 5)))
-            // member_access_converters <- List2.push function_info.member_access_converters (MemberAccessConverter (OwnershipTypeVariable 0) (OwnershipTypeVariable 5) (OwnershipTypeVariable 8))
-            // function_info <- function_info { members = members, member_access_converters = member_access_converters }
-            function_info
-    else if (mod == "List" || mod == "List2") && name == "intoIter"
-    then do
-        converters <- List2.push function_info.converters (Converter (OwnershipTypeVariable 1) (OwnershipTypeVariable 2))
-        function_info <- function_info { converters = converters }
-        function_info
-    else if (mod == "List" || mod == "List2") && name == "nextItem"
-    then do
-        converters <- List2.push function_info.converters (Converter (OwnershipTypeVariable 1) (OwnershipTypeVariable 3))
-        function_info <- function_info { converters = converters }
-        function_info
-    else function_info
+    function_info <- FunctionInfo args result context.members converters context.ownershipinfos
+    function_info <- processEquals context.equals function_info
     function_info

@@ -112,7 +112,7 @@ processNormalFunction context mir_function_id hir_type qn hir_function =
             //println "Processing extern {}" % (hir_function.name)
             (context, mir_arg_types, mir_result_type) <- getFunctionType context hir_type hir_function.arg_count
             type_mapping <- case hir_function.type_with_ownership of
-                Some t -> createTypeMap context t hir_function.arg_count
+                Some t -> createTypeMap context t hir_function.arg_count hir_function.extern_constraints
                 None -> panic "Extern function has no ownership type! {}" % mir_function_id
             function_type <- MF.FunctionType mir_arg_types mir_result_type
             mir_function <- MF.Function mir_function_id (MF.Extern type_mapping) function_type
