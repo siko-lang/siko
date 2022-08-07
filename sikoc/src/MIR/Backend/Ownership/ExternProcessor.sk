@@ -107,10 +107,13 @@ createExternFunctionInfo program id function_type type_mapping = do
             if List2.contains context.converter_vars info.ownership_var
             then (context, ownership_vars)
             else (context, List.push ownership_vars info.ownership_var))
-        first <- atIndex ownership_vars 0
-        context <- List.fold context ownership_vars (\context, var -> if var != first
-            then context { equals = List2.push context.equals (EqualOwnership var first) }
-            else context)
+        context <- if List.isEmpty ownership_vars
+        then context
+        else do
+            first <- atIndex ownership_vars 0
+            List.fold context ownership_vars (\context, var -> if var != first
+                then context { equals = List2.push context.equals (EqualOwnership var first) }
+                else context)
         context)
     (context, _) <- List.fold (context, 0) function_type.args (\(context, index), arg_ty-> do
         step <- F.FunctionArg index
