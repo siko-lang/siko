@@ -118,7 +118,7 @@ intoIter a :: [a] -> ~ListIterator a
 intoIter list = extern (arg[0] -> result.i[0])
 
 nextItem a :: ListIterator a -> ~Option ~(~ListIterator a, a)
-nextItem iter = extern (arg[0].i[0] -> result.v[0].f[1], arg[0].i[0] == result.v[0].f[0].f[0].i[0])
+nextItem iter = extern (arg[0].i[0].f[0] -> result.v[0].f[0].f[1], arg[0].i[0] == result.v[0].f[0].f[0].i[0])
 
 @Inline
 toList it a :: (Iterator it > a) => it -> [a]
@@ -169,8 +169,12 @@ join items separator = List.foldE (joiner separator) "" items
 head a :: [a] -> Option a
 head l = if isEmpty l then None else Some (atIndex l 0)
 
-tail a :: ~[~a] -> ~Option ~[~a]
-tail l = extern
+tail a :: [a] -> Option [a]
+tail l = if isEmpty l
+         then None
+         else do
+            (_, rest) <- List.remove l 0
+            Some rest
 
 remove a :: ~[~a] -> ~Int -> ~(~a, ~[~a])
 remove l index = extern

@@ -595,6 +595,7 @@ generateListNextItem program type_store arg_types result_type = do
     iterator_id <- LT.getIdentity iterator_type
     iterator_record <- getRecord program iterator_id
     iterator_info <- Option.unwrap iterator_record.external_info
+    is_iterator_ref <- Option.isSome iterator_record.implicit_member_lifetime
     iterator_item_type <- atIndex iterator_info.type_args 0
     field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
     iter_ref <- if LT.isRef iterator_type
@@ -621,8 +622,8 @@ generateListNextItem program type_store arg_types result_type = do
     state_field <- atIndex tuple_record.fields 0
     value_field <- atIndex tuple_record.fields 1
     rust_state_type <- convertType state_field.type
-    item_ref <- if not (LT.isRef value_field.type) && (LT.isRef iterator_item_type || LT.isRef iterator_type)
-    then R.MethodCall (R.VarRef item) cloneName []
+    item_ref <- if not (LT.isRef value_field.type) && (LT.isRef iterator_item_type || is_iterator_ref)
+    then R.MethodCall (R.Deref (R.VarRef item)) cloneName []
     else R.VarRef item
     state_ctor <- R.StructCtor (RT.showBase rust_state_type) [R.FieldInitItem innerValueField (R.VarRef state)]
     tuple_ctor <- R.StructCtor (RT.showBase rust_item_type) [R.FieldInitItem (getFieldName 0) state_ctor,
@@ -837,27 +838,48 @@ generateMapRemove program type_store arg_types result_type = do
 generateMapIntoIter :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateMapIntoIter program type_store arg_types result_type = do
     rust_type <- convertType result_type
+    iterator_type <- result_type
+    iterator_id <- LT.getIdentity iterator_type
+    iterator_record <- getRecord program iterator_id
+    is_iterator_ref <- Option.isSome iterator_record.implicit_member_lifetime
     map_type <- atIndex arg_types 0
     field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
-    new0 <- "new0"
     map_ref <- if LT.isRef map_type
-    then (R.MethodCall field_access0 cloneName [])
+    then if is_iterator_ref
+        then R.Ref field_access0
+        else R.MethodCall field_access0 cloneName []
     else field_access0
-    new0_decl <- R.VarDecl new0 map_ref None
-    into_iter_call <- R.MethodCall (R.VarRef new0) "into_iter" []
-    collect <- R.MethodCall into_iter_call "collect" []
-    v <- "v"
-    v_decl <- R.VarDecl v collect (Some (RT.Named "Vec<_>" []))
-    v_into_iter_call <- R.MethodCall (R.VarRef v) "into_iter" []
-    struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField v_into_iter_call]
-    R.Block [new0_decl, v_decl, struct_ctor]
+    new0 <- "new0"
+    if is_iterator_ref
+    then do
+        new0_decl <- R.VarDecl new0 (R.Ref map_ref) None
+        iter_call <- R.MethodCall (R.VarRef new0) "iter" []
+        struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField iter_call]
+        R.Block [new0_decl, struct_ctor]
+    else do
+        new0_decl <- R.VarDecl new0 map_ref None
+        into_iter_call <- R.MethodCall (R.VarRef new0) "into_iter" []
+        collect <- R.MethodCall into_iter_call "collect" []
+        v <- "v"
+        v_decl <- R.VarDecl v collect (Some (RT.Named "Vec<_>" []))
+        v_into_iter_call <- R.MethodCall (R.VarRef v) "into_iter" []
+        struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField v_into_iter_call]
+        R.Block [new0_decl, v_decl, struct_ctor]
 
 generateMapNextItem :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateMapNextItem program type_store arg_types result_type = do
+    iterator_type <- atIndex arg_types 0
+    iterator_id <- LT.getIdentity iterator_type
+    iterator_record <- getRecord program iterator_id
+    is_iterator_ref <- Option.isSome iterator_record.implicit_member_lifetime
+    iterator_info <- Option.unwrap iterator_record.external_info
     rust_type <- convertType result_type
     field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
+    iter_ref <- if LT.isRef iterator_type
+    then R.MethodCall field_access0 cloneName []
+    else field_access0
     state <- "state"
-    state_decl <- R.VarDeclMut state field_access0 None
+    state_decl <- R.VarDeclMut state iter_ref None
     value <- "value"
     value_decl <- R.VarDecl value (R.MethodCall (R.VarRef state) "next" []) None
     item <- "item"
@@ -883,8 +905,16 @@ generateMapNextItem program type_store arg_types result_type = do
         _ -> panic "Item tuple is not a record"
     value_field0 <- atIndex value_tuple_record.fields 0
     value_field1 <- atIndex value_tuple_record.fields 1
-    key_ctor <- R.FieldAccess "0" (R.VarRef item)
-    value_ctor <- R.FieldAccess "1" (R.VarRef item)
+    key_ctor <- if LT.isRef state_field.type
+    then R.Ref (R.FieldAccess "0" (R.VarRef item))
+    else if is_iterator_ref
+        then R.MethodCall (R.FieldAccess "0" (R.VarRef item)) cloneName []
+        else R.FieldAccess "0" (R.VarRef item)
+    value_ctor <- if LT.isRef value_field.type
+    then R.Ref (R.FieldAccess "1" (R.VarRef item))
+    else if is_iterator_ref
+        then R.MethodCall (R.FieldAccess "1" (R.VarRef item)) cloneName []
+        else R.FieldAccess "1" (R.VarRef item)
     value_tuple_ctor <- R.StructCtor (RT.showBase rust_value_type) [R.FieldInitItem (getFieldName 0) key_ctor,
                                                            R.FieldInitItem (getFieldName 1) value_ctor]
     state_ctor <- R.StructCtor (RT.showBase rust_state_type) [R.FieldInitItem innerValueField (R.VarRef state)]
@@ -1034,12 +1064,14 @@ generateMapFields args _ = do
     [R.StructField innerValueField (RT.Named "std::collections::BTreeMap<{}, {}>" % (RT.showAll rust_type_arg1, RT.showAll rust_type_arg2) [])]
 
 generateMapIteratorFields :: [LT.Type] -> Option LT.Lifetime -> [R.StructField]
-generateMapIteratorFields args _ = do
+generateMapIteratorFields args implicit_member_lifetime = do
     first <- atIndex args 0
     second <- atIndex args 1
     rust_type_arg1 <- convertType first
     rust_type_arg2 <- convertType second
-    [R.StructField innerValueField (RT.Named "std::vec::IntoIter<({}, {})>" % (RT.showAll rust_type_arg1, RT.showAll rust_type_arg2) [])]
+    case implicit_member_lifetime of
+        Some lifetime -> [R.StructField innerValueField (RT.Named "std::collections::btree_map::Iter<{}, {}, {}>" % (lifetime, RT.showAll rust_type_arg1, RT.showAll rust_type_arg2) [])]
+        None -> [R.StructField innerValueField (RT.Named "std::vec::IntoIter<({}, {})>" % (RT.showAll rust_type_arg1, RT.showAll rust_type_arg2) [])]
 
 initializeExternalStructFields :: Map ExternalId ExternStructBuilder
 initializeExternalStructFields = do

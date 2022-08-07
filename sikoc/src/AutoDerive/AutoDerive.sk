@@ -24,10 +24,10 @@ processRecordDerive record (Ident name derive_location) = do
         "Copy" -> Some (deriveRecordCopy record derive_location)
         _ -> None
 
-processAdtDerive :: D.AlgebraicDataType -> Ident -> Option C.Instance
-processAdtDerive adt (Ident name derive_location) = do
+processAdtDerive :: D.AlgebraicDataType -> Ident -> String -> Option C.Instance
+processAdtDerive adt (Ident name derive_location) mod_name = do
     case name of
-        "Show" -> Some (deriveAdtShow adt derive_location)
+        "Show" -> Some (deriveAdtShow adt derive_location mod_name)
         "PartialEq" -> Some (deriveAdtPartialEq adt derive_location)
         "Eq" -> Some (deriveAdtEq adt derive_location)
         "PartialOrd" -> Some (deriveAdtPartialOrd adt derive_location)
@@ -45,10 +45,10 @@ processRecordDerives record = do
     record <- record { derived_classes = derived_classes }
     (record, instances)
 
-processAdtDerives :: D.AlgebraicDataType -> (D.AlgebraicDataType, [C.Instance])
-processAdtDerives adt = do
+processAdtDerives :: D.AlgebraicDataType -> String -> (D.AlgebraicDataType, [C.Instance])
+processAdtDerives adt mod_name = do
     (instances, derived_classes) <- List.fold ([], []) adt.derived_classes
-        (\(instances, derived_classes), derived_class -> case processAdtDerive adt derived_class of
+        (\(instances, derived_classes), derived_class -> case processAdtDerive adt derived_class mod_name of
             Some i -> (push instances i, derived_classes)
             None -> (instances, push derived_classes derived_class))
     adt <- adt { derived_classes = derived_classes }

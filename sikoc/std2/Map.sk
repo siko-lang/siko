@@ -93,7 +93,7 @@ put m k v = do
     m
 
 get k v :: (Ord k) => Map k v -> k -> ~Option v
-get m k = extern
+get m k = extern (arg[0].e[1] -> result.v[0].f[0])
 
 remove k v :: (Ord k) => Map k v -> k -> ~(~Map k v, ~Option v)
 remove m k = extern
@@ -149,13 +149,13 @@ instance Iterator (MapIter k v) > (k, v) where
 iter k v :: Map k v -> MapIter k v
 iter m = MapIter (intoIter m)
 
-data MapIterator k v = extern
+data MapIterator k v = extern (implicit)
 
-intoIter k v :: ~Map k v -> ~MapIterator k v
-intoIter m = extern
+intoIter k v :: Map k v -> ~MapIterator k v
+intoIter m = extern (arg[0] -> result.i[0])
 
-nextItem k v :: ~MapIterator k v -> ~Option ~(~MapIterator k v, ~(k, v))
-nextItem iter = extern
+nextItem k v :: MapIterator k v -> ~Option ~(~MapIterator k v, ~(k, v))
+nextItem iter = extern (arg[0].i[0] -> result.v[0].f[1].f[0], arg[0].i[0] -> result.v[0].f[1].f[1], arg[0].i[0] == result.v[0].f[0].f[0].i[0])
 
 @Inline
 toMap it k v :: (Iterator it > (k, v), Ord k) => it -> Map k v

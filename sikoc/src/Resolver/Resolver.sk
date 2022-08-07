@@ -1,6 +1,7 @@
 module Siko.Resolver where
 
 import Siko.Syntax.Location
+import Siko.Syntax.Ident
 import Siko.Syntax.SourceFile as SF
 import Siko.Syntax.Module as SM
 import Siko.Syntax.Class as SC
@@ -59,17 +60,18 @@ processAutoDerives source_files = do
 
         processADModule :: SM.Module -> SM.Module // FIXME: name of this function!
         processADModule mod = do
-            (instances, items) <- List.mapS [] mod.items processADItem
+            mod_name <- getString mod.name
+            (instances, items) <- List.mapS [] mod.items (processADItem mod_name)
             instances <- List.map instances (\i -> SM.Instance i)
             mod { items = items + instances }
 
-        processADItem :: [SC.Instance] -> SM.Item -> ([SC.Instance], SM.Item) // FIXME: name of this function!
-        processADItem instances item = case item of
+        processADItem :: String -> [SC.Instance] -> SM.Item -> ([SC.Instance], SM.Item) // FIXME: name of this function!
+        processADItem mod_name instances item = case item of
             SM.Record record -> do
                 (record, record_instances) <- AD.processRecordDerives record
                 (instances + record_instances, SM.Record record)
             SM.Adt adt -> do
-                (adt, adt_instances) <- AD.processAdtDerives adt
+                (adt, adt_instances) <- AD.processAdtDerives adt mod_name
                 (instances + adt_instances, SM.Adt adt)
             _ -> (instances, item)
 
