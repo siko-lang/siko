@@ -85,7 +85,7 @@ processAdt state hir_program module_resolver (SD.AlgebraicDataType name type_arg
     (state, hir_program)
 
 processRecord :: ResolverState -> HP.Program () -> ModuleResolver -> SD.Record -> (ResolverState, HP.Program ())
-processRecord state hir_program module_resolver (SD.Record name type_arguments fields external derived_classes) = do
+processRecord state hir_program module_resolver (SD.Record name type_arguments fields external derived_classes implicit_member) = do
     (type_resolver, state) <- initTypeResolver module_resolver state type_arguments
     (state, type_resolver, fields, field_names) <- fields |> List.iter |> Iterator.fold (\(state, type_resolver, fields, field_names), field -> do
                 (state, type_resolver, field, field_names) <- processRecordField state type_resolver field field_names
@@ -101,7 +101,7 @@ processRecord state hir_program module_resolver (SD.Record name type_arguments f
     type <- Named qn type_args
     ctor_arg_types <- fields |> List.iter |> Iterator.map (\(HD.RecordField _ type) -> type) |> toList
     ctor_type <- createFunctionFromArgs ctor_arg_types type
-    record <- HD.Record qn location type_args fields external ctor_type derived_classes type
+    record <- HD.Record qn location type_args fields external ctor_type derived_classes type implicit_member
     (hir_program, other_item) <- HP.addItem hir_program qn (HP.Record record)
     state <- handleItemConflict state other_item location
     (state, hir_program)

@@ -571,18 +571,18 @@ generateListIntoIter :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateListIntoIter program type_store arg_types result_type = do
     iterator_id <- LT.getIdentity result_type
     iterator_record <- getRecord program iterator_id
-    iter_list_type <- (atIndex iterator_record.fields 0).type
+    is_iterator_ref <- Option.isSome iterator_record.implicit_member_lifetime
     rust_type <- convertType result_type
     list_type <- atIndex arg_types 0
     field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
     list_ref <- if LT.isRef list_type
-    then if LT.isRef iter_list_type
+    then if is_iterator_ref
         then R.Ref field_access0
         else R.MethodCall field_access0 cloneName []
     else field_access0
     new0 <- "new0"
     new0_decl <- R.VarDecl new0 list_ref None
-    iter_call <- if LT.isRef iter_list_type
+    iter_call <- if is_iterator_ref
     then R.MethodCall (R.VarRef new0) "iter" []
     else R.MethodCall (R.VarRef new0) "into_iter" []
     struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField iter_call]
@@ -594,11 +594,8 @@ generateListNextItem program type_store arg_types result_type = do
     iterator_type <- atIndex arg_types 0
     iterator_id <- LT.getIdentity iterator_type
     iterator_record <- getRecord program iterator_id
-    list_type <- (atIndex iterator_record.fields 0).type
-    list_id <- LT.getIdentity list_type
-    list_record <- getRecord program list_id
-    list_info <- Option.unwrap list_record.external_info
-    iterator_item_type <- atIndex list_info.type_args 0
+    iterator_info <- Option.unwrap iterator_record.external_info
+    iterator_item_type <- atIndex iterator_info.type_args 0
     field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
     iter_ref <- if LT.isRef iterator_type
     then R.MethodCall field_access0 cloneName []
@@ -1002,40 +999,42 @@ initializeExternalFunctions = do
 
     externals
 
-generateStringFields :: [LT.Type] -> [R.StructField]
-generateStringFields args = [R.StructField innerValueField (RT.Named "std::string::String" [])]
+generateStringFields :: [LT.Type] -> Option LT.Lifetime -> [R.StructField]
+generateStringFields args _ = [R.StructField innerValueField (RT.Named "std::string::String" [])]
 
-generateIntFields :: [LT.Type] -> [R.StructField]
-generateIntFields args = [R.StructField innerValueField (RT.Named "i64" [])]
+generateIntFields :: [LT.Type] -> Option LT.Lifetime -> [R.StructField]
+generateIntFields args _ = [R.StructField innerValueField (RT.Named "i64" [])]
 
-generateFloatFields :: [LT.Type] -> [R.StructField]
-generateFloatFields args = [R.StructField innerValueField (RT.Named "f64" [])]
+generateFloatFields :: [LT.Type] -> Option LT.Lifetime -> [R.StructField]
+generateFloatFields args _ = [R.StructField innerValueField (RT.Named "f64" [])]
 
-generateCharFields :: [LT.Type] -> [R.StructField]
-generateCharFields args = [R.StructField innerValueField (RT.Named "char" [])]
+generateCharFields :: [LT.Type] -> Option LT.Lifetime -> [R.StructField]
+generateCharFields args _ = [R.StructField innerValueField (RT.Named "char" [])]
 
-generateListFields :: [LT.Type] -> [R.StructField]
-generateListFields args = do
+generateListFields :: [LT.Type] -> Option LT.Lifetime -> [R.StructField]
+generateListFields args _ = do
     first <- atIndex args 0
     rust_type_arg <- convertType first
     [R.StructField innerValueField (RT.Named ("std::vec::Vec<{}>" % RT.showAll rust_type_arg) [])]
 
-generateListIteratorFields :: [LT.Type] -> [R.StructField]
-generateListIteratorFields args = do
+generateListIteratorFields :: [LT.Type] -> Option LT.Lifetime -> [R.StructField]
+generateListIteratorFields args implicit_member_lifetime = do
     first <- atIndex args 0
     rust_type_arg <- convertType first
-    [R.StructField innerValueField (RT.Named ("std::vec::IntoIter<{}>" % RT.showAll rust_type_arg) [])]
+    case implicit_member_lifetime of
+        Some lifetime -> [R.StructField innerValueField (RT.Named ("std::slice::Iter<{}, {}>" % (lifetime, RT.showAll rust_type_arg)) [])]
+        None -> [R.StructField innerValueField (RT.Named ("std::vec::IntoIter<{}>" % RT.showAll rust_type_arg) [])]
 
-generateMapFields :: [LT.Type] -> [R.StructField]
-generateMapFields args = do
+generateMapFields :: [LT.Type] -> Option LT.Lifetime -> [R.StructField]
+generateMapFields args _ = do
     first <- atIndex args 0
     second <- atIndex args 1
     rust_type_arg1 <- convertType first
     rust_type_arg2 <- convertType second
     [R.StructField innerValueField (RT.Named "std::collections::BTreeMap<{}, {}>" % (RT.showAll rust_type_arg1, RT.showAll rust_type_arg2) [])]
 
-generateMapIteratorFields :: [LT.Type] -> [R.StructField]
-generateMapIteratorFields args = do
+generateMapIteratorFields :: [LT.Type] -> Option LT.Lifetime -> [R.StructField]
+generateMapIteratorFields args _ = do
     first <- atIndex args 0
     second <- atIndex args 1
     rust_type_arg1 <- convertType first

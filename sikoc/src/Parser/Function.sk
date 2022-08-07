@@ -68,9 +68,17 @@ parseExternConstraints state = parseList state parseExternConstraint Kind.LParen
         parseExternConstraint :: ParserState -> Result (ParserState, ExternConstraint) (ParserState, ParserError)
         parseExternConstraint state = do
             (state, from) <- try parseConstraintPath state
-            state <- try expect state Kind.RightArrow
+            (state, is_equal) <- if check state Kind.RightArrow
+            then do
+                state <- try expect state Kind.RightArrow
+                (state, False)
+            else do
+                state <- try expect state Kind.DoubleEqual
+                (state, True)
             (state, to) <- try parseConstraintPath state
-            Ok (state, ExternConverter (Converter from to))
+            if is_equal
+            then Ok (state, ExternEquality (Equal from to))
+            else Ok (state, ExternConverter (Converter from to))
 
         parseConstraintPath :: ParserState -> Result (ParserState, ConstraintPath) (ParserState, ParserError)
         parseConstraintPath state =
@@ -100,6 +108,12 @@ parseExternConstraints state = parseList state parseExternConstraint Kind.LParen
                             Some parent -> parent
                             None -> return Err (state, unexpectedToken state "variant with parent path")
                         (state, Variant index parent)
+                    "i" -> do
+                        (state, index) <- try parseIndex state
+                        parent <- case parent of
+                            Some parent -> parent
+                            None -> return Err (state, unexpectedToken state "implicit with parent path")
+                        (state, Implicit index parent)
                     _ -> return Err (state, unexpectedToken state "path name")
                 if check state Kind.Dot
                 then do

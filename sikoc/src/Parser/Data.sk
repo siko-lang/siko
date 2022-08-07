@@ -61,7 +61,8 @@ parseRecord state args name = do
                        type_arguments = args,
                        fields = fields,
                        external = False,
-                       derived_classes = derived_classes }
+                       derived_classes = derived_classes,
+                       implicit_member = False, }
     Ok (state, record)
 
 parseData :: ParserState -> Result (ParserState, Either AlgebraicDataType Record) (ParserState, ParserError)
@@ -84,11 +85,23 @@ parseData state = do
             if check state Kind.KeywordExtern
             then do
                 state <- try expect state Kind.KeywordExtern
+                (state, implicit_member) <- if check state Kind.LParen
+                then do
+                    state <- try expect state Kind.LParen
+                    (state, modifier) <- try expectVarIdent state "extern modifier"
+                    modifier <- getString modifier
+                    case modifier of
+                        "implicit" -> ()
+                        _ -> return Err (state, unexpectedToken state "extern modifier")
+                    state <- try expect state Kind.RParen
+                    (state, True)
+                else (state, False)
                 record <- Record { name = name,
                                    type_arguments = args,
                                    fields = [],
                                    external = True,
-                                   derived_classes = [] }
+                                   derived_classes = [],
+                                   implicit_member = implicit_member, }
                 (state, Right record)
             else do
                     (state, data_definition) <- if check state Kind.LCurly

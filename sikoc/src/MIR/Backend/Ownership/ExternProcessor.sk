@@ -55,6 +55,9 @@ processStep info parent step =
         F.Field index -> do
             member <- M.MemberInfo (M.Field index) parent.arg_group_var info
             (Some member, None)
+        F.Implicit index -> do
+            member <- M.MemberInfo (M.Field index) parent.arg_group_var info
+            (Some member, None)
         F.FunctionArg index -> (None, None)
         F.FunctionResult -> (None, None)
 
@@ -95,6 +98,11 @@ createExternFunctionInfo program id function_type type_mapping = do
         converter_vars <- List2.push converter_vars to_info.ownership_var
         context <- context { converter_vars  = converter_vars }
         (context, converters))
+    context <- List.fold context type_mapping.equals (\context, mir_equal -> do
+        (context, left_info) <- getInfoForPos context mir_equal.left
+        (context, right_info) <- getInfoForPos context mir_equal.right
+        equals <- List2.push context.equals (EqualOwnership left_info.ownership_var right_info.ownership_var)
+        context { equals = equals })
     context <- Map.fold context type_mapping.var_mappings (\context, (n, positions) -> do
         context <- List.fold context positions processPos
         (context, infos) <- List.mapS context positions getInfoForPos
@@ -130,11 +138,9 @@ createExternFunctionInfo program id function_type type_mapping = do
     args <- List2.map args (\arg_step -> case Map2.get context.info_map (F.Position [arg_step]) of
                         Some info -> info
                         None -> panic "No type variable info for arg step")
-    (context, result) <- case Map2.get context.info_map (F.Position [F.FunctionResult]) of
-        Some info -> (context, info)
-        None -> if Map.getSize type_mapping.var_mappings == 0
-            then getNext context
-            else panic "No type variable info for result step for {}" % id
+    result <- case Map2.get context.info_map (F.Position [F.FunctionResult]) of
+        Some info -> info
+        None -> panic "No type variable info for result step for {}" % id
     function_info <- FunctionInfo args result context.members converters context.ownershipinfos
     function_info <- processEquals context.equals function_info
     function_info

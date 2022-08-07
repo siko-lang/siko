@@ -11,6 +11,7 @@ data ConstraintPath = Argument Int
                     | Field Int ConstraintPath
                     | Extern Int ConstraintPath
                     | Variant Int ConstraintPath
+                    | Implicit Int ConstraintPath
                     | Result
                     deriving (Show)
 
@@ -18,7 +19,13 @@ data Converter = { from :: ConstraintPath,
                    to :: ConstraintPath,
                  } deriving (Show)
 
-data ExternConstraint = ExternConverter Converter deriving (Show)
+data Equal = { left :: ConstraintPath,
+               right :: ConstraintPath,
+             } deriving (Show)
+
+data ExternConstraint = ExternConverter Converter
+                      | ExternEquality Equal
+                      deriving (Show)
 
 data LambdaId = LambdaId Int deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 

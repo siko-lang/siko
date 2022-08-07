@@ -111,13 +111,13 @@ instance Iterator (ListIter a) > a where
 iter it a :: List2 a -> ListIter a
 iter l = ListIter (List2.intoIter l)
 
-data ListIterator a = { list :: List2 a }
+data ListIterator a = extern (implicit)
 
 intoIter a :: List2 a -> ~ListIterator a
-intoIter list = extern (arg[0] -> result.f[0])
+intoIter list = extern (arg[0] -> result.i[0])
 
 nextItem a :: ListIterator a -> ~Option ~(~ListIterator a, a)
-nextItem iter = extern (arg[0].f[0] -> result.v[0].f[1])
+nextItem iter = extern (arg[0].i[0] -> result.v[0].f[1], arg[0].i[0] == result.v[0].f[0].f[0].i[0])
 
 @Inline
 toList it a :: (Iterator it > a) => it -> List2 a

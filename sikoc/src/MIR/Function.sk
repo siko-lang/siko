@@ -55,6 +55,7 @@ dump function = do
 data Step = External Int
           | Variant Int
           | Field Int
+          | Implicit Int
           | FunctionArg Int
           | FunctionResult
           deriving (PartialEq, Eq, PartialOrd, Ord)
@@ -69,6 +70,7 @@ instance Show Step where
         External index -> ".e{}" % index
         Variant index -> ".v{}" % index
         Field index -> ".f{}" % index
+        Implicit index -> ".i{}" % index
         FunctionArg index -> "arg{}" % index
         FunctionResult -> "R"
 
@@ -76,8 +78,13 @@ data Converter = { from :: Position,
                    to :: Position,
                  } deriving (Show)
 
+data Equal = { left :: Position,
+               right :: Position,
+             } deriving (Show)
+
 data TypeMapping = { var_mappings :: Map String [Position],
                      owner_positions :: [Position],
                      ref_positions :: Map Int [Position],
                      converters :: [Converter],
+                     equals :: [Equal],
                    } deriving (Show)

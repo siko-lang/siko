@@ -25,14 +25,19 @@ convertPath path = MF.Position (helper path)
             HF.Field index parent -> List.push (helper parent) (MF.Field index)
             HF.Extern index parent -> List.push (helper parent) (MF.External index)
             HF.Variant index parent -> List.push (helper parent) (MF.Variant index)
+            HF.Implicit index parent -> List.push (helper parent) (MF.Implicit index)
             HF.Result -> [MF.FunctionResult]
 
-getConverters :: [HF.ExternConstraint] -> [MF.Converter]
-getConverters extern_constraints =  List.fold [] extern_constraints (\converters, c -> case c of
+getConvertersAndEquals :: [HF.ExternConstraint] -> ([MF.Converter], [MF.Equal])
+getConvertersAndEquals extern_constraints =  List.fold ([], []) extern_constraints (\(converters, equals), c -> case c of
     HF.ExternConverter hir_converter -> do
         from <- convertPath hir_converter.from
         to <- convertPath hir_converter.to
-        List.push converters (MF.Converter from to))
+        (List.push converters (MF.Converter from to), equals)
+    HF.ExternEquality equal -> do
+        left <- convertPath equal.left
+        right <- convertPath equal.right
+        (converters, List.push equals (MF.Equal left right)))
 
 createTypeMap :: L.Context -> HT.Type -> Int -> [HF.ExternConstraint] ->  MF.TypeMapping
 createTypeMap lowering_context type arg_count extern_constraints = do
@@ -45,8 +50,8 @@ createTypeMap lowering_context type arg_count extern_constraints = do
         context <- mapType context steps arg
         (context, index + 1)) (context, 0)
     context <- mapType context [MF.FunctionResult] result_type
-    converters <- getConverters extern_constraints
-    MF.TypeMapping context.var_mappings context.owner_positions context.ref_positions converters
+    (converters, equals) <- getConvertersAndEquals extern_constraints
+    MF.TypeMapping context.var_mappings context.owner_positions context.ref_positions converters equals
 
 addVarPosition :: Context -> String -> [MF.Step] -> Context
 addVarPosition context name steps = do
@@ -79,6 +84,9 @@ mapType context steps type = case type of
                 if record.external
                     then do
                         context <- List.foldE (\context, index, arg -> do
+                            steps <- if record.implicit_member
+                            then push steps (MF.Implicit 0)
+                            else steps
                             steps <- push steps (MF.External index)
                             context <- mapType context steps arg
                             context) context args

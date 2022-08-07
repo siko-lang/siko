@@ -144,6 +144,7 @@ processExternConstraints extern_constraints = List.map extern_constraints proces
         processExternConstraint :: SF.ExternConstraint -> HF.ExternConstraint
         processExternConstraint extern_constraint = case extern_constraint of
             SF.ExternConverter (SF.Converter from to) -> HF.ExternConverter (HF.Converter (processConstraintPath from) (processConstraintPath to))
+            SF.ExternEquality (SF.Equal from to) -> HF.ExternEquality (HF.Equal (processConstraintPath from) (processConstraintPath to))
 
         processConstraintPath :: SF.ConstraintPath -> HF.ConstraintPath
         processConstraintPath path = case path of
@@ -152,6 +153,7 @@ processExternConstraints extern_constraints = List.map extern_constraints proces
             SF.Field index parent -> HF.Field index (processConstraintPath parent)
             SF.Extern index parent -> HF.Extern index (processConstraintPath parent)
             SF.Variant index parent -> HF.Variant index (processConstraintPath parent)
+            SF.Implicit index parent -> HF.Implicit index (processConstraintPath parent)
 
 processFunction :: ResolverState ->
                    HP.Program () ->
