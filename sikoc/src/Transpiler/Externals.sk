@@ -590,7 +590,10 @@ generateListIntoIter program type_store arg_types result_type = do
 
 generateListNextItem :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateListNextItem program type_store arg_types result_type = do
-    rust_type <- convertType result_type
+    result_id <- LT.getIdentity result_type
+    result_record <- getRecord program result_id
+    option_type <- (atIndex result_record.fields 1).type
+    rust_option_type <- convertType option_type
     iterator_type <- atIndex arg_types 0
     iterator_id <- LT.getIdentity iterator_type
     iterator_record <- getRecord program iterator_id
@@ -609,14 +612,14 @@ generateListNextItem program type_store arg_types result_type = do
     some_pattern <- R.VariantPattern "Some" (Some item)
     none_pattern <- R.VariantPattern "None" None
     rust_result_type <- convertType result_type
-    some_record_type <- getVariantRecordType program result_type "Some"
-    none_record_type <- getVariantRecordType program result_type "None"
+    some_record_type <- getVariantRecordType program option_type "Some"
+    none_record_type <- getVariantRecordType program option_type "None"
     rust_some_record_type <- convertType (LT.Record some_record_type [])
     rust_none_record_type <- convertType (LT.Record none_record_type [])
     some_record <- getRecord program some_record_type
     item_field <- atIndex some_record.fields 0
     rust_item_type <- convertType item_field.type
-    tuple_record <- case item_field.type of
+    tuple_record <- case result_type of
         LT.Record record_id _ -> getRecord program record_id
         ty -> panic "Tuple is not a record {}" % ty
     state_field <- atIndex tuple_record.fields 0
@@ -625,13 +628,20 @@ generateListNextItem program type_store arg_types result_type = do
     item_ref <- if not (LT.isRef value_field.type) && (LT.isRef iterator_item_type || is_iterator_ref)
     then R.MethodCall (R.Deref (R.VarRef item)) cloneName []
     else R.VarRef item
+    item_ref <- if RT.isBoxed rust_item_type
+    then boxExpr item_ref
+    else item_ref
     state_ctor <- R.StructCtor (RT.showBase rust_state_type) [R.FieldInitItem innerValueField (R.VarRef state)]
-    tuple_ctor <- R.StructCtor (RT.showBase rust_item_type) [R.FieldInitItem (getFieldName 0) state_ctor,
-                                                      R.FieldInitItem (getFieldName 1) item_ref]
-    some_ctor <- R.StructCtor (RT.showBase rust_some_record_type) [R.FieldInitItem (getFieldName 0) tuple_ctor]
+    some_ctor <- R.StructCtor (RT.showBase rust_some_record_type) [R.FieldInitItem (getFieldName 0) item_ref]
+    some_ctor <- R.FunctionCall ("{}::Some" % RT.showBase rust_option_type) [some_ctor]
     none_ctor <- R.StructCtor (RT.showBase rust_none_record_type) []
-    some_case <- R.MatchCase some_pattern (R.FunctionCall ("{}::Some" % RT.showBase rust_result_type) [some_ctor]) None
-    none_case <- R.MatchCase none_pattern (R.FunctionCall ("{}::None" % RT.showBase rust_result_type) [none_ctor]) None
+    none_ctor <- R.FunctionCall ("{}::None" % RT.showBase rust_option_type) [none_ctor]
+    tuple_ctor_some <- R.StructCtor (RT.showBase rust_result_type) [R.FieldInitItem (getFieldName 0) state_ctor,
+                                                                    R.FieldInitItem (getFieldName 1) some_ctor]
+    tuple_ctor_none <- R.StructCtor (RT.showBase rust_result_type) [R.FieldInitItem (getFieldName 0) state_ctor,
+                                                                    R.FieldInitItem (getFieldName 1) none_ctor]
+    some_case <- R.MatchCase some_pattern tuple_ctor_some None
+    none_case <- R.MatchCase none_pattern tuple_ctor_none None
     cases <- [some_case, none_case]
     match <- R.Match (R.VarRef value) cases
     R.Block [state_decl, value_decl, match]

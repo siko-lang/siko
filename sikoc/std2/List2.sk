@@ -100,11 +100,11 @@ atIndex index l = extern (arg[0].e[0] -> result)
 data ListIter a = { inner :: ListIterator a }
 
 instance Iterator (ListIter a) > a where
-    next iter =
-        case List2.nextItem iter.inner of
-            Some (inner, a) -> do
-                iter <- iter { inner = inner }
-                (iter, Some a)
+    next iter = do
+        (inner, item) <- List2.nextItem iter.inner
+        iter <- iter { inner = inner }
+        case item of
+            Some a -> (iter, Some a)
             None -> (iter, None)
 
 @Inline
@@ -116,8 +116,8 @@ data ListIterator a = extern (implicit)
 intoIter a :: List2 a -> ~ListIterator a
 intoIter list = extern (arg[0] -> result.i[0])
 
-nextItem a :: ListIterator a -> ~Option ~(~ListIterator a, a)
-nextItem iter = extern (arg[0].i[0].f[0] -> result.v[0].f[0].f[1], arg[0].i[0] == result.v[0].f[0].f[0].i[0])
+nextItem a :: ListIterator a -> ~(~ListIterator a, Option a)
+nextItem iter = extern (arg[0].i[0].f[0] -> result.f[1].v[0].f[0], arg[0].i[0] == result.f[0].i[0])
 
 @Inline
 toList it a :: (Iterator it > a) => it -> List2 a
