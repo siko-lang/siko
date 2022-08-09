@@ -155,11 +155,11 @@ addS s k m f = do
 data MapIter k v = { inner :: MapIterator k v }
 
 instance Iterator (MapIter k v) > (k, v) where
-    next iter =
-        case Map2.nextItem iter.inner of
-            Some (inner, a) -> do
-                iter <- iter { inner = inner }
-                (iter, Some a)
+    next iter = do
+        (inner, item) <- Map2.nextItem iter.inner
+        iter <- iter { inner = inner }
+        case item of
+            Some a -> (iter, Some a)
             None -> (iter, None)
 
 @Inline
@@ -171,8 +171,8 @@ data MapIterator k v = extern (implicit)
 intoIter k v :: Map2 k v -> ~MapIterator k v
 intoIter m = extern (arg[0] -> result.i[0])
 
-nextItem k v :: MapIterator k v -> ~Option (~MapIterator k v, ~(k, v))
-nextItem iter = extern (arg[0].i[0] -> result.v[0].f[1].f[0], arg[0].i[0] -> result.v[0].f[1].f[1], arg[0].i[0] == result.v[0].f[0].f[0].i[0])
+nextItem k v :: MapIterator k v -> ~(~MapIterator k v, ~Option (k, v))
+nextItem iter = extern (arg[0].i[0].f[0] -> result.f[1].v[0].f[0], arg[0].i[0].f[0] -> result.f[1].v[0].f[1], arg[0].i[0] == result.f[0].i[0])
 
 @Inline
 toMap2 it k v :: (Iterator it > (k, v), Ord k) => it -> Map2 k v
