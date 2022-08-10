@@ -94,11 +94,10 @@ add sub var type = do
         then return Err ()
         else do
             (vars, old) <- insert sub.vars var type
+            sub <- sub { vars = vars }
             case old of
                 Some old -> if old == type then Ok sub else Err ()
-                None -> do
-                    sub <- sub { vars = vars }
-                    Ok sub
+                None -> Ok sub
 
 addUnificationConstraint :: Substitution -> UnificationConstraint -> Substitution
 addUnificationConstraint sub c = do
