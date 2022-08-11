@@ -30,7 +30,6 @@ import Siko.Util.SharedString as SS
 
 data Context = { type_store :: TS.TypeStore,
                  function_store :: FS.FunctionStore,
-                 instance_resolver :: IR.InstanceResolver,
                  state :: TypecheckerState,
                  returns :: [(E.ExprId, Location)],
                  group_items :: [PO.FullyQualifiedName],
@@ -62,9 +61,12 @@ instance U.ClassProvider Context where
     getAllClassDependencies context qn = U.getAllClassDependencies context.state qn
     getAssociatedTypeCount context qn = U.getAssociatedTypeCount context.state qn
 
-initializeContext :: TypecheckerState -> IR.InstanceResolver -> FS.FunctionStore -> [PO.FullyQualifiedName] -> Context
-initializeContext state instance_resolver function_store group_items =
-    Context TS.initializeTypeStore function_store instance_resolver state [] group_items []
+instance IR.InstanceResolverProvider Context where
+    getResolver context = IR.getResolver context.state
+
+initializeContext :: TypecheckerState -> FS.FunctionStore -> [PO.FullyQualifiedName] -> Context
+initializeContext state function_store group_items =
+    Context TS.initializeTypeStore function_store state [] group_items []
 
 addExprType :: Context -> E.ExprId -> TS.ExprTypeState -> Context
 addExprType context expr_id expr_type = do
@@ -111,11 +113,11 @@ processClassConstraints context location = do
         if isEmpty context.class_constraints
         then break Ok context
         else do
-            (constraint, class_constraints) <- List.remove context.class_constraints (List.getLength context.class_constraints - 1)
+            (constraint, class_constraints) <- List.removeLast context.class_constraints
             context <- context { class_constraints = class_constraints }
             S.UnificationConstraint class_name type associated_types <- constraint
             //println "processClassConstraints: {} {} {}" % (class_name, TF.toString type, TF.toStringTypes associated_types)
-            case IR.checkInstance context context.instance_resolver type class_name of // FIXME: put instance resolver behind type class!
+            case IR.checkInstance context type class_name of // FIXME: put instance resolver behind type class!
                 Ok (context, sub, instance_info) -> do
                     sub :: S.Substitution <- sub // FIXME
                     instance_info :: IR.InstanceInfo <- instance_info // FIXME
@@ -125,7 +127,7 @@ processClassConstraints context location = do
                     //println "processClassConstraints2: {} {} {}" % (class_name, TF.toStringTypes associated_types, TF.toStringTypes instance_info.associated_types)
                     List.zipS context associated_types instance_info.associated_types (\context, ty1, ty2 -> do
                             unify context S.createSubstitution ty1 ty2 location)
-                Err _ -> do
+                Err context -> do
                     //println "processClassConstraints failed: {} {}" % (TF.toString type, class_name)
                     break Err context
 
@@ -145,7 +147,8 @@ unify context sub ty1 ty2 location = do
                     state <- addError context.state err
                     context <- context { state = state }
                     context
-        Err _ -> do
+        Err (context, sub) -> do
+            context :: Context <- context // FIXME
             //println "Not Ok! {}, {}" % (TF.toString ty1, TF.toString ty2)
             err <- TypeMismatch (SS.create (ty1 |> TF.fixedType |> TF.toString)) (SS.create (ty2 |> TF.fixedType |> TF.toString)) location
             state <- addError context.state err

@@ -88,15 +88,15 @@ containsVar type var = case type of
     Owner t -> containsVar t var
     Tuple args -> List.fold False args (\contains, arg -> contains || containsVar arg var)
 
-add :: Substitution -> TypeVar -> Type -> Result Substitution ()
+add :: Substitution -> TypeVar -> Type -> Result Substitution Substitution
 add sub var type = do
     if containsVar type var
-        then return Err ()
+        then return Err sub
         else do
             (vars, old) <- insert sub.vars var type
             sub <- sub { vars = vars }
             case old of
-                Some old -> if old == type then Ok sub else Err ()
+                Some old -> if old == type then Ok sub else Err sub
                 None -> Ok sub
 
 addUnificationConstraint :: Substitution -> UnificationConstraint -> Substitution

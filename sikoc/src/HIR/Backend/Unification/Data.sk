@@ -42,18 +42,22 @@ remapAdt adt context = do
     adt <- S.transform adt (\t -> S.apply (T.removeFixed t) sub)
     (adt, context)
 
-instantiateAdt a :: (U.TypeVarGenerator a, U.DataProvider a, U.ClassProvider a, U.Context a) => a -> D.AlgebraicDataType -> T.Type -> Result (a, D.AlgebraicDataType) () // FIXME TypeVarGenerator
+instantiateAdt a :: (U.TypeVarGenerator a, U.DataProvider a, U.ClassProvider a, U.Context a) => a -> D.AlgebraicDataType -> T.Type -> Result (a, D.AlgebraicDataType) a // FIXME TypeVarGenerator
 instantiateAdt context adt adt_type = do
     sub <- S.createSubstitution
     (adt, context) <- remapAdt adt context
-    (context, sub) <- try U.unify context sub adt.type adt_type
+    (context, sub) <- case U.unify context sub adt.type adt_type of
+        Ok (context, sub) -> (context, sub)
+        Err (context, sub) -> return Err context
     adt <- S.apply adt sub
     Ok (context, adt)
 
-instantiateRecord a :: (U.TypeVarGenerator a, U.DataProvider a, U.ClassProvider a, U.Context a) => a -> D.Record -> T.Type -> Result (a, D.Record) () // FIXME TypeVarGenerator
+instantiateRecord a :: (U.TypeVarGenerator a, U.DataProvider a, U.ClassProvider a, U.Context a) => a -> D.Record -> T.Type -> Result (a, D.Record) a // FIXME TypeVarGenerator
 instantiateRecord context record record_type = do
     sub <- S.createSubstitution
     (record, context) <- remapRecord record context
-    (context, sub) <- try U.unify context sub record.type record_type
+    (context, sub) <- case U.unify context sub record.type record_type of
+        Ok (context, sub) -> (context, sub)
+        Err (context, sub) -> return Err context
     record <- S.apply record sub
     Ok (context, record)

@@ -68,20 +68,21 @@ isSpecializedType type = case type of
     T.Tuple args -> args |> List.iter |> Iterator.fold (\specialized, arg -> specialized || not (isVar arg)) False
     _ -> True
 
-processInstance :: TypecheckerState -> CIS.ClassInfoStore -> IR.InstanceResolver -> C.Instance -> (TypecheckerState, IR.InstanceResolver, [(P.FullyQualifiedName, T.Type)])
-processInstance state class_info_store instance_resolver i = do
+processInstance :: TypecheckerState -> CIS.ClassInfoStore -> C.Instance -> (TypecheckerState, [(P.FullyQualifiedName, T.Type)])
+processInstance state class_info_store i = do
     if isSpecializedType i.type
         then do
             state <- addError state (SpecializedInstance i.location)
-            return (state, instance_resolver, [])
+            return (state, [])
         else ()
     instance_info <- IR.InstanceInfo i.type i.associated_types i.id i.location
     (state, instance_info) <- IR.instantiateInstanceInfo state instance_info
-    instance_resolver <- case IR.addUserDefinedInstance instance_resolver i.class_name instance_info of
-        Ok instance_resolver -> instance_resolver
-        Err location -> do
+    state <- case IR.addUserDefinedInstance state.instance_resolver i.class_name instance_info of
+        Ok instance_resolver -> state { instance_resolver = instance_resolver }
+        Err (instance_resolver, location) -> do
+            state { instance_resolver = instance_resolver }
             state <- addError state (ConflictingInstances (SS.create "{}" % i.class_name) i.location location)
-            return (state, instance_resolver, [])
+            return (state, [])
     (state, inferred_types) <- case get state.class_store.class_type_info_map i.class_name of
         Some class_type_info -> do
             (state, member_names, inferred_types) <- i.members |> List.iter |> Iterator.fold (\(state, member_names, inferred_types), instance_member_name -> do
@@ -144,7 +145,7 @@ processInstance state class_info_store instance_resolver i = do
                 ) state
             (state, inferred_types)
         None -> (state, [])
-    (state, instance_resolver, inferred_types)
+    (state, inferred_types)
 
 initializeClassInfoStore :: TypecheckerState -> CIS.ClassInfoStore
 initializeClassInfoStore state = do
@@ -158,8 +159,8 @@ initializeClassInfoStore state = do
         class_info <- CIS.ClassInfo arg_type class_type_info.associated_types members dependencies
         CIS.addClassInfo store class_name class_info)
 
-processClassesAndInstances :: Config -> TypecheckerState -> IR.InstanceResolver -> (TypecheckerState, IR.InstanceResolver, CIS.ClassInfoStore)
-processClassesAndInstances config state instance_resolver = do
+processClassesAndInstances :: Config -> TypecheckerState -> (TypecheckerState, CIS.ClassInfoStore)
+processClassesAndInstances config state = do
     classes <- P.getClasses state.program
     class_dependency_map <- ClassDependencyMap empty
     (state, class_type_info_map, class_dependency_map) <- classes |> List.iter |> Iterator.fold (\(state, class_type_info_map, class_dependency_map), c -> do
@@ -183,9 +184,9 @@ processClassesAndInstances config state instance_resolver = do
     state <- state { class_store = class_store }
     class_info_store <- initializeClassInfoStore state
     instances <- P.getInstances state.program
-    (state, instance_resolver, inferred_types) <- List.fold (state, instance_resolver, []) instances (\(state, instance_resolver, inferred_types), i -> do
-        (state, instance_resolver, types) <- processInstance state class_info_store instance_resolver i
-        (state, instance_resolver, inferred_types + types))
+    (state, inferred_types) <- List.fold (state, []) instances (\(state, inferred_types), i -> do
+        (state, types) <- processInstance state class_info_store i
+        (state, inferred_types + types))
     program <- inferred_types |> List.iter |> Iterator.fold (\program, (qn, type) -> P.updateInstanceMemberType program qn type) state.program
     state <- state { program = program }
-    (state, instance_resolver, class_info_store)
+    (state, class_info_store)
