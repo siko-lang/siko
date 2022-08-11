@@ -18,10 +18,10 @@ import Siko.Syntax.Location
 import Siko.Config
 import Siko.Constants
 import Siko.Trace
-
+import Siko.Util.SharedString as SS
 import Map
 
-data Name = { module_name :: String, name :: String } deriving (PartialEq, Eq, PartialOrd, Ord, Show)
+data Name = { module_name :: SS.SharedString, name :: SS.SharedString } deriving (PartialEq, Eq, PartialOrd, Ord, Show)
 
 data NameMap = { names :: Map Name Int }
 
@@ -33,7 +33,7 @@ getName name_map effectfull_id = do
         Some old_id -> Some (old_id + 1)
         None -> Some 1) (Name mod name) name_map.names
     effectless_id <- case id of
-        Some id -> PO.Effectless mod ("{}{}" % (name, id))
+        Some id -> PO.Effectless mod (SS.create "{}{}" % (name, id))
         None -> PO.Effectless mod name
     (name_map { names = names}, effectless_id)
 
@@ -199,7 +199,7 @@ preWithHook (queue, context) with_id handlers effect_types location = do
         (context, tuple_id) <- getNextExprId context
         (context, bind_id) <- getNextExprId context
         (context, pattern_id) <- getNextPatternId context
-        bind_ref <- P.BindRef ".dyn_effect_context" pattern_id
+        bind_ref <- P.BindRef (SS.create ".dyn_effect_context") pattern_id
         bind_pattern <- P.Pattern (P.Binding bind_ref) pattern_id dynamic_context_type location
         tuple_args <- if isDynamic effect_context
         then do

@@ -13,6 +13,7 @@ import Siko.HIR.Backend.Unification as U
 import Siko.HIR.Backend.Unification.Substitution as S
 import Siko.HIR.Backend.TypeIsomorphism as HTI
 import Map
+import Siko.Util.SharedString as SS
 
 checkConflicts :: TypecheckerState -> InstanceResolver -> TypecheckerState
 checkConflicts state instance_resolver = do
@@ -28,7 +29,7 @@ checkConflicts state instance_resolver = do
                         location <- i.location
                         state <- if generic_instance_location == location
                             then state
-                            else addError state (ConflictingInstances ("{}" % class_name) generic_instance_location location)
+                            else addError state (ConflictingInstances (SS.create "{}" % class_name) generic_instance_location location)
                         state
                     None -> state
             ) state
@@ -45,7 +46,7 @@ checkInstanceDependenciesForInstance state instance_resolver type class_name loc
     List.fold state deps (\state, dep -> do
         case checkInstance state instance_resolver type dep of
             Ok (state, sub, instance_info) -> state
-            Err _ -> addError state (MissingInstance ("{}" % dep) location))
+            Err _ -> addError state (MissingInstance (SS.create "{}" % dep) location))
 
 checkInstanceDependencies :: TypecheckerState -> InstanceResolver -> TypecheckerState
 checkInstanceDependencies state instance_resolver =

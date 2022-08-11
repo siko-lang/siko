@@ -14,6 +14,7 @@ import Siko.HIR.Data as HD
 import Siko.HIR.Type
 import Siko.HIR.Program as HP
 import Map
+import Siko.Util.SharedString as SS
 
 processVariant :: ResolverState -> TypeResolverState -> SD.Variant -> (ResolverState, TypeResolverState, HD.Variant)
 processVariant state type_resolver variant = do
@@ -27,7 +28,7 @@ processVariant state type_resolver variant = do
 processRecordField :: ResolverState ->
                       TypeResolverState ->
                       SD.RecordField ->
-                      Map String [Ident] -> (ResolverState, TypeResolverState, HD.RecordField, Map String [Ident])
+                      Map SS.SharedString [Ident] -> (ResolverState, TypeResolverState, HD.RecordField, Map SS.SharedString [Ident])
 processRecordField state type_resolver (SD.RecordField name type_signature) field_names = do
     (type_resolver, state, type) <- processTypeSignature type_resolver state type_signature
     n <- getString name

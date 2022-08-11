@@ -9,6 +9,7 @@ import Siko.HIR.Backend.Lowering.TypeStore as TS
 import Siko.HIR.Backend.Unification as U
 import Siko.HIR.Backend.Lowering as L
 import Siko.HIR.Backend.Unification.Util
+import Siko.Util.SharedString as SS
 import Map
 
 data Context = { var_mappings :: Map String [MF.Position],
@@ -77,7 +78,7 @@ mapType :: Context -> [MF.Step] -> HT.Type -> Context
 mapType context steps type = case type of
     HT.Var _ _ -> panic "Var type in type mapping!"
     HT.FixedTypeArg name _ _ -> do
-        addVarPosition context name steps
+        addVarPosition context (SS.get name) steps
     HT.Named qn args -> do
         case HP.getItem context.lowering_context.hir_program qn of
             HP.Record record -> do

@@ -5,11 +5,12 @@ import Siko.HIR.Pattern
 import Siko.HIR.Function
 import Siko.Syntax.Ident
 import Map
+import Siko.Util.SharedString as SS
 
-data PatternEnvironment = { bindings :: Map String [Ident], irrefutable :: Bool }
+data PatternEnvironment = { bindings :: Map SS.SharedString [Ident], irrefutable :: Bool }
 
 data Environment = { lambda_id :: LambdaId,
-                     block_bindings :: Map String BindRef,
+                     block_bindings :: Map SS.SharedString BindRef,
                      parent :: Option Environment }
 
 createPatternEnvironment :: Bool -> PatternEnvironment
@@ -36,7 +37,7 @@ addBinding env bind_ref = do
     env <- env { block_bindings = block_bindings }
     env
 
-getBinding :: Environment -> String -> Option (BindRef, LambdaId)
+getBinding :: Environment -> SS.SharedString -> Option (BindRef, LambdaId)
 getBinding env name = do
     case get env.block_bindings name of
         Some bind_ref -> Some (bind_ref, env.lambda_id)
@@ -44,7 +45,7 @@ getBinding env name = do
             Some env -> getBinding env name
             None -> None
 
-getAllBindings :: PatternEnvironment -> [String]
+getAllBindings :: PatternEnvironment -> [SS.SharedString]
 getAllBindings env = env.bindings |> Map.iter |> Iterator.fold (\names, (name, _) -> push names name) []
 
 envToBindGroup :: PatternEnvironment -> Environment -> BindGroup -> BindGroup

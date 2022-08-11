@@ -19,6 +19,7 @@ import Siko.Resolver.Class
 import Siko.Resolver.Effect
 import Siko.AutoDerive as AD
 import Map
+import Siko.Util.SharedString as SS
 
 data ResolverState = { errors :: [ResolverError],
                        expr_id_gen :: ExprIdGenerator,
@@ -65,13 +66,13 @@ processAutoDerives source_files = do
             instances <- List.map instances (\i -> SM.Instance i)
             mod { items = items + instances }
 
-        processADItem :: String -> [SC.Instance] -> SM.Item -> ([SC.Instance], SM.Item) // FIXME: name of this function!
+        processADItem :: SS.SharedString -> [SC.Instance] -> SM.Item -> ([SC.Instance], SM.Item) // FIXME: name of this function!
         processADItem mod_name instances item = case item of
             SM.Record record -> do
                 (record, record_instances) <- AD.processRecordDerives record
                 (instances + record_instances, SM.Record record)
             SM.Adt adt -> do
-                (adt, adt_instances) <- AD.processAdtDerives adt mod_name
+                (adt, adt_instances) <- AD.processAdtDerives adt (SS.get mod_name)
                 (instances + adt_instances, SM.Adt adt)
             _ -> (instances, item)
 

@@ -3,12 +3,13 @@ module Siko.Resolver.Error where
 import Siko.Syntax.Ident
 import Siko.Syntax.Location
 import Siko.Resolver
+import Siko.Util.SharedString as SS
 
 data DefArgCount = DefArgCount Ident Int deriving (Show)
 
 data ResolverError = ModuleNotFound Ident
                    | UnknownType Ident
-                   | AmbiguousName Ident [String]
+                   | AmbiguousName Ident [SS.SharedString]
                    | UnknownTypeArg Ident
                    | InvalidVariant Location
                    | NotAClassName Ident
@@ -25,15 +26,15 @@ data ResolverError = ModuleNotFound Ident
                    | NotAVariant Ident
                    | InvalidVariantArgCountInPattern Ident Int Int
                    | InvalidRecordArgCountInPattern Ident Int Int
-                   | UninitalizedFields [String]
+                   | UninitalizedFields [SS.SharedString]
                    | MultiInitFields [Ident]
                    | UnknownInitFields [Ident]
-                   | UnusedFields [String]
+                   | UnusedFields [SS.SharedString]
                    | MultiUsedFields [Ident]
                    | UnknownUsedFields [Ident]
                    | NotAVariable Ident
                    | BindNotUnique [Ident]
-                   | OrPatternMismatch String Location
+                   | OrPatternMismatch SS.SharedString Location
                    | UnusedClassArg Ident Location
                    | ExternFnWithoutType Ident
                    | ContinueWithoutLoop Location

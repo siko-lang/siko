@@ -30,6 +30,7 @@ import Siko.Config
 import Siko.Trace
 import Siko.HIR.Backend.Typechecker.TypedProgram as TP
 import Map
+import Siko.Util.SharedString as SS
 
 data TypecheckerState = { program :: P.Program (),
                           errors :: [TypecheckerError],
@@ -111,14 +112,14 @@ checkFunctionType context fn = do
                             if List.contains declared_effect_names inferred_effect
                             then context
                             else do
-                                err <- UndeclaredEffect (show inferred_effect) fn.location
+                                err <- UndeclaredEffect (SS.create (show inferred_effect)) fn.location
                                 state <- addError context.state err
                                 context { state = state } )
                         context <- List.fold context declared_effect_names (\context, declared_effect -> do
                             if List.contains inferred_effect_names declared_effect
                             then context
                             else do
-                                err <- UnnecessaryEffect (show declared_effect) fn.location
+                                err <- UnnecessaryEffect (SS.create (show declared_effect)) fn.location
                                 state <- addError context.state err
                                 context { state = state } )
                         context
@@ -148,14 +149,14 @@ checkFunctionType context fn = do
                     context <- if HTI.checkIsomorphicType func_type_info.function_type (T.Tuple []) context.state
                         then context
                         else do
-                            err <- IncorrectMainType ("{}" % TF.toString func_type_info.function_type) fn.location
+                            err <- IncorrectMainType (SS.create "{}" % TF.toString func_type_info.function_type) fn.location
                             state <- addError context.state err
                             context { state = state }
                     context <- case func_type_info.effects of
                         Some effects -> if isEmpty effects
                                         then context
                                         else do
-                                            effect_names <- List.map effects TF.toString
+                                            effect_names <- List.map effects (\e -> TF.toString e |> SS.create)
                                             err <- MainEffectFound effect_names fn.location
                                             state <- addError context.state err
                                             context { state = state }

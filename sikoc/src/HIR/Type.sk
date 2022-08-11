@@ -15,10 +15,11 @@ module Siko.HIR.Type(Type(..),
 
 import Siko.HIR.Program as HP
 import Map
+import Siko.Util.SharedString as SS
 
 data TypeVar = TypeVar Int deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
-data RowKind = NamedRow String
+data RowKind = NamedRow SS.SharedString
              | IndexedRow Int
              deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
@@ -27,7 +28,7 @@ data Constraint = ClassConstraint HP.FullyQualifiedName [Type]
                 deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
 data Type = Var TypeVar [Constraint]
-          | FixedTypeArg String TypeVar [Constraint]
+          | FixedTypeArg SS.SharedString TypeVar [Constraint]
           | Named HP.FullyQualifiedName [Type]
           | Function Type Type
           | Never TypeVar

@@ -14,6 +14,7 @@ import Siko.Syntax.Location
 import Siko.Syntax.Attribute
 import Siko.Syntax.Module as M
 import Siko.Parser.Error
+import Siko.Util.SharedString as SS
 
 checkTypeArgs :: ([Ident], [ParserError]) -> Pattern -> ([Ident], [ParserError])
 checkTypeArgs (args, errors) (Pattern pattern (Location _ span)) = do
@@ -84,7 +85,7 @@ parseExternConstraints state = parseList state parseExternConstraint Kind.LParen
         parseConstraintPath state =
             loop (state, parent) <- (state, None) do
                 (state, path) <- try expectVarIdent state "path name"
-                p <- getString path
+                p <- SS.get (getString path)
                 (state, path) <- case p of
                     "arg" -> do
                         (state, index) <- try parseIndex state

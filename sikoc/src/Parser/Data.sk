@@ -8,6 +8,7 @@ import Siko.Parser.Type
 import Siko.Parser.Token.Kind as Kind
 import Siko.Parser.Token
 import Siko.Parser.Error
+import Siko.Util.SharedString as SS
 
 parseRecordField :: ParserState -> Result (ParserState, RecordField) (ParserState, ParserError)
 parseRecordField state = do
@@ -90,7 +91,7 @@ parseData state = do
                     state <- try expect state Kind.LParen
                     (state, modifier) <- try expectVarIdent state "extern modifier"
                     modifier <- getString modifier
-                    case modifier of
+                    case (SS.get modifier) of
                         "implicit" -> ()
                         _ -> return Err (state, unexpectedToken state "extern modifier")
                     state <- try expect state Kind.RParen

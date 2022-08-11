@@ -31,6 +31,7 @@ import Siko.Constants
 import Map
 import Siko.FileManager
 import Siko.Diagnostics
+import Siko.Util.SharedString as SS
 
 processArgs :: Context -> S.Substitution -> [HE.Expr HT.Type] -> (Context, [ME.Expr])
 processArgs context sub args = do
@@ -232,9 +233,9 @@ processChoiceTree context sub choice path_info_map hir_case_bodies hir_guards = 
                 (context, choice_expr) <- processChoiceTree context sub choice path_info_map hir_case_bodies hir_guards
                 (cond, expr) <- case cond of
                     CC.IntegerCondition literal -> do
-                        (ME.IntegerChecker literal, choice_expr)
+                        (ME.IntegerChecker (SS.get literal), choice_expr)
                     CC.StringCondition literal -> do
-                        (ME.StringChecker literal, choice_expr)
+                        (ME.StringChecker (SS.get literal), choice_expr)
                     CC.CharCondition literal -> do
                         (ME.CharChecker literal, choice_expr)
                     CC.CharRangeCondition s e kind -> do
@@ -507,7 +508,7 @@ processExpr context sub hir_expr = do
             function_type <- HPO.getVariantCtor context.hir_program qn index
             (function_type, context) <- BUtil.instantiateType function_type context
             (context, function_type, _) <- getFunctionType context arg_types expr_type function_type
-            queue_item <- FQ.VariantCtor qn index variant.name function_type
+            queue_item <- FQ.VariantCtor qn index (SS.get variant.name) function_type
             (context, function_id) <- FQ.insert context queue_item
             arg_count <- getLength variant.items
             processStaticFunctionCall context mir_args function_type function_id arg_count
@@ -541,13 +542,13 @@ processExpr context sub hir_expr = do
             (context, list_expr) <- getExpr context (ME.Expr (ME.List mir_args) mir_expr_type)
             (context, list_expr)
         HE.IntegerLiteral lit -> do
-            (context, lit_expr) <- getExpr context (ME.Expr (ME.IntegerLiteral lit) mir_expr_type)
+            (context, lit_expr) <- getExpr context (ME.Expr (ME.IntegerLiteral (SS.get lit)) mir_expr_type)
             (context, lit_expr)
         HE.FloatLiteral lit -> do
-            (context, lit_expr) <- getExpr context (ME.Expr (ME.FloatLiteral lit) mir_expr_type)
+            (context, lit_expr) <- getExpr context (ME.Expr (ME.FloatLiteral (SS.get lit)) mir_expr_type)
             (context, lit_expr)
         HE.StringLiteral lit -> do
-            (context, lit_expr) <- getExpr context (ME.Expr (ME.StringLiteral lit) mir_expr_type)
+            (context, lit_expr) <- getExpr context (ME.Expr (ME.StringLiteral (SS.get lit)) mir_expr_type)
             (context, lit_expr)
         HE.CharLiteral lit -> do
             (context, lit_expr) <- getExpr context (ME.Expr (ME.CharLiteral lit) mir_expr_type)
@@ -594,7 +595,7 @@ processExpr context sub hir_expr = do
                 (context, var_ref_expr) <- getExpr context (ME.Expr (ME.VarRef var) show_result_type)
                 mir_args <- push mir_args var_ref_expr
                 (context, exprs, mir_args)) (context, [], [])
-            processFormatExpr context fmt exprs mir_args
+            processFormatExpr context (SS.get fmt) exprs mir_args
         HE.CaseOf body hir_cases bind_groups -> do
             hir_case_bodies <- hir_cases |> List.iter |> Iterator.map (\HE.Case _ body -> body) |> toList
             hir_guards <- hir_cases |> List.iter |> Iterator.map (\HE.Case p _ -> do

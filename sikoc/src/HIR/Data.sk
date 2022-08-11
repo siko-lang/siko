@@ -3,12 +3,13 @@ module Siko.HIR.Data where
 import Siko.Syntax.Location
 import Siko.HIR.Type
 import Siko.HIR.Program as HP
+import Siko.Util.SharedString as SS
 
 data DeriveInfo = { class_name :: HP.FullyQualifiedName,
                     location :: Location,
                   } deriving (Show)
 
-data Variant = { name :: String,
+data Variant = { name :: SS.SharedString,
                  location :: Location,
                  items :: [Type],
                } deriving (Show)
@@ -24,7 +25,7 @@ data AlgebraicDataType = { name :: HP.FullyQualifiedName,
                            type :: Type,
                         } deriving (Show)
 
-data RecordField = RecordField String Type deriving (Show)
+data RecordField = RecordField SS.SharedString Type deriving (Show)
 
 data Record = { name :: HP.FullyQualifiedName,
                 location :: Location,
@@ -37,5 +38,5 @@ data Record = { name :: HP.FullyQualifiedName,
                 implicit_member :: Bool,
               } deriving (Show)
 
-getFieldByName :: Record -> String -> Option RecordField
+getFieldByName :: Record -> SS.SharedString -> Option RecordField
 getFieldByName record name = find record.fields (\RecordField field_name _ -> field_name == name)

@@ -4,6 +4,7 @@ import Siko.Syntax.Module as M
 import Siko.Resolver.Item
 import Siko.Syntax.Import as SI
 import Map
+import Siko.Util.SharedString as SS
 
 processExport :: SI.Export -> Item -> Bool
 processExport export item = case export of
@@ -13,7 +14,7 @@ processExport export item = case export of
 processModule :: [Item] -> SI.Export -> [Item]
 processModule locals export = List.filter locals (processExport export)
 
-processExports :: Map String [Item] -> Map String M.Module -> Map String [Item]
+processExports :: Map SS.SharedString [Item] -> Map SS.SharedString M.Module -> Map SS.SharedString [Item]
 processExports locals modules = do
     Map.map locals (\(name, locals) -> do
                                     mod <- Option.unwrap (get modules name)

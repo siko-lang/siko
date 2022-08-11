@@ -1,0 +1,17 @@
+module Siko.Util.SharedString where
+
+import Rc
+
+data SharedString = { value :: Rc String } deriving (PartialEq, Eq, PartialOrd, Ord)
+
+create :: String -> SharedString
+create s = SharedString (Rc.create s)
+
+get :: SharedString -> String
+get ss = Rc.get ss.value
+
+instance Show SharedString where
+    show s = (Rc.get s.value)
+
+instance Add SharedString where
+    opAdd a b = Siko.Util.SharedString.create ((Siko.Util.SharedString.get a) + (Siko.Util.SharedString.get b))

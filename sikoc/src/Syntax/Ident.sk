@@ -1,15 +1,19 @@
 module Siko.Syntax.Ident where
 
 import Siko.Syntax.Location
+import Siko.Util.SharedString as SS
 
-data Ident = Ident String.String Location deriving (PartialEq)
+data Ident = Ident SS.SharedString Location deriving (PartialEq)
 
-getString :: Ident -> String
+getString :: Ident -> SS.SharedString
 getString (Ident s _) = s
 
 mergeIdents :: Ident -> Ident -> Ident
 mergeIdents (Ident n1 l1) (Ident n2 l2) =
     Ident (n1 + n2) (mergeLocations l1 l2)
 
+createIdent :: String -> Location -> Ident
+createIdent s location = Ident (SS.create s) location
+
 instance Show Ident where
-    show (Ident s _) = s
+    show (Ident s _) = show s

@@ -4,6 +4,7 @@ import Siko.Syntax.Ident
 import Siko.HIR.Pattern as P
 import Siko.HIR.Program (FullyQualifiedName)
 import Siko.Syntax.Location
+import Siko.Util.SharedString as SS
 
 data Case a = { pattern :: P.Pattern a,
                 body :: Expr a,
@@ -51,15 +52,15 @@ data SimpleExpr a = StaticFunctionCall FullyQualifiedName [Expr a]
                   | If (Expr a) (Expr a) (Expr a)
                   | Tuple [Expr a]
                   | List [Expr a]
-                  | IntegerLiteral String
-                  | FloatLiteral String
-                  | StringLiteral String
+                  | IntegerLiteral SS.SharedString
+                  | FloatLiteral SS.SharedString
+                  | StringLiteral SS.SharedString
                   | CharLiteral Char
                   | Do [Expr a]
                   | Bind (P.Pattern a) (Expr a)
                   | FieldAccess Ident (Expr a)
                   | TupleFieldAccess Int (Expr a)
-                  | Formatter String [Expr a]
+                  | Formatter SS.SharedString [Expr a]
                   | CaseOf (Expr a) [Case a] [P.BindGroup]
                   | RecordUpdate (Expr a) [RecordConstructionItem a]
                   | Return (Expr a)

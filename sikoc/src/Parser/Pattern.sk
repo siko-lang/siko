@@ -11,6 +11,7 @@ import Siko.Syntax.Pattern
 import Siko.Parser.Token as T
 import Siko.Parser.Token.Kind as Kind
 import Siko.Parser.Error
+import Siko.Util.SharedString as SS
 
 irrefutablePatternFollows :: ParserState -> Bool
 irrefutablePatternFollows state = do
@@ -117,7 +118,7 @@ parsePatternL state inner = do
         T.LParen -> parseTuplePattern state
         T.IntegerLiteral v -> do
                         state <- try expect state Kind.IntegerLiteral
-                        Ok (state, buildPattern (IntegerLiteral v) start_index state)
+                        Ok (state, buildPattern (IntegerLiteral (SS.create v)) start_index state)
         T.CharLiteral v1 -> do
             state <- try expect state Kind.CharLiteral
             ti <- peek state
@@ -141,7 +142,7 @@ parsePatternL state inner = do
                 _ -> Ok (state, buildPattern (CharLiteral v1) start_index state)
         T.StringLiteral v -> do
                             state <- try expect state Kind.StringLiteral
-                            Ok (state, buildPattern (StringLiteral v) start_index state)
+                            Ok (state, buildPattern (StringLiteral (SS.create v)) start_index state)
         T.TypeIdentifier _ -> parseConstructorPattern state inner start_index
         T.VarIdentifier _ -> do
                             (state, ident) <- try expectVarIdent state "type argument pattern"

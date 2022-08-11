@@ -16,6 +16,7 @@ import Siko.HIR.Backend.Unification.Substitution as S
 import Siko.HIR.Backend.Unification.TypeVarGenerator as TVG
 import Siko.Trace
 import Siko.Config
+import Siko.Util.SharedString as SS
 
 import Map
 
@@ -113,7 +114,7 @@ createArgExprs context args =
                 _ -> ()
             (context, id) <- getNextExprId context
             (context, pattern_id) <- getNextPatternId context
-            var_name <- ".inline_arg_{}" % pattern_id
+            var_name <- SS.create ".inline_arg_{}" % pattern_id
             bind_ref <- P.BindRef var_name pattern_id
             arg_map <- List.push arg_map (ArgRef bind_ref)
             bind_pattern <- P.Pattern (P.Binding bind_ref) pattern_id arg_type location

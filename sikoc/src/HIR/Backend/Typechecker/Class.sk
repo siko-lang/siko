@@ -20,6 +20,7 @@ import Siko.HIR.Backend.ClassInfoStore as CIS
 import Siko.Util.DependencyProcessor
 import Siko.Config
 import Map
+import Siko.Util.SharedString as SS
 
 data ClassDependencyMap = { direct_dependencies :: Map P.FullyQualifiedName [P.FullyQualifiedName] }
 
@@ -28,9 +29,9 @@ data ClassMemberInfo = { type :: T.Type,
 
 data ClassTypeInfo = {  arg_type :: T.Type,
                         associated_types :: [T.Type],
-                        members :: Map String ClassMemberInfo }
+                        members :: Map SS.SharedString ClassMemberInfo }
 
-addMemberInfo :: ClassTypeInfo -> String -> T.Type -> Bool -> ClassTypeInfo
+addMemberInfo :: ClassTypeInfo -> SS.SharedString -> T.Type -> Bool -> ClassTypeInfo
 addMemberInfo class_type_info name type has_default_impl = do
     (members, _) <- Map.insert class_type_info.members name (ClassMemberInfo type has_default_impl)
     class_type_info { members = members }
@@ -79,7 +80,7 @@ processInstance state class_info_store instance_resolver i = do
     instance_resolver <- case IR.addUserDefinedInstance instance_resolver i.class_name instance_info of
         Ok instance_resolver -> instance_resolver
         Err location -> do
-            state <- addError state (ConflictingInstances ("{}" % i.class_name) i.location location)
+            state <- addError state (ConflictingInstances (SS.create "{}" % i.class_name) i.location location)
             return (state, instance_resolver, [])
     (state, inferred_types) <- case get state.class_store.class_type_info_map i.class_name of
         Some class_type_info -> do
@@ -122,7 +123,7 @@ processInstance state class_info_store instance_resolver i = do
                                     else do
                                         expected <- inferred_instance_member_type |> TF.fixedType |> TF.toString
                                         found <- instance_member_type |> TF.fixedType |> TF.toString
-                                        addError state (InstanceMemberTypeMismatch expected found instance_member.location)
+                                        addError state (InstanceMemberTypeMismatch (SS.create expected) (SS.create found) instance_member.location)
                                 (instance_member_type, state)
                             None -> (TF.fixedType inferred_instance_member_type, state)
                         (state, Some final_member_type)

@@ -6,10 +6,11 @@ import Siko.HIR.Expr as E
 import Siko.HIR.Type as T
 import Siko.HIR.Program as P
 import Map
+import Siko.Util.SharedString as SS
 
-data BindRef = BindRef String PatternId deriving (Show, PartialEq, Eq, PartialOrd, Ord)
+data BindRef = BindRef SS.SharedString PatternId deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
-data BindGroup = { bindings :: Map String [BindRef] } deriving (Show)
+data BindGroup = { bindings :: Map SS.SharedString [BindRef] } deriving (Show)
 
 data RangeKind = Exclusive
                | Inclusive
@@ -29,8 +30,8 @@ data SimplePattern a = Binding BindRef
                      | Tuple [Pattern a]
                      | Guarded (Pattern a) (E.Expr a)
                      | Wildcard
-                     | IntegerLiteral String
-                     | StringLiteral String
+                     | IntegerLiteral SS.SharedString
+                     | StringLiteral SS.SharedString
                      | CharLiteral Char
                      | CharRange Char Char RangeKind
                      | Typed (Pattern a) T.Type

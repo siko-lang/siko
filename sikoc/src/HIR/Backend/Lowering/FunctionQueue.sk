@@ -20,6 +20,7 @@ import Siko.Constants
 import Siko.Util.Counter
 import Map as M
 import Siko.HIR.Backend.Lowering.TypeMapping
+import Siko.Util.SharedString as SS
 
 data FunctionQueueItem = Normal HP.FullyQualifiedName HT.Type
                          | VariantCtor HP.FullyQualifiedName Int String HT.Type
@@ -38,12 +39,12 @@ createFunctionQueue = FunctionQueue [] M.empty
 
 getItemName :: FunctionQueueItem -> (String, String)
 getItemName item = case item of
-    Normal n _ -> (HP.getModuleName n, HP.getShortName n)
-    VariantCtor n _ vn _ -> (HP.getModuleName n, vn)
-    RecordCtor n _ -> (HP.getModuleName n, HP.getShortName n)
-    TupleCtor _ -> (getInternalModuleName, "TupleCtor")
-    ClosureCtor _ _ closure_instance ->  (getInternalModuleName, CS.getVariantCtorName closure_instance)
-    ClosureCall n _ -> (getInternalModuleName, "ClosureCall{}" % n)
+    Normal n _ -> (SS.get (HP.getModuleName n), SS.get (HP.getShortName n))
+    VariantCtor n _ vn _ -> (SS.get (HP.getModuleName n), vn)
+    RecordCtor n _ -> (SS.get (HP.getModuleName n), SS.get (HP.getShortName n))
+    TupleCtor _ -> (SS.get getInternalModuleName, "TupleCtor")
+    ClosureCtor _ _ closure_instance ->  (SS.get getInternalModuleName, CS.getVariantCtorName closure_instance)
+    ClosureCall n _ -> (SS.get getInternalModuleName, "ClosureCall{}" % n)
 
 insert :: Context -> FunctionQueueItem -> (Context, MP.Identity)
 insert context item = do

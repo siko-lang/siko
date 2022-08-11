@@ -10,33 +10,34 @@ import Siko.Resolver.Module
 import Siko.Resolver as R
 import Siko.Resolver.Error
 import Siko.HIR.Program (getResolvableName, FullyQualifiedName(..))
+import Siko.Util.SharedString as SS
 
 data ItemRef = FullyQualifiedNameRef FullyQualifiedName
-             | Local String
+             | Local SS.SharedString
              deriving (Show)
 
-unpackItemRef :: ItemRef -> String
+unpackItemRef :: ItemRef -> SS.SharedString
 unpackItemRef ref = case ref of
     FullyQualifiedNameRef n -> getResolvableName n
     Local n -> n
 
 data ImportedItem = { name :: ItemRef,
-                      source_module :: String,
+                      source_module :: SS.SharedString,
                       item :: Item,
                       explicitness :: Explicitness } deriving (Show)
 
-importLocalItem :: String -> Item -> [ImportedItem]
+importLocalItem :: SS.SharedString -> Item -> [ImportedItem]
 importLocalItem module_name item = do
     name <- getItemName item
     [ImportedItem (Local name) module_name item Explicit,
      ImportedItem (FullyQualifiedNameRef (FullPath module_name name)) module_name item Explicit]
 
-processLocals :: String -> [Item] -> [ImportedItem]
+processLocals :: SS.SharedString -> [Item] -> [ImportedItem]
 processLocals module_name locals = do
     imported_items <- locals |> List.iter |> Iterator.map (importLocalItem module_name) |> Iterator.fold (\total, items -> total + items)  []
     imported_items
 
-importExportedItem :: Option Ident -> String -> Explicitness -> Item -> [ImportedItem]
+importExportedItem :: Option Ident -> SS.SharedString -> Explicitness -> Item -> [ImportedItem]
 importExportedItem alternative_name module_name explicitness item = do
     name <- getItemName item
     names <- case alternative_name of
@@ -47,7 +48,7 @@ importExportedItem alternative_name module_name explicitness item = do
             [FullyQualifiedNameRef (FullPath module_name name), Local name]
     names |> List.iter |> Iterator.map (\name -> ImportedItem name module_name item explicitness) |> toList
 
-processImport :: Map String [Item] -> I.Import -> Result [ImportedItem] ResolverError
+processImport :: Map SS.SharedString [Item] -> I.Import -> Result [ImportedItem] ResolverError
 processImport exported_items i = case i of
     I.Hiding name items -> Ok []
     I.ImportAll name alternative_name -> do
@@ -96,11 +97,11 @@ isHidden imports imported_item = List.fold False imports (\total, i -> total || 
                     else False
                 _ -> False
 
-processAllImports :: R.ResolverState -> Map String [Item] -> Map String [Item] -> Map String [I.Import] -> (R.ResolverState, Map String [ImportedItem])
+processAllImports :: R.ResolverState -> Map SS.SharedString [Item] -> Map SS.SharedString [Item] -> Map SS.SharedString [I.Import] -> (R.ResolverState, Map SS.SharedString [ImportedItem])
 processAllImports state all_locals all_exports all_imports =
     Map.fold (state, empty) all_locals (processModule all_exports all_imports)
         where
-            processModule :: Map String [Item] -> Map String [I.Import] -> (R.ResolverState, Map String [ImportedItem])-> (String, [Item]) -> (R.ResolverState, Map String [ImportedItem])
+            processModule :: Map SS.SharedString [Item] -> Map SS.SharedString [I.Import] -> (R.ResolverState, Map SS.SharedString [ImportedItem])-> (SS.SharedString, [Item]) -> (R.ResolverState, Map SS.SharedString [ImportedItem])
             processModule all_exports all_imports (state, all_imported_items) (module_name, locals) = do
                 module_imports <- Option.unwrap (get all_imports module_name)
                 local_imported_items <- processLocals module_name locals
@@ -110,7 +111,7 @@ processAllImports state all_locals all_exports all_imports =
                 state <- List.fold state errors (\state, error -> addError state error)
                 (state, all_imported_items)
 
-            processImports :: Map String [Item] -> ([ImportedItem], [ResolverError]) -> I.Import -> ([ImportedItem], [ResolverError])
+            processImports :: Map SS.SharedString [Item] -> ([ImportedItem], [ResolverError]) -> I.Import -> ([ImportedItem], [ResolverError])
             processImports all_exports (all_imported_items, all_errors) import_ =  do
                     case processImport all_exports import_ of
                         Ok imported_items -> (all_imported_items + imported_items, all_errors)

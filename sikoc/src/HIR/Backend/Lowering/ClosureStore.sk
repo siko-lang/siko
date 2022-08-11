@@ -14,6 +14,7 @@ import Siko.MIR.Data as MD
 import Siko.MIR.Type as MT
 import Siko.Constants
 import Map
+import Siko.Util.SharedString as SS
 
 data ClosureName = ClosureName String deriving (PartialEq, Eq, PartialOrd, Ord)
 
@@ -101,14 +102,14 @@ getVariantName closure_instance = do
     "I{}" % id
 
 getVariantRecordIdentity :: ClosureInstance -> Identity
-getVariantRecordIdentity closure_instance = Identity getInternalModuleName ("{}_{}" % (closure_instance.name, getVariantName closure_instance)) 0
+getVariantRecordIdentity closure_instance = Identity (SS.get getInternalModuleName) ("{}_{}" % (closure_instance.name, getVariantName closure_instance)) 0
 
 getVariantCtorName :: ClosureInstance -> String
 getVariantCtorName closure_instance = "{}_{}" % (closure_instance.name, getVariantName closure_instance)
 
 getClosureIdentity :: ClosureName -> Identity
 getClosureIdentity (ClosureName closure_name) = do
-    Identity getInternalModuleName closure_name 0
+    Identity (SS.get getInternalModuleName) closure_name 0
 
 compileClosure :: Context -> Closure -> Identity -> Context
 compileClosure context closure closure_call_identity = do
@@ -176,7 +177,7 @@ compileClosureInstance (ClosureName name) context closure_instance = do
     (records, _) <- insert type_store.records record_identity mir_variant_record
     type_store <- type_store { records = records }
     mir_variant <- MD.Variant variant_name (MT.Record record_identity)
-    adt_identity <- Identity getInternalModuleName name 0
+    adt_identity <- Identity (SS.get getInternalModuleName) name 0
     type_store <- TS.addVariant type_store adt_identity mir_variant
     context { type_store = type_store }
 

@@ -12,9 +12,11 @@ import Siko.Syntax.Ident
 import Siko.Syntax.Class as C
 import Siko.Syntax.Data as D
 
+import Siko.Util.SharedString as SS
+
 processRecordDerive :: D.Record -> Ident -> Option C.Instance
 processRecordDerive record (Ident name derive_location) = do
-    case name of
+    case SS.get name of
         "Show" -> Some (deriveRecordShow record derive_location)
         "PartialEq" -> Some (deriveRecordPartialEq record derive_location)
         "Eq" -> Some (deriveRecordEq record derive_location)
@@ -26,7 +28,7 @@ processRecordDerive record (Ident name derive_location) = do
 
 processAdtDerive :: D.AlgebraicDataType -> Ident -> String -> Option C.Instance
 processAdtDerive adt (Ident name derive_location) mod_name = do
-    case name of
+    case SS.get name of
         "Show" -> Some (deriveAdtShow adt derive_location mod_name)
         "PartialEq" -> Some (deriveAdtPartialEq adt derive_location)
         "Eq" -> Some (deriveAdtEq adt derive_location)

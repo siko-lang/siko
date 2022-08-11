@@ -8,22 +8,23 @@ import Siko.HIR.Type
 import Siko.HIR.Util as Util
 import Siko.HIR.Program as HP
 import Map
+import Siko.Util.SharedString as SS
 
 fixedType :: Type -> Type
 fixedType type = do
     vars <- Util.collectVars [] type
     (var_map, index) <- vars |> List.iter |> Iterator.fold (\(var_map, index), v -> do
-                 new_var <- (("t{}" % index), v)
+                 new_var <- ((SS.create "t{}" % index), v)
                  (var_map, _) <- Map.insert var_map v new_var
                  (var_map, index + 1)) (Map.empty, 0)
     convertToFixed var_map type
 
-convertConstraintsToFixed :: [Constraint] -> Map TypeVar (String, TypeVar) -> [Constraint]
+convertConstraintsToFixed :: [Constraint] -> Map TypeVar (SS.SharedString, TypeVar) -> [Constraint]
 convertConstraintsToFixed constraints var_map = List.map constraints (\c -> case c of
     ClassConstraint s associated_types -> ClassConstraint s (List.map associated_types (convertToFixed var_map))
     RowConstraint row_name row_type -> RowConstraint row_name (convertToFixed var_map row_type))
 
-convertToFixed :: Map TypeVar (String, TypeVar) -> Type -> Type
+convertToFixed :: Map TypeVar (SS.SharedString, TypeVar) -> Type -> Type
 convertToFixed var_map type =
     case type of
         Var var constraints -> case get var_map var of
@@ -56,7 +57,7 @@ convertType type names = case type of
     Var var _ -> do
         TypeVar v <- var
         "tv{}" % v
-    FixedTypeArg n _ _ -> n
+    FixedTypeArg n _ _ -> SS.get n
     Named n args -> do
         n <- HP.getResolvableName n
         if n == getFullListTypeName
@@ -138,25 +139,25 @@ addShortName name names = case names of
     Some names -> if contains names name then Some names else Some (push names name)
     None -> Some [name]
 
-getNiceName :: String -> Map String Bool -> String
+getNiceName :: SS.SharedString -> Map String Bool -> String
 getNiceName full_name conflicting_names = do
-    short <- getShortName full_name
+    short <- getShortName (SS.get full_name)
     case get conflicting_names short of
-        Some True -> full_name
+        Some True -> SS.get full_name
         _ -> short
 
 collectNamesFromConstraints :: [Constraint] -> [String]
 collectNamesFromConstraints constraints = constraints |> List.iter |> Iterator.map (\c -> case c of
-                ClassConstraint s _ -> HP.getResolvableName s
-                RowConstraint (NamedRow name) row_type -> name
+                ClassConstraint s _ -> SS.get (HP.getResolvableName s)
+                RowConstraint (NamedRow name) row_type -> SS.get name
                 RowConstraint (IndexedRow i) row_type -> "{}"  % i) |> toList
 
 collectNames :: Type -> Map String [Constraint] -> ([String], Map String [Constraint])
 collectNames type constraint_map = case type of
     Var (TypeVar v)  constraints -> (collectNamesFromConstraints constraints, addConstraint ("t{}" % v) constraints constraint_map)
-    FixedTypeArg n _ constraints -> (collectNamesFromConstraints constraints, addConstraint n constraints constraint_map)
+    FixedTypeArg n _ constraints -> (collectNamesFromConstraints constraints, addConstraint (SS.get n) constraints constraint_map)
     Named n args -> do
-                n <- HP.getResolvableName n
+                n <- SS.get (HP.getResolvableName n)
                 args |> List.iter |> Iterator.fold (\(all, constraint_map), arg -> do
                 (args, constraint_map) <- collectNames arg constraint_map
                 (all + args, constraint_map)) ([n], constraint_map)

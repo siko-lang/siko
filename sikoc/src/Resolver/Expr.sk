@@ -22,6 +22,7 @@ import Siko.Resolver.ModuleResolver
 import Siko.Resolver.ResolvedItem
 import Map
 import Std.Util
+import Siko.Util.SharedString as SS
 
 data LambdaHelper = { captured_values :: [HP.BindRef],
                     } deriving (Show)
@@ -237,18 +238,18 @@ processBinaryOp :: Context -> SE.Op -> HE.Expr () -> HE.Expr () -> HE.SimpleExpr
 processBinaryOp context op lhs rhs = do
     module_name <- getStdOpsModuleName
     qn <- case op of
-            SE.Equal -> HPO.FullPath module_name "opEq"
-            SE.NotEqual -> HPO.FullPath module_name "opNotEq"
-            SE.And -> HPO.FullPath module_name "opAnd"
-            SE.Or -> HPO.FullPath module_name "opOr"
-            SE.LessThan -> HPO.FullPath module_name "opLessThan"
-            SE.GreaterThan -> HPO.FullPath module_name "opGreaterThan"
-            SE.LessOrEqualThan -> HPO.FullPath module_name "opLessEqual"
-            SE.GreaterOrEqualThan -> HPO.FullPath module_name "opGreaterEqual"
-            SE.Add -> HPO.FullPath module_name "opAdd"
-            SE.Sub -> HPO.FullPath module_name "opSub"
-            SE.Mul -> HPO.FullPath module_name "opMul"
-            SE.Div -> HPO.FullPath module_name "opDiv"
+            SE.Equal -> HPO.FullPath module_name (SS.create "opEq")
+            SE.NotEqual -> HPO.FullPath module_name (SS.create "opNotEq")
+            SE.And -> HPO.FullPath module_name (SS.create "opAnd")
+            SE.Or -> HPO.FullPath module_name (SS.create "opOr")
+            SE.LessThan -> HPO.FullPath module_name (SS.create "opLessThan")
+            SE.GreaterThan -> HPO.FullPath module_name (SS.create "opGreaterThan")
+            SE.LessOrEqualThan -> HPO.FullPath module_name (SS.create "opLessEqual")
+            SE.GreaterOrEqualThan -> HPO.FullPath module_name (SS.create "opGreaterEqual")
+            SE.Add -> HPO.FullPath module_name (SS.create "opAdd")
+            SE.Sub -> HPO.FullPath module_name (SS.create "opSub")
+            SE.Mul -> HPO.FullPath module_name (SS.create "opMul")
+            SE.Div -> HPO.FullPath module_name (SS.create "opDiv")
             SE.PipeForward -> do
                 HE.Expr s_expr type id location <- rhs
                 case s_expr of
@@ -274,7 +275,7 @@ processDo context env exprs = do
                 (context, env, hir_exprs)) (context, env, [])
     (context, hir_exprs)
 
-validateUsedFields :: [Ident] -> HD.Record -> Result () ([String], [Ident], [Ident])
+validateUsedFields :: [Ident] -> HD.Record -> Result () ([SS.SharedString], [Ident], [Ident])
 validateUsedFields used_fields record = do
     used_fields_s <- used_fields |> List.iter |> Iterator.map (\i -> getString i) |> toList
     real_fields <- record.fields |> List.iter |> Iterator.map (\(HD.RecordField field_name _) -> field_name) |> toList
@@ -364,8 +365,8 @@ desugarTry expr = do
                     getResultModuleName getResultTypeName getResultOkVariantName)) location
     result_err <- Ident (HPO.getResolvableName (HPO.FullPathWithVariant
                     getResultModuleName getResultTypeName getResultErrVariantName)) location
-    ok <- Ident "ok" location
-    err <- Ident "err"  location
+    ok <- Ident (SS.create "ok") location
+    err <- Ident (SS.create "err")  location
     ce <- \e -> SE.Expr e location
     cp <- \p -> SP.Pattern p location
     ok_body <- ce (SE.Path ok)
@@ -499,11 +500,11 @@ processExpr context env (SE.Expr expr location) = do
             (context, env, HE.FieldAccess field hir_receiver)
         SE.TupleFieldAccess index receiver -> do
             (context, env, hir_receiver) <- processExpr context env receiver
-            case Int.parse index of
+            case Int.parse (SS.get index) of
                 Some i -> (context, env, HE.TupleFieldAccess i hir_receiver)
                 None -> panic "TupleField index not a number {}" % index
         SE.Formatter fmt args -> do
-            subs <- String.split fmt "{}"
+            subs <- String.split (SS.get fmt) "{}"
             context <- if getLength subs != getLength args + 1
                 then addErrorToContext context (InvalidFormatString location)
                 else context
@@ -520,11 +521,11 @@ processExpr context env (SE.Expr expr location) = do
                 (context, env, cases, bind_groups)) (context, env, [], [])
             (context, env, HE.CaseOf hir_body cases bind_groups)
         SE.Not arg -> do
-            qn <- HPO.FullPath getStdOpsModuleName "opNot"
+            qn <- HPO.FullPath getStdOpsModuleName (SS.create "opNot")
             (context, env, hir_arg) <- processExpr context env arg
             (context, env, HE.StaticFunctionCall qn [hir_arg])
         SE.Negative arg -> do
-            qn <- HPO.FullPath getStdOpsModuleName "opNegative"
+            qn <- HPO.FullPath getStdOpsModuleName (SS.create "opNegative")
             (context, env, hir_arg) <- processExpr context env arg
             (context, env, HE.ClassMemberCall qn [hir_arg])
         SE.RecordInitialization name field_inits -> do

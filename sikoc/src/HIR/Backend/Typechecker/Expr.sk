@@ -26,6 +26,7 @@ import Siko.HIR.Backend.Typechecker.InstanceResolver.Checks as IRChecks
 import Siko.HIR.Backend.Typechecker.Error
 import Siko.Constants
 import Map
+import Siko.Util.SharedString as SS
 
 data Context = { type_store :: TS.TypeStore,
                  function_store :: FS.FunctionStore,
@@ -140,13 +141,13 @@ unify context sub ty1 ty2 location = do
                 Ok context -> context
                 Err context -> do
                     context :: Context <- context // FIXME
-                    err <- TypeMismatch (ty1 |> TF.fixedType |> TF.toString) (ty2 |> TF.fixedType |> TF.toString) location
+                    err <- TypeMismatch (SS.create (ty1 |> TF.fixedType |> TF.toString)) (SS.create (ty2 |> TF.fixedType |> TF.toString)) location
                     state <- addError context.state err
                     context <- context { state = state }
                     context
         Err _ -> do
             //println "Not Ok! {}, {}" % (TF.toString ty1, TF.toString ty2)
-            err <- TypeMismatch (ty1 |> TF.fixedType |> TF.toString) (ty2 |> TF.fixedType |> TF.toString) location
+            err <- TypeMismatch (SS.create (ty1 |> TF.fixedType |> TF.toString)) (SS.create (ty2 |> TF.fixedType |> TF.toString)) location
             state <- addError context.state err
             context <- context { state = state }
             context
@@ -162,7 +163,7 @@ unify2 context sub ty1 ty2 location = do
             (context, sub)
         Err _ -> do
             //println "Not Ok! {}, {}" % (TF.toString ty1, TF.toString ty2)
-            err <- TypeMismatch (ty1 |> TF.fixedType |> TF.toString) (ty2 |> TF.fixedType |> TF.toString) location
+            err <- TypeMismatch (SS.create (ty1 |> TF.fixedType |> TF.toString)) (SS.create (ty2 |> TF.fixedType |> TF.toString)) location
             state <- addError context.state err
             context <- context { state = state }
             (context, sub)
@@ -265,13 +266,13 @@ checkHandlerConsistency context location info = do
                     1 -> context
                     _ -> do
                         locations <- List.map locations (\HandlerInfo location _ -> location)
-                        err <- EffectMemberNotUnique (show name) locations
+                        err <- EffectMemberNotUnique (SS.create (show name)) locations
                         state <- addError context.state err
                         context { state = state })
             List.fold (context, missing_members) eff.members (\(context, missing_members), member_name -> do
                 case get handled_effect.handlers member_name of
                     Some _ -> (context, missing_members)
-                    None -> (context, push missing_members (show member_name)))
+                    None -> (context, push missing_members (SS.create (show member_name))))
         )
     if isEmpty missing_members
     then context
@@ -478,7 +479,7 @@ checkFunctionCall context qn expr_id args call_location =
             then do
                 arg_type_strings <- List.map args (\(E.Expr _ arg _ _) -> TF.toString (getExprType context arg))
                 arg_strings <- "{}" % (join arg_type_strings ", ")
-                err <- TooManyArguments arg_strings (TF.toString fn_ty) call_location
+                err <- TooManyArguments (SS.create arg_strings) (SS.create (TF.toString fn_ty)) call_location
                 state <- addError context.state err
                 break context { state = state }
             else do

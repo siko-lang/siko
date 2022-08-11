@@ -5,16 +5,17 @@ import Siko.Syntax.Ident
 import Siko.Resolver.Item
 import Siko.Resolver.Error
 import Map
+import Siko.Util.SharedString as SS
 
 data ResolvedItem = ResolvedItem HP.FullyQualifiedName Item Explicitness deriving (Show)
 
 instance PartialEq ResolvedItem where
     opEq (ResolvedItem qn1 _ _) (ResolvedItem qn2 _ _) = qn1 == qn2
 
-getCandidates :: [ResolvedItem] -> [String]
+getCandidates :: [ResolvedItem] -> [SS.SharedString]
 getCandidates resolved_items = resolved_items |> List.iter |> Iterator.map (\(ResolvedItem name _ _) -> HP.getResolvableName name) |> toList
 
-resolveItem :: Map String [ResolvedItem] -> (Ident -> ResolverError) -> Ident -> Result ResolvedItem ResolverError
+resolveItem :: Map SS.SharedString [ResolvedItem] -> (Ident -> ResolverError) -> Ident -> Result ResolvedItem ResolverError
 resolveItem items err name = do
     n <- getString name
     case get items n of

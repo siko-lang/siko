@@ -2,20 +2,21 @@ module Siko.Resolver.Item where
 
 import Siko.Syntax.Import as SI
 import Siko.Syntax.Ident
+import Siko.Util.SharedString as SS
 
 data Explicitness = Explicit | Implicit deriving (Show, PartialEq)
 
-data Item = Adt String Int
-          | Variant String String
-          | Record String Int
-          | Class String
-          | ClassMember String String
-          | Function String
-          | Effect String Int
-          | EffectMember String String
+data Item = Adt SS.SharedString Int
+          | Variant SS.SharedString SS.SharedString
+          | Record SS.SharedString Int
+          | Class SS.SharedString
+          | ClassMember SS.SharedString SS.SharedString
+          | Function SS.SharedString
+          | Effect SS.SharedString Int
+          | EffectMember SS.SharedString SS.SharedString
           deriving (Show)
 
-getItemName :: Item -> String
+getItemName :: Item -> SS.SharedString
 getItemName item = case item of
     Adt a _ -> a
     Variant a v -> v
@@ -37,10 +38,10 @@ getItemArgCount item = case item of
     Effect _ c -> c
     EffectMember _ _ -> 0
 
-matchSpecs :: [SI.MemberSpecification] -> String -> Bool
+matchSpecs :: [SI.MemberSpecification] -> SS.SharedString -> Bool
 matchSpecs specs name = List.fold False specs (\total, spec -> total || (matchSpec spec name))
     where
-        matchSpec :: SI.MemberSpecification -> String -> Bool
+        matchSpec :: SI.MemberSpecification -> SS.SharedString -> Bool
         matchSpec spec name = case spec of
             SI.Specific n -> getString n == name
             SI.All -> True

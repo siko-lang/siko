@@ -9,6 +9,7 @@ import Siko.Parser.Token as T
 import Siko.Parser.Token.Kind as Kind
 import Siko.Syntax.Expr
 import Siko.Parser.Error
+import Siko.Util.SharedString as SS
 
 buildExpr :: SimpleExpr -> Int -> ParserState -> (ParserState, Expr)
 buildExpr expr start_index state = do
@@ -93,9 +94,9 @@ parseUnary state = do
                 case ti.token of
                     T.IntegerLiteral i2 -> do
                         state <- step state
-                        Ok (buildExpr (FloatLiteral "{}.{}" % (i, i2)) start_index state)
+                        Ok (buildExpr (FloatLiteral (SS.create "{}.{}" % (i, i2))) start_index state)
                     _ -> Err (state, unexpectedToken state "numeric literal")
-            else Ok (buildExpr (IntegerLiteral i) start_index state)
+            else Ok (buildExpr (IntegerLiteral (SS.create i)) start_index state)
         T.StringLiteral s -> do
             state <- step state
             if check state Kind.Percent
@@ -104,11 +105,11 @@ parseUnary state = do
                 if check state Kind.LParen
                 then do
                     (state, exprs) <- try parseList state parseExpr Kind.LParen Kind.RParen
-                    Ok (buildExpr (Formatter s exprs) start_index state)
+                    Ok (buildExpr (Formatter (SS.create s) exprs) start_index state)
                 else do
                     (state, expr) <- try parseExpr state
-                    Ok (buildExpr (Formatter s [expr]) start_index state)
-            else Ok (buildExpr (StringLiteral s) start_index state)
+                    Ok (buildExpr (Formatter (SS.create s) [expr]) start_index state)
+            else Ok (buildExpr (StringLiteral (SS.create s)) start_index state)
         T.CharLiteral c -> do
             state <- step state
             Ok (buildExpr (CharLiteral c) start_index state)
@@ -195,7 +196,7 @@ parseFieldAccess state = do
                 T.IntegerLiteral i -> do
                     start_index <- state.index
                     state <- step state
-                    buildExpr (TupleFieldAccess i expr) start_index state
+                    buildExpr (TupleFieldAccess (SS.create i) expr) start_index state
                 T.VarIdentifier i -> do
                     start_index <- state.index
                     (state, name) <- try expectVarIdent state "field"

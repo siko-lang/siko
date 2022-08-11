@@ -9,6 +9,7 @@ import Siko.Syntax.Function as F
 import Siko.Syntax.Effect as E
 import Siko.Resolver.Item
 import Map
+import Siko.Util.SharedString as SS
 
 getVariants :: D.AlgebraicDataType -> [Item]
 getVariants adt =
@@ -46,7 +47,7 @@ exportable m_item = case m_item of
     M.Instance _ -> False
     M.Effect _ -> True
 
-processModule :: (String, M.Module) -> (String, [Item])
+processModule :: (SS.SharedString, M.Module) -> (SS.SharedString, [Item])
 processModule (name, mod) = do
     items <- mod.items |>
              List.iter |>
@@ -55,5 +56,5 @@ processModule (name, mod) = do
              Iterator.fold (\total, items -> total + items)  []
     (name, items)
 
-processLocals :: Map String M.Module -> Map String [Item]
+processLocals :: Map SS.SharedString M.Module -> Map SS.SharedString [Item]
 processLocals modules = Map.map modules processModule

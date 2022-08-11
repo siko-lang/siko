@@ -15,6 +15,7 @@ import Siko.Parser.Token.Kind as Kind
 import Siko.Parser.Layout
 import Siko.Parser.Lexer
 import Siko.Parser.Error
+import Siko.Util.SharedString as SS
 
 data ParserState =
     {
@@ -106,22 +107,22 @@ expectTypeIdent :: ParserState -> String -> Result (ParserState, Ident) (ParserS
 expectTypeIdent state msg = do
     ti <- peek state
     case ti.token of
-        TypeIdentifier id -> Ok (step state, Ident id (getLocation ti.span state))
+        TypeIdentifier id -> Ok (step state, Ident (SS.create id) (getLocation ti.span state))
         _ -> Err (state, unexpectedToken state msg)
 
 expectVarIdent :: ParserState -> String -> Result (ParserState, Ident) (ParserState, ParserError)
 expectVarIdent state msg = do
     ti <- peek state
     case ti.token of
-        VarIdentifier id -> Ok (step state, Ident id (getLocation ti.span state))
+        VarIdentifier id -> Ok (step state, Ident (SS.create id) (getLocation ti.span state))
         _ -> Err (state, unexpectedToken state msg)
 
 expectAnyIdent :: ParserState -> String -> Result (ParserState, Ident) (ParserState, ParserError)
 expectAnyIdent state msg = do
     ti <- peek state
     case ti.token of
-        VarIdentifier id -> Ok (step state, Ident id (getLocation ti.span state))
-        TypeIdentifier id -> Ok (step state, Ident id (getLocation ti.span state))
+        VarIdentifier id -> Ok (step state, Ident (SS.create id) (getLocation ti.span state))
+        TypeIdentifier id -> Ok (step state, Ident (SS.create id) (getLocation ti.span state))
         _ -> Err (state, unexpectedToken state msg)
 
 parseQualifiedTypeName :: ParserState -> String -> Result (ParserState, Ident) (ParserState, ParserError)
@@ -131,7 +132,7 @@ parseQualifiedTypeName state msg = do
         ti <- peek state
         case ti.token of
             Dot -> do
-                dot <- Ident "." (getLocation ti.span state)
+                dot <- Ident (SS.create".") (getLocation ti.span state)
                 name <- mergeIdents name dot
                 state <- step state
                 (state, n) <- try expectTypeIdent state msg
@@ -150,7 +151,7 @@ parseQualifiedName state msg = do
             ti <- peek state
             case ti.token of
                 Dot -> do
-                    dot <- Ident "." (getLocation ti.span state)
+                    dot <- Ident (SS.create ".") (getLocation ti.span state)
                     name <- mergeIdents name dot
                     state <- step state
                     ti <- peek state

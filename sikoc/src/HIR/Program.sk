@@ -7,14 +7,15 @@ import Siko.HIR.Class as C
 import Siko.HIR.Type as T
 import Siko.HIR.Effect as E
 import Map
+import Siko.Util.SharedString as SS
 
-data FullyQualifiedName = FullPath String String
-                        | FullPathWithVariant String String String
+data FullyQualifiedName = FullPath SS.SharedString SS.SharedString
+                        | FullPathWithVariant SS.SharedString SS.SharedString SS.SharedString
                         | FullPathWithLambda FullyQualifiedName F.LambdaId
-                        | FullPathWithInstanceId String String C.InstanceId
-                        | ModulePath String
-                        | SubItem FullyQualifiedName String
-                        | Effectless String String
+                        | FullPathWithInstanceId SS.SharedString SS.SharedString C.InstanceId
+                        | ModulePath SS.SharedString
+                        | SubItem FullyQualifiedName SS.SharedString
+                        | Effectless SS.SharedString SS.SharedString
                         deriving (PartialEq, Eq, PartialOrd, Ord)
 
 instance Show FullyQualifiedName where
@@ -27,8 +28,9 @@ instance Show FullyQualifiedName where
         SubItem p n -> "{}/{}" % (p, n)
         Effectless m n -> "{}.{}" % (m, n)
 
-getResolvableName :: FullyQualifiedName -> String
-getResolvableName f = case f of
+getResolvableName :: FullyQualifiedName -> SS.SharedString
+getResolvableName f = do
+    s <- case f of
         FullPath m n -> "{}.{}" % (m, n)
         FullPathWithVariant m n v -> "{}.{}" % (m, v)
         FullPathWithLambda n i -> panic "getResolvableName called for a lambda"
@@ -36,18 +38,19 @@ getResolvableName f = case f of
         ModulePath m -> panic "getResolvableName called for a module"
         SubItem p n -> panic "getResolvableName called for a sub item"
         Effectless m n -> "{}.{}" % (m, n)
+    SS.create s
 
-getShortName :: FullyQualifiedName -> String
+getShortName :: FullyQualifiedName -> SS.SharedString
 getShortName f = case f of
         FullPath m n -> n
         FullPathWithVariant m n v -> n
-        FullPathWithLambda n i -> "{}_lambda" % getShortName n
+        FullPathWithLambda n i -> SS.create "{}_lambda" % getShortName n
         FullPathWithInstanceId m n i -> n
         ModulePath m -> m
         SubItem p n -> n
         Effectless m n -> n
 
-getModuleName :: FullyQualifiedName -> String
+getModuleName :: FullyQualifiedName -> SS.SharedString
 getModuleName f = case f of
         FullPath m n -> m
         FullPathWithVariant m n v -> m
