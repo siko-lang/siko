@@ -25,7 +25,7 @@ data ResolverState = { errors :: [ResolverError],
                        expr_id_gen :: ExprIdGenerator,
                        pattern_id_gen :: PatternIdGenerator,
                        var_gen :: TypeVarGenerator,
-                     }
+                     } deriving (Move)
 
 emptyState :: ResolverState
 emptyState = ResolverState [] createExprIdGenerator createPatternIdGenerator createTypeVarGenerator
@@ -86,16 +86,12 @@ processProgram source_files = do
     state <- emptyState
     hir_program <- HP.Program empty empty
     (state, hir_program, modules) <- processExportsImports source_files state hir_program
-    (state, hir_program) <- modules |> Map.iter |> Iterator.fold (\(state, hir_program), (module_name, (mod, module_resolver)) -> do
-                                    (state, hir_program) <- processData state hir_program module_resolver mod
-                                    (state, hir_program)) (state, hir_program)
-    (state, hir_program) <- modules |> Map.iter |> Iterator.fold (\(state, hir_program), (module_name, (mod, module_resolver)) -> do
-                                    (state, hir_program) <- processFunctions state hir_program module_resolver mod
-                                    (state, hir_program)) (state, hir_program)
-    (state, hir_program) <- modules |> Map.iter |> Iterator.fold (\(state, hir_program), (module_name, (mod, module_resolver)) -> do
-                                    (state, hir_program) <- processClassesAndInstances state hir_program module_resolver mod
-                                    (state, hir_program)) (state, hir_program)
-    (state, hir_program) <- modules |> Map.iter |> Iterator.fold (\(state, hir_program), (module_name, (mod, module_resolver)) -> do
-                                    (state, hir_program) <- processEffects state hir_program module_resolver mod
-                                    (state, hir_program)) (state, hir_program)
+    (state, hir_program) <- Map.fold (state, hir_program) modules (\(state, hir_program), (module_name, (mod, module_resolver)) ->
+        processData state hir_program module_resolver mod)
+    (state, hir_program) <- Map.fold (state, hir_program) modules (\(state, hir_program), (module_name, (mod, module_resolver)) ->
+        processFunctions state hir_program module_resolver mod)
+    (state, hir_program) <- Map.fold (state, hir_program) modules (\(state, hir_program), (module_name, (mod, module_resolver)) ->
+        processClassesAndInstances state hir_program module_resolver mod)
+    (state, hir_program) <- Map.fold (state, hir_program) modules (\(state, hir_program), (module_name, (mod, module_resolver)) ->
+        processEffects state hir_program module_resolver mod)
     (hir_program, state.expr_id_gen, state.pattern_id_gen, state.var_gen, state.errors)

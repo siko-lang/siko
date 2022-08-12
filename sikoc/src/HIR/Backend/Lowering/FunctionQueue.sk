@@ -32,7 +32,7 @@ data FunctionQueueItem = Normal HP.FullyQualifiedName HT.Type
 
 data FunctionQueue = { pending :: [(FunctionQueueItem, MP.Identity)],
                        processed :: M.Map FunctionQueueItem MP.Identity,
-                     }
+                     } deriving (Move)
 
 createFunctionQueue :: FunctionQueue
 createFunctionQueue = FunctionQueue [] M.empty
@@ -112,7 +112,7 @@ processNormalFunction context mir_function_id hir_type qn hir_function =
         None -> do
             //println "Processing extern {}" % (hir_function.name)
             (context, mir_arg_types, mir_result_type) <- getFunctionType context hir_type hir_function.arg_count
-            type_mapping <- case hir_function.type_with_ownership of
+            (type_mapping, context) <- case hir_function.type_with_ownership of
                 Some t -> createTypeMap context t hir_function.arg_count hir_function.extern_constraints
                 None -> panic "Extern function has no ownership type! {}" % mir_function_id
             function_type <- MF.FunctionType mir_arg_types mir_result_type
@@ -182,10 +182,10 @@ processItems context = do
     loop context <- context do
         context :: Context <- context // FIXME
         function_queue :: FunctionQueue <- context.function_queue // FIXME
-        case pop function_queue.pending of
-            Some (first, pending) -> do
-                (item, id) <- first
-                function_queue <- function_queue { pending = pending }
-                context <- context { function_queue = function_queue }
-                processItem item id context
-            None -> break context
+        pending <- function_queue.pending
+        function_queue <- function_queue { pending = [] }
+        context <- context { function_queue = function_queue }
+        context <- List.fold context pending (\context, (item, id) -> processItem item id context)
+        if List.isEmpty context.function_queue.pending
+        then break context
+        else context

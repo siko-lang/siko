@@ -38,7 +38,8 @@ parseBindPattern state = do
         then do
             state <- step state
             (state, type_signature) <- try parseTypeSignature state False True
-            (state, buildPattern (Typed pattern type_signature) start_index state)
+            pattern <- buildPattern (Typed pattern type_signature) start_index state
+            (state, pattern)
         else (state, pattern)
     Ok (state, pattern)
 
@@ -47,7 +48,9 @@ parseTuplePattern state = do
     start_index <- state.index
     case try parseParens state (\state -> parsePatternL state False) "pattern" of
         (state, Single ty) -> Ok (state, ty)
-        (state, Multi types) -> Ok (state, buildPattern (Tuple types) start_index state)
+        (state, Multi types) -> do
+            pattern <- buildPattern (Tuple types) start_index state
+            Ok (state, pattern)
 
 parseRecordFieldPattern :: ParserState -> Result (ParserState, RecordFieldPattern) (ParserState, ParserError)
 parseRecordFieldPattern state = do
@@ -61,13 +64,15 @@ parseConstructorPattern state inner start_index = do
     if inner
     then do
         (state, name) <- try parseQualifiedTypeName state "type constructor"
-        Ok (state, buildPattern (Constructor name []) start_index state)
+        pattern <- buildPattern (Constructor name []) start_index state
+        Ok (state, pattern)
     else do
         (state, name) <- try parseQualifiedTypeName state "type constructor"
         if check state Kind.LCurly
         then do
             (state, fields) <- try parseList state parseRecordFieldPattern Kind.LCurly Kind.RCurly
-            Ok (state, buildPattern (Record name fields) start_index state)
+            pattern <- buildPattern (Record name fields) start_index state
+            Ok (state, pattern)
         else do
             (state, args) <- loop (state, args) <- (state, []) do
                 ti  <- peek state
@@ -83,7 +88,8 @@ parseConstructorPattern state inner start_index = do
                             args <- push args ty
                             (state, args)
                     _ -> break (state, args)
-            Ok (state, buildPattern (Constructor name args) start_index state)
+            pattern <- buildPattern (Constructor name args) start_index state
+            Ok (state, pattern)
 
 parsePattern :: ParserState -> Result (ParserState, Pattern) (ParserState, ParserError)
 parsePattern state = parsePatternL state False
@@ -106,7 +112,8 @@ parseExtendedPattern state = do
         then do
             state <- step state
             (state, expr) <- try parseExpr state
-            (state, buildPattern (Guarded pattern expr) start_index state)
+            pattern <- buildPattern (Guarded pattern expr) start_index state
+            (state, pattern)
         else (state, pattern)
     Ok (state, pattern)
 
@@ -118,7 +125,8 @@ parsePatternL state inner = do
         T.LParen -> parseTuplePattern state
         T.IntegerLiteral v -> do
                         state <- try expect state Kind.IntegerLiteral
-                        Ok (state, buildPattern (IntegerLiteral (SS.create v)) start_index state)
+                        pattern <- buildPattern (IntegerLiteral (SS.create v)) start_index state
+                        Ok (state, pattern)
         T.CharLiteral v1 -> do
             state <- try expect state Kind.CharLiteral
             ti <- peek state
@@ -129,25 +137,38 @@ parsePatternL state inner = do
                         case ti.token of
                             T.CharLiteral v2 -> do
                                 state <- try expect state Kind.CharLiteral
-                                Ok (state, buildPattern (CharRange v1 v2 Exclusive) start_index state)
-                            _ -> return Err (state, unexpectedToken state "char literal")
+                                pattern <- buildPattern (CharRange v1 v2 Exclusive) start_index state
+                                Ok (state, pattern)
+                            _ -> do
+                                err <- unexpectedToken state "char literal"
+                                Err (state, err)
                 T.InclusiveRange -> do
                         state <- try expect state Kind.InclusiveRange
                         ti <- peek state
                         case ti.token of
                             T.CharLiteral v2 -> do
                                 state <- try expect state Kind.CharLiteral
-                                Ok (state, buildPattern (CharRange v1 v2 Inclusive) start_index state)
-                            _ -> return Err (state, unexpectedToken state "char literal")
-                _ -> Ok (state, buildPattern (CharLiteral v1) start_index state)
+                                pattern <- buildPattern (CharRange v1 v2 Inclusive) start_index state
+                                Ok (state, pattern)
+                            _ -> do
+                                err <- unexpectedToken state "char literal"
+                                Err (state, err)
+                _ -> do
+                    pattern <- buildPattern (CharLiteral v1) start_index state
+                    Ok (state, pattern)
         T.StringLiteral v -> do
                             state <- try expect state Kind.StringLiteral
-                            Ok (state, buildPattern (StringLiteral (SS.create v)) start_index state)
+                            pattern <- buildPattern (StringLiteral (SS.create v)) start_index state
+                            Ok (state, pattern)
         T.TypeIdentifier _ -> parseConstructorPattern state inner start_index
         T.VarIdentifier _ -> do
                             (state, ident) <- try expectVarIdent state "type argument pattern"
-                            Ok (state, buildPattern (Binding ident) start_index state)
+                            pattern <- buildPattern (Binding ident) start_index state
+                            Ok (state, pattern)
         T.Wildcard -> do
                         state <- try expect state Kind.Wildcard
-                        Ok (state, buildPattern Wildcard start_index state)
-        _ -> return Err (state, unexpectedToken state "pattern")
+                        pattern <- buildPattern Wildcard start_index state
+                        Ok (state, pattern)
+        _ -> do
+            err <- unexpectedToken state "pattern"
+            Err (state, err)

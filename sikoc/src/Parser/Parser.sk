@@ -26,7 +26,7 @@ data ParserState =
         file_id :: FileId,
         ops_table :: [[Kind.TokenKind]],
         sub_items :: [M.Item],
-    }
+    }  deriving (Move)
 
 initState :: FileId -> [TokenInfo] -> ParserState
 initState file_id tokens = do
@@ -96,7 +96,9 @@ expect state kind = do
     ti <- peek state
     if getKind ti.token == kind
     then Ok (step state)
-    else Err (state, unexpectedToken state (show kind))
+    else do
+        err <-unexpectedToken state (show kind)
+        Err (state, err)
 
 check :: ParserState -> Kind.TokenKind -> Bool
 check state kind = do
@@ -107,23 +109,41 @@ expectTypeIdent :: ParserState -> String -> Result (ParserState, Ident) (ParserS
 expectTypeIdent state msg = do
     ti <- peek state
     case ti.token of
-        TypeIdentifier id -> Ok (step state, Ident (SS.create id) (getLocation ti.span state))
-        _ -> Err (state, unexpectedToken state msg)
+        TypeIdentifier id -> do
+            location <- (getLocation ti.span state)
+            state <- step state
+            Ok (state, Ident (SS.create id) location)
+        _ -> do
+            err <- unexpectedToken state msg
+            Err (state, err)
 
 expectVarIdent :: ParserState -> String -> Result (ParserState, Ident) (ParserState, ParserError)
 expectVarIdent state msg = do
     ti <- peek state
     case ti.token of
-        VarIdentifier id -> Ok (step state, Ident (SS.create id) (getLocation ti.span state))
-        _ -> Err (state, unexpectedToken state msg)
+        VarIdentifier id -> do
+            location <- (getLocation ti.span state)
+            state <- step state
+            Ok (state, Ident (SS.create id) location)
+        _ -> do
+            err <- unexpectedToken state msg
+            Err (state, err)
 
 expectAnyIdent :: ParserState -> String -> Result (ParserState, Ident) (ParserState, ParserError)
 expectAnyIdent state msg = do
     ti <- peek state
     case ti.token of
-        VarIdentifier id -> Ok (step state, Ident (SS.create id) (getLocation ti.span state))
-        TypeIdentifier id -> Ok (step state, Ident (SS.create id) (getLocation ti.span state))
-        _ -> Err (state, unexpectedToken state msg)
+        VarIdentifier id -> do
+            location <- (getLocation ti.span state)
+            state <- step state
+            Ok (state, Ident (SS.create id) location)
+        TypeIdentifier id -> do
+            location <- (getLocation ti.span state)
+            state <- step state
+            Ok (state, Ident (SS.create id) location)
+        _ -> do
+            err <- unexpectedToken state msg
+            Err (state, err)
 
 parseQualifiedTypeName :: ParserState -> String -> Result (ParserState, Ident) (ParserState, ParserError)
 parseQualifiedTypeName state msg = do
@@ -164,7 +184,9 @@ parseQualifiedName state msg = do
                             (state, n) <- try expectVarIdent state msg
                             name <- mergeIdents name n
                             break (state, name)
-                        _ -> return Err (state, unexpectedToken state "identifier")
+                        _ -> return do
+                            err <- unexpectedToken state "identifier"
+                            Err (state, err)
                 _ -> break (state, name)
         Ok (state, name)
 
@@ -185,7 +207,9 @@ parseParens state parser msg = do
                 (state, items, True)
             else if check state Kind.RParen
                 then break (state, items, comma_found)
-                else return Err (state, unexpectedToken state msg)
+                else return do
+                    err <- unexpectedToken state msg
+                    Err (state, err)
     state <- try expect state Kind.RParen
     if comma_found || isEmpty items
     then Ok (state, Multi items)

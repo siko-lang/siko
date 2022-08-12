@@ -40,7 +40,7 @@ getConvertersAndEquals extern_constraints =  List.fold ([], []) extern_constrain
         right <- convertPath equal.right
         (converters, List.push equals (MF.Equal left right)))
 
-createTypeMap :: L.Context -> HT.Type -> Int -> [HF.ExternConstraint] ->  MF.TypeMapping
+createTypeMap :: L.Context -> HT.Type -> Int -> [HF.ExternConstraint] ->  (MF.TypeMapping, L.Context)
 createTypeMap lowering_context type arg_count extern_constraints = do
     args <- HT.getArgs type
     (args, _) <- List.split args arg_count
@@ -52,7 +52,7 @@ createTypeMap lowering_context type arg_count extern_constraints = do
         (context, index + 1)) (context, 0)
     context <- mapType context [MF.FunctionResult] result_type
     (converters, equals) <- getConvertersAndEquals extern_constraints
-    MF.TypeMapping context.var_mappings context.owner_positions context.ref_positions converters equals
+    (MF.TypeMapping context.var_mappings context.owner_positions context.ref_positions converters equals, context.lowering_context)
 
 addVarPosition :: Context -> String -> [MF.Step] -> Context
 addVarPosition context name steps = do

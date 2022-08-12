@@ -100,11 +100,13 @@ processFunction context function = do
 
 processProgram :: P.Program T.Type -> ExprIdGenerator -> TVG.TypeVarGenerator -> CDS.ClassInfoStore -> (P.Program T.Type, ExprIdGenerator, TVG.TypeVarGenerator, CDS.ClassInfoStore)
 processProgram program expr_id_gen var_gen class_info_store = do
+    items <- program.items
     context <- Context program expr_id_gen var_gen class_info_store
-    (context, items) <- Map.mapS context program.items (\context, (qn, item) -> do
+    (context, items) <- Map.mapS context items (\context, (qn, item) -> do
         case item of
             P.Function fn -> do
                 (context, fn) <- processFunction context fn
                 (context, qn, P.Function fn)
             other -> (context, qn, other))
+    program <- context.program
     (program { items = items }, context.expr_id_gen, context.var_gen, context.class_info_store)

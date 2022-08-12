@@ -45,15 +45,13 @@ processQueue context = do
     loop context <- context do
         context :: Context <- context // FIXME
         type_store :: TypeStore <- context.type_store // FIXME
-        case pop type_store.queue of
-            Some (first, queue) -> do
-                (hir_type, mir_type) <- first
-                type_store <- type_store { queue = queue }
-                context <- context { type_store = type_store }
-                //println "Processing queued {} - {}" % (HT.toLongString hir_type, mir_type)
-                context <- processQueuedType context hir_type mir_type
-                context
-            None -> break context
+        queue <- type_store.queue
+        type_store <- type_store { queue = [] }
+        context <- context { type_store = type_store }
+        context <- List.fold context queue (\context, (hir_type, mir_type) -> processQueuedType context hir_type mir_type)
+        if List.isEmpty context.type_store.queue
+        then break context
+        else context
 
 addVariant :: TypeStore -> MP.Identity -> MD.Variant -> TypeStore
 addVariant type_store identity variant = do
@@ -75,6 +73,9 @@ addExternalClassImplForAdt type_store identity external_class_impl = do
                 MD.Copy -> do
                     attributes <- List.push adt.attributes MD.Copyable
                     adt { attributes = attributes }
+                MD.Move -> do
+                    attributes <- List.push adt.attributes MD.NonCopyable
+                    adt { attributes = attributes }
                 _ -> do
                     external_class_impls <- push adt.external_class_impls external_class_impl
                     adt { external_class_impls = external_class_impls }
@@ -90,6 +91,9 @@ addExternalClassImplForRecord type_store identity external_class_impl = do
             record <- case external_class_impl of
                 MD.Copy -> do
                     attributes <- List.push record.attributes MD.Copyable
+                    record { attributes = attributes }
+                MD.Move -> do
+                    attributes <- List.push record.attributes MD.NonCopyable
                     record { attributes = attributes }
                 _ -> do
                     external_class_impls <- push record.external_class_impls external_class_impl
@@ -116,6 +120,7 @@ getDependencies impl = case impl of
     MD.PartialOrdKind -> [MD.PartialEqKind]
     MD.OrdKind -> [MD.PartialEqKind, MD.EqKind, MD.PartialOrdKind]
     MD.CopyKind -> []
+    MD.MoveKind -> []
 
 checkImpl :: Context -> HT.Type -> HP.FullyQualifiedName -> (Context, Bool)
 checkImpl context type class_name = do

@@ -64,7 +64,7 @@ data InferenceInfo = { expr_type_variables :: Map2 GlobalExprId TypeVariableInfo
                        interrnal_borrows :: Map2 BorrowId BorrowId,
                        initials :: Map2 OwnershipTypeVariable M.OwnershipKind,
                        function_info_bases :: Map2 P.Identity FunctionInfoBase,
-                     } deriving (Show)
+                     } deriving (Show, Move)
 
 createInferenceInfoFromLoweringInfo :: FunctionLoweringInfo -> P.Identity -> (InferenceInfo, List2 BorrowId)
 createInferenceInfoFromLoweringInfo lowering_info function_id = do
@@ -529,7 +529,8 @@ buildFilterInfoFromInferenceInfo config inference_info = do
 
 checkInitials :: InferenceInfo -> String -> InferenceInfo
 checkInitials inference_info phase = do
-    Map2.fold inference_info inference_info.initials (\inference_info, (var, kind) -> do
+    initials <- inference_info.initials
+    Map2.fold inference_info initials (\inference_info, (var, kind) -> do
         (inference_info, current) <- getOwnership inference_info var
         case current of
             Some current -> do

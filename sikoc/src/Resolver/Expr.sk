@@ -31,18 +31,17 @@ data LoopHelper = { continues :: [HE.ExprRef],
                     breaks :: [HE.ExprRef],
                   } deriving (Show)
 
-data Context = {
-                    function_name :: HPO.FullyQualifiedName,
-                    type_resolver :: TypeResolverState,
-                    state :: ResolverState,
-                    module_resolver :: ModuleResolver,
-                    program :: HPO.Program (),
-                    next_lambda_id :: Int,
-                    lambda_helper :: Option LambdaHelper,
-                    lambdas :: [F.LambdaInfo],
-                    loop_helper :: Option LoopHelper,
-                    function_scope_resolver :: F.FunctionScopeResolver
-               }
+data Context = { function_name :: HPO.FullyQualifiedName,
+                 type_resolver :: TypeResolverState,
+                 state :: ResolverState,
+                 module_resolver :: ModuleResolver,
+                 program :: HPO.Program (),
+                 next_lambda_id :: Int,
+                 lambda_helper :: Option LambdaHelper,
+                 lambdas :: [F.LambdaInfo],
+                 loop_helper :: Option LoopHelper,
+                 function_scope_resolver :: F.FunctionScopeResolver
+               } deriving (Move)
 
 createContext :: HPO.FullyQualifiedName ->
                  TypeResolverState ->
@@ -80,7 +79,8 @@ createLambdaName context = do
     id <- context.next_lambda_id
     context <- context { next_lambda_id = id + 1 }
     id <- HF.LambdaId id
-    (context, id, HPO.FullPathWithLambda context.function_name id)
+    name <- context.function_name
+    (context, id, HPO.FullPathWithLambda name id)
 
 captureValue :: Context -> HP.BindRef -> (Context, Int)
 captureValue context bind_ref = do
@@ -234,8 +234,8 @@ resolvePath context path = do
                         Err (addErrorToContext context err)
             Err err -> Err (addErrorToContext context err)
 
-processBinaryOp :: Context -> SE.Op -> HE.Expr () -> HE.Expr () -> HE.SimpleExpr ()
-processBinaryOp context op lhs rhs = do
+processBinaryOp :: SE.Op -> HE.Expr () -> HE.Expr () -> HE.SimpleExpr ()
+processBinaryOp op lhs rhs = do
     module_name <- getStdOpsModuleName
     qn <- case op of
             SE.Equal -> HPO.FullPath module_name (SS.create "opEq")
@@ -455,7 +455,7 @@ processExpr context env (SE.Expr expr location) = do
         SE.BinaryOp op lhs rhs -> do
             (context, env, hir_lhs) <- processExpr context env lhs
             (context, env, hir_rhs) <- processExpr context env rhs
-            (context, env, processBinaryOp context op hir_lhs hir_rhs)
+            (context, env, processBinaryOp op hir_lhs hir_rhs)
         SE.If cond true_branch false_branch -> do
             (context, _, hir_cond) <- processExpr context env cond
             (context, _, hir_true_branch) <- processExpr context env true_branch

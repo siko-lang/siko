@@ -108,10 +108,9 @@ processBranches context usage_store branches expr_id = do
         List.fold (context, usage_store, DoesNotReturn) outputs (\(context, usage_store, exec_mode), (c_context, c_usage_store, c_exec_mode) ->
             do
                 context <- mergeContexts context c_context
-                usage_store <- mergeUsageStores usage_store c_usage_store
-                exec_mode <- case c_exec_mode of
-                    Normal -> Normal
-                    DoesNotReturn -> exec_mode
+                (exec_mode, usage_store) <- case c_exec_mode of
+                    Normal -> (Normal, mergeUsageStores usage_store c_usage_store)
+                    DoesNotReturn -> (exec_mode, usage_store)
                 (context, usage_store, exec_mode))
     where
         processBranch :: Context -> UsageStore -> Option E.Var -> E.Expr -> E.ExprId -> (Context, UsageStore, ExecutionMode)

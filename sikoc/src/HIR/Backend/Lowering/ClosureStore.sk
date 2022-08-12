@@ -201,9 +201,11 @@ compileUncallableClosure context closure_call_identity = do
 
 createClosures :: Context -> Context
 createClosures context = do
-        context <- context.closure_store.closures |> Map.iter |> Iterator.fold (\context, (name, closure) -> do
-            List.fold context closure.instances (compileClosureInstance name)) context
-        Map.fold context context.closure_store.closure_calls compile
+        closures <- context.closure_store.closures
+        context <- Map.fold context closures (\context, (name, closure) -> do
+            List.fold context closure.instances (compileClosureInstance name))
+        calls <- context.closure_store.closure_calls
+        Map.fold context calls compile
     where
         compile :: Context -> (ClosureName, Identity) -> Context
         compile context (closure_call_name, closure_call_identity) =

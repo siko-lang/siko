@@ -11,7 +11,7 @@ data LayoutProcessorState =
         index :: Int,
         output :: [TokenInfo],
         errors :: [LexerError],
-    }
+    } deriving (Move)
 
 emptyState :: [TokenInfo] -> LayoutProcessorState
 emptyState input = LayoutProcessorState input 0 [] []
@@ -75,7 +75,8 @@ processItem state first_span = do
                         item_state { state = advance item_state.state }
         else break item_state { end_of_block = True }
     state <- item_state.state
-    state <- addToken state (TokenInfo EndOfItem (lastSpan state))
+    s <- lastSpan state
+    state <- addToken state (TokenInfo EndOfItem s)
     (state, item_state.end_of_block)
 
 processBlock :: LayoutProcessorState -> LayoutProcessorState
@@ -94,7 +95,8 @@ processBlock state = do
                     else case first.token of
                             KeywordDo | KeywordWhere | KeywordOf -> do
                                 state <- processBlock state
-                                state <- addToken state (TokenInfo EndOfItem (lastSpan state))
+                                s <- lastSpan state
+                                state <- addToken state (TokenInfo EndOfItem s)
                                 state
                             KeywordModule -> break state
                             _ -> do
@@ -104,7 +106,8 @@ processBlock state = do
                                 else state
                 else break state
         else state
-    state <- addToken state (TokenInfo EndOfBlock (lastSpan state))
+    s <- lastSpan state
+    state <- addToken state (TokenInfo EndOfBlock s)
     state
 
 processModule :: LayoutProcessorState -> LayoutProcessorState
@@ -119,7 +122,8 @@ processModule state = do
                 KeywordModule -> break state
                 _ -> advance state
         else break state
-    state <- addToken state (TokenInfo EndOfModule (lastSpan state))
+    s <- lastSpan state
+    state <- addToken state (TokenInfo EndOfModule s)
     state
 
 processLayout :: [TokenInfo] -> ([TokenInfo], [LexerError])

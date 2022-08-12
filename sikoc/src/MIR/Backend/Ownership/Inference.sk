@@ -33,7 +33,8 @@ import Map2 as Map2
 data Context = { config :: Config,
                  program :: P.Program,
                  function_info_store :: FunctionInfoStore,
-                 data_group_info_store :: DataGroupInfoStore }
+                 data_group_info_store :: DataGroupInfoStore
+               } deriving (Move)
 
 createRecordCtorFunctionInfo :: Context -> T.Type -> FunctionInfo
 createRecordCtorFunctionInfo context type =
@@ -119,13 +120,14 @@ processFunction context group inference_info function_id = do
                     function_info_store <- context.function_info_store
                     //trace context.config "processEqualities {}" % function_id
                     (program, equals, inference_info, data_group_info_store) <- processFunctionEqualities function_id context.config group List2.empty inference_info function_info_store context.program info.body context.data_group_info_store
-                    (program, inference_info) <- processEqualities context.config equals inference_info context.program
+                    (program, inference_info) <- processEqualities context.config equals inference_info program
                     context <- context { program = program, data_group_info_store = data_group_info_store }
                     (context, inference_info)
             //trace context.config "checkBorrows {}" % function_id
             borrow_info <- checkBorrows context.program info.body
             //trace context.config "inferOwnership {}" % function_id
-            (inference_info, constraints, invalid_borrow_map, ownership_expr_map, result_vars) <- collectConstraints context.config function_id context.program borrow_info inference_info info.body
+            (inference_info, constraints, invalid_borrow_map, ownership_expr_map, result_vars, program) <- collectConstraints context.config function_id context.program borrow_info inference_info info.body
+            context <- context { program = program }
             inference_info <- processConstraints context.config function_id inference_info constraints invalid_borrow_map ownership_expr_map result_vars Partial
             inference_info <- if context.config.trace_level == Level2
             then dumpOwnership inference_info function_id info.body
@@ -219,6 +221,6 @@ processProgram config program data_groups function_groups = do
     (_, context) <- List.fold (1, context) function_groups (\(index, context), group -> processFunctionGroup index group_count context group.items)
     trace config "Ownership inference ended"
     trace config "Lowering started"
-    lir_program <- lowerProgram program context.config context.function_info_store data_group_info_store
+    lir_program <- lowerProgram context.program context.config context.function_info_store data_group_info_store
     trace config "Lowering ended"
     lir_program

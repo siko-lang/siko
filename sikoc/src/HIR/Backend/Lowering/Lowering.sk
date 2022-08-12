@@ -46,7 +46,7 @@ data Context = { hir_program :: HP.Program HT.Type,
                  class_info_store :: CDS.ClassInfoStore,
                  file_manager :: FileManager,
                  instance_resolver_history :: IR.InstanceResolverHistory
-               }
+               } deriving (Move)
 
 instance IR.HistoryProvider Context where
     addEntry context ty qn = do
@@ -155,12 +155,14 @@ getExternalClassNames = do
     partial_ord <- HP.FullPath getStdOpsModuleName getPartialOrdClassName
     ord <- HP.FullPath getStdOpsModuleName getOrdClassName
     copy <- HP.FullPath getStdIntrinsicsModuleName getCopyClassName
+    move <- HP.FullPath getStdIntrinsicsModuleName getMoveClassName
     [(show, MD.ShowKind),
      (partial_eq, MD.PartialEqKind),
      (eq, MD.EqKind),
      (partial_ord, MD.PartialOrdKind),
      (ord, MD.OrdKind),
-     (copy, MD.CopyKind)]
+     (copy, MD.CopyKind),
+     (move, MD.MoveKind)]
 
 
 unpackCall :: ME.Expr -> MP.Identity
@@ -222,6 +224,16 @@ generateExternalImpl context hir_type impl_kind = case impl_kind of
                 type_store <- addExternalClassImplForRecord context.type_store record_id MD.Copy
                 context { type_store = type_store }
             _ -> panic "Not yet implemented"
+    MD.MoveKind -> do
+        (context, mir_type) <- processType context hir_type
+        case mir_type of
+            MT.Adt adt_id -> do
+                type_store <- addExternalClassImplForAdt context.type_store adt_id MD.Move
+                context { type_store = type_store }
+            MT.Record record_id -> do
+                type_store <- addExternalClassImplForRecord context.type_store record_id MD.Move
+                context { type_store = type_store }
+            _ -> panic "Not yet implemented"
     MD.PartialOrdKind -> do
         (context, mir_type) <- processType context hir_type
         arg_ref0 <- ME.VarRef (ME.Arg 0)
@@ -257,14 +269,15 @@ generateExternalImpl context hir_type impl_kind = case impl_kind of
 
 generateExternalImpls :: Context -> Context
 generateExternalImpls context = do
-    context.external_class_impls |> Map.iter |> Iterator.fold (\context, (hir_type, impls) -> do
-            impls |> List.iter |> Iterator.fold (\context, impl -> do
+    external_class_impls <- context.external_class_impls
+    Map.fold context external_class_impls (\context, (hir_type, impls) -> do
+            List.fold context impls (\context, impl -> do
                 expr_id_gen <- getExprIdCounter
                 context <- setExprIdCounter context expr_id_gen
                 context <- generateExternalImpl context hir_type impl
                 (context, _) <- resetExprIdCounter context
-                context) context
-        ) context
+                context)
+        )
 
 lowerProgram :: Config -> FileManager -> TVG.TypeVarGenerator -> CDS.ClassInfoStore -> HP.Program HT.Type -> IR.InstanceResolver -> IR.InstanceResolverHistory -> MP.Program
 lowerProgram config file_manager var_gen class_info_store hir_program instance_resolver instance_resolver_history = do
@@ -272,11 +285,12 @@ lowerProgram config file_manager var_gen class_info_store hir_program instance_r
     main_qn <- HP.Effectless getMainModuleName getMainFunctionName
     type_store <- createTypeStore
     mir_program <- MP.createProgram
+    main_fn <- HP.getFunctionOpt hir_program main_qn
     context <- Context hir_program mir_program
                type_store CS.createClosureStore instance_resolver Map.empty
                FQ.createFunctionQueue getExternalClassNames Map.empty Map.empty [] [] None None var_gen class_info_store
                file_manager instance_resolver_history
-    context <- case HP.getFunctionOpt hir_program main_qn of
+    context <- case main_fn of
         Some main -> do
             item <- FQ.Normal main_qn (HT.Tuple [])
             (context, _) <- FQ.insert context item

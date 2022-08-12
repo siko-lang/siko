@@ -249,11 +249,21 @@ lowerExpr lowering_context context expr = do
             case (from, to) of
                 (M.Owner, M.Owner) ->
                     if List2.contains lowering_context.borrowers arg_id
-                    then (lowering_context, context, LE.Clone lir_arg)
+                    then do
+                        id <- MT.getIdentity expr_type
+                        if List.contains context.mir_program.noncopyables id
+                        then println "{}: copies {}" % (lowering_context.function_id, id)
+                        else ()
+                        (lowering_context, context, LE.Clone lir_arg)
                     else (lowering_context, context, LE.Move lir_arg)
                 (M.Owner, M.Borrower _) -> (lowering_context, context, LE.Ref lir_arg)
                 (M.Borrower _, M.Borrower _) -> (lowering_context, context, LE.Move lir_arg)
-                (M.Borrower _, M.Owner) -> (lowering_context, context, LE.DerefClone lir_arg)
+                (M.Borrower _, M.Owner) -> do
+                    id <- MT.getIdentity expr_type
+                    if List.contains context.mir_program.noncopyables id
+                    then println "{}: copies {}" % (lowering_context.function_id, id)
+                    else ()
+                    (lowering_context, context, LE.DerefClone lir_arg)
                 (from, to) -> panic "Invalid converter in LIR lowering {}/{}" % (from, to)
     //println "Transforming EXPR {} {}" % ((ME.short expr), expr_info)
     lir_expr <- LE.Expr lir_s_expr lir_type (LE.ExprId 0)

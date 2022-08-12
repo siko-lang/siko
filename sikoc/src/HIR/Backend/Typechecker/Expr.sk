@@ -33,7 +33,7 @@ data Context = { type_store :: TS.TypeStore,
                  state :: TypecheckerState,
                  returns :: [(E.ExprId, Location)],
                  group_items :: [PO.FullyQualifiedName],
-                 class_constraints :: [S.UnificationConstraint] }
+                 class_constraints :: [S.UnificationConstraint] } deriving (Move)
 
 instance IR.HistoryProvider Context where
     addEntry context ty qn = do
@@ -164,7 +164,8 @@ unify2 context sub ty1 ty2 location = do
             //println "Ok! Sub: {}" % sub
             context <- applyToContext context sub
             (context, sub)
-        Err _ -> do
+        Err (context, sub) -> do
+            context :: Context <- context // FIXME
             //println "Not Ok! {}, {}" % (TF.toString ty1, TF.toString ty2)
             err <- TypeMismatch (SS.create (ty1 |> TF.fixedType |> TF.toString)) (SS.create (ty2 |> TF.fixedType |> TF.toString)) location
             state <- addError context.state err

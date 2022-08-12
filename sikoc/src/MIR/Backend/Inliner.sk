@@ -18,7 +18,7 @@ data Context = { program :: P.Program,
                  temp_var_gen :: Counter E.Var,
                  kept_functions :: Set P.Identity,
                  inlined :: Bool,
-               }
+               } deriving (Move)
 
 bindArg :: T.Type -> Rebinder.Context -> Int -> E.Expr -> (Rebinder.Context, E.Expr)
 bindArg unit_type context index arg = do
@@ -80,7 +80,7 @@ processFunction group (program, kept_functions) function_id = do
                 else break (context, body)
             info <- info { body = body, expr_id_gen = context.expr_id_gen, temp_var_gen = context.temp_var_gen }
             new_kind <- F.Normal info
-            program <- P.updateFunctionKind program function_id new_kind
+            program <- P.updateFunctionKind context.program function_id new_kind
             (program, context.kept_functions)
         _ -> (program, kept_functions)
 

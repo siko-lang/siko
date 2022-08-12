@@ -163,6 +163,27 @@ processCopyables mir_program data_groups = do
                             (mir_program, List2.push copyables id)
                         else (mir_program, copyables)
 
+processNonCopyables :: MP.Program -> [DependencyGroup MP.Identity] -> MP.Program
+processNonCopyables mir_program data_groups = do
+        (mir_program, noncopyables) <- List.fold (mir_program, List2.empty) data_groups processNonCopyable
+        mir_program { noncopyables = List2.asList noncopyables }
+    where
+        processNonCopyable :: (MP.Program, List2 MP.Identity) -> DependencyGroup MP.Identity -> (MP.Program, List2 MP.Identity)
+        processNonCopyable (mir_program, noncopyables) data_group =
+            List.fold (mir_program, noncopyables) data_group.items (\(mir_program, noncopyables), id -> do
+                (mir_program, item) <- MP.getAdtOrRecord mir_program id
+                case item of
+                    Left adt -> do
+                        adt :: AlgebraicDataType <- adt // FIXME
+                        if List.contains adt.attributes NonCopyable
+                        then (mir_program, List2.push noncopyables id)
+                        else (mir_program, noncopyables)
+                    Right record -> do
+                        record :: Record <- record // FIXME
+                        if List.contains record.attributes NonCopyable
+                        then (mir_program, List2.push noncopyables id)
+                        else (mir_program, noncopyables))
+
 processProgram :: Config -> MP.Program -> LP.Program
 processProgram config mir_program = do
     mir_program <- FnArgVarCreator.processProgram mir_program
@@ -174,6 +195,7 @@ processProgram config mir_program = do
     (data_groups, function_groups) <- createGroups config mir_program
     mir_program <- processDataGroups mir_program data_groups
     mir_program <- processCopyables mir_program data_groups
+    mir_program <- processNonCopyables mir_program data_groups
     trace config "Inliner.."
     mir_program <- Inliner.processProgram mir_program function_groups
     dumpProgram config mir_program (MIR "inliner")

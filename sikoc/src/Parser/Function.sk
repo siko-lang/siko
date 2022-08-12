@@ -95,27 +95,37 @@ parseExternConstraints state = parseList state parseExternConstraint Kind.LParen
                         (state, index) <- try parseIndex state
                         parent <- case parent of
                             Some parent -> parent
-                            None -> return Err (state, unexpectedToken state "field with parent path")
+                            None -> return do
+                                err <- unexpectedToken state "field with parent path"
+                                Err (state, err)
                         (state, Field index parent)
                     "e" -> do
                         (state, index) <- try parseIndex state
                         parent <- case parent of
                             Some parent -> parent
-                            None -> return Err (state, unexpectedToken state "extern field with parent path")
+                            None -> return do
+                                err <- unexpectedToken state "extern field with parent path"
+                                Err (state, err)
                         (state, Extern index parent)
                     "v" -> do
                         (state, index) <- try parseIndex state
                         parent <- case parent of
                             Some parent -> parent
-                            None -> return Err (state, unexpectedToken state "variant with parent path")
+                            None -> return do
+                                err <- unexpectedToken state "variant with parent path"
+                                Err (state, err)
                         (state, Variant index parent)
                     "i" -> do
                         (state, index) <- try parseIndex state
                         parent <- case parent of
                             Some parent -> parent
-                            None -> return Err (state, unexpectedToken state "implicit with parent path")
+                            None -> return do
+                                err <- unexpectedToken state "implicit with parent path"
+                                Err (state, err)
                         (state, Implicit index parent)
-                    _ -> return Err (state, unexpectedToken state "path name")
+                    _ -> return do
+                        err <- unexpectedToken state "path name"
+                        Err (state, err)
                 if check state Kind.Dot
                 then do
                     state <- step state
@@ -133,8 +143,12 @@ parseExternConstraints state = parseList state parseExternConstraint Kind.LParen
                         Some index -> do
                             state <- try expect state Kind.RBracket
                             Ok (state, index)
-                        None -> Err (state, unexpectedToken state "numeric literal")
-                _ -> Err (state, unexpectedToken state "numeric literal")
+                        None -> do
+                            err <- unexpectedToken state "numeric literal"
+                            Err (state, err)
+                _ -> do
+                    err <- unexpectedToken state "numeric literal"
+                    Err (state, err)
 
 
 parseFunction :: ParserState -> Result (ParserState, Either Function FunctionSignature) (ParserState, ParserError)
@@ -196,4 +210,6 @@ parseFunction state = do
                                                               effects = effects }
                     Ok (state, Right function_signature)
                 _ -> panic "Unexpected separator"
-        _ -> Err (state, unexpectedToken state "function name")
+        _ -> do
+            err <- unexpectedToken state "function name"
+            Err (state, err)

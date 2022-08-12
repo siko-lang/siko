@@ -31,7 +31,7 @@ data Context = { program :: PO.Program T.Type,
                  arg_refs :: [InlinedArg],
                  static_calls :: Map P.PatternId (E.Expr T.Type),
                  removed_binds :: [E.ExprId],
-                 sub :: S.Substitution }
+                 sub :: S.Substitution } deriving (Move)
 
 instance U.TypeVarGenerator Context where
     getNewTypeVar context = do
@@ -238,7 +238,7 @@ processProgram config program expr_id_gen pattern_id_gen var_gen class_info_stor
     functions <- PO.getFunctions program
     context <- Context program expr_id_gen pattern_id_gen var_gen class_info_store [] Map.empty [] S.createSubstitution
     (context, functions) <- List.mapS context functions processFunction
-    program <- List.fold program functions (\program, fn -> do
+    program <- List.fold context.program functions (\program, fn -> do
         (program, _) <- PO.addItem program fn.name (PO.Function fn)
         program)
     trace config "Inliner finished.."

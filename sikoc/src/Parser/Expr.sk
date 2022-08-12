@@ -95,7 +95,9 @@ parseUnary state = do
                     T.IntegerLiteral i2 -> do
                         state <- step state
                         Ok (buildExpr (FloatLiteral (SS.create "{}.{}" % (i, i2))) start_index state)
-                    _ -> Err (state, unexpectedToken state "numeric literal")
+                    _ -> do
+                        err <- unexpectedToken state "numeric literal"
+                        Err (state, err)
             else Ok (buildExpr (IntegerLiteral (SS.create i)) start_index state)
         T.StringLiteral s -> do
             state <- step state
@@ -182,7 +184,9 @@ parseUnary state = do
             (state, body) <- try parseDoBlock state
             Ok (buildExpr (Loop pattern start_expr body) start_index state)
         T.KeywordWith -> parseWithBlock state
-        _ -> Err (state, unexpectedToken state "expression")
+        _ -> do
+            err <- unexpectedToken state "expression"
+            Err (state, err)
 
 parseFieldAccess :: ParserState -> Result (ParserState, Expr) (ParserState, ParserError)
 parseFieldAccess state = do
@@ -201,7 +205,9 @@ parseFieldAccess state = do
                     start_index <- state.index
                     (state, name) <- try expectVarIdent state "field"
                     buildExpr (FieldAccess name expr) start_index state
-                _ -> return Err (state, unexpectedToken state "field")
+                _ -> return do
+                    err <- unexpectedToken state "field"
+                    Err (state, err)
         else break (state, expr)
     Ok (state, expr)
 

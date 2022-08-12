@@ -673,6 +673,9 @@ impl Resolver {
     ) -> Vec<IrDerivedClass> {
         let mut ir_derived_classes = Vec::new();
         for derived_class in derived_classes {
+            if derived_class.name == "Move" {
+                continue;
+            }
             if let Some(ir_class_id) = self.lookup_class(
                 &derived_class.name,
                 derived_class.location_id,

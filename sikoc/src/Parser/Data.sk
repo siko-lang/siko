@@ -93,7 +93,9 @@ parseData state = do
                     modifier <- getString modifier
                     case (SS.get modifier) of
                         "implicit" -> ()
-                        _ -> return Err (state, unexpectedToken state "extern modifier")
+                        _ -> return do
+                            err <- unexpectedToken state "extern modifier"
+                            Err (state, err)
                     state <- try expect state Kind.RParen
                     (state, True)
                 else (state, False)

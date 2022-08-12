@@ -98,4 +98,6 @@ parseTypeSignaturePart state with_args allow_wildcard = do
             state <- try expect state Kind.Tilde
             (state, ty) <- try parseTypeSignaturePart state with_args allow_wildcard
             Ok (buildTypeSignature (Owner ty) start_index state)
-        _ -> return Err (state, unexpectedToken state "type signature")
+        _ -> do
+            err <- unexpectedToken state "type signature"
+            Err (state, err)

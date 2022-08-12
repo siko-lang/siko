@@ -52,7 +52,7 @@ lowerFunction context lowering_info mir_id lir_id = do
             function_info_store <- context.function_info_store
             (mir_program, equals, inference_info, data_group_info_store) <- processFunctionEqualities mir_id context.config []
                 List2.empty inference_info function_info_store context.mir_program info.body context.data_group_info_store
-            context <- context { data_group_info_store = data_group_info_store }
+            context <- context { data_group_info_store = data_group_info_store, mir_program = mir_program }
             (mir_program, inference_info) <- processEqualities context.config equals inference_info context.mir_program
             inference_info <- checkInitials inference_info "after processEqualities"
             //trace2 context.config "after processEqualities {} {}" % (lir_id, inference_info)
@@ -66,7 +66,8 @@ lowerFunction context lowering_info mir_id lir_id = do
             (inference_info, ownership_dep_map) <- unpackOwnerships context.config mir_id inference_info ownership_dep_map external_borrows
             inference_info <- checkInitials inference_info "after unpackOwnerships"
             //trace2 context.config "after unpackOwnerships {} {}" % (lir_id, inference_info)
-            (inference_info, constraints, invalid_borrow_map, ownership_expr_map, result_vars) <- collectConstraints context.config mir_id context.mir_program borrow_info inference_info info.body
+            (inference_info, constraints, invalid_borrow_map, ownership_expr_map, result_vars, mir_program) <- collectConstraints context.config mir_id context.mir_program borrow_info inference_info info.body
+            context <- context { mir_program = mir_program }
             inference_info <- processConstraints context.config mir_id inference_info constraints invalid_borrow_map ownership_expr_map result_vars Full
             //trace2 context.config "after processConstraints {} {}" % (lir_id, inference_info)
             inference_info <- if context.config.trace_level == Level2

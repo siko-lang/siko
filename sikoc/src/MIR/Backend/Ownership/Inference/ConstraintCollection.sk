@@ -220,7 +220,13 @@ updateInvalidBorrows context expr_id expr_info = do
                         ownership_expr_map = ownership_expr_map, }
     context
 
-collectConstraints :: Config -> P.Identity -> P.Program -> BorrowInfo -> InferenceInfo -> E.Expr -> (InferenceInfo, List2 C.Constraint, Map2 E.ExprId (List2 E.ExprId), Map2 OwnershipTypeVariable (List2 E.ExprId), List2 OwnershipTypeVariable)
+collectConstraints :: Config -> P.Identity -> P.Program -> BorrowInfo -> InferenceInfo -> E.Expr ->
+                      (InferenceInfo,
+                       List2 C.Constraint,
+                       Map2 E.ExprId (List2 E.ExprId),
+                       Map2 OwnershipTypeVariable (List2 E.ExprId),
+                       List2 OwnershipTypeVariable,
+                       P.Program)
 collectConstraints config function_id program borrow_info inference_info body = do
     //trace config "collectConstraints {}" % function_id
     (members, ownership_dep_map) <- calculateOwnershipDepMap config inference_info.members
@@ -231,4 +237,4 @@ collectConstraints config function_id program borrow_info inference_info body = 
     E.Expr _ _ body_id <- body
     (context, body_info) <- getTypeVariableInfoByExprId2 context body_id
     (ownership_dep_map, result_vars) <- getOwnershipVars context.ownership_dep_map body_info
-    (context.inference_info, context.constraints, context.invalid_borrow_map, context.ownership_expr_map, result_vars)
+    (context.inference_info, context.constraints, context.invalid_borrow_map, context.ownership_expr_map, result_vars, context.program)

@@ -142,10 +142,11 @@ checkFunctionType context fn = do
                     function_store <- FS.setFunctionEffects context.function_store fn.name inferred_effects
                     context { function_store = function_store }
             context <- matchExprWith context body_id func_type_info.result_type location
-            context <- context.returns |> List.iter |> Iterator.fold (\context, (arg_id, arg_location) -> do
+            returns <- context.returns
+            context <- List.fold context returns (\context, (arg_id, arg_location) -> do
                     func_type_info <- getFunctionTypeInfo context fn.name
                     context <- matchExprWith context arg_id func_type_info.result_type arg_location
-                    context) context
+                    context)
             main <- P.FullPath getMainModuleName getMainFunctionName
             context <- if fn.name == main
                 then do
