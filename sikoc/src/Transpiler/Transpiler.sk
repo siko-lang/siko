@@ -138,17 +138,16 @@ convertPattern type_store checker = case checker of
 data Constructor = { fn :: Context -> [R.Expr] -> R.Expr }
 
 data Context = { type_store :: TypeStore,
-                 loop_var :: Option String,
                  constructors :: Map Identity Constructor,
                  external_functions :: Map ExternalId ExternFnBuilder,
                }
 
-convertExpr :: Context -> LE.Expr -> R.Expr
-convertExpr context lir_expr = do
+convertExpr :: Context -> Option String -> LE.Expr -> R.Expr
+convertExpr context loop_var lir_expr = do
     LE.Expr expr expr_type _ <- lir_expr
     case expr of
         LE.Do args -> do
-            args <- args |> List.iter |> Iterator.map (\arg -> convertExpr context arg) |> toList
+            args <- args |> List.iter |> Iterator.map (\arg -> convertExpr context loop_var arg) |> toList
             last <- List.last args
             is_var_decl <- case last of
                 R.VarDecl _ _ _ -> True
@@ -161,7 +160,7 @@ convertExpr context lir_expr = do
                     R.Block (push args unit)
                 else R.Block args
         LE.StaticFunctionCall id args -> do
-            args <- args |> List.iter |> Iterator.map (\arg -> convertExpr context arg) |> toList
+            args <- args |> List.iter |> Iterator.map (\arg -> convertExpr context loop_var arg) |> toList
             case get context.constructors id of
                 Some ctor -> do
                     ctor :: Constructor <- ctor // FIXME
@@ -179,7 +178,7 @@ convertExpr context lir_expr = do
         LE.VarDecl v rhs -> do
             n <- show v
             LE.Expr _ rhs_type _ <- rhs
-            rhs_expr <- convertExpr context rhs
+            rhs_expr <- convertExpr context loop_var rhs
             t <- Some (convertType rhs_type)
             R.VarDecl n rhs_expr t
         LE.VarRef v -> case v of
@@ -188,53 +187,52 @@ convertExpr context lir_expr = do
         LE.CaseOf body cases -> do
             cases <- cases |> List.iter |> Iterator.map (\c -> do
                 (case_pattern, case_guard) <- convertPattern context.type_store c.checker
-                case_body <- convertExpr context c.body
+                case_body <- convertExpr context loop_var c.body
                 R.MatchCase case_pattern case_body case_guard) |> toList
-            body <- convertExpr context body
+            body <- convertExpr context loop_var body
             R.Match body cases
-        LE.FieldAccess index receiver -> R.FieldAccess (getFieldName index) (convertExpr context receiver)
+        LE.FieldAccess index receiver -> R.FieldAccess (getFieldName index) (convertExpr context loop_var receiver)
         LE.If cond true_branch false_branch -> do
             true_pattern <- R.VariantPattern ("{}::True" % boolTypeName) (Some "_")
             false_pattern <- R.VariantPattern ("{}::False" % boolTypeName) (Some "_")
-            true_case <- R.MatchCase true_pattern (convertExpr context true_branch) None
-            false_case <- R.MatchCase false_pattern (convertExpr context false_branch) None
+            true_case <- R.MatchCase true_pattern (convertExpr context loop_var true_branch) None
+            false_case <- R.MatchCase false_pattern (convertExpr context loop_var false_branch) None
             cases <- [true_case, false_case]
-            R.Match (convertExpr context cond) cases
+            R.Match (convertExpr context loop_var cond) cases
         LE.Loop v initializer body -> do
             n <- show v
-            var_decl <- R.VarDeclMut n (convertExpr context initializer) None
-            inner_context <- Context context.type_store (Some n) context.constructors context.external_functions
-            loop_body <- R.Assign (R.VarRef n) (convertExpr inner_context body)
+            var_decl <- R.VarDeclMut n (convertExpr context loop_var initializer) None
+            loop_body <- R.Assign (R.VarRef n) (convertExpr context (Some n) body)
             loop_expr <- R.Loop [loop_body]
             R.Block [var_decl, loop_expr]
-        LE.Break e -> R.Break (convertExpr context e)
+        LE.Break e -> R.Break (convertExpr context loop_var e)
         LE.Continue e -> do
-            case context.loop_var of
+            case loop_var of
                 Some n -> do
-                    assign <- R.Assign (R.VarRef n) (convertExpr context e)
+                    assign <- R.Assign (R.VarRef n) (convertExpr context loop_var e)
                     R.Block [assign, R.Continue]
                 None -> panic "No loop var found for continue"
-        LE.Return e -> R.Return (convertExpr context e)
+        LE.Return e -> R.Return (convertExpr context loop_var e)
         LE.List args -> do
             rust_type <- convertType expr_type
-            args <- args |> List.iter |> Iterator.map (\arg -> convertExpr context arg) |> toList
+            args <- args |> List.iter |> Iterator.map (\arg -> convertExpr context loop_var arg) |> toList
             R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.List args)]
         LE.Clone expr -> do
-            expr <- convertExpr context expr
+            expr <- convertExpr context loop_var expr
             R.MethodCall expr cloneName []
         LE.Multi _ -> panic "Multi in transpiler"
         LE.Deref expr -> do
-            expr <- convertExpr context expr
+            expr <- convertExpr context loop_var expr
             R.Deref expr
         LE.DerefClone expr -> do
-            expr <- convertExpr context expr
+            expr <- convertExpr context loop_var expr
             R.MethodCall (R.Deref expr) cloneName []
         LE.Ref expr -> do
-            expr <- convertExpr context expr
+            expr <- convertExpr context loop_var expr
             R.Ref expr
-        LE.Move expr -> convertExpr context expr
+        LE.Move expr -> convertExpr context loop_var expr
         LE.Box expr -> do
-            expr <- convertExpr context expr
+            expr <- convertExpr context loop_var expr
             boxExpr expr
 
 convertRecord :: LD.Record -> Map ExternalId ExternStructBuilder -> R.Struct
@@ -360,8 +358,8 @@ processFunction (context, program, type_store, rust_program) (_, lir_function) =
         Normal lir_body -> do
                 LE.Expr b _ _ <- lir_body
                 case b of
-                    LE.Do _ -> convertExpr context lir_body
-                    _ -> R.Block [convertExpr context lir_body]
+                    LE.Do _ -> convertExpr context None lir_body
+                    _ -> R.Block [convertExpr context None lir_body]
         Extern -> do
                 Identity mod name _ <- lir_function.id
                 id <- ExternalId mod name
@@ -399,7 +397,7 @@ transpile program = do
         rust_program <- rust_program { structs = structs }
         (type_store, rust_program))
     constructors <- createConstructors program
-    context <- Context type_store None constructors external_functions
+    context <- Context type_store constructors external_functions
     rust_program <- Map.fold rust_program program.adts (\rust_program, (_, adt) -> do
             name <- getRustIdentity adt.id
             lifetimes <- convertLifetimes adt.lifetimes

@@ -84,6 +84,14 @@ dumpProgram config mir_program type =
         writeTextFile (getOutputFileName config type) s
     else ()
 
+dumpLIRProgram :: Config -> LP.Program -> OutputFileType -> ()
+dumpLIRProgram config lir_program type =
+    if config.dump
+    then do
+        s <- LP.dump lir_program
+        writeTextFile (getOutputFileName config type) s
+    else ()
+
 createGroups :: Config -> MP.Program -> ([DependencyGroup MP.Identity], [DependencyGroup MP.Identity])
 createGroups config mir_program = do
     trace config "collectDataDeps.."
@@ -217,5 +225,6 @@ processProgram config mir_program = do
     dumpProgram config mir_program (MIR "addconverter")
     trace config "Inference start.."
     lir_program <- Inference.processProgram config mir_program data_groups function_groups
+    dumpLIRProgram config lir_program (LIR "first")
     trace config "Inference end.."
     return lir_program

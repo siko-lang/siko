@@ -33,7 +33,9 @@ data Context = { config :: Config,
                  constraints :: List2 C.Constraint,
                  ownership_dep_map :: Map2 GroupTypeVariable (List2 OwnershipTypeVariable),
                  invalid_borrow_map :: Map2 E.ExprId (List2 E.ExprId),
-                 ownership_expr_map :: Map2 OwnershipTypeVariable (List2 E.ExprId) }
+                 ownership_expr_map :: Map2 OwnershipTypeVariable (List2 E.ExprId),
+                 group_expr_map :: Map2 GroupTypeVariable (List2 E.ExprId),
+                 ownership_group_map :: Map2 OwnershipTypeVariable (List2 GroupTypeVariable), }
 
 addOwnershipConstraint :: Context -> C.Constraint -> Context
 addOwnershipConstraint context constraint = do
@@ -210,14 +212,24 @@ updateInvalidBorrows context expr_id expr_info = do
             invalid_borrows <- invalid_borrows |> List2.sort |> List2.dedup
             context { invalid_borrows = invalid_borrows }
         None -> context
-    (ownership_dep_map, relevants) <- getOwnershipVars context.ownership_dep_map expr_info
-    // println "Invalid borrows {} = {}" % (expr_id, context.invalid_borrows)
-    // println "Relevants {}" % relevants
-    ownership_expr_map <- List2.fold context.ownership_expr_map relevants (\ownership_expr_map, ownership_var -> Map2.add ownership_expr_map ownership_var expr_id)
+    context <- case Map2.get context.group_expr_map expr_info.arg_group_var of
+        Some _ -> context
+        None -> do
+            // first time seeing this group
+            vars <- case Map2.get context.ownership_dep_map expr_info.arg_group_var of
+                Some vars -> vars
+                None -> List2.empty
+            List2.fold context vars (\context, var -> do
+                ownership_group_map <- Map2.add context.ownership_group_map var expr_info.arg_group_var
+                context { ownership_group_map = ownership_group_map })
+    group_expr_map <- Map2.add context.group_expr_map expr_info.arg_group_var expr_id
+    ownership_expr_map <- Map2.add context.ownership_expr_map expr_info.ownership_var expr_id
+    context <- context { group_expr_map = group_expr_map }
+    //ownership_expr_map <- List2.fold context.ownership_expr_map relevants (\ownership_expr_map, ownership_var -> Map2.add ownership_expr_map ownership_var expr_id)
     invalid_borrow_map <- Map2.put context.invalid_borrow_map expr_id context.invalid_borrows
-    context <- context { ownership_dep_map = ownership_dep_map,
-                        invalid_borrow_map = invalid_borrow_map,
-                        ownership_expr_map = ownership_expr_map, }
+    context <- context { group_expr_map = group_expr_map,
+                         invalid_borrow_map = invalid_borrow_map,
+                         ownership_expr_map = ownership_expr_map, }
     context
 
 collectConstraints :: Config -> P.Identity -> P.Program -> BorrowInfo -> InferenceInfo -> E.Expr ->
@@ -225,6 +237,8 @@ collectConstraints :: Config -> P.Identity -> P.Program -> BorrowInfo -> Inferen
                        List2 C.Constraint,
                        Map2 E.ExprId (List2 E.ExprId),
                        Map2 OwnershipTypeVariable (List2 E.ExprId),
+                       Map2 GroupTypeVariable (List2 E.ExprId),
+                       Map2 OwnershipTypeVariable (List2 GroupTypeVariable),
                        List2 OwnershipTypeVariable,
                        P.Program)
 collectConstraints config function_id program borrow_info inference_info body = do
@@ -232,9 +246,12 @@ collectConstraints config function_id program borrow_info inference_info body = 
     (members, ownership_dep_map) <- calculateOwnershipDepMap config inference_info.members
     inference_info <- inference_info { members = members }
     context <- Context config function_id inference_info program borrow_info List2.empty
-               List2.empty ownership_dep_map Map2.empty Map2.empty
+               List2.empty ownership_dep_map Map2.empty Map2.empty Map2.empty Map2.empty
     context <- processExpr context body
     E.Expr _ _ body_id <- body
     (context, body_info) <- getTypeVariableInfoByExprId2 context body_id
     (ownership_dep_map, result_vars) <- getOwnershipVars context.ownership_dep_map body_info
-    (context.inference_info, context.constraints, context.invalid_borrow_map, context.ownership_expr_map, result_vars, context.program)
+    (context.inference_info, context.constraints,
+     context.invalid_borrow_map, context.ownership_expr_map,
+     context.group_expr_map, context.ownership_group_map,
+      result_vars, context.program)

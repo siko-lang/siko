@@ -126,9 +126,9 @@ processFunction context group inference_info function_id = do
             //trace context.config "checkBorrows {}" % function_id
             borrow_info <- checkBorrows context.program info.body
             //trace context.config "inferOwnership {}" % function_id
-            (inference_info, constraints, invalid_borrow_map, ownership_expr_map, result_vars, program) <- collectConstraints context.config function_id context.program borrow_info inference_info info.body
+            (inference_info, constraints, invalid_borrow_map, ownership_expr_map, group_expr_map, ownership_group_map, result_vars, program) <- collectConstraints context.config function_id context.program borrow_info inference_info info.body
             context <- context { program = program }
-            inference_info <- processConstraints context.config function_id inference_info constraints invalid_borrow_map ownership_expr_map result_vars Partial
+            inference_info <- processConstraints context.config function_id inference_info constraints invalid_borrow_map ownership_expr_map group_expr_map ownership_group_map result_vars Partial
             inference_info <- if context.config.trace_level == Level2
             then dumpOwnership inference_info function_id info.body
             else inference_info

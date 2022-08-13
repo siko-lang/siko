@@ -25,6 +25,8 @@ data Context = { config :: Config,
                  changed_ownership_vars :: Bool,
                  invalid_borrow_map :: Map2 E.ExprId (List2 E.ExprId),
                  ownership_expr_map :: Map2 OwnershipTypeVariable (List2 E.ExprId),
+                 group_expr_map :: Map2 GroupTypeVariable (List2 E.ExprId),
+                 ownership_group_map :: Map2 OwnershipTypeVariable (List2 GroupTypeVariable),
                  mode :: InferenceMode,
                  result_vars :: List2 OwnershipTypeVariable,
                  allow_guess :: Bool }
@@ -72,15 +74,34 @@ updateOwnership context ownership_var kind = do
 
 isValidBorrow :: Context -> OwnershipTypeVariable -> E.ExprId -> (Context, Bool)
 isValidBorrow context ownership_var expr_id = do
-    //trace2 context.config "isValidBorrow {} {}" % (ownership_var, expr_id)
-    case Map2.get context.ownership_expr_map ownership_var of
-        Some expr_ids -> List2.fold (context, True) expr_ids (\(context, is_valid_borrow), dep -> do
+        //trace2 context.config "isValidBorrow {} {}" % (ownership_var, expr_id)
+        is_valid_borrow <- True
+        (context, is_valid_borrow) <- case Map2.get context.ownership_expr_map ownership_var of
+            Some expr_ids -> checkExprs context is_valid_borrow expr_ids expr_id
+            None -> (context, is_valid_borrow)
+        if is_valid_borrow
+        then case Map2.get context.ownership_group_map ownership_var of
+            Some groups -> List2.fold (context, is_valid_borrow) groups (\(context, is_valid_borrow), group -> do
+                    case Map2.get context.group_expr_map group of
+                        Some expr_ids -> checkExprs context is_valid_borrow expr_ids expr_id
+                        None -> (context, is_valid_borrow)
+                )
+            None -> (context, True)
+        else (context, is_valid_borrow)
+    where
+        checkExprs :: Context -> Bool -> List2 E.ExprId -> E.ExprId -> (Context, Bool)
+        checkExprs context is_valid_borrow expr_ids expr_id = List2.fold (context, is_valid_borrow) expr_ids (\(context, is_valid_borrow), dep -> do
+            if is_valid_borrow
+            then checkExpr context expr_id dep
+            else (context, is_valid_borrow))
+
+        checkExpr :: Context -> E.ExprId -> E.ExprId -> (Context, Bool)
+        checkExpr context expr_id dep =
             case Map2.get context.invalid_borrow_map dep of
                 Some invalid_borrows -> do
-                    is_valid_borrow <- is_valid_borrow && not (List2.contains invalid_borrows expr_id)
+                    is_valid_borrow <- not (List2.contains invalid_borrows expr_id)
                     (context, is_valid_borrow)
-                None -> (context, is_valid_borrow))
-        None -> (context, True)
+                None -> (context, True)
 
 isInternal :: Context -> BorrowId -> (Context, Bool)
 isInternal context borrow_id = do
@@ -257,11 +278,11 @@ dumpOwnership context = do
             context
         )
 
-processConstraints :: Config -> P.Identity -> InferenceInfo -> List2 C.Constraint -> Map2 E.ExprId (List2 E.ExprId) -> Map2 OwnershipTypeVariable (List2 E.ExprId) -> List2 OwnershipTypeVariable -> InferenceMode -> InferenceInfo
-processConstraints config function_id inference_info constraints invalid_borrow_map ownership_expr_map result_vars mode = do
+processConstraints :: Config -> P.Identity -> InferenceInfo -> List2 C.Constraint -> Map2 E.ExprId (List2 E.ExprId) -> Map2 OwnershipTypeVariable (List2 E.ExprId) -> Map2 GroupTypeVariable (List2 E.ExprId) -> Map2 OwnershipTypeVariable (List2 GroupTypeVariable) -> List2 OwnershipTypeVariable -> InferenceMode -> InferenceInfo
+processConstraints config function_id inference_info constraints invalid_borrow_map ownership_expr_map group_expr_map ownership_group_map result_vars mode = do
     // println "Invalid borrow map {}" % (invalid_borrow_map)
     // println "InferenceInfo {}" % inference_info
-    context <- Context config inference_info function_id True invalid_borrow_map ownership_expr_map mode result_vars False
+    context <- Context config inference_info function_id True invalid_borrow_map ownership_expr_map group_expr_map ownership_group_map mode result_vars False
     //dumpConstraints constraints
     context <- loop context <- context do
         context :: Context <- context // FIXME
