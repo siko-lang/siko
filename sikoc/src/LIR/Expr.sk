@@ -35,9 +35,7 @@ instance Show Checker where
 
 data Case = { checker :: Checker, body :: Expr } deriving (Show)
 
-data ExprId = ExprId Int deriving (PartialEq, Eq, PartialOrd, Ord, Show)
-
-data Expr = Expr SimpleExpr T.Type ExprId deriving (Show)
+data Expr = Expr SimpleExpr T.Type deriving (Show)
 
 data SimpleExpr = Do [Expr]
             | Multi [Expr]
@@ -66,7 +64,7 @@ data SimpleExpr = Do [Expr]
 
 prettyPrint :: Expr -> Indent -> (String, Bool)
 prettyPrint expr ind = do
-    Expr expr expr_type _ <- expr
+    Expr expr expr_type <- expr
     case expr of
         Do args -> do
             inner <- inc ind
@@ -90,7 +88,7 @@ prettyPrint expr ind = do
         FloatLiteral lit -> ("{}" % lit, True)
         CharLiteral lit -> ("'{}'" % lit, True)
         VarDecl v arg -> do
-            Expr _ arg_type id <- arg
+            Expr _ arg_type <- arg
             s <- "{} :: {} <- {}" % (v, arg_type, (prettyPrint arg ind).0)
             (s, False)
         VarRef v -> ("({} :: {})" % (v, expr_type), True)

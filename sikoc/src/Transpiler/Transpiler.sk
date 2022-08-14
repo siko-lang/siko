@@ -144,7 +144,7 @@ data Context = { type_store :: TypeStore,
 
 convertExpr :: Context -> Option String -> LE.Expr -> R.Expr
 convertExpr context loop_var lir_expr = do
-    LE.Expr expr expr_type _ <- lir_expr
+    LE.Expr expr expr_type <- lir_expr
     case expr of
         LE.Do args -> do
             args <- args |> List.iter |> Iterator.map (\arg -> convertExpr context loop_var arg) |> toList
@@ -177,7 +177,7 @@ convertExpr context loop_var lir_expr = do
         LE.CharLiteral lit -> R.StructCtor charTypeName [R.FieldInitItem innerValueField (R.CharLiteral lit)]
         LE.VarDecl v rhs -> do
             n <- show v
-            LE.Expr _ rhs_type _ <- rhs
+            LE.Expr _ rhs_type <- rhs
             rhs_expr <- convertExpr context loop_var rhs
             t <- Some (convertType rhs_type)
             R.VarDecl n rhs_expr t
@@ -356,7 +356,7 @@ processFunction (context, program, type_store, rust_program) (_, lir_function) =
     rust_result <- convertType lir_function.type.result
     rust_body <- case lir_function.kind of
         Normal lir_body -> do
-                LE.Expr b _ _ <- lir_body
+                LE.Expr b _  <- lir_body
                 case b of
                     LE.Do _ -> convertExpr context None lir_body
                     _ -> R.Block [convertExpr context None lir_body]

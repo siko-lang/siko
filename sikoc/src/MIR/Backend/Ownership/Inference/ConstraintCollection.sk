@@ -114,6 +114,17 @@ processExpr context expr = do
         E.FloatLiteral _ -> addOwnershipValue context info.ownership_var M.Owner
         E.CharLiteral _ -> addOwnershipValue context info.ownership_var M.Owner
         E.VarDecl var rhs -> do
+            E.Expr s rhs_type rhs_id <- rhs
+            context <- case rhs_type of
+                T.Never -> context
+                _ -> do
+                        id <- T.getIdentity rhs_type
+                        if List.contains context.program.copyables id
+                        then do
+                            (context, info) <- getTypeVariableInfoByExprId2 context rhs_id
+                            addOwnershipValue context info.ownership_var M.Owner
+                        else context
+            rhs <- E.Expr s rhs_type rhs_id  // FIXME: linear HACK
             context <- processExpr context rhs
             context <- addOwnershipValue context info.ownership_var M.Owner
             context

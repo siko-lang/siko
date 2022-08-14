@@ -150,8 +150,8 @@ lowerExpr lowering_context context expr = do
                         lir_args <- List.zipS [] lir_args record.fields (\lir_args, arg, field -> do
                             if field.grouped
                             then do
-                                LE.Expr _ arg_type _ <- arg
-                                arg <- LE.Expr (LE.Box arg) (LT.Box arg_type) (LE.ExprId 0)
+                                LE.Expr _ arg_type <- arg
+                                arg <- LE.Expr (LE.Box arg) (LT.Box arg_type)
                                 List.push lir_args arg
                             else List.push lir_args arg)
                         (context, lir_args)
@@ -162,8 +162,8 @@ lowerExpr lowering_context context expr = do
                         lir_args <- List.zipS [] lir_args record.fields (\lir_args, arg, field -> do
                             if field.grouped
                             then do
-                                LE.Expr _ arg_type _ <- arg
-                                arg <- LE.Expr (LE.Box arg) (LT.Box arg_type) (LE.ExprId 0)
+                                LE.Expr _ arg_type <- arg
+                                arg <- LE.Expr (LE.Box arg) (LT.Box arg_type)
                                 List.push lir_args arg
                             else List.push lir_args arg)
                         (context, lir_args)
@@ -191,15 +191,15 @@ lowerExpr lowering_context context expr = do
             then do
                 case lir_type of
                     LT.Ref _ _ -> do
-                        field_access <- LE.Expr (LE.FieldAccess index lir_receiver) lir_type (LE.ExprId 0)
-                        field_access <- LE.Expr (LE.Deref field_access) lir_type (LE.ExprId 0)
+                        field_access <- LE.Expr (LE.FieldAccess index lir_receiver) lir_type
+                        field_access <- LE.Expr (LE.Deref field_access) lir_type
                         (lowering_context, context, LE.Ref field_access)
                     _ -> do
-                        field_access <- LE.Expr (LE.FieldAccess index lir_receiver) lir_type (LE.ExprId 0)
+                        field_access <- LE.Expr (LE.FieldAccess index lir_receiver) lir_type
                         (lowering_context, context, LE.Deref field_access)
             else case lir_type of
                 LT.Ref _ _ -> do
-                    field_access <- LE.Expr (LE.FieldAccess index lir_receiver) lir_type (LE.ExprId 0)
+                    field_access <- LE.Expr (LE.FieldAccess index lir_receiver) lir_type
                     (lowering_context, context, LE.Ref field_access)
                 _ -> (lowering_context, context, LE.FieldAccess index lir_receiver)
         ME.If cond true_branch false_branch -> do
@@ -266,5 +266,5 @@ lowerExpr lowering_context context expr = do
                     (lowering_context, context, LE.DerefClone lir_arg)
                 (from, to) -> panic "Invalid converter in LIR lowering {}/{}" % (from, to)
     //println "Transforming EXPR {} {}" % ((ME.short expr), expr_info)
-    lir_expr <- LE.Expr lir_s_expr lir_type (LE.ExprId 0)
+    lir_expr <- LE.Expr lir_s_expr lir_type
     (lowering_context, context, lir_expr)
