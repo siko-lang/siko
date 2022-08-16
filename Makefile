@@ -1,13 +1,13 @@
 rust_sikoc:
 	@build/build_rust_sikoc.sh
 
-stage0: rust_sikoc
+stage0: rust_sikoc $(shell find sikoc/src -type f)
 	@build/build_stage0.sh
 
-stage1: stage0
+stage1: stage0 $(shell find sikoc/src -type f)
 	@build/build_stage1.sh
 
-stage2: stage1
+stage2: stage1 $(shell find sikoc/src -type f)
 	@build/build_stage2.sh
 
 stage0_test: stage0
@@ -16,7 +16,7 @@ stage0_test: stage0
 stage1_test: stage1
 	@./tests stage1
 
-minimal: stage0
+minimal:
 	@sikoc/rr
 
 clean:

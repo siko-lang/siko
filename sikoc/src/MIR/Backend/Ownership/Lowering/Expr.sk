@@ -108,19 +108,12 @@ lowerExpr lowering_context context expr = do
                 ME.Expr _ arg_type arg_id <- arg
                 (inference_info, info) <- getTypeVariableInfoByExprId lowering_context.inference_info arg_id lowering_context.function_id
                 (lowering_context { inference_info = inference_info }, info))
-            function_converters <- Option.unwrap (Map2.get lowering_context.inference_info.function_converters expr_id)
-            (inference_info, lifetime_dependencies) <- List2.fold (lowering_context.inference_info, List2.empty) function_converters (\(inference_info, lifetime_dependencies), converter -> do
-                (inference_info, from_kind) <- getOwnership inference_info converter.from
-                (inference_info, to_kind) <- getOwnership inference_info converter.to
-                lifetime_dependencies <- case (from_kind, to_kind) of
-                    (Some (M.Borrower a), Some (M.Borrower b)) -> do
-                        if a == b
-                        then lifetime_dependencies
-                        else List2.push lifetime_dependencies (LifetimeDependency a b)
-                    _ -> lifetime_dependencies
-                (inference_info, lifetime_dependencies))
-            lifetime_dependencies <- lifetime_dependencies |> List2.sort |> List2.dedup
-            lowering_context <- lowering_context { inference_info = inference_info }
+            lifetime_dependencies <- case Map2.get lowering_context.inference_info.function_converter_borrows expr_id of
+                Some function_converter_borrows -> do
+                    lifetime_dependencies <- List2.fold (List2.empty) function_converter_borrows (\lifetime_dependencies, function_converter_borrow -> do
+                        List2.push lifetime_dependencies (LifetimeDependency function_converter_borrow.from function_converter_borrow.to))
+                    lifetime_dependencies |> List2.sort |> List2.dedup
+                None -> List2.empty
             (inference_info, lowering_info, filter_info) <- convertToFunctionLoweringInfo context.config lowering_context.inference_info args_info
                                                expr_info lowering_context.filter_info lifetime_dependencies
             lowering_context <- lowering_context { inference_info = inference_info, filter_info = filter_info }

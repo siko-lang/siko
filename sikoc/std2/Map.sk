@@ -155,7 +155,11 @@ intoIter k v :: Map k v -> ~MapIterator k v
 intoIter m = extern (arg[0] -> result.i[0])
 
 nextItem k v :: MapIterator k v -> ~(~MapIterator k v, ~Option (k, v))
-nextItem iter = extern (arg[0].i[0].f[0] -> result.f[1].v[0].f[0], arg[0].i[0].f[0] -> result.f[1].v[0].f[1], arg[0].i[0] == result.f[0].i[0])
+nextItem iter = extern (arg[0].i[0].e[0] -> result.f[1].v[0].f[0].f[0],
+                        arg[0].i[0].e[1] -> result.f[1].v[0].f[0].f[1],
+                        arg[0].i[0] == result.f[0].i[0],
+                        arg[0].i[0].e[0] == result.f[0].i[0].e[0],
+                        arg[0].i[0].e[1] == result.f[0].i[0].e[1])
 
 @Inline
 toMap it k v :: (Iterator it > (k, v), Ord k) => it -> Map k v

@@ -8,6 +8,31 @@ import Siko.Util.SCC as SCC
 import List2 as List2
 import List2 (List2)
 
+data GroupIndexMap a = { groups :: Map2 a Int } deriving (Show)
+
+getGroupIndex a :: (Ord a) => GroupIndexMap a -> a -> (GroupIndexMap a, Int)
+getGroupIndex group_index_map item = do
+    case Map2.get group_index_map.groups item of
+        Some index -> (group_index_map, index)
+        None -> panic "Item not found in group_index_map"
+
+getGroupIndexOpt a :: (Ord a) => GroupIndexMap a -> a -> (GroupIndexMap a, Option Int)
+getGroupIndexOpt group_index_map item = do
+    case Map2.get group_index_map.groups item of
+        Some index -> (group_index_map, Some index)
+        None -> (group_index_map, None)
+
+getGroupIndexMap a :: (Ord a) => List2 (DependencyGroup a) -> (List2 (DependencyGroup a), GroupIndexMap a)
+getGroupIndexMap groups =
+    loop (groups, group_index_map, index) <- (groups, Map2.empty, 0) do
+        if index >= List2.getLength groups
+        then break (groups, GroupIndexMap group_index_map)
+        else do
+            group :: DependencyGroup a <- List2.atIndex groups index // FIXME: type annotation
+            group_index_map <- List2.fold group_index_map group.items (\group_index_map, item -> do
+                Map2.put group_index_map item index)
+            (groups, group_index_map, index + 1)
+
 data DependencyGroup a = { items :: List2 a } deriving (Show)
 
 createIdMaps a :: (PartialEq a, Ord a) => SCC.Graph -> Map2 a (List2 a) -> (SCC.Graph, Map2 a SCC.NodeId, Map2 SCC.NodeId a)

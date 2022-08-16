@@ -20,7 +20,7 @@ import List2 (List2)
 data FilterInfo = { ordered_dep_map :: Map2 GroupTypeVariable (List2 TypeVariableInfo),
                     ownership_dep_map :: Map2 GroupTypeVariable (List2 OwnershipTypeVariable),
                     deps_map :: Map2 GroupTypeVariable (List2 TypeVariableInfo),
-                    group_index_map :: Map2 TypeVariableInfo Int,
+                    group_index_map :: GroupIndexMap TypeVariableInfo,
                     group_borrow_map :: Map2 Int Bool,
                     group_dep_map :: Map2 Int (List2 Int),
                     groups :: List2 (DependencyGroup TypeVariableInfo)
@@ -65,17 +65,6 @@ buildFilterInfo config members ownershipinfos sources = do
     filter_info <- FilterInfo ordered_dep_map ownership_dep_map deps_map group_index_map group_borrow_map group_dep_map groups
     (members, ownershipinfos, filter_info)
 
-getGroupIndexMap a :: (Ord a) => List2 (DependencyGroup a) -> (List2 (DependencyGroup a), Map2 a Int)
-getGroupIndexMap groups =
-    loop (groups, group_index_map, index) <- (groups, Map2.empty, 0) do
-        if index >= List2.getLength groups
-        then break (groups, group_index_map)
-        else do
-            group :: DependencyGroup a <- List2.atIndex groups index // FIXME: type annotation
-            group_index_map <- List2.fold group_index_map group.items (\group_index_map, item -> do
-                Map2.put group_index_map item index)
-            (groups, group_index_map, index + 1)
-
 getInfoDependencyMap :: List2 TypeVariableInfo -> List2 M.MemberInfo -> Map2 GroupTypeVariable (List2 TypeVariableInfo) ->
                         (List2 M.MemberInfo, Map2 TypeVariableInfo (List2 TypeVariableInfo), Map2 GroupTypeVariable (List2 TypeVariableInfo))
 getInfoDependencyMap sources members deps_map = do
@@ -99,26 +88,14 @@ isVarBorrower kind_map var =
         Some (M.Borrower _) -> (kind_map, True)
         _ -> (kind_map, False)
 
-getGroupIndex :: Map2 TypeVariableInfo Int -> TypeVariableInfo -> (Map2 TypeVariableInfo Int, Int)
-getGroupIndex group_index_map info = do
-    case Map2.get group_index_map info of
-        Some index -> (group_index_map, index)
-        None -> panic "Info not found in group_index_map"
-
-getGroupIndex2 :: FilterInfo -> TypeVariableInfo -> (FilterInfo, Int) // FIXME
-getGroupIndex2 filter_info info = do
-    case Map2.get filter_info.group_index_map info of
-        Some index -> (filter_info, index)
-        None -> panic "Info not found in group_index_map"
-
 isGroupBorrower :: List2 TypeVariableInfo ->
                    Map2 OwnershipTypeVariable M.OwnershipKind ->
                    Map2 TypeVariableInfo (List2 TypeVariableInfo) ->
-                   Map2 TypeVariableInfo Int ->
+                   GroupIndexMap TypeVariableInfo ->
                    Map2 Int Bool ->
                    (Map2 OwnershipTypeVariable M.OwnershipKind,
                     Map2 TypeVariableInfo (List2 TypeVariableInfo),
-                    Map2 TypeVariableInfo Int,
+                    GroupIndexMap TypeVariableInfo,
                     Map2 Int Bool,
                     Bool)
 isGroupBorrower group_items kind_map info_dep_map group_index_map group_borrow_map =
@@ -129,12 +106,11 @@ isGroupBorrower group_items kind_map info_dep_map group_index_map group_borrow_m
             Some deps -> List2.fold (kind_map, info_dep_map, group_index_map, group_borrow_map, borrower) deps (\(kind_map, info_dep_map, group_index_map, group_borrow_map, borrower), dep -> do
                 borrower <- if List2.contains group_items dep
                 then borrower
-                else case Map2.get group_index_map dep of
-                    Some index -> do
-                        case Map2.get group_borrow_map index of
-                            Some b -> borrower || b
-                            None -> panic "Group index not found in group_borrow_map"
-                    None -> panic "Info not found in group_index_map"
+                else do
+                    (group_index_map, index) <- getGroupIndex group_index_map dep
+                    case Map2.get group_borrow_map index of
+                        Some b -> borrower || b
+                        None -> panic "Group index not found in group_borrow_map"
                 (kind_map, info_dep_map, group_index_map, group_borrow_map, borrower))
             None -> panic "Info not found in info_dep_map")
 
@@ -142,10 +118,10 @@ isGroupBorrower group_items kind_map info_dep_map group_index_map group_borrow_m
 getGroupBorrowMap :: List2 (DependencyGroup TypeVariableInfo) ->
                      Map2 TypeVariableInfo (List2 TypeVariableInfo) ->
                      Map2 OwnershipTypeVariable M.OwnershipKind ->
-                     Map2 TypeVariableInfo Int ->
+                     GroupIndexMap TypeVariableInfo ->
                      (Map2 OwnershipTypeVariable M.OwnershipKind,
                       Map2 TypeVariableInfo (List2 TypeVariableInfo),
-                      Map2 TypeVariableInfo Int,
+                      GroupIndexMap TypeVariableInfo,
                       Map2 Int Bool)
 getGroupBorrowMap groups info_dep_map kind_map group_index_map = do
     loop (kind_map, info_dep_map, group_index_map, group_borrow_map, index) <- (kind_map, info_dep_map, group_index_map, Map2.empty, 0) do
@@ -160,9 +136,9 @@ getGroupBorrowMap groups info_dep_map kind_map group_index_map = do
 getGroupDepMap :: DependencyGroup TypeVariableInfo ->
                   Int ->
                   Map2 TypeVariableInfo (List2 TypeVariableInfo) ->
-                  Map2 TypeVariableInfo Int ->
+                  GroupIndexMap TypeVariableInfo ->
                   Map2 Int (List2 Int) ->
-                  (Map2 TypeVariableInfo Int, Map2 TypeVariableInfo (List2 TypeVariableInfo), Map2 Int (List2 Int))
+                  (GroupIndexMap TypeVariableInfo, Map2 TypeVariableInfo (List2 TypeVariableInfo), Map2 Int (List2 Int))
 getGroupDepMap group group_index info_dep_map group_index_map group_dep_map = do
     List2.fold (group_index_map, info_dep_map, group_dep_map) group.items (\(group_index_map, info_dep_map, group_dep_map), item ->
         case Map2.get info_dep_map item of
@@ -191,7 +167,8 @@ collectBorrows filter_info relevants group_index = do
 getRelevants :: FilterInfo -> List2 TypeVariableInfo -> (FilterInfo, List2 TypeVariableInfo)
 getRelevants filter_info sources = do
     (filter_info, relevants) <- List2.fold (filter_info, sources) sources (\(filter_info, relevants), source -> do
-        (filter_info, group_index) <- getGroupIndex2 filter_info source
+        (group_index_map, group_index) <- getGroupIndex filter_info.group_index_map source
+        filter_info <- filter_info { group_index_map = group_index_map }
         (filter_info, relevants) <- collectBorrows filter_info relevants group_index
         (filter_info, relevants))
     (filter_info, relevants)

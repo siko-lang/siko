@@ -1,0 +1,37 @@
+module Main where
+
+import Map
+
+data RType = Named String
+            | Never
+            deriving (PartialEq, Eq, PartialOrd, Ord)
+
+data RExpr = RStringLiteral String
+
+data Identity = { module_name :: String, name :: String, index :: Int } deriving (PartialEq, Eq, PartialOrd, Ord)
+
+data Constructor = { fn :: Context -> [RExpr] -> RExpr }
+
+data Context = { loop_var :: Option String,
+                 constructors :: Map Identity Constructor,
+               }
+
+createVariantCtor :: RType -> Int -> Context -> [RExpr] -> RExpr
+createVariantCtor result index context args = do
+    RStringLiteral "a"
+
+main = do
+    id1 <- Identity "a" "b" 0
+    ctor1 <- createVariantCtor Never 0
+    constructors <- Map.empty
+    (constructors, _) <- Map.insert constructors id1 (Constructor ctor1)
+    context <- Context None constructors
+    args <- []
+    case get context.constructors (Identity "a" "b" 0) of
+        Some ctor -> do
+            ctor :: Constructor <- ctor // FIXME
+            ctor.fn context args
+        None -> do
+            RStringLiteral "a"
+    context
+    ()

@@ -8,14 +8,24 @@ import Siko.Transpiler.Rust.Type as RT
 import Siko.Transpiler
 import Map
 
-getVariantRecordType :: Program -> LT.Type -> String -> Identity
-getVariantRecordType program lir_type name = do
+getVariantRecordTypeId :: Program -> LT.Type -> String -> Identity
+getVariantRecordTypeId program lir_type name = do
     adt_id <- LT.getIdentity lir_type
     adt <- getAdt program adt_id
     loop index <- 0 do
         variant <- atIndex adt.variants index
         if variant.name == name
             then return (LT.getIdentity variant.type)
+            else index + 1
+
+getVariantRecordType :: Program -> LT.Type -> String -> LT.Type
+getVariantRecordType program lir_type name = do
+    adt_id <- LT.getIdentity lir_type
+    adt <- getAdt program adt_id
+    loop index <- 0 do
+        variant <- atIndex adt.variants index
+        if variant.name == name
+            then return variant.type
             else index + 1
 
 generatePrintStr :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
@@ -103,16 +113,16 @@ generatePartialCmp program type_store arg_types result_type = do
     field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
     partial_cmp_call <- R.MethodCall field_access0 "partial_cmp" [R.Ref field_access1]
     rust_result_type <- convertType result_type
-    some_record_type <- getVariantRecordType program result_type "Some"
-    none_record_type <- getVariantRecordType program result_type "None"
+    some_record_type <- getVariantRecordTypeId program result_type "Some"
+    none_record_type <- getVariantRecordTypeId program result_type "None"
     rust_some_record_type <- convertType (LT.Record some_record_type [])
     rust_none_record_type <- convertType (LT.Record none_record_type [])
     some_record <- getRecord program some_record_type
     ordering_field <- atIndex some_record.fields 0
     ordering_type <- ordering_field.type
-    greater_record_type <- getVariantRecordType program ordering_type "Greater"
-    equal_record_type <- getVariantRecordType program ordering_type "Equal"
-    less_record_type <- getVariantRecordType program ordering_type "Less"
+    greater_record_type <- getVariantRecordTypeId program ordering_type "Greater"
+    equal_record_type <- getVariantRecordTypeId program ordering_type "Equal"
+    less_record_type <- getVariantRecordTypeId program ordering_type "Less"
     rust_ordering_type <- convertType ordering_type
     ordering_var <- "o"
     greater_ctor <- R.StructCtor (RT.showBase (convertType (LT.Record greater_record_type []))) []
@@ -140,9 +150,9 @@ generateCmp program type_store arg_types result_type = do
     field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
     cmp_call <- R.MethodCall field_access0 "cmp" [R.Ref field_access1]
     rust_ordering_type <- convertType result_type
-    greater_record_type <- getVariantRecordType program result_type "Greater"
-    equal_record_type <- getVariantRecordType program result_type "Equal"
-    less_record_type <- getVariantRecordType program result_type "Less"
+    greater_record_type <- getVariantRecordTypeId program result_type "Greater"
+    equal_record_type <- getVariantRecordTypeId program result_type "Equal"
+    less_record_type <- getVariantRecordTypeId program result_type "Less"
     greater_ctor <- R.StructCtor (RT.showBase (convertType (LT.Record greater_record_type []))) []
     equal_ctor <- R.StructCtor (RT.showBase (convertType (LT.Record equal_record_type []))) []
     less_ctor <- R.StructCtor (RT.showBase (convertType (LT.Record less_record_type []))) []
@@ -158,8 +168,8 @@ generateCmp program type_store arg_types result_type = do
 rustBoolToSikoBool :: Program -> R.Expr -> LT.Type -> R.Expr
 rustBoolToSikoBool program bool_expr bool_type = do
     rust_bool_type <- convertType bool_type
-    true_record_type <- getVariantRecordType program bool_type "True"
-    false_record_type <- getVariantRecordType program bool_type "False"
+    true_record_type <- getVariantRecordTypeId program bool_type "True"
+    false_record_type <- getVariantRecordTypeId program bool_type "False"
     true_pattern <- R.VariantPattern "true" None
     false_pattern <- R.VariantPattern "false" None
     rust_true_record_type <- convertType (LT.Record true_record_type [])
@@ -197,7 +207,7 @@ sikoOptionalOrderingToRustOptionalOrdering program partial_ord_expr optional_ord
     some_ordering <- "some_ordering"
     some_pattern <- R.VariantPattern ("{}::Some" % RT.showBase rust_optional_ordering_type) (Some some_ordering)
     none_pattern <- R.VariantPattern ("{}::None" % RT.showBase rust_optional_ordering_type) (Some "_")
-    some_record_type <- getVariantRecordType program optional_ordering_type "Some"
+    some_record_type <- getVariantRecordTypeId program optional_ordering_type "Some"
     some_record <- getRecord program some_record_type
     ordering_type_field <- atIndex some_record.fields 0
     rust_some_record_type <- convertType ordering_type_field.type
@@ -224,8 +234,8 @@ generateOpAnd program type_store arg_types result_type = do
     field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
     rust_result_type <- convertType result_type
     arg_type <- atIndex arg_types 0
-    true_record_type <- getVariantRecordType program arg_type "True"
-    false_record_type <- getVariantRecordType program arg_type "False"
+    true_record_type <- getVariantRecordTypeId program arg_type "True"
+    false_record_type <- getVariantRecordTypeId program arg_type "False"
     true_pattern <- R.VariantPattern "true" None
     false_pattern <- R.VariantPattern "false" None
     rust_true_record_type <- convertType (LT.Record true_record_type [])
@@ -260,8 +270,8 @@ generateOpOr program type_store arg_types result_type = do
     field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
     rust_result_type <- convertType result_type
     arg_type <- atIndex arg_types 0
-    true_record_type <- getVariantRecordType program arg_type "True"
-    false_record_type <- getVariantRecordType program arg_type "False"
+    true_record_type <- getVariantRecordTypeId program arg_type "True"
+    false_record_type <- getVariantRecordTypeId program arg_type "False"
     true_pattern <- R.VariantPattern "true" None
     false_pattern <- R.VariantPattern "false" None
     rust_true_record_type <- convertType (LT.Record true_record_type [])
@@ -387,8 +397,8 @@ generateIntParse program type_store arg_types result_type = do
     field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
     parse_call <- R.MethodCall field_access0 "parse::<i64>" []
     rust_result_type <- convertType result_type
-    some_record_type <- getVariantRecordType program result_type "Some"
-    none_record_type <- getVariantRecordType program result_type "None"
+    some_record_type <- getVariantRecordTypeId program result_type "Some"
+    none_record_type <- getVariantRecordTypeId program result_type "None"
     rust_some_record_type <- convertType (LT.Record some_record_type [])
     rust_none_record_type <- convertType (LT.Record none_record_type [])
     some_record <- getRecord program some_record_type
@@ -465,8 +475,8 @@ generateListTail program type_store arg_types result_type = do
     inner0 <- R.FieldAccess innerValueField arg0
     is_empty_call <- R.MethodCall inner0 "is_empty" []
     rust_result_type <- convertType result_type
-    some_record_type <- getVariantRecordType program result_type "Some"
-    none_record_type <- getVariantRecordType program result_type "None"
+    some_record_type <- getVariantRecordTypeId program result_type "Some"
+    none_record_type <- getVariantRecordTypeId program result_type "None"
     rust_some_record_type <- convertType (LT.Record some_record_type [])
     rust_none_record_type <- convertType (LT.Record none_record_type [])
     none_ctor <- R.StructCtor (RT.showBase rust_none_record_type) []
@@ -612,8 +622,8 @@ generateListNextItem program type_store arg_types result_type = do
     some_pattern <- R.VariantPattern "Some" (Some item)
     none_pattern <- R.VariantPattern "None" None
     rust_result_type <- convertType result_type
-    some_record_type <- getVariantRecordType program option_type "Some"
-    none_record_type <- getVariantRecordType program option_type "None"
+    some_record_type <- getVariantRecordTypeId program option_type "Some"
+    none_record_type <- getVariantRecordTypeId program option_type "None"
     rust_some_record_type <- convertType (LT.Record some_record_type [])
     rust_none_record_type <- convertType (LT.Record none_record_type [])
     some_record <- getRecord program some_record_type
@@ -625,7 +635,7 @@ generateListNextItem program type_store arg_types result_type = do
     state_field <- atIndex tuple_record.fields 0
     value_field <- atIndex tuple_record.fields 1
     rust_state_type <- convertType state_field.type
-    item_ref <- if not (LT.isRef value_field.type) && (LT.isRef iterator_item_type || is_iterator_ref)
+    item_ref <- if not (LT.isRef item_field.type) && (LT.isRef iterator_item_type || is_iterator_ref)
     then R.MethodCall (R.Deref (R.VarRef item)) cloneName []
     else R.VarRef item
     item_ref <- if RT.isBoxed rust_item_type
@@ -753,8 +763,8 @@ generateMapInsert program type_store arg_types result_type = do
     insert_call <- R.MethodCall (R.VarRef map) "insert" [key_ref, value_ref]
     some_pattern <- R.VariantPattern "Some" (Some value)
     none_pattern <- R.VariantPattern "None" None
-    some_record_type <- getVariantRecordType program value_field.type "Some"
-    none_record_type <- getVariantRecordType program value_field.type "None"
+    some_record_type <- getVariantRecordTypeId program value_field.type "Some"
+    none_record_type <- getVariantRecordTypeId program value_field.type "None"
     rust_some_record_type <- convertType (LT.Record some_record_type [])
     rust_none_record_type <- convertType (LT.Record none_record_type [])
     some_record <- getRecord program some_record_type
@@ -783,8 +793,8 @@ generateMapGet program type_store arg_types result_type = do
     get_call <- R.MethodCall (R.VarRef map) "get" [R.Ref (R.VarRef (getArgName 1))]
     some_pattern <- R.VariantPattern "Some" (Some value)
     none_pattern <- R.VariantPattern "None" None
-    some_record_type <- getVariantRecordType program result_type "Some"
-    none_record_type <- getVariantRecordType program result_type "None"
+    some_record_type <- getVariantRecordTypeId program result_type "Some"
+    none_record_type <- getVariantRecordTypeId program result_type "None"
     rust_some_record_type <- convertType (LT.Record some_record_type [])
     rust_none_record_type <- convertType (LT.Record none_record_type [])
     some_record <- getRecord program some_record_type
@@ -827,8 +837,8 @@ generateMapRemove program type_store arg_types result_type = do
     remove_call <- R.MethodCall (R.VarRef map) "remove" [R.Ref (R.VarRef (getArgName 1))]
     some_pattern <- R.VariantPattern "Some" (Some value)
     none_pattern <- R.VariantPattern "None" None
-    some_record_type <- getVariantRecordType program value_field.type "Some"
-    none_record_type <- getVariantRecordType program value_field.type "None"
+    some_record_type <- getVariantRecordTypeId program value_field.type "Some"
+    none_record_type <- getVariantRecordTypeId program value_field.type "None"
     rust_some_record_type <- convertType (LT.Record some_record_type [])
     rust_none_record_type <- convertType (LT.Record none_record_type [])
     some_record <- getRecord program some_record_type
@@ -884,6 +894,8 @@ generateMapNextItem program type_store arg_types result_type = do
     rust_iterator_type <- convertType iterator_type
     is_iterator_ref <- Option.isSome iterator_record.implicit_member_lifetime
     iterator_info <- Option.unwrap iterator_record.external_info
+    iterator_item_type_key <- atIndex iterator_info.type_args 0
+    iterator_item_type_value <- atIndex iterator_info.type_args 1
     rust_result_type <- convertType result_type
     result_id <- LT.getIdentity result_type
     result_record <- getRecord program result_id
@@ -900,8 +912,8 @@ generateMapNextItem program type_store arg_types result_type = do
     item <- "item"
     some_pattern <- R.VariantPattern "Some" (Some item)
     none_pattern <- R.VariantPattern "None" None
-    some_record_type <- getVariantRecordType program option_type "Some"
-    none_record_type <- getVariantRecordType program option_type "None"
+    some_record_type <- getVariantRecordTypeId program option_type "Some"
+    none_record_type <- getVariantRecordTypeId program option_type "None"
     rust_some_record_type <- convertType (LT.Record some_record_type [])
     rust_none_record_type <- convertType (LT.Record none_record_type [])
     some_record <- getRecord program some_record_type
@@ -916,12 +928,12 @@ generateMapNextItem program type_store arg_types result_type = do
     rust_value_type <- convertType value_field.type
     key_ctor <- if LT.isRef state_field.type
     then R.Ref (R.FieldAccess "0" (R.VarRef item))
-    else if is_iterator_ref
+    else if not (LT.isRef item_field.type) && (LT.isRef iterator_item_type_key || is_iterator_ref)
         then R.MethodCall (R.FieldAccess "0" (R.VarRef item)) cloneName []
         else R.FieldAccess "0" (R.VarRef item)
     value_ctor <- if LT.isRef value_field.type
     then R.Ref (R.FieldAccess "1" (R.VarRef item))
-    else if is_iterator_ref
+    else if not (LT.isRef value_field.type) && (LT.isRef iterator_item_type_value || is_iterator_ref)
         then R.MethodCall (R.FieldAccess "1" (R.VarRef item)) cloneName []
         else R.FieldAccess "1" (R.VarRef item)
     value_tuple_ctor <- R.StructCtor (RT.showBase rust_item_type) [R.FieldInitItem (getFieldName 0) key_ctor,

@@ -61,6 +61,7 @@ calculateDepsForGroup child_ownership_vars ownership_dep_map deps_map group = do
                 None -> ownership_vars
             (ownership_dep_map, deps_map, ownership_vars) <- collectDepOwnershipVarsForGroupVar group deps_map ownership_dep_map ownership_vars item
             (ownership_vars, child_ownership_vars, ownership_dep_map, deps_map, index + 1)
+    ownership_vars <- ownership_vars |> List2.sort |> List2.dedup
     ownership_dep_map <- loop (ownership_dep_map, index) <- (ownership_dep_map, 0) do
             if index >= List2.getLength group
             then break ownership_dep_map

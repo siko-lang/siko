@@ -2,6 +2,7 @@ module Siko.MIR.Backend.Ownership.Inference.Constraint where
 
 import Siko.MIR.Backend.Ownership.TypeVariableInfo
 import Siko.MIR.Expr as E
+import Map
 
 data FieldAccessConstraint = { receiver_info :: TypeVariableInfo,
                                member_info :: TypeVariableInfo,
@@ -20,9 +21,14 @@ data VariantConstraint = { var_info :: TypeVariableInfo,
                            expr_info :: TypeVariableInfo,
                          } deriving (Show)
 
-data FunctionConverterConstraint = { from :: OwnershipTypeVariable,
+data FunctionConverterConstraint = { call :: E.ExprId,
+                                     from :: OwnershipTypeVariable,
                                      to :: OwnershipTypeVariable,
                                    } deriving (Show)
+
+data CallContext = { sub_map :: Map OwnershipTypeVariable (List OwnershipTypeVariable) } deriving (PartialEq, Eq, PartialOrd, Ord, Show)
+
+data CallContextSet = { call_contexts :: List CallContext } deriving (Show)
 
 data Constraint = FieldAccess FieldAccessConstraint
                 | Converter ConverterConstraint

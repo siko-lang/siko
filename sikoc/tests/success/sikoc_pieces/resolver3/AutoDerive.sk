@@ -1,0 +1,52 @@
+module Siko.AutoDerive where
+
+import Siko.AutoDerive.Show
+import Siko.AutoDerive.PartialEq
+import Siko.AutoDerive.Eq
+import Siko.AutoDerive.PartialOrd
+import Siko.AutoDerive.Ord
+import Siko.AutoDerive.ToJson
+
+import Siko.Syntax.Ident
+import Siko.Syntax.Class as C
+import Siko.Syntax.Data as D
+
+processRecordDerive :: D.Record -> Ident -> Option C.Instance
+processRecordDerive record (Ident name derive_location) = do
+    case name of
+        "Show" -> Some (deriveRecordShow record derive_location)
+        "PartialEq" -> Some (deriveRecordPartialEq record derive_location)
+        "Eq" -> Some (deriveRecordEq record derive_location)
+        "PartialOrd" -> Some (deriveRecordPartialOrd record derive_location)
+        "Ord" -> Some (deriveRecordOrd record derive_location)
+        "ToJson" -> Some (deriveRecordToJson record derive_location)
+        _ -> None
+
+processAdtDerive :: D.AlgebraicDataType -> Ident -> Option C.Instance
+processAdtDerive adt (Ident name derive_location) = do
+    case name of
+        "Show" -> Some (deriveAdtShow adt derive_location)
+        "PartialEq" -> Some (deriveAdtPartialEq adt derive_location)
+        "Eq" -> Some (deriveAdtEq adt derive_location)
+        "PartialOrd" -> Some (deriveAdtPartialOrd adt derive_location)
+        "Ord" -> Some (deriveAdtOrd adt derive_location)
+        "ToJson" -> Some (deriveAdtToJson adt derive_location)
+        _ -> None
+
+processRecordDerives :: D.Record -> (D.Record, [C.Instance])
+processRecordDerives record = do
+    (instances, derived_classes) <- List.fold ([], []) record.derived_classes
+        (\(instances, derived_classes), derived_class -> case processRecordDerive record derived_class of
+            Some i -> (instances + [i], derived_classes)
+            None -> (instances, derived_classes + [derived_class]))
+    record <- record { derived_classes = derived_classes }
+    (record, instances)
+
+processAdtDerives :: D.AlgebraicDataType -> (D.AlgebraicDataType, [C.Instance])
+processAdtDerives adt = do
+    (instances, derived_classes) <- List.fold ([], []) adt.derived_classes
+        (\(instances, derived_classes), derived_class -> case processAdtDerive adt derived_class of
+            Some i -> (instances + [i], derived_classes)
+            None -> (instances, derived_classes + [derived_class]))
+    adt <- adt { derived_classes = derived_classes }
+    (adt, instances)

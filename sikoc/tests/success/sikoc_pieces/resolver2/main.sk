@@ -1,0 +1,30 @@
+module Main where
+
+data FunctionInfo = {
+                        functions :: [SFunction],
+                    }
+
+data Function a = { name :: FullyQualifiedName,
+                    arg_count :: Int,
+                  }
+
+data Expr = Expr
+
+data SFunction = { arguments :: [Expr],
+                  body :: Option Expr,
+                }
+
+data FullyQualifiedName = FullPath
+
+processFunctionMulti :: FunctionInfo ->
+                        [Function ()]
+processFunctionMulti function_info = do
+    arg_cases <- function_info.functions |> List.iter |> Iterator.map (\f -> (f.arguments, Option.unwrap f.body)) |> toList
+    arg_count <- getLength (atIndex function_info.functions 0).arguments
+    function <- Function FullPath arg_count 
+    [function]
+
+main = do
+    function_info <- FunctionInfo []
+    processFunctionMulti function_info
+    ()

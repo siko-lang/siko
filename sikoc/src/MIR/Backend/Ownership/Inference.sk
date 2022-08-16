@@ -96,7 +96,7 @@ processFunctionInfo context function_info function_id = do
     function_info <- normalizeFunctionInfo function_info
     //trace context.config "processFunctionInfo - normalization done"
     function_info_store <- context.function_info_store
-    //println "Function info added for {}/{}" % (function_id, getLength function_info.members)
+    //println "Function info added for {}/{}" % (function_id, function_info)
     (function_info_store, added) <- addFunctionInfo function_info_store function_id function_info
     //trace context.config "processFunctionInfo - added done"
     context <- context { function_info_store = function_info_store }
@@ -126,17 +126,17 @@ processFunction context group inference_info function_id = do
             //trace context.config "checkBorrows {}" % function_id
             borrow_info <- checkBorrows context.program info.body
             //trace context.config "inferOwnership {}" % function_id
-            (inference_info, constraints, invalid_borrow_map, ownership_expr_map, group_expr_map, ownership_group_map, result_vars, program) <- collectConstraints context.config function_id context.program borrow_info inference_info info.body
+            (inference_info, constraints, invalid_borrow_map, ownership_expr_map,
+                              group_expr_map, ownership_group_map, result_vars, program, call_context_map) <- collectConstraints context.config
+                                                                                                              function_id context.program borrow_info inference_info info.body
             context <- context { program = program }
-            inference_info <- processConstraints context.config function_id inference_info constraints invalid_borrow_map ownership_expr_map group_expr_map ownership_group_map result_vars Partial
+            inference_info <- processConstraints context.config function_id inference_info constraints invalid_borrow_map ownership_expr_map group_expr_map ownership_group_map result_vars call_context_map Partial
             inference_info <- if context.config.trace_level == Level2
             then dumpOwnership inference_info function_id info.body
             else inference_info
             //trace context.config "Processing {}" % function_id
             (inference_info, function_info) <- toFunctionInfo context.config inference_info function_id
             function_info <- enforceUnknownArgOwnership function_info
-            //trace2 context.config "{}: {}" % (function_id, function_info)
-            //trace2 context.config "{}: {}" % (function_id, inference_info)
             (context, added) <- processFunctionInfo context function_info function_id
             (context, added, Some inference_info)
         F.VariantCtor index -> do
@@ -209,6 +209,8 @@ processFunctionGroup index group_count context group = do
                     function_info_bases <- Map2.put inference_info.function_info_bases function_id function_info_base
                     inference_info { function_info_bases = function_info_bases }
                 )
+            inference_info <- updateOwnershipDeMap config inference_info
+            inference_info <- createBaseCallContexts config inference_info
             context <- context { program = program }
             (context, inference_info)
 

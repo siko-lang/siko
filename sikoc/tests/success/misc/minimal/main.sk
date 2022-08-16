@@ -1,9 +1,163 @@
-module Main where
+module Bool where
 
 data Bool = True | False
 
+not :: Bool -> Bool
+not a = if a then False
+             else True
+
+module Std.Ops where
+
+class (PartialEq a) => PartialOrd a where
+    partialCmp a :: a -> a -> Option Ordering
+
+    opLessThan a :: a -> a -> Bool
+    opLessThan a b = case partialCmp a b of
+                        Some Less -> True
+                        _ -> False
+
+    opLessEqual a :: a -> a -> Bool
+    opLessEqual a b = case partialCmp a b of
+                         Some Less -> True
+                         Some Equal -> True
+                         _ -> False
+
+    opGreaterThan a :: a -> a -> Bool
+    opGreaterThan a b = case partialCmp a b of
+                         Some Greater -> True
+                         _ -> False
+
+    opGreaterEqual a :: a -> a -> Bool
+    opGreaterEqual a b = case partialCmp a b of
+                         Some Greater -> True
+                         Some Equal -> True
+                         _ -> False
+
+getDiscriminant a :: ~a -> ~Int
+getDiscriminant a = extern
+
+class PartialEq a where
+    opEq a :: a -> a -> Bool
+    opNotEq a :: a -> a -> Bool
+    opNotEq a b = not (opEq a b)
+
+class (PartialEq a) => Eq a
+
+class (PartialOrd a, Eq a) => Ord a where
+    cmp a :: a -> a -> Ordering
+
+    max a :: a -> a -> a
+    max a b = if a >= b then a else b
+
+    min a :: a -> a -> a
+    min a b = if a <= b then a else b
+
+module Ordering where
+
+data Ordering = Less | Equal | Greater deriving (PartialEq, Eq, PartialOrd, Ord)
+
+module Map where
+
+data Map k v = extern
+
+empty k v :: ~Map k v
+empty = extern
+
+insert k v :: (Ord k) => Map k v -> k -> v -> ~(~Map k v, ~Option v)
+insert m k v = extern
+
+data MapIterator k v = extern (implicit)
+
+intoIter k v :: Map k v -> ~MapIterator k v
+intoIter m = extern (arg[0] -> result.i[0])
+
+nextItem k v :: MapIterator k v -> ~(~MapIterator k v, ~Option (k, v))
+nextItem iter = extern (arg[0].i[0] -> result.f[1].v[0].f[0].f[0],
+                        arg[0].i[0] -> result.f[1].v[0].f[0].f[1],
+                        arg[0].i[0] == result.f[0].i[0])
+
+module Option where
+
+data Option a = Some a | None
+
+module String where
+
+data String = extern
+
+module Int where
+
+data Int = extern
+
+module List where
+
+data List a = extern
+
+instance PartialOrd Int where
+    partialCmp a b = partialCmpInt a b
+
+instance Ord Int where
+    cmp a b = cmpInt a b
+
+instance Eq Int
+
+instance PartialEq Int where
+    opEq a b = eqInt a b
+
+eqInt :: ~Int -> ~Int -> ~Bool
+eqInt a b = extern
+
+partialCmpInt :: ~Int -> ~Int -> ~Option (~Ordering)
+partialCmpInt a b = extern
+
+cmpInt :: ~Int -> ~Int -> ~Ordering
+cmpInt a b = extern
+
+atIndex a :: [a] -> Int -> a
+atIndex index l = extern (arg[0].e[0] -> result)
+
+data ListIterator a = extern (implicit)
+
+intoIter a :: [a] -> ~ListIterator a
+intoIter list = extern (arg[0] -> result.i[0])
+
+nextItem a :: ListIterator a -> ~(~ListIterator a, ~Option a)
+nextItem iter = extern (arg[0].i[0] -> result.f[1].v[0].f[0], arg[0].i[0] == result.f[0].i[0])
+
+module Main where
+
+import Map
+
+data Foo = Foo deriving (PartialEq, Eq, PartialOrd, Ord)
+
 main = do
-    bool <- True
-    case bool of
-        True -> ()
-        _ -> ()
+    list <- [Foo]
+    b <- atIndex list 0
+    i <- List.intoIter list
+    k <- List.nextItem i
+    list
+    //b <- atIndex list 0
+    m <- Map.empty
+    f <- Foo
+    k <- Foo
+    (m, _) <- Map.insert m k f
+    i <- Map.intoIter m
+    item <- Map.nextItem i
+    m
+    f
+    k
+    ()
+
+
+// module Main where
+
+// data Foo = Foo deriving (PartialEq, Eq, PartialOrd, Ord)
+
+// import Map
+
+// main = do
+//     m <- Map.empty
+//     m <- Map.put m Foo Foo
+//     i <- Map.intoIter m
+//     k <- Map.nextItem i
+//     m
+//     ()
