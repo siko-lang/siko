@@ -121,6 +121,8 @@ processFunction context group inference_info function_id = do
                     //trace context.config "processEqualities {}" % function_id
                     (program, equals, inference_info, data_group_info_store) <- processFunctionEqualities function_id context.config group List2.empty inference_info function_info_store context.program info.body context.data_group_info_store
                     (program, inference_info) <- processEqualities context.config equals inference_info program
+                    inference_info <- updateOwnershipDeMap context.config inference_info
+                    inference_info <- createBaseCallContexts context.config inference_info
                     context <- context { program = program, data_group_info_store = data_group_info_store }
                     (context, inference_info)
             //trace context.config "checkBorrows {}" % function_id

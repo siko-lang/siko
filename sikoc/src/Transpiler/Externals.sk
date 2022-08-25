@@ -379,17 +379,30 @@ generateGetArgs program type_store arg_types result_type = do
     struct_ctor <- R.StructCtor (RT.showBase rust_result_type) [R.FieldInitItem innerValueField (R.VarRef args)]
     R.Block [args_decl, struct_ctor]
 
-generateSink :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
-generateSink program type_store arg_types result_type = do
-    rust_result_type <- convertType result_type
-    struct_ctor <- R.StructCtor (RT.showBase rust_result_type) []
-    R.Block [struct_ctor]
+generateIsDir :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
+generateIsDir program type_store arg_types result_type = do
+    field_access <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
+    is_dir_call <- R.MethodCall (R.FunctionCall "std::path::Path::new" [R.Ref field_access]) "is_dir" []
+    R.Block [rustBoolToSikoBool program is_dir_call result_type ]
 
-generateBorrower :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
-generateBorrower program type_store arg_types result_type = do
+generateListDir :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
+generateListDir program type_store arg_types result_type = do
+    entries <- "entries"
     rust_result_type <- convertType result_type
-    struct_ctor <- R.StructCtor (RT.showBase rust_result_type) []
-    R.Block [struct_ctor]
+    read_dir_call <- R.FunctionCall "std::fs::read_dir" [R.Ref (R.FieldAccess innerValueField (R.VarRef (getArgName 0)))]
+    read_dir_expect <- R.MethodCall read_dir_call "expect" [R.StringLiteral "read dir failed"]
+    entry <- "entry"
+    entry_ref <- R.MethodCall (R.VarRef entry) "expect" [R.StringLiteral "read dir entry failed"]
+    entry_ref <- R.MethodCall entry_ref "path" []
+    entry_ref <- R.MethodCall entry_ref "to_string_lossy" []
+    entry_ref <- R.MethodCall entry_ref "into_owned" []
+    string_ctor <- R.StructCtor stringTypeName [R.FieldInitItem innerValueField entry_ref]
+    map_body <- R.Lambda ("|{}|" % entry) string_ctor
+    map <- R.MethodCall read_dir_expect "map" [map_body]
+    collect <- R.MethodCall map "collect" []
+    entries_decl <- R.VarDecl entries collect (Some (RT.Named "Vec<_>" []))
+    struct_ctor <- R.StructCtor (RT.showBase rust_result_type) [R.FieldInitItem innerValueField (R.VarRef entries)]
+    R.Block [entries_decl, struct_ctor]
 
 generateIntParse :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateIntParse program type_store arg_types result_type = do
@@ -991,9 +1004,8 @@ initializeExternalFunctions = do
     (externals, _) <- insert externals (ExternalId "Hack" "readTextFile") (ExternFnBuilder generateReadTextFile)
     (externals, _) <- insert externals (ExternalId "Hack" "writeTextFile") (ExternFnBuilder generateWriteTextFile)
     (externals, _) <- insert externals (ExternalId "Hack" "getArgs") (ExternFnBuilder generateGetArgs)
-    (externals, _) <- insert externals (ExternalId "Hack" "sink") (ExternFnBuilder generateSink)
-    (externals, _) <- insert externals (ExternalId "Hack" "borrower") (ExternFnBuilder generateBorrower)
-    (externals, _) <- insert externals (ExternalId "Hack" "add") (ExternFnBuilder generateAdd)
+    (externals, _) <- insert externals (ExternalId "Hack" "isDir") (ExternFnBuilder generateIsDir)
+    (externals, _) <- insert externals (ExternalId "Hack" "listDir") (ExternFnBuilder generateListDir)
 
     (externals, _) <- insert externals (ExternalId "String" "addString") (ExternFnBuilder generateStringAdd)
     (externals, _) <- insert externals (ExternalId "String" "partialCmpString") (ExternFnBuilder generatePartialCmp)

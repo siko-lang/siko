@@ -1,0 +1,27 @@
+module Main where
+
+data Ident = Ident String Location
+
+data Location = Location
+
+data Pattern = Pattern SimplePattern Location
+
+data SimplePattern = Binding Ident
+                   | Constructor Ident Pattern
+
+data Expr = Expr SimpleExpr Location
+
+data SimpleExpr = Tuple
+                | Path Ident
+                | Do [Expr]
+
+desugarTry :: Expr -> Expr
+desugarTry expr = do
+    ok <- Ident "ok" Location
+    ok_body <- Expr (Path ok) Location
+    ok_pattern <- Pattern (Constructor ok (Pattern (Binding ok) Location)) Location
+    Expr (Do [expr, ok_body]) Location
+
+main = do
+    desugarTry (Expr (Tuple) Location)
+    ()

@@ -3,20 +3,16 @@ module Siko.Syntax.Pattern where
 import Siko.Syntax.Location
 import Siko.Syntax.Ident
 import Siko.Syntax.Expr as E
-import Siko.Syntax.TypeSignature as T
 
 data RangeKind = Exclusive
-               | Inclusive deriving (Show)
+               | Inclusive 
 
 data RecordFieldPattern = {
                             name :: Ident,
                             pattern :: Pattern,
-                          } deriving (Show)
+                          }
 
 data Pattern = Pattern SimplePattern Location
-
-instance Show Pattern where
-  show (Pattern p _) = show p
 
 data SimplePattern = Binding Ident
                    | Tuple [Pattern]
@@ -27,7 +23,5 @@ data SimplePattern = Binding Ident
                    | StringLiteral String
                    | CharLiteral Char
                    | CharRange Char Char RangeKind
-                   | Typed Pattern T.TypeSignature
                    | Record Ident [RecordFieldPattern]
                    | Or [Pattern]
-                   deriving (Show)
