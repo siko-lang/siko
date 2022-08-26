@@ -732,6 +732,30 @@ generateStringSplit program type_store arg_types result_type = do
     new_decl <- R.VarDecl new collect_call (Some (RT.Named "Vec<_>" []))
     R.Block [new_decl, R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef new)]]
 
+generateStringStartsWith :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
+generateStringStartsWith program type_store arg_types result_type = do
+    arg1_type <- atIndex arg_types 1
+    arg0 <- R.VarRef (getArgName 0)
+    field_access0 <- R.FieldAccess innerValueField arg0
+    arg1 <- R.VarRef (getArgName 1)
+    field_access1 <- if LT.isRef arg1_type
+    then R.FieldAccess innerValueField arg1
+    else R.Ref (R.FieldAccess innerValueField arg1)
+    starts_with_call <- R.MethodCall field_access0 "starts_with" [field_access1]
+    R.Block [rustBoolToSikoBool program starts_with_call result_type]
+
+generateStringEndsWith :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
+generateStringEndsWith program type_store arg_types result_type = do
+    arg1_type <- atIndex arg_types 1
+    arg0 <- R.VarRef (getArgName 0)
+    field_access0 <- R.FieldAccess innerValueField arg0
+    arg1 <- R.VarRef (getArgName 1)
+    field_access1 <- if LT.isRef arg1_type
+    then R.FieldAccess innerValueField arg1
+    else R.Ref (R.FieldAccess innerValueField arg1)
+    starts_with_call <- R.MethodCall field_access0 "ends_with" [field_access1]
+    R.Block [rustBoolToSikoBool program starts_with_call result_type]
+
 generateAbort :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateAbort program type_store arg_types result_type = do
     R.Block [R.FunctionCall "panic!" [R.StringLiteral "Abort called"]]
@@ -1014,6 +1038,8 @@ initializeExternalFunctions = do
     (externals, _) <- insert externals (ExternalId "String" "chars") (ExternFnBuilder generateStringChars)
     (externals, _) <- insert externals (ExternalId "String" "replace") (ExternFnBuilder generateStringReplace)
     (externals, _) <- insert externals (ExternalId "String" "split") (ExternFnBuilder generateStringSplit)
+    (externals, _) <- insert externals (ExternalId "String" "startsWith") (ExternFnBuilder generateStringStartsWith)
+    (externals, _) <- insert externals (ExternalId "String" "endsWith") (ExternFnBuilder generateStringEndsWith)
 
     (externals, _) <- insert externals (ExternalId "Int" "addInt") (ExternFnBuilder generateAdd)
     (externals, _) <- insert externals (ExternalId "Int" "subInt") (ExternFnBuilder generateSub)

@@ -14,6 +14,21 @@ import Siko.Config
 import Siko.Trace
 import Siko.FileManager
 
+processPath :: String -> [FileName]
+processPath path = do
+    if isDir path
+    then do
+        entries <- listDir path
+        List.fold [] entries (\files, entry -> if isDir entry
+            then files + processPath entry
+            else do
+                subs <- String.split entry "/"
+                file <- last subs
+                if endsWith file ".sk"
+                then List.push files (FileName entry)
+                else files)
+    else [FileName path]
+
 processArgs :: [String] -> Config
 processArgs args = loop (config, args) <- (getDefaultConfig, args) do
     case pop args of
@@ -50,7 +65,8 @@ main = do
     config <- processArgs args
     file_manager <- createFileManager
     trace config "Parsing inputs.."
-    (file_manager, source_files) <-  List.mapS file_manager config.input_files (parseFile config)
+    files <- List.fold [] config.input_files (\files, (FileName path) -> files + processPath path)
+    (file_manager, source_files) <-  List.mapS file_manager files (parseFile config)
     trace config "Resolving names.."
     (hir_program, expr_id_gen, pattern_id_gen, var_gen, resolver_errors) <- R.processProgram source_files
     resolver_errors |> List.iter |> forEach \error -> printResolverError file_manager error

@@ -25,45 +25,46 @@ data ClosureInstanceId = ClosureInstanceId Int deriving (Show, PartialEq, Eq, Pa
 
 data ClosureInstance = { id :: ClosureInstanceId,
                          name :: ClosureName,
-                         args :: [HT.Type] } deriving (Show, PartialEq, Eq, PartialOrd, Ord)
+                         args :: [HT.Type],
+                         successor :: Identity } deriving (Show, PartialEq, Eq, PartialOrd, Ord)
+
+data ClosureInstanceKey = { name :: ClosureName, args :: [HT.Type], successor :: Identity } deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
 data Closure = { name :: ClosureName,
                  instances :: [ClosureInstance] }
 
-data ClosureInstanceSuccessor = NextClosureInstance Identity
-                                | RealFunctionCall Identity
-
-instance Show ClosureInstanceSuccessor where
-    show c = case c of
-        NextClosureInstance f -> show f
-        RealFunctionCall f -> show f
-
 data ClosureStore = { closures :: Map ClosureName Closure,
                       closure_type_map :: Map HT.Type ClosureName,
                       closure_calls :: Map ClosureName Identity,
-                      successors :: Map ClosureInstance ClosureInstanceSuccessor }
+                      closure_instances :: Map ClosureInstanceKey ClosureInstance
+                    }
 
 createClosureStore :: ClosureStore
 createClosureStore = ClosureStore empty empty empty empty
 
-addClosureInstance :: ClosureStore -> HT.Type -> [HT.Type] -> (ClosureStore, ClosureInstance)
-addClosureInstance store closure_type args = do
+addClosureInstance :: ClosureStore -> HT.Type -> [HT.Type] -> Identity -> (ClosureStore, ClosureInstance)
+addClosureInstance store closure_type args successor = do
     (store, name) <- getClosureName store closure_type
-    // FIXME: use a stateful alter here
-    next_id <- case get store.closures name of
-        Some closure -> do
-            closure :: Closure <- closure
-            getLength closure.instances
-        None -> 0
-    instance_id <- ClosureInstanceId next_id
-    closure_instance <- ClosureInstance instance_id name args
-    (closures, _) <- alter (\closure -> case closure of
-        Some closure -> do
-            closure :: Closure <- closure
-            instances <- push closure.instances closure_instance
-            Some closure { instances = instances }
-        None -> Some (Closure name [closure_instance])) name store.closures
-    (store { closures = closures }, closure_instance)
+    key <- ClosureInstanceKey name args successor
+    case get store.closure_instances key of
+        Some closure_instance -> (store, closure_instance)
+        None -> do
+            next_id <- case get store.closures name of
+                Some closure -> do
+                    closure :: Closure <- closure
+                    getLength closure.instances
+                None -> 0
+            instance_id <- ClosureInstanceId next_id
+            closure_instance <- ClosureInstance instance_id name args successor
+            closure_instances <- put store.closure_instances key closure_instance
+            store <- store { closure_instances = closure_instances }
+            (closures, _) <- alter (\closure -> case closure of
+                Some closure -> do
+                    closure :: Closure <- closure
+                    instances <- push closure.instances closure_instance
+                    Some closure { instances = instances }
+                None -> Some (Closure name [closure_instance])) name store.closures
+            (store { closures = closures }, closure_instance)
 
 getClosureName :: ClosureStore -> HT.Type -> (ClosureStore, ClosureName)
 getClosureName store closure_type = do
@@ -90,11 +91,6 @@ getClosureCall store closure_type = case get store.closure_type_map closure_type
         Some function_id -> function_id
         None -> panic "Closure call for closure {} not found" % closure_name
     None -> panic "Closure name for closure type {} not found" % (TF.toString closure_type)
-
-addClosureInstanceSuccessor :: ClosureStore -> ClosureInstance -> ClosureInstanceSuccessor -> ClosureStore
-addClosureInstanceSuccessor store closure_instance closure_instance_successor = do
-    (successors, _) <- insert store.successors closure_instance closure_instance_successor
-    store { successors = successors }
 
 getVariantName :: ClosureInstance -> String
 getVariantName closure_instance = do
@@ -136,9 +132,7 @@ compileClosure context closure closure_call_identity = do
             arg_ref <- ME.FieldAccess field_index prev_var_ref_expr
             (context, arg_ref_expr) <- getExpr context (ME.Expr arg_ref field.type)
             (context, push arg_refs arg_ref_expr)) (context, [])
-        next_fn <- case Option.unwrap (get context.closure_store.successors closure_instance) of
-            NextClosureInstance fn -> fn
-            RealFunctionCall fn -> fn
+        next_fn <- closure_instance.successor
         arg_ref1 <- ME.VarRef (ME.Arg 1)
         arg_ref1_type <- atIndex closure_call_function.type.args 1
         (context, arg_ref1_expr) <- getExpr context (ME.Expr arg_ref1 arg_ref1_type)

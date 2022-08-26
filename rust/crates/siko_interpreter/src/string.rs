@@ -153,6 +153,38 @@ impl ExternFunction for StringReplace {
     }
 }
 
+pub struct StringStartsWith {}
+
+impl ExternFunction for StringStartsWith {
+    fn call(
+        &self,
+        environment: &Environment,
+        _: Option<ExprId>,
+        _: &NamedFunctionKind,
+        _: Type,
+    ) -> Value {
+        let s = environment.get_arg_by_index(0).core.as_string();
+        let pattern = environment.get_arg_by_index(1).core.as_string();
+        return Interpreter::get_bool_value(s.starts_with(&pattern));
+    }
+}
+
+pub struct StringEndsWith {}
+
+impl ExternFunction for StringEndsWith {
+    fn call(
+        &self,
+        environment: &Environment,
+        _: Option<ExprId>,
+        _: &NamedFunctionKind,
+        _: Type,
+    ) -> Value {
+        let s = environment.get_arg_by_index(0).core.as_string();
+        let pattern = environment.get_arg_by_index(1).core.as_string();
+        return Interpreter::get_bool_value(s.ends_with(&pattern));
+    }
+}
+
 pub fn register_extern_functions(interpreter: &mut Interpreter) {
     interpreter.add_extern_function(STRING_MODULE_NAME, "opAdd", Box::new(StringAdd {}));
     interpreter.add_extern_function(STRING_MODULE_NAME, "opEq", Box::new(StringPartialEq {}));
@@ -166,4 +198,10 @@ pub fn register_extern_functions(interpreter: &mut Interpreter) {
     interpreter.add_extern_function(STRING_MODULE_NAME, "chars", Box::new(StringChars {}));
     interpreter.add_extern_function(STRING_MODULE_NAME, "split", Box::new(StringSplit {}));
     interpreter.add_extern_function(STRING_MODULE_NAME, "replace", Box::new(StringReplace {}));
+    interpreter.add_extern_function(STRING_MODULE_NAME, "endsWith", Box::new(StringEndsWith {}));
+    interpreter.add_extern_function(
+        STRING_MODULE_NAME,
+        "startsWith",
+        Box::new(StringStartsWith {}),
+    );
 }

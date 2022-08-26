@@ -264,6 +264,36 @@ fn generate_string_builtins(
                 indent, result_ty_str
             )?;
         }
+        "endsWith" => {
+            write!(
+                output_file,
+                "{}if arg0.value.ends_with(&*arg1.value) {{\n",
+                indent
+            )?;
+            indent.inc();
+            write!(output_file, "{}{}::True\n", indent, result_ty_str)?;
+            indent.dec();
+            write!(output_file, "{}}} else {{\n", indent)?;
+            indent.inc();
+            write!(output_file, "{}{}::False\n", indent, result_ty_str)?;
+            indent.dec();
+            write!(output_file, "{}}}\n", indent)?;
+        }
+        "startsWith" => {
+            write!(
+                output_file,
+                "{}if arg0.value.starts_with(&*arg1.value) {{\n",
+                indent
+            )?;
+            indent.inc();
+            write!(output_file, "{}{}::True\n", indent, result_ty_str)?;
+            indent.dec();
+            write!(output_file, "{}}} else {{\n", indent)?;
+            indent.inc();
+            write!(output_file, "{}{}::False\n", indent, result_ty_str)?;
+            indent.dec();
+            write!(output_file, "{}}}\n", indent)?;
+        }
         "chars" => {
             write!(
                 output_file,
@@ -2210,6 +2240,28 @@ pub fn generate_builtin(
                         "{} {{ value : std::rc::Rc::new(content) }}",
                         result_ty_str
                     )?;
+                }
+                ("Hack", "listDir") => {
+                    write!(
+                        output_file,
+                        "let entries : Vec<_> = std::fs::read_dir((&(arg0.value.as_ref()))).expect(\"read dir failed\").map(|entry| std::rc::Rc::new(crate::source::String::String {{ value: std::rc::Rc::new(entry.expect(\"read dir entry failed\").path().to_string_lossy().into_owned()) }})).collect();"
+                    )?;
+                    write!(output_file, "{} {{ value : std::rc::Rc::new(entries) }}", result_ty_str)?;
+                }
+                ("Hack", "isDir") => {
+                    write!(
+                        output_file,
+                        "{}if std::path::Path::new(&arg0.value.as_ref()).is_dir() {{\n",
+                        indent
+                    )?;
+                    indent.inc();
+                    write!(output_file, "{}{}::True\n", indent, result_ty_str)?;
+                    indent.dec();
+                    write!(output_file, "{}}} else {{\n", indent)?;
+                    indent.inc();
+                    write!(output_file, "{}{}::False\n", indent, result_ty_str)?;
+                    indent.dec();
+                    write!(output_file, "{}}}\n", indent)?;
                 }
                 ("Hack", "writeTextFile") => {
                     write!(

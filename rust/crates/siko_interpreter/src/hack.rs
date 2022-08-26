@@ -91,9 +91,52 @@ impl ExternFunction for GetArgs {
     }
 }
 
+pub struct ListDir {}
+
+impl ExternFunction for ListDir {
+    fn call(
+        &self,
+        environment: &Environment,
+        _: Option<ExprId>,
+        _: &NamedFunctionKind,
+        ty: Type,
+    ) -> Value {
+        let path = environment.get_arg_by_index(0).core.as_string();
+        let string_ty = Interpreter::get_string_type();
+        let mut args = vec![];
+        for entry in std::fs::read_dir(&path).expect("read_dir failed") {
+            let path = entry
+                .expect("readdir entry failed")
+                .path()
+                .to_string_lossy()
+                .into_owned();
+            let v = Value::new(ValueCore::String(path), string_ty.clone());
+            args.push(v);
+        }
+        return Value::new(ValueCore::List(args.into_iter().collect()), ty);
+    }
+}
+
+pub struct IsDir {}
+
+impl ExternFunction for IsDir {
+    fn call(
+        &self,
+        environment: &Environment,
+        _: Option<ExprId>,
+        _: &NamedFunctionKind,
+        _: Type,
+    ) -> Value {
+        let path = environment.get_arg_by_index(0).core.as_string();
+        return Interpreter::get_bool_value(std::path::Path::new(&path).is_dir());
+    }
+}
+
 pub fn register_extern_functions(interpreter: &mut Interpreter) {
     interpreter.add_extern_function("Hack", "readTextFile", Box::new(ReadTextFile {}));
     interpreter.add_extern_function("Hack", "writeTextFile", Box::new(WriteTextFile {}));
     interpreter.add_extern_function("Hack", "getArgs", Box::new(GetArgs {}));
+    interpreter.add_extern_function("Hack", "listDir", Box::new(ListDir {}));
+    interpreter.add_extern_function("Hack", "isDir", Box::new(IsDir {}));
     interpreter.add_extern_function("Hack", "investigate", Box::new(Investigate {}));
 }

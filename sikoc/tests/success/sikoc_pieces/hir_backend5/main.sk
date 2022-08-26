@@ -1,0 +1,19 @@
+module Main where
+
+data FullyQualifiedName = FullyQualifiedName String
+
+data Constraint = ClassConstraint FullyQualifiedName Int
+                | RowConstraint Int
+
+collectClassesFromClassConstraints :: [Constraint] -> [FullyQualifiedName]
+collectClassesFromClassConstraints constraints =
+    List.filterMap constraints getClass
+        where getClass c = case c of
+                ClassConstraint n _ -> Some n
+                _ -> None
+
+main = do
+    constraints <- [RowConstraint 5]
+    cs <- collectClassesFromClassConstraints constraints
+    constraints
+    ()

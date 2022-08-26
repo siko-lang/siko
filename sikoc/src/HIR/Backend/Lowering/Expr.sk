@@ -384,6 +384,8 @@ processFormatExpr  context fmt exprs args = do
     (context, do_expr) <- getExpr context (ME.Expr (ME.Do exprs) mir_string_type)
     (context, do_expr)
 
+data ClosureType = { closure_type :: HT.Type, arg_types :: [HT.Type] } deriving (Show)
+
 processStaticFunctionCall :: Context -> [ME.Expr] -> HT.Type -> MP.Identity -> Int -> (Context, ME.Expr)
 processStaticFunctionCall context mir_args function_type function_id arg_count = do
     arg_types <- HT.getArgsLimited function_type (getLength mir_args)
@@ -398,35 +400,33 @@ processStaticFunctionCall context mir_args function_type function_id arg_count =
             then do
                 diff <- arg_count - current_arg_count
                 result_type <- HT.getResultType function_type current_arg_count
-                (context, closures, functions) <- loop (context, closure_type, arg_types, closures, functions)
-                                                <- (context, result_type, arg_types, [], []) do
+                (context, closures) <- loop (context, closure_type, arg_types, closures)
+                                                <- (context, result_type, arg_types, []) do
                     context :: Context <- context // FIXME
-                    if getLength functions < diff
+                    if getLength closures < diff
                         then do
-                            (closure_store, closure_instance) <- CS.addClosureInstance context.closure_store closure_type arg_types
-                            closures <- push closures closure_instance
-                            context <- context { closure_store = closure_store }
-                            queue_item <- FQ.ClosureCtor (getLength arg_types) function_type closure_instance
-                            (context, function_id) <- FQ.insert context queue_item
-                            functions <- push functions function_id
-                            queue_item <- FQ.ClosureCall closure_instance.name (HT.Function closure_type closure_type)
-                            (context, _) <- FQ.insert context queue_item
+                            closures <- push closures (ClosureType closure_type arg_types)
                             first_arg <- HT.getArgsLimited closure_type 1
                             closure_type <- HT.getResultType closure_type 1
-                            (context, closure_type, arg_types + first_arg, closures, functions)
-                        else break (context, closures, functions)
-                first_closure_fn <- atIndex functions 0
-                (closure_store, _) <- closures |> List.iter |> Iterator.fold (\(closure_store, index), closure -> do
-                    closure_store <- if index + 1 == getLength closures
-                        then do
-                            CS.addClosureInstanceSuccessor closure_store closure (CS.RealFunctionCall function_id)
-                        else do
-                            next <- atIndex functions (index + 1)
-                            CS.addClosureInstanceSuccessor closure_store closure (CS.NextClosureInstance next)
-                    (closure_store, index + 1)) (context.closure_store, 0)
-                context <- context { closure_store = closure_store }
+                            (context, closure_type, arg_types + first_arg, closures)
+                        else break (context, closures)
+                (context, function_id) <- loop (context, closures, next, function_id) <- (context, closures, List.getLength closures, function_id) do
+                    next <- next - 1
+                    if next == -1
+                    then break (context, function_id)
+                    else do
+                        closure <- List.atIndex closures next
+                        closure :: ClosureType <- closure // FIXME
+                        context :: Context <- context // FIXME
+                        (closure_store, closure_instance) <- CS.addClosureInstance context.closure_store closure.closure_type closure.arg_types function_id
+                        context <- context { closure_store = closure_store }
+                        queue_item <- FQ.ClosureCtor (getLength closure.arg_types) function_type closure_instance
+                        (context, function_id) <- FQ.insert context queue_item
+                        queue_item <- FQ.ClosureCall closure_instance.name (HT.Function closure.closure_type closure.closure_type)
+                        (context, _) <- FQ.insert context queue_item
+                        (context, closures, next, function_id)
                 (context, mir_result_type) <- processType context result_type
-                (context, call_expr) <- getExpr context (ME.Expr (ME.StaticFunctionCall first_closure_fn mir_args) mir_result_type)
+                (context, call_expr) <- getExpr context (ME.Expr (ME.StaticFunctionCall function_id mir_args) mir_result_type)
                 (context, call_expr)
             else do
                 (static_args, dynamic_args) <- List.split mir_args arg_count

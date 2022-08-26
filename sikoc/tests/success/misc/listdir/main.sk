@@ -1,0 +1,22 @@
+module Main where
+
+import Hack
+
+processPath :: String -> [String]
+processPath path = do
+    entries <- listDir path
+    List.fold [] entries (\files, entry -> if isDir entry
+        then files + processPath entry
+        else do
+            subs <- String.split entry "/"
+            file <- last subs
+            if endsWith file ".sk"
+            then List.push files entry
+            else files)
+
+main = do
+    if True
+    then ()
+    else do
+        files <- processPath "/tmp"
+    ()
