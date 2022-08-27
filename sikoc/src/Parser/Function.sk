@@ -69,17 +69,20 @@ parseExternConstraints state = parseList state parseExternConstraint Kind.LParen
         parseExternConstraint :: ParserState -> Result (ParserState, ExternConstraint) (ParserState, ParserError)
         parseExternConstraint state = do
             (state, from) <- try parseConstraintPath state
-            (state, is_equal) <- if check state Kind.RightArrow
+            if check state Kind.RightArrow
             then do
                 state <- try expect state Kind.RightArrow
-                (state, False)
+                (state, to) <- try parseConstraintPath state
+                Ok (state, ExternConverter (Converter from to))
             else do
                 state <- try expect state Kind.DoubleEqual
-                (state, True)
-            (state, to) <- try parseConstraintPath state
-            if is_equal
-            then Ok (state, ExternEquality (Equal from to))
-            else Ok (state, ExternConverter (Converter from to))
+                if check state Kind.Mul
+                then do
+                    state <- try expect state Kind.Mul
+                    Ok (state, Independent from)
+                else do
+                    (state, to) <- try parseConstraintPath state
+                    Ok (state, ExternEquality (Equal from to))
 
         parseConstraintPath :: ParserState -> Result (ParserState, ConstraintPath) (ParserState, ParserError)
         parseConstraintPath state =

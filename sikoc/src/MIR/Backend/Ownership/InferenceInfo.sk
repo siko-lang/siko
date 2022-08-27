@@ -186,14 +186,23 @@ createBorrowSetForInternal inference_info external_id = do
     interrnal_borrows <- Map2.put inference_info.interrnal_borrows external_id id
     (inference_info { interrnal_borrows = interrnal_borrows }, id)
 
+isExternalBorrowSet :: BorrowSet -> Bool
+isExternalBorrowSet borrow_set = 
+    Set.fold True borrow_set.borrows (\is_external, borrow -> case borrow of
+        External _ -> is_external
+        _ -> False)
+
 containsBorrows :: InferenceInfo -> BorrowId -> BorrowId -> (InferenceInfo, Bool)
 containsBorrows inference_info needle haystack = do
     if haystack == needle then (inference_info, True)
     else do
         (inference_info, haystack_set) <- getBorrowSet inference_info haystack
         (inference_info, needle_set) <- getBorrowSet inference_info needle
-        rest <- needle_set.borrows - haystack_set.borrows
-        (inference_info, Set.isEmpty rest)
+        if isExternalBorrowSet haystack_set && isExternalBorrowSet needle_set
+        then (inference_info, True)
+        else do
+            rest <- needle_set.borrows - haystack_set.borrows
+            (inference_info, Set.isEmpty rest)
 
 mergeBorrowSets :: InferenceInfo -> BorrowId -> BorrowId -> (InferenceInfo, BorrowId)
 mergeBorrowSets inference_info id1 id2 = do
@@ -441,11 +450,6 @@ toFunctionInfo config inference_info function_id = do
             (filtered_ownershipinfos, relevant_ownership_vars, ownership_values, index + 1)
 
     filtered_ownershipinfos <- filtered_ownershipinfos |> List2.sort |> List2.dedup
-
-    (_, filtered_ownershipinfos) <- List2.mapS function_info_base.result_only_vars filtered_ownershipinfos (\result_only_vars, info -> do
-        if List2.contains result_only_vars info.var
-        then (result_only_vars, info { kind = M.Owner })
-        else (result_only_vars, info))
 
     (inference_info, FunctionInfo function_info_base.args function_info_base.result
         function_info_base.members function_info_base.converters filtered_ownershipinfos)

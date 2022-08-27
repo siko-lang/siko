@@ -29,16 +29,19 @@ convertPath path = MF.Position (helper path)
             HF.Implicit index parent -> List.push (helper parent) (MF.Implicit index)
             HF.Result -> [MF.FunctionResult]
 
-getConvertersAndEquals :: [HF.ExternConstraint] -> ([MF.Converter], [MF.Equal])
-getConvertersAndEquals extern_constraints =  List.fold ([], []) extern_constraints (\(converters, equals), c -> case c of
+getConvertersAndEquals :: [HF.ExternConstraint] -> ([MF.Converter], [MF.Equal], [MF.Position])
+getConvertersAndEquals extern_constraints =  List.fold ([], [], []) extern_constraints (\(converters, equals, independents), c -> case c of
     HF.ExternConverter hir_converter -> do
         from <- convertPath hir_converter.from
         to <- convertPath hir_converter.to
-        (List.push converters (MF.Converter from to), equals)
+        (List.push converters (MF.Converter from to), equals, independents)
     HF.ExternEquality equal -> do
         left <- convertPath equal.left
         right <- convertPath equal.right
-        (converters, List.push equals (MF.Equal left right)))
+        (converters, List.push equals (MF.Equal left right), independents)
+    HF.Independent path -> do
+        pos <- convertPath path
+        (converters, equals, List.push independents pos))
 
 createTypeMap :: L.Context -> HT.Type -> Int -> [HF.ExternConstraint] ->  (MF.TypeMapping, L.Context)
 createTypeMap lowering_context type arg_count extern_constraints = do
@@ -51,8 +54,8 @@ createTypeMap lowering_context type arg_count extern_constraints = do
         context <- mapType context steps arg
         (context, index + 1)) (context, 0)
     context <- mapType context [MF.FunctionResult] result_type
-    (converters, equals) <- getConvertersAndEquals extern_constraints
-    (MF.TypeMapping context.var_mappings context.owner_positions context.ref_positions converters equals, context.lowering_context)
+    (converters, equals, independents) <- getConvertersAndEquals extern_constraints
+    (MF.TypeMapping context.var_mappings context.owner_positions context.ref_positions converters equals independents, context.lowering_context)
 
 addVarPosition :: Context -> String -> [MF.Step] -> Context
 addVarPosition context name steps = do

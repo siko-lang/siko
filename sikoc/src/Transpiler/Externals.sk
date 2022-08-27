@@ -529,14 +529,21 @@ generateListAdd program type_store arg_types result_type = do
 generateListPush :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateListPush program type_store arg_types result_type = do
     rust_type <- convertType result_type
-    list_type <- convertType (atIndex arg_types 0)
+    list_type <- atIndex arg_types 0
+    arg_item_type <- atIndex arg_types 1
+    list_record <- getRecord program (LT.getIdentity list_type)
+    list_info <- Option.unwrap list_record.external_info
+    item_type <- atIndex list_info.type_args 0
     field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
-    list_ref <- if RT.isRef list_type
+    list_ref <- if LT.isRef list_type
     then R.MethodCall field_access0 cloneName []
     else field_access0
+    arg_ref <- if LT.isRef arg_item_type && (not (LT.isRef item_type))
+    then R.MethodCall (R.VarRef (getArgName 1)) cloneName []
+    else R.VarRef (getArgName 1)
     new0 <- "new0"
     new0_decl <- R.VarDeclMut new0 list_ref None
-    add_call <- R.MethodCall (R.VarRef new0) "push" [R.VarRef (getArgName 1)]
+    add_call <- R.MethodCall (R.VarRef new0) "push" [arg_ref]
     struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef new0)]
     R.Block [new0_decl, add_call, struct_ctor]
 
