@@ -1,0 +1,39 @@
+module Siko.MIR.Expr where
+
+import Siko.MIR.Program
+import Siko.MIR.Type as T
+
+data Var = Named String
+         | Temp Int
+         | Arg Int
+         | FnArg Int
+         deriving (PartialEq, Eq, PartialOrd, Ord)
+
+instance Show Var where
+    show v = case v of
+        Named v -> "_{}" % v
+        Temp v -> "tmp_{}" % v
+        Arg i -> "arg{}" % i
+        FnArg i -> "fn_arg{}" % i
+
+data RangeKind = Inclusive | Exclusive
+
+data Checker = IntegerChecker String
+             | StringChecker String
+             | CharChecker Char
+             | CharRangeChecker Char Char RangeKind
+             | VariantChecker Int Var T.Type
+             | WildcardChecker
+
+data Case = { checker :: Checker, body :: Expr }
+
+data ExprId = ExprId Int deriving (PartialEq, Eq, PartialOrd, Ord)
+
+data Expr = Expr SimpleExpr T.Type ExprId
+
+data ConverterKind = NormalConverter
+                   | BorrowerConverter
+                   | FieldConverter Bool
+
+data SimpleExpr = Do [Expr]
+                | CaseOf Expr [Case]

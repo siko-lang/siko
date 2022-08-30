@@ -1,11 +1,7 @@
 module Siko.MIR.Backend.Ownership.BorrowChecker(checkBorrows) where
 
-import Siko.MIR.Program as P
-import Siko.MIR.Backend.Ownership.InferenceInfo
 import Siko.MIR.Backend.Ownership.BorrowInfo
-import Siko.MIR.Backend.Traversal
 import Siko.MIR.Expr as E
-import Siko.MIR.Function as F
 
 import Set
 import Map
@@ -21,8 +17,7 @@ data UsageStore = { usages :: Map2 E.Var (List2 Usage) } deriving (Show, Partial
 
 data Invalidation = { subject :: E.ExprId, object :: E.ExprId } deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
-data Context = { program :: P.Program,
-                 borrows :: List2 E.ExprId ,
+data Context = { borrows :: List2 E.ExprId ,
                  invalidations :: List2 Invalidation }
 
 data ExecutionMode = Normal
@@ -193,9 +188,9 @@ collectBorrows context usage_store expr = do
         E.Converter arg _ -> collectBorrows context usage_store arg
     (context, usage_store, exec_mode)
 
-checkBorrows :: P.Program -> E.Expr -> BorrowInfo
-checkBorrows program body = do
-    context <- Context program List2.empty List2.empty
+checkBorrows :: E.Expr -> BorrowInfo
+checkBorrows body = do
+    context <- Context List2.empty List2.empty
     usage_store <- UsageStore Map2.empty
     (context, usage_store, exec_mode) <- collectBorrows context usage_store body
     invalidations <- List2.filter context.invalidations (\invalidation -> not (List2.contains context.borrows invalidation.subject))

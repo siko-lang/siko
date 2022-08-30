@@ -117,9 +117,12 @@ processExpr context expr = do
                 context <- context { program = program }
                 case function.kind of
                     F.Normal _ | F.Extern _ -> do
-                        case Map2.get context.inference_info.function_converters expr_id of
+                        case Map2.get context.inference_info.function_converters (GlobalExprId context.function_id expr_id) of
                             Some function_converters -> do
                                 List2.fold context function_converters (\context, converter -> do
+                                    if P.isDebugged context.config context.function_id
+                                    then println "Adding function converter constraint {} {} -> {}" % (expr_id, converter.from, converter.to)
+                                    else ()
                                     addOwnershipConstraint context (C.FunctionConverter (C.FunctionConverterConstraint expr_id converter.from converter.to)))
                             None -> if List2.contains context.inference_info.group f_id
                                 then case Map2.get context.inference_info.group_function_converters f_id of
@@ -171,7 +174,7 @@ processExpr context expr = do
             context <- if field.grouped
             then addOwnershipValue context member_info.ownership_var M.Owner
             else context
-            addOwnershipConstraint context (C.FieldAccess (C.FieldAccessConstraint receiver_info member_info info))
+            addOwnershipConstraint context (C.FieldAccess (C.FieldAccessConstraint expr_id receiver_info member_info info))
         E.If cond true_branch false_branch -> do
             context <- processExpr context cond
             saved_invalid_borrows <- context.invalid_borrows
@@ -184,15 +187,9 @@ processExpr context expr = do
         E.List args -> do
             context <- List.fold context args processExpr
             addOwnershipValue context info.ownership_var M.Owner
-        E.Return arg -> do
-            context <- processExpr context arg
-            addOwnershipValue context info.ownership_var M.Owner
-        E.Continue arg -> do
-            context <- processExpr context arg
-            addOwnershipValue context info.ownership_var M.Owner
-        E.Break arg -> do
-            context <- processExpr context arg
-            addOwnershipValue context info.ownership_var M.Owner
+        E.Return arg -> processExpr context arg
+        E.Continue arg -> processExpr context arg
+        E.Break arg -> processExpr context arg
         E.Loop var initializer body _ _ -> do
             context <- processExpr context initializer
             context <- processExpr context body

@@ -1,0 +1,67 @@
+module Siko.MIR.Backend.Ownership.BorrowChecker(checkBorrows) where
+
+import Siko.MIR.Backend.Ownership.BorrowInfo
+import Siko.MIR.Expr as E
+
+import Set
+import Map
+import Map2
+import List2 as List2
+import List2 (List2)
+
+data Path = Whole | Partial [String] deriving (PartialEq, Eq, PartialOrd, Ord)
+
+data Usage = { expr_id :: E.ExprId, path :: Path } deriving (PartialEq, Eq, PartialOrd, Ord)
+
+data UsageStore = { usages :: Map2 E.Var (List2 Usage) } deriving (PartialEq, Eq, PartialOrd, Ord)
+
+data Invalidation = { subject :: E.ExprId, object :: E.ExprId } deriving (PartialEq, Eq, PartialOrd, Ord)
+
+data Context = { borrows :: List2 E.ExprId ,
+                 invalidations :: List2 Invalidation }
+
+data ExecutionMode = Normal
+                   | DoesNotReturn
+
+addUsageVar :: UsageStore -> E.Var -> UsageStore
+addUsageVar usage_store var = do
+    usages <- Map2.put usage_store.usages var List2.empty
+    usage_store { usages = usages }
+
+processBranches :: Context -> UsageStore -> [(Option E.Var, E.Expr)] -> E.ExprId -> (Context, UsageStore, ExecutionMode)
+processBranches context usage_store branches expr_id = do
+        outputs <- List.map branches (\(var, expr) -> processBranch context usage_store var expr expr_id)
+        List.fold (context, usage_store, DoesNotReturn) outputs (\(context, usage_store, exec_mode), (c_context, c_usage_store, c_exec_mode) ->
+            do
+                exec_mode <- case c_exec_mode of
+                    Normal -> Normal
+                    DoesNotReturn -> exec_mode
+                (context, usage_store, exec_mode))
+    where
+        processBranch :: Context -> UsageStore -> Option E.Var -> E.Expr -> E.ExprId -> (Context, UsageStore, ExecutionMode)
+        processBranch context usage_store var expr expr_id = do
+            usage_store <- case var of
+                Some var -> addUsageVar usage_store var
+                None -> usage_store
+            collectBorrows context usage_store expr
+
+collectBorrows :: Context -> UsageStore -> E.Expr -> (Context, UsageStore, ExecutionMode)
+collectBorrows context usage_store expr = do
+    E.Expr s_expr _ expr_id <- expr
+    (context, usage_store, exec_mode) <- case s_expr of
+        E.Do items -> (context, usage_store, Normal)
+        E.CaseOf body cases -> do
+            (context, usage_store, exec_mode) <- collectBorrows context usage_store body
+            branches <- List.map cases (\c -> case c.checker of
+                E.VariantChecker _ var _ -> (Some var, c.body)
+                _ -> (None, c.body))
+            (context, usage_store, exec_mode) <- processBranches context usage_store branches expr_id
+            (context, usage_store, exec_mode)
+    (context, usage_store, exec_mode)
+
+checkBorrows :: E.Expr -> BorrowInfo
+checkBorrows body = do
+    context <- Context List2.empty List2.empty
+    usage_store <- UsageStore Map2.empty
+    (context, usage_store, exec_mode) <- collectBorrows context usage_store body
+    BorrowInfo context.borrows Map2.empty
