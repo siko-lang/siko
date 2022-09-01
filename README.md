@@ -4,46 +4,51 @@ Status: ![](https://github.com/siko-lang/siko/workflows/Master/badge.svg)
 
 ## The vision
 
-Siko is an imperative, statically typed, runtime agnostic programming language that has very strong functional flavours.
+Siko is an imperative, statically typed, runtime agnostic programming language that looks and acts like a functional language.
 It should be possible to write most algorithms in Siko without thinking/worrying about the target
-environment much and it should just work. Siko does not have a runtime, all its features are compile time,
-it does full program type inference, compile time effects and whole program ownership inference.
-It should be at least as fast as safe rust. The language currently has a Haskell like syntax but that may be temporary.
+environment much and it should just work. Siko does not have a runtime, all its features are compile time.
+It does full program type inference, compile time effects and whole program ownership inference.
+It should be at least as fast as its target language. Currently only Rust is supported as a target language, theoretically any imperative language would work (or even LLVM/WASM). The language currently has a Haskell like syntax.
 
-## Status
+## Current state of the project
 
-Siko is under development but the real Siko compiler is self hosted, so a large amount of the features are implemented.
-It's original compiler written in rust is NOT feature complete, the generated code by the rust compiler is very slow/dumb.
-The Siko compiler written in Siko is much smarter and contains most of the features but may contain bugs and the error
-messages are not user friendly/very terse. The full program analysis is very computation heavy and the code generated
-by the bootstrapping (rust) compiler is very dumb, so the source code of the siko compiler contains various workarounds to hack around it.
-When the siko compiler is feature complete enough to fully replace the rust compiler, these workarounds/hacks can be removed.
-Currently siko transpiles to rust but there is nothing rust specific in the design, it should be possible to transpile it to
+Siko is heavily under development and its compiler is self hosted. There is also a compiler written in Rust but that one is very simple and does NOT contain the interesting bits (effect handling and ownership inference).
+The Siko compiler written in Siko is much smarter and contains most of the features but not fully tested and contain bugs and the error messages are not user friendly/very terse. The full program analysis is very computation heavy and the code generated
+by the bootstrapping (Rust) compiler is very dumb, so the source code of the Siko compiler contains various workarounds to hack around it.
+When the Siko compiler is feature complete enough to fully replace the its original compiler, these workarounds/hacks can be removed.
+Currently Siko transpiles to Rust but there is nothing Rust specific in the design, it should be possible to transpile it to
 any (mostly imperative) language (including garbage collected ones).
+Development is happening on the master branch and as long as there are no external contributors it will remain this way.
+The master branch is sometimes broken in various ways.
 
-## Building
+## Building instructions (try commit 35cddeea28e5393b1021068f38145e41e8c47546 for a full experience)
 
-Dependencies: rust, make, bash, python
+Dependencies: Rust, make, bash, python
 
-Building the compiler written in rust
+Building the compiler written in Rust
 ```
 make rust_sikoc
 ```
 
-Building stage0 (the siko compiler built by the rust compiler, this compiler is very slow)
+Building stage0 (the Siko compiler built by the compiler written in Rust, this compiler is very slow)
 ```
 make stage0
 ```
 
-Building stage1 (the siko compiler built by stage0)
+Building stage1 (the Siko compiler built by stage0)
 ```
 make stage1
 ```
 
-Building stage2 (the siko compiler built by stage1, should be identical to stage1)
+Building stage2 (the Siko compiler built by stage1, should be identical to stage1)
 ```
 make stage2
 ```
+
+## Documentation
+
+The documentation is basically non existent. There are a few unfinished attempts at writing various versions of the documentation
+in the doc folder, check them out for a peek into my brain.
 
 ## Language features
 - [X] Functions
@@ -100,4 +105,16 @@ make stage2
 - [] Package manager
 
 
-VSCode support for [siko](https://github.com/siko-lang/siko).
+## Contributors
+
+The project is too ambitious and it is very unlikely that I can finish it alone so the most important help
+the project needs is actual work. You can select anything on the roadmap and implement it or just help fix bugs
+or clean up the compiler.
+
+## License
+
+MIT
+
+## VSCode support
+
+Very crude VSCode support for [Siko](https://github.com/siko-lang/siko), only contains syntax highlight.
