@@ -100,9 +100,9 @@ in the doc folder, check them out for a peek into my brain.
 - [X] Rust transpiler
 
 ## Tooling progress
-- [] LSP Server
-- [] Auto formatter
-- [] Package manager
+- [ ] LSP Server
+- [ ] Auto formatter
+- [ ] Package manager
 
 
 ## Contributors
