@@ -133,10 +133,10 @@ processFunction context group inference_info function_id = do
             borrow_info <- checkBorrows info.body
             //trace context.config "inferOwnership {}" % function_id
             (inference_info, constraints, invalid_borrow_map, ownership_expr_map,
-                              group_expr_map, ownership_group_map, result_vars, program, call_context_map) <- collectConstraints context.config
+                              group_expr_map, ownership_group_map, result_vars, program, call_context_map, call_args) <- collectConstraints context.config
                                                                                                               function_id context.program borrow_info inference_info info.body
             context <- context { program = program }
-            inference_info <- processConstraints context.config function_id inference_info constraints invalid_borrow_map ownership_expr_map group_expr_map ownership_group_map result_vars call_context_map Partial
+            inference_info <- processConstraints context.config function_id inference_info constraints invalid_borrow_map ownership_expr_map group_expr_map ownership_group_map result_vars call_context_map Partial call_args
             //trace context.config "Processing {}" % function_id
             (inference_info, function_info) <- toFunctionInfo context.config inference_info function_id
             inference_info <- if P.isDebugged context.config function_id

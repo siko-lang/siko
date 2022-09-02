@@ -33,7 +33,8 @@ data Context = { config :: Config,
                  result_vars :: List2 OwnershipTypeVariable,
                  allow_guess :: Bool,
                  function_converter_borrows :: Map2 Int (List2 FunctionConverterBorrow),
-                 function_converter_borrow_keys :: Map2 Int E.ExprId } deriving (Move)
+                 function_converter_borrow_keys :: Map2 Int E.ExprId,
+                 call_args :: List2 OwnershipTypeVariable } deriving (Move)
 
 isDebug :: Context -> (Context, Bool)
 isDebug context = do
@@ -161,25 +162,33 @@ processCallContext :: Context -> E.ExprId -> Int -> OwnershipTypeVariable -> Own
 processCallContext context call_id index from to to_borrow = do
     case Map.get context.call_context_map call_id of
         Some call_context_set -> do
-            call_context_set :: C.CallContextSet <- call_context_set // FIXME
-            context <- debugPrint context "Call context set {}" % call_context_set
-            (context, borrows, owners, unknowns) <- List.fold (context, List2.empty, List2.empty, List2.empty) call_context_set.call_contexts (\(context, borrows, owners, unknowns), call_context -> do
-                    case Map.get call_context.sub_map from of
-                        Some parents -> do
-                            context <- debugPrint context "Checking parents {}" % parents
-                            (context, parent_kind) <- getParentKind context parents
-                            context <- debugPrint context "Parent kind {}" % parent_kind
-                            case parent_kind of
-                                M.Borrower _ -> do
-                                    borrows <- List2.push borrows parent_kind
-                                    (context, borrows, owners, unknowns)
-                                M.Owner -> do
-                                    owners <- List2.push owners parent_kind
-                                    (context, borrows, owners, unknowns)
-                                M.Unknown -> do
-                                    unknowns <- List2.push unknowns parent_kind
-                                    (context, borrows, owners, unknowns)
-                        None -> (context, borrows, owners, unknowns))
+            (context, borrows, owners, unknowns) <- if List2.contains context.call_args from
+            then do
+                (context, from_kind) <- getOwnershipValue context from
+                case from_kind of
+                    M.Owner -> (context, List2.empty, List2.single from_kind, List2.empty)
+                    M.Borrower _ -> (context, List2.single from_kind, List2.empty, List2.empty)
+                    M.Unknown -> (context, List2.empty, List2.empty, List2.single from_kind)
+            else do
+                call_context_set :: C.CallContextSet <- call_context_set // FIXME
+                context <- debugPrint context "Call context set {}" % call_context_set
+                List.fold (context, List2.empty, List2.empty, List2.empty) call_context_set.call_contexts (\(context, borrows, owners, unknowns), call_context -> do
+                        case Map.get call_context.sub_map from of
+                            Some parents -> do
+                                context <- debugPrint context "Checking parents {}" % parents
+                                (context, parent_kind) <- getParentKind context parents
+                                context <- debugPrint context "Parent kind {}" % parent_kind
+                                case parent_kind of
+                                    M.Borrower _ -> do
+                                        borrows <- List2.push borrows parent_kind
+                                        (context, borrows, owners, unknowns)
+                                    M.Owner -> do
+                                        owners <- List2.push owners parent_kind
+                                        (context, borrows, owners, unknowns)
+                                    M.Unknown -> do
+                                        unknowns <- List2.push unknowns parent_kind
+                                        (context, borrows, owners, unknowns)
+                            None -> (context, borrows, owners, unknowns))
             context <- debugPrint context "After checking parents {}/{}/{}" % (borrows, owners, unknowns)
             if not (List2.isEmpty unknowns)
             then do
@@ -433,12 +442,13 @@ dumpOwnership context = do
 processConstraints :: Config -> P.Identity -> InferenceInfo -> List2 C.Constraint ->
                       Map2 E.ExprId (List2 E.ExprId) -> Map2 OwnershipTypeVariable (List2 E.ExprId) ->
                       Map2 GroupTypeVariable (List2 E.ExprId) -> Map2 OwnershipTypeVariable (List2 GroupTypeVariable) ->
-                      List2 OwnershipTypeVariable -> Map E.ExprId C.CallContextSet -> InferenceMode -> InferenceInfo
-processConstraints config function_id inference_info constraints invalid_borrow_map ownership_expr_map group_expr_map ownership_group_map result_vars call_context_map mode = do
+                      List2 OwnershipTypeVariable -> Map E.ExprId C.CallContextSet -> InferenceMode -> List2 OwnershipTypeVariable -> InferenceInfo
+processConstraints config function_id inference_info constraints invalid_borrow_map ownership_expr_map 
+                    group_expr_map ownership_group_map result_vars call_context_map mode call_args = do
     // println "Invalid borrow map {}" % (invalid_borrow_map)
     // println "InferenceInfo {}" % inference_info
     context <- Context config inference_info function_id True invalid_borrow_map
-                       ownership_expr_map group_expr_map ownership_group_map call_context_map mode result_vars False Map2.empty Map2.empty
+                       ownership_expr_map group_expr_map ownership_group_map call_context_map mode result_vars False Map2.empty Map2.empty call_args
     //dumpConstraints constraints
     context <- loop context <- context do
         context :: Context <- context // FIXME

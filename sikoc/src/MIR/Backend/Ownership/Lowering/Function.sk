@@ -69,10 +69,10 @@ lowerFunction context lowering_info mir_id lir_id = do
             inference_info <- updateOwnershipDeMap context.config inference_info
             inference_info <- createBaseCallContexts context.config inference_info
             (inference_info, constraints, invalid_borrow_map, ownership_expr_map, group_expr_map, ownership_group_map,
-                             result_vars, mir_program, call_context_map) <- collectConstraints context.config mir_id context.mir_program
+                             result_vars, mir_program, call_context_map, call_args) <- collectConstraints context.config mir_id context.mir_program
                                                                             borrow_info inference_info info.body
             context <- context { mir_program = mir_program }
-            inference_info <- processConstraints context.config mir_id inference_info constraints invalid_borrow_map ownership_expr_map group_expr_map ownership_group_map result_vars call_context_map Full
+            inference_info <- processConstraints context.config mir_id inference_info constraints invalid_borrow_map ownership_expr_map group_expr_map ownership_group_map result_vars call_context_map Full call_args
             //trace2 context.config "after processConstraints {} {}" % (lir_id, inference_info)
             inference_info <- if MP.isDebugged context.config mir_id
             then do
