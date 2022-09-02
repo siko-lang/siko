@@ -125,6 +125,8 @@ processFunction context group inference_info function_id = do
                     (program, inference_info) <- processEqualities context.config equals inference_info program
                     inference_info <- updateOwnershipDeMap context.config inference_info
                     inference_info <- createBaseCallContexts context.config inference_info
+                    inference_info <- createConverterMergeInfo context.config inference_info
+                    inference_info <- createFunctionInfoBase context.config inference_info function_id
                     context <- context { program = program, data_group_info_store = data_group_info_store }
                     (context, inference_info)
             //trace context.config "checkBorrows {}" % function_id
@@ -135,13 +137,14 @@ processFunction context group inference_info function_id = do
                                                                                                               function_id context.program borrow_info inference_info info.body
             context <- context { program = program }
             inference_info <- processConstraints context.config function_id inference_info constraints invalid_borrow_map ownership_expr_map group_expr_map ownership_group_map result_vars call_context_map Partial
+            //trace context.config "Processing {}" % function_id
+            (inference_info, function_info) <- toFunctionInfo context.config inference_info function_id
             inference_info <- if P.isDebugged context.config function_id
             then do
+                println "Function info {}" % function_info
                 println "Inference info {}" % inference_info
                 dumpOwnership inference_info function_id info.body
             else inference_info
-            //trace context.config "Processing {}" % function_id
-            (inference_info, function_info) <- toFunctionInfo context.config inference_info function_id
             function_info <- enforceUnknownArgOwnership function_info
             (context, added) <- processFunctionInfo context function_info function_id
             (context, added, Some inference_info)
@@ -209,14 +212,14 @@ processFunctionGroup index group_count context group = do
                     inference_info { group_function_converters = group_function_converters })
             (program, inference_info) <- processEqualities context.config equals inference_info context.program
             config <- context.config
+            
+            inference_info <- createConverterMergeInfo config inference_info
+        
             inference_info <- List.fold inference_info group
-                (\inference_info, function_id -> do
-                    (inference_info, function_info_base) <- createFunctionInfoBase config inference_info function_id
-                    function_info_bases <- Map2.put inference_info.function_info_bases function_id function_info_base
-                    inference_info { function_info_bases = function_info_bases }
-                )
+                (\inference_info, function_id -> createFunctionInfoBase config inference_info function_id)
             inference_info <- updateOwnershipDeMap config inference_info
             inference_info <- createBaseCallContexts config inference_info
+            
             context <- context { program = program }
             (context, inference_info)
 

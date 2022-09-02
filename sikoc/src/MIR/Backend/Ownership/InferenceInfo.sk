@@ -71,6 +71,7 @@ data InferenceInfo = { expr_type_variables :: Map2 GlobalExprId TypeVariableInfo
                        ownership_dep_map :: Map2 GroupTypeVariable (List2 OwnershipTypeVariable),
                        base_call_contexts :: List C.CallContextSet,
                        group_index_map :: GroupIndexMap GroupTypeVariable,
+                       converter_merge_info :: Option ConverterMergeInfo,
                      } deriving (Show, Move)
 
 createInferenceInfoFromLoweringInfo :: FunctionLoweringInfo -> P.Identity -> (InferenceInfo, List2 BorrowId)
@@ -94,7 +95,7 @@ createInferenceInfoFromLoweringInfo lowering_info function_id = do
     inference_info <- InferenceInfo expr_type_variables var_type_variables group
         function_infos ownership_values members converters allocator
         function_converters group_function_converters borrow_sets Map2.empty Map2.empty Map2.empty
-        Map2.empty Map2.empty Map2.empty List.empty (GroupIndexMap Map2.empty)
+        Map2.empty Map2.empty Map2.empty List.empty (GroupIndexMap Map2.empty) None
     (inference_info, external_borrows) <- List2.fold (inference_info, List2.empty) lowering_info.ownershipinfos (\(inference_info, external_borrows), ownershipinfo -> do
             (inference_info, external_borrows, v, kind) <- case ownershipinfo of
                 M.OwnershipInfo v M.Unknown -> panic "Unknown ownership in createInferenceInfoFromLoweringInfo"
@@ -154,7 +155,7 @@ createInferenceInfo = do
     borrow_sets <- Map2.empty
     InferenceInfo Map2.empty Map2.empty List2.empty function_infos ownership_values List2.empty List2.empty allocator
             function_converters group_function_converters borrow_sets Map2.empty Map2.empty
-            Map2.empty Map2.empty Map2.empty Map2.empty List.empty (GroupIndexMap Map2.empty)
+            Map2.empty Map2.empty Map2.empty Map2.empty List.empty (GroupIndexMap Map2.empty) None
 
 createBorrowSet :: InferenceInfo -> Borrow -> (InferenceInfo, BorrowId)
 createBorrowSet inference_info borrow = do
@@ -376,7 +377,7 @@ getFunctionConverters config inference_info function_id = do
             (converter_map, input_ownership_vars, output_ownership_vars, filtered_converters))
     filtered_converters
 
-createFunctionInfoBase :: Config -> InferenceInfo -> P.Identity -> (InferenceInfo, FunctionInfoBase)
+createFunctionInfoBase :: Config -> InferenceInfo -> P.Identity -> InferenceInfo
 createFunctionInfoBase config inference_info function_id = do
     (inference_info, function_inference_info) <- getFunctionInferenceInfo inference_info function_id
     // println "createFunctionInfoBase"
@@ -412,10 +413,20 @@ createFunctionInfoBase config inference_info function_id = do
             List2.push vars member.info.ownership_var)
     relevant_ownership_vars <- input_ownership_vars + output_ownership_vars
 
-    converters <- mergeConverters config inference_info.converters
-    ((input_ownership_vars, output_ownership_vars), filtered_converters) <- List2.filterS (input_ownership_vars, output_ownership_vars) converters (\(input_ownership_vars, output_ownership_vars), converter -> do
+    converter_merge_info <- case inference_info.converter_merge_info of
+        Some converter_merge_info -> converter_merge_info
+        None -> panic "No converter merge info when trying to create funtion info base!"
+
+    ((input_ownership_vars, output_ownership_vars), filtered_converters) <- List2.filterS (input_ownership_vars, output_ownership_vars) converter_merge_info.converters (\(input_ownership_vars, output_ownership_vars), converter -> do
         match <- List2.contains input_ownership_vars converter.from && List2.contains output_ownership_vars converter.to
         ((input_ownership_vars, output_ownership_vars), match))
+
+    (input_ownership_vars, output_ownership_vars, filtered_converters) <- List2.fold (input_ownership_vars, output_ownership_vars, filtered_converters) converter_merge_info.cycle_groups (\(input_ownership_vars, output_ownership_vars, filtered_converters), group -> do
+        inputs <- List2.filter input_ownership_vars (\var -> List2.contains group var)
+        outputs <- List2.filter output_ownership_vars (\var -> List2.contains group var)
+        filtered_converters <- List2.fold filtered_converters inputs (\filtered_converters, input -> 
+            List2.fold filtered_converters outputs (\filtered_converters, output -> List2.push filtered_converters (Converter input output)))
+        (input_ownership_vars, output_ownership_vars, filtered_converters))
 
     members <- (input_members + output_members) |> List2.sort |> List2.dedup
 
@@ -430,14 +441,17 @@ createFunctionInfoBase config inference_info function_id = do
         r <- not (List2.contains converter_results var)
         (converter_results, r))
 
-    (inference_info, FunctionInfoBase function_inference_info.args function_inference_info.result
-        members filtered_converters relevant_ownership_vars result_only_vars)
+    function_info_base <- FunctionInfoBase function_inference_info.args function_inference_info.result
+        members filtered_converters relevant_ownership_vars result_only_vars
+
+    function_info_bases <- Map2.put inference_info.function_info_bases function_id function_info_base
+    inference_info { function_info_bases = function_info_bases }
 
 toFunctionInfo :: Config -> InferenceInfo -> P.Identity -> (InferenceInfo, FunctionInfo)
 toFunctionInfo config inference_info function_id = do
     (inference_info, function_info_base) <- case Map2.get inference_info.function_info_bases function_id of
         Some function_info_base -> (inference_info, function_info_base)
-        None -> createFunctionInfoBase config inference_info function_id
+        None -> panic "Not function info base found for {}" % function_id
 
     (filtered_ownershipinfos, ownership_values) <- loop (filtered_ownershipinfos, relevant_ownership_vars, ownership_values, index) <- (List2.empty, function_info_base.relevant_ownership_vars, inference_info.ownership_values, 0) do
         if index >= List2.getLength relevant_ownership_vars
@@ -497,7 +511,7 @@ instance Apply InferenceInfo where
             function_converters group_function_converters inference_info.borrow_sets
             inference_info.external_borrows inference_info.interrnal_borrows inference_info.initials
             inference_info.function_info_bases inference_info.function_converter_borrows inference_info.ownership_dep_map
-            inference_info.base_call_contexts inference_info.group_index_map
+            inference_info.base_call_contexts inference_info.group_index_map inference_info.converter_merge_info
         (inference_info, ownership_values) <- Map2.fold (inference_info, Map2.empty) merged_ownership_values (\(inference_info, ownership_values), (var, kinds) -> do
             kinds <- kinds |> List2.sort |> List2.dedup
             kinds <- List2.filter kinds (\kind -> case kind of
@@ -572,6 +586,11 @@ addOwnershipVarToCallContext call_context_set var = do
         call_context { sub_map = sub_map })
     call_context_set { call_contexts = call_contexts }
 
+createConverterMergeInfo :: Config -> InferenceInfo -> InferenceInfo
+createConverterMergeInfo config inference_info = do
+    converter_merge_info <- mergeConverters config inference_info.converters
+    inference_info { converter_merge_info = Some converter_merge_info }
+
 createBaseCallContexts :: Config -> InferenceInfo -> InferenceInfo
 createBaseCallContexts config inference_info = do
         (members, accumulated_group_deps_map, group_deps_map, groups) <- calculateGroupDepMap config inference_info.members
@@ -597,7 +616,11 @@ createBaseCallContexts config inference_info = do
                     None -> (group_deps_map, group_items, deps))
             //println "group {} deps {}" % (group, deps)
             deps <- deps |> List2.sort |> List2.dedup
-            (group_index_map, group_items, deps, context_map, ownership_vars, base_call_contexts) <- List2.fold (group_index_map, group_items, deps, Map.empty, List2.empty, base_call_contexts) members (\(group_index_map, group_items, deps, context_map, ownership_vars, base_call_contexts), member -> do
+            (group_index_map, group_items, deps, context_map, ownership_vars, base_call_contexts, group_locals) <- List2.fold (group_index_map, group_items, deps, Map.empty, List2.empty, base_call_contexts, List2.empty) members 
+                              (\(group_index_map, group_items, deps, context_map, ownership_vars, base_call_contexts, group_locals), member -> do
+                group_locals <- if List2.contains group_items member.root && List2.contains group_items member.info.arg_group_var
+                then List2.push group_locals member.info.ownership_var
+                else group_locals
                 if List2.contains group_items member.root && List2.contains deps member.info.arg_group_var
                 then do
                     (group_index_map, group_index) <- getGroupIndex group_index_map member.info.arg_group_var
@@ -610,8 +633,8 @@ createBaseCallContexts config inference_info = do
                     dep_call_context_set <- addOwnershipVarToCallContext dep_call_context_set member.info.ownership_var
                     context_map <- Map.put context_map group_index dep_call_context_set
                     ownership_vars <- List2.push ownership_vars member.info.ownership_var
-                    (group_index_map, group_items, deps, context_map, ownership_vars, base_call_contexts)
-                else (group_index_map, group_items, deps, context_map, ownership_vars, base_call_contexts))
+                    (group_index_map, group_items, deps, context_map, ownership_vars, base_call_contexts, group_locals)
+                else (group_index_map, group_items, deps, context_map, ownership_vars, base_call_contexts, group_locals))
             //println "context_map {}" % context_map
             //println "ownership_vars {}" % ownership_vars
             current <- if Map.getSize context_map == 0
@@ -622,7 +645,7 @@ createBaseCallContexts config inference_info = do
                 (current { call_contexts = call_contexts }))
             // add all group vars as vars that can be affected by parents
             call_contexts <- List.map current.call_contexts (\call_context ->
-                List2.fold call_context ownership_vars (\call_context, var -> do
+                List2.fold call_context (ownership_vars + group_locals) (\call_context, var -> do
                     sub_map <- Map.put call_context.sub_map var List.empty
                     call_context { sub_map = sub_map }))
             call_contexts <- call_contexts |> List.sort |> List.dedup

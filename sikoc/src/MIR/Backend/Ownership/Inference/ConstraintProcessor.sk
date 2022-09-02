@@ -182,7 +182,9 @@ processCallContext context call_id index from to to_borrow = do
                         None -> (context, borrows, owners, unknowns))
             context <- debugPrint context "After checking parents {}/{}/{}" % (borrows, owners, unknowns)
             if not (List2.isEmpty unknowns)
-            then context
+            then do
+                context <- eraseFunctionConverterBorrow context index
+                context
             else do
                 if not (List2.isEmpty owners)
                 then do
@@ -197,8 +199,8 @@ processCallContext context call_id index from to to_borrow = do
                     case List2.getLength borrows of
                         0 -> do
                             context <- eraseFunctionConverterBorrow context index
-                            context <- debugPrint context "Cannot borrow anything, promote {} to owner" % to
-                            updateOwnership context to M.Owner
+                            context <- debugPrint context "Cannot borrow anything, do nothing"
+                            context
                         _ -> do
                             (context, can_propagate) <- List2.fold (context, True) borrows (\(context, can_propagate), borrow -> do
                                         (context, c) <- canPropagateBorrow context to borrow
