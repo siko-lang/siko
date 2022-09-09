@@ -103,6 +103,10 @@ processNormalFunction context mir_function_id hir_type qn hir_function =
             (context, expr_id_gen) <- resetExprIdCounter context
             (context, temp_var_gen) <- resetTempVarCounter context
             (context, mir_arg_types, mir_result_type) <- getFunctionType context hir_type hir_function.arg_count
+            f_result <- HT.getResultType function_type hir_function.arg_count
+            mir_result_type <- case f_result of
+                HT.Never _ -> MT.Never
+                _ -> mir_result_type
             info <- MF.FunctionInfo mir_body expr_id_gen temp_var_gen (List.map hir_fn.attributes convertAttribute)
             mir_function_type <- MF.FunctionType mir_arg_types mir_result_type
             mir_function <- MF.Function mir_function_id (MF.Normal info) mir_function_type
@@ -111,7 +115,13 @@ processNormalFunction context mir_function_id hir_type qn hir_function =
             context
         None -> do
             //println "Processing extern {}" % (hir_function.name)
+            hir_fn <- HP.getFunction context.hir_program qn
+            function_type <- HT.removeFixed (Option.unwrap hir_fn.type)
             (context, mir_arg_types, mir_result_type) <- getFunctionType context hir_type hir_function.arg_count
+            f_result <- HT.getResultType function_type hir_function.arg_count
+            mir_result_type <- case f_result of
+                HT.Never _ -> MT.Never
+                _ -> mir_result_type
             (type_mapping, context) <- case hir_function.type_with_ownership of
                 Some t -> createTypeMap context t hir_function.arg_count hir_function.extern_constraints
                 None -> panic "Extern function has no ownership type! {}" % mir_function_id

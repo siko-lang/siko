@@ -37,8 +37,8 @@ data ConverterMergeInfo = { converters :: List2 Converter,
                             cycle_groups :: List2 (List2 OwnershipTypeVariable)
                           } deriving (Show)
 
-mergeConverters :: Config -> List2 Converter -> ConverterMergeInfo
-mergeConverters config converters = do
+mergeConverters :: Config -> List2 OwnershipTypeVariable -> List2 Converter -> ConverterMergeInfo
+mergeConverters config input_ownership_vars converters = do
         deps_map <- List2.fold Map2.empty converters (\deps_map, converter -> do
             deps_map <- Map2.put deps_map converter.from List2.empty
             Map2.put deps_map converter.to List2.empty)
@@ -65,16 +65,19 @@ mergeConverters config converters = do
             (deps_map, converter_map))
         groups <- processDependencies config deps_map
         conversion_map <- Map2.empty
-        (converter_map, conversion_map) <- List2.fold (converter_map, conversion_map) groups (\(converter_map, conversion_map), group -> do
-            List2.fold (converter_map, conversion_map) group.items (\(converter_map, conversion_map), item -> do
+        (input_ownership_vars, converter_map, conversion_map) <- List2.fold (input_ownership_vars, converter_map, conversion_map) groups (\(input_ownership_vars, converter_map, conversion_map), group -> do
+            List2.fold (input_ownership_vars, converter_map, conversion_map) group.items (\(input_ownership_vars, converter_map, conversion_map), item -> do
                     sources <- case Map2.get conversion_map item of
                         Some sources -> sources
-                        None -> List2.single item
+                        None -> List2.empty
+                    sources <- if List2.contains input_ownership_vars item
+                    then List2.push sources item
+                    else sources
                     case Map2.get converter_map item of
                         Some targets -> do
                             conversion_map <- List2.fold conversion_map targets (\conversion_map, target -> addSources conversion_map target sources)
-                            (converter_map ,conversion_map)
-                        None -> (converter_map, conversion_map)
+                            (input_ownership_vars, converter_map ,conversion_map)
+                        None -> (input_ownership_vars, converter_map, conversion_map)
                 ))
         converters <- Map2.fold List2.empty conversion_map (\converters, (to, froms) -> List2.fold converters froms (\converters, from -> List2.push converters (Converter from to)))
         ConverterMergeInfo converters cycle_groups

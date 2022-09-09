@@ -50,6 +50,10 @@ collectBorrows context usage_store expr = do
     E.Expr s_expr _ expr_id <- expr
     (context, usage_store, exec_mode) <- case s_expr of
         E.Do items -> (context, usage_store, Normal)
+        E.If cond true_branch false_branch -> do
+            (context, usage_store, exec_mode) <- collectBorrows context usage_store cond
+            (context, usage_store, exec_mode) <- processBranches context usage_store [(None, true_branch), (None, false_branch)] expr_id
+            (context, usage_store, exec_mode)
         E.CaseOf body cases -> do
             (context, usage_store, exec_mode) <- collectBorrows context usage_store body
             branches <- List.map cases (\c -> case c.checker of

@@ -829,16 +829,13 @@ generateMapGet :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateMapGet program type_store arg_types result_type = do
     rust_type <- convertType result_type
     map_type <- atIndex arg_types 0
-    map_record <- getRecord program (LT.getIdentity map_type)
-    map_info <- Option.unwrap map_record.external_info
-    key_type <- atIndex map_info.type_args 0
     field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
     map <- "map"
     value <- "value"
     map_decl <- if LT.isRef map_type
     then R.VarDecl map (R.Ref field_access0) None
     else R.VarDecl map field_access0 None
-    get_call <- if LT.isRef key_type
+    get_call <- if LT.isRef (atIndex arg_types 1)
     then R.MethodCall (R.VarRef map) "get" [R.VarRef (getArgName 1)]
     else R.MethodCall (R.VarRef map) "get" [R.Ref (R.VarRef (getArgName 1))]
     some_pattern <- R.VariantPattern "Some" (Some value)
@@ -884,7 +881,9 @@ generateMapRemove program type_store arg_types result_type = do
     map <- "map"
     value <- "value"
     map_decl <- R.VarDeclMut map map_ref None
-    remove_call <- R.MethodCall (R.VarRef map) "remove" [R.Ref (R.VarRef (getArgName 1))]
+    remove_call <- if LT.isRef (atIndex arg_types 1)
+    then R.MethodCall (R.VarRef map) "remove" [R.VarRef (getArgName 1)]
+    else R.MethodCall (R.VarRef map) "remove" [R.Ref (R.VarRef (getArgName 1))]
     some_pattern <- R.VariantPattern "Some" (Some value)
     none_pattern <- R.VariantPattern "None" None
     some_record_type <- getVariantRecordTypeId program value_field.type "Some"
