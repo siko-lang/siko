@@ -1,0 +1,47 @@
+
+module Main where
+
+import Hack
+
+data FileName = FileName String
+
+data TraceLevel = Off
+                | Leve1
+                | Level2 deriving (PartialEq)
+
+data Config = { input_files :: [FileName],
+                output_file_name :: Option String,
+                trace_level :: TraceLevel,
+                dump :: Bool,
+                mir_functions :: [String],
+                print_function_info :: Bool }
+
+data OutputFileType = Normal
+                    | HIR String
+                    | MIR String
+                    | LIR String
+                    | MIRJson String
+
+getDefaultConfig :: Config
+getDefaultConfig = Config [] None Off False [] False
+
+processPath :: String -> [FileName]
+processPath path = do
+    if isDir path
+    then do
+        entries <- listDir path
+        List.fold [] entries (\files, entry -> if isDir entry
+            then files + processPath entry
+            else do
+                subs <- String.split entry "/"
+                file <- last subs
+                if endsWith file ".sk"
+                then List.push files (FileName entry)
+                else files)
+    else [FileName path]
+
+main = do
+    config <- getDefaultConfig
+    files <- List.fold [] config.input_files (\files, (FileName path) -> files + processPath path)
+    config
+    ()
