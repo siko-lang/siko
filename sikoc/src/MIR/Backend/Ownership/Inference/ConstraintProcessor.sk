@@ -312,7 +312,11 @@ processFunctionConverter context converter index = do
         (M.Borrower a, M.Unknown) -> do
             (context, can_propagate) <- canPropagateBorrow context to a
             if can_propagate
-            then updateOwnership context to from_kind
+            then do
+                (inference_info, id) <- cloneBorrowSet context.inference_info a
+                context <- context { inference_info = inference_info }
+                context <- addFunctionConverterBorrow context index a id
+                updateOwnership context to (M.Borrower id)
             else updateOwnership context to M.Owner
         (M.Owner, M.Borrower b) -> processCallContext context converter.call index from to (Some b)
         (M.Unknown, M.Unknown) if context.allow_guess -> do
@@ -369,7 +373,10 @@ processConverter context converter = do
         (M.Borrower a, M.Unknown) -> do
             (context, can_propagate) <- canPropagateBorrow context expr_info.ownership_var a
             if can_propagate
-            then updateOwnership context expr_info.ownership_var arg_kind
+            then do
+                (inference_info, id) <- cloneBorrowSet context.inference_info a
+                context <- context { inference_info = inference_info }
+                updateOwnership context expr_info.ownership_var (M.Borrower id)
             else updateOwnership context expr_info.ownership_var M.Owner
         (M.Owner, M.Borrower a) -> do
             if converter.borrower

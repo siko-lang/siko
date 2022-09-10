@@ -215,6 +215,15 @@ mergeBorrowSets inference_info id1 id2 = do
     borrow_sets <- Map2.put inference_info.borrow_sets id merged_set
     (inference_info { allocator = allocator, borrow_sets = borrow_sets }, id)
 
+cloneBorrowSet :: InferenceInfo -> BorrowId -> (InferenceInfo, BorrowId)
+cloneBorrowSet inference_info id = do
+    (inference_info, set) <- getBorrowSet inference_info id
+    allocator <- inference_info.allocator
+    (allocator, new_id) <- getNextBorrowId allocator
+    merged_set <- BorrowSet set.borrows
+    borrow_sets <- Map2.put inference_info.borrow_sets new_id merged_set
+    (inference_info { allocator = allocator, borrow_sets = borrow_sets }, new_id)
+
 getBorrowSet :: InferenceInfo -> BorrowId -> (InferenceInfo, BorrowSet) // FIXME
 getBorrowSet inference_info id =
     case Map2.get inference_info.borrow_sets id of
