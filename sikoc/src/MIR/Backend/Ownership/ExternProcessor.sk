@@ -19,8 +19,7 @@ import List2 (List2)
 import Map2 as Map2
 import Map2 (Map2)
 
-data Context = { program :: P.Program,
-                 args :: List2 F.Step,
+data Context = { args :: List2 F.Step,
                  allocator :: Allocator,
                  info_map :: Map2 F.Position TypeVariableInfo,
                  members :: List2 M.MemberInfo,
@@ -86,11 +85,11 @@ processPos context position = do
             current <- List.push current first
             (context, current, rest, info)
 
-createExternFunctionInfo :: P.Program -> P.Identity -> F.FunctionType -> F.TypeMapping -> FunctionInfo
-createExternFunctionInfo program id function_type type_mapping = do
+createExternFunctionInfo :: P.Identity -> F.FunctionType -> F.TypeMapping -> FunctionInfo
+createExternFunctionInfo id function_type type_mapping = do
     //println "type_mapping {}" % type_mapping
     allocator <- createAllocator
-    context <- Context program List2.empty allocator Map2.empty List2.empty List2.empty List2.empty List2.empty List2.empty
+    context <- Context List2.empty allocator Map2.empty List2.empty List2.empty List2.empty List2.empty List2.empty
     (context, converters) <- List.fold (context, List2.empty) type_mapping.converters (\(context, converters), mir_converter -> do
         (context, from_info) <- getInfoForPos context mir_converter.from
         (context, to_info) <- getInfoForPos context mir_converter.to

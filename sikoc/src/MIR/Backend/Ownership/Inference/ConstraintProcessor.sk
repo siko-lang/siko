@@ -160,6 +160,7 @@ getParentKind context parents = do
 
 processCallContext :: Context -> E.ExprId -> Int -> OwnershipTypeVariable -> OwnershipTypeVariable -> Option BorrowId -> Context
 processCallContext context call_id index from to to_borrow = do
+    context <- eraseFunctionConverterBorrow context index
     case Map.get context.call_context_map call_id of
         Some call_context_set -> do
             call_args <- case Map2.get context.call_args call_id of
@@ -196,14 +197,11 @@ processCallContext context call_id index from to to_borrow = do
                             None -> (context, borrows, owners, unknowns))
             context <- debugPrint context "After checking parents {}/{}/{}" % (borrows, owners, unknowns)
             if not (List2.isEmpty unknowns)
-            then do
-                context <- eraseFunctionConverterBorrow context index
-                context
+            then context
             else do
                 if not (List2.isEmpty owners)
                 then do
                     context <- debugPrint context "in some context ownership required, promoting {}" % to
-                    context <- eraseFunctionConverterBorrow context index
                     updateOwnership context to M.Owner
                 else do
                     borrows <- borrows |> List2.sort |> List2.dedup
@@ -212,7 +210,6 @@ processCallContext context call_id index from to to_borrow = do
                                 _ -> panic "Borrow is not a borrow?!")
                     case List2.getLength borrows of
                         0 -> do
-                            context <- eraseFunctionConverterBorrow context index
                             context <- debugPrint context "Cannot borrow anything, do nothing"
                             context
                         _ -> do
@@ -247,7 +244,6 @@ processCallContext context call_id index from to to_borrow = do
                                     first <- List2.atIndex borrows 0
                                     if List2.getLength borrows == 1
                                     then do
-                                        context <- eraseFunctionConverterBorrow context index
                                         context <- debugPrint context "propagation not possible to target (single), setting borrow {} at {}" % (first,  index)
                                         updateOwnership context to (M.Borrower first) 
                                     else do
@@ -261,11 +257,9 @@ processCallContext context call_id index from to to_borrow = do
                                         context <- context { function_converter_borrows = function_converter_borrows }
                                         updateOwnership context to (M.Borrower merged)
                             else do
-                                context <- eraseFunctionConverterBorrow context index
                                 context <- debugPrint context "Cannot propagate one of borrows {}, promote {} to owner" % (borrows, to)
                                 updateOwnership context to M.Owner
         None -> do
-            context <- eraseFunctionConverterBorrow context index
             context <- debugPrint context "no callcontext for callid {}" % (index)
             updateOwnership context to M.Owner
 
@@ -282,6 +276,7 @@ addFunctionConverterBorrow context index a b = do
 
 processFunctionConverter :: Context -> C.FunctionConverterConstraint -> Int -> Context
 processFunctionConverter context converter index = do
+    context <- eraseFunctionConverterBorrow context index
     from <- converter.from
     to <- converter.to
     function_converter_borrow_keys <- Map2.put context.function_converter_borrow_keys index converter.call
@@ -293,9 +288,7 @@ processFunctionConverter context converter index = do
         (M.Owner, M.Unknown) -> processCallContext context converter.call index from to None
         (M.Borrower a, M.Borrower b) -> do
             if a == b
-            then do
-                context <- eraseFunctionConverterBorrow context index
-                context
+            then context
             else do
                 (context, can_propagate) <- canPropagateBorrow context to a
                 if can_propagate
@@ -311,9 +304,7 @@ processFunctionConverter context converter index = do
                         context <- context { inference_info = inference_info }
                         context <- addFunctionConverterBorrow context index a id
                         updateOwnership context to (M.Borrower id)
-                else do
-                    context <- eraseFunctionConverterBorrow context index
-                    updateOwnership context to M.Owner
+                else updateOwnership context to M.Owner
         (M.Borrower a, M.Unknown) -> do
             (context, can_propagate) <- canPropagateBorrow context to a
             if can_propagate
@@ -330,9 +321,7 @@ processFunctionConverter context converter index = do
         (M.Unknown, _) if context.allow_guess -> do
             context <- context { allow_guess = False }
             updateOwnership context from to_kind
-        (_, _) -> do
-            context <- eraseFunctionConverterBorrow context index
-            context
+        (_, _) -> context
 
 processFieldAccess :: Context -> C.FieldAccessConstraint -> Context
 processFieldAccess context access = do

@@ -40,7 +40,10 @@ generateStringAdd :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateStringAdd program type_store arg_types result_type = do
     rust_type <- convertType result_type
     new <- "new"
-    new_decl <- R.VarDeclMut new (R.VarRef (getArgName 0)) None
+    value_ref <- if LT.isRef (atIndex arg_types 0)
+    then R.MethodCall (R.VarRef (getArgName 0)) cloneName []
+    else R.VarRef (getArgName 0)
+    new_decl <- R.VarDeclMut new value_ref None
     field_access0 <- R.FieldAccess innerValueField (R.VarRef new)
     field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
     extend_call <- R.MethodCall (field_access0) "push_str" [R.Ref field_access1]

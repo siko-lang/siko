@@ -21,7 +21,7 @@ any (mostly imperative) language (including garbage collected ones).
 Development is happening on the master branch and as long as there are no external contributors it will remain this way.
 The master branch is sometimes broken in various ways.
 
-## Building instructions (try commit 35cddeea28e5393b1021068f38145e41e8c47546 for a full experience)
+## Building instructions
 
 Dependencies: Rust, make, bash, python
 
