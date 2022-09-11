@@ -1,0 +1,31 @@
+module Main where
+
+data Type = Adt String
+          | Record String
+          | Function Type Type
+
+getResultType :: Type -> Type
+getResultType function_type = 
+    case function_type of
+        Function a b -> b
+        _ -> panic "Nope"
+
+data ClosureType = ClosureType Type [Type]
+
+main = do
+    if True
+    then ()
+    else do
+        function_type <- Function (Adt "a") (Record "b")
+        result_type <- getResultType function_type
+        closures <- loop (closure_type, closures)
+                                <- (result_type, []) do
+            if True
+            then do
+                closures <- push closures (ClosureType closure_type)
+                closure_type <- getResultType closure_type
+                (closure_type, closures)
+            else break closures
+        result_type
+        function_type
+        ()

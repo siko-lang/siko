@@ -34,7 +34,7 @@ data Context = { config :: Config,
                  allow_guess :: Bool,
                  function_converter_borrows :: Map2 Int (List2 FunctionConverterBorrow),
                  function_converter_borrow_keys :: Map2 Int E.ExprId,
-                 call_args :: List2 OwnershipTypeVariable } deriving (Move)
+                 call_args :: Map2 E.ExprId (List2 OwnershipTypeVariable) } deriving (Move)
 
 isDebug :: Context -> (Context, Bool)
 isDebug context = do
@@ -162,9 +162,14 @@ processCallContext :: Context -> E.ExprId -> Int -> OwnershipTypeVariable -> Own
 processCallContext context call_id index from to to_borrow = do
     case Map.get context.call_context_map call_id of
         Some call_context_set -> do
-            (context, borrows, owners, unknowns) <- if List2.contains context.call_args from
+            call_args <- case Map2.get context.call_args call_id of
+                Some call_args -> call_args
+                None -> panic "Call args not found for call {}" % call_id
+            (context, borrows, owners, unknowns) <- if List2.contains call_args from
             then do
                 (context, from_kind) <- getOwnershipValue context from
+                args <- context.call_args
+                context <- debugPrint context "using {} from {} as that is a call_arg {}" % (from_kind, from, args)
                 case from_kind of
                     M.Owner -> (context, List2.empty, List2.single from_kind, List2.empty)
                     M.Borrower _ -> (context, List2.single from_kind, List2.empty, List2.empty)
@@ -449,7 +454,7 @@ dumpOwnership context = do
 processConstraints :: Config -> P.Identity -> InferenceInfo -> List2 C.Constraint ->
                       Map2 E.ExprId (List2 E.ExprId) -> Map2 OwnershipTypeVariable (List2 E.ExprId) ->
                       Map2 GroupTypeVariable (List2 E.ExprId) -> Map2 OwnershipTypeVariable (List2 GroupTypeVariable) ->
-                      List2 OwnershipTypeVariable -> Map E.ExprId C.CallContextSet -> InferenceMode -> List2 OwnershipTypeVariable -> InferenceInfo
+                      List2 OwnershipTypeVariable -> Map E.ExprId C.CallContextSet -> InferenceMode -> Map2 E.ExprId (List2 OwnershipTypeVariable) -> InferenceInfo
 processConstraints config function_id inference_info constraints invalid_borrow_map ownership_expr_map 
                     group_expr_map ownership_group_map result_vars call_context_map mode call_args = do
     // println "Invalid borrow map {}" % (invalid_borrow_map)

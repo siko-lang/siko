@@ -38,7 +38,7 @@ data Context = { config :: Config,
                  group_expr_map :: Map2 GroupTypeVariable (List2 E.ExprId),
                  ownership_group_map :: Map2 OwnershipTypeVariable (List2 GroupTypeVariable),
                  call_context_map :: Map E.ExprId C.CallContextSet,
-                 call_args :: List2 OwnershipTypeVariable,
+                 call_args :: Map2 E.ExprId (List2 OwnershipTypeVariable),
                }
 
 addOwnershipConstraint :: Context -> C.Constraint -> Context
@@ -93,7 +93,7 @@ processExpr context expr = do
         E.Multi _ -> context
         E.StaticFunctionCall f_id args -> do
                 context <- List.fold context args processExpr
-                (context, call_context_set) <- List.fold (context, C.CallContextSet List.empty) args (\(context, call_context_set), arg -> do
+                (context, call_context_set, call_args) <- List.fold (context, C.CallContextSet List.empty, List2.empty) args (\(context, call_context_set, call_args), arg -> do
                     E.Expr _ _ id <- arg
                     (context, info) <- getTypeVariableInfoByExprId2 context id
                     //println "{}: {}" % (f_id, info)
@@ -102,8 +102,7 @@ processExpr context expr = do
                     (group_index_map, group_index) <- getGroupIndexOpt inference_info.group_index_map info.arg_group_var
                     inference_info <- inference_info { group_index_map = group_index_map }
                     context <- context { inference_info = inference_info }
-                    call_args <- List2.push context.call_args info.ownership_var
-                    context <- context { call_args = call_args }
+                    call_args <- List2.push call_args info.ownership_var
                     case group_index of
                         Some group_index -> do
                             g_call_context <- List.atIndex context.inference_info.base_call_contexts group_index
@@ -111,8 +110,10 @@ processExpr context expr = do
                             //println "g_call_context: {} {}" % (info, g_call_context)
                             call_contexts <- call_context_set.call_contexts + g_call_context.call_contexts
                             call_context_set <- call_context_set { call_contexts = call_contexts }
-                            (context, call_context_set)
-                        None -> (context, call_context_set))
+                            (context, call_context_set, call_args)
+                        None -> (context, call_context_set, call_args))
+                call_args <- Map2.put context.call_args expr_id call_args
+                context <- context { call_args = call_args }
                 //println "{}: cc {} - {}" % (f_id, expr_id, call_context_set)
                 call_context_map <- Map.put context.call_context_map expr_id call_context_set
                 context <- context { call_context_map = call_context_map }
@@ -270,11 +271,11 @@ collectConstraints :: Config -> P.Identity -> P.Program -> BorrowInfo -> Inferen
                        Map2 OwnershipTypeVariable (List2 GroupTypeVariable),
                        List2 OwnershipTypeVariable,
                        P.Program,
-                       Map E.ExprId C.CallContextSet, List2 OwnershipTypeVariable)
+                       Map E.ExprId C.CallContextSet, Map2 E.ExprId (List2 OwnershipTypeVariable))
 collectConstraints config function_id program borrow_info inference_info body = do
     //trace config "collectConstraints {}" % function_id
     context <- Context config function_id inference_info program borrow_info List2.empty
-               List2.empty Map2.empty Map2.empty Map2.empty Map2.empty Map.empty List2.empty
+               List2.empty Map2.empty Map2.empty Map2.empty Map2.empty Map.empty Map2.empty
     context <- processExpr context body
     E.Expr _ _ body_id <- body
     (context, body_info) <- getTypeVariableInfoByExprId2 context body_id

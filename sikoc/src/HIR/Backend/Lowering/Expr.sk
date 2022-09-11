@@ -400,16 +400,15 @@ processStaticFunctionCall context mir_args function_type function_id arg_count =
             then do
                 diff <- arg_count - current_arg_count
                 result_type <- HT.getResultType function_type current_arg_count
-                (context, closures) <- loop (context, closure_type, arg_types, closures)
-                                                <- (context, result_type, arg_types, []) do
-                    context :: Context <- context // FIXME
+                closures <- loop (closure_type, arg_types, closures)
+                                                <- (result_type, arg_types, []) do
                     if getLength closures < diff
                         then do
                             closures <- push closures (ClosureType closure_type arg_types)
                             first_arg <- HT.getArgsLimited closure_type 1
                             closure_type <- HT.getResultType closure_type 1
-                            (context, closure_type, arg_types + first_arg, closures)
-                        else break (context, closures)
+                            (closure_type, arg_types + first_arg, closures)
+                        else break closures
                 (context, function_id) <- loop (context, closures, next, function_id) <- (context, closures, List.getLength closures, function_id) do
                     next <- next - 1
                     if next == -1
