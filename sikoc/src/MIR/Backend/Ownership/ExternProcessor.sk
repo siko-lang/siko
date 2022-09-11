@@ -135,7 +135,9 @@ createExternFunctionInfo program id function_type type_mapping = do
         args <- List2.push context.args step
         (context { args = args }, index + 1))
     (context, info) <- getInfoForPos context (F.Position [F.FunctionResult])
-    (context, owner_infos) <- List.mapS context type_mapping.owner_positions getInfoForPos
+    (context, owner_infos) <- List.mapS context type_mapping.owner_positions (\context, pos -> do
+        context <- processPos context pos
+        getInfoForPos context pos)
     owner_infos <- List2.toList2 owner_infos
     owner_infos <- List2.map owner_infos (\info -> M.OwnershipInfo info.ownership_var M.Owner)
     context <- context { ownershipinfos = context.ownershipinfos + owner_infos }
