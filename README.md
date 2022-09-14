@@ -13,7 +13,7 @@ theoretically any imperative language would work (or even LLVM/WASM). The langua
 
 ## Current state of the project
 
-Siko is heavily under development and its compiler is self hosted. The error messages are not user friendly/very terse and.
+Siko is heavily under development and its compiler is self hosted. The error messages are not user friendly/very terse.
 The full program analysis is very computation heavy and it is a work in progress to make it quick enough for everyday programming.
 Currently Siko transpiles to Rust but there is nothing Rust specific in the design, it should be possible to transpile it to
 any (mostly imperative) language (including garbage collected ones).
