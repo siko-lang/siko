@@ -1,0 +1,81 @@
+module Siko.MIR.Backend.Ownership.Lowering.LoweringInfo.Normalizer where
+
+import Siko.Config
+import Siko.Trace
+import Siko.MIR.Backend.Ownership.TypeVariableInfo
+import Siko.MIR.Backend.Ownership.MemberInfo as M
+import Siko.MIR.Backend.Ownership.Duplicator
+import Siko.MIR.Backend.Ownership.Lowering.LoweringInfo
+import Siko.MIR.Backend.Ownership.OrderedDependencyMap
+import Siko.MIR.Backend.Ownership.Lowering.Normalizer
+import Siko.MIR.Backend.Ownership.Lowering.LoweringInfo.Singularizer as S
+import Siko.MIR.Backend.Ownership.Allocator as A
+
+import Map
+import Map2
+import Set
+
+import List2 as List2
+import List2 (List2)
+
+instance Duplicable LifetimeDependency where
+    duplicate duplicator dep = do
+        (duplicator, from) <- duplicate duplicator dep.from
+        (duplicator, to) <- duplicate duplicator dep.to
+        (duplicator, LifetimeDependency from to)
+
+normalizeFunctionLoweringInfo :: Config -> FunctionLoweringInfo -> (FunctionLoweringInfo, Duplicator)
+normalizeFunctionLoweringInfo config lowering_info = do
+    //trace config "normalizeFunctionLoweringInfo: input {}" % lowering_info
+    deps_map <- getOrderedDependencyMap lowering_info.members
+    duplicator <- createNormalizer
+    (visited, duplicator) <- processTypeVariableInfo List2.empty deps_map duplicator lowering_info.result
+    (visited, duplicator) <- List2.fold (visited, duplicator) lowering_info.args (\(visited, duplicator), arg -> do
+        processTypeVariableInfo visited deps_map duplicator arg)
+    (duplicator, args) <- List2.mapS duplicator lowering_info.args duplicate
+    (duplicator, result) <- duplicate duplicator lowering_info.result
+    (duplicator, members) <- List2.mapS duplicator lowering_info.members duplicate
+    (duplicator, ownershipinfos) <- List2.mapS duplicator lowering_info.ownershipinfos duplicate
+    ownershipinfos <- List2.filter ownershipinfos (\o -> case o.kind of
+        M.Borrower _ -> True
+        _ -> False)
+    (duplicator, lifetime_dependencies) <- List2.mapS duplicator lowering_info.lifetime_dependencies duplicate
+    members <- members |> List2.sort
+    ownershipinfos <- ownershipinfos |> List2.sort
+    output <- FunctionLoweringInfo members args result ownershipinfos duplicator.allocator lifetime_dependencies
+    //trace config "normalizeFunctionLoweringInfo: output {}" % output
+    (output, duplicator)
+
+normalizeTypeLoweringInfo :: Config -> TypeLoweringInfo -> (TypeLoweringInfo, Duplicator)
+normalizeTypeLoweringInfo config lowering_info = do
+    //trace config "normalizeTypeLoweringInfo: input {}" % lowering_info
+    deps_map <- getOrderedDependencyMap lowering_info.members
+    //trace config "normalizeTypeLoweringInfo: deps_map {}" % deps_map
+    duplicator <- createNormalizer
+    (visited, duplicator) <- processTypeVariableInfo List2.empty deps_map duplicator lowering_info.root
+    (duplicator, root) <- duplicate duplicator lowering_info.root
+    (duplicator, members) <- List2.mapS duplicator lowering_info.members duplicate
+    (duplicator, ownershipinfos) <- List2.mapS duplicator lowering_info.ownershipinfos duplicate
+    ownershipinfos <- List2.filter ownershipinfos (\o -> case o.kind of
+        M.Borrower _ -> True
+        _ -> False)
+    singularizer <- S.createSingularizer
+    members <- members |> List2.sort
+    (singularizer, members) <- S.processMembers singularizer members
+    (singularizer, root) <- S.processOwnerVar singularizer root
+    (singularizer, ownershipinfos) <- S.buildOwnershipinfos singularizer ownershipinfos
+    ownershipinfos <- ownershipinfos |> List2.sort |> List2.dedup
+    before_reset <- duplicator
+    duplicator <- resetBorrows duplicator
+    (duplicator, ownershipinfos) <- List2.mapS duplicator ownershipinfos (\duplicator, ownershipinfo -> do
+        (duplicator, kind) <- duplicate duplicator ownershipinfo.kind
+        (duplicator, ownershipinfo { kind = kind }))
+    ownershipinfos <- ownershipinfos |> List2.sort |> List2.dedup
+    allocator <- duplicator.allocator
+    allocator <- allocator { ownership_type_var = singularizer.allocator.ownership_type_var }
+    inverse_borrows <- duplicator.inverse_borrows
+    inverse_borrows <- Map.map inverse_borrows (\(key, value) -> (key, remapBorrow before_reset value))
+    duplicator <- duplicator { inverse_borrows = inverse_borrows }
+    output <- TypeLoweringInfo members root ownershipinfos allocator
+    //trace config "normalizeTypeLoweringInfo: output {}" % output
+    (output, duplicator)

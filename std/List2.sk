@@ -5,61 +5,147 @@ import Map
 data List2 a = extern
 
 instance (Show a) => Show (List2 a) where
-    show a = extern
+    show l = do
+        subs <- List2.map l show
+        "[" + join subs ", " + "]"
 
 instance (PartialEq a) => PartialEq (List2 a) where
-    opEq a b = extern
+    opEq a :: List2 a -> List2 a -> Bool
+    opEq a b =
+        if getLength a != getLength b
+        then False
+        else do
+            iter_a :: ListIter a <- List2.iter a
+            iter_b :: ListIter a <- List2.iter b
+            loop zipper <- Iterator.zip iter_a iter_b do
+                zipper :: IteratorZip (ListIter a) (ListIter a) <- zipper // FIXME
+                (zipper, item) <- Iterator.next zipper
+                case item of
+                    Some (item_a, item_b) ->
+                        if item_a != item_b
+                        then break False
+                        else zipper
+                    None -> break True
 
 instance (Eq a) => Eq (List2 a)
 
 instance (PartialOrd a) => PartialOrd (List2 a) where
-    partialCmp a b = extern
+    partialCmp a :: List2 a -> List2 a -> Option Ordering
+    partialCmp a b = do
+        len_a <- getLength a
+        len_b <- getLength b
+        if len_a != len_b
+        then partialCmp len_a len_b
+        else do
+            iter_a :: ListIter a <- List2.iter a
+            iter_b :: ListIter a <- List2.iter b
+            loop zipper <- Iterator.zip iter_a iter_b do
+                zipper :: IteratorZip (ListIter a) (ListIter a) <- zipper // FIXME
+                (zipper, item) <- Iterator.next zipper
+                case item of
+                    Some (item_a, item_b) ->
+                        case partialCmp item_a item_b of
+                            Some Equal -> zipper
+                            e -> break e
+                    None -> break (Some Equal)
 
 instance (Ord a) => Ord (List2 a) where
-    cmp a b = extern
+    cmp a :: List2 a -> List2 a -> Ordering
+    cmp a b = do
+        len_a <- getLength a
+        len_b <- getLength b
+        if len_a != len_b
+        then cmp len_a len_b
+        else do
+            iter_a :: ListIter a <- List2.iter a
+            iter_b :: ListIter a <- List2.iter b
+            loop zipper <- Iterator.zip iter_a iter_b do
+                zipper :: IteratorZip (ListIter a) (ListIter a) <- zipper // FIXME
+                (zipper, item) <- Iterator.next zipper
+                case item of
+                    Some (item_a, item_b) ->
+                        case cmp item_a item_b of
+                            Equal -> zipper
+                            e -> break e
+                    None -> break Equal
 
-instance Add (List2 a) where
-    opAdd a b = extern
+instance Add List2 a where
+    opAdd a b = addList a b
 
+cmpList a :: List2 a -> List2 a -> ~Ordering
+cmpList a b = extern
+
+addList a :: List2 a -> List2 a -> ~List2 a
+addList a b = extern
+
+@Inline
 empty a :: List2 a
 empty = withCapacity 0
 
-push a :: List2 a -> a -> List2 a
-push l item = extern
-
+@Inline
 single a :: a -> List2 a
 single item = do
     l <- List2.empty
     push l item
 
+push a :: List2 a -> a -> ~List2 a
+push l item = extern (arg[1] -> result.e[0],
+                      arg[0].e[0] == result.e[0])
+
+withCapacity a :: Int -> ~List2 a
+withCapacity capacity = extern
+
+atIndex a :: List2 a -> Int -> a
+atIndex index l = extern (arg[0].e[0] -> result)
+
+data ListIter a = { inner :: ListIterator a }
+
+instance Iterator (ListIter a) > a where
+    next iter = do
+        (inner, item) <- List2.nextItem iter.inner
+        iter <- iter { inner = inner }
+        case item of
+            Some a -> (iter, Some a)
+            None -> (iter, None)
+
+@Inline
+iter it a :: List2 a -> ListIter a
+iter l = ListIter (List2.intoIter l)
+
+data ListIterator a = extern (implicit)
+
+intoIter a :: List2 a -> ~ListIterator a
+intoIter list = extern (arg[0] -> result.i[0])
+
+nextItem a :: ListIterator a -> ~(~ListIterator a, ~Option a)
+nextItem iter = extern (arg[0].i[0].e[0] -> result.f[1].v[0].f[0], 
+                        arg[0].i[0] == result.f[0].i[0],
+                        arg[0].i[0].e[0] == result.f[0].i[0].e[0])
+
+@Inline
+toList it a :: (Iterator it > a) => it -> List2 a
+toList iter = Iterator.fold (\list, item -> push list item) List2.empty iter
+
+@Inline
 removeLast a :: List2 a -> (a, List2 a)
 removeLast list = do
     i <- List2.getLength list
     List2.remove list (i - 1)
 
-withCapacity a :: Int -> List2 a
-withCapacity capacity = extern
-
-atIndex a :: List2 a -> Int -> a
-atIndex index l = extern
-
-iter a :: List2 a -> Iterator a
-iter l = extern
-
-toList a :: Iterator a -> List2 a
-toList i = extern
-
-getLength a :: List2 a -> Int
+getLength a :: List2 a -> ~Int
 getLength l = extern
 
-isEmpty a :: List2 a -> Bool
+isEmpty a :: List2 a -> ~Bool
 isEmpty l = extern
 
+@Inline
 contains a :: (PartialEq a) => List2 a -> a -> Bool
-contains l i = extern
+contains l i = do
+    isSome (containsAtIndex l i)
 
+@Inline
 containsAtIndex a :: (PartialEq a) => List2 a -> a -> Option Int
-containsAtIndex l i =
+containsAtIndex l i = do
     loop index <- 0 do
         if index >= getLength l
         then break None
@@ -69,21 +155,20 @@ containsAtIndex l i =
             then break Some index
             else index + 1
 
+@Inline
 find a :: List2 a -> (a -> Bool) -> Option a
 find l f = do
     loop index <- 0 do
-            if index >= getLength l
-                then
-                    return None
-                else
-                    do
-                    e <- atIndex l index
-                    if f e
-                        then
-                            return Some e
-                        else
-                            index + 1
+        if index >= getLength l
+        then break None
+        else
+            do
+            e <- atIndex l index
+            if f e
+            then break Some e
+            else index + 1
 
+@Inline
 join a :: (Show a) => List2 a -> String -> String
 join items separator = do
     len <- getLength items
@@ -96,32 +181,39 @@ join items separator = do
             (total, index + 1)) ("", 0)
     s
 
+@Inline
 head a :: List2 a -> Option a
 head l = if isEmpty l then None else Some (atIndex l 0)
 
 tail a :: List2 a -> Option (List2 a)
-tail l = extern
+tail l = if isEmpty l
+         then None
+         else do
+            (_, rest) <- List2.remove l 0
+            Some rest
 
-remove a :: List2 a -> Int -> (a, List2 a)
+remove a :: ~List2 a -> ~Int -> ~(a, ~List2 a)
 remove l index = extern
 
-pop a :: List2 a -> Option(a, List2 a)
+@Inline
+pop a :: List2 a -> Option (a, List2 a)
 pop l = if isEmpty l
         then None
         else Some (List2.remove l 0)
 
-sort a :: (Ord a) => List2 a -> List2 a
+sort a :: (Ord a) => ~List2 a -> ~List2 a
 sort l = extern
 
-dedup a :: (PartialEq a) => List2 a -> List2 a
+dedup a :: (PartialEq a) => ~List2 a -> ~List2 a
 dedup l = extern
 
-write a :: List2 a -> Int -> a -> List2 a
+write a :: ~List2 a -> ~Int -> a -> ~List2 a
 write l index item = extern
 
-split a :: List2 a -> Int -> (List2 a, List2 a)
+split a :: ~List2 a -> ~Int -> ~(~List2 a, ~List2 a)
 split l n = extern
 
+@Inline
 zipS s a b :: s -> List2 a -> List2 b -> (s -> a -> b -> s) -> s
 zipS s l1 l2 f = do
     if getLength l1 != getLength l2
@@ -136,6 +228,7 @@ zipS s l1 l2 f = do
                 s <- f s item1 item2
                 (s, index + 1)
 
+@Inline
 zipSE s a b :: s -> List2 a -> List2 b -> (s -> Int -> a -> b -> s) -> s
 zipSE s l1 l2 f = do
     if getLength l1 != getLength l2
@@ -150,17 +243,14 @@ zipSE s l1 l2 f = do
                 s <- f s index item1 item2
                 (s, index + 1)
 
+@Inline
 mapS s a b :: s -> List2 a -> (s -> a -> (s, b)) -> (s, List2 b)
-mapS s l f =
-    loop (result, s, index) <- (List2.withCapacity (List2.getLength l), s, 0) do
-        if index >= List2.getLength l
-        then break (s, result)
-        else do
-            i <- atIndex l index
-            (s, i) <- f s i
-            (List2.push result i, s, index + 1)
+mapS s l f = do
+    l |> List2.iter |> Iterator.fold (\(s, items), i -> do
+        (s, i) <- f s i
+        (s, push items i)) (s, withCapacity (getLength l))
 
-
+@Inline
 mapSE s a b :: s -> List2 a -> (s -> Int -> a -> (s, b)) -> (s, List2 b)
 mapSE s l f = do
     (s, index, l) <- l |> List2.iter |> Iterator.fold (\(s, index, items), i -> do
@@ -168,6 +258,7 @@ mapSE s l f = do
         (s, index + 1, push items i)) (s, 0, withCapacity (getLength l))
     (s, l)
 
+@Inline
 mapE a b :: List2 a -> (Int -> a -> b) -> List2 b
 mapE l f = do
     (index, l) <- l |> List2.iter |> Iterator.fold (\(index, items), i -> do
@@ -175,6 +266,7 @@ mapE l f = do
         (index + 1, push items i)) (0, withCapacity (getLength l))
     l
 
+@Inline
 foldE a b :: (a -> Int -> b -> a) -> a -> List2 b -> a
 foldE f s l = do
     (s, i) <- l |> List2.iter |> Iterator.fold (\(s, index), i -> do
@@ -182,15 +274,11 @@ foldE f s l = do
         (s, index + 1)) (s, 0)
     s
 
+@Inline
 fold s a :: s -> List2 a -> (s -> a -> s) -> s
-fold init input f = loop (result, index) <- (init, 0) do
-    if index >= List2.getLength input
-    then break result
-    else do
-        elem <- List2.atIndex input index
-        result <- f result elem
-        (result, index + 1)
+fold init list f = list |> List2.iter |> Iterator.fold f init
 
+@Inline
 foldLinear s a :: s -> List2 a -> (s -> a -> s) -> (List2 a, s)
 foldLinear init input f = loop (result, index) <- (init, 0) do
     if index >= List2.getLength input
@@ -200,22 +288,15 @@ foldLinear init input f = loop (result, index) <- (init, 0) do
         result <- f result elem
         (result, index + 1)
 
+@Inline
 map a b :: List2 a -> (a -> b) -> List2 b
-map input f = loop (result, index) <- (List2.withCapacity (getLength input), 0) do
-    if index >= getLength input
-    then break result
-    else (List2.push result (f (atIndex input index) ), index + 1)
+map input f = input |> List2.iter |> Iterator.map f |> toList
 
+@Inline
 filter a :: List2 a -> (a -> Bool) -> List2 a
-filter input f = loop (result, index) <- (List2.withCapacity (List2.getLength input), 0) do
-    if index >= List2.getLength input
-    then break result
-    else do
-        elem <- List2.atIndex input index
-        if f elem
-        then (List2.push result elem, index + 1)
-        else (result, index + 1)
+filter list f = list |> List2.iter |> Iterator.filter f |> toList
 
+@Inline
 filterS s a :: s -> List2 a -> (s -> a -> (s, Bool)) -> (s, List2 a)
 filterS state input f = loop (state, result, index) <- (state, List2.withCapacity (List2.getLength input), 0) do
     if index >= List2.getLength input
@@ -227,18 +308,21 @@ filterS state input f = loop (state, result, index) <- (state, List2.withCapacit
         then (state, List2.push result elem, index + 1)
         else (state, result, index + 1)
 
+@Inline
 foldM a k v :: (Ord k) => Map k v -> List2 a -> (a -> (k, v)) -> Map k v
 foldM init list f = List2.fold init list (\m, item -> do
     (k, v) <- f item
     (m, _) <- Map.insert m k v
     m)
 
+@Inline
 filterMap a b :: List2 a -> (a -> Option b) -> List2 b
 filterMap list f = List2.fold (withCapacity (getLength list)) list (\all, item -> do
     case f item of
         Some item -> push all item
         None -> all)
 
+@Inline
 filterMapS s a b :: s -> List2 a -> (s -> a -> (s, Option b)) -> (s, List2 b)
 filterMapS s list f = List2.fold (s, List2.empty) list (\(s, all), item -> do
     (s, r) <- f s item
@@ -246,35 +330,40 @@ filterMapS s list f = List2.fold (s, List2.empty) list (\(s, all), item -> do
         Some item -> (s, List2.push all item)
         None -> (s, all))
 
+@Inline
 repeat a :: a -> Int -> List2 a
 repeat item count = do
-    (items, _) <- loop (items, c) <- (List2.empty, 0) do
+    (items, _) <- loop (items, c) <- (withCapacity count, 0) do
                 if c < count
-                then (push items item, c + 1)
-                else break (items, 0)
+                    then (push items item, c + 1) else break (items, 0)
     items
 
 repeatS s a :: s -> (s -> (s, a)) -> Int -> (s, List2 a)
 repeatS state fn count = do
-    loop (state, items, c) <- (state, List2.empty, 0) do
+    loop (state, items, c) <- (state, withCapacity count, 0) do
         if c < count
             then do
                 (state, item) <- fn state
                 (state, push items item, c + 1)
             else return (state, items)
 
+@Inline
 flatten a :: List2 (List2 a) -> List2 a
 flatten lists = List2.fold List2.empty lists (\s, l -> s + l)
 
+@Inline
 updateAll a :: List2 a -> (a -> a) -> List2 a
-updateAll input f = extern
+updateAll input f = List2.map input f
 
+@Inline
 updateAllS s a :: s -> List2 a -> (s -> a -> (s, a)) -> (s, List2 a)
-updateAllS s input f = extern
+updateAllS s input f = List2.mapS s input f
 
+@Inline
 updateSpecifics a :: (PartialEq a) => List2 a -> a -> a -> List2 a
-updateSpecifics list from to = extern
+updateSpecifics list from to = List2.updateAll list (\i -> if i == from then to else i)
 
+@Inline
 toList2 a :: [a] -> List2 a
 toList2 l = List.fold List2.empty l (\xs, x -> List2.push xs x)
 

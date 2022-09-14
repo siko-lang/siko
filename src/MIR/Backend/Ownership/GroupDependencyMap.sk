@@ -1,0 +1,78 @@
+module Siko.MIR.Backend.Ownership.GroupDependencyMap where
+
+import Set
+import Siko.Trace
+import Siko.Config
+
+import Siko.MIR.Backend.Ownership.MemberInfo
+import Siko.MIR.Backend.Ownership.TypeVariableInfo
+import Siko.Util.DependencyProcessorLinear
+
+import Map2
+import List2 as List2
+import List2 (List2)
+
+calculateDepsForGroup :: Map2 GroupTypeVariable (List2 GroupTypeVariable)
+                         -> Map2 GroupTypeVariable (List2 GroupTypeVariable)
+                         -> List2 GroupTypeVariable
+                         -> Map2 GroupTypeVariable (List2 GroupTypeVariable)
+calculateDepsForGroup group_dep_map deps_map group = do
+    group_vars <- List2.empty
+    group_vars <- loop (group_vars, index) <- (group_vars, 0) do
+        if index >= List2.getLength group
+        then break group_vars
+        else do
+            item <- List2.atIndex group index
+            group_vars <- collectDepsForGroupVar group deps_map group_dep_map group_vars item
+            (group_vars, index + 1)
+    group_dep_map <- loop (group_dep_map, index) <- (group_dep_map, 0) do
+            if index >= List2.getLength group
+            then break group_dep_map
+            else do
+                item <- List2.atIndex group index
+                group_dep_map <- Map2.put group_dep_map item group_vars
+                (group_dep_map, index + 1)
+    group_dep_map
+
+collectDepsForGroupVar :: List2 GroupTypeVariable
+                          -> Map2 GroupTypeVariable (List2 GroupTypeVariable)
+                          -> Map2 GroupTypeVariable (List2 GroupTypeVariable)
+                          -> List2 GroupTypeVariable
+                          -> GroupTypeVariable
+                          -> List2 GroupTypeVariable
+collectDepsForGroupVar group deps_map group_dep_map group_vars item =
+    case Map2.get deps_map item of
+        Some deps -> do
+            loop (group_vars, index) <- (group_vars, 0) do
+                if index >= List2.getLength deps
+                then break group_vars
+                else do
+                    dep <- List2.atIndex deps index
+                    group_vars <- List2.push group_vars dep
+                    group_vars <- case Map2.get group_dep_map dep of
+                        Some deps_group_vars -> group_vars + deps_group_vars
+                        None -> if List2.contains group item
+                                then group_vars
+                                else panic "Dep not found in group_dep_map"
+                    (group_vars, index + 1)
+        None -> panic "Dep not found in deps map"
+
+calculateGroupDepMap :: Config -> List2 MemberInfo -> (Map2 GroupTypeVariable (List2 GroupTypeVariable),
+                                                       Map2 GroupTypeVariable (List2 GroupTypeVariable),
+                                                       List2 (DependencyGroup GroupTypeVariable))
+calculateGroupDepMap config members = do
+    //trace config "calculateGroupDepMap: start ({})" % (List2.getLength members)
+    deps_map <- getGroupDependencyMap members
+    //trace config "calculateGroupDepMap: got deps_map"
+    groups <- processDependencies config deps_map
+    //trace config "calculateGroupDepMap: got groups {}" % (List2.getLength groups)
+    group_dep_map <- Map2.empty
+    group_dep_map <- loop (group_dep_map, index) <- (group_dep_map, 0) do
+        if index >= List2.getLength groups
+        then break group_dep_map
+        else do
+            group <- List2.atIndex groups index
+            group_dep_map <- calculateDepsForGroup group_dep_map deps_map group.items
+            (group_dep_map, index + 1)
+    //trace config "calculateGroupDepMap: done"
+    (group_dep_map, deps_map, groups)

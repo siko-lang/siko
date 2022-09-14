@@ -1,0 +1,23 @@
+
+module Siko.MIR.Backend.Ownership.OrderedDependencyMap where
+
+import Siko.MIR.Backend.Ownership.TypeVariableInfo
+import Siko.MIR.Backend.Ownership.MemberInfo as M
+
+import Map
+import Map2
+
+import List2 as List2
+import List2 (List2)
+
+data DepMapEntry = DepMapEntry M.MemberKind TypeVariableInfo deriving (PartialEq, Eq, PartialOrd, Ord)
+
+getOrderedDependencyMap :: List2 M.MemberInfo -> Map2 GroupTypeVariable (List2 TypeVariableInfo)
+getOrderedDependencyMap members = do
+    deps_map <- List2.fold Map2.empty members (\deps_map, m ->
+        Map2.add deps_map m.root (DepMapEntry m.kind m.info))
+    deps_map <- Map2.map deps_map (\(k, entries) -> do
+        entries <- List2.sort entries
+        entries <- List2.map entries (\DepMapEntry kind info -> info)
+        (k, entries))
+    deps_map

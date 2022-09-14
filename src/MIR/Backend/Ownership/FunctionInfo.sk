@@ -1,0 +1,70 @@
+module Siko.MIR.Backend.Ownership.FunctionInfo(FunctionInfo(..), normalizeFunctionInfo, enforceUnknownArgOwnership, duplicateFunctionInfo) where
+
+import Siko.MIR.Backend.Ownership.InferenceInfo
+import Siko.MIR.Backend.Ownership.TypeVariableInfo
+import Siko.MIR.Backend.Ownership.Allocator
+import Siko.MIR.Backend.Ownership.MemberInfo as M
+import Siko.MIR.Backend.Ownership.Duplicator
+import Siko.MIR.Backend.Ownership.EqualitySolver
+import Siko.MIR.Backend.Ownership.OrderedDependencyMap
+import Siko.MIR.Backend.Ownership.Lowering.Normalizer
+import Siko.MIR.Backend.Ownership.Converter
+
+import Map
+import List2 as List2
+import List2 (List2)
+
+data FunctionInfo = { args :: List2 TypeVariableInfo,
+                      result :: TypeVariableInfo,
+                      members :: List2 M.MemberInfo,
+                      converters :: List2 Converter,
+                      ownershipinfos :: List2 M.OwnershipInfo,
+                    } deriving (PartialEq, Eq, Show)
+
+normalizeFunctionInfo :: FunctionInfo -> FunctionInfo
+normalizeFunctionInfo function_info = do
+    deps_map <- getOrderedDependencyMap function_info.members
+    duplicator <- createNormalizer
+    (visited, duplicator) <- processTypeVariableInfo List2.empty deps_map duplicator function_info.result
+    (visited, duplicator) <- List2.fold (visited, duplicator) function_info.args (\(visited, duplicator), arg -> do
+        processTypeVariableInfo visited deps_map duplicator arg)
+    (duplicator, args) <- List2.mapS duplicator function_info.args duplicate
+    (duplicator, result) <- duplicate duplicator function_info.result
+    (duplicator, members) <- List2.mapS duplicator function_info.members duplicate
+    (duplicator, converters) <- List2.mapS duplicator function_info.converters duplicate
+    (duplicator, ownershipinfos) <- List2.mapS duplicator function_info.ownershipinfos duplicate
+    members <- members |> List2.sort
+    ownershipinfos <- ownershipinfos |> List2.sort
+    FunctionInfo args result members converters ownershipinfos
+
+enforceUnknownArgOwnership :: FunctionInfo -> FunctionInfo
+enforceUnknownArgOwnership function_info = do
+    arg_ownership_vars <- List2.fold List2.empty function_info.args (\arg_ownership_vars, info -> List2.push arg_ownership_vars info.ownership_var)
+    ownershipinfos <- List2.map function_info.ownershipinfos (\info -> if List2.contains arg_ownership_vars info.var then info { kind = M.Unknown } else info)
+    ownershipinfos <- ownershipinfos |> List2.sort
+    function_info { ownershipinfos = ownershipinfos }
+
+duplicateFunctionInfo :: Allocator -> FunctionInfo -> (Allocator, FunctionInfo)
+duplicateFunctionInfo allocator function_info = do
+    duplicator <- createDuplicator allocator
+    (duplicator, args) <- List2.mapS duplicator function_info.args duplicate
+    (duplicator, result) <- duplicate duplicator function_info.result
+    (duplicator, members) <- List2.mapS duplicator function_info.members duplicate
+    (duplicator, converters) <- List2.mapS duplicator function_info.converters duplicate
+    (duplicator, ownershipinfos) <- List2.mapS duplicator function_info.ownershipinfos duplicate
+    (duplicator.allocator, FunctionInfo args result members converters ownershipinfos)
+
+instance Apply FunctionInfo where
+    apply applier function_info = do
+        (applier, args) <- apply applier function_info.args
+        (applier, result) <- apply applier function_info.result
+        (applier, members) <- apply applier function_info.members
+        (applier, converters) <- apply applier function_info.converters
+        (applier, ownershipinfos) <- apply applier function_info.ownershipinfos
+        members <- List2.dedup (List2.sort members)
+        converters <- List2.dedup (List2.sort converters)
+        function_info <- FunctionInfo args result members converters ownershipinfos
+        (applier, function_info)
+
+instance MemberOwner FunctionInfo where
+    getMembers function_info = function_info.members

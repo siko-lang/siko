@@ -1,26 +1,16 @@
-rust_sikoc:
-	@build/build_rust_sikoc.sh
+stage0: bootstrap/source.rs
+	@rustc bootstrap/source.rs -O -o stage0
 
-stage0: rust_sikoc $(shell find sikoc/src -type f)
-	@build/build_stage0.sh
-
-stage1: stage0 $(shell find sikoc/src -type f)
+stage1: stage0 $(shell find src -type f)
 	@build/build_stage1.sh
 
-stage2: stage1 $(shell find sikoc/src -type f)
+stage2: stage1 $(shell find src -type f)
 	@build/build_stage2.sh
 
-stage0_test: stage0
-	@./tests stage0
-
-stage1_test: stage1
+test: stage1
 	@./tests stage1
 
-minimal:
-	@sikoc/rr
-
 clean:
-	@rm -f rust_sikoc
 	@rm -f stage0
 	@rm -f stage1
 	@rm -f stage2

@@ -1,0 +1,116 @@
+module Siko.MIR.Program where
+
+import Siko.MIR.Function as F
+import Siko.MIR.Data as D
+import Siko.MIR.Type
+import Siko.Constants
+import Siko.Config
+import Map
+import Siko.Util.SharedString as SS
+
+getMainIdentity :: Identity
+getMainIdentity = Identity (SS.get getMainModuleName) (SS.get getMainFunctionName) 0
+
+isDebugged :: Config -> Identity -> Bool
+isDebugged config id = if List.isEmpty config.mir_functions
+                       then False
+                       else List.contains config.mir_functions (show id)
+
+data Identity = { module_name :: String, name :: String, index :: Int } deriving (PartialEq, Eq, PartialOrd, Ord)
+
+data Program = { functions :: Map Identity F.Function,
+                 adts :: Map Identity D.AlgebraicDataType,
+                 records :: Map Identity D.Record,
+                 unit_type :: Option Type,
+                 copyables :: [Identity],
+                 noncopyables :: [Identity] } deriving (Move)
+
+createProgram :: Program
+createProgram = Program empty empty empty None [] []
+
+addFunction :: Program -> Identity -> F.Function -> Program
+addFunction program function_id function = do
+    (functions, _) <- insert program.functions function_id function
+    program { functions = functions }
+
+getUnitType :: Program -> Type
+getUnitType program = Option.unwrap program.unit_type
+
+getFunction :: Program -> Identity -> F.Function
+getFunction program function_id = case get program.functions function_id of
+    Some function -> function
+    None -> panic "MIR Function not found {}" % function_id
+
+getAdt :: Program -> Identity -> D.AlgebraicDataType
+getAdt program adt_id = case get program.adts adt_id of
+    Some adt -> adt
+    None -> panic "MIR Adt not found {}" % adt_id
+
+getRecord :: Program -> Identity -> D.Record
+getRecord program record_id = case get program.records record_id of
+    Some record -> record
+    None -> panic "MIR Record not found {}" % record_id
+
+getAdtOrRecord :: Program -> Identity -> Either D.AlgebraicDataType D.Record
+getAdtOrRecord program id = case get program.adts id of
+    Some adt -> Left adt
+    None -> case get program.records id of
+        Some record -> Right record
+        None -> panic "MIR id is not adt or record {}" % id
+
+updateRecordFields :: Program -> Identity -> [D.RecordField] -> Program
+updateRecordFields program record_id fields = do
+    (records, _) <- alter (\r -> case r of
+                Some r -> Some r { fields = fields }
+                None -> panic "Record not found during field update"
+            ) record_id program.records
+    program { records = records }
+
+updateRecordAttributes :: Program -> Identity -> [D.Attribute] -> Program
+updateRecordAttributes program record_id attributes = do
+    (records, _) <- alter (\r -> case r of
+                Some r -> do
+                    r :: D.Record <- r // FIXME
+                    Some r { attributes = attributes }
+                None -> panic "Record not found during attribute update"
+            ) record_id program.records
+    program { records = records }
+
+updateAdtAttributes :: Program -> Identity -> [D.Attribute] -> Program
+updateAdtAttributes program adt_id attributes = do
+    (adts, _) <- alter (\a -> case a of
+                Some a -> do
+                    a :: D.AlgebraicDataType <- a // FIXME
+                    Some a { attributes = attributes }
+                None -> panic "Adt not found during attribute update"
+            ) adt_id program.adts
+    program { adts = adts }
+
+updateFunctionKind :: Program -> Identity -> F.FunctionKind -> Program
+updateFunctionKind program function_id kind = do
+    (functions, _) <- alter (\f -> case f of
+                Some f -> Some f { kind = kind }
+                None -> panic "Function not found during kind update"
+            ) function_id program.functions
+    program { functions = functions }
+
+updateFunctionType :: Program -> Identity -> F.FunctionType -> Program
+updateFunctionType program function_id type = do
+    (functions, _) <- alter (\f -> case f of
+                Some f -> do
+                    f :: F.Function <- f // FIXME
+                    Some f { type = type }
+                None -> panic "Function not found during type update"
+            ) function_id program.functions
+    program { functions = functions }
+
+dump :: Program -> String
+dump program = do
+    s <- ""
+    s <- program.adts |> Map.iter |> Iterator.fold (\s, (id, adt) -> do
+        s + D.dumpAdt adt + "\n\n") s
+    s <- program.records |> Map.iter |> Iterator.fold (\s, (id, record) -> do
+        s + D.dumpRecord record + "\n\n") s
+    s <- program.functions |> Map.iter |> Iterator.fold (\s, (id, f) -> do
+        s + F.dump f + "\n\n") s
+    s

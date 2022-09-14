@@ -1,12 +1,26 @@
 module Rc where
 
-data Rc a = { value :: a } deriving (PartialEq, Eq, PartialOrd, Ord)
+data Rc a = extern
 
-create a :: a -> Rc a
-create item = Rc item
+create a :: a -> ~Rc ~a
+create item = extern
 
 get a :: Rc a -> a
-get rc = rc.value
+get rc = extern (arg[0] -> result)
 
 instance (Show a) => Show Rc a where
     show a = show (get a)
+
+instance (PartialEq a) => PartialEq Rc a where
+    opEq a :: Rc a -> Rc a -> Bool
+    opEq a b = opEq (get a) (get b)
+
+instance (Eq a) => Eq Rc a
+
+instance (PartialOrd a) => PartialOrd Rc a where
+    partialCmp a :: Rc a -> Rc a -> Option Ordering
+    partialCmp a b = partialCmp (get a) (get b)
+
+instance (Ord a) => Ord Rc a where
+    cmp a :: Rc a -> Rc a -> Ordering
+    cmp a b = cmp (get a) (get b)

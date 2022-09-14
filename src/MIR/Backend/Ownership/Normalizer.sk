@@ -1,0 +1,29 @@
+module Siko.MIR.Backend.Ownership.Lowering.Normalizer where
+
+import Siko.MIR.Backend.Ownership.TypeVariableInfo
+import Siko.MIR.Backend.Ownership.Duplicator
+import Siko.MIR.Backend.Ownership.OrderedDependencyMap
+
+import Map
+import Map2
+
+import List2 as List2
+import List2 (List2)
+
+processTypeVariableInfo :: List2 GroupTypeVariable ->
+                           Map2 GroupTypeVariable (List2 TypeVariableInfo) -> Duplicator -> TypeVariableInfo ->
+                           (List2 GroupTypeVariable, Duplicator)
+processTypeVariableInfo visited deps_map duplicator info = do
+    (duplicator, new_info) <- duplicate duplicator info
+    //println "processTypeVariableInfo: info {} new info {}" % (info, new_info)
+    if List2.contains visited info.arg_group_var
+    then (visited, duplicator)
+    else do
+        visited <- List2.push visited info.arg_group_var
+        (visited, duplicator) <- case Map2.get deps_map info.arg_group_var of
+            Some deps -> do
+                //println "processTypeVariableInfo: deps {}" % deps
+                List2.fold (visited, duplicator) deps (\(visited, duplicator), info ->
+                    processTypeVariableInfo visited deps_map duplicator info)
+            None -> (visited, duplicator)
+        (visited, duplicator)

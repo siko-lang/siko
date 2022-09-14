@@ -8,14 +8,13 @@ Siko is an imperative, statically typed, runtime agnostic programming language t
 It should be possible to write most algorithms in Siko without thinking/worrying about the target
 environment much and it should just work. Siko does not have a runtime, all its features are compile time.
 It does full program type inference, compile time effects and whole program ownership inference.
-It should be at least as fast as its target language. Currently only Rust is supported as a target language, theoretically any imperative language would work (or even LLVM/WASM). The language currently has a Haskell like syntax.
+It should be at least as fast as its target language. Currently only Rust is supported as a target language,
+theoretically any imperative language would work (or even LLVM/WASM). The language currently has a Haskell like syntax.
 
 ## Current state of the project
 
-Siko is heavily under development and its compiler is self hosted. There is also a compiler written in Rust but that one is very simple and does NOT contain the interesting bits (effect handling and ownership inference).
-The Siko compiler written in Siko is much smarter and contains most of the features but not fully tested and contain bugs and the error messages are not user friendly/very terse. The full program analysis is very computation heavy and the code generated
-by the bootstrapping (Rust) compiler is very dumb, so the source code of the Siko compiler contains various workarounds to hack around it.
-When the Siko compiler is feature complete enough to fully replace the its original compiler, these workarounds/hacks can be removed.
+Siko is heavily under development and its compiler is self hosted. The error messages are not user friendly/very terse and.
+The full program analysis is very computation heavy and it is a work in progress to make it quick enough for everyday programming.
 Currently Siko transpiles to Rust but there is nothing Rust specific in the design, it should be possible to transpile it to
 any (mostly imperative) language (including garbage collected ones).
 Development is happening on the master branch and as long as there are no external contributors it will remain this way.
@@ -25,12 +24,7 @@ The master branch is sometimes broken in various ways.
 
 Dependencies: Rust, make, bash, python
 
-Building the compiler written in Rust
-```
-make rust_sikoc
-```
-
-Building stage0 (the Siko compiler built by the compiler written in Rust, this compiler is very slow)
+Building the compiler from the generated Rust code
 ```
 make stage0
 ```
@@ -43,6 +37,11 @@ make stage1
 Building stage2 (the Siko compiler built by stage1, should be identical to stage1)
 ```
 make stage2
+```
+
+Run tests
+```
+make test
 ```
 
 ## Documentation

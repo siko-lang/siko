@@ -20,7 +20,7 @@ step :: LexerState -> LexerState
 step state = state { index = state.index + 1 }
 
 addToken :: LexerState -> Token -> LexerState
-addToken state token = state { tokens = push state.tokens token }
+addToken state token = state { tokens = state.tokens + [token] }
 
 consumeSingle :: LexerState -> Token -> LexerState
 consumeSingle state token = do
@@ -85,7 +85,6 @@ processNextChar state = do
 lex :: String -> Result [Token] Error
 lex input = do
     cs <- String.chars input
-    println "Chars {}" % (getLength cs)
     state <- emptyState cs
     state <- loop state <- state do
         if not (isDone state)
