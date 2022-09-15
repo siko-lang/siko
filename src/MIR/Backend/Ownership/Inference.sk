@@ -23,6 +23,7 @@ import Siko.MIR.Backend.Ownership.TypeVariableInfo
 import Siko.MIR.Backend.Ownership.MemberInfo as M
 import Siko.MIR.Backend.Ownership.Inference.ConstraintCollection
 import Siko.MIR.Backend.Ownership.Inference.ConstraintProcessor
+import Siko.MIR.Backend.Ownership.Converter
 import Siko.MIR.Backend.Ownership.DumpOwnership
 import Siko.MIR.Backend.Ownership.DataGroupInfo
 
@@ -121,7 +122,8 @@ processFunction context group inference_info function_id = do
                     inference_info <- processEqualities context.config equals inference_info context.program
                     inference_info <- updateOwnershipDepMap context.config inference_info
                     inference_info <- createBaseCallContexts context.config inference_info
-                    inference_info <- createFunctionInfoBase context.config inference_info function_id
+                    converter_merge_info_base <- createConverterMergeInfoBase context.config inference_info.converters
+                    inference_info <- createFunctionInfoBase context.config inference_info function_id converter_merge_info_base
                     (context, inference_info)
             //trace context.config "checkBorrows {}" % function_id
             borrow_info <- checkBorrows info.body
@@ -198,8 +200,9 @@ processFunctionGroup index group_count context group = do
                         _ -> panic "Groupped function is not normal!")
             inference_info <- processEqualities context.config equals inference_info context.program
             config <- context.config
+            converter_merge_info_base <- createConverterMergeInfoBase config inference_info.converters
             inference_info <- List.fold inference_info group
-                (\inference_info, function_id -> createFunctionInfoBase config inference_info function_id)
+                (\inference_info, function_id -> createFunctionInfoBase config inference_info function_id converter_merge_info_base)
             inference_info <- updateOwnershipDepMap config inference_info
             inference_info <- createBaseCallContexts config inference_info
             inference_info

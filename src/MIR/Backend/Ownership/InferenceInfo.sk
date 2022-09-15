@@ -328,8 +328,8 @@ getTypeVariableInfoByVar inference_info var function_id = do
         Some i -> i
         None -> panic "TypeVariableInfo not found for var {}" % var
 
-createFunctionInfoBase :: Config -> InferenceInfo -> P.Identity -> InferenceInfo
-createFunctionInfoBase config inference_info function_id = do
+createFunctionInfoBase :: Config -> InferenceInfo -> P.Identity -> ConverterMergeInfoBase -> InferenceInfo
+createFunctionInfoBase config inference_info function_id converter_merge_info_base = do
     function_inference_info <- getFunctionInferenceInfo inference_info function_id
     // println "createFunctionInfoBase"
     // println "members: {}" % List2.getLength inference_info.members
@@ -364,7 +364,7 @@ createFunctionInfoBase config inference_info function_id = do
             List2.push vars member.info.ownership_var)
     relevant_ownership_vars <- input_ownership_vars + output_ownership_vars
 
-    converter_merge_info <- mergeConverters config input_ownership_vars inference_info.converters
+    converter_merge_info <- mergeConverters config input_ownership_vars converter_merge_info_base
 
     ((input_ownership_vars, output_ownership_vars), filtered_converters) <- List2.filterS (input_ownership_vars, output_ownership_vars) converter_merge_info.converters (\(input_ownership_vars, output_ownership_vars), converter -> do
         match <- List2.contains input_ownership_vars converter.from && List2.contains output_ownership_vars converter.to

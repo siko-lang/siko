@@ -20,6 +20,7 @@ import Siko.MIR.Backend.Ownership.TypeVariableInfo
 import Siko.MIR.Backend.Ownership.OwnershipDependencyMap
 import Siko.MIR.Backend.Ownership.Inference.ConstraintCollection
 import Siko.MIR.Backend.Ownership.Inference.ConstraintProcessor
+import Siko.MIR.Backend.Ownership.Converter
 import Siko.MIR.Backend.Ownership.OrderedDependencyMap
 import Siko.MIR.Backend.Ownership.DumpOwnership
 import Siko.MIR.Program as MP
@@ -60,7 +61,8 @@ lowerFunction context lowering_info mir_id lir_id = do
             checkInitials inference_info "after unpackOwnerships"
             //trace2 context.config "after unpackOwnerships {} {}" % (lir_id, inference_info)
             inference_info <- updateOwnershipDepMap context.config inference_info
-            inference_info <- createFunctionInfoBase context.config inference_info mir_id
+            converter_merge_info_base <- createConverterMergeInfoBase context.config inference_info.converters
+            inference_info <- createFunctionInfoBase context.config inference_info mir_id converter_merge_info_base
             inference_info <- createBaseCallContexts context.config inference_info
             (inference_info, constraints, invalid_borrow_map, ownership_expr_map, group_expr_map, ownership_group_map,
                              result_vars, mir_program, call_context_map, call_args) <- collectConstraints context.config mir_id context.mir_program

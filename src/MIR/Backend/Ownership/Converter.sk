@@ -37,8 +37,13 @@ data ConverterMergeInfo = { converters :: List2 Converter,
                             cycle_groups :: List2 (List2 OwnershipTypeVariable)
                           } deriving (Show)
 
-mergeConverters :: Config -> List2 OwnershipTypeVariable -> List2 Converter -> ConverterMergeInfo
-mergeConverters config input_ownership_vars converters = do
+data ConverterMergeInfoBase = { groups :: List2 (DependencyGroup OwnershipTypeVariable),
+                                converter_map :: Map2 OwnershipTypeVariable (List2 OwnershipTypeVariable),
+                                cycle_groups :: List2 (List2 OwnershipTypeVariable)
+                              } deriving (Show)
+
+createConverterMergeInfoBase :: Config -> List2 Converter -> ConverterMergeInfoBase
+createConverterMergeInfoBase config converters = do
         deps_map <- List2.fold Map2.empty converters (\deps_map, converter -> do
             deps_map <- Map2.put deps_map converter.from List2.empty
             Map2.put deps_map converter.to List2.empty)
@@ -64,8 +69,12 @@ mergeConverters config input_ownership_vars converters = do
             converter_map <- Map2.add converter_map converter.from converter.to
             (deps_map, converter_map))
         groups <- processDependencies config deps_map
+        ConverterMergeInfoBase groups converter_map cycle_groups
+
+mergeConverters :: Config -> List2 OwnershipTypeVariable -> ConverterMergeInfoBase -> ConverterMergeInfo
+mergeConverters config input_ownership_vars converter_merge_info_base = do
         conversion_map <- Map2.empty
-        conversion_map <- List2.fold conversion_map groups (\conversion_map, group -> do
+        conversion_map <- List2.fold conversion_map converter_merge_info_base.groups (\conversion_map, group -> do
             List2.fold conversion_map group.items (\conversion_map, item -> do
                     sources <- case Map2.get conversion_map item of
                         Some sources -> sources
@@ -73,12 +82,12 @@ mergeConverters config input_ownership_vars converters = do
                     sources <- if List2.contains input_ownership_vars item
                     then List2.push sources item
                     else sources
-                    case Map2.get converter_map item of
+                    case Map2.get converter_merge_info_base.converter_map item of
                         Some targets -> List2.fold conversion_map targets (\conversion_map, target -> addSources conversion_map target sources)
                         None -> conversion_map
                 ))
         converters <- Map2.fold List2.empty conversion_map (\converters, (to, froms) -> List2.fold converters froms (\converters, from -> List2.push converters (Converter from to)))
-        ConverterMergeInfo converters cycle_groups
+        ConverterMergeInfo converters converter_merge_info_base.cycle_groups
     where
         addSources :: Map2 OwnershipTypeVariable (List2 OwnershipTypeVariable) -> OwnershipTypeVariable -> List2 OwnershipTypeVariable -> Map2 OwnershipTypeVariable (List2 OwnershipTypeVariable)
         addSources conversion_map target sources = do
