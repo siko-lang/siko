@@ -10,7 +10,6 @@ import Siko.Util.DependencyProcessorLinear
 import Siko.MIR.Backend.Ownership.TypeVariableInfo
 import Siko.MIR.Backend.Ownership.Inference.Constraint as C
 import Siko.MIR.Backend.Ownership.FunctionInfoStore
-import Siko.MIR.Backend.Ownership.BorrowId // FIXME: needed only for the linear hack
 import Siko.MIR.Backend.Ownership.Converter
 import Siko.MIR.Expr as E
 import Siko.MIR.Type as T
@@ -129,7 +128,6 @@ processExpr context expr = do
                             info <- getTypeVariableInfoByExprId context.inference_info rhs_id context.function_id
                             addOwnershipValue context info.ownership_var M.Owner
                         else context
-            rhs <- E.Expr s rhs_type rhs_id  // FIXME: linear HACK
             context <- processExpr context rhs
             context <- addOwnershipValue context info.ownership_var M.Owner
             context
