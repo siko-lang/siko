@@ -54,15 +54,13 @@ lowerFunction context lowering_info mir_id lir_id = do
             inference_info <- processEqualities context.config equals inference_info context.mir_program
             checkInitials inference_info "after processEqualities"
             //trace2 context.config "after processEqualities {} {}" % (lir_id, inference_info)
-            converters <- getFunctionConverters context.config inference_info mir_id
-            group_function_converters <- Map2.put inference_info.group_function_converters mir_id converters
-            inference_info <- inference_info { group_function_converters = group_function_converters }
             borrow_info <- checkBorrows info.body
             ownership_dep_map <- calculateOwnershipDepMap context.config inference_info.members
             (inference_info, ownership_dep_map) <- unpackOwnerships context.config mir_id inference_info ownership_dep_map external_borrows
             checkInitials inference_info "after unpackOwnerships"
             //trace2 context.config "after unpackOwnerships {} {}" % (lir_id, inference_info)
-            inference_info <- updateOwnershipDeMap context.config inference_info
+            inference_info <- updateOwnershipDepMap context.config inference_info
+            inference_info <- createFunctionInfoBase context.config inference_info mir_id
             inference_info <- createBaseCallContexts context.config inference_info
             (inference_info, constraints, invalid_borrow_map, ownership_expr_map, group_expr_map, ownership_group_map,
                              result_vars, mir_program, call_context_map, call_args) <- collectConstraints context.config mir_id context.mir_program
