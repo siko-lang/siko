@@ -1028,6 +1028,52 @@ generateRcGet program type_store arg_types result_type = do
     else R.Ref field_access0
     R.Block [item_ref]
 
+generateCellCreate :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
+generateCellCreate program type_store arg_types result_type = do
+    rust_type <- convertType result_type
+    item_type <- convertType (atIndex arg_types 0)
+    item_ref <- if RT.isRef item_type
+    then R.MethodCall (R.VarRef (getArgName 0)) cloneName []
+    else R.VarRef (getArgName 0)
+    new0 <- "new0"
+    create_call <- R.FunctionCall "std::option::Option::Some" [item_ref]
+    create_call <- R.FunctionCall "std::cell::RefCell::new" [create_call]
+    create_call <- R.FunctionCall "std::rc::Rc::new" [create_call]
+    new0_decl <- R.VarDecl new0 create_call None
+    struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef new0)]
+    R.Block [new0_decl, struct_ctor]
+
+generateCellGet :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
+generateCellGet program type_store arg_types result_type = do
+    rust_type <- convertType result_type
+    field_access0 <- R.Deref (R.FieldAccess innerValueField (R.VarRef (getArgName 0)))
+    item_ref <- if not (RT.isRef rust_type)
+    then R.MethodCall field_access0 cloneName []
+    else R.Ref field_access0
+    item_ref <- R.MethodCall item_ref "into_inner" []
+    item_ref <- R.MethodCall item_ref "unwrap" []
+    R.Block [item_ref]
+
+generateCellPut :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
+generateCellPut program type_store arg_types result_type = do
+    rust_type <- convertType result_type
+    field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
+    borrow_mut <- R.MethodCall field_access0 "borrow_mut" []
+    cell_decl <- R.VarDeclMut "cell" borrow_mut None
+    struct_ctor <- R.StructCtor (RT.showBase rust_type) []
+    assign <- R.Assign (R.Deref (R.VarRef "cell")) (R.FunctionCall "std::option::Option::Some" [R.VarRef (getArgName 1)])
+    R.Block [cell_decl, assign, struct_ctor]
+
+generateCellTake :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
+generateCellTake program type_store arg_types result_type = do
+    field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
+    borrow_mut <- R.MethodCall field_access0 "borrow_mut" []
+    cell_decl <- R.VarDeclMut "cell" borrow_mut None
+    take <- R.MethodCall (R.VarRef "cell") "take" []
+    take <- R.MethodCall take "take" []
+    take <- R.MethodCall take "unwrap" []
+    R.Block [cell_decl, take]
+
 initializeExternalFunctions :: Map ExternalId ExternFnBuilder
 initializeExternalFunctions = do
     externals <- Map.empty
@@ -1130,6 +1176,11 @@ initializeExternalFunctions = do
 
     (externals, _) <- insert externals (ExternalId "Rc" "create") (ExternFnBuilder generateRcCreate)
     (externals, _) <- insert externals (ExternalId "Rc" "get") (ExternFnBuilder generateRcGet)
+
+    (externals, _) <- insert externals (ExternalId "Cell" "create") (ExternFnBuilder generateCellCreate)
+    (externals, _) <- insert externals (ExternalId "Cell" "get") (ExternFnBuilder generateCellGet)
+    (externals, _) <- insert externals (ExternalId "Cell" "put") (ExternFnBuilder generateCellPut)
+    (externals, _) <- insert externals (ExternalId "Cell" "take") (ExternFnBuilder generateCellTake)
     externals
 
 generateStringFields :: [LT.Type] -> Option LT.Lifetime -> [R.StructField]
@@ -1182,6 +1233,12 @@ generateRcFields args _ = do
     rust_type_arg <- convertType first
     [R.StructField innerValueField (RT.Named ("std::rc::Rc<{}>" % RT.showAll rust_type_arg) [])]
 
+generateCellFields :: [LT.Type] -> Option LT.Lifetime -> [R.StructField]
+generateCellFields args _ = do
+    first <- atIndex args 0
+    rust_type_arg <- convertType first
+    [R.StructField innerValueField (RT.Named ("std::rc::Rc<std::cell::RefCell<std::option::Option<{}>>>" % RT.showAll rust_type_arg) [])]
+
 initializeExternalStructFields :: Map ExternalId ExternStructBuilder
 initializeExternalStructFields = do
     externals <- Map.empty
@@ -1198,4 +1255,5 @@ initializeExternalStructFields = do
     (externals, _) <- insert externals (ExternalId "Map" "MapIterator") (ExternStructBuilder generateMapIteratorFields)
     (externals, _) <- insert externals (ExternalId "Map2" "MapIterator") (ExternStructBuilder generateMapIteratorFields)
     (externals, _) <- insert externals (ExternalId "Rc" "Rc") (ExternStructBuilder generateRcFields)
+    (externals, _) <- insert externals (ExternalId "Cell" "Cell") (ExternStructBuilder generateCellFields)
     externals

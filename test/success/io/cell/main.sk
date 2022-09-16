@@ -1,0 +1,20 @@
+module Main where
+
+import Std.Util
+import Cell
+
+data Thing = { value :: String, counter :: Int } deriving (Show, PartialEq, Eq)
+
+increment :: Thing -> Thing
+increment thing = thing { counter = thing.counter + 1 }
+
+main = do
+    cell <- Cell.create (Thing "apple" 0)
+    update cell increment
+    update cell increment
+    update cell increment
+    thing <- Cell.get cell
+    assert (thing == (Thing "apple" 3))
+    thing <- Cell.take cell
+    assert (thing == (Thing "apple" 3))
+    ()
