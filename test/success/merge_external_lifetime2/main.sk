@@ -1,7 +1,6 @@
 module Main where
 
-import List2
-import Map2
+import Map
 import Set
 
 data BorrowId = BorrowId Int deriving (PartialEq, Eq, PartialOrd, Ord)
@@ -20,11 +19,11 @@ data Borrow = Local ExprId
 data BorrowSet = { borrows :: Set Borrow } deriving (PartialEq, Eq, PartialOrd, Ord)
 
 main = do
-    borrow_sets :: Map2 BorrowId BorrowSet <- Map2.empty
-    ownership_values :: Map2 OwnershipTypeVariable OwnershipKind <- Map2.empty
-    inverse_map :: Map2 BorrowSet (List2 BorrowId) <- Map2.empty
-    kind_map <- Map2.fold Map2.empty inverse_map (\kind_map, (_, ids) -> do
-        first <- List2.atIndex ids 0
-        List2.fold kind_map ids (\kind_map, id -> if id != first then Map2.put kind_map id first else kind_map))
+    borrow_sets :: Map BorrowId BorrowSet <- Map.empty
+    ownership_values :: Map OwnershipTypeVariable OwnershipKind <- Map.empty
+    inverse_map :: Map BorrowSet (List BorrowId) <- Map.empty
+    kind_map <- Map.fold Map.empty inverse_map (\kind_map, (_, ids) -> do
+        first <- List.atIndex ids 0
+        List.fold kind_map ids (\kind_map, id -> if id != first then Map.put kind_map id first else kind_map))
     kind_map
     ()

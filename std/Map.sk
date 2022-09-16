@@ -110,6 +110,15 @@ alter f k m = // FIXME: make this builtin and much faster
         None -> remove m k
 
 @Inline
+alter2 k v :: (Ord k) => (Option v -> Option v) -> k -> Map k v -> (Map k v, Option v)
+alter2 f k m = do // FIXME: this is an ugly hack to make it faster (do not copy prev)
+    (m, prev) <- remove m k
+    v <- f prev
+    case v of
+        Some v -> insert m k v
+        None -> (m, None)
+
+@Inline
 alterS si so k v :: (Ord k) => (si -> Option v -> (so, Option v)) -> si -> k -> Map k v -> (so, Map k v, Option v)
 alterS f s k m = do
     (s, v) <- f s (get m k)

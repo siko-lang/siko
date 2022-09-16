@@ -2,50 +2,49 @@ module Main where
 
 import Siko.Util.SCC as SCC
 
-import List2
-import Map2
+import Map
 
-data DependencyGroup a = { items :: List2 a }
+data DependencyGroup a = { items :: List a }
 
-createIdMaps a :: (PartialEq a, Ord a) => SCC.Graph -> Map2 a (List2 a) -> (SCC.Graph, Map2 a SCC.NodeId, Map2 SCC.NodeId a)
+createIdMaps a :: (PartialEq a, Ord a) => SCC.Graph -> Map a (List a) -> (SCC.Graph, Map a SCC.NodeId, Map SCC.NodeId a)
 createIdMaps graph all_dependencies = do
         keys <- getKeys all_dependencies
-        (graph, item_id_map) <- List2.fold (graph, Map2.empty) keys mapKey
-        id_item_map <- Map2.fold Map2.empty item_id_map (\id_item_map, (k, v) -> Map2.put id_item_map v k)
+        (graph, item_id_map) <- List.fold (graph, Map.empty) keys mapKey
+        id_item_map <- Map.fold Map.empty item_id_map (\id_item_map, (k, v) -> Map.put id_item_map v k)
         (graph, item_id_map, id_item_map)
     where
-        mapKey a :: (PartialEq a, Ord a) => (SCC.Graph, Map2 a SCC.NodeId) -> a -> (SCC.Graph, Map2 a SCC.NodeId)
+        mapKey a :: (PartialEq a, Ord a) => (SCC.Graph, Map a SCC.NodeId) -> a -> (SCC.Graph, Map a SCC.NodeId)
         mapKey (graph, id_map) id = do
-            (graph, _, id_map) <- Map2.addS graph id id_map (\graph, id -> SCC.addNode graph)
+            (graph, _, id_map) <- Map.addS graph id id_map (\graph, id -> SCC.addNode graph)
             (graph, id_map)
 
-initGraph a :: (PartialEq a, Ord a) => SCC.Graph -> Map2 a SCC.NodeId -> Map2 a (List2 a) -> (Map2 a SCC.NodeId, SCC.Graph)
+initGraph a :: (PartialEq a, Ord a) => SCC.Graph -> Map a SCC.NodeId -> Map a (List a) -> (Map a SCC.NodeId, SCC.Graph)
 initGraph graph item_id_map all_dependencies =
-    Map2.fold (item_id_map, graph) all_dependencies processDeps
+    Map.fold (item_id_map, graph) all_dependencies processDeps
         where
-            processDeps a :: (PartialEq a, Ord a) => (Map2 a SCC.NodeId, SCC.Graph) -> (a, List2 a) -> (Map2 a SCC.NodeId, SCC.Graph)
+            processDeps a :: (PartialEq a, Ord a) => (Map a SCC.NodeId, SCC.Graph) -> (a, List a) -> (Map a SCC.NodeId, SCC.Graph)
             processDeps (item_id_map, graph) (item, deps) = do
-                List2.fold (item_id_map, graph) deps (processDep item)
+                List.fold (item_id_map, graph) deps (processDep item)
 
-            processDep a :: (PartialEq a, Ord a) => a -> (Map2 a SCC.NodeId, SCC.Graph) -> a -> (Map2 a SCC.NodeId, SCC.Graph)
+            processDep a :: (PartialEq a, Ord a) => a -> (Map a SCC.NodeId, SCC.Graph) -> a -> (Map a SCC.NodeId, SCC.Graph)
             processDep item (item_id_map, graph) dep = do
                 item <- Option.unwrap (get item_id_map item)
                 dep <- Option.unwrap (get item_id_map dep)
                 (item_id_map, SCC.addNeighbour graph item dep)
 
-processDependencies a :: (PartialEq a, Ord a) => Map2 a (List2 a) -> List2 (DependencyGroup a)
+processDependencies a :: (PartialEq a, Ord a) => Map a (List a) -> List (DependencyGroup a)
 processDependencies all_dependencies = do
         graph <- SCC.createGraph
         (graph, item_id_map, id_item_map) <- createIdMaps graph all_dependencies
         (_, graph) <- initGraph graph item_id_map all_dependencies
         sccs <- SCC.collectSCCs graph
-        (_, ordered_groups) <- List2.mapS id_item_map sccs mapSCC
+        (_, ordered_groups) <- List.mapS id_item_map sccs mapSCC
         ordered_groups
     where
-        mapSCC a :: Map2 SCC.NodeId a -> List2 SCC.NodeId -> (Map2 SCC.NodeId a, DependencyGroup a)
+        mapSCC a :: Map SCC.NodeId a -> List SCC.NodeId -> (Map SCC.NodeId a, DependencyGroup a)
         mapSCC id_item_map scc = do
-            (id_item_map, items) <- List2.mapS id_item_map scc (\id_item_map, id -> do
-                item <- Option.unwrap (Map2.get id_item_map id)
+            (id_item_map, items) <- List.mapS id_item_map scc (\id_item_map, id -> do
+                item <- Option.unwrap (Map.get id_item_map id)
                 (id_item_map, item))
             (id_item_map, DependencyGroup items)
 
@@ -56,7 +55,7 @@ data TypeVariableInfo = { ownership_var :: OwnershipTypeVariable,
                           arg_group_var :: GroupTypeVariable,
                         } deriving (PartialEq, Eq, PartialOrd, Ord)
 
-data FilterInfo = { groups :: List2 (DependencyGroup TypeVariableInfo)
+data FilterInfo = { groups :: List (DependencyGroup TypeVariableInfo)
                    }
 
 data BorrowId = BorrowId 
@@ -74,40 +73,40 @@ data MemberInfo = { kind :: MemberKind,
                     info :: TypeVariableInfo
                 }
 
-data FunctionLoweringInfo = { members :: List2 MemberInfo,
-                              args :: List2 TypeVariableInfo,
+data FunctionLoweringInfo = { members :: List MemberInfo,
+                              args :: List TypeVariableInfo,
                               result :: TypeVariableInfo,
                             }
 
-buildFilterInfo :: List2 MemberInfo -> List2 TypeVariableInfo -> (List2 MemberInfo, FilterInfo)
+buildFilterInfo :: List MemberInfo -> List TypeVariableInfo -> (List MemberInfo, FilterInfo)
 buildFilterInfo members sources = do
-    (members, deps_map) <- (members, Map2.empty)
+    (members, deps_map) <- (members, Map.empty)
     (members, info_dep_map, deps_map) <- getInfoDependencyMap sources members deps_map
     groups <- processDependencies info_dep_map
     info_dep_map
     filter_info <- FilterInfo groups
     (members, filter_info)
 
-getInfoDependencyMap :: List2 TypeVariableInfo -> List2 MemberInfo -> Map2 GroupTypeVariable (List2 TypeVariableInfo) ->
-                        (List2 MemberInfo, Map2 TypeVariableInfo (List2 TypeVariableInfo), Map2 GroupTypeVariable (List2 TypeVariableInfo))
+getInfoDependencyMap :: List TypeVariableInfo -> List MemberInfo -> Map GroupTypeVariable (List TypeVariableInfo) ->
+                        (List MemberInfo, Map TypeVariableInfo (List TypeVariableInfo), Map GroupTypeVariable (List TypeVariableInfo))
 getInfoDependencyMap sources members deps_map = do
-    full_info_deps_map <- Map2.empty
-    (sources, (deps_map, full_info_deps_map)) <- List2.foldLinear (deps_map, full_info_deps_map) sources (\(deps_map, full_info_deps_map), source -> do
-        full_info_deps_map <- case Map2.get deps_map source.arg_group_var of
-            Some deps -> Map2.put full_info_deps_map source deps
-            None -> Map2.put full_info_deps_map source List2.empty
+    full_info_deps_map <- Map.empty
+    (deps_map, full_info_deps_map) <- List.fold (deps_map, full_info_deps_map) sources (\(deps_map, full_info_deps_map), source -> do
+        full_info_deps_map <- case Map.get deps_map source.arg_group_var of
+            Some deps -> Map.put full_info_deps_map source deps
+            None -> Map.put full_info_deps_map source List.empty
         (deps_map, full_info_deps_map))
-    (members, (deps_map, full_info_deps_map)) <- List2.foldLinear (deps_map, full_info_deps_map) members (\(deps_map, full_info_deps_map), member -> do
+    (deps_map, full_info_deps_map) <- List.fold (deps_map, full_info_deps_map) members (\(deps_map, full_info_deps_map), member -> do
         info <- member.info
-        full_info_deps_map <- case Map2.get deps_map info.arg_group_var of
-            Some deps -> Map2.put full_info_deps_map info deps
-            None -> Map2.put full_info_deps_map info List2.empty
+        full_info_deps_map <- case Map.get deps_map info.arg_group_var of
+            Some deps -> Map.put full_info_deps_map info deps
+            None -> Map.put full_info_deps_map info List.empty
         (deps_map, full_info_deps_map))
     (members, full_info_deps_map, deps_map)
 
 buildFilterInfoFromFunctionLoweringInfo :: FunctionLoweringInfo -> (FunctionLoweringInfo, FilterInfo)
 buildFilterInfoFromFunctionLoweringInfo lowering_info = do
-    (members, filter_info) <- buildFilterInfo lowering_info.members (List2.push lowering_info.args lowering_info.result)
+    (members, filter_info) <- buildFilterInfo lowering_info.members (List.push lowering_info.args lowering_info.result)
     (lowering_info, filter_info)
 
 lowerFunctionType :: FunctionLoweringInfo -> ()
@@ -120,7 +119,7 @@ main = do
     then ()
     else do
         root <- TypeVariableInfo (OwnershipTypeVariable 1) (GroupTypeVariable 1)
-        info <- FunctionLoweringInfo List2.empty List2.empty root
+        info <- FunctionLoweringInfo List.empty List.empty root
         lowerFunctionType info
         info
         ()

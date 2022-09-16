@@ -5,10 +5,7 @@ import Siko.MIR.Backend.Ownership.EqualitySolver
 import Siko.Util.DependencyProcessorLinear
 import Siko.Config
 
-import List2 as List2
-import List2 (List2)
-import Map2 as Map2
-import Map2 (Map2)
+import Map
 
 data Converter = { from :: OwnershipTypeVariable,
                    to :: OwnershipTypeVariable,
@@ -23,7 +20,7 @@ instance Apply Converter where
 instance Show Converter where
     show converter = "{} -> {}" % (converter.from, converter.to)
 
-data ConverterStore = { converters :: List2 Converter }
+data ConverterStore = { converters :: [Converter] }
 
 instance Apply ConverterStore where
     apply applier store = do
@@ -31,67 +28,67 @@ instance Apply ConverterStore where
         (applier, store { converters = converters })
 
 instance MemberOwner ConverterStore where
-    getMembers store = List2.empty
+    getMembers store = []
 
-data ConverterMergeInfo = { converters :: List2 Converter,
-                            cycle_groups :: List2 (List2 OwnershipTypeVariable)
+data ConverterMergeInfo = { converters :: [Converter],
+                            cycle_groups :: [[OwnershipTypeVariable]],
                           } deriving (Show)
 
-data ConverterMergeInfoBase = { groups :: List2 (DependencyGroup OwnershipTypeVariable),
-                                converter_map :: Map2 OwnershipTypeVariable (List2 OwnershipTypeVariable),
-                                cycle_groups :: List2 (List2 OwnershipTypeVariable)
+data ConverterMergeInfoBase = { groups :: [(DependencyGroup OwnershipTypeVariable)],
+                                converter_map :: Map OwnershipTypeVariable [OwnershipTypeVariable],
+                                cycle_groups :: [[OwnershipTypeVariable]],
                               } deriving (Show)
 
-createConverterMergeInfoBase :: Config -> List2 Converter -> ConverterMergeInfoBase
+createConverterMergeInfoBase :: Config -> [Converter] -> ConverterMergeInfoBase
 createConverterMergeInfoBase config converters = do
-        deps_map <- List2.fold Map2.empty converters (\deps_map, converter -> do
-            deps_map <- Map2.put deps_map converter.from List2.empty
-            Map2.put deps_map converter.to List2.empty)
-        (deps_map, converter_map) <- List2.fold (deps_map, Map2.empty) converters (\(deps_map, converter_map), converter -> do
-            deps_map <- Map2.add deps_map converter.to converter.from
-            converter_map <- Map2.add converter_map converter.from converter.to
+        deps_map <- List.fold Map.empty converters (\deps_map, converter -> do
+            deps_map <- Map.put deps_map converter.from []
+            Map.put deps_map converter.to [])
+        (deps_map, converter_map) <- List.fold (deps_map, Map.empty) converters (\(deps_map, converter_map), converter -> do
+            deps_map <- Map.add deps_map converter.to converter.from
+            converter_map <- Map.add converter_map converter.from converter.to
             (deps_map, converter_map))
         groups <- processDependencies config deps_map
-        (cycle_groups, equals) <- List2.fold (List2.empty, List2.empty) groups (\(cycle_groups, equals), group -> if List2.getLength group.items > 1
+        (cycle_groups, equals) <- List.fold ([], []) groups (\(cycle_groups, equals), group -> if List.getLength group.items > 1
              then do
-                first <- List2.atIndex group.items 0
-                equals <- List2.fold equals group.items (\equals, item -> List2.push equals (EqualOwnership first item))
-                (List2.push cycle_groups group.items, equals)
+                first <- List.atIndex group.items 0
+                equals <- List.fold equals group.items (\equals, item -> List.push equals (EqualOwnership first item))
+                (List.push cycle_groups group.items, equals)
             else (cycle_groups, equals))
         store <- ConverterStore converters
         store <- processEquals equals store
         converters <- store.converters
-        deps_map <- List2.fold Map2.empty converters (\deps_map, converter -> do
-            deps_map <- Map2.put deps_map converter.from List2.empty
-            Map2.put deps_map converter.to List2.empty)
-        (deps_map, converter_map) <- List2.fold (deps_map, Map2.empty) converters (\(deps_map, converter_map), converter -> do
-            deps_map <- Map2.add deps_map converter.to converter.from
-            converter_map <- Map2.add converter_map converter.from converter.to
+        deps_map <- List.fold Map.empty converters (\deps_map, converter -> do
+            deps_map <- Map.put deps_map converter.from []
+            Map.put deps_map converter.to [])
+        (deps_map, converter_map) <- List.fold (deps_map, Map.empty) converters (\(deps_map, converter_map), converter -> do
+            deps_map <- Map.add deps_map converter.to converter.from
+            converter_map <- Map.add converter_map converter.from converter.to
             (deps_map, converter_map))
         groups <- processDependencies config deps_map
         ConverterMergeInfoBase groups converter_map cycle_groups
 
-mergeConverters :: Config -> List2 OwnershipTypeVariable -> ConverterMergeInfoBase -> ConverterMergeInfo
+mergeConverters :: Config -> [OwnershipTypeVariable] -> ConverterMergeInfoBase -> ConverterMergeInfo
 mergeConverters config input_ownership_vars converter_merge_info_base = do
-        conversion_map <- Map2.empty
-        conversion_map <- List2.fold conversion_map converter_merge_info_base.groups (\conversion_map, group -> do
-            List2.fold conversion_map group.items (\conversion_map, item -> do
-                    sources <- case Map2.get conversion_map item of
+        conversion_map <- Map.empty
+        conversion_map <- List.fold conversion_map converter_merge_info_base.groups (\conversion_map, group -> do
+            List.fold conversion_map group.items (\conversion_map, item -> do
+                    sources <- case Map.get conversion_map item of
                         Some sources -> sources
-                        None -> List2.empty
-                    sources <- if List2.contains input_ownership_vars item
-                    then List2.push sources item
+                        None -> []
+                    sources <- if List.contains input_ownership_vars item
+                    then List.push sources item
                     else sources
-                    case Map2.get converter_merge_info_base.converter_map item of
-                        Some targets -> List2.fold conversion_map targets (\conversion_map, target -> addSources conversion_map target sources)
+                    case Map.get converter_merge_info_base.converter_map item of
+                        Some targets -> List.fold conversion_map targets (\conversion_map, target -> addSources conversion_map target sources)
                         None -> conversion_map
                 ))
-        converters <- Map2.fold List2.empty conversion_map (\converters, (to, froms) -> List2.fold converters froms (\converters, from -> List2.push converters (Converter from to)))
+        converters <- Map.fold [] conversion_map (\converters, (to, froms) -> List.fold converters froms (\converters, from -> List.push converters (Converter from to)))
         ConverterMergeInfo converters converter_merge_info_base.cycle_groups
     where
-        addSources :: Map2 OwnershipTypeVariable (List2 OwnershipTypeVariable) -> OwnershipTypeVariable -> List2 OwnershipTypeVariable -> Map2 OwnershipTypeVariable (List2 OwnershipTypeVariable)
+        addSources :: Map OwnershipTypeVariable [OwnershipTypeVariable] -> OwnershipTypeVariable -> [OwnershipTypeVariable] -> Map OwnershipTypeVariable [OwnershipTypeVariable]
         addSources conversion_map target sources = do
-            (conversion_map, _) <- Map2.alter2 (\old -> case old of
-                        Some vs -> Some ((vs + sources) |> List2.sort |> List2.dedup)
+            (conversion_map, _) <- Map.alter2 (\old -> case old of
+                        Some vs -> Some ((vs + sources) |> List.sort |> List.dedup)
                         None -> Some sources) target conversion_map
             conversion_map

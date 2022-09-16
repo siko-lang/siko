@@ -1,9 +1,6 @@
 module Main where
 
-import Map2
-import List2 as List2
-import List2 (List2)
-
+import Map
 
 data Identity = Identity deriving (PartialEq, Eq, PartialOrd, Ord)
 
@@ -44,20 +41,20 @@ data TypeVariableInfo = { ownership_var :: OwnershipTypeVariable,
 
 data TypeInfo = TypeInfo Type TypeVariableInfo deriving (PartialEq, Eq, PartialOrd, Ord)
 
-mergeTypes :: List2 MemberInfo -> (List2 MemberInfo, List2 Equal)
+mergeTypes :: List MemberInfo -> (List MemberInfo, List Equal)
 mergeTypes members = do
-    (members, type_info_map) :: (List2 MemberInfo , Map2 GroupTypeVariable (List2 TypeInfo)) <- (members, Map2.empty)
-    inverse_type_info_map <- Map2.fold Map2.empty type_info_map (\inverse_type_info_map, (root, type_infos) -> Map2.add inverse_type_info_map type_infos root)
-    equals <- Map2.fold List2.empty inverse_type_info_map (\equals, (type_infos, roots) -> do
-        first <- List2.atIndex roots 0
-        if List2.getLength roots > 1
-        then List2.fold equals roots (\equals, var ->
+    (members, type_info_map) :: (List MemberInfo , Map GroupTypeVariable (List TypeInfo)) <- (members, Map.empty)
+    inverse_type_info_map <- Map.fold Map.empty type_info_map (\inverse_type_info_map, (root, type_infos) -> Map.add inverse_type_info_map type_infos root)
+    equals <- Map.fold List.empty inverse_type_info_map (\equals, (type_infos, roots) -> do
+        first <- List.atIndex roots 0
+        if List.getLength roots > 1
+        then List.fold equals roots (\equals, var ->
             if first != var
-            then List2.push equals (EqualGroup first var)
+            then List.push equals (EqualGroup first var)
             else equals)
         else equals)
     (members, equals)
 
 main = do
-    mergeTypes List2.empty
+    mergeTypes List.empty
     ()

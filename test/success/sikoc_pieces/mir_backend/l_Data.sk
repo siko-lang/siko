@@ -21,7 +21,6 @@ import Siko.LIR.Data as LD
 import Siko.LIR.Type as LT
 
 import Map
-import List2
 
 lowerExternalRecordInfo :: TypeLoweringInfo -> Context -> MD.ExternalRecordInfo -> FilterInfo -> (Context, LD.ExternalRecordInfo, FilterInfo)
 lowerExternalRecordInfo lowering_info context mir_external_record_info filter_info = do
@@ -73,12 +72,12 @@ processExternalClassImpl lowering_info context mir_class_impl =
             (allocator, borrow_id) <- getNextBorrowId allocator
             arg <- arg { arg_group_var = lowering_info.root.arg_group_var }
             args <- case arg_count of
-                1 -> List2.single arg
-                2 -> List2.push (List2.single arg) arg
+                1 -> [arg]
+                2 -> [arg, arg]
                 _ -> panic "External class impl with {} arg count" % arg_count
-            ownershipinfos <- List2.push lowering_info.ownershipinfos (M.OwnershipInfo arg.ownership_var (M.Borrower borrow_id))
-            ownershipinfos <- List2.push ownershipinfos (M.OwnershipInfo result.ownership_var M.Owner)
-            lowering_info <- FunctionLoweringInfo lowering_info.members args result ownershipinfos allocator List2.empty
+            ownershipinfos <- List.push lowering_info.ownershipinfos (M.OwnershipInfo arg.ownership_var (M.Borrower borrow_id))
+            ownershipinfos <- List.push ownershipinfos (M.OwnershipInfo result.ownership_var M.Owner)
+            lowering_info <- FunctionLoweringInfo lowering_info.members args result ownershipinfos allocator List.empty
             (lowering_info, _) <- normalizeFunctionLoweringInfo context.config lowering_info
             lir_key <- FunctionKey id lowering_info
             (context, lir_id) <- getLIRId context lir_key

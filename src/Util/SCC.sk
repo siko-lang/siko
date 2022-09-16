@@ -1,8 +1,5 @@
 module Siko.Util.SCC where
 
-import List2 as List2
-import List2 (List2)
-
 data NodeId = NodeId Int deriving (PartialEq, Eq, PartialOrd, Ord)
 
 instance Show NodeId where
@@ -12,13 +9,13 @@ data Node = { id :: NodeId,
               index :: Int,
               low_link :: Option Int,
               on_stack :: Bool,
-              neighbours :: List2 NodeId }
+              neighbours :: [NodeId] }
 
-data Graph = { nodes :: List2 Node, sccs :: List2 (List2 NodeId), stack :: List2 NodeId, index :: Int }
+data Graph = { nodes :: [Node], sccs :: [[NodeId]], stack :: [NodeId], index :: Int }
 
 getNode :: Graph -> NodeId -> (Graph, Node)
 getNode graph (NodeId index) = do
-    node <- List2.atIndex graph.nodes index
+    node <- List.atIndex graph.nodes index
     (graph, node)
 
 initNode :: Graph -> NodeId -> Graph
@@ -27,7 +24,7 @@ initNode graph node_id = do
     index <- graph.index
     node <- node { index = index, low_link = Some index }
     NodeId i <- node_id
-    nodes <- List2.write graph.nodes i node
+    nodes <- List.write graph.nodes i node
     graph { nodes = nodes, index = index + 1 }
 
 updateLowLink :: Graph -> NodeId -> Int -> Graph
@@ -37,7 +34,7 @@ updateLowLink graph node_id other_low_link = do
     low_link <- min old_low_link other_low_link
     node <- node { low_link = Some low_link }
     NodeId index <- node_id
-    nodes <- List2.write graph.nodes index node
+    nodes <- List.write graph.nodes index node
     graph { nodes = nodes }
 
 isVisited :: Node -> Bool
@@ -48,8 +45,8 @@ pushToStack graph node_id = do
     (graph, node) <- getNode graph node_id
     node <- node { on_stack = True }
     NodeId index <- node_id
-    nodes <- List2.write graph.nodes index node
-    stack <- List2.push graph.stack node_id
+    nodes <- List.write graph.nodes index node
+    stack <- List.push graph.stack node_id
     graph { nodes = nodes, stack = stack }
 
 startOfSCC :: Graph -> NodeId -> (Graph, Bool)
@@ -61,18 +58,18 @@ startOfSCC graph node_id = do
 createSCC :: Graph -> NodeId -> Graph
 createSCC graph root = do
     (graph, root_node) <- getNode graph root
-    loop (graph, scc) <- (graph, List2.empty) do
+    loop (graph, scc) <- (graph, []) do
         graph :: Graph <- graph
-        (stack, end) <- List2.split graph.stack (List2.getLength graph.stack - 1)
-        last_id <- List2.atIndex end 0
+        (stack, end) <- List.split graph.stack (List.getLength graph.stack - 1)
+        last_id <- List.atIndex end 0
         (graph, last) <- getNode graph last_id
         last <- last { on_stack = False }
         NodeId index <- last_id
-        nodes <- List2.write graph.nodes index last
+        nodes <- List.write graph.nodes index last
         graph <- graph { stack = stack, nodes = nodes }
-        scc <- List2.push scc last_id
+        scc <- List.push scc last_id
         if last.index == root_node.index
-        then break graph { sccs = List2.push graph.sccs scc }
+        then break graph { sccs = List.push graph.sccs scc }
         else (graph, scc)
 
 dfs :: Graph -> NodeId -> Graph
@@ -82,7 +79,7 @@ dfs graph node_id = do
             Some _ -> return graph
             None -> initNode graph node_id
         graph <- pushToStack graph node_id
-        graph <- List2.fold graph node.neighbours (checkNode node_id)
+        graph <- List.fold graph node.neighbours (checkNode node_id)
         (graph, start) <- startOfSCC graph node_id
         if start
         then createSCC graph node_id
@@ -100,34 +97,34 @@ dfs graph node_id = do
                 (graph, neighbour_node) <- getNode graph neighbour
                 updateLowLink graph current (Option.unwrap neighbour_node.low_link)
 
-collectSCCs :: Graph -> List2 (List2 NodeId)
+collectSCCs :: Graph -> [[NodeId]]
 collectSCCs graph = do
-    (node_ids, graph) <- loop (node_ids, graph, index) <- (List2.withCapacity (List2.getLength graph.nodes), graph, 0) do
+    (node_ids, graph) <- loop (node_ids, graph, index) <- (List.withCapacity (List.getLength graph.nodes), graph, 0) do
         graph :: Graph <- graph // FIXME
-        if List2.getLength graph.nodes <= index
+        if List.getLength graph.nodes <= index
         then break (node_ids, graph)
         else do
-            node <- List2.atIndex graph.nodes index
-            node_ids <- List2.push node_ids node.id
+            node <- List.atIndex graph.nodes index
+            node_ids <- List.push node_ids node.id
             (node_ids, graph, index + 1)
-    (node_ids, graph) <- List2.foldLinear graph node_ids dfs
+    graph <- List.fold graph node_ids dfs
     graph.sccs
 
 addNode :: Graph -> (Graph, NodeId)
 addNode graph = do
-    index <- List2.getLength graph.nodes
+    index <- List.getLength graph.nodes
     id <- NodeId index
-    node <- Node id 0 None False List2.empty
-    nodes <- List2.push graph.nodes node
+    node <- Node id 0 None False []
+    nodes <- List.push graph.nodes node
     graph <- graph { nodes = nodes }
     (graph, id)
 
 addNeighbour :: Graph -> NodeId -> NodeId -> Graph
 addNeighbour graph (NodeId source) destination = do
-    node <- List2.atIndex graph.nodes source
-    node <- node { neighbours = List2.push node.neighbours destination }
-    nodes <- List2.write graph.nodes source node
+    node <- List.atIndex graph.nodes source
+    node <- node { neighbours = List.push node.neighbours destination }
+    nodes <- List.write graph.nodes source node
     graph { nodes = nodes }
 
 createGraph :: Graph
-createGraph = Graph List2.empty List2.empty List2.empty 0
+createGraph = Graph [] [] [] 0

@@ -28,9 +28,7 @@ import Siko.MIR.Function as MF
 import Siko.LIR.Function as LF
 import Siko.LIR.Type as LT
 
-import Map2
-import List2 as List2
-import List2 (List2)
+import Map
 
 lowerLifetimeDependency :: LifetimeDependency -> LF.LifetimeDependency
 lowerLifetimeDependency dep = LF.LifetimeDependency (toLifetime dep.from) (toLifetime dep.to)
@@ -50,12 +48,12 @@ lowerFunction context lowering_info mir_id lir_id = do
             //println "lowerFunction1 {} {}" % (lir_id, inference_info)
             function_info_store <- context.function_info_store
             (mir_program, equals, inference_info, data_group_info_store) <- processFunctionEqualities mir_id context.config []
-                List2.empty inference_info function_info_store context.mir_program info.body context.data_group_info_store
+                List.empty inference_info function_info_store context.mir_program info.body context.data_group_info_store
             context <- context { data_group_info_store = data_group_info_store }
             (mir_program, inference_info) <- processEqualities context.config equals inference_info context.mir_program
             //println "lowerFunction2 {} {}" % (lir_id, inference_info)
             converters <- getFunctionConverters context.config inference_info mir_id
-            group_function_converters <- Map2.put inference_info.group_function_converters mir_id converters
+            group_function_converters <- Map.put inference_info.group_function_converters mir_id converters
             inference_info <- inference_info { group_function_converters = group_function_converters }
             context <- context { mir_program = mir_program }
             borrow_info <- checkBorrows context.mir_program info.body
@@ -76,8 +74,7 @@ lowerFunction context lowering_info mir_id lir_id = do
             //trace context.config "Processing expr done"
             lir_kind <- LF.Normal lir_body
             (context, lir_function_type, lifetimes) <- lowerFunctionType context lowering_info function.type
-            lifetime_dependencies <- List2.map lowering_info.lifetime_dependencies lowerLifetimeDependency
-            lifetime_dependencies <- List2.asList lifetime_dependencies
+            lifetime_dependencies <- List.map lowering_info.lifetime_dependencies lowerLifetimeDependency
             lir_function <- LF.Function lir_id lifetimes lifetime_dependencies lir_kind lir_function_type
             context <- addFunction context lir_function
             context
@@ -106,9 +103,9 @@ lowerFunction context lowering_info mir_id lir_id = do
     context
 
 unpackOwnerships :: Config -> MP.Identity -> InferenceInfo ->
-                    Map2 GroupTypeVariable (List2 OwnershipTypeVariable) ->
-                    List2 BorrowId ->
-                    (InferenceInfo, Map2 GroupTypeVariable (List2 OwnershipTypeVariable))
+                    Map GroupTypeVariable (List OwnershipTypeVariable) ->
+                    List BorrowId ->
+                    (InferenceInfo, Map GroupTypeVariable (List OwnershipTypeVariable))
 unpackOwnerships config function_id inference_info ownership_dep_map external_borrows = do
     // Ownership information is present in the lowering info
     // in a packed way. For example an owned record implies
@@ -117,12 +114,12 @@ unpackOwnerships config function_id inference_info ownership_dep_map external_bo
     // the ownerships, i.e. fill out member ownerships which are implied from
     // the arguments, result.
     (inference_info, function_inference_info) <- getFunctionInferenceInfo inference_info function_id
-    vars <- List2.fold List2.empty function_inference_info.args (\vars, info -> do
-        vars <- List2.push vars info.arg_group_var
+    vars <- List.fold List.empty function_inference_info.args (\vars, info -> do
+        vars <- List.push vars info.arg_group_var
         vars)
-    vars <- List2.push vars function_inference_info.result.arg_group_var
-    List2.fold (inference_info, ownership_dep_map) vars (\(inference_info, ownership_dep_map), var -> do
-        case Map2.get ownership_dep_map var of
-            Some ownership_vars -> List2.fold (inference_info, ownership_dep_map) ownership_vars (\(inference_info, ownership_dep_map), var ->
+    vars <- List.push vars function_inference_info.result.arg_group_var
+    List.fold (inference_info, ownership_dep_map) vars (\(inference_info, ownership_dep_map), var -> do
+        case Map.get ownership_dep_map var of
+            Some ownership_vars -> List.fold (inference_info, ownership_dep_map) ownership_vars (\(inference_info, ownership_dep_map), var ->
                 (enforceOwner inference_info var external_borrows, ownership_dep_map))
             None -> (inference_info, ownership_dep_map))

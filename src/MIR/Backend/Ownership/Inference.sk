@@ -27,9 +27,7 @@ import Siko.MIR.Backend.Ownership.Converter
 import Siko.MIR.Backend.Ownership.DumpOwnership
 import Siko.MIR.Backend.Ownership.DataGroupInfo
 
-import List2 as List2
-import List2 (List2)
-import Map2 as Map2
+import Map
 
 data Context = { config :: Config,
                  program :: P.Program,
@@ -44,17 +42,17 @@ createRecordCtorFunctionInfo context type =
             record <- P.getRecord context.program id
             allocator <- createAllocator
             (allocator, result) <- getNextTypeVariableInfo allocator
-            ownershipinfos <- List2.empty
-            (allocator, args, members, ownershipinfos) <- List.fold (allocator, List2.empty, List2.empty, ownershipinfos) record.fields (\(allocator, args, members, ownershipinfos), field -> do
+            ownershipinfos <- []
+            (allocator, args, members, ownershipinfos) <- List.fold (allocator, [], [], ownershipinfos) record.fields (\(allocator, args, members, ownershipinfos), field -> do
                     (allocator, arg_info) <- getNextTypeVariableInfo allocator
                     member <- M.MemberInfo (M.Field field.index) result.arg_group_var arg_info
-                    members <- List2.push members member
-                    args <- List2.push args arg_info
+                    members <- List.push members member
+                    args <- List.push args arg_info
                     ownershipinfos <- if List.contains context.program.copyables (T.getIdentity field.type)
-                    then List2.push ownershipinfos (M.OwnershipInfo arg_info.ownership_var M.Owner)
+                    then List.push ownershipinfos (M.OwnershipInfo arg_info.ownership_var M.Owner)
                     else ownershipinfos
                     (allocator, args, members, ownershipinfos))
-            FunctionInfo args result members List2.empty ownershipinfos
+            FunctionInfo args result members [] ownershipinfos
         _ -> panic "createRecordCtorFunctionInfo: not a record"
 
 createVariantctorFunctionInfo :: Context -> Int -> T.Type -> FunctionInfo
@@ -64,28 +62,28 @@ createVariantctorFunctionInfo context index type =
             adt <- P.getAdt context.program id
             allocator <- createAllocator
             (allocator, result) <- getNextTypeVariableInfo allocator
-            (allocator, args, members, ownershipinfos, current) <- List.fold (allocator, List2.empty, List2.empty, List2.empty, 0) adt.variants (\(allocator, args, members, ownershipinfos, current), variant ->
+            (allocator, args, members, ownershipinfos, current) <- List.fold (allocator, [], [], [], 0) adt.variants (\(allocator, args, members, ownershipinfos, current), variant ->
                 case variant.type of
                     T.Record id -> do
                         (allocator, record_result) <- getNextTypeVariableInfo allocator
-                        ownershipinfos <- List2.push ownershipinfos (M.OwnershipInfo record_result.ownership_var M.Owner)
-                        members <- List2.push members (M.MemberInfo (M.Variant current) result.arg_group_var record_result)
+                        ownershipinfos <- List.push ownershipinfos (M.OwnershipInfo record_result.ownership_var M.Owner)
+                        members <- List.push members (M.MemberInfo (M.Variant current) result.arg_group_var record_result)
                         if current == index
                         then do
                             record <- P.getRecord context.program id
                             (allocator, args, members, ownershipinfos) <- List.fold (allocator, args, members, ownershipinfos) record.fields (\(allocator, args, members, ownershipinfos), field -> do
                                 (allocator, arg_info) <- getNextTypeVariableInfo allocator
                                 member <- M.MemberInfo (M.Field field.index) record_result.arg_group_var arg_info
-                                members <- List2.push members member
-                                args <- List2.push args arg_info
+                                members <- List.push members member
+                                args <- List.push args arg_info
                                 ownershipinfos <- if List.contains context.program.copyables (T.getIdentity field.type)
-                                then List2.push ownershipinfos (M.OwnershipInfo arg_info.ownership_var M.Owner)
+                                then List.push ownershipinfos (M.OwnershipInfo arg_info.ownership_var M.Owner)
                                 else ownershipinfos
                                 (allocator, args, members, ownershipinfos))
                             (allocator, args, members, ownershipinfos, current + 1)
                         else (allocator, args, members, ownershipinfos, current + 1)
                     _ -> panic "createVariantctorFunctionInfo: not a record")
-            FunctionInfo args result members List2.empty ownershipinfos
+            FunctionInfo args result members [] ownershipinfos
         _ -> panic "createVariantctorFunctionInfo: not an adt"
 
 processFunctionInfo :: Context -> FunctionInfo -> P.Identity -> (Context, Bool)
@@ -118,7 +116,7 @@ processFunction context group inference_info function_id = do
                     inference_info <- initializeTypeVariables inference_info function_id info.body
                     function_info_store <- context.function_info_store
                     //trace context.config "processEqualities {}" % function_id
-                    (equals, inference_info) <- processFunctionEqualities function_id context.config group List2.empty inference_info function_info_store context.program info.body context.data_group_info_store
+                    (equals, inference_info) <- processFunctionEqualities function_id context.config group [] inference_info function_info_store context.program info.body context.data_group_info_store
                     inference_info <- processEqualities context.config equals inference_info context.program
                     inference_info <- updateOwnershipDepMap context.config inference_info
                     inference_info <- createBaseCallContexts context.config inference_info
@@ -190,7 +188,7 @@ processFunctionGroup index group_count context group = do
                         inference_info <- initializeTypeVariables inference_info function_id info.body
                         inference_info
                     _ -> panic "Groupped function is not normal!")
-            (equals, inference_info) <- List.fold (List2.empty, inference_info) group
+            (equals, inference_info) <- List.fold ([], inference_info) group
                 (\(equals, inference_info), function_id -> do
                     function_info_store <- context.function_info_store
                     function <- P.getFunction context.program function_id

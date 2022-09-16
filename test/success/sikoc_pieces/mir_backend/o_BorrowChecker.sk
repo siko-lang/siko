@@ -9,21 +9,19 @@ import Siko.MIR.Function as F
 
 import Set
 import Map
-import Map2
-import List2 as List2
-import List2 (List2)
+import Map
 
 data Path = Whole | Partial [String] deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
 data Usage = { expr_id :: E.ExprId, path :: Path } deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
-data UsageStore = { usages :: Map2 E.Var (List2 Usage) } deriving (Show, PartialEq, Eq, PartialOrd, Ord)
+data UsageStore = { usages :: Map E.Var (List Usage) } deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
 data Invalidation = { subject :: E.ExprId, object :: E.ExprId } deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
 data Context = { program :: P.Program,
-                 borrows :: List2 E.ExprId ,
-                 invalidations :: List2 Invalidation }
+                 borrows :: List E.ExprId ,
+                 invalidations :: List Invalidation }
 
 data ExecutionMode = Normal
                    | DoesNotReturn deriving (Show)
@@ -41,27 +39,27 @@ invalidates current other = do
             (o_start, _) <- List.split other_path min_len
             c_start == o_start
 
-checkUsages :: List2 Usage -> Usage ->  E.ExprId -> (List2 E.ExprId, List2 Invalidation)
+checkUsages :: List Usage -> Usage ->  E.ExprId -> (List E.ExprId, List Invalidation)
 checkUsages usages usage expr_id = do
-    List2.fold (List2.empty, List2.empty) usages (\(borrows, invalidations), prev_usage ->
+    List.fold (List.empty, List.empty) usages (\(borrows, invalidations), prev_usage ->
         if invalidates usage.path prev_usage.path
         then do
-            borrows <- List2.push borrows prev_usage.expr_id
-            invalidations <- List2.push invalidations (Invalidation expr_id prev_usage.expr_id)
+            borrows <- List.push borrows prev_usage.expr_id
+            invalidations <- List.push invalidations (Invalidation expr_id prev_usage.expr_id)
             (borrows, invalidations)
         else (borrows, invalidations))
 
 addUsageVar :: UsageStore -> E.Var -> UsageStore
 addUsageVar usage_store var = do
-    usages <- Map2.put usage_store.usages var List2.empty
+    usages <- Map.put usage_store.usages var List.empty
     usage_store { usages = usages }
 
 invalidateAll :: Context -> UsageStore -> E.Var -> E.ExprId -> (Context, UsageStore)
 invalidateAll context usage_store var expr_id = do
-    case Map2.get usage_store.usages var of
+    case Map.get usage_store.usages var of
         Some usages -> do
-            context <- List2.fold context usages (\context, usage -> do
-                invalidations <- List2.push context.invalidations (Invalidation expr_id usage.expr_id)
+            context <- List.fold context usages (\context, usage -> do
+                invalidations <- List.push context.invalidations (Invalidation expr_id usage.expr_id)
                 context { invalidations = invalidations })
             (context, usage_store)
         None -> (context, usage_store)
@@ -69,15 +67,15 @@ invalidateAll context usage_store var expr_id = do
 addUsage :: Context -> UsageStore -> E.Var -> E.ExprId -> Path -> (Context, UsageStore)
 addUsage context usage_store var expr_id path = do
     usage <- Usage expr_id path
-    usages <- case Map2.get usage_store.usages var of
+    usages <- case Map.get usage_store.usages var of
         Some usages -> usages
-        None -> List2.empty
+        None -> List.empty
     (borrows, invalidations) <- checkUsages usages usage expr_id
     borrows <- context.borrows + borrows
     invalidations <- context.invalidations + invalidations
-    context <- context { borrows = borrows |> List2.sort |> List2.dedup, invalidations = invalidations }
-    usages <- List2.push usages usage
-    usages<- Map2.put usage_store.usages var usages
+    context <- context { borrows = borrows |> List.sort |> List.dedup, invalidations = invalidations }
+    usages <- List.push usages usage
+    usages<- Map.put usage_store.usages var usages
     (context, usage_store { usages = usages })
 
 collectBlockBorrows :: Context -> UsageStore -> [E.Expr] -> (Context, UsageStore, ExecutionMode)
@@ -91,15 +89,15 @@ collectBlockBorrows context usage_store items =
 
 mergeContexts :: Context -> Context -> Context
 mergeContexts context1 context2 = do
-    borrows <- (context1.borrows + context2.borrows) |> List2.sort |> List2.dedup
-    invalidations <- (context1.invalidations + context2.invalidations) |> List2.sort |> List2.dedup
+    borrows <- (context1.borrows + context2.borrows) |> List.sort |> List.dedup
+    invalidations <- (context1.invalidations + context2.invalidations) |> List.sort |> List.dedup
     context1 { borrows = borrows, invalidations = invalidations }
 
 mergeUsageStores :: UsageStore -> UsageStore -> UsageStore
 mergeUsageStores store1 store2 = do
-    usages <- Map2.fold store1.usages store2.usages (\usages, (var, c_usages) -> do
-        List2.fold usages c_usages (\usages, usage -> Map2.add usages var usage))
-    usages <- Map2.map usages (\(var, usages) -> (var, usages |> List2.sort |> List2.dedup ))
+    usages <- Map.fold store1.usages store2.usages (\usages, (var, c_usages) -> do
+        List.fold usages c_usages (\usages, usage -> Map.add usages var usage))
+    usages <- Map.map usages (\(var, usages) -> (var, usages |> List.sort |> List.dedup ))
     store1 { usages = usages }
 
 processBranches :: Context -> UsageStore -> [(Option E.Var, E.Expr)] -> E.ExprId -> (Context, UsageStore, ExecutionMode)
@@ -126,11 +124,11 @@ collectBorrows context usage_store expr = do
     E.Expr s_expr _ expr_id <- expr
     (context, usage_store, exec_mode) <- case s_expr of
         E.Do items -> do
-            pre_vars <- Map2.getKeys usage_store.usages
+            pre_vars <- Map.getKeys usage_store.usages
             (context, usage_store, exec_mode) <- collectBlockBorrows context usage_store items
-            all_vars <- Map2.getKeys usage_store.usages
-            new_vars <- List2.filter all_vars (\var -> not (List2.contains pre_vars var))
-            (context, usage_store) <- List2.fold (context, usage_store) new_vars (\(context, usage_store), var ->
+            all_vars <- Map.getKeys usage_store.usages
+            new_vars <- List.filter all_vars (\var -> not (List.contains pre_vars var))
+            (context, usage_store) <- List.fold (context, usage_store) new_vars (\(context, usage_store), var ->
                                             invalidateAll context usage_store var expr_id)
             (context, usage_store, exec_mode)
         E.Multi _ -> panic "Multi in borrow checker"
@@ -196,13 +194,13 @@ collectBorrows context usage_store expr = do
 
 checkBorrows :: P.Program -> E.Expr -> BorrowInfo
 checkBorrows program body = do
-    context <- Context program List2.empty List2.empty
-    usage_store <- UsageStore Map2.empty
+    context <- Context program List.empty List.empty
+    usage_store <- UsageStore Map.empty
     (context, usage_store, exec_mode) <- collectBorrows context usage_store body
-    invalidations <- List2.filter context.invalidations (\invalidation -> not (List2.contains context.borrows invalidation.subject))
-    invalidations <- List2.fold Map2.empty invalidations (\invalidations, invalidation -> do
-        (invalidations, _) <- Map2.alter (\old -> case old of
-            Some invalidations -> Some (List2.push invalidations invalidation.object)
-            None -> Some (List2.single invalidation.object)) invalidation.subject invalidations
+    invalidations <- List.filter context.invalidations (\invalidation -> not (List.contains context.borrows invalidation.subject))
+    invalidations <- List.fold Map.empty invalidations (\invalidations, invalidation -> do
+        (invalidations, _) <- Map.alter (\old -> case old of
+            Some invalidations -> Some (List.push invalidations invalidation.object)
+            None -> Some ([invalidation.object])) invalidation.subject invalidations
         invalidations)
     BorrowInfo context.borrows invalidations

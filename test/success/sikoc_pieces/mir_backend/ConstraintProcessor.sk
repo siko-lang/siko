@@ -10,9 +10,7 @@ import Siko.MIR.Program as P
 import Siko.MIR.Expr as E
 import Siko.Config
 import Siko.Trace
-import List2 as List2
-import List2 (List2)
-import Map2
+import Map
 import Set
 
 data InferenceMode = Partial
@@ -22,10 +20,10 @@ data InferenceMode = Partial
 data Context = { inference_info :: InferenceInfo,
                  function_id :: P.Identity,
                  changed_ownership_vars :: Bool,
-                 invalid_borrow_map :: Map2 E.ExprId (List2 E.ExprId),
-                 ownership_expr_map :: Map2 OwnershipTypeVariable (List2 E.ExprId),
+                 invalid_borrow_map :: Map E.ExprId (List E.ExprId),
+                 ownership_expr_map :: Map OwnershipTypeVariable (List E.ExprId),
                  mode :: InferenceMode,
-                 result_vars :: List2 OwnershipTypeVariable,
+                 result_vars :: List OwnershipTypeVariable,
                  allow_guess :: Bool }
 
 getTypeVariableInfoByExprId2 :: Context -> E.ExprId -> (Context, TypeVariableInfo) // FIXME:
@@ -33,10 +31,10 @@ getTypeVariableInfoByExprId2 context expr_id = do
     (inference_info, info) <- getTypeVariableInfoByExprId context.inference_info expr_id context.function_id
     (context { inference_info = inference_info }, info)
 
-dumpConstraints :: List2 C.Constraint -> ()
+dumpConstraints :: List C.Constraint -> ()
 dumpConstraints constraints = do
     println "Constraints:"
-    constraints |> List2.iter |> Iterator.forEach (\c -> println c)
+    constraints |> List.iter |> Iterator.forEach (\c -> println c)
 
 getOwnershipValue :: Context -> OwnershipTypeVariable -> (Context, M.OwnershipKind) // FIXME
 getOwnershipValue context var = do
@@ -51,7 +49,7 @@ updateOwnership context ownership_var kind = do
     //println "UpdateOwnership {} {}" % (ownership_var, kind)
     (context, kind) <- case context.mode of
         Partial -> do
-            is_result_var <- List2.contains context.result_vars ownership_var
+            is_result_var <- List.contains context.result_vars ownership_var
             case (is_result_var, kind) of
                 (True, M.Owner) -> (context, kind)
                 (True, M.Unknown) -> (context, kind)
@@ -61,7 +59,7 @@ updateOwnership context ownership_var kind = do
                     (context, found_function_local) <- Set.fold (context, False) borrow_set.borrows (\(context, found_function_local), borrow ->
                         case borrow of
                             Local expr_id ->
-                                case Map2.get context.invalid_borrow_map expr_id of
+                                case Map.get context.invalid_borrow_map expr_id of
                                     Some _ -> (context, True)
                                     None -> (context, False)
                             _ -> (context, False))
@@ -81,11 +79,11 @@ updateOwnership context ownership_var kind = do
 isValidBorrow :: Context -> OwnershipTypeVariable -> E.ExprId -> (Context, Bool)
 isValidBorrow context ownership_var expr_id = do
     //println "isValidBorrow {} {}" % (ownership_var, expr_id)
-    case Map2.get context.ownership_expr_map ownership_var of
-        Some expr_ids -> List2.fold (context, True) expr_ids (\(context, is_valid_borrow), dep -> do
-            case Map2.get context.invalid_borrow_map dep of
+    case Map.get context.ownership_expr_map ownership_var of
+        Some expr_ids -> List.fold (context, True) expr_ids (\(context, is_valid_borrow), dep -> do
+            case Map.get context.invalid_borrow_map dep of
                 Some invalid_borrows -> do
-                    is_valid_borrow <- is_valid_borrow && not (List2.contains invalid_borrows expr_id)
+                    is_valid_borrow <- is_valid_borrow && not (List.contains invalid_borrows expr_id)
                     (context, is_valid_borrow)
                 None -> (context, is_valid_borrow))
         None -> (context, True)
@@ -94,11 +92,11 @@ canPropagateBorrow :: Context -> OwnershipTypeVariable -> BorrowId -> (Context, 
 canPropagateBorrow context ownership_var borrow_id = do
     (inference_info, borrow_set) <- getBorrowSet context.inference_info borrow_id
     context <- context { inference_info = inference_info }
-    borrows <- borrow_set.borrows |> Set.iter |> List2.toList
-    expr_ids <- List2.filterMap borrows (\borrow -> case borrow of
+    borrows <- borrow_set.borrows |> Set.iter |> List.toList
+    expr_ids <- List.filterMap borrows (\borrow -> case borrow of
         Local expr_id -> Some expr_id
         _ -> None)
-    List2.fold (context, True) expr_ids (\(context, can_propagate), expr_id -> do
+    List.fold (context, True) expr_ids (\(context, can_propagate), expr_id -> do
         (context, is_valid) <- isValidBorrow context ownership_var expr_id
         (context, can_propagate && is_valid))
 
@@ -237,17 +235,17 @@ processConstraint context constraint = do
 
 dumpOwnership :: Context -> Context
 dumpOwnership context = do
-    expr_ids <- Map2.getKeys context.inference_info.expr_type_variables
+    expr_ids <- Map.getKeys context.inference_info.expr_type_variables
     function_id <- context.function_id
-    expr_ids <- List2.filterMap expr_ids (\(GlobalExprId f_id expr_id) -> if f_id == function_id then Some expr_id else None)
-    List2.fold context expr_ids (\context, expr_id -> do
+    expr_ids <- List.filterMap expr_ids (\(GlobalExprId f_id expr_id) -> if f_id == function_id then Some expr_id else None)
+    List.fold context expr_ids (\context, expr_id -> do
             (context, info) <- getTypeVariableInfoByExprId2 context expr_id
             (context, o1) <- getOwnershipValue context info.ownership_var
             println "dumpOwnership {} {} {}" % (expr_id, info, o1)
             context
         )
 
-processConstraints :: Config -> P.Identity -> InferenceInfo -> List2 C.Constraint -> Map2 E.ExprId (List2 E.ExprId) -> Map2 OwnershipTypeVariable (List2 E.ExprId) -> List2 OwnershipTypeVariable -> InferenceMode -> InferenceInfo
+processConstraints :: Config -> P.Identity -> InferenceInfo -> List C.Constraint -> Map E.ExprId (List E.ExprId) -> Map OwnershipTypeVariable (List E.ExprId) -> List OwnershipTypeVariable -> InferenceMode -> InferenceInfo
 processConstraints config function_id inference_info constraints invalid_borrow_map ownership_expr_map result_vars mode = do
     // println "Invalid borrow map {}" % (invalid_borrow_map)
     // println "InferenceInfo {}" % inference_info
@@ -264,7 +262,7 @@ processConstraints config function_id inference_info constraints invalid_borrow_
                     else context { allow_guess = True, changed_ownership_vars = True }
         else do
             context <- context { changed_ownership_vars = False }
-            List2.fold context constraints processConstraint
+            List.fold context constraints processConstraint
     // println "----------- BEGIN"
     // dumpOwnership context
     // println "----------- END"

@@ -286,6 +286,19 @@ map input f = input |> List.iter |> Iterator.map f |> toList
 filter a :: [a] -> (a -> Bool) -> [a]
 filter list f = list |> List.iter |> Iterator.filter f |> toList
 
+// FIXME: use iterator instead
+@Inline
+filterS s a :: s -> [a] -> (s -> a -> (s, Bool)) -> (s, [a])
+filterS state input f = loop (state, result, index) <- (state, List.withCapacity (List.getLength input), 0) do
+    if index >= List.getLength input
+    then break (state, result)
+    else do
+        elem <- List.atIndex input index
+        (state, match) <- f state elem
+        if match
+        then (state, List.push result elem, index + 1)
+        else (state, result, index + 1)
+
 @Inline
 foldM a k v :: (Ord k) => Map k v -> [a] -> (a -> (k, v)) -> Map k v
 foldM init list f = List.fold init list (\m, item -> do

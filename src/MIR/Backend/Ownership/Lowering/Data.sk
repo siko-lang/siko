@@ -23,14 +23,13 @@ import Siko.LIR.Data as LD
 import Siko.LIR.Type as LT
 
 import Map
-import List2
 
-data MemberMerger = { members :: List2 M.MemberInfo }
+data MemberMerger = { members :: [M.MemberInfo] }
 
 instance Apply MemberMerger where
     apply applier merger = do
         (applier, members) <- apply applier merger.members
-        members <- List2.dedup (List2.sort members)
+        members <- List.dedup (List.sort members)
         merger <- MemberMerger members
         (applier, merger)
 
@@ -61,15 +60,15 @@ lowerVariant lowering_info filter_info context index mir_variant = do
     (context, lir_type) <- lowerType context lowering_info mir_variant.type
     (context, LD.Variant mir_variant.name lir_type)
 
-expandMembers :: Context -> List2 M.MemberInfo -> Allocator -> MP.Identity -> GroupTypeVariable -> (Context, List2 M.MemberInfo, Allocator)
+expandMembers :: Context -> [M.MemberInfo] -> Allocator -> MP.Identity -> GroupTypeVariable -> (Context, [M.MemberInfo], Allocator)
 expandMembers context members allocator type_id group_var = do
     (allocator, group_info) <- getDataGroupInfo context.data_group_info_store allocator type_id
     (members, equals) <- case (group_info) of
         Some (data_group_info, var_info) -> do
             data_group_info :: DataGroupInfo <- data_group_info // FIXME
             var_info :: TypeVariableInfo <- var_info // FIXME
-            (members + data_group_info.members, List2.single (EqualGroup group_var var_info.arg_group_var))
-        None -> (members, List2.empty)
+            (members + data_group_info.members, [EqualGroup group_var var_info.arg_group_var])
+        None -> (members, [])
     merger <- MemberMerger members
     merger <- processEquals equals merger
     (context, merger.members, allocator)
@@ -101,14 +100,14 @@ processExternalClassImpl lowering_info mir_id context mir_class_impl =
             (allocator, borrow_id) <- getNextBorrowId allocator
             arg <- arg { arg_group_var = lowering_info.root.arg_group_var }
             args <- case arg_count of
-                1 -> List2.single arg
-                2 -> List2.push (List2.single arg) arg
+                1 -> [arg]
+                2 -> [arg, arg]
                 _ -> panic "External class impl with {} arg count" % arg_count
-            ownershipinfos <- List2.push lowering_info.ownershipinfos (M.OwnershipInfo arg.ownership_var (M.Borrower borrow_id))
-            ownershipinfos <- List2.push ownershipinfos (M.OwnershipInfo result.ownership_var M.Owner)
+            ownershipinfos <- List.push lowering_info.ownershipinfos (M.OwnershipInfo arg.ownership_var (M.Borrower borrow_id))
+            ownershipinfos <- List.push ownershipinfos (M.OwnershipInfo result.ownership_var M.Owner)
             members <- lowering_info.members
             (context, members, allocator) <- expandMembers context lowering_info.members allocator mir_id arg.arg_group_var
-            lowering_info <- FunctionLoweringInfo members args result ownershipinfos allocator List2.empty
+            lowering_info <- FunctionLoweringInfo members args result ownershipinfos allocator []
             (lowering_info, _) <- normalizeFunctionLoweringInfo context.config lowering_info
             lir_key <- FunctionKey impl_id lowering_info
             (context, lir_id) <- getLIRId context lir_key
@@ -126,7 +125,7 @@ lowerRecord context lowering_info mir_id lir_id = do
         Some external_info -> do
             (implicit_member_lifetime, implicit_info) <- case getInfoForField lowering_info 0 of
                 Some info -> do
-                    filtered <- List2.filter lowering_info.ownershipinfos (\owner_info -> owner_info.var == info.ownership_var)
+                    filtered <- List.filter lowering_info.ownershipinfos (\owner_info -> owner_info.var == info.ownership_var)
                     implicit_member_lifetimes <- collectLifetimes filtered
                     (List.head implicit_member_lifetimes, Some info)
                 None -> (None, None)

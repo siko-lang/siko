@@ -5,29 +5,27 @@ import Siko.MIR.Backend.Ownership.TypeVariableInfo
 import Siko.MIR.Backend.Ownership.EqualitySolver
 import Siko.MIR.Type as T
 
-import Map2
-import List2 as List2
-import List2 (List2)
+import Map
 
 data TypeInfo = TypeInfo T.Type TypeVariableInfo deriving (PartialEq, Eq, PartialOrd, Ord, Show)
 
-getTypeInfoMap :: List2 M.MemberInfo  -> (List2 M.MemberInfo , Map2 GroupTypeVariable (List2 TypeInfo))
+getTypeInfoMap :: List M.MemberInfo  -> (List M.MemberInfo , Map GroupTypeVariable (List TypeInfo))
 getTypeInfoMap members = do
-    type_info_map <- Map2.empty
-    (members, type_info_map) <- List2.foldLinear type_info_map members (\type_info_map, m ->
-        Map2.add type_info_map m.root (TypeInfo m.type m.info))
+    type_info_map <- Map.empty
+    type_info_map <- List.fold type_info_map members (\type_info_map, m ->
+        Map.add type_info_map m.root (TypeInfo m.type m.info))
     (members, type_info_map)
 
-mergeTypes :: List2 M.MemberInfo -> (List2 M.MemberInfo, List2 Equal)
+mergeTypes :: List M.MemberInfo -> (List M.MemberInfo, List Equal)
 mergeTypes members = do
     (members, type_info_map) <- getTypeInfoMap members
-    inverse_type_info_map <- Map2.fold Map2.empty type_info_map (\inverse_type_info_map, (root, type_infos) -> Map2.add inverse_type_info_map type_infos root)
-    equals <- Map2.fold List2.empty inverse_type_info_map (\equals, (type_infos, roots) -> do
-        first <- List2.atIndex roots 0
-        if List2.getLength roots > 1
-        then List2.fold equals roots (\equals, var ->
+    inverse_type_info_map <- Map.fold Map.empty type_info_map (\inverse_type_info_map, (root, type_infos) -> Map.add inverse_type_info_map type_infos root)
+    equals <- Map.fold List.empty inverse_type_info_map (\equals, (type_infos, roots) -> do
+        first <- List.atIndex roots 0
+        if List.getLength roots > 1
+        then List.fold equals roots (\equals, var ->
             if first != var
-            then List2.push equals (EqualGroup first var)
+            then List.push equals (EqualGroup first var)
             else equals)
         else equals)
     (members, equals)

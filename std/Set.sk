@@ -1,7 +1,5 @@
 module Set where
 
-import List2
-
 data Set a = { items :: [a] } deriving (Show)
 
 instance (Ord a) => Add Set a where
@@ -52,11 +50,11 @@ toSet iter = Set (List.toList iter |> List.sort |> List.dedup)
 isEmpty a :: Set a -> Bool
 isEmpty set = List.isEmpty set.items
 
-collect a b :: List2 b -> Set a -> (Set a -> b -> Set a) -> Set a
+collect a b :: [b] -> Set a -> (Set a -> b -> Set a) -> Set a
 collect sources result f =
     loop result <- result do
         start_size <- Set.getSize result
-        result <- List2.fold result sources f
+        result <- List.fold result sources f
         if Set.getSize result != start_size
         then result
         else break result

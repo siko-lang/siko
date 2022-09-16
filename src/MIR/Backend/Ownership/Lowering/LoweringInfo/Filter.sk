@@ -13,15 +13,13 @@ import Siko.MIR.Backend.Ownership.OrderedDependencyMap
 import Siko.MIR.Backend.Ownership.Lowering.LoweringInfo.FilterInfo
 
 import Map
-import Map2
+import Map
 import Set
-import List2 as List2
-import List2 (List2)
 
-filterMember :: List2 TypeVariableInfo -> List2 GroupTypeVariable -> M.MemberInfo -> Bool
-filterMember infos vars member = List2.contains infos member.info && List2.contains vars member.root
+filterMember :: [TypeVariableInfo] -> [GroupTypeVariable] -> M.MemberInfo -> Bool
+filterMember infos vars member = List.contains infos member.info && List.contains vars member.root
 
-filterTypeLoweringInfo :: Config -> TypeLoweringInfo -> List2 TypeVariableInfo -> FilterInfo -> TypeLoweringInfo
+filterTypeLoweringInfo :: Config -> TypeLoweringInfo -> [TypeVariableInfo] -> FilterInfo -> TypeLoweringInfo
 filterTypeLoweringInfo config lowering_info sources filter_info = do
     //trace config "------------ start filterInfo {} / {}-----------" % (lowering_info, sources)
     (members, ownershipinfos, allocator) <- filterLoweringInfo config sources lowering_info.members lowering_info.ownershipinfos filter_info
@@ -29,7 +27,7 @@ filterTypeLoweringInfo config lowering_info sources filter_info = do
     //trace config "------------ end filterInfo {} / {}-----------" % (lowering_info, sources)
     lowering_info
 
-filterFunctionLoweringInfo :: Config -> FunctionLoweringInfo -> List2 TypeVariableInfo -> FilterInfo -> FunctionLoweringInfo
+filterFunctionLoweringInfo :: Config -> FunctionLoweringInfo -> [TypeVariableInfo] -> FilterInfo -> FunctionLoweringInfo
 filterFunctionLoweringInfo config lowering_info sources filter_info = do
     //trace config "------------ start filterInfo {} / {}-----------" % (lowering_info, sources)
     (members, ownershipinfos, allocator) <- filterLoweringInfo config sources lowering_info.members lowering_info.ownershipinfos filter_info
@@ -37,24 +35,24 @@ filterFunctionLoweringInfo config lowering_info sources filter_info = do
     //trace config "------------ end filterInfo {} / {}-----------" % (lowering_info, sources)
     lowering_info
 
-filterLoweringInfo :: Config -> List2 TypeVariableInfo ->
-                      List2 M.MemberInfo -> List2 M.OwnershipInfo ->
+filterLoweringInfo :: Config -> [TypeVariableInfo] ->
+                      [M.MemberInfo] -> [M.OwnershipInfo] ->
                       FilterInfo ->
-                      (List2 M.MemberInfo, List2 M.OwnershipInfo, Allocator)
+                      ([M.MemberInfo], [M.OwnershipInfo], Allocator)
 filterLoweringInfo config sources members ownershipinfos filter_info = do
     relevants <- getRelevants filter_info sources
     //println "borrower_map {}" % borrower_map
     //println "relevants {}" % relevants
-    group_vars <- List2.map relevants (\info -> info.arg_group_var)
-    ownership_vars <- List2.map relevants (\info -> info.ownership_var)
-    members <- List2.filter members (filterMember relevants group_vars)
-    ownershipinfos <- List2.filter ownershipinfos (M.filterOwnershipInfo ownership_vars)
-    allocator <- List2.fold createAllocator members (\allocator, m -> do
+    group_vars <- List.map relevants (\info -> info.arg_group_var)
+    ownership_vars <- List.map relevants (\info -> info.ownership_var)
+    members <- List.filter members (filterMember relevants group_vars)
+    ownershipinfos <- List.filter ownershipinfos (M.filterOwnershipInfo ownership_vars)
+    allocator <- List.fold createAllocator members (\allocator, m -> do
             allocator <- addGroupTypeVariable allocator m.root
             allocator <- addTypeVariableInfo allocator m.info
             allocator)
-    allocator <- List2.fold allocator sources (\allocator, info -> addTypeVariableInfo allocator info)
-    allocator <- List2.fold allocator ownershipinfos (\allocator, o -> case o of
+    allocator <- List.fold allocator sources (\allocator, info -> addTypeVariableInfo allocator info)
+    allocator <- List.fold allocator ownershipinfos (\allocator, o -> case o of
         M.OwnershipInfo _ (M.Borrower id) -> addBorrowId allocator id
         _ -> allocator)
     (members, ownershipinfos, allocator)

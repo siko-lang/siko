@@ -5,27 +5,25 @@ import Siko.MIR.Expr as E
 
 import Set
 import Map
-import Map2
-import List2 as List2
-import List2 (List2)
+import Map
 
 data Path = Whole | Partial [String] deriving (PartialEq, Eq, PartialOrd, Ord)
 
 data Usage = { expr_id :: E.ExprId, path :: Path } deriving (PartialEq, Eq, PartialOrd, Ord)
 
-data UsageStore = { usages :: Map2 E.Var (List2 Usage) } deriving (PartialEq, Eq, PartialOrd, Ord)
+data UsageStore = { usages :: Map E.Var (List Usage) } deriving (PartialEq, Eq, PartialOrd, Ord)
 
 data Invalidation = { subject :: E.ExprId, object :: E.ExprId } deriving (PartialEq, Eq, PartialOrd, Ord)
 
-data Context = { borrows :: List2 E.ExprId ,
-                 invalidations :: List2 Invalidation }
+data Context = { borrows :: List E.ExprId ,
+                 invalidations :: List Invalidation }
 
 data ExecutionMode = Normal
                    | DoesNotReturn
 
 addUsageVar :: UsageStore -> E.Var -> UsageStore
 addUsageVar usage_store var = do
-    usages <- Map2.put usage_store.usages var List2.empty
+    usages <- Map.put usage_store.usages var List.empty
     usage_store { usages = usages }
 
 processBranches :: Context -> UsageStore -> [(Option E.Var, E.Expr)] -> E.ExprId -> (Context, UsageStore, ExecutionMode)
@@ -65,7 +63,7 @@ collectBorrows context usage_store expr = do
 
 checkBorrows :: E.Expr -> BorrowInfo
 checkBorrows body = do
-    context <- Context List2.empty List2.empty
-    usage_store <- UsageStore Map2.empty
+    context <- Context List.empty List.empty
+    usage_store <- UsageStore Map.empty
     (context, usage_store, exec_mode) <- collectBorrows context usage_store body
-    BorrowInfo context.borrows Map2.empty
+    BorrowInfo context.borrows Map.empty

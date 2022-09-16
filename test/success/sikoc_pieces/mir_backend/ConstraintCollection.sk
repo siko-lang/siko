@@ -18,25 +18,23 @@ import Siko.Trace
 
 import Map
 import Set
-import List2 as List2
-import List2 (List2)
-import Map2 as Map2
-import Map2 (Map2)
+import Map as Map
+import Map (Map)
 
 data Context = { config :: Config,
                  function_id :: P.Identity,
                  inference_info :: InferenceInfo,
                  program :: P.Program,
                  borrow_info :: BorrowInfo,
-                 invalid_borrows :: List2 E.ExprId,
-                 constraints :: List2 C.Constraint,
-                 ownership_dep_map :: Map2 GroupTypeVariable (List2 OwnershipTypeVariable),
-                 invalid_borrow_map :: Map2 E.ExprId (List2 E.ExprId),
-                 ownership_expr_map :: Map2 OwnershipTypeVariable (List2 E.ExprId) }
+                 invalid_borrows :: List E.ExprId,
+                 constraints :: List C.Constraint,
+                 ownership_dep_map :: Map GroupTypeVariable (List OwnershipTypeVariable),
+                 invalid_borrow_map :: Map E.ExprId (List E.ExprId),
+                 ownership_expr_map :: Map OwnershipTypeVariable (List E.ExprId) }
 
 addOwnershipConstraint :: Context -> C.Constraint -> Context
 addOwnershipConstraint context constraint = do
-    constraints <- List2.push context.constraints constraint
+    constraints <- List.push context.constraints constraint
     context { constraints = constraints }
 
 addOwnershipValue :: Context -> OwnershipTypeVariable -> M.OwnershipKind -> Context
@@ -91,15 +89,15 @@ processExpr context expr = do
                 case function.kind of
                     F.Normal _ | F.Extern _ -> do
                         //println "{}/function info {}" % (f_id, function_info)
-                        case Map2.get context.inference_info.function_converters expr_id of
+                        case Map.get context.inference_info.function_converters expr_id of
                             Some function_converters -> do
-                                List2.fold context function_converters (\context, converter -> do
+                                List.fold context function_converters (\context, converter -> do
                                     //println "Running function converter"
                                     addOwnershipConstraint context (C.FunctionConverter (C.FunctionConverterConstraint converter.from converter.to)))
-                            None -> if List2.contains context.inference_info.group f_id
-                                then case Map2.get context.inference_info.group_function_converters f_id of
+                            None -> if List.contains context.inference_info.group f_id
+                                then case Map.get context.inference_info.group_function_converters f_id of
                                     Some function_converters -> do
-                                        List2.fold context function_converters (\context, converter -> do
+                                        List.fold context function_converters (\context, converter -> do
                                             //println "Running function converter"
                                             addOwnershipConstraint context (C.FunctionConverter (C.FunctionConverterConstraint converter.from converter.to)))
                                     None -> context
@@ -121,10 +119,10 @@ processExpr context expr = do
             (context, receiver_info) <- getTypeVariableInfoByExprId2 context receiver_id
             (context, receiver_kind) <- getOwnershipValue context receiver_info.ownership_var
             (context, expr_kind) <- getOwnershipValue context info.ownership_var
-            member <- List2.filter context.inference_info.members (\m -> case m.kind of
+            member <- List.filter context.inference_info.members (\m -> case m.kind of
                     M.Field n -> n == name && receiver_info.arg_group_var == m.root
                     _ -> False)
-            member_info <- case List2.head member of
+            member_info <- case List.head member of
                 Some m -> do
                     m :: M.MemberInfo <- m // FIXME
                     m.info
@@ -169,7 +167,7 @@ processExpr context expr = do
             E.Expr _ _ body_id <- body
             saved_invalid_borrows <- context.invalid_borrows
             (context, body_info) <- getTypeVariableInfoByExprId2 context body_id
-            (context, all_invalid_borrows) <- List.fold (context, List2.empty) cases (\(context, all_invalid_borrows), c -> do
+            (context, all_invalid_borrows) <- List.fold (context, List.empty) cases (\(context, all_invalid_borrows), c -> do
                     context <- case c.checker of
                         E.VariantChecker index var _ -> do
                             (context, var_info) <- getTypeVariableInfoByVar2 context var
@@ -203,29 +201,29 @@ processExpr context expr = do
 
 updateInvalidBorrows :: Context -> E.ExprId -> TypeVariableInfo -> Context
 updateInvalidBorrows context expr_id expr_info = do
-    context <- case Map2.get context.borrow_info.invalidations expr_id of
+    context <- case Map.get context.borrow_info.invalidations expr_id of
         Some invalidations -> do
             invalid_borrows <- context.invalid_borrows + invalidations
-            invalid_borrows <- invalid_borrows |> List2.sort |> List2.dedup
+            invalid_borrows <- invalid_borrows |> List.sort |> List.dedup
             context { invalid_borrows = invalid_borrows }
         None -> context
     (ownership_dep_map, relevants) <- getOwnershipVars context.ownership_dep_map expr_info
     // println "Invalid borrows {} = {}" % (expr_id, context.invalid_borrows)
     // println "Relevants {}" % relevants
-    ownership_expr_map <- List2.fold context.ownership_expr_map relevants (\ownership_expr_map, ownership_var -> Map2.add ownership_expr_map ownership_var expr_id)
-    invalid_borrow_map <- Map2.put context.invalid_borrow_map expr_id context.invalid_borrows
+    ownership_expr_map <- List.fold context.ownership_expr_map relevants (\ownership_expr_map, ownership_var -> Map.add ownership_expr_map ownership_var expr_id)
+    invalid_borrow_map <- Map.put context.invalid_borrow_map expr_id context.invalid_borrows
     context <- context { ownership_dep_map = ownership_dep_map,
                         invalid_borrow_map = invalid_borrow_map,
                         ownership_expr_map = ownership_expr_map, }
     context
 
-collectConstraints :: Config -> P.Identity -> P.Program -> BorrowInfo -> InferenceInfo -> E.Expr -> (InferenceInfo, List2 C.Constraint, Map2 E.ExprId (List2 E.ExprId), Map2 OwnershipTypeVariable (List2 E.ExprId), List2 OwnershipTypeVariable)
+collectConstraints :: Config -> P.Identity -> P.Program -> BorrowInfo -> InferenceInfo -> E.Expr -> (InferenceInfo, List C.Constraint, Map E.ExprId (List E.ExprId), Map OwnershipTypeVariable (List E.ExprId), List OwnershipTypeVariable)
 collectConstraints config function_id program borrow_info inference_info body = do
     //trace config "collectConstraints {}" % function_id
     (members, ownership_dep_map) <- calculateOwnershipDepMap config inference_info.members
     inference_info <- inference_info { members = members }
-    context <- Context config function_id inference_info program borrow_info List2.empty
-               List2.empty ownership_dep_map Map2.empty Map2.empty
+    context <- Context config function_id inference_info program borrow_info List.empty
+               List.empty ownership_dep_map Map.empty Map.empty
     context <- processExpr context body
     E.Expr _ _ body_id <- body
     (context, body_info) <- getTypeVariableInfoByExprId2 context body_id

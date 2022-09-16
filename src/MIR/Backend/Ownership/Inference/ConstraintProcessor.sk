@@ -10,9 +10,7 @@ import Siko.MIR.Program as P
 import Siko.MIR.Expr as E
 import Siko.Config
 import Siko.Trace
-import List2 as List2
-import List2 (List2)
-import Map2
+import Map
 import Map
 import Set
 
@@ -24,17 +22,17 @@ data Context = { config :: Config,
                  inference_info :: InferenceInfo,
                  function_id :: P.Identity,
                  changed_ownership_vars :: Bool,
-                 invalid_borrow_map :: Map2 E.ExprId (List2 E.ExprId),
-                 ownership_expr_map :: Map2 OwnershipTypeVariable (List2 E.ExprId),
-                 group_expr_map :: Map2 GroupTypeVariable (List2 E.ExprId),
-                 ownership_group_map :: Map2 OwnershipTypeVariable (List2 GroupTypeVariable),
+                 invalid_borrow_map :: Map E.ExprId [E.ExprId],
+                 ownership_expr_map :: Map OwnershipTypeVariable [E.ExprId],
+                 group_expr_map :: Map GroupTypeVariable [E.ExprId],
+                 ownership_group_map :: Map OwnershipTypeVariable [GroupTypeVariable],
                  call_context_map :: Map E.ExprId C.CallContextSet,
                  mode :: InferenceMode,
-                 result_vars :: List2 OwnershipTypeVariable,
+                 result_vars :: [OwnershipTypeVariable],
                  allow_guess :: Bool,
-                 function_converter_borrows :: Map2 Int (List2 FunctionConverterBorrow),
-                 function_converter_borrow_keys :: Map2 Int E.ExprId,
-                 call_args :: Map2 E.ExprId (List2 OwnershipTypeVariable) } deriving (Move)
+                 function_converter_borrows :: Map Int [FunctionConverterBorrow],
+                 function_converter_borrow_keys :: Map Int E.ExprId,
+                 call_args :: Map E.ExprId [OwnershipTypeVariable] } deriving (Move)
 
 isDebug :: Context -> (Context, Bool)
 isDebug context = do
@@ -50,10 +48,10 @@ debugPrint context msg = do
         context
     else context
 
-dumpConstraints :: List2 C.Constraint -> ()
+dumpConstraints :: [C.Constraint] -> ()
 dumpConstraints constraints = do
     println "Constraints:"
-    constraints |> List2.iter |> Iterator.forEach (\c -> println c)
+    constraints |> List.iter |> Iterator.forEach (\c -> println c)
 
 getOwnershipValue :: Context -> OwnershipTypeVariable -> M.OwnershipKind
 getOwnershipValue context var = do
@@ -66,7 +64,7 @@ updateOwnership :: Context -> OwnershipTypeVariable -> M.OwnershipKind -> Contex
 updateOwnership context ownership_var kind = do
     (context, kind) <- case context.mode of
         Partial -> do
-            is_result_var <- List2.contains context.result_vars ownership_var
+            is_result_var <- List.contains context.result_vars ownership_var
             case (is_result_var, kind) of
                 (True, M.Owner) -> (context, kind)
                 (True, M.Unknown) -> (context, kind)
@@ -89,36 +87,36 @@ isValidBorrow :: Context -> OwnershipTypeVariable -> E.ExprId -> Bool
 isValidBorrow context ownership_var expr_id = do
         //context <- debugPrint context "isValidBorrow {} {}" % (ownership_var, expr_id)
         is_valid_borrow <- True
-        is_valid_borrow <- case Map2.get context.ownership_expr_map ownership_var of
+        is_valid_borrow <- case Map.get context.ownership_expr_map ownership_var of
             Some expr_ids -> checkExprs context is_valid_borrow expr_ids expr_id
             None -> is_valid_borrow
         if is_valid_borrow
-        then case Map2.get context.ownership_group_map ownership_var of
-            Some groups -> List2.fold is_valid_borrow groups (\is_valid_borrow, group -> do
-                    case Map2.get context.group_expr_map group of
+        then case Map.get context.ownership_group_map ownership_var of
+            Some groups -> List.fold is_valid_borrow groups (\is_valid_borrow, group -> do
+                    case Map.get context.group_expr_map group of
                         Some expr_ids -> checkExprs context is_valid_borrow expr_ids expr_id
                         None -> is_valid_borrow
                 )
             None -> True
         else is_valid_borrow
     where
-        checkExprs :: Context -> Bool -> List2 E.ExprId -> E.ExprId -> Bool
-        checkExprs context is_valid_borrow expr_ids expr_id = List2.fold is_valid_borrow expr_ids (\is_valid_borrow, dep -> do
+        checkExprs :: Context -> Bool -> [E.ExprId] -> E.ExprId -> Bool
+        checkExprs context is_valid_borrow expr_ids expr_id = List.fold is_valid_borrow expr_ids (\is_valid_borrow, dep -> do
             if is_valid_borrow
             then checkExpr context expr_id dep
             else is_valid_borrow)
 
         checkExpr :: Context -> E.ExprId -> E.ExprId -> Bool
         checkExpr context expr_id dep =
-            case Map2.get context.invalid_borrow_map dep of
-                Some invalid_borrows -> not (List2.contains invalid_borrows expr_id)
+            case Map.get context.invalid_borrow_map dep of
+                Some invalid_borrows -> not (List.contains invalid_borrows expr_id)
                 None -> True
 
 isInternal :: Context -> BorrowId -> (Context, Bool)
 isInternal context borrow_id = do
     borrow_set <- getBorrowSet context.inference_info borrow_id
-    borrows <- borrow_set.borrows |> Set.iter |> List2.toList
-    is_internal <- List2.fold True borrows (\is_internal, borrow -> case borrow of
+    borrows <- borrow_set.borrows |> Set.iter |> List.toList
+    is_internal <- List.fold True borrows (\is_internal, borrow -> case borrow of
         Internal _ -> is_internal
         _ -> False)
     (context, is_internal)
@@ -126,11 +124,11 @@ isInternal context borrow_id = do
 canPropagateBorrow :: Context -> OwnershipTypeVariable -> BorrowId -> Bool
 canPropagateBorrow context ownership_var borrow_id = do
     borrow_set <- getBorrowSet context.inference_info borrow_id
-    borrows <- borrow_set.borrows |> Set.iter |> List2.toList
-    expr_ids <- List2.filterMap borrows (\borrow -> case borrow of
+    borrows <- borrow_set.borrows |> Set.iter |> List.toList
+    expr_ids <- List.filterMap borrows (\borrow -> case borrow of
         Local expr_id -> Some expr_id
         _ -> None)
-    List2.fold True expr_ids (\can_propagate, expr_id -> do
+    List.fold True expr_ids (\can_propagate, expr_id -> do
         is_valid <- isValidBorrow context ownership_var expr_id
         can_propagate && is_valid)
 
@@ -153,22 +151,22 @@ processCallContext context call_id index from to to_borrow = do
     context <- eraseFunctionConverterBorrow context index
     case Map.get context.call_context_map call_id of
         Some call_context_set -> do
-            call_args <- case Map2.get context.call_args call_id of
+            call_args <- case Map.get context.call_args call_id of
                 Some call_args -> call_args
                 None -> panic "Call args not found for call {}" % call_id
-            (borrows, owners, unknowns) <- if List2.contains call_args from
+            (borrows, owners, unknowns) <- if List.contains call_args from
             then do
                 from_kind <- getOwnershipValue context from
                 args <- context.call_args
                 //context <- debugPrint context "using {} from {} as that is a call_arg {}" % (from_kind, from, args)
                 case from_kind of
-                    M.Owner -> (List2.empty, List2.single from_kind, List2.empty)
-                    M.Borrower _ -> (List2.single from_kind, List2.empty, List2.empty)
-                    M.Unknown -> (List2.empty, List2.empty, List2.single from_kind)
+                    M.Owner -> ([], [from_kind], [])
+                    M.Borrower _ -> ([from_kind], [], [])
+                    M.Unknown -> ([], [], [from_kind])
             else do
                 call_context_set :: C.CallContextSet <- call_context_set // FIXME
                 //context <- debugPrint context "Call context set {}" % call_context_set
-                List.fold (List2.empty, List2.empty, List2.empty) call_context_set.call_contexts (\(borrows, owners, unknowns), call_context -> do
+                List.fold ([], [], []) call_context_set.call_contexts (\(borrows, owners, unknowns), call_context -> do
                         case Map.get call_context.sub_map from of
                             Some parents -> do
                                 //context <- debugPrint context "Checking parents {}" % parents
@@ -176,34 +174,34 @@ processCallContext context call_id index from to to_borrow = do
                                 //context <- debugPrint context "Parent kind {}" % parent_kind
                                 case parent_kind of
                                     M.Borrower _ -> do
-                                        borrows <- List2.push borrows parent_kind
+                                        borrows <- List.push borrows parent_kind
                                         (borrows, owners, unknowns)
                                     M.Owner -> do
-                                        owners <- List2.push owners parent_kind
+                                        owners <- List.push owners parent_kind
                                         (borrows, owners, unknowns)
                                     M.Unknown -> do
-                                        unknowns <- List2.push unknowns parent_kind
+                                        unknowns <- List.push unknowns parent_kind
                                         (borrows, owners, unknowns)
                             None -> (borrows, owners, unknowns))
             //context <- debugPrint context "After checking parents {}/{}/{}" % (borrows, owners, unknowns)
-            if not (List2.isEmpty unknowns)
+            if not (List.isEmpty unknowns)
             then context
             else do
-                if not (List2.isEmpty owners)
+                if not (List.isEmpty owners)
                 then do
                     //context <- debugPrint context "in some context ownership required, promoting {}" % to
                     updateOwnership context to M.Owner
                 else do
-                    borrows <- borrows |> List2.sort |> List2.dedup
-                    borrows <- List2.map borrows (\borrow -> case borrow of
+                    borrows <- borrows |> List.sort |> List.dedup
+                    borrows <- List.map borrows (\borrow -> case borrow of
                                 M.Borrower id -> id
                                 _ -> panic "Borrow is not a borrow?!")
-                    case List2.getLength borrows of
+                    case List.getLength borrows of
                         0 -> do
                             //context <- debugPrint context "Cannot borrow anything, do nothing"
                             context
                         _ -> do
-                            can_propagate <- List2.fold True borrows (\can_propagate, borrow -> do
+                            can_propagate <- List.fold True borrows (\can_propagate, borrow -> do
                                         c <- canPropagateBorrow context to borrow
                                         can_propagate <- can_propagate && c
                                         can_propagate)
@@ -211,7 +209,7 @@ processCallContext context call_id index from to to_borrow = do
                             then do
                                 (context, contains) <- case to_borrow of
                                     Some to_borrow -> do
-                                        List2.fold (context, True) borrows (\(context, contains), borrow -> do
+                                        List.fold (context, True) borrows (\(context, contains), borrow -> do
                                             c <- containsBorrows context.inference_info borrow to_borrow
                                             contains <- contains  && c
                                             (context, contains))
@@ -219,29 +217,29 @@ processCallContext context call_id index from to to_borrow = do
                                 if contains
                                 then do
                                     to_borrow <- Option.unwrap to_borrow
-                                    borrows <- List2.fold List2.empty borrows (\borrows, borrow -> if borrow == to_borrow
+                                    borrows <- List.fold [] borrows (\borrows, borrow -> if borrow == to_borrow
                                         then borrows
-                                        else List2.push borrows (FunctionConverterBorrow borrow to_borrow))
+                                        else List.push borrows (FunctionConverterBorrow borrow to_borrow))
                                     //context <- debugPrint context "propagation possible to target, borrows {}, adding to {}" % (borrows, index)
-                                    function_converter_borrows <- Map2.put context.function_converter_borrows index borrows
+                                    function_converter_borrows <- Map.put context.function_converter_borrows index borrows
                                     context <- context { function_converter_borrows = function_converter_borrows }
                                     context
                                 else do
                                     borrows <- case to_borrow of
-                                        Some to_borrow -> List2.push borrows to_borrow
+                                        Some to_borrow -> List.push borrows to_borrow
                                         None -> borrows
-                                    first <- List2.atIndex borrows 0
-                                    if List2.getLength borrows == 1
+                                    first <- List.atIndex borrows 0
+                                    if List.getLength borrows == 1
                                     then do
                                         //context <- debugPrint context "propagation not possible to target (single), setting borrow {} at {}" % (first,  index)
                                         updateOwnership context to (M.Borrower first) 
                                     else do
-                                        (context, merged) <- List2.fold (context, first) borrows (\(context, current), borrow -> do
+                                        (context, merged) <- List.fold (context, first) borrows (\(context, current), borrow -> do
                                             (inference_info, id) <- mergeBorrowSets context.inference_info current borrow
                                             context <- context { inference_info = inference_info }
                                             (context, id))
-                                        borrows <- List2.map borrows (\borrow -> FunctionConverterBorrow borrow merged)
-                                        function_converter_borrows <- Map2.put context.function_converter_borrows index borrows
+                                        borrows <- List.map borrows (\borrow -> FunctionConverterBorrow borrow merged)
+                                        function_converter_borrows <- Map.put context.function_converter_borrows index borrows
                                         //context <- debugPrint context "propagation not possible to target, borrows {}, adding to {}" % (borrows, index)
                                         context <- context { function_converter_borrows = function_converter_borrows }
                                         updateOwnership context to (M.Borrower merged)
@@ -254,13 +252,13 @@ processCallContext context call_id index from to to_borrow = do
 
 eraseFunctionConverterBorrow :: Context -> Int -> Context
 eraseFunctionConverterBorrow context index = do
-    (function_converter_borrows, _) <- Map2.remove context.function_converter_borrows index
+    (function_converter_borrows, _) <- Map.remove context.function_converter_borrows index
     context { function_converter_borrows = function_converter_borrows }
 
 addFunctionConverterBorrow :: Context -> Int -> BorrowId -> BorrowId -> Context
 addFunctionConverterBorrow context index a b = do
     //context <- debugPrint context "addFunctionConverterBorrow {} {} {}" % (index, a, b)
-    function_converter_borrows <- Map2.put context.function_converter_borrows index (List2.single (FunctionConverterBorrow a b))
+    function_converter_borrows <- Map.put context.function_converter_borrows index [FunctionConverterBorrow a b]
     context { function_converter_borrows = function_converter_borrows }
 
 processFunctionConverter :: Context -> C.FunctionConverterConstraint -> Int -> Context
@@ -268,7 +266,7 @@ processFunctionConverter context converter index = do
     context <- eraseFunctionConverterBorrow context index
     from <- converter.from
     to <- converter.to
-    function_converter_borrow_keys <- Map2.put context.function_converter_borrow_keys index converter.call
+    function_converter_borrow_keys <- Map.put context.function_converter_borrow_keys index converter.call
     context <- context { function_converter_borrow_keys = function_converter_borrow_keys }
     from_kind <- getOwnershipValue context from
     to_kind <- getOwnershipValue context to
@@ -417,26 +415,26 @@ processConstraint (context, index) constraint = do
 
 dumpOwnership :: Context -> Context
 dumpOwnership context = do
-    expr_ids <- Map2.getKeys context.inference_info.expr_type_variables
+    expr_ids <- Map.getKeys context.inference_info.expr_type_variables
     function_id <- context.function_id
-    expr_ids <- List2.filterMap expr_ids (\(GlobalExprId f_id expr_id) -> if f_id == function_id then Some expr_id else None)
-    List2.fold context expr_ids (\context, expr_id -> do
+    expr_ids <- List.filterMap expr_ids (\(GlobalExprId f_id expr_id) -> if f_id == function_id then Some expr_id else None)
+    List.fold context expr_ids (\context, expr_id -> do
             info <- getTypeVariableInfoByExprId context.inference_info expr_id context.function_id
             o1 <- getOwnershipValue context info.ownership_var
             println "dumpOwnership {} {} {}" % (expr_id, info, o1)
             context
         )
 
-processConstraints :: Config -> P.Identity -> InferenceInfo -> List2 C.Constraint ->
-                      Map2 E.ExprId (List2 E.ExprId) -> Map2 OwnershipTypeVariable (List2 E.ExprId) ->
-                      Map2 GroupTypeVariable (List2 E.ExprId) -> Map2 OwnershipTypeVariable (List2 GroupTypeVariable) ->
-                      List2 OwnershipTypeVariable -> Map E.ExprId C.CallContextSet -> InferenceMode -> Map2 E.ExprId (List2 OwnershipTypeVariable) -> InferenceInfo
+processConstraints :: Config -> P.Identity -> InferenceInfo -> [C.Constraint] ->
+                      Map E.ExprId [E.ExprId] -> Map OwnershipTypeVariable [E.ExprId] ->
+                      Map GroupTypeVariable [E.ExprId] -> Map OwnershipTypeVariable [GroupTypeVariable] ->
+                      [OwnershipTypeVariable] -> Map E.ExprId C.CallContextSet -> InferenceMode -> Map E.ExprId [OwnershipTypeVariable] -> InferenceInfo
 processConstraints config function_id inference_info constraints invalid_borrow_map ownership_expr_map 
                     group_expr_map ownership_group_map result_vars call_context_map mode call_args = do
     // println "Invalid borrow map {}" % (invalid_borrow_map)
     // println "InferenceInfo {}" % inference_info
     context <- Context config inference_info function_id True invalid_borrow_map
-                       ownership_expr_map group_expr_map ownership_group_map call_context_map mode result_vars False Map2.empty Map2.empty call_args
+                       ownership_expr_map group_expr_map ownership_group_map call_context_map mode result_vars False Map.empty Map.empty call_args
     //dumpConstraints constraints
     context <- loop context <- context do
         context :: Context <- context // FIXME
@@ -449,14 +447,14 @@ processConstraints config function_id inference_info constraints invalid_borrow_
                     else context { allow_guess = True, changed_ownership_vars = True }
         else do
             context <- context { changed_ownership_vars = False }
-            (context, _) <- List2.fold (context, 0) constraints processConstraint
+            (context, _) <- List.fold (context, 0) constraints processConstraint
             context
     // println "----------- BEGIN"
     // dumpOwnership context
     // println "----------- END"
-    expr_id_map <- Map2.fold Map2.empty context.function_converter_borrow_keys (\expr_id_map, (index, expr_id) -> Map2.add expr_id_map expr_id index)
-    (context, function_converter_borrows) <- Map2.mapS context expr_id_map (\context, (expr_id, indices) -> do
-            (context, borrows) <- List2.fold (context, List2.empty) indices (\(context, borrows), index -> case Map2.get context.function_converter_borrows index of
+    expr_id_map <- Map.fold Map.empty context.function_converter_borrow_keys (\expr_id_map, (index, expr_id) -> Map.add expr_id_map expr_id index)
+    (context, function_converter_borrows) <- Map.mapS context expr_id_map (\context, (expr_id, indices) -> do
+            (context, borrows) <- List.fold (context, []) indices (\(context, borrows), index -> case Map.get context.function_converter_borrows index of
                         Some bs -> (context, borrows + bs)
                         None -> (context, borrows))
             (context, expr_id, borrows)

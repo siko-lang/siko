@@ -4,17 +4,17 @@ import Siko.MIR.Program as MP
 import Siko.LIR.Program as LP
 import Siko.MIR.Backend.Ownership.Lowering.Context
 
-import Map2 as Map2
-import Map2 (Map2)
+import Map as Map
+import Map (Map)
 
 data Name = { module_name :: String, name :: String } deriving (PartialEq, Eq, PartialOrd, Ord, Show)
 
-data NameMap = { names :: Map2 Name Int }
+data NameMap = { names :: Map Name Int }
 
 getName :: NameMap -> MP.Identity -> (NameMap, LP.Identity)
 getName name_map mir_id = do
     MP.Identity mod name _ <- mir_id
-    (names, id) <- Map2.alter (\old -> case old of
+    (names, id) <- Map.alter (\old -> case old of
         Some old_id -> Some (old_id + 1)
         None -> Some 1) (Name mod name) name_map.names
     lir_id <- case id of
@@ -39,5 +39,5 @@ getLIRId :: Context -> LIRKey -> (Context, LP.Identity)
 getLIRId context key = do
     mir_id <- getMIRId key
     lir_id :: Option LP.Identity <- None
-    ((name_map, lir_id), lir_ids, _) <- Map2.alterS (createId mir_id) (context.name_map, None) key context.lir_ids
+    ((name_map, lir_id), lir_ids, _) <- Map.alterS (createId mir_id) (context.name_map, None) key context.lir_ids
     (context { name_map = name_map, lir_ids = lir_ids }, Option.unwrap lir_id)

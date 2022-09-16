@@ -2,38 +2,37 @@ module Main where
 
 data OwnershipTypeVariable = OwnershipTypeVariable Int deriving (PartialEq, Eq, PartialOrd, Ord)
 
-import List2
-import Map2
+import Map
 
 data Converter = { from :: OwnershipTypeVariable,
                    to :: OwnershipTypeVariable,
                  } deriving (PartialEq, Eq, PartialOrd, Ord)
 
-data InferenceInfo = { converters :: List2 Converter }
+data InferenceInfo = { converters :: List Converter }
 
-getFunctionConverters :: InferenceInfo -> List2 Converter
+getFunctionConverters :: InferenceInfo -> List Converter
 getFunctionConverters inference_info = do
     converters <- inference_info.converters
-    (converters, converter_map) <- List2.foldLinear Map2.empty converters (\converter_map, converter ->
-        Map2.put converter_map converter.from converter.to)
-    input_ownership_vars <- List2.empty
-    output_ownership_vars <- List2.empty
-    (converters, (converter_map, input_ownership_vars, output_ownership_vars, filtered_converters)) <- List2.foldLinear (converter_map, input_ownership_vars, output_ownership_vars, List2.empty) converters
+    converter_map <- List.fold Map.empty converters (\converter_map, converter ->
+        Map.put converter_map converter.from converter.to)
+    input_ownership_vars <- List.empty
+    output_ownership_vars <- List.empty
+    (converter_map, input_ownership_vars, output_ownership_vars, filtered_converters) <- List.fold (converter_map, input_ownership_vars, output_ownership_vars, List.empty) converters
         (\(converter_map, input_ownership_vars, output_ownership_vars, filtered_converters), converter -> do
-            filtered_converters <- if List2.contains input_ownership_vars converter.from
+            filtered_converters <- if List.contains input_ownership_vars converter.from
             then do
-                converter <- loop (visited, converter) <- (List2.single converter.from, converter) do
+                converter <- loop (visited, converter) <- ([converter.from], converter) do
                     converter :: Converter <- converter // FIXME
-                    case Map2.get converter_map converter.to of
+                    case Map.get converter_map converter.to of
                         Some another_to -> do
-                            if List2.contains visited another_to
+                            if List.contains visited another_to
                             then break converter
                             else do
-                                visited <- List2.push visited another_to
+                                visited <- List.push visited another_to
                                 (visited, converter { to = another_to })
                         None -> break converter
-                if List2.contains output_ownership_vars converter.to
-                then List2.push filtered_converters converter
+                if List.contains output_ownership_vars converter.to
+                then List.push filtered_converters converter
                 else filtered_converters
             else filtered_converters
             (converter_map, input_ownership_vars, output_ownership_vars, filtered_converters))
@@ -43,7 +42,7 @@ main = do
     if True
     then ()
     else do
-        inference_info <- InferenceInfo List2.empty
+        inference_info <- InferenceInfo List.empty
         getFunctionConverters inference_info
         inference_info
         ()
