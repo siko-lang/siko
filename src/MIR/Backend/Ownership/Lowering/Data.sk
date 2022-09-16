@@ -64,10 +64,7 @@ expandMembers :: Context -> [M.MemberInfo] -> Allocator -> MP.Identity -> GroupT
 expandMembers context members allocator type_id group_var = do
     (allocator, group_info) <- getDataGroupInfo context.data_group_info_store allocator type_id
     (members, equals) <- case (group_info) of
-        Some (data_group_info, var_info) -> do
-            data_group_info :: DataGroupInfo <- data_group_info // FIXME
-            var_info :: TypeVariableInfo <- var_info // FIXME
-            (members + data_group_info.members, [EqualGroup group_var var_info.arg_group_var])
+        Some (data_group_info, var_info) -> (members + data_group_info.members, [EqualGroup group_var var_info.arg_group_var])
         None -> (members, [])
     merger <- MemberMerger members
     merger <- processEquals equals merger

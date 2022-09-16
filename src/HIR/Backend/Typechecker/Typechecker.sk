@@ -65,15 +65,11 @@ instance U.DataProvider TypecheckerState where
 
 instance U.ClassProvider TypecheckerState where
     getAllClassDependencies state qn = case get state.class_store.classes qn of
-                                        Some class_info -> do
-                                            class_info :: CS.ClassInfo <- class_info // FIXME
-                                            class_info.all_dependencies
+                                        Some class_info -> class_info.all_dependencies
                                         None -> panic "Class not found in class store"
 
     getAssociatedTypeCount state qn = case get state.class_store.class_type_info_map qn of
-                                        Some class_type_info -> do
-                                            class_type_info :: ClassTypeInfo <- class_type_info // FIXME
-                                            getLength class_type_info.associated_types
+                                        Some class_type_info -> getLength class_type_info.associated_types
                                         None -> panic "Class not found in class store"
 
 instance HTI.DependencyProvider TypecheckerState where

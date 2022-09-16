@@ -65,7 +65,7 @@ processExpr context expr = do
             qn <- case type of
                 T.Named qn _ -> qn
                 _ -> panic "Record update's type is not a record!"
-            record :: D.Record <- P.getRecord context.program qn // FIXME
+            record <- P.getRecord context.program qn
             (context, record) <- Result.unwrap (UD.instantiateRecord context record type)
             (context, args) <- List.fold (context, []) record.fields (\(context, args), field -> do
                 D.RecordField field_name field_type <- field
@@ -73,7 +73,6 @@ processExpr context expr = do
                                             update_name <- getString update.field_name
                                             update_name == field_name) of
                     Some update -> do
-                        update :: E.RecordConstructionItem T.Type <- update // FIXME
                         (context, update.body)
                     None -> do
                         (context, expr_id) <- getNextExprId context

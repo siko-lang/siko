@@ -43,8 +43,7 @@ enqueueType context hir_type mir_type = do
 processQueue :: Context -> Context
 processQueue context = do
     loop context <- context do
-        context :: Context <- context // FIXME
-        type_store :: TypeStore <- context.type_store // FIXME
+        type_store <- context.type_store
         queue <- type_store.queue
         type_store <- type_store { queue = [] }
         context <- context { type_store = type_store }
@@ -57,7 +56,6 @@ addVariant :: TypeStore -> MP.Identity -> MD.Variant -> TypeStore
 addVariant type_store identity variant = do
     (adts, _) <- alter (\adt -> case adt of
         Some adt -> do
-            adt :: MD.AlgebraicDataType <- adt // FIXME
             variants <- push adt.variants variant
             adt <- adt { variants = variants }
             Some adt
@@ -68,7 +66,6 @@ addExternalClassImplForAdt :: TypeStore -> MP.Identity -> MD.ExternalClassImpl -
 addExternalClassImplForAdt type_store identity external_class_impl = do
     (adts, _) <- alter (\adt -> case adt of
         Some adt -> do
-            adt :: MD.AlgebraicDataType <- adt // FIXME
             adt <- case external_class_impl of
                 MD.Copy -> do
                     attributes <- List.push adt.attributes MD.Copyable
@@ -87,7 +84,6 @@ addExternalClassImplForRecord :: TypeStore -> MP.Identity -> MD.ExternalClassImp
 addExternalClassImplForRecord type_store identity external_class_impl = do
     (records, _) <- alter (\record -> case record of
         Some record -> do
-            record :: MD.Record <- record // FIXME
             record <- case external_class_impl of
                 MD.Copy -> do
                     attributes <- List.push record.attributes MD.Copyable
@@ -126,9 +122,7 @@ checkImpl :: Context -> HT.Type -> HP.FullyQualifiedName -> (Context, Bool)
 checkImpl context type class_name = do
     case IR.checkInstance context type class_name of
         Ok (context, sub, instance_info) -> do
-            sub :: S.Substitution <- sub // FIXME
             List.fold (context, True) sub.constraints (\(context, exists), constraint -> do
-                constraint :: S.UnificationConstraint <- constraint // FIXME
                 (context, c_exists) <- checkImpl context constraint.type constraint.class_name
                 exists <- exists && c_exists
                 (context, exists))

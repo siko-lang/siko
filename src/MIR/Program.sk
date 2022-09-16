@@ -69,9 +69,7 @@ updateRecordFields program record_id fields = do
 updateRecordAttributes :: Program -> Identity -> [D.Attribute] -> Program
 updateRecordAttributes program record_id attributes = do
     (records, _) <- alter (\r -> case r of
-                Some r -> do
-                    r :: D.Record <- r // FIXME
-                    Some r { attributes = attributes }
+                Some r -> Some r { attributes = attributes }
                 None -> panic "Record not found during attribute update"
             ) record_id program.records
     program { records = records }
@@ -79,9 +77,7 @@ updateRecordAttributes program record_id attributes = do
 updateAdtAttributes :: Program -> Identity -> [D.Attribute] -> Program
 updateAdtAttributes program adt_id attributes = do
     (adts, _) <- alter (\a -> case a of
-                Some a -> do
-                    a :: D.AlgebraicDataType <- a // FIXME
-                    Some a { attributes = attributes }
+                Some a -> Some a { attributes = attributes }
                 None -> panic "Adt not found during attribute update"
             ) adt_id program.adts
     program { adts = adts }
@@ -97,9 +93,7 @@ updateFunctionKind program function_id kind = do
 updateFunctionType :: Program -> Identity -> F.FunctionType -> Program
 updateFunctionType program function_id type = do
     (functions, _) <- alter (\f -> case f of
-                Some f -> do
-                    f :: F.Function <- f // FIXME
-                    Some f { type = type }
+                Some f -> Some f { type = type }
                 None -> panic "Function not found during type update"
             ) function_id program.functions
     program { functions = functions }

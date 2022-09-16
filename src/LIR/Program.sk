@@ -64,9 +64,7 @@ updateFunctionKind program function_id kind = do
 updateFunctionType :: Program -> Identity -> F.FunctionType -> Program
 updateFunctionType program function_id type = do
     (functions, _) <- alter (\f -> case f of
-                Some f -> do
-                    f :: F.Function <- f // FIXME
-                    Some f { type = type }
+                Some f -> Some f { type = type }
                 None -> panic "Function not found during type update"
             ) function_id program.functions
     program { functions = functions }

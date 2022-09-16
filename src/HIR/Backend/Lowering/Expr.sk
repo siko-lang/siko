@@ -135,7 +135,6 @@ processBindVars context additional_info path_info_map unit_type = do
         var <- bindRefToVar bind_ref
         ref_expr <- case get path_info_map path of
             Some parent_expr -> do
-                parent_expr :: ValuePathAccessor <- parent_expr // FIXME
                 parent_expr.normal
             None -> panic "Path {} not found in path_info_map" % path
         (context, ref_expr) <- getExpr context ref_expr
@@ -281,7 +280,6 @@ processDynamicFunctionCall :: Context -> HT.Type -> [ME.Expr] -> ME.Expr -> (Con
 processDynamicFunctionCall context receiver_type mir_args mir_receiver = do
     (context, calls) <- loop (context, receiver_type, args, receiver, calls)
                                   <- (context, receiver_type, mir_args, mir_receiver, []) do
-                context :: Context <- context // FIXME
                 (closure_store, name) <- CS.getClosureName context.closure_store receiver_type
                 context <- context { closure_store = closure_store }
                 result_type <- HT.getResultType receiver_type 1
@@ -415,8 +413,6 @@ processStaticFunctionCall context mir_args function_type function_id arg_count =
                     then break (context, function_id)
                     else do
                         closure <- List.atIndex closures next
-                        closure :: ClosureType <- closure // FIXME
-                        context :: Context <- context // FIXME
                         (closure_store, closure_instance) <- CS.addClosureInstance context.closure_store closure.closure_type closure.arg_types function_id
                         context <- context { closure_store = closure_store }
                         queue_item <- FQ.ClosureCtor (getLength closure.arg_types) function_type closure_instance

@@ -90,7 +90,6 @@ processInstance state class_info_store i = do
                 instance_member <- P.getFunction state.program instance_member_name
                 (state, inferred_type) <- case get class_type_info.members short_name of
                     Some member_data -> do
-                        member_data :: ClassMemberInfo <- member_data // FIXME: type inference
                         sub <- S.createSubstitution
                         class_vars <- Util.collectVars [] class_type_info.arg_type
                         class_vars <- Util.collectVars class_vars member_data.type
@@ -135,7 +134,6 @@ processInstance state class_info_store i = do
                     Some inferred_type -> push inferred_types (instance_member_name, inferred_type)
                     None -> inferred_types
                 (state, push member_names short_name, inferred_types)) (state, [], [])
-            class_type_info :: ClassTypeInfo <- class_type_info // FIXME: type inference fix!
             state <- class_type_info.members |> Map.iter |> Iterator.fold (\state, (name, member_data) -> do
                     if member_data.has_default_impl
                         then state

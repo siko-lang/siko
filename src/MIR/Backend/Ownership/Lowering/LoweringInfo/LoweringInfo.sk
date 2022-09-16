@@ -105,9 +105,7 @@ getInfoForField lowering_info index = do
             M.Field i -> i == index && lowering_info.root.arg_group_var == member.root
             _ -> False)
     case List.head member of
-        Some m -> do
-            m :: M.MemberInfo <- m // FIXME
-            Some m.info
+        Some m -> Some m.info
         None -> None
 
 getLoweringInfoForField :: Config -> TypeLoweringInfo -> Int -> FilterInfo -> TypeLoweringInfo
@@ -122,9 +120,7 @@ getLoweringInfoForVariant config lowering_info index filter_info = do
             M.Variant i -> i == index && lowering_info.root.arg_group_var == member.root
             _ -> False)
     case List.head variant of
-        Some m -> do
-            m :: M.MemberInfo <- m // FIXME
-            createTypeLoweringInfoFromTypeLoweringInfo config lowering_info m.info filter_info
+        Some m -> createTypeLoweringInfoFromTypeLoweringInfo config lowering_info m.info filter_info
         None -> createEmptyTypeLoweringInfo
 
 getLoweringInfoForExtern :: Config -> TypeLoweringInfo -> Int -> FilterInfo -> Option TypeVariableInfo -> TypeLoweringInfo
@@ -136,7 +132,5 @@ getLoweringInfoForExtern config lowering_info index filter_info implicit_info = 
             M.Extern i -> i == index && info.arg_group_var == member.root
             _ -> False)
     case List.head variant of
-        Some m -> do
-            m :: M.MemberInfo <- m // FIXME
-            createTypeLoweringInfoFromTypeLoweringInfo config lowering_info m.info filter_info
+        Some m -> createTypeLoweringInfoFromTypeLoweringInfo config lowering_info m.info filter_info
         None -> createEmptyTypeLoweringInfo

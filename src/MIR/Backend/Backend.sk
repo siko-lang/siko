@@ -115,7 +115,6 @@ processDataGroups mir_program data_groups =
             List.fold mir_program data_group.items (\mir_program, id -> do
                 case get mir_program.records id of
                     Some record -> do
-                        record :: Record <- record // FIXME
                         fields <- List.map record.fields (\field -> do
                             id <- T.getIdentity field.type
                             if List.contains data_group.items id
@@ -138,7 +137,6 @@ processCopyables mir_program data_groups = do
                 item <- MP.getAdtOrRecord mir_program id
                 case item of
                     Left adt -> do
-                        adt :: AlgebraicDataType <- adt // FIXME
                         is_copyable <- False
                         is_copyable <- is_copyable || List.contains adt.attributes Copyable
                         is_copyable <- is_copyable || List.fold True adt.variants (\is_copyable, variant -> do
@@ -153,7 +151,6 @@ processCopyables mir_program data_groups = do
                             (mir_program, List.push copyables id)
                         else (mir_program, copyables)
                     Right record -> do
-                        record :: Record <- record // FIXME
                         is_copyable <- False
                         is_copyable <- is_copyable || List.contains record.attributes Copyable
                         is_copyable <- is_copyable || List.fold (isNone record.external_info) record.fields (\is_copyable, field -> do
@@ -179,12 +176,10 @@ processNonCopyables mir_program data_groups = do
                 item <- MP.getAdtOrRecord mir_program id
                 case item of
                     Left adt -> do
-                        adt :: AlgebraicDataType <- adt // FIXME
                         if List.contains adt.attributes NonCopyable
                         then (mir_program, List.push noncopyables id)
                         else (mir_program, noncopyables)
                     Right record -> do
-                        record :: Record <- record // FIXME
                         if List.contains record.attributes NonCopyable
                         then (mir_program, List.push noncopyables id)
                         else (mir_program, noncopyables))

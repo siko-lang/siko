@@ -162,9 +162,7 @@ convertExpr context loop_var lir_expr = do
         LE.StaticFunctionCall id args -> do
             args <- args |> List.iter |> Iterator.map (\arg -> convertExpr context loop_var arg) |> toList
             case get context.constructors id of
-                Some ctor -> do
-                    ctor :: Constructor <- ctor // FIXME
-                    ctor.fn context args
+                Some ctor -> ctor.fn context args
                 None -> do
                     rust_function_name <- getRustIdentity id
                     R.FunctionCall rust_function_name args

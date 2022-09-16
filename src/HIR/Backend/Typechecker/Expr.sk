@@ -109,7 +109,6 @@ addClassConstraints context constraints = context { class_constraints = context.
 processClassConstraints :: Context -> Location -> Result Context Context
 processClassConstraints context location = do
     loop context <- context do
-        context :: Context <- context // FIXME
         if isEmpty context.class_constraints
         then break Ok context
         else do
@@ -119,8 +118,6 @@ processClassConstraints context location = do
             //println "processClassConstraints: {} {} {}" % (class_name, TF.toString type, TF.toStringTypes associated_types)
             case IR.checkInstance context type class_name of // FIXME: put instance resolver behind type class!
                 Ok (context, sub, instance_info) -> do
-                    sub :: S.Substitution <- sub // FIXME
-                    instance_info :: IR.InstanceInfo <- instance_info // FIXME
                     //println "processClassConstraints: sub {}" % sub
                     context <- applyToContext context sub
                     context <- addClassConstraints context sub.constraints
@@ -142,13 +139,11 @@ unify context sub ty1 ty2 location = do
             case processClassConstraints context location of
                 Ok context -> context
                 Err context -> do
-                    context :: Context <- context // FIXME
                     err <- TypeMismatch (SS.create (ty1 |> TF.fixedType |> TF.toString)) (SS.create (ty2 |> TF.fixedType |> TF.toString)) location
                     state <- addError context.state err
                     context <- context { state = state }
                     context
         Err (context, sub) -> do
-            context :: Context <- context // FIXME
             //println "Not Ok! {}, {}" % (TF.toString ty1, TF.toString ty2)
             err <- TypeMismatch (SS.create (ty1 |> TF.fixedType |> TF.toString)) (SS.create (ty2 |> TF.fixedType |> TF.toString)) location
             state <- addError context.state err
@@ -165,7 +160,6 @@ unify2 context sub ty1 ty2 location = do
             context <- applyToContext context sub
             (context, sub)
         Err (context, sub) -> do
-            context :: Context <- context // FIXME
             //println "Not Ok! {}, {}" % (TF.toString ty1, TF.toString ty2)
             err <- TypeMismatch (SS.create (ty1 |> TF.fixedType |> TF.toString)) (SS.create (ty2 |> TF.fixedType |> TF.toString)) location
             state <- addError context.state err
@@ -215,7 +209,7 @@ instance S.Transform EffectTypeInfo where
         type <- f eff_type_info.effect_type
         EffectTypeInfo type members
 
-remapEffectTypeInfo a :: (U.TypeVarGenerator a, U.Context a) => EffectTypeInfo -> a -> (EffectTypeInfo, a) // FIXME!
+remapEffectTypeInfo a :: (U.Context a) => EffectTypeInfo -> a -> (EffectTypeInfo, a)
 remapEffectTypeInfo eff_type_info context = do
     types <- Map.fold [eff_type_info.effect_type] eff_type_info.members (\types, (qn, t) -> List.push types t)
     (sub, context) <- BUtil.newSub types context

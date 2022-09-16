@@ -7,13 +7,13 @@ import Siko.HIR.Program as P
 import Siko.HIR.Backend.ClassInfoStore
 import Siko.HIR.TypeFormatter as TF
 
-unify a :: (U.TypeVarGenerator a, U.DataProvider a, U.ClassProvider a, U.Context a) => a -> S.Substitution -> T.Type -> T.Type -> (a, S.Substitution) // FIXME
+unify a :: (U.Context a) => a -> S.Substitution -> T.Type -> T.Type -> (a, S.Substitution)
 unify context sub type1 type2 =
     case U.unify context sub type1 type2 of
         Ok (context, sub) -> (context, sub)
         Err _ -> panic "getFunctionType: failed to unify {} {}" % (TF.toString type1, TF.toString type2)
 
-getFunctionType a :: (U.TypeVarGenerator a, U.DataProvider a, U.ClassProvider a, U.Context a) => a -> [T.Type] -> T.Type -> T.Type -> (a, T.Type, S.Substitution) // FIXME
+getFunctionType a :: (U.Context a) => a -> [T.Type] -> T.Type -> T.Type -> (a, T.Type, S.Substitution)
 getFunctionType context arg_types expected_result_type function_type = do
     (context, function_type, sub) <- loop (context, function_type, sub, index) <- (context, function_type, S.createSubstitution, 0) do
         if index >= getLength arg_types

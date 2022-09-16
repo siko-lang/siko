@@ -20,9 +20,7 @@ checkConflicts state = do
     instance_map <- state.instance_resolver.instance_map
     state <- instance_map |> Map.iter |> Iterator.fold (\state, (class_name, instance_info_map) -> do
         generic_instance_location <- case get instance_info_map Generic of
-            Some instance_info -> do
-                instance_info :: InstanceInfo <- instance_info // FIXME
-                Some instance_info.location
+            Some instance_info -> Some instance_info.location
             None -> None
         state <- instance_info_map |> Map.iter |> Iterator.fold (\state, (_, i) -> do
                 case generic_instance_location of
@@ -40,9 +38,7 @@ checkConflicts state = do
 checkInstanceDependenciesForInstance :: TypecheckerState -> T.Type -> P.FullyQualifiedName -> Location -> TypecheckerState
 checkInstanceDependenciesForInstance state type class_name location = do
     deps <- case get state.class_store.classes class_name of
-        Some class_info -> do
-            class_info :: ClassInfo <- class_info // FIXME:
-            class_info.direct_dependencies
+        Some class_info -> class_info.direct_dependencies
         None -> panic "Class {} not found in class store" % class_name
     List.fold state deps (\state, dep -> do
         case checkInstance state type dep of

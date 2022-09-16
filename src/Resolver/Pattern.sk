@@ -64,7 +64,6 @@ processPattern context pattern_env env (SP.Pattern pattern location) = do
             (context, pattern_env, env, hir_args) <- processPatterns context pattern_env env args
             case resolveConstructor context name False of
                 Ok (context, qn) -> do
-                    context :: Context <- context // FIXME: type inference
                     case HPO.getItem context.program qn of
                         HPO.Variant (HD.VariantInfo adt_name index _) -> do
                             (HD.Variant _ _ items) <- HPO.getVariant context.program adt_name index
@@ -130,7 +129,6 @@ processPattern context pattern_env env (SP.Pattern pattern location) = do
         SP.Record name field_patterns -> do
             case resolveConstructor context name True of
                 Ok (context, qn) -> do
-                    context :: Context <- context // FIXME: type inference
                     case HPO.getItem context.program qn of
                         HPO.Record record -> do
                             used_fields <- field_patterns |> List.iter |> Iterator.map (\(SP.RecordFieldPattern field _) -> field) |> toList

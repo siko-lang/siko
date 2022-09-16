@@ -164,7 +164,6 @@ processCallContext context call_id index from to to_borrow = do
                     M.Borrower _ -> ([from_kind], [], [])
                     M.Unknown -> ([], [], [from_kind])
             else do
-                call_context_set :: C.CallContextSet <- call_context_set // FIXME
                 //context <- debugPrint context "Call context set {}" % call_context_set
                 List.fold ([], [], []) call_context_set.call_contexts (\(borrows, owners, unknowns), call_context -> do
                         case Map.get call_context.sub_map from of
@@ -437,7 +436,6 @@ processConstraints config function_id inference_info constraints invalid_borrow_
                        ownership_expr_map group_expr_map ownership_group_map call_context_map mode result_vars False Map.empty Map.empty call_args
     //dumpConstraints constraints
     context <- loop context <- context do
-        context :: Context <- context // FIXME
         if not context.changed_ownership_vars
         then case context.mode of
                 Partial -> break context
