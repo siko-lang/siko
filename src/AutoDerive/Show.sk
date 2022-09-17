@@ -28,10 +28,12 @@ deriveRecordShow record derive_location = do
         field_name_expr <- E.Expr (E.FieldAccess field.name arg_ref_expr) derive_location
         show_name_expr <- E.Expr (E.Path (createIdent "Std.Ops.show" derive_location)) derive_location
         E.Expr (E.FunctionCall show_name_expr [field_name_expr]) derive_location)
-    arg_fmts <- repeat "({})" (getLength field_show_exprs)
+    arg_fmts <- List.map record.fields (\field -> do
+        Ident f _ <- field.name
+        (SS.get f) + " : ({})")
     fmt <- if isEmpty arg_fmts
     then "{}"
-    else "{} " + join arg_fmts " "
+    else "{} { " + join arg_fmts ", " + " }"
     body <- E.Expr (E.Formatter (SS.create fmt) ([record_name_expr] + field_show_exprs)) derive_location
     body <- Some body
     sub_items <- []
