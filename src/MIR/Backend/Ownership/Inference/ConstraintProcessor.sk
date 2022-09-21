@@ -34,19 +34,11 @@ data Context = { config :: Config,
                  function_converter_borrow_keys :: Map Int E.ExprId,
                  call_args :: Map E.ExprId [OwnershipTypeVariable] } deriving (Move)
 
-isDebug :: Context -> (Context, Bool)
-isDebug context = do
-    r <- P.isDebugged context.config context.function_id
-    (context, r)
-
-debugPrint :: Context -> String -> Context
+debugPrint :: Context -> String -> ()
 debugPrint context msg = do
-    (context, r) <- isDebug context
-    if r
-    then do
-        println msg
-        context
-    else context
+    if P.isDebugged context.config context.function_id
+    then println msg
+    else ()
 
 dumpConstraints :: [C.Constraint] -> ()
 dumpConstraints constraints = do
@@ -78,14 +70,14 @@ updateOwnership context ownership_var kind = do
         context <- context { inference_info = inference_info }
         if changed
         then do
-            //context <- debugPrint context "UpdateOwnership {} {}" % (ownership_var, kind)
+            //debugPrint context "UpdateOwnership {} {}" % (ownership_var, kind)
             context { changed_ownership_vars = True }
         else context
     else context
 
 isValidBorrow :: Context -> OwnershipTypeVariable -> E.ExprId -> Bool
 isValidBorrow context ownership_var expr_id = do
-        //context <- debugPrint context "isValidBorrow {} {}" % (ownership_var, expr_id)
+        //debugPrint context "isValidBorrow {} {}" % (ownership_var, expr_id)
         is_valid_borrow <- True
         is_valid_borrow <- case Map.get context.ownership_expr_map ownership_var of
             Some expr_ids -> checkExprs context is_valid_borrow expr_ids expr_id
@@ -135,7 +127,7 @@ canPropagateBorrow context ownership_var borrow_id = do
 getParentKind :: Context -> [OwnershipTypeVariable] -> M.OwnershipKind
 getParentKind context parents = do
     kinds <- List.map parents (getOwnershipValue context)
-    //context <- debugPrint context "getParentKind kinds {}" % kinds
+    //debugPrint context "getParentKind kinds {}" % kinds
     if List.contains kinds M.Unknown
     then M.Unknown
     else do
@@ -158,19 +150,19 @@ processCallContext context call_id index from to to_borrow = do
             then do
                 from_kind <- getOwnershipValue context from
                 args <- context.call_args
-                //context <- debugPrint context "using {} from {} as that is a call_arg {}" % (from_kind, from, args)
+                //debugPrint context "using {} from {} as that is a call_arg {}" % (from_kind, from, args)
                 case from_kind of
                     M.Owner -> ([], [from_kind], [])
                     M.Borrower _ -> ([from_kind], [], [])
                     M.Unknown -> ([], [], [from_kind])
             else do
-                //context <- debugPrint context "Call context set {}" % call_context_set
+                //debugPrint context "Call context set {}" % call_context_set
                 List.fold ([], [], []) call_context_set.call_contexts (\(borrows, owners, unknowns), call_context -> do
                         case Map.get call_context.sub_map from of
                             Some parents -> do
-                                //context <- debugPrint context "Checking parents {}" % parents
+                                //debugPrint context "Checking parents {}" % parents
                                 parent_kind <- getParentKind context parents
-                                //context <- debugPrint context "Parent kind {}" % parent_kind
+                                //debugPrint context "Parent kind {}" % parent_kind
                                 case parent_kind of
                                     M.Borrower _ -> do
                                         borrows <- List.push borrows parent_kind
@@ -182,13 +174,13 @@ processCallContext context call_id index from to to_borrow = do
                                         unknowns <- List.push unknowns parent_kind
                                         (borrows, owners, unknowns)
                             None -> (borrows, owners, unknowns))
-            //context <- debugPrint context "After checking parents {}/{}/{}" % (borrows, owners, unknowns)
+            //debugPrint context "After checking parents {}/{}/{}" % (borrows, owners, unknowns)
             if not (List.isEmpty unknowns)
             then context
             else do
                 if not (List.isEmpty owners)
                 then do
-                    //context <- debugPrint context "in some context ownership required, promoting {}" % to
+                    //debugPrint context "in some context ownership required, promoting {}" % to
                     updateOwnership context to M.Owner
                 else do
                     borrows <- borrows |> List.sort |> List.dedup
@@ -197,7 +189,7 @@ processCallContext context call_id index from to to_borrow = do
                                 _ -> panic "Borrow is not a borrow?!")
                     case List.getLength borrows of
                         0 -> do
-                            //context <- debugPrint context "Cannot borrow anything, do nothing"
+                            //debugPrint context "Cannot borrow anything, do nothing"
                             context
                         _ -> do
                             can_propagate <- List.fold True borrows (\can_propagate, borrow -> do
@@ -219,7 +211,7 @@ processCallContext context call_id index from to to_borrow = do
                                     borrows <- List.fold [] borrows (\borrows, borrow -> if borrow == to_borrow
                                         then borrows
                                         else List.push borrows (FunctionConverterBorrow borrow to_borrow))
-                                    //context <- debugPrint context "propagation possible to target, borrows {}, adding to {}" % (borrows, index)
+                                    //debugPrint context "propagation possible to target, borrows {}, adding to {}" % (borrows, index)
                                     function_converter_borrows <- Map.put context.function_converter_borrows index borrows
                                     context <- context { function_converter_borrows = function_converter_borrows }
                                     context
@@ -230,7 +222,7 @@ processCallContext context call_id index from to to_borrow = do
                                     first <- List.atIndex borrows 0
                                     if List.getLength borrows == 1
                                     then do
-                                        //context <- debugPrint context "propagation not possible to target (single), setting borrow {} at {}" % (first,  index)
+                                        //debugPrint context "propagation not possible to target (single), setting borrow {} at {}" % (first,  index)
                                         updateOwnership context to (M.Borrower first) 
                                     else do
                                         (context, merged) <- List.fold (context, first) borrows (\(context, current), borrow -> do
@@ -239,14 +231,14 @@ processCallContext context call_id index from to to_borrow = do
                                             (context, id))
                                         borrows <- List.map borrows (\borrow -> FunctionConverterBorrow borrow merged)
                                         function_converter_borrows <- Map.put context.function_converter_borrows index borrows
-                                        //context <- debugPrint context "propagation not possible to target, borrows {}, adding to {}" % (borrows, index)
+                                        //debugPrint context "propagation not possible to target, borrows {}, adding to {}" % (borrows, index)
                                         context <- context { function_converter_borrows = function_converter_borrows }
                                         updateOwnership context to (M.Borrower merged)
                             else do
-                                //context <- debugPrint context "Cannot propagate one of borrows {}, promote {} to owner" % (borrows, to)
+                                //debugPrint context "Cannot propagate one of borrows {}, promote {} to owner" % (borrows, to)
                                 updateOwnership context to M.Owner
         None -> do
-            //context <- debugPrint context "no callcontext for callid {}" % (index)
+            //debugPrint context "no callcontext for callid {}" % (index)
             updateOwnership context to M.Owner
 
 eraseFunctionConverterBorrow :: Context -> Int -> Context
@@ -256,7 +248,7 @@ eraseFunctionConverterBorrow context index = do
 
 addFunctionConverterBorrow :: Context -> Int -> BorrowId -> BorrowId -> Context
 addFunctionConverterBorrow context index a b = do
-    //context <- debugPrint context "addFunctionConverterBorrow {} {} {}" % (index, a, b)
+    //debugPrint context "addFunctionConverterBorrow {} {} {}" % (index, a, b)
     function_converter_borrows <- Map.put context.function_converter_borrows index [FunctionConverterBorrow a b]
     context { function_converter_borrows = function_converter_borrows }
 
@@ -269,7 +261,7 @@ processFunctionConverter context converter index = do
     context <- context { function_converter_borrow_keys = function_converter_borrow_keys }
     from_kind <- getOwnershipValue context from
     to_kind <- getOwnershipValue context to
-    //context <- debugPrint context "Checking function converter {} {} {} / {} {}" % (converter.call, from, to, from_kind, to_kind)
+    //debugPrint context "Checking function converter {} {} {} / {} {}" % (converter.call, from, to, from_kind, to_kind)
     case (from_kind, to_kind) of
         (M.Owner, M.Unknown) -> processCallContext context converter.call index from to None
         (M.Borrower a, M.Borrower b) -> do
@@ -316,7 +308,7 @@ processFieldAccess context access = do
     receiver_kind <- getOwnershipValue context receiver_info.ownership_var
     member_kind <- getOwnershipValue context member_info.ownership_var
     expr_kind <- getOwnershipValue context expr_info.ownership_var
-    //context <- debugPrint context "processFieldAccess: expr {} receiverkind {} memberkind {} exprkind {}" % (access.expr_id, receiver_kind, member_kind, expr_kind)
+    //debugPrint context "processFieldAccess: expr {} receiverkind {} memberkind {} exprkind {}" % (access.expr_id, receiver_kind, member_kind, expr_kind)
     case (receiver_kind, member_kind) of
         (M.Borrower _, M.Borrower _) -> updateOwnership context expr_info.ownership_var member_kind
         (M.Owner, M.Borrower _) -> updateOwnership context expr_info.ownership_var member_kind
@@ -334,7 +326,7 @@ processConverter context converter = do
     expr_info <- converter.expr_info
     arg_kind <- getOwnershipValue context arg_info.ownership_var
     expr_kind <- getOwnershipValue context expr_info.ownership_var
-    //context <- debugPrint context "Converter {} {}, {} -> {}" % (arg_kind, expr_kind, arg_info.ownership_var, expr_info.ownership_var)
+    //debugPrint context "Converter {} {}, {} -> {}" % (arg_kind, expr_kind, arg_info.ownership_var, expr_info.ownership_var)
     case (arg_kind, expr_kind) of
         (M.Owner, M.Unknown) ->
             if converter.borrower
@@ -343,7 +335,7 @@ processConverter context converter = do
                 if valid
                 then do
                     (inference_info, id) <- createBorrowSetForExpr context.inference_info converter.arg_id
-                    //context <- debugPrint context "Borrowing owner at {} {}" % (converter.arg_id, id)
+                    //debugPrint context "Borrowing owner at {} {}" % (converter.arg_id, id)
                     context <- context { inference_info = inference_info }
                     updateOwnership context expr_info.ownership_var (M.Borrower id)
                 else do
@@ -404,7 +396,7 @@ processVariantAccess context variant = do
 
 processConstraint :: (Context, Int) -> C.Constraint -> (Context, Int)
 processConstraint (context, index) constraint = do
-    //context <- debugPrint context "Processing constraint {}" % constraint
+    //debugPrint context "Processing constraint {}" % constraint
     context <- case constraint of
         C.FieldAccess access -> processFieldAccess context access
         C.Converter converter -> processConverter context converter
