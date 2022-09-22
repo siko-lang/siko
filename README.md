@@ -118,6 +118,10 @@ or clean up the compiler.
 
 MIT
 
+## Community
+
+[Discord](https://discord.gg/fZRrRUrJ)
+
 ## VSCode support
 
 Very crude VSCode support for [Siko](https://github.com/siko-lang/siko), only contains syntax highlight.
