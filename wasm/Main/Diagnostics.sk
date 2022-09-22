@@ -1,0 +1,149 @@
+module Siko.Diagnostics where
+
+import Siko.Parser.Lexer
+import Siko.Parser.Error
+import Siko.Syntax.Location
+import Siko.Syntax.Ident
+import Siko.Resolver.Error
+import Siko.HIR.Backend.Typechecker.Error
+import Siko.HIR.Backend.CaseChecker.Error as CCE
+import Siko.FileManager
+
+printSpan :: String -> Span -> String
+printSpan msg span = "{} at {}" % (msg, fmtSpan span)
+
+fmtSpan :: Span -> String
+fmtSpan span = "{}:{}" % (span.start.line, span.start.offset + 1)
+
+fmtLocation :: Location -> String
+fmtLocation location = "{}" % (fmtSpan location.span)
+
+getLine :: Location -> Int
+getLine location = location.span.start.line
+
+getOffset :: Location -> Int
+getOffset location = location.span.start.offset + 1
+
+fmtIdent :: FileManager -> Ident -> String
+fmtIdent file_manager (Ident s location) = do
+    file_name <- getFile file_manager location.file_id
+    "-- {}:{}:{}\n" % (file_name, getLine location, getOffset location)
+
+fmtIdents :: FileManager -> [Ident] -> String
+fmtIdents file_manager idents = idents |> List.iter |> Iterator.fold (\r, i -> do
+                                s <- fmtIdent file_manager i
+                                r <- "{} {}" % (r, s)
+                                r) ""
+
+printLexerError error = case error of
+    InvalidEscapeSequence span -> printSpan "InvalidEscapeSequence" span
+    UnsupportedCharacter span -> printSpan "UnsupportedCharacter" span
+    InvalidOperator span -> printSpan "InvalidOperator" span
+    InvalidIdent span -> printSpan "InvalidIdent" span
+
+printParserError :: FileManager -> FileId -> ParserError -> String
+printParserError file_manager file_id error = case error of
+    UnexpectedToken expected found span -> do
+        output <- "ERROR: expected: {} found: {}\n" % (expected, found)
+        file_name <- getFile file_manager file_id
+        output <- output + "-- {}:{}:{}\n" % (file_name, span.start.line, span.start.offset + 1)
+        output
+    InvalidTypeArgument span -> printSpan "InvalidTypeArgument" span
+
+printSingle :: FileManager -> String -> Ident -> String
+printSingle file_manager msg (Ident n location) = do
+    output <- "ERROR: {} - {}\n" % (msg, n)
+    file_name <- getFile file_manager location.file_id
+    output <- output + "-- {}:{}:{}\n" % (file_name, getLine location, getOffset location)
+    output
+
+printSingleL :: FileManager -> String -> Location -> String
+printSingleL file_manager msg location = do
+    output <- "ERROR: {}\n" % msg
+    file_name <- getFile file_manager location.file_id
+    output <- output + "-- {}:{}:{}\n" % (file_name, getLine location, getOffset location)
+    output
+
+printMulti :: FileManager -> String -> [Ident] -> String
+printMulti file_manager msg idents = do
+    output <- "ERROR: {}\n" % msg
+    List.fold output idents (\output, (Ident n location) -> do
+        file_name <- getFile file_manager location.file_id
+        output + "-- {}:{}:{}\n" % (file_name, getLine location, getOffset location))
+
+printResolverError :: FileManager -> ResolverError -> String
+printResolverError file_manager error = case error of
+    ModuleNotFound name -> printSingle file_manager "ModuleNotFound" name
+    UnknownType name -> printSingle file_manager "UnknownType" name
+    AmbiguousName name candidates -> printSingle file_manager ("AmbiguousName {}" % candidates) name
+    UnknownTypeArg name -> "UnknownTypeArg {}" % (fmtIdent file_manager name)
+    InvalidVariant location -> "InvalidVariant {}" % (fmtLocation location)
+    NotAClassName name -> "NotAClassName {}" % (fmtIdent file_manager name)
+    UnusedTypeArg name -> "UnusedTypeArg {}" % (fmtIdent file_manager name)
+    ConflictingSignatures names -> "ConflictingSignatures {}" % (fmtIdents file_manager names)
+    MissingImpl name -> "MissingImpl {}" % (fmtIdent file_manager name)
+    InvalidExternArg location -> "InvalidExternArg {}" % (fmtLocation location)
+    ExternFnWithMultiDef name -> "ExternFnWithMultiDef {}" % (fmtIdent file_manager name)
+    MultiDefArgCountMismatch counts -> "MultiDefArgCountMismatch {}" % counts
+    MultiDefNoArg name -> "MultiDefNoArg {}" % (fmtIdent file_manager name)
+    NotAFunction name -> "NotAFunction {}" % (fmtIdent file_manager name)
+    UnknownFunction name -> printSingle file_manager "UnknownFunction" name
+    NotARecord name -> "NotARecord {}" % (fmtIdent file_manager name)
+    NotAVariant name -> "NotAVariant {}" % (fmtIdent file_manager name)
+    InvalidVariantArgCountInPattern name e f -> "InvalidVariantArgCountInPattern {} {} {}" % (fmtIdent file_manager name, e, f)
+    InvalidRecordArgCountInPattern name e f -> "InvalidRecordArgCountInPattern {} {} {}" % (fmtIdent file_manager name, e, f)
+    UninitalizedFields names -> "UninitalizedFields {}" % names
+    MultiInitFields names -> "MultiInitFields {}" % (fmtIdents file_manager names)
+    UnknownInitFields names -> "UnknownInitFields {}" % (fmtIdents file_manager names)
+    UnusedFields names -> "UnusedFields {}" % names
+    MultiUsedFields names -> "MultiUsedFields {}" % (fmtIdents file_manager names)
+    UnknownUsedFields names -> "UnknownUsedFields {}" % (fmtIdents file_manager names)
+    NotAVariable name -> "NotAVariable {}" % (fmtIdent file_manager name)
+    BindNotUnique names -> "BindNotUnique {}" % (fmtIdents file_manager names)
+    OrPatternMismatch name location -> "OrPatternMismatch {} {}" % (name, fmtLocation location)
+    UnusedClassArg name location -> "UnusedClassArg {} {}" % (fmtIdent file_manager name, fmtLocation location)
+    ExternFnWithoutType name -> "ExternFnWithoutType {}" % (fmtIdent file_manager name)
+    ContinueWithoutLoop location -> "ContinueWithoutLoop {}" % (fmtLocation location)
+    BreakWithoutLoop location -> "BreakWithoutLoop {}" % (fmtLocation location)
+    ItemConflict l1 l2 -> "ItemConflict {} {}" % (fmtLocation l1, fmtLocation l2)
+    RecordFieldConflict names -> printMulti file_manager "RecordFieldConflict" names
+    NotIrrefutablePattern location -> "NotIrrefutablePattern {}" % (fmtLocation location)
+    InvalidTypeArgCount expected found location ->
+        printSingleL file_manager ("InvalidTypeArgCount {} {}" % (expected, found)) location
+    InvalidFormatString location -> "InvalidFormatString {}" % (fmtLocation location)
+    InvalidAttribute name -> "Invalid attribute {}" % (fmtIdent file_manager name)
+    NotAnEffectName name -> "NotAnEffectName {}" % (fmtIdent file_manager name)
+    NotAnEffectMemberName name -> "NotAnEffectMemberName {}" % (fmtIdent file_manager name)
+    InvalidEffectArgCount expected found location ->
+        printSingleL file_manager ("InvalidEffectArgCount {} {}" % (expected, found)) location
+    TypeArgumentsNotUnique names -> "TypeArgumentsNotUnique {}" % (fmtIdents file_manager names)
+    ExternEffect name -> "ExternEffect {}" % (fmtIdent file_manager name)
+
+printTypecheckerError file_manager error = case error of
+    TypeMismatch expected found location -> printSingleL file_manager "TypeMismatch expected: {} found: {}" % (expected, found) location
+    TooManyArguments args type location -> "TooManyArguments args {} {} {}" % (args, type, fmtLocation location)
+    ClassMemberWithoutType name location -> "ClassMemberWithoutType {} {}" % (name, fmtLocation location)
+    InstanceMemberNotClassMember name location -> "InstanceMemberNotClassMember {} {}" % (name, fmtLocation location)
+    MissingInstanceMember name location -> printSingleL file_manager ("MissingInstanceMember {}" % name) location
+    InstanceMemberTypeMismatch expected found location -> "InstanceMemberTypeMismatch expected: {} found: {} {}" % (expected, found, fmtLocation location)
+    IncorrectArgCount expected found location -> "IncorrectArgCount {} {} {}" % (expected, found, fmtLocation location)
+    UnreachablePattern location -> "UnreachablePattern {}" % (fmtLocation location)
+    CircularClassDependency names locations -> "CircularClassDependency {} {}" % (names, locations)
+    ConflictingInstances class_name l1 l2 -> "ConflictingInstances {} {} {}" % (class_name, fmtLocation l1, fmtLocation l2)
+    MissingInstance class_name location -> "MissingInstance {} {}" % (class_name, fmtLocation location)
+    SpecializedInstance location -> "SpecializedInstance {}" % (fmtLocation location)
+    AutoDeriveError type_name type class_name location -> "AutoDeriveError {} {} {} {}" % (type_name, type, class_name, fmtLocation location)
+    TypeAnnotationNeeded location -> printSingleL file_manager "TypeAnnotationNeeded" location
+    IncorrectMainType type location -> "IncorrectMainType {} {}" % (type, fmtLocation location)
+    MissingEffectMembers names location -> printSingleL file_manager ("MissingEffectMembers {}" % names) location
+    EffectMemberNotUnique name locations -> "EffectMemberNotUnique {} {}" % (name, locations)
+    UndeclaredEffect name location -> printSingleL file_manager ("UndeclaredEffect {}" % name) location
+    UnnecessaryEffect name location -> printSingleL file_manager ("UnnecessaryEffect {}" % name) location
+    MainEffectFound names location -> printSingleL file_manager ("MainEffectFound {}" % names) location
+
+printCaseCheckerError :: FileManager -> CCE.CaseCheckerError -> ()
+printCaseCheckerError file_manager error = do
+    case error of
+        CCE.UnreachableCase location -> printSingleL file_manager "UnreachableCase" location
+        CCE.NonExhaustiveCase location -> printSingleL file_manager "NonExhaustiveCase" location
+    () // FIXME fix this

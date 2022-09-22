@@ -209,7 +209,52 @@ also eliminated during compilation.
 
 If we also add associated types, we can create Rust iterators.
 
-class Iterator a > b where
-    next a b :: a -> (a, Option b)
+    class Iterator a > b where
+        next a b :: a -> (a, Option b)
 
 The variable b will be the associated type.
+
+Obviously, we'll need something unsafe, because these features cannot express low level operations in a safe way.
+We'll hide every unsafe thing behind extern functions are extern data types.
+
+For example the list module could look like this:
+
+    module List where
+
+    data List a = extern
+
+    empty a :: List a
+    empty = extern
+
+    push a :: List a -> a -> List a
+    push list elem = extern
+
+We also don't really want to care about the internals of these extern functions but we very much want to know whether a piece of code is
+running something evil, so we want most of the library code to be pure without causing unnecessary issues to the library authors.
+
+We'll introduce compile time effects which is basically just fancy dependency injection method. We do not want full-blown resumable algebraic effects with stack manipulation requirements.
+
+    effect Print where
+        print a :: (Show a) => a -> ()
+
+    // inside the library
+
+    myComplexLibrary :: Int -> Int -> Int
+    myComplexLibrary a b = do
+        c <- a + b
+        print c
+        c
+
+    // my application using the library
+
+    main = do
+        with { print = println } do
+            myComplexLibrary
+
+Using effects, the compiler can statically replace an effect method call with the appropriate instantiation that is required by the current context
+with zero runtime overhead. If the effect call also has state (for example when the selected effect handler is a closure) then the compiler
+automatically injects them for every function call as a hidden argument (or if the target runtime permits, it could even use a thread local static storage). Also, the compiler can statically verify that the library indeed does not call any function that could have a potentially dangerous side effect because it is not supposed to call anything that has a side effect directly.
+The application should decide the actual function mapping.
+
+With these features (and an insane amount of hidden details) we are ready to write our high level applications in a mostly carefree way.
+The real beauty of this design is that the source code does not contain anything about the details of the compilation or the runtime. If it turns out the current methods of compilation are suboptimal and there are better ones we can just change the compiler to use those and the source code does not have to be changed.
