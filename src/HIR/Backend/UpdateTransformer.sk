@@ -64,7 +64,7 @@ processExpr context expr = do
                 _ -> panic "Record update's receiver is not a ref!"
             qn <- case type of
                 T.Named qn _ -> qn
-                _ -> panic "Record update's type is not a record!"
+                t -> panic "Record update's type is not a record! {}" % TF.toString t
             record <- P.getRecord context.program qn
             (context, record) <- Result.unwrap (UD.instantiateRecord context record type)
             (context, args) <- List.fold (context, []) record.fields (\(context, args), field -> do
