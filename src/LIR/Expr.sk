@@ -38,7 +38,6 @@ data Case = { checker :: Checker, body :: Expr } deriving (Show)
 data Expr = Expr SimpleExpr T.Type deriving (Show)
 
 data SimpleExpr = Do [Expr]
-            | Multi [Expr]
             | StaticFunctionCall Identity [Expr]
             | IntegerLiteral String
             | StringLiteral String
@@ -71,11 +70,6 @@ prettyPrint expr ind = do
             args <- args |> List.iter |> Iterator.map (\arg -> do
                 "{}{}" % (inner, (prettyPrint arg inner).0)) |> toList
             s <- "do\n{}" % (join args "\n")
-            (s, False)
-        Multi args -> do
-            args <- args |> List.iter |> Iterator.map (\arg -> do
-                "{}" % ((prettyPrint arg ind).0)) |> toList
-            s <- "Multi: {}" % (join args ";")
             (s, False)
         StaticFunctionCall id args -> do
             args <- args |> List.iter |> Iterator.map (\arg -> do
