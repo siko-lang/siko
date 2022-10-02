@@ -46,7 +46,7 @@ parseObject state = do
                 state <- try expect state Colon
                 (state, value) <- try parseJson state
                 item <- JsonObjectItem name value
-                items <- items + [item]
+                items <- push items item
                 case peek state of
                     RCurly -> break (state, items)
                     Comma -> do
@@ -65,7 +65,7 @@ parseList state = do
             _ -> do
                 (state, value) <- try parseJson state
                 item <- value
-                items <- items + [item]
+                items <- push items item
                 case peek state of
                     RBracket -> break (state, items)
                     Comma -> do

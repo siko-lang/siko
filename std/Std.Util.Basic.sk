@@ -49,7 +49,7 @@ repeat a :: a -> Int -> [a]
 repeat item count = do
     (items, _) <- loop (items, c) <- ([], 0) do
                 if c < count
-                    then (items + [item], c + 1) else break (items, 0)
+                    then (push items item, c + 1) else break (items, 0)
     items
 
 @Inline
@@ -59,7 +59,7 @@ repeatS state fn count = do
         if c < count
             then do
                 (state, item) <- fn state
-                (state, items + [item], c + 1)
+                (state, push items item, c + 1)
             else break (state, items)
 
 @Inline
@@ -69,7 +69,7 @@ repeatSE state fn count = do
         if c < count
             then do
                 (state, item) <- fn state c
-                (state, items + [item], c + 1)
+                (state, push items item, c + 1)
             else break (state, items)
 
 @Inline
@@ -79,5 +79,5 @@ repeatE fn count = do
         if c < count
             then do
                 (item) <- fn c
-                (items + [item], c + 1)
+                (push items item, c + 1)
             else break items

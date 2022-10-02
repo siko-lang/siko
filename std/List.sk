@@ -124,7 +124,7 @@ nextItem iter = extern (arg[0].i[0].e[0] -> result.f[1].v[0].f[0],
 
 @Inline
 toList it a :: (Iterator it > a) => it -> [a]
-toList iter = Iterator.fold (\list, item -> list + [item]) [] iter
+toList iter = Iterator.fold (\list, item -> push list item) [] iter
 
 getLength a :: [a] -> ~Int
 getLength l = extern
@@ -248,14 +248,14 @@ mapS s a b :: s -> [a] -> (s -> a -> (s, b)) -> (s, [b])
 mapS s l f = do
     l |> List.iter |> Iterator.fold (\(s, items), i -> do
         (s, i) <- f s i
-        (s, items + [i])) (s, [])
+        (s, push items i)) (s, [])
 
 @Inline
 mapSE s a b :: s -> [a] -> (s -> Int -> a -> (s, b)) -> (s, [b])
 mapSE s l f = do
     (s, index, l) <- l |> List.iter |> Iterator.fold (\(s, index, items), i -> do
         (s, i) <- f s index i
-        (s, index + 1, items + [i])) (s, 0, [])
+        (s, index + 1, push items i)) (s, 0, [])
     (s, l)
 
 @Inline
@@ -263,7 +263,7 @@ mapE a b :: [a] -> (Int -> a -> b) -> [b]
 mapE l f = do
     (index, l) <- l |> List.iter |> Iterator.fold (\(index, items), i -> do
         i <- f index i
-        (index + 1, items + [i])) (0, [])
+        (index + 1, push items i)) (0, [])
     l
 
 @Inline
@@ -310,7 +310,7 @@ foldM init list f = List.fold init list (\m, item -> do
 filterMap a b :: [a] -> (a -> Option b) -> [b]
 filterMap list f = List.fold [] list (\all, item -> do
     case f item of
-        Some item -> all + [item]
+        Some item -> push all item
         None -> all)
 
 @Inline
@@ -318,7 +318,7 @@ filterMapS s a b :: s -> [a] -> (s -> a -> (s, Option b)) -> (s, [b])
 filterMapS s list f = List.fold (s, []) list (\(s, all), item -> do
     (s, r) <- f s item
     case r of
-        Some item -> (s, all + [item])
+        Some item -> (s, push all item)
         None -> (s, all))
 
 @Inline
