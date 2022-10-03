@@ -10,6 +10,7 @@ import Siko.Syntax.Location
 import Siko.Syntax.SourceFile
 import Siko.MIR.Backend as MB
 import Siko.HIR.Backend as HB
+import Siko.LIR.Backend as LB
 import Siko.Config
 import Siko.Trace
 import Siko.FileManager
@@ -85,6 +86,8 @@ main = do
             Ok mir_program -> do
                 trace config "MIR processing.."
                 lir_program <- MB.processProgram config mir_program
+                trace config "LIR processing.."
+                lir_program <- LB.processProgram lir_program
                 trace config "Transpiling.."
                 rust_output <- Transpiler.transpile lir_program
                 writeTextFile (getOutputFileName config Normal) rust_output

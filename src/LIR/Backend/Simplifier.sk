@@ -1,0 +1,123 @@
+module Siko.LIR.Backend.Simplifier where
+
+import Siko.LIR.Program
+import Siko.LIR.Function
+import Siko.LIR.Expr as E
+
+import Map
+
+data Context = { var_map :: Map E.Var E.Var } deriving (Show)
+
+processDo :: Context -> [E.Expr] -> (Context, [E.Expr])
+processDo context items = List.filterMapS context items filterDecl
+    where
+        filterDecl :: Context -> E.Expr -> (Context, Option E.Expr)
+        filterDecl context expr = do
+            E.Expr s_expr type <- expr
+            case s_expr of
+                E.VarDecl target rhs_expr -> do
+                    (context, rhs_expr) <- simplifyExpr context rhs_expr
+                    E.Expr rhs t <- rhs_expr
+                    case rhs of
+                        E.VarRef source -> do
+                            var_map <- Map.put context.var_map target source
+                            (context { var_map = var_map }, None)
+                        E.Move move_expr -> do
+                            E.Expr move_expr t <- move_expr
+                            case move_expr of
+                                E.VarRef source -> do
+                                    var_map <- Map.put context.var_map target source
+                                    (context { var_map = var_map }, None)
+                                _ -> (context, Some (E.Expr (E.VarDecl target (E.Expr rhs t)) type))
+                        rhs -> (context, Some (E.Expr (E.VarDecl target (E.Expr rhs t)) type))
+                s_expr -> do
+                    (context, expr) <- simplifyExpr context (E.Expr s_expr type)
+                    (context, Some expr)
+
+simplifyCase :: Context -> E.Case -> (Context, E.Case)
+simplifyCase context c = do
+    (context, body) <- simplifyExpr context c.body
+    (context, c { body = body })
+
+simplifyExpr :: Context -> E.Expr -> (Context, E.Expr)
+simplifyExpr context (E.Expr expr type) = do
+    (context, expr) <- case expr of
+        E.Do items -> do
+            (context, items) <- processDo context items
+            (context, E.Do items)
+        E.StaticFunctionCall id args -> do
+            (context, args) <- List.mapS context args simplifyExpr
+            (context, E.StaticFunctionCall id args)
+        E.IntegerLiteral lit -> (context, E.IntegerLiteral lit)
+        E.StringLiteral lit -> (context, E.StringLiteral lit)
+        E.FloatLiteral lit -> (context, E.FloatLiteral lit)
+        E.CharLiteral lit -> (context, E.CharLiteral lit)
+        E.VarDecl var rhs -> do
+            (context, rhs) <- simplifyExpr context rhs
+            (context, E.VarDecl var rhs)
+        E.VarRef v -> do
+            case Map.get context.var_map v of
+                Some other -> (context, E.VarRef other)
+                None -> (context, E.VarRef v)
+        E.FieldAccess index receiver -> do
+            (context, receiver) <- simplifyExpr context receiver
+            (context, E.FieldAccess index receiver)
+        E.If cond true false -> do
+            (context, cond) <- simplifyExpr context cond
+            (context, true) <- simplifyExpr context true
+            (context, false) <- simplifyExpr context false
+            (context, E.If cond true false)
+        E.List items -> do
+            (context, items) <- List.mapS context items simplifyExpr
+            (context, E.List items)
+        E.Return arg -> do
+            (context, arg) <- simplifyExpr context arg
+            (context, E.Return arg)
+        E.Continue arg -> do
+            (context, arg) <- simplifyExpr context arg
+            (context, E.Continue arg)
+        E.Break arg -> do
+            (context, arg) <- simplifyExpr context arg
+            (context, E.Break arg)
+        E.Loop var initializer body -> do
+            (context, initializer) <- simplifyExpr context initializer
+            (context, body) <- simplifyExpr context body
+            (context, E.Loop var initializer body)
+        E.CaseOf body cases -> do
+            (context, body) <- simplifyExpr context body
+            (context, cases) <- List.mapS context cases simplifyCase
+            (context, E.CaseOf body cases)
+        E.Clone arg -> do
+            (context, arg) <- simplifyExpr context arg
+            (context, E.Clone arg)
+        E.Deref arg -> do
+            (context, arg) <- simplifyExpr context arg
+            (context, E.Deref arg)
+        E.DerefClone arg -> do
+            (context, arg) <- simplifyExpr context arg
+            (context, E.DerefClone arg)
+        E.Ref arg -> do
+            (context, arg) <- simplifyExpr context arg
+            (context, E.Ref arg)
+        E.Move arg -> do
+            (context, arg) <- simplifyExpr context arg
+            (context, E.Move arg)
+        E.Box arg -> do
+            (context, arg) <- simplifyExpr context arg
+            (context, E.Box arg)
+    (context, E.Expr expr type)
+
+simplifyFunction :: (Identity, Function) -> (Identity, Function)
+simplifyFunction (id, function) = do
+    kind <- case function.kind of
+        Normal body -> do
+            context <- Context Map.empty
+            (context, body) <- simplifyExpr context body
+            Normal body
+        kind -> kind
+    (id, function { kind = kind })
+
+processProgram :: Program -> Program
+processProgram program = do
+    functions <- Map.map program.functions simplifyFunction
+    program { functions = functions }
