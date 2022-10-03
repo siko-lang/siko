@@ -269,15 +269,6 @@ processImpl :: Program -> R.Program -> Context -> String -> LD.ExternalClassImpl
 processImpl lir_program program context type_name impl lifetimes = do
     rust_type_name <- RT.Named type_name []
     (name, methods) <- case impl of
-            LD.Show fn_id -> do
-                args <- [("fmt", RT.Named "&mut std::fmt::Formatter" [])]
-                result <- RT.Named "std::fmt::Result" []
-                fn <- getFunction lir_program fn_id
-                show_call <- R.FunctionCall (getRustIdentity fn_id) [convertImplArg lir_program fn_id (R.VarRef "self")]
-                fmt_call <- R.FunctionCall "write!" [R.VarRef "fmt", R.StringLiteral "{}", R.FieldAccess innerValueField show_call]
-                body <- R.Block [fmt_call]
-                method <- R.Function "fmt" [] True args result body []
-                ("std::fmt::Display", [method])
             LD.PartialEq fn_id -> do
                 args <- [(getArgName 1, (RT.Named "&{}" % type_name) [])]
                 result <- RT.Named "bool" []

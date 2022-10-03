@@ -32,7 +32,7 @@ generatePrintStr :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generatePrintStr program type_store arg_types result_type = do
     rust_type <- convertType result_type
     field_access <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
-    print_call <- R.FunctionCall "print!" [R.StringLiteral "{}", field_access]
+    print_call <- R.FunctionCall "std::io::Write::write_all" [R.FunctionCall "&mut std::io::stdout" [], R.MethodCall field_access "as_ref" []]
     unit <- R.StructCtor (RT.showBase rust_type) []
     R.Block [print_call, unit]
 
