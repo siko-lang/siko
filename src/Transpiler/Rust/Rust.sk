@@ -39,7 +39,7 @@ data Pattern = IntegerPattern String
                | CharRangePattern Char Char RangeKind
                | VariantPattern String (Option String)
                | RecordPattern String
-               | WildcardPattern
+               | WildcardPattern (Option String)
 
 data MatchCase = { pattern :: Pattern, body :: Expr, guard :: Option Expr }
 
@@ -101,7 +101,9 @@ generatePattern pattern guard = case pattern of
         Some var_name -> "{}({})" % (variant_name, var_name)
         None -> "{}" % variant_name
     RecordPattern record_name -> record_name + "{..}"
-    WildcardPattern -> "_"
+    WildcardPattern name -> case name of
+        Some name -> "{}" % name
+        None -> "_"
 
 getTypeAnnotation :: T.Type -> String
 getTypeAnnotation type = case type of
@@ -253,6 +255,7 @@ generateProgram program = do
     content <- content + "#![allow(unused_must_use)]\n"
     content <- content + "#![allow(unused_assignments)]\n"
     content <- content + "#![allow(unused_mut)]\n"
+    content <- content + "#![allow(unreachable_patterns)]\n"
     content <- program.structs |> List.iter |> Iterator.fold (\content, s -> content + "\n\n" + generateStruct s) content
     content <- program.enums |> List.iter |> Iterator.fold (\content, e -> content + "\n\n" + generateEnum e) content
     content <- program.functions |> List.iter |> Iterator.fold (\content, f -> content + "\n\n" + generateFunction f (Indent 0)) content

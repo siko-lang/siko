@@ -22,7 +22,7 @@ data Checker = IntegerChecker String
                | CharChecker Char
                | CharRangeChecker Char Char RangeKind
                | VariantChecker Int Var T.Type
-               | WildcardChecker
+               | WildcardChecker Var
 
 instance Show Checker where
     show checker = case checker of
@@ -31,7 +31,7 @@ instance Show Checker where
         CharChecker lit -> "c:{}" % lit
         CharRangeChecker s e kind -> "{}:{}:{}" % (s, e, kind)
         VariantChecker i v _ -> "v:{} {}" % (i, v)
-        WildcardChecker -> "w"
+        WildcardChecker v -> "w({})" % v
 
 data Case = { checker :: Checker, body :: Expr } deriving (Show)
 

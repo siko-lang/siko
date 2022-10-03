@@ -173,6 +173,7 @@ collectBorrows context usage_store expr = do
             (context, usage_store, exec_mode) <- collectBorrows context usage_store body
             branches <- List.map cases (\c -> case c.checker of
                 E.VariantChecker _ var _ -> (Some var, c.body)
+                E.WildcardChecker var -> (Some var, c.body)
                 _ -> (None, c.body))
             (context, usage_store, exec_mode) <- processBranches context usage_store branches expr_id
             (context, usage_store, exec_mode)

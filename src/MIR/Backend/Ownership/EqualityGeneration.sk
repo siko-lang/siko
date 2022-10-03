@@ -258,6 +258,11 @@ processExpr context expr = do
                                     var_info <- getTypeVariableInfoByVar inference_info var context.function_id
                                     addEqualInfo context body_info var_info
                                 _ -> panic "VariantCheckers' type is nor adt nor record"
+                        E.WildcardChecker var -> do
+                                    inference_info <- context.inference_info
+                                    body_info <- getTypeVariableInfoByExprId inference_info body_id context.function_id
+                                    var_info <- getTypeVariableInfoByVar inference_info var context.function_id
+                                    addEqualInfo context body_info var_info
                         _ -> context
                 ) context cases
             context
