@@ -32,7 +32,8 @@ data Context = { config :: Config,
                  allow_guess :: Bool,
                  function_converter_borrows :: Map Int [FunctionConverterBorrow],
                  function_converter_borrow_keys :: Map Int E.ExprId,
-                 call_args :: Map E.ExprId [OwnershipTypeVariable] } deriving (Move)
+                 call_args :: Map E.ExprId [OwnershipTypeVariable],
+                } deriving (Move)
 
 debugPrint :: Context -> String -> ()
 debugPrint context msg = do
@@ -104,14 +105,13 @@ isValidBorrow context ownership_var expr_id = do
                 Some invalid_borrows -> not (List.contains invalid_borrows expr_id)
                 None -> True
 
-isInternal :: Context -> BorrowId -> (Context, Bool)
+isInternal :: Context -> BorrowId -> Bool
 isInternal context borrow_id = do
     borrow_set <- getBorrowSet context.inference_info borrow_id
     borrows <- borrow_set.borrows |> Set.iter |> List.toList
-    is_internal <- List.fold True borrows (\is_internal, borrow -> case borrow of
+    List.fold True borrows (\is_internal, borrow -> case borrow of
         Internal _ -> is_internal
         _ -> False)
-    (context, is_internal)
 
 canPropagateBorrow :: Context -> OwnershipTypeVariable -> BorrowId -> Bool
 canPropagateBorrow context ownership_var borrow_id = do
@@ -331,11 +331,11 @@ processConverter context converter = do
         (M.Owner, M.Unknown) ->
             if converter.borrower
             then do
-                valid <- isValidBorrow context expr_info.ownership_var converter.arg_id
+                valid <- isValidBorrow context expr_info.ownership_var converter.source_id
                 if valid
                 then do
-                    (inference_info, id) <- createBorrowSetForExpr context.inference_info converter.arg_id
-                    //debugPrint context "Borrowing owner at {} {}" % (converter.arg_id, id)
+                    (inference_info, id) <- createBorrowSetForExpr context.inference_info converter.source_id
+                    //debugPrint context "Borrowing owner at {} {}" % (converter.source_id, id)
                     context <- context { inference_info = inference_info }
                     updateOwnership context expr_info.ownership_var (M.Borrower id)
                 else do
@@ -352,16 +352,14 @@ processConverter context converter = do
         (M.Owner, M.Borrower a) -> do
             if converter.borrower
             then do
-                valid <- isValidBorrow context expr_info.ownership_var converter.arg_id
+                valid <- isValidBorrow context expr_info.ownership_var converter.source_id
                 if valid
-                then do
-                    (context, is_internal) <- isInternal context a
-                    if is_internal
-                    then do
-                        (inference_info, id) <- createBorrowSetForExpr context.inference_info converter.arg_id
-                        context <- context { inference_info = inference_info }
-                        updateOwnership context expr_info.ownership_var (M.Borrower id)
-                    else context
+                then if isInternal context a
+                     then do
+                         (inference_info, id) <- createBorrowSetForExpr context.inference_info converter.source_id
+                         context <- context { inference_info = inference_info }
+                         updateOwnership context expr_info.ownership_var (M.Borrower id)
+                     else context
                 else updateOwnership context expr_info.ownership_var M.Owner
             else updateOwnership context expr_info.ownership_var M.Owner
         (M.Borrower a, M.Borrower b) -> do
@@ -419,7 +417,8 @@ dumpOwnership context = do
 processConstraints :: Config -> P.Identity -> InferenceInfo -> [C.Constraint] ->
                       Map E.ExprId [E.ExprId] -> Map OwnershipTypeVariable [E.ExprId] ->
                       Map GroupTypeVariable [E.ExprId] -> Map OwnershipTypeVariable [GroupTypeVariable] ->
-                      [OwnershipTypeVariable] -> Map E.ExprId C.CallContextSet -> InferenceMode -> Map E.ExprId [OwnershipTypeVariable] -> InferenceInfo
+                      [OwnershipTypeVariable] -> Map E.ExprId C.CallContextSet -> InferenceMode -> Map E.ExprId [OwnershipTypeVariable] -> 
+                      InferenceInfo
 processConstraints config function_id inference_info constraints invalid_borrow_map ownership_expr_map 
                     group_expr_map ownership_group_map result_vars call_context_map mode call_args = do
     // println "Invalid borrow map {}" % (invalid_borrow_map)

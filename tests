@@ -67,25 +67,21 @@ def run_command(args, name, verbose = False):
         print("%s failed" % name)
         return False
 
-def getStd():
-    return ["./std"]
-
-def run(silent, verbose, debug, test_name, source_folder, index, total, target, pfi, mir_functions):
+def run(silent, verbose, debug, test_name, source_folder, index, total, target, pfi, dlt, mir_functions):
     if not silent:
         print("--- Running %s - %d/%d - " % (test_name, total, index), end = "", flush=True)
     mkdir_safe("test_runs")
     target_folder = os.path.join("test_runs", test_name)
     mkdir_safe(target_folder)
-    std = getStd()
+    extra_args = ["./std"]
     if pfi:
-        pfi_args = ["-pfi"]
-    else:
-        pfi_args = []
-    mir_function_args = []
+        extra_args.append("-pfi")
+    if dlt:
+        extra_args.append("-dlt")
     for m in mir_functions:
-        mir_function_args.append("-m")
-        mir_function_args.append(m)
-    if not run_command(["./%s" % target, debug, verbose] + std + pfi_args + mir_function_args + [source_folder, "-o", os.path.join(target_folder, test_name)], target, verbose = True):
+        extra_args.append("-m")
+        extra_args.append(m)
+    if not run_command(["./%s" % target, debug, verbose] + extra_args + [source_folder, "-o", os.path.join(target_folder, test_name)], target, verbose = True):
         return False
     normal_output = os.path.join(target_folder, "normal")
     rc_output = os.path.join(target_folder, "rc")
@@ -100,6 +96,7 @@ debug = ""
 silent = False
 target = "stage0"
 pfi = False
+dlt = False
 mir_functions = []
 selected = set()
 if len(sys.argv) != 1:
@@ -125,7 +122,7 @@ failure = 0
 tests = sorted(tests)
 for (index, (name, path)) in enumerate(tests):
     start_time = time.time()
-    result = run(silent, verbose, debug, name, path, index + 1, total, target, pfi, mir_functions)
+    result = run(silent, verbose, debug, name, path, index + 1, total, target, pfi, dlt, mir_functions)
     end_time = time.time()
     elapsed_time = end_time - start_time
     if not silent:

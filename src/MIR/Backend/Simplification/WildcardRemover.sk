@@ -1,4 +1,4 @@
-module Siko.MIR.Backend.Simplification.VarReplacer where
+module Siko.MIR.Backend.Simplification.WildcardRemover where
 
 import Siko.MIR.Program as P
 import Siko.MIR.Expr as E
@@ -14,21 +14,6 @@ replaceVar context old new = do
     (replaced_vars, _) <- Map.insert context.replaced_vars old new
     context <- context { replaced_vars = replaced_vars }
     context
-
-processDoItem :: Context -> E.Expr -> (Context, Option E.Expr)
-processDoItem context expr = do
-    E.Expr item_s_expr type id <- expr
-    context <- case item_s_expr of
-        E.VarDecl v rhs -> do
-            E.Expr rhs_s_expr type id <- rhs
-            case rhs_s_expr of
-                E.VarRef orig_v -> do
-                    context <- replaceVar context v orig_v
-                    return (context, None)
-                _ -> context
-        _ -> context
-    (context, expr) <- processExpr context expr
-    (context, Some expr)
 
 processVar :: Context -> E.Var -> E.Var
 processVar context var = do
@@ -47,7 +32,7 @@ processExpr context expr = do
     E.Expr s_expr type id <- expr
     case s_expr of
         E.Do items -> do
-            (context, items) <- List.filterMapS context items processDoItem
+            (context, items) <- List.mapS context items processExpr
             (context, E.Expr (E.Do items) type id)
         E.Multi _ -> panic "Multi expr found in rebinder"
         E.StaticFunctionCall f_id args -> do
@@ -88,12 +73,24 @@ processExpr context expr = do
             (context, body) <- processExpr context body
             (context, E.Expr (E.Loop v initializer body continues breaks) type id)
         E.CaseOf body cases -> do
+            E.Expr body_expr _ _ <- body
+            body_var <- case body_expr of
+                E.VarRef body_var -> body_var
+                _ -> panic "Case body is not var ref!"
             (context, body) <- processExpr context body
-            (context, cases) <- List.mapS context cases (\context, case_branch -> do
+            len <- List.getLength cases
+            ((context, simplify), cases) <- List.mapS (context, False) cases (\(context, simplify), case_branch -> do
+                (context, simplify) <- case case_branch.checker of
+                    E.WildcardChecker v -> if len == 1
+                        then (replaceVar context v body_var, True)
+                        else (context, simplify)
+                    _ -> (context, simplify)
                 (context, updated_body) <- processExpr context case_branch.body
                 case_branch <- case_branch { body = updated_body }
-                (context, case_branch))
-            (context, E.Expr (E.CaseOf body cases) type id)
+                ((context, simplify), case_branch))
+            if simplify
+            then (context, (atIndex cases 0).body)
+            else (context, E.Expr (E.CaseOf body cases) type id)
         E.Clone arg -> do
             (context, arg) <- processExpr context arg
             (context, E.Expr (E.Clone arg) type id)
@@ -113,20 +110,20 @@ processExpr context expr = do
             (context, arg) <- processExpr context arg
             (context, E.Expr (E.Converter arg kind) type id)
 
-processFunction :: F.Function -> F.Function
-processFunction function = case function.kind of
+processFunction :: Context -> F.Function -> (Context, F.Function)
+processFunction context function = case function.kind of
     F.Normal info -> do
-        context <- Context Map.empty
+        context <- context { replaced_vars = Map.empty }
         (context, body) <- processExpr context info.body
         info <- info { body = body }
         new_kind <- F.Normal info
-        function { kind = new_kind }
-    _ -> function
+        (context, function { kind = new_kind})
+    _ -> (context, function)
 
 processProgram :: P.Program -> P.Program
 processProgram program = do
     context <- Context Map.empty
-    functions <- Map.map program.functions (\(id, function) -> do
-        function <- processFunction function
-        (id, function))
+    (context, functions) <- Map.mapS context program.functions (\context, (id, function) -> do
+        (context, function) <- processFunction context function
+        (context, id, function))
     program { functions = functions }

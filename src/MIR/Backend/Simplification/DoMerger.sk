@@ -2,14 +2,11 @@ module Siko.MIR.Backend.Simplification.DoMerger where
 
 import Siko.MIR.Program as P
 import Siko.MIR.Expr as E
-import Siko.MIR.Data as D
-import Siko.MIR.Type as T
 import Siko.MIR.Function as F
-import Siko.Util.Counter
 import Siko.MIR.Backend.Traversal
 import Map
 
-data Context = { modified :: Bool }
+data Context = Context
 
 processExpr :: Context -> E.Expr -> (Context, E.Expr)
 processExpr context expr = do
@@ -20,19 +17,14 @@ processExpr context expr = do
                 E.Expr s_expr _ _ <- item
                 case s_expr of
                     E.Do sub_items -> do
-                        context <- context { modified = True }
                         (context, items + sub_items)
                     _ -> (context, push items item))
             (context, items) <- List.mapS context items processExpr
-            if getLength items == 1
-            then do
-                context <- context { modified = True }
-                (context, atIndex items 0)
-            else (context, E.Expr (E.Do items) type id)
+            (context, E.Expr (E.Do items) type id)
         _ -> (context, expr)
 
-processFunction :: Context -> P.Program -> F.Function -> (Context, F.Function)
-processFunction context program function = case function.kind of
+processFunction :: Context -> F.Function -> (Context, F.Function)
+processFunction context function = case function.kind of
     F.Normal info -> do
         (context, body) <- traverse context info.body (Some processExpr) None None
         info <- info { body = body }
@@ -40,10 +32,10 @@ processFunction context program function = case function.kind of
         (context, function { kind = new_kind})
     _ -> (context, function)
 
-processProgram :: P.Program -> (P.Program, Bool)
+processProgram :: P.Program -> P.Program
 processProgram program = do
-    context <- Context False
+    context <- Context
     (context, functions) <- Map.mapS context program.functions (\context, (id, function) -> do
-        (context, function) <- processFunction context program function
+        (context, function) <- processFunction context function
         (context, id, function))
-    (program { functions = functions }, context.modified)
+    program { functions = functions }

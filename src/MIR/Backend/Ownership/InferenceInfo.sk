@@ -66,7 +66,12 @@ data InferenceInfo = { expr_type_variables :: Map GlobalExprId TypeVariableInfo,
                        ownership_dep_map :: Map GroupTypeVariable [OwnershipTypeVariable],
                        base_call_contexts :: [C.CallContextSet],
                        group_index_map :: GroupIndexMap GroupTypeVariable,
-                     } deriving (Show, Move)
+                     } deriving (Move)
+
+instance Show InferenceInfo where
+    show inference_info =
+        "InferenceInfo(ownership_values {}, members {}, converters {}, borrow_sets {}, initials {})" % 
+            (inference_info.ownership_values, inference_info.members, inference_info.converters, inference_info.borrow_sets, inference_info.initials)
 
 createInferenceInfoFromLoweringInfo :: FunctionLoweringInfo -> P.Identity -> (InferenceInfo, [BorrowId])
 createInferenceInfoFromLoweringInfo lowering_info function_id = do

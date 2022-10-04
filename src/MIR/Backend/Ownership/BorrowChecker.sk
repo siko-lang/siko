@@ -15,8 +15,10 @@ data UsageStore = { usages :: Map E.Var [Usage] } deriving (Show, PartialEq, Eq,
 
 data Invalidation = { subject :: E.ExprId, object :: E.ExprId } deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
-data Context = { borrows :: [E.ExprId] ,
-                 invalidations :: [Invalidation] }
+data Context = { moves :: [(E.Var, E.ExprId)],
+                 decls :: [(E.Var, E.ExprId)],
+                 borrows :: [E.ExprId],
+                 invalidations :: [Invalidation] } deriving (Move)
 
 data ExecutionMode = Normal
                    | DoesNotReturn deriving (Show)
@@ -44,13 +46,19 @@ checkUsages usages usage expr_id = do
             (borrows, invalidations)
         else (borrows, invalidations))
 
-addUsageVar :: UsageStore -> E.Var -> UsageStore
-addUsageVar usage_store var = do
+addUsageVar :: Context -> UsageStore -> E.Var -> E.ExprId -> (Context, UsageStore)
+addUsageVar context usage_store var decl_expr_id = do
     usages <- Map.put usage_store.usages var []
-    usage_store { usages = usages }
+    decls <- List.push context.decls (var, decl_expr_id)
+    (context { decls = decls }, usage_store { usages = usages })
 
 invalidateAll :: Context -> UsageStore -> E.Var -> E.ExprId -> Context
 invalidateAll context usage_store var expr_id = do
+    invalidations <- List.fold context.invalidations context.decls (\invalidations, (decl_var, decl_expr_id) ->
+        if var == decl_var
+        then List.push invalidations (Invalidation expr_id decl_expr_id)
+        else invalidations)
+    context <- context { invalidations = invalidations }
     case Map.get usage_store.usages var of
         Some usages -> List.fold context usages (\context, usage -> do
                 invalidations <- List.push context.invalidations (Invalidation expr_id usage.expr_id)
@@ -60,6 +68,8 @@ invalidateAll context usage_store var expr_id = do
 addUsage :: Context -> UsageStore -> E.Var -> E.ExprId -> Path -> (Context, UsageStore)
 addUsage context usage_store var expr_id path = do
     usage <- Usage expr_id path
+    moves <- List.push context.moves (var, expr_id)
+    context <- context { moves = moves }
     usages <- case Map.get usage_store.usages var of
         Some usages -> usages
         None -> []
@@ -68,7 +78,7 @@ addUsage context usage_store var expr_id path = do
     invalidations <- context.invalidations + invalidations
     context <- context { borrows = borrows |> List.sort |> List.dedup, invalidations = invalidations }
     usages <- List.push usages usage
-    usages<- Map.put usage_store.usages var usages
+    usages <- Map.put usage_store.usages var usages
     (context, usage_store { usages = usages })
 
 collectBlockBorrows :: Context -> UsageStore -> [E.Expr] -> (Context, UsageStore, ExecutionMode)
@@ -84,7 +94,9 @@ mergeContexts :: Context -> Context -> Context
 mergeContexts context1 context2 = do
     borrows <- (context1.borrows + context2.borrows) |> List.sort |> List.dedup
     invalidations <- (context1.invalidations + context2.invalidations) |> List.sort |> List.dedup
-    context1 { borrows = borrows, invalidations = invalidations }
+    decls <- (context1.decls + context2.decls) |> List.sort |> List.dedup
+    moves <- (context1.moves + context2.moves) |> List.sort |> List.dedup
+    context1 { moves = moves, decls = decls, borrows = borrows, invalidations = invalidations }
 
 mergeUsageStores :: UsageStore -> UsageStore -> UsageStore
 mergeUsageStores store1 store2 = do
@@ -106,9 +118,9 @@ processBranches context usage_store branches expr_id = do
     where
         processBranch :: Context -> UsageStore -> Option E.Var -> E.Expr -> E.ExprId -> (Context, UsageStore, ExecutionMode)
         processBranch context usage_store var expr expr_id = do
-            usage_store <- case var of
-                Some var -> addUsageVar usage_store var
-                None -> usage_store
+            (context, usage_store) <- case var of
+                Some var -> addUsageVar context usage_store var expr_id
+                None -> (context, usage_store)
             collectBorrows context usage_store expr
 
 collectBorrows :: Context -> UsageStore -> E.Expr -> (Context, UsageStore, ExecutionMode)
@@ -131,7 +143,7 @@ collectBorrows context usage_store expr = do
         E.CharLiteral _ -> (context, usage_store, Normal)
         E.VarDecl var rhs -> do
             (context, usage_store, exec_mode) <- collectBorrows context usage_store rhs
-            usage_store <- addUsageVar usage_store var
+            (context, usage_store) <- addUsageVar context usage_store var expr_id
             (context, usage_store, exec_mode)
         E.VarRef var -> do
             path <- Whole
@@ -163,9 +175,9 @@ collectBorrows context usage_store expr = do
             (context, usage_store, DoesNotReturn)
         E.Loop var initializer body _ _ -> do
             (context, usage_store, exec_mode) <- collectBorrows context usage_store initializer
-            usage_store <- addUsageVar usage_store var
+            (context, usage_store) <- addUsageVar context usage_store var expr_id
             (context, usage_store, exec_mode) <- collectBorrows context usage_store body
-            usage_store <- addUsageVar usage_store var
+            (context, usage_store) <- addUsageVar context usage_store var expr_id
             (context, usage_store, exec_mode) <- collectBorrows context usage_store body
             context <- invalidateAll context usage_store var expr_id
             (context, usage_store, exec_mode)
@@ -187,10 +199,19 @@ collectBorrows context usage_store expr = do
 
 checkBorrows :: E.Expr -> BorrowInfo
 checkBorrows body = do
-    context <- Context [] []
+    context <- Context [] [] [] []
     usage_store <- UsageStore Map.empty
     (context, usage_store, exec_mode) <- collectBorrows context usage_store body
     invalidations <- List.filter context.invalidations (\invalidation -> not (List.contains context.borrows invalidation.subject))
+    decls <- List.fold Map.empty context.decls (\decls, (var, decl) -> Map.put decls var decl)
+    invalidations <- List.fold invalidations context.moves (\invalidations, (var, move) -> do
+            if List.contains context.borrows move
+            then invalidations
+            else do
+                case Map.get decls var of
+                    Some decl -> List.push invalidations (Invalidation move decl)
+                    None -> invalidations // FIXME: handle move of function args, they are not declared in an expression!
+        )
     invalidations <- List.fold Map.empty invalidations (\invalidations, invalidation -> do
         (invalidations, _) <- Map.alter (\old -> case old of
             Some invalidations -> Some (List.push invalidations invalidation.object)

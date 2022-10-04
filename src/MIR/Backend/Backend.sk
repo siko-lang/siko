@@ -4,10 +4,12 @@ import Siko.MIR.Backend.Ownership.Inference as Inference
 import Siko.MIR.Backend.Ownership.AddConverter as AddConverter
 import Siko.MIR.Backend.SanityCheck as SanityCheck
 import Siko.MIR.Backend.Rebinder as Rebinder
-import Siko.MIR.Backend.Simplifier as Simplifier
 import Siko.MIR.Backend.Inliner as Inliner
-import Siko.MIR.Backend.FnArgVarCreator as FnArgVarCreator
+import Siko.MIR.Backend.LocalArgCreator as LocalArgCreator
 import Siko.MIR.Backend.ConverterVarCreator as ConverterVarCreator
+import Siko.MIR.Backend.Simplification.WildcardRemover as WildcardRemover
+import Siko.MIR.Backend.Simplification.VarReplacer as VarReplacer
+import Siko.MIR.Backend.Simplification.DoMerger as DoMerger
 import Siko.MIR.Backend.Traversal
 import Siko.MIR.Program as MP
 import Siko.LIR.Program as LP
@@ -186,32 +188,35 @@ processNonCopyables mir_program data_groups = do
 
 processProgram :: Config -> MP.Program -> LP.Program
 processProgram config mir_program = do
-    mir_program <- FnArgVarCreator.processProgram mir_program
-    trace config "Rebinder.."
-    mir_program <- Rebinder.processProgram mir_program
-    dumpProgram config mir_program (MIR "rebinder")
-    trace config "SanityCheck1.."
-    SanityCheck.processProgram mir_program
     (data_groups, function_groups) <- createGroups config mir_program
+    trace config "Process groups.."
     mir_program <- processDataGroups mir_program data_groups
     mir_program <- processCopyables mir_program data_groups
     mir_program <- processNonCopyables mir_program data_groups
     trace config "Inliner.."
     mir_program <- Inliner.processProgram mir_program function_groups
     dumpProgram config mir_program (MIR "inliner")
-    //trace config "Simplifier.."
-    //mir_program <- Simplifier.processProgram config mir_program
-    dumpProgram config mir_program (MIR "simplifier")
+    trace config "Rebinder.."
     mir_program <- Rebinder.processProgram mir_program
-    dumpProgram config mir_program (MIR "rebinder2")
-    trace config "SanityCheck2.."
-    SanityCheck.processProgram mir_program
+    dumpProgram config mir_program (MIR "rebinder")
     (data_groups, function_groups) <- createGroups config mir_program
-    trace config "ConverterVarCreator.."
-    mir_program <- ConverterVarCreator.processProgram mir_program
-    dumpProgram config mir_program (MIR "convertervarcreator")
+    trace config "WildcardRemover.."
+    mir_program <- WildcardRemover.processProgram mir_program
+    dumpProgram config mir_program (MIR "wildcardremover")
+    trace config "VarReplacer.."
+    mir_program <- VarReplacer.processProgram mir_program
+    dumpProgram config mir_program (MIR "varreplacer")
+    trace config "DoMerger.."
+    mir_program <- DoMerger.processProgram mir_program
+    dumpProgram config mir_program (MIR "domerger")
+    trace config "LocalArgCreator.."
+    mir_program <- LocalArgCreator.processProgram mir_program
+    dumpProgram config mir_program (MIR "localargcreator")
+    trace config "Rebinder.."
     mir_program <- Rebinder.processProgram mir_program
-    dumpProgram config mir_program (MIR "rebinder3")
+    dumpProgram config mir_program (MIR "rebinder_simplified")
+    trace config "SanityCheck1.."
+    SanityCheck.processProgram mir_program
     trace config "AddConverter.."
     mir_program <- AddConverter.processProgram config mir_program
     dumpProgram config mir_program (MIR "addconverter")
