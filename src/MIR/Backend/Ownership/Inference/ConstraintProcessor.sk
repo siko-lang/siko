@@ -1,6 +1,7 @@
 module Siko.MIR.Backend.Ownership.Inference.ConstraintProcessor(processConstraints, InferenceMode(..)) where
 
 import Siko.MIR.Backend.Ownership.Inference.Constraint as C
+import Siko.MIR.Backend.Ownership.CallContext as CC
 import Siko.MIR.Backend.Ownership.MemberInfo as M
 import Siko.MIR.Backend.Ownership.InferenceInfo
 import Siko.MIR.Backend.Ownership.TypeVariableInfo
@@ -26,7 +27,7 @@ data Context = { config :: Config,
                  ownership_expr_map :: Map OwnershipTypeVariable [E.ExprId],
                  group_expr_map :: Map GroupTypeVariable [E.ExprId],
                  ownership_group_map :: Map OwnershipTypeVariable [GroupTypeVariable],
-                 call_context_map :: Map E.ExprId C.CallContextSet,
+                 call_context_map :: Map E.ExprId CC.CallContextSet,
                  mode :: InferenceMode,
                  result_vars :: [OwnershipTypeVariable],
                  allow_guess :: Bool,
@@ -417,7 +418,7 @@ dumpOwnership context = do
 processConstraints :: Config -> P.Identity -> InferenceInfo -> [C.Constraint] ->
                       Map E.ExprId [E.ExprId] -> Map OwnershipTypeVariable [E.ExprId] ->
                       Map GroupTypeVariable [E.ExprId] -> Map OwnershipTypeVariable [GroupTypeVariable] ->
-                      [OwnershipTypeVariable] -> Map E.ExprId C.CallContextSet -> InferenceMode -> Map E.ExprId [OwnershipTypeVariable] -> 
+                      [OwnershipTypeVariable] -> Map E.ExprId CC.CallContextSet -> InferenceMode -> Map E.ExprId [OwnershipTypeVariable] -> 
                       InferenceInfo
 processConstraints config function_id inference_info constraints invalid_borrow_map ownership_expr_map 
                     group_expr_map ownership_group_map result_vars call_context_map mode call_args = do

@@ -26,6 +26,7 @@ import Siko.MIR.Backend.Ownership.Inference.ConstraintProcessor
 import Siko.MIR.Backend.Ownership.Converter
 import Siko.MIR.Backend.Ownership.DumpOwnership
 import Siko.MIR.Backend.Ownership.DataGroupInfo
+import Siko.MIR.Backend.Ownership.CallContext as CC
 
 import Map
 
@@ -119,7 +120,7 @@ processFunction context group inference_info function_id = do
                     (equals, inference_info) <- processFunctionEqualities function_id context.config group [] inference_info function_info_store context.program info.body context.data_group_info_store
                     inference_info <- processEqualities context.config equals inference_info context.program
                     inference_info <- updateOwnershipDepMap context.config inference_info
-                    inference_info <- createBaseCallContexts context.config inference_info
+                    inference_info <- CC.createBaseCallContexts context.config inference_info
                     converter_merge_info_base <- createConverterMergeInfoBase context.config inference_info.converters
                     inference_info <- createFunctionInfoBase context.config inference_info function_id converter_merge_info_base
                     (context, inference_info)
@@ -202,7 +203,7 @@ processFunctionGroup index group_count context group = do
             inference_info <- List.fold inference_info group
                 (\inference_info, function_id -> createFunctionInfoBase config inference_info function_id converter_merge_info_base)
             inference_info <- updateOwnershipDepMap config inference_info
-            inference_info <- createBaseCallContexts config inference_info
+            inference_info <- CC.createBaseCallContexts config inference_info
             inference_info
 
 processProgram :: Config -> P.Program -> [DependencyGroup P.Identity] -> [DependencyGroup P.Identity] -> LP.Program

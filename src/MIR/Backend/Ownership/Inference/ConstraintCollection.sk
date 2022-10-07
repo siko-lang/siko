@@ -9,6 +9,7 @@ import Siko.MIR.Backend.Ownership.OwnershipDependencyMap
 import Siko.Util.DependencyProcessorLinear
 import Siko.MIR.Backend.Ownership.TypeVariableInfo
 import Siko.MIR.Backend.Ownership.Inference.Constraint as C
+import Siko.MIR.Backend.Ownership.CallContext as CC
 import Siko.MIR.Backend.Ownership.FunctionInfoStore
 import Siko.MIR.Backend.Ownership.Converter
 import Siko.MIR.Expr as E
@@ -32,7 +33,7 @@ data Context = { config :: Config,
                  ownership_expr_map :: Map OwnershipTypeVariable [E.ExprId],
                  group_expr_map :: Map GroupTypeVariable [E.ExprId],
                  ownership_group_map :: Map OwnershipTypeVariable [GroupTypeVariable],
-                 call_context_map :: Map E.ExprId C.CallContextSet,
+                 call_context_map :: Map E.ExprId CC.CallContextSet,
                  call_args :: Map E.ExprId [OwnershipTypeVariable],
                  var_expr_map :: Map E.Var E.ExprId,
                }
@@ -70,7 +71,7 @@ processExpr context expr = do
         E.Multi _ -> context
         E.StaticFunctionCall f_id args -> do
                 context <- List.fold context args processExpr
-                (context, call_context_set, call_args) <- List.fold (context, C.CallContextSet List.empty, []) args (\(context, call_context_set, call_args), arg -> do
+                (context, call_context_set, call_args) <- List.fold (context, CC.CallContextSet List.empty, []) args (\(context, call_context_set, call_args), arg -> do
                     E.Expr _ _ id <- arg
                     info <- getTypeVariableInfoByExprId context.inference_info id context.function_id
                     //println "{}: {}" % (f_id, info)
@@ -80,7 +81,7 @@ processExpr context expr = do
                     case group_index of
                         Some group_index -> do
                             g_call_context <- List.atIndex context.inference_info.base_call_contexts group_index
-                            g_call_context <- addOwnershipVarToCallContext g_call_context info.ownership_var
+                            g_call_context <- CC.addOwnershipVarToCallContext g_call_context info.ownership_var
                             //println "g_call_context: {} {}" % (info, g_call_context)
                             call_contexts <- call_context_set.call_contexts + g_call_context.call_contexts
                             call_context_set <- call_context_set { call_contexts = call_contexts }
@@ -257,7 +258,7 @@ collectConstraints :: Config -> P.Identity -> P.Program -> BorrowInfo -> Inferen
                        Map OwnershipTypeVariable [GroupTypeVariable],
                        [OwnershipTypeVariable],
                        P.Program,
-                       Map E.ExprId C.CallContextSet, Map E.ExprId [OwnershipTypeVariable])
+                       Map E.ExprId CC.CallContextSet, Map E.ExprId [OwnershipTypeVariable])
 collectConstraints config function_id program borrow_info inference_info body = do
     //trace config "collectConstraints {}" % function_id
     context <- Context config function_id inference_info program borrow_info []

@@ -23,6 +23,7 @@ import Siko.MIR.Backend.Ownership.Inference.ConstraintProcessor
 import Siko.MIR.Backend.Ownership.Converter
 import Siko.MIR.Backend.Ownership.OrderedDependencyMap
 import Siko.MIR.Backend.Ownership.DumpOwnership
+import Siko.MIR.Backend.Ownership.CallContext as CC
 import Siko.MIR.Program as MP
 import Siko.LIR.Program as LP
 import Siko.MIR.Function as MF
@@ -61,7 +62,7 @@ lowerFunction context lowering_info mir_id lir_id = do
             inference_info <- updateOwnershipDepMap context.config inference_info
             converter_merge_info_base <- createConverterMergeInfoBase context.config inference_info.converters
             inference_info <- createFunctionInfoBase context.config inference_info mir_id converter_merge_info_base
-            inference_info <- createBaseCallContexts context.config inference_info
+            inference_info <- CC.createBaseCallContexts context.config inference_info
             (inference_info, constraints, invalid_borrow_map, ownership_expr_map, group_expr_map, ownership_group_map,
                              result_vars, mir_program, call_context_map, call_args) <- collectConstraints context.config mir_id context.mir_program
                                                                             borrow_info inference_info info.body
