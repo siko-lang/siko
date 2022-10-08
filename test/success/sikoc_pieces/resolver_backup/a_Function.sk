@@ -151,7 +151,7 @@ processFunction :: ResolverState ->
                    [HF.Attribute] -> (ResolverState, [HF.Function ()])
 processFunction state hir_program module_resolver function_scope_resolver type_resolver kind function effects type qn_creator attributes = do
     (state, effects, desugared_body) <- case function.body of
-        Some body if isEmpty function.arguments -> (state, effects, Some body)
+        Some body if List.isEmpty function.arguments -> (state, effects, Some body)
         Some body -> (state, effects, Some (desugarFunctionArgs function.arguments body))
         None -> do
             state <- function.arguments |> List.iter |> Iterator.fold (\state, p -> case p of
@@ -202,7 +202,7 @@ processFunctionMulti state hir_program module_resolver function_scope_resolver t
                         state <- addError state (ExternFnWithMultiDef f.name)
                         (state, True)
                     else (state, err)
-                (state, err) <- if isEmpty f.arguments
+                (state, err) <- if List.isEmpty f.arguments
                     then do
                         state <- addError state (MultiDefNoArg f.name)
                         (state, True)

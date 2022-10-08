@@ -906,7 +906,7 @@ parseParens state parser msg = do
                 then break (state, items, comma_found)
                 else return Err (state, unexpectedToken state msg)
     state <- try expect state Kind.RParen
-    if comma_found || isEmpty items
+    if comma_found || List.isEmpty items
     then Ok (state, Multi items)
     else Ok (state, Single (atIndex items 0))
 
@@ -1499,7 +1499,7 @@ parsePrimary state for_initializer = do
         (state, arg) <- try parseFieldAccess state
         args <- args + [arg]
         (state, args)
-    if isEmpty args
+    if List.isEmpty args
     then Ok (state, fn)
     else Ok (buildExpr (FunctionCall fn args) start_index state)
 

@@ -40,7 +40,7 @@ lowerLifetimeDependency dep = LF.LifetimeDependency (toLifetime dep.from) (toLif
 
 lowerFunction :: Context -> FunctionLoweringInfo -> MP.Identity -> LP.Identity -> Context
 lowerFunction context lowering_info mir_id lir_id = do
-    trace context.config "Lowering function {}/{} {}" % (mir_id, lir_id, lowering_info)
+    trace2 context.config "Lowering function {}/{} {}" % (mir_id, lir_id, lowering_info)
     function <- MP.getFunction context.mir_program mir_id
     context <- case function.kind of
         MF.Normal info -> do
@@ -71,7 +71,7 @@ lowerFunction context lowering_info mir_id lir_id = do
             //trace2 context.config "after processConstraints {} {}" % (lir_id, inference_info)
             if MP.isDebugged context.config mir_id
             then do
-                println "Inference info {}" % inference_info 
+                println "Inference info {}" % inference_info
                 println "Borrow info {}" % borrow_info
                 dumpOwnership inference_info mir_id info.body
             else ()

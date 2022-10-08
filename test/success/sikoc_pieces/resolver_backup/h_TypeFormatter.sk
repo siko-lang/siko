@@ -61,7 +61,7 @@ convertType type names = case type of
         n <- HP.getResolvableName n
         if n == getFullListTypeName
             then "[{}]" % (convertType (atIndex args 0) names)
-            else if isEmpty args
+            else if List.isEmpty args
                 then getNiceName n names
                 else do
                     args <- args |> List.iter |> Iterator.map (\arg -> toStringComplex arg names) |> toList
@@ -99,7 +99,7 @@ formatTypeInner type short = do
     where
         formatConstraint short conflicting_names name constraint = case constraint of
             ClassConstraint s associated_types -> do
-                if isEmpty associated_types
+                if List.isEmpty associated_types
                 then ([], "{} {}" % (getNiceName (HP.getResolvableName s) conflicting_names, name))
                 else do
                     (cs, string_types) <- processAssociatedTypes short associated_types
@@ -115,7 +115,7 @@ formatTypeInner type short = do
 formatType :: Type -> Bool -> String
 formatType type short = do
     (constraints, string_type) <- formatTypeInner type short
-    if isEmpty constraints
+    if List.isEmpty constraints
         then string_type
         else "({}) => {}" % (join constraints ", ", string_type)
 

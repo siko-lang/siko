@@ -105,7 +105,7 @@ checkFunctionType context fn = do
             context <- case func_type_info.effects of
                 Some declared_effects -> do
                     declared_effect_names <- List.map declared_effects T.getNameFromType
-                    context <- if not (isEmpty inferred_effect_names) || not (isEmpty declared_effect_names)
+                    context <- if not (List.isEmpty inferred_effect_names) || not (List.isEmpty declared_effect_names)
                     then do
                         context <- List.fold context inferred_effect_names (\context, inferred_effect -> do
                             if List.contains declared_effect_names inferred_effect
@@ -152,7 +152,7 @@ checkFunctionType context fn = do
                             state <- addError context.state err
                             context { state = state }
                     context <- case func_type_info.effects of
-                        Some effects -> if isEmpty effects
+                        Some effects -> if List.isEmpty effects
                                         then context
                                         else do
                                             effect_names <- List.map effects TF.toString
@@ -237,7 +237,7 @@ processProgram config program var_gen = do
         (state, instance_resolver, function_store, type_store) <- processGroup state instance_resolver group function_store type_store
         (state, instance_resolver, function_store, type_store) ) (state, instance_resolver, function_store, type_store)
     //FS.dump function_store
-    if isEmpty state.errors
+    if List.isEmpty state.errors
         then do
             typed_program <- TP.createTypedProgram type_store function_store state.program
             Ok (typed_program, state.var_gen, class_info_store, instance_resolver, state.instance_resolver_history)

@@ -107,7 +107,7 @@ processClassConstraints :: Context -> Location -> Result Context Context
 processClassConstraints context location = do
     loop context <- context do
         context :: Context <- context // FIXME
-        if isEmpty context.class_constraints
+        if List.isEmpty context.class_constraints
         then break Ok context
         else do
             (constraint, class_constraints) <- List.remove context.class_constraints (List.getLength context.class_constraints - 1)
@@ -273,7 +273,7 @@ checkHandlerConsistency context location info = do
                     Some _ -> (context, missing_members)
                     None -> (context, missing_members + [show member_name]))
         )
-    if isEmpty missing_members
+    if List.isEmpty missing_members
     then context
     else do
         err <- MissingEffectMembers missing_members location
@@ -567,7 +567,7 @@ checkExprType context orig_expr = do
             sub_ids <- List.map args (\E.Expr _ id _ _ -> id)
             sub_signatures <- TEff.getExprEffectSignatures context sub_ids
             context <- TEff.setExprEffect context id sub_signatures location
-            if isEmpty args
+            if List.isEmpty args
             then context
             else do
                 (E.Expr _ first_id _ location) <- atIndex args 0

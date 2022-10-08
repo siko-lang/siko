@@ -52,7 +52,7 @@ deriveAdtToJson adt derive_location = do
     fn_name <- createIdent "toJson" derive_location
     fn_args <- [P.Pattern (P.Binding (createIdent "adt" derive_location)) derive_location]
     arg_ref_expr <- E.Expr (E.Path (createIdent "adt" derive_location)) derive_location
-    body <- if isEmpty adt.variants
+    body <- if List.isEmpty adt.variants
     then do
         unreachable_expr <- E.Expr (E.Path (createIdent "unreachable" derive_location)) derive_location
         E.Expr (E.FunctionCall unreachable_expr []) derive_location
@@ -70,7 +70,7 @@ deriveAdtToJson adt derive_location = do
                 show_expr <- E.Expr (E.FunctionCall show_name_expr [item_expr]) derive_location
                 List.push show_exprs show_expr) [] variant.items
             arg_fmts <- repeat "({})" (getLength item_show_exprs)
-            fmt <- if isEmpty arg_fmts
+            fmt <- if List.isEmpty arg_fmts
             then "{}"
             else "{} " + join arg_fmts " "
             case_body <- E.Expr (E.Formatter (SS.create fmt) ([variant_name_expr] + item_show_exprs)) derive_location

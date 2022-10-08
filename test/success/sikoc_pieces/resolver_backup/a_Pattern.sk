@@ -139,13 +139,13 @@ processPattern context pattern_env env (SP.Pattern pattern location) = do
                                     (context, pattern_env, env, args) <- record.fields |> List.iter |> Iterator.fold (processRecordFieldPattern field_patterns) (context, pattern_env, env, [])
                                     (context, pattern_env, env, HP.Record qn args)
                                 Err (unused_fields, not_real_fields, multi_used) -> do
-                                    context <- if not (isEmpty unused_fields)
+                                    context <- if not (List.isEmpty unused_fields)
                                         then addErrorToContext context (UnusedFields unused_fields)
                                         else context
-                                    context <- if not (isEmpty not_real_fields)
+                                    context <- if not (List.isEmpty not_real_fields)
                                         then addErrorToContext context (UnknownUsedFields not_real_fields)
                                         else context
-                                    context <- if not (isEmpty multi_used)
+                                    context <- if not (List.isEmpty multi_used)
                                         then addErrorToContext context (MultiUsedFields multi_used)
                                         else context
                                     (context, pattern_env, env, HP.Tuple [])

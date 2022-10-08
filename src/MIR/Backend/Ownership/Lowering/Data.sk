@@ -110,7 +110,7 @@ processExternalClassImpl lowering_info mir_id context mir_class_impl =
 
 lowerRecord :: Context -> TypeLoweringInfo -> MP.Identity -> LP.Identity -> Context
 lowerRecord context lowering_info mir_id lir_id = do
-    trace context.config "Lowering record {} {} {}" % (mir_id, lir_id, lowering_info)
+    trace2 context.config "Lowering record {} {} {}" % (mir_id, lir_id, lowering_info)
     mir_record <- MP.getRecord context.mir_program mir_id
     filter_info <- buildFilterInfoFromTypeLoweringInfo context.config lowering_info
     (context, fields) <- List.mapSE context mir_record.fields (lowerField lowering_info filter_info)
@@ -133,7 +133,7 @@ lowerRecord context lowering_info mir_id lir_id = do
 
 lowerAdt :: Context -> TypeLoweringInfo -> MP.Identity -> LP.Identity -> Context
 lowerAdt context lowering_info mir_id lir_id = do
-    trace context.config "Lowering adt {} {} {}" % (mir_id, lir_id, lowering_info)
+    trace2 context.config "Lowering adt {} {} {}" % (mir_id, lir_id, lowering_info)
     mir_adt <- MP.getAdt context.mir_program mir_id
     filter_info <- buildFilterInfoFromTypeLoweringInfo context.config lowering_info
     (context, variants) <- List.mapSE context mir_adt.variants (lowerVariant lowering_info filter_info)

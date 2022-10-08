@@ -2,8 +2,11 @@ module Main where
 
 import IO
 import Siko.Parser
+import Siko.Parser.Error
 import Siko.Resolver as R
+import Siko.Resolver.Error
 import Siko.HIR.Backend.Typechecker as TC
+import Siko.HIR.Backend.Typechecker.Error
 import Siko.Transpiler as Transpiler
 import Siko.Diagnostics
 import Siko.Syntax.Location
@@ -14,6 +17,7 @@ import Siko.LIR.Backend as LB
 import Siko.Config
 import Siko.Trace
 import Siko.FileManager
+import Map
 
 processPath :: String -> [FileName]
 processPath path = do
@@ -61,29 +65,67 @@ processArgs args = loop (config, args) <- (getDefaultConfig, args) do
                         (config, rest)
         None -> break config
 
-parseFile :: Config -> FileManager -> FileName -> (FileManager, SourceFile)
-parseFile config file_manager (FileName file_name) = do
-    source <- readTextFile file_name
-    (file_manager, file_id) <- addFile file_manager file_name
-    (source_file, lexer_errors, parser_errors) <- parse file_id file_name source
-    lexer_errors |> List.iter |> forEach \error -> printLexerError error
-    parser_errors |> List.iter |> forEach \error -> printParserError file_manager file_id error
-    (file_manager, source_file)
+data Context = { file_manager :: FileManager,
+                 lexer_errors :: Map FileId [LexerError],
+                 parser_errors :: Map FileId [ParserError],
+                 resolver_errors :: [ResolverError],
+                 typechecker_errors :: [TypecheckerError],
+               }
 
-main = do
-    args <- Option.unwrap (tail getArgs)
-    config <- processArgs args
+dumpErrors :: Context -> ()
+dumpErrors context = do
+    context.lexer_errors
+        |> Map.iter
+        |> forEach (\(file_id, lexer_errors) -> lexer_errors
+                                                 |> List.iter
+                                                 |> forEach \error -> printLexerError error)
+    context.parser_errors
+        |> Map.iter
+        |> forEach (\(file_id, parser_errors) -> parser_errors
+                                                  |> List.iter
+                                                  |> forEach \error -> printParserError context.file_manager file_id error)
+
+    context.resolver_errors |> List.iter |> forEach \error -> printResolverError context.file_manager error
+    context.typechecker_errors |> List.iter |> forEach \error -> printTypecheckerError context.file_manager error
+
+isOk :: Context -> Bool
+isOk context = Map.isEmpty context.lexer_errors &&
+               Map.isEmpty context.parser_errors &&
+               List.isEmpty context.resolver_errors &&
+               List.isEmpty context.typechecker_errors
+
+parseFile :: Config -> Context -> FileName -> (Context, SourceFile)
+parseFile config context (FileName file_name) = do
+    source <- readTextFile file_name
+    (file_manager, file_id) <- addFile context.file_manager file_name
+    context <- context { file_manager = file_manager }
+    (source_file, lexer_errors, parser_errors) <- parse file_id file_name source
+    context <- if List.isEmpty lexer_errors
+    then context
+    else do
+        lexer_errors <- Map.put context.lexer_errors file_id lexer_errors
+        context { lexer_errors = lexer_errors }
+    context <- if List.isEmpty parser_errors
+    then context
+    else do
+        parser_errors <- Map.put context.parser_errors file_id parser_errors
+        context { parser_errors = parser_errors }
+    (context, source_file)
+
+compile :: Config -> Context
+compile config = do
     file_manager <- createFileManager
+    context <- Context file_manager Map.empty Map.empty [] []
     trace config "Parsing inputs.."
     files <- List.fold [] config.input_files (\files, (FileName path) -> files + processPath path)
-    (file_manager, source_files) <-  List.mapS file_manager files (parseFile config)
+    (context, source_files) <-  List.mapS context files (parseFile config)
     trace config "Resolving names.."
     (hir_program, expr_id_gen, pattern_id_gen, var_gen, resolver_errors) <- R.processProgram source_files
-    resolver_errors |> List.iter |> forEach \error -> printResolverError file_manager error
-    if List.isEmpty resolver_errors
+    context <- context { resolver_errors = resolver_errors }
+    if isOk context
     then do
         trace config "HIR processing"
-        case HB.processProgram config hir_program expr_id_gen pattern_id_gen var_gen file_manager of
+        case HB.processProgram config hir_program expr_id_gen pattern_id_gen var_gen context.file_manager of
             Ok mir_program -> do
                 trace config "MIR processing.."
                 lir_program <- MB.processProgram config mir_program
@@ -95,6 +137,17 @@ main = do
                 trace config "Transpiling.."
                 rust_output <- Transpiler.transpile lir_program
                 writeTextFile (getOutputFileName config Normal) rust_output
-                ()
-            Err tc_errors -> tc_errors |> List.iter |> forEach \error -> printTypecheckerError file_manager error
-    else ()
+                context
+            Err tc_errors -> context { typechecker_errors = tc_errors }
+    else context
+
+main = do
+    args <- Option.unwrap (tail getArgs)
+    config <- processArgs args
+    context <- compile config
+    if isOk context
+    then ()
+    else do
+        dumpErrors context
+        panic "Compilation failed"
+

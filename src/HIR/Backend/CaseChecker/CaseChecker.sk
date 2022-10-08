@@ -403,7 +403,7 @@ checkBranches choice =
             (guarded_only, found_cases) <- matches |> List.iter |> Iterator.fold (\(guarded_only, found_cases), MatchInfo id additional_info -> do
                 guarded_only <- guarded_only && additional_info.guarded
                 (guarded_only, push found_cases id)) (True, [])
-            if guarded_only || isEmpty matches
+            if guarded_only || List.isEmpty matches
                 then ([MissingCase], found_cases)
                 else ([], found_cases)
         ElseNode -> panic "ElseNode reached"
@@ -418,7 +418,7 @@ validateChoiceTree context choice location cases = do
                 else addError context (UnreachableCase location)
             (context, case_index + 1)
         ) (context, 0)
-    if isEmpty missing_cases
+    if List.isEmpty missing_cases
         then context
         else addError context (NonExhaustiveCase location)
 
@@ -445,6 +445,6 @@ checkCase context expr_id case_body cases = do
                               processTree choice empty case_info True) (choice, False)
     //dumpChoiceTree choice "{}" % expr_id
     context <- validateChoiceTree context choice location cases
-    if isEmpty context.errors
+    if List.isEmpty context.errors
     then Ok choice
     else Err context.errors
