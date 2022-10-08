@@ -483,6 +483,20 @@ generateListSort program type_store arg_types result_type = do
     sort_call <- R.MethodCall (R.VarRef new) "sort" []
     R.Block [new_decl, sort_call, R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef new)]]
 
+generateListReverse :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
+generateListReverse program type_store arg_types result_type = do
+    rust_type <- convertType result_type
+    list_type <- atIndex arg_types 0
+    arg0 <- R.VarRef (getArgName 0)
+    field_access0 <- R.FieldAccess innerValueField arg0
+    list_ref <- if LT.isRef list_type
+    then R.MethodCall field_access0 cloneName []
+    else field_access0
+    new <- "new"
+    new_decl <- R.VarDeclMut new list_ref None
+    reverse_call <- R.MethodCall (R.VarRef new) "reverse" []
+    R.Block [new_decl, reverse_call, R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef new)]]
+
 generateListTail :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateListTail program type_store arg_types result_type = do
     arg_type <- atIndex arg_types 0
@@ -1138,6 +1152,7 @@ initializeExternalFunctions = do
     (externals, _) <- insert externals (ExternalId "List" "dedup") (ExternFnBuilder generateListDedup)
     (externals, _) <- insert externals (ExternalId "List" "isEmpty") (ExternFnBuilder generateListIsEmpty)
     (externals, _) <- insert externals (ExternalId "List" "sort") (ExternFnBuilder generateListSort)
+    (externals, _) <- insert externals (ExternalId "List" "reverse") (ExternFnBuilder generateListReverse)
     (externals, _) <- insert externals (ExternalId "List" "tail") (ExternFnBuilder generateListTail)
     (externals, _) <- insert externals (ExternalId "List" "write") (ExternFnBuilder generateListWrite)
     (externals, _) <- insert externals (ExternalId "List" "intoIter") (ExternFnBuilder generateListIntoIter)
