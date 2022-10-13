@@ -1,6 +1,6 @@
 module Siko.MIR.Backend.Ownership.Lowering where
 
-import Siko.Config
+
 import Siko.MIR.Backend.Ownership.Lowering.Context
 import Siko.MIR.Backend.Ownership.Lowering.Naming
 import Siko.MIR.Backend.Ownership.Lowering.LoweringInfo
@@ -14,9 +14,9 @@ import Siko.MIR.Program as MP
 
 import Map
 
-lowerProgram :: MP.Program -> Config -> FunctionInfoStore -> DataGroupInfoStore -> LP.Program
-lowerProgram mir_program config function_info_store data_group_info_store = do
-    context <- createContext function_info_store config mir_program data_group_info_store
+lowerProgram :: MP.Program -> FunctionInfoStore -> DataGroupInfoStore -> LP.Program
+lowerProgram mir_program function_info_store data_group_info_store = do
+    context <- createContext function_info_store mir_program data_group_info_store
     allocator <- createAllocator
     (allocator, result) <- getNextTypeVariableInfo allocator
     main_key <- FunctionKey MP.getMainIdentity (FunctionLoweringInfo [] [] result [] allocator [])

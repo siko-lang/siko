@@ -26,7 +26,7 @@ import Siko.HIR.Expr
 import Siko.HIR.Backend.ClassInfoStore
 import Siko.HIR.Data as D
 import Siko.Constants
-import Siko.Config
+
 import Siko.Trace
 import Siko.HIR.Backend.Typechecker.TypedProgram as TP
 import Map
@@ -36,7 +36,6 @@ data TypecheckerState = { program :: P.Program (),
                           errors :: [TypecheckerError],
                           var_gen :: TVG.TypeVarGenerator,
                           class_store :: CS.ClassStore,
-                          config :: Config,
                           instance_resolver_history :: IR.InstanceResolverHistory,
                           instance_resolver :: IR.InstanceResolver,
                         }
@@ -94,7 +93,7 @@ initializeFunctionType context fn = do
 
 checkFunctionEffects :: Context -> F.Function () -> Context
 checkFunctionEffects context fn = do
-    //trace context.state.config "Checking function effects {}" % fn.name
+    //trace "Checking function effects {}" % fn.name
     case fn.body of
         Some body -> do
             func_type_info <- getFunctionTypeInfo context fn.name
@@ -158,7 +157,7 @@ checkMain context fn = do
 
 checkFunctionType :: Context -> F.Function () -> Context
 checkFunctionType context fn = do
-    //trace context.state.config "Checking function {}" % fn.name
+    //trace "Checking function {}" % fn.name
     case fn.body of
         Some body -> do
             traversal_context <- createTraversalContext context checkExprType checkPatternType
@@ -254,22 +253,22 @@ processGroup state  group function_store type_store = do
         TP.addWithEffects type_store id effect_types)
     (context.state, context.function_store, type_store)
 
-processProgram :: Config -> P.Program () -> TVG.TypeVarGenerator ->
+processProgram :: P.Program () -> TVG.TypeVarGenerator ->
                   Result (P.Program T.Type, TVG.TypeVarGenerator, ClassInfoStore, IR.InstanceResolver, IR.InstanceResolverHistory) [TypecheckerError]
-processProgram config program var_gen = do
-    state <- TypecheckerState program [] var_gen CS.initializeEmptyClassStore config IR.createInstanceResolverHistory IR.createInstanceResolver
-    trace config "TYCHK processData"
+processProgram program var_gen = do
+    state <- TypecheckerState program [] var_gen CS.initializeEmptyClassStore IR.createInstanceResolverHistory IR.createInstanceResolver
+    trace "TYCHK processData"
     type_store <- TP.TypeStore Map.empty Map.empty Map.empty
-    trace config "TYCHK processClassesAndInstances"
-    (state, class_info_store) <- processClassesAndInstances config state
-    trace config "TYCHK processAutoDerivedInstances"
+    trace "TYCHK processClassesAndInstances"
+    (state, class_info_store) <- processClassesAndInstances state
+    trace "TYCHK processAutoDerivedInstances"
     state <- IRChecks.checkConflicts state
     state <- IRChecks.checkInstanceDependencies state
-    trace config "TYCHK processFunctions"
-    (state, function_store, groups) <- processFunctions config state
+    trace "TYCHK processFunctions"
+    (state, function_store, groups) <- processFunctions state
     //println "Functions: {}" % (getSize function_store.functions)
     //println "Groups: {}" % (getLength groups)
-    trace config "TYCHK processGroups"
+    trace "TYCHK processGroups"
     (state, function_store, type_store) <- groups |> List.iter
             |> Iterator.fold (\(state, function_store, type_store), group -> do
         (state, function_store, type_store) <- processGroup state group function_store type_store

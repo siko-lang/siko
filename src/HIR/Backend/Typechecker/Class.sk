@@ -18,7 +18,7 @@ import Siko.HIR.TypeFormatter as TF
 import Siko.HIR.Class as C
 import Siko.HIR.Backend.ClassInfoStore as CIS
 import Siko.Util.DependencyProcessor
-import Siko.Config
+
 import Map
 import Siko.Util.SharedString as SS
 
@@ -157,15 +157,15 @@ initializeClassInfoStore state = do
         class_info <- CIS.ClassInfo arg_type class_type_info.associated_types members dependencies
         CIS.addClassInfo store class_name class_info)
 
-processClassesAndInstances :: Config -> TypecheckerState -> (TypecheckerState, CIS.ClassInfoStore)
-processClassesAndInstances config state = do
+processClassesAndInstances :: TypecheckerState -> (TypecheckerState, CIS.ClassInfoStore)
+processClassesAndInstances state = do
     classes <- P.getClasses state.program
     class_dependency_map <- ClassDependencyMap empty
     (state, class_type_info_map, class_dependency_map) <- classes |> List.iter |> Iterator.fold (\(state, class_type_info_map, class_dependency_map), c -> do
         (state, class_member_info, class_dependency_map) <- processClass state c class_dependency_map
         (class_type_info_map, _) <- Map.insert class_type_info_map c.name class_member_info
         (state, class_type_info_map, class_dependency_map)) (state, Map.empty, class_dependency_map)
-    groups <- processDependencies config class_dependency_map.direct_dependencies
+    groups <- processDependencies class_dependency_map.direct_dependencies
     (state, circular) <- groups |> List.iter |> Iterator.fold (\(state, circular), group -> do
         if getLength group.items > 1
             then do

@@ -17,7 +17,7 @@ import Siko.MIR.Type as MT
 import Siko.MIR.Program as MP
 import Siko.LIR.Type as LT
 import Siko.LIR.Expr as LE
-import Siko.Config
+
 
 import Map
 
@@ -29,14 +29,14 @@ data LoweringContext = { function_id :: MP.Identity,
                          type_lowering_info_cache :: Map TypeVariableInfo TypeLoweringInfo,
                        }
 
-getTypeLoweringInfo :: Config -> LoweringContext -> TypeVariableInfo -> (LoweringContext, TypeLoweringInfo)
-getTypeLoweringInfo config lowering_context info = do
+getTypeLoweringInfo :: LoweringContext -> TypeVariableInfo -> (LoweringContext, TypeLoweringInfo)
+getTypeLoweringInfo lowering_context info = do
     case Map.get lowering_context.type_lowering_info_cache info of
         Some lowering_info -> (lowering_context, lowering_info)
         None -> do
-            lowering_info <- createTypeLoweringInfoFromInferenceInfo config
+            lowering_info <- createTypeLoweringInfoFromInferenceInfo
                                                lowering_context.inference_info info lowering_context.filter_info
-            (lowering_info, _) <- normalizeTypeLoweringInfo config lowering_info
+            (lowering_info, _) <- normalizeTypeLoweringInfo lowering_info
             type_lowering_info_cache <- Map.put lowering_context.type_lowering_info_cache info lowering_info
             lowering_context <- lowering_context { type_lowering_info_cache = type_lowering_info_cache }
             (lowering_context, lowering_info)
@@ -46,7 +46,7 @@ getType context lowering_context info mir_type = do
     case Map.get lowering_context.type_cache info of
         Some ty -> (context, lowering_context, ty)
         None -> do
-            (lowering_context, lowering_info) <- getTypeLoweringInfo context.config lowering_context info
+            (lowering_context, lowering_info) <- getTypeLoweringInfo lowering_context info
             (context, lir_type) <- lowerType context lowering_info mir_type
             (context, lowering_context, lir_type)
 
@@ -109,9 +109,9 @@ lowerExpr lowering_context context expr = do
                         List.push lifetime_dependencies (LifetimeDependency function_converter_borrow.from function_converter_borrow.to))
                     lifetime_dependencies |> List.sort |> List.dedup
                 None -> []
-            lowering_info <- convertToFunctionLoweringInfo context.config lowering_context.inference_info args_info
+            lowering_info <- convertToFunctionLoweringInfo lowering_context.inference_info args_info
                                                expr_info lowering_context.filter_info lifetime_dependencies
-            if MP.isDebugged context.config lowering_context.function_id
+            if MP.isDebugged lowering_context.function_id
             then do
                 println "-----------------------------------------"
                 println "---------------{} from {} ---------------" % (f_id, lowering_context.function_id)
@@ -119,7 +119,7 @@ lowerExpr lowering_context context expr = do
                 println "Calling {} Lowering info {}" % (f_id, lowering_info)
                 println "-----------------------------------------"
             else ()
-            (lowering_info, _) <- normalizeFunctionLoweringInfo context.config lowering_info
+            (lowering_info, _) <- normalizeFunctionLoweringInfo lowering_info
             lir_key <- FunctionKey f_id lowering_info
             (context, lir_id) <- getLIRId context lir_key
             context <- addItem context lir_key
@@ -214,7 +214,7 @@ lowerExpr lowering_context context expr = do
         ME.CaseOf body cases -> do
             ME.Expr _ _ body_id <- body
             body_info <- getTypeVariableInfoByExprId lowering_context.inference_info body_id lowering_context.function_id
-            (lowering_context, lowering_info) <- getTypeLoweringInfo context.config lowering_context body_info
+            (lowering_context, lowering_info) <- getTypeLoweringInfo lowering_context body_info
             (lowering_context, context, lir_body) <- lowerExpr lowering_context context body
             ((lowering_context, lowering_info, context), lir_cases) <- List.mapS (lowering_context, lowering_info, context) cases lowerCase
             (lowering_context, context, LE.CaseOf lir_body lir_cases)

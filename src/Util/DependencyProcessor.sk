@@ -1,7 +1,7 @@
 module Siko.Util.DependencyProcessor where
 
 import Map
-import Siko.Config
+
 import Siko.Trace
 import Siko.Util.SCC as SCC
 
@@ -33,16 +33,16 @@ initGraph graph item_id_map all_dependencies =
                 dep <- Option.unwrap (get item_id_map dep)
                 SCC.addNeighbour graph item dep
 
-processDependencies a :: (PartialEq a, Ord a, Show a) => Config -> Map a [a] -> [DependencyGroup a]
-processDependencies config all_dependencies = do
-        //trace config "new processDependencies {}" % getSize all_dependencies
+processDependencies a :: (PartialEq a, Ord a, Show a) => Map a [a] -> [DependencyGroup a]
+processDependencies all_dependencies = do
+        //trace "new processDependencies {}" % getSize all_dependencies
         graph <- SCC.createGraph
         (graph, item_id_map, id_item_map) <- createIdMaps graph all_dependencies
         graph <- initGraph graph item_id_map all_dependencies
         sccs <- SCC.collectSCCs graph
         ordered_groups <- List.map sccs (mapSCC id_item_map)
         ordered_groups <- ordered_groups |> List.iter |> List.toList
-        //trace config "new processDependencies done"
+        //trace "new processDependencies done"
         ordered_groups
     where
         mapSCC a :: Map SCC.NodeId a -> [SCC.NodeId] -> DependencyGroup a

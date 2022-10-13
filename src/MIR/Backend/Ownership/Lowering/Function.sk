@@ -1,6 +1,6 @@
 module Siko.MIR.Backend.Ownership.Lowering.Function where
 
-import Siko.Config
+
 import Siko.Trace
 import Siko.MIR.Backend.Ownership.Lowering.Context
 import Siko.MIR.Backend.Ownership.Lowering.LoweringInfo
@@ -40,43 +40,43 @@ lowerLifetimeDependency dep = LF.LifetimeDependency (toLifetime dep.from) (toLif
 
 lowerFunction :: Context -> FunctionLoweringInfo -> MP.Identity -> LP.Identity -> Context
 lowerFunction context lowering_info mir_id lir_id = do
-    trace2 context.config "Lowering function {}/{} {}" % (mir_id, lir_id, lowering_info)
+    trace2 "Lowering function {}/{} {}" % (mir_id, lir_id, lowering_info)
     function <- MP.getFunction context.mir_program mir_id
     context <- case function.kind of
         MF.Normal info -> do
             (inference_info, external_borrows) <- createInferenceInfoFromLoweringInfo lowering_info mir_id
             inference_info <- initializeTypeVariables inference_info mir_id info.body
             checkInitials inference_info "after initializeTypeVariables"
-            //trace2 context.config "after initializeTypeVariables {} {}" % (lir_id, inference_info)
+            //trace2 "after initializeTypeVariables {} {}" % (lir_id, inference_info)
             function_info_store <- context.function_info_store
-            (equals, inference_info) <- processFunctionEqualities mir_id context.config []
+            (equals, inference_info) <- processFunctionEqualities mir_id []
                 [] inference_info function_info_store context.mir_program info.body context.data_group_info_store
-            inference_info <- processEqualities context.config equals inference_info context.mir_program
+            inference_info <- processEqualities equals inference_info context.mir_program
             checkInitials inference_info "after processEqualities"
-            //trace2 context.config "after processEqualities {} {}" % (lir_id, inference_info)
+            //trace2 "after processEqualities {} {}" % (lir_id, inference_info)
             borrow_info <- checkBorrows info.body
-            ownership_dep_map <- calculateOwnershipDepMap context.config inference_info.members
-            (inference_info, ownership_dep_map) <- unpackOwnerships context.config mir_id inference_info ownership_dep_map external_borrows
+            ownership_dep_map <- calculateOwnershipDepMap inference_info.members
+            (inference_info, ownership_dep_map) <- unpackOwnerships mir_id inference_info ownership_dep_map external_borrows
             checkInitials inference_info "after unpackOwnerships"
-            //trace2 context.config "after unpackOwnerships {} {}" % (lir_id, inference_info)
-            inference_info <- updateOwnershipDepMap context.config inference_info
-            converter_merge_info_base <- createConverterMergeInfoBase context.config inference_info.converters
-            inference_info <- createFunctionInfoBase context.config inference_info mir_id converter_merge_info_base
-            inference_info <- CC.createBaseCallContexts context.config inference_info
+            //trace2 "after unpackOwnerships {} {}" % (lir_id, inference_info)
+            inference_info <- updateOwnershipDepMap inference_info
+            converter_merge_info_base <- createConverterMergeInfoBase inference_info.converters
+            inference_info <- createFunctionInfoBase inference_info mir_id converter_merge_info_base
+            inference_info <- CC.createBaseCallContexts inference_info
             (inference_info, constraints, invalid_borrow_map, ownership_expr_map, group_expr_map, ownership_group_map,
-                             result_vars, mir_program, call_context_map, call_args) <- collectConstraints context.config mir_id context.mir_program
+                             result_vars, mir_program, call_context_map, call_args) <- collectConstraints mir_id context.mir_program
                                                                             borrow_info inference_info info.body
             context <- context { mir_program = mir_program }
-            inference_info <- processConstraints context.config mir_id inference_info constraints invalid_borrow_map ownership_expr_map group_expr_map ownership_group_map result_vars call_context_map Full call_args
-            //trace2 context.config "after processConstraints {} {}" % (lir_id, inference_info)
-            if MP.isDebugged context.config mir_id
+            inference_info <- processConstraints mir_id inference_info constraints invalid_borrow_map ownership_expr_map group_expr_map ownership_group_map result_vars call_context_map Full call_args
+            //trace2 "after processConstraints {} {}" % (lir_id, inference_info)
+            if MP.isDebugged mir_id
             then do
                 println "Inference info {}" % inference_info
                 println "Borrow info {}" % borrow_info
                 dumpOwnership inference_info mir_id info.body
             else ()
             checkInitials inference_info "after processConstraints"
-            filter_info <- buildFilterInfoFromInferenceInfo context.config inference_info
+            filter_info <- buildFilterInfoFromInferenceInfo inference_info
             lowering_context <- LoweringContext mir_id inference_info borrow_info.borrows filter_info Map.empty Map.empty
             (lowering_context, context, lir_body) <- lowerExpr lowering_context context info.body
             lir_kind <- LF.Normal lir_body
@@ -106,14 +106,14 @@ lowerFunction context lowering_info mir_id lir_id = do
             lir_function <- LF.Function lir_id lifetimes lifetime_dependencies lir_kind lir_function_type
             context <- addFunction context lir_function
             context
-    //trace context.config "Lowering done"
+    //trace "Lowering done"
     context
 
-unpackOwnerships :: Config -> MP.Identity -> InferenceInfo ->
+unpackOwnerships :: MP.Identity -> InferenceInfo ->
                     Map GroupTypeVariable [OwnershipTypeVariable] ->
                     [BorrowId] ->
                     (InferenceInfo, Map GroupTypeVariable [OwnershipTypeVariable])
-unpackOwnerships config function_id inference_info ownership_dep_map external_borrows = do
+unpackOwnerships function_id inference_info ownership_dep_map external_borrows = do
     // Ownership information is present in the lowering info
     // in a packed way. For example an owned record implies
     // that every field of the record is also owned.

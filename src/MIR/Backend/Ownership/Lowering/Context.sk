@@ -1,7 +1,7 @@
 
 module Siko.MIR.Backend.Ownership.Lowering.Context where
 
-import Siko.Config
+
 import Siko.Trace
 import Siko.MIR.Backend.Ownership.Lowering.LoweringInfo
 import Siko.MIR.Backend.Ownership.Lowering.Naming
@@ -25,7 +25,6 @@ data LIRKey = FunctionKey MP.Identity FunctionLoweringInfo
 
 data Context = { function_info_store :: FunctionInfoStore,
                  data_group_info_store :: DataGroupInfoStore,
-                 config :: Config,
                  mir_program :: MP.Program,
                  items :: [LIRKey],
                  name_map :: NameMap,
@@ -36,9 +35,9 @@ data Context = { function_info_store :: FunctionInfoStore,
                  external_member_List :: [LP.Identity],
                } deriving (Move)
 
-createContext :: FunctionInfoStore -> Config -> MP.Program -> DataGroupInfoStore -> Context
-createContext function_info_store config mir_program data_group_info_store =
-    Context function_info_store data_group_info_store config mir_program [] (NameMap Map.empty)
+createContext :: FunctionInfoStore -> MP.Program -> DataGroupInfoStore -> Context
+createContext function_info_store mir_program data_group_info_store =
+    Context function_info_store data_group_info_store mir_program [] (NameMap Map.empty)
             Map.empty Map.empty Map.empty Map.empty []
 
 addItem :: Context -> LIRKey -> Context

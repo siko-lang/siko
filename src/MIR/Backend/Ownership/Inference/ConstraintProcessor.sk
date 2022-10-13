@@ -9,7 +9,7 @@ import Siko.MIR.Backend.Ownership.BorrowId
 
 import Siko.MIR.Program as P
 import Siko.MIR.Expr as E
-import Siko.Config
+
 import Siko.Trace
 import Map
 import Map
@@ -19,8 +19,7 @@ data InferenceMode = Partial
                    | Full
                    deriving (PartialEq, Eq, PartialOrd, Ord, Show)
 
-data Context = { config :: Config,
-                 inference_info :: InferenceInfo,
+data Context = { inference_info :: InferenceInfo,
                  function_id :: P.Identity,
                  changed_ownership_vars :: Bool,
                  invalid_borrow_map :: Map E.ExprId [E.ExprId],
@@ -38,7 +37,7 @@ data Context = { config :: Config,
 
 debugPrint :: Context -> String -> ()
 debugPrint context msg = do
-    if P.isDebugged context.config context.function_id
+    if P.isDebugged context.function_id
     then println msg
     else ()
 
@@ -224,7 +223,7 @@ processCallContext context call_id index from to to_borrow = do
                                     if List.getLength borrows == 1
                                     then do
                                         //debugPrint context "propagation not possible to target (single), setting borrow {} at {}" % (first,  index)
-                                        updateOwnership context to (M.Borrower first) 
+                                        updateOwnership context to (M.Borrower first)
                                     else do
                                         (context, merged) <- List.fold (context, first) borrows (\(context, current), borrow -> do
                                             (inference_info, id) <- mergeBorrowSets context.inference_info current borrow
@@ -415,16 +414,16 @@ dumpOwnership context = do
             context
         )
 
-processConstraints :: Config -> P.Identity -> InferenceInfo -> [C.Constraint] ->
+processConstraints :: P.Identity -> InferenceInfo -> [C.Constraint] ->
                       Map E.ExprId [E.ExprId] -> Map OwnershipTypeVariable [E.ExprId] ->
                       Map GroupTypeVariable [E.ExprId] -> Map OwnershipTypeVariable [GroupTypeVariable] ->
-                      [OwnershipTypeVariable] -> Map E.ExprId CC.CallContextSet -> InferenceMode -> Map E.ExprId [OwnershipTypeVariable] -> 
+                      [OwnershipTypeVariable] -> Map E.ExprId CC.CallContextSet -> InferenceMode -> Map E.ExprId [OwnershipTypeVariable] ->
                       InferenceInfo
-processConstraints config function_id inference_info constraints invalid_borrow_map ownership_expr_map 
+processConstraints function_id inference_info constraints invalid_borrow_map ownership_expr_map
                     group_expr_map ownership_group_map result_vars call_context_map mode call_args = do
     // println "Invalid borrow map {}" % (invalid_borrow_map)
     // println "InferenceInfo {}" % inference_info
-    context <- Context config inference_info function_id True invalid_borrow_map
+    context <- Context inference_info function_id True invalid_borrow_map
                        ownership_expr_map group_expr_map ownership_group_map call_context_map mode result_vars False Map.empty Map.empty call_args
     //dumpConstraints constraints
     context <- loop context <- context do

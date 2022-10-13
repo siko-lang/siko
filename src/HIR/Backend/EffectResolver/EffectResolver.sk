@@ -15,7 +15,7 @@ import Siko.HIR.Backend.Unification.TypeVarGenerator as TVG
 import Siko.HIR.Backend.ExprIdGenerator
 import Siko.HIR.Backend.PatternIdGenerator
 import Siko.Syntax.Location
-import Siko.Config
+
 import Siko.Constants
 import Siko.Trace
 import Siko.Util.SharedString as SS
@@ -348,14 +348,13 @@ createContext program expr_id_gen pattern_id_gen var_gen class_info_store =
         Context Map.empty Map.empty program [] (NameMap Map.empty)
             expr_id_gen pattern_id_gen var_gen class_info_store Map.empty
 
-processProgram :: Config ->
-                  PO.Program T.Type ->
+processProgram :: PO.Program T.Type ->
                   ExprIdGenerator ->
                   PatternIdGenerator ->
                   TVG.TypeVarGenerator ->
                   CDS.ClassInfoStore ->
                   (ExprIdGenerator, PatternIdGenerator, TVG.TypeVarGenerator, PO.Program T.Type)
-processProgram config program expr_id_gen pattern_id_gen var_gen class_info_store = do
+processProgram program expr_id_gen pattern_id_gen var_gen class_info_store = do
     main_qn <- PO.FullPath getMainModuleName getMainFunctionName
     main_key <- FunctionKey main_qn (EffectResolutionSet Map.empty Map.empty)
     queue <- Q.createQueue
@@ -363,9 +362,9 @@ processProgram config program expr_id_gen pattern_id_gen var_gen class_info_stor
     context <- createContext program expr_id_gen pattern_id_gen var_gen class_info_store
     (context, _, _) <- getFunctionName context main_key
     (queue, context) <- Q.processItems queue context processItem
-    trace config "HIR processing effect handlers"
+    trace "HIR processing effect handlers"
     program <- Map.fold context.program context.functions (\program, (name, fn) -> do
         (program, _) <- PO.addItem program name (PO.Function fn)
         program)
-    trace config "HIR processing effect handlers done"
+    trace "HIR processing effect handlers done"
     (context.expr_id_gen, context.pattern_id_gen, context.var_gen, program)

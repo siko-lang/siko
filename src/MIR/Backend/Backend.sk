@@ -17,9 +17,10 @@ import Siko.MIR.Data
 import Siko.MIR.Type as T
 import Siko.MIR.Function as F
 import Siko.MIR.Expr
-import Siko.Config
 import Siko.Trace
+import Siko.Config
 import Siko.Util.DependencyProcessor
+
 import Map
 import IO
 
@@ -75,32 +76,34 @@ collectFunctionDeps mir_program = do
         ) dependencies
     dependencies
 
-dumpProgram :: Config -> MP.Program -> OutputFileType -> ()
-dumpProgram config mir_program type =
+dumpProgram :: MP.Program -> OutputFileType -> ()
+dumpProgram mir_program type = do
+    config <- getConfig ()
     if config.dump
     then do
         s <- MP.dump mir_program
-        writeTextFile (getOutputFileName config type) s
+        writeTextFile (getOutputFileName type) s
     else ()
 
-dumpLIRProgram :: Config -> LP.Program -> OutputFileType -> ()
-dumpLIRProgram config lir_program type =
+dumpLIRProgram :: LP.Program -> OutputFileType -> ()
+dumpLIRProgram lir_program type = do
+    config <- getConfig ()
     if config.dump
     then do
         s <- LP.dump lir_program
-        writeTextFile (getOutputFileName config type) s
+        writeTextFile (getOutputFileName type) s
     else ()
 
-createGroups :: Config -> MP.Program -> ([DependencyGroup MP.Identity], [DependencyGroup MP.Identity])
-createGroups config mir_program = do
-    trace config "collectDataDeps.."
+createGroups :: MP.Program -> ([DependencyGroup MP.Identity], [DependencyGroup MP.Identity])
+createGroups mir_program = do
+    trace "collectDataDeps.."
     data_dependencies <- collectDataDeps mir_program
-    trace config "processing data deps.."
-    data_groups <- processDependencies config data_dependencies
-    trace config "collectFunctionDeps.."
+    trace "processing data deps.."
+    data_groups <- processDependencies data_dependencies
+    trace "collectFunctionDeps.."
     function_dependencies <- collectFunctionDeps mir_program
-    trace config "processing function deps.."
-    function_groups <- processDependencies config function_dependencies
+    trace "processing function deps.."
+    function_groups <- processDependencies function_dependencies
     (data_groups, function_groups)
 
 addCopyable :: [Attribute] -> [Attribute]
@@ -189,42 +192,42 @@ processNonCopyables mir_program data_groups = do
                         then (mir_program, List.push noncopyables id)
                         else (mir_program, noncopyables))
 
-processProgram :: Config -> MP.Program -> LP.Program
-processProgram config mir_program = do
-    (data_groups, function_groups) <- createGroups config mir_program
-    trace config "Process groups.."
+processProgram :: MP.Program -> LP.Program
+processProgram mir_program = do
+    (data_groups, function_groups) <- createGroups mir_program
+    trace "Process groups.."
     mir_program <- processDataGroups mir_program data_groups
     mir_program <- processCopyables mir_program data_groups
     mir_program <- processNonCopyables mir_program data_groups
-    trace config "Inliner.."
+    trace "Inliner.."
     mir_program <- Inliner.processProgram mir_program function_groups
-    dumpProgram config mir_program (MIR "inliner")
-    trace config "Rebinder.."
+    dumpProgram mir_program (MIR "inliner")
+    trace "Rebinder.."
     mir_program <- Rebinder.processProgram mir_program
-    dumpProgram config mir_program (MIR "rebinder")
-    (data_groups, function_groups) <- createGroups config mir_program
-    trace config "WildcardRemover.."
+    dumpProgram mir_program (MIR "rebinder")
+    (data_groups, function_groups) <- createGroups mir_program
+    trace "WildcardRemover.."
     mir_program <- WildcardRemover.processProgram mir_program
-    dumpProgram config mir_program (MIR "wildcardremover")
-    trace config "VarReplacer.."
+    dumpProgram mir_program (MIR "wildcardremover")
+    trace "VarReplacer.."
     mir_program <- VarReplacer.processProgram mir_program
-    dumpProgram config mir_program (MIR "varreplacer")
-    trace config "DoMerger.."
+    dumpProgram mir_program (MIR "varreplacer")
+    trace "DoMerger.."
     mir_program <- DoMerger.processProgram mir_program
-    dumpProgram config mir_program (MIR "domerger")
-    trace config "LocalArgCreator.."
+    dumpProgram mir_program (MIR "domerger")
+    trace "LocalArgCreator.."
     mir_program <- LocalArgCreator.processProgram mir_program
-    dumpProgram config mir_program (MIR "localargcreator")
-    trace config "Rebinder.."
+    dumpProgram mir_program (MIR "localargcreator")
+    trace "Rebinder.."
     mir_program <- Rebinder.processProgram mir_program
-    dumpProgram config mir_program (MIR "rebinder_simplified")
-    trace config "SanityCheck1.."
+    dumpProgram mir_program (MIR "rebinder_simplified")
+    trace "SanityCheck1.."
     SanityCheck.processProgram mir_program
-    trace config "AddConverter.."
-    mir_program <- AddConverter.processProgram config mir_program
-    dumpProgram config mir_program (MIR "addconverter")
-    trace config "Inference start.."
-    lir_program <- Inference.processProgram config mir_program data_groups function_groups
-    dumpLIRProgram config lir_program (LIR "first")
-    trace config "Inference end.."
+    trace "AddConverter.."
+    mir_program <- AddConverter.processProgram mir_program
+    dumpProgram mir_program (MIR "addconverter")
+    trace "Inference start.."
+    lir_program <- Inference.processProgram mir_program data_groups function_groups
+    dumpLIRProgram lir_program (LIR "first")
+    trace "Inference end.."
     return lir_program

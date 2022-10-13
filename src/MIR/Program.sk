@@ -4,17 +4,21 @@ import Siko.MIR.Function as F
 import Siko.MIR.Data as D
 import Siko.MIR.Type
 import Siko.Constants
+
 import Siko.Config
+
 import Map
 import Siko.Util.SharedString as SS
 
 getMainIdentity :: Identity
 getMainIdentity = Identity (SS.get getMainModuleName) (SS.get getMainFunctionName) 0
 
-isDebugged :: Config -> Identity -> Bool
-isDebugged config id = if List.isEmpty config.mir_functions
-                       then False
-                       else List.contains config.mir_functions (show id)
+isDebugged :: Identity -> Bool
+isDebugged id = do
+    config <- getConfig ()
+    if List.isEmpty config.mir_functions
+    then False
+    else List.contains config.mir_functions (show id)
 
 data Identity = { module_name :: String, name :: String, index :: Int } deriving (PartialEq, Eq, PartialOrd, Ord)
 

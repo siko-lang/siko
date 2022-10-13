@@ -3,7 +3,7 @@ module Siko.MIR.Backend.Ownership.Converter where
 import Siko.MIR.Backend.Ownership.TypeVariableInfo
 import Siko.MIR.Backend.Ownership.EqualitySolver
 import Siko.Util.DependencyProcessorLinear
-import Siko.Config
+
 
 import Map
 
@@ -39,8 +39,8 @@ data ConverterMergeInfoBase = { groups :: [(DependencyGroup OwnershipTypeVariabl
                                 cycle_groups :: [[OwnershipTypeVariable]],
                               } deriving (Show)
 
-createConverterMergeInfoBase :: Config -> [Converter] -> ConverterMergeInfoBase
-createConverterMergeInfoBase config converters = do
+createConverterMergeInfoBase :: [Converter] -> ConverterMergeInfoBase
+createConverterMergeInfoBase converters = do
         deps_map <- List.fold Map.empty converters (\deps_map, converter -> do
             deps_map <- Map.put deps_map converter.from []
             Map.put deps_map converter.to [])
@@ -48,7 +48,7 @@ createConverterMergeInfoBase config converters = do
             deps_map <- Map.add deps_map converter.to converter.from
             converter_map <- Map.add converter_map converter.from converter.to
             (deps_map, converter_map))
-        groups <- processDependencies config deps_map
+        groups <- processDependencies deps_map
         (cycle_groups, equals) <- List.fold ([], []) groups (\(cycle_groups, equals), group -> if List.getLength group.items > 1
              then do
                 first <- List.atIndex group.items 0
@@ -65,11 +65,11 @@ createConverterMergeInfoBase config converters = do
             deps_map <- Map.add deps_map converter.to converter.from
             converter_map <- Map.add converter_map converter.from converter.to
             (deps_map, converter_map))
-        groups <- processDependencies config deps_map
+        groups <- processDependencies deps_map
         ConverterMergeInfoBase groups converter_map cycle_groups
 
-mergeConverters :: Config -> [OwnershipTypeVariable] -> ConverterMergeInfoBase -> ConverterMergeInfo
-mergeConverters config input_ownership_vars converter_merge_info_base = do
+mergeConverters :: [OwnershipTypeVariable] -> ConverterMergeInfoBase -> ConverterMergeInfo
+mergeConverters input_ownership_vars converter_merge_info_base = do
         conversion_map <- Map.empty
         conversion_map <- List.fold conversion_map converter_merge_info_base.groups (\conversion_map, group -> do
             List.fold conversion_map group.items (\conversion_map, item -> do

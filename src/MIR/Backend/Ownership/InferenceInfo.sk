@@ -3,7 +3,7 @@ module Siko.MIR.Backend.Ownership.InferenceInfo where
 import Siko.MIR.Expr as E
 import Siko.MIR.Program as P
 import Siko.Trace
-import Siko.Config
+
 import Map
 import Set
 import Siko.MIR.Backend.Ownership.FunctionInfo
@@ -71,7 +71,7 @@ data InferenceInfo = { expr_type_variables :: Map GlobalExprId TypeVariableInfo,
 
 instance Show InferenceInfo where
     show inference_info =
-        "InferenceInfo(ownership_values {}, members {}, converters {}, borrow_sets {}, initials {})" % 
+        "InferenceInfo(ownership_values {}, members {}, converters {}, borrow_sets {}, initials {})" %
             (inference_info.ownership_values, inference_info.members, inference_info.converters, inference_info.borrow_sets, inference_info.initials)
 
 createInferenceInfoFromLoweringInfo :: FunctionLoweringInfo -> P.Identity -> (InferenceInfo, [BorrowId])
@@ -188,7 +188,7 @@ createBorrowSetForInternal inference_info external_id = do
     (inference_info { interrnal_borrows = interrnal_borrows }, id)
 
 isExternalBorrowSet :: BorrowSet -> Bool
-isExternalBorrowSet borrow_set = 
+isExternalBorrowSet borrow_set =
     Set.fold True borrow_set.borrows (\is_external, borrow -> case borrow of
         External _ -> is_external
         _ -> False)
@@ -329,8 +329,8 @@ getTypeVariableInfoByVar inference_info var function_id = do
         Some i -> i
         None -> panic "TypeVariableInfo not found for var {}" % var
 
-createFunctionInfoBase :: Config -> InferenceInfo -> P.Identity -> ConverterMergeInfoBase -> InferenceInfo
-createFunctionInfoBase config inference_info function_id converter_merge_info_base = do
+createFunctionInfoBase :: InferenceInfo -> P.Identity -> ConverterMergeInfoBase -> InferenceInfo
+createFunctionInfoBase inference_info function_id converter_merge_info_base = do
     function_inference_info <- getFunctionInferenceInfo inference_info function_id
     // println "createFunctionInfoBase"
     // println "members: {}" % List.getLength inference_info.members
@@ -341,7 +341,7 @@ createFunctionInfoBase config inference_info function_id converter_merge_info_ba
     // println "borrow_sets: {}" % Map.getSize inference_info.borrow_sets
 
     members <- inference_info.members
-    (group_dep_map, deps_map, groups) <- calculateGroupDepMap config members
+    (group_dep_map, deps_map, groups) <- calculateGroupDepMap members
     input_group_vars <- List.fold [] function_inference_info.args
         (\input_group_vars, info -> do
             input_group_vars <- case Map.get group_dep_map info.arg_group_var of
@@ -365,7 +365,7 @@ createFunctionInfoBase config inference_info function_id converter_merge_info_ba
             List.push vars member.info.ownership_var)
     relevant_ownership_vars <- input_ownership_vars + output_ownership_vars
 
-    converter_merge_info <- mergeConverters config input_ownership_vars converter_merge_info_base
+    converter_merge_info <- mergeConverters input_ownership_vars converter_merge_info_base
 
     ((input_ownership_vars, output_ownership_vars), filtered_converters) <- List.filterS (input_ownership_vars, output_ownership_vars) converter_merge_info.converters (\(input_ownership_vars, output_ownership_vars), converter -> do
         match <- List.contains input_ownership_vars converter.from && List.contains output_ownership_vars converter.to
@@ -374,7 +374,7 @@ createFunctionInfoBase config inference_info function_id converter_merge_info_ba
     (input_ownership_vars, output_ownership_vars, filtered_converters) <- List.fold (input_ownership_vars, output_ownership_vars, filtered_converters) converter_merge_info.cycle_groups (\(input_ownership_vars, output_ownership_vars, filtered_converters), group -> do
         inputs <- List.filter input_ownership_vars (\var -> List.contains group var)
         outputs <- List.filter output_ownership_vars (\var -> List.contains group var)
-        filtered_converters <- List.fold filtered_converters inputs (\filtered_converters, input -> 
+        filtered_converters <- List.fold filtered_converters inputs (\filtered_converters, input ->
             List.fold filtered_converters outputs (\filtered_converters, output -> List.push filtered_converters (Converter input output)))
         (input_ownership_vars, output_ownership_vars, filtered_converters))
 
@@ -399,13 +399,13 @@ createFunctionInfoBase config inference_info function_id converter_merge_info_ba
 
     inference_info { function_info_bases = function_info_bases, group_function_converters = group_function_converters }
 
-toFunctionInfo :: Config -> InferenceInfo -> P.Identity -> Bool -> FunctionInfo
-toFunctionInfo config inference_info function_id no_return = do
-    
+toFunctionInfo :: InferenceInfo -> P.Identity -> Bool -> FunctionInfo
+toFunctionInfo inference_info function_id no_return = do
+
     function_info_base <- case Map.get inference_info.function_info_bases function_id of
         Some function_info_base -> function_info_base
         None -> panic "Not function info base found for {}" % function_id
-    (filtered_ownershipinfos, ownership_values, result_only_vars) <- loop (filtered_ownershipinfos, relevant_ownership_vars, ownership_values, index, result_only_vars) <- 
+    (filtered_ownershipinfos, ownership_values, result_only_vars) <- loop (filtered_ownershipinfos, relevant_ownership_vars, ownership_values, index, result_only_vars) <-
                         ([], function_info_base.relevant_ownership_vars, inference_info.ownership_values, 0, function_info_base.result_only_vars) do
         if index >= List.getLength relevant_ownership_vars
         then break (filtered_ownershipinfos, ownership_values, result_only_vars)
@@ -502,8 +502,8 @@ instance Apply InferenceInfo where
 instance MemberOwner InferenceInfo where
     getMembers inference_info = inference_info.members
 
-buildFilterInfoFromInferenceInfo :: Config -> InferenceInfo -> FilterInfo
-buildFilterInfoFromInferenceInfo config inference_info = do
+buildFilterInfoFromInferenceInfo :: InferenceInfo -> FilterInfo
+buildFilterInfoFromInferenceInfo inference_info = do
     ownershipinfos <- M.toOwnershipInfo inference_info.ownership_values
     sources <- Map.fold [] inference_info.function_infos (\sources, (_, function_info) -> do
         sources <- List.push sources function_info.result
@@ -511,7 +511,7 @@ buildFilterInfoFromInferenceInfo config inference_info = do
         sources)
     sources <- Map.fold sources inference_info.expr_type_variables (\sources, (_, info) -> List.push sources info)
     sources <- Map.fold sources inference_info.var_type_variables (\sources, (_, info) -> List.push sources info)
-    filter_info <- buildFilterInfo config inference_info.members ownershipinfos sources
+    filter_info <- buildFilterInfo inference_info.members ownershipinfos sources
     filter_info
 
 checkInitials :: InferenceInfo -> String -> ()
@@ -530,7 +530,7 @@ checkInitials inference_info phase = do
                 println inference_info
                 panic "Initial {} has no ownership {} ! {}" % (var, phase, kind))
 
-updateOwnershipDepMap :: Config -> InferenceInfo -> InferenceInfo
-updateOwnershipDepMap config inference_info = do
-    ownership_dep_map <- calculateOwnershipDepMap config inference_info.members
+updateOwnershipDepMap :: InferenceInfo -> InferenceInfo
+updateOwnershipDepMap inference_info = do
+    ownership_dep_map <- calculateOwnershipDepMap inference_info.members
     inference_info { ownership_dep_map = ownership_dep_map }

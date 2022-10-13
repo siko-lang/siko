@@ -8,7 +8,7 @@ import Siko.MIR.Function as F
 import Siko.Util.Counter
 import Siko.MIR.Backend.Traversal
 import Siko.Trace
-import Siko.Config
+
 
 import Map
 import Set
@@ -58,8 +58,8 @@ processExpr context expr = do
             packExpr context expr
         _ -> (context, expr)
 
-processFunction :: Config -> P.Identity -> F.Function -> (P.Identity, F.Function)
-processFunction config id function = do
+processFunction :: P.Identity -> F.Function -> (P.Identity, F.Function)
+processFunction id function = do
     case function.kind of
         F.Normal info -> do
             context <- Context info.expr_id_gen
@@ -69,7 +69,7 @@ processFunction config id function = do
             (id, function { kind = new_kind })
         _ -> (id, function)
 
-processProgram :: Config -> P.Program -> P.Program
-processProgram config program = do
-    functions <- program.functions |> Map.iter |> Iterator.map (\(id, function) -> processFunction config id function) |> toMap
+processProgram :: P.Program -> P.Program
+processProgram program = do
+    functions <- program.functions |> Map.iter |> Iterator.map (\(id, function) -> processFunction id function) |> toMap
     program { functions = functions }

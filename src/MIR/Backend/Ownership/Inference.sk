@@ -6,7 +6,7 @@ import Siko.MIR.Function as F
 import Siko.MIR.Expr as E
 import Siko.MIR.Type as T
 import Siko.MIR.Data as D
-import Siko.Config
+
 import Siko.Trace
 import Siko.Util.DependencyProcessor
 
@@ -27,11 +27,11 @@ import Siko.MIR.Backend.Ownership.Converter
 import Siko.MIR.Backend.Ownership.DumpOwnership
 import Siko.MIR.Backend.Ownership.DataGroupInfo
 import Siko.MIR.Backend.Ownership.CallContext as CC
+import Siko.Config
 
 import Map
 
-data Context = { config :: Config,
-                 program :: P.Program,
+data Context = { program :: P.Program,
                  function_info_store :: FunctionInfoStore,
                  data_group_info_store :: DataGroupInfoStore
                } deriving (Move)
@@ -89,15 +89,16 @@ createVariantctorFunctionInfo context index type =
 
 processFunctionInfo :: Context -> FunctionInfo -> P.Identity -> (Context, Bool)
 processFunctionInfo context function_info function_id = do
-    //trace context.config "processFunctionInfo - processing {}" % function_id
+    //trace "processFunctionInfo - processing {}" % function_id
     function_info <- normalizeFunctionInfo function_info
-    //trace context.config "processFunctionInfo - normalization done"
+    //trace "processFunctionInfo - normalization done"
     function_info_store <- context.function_info_store
-    if context.config.print_function_info
+    config <- getConfig ()
+    if config.print_function_info
     then println "Function info added for {}/{}" % (function_id, function_info)
     else ()
     (function_info_store, added) <- addFunctionInfo function_info_store function_id function_info
-    //trace context.config "processFunctionInfo - added done"
+    //trace "processFunctionInfo - added done"
     context <- context { function_info_store = function_info_store }
     (context, added)
 
@@ -106,36 +107,35 @@ processFunction context group inference_info function_id = do
     function <- P.getFunction context.program function_id
     case function.kind of
         F.Normal info -> do
-            //trace context.config "Ownership inference - processing {}" % function_id
+            //trace "Ownership inference - processing {}" % function_id
             (context, inference_info) <- case inference_info of
                 Some inference_info -> (context, inference_info)
                 None -> do
                     arg_count <- getLength function.type.args
                     inference_info <- createInferenceInfo
                     inference_info <- addFunctionInferenceInfo inference_info function_id arg_count
-                    //trace context.config "initializeTypeVariables {}" % function_id
+                    //trace "initializeTypeVariables {}" % function_id
                     inference_info <- initializeTypeVariables inference_info function_id info.body
                     function_info_store <- context.function_info_store
-                    //trace context.config "processEqualities {}" % function_id
-                    (equals, inference_info) <- processFunctionEqualities function_id context.config group [] inference_info function_info_store context.program info.body context.data_group_info_store
-                    inference_info <- processEqualities context.config equals inference_info context.program
-                    inference_info <- updateOwnershipDepMap context.config inference_info
-                    inference_info <- CC.createBaseCallContexts context.config inference_info
-                    converter_merge_info_base <- createConverterMergeInfoBase context.config inference_info.converters
-                    inference_info <- createFunctionInfoBase context.config inference_info function_id converter_merge_info_base
+                    //trace "processEqualities {}" % function_id
+                    (equals, inference_info) <- processFunctionEqualities function_id group [] inference_info function_info_store context.program info.body context.data_group_info_store
+                    inference_info <- processEqualities equals inference_info context.program
+                    inference_info <- updateOwnershipDepMap inference_info
+                    inference_info <- CC.createBaseCallContexts inference_info
+                    converter_merge_info_base <- createConverterMergeInfoBase inference_info.converters
+                    inference_info <- createFunctionInfoBase inference_info function_id converter_merge_info_base
                     (context, inference_info)
-            //trace context.config "checkBorrows {}" % function_id
+            //trace "checkBorrows {}" % function_id
             borrow_info <- checkBorrows info.body
-            //trace context.config "inferOwnership {}" % function_id
+            //trace "inferOwnership {}" % function_id
             (inference_info, constraints, invalid_borrow_map, ownership_expr_map,
-                              group_expr_map, ownership_group_map, result_vars, program, call_context_map, call_args) <- collectConstraints context.config
-                                                                                                              function_id context.program borrow_info inference_info info.body
+                              group_expr_map, ownership_group_map, result_vars, program, call_context_map, call_args) <- collectConstraints function_id context.program borrow_info inference_info info.body
             context <- context { program = program }
-            inference_info <- processConstraints context.config function_id inference_info constraints invalid_borrow_map ownership_expr_map group_expr_map ownership_group_map result_vars call_context_map Partial call_args
-            //trace context.config "Processing {}" % function_id
+            inference_info <- processConstraints function_id inference_info constraints invalid_borrow_map ownership_expr_map group_expr_map ownership_group_map result_vars call_context_map Partial call_args
+            //trace "Processing {}" % function_id
             no_return <- T.isNever function.type.result
-            function_info <- toFunctionInfo context.config inference_info function_id no_return
-            if P.isDebugged context.config function_id
+            function_info <- toFunctionInfo inference_info function_id no_return
+            if P.isDebugged function_id
             then do
                 println "Function info {}" % function_info
                 println "Inference info {}" % inference_info
@@ -146,23 +146,23 @@ processFunction context group inference_info function_id = do
             (context, added, Some inference_info)
         F.VariantCtor index -> do
             function_info <- createVariantctorFunctionInfo context index function.type.result
-            //trace2 context.config "Variant ctor {} = {}" % (function_id, function_info)
+            //trace2 "Variant ctor {} = {}" % (function_id, function_info)
             (context, added) <- processFunctionInfo context function_info function_id
             (context, added, None)
         F.RecordCtor -> do
             function_info <- createRecordCtorFunctionInfo context function.type.result
-            //trace2 context.config "Record ctor {} = {}" % (function_id, function_info)
+            //trace2 "Record ctor {} = {}" % (function_id, function_info)
             (context, added) <- processFunctionInfo context function_info function_id
             (context, added, None)
         F.Extern type_mapping -> do
             function_info <- createExternFunctionInfo function_id function.type type_mapping
-            //trace2 context.config "Extern {} = {}" % (function_id, function_info)
+            //trace2 "Extern {} = {}" % (function_id, function_info)
             (context, added) <- processFunctionInfo context function_info function_id
             (context, added, None)
 
 processFunctionGroup :: Int -> Int -> Context -> [P.Identity] -> (Int, Context)
 processFunctionGroup index group_count context group = do
-        trace2 context.config "processFunctionGroup {}/{} ({}%) {}" % (index, group_count, index * 100 / group_count, group)
+        trace2 "processFunctionGroup {}/{} ({}%) {}" % (index, group_count, index * 100 / group_count, group)
         if getLength group == 1
             then do
                 function_id <- atIndex group 0
@@ -194,27 +194,26 @@ processFunctionGroup index group_count context group = do
                     function_info_store <- context.function_info_store
                     function <- P.getFunction context.program function_id
                     case function.kind of
-                        F.Normal info -> processFunctionEqualities function_id context.config group equals inference_info
+                        F.Normal info -> processFunctionEqualities function_id group equals inference_info
                                 function_info_store context.program info.body context.data_group_info_store
                         _ -> panic "Groupped function is not normal!")
-            inference_info <- processEqualities context.config equals inference_info context.program
-            config <- context.config
-            converter_merge_info_base <- createConverterMergeInfoBase config inference_info.converters
+            inference_info <- processEqualities equals inference_info context.program
+            converter_merge_info_base <- createConverterMergeInfoBase inference_info.converters
             inference_info <- List.fold inference_info group
-                (\inference_info, function_id -> createFunctionInfoBase config inference_info function_id converter_merge_info_base)
-            inference_info <- updateOwnershipDepMap config inference_info
-            inference_info <- CC.createBaseCallContexts config inference_info
+                (\inference_info, function_id -> createFunctionInfoBase inference_info function_id converter_merge_info_base)
+            inference_info <- updateOwnershipDepMap inference_info
+            inference_info <- CC.createBaseCallContexts inference_info
             inference_info
 
-processProgram :: Config -> P.Program -> [DependencyGroup P.Identity] -> [DependencyGroup P.Identity] -> LP.Program
-processProgram config program data_groups function_groups = do
-    trace config "Ownership inference started"
+processProgram :: P.Program -> [DependencyGroup P.Identity] -> [DependencyGroup P.Identity] -> LP.Program
+processProgram program data_groups function_groups = do
+    trace "Ownership inference started"
     data_group_info_store <- initializeDataGroupInfoStore program data_groups
-    context <- Context config program createFunctionInfoStore data_group_info_store
+    context <- Context program createFunctionInfoStore data_group_info_store
     group_count <- getLength function_groups
     (_, context) <- List.fold (1, context) function_groups (\(index, context), group -> processFunctionGroup index group_count context group.items)
-    trace config "Ownership inference ended"
-    trace config "Lowering started"
-    lir_program <- lowerProgram context.program context.config context.function_info_store data_group_info_store
-    trace config "Lowering ended"
+    trace "Ownership inference ended"
+    trace "Lowering started"
+    lir_program <- lowerProgram context.program context.function_info_store data_group_info_store
+    trace "Lowering ended"
     lir_program

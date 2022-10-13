@@ -2,7 +2,7 @@ module Siko.MIR.Backend.Ownership.GroupDependencyMap where
 
 import Set
 import Siko.Trace
-import Siko.Config
+
 
 import Siko.MIR.Backend.Ownership.MemberInfo
 import Siko.MIR.Backend.Ownership.TypeVariableInfo
@@ -55,15 +55,15 @@ collectDepsForGroupVar group deps_map group_dep_map group_vars item =
                     (group_vars, index + 1)
         None -> panic "Dep not found in deps map"
 
-calculateGroupDepMap :: Config -> [MemberInfo] -> (Map GroupTypeVariable [GroupTypeVariable],
+calculateGroupDepMap :: [MemberInfo] -> (Map GroupTypeVariable [GroupTypeVariable],
                                                        Map GroupTypeVariable [GroupTypeVariable],
                                                        [DependencyGroup GroupTypeVariable])
-calculateGroupDepMap config members = do
-    //trace config "calculateGroupDepMap: start ({})" % (List.getLength members)
+calculateGroupDepMap members = do
+    //trace "calculateGroupDepMap: start ({})" % (List.getLength members)
     deps_map <- getGroupDependencyMap members
-    //trace config "calculateGroupDepMap: got deps_map"
-    groups <- processDependencies config deps_map
-    //trace config "calculateGroupDepMap: got groups {}" % (List.getLength groups)
+    //trace "calculateGroupDepMap: got deps_map"
+    groups <- processDependencies deps_map
+    //trace "calculateGroupDepMap: got groups {}" % (List.getLength groups)
     group_dep_map <- Map.empty
     group_dep_map <- loop (group_dep_map, index) <- (group_dep_map, 0) do
         if index >= List.getLength groups
@@ -72,5 +72,5 @@ calculateGroupDepMap config members = do
             group <- List.atIndex groups index
             group_dep_map <- calculateDepsForGroup group_dep_map deps_map group.items
             (group_dep_map, index + 1)
-    //trace config "calculateGroupDepMap: done"
+    //trace "calculateGroupDepMap: done"
     (group_dep_map, deps_map, groups)

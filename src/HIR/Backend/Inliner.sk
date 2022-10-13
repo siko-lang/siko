@@ -15,7 +15,7 @@ import Siko.HIR.Backend.ClassInfoStore as CDS
 import Siko.HIR.Backend.Unification.Substitution as S
 import Siko.HIR.Backend.Unification.TypeVarGenerator as TVG
 import Siko.Trace
-import Siko.Config
+
 import Siko.Util.SharedString as SS
 
 import Map
@@ -231,15 +231,15 @@ processFunction context function = do
                 _ -> (context, function)
         None -> (context, function)
 
-processProgram :: Config -> PO.Program T.Type -> ExprIdGenerator -> PatternIdGenerator -> TVG.TypeVarGenerator ->
+processProgram :: PO.Program T.Type -> ExprIdGenerator -> PatternIdGenerator -> TVG.TypeVarGenerator ->
                   CDS.ClassInfoStore -> (PO.Program T.Type, ExprIdGenerator, PatternIdGenerator, TVG.TypeVarGenerator)
-processProgram config program expr_id_gen pattern_id_gen var_gen class_info_store = do
-    trace config "Inliner started.."
+processProgram program expr_id_gen pattern_id_gen var_gen class_info_store = do
+    trace "Inliner started.."
     functions <- PO.getFunctions program
     context <- Context program expr_id_gen pattern_id_gen var_gen class_info_store [] Map.empty [] S.createSubstitution
     (context, functions) <- List.mapS context functions processFunction
     program <- List.fold context.program functions (\program, fn -> do
         (program, _) <- PO.addItem program fn.name (PO.Function fn)
         program)
-    trace config "Inliner finished.."
+    trace "Inliner finished.."
     (program, context.expr_id_gen, context.pattern_id_gen, context.var_gen)

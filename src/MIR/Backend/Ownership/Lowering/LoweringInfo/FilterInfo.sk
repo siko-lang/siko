@@ -1,6 +1,6 @@
 module Siko.MIR.Backend.Ownership.Lowering.LoweringInfo.FilterInfo where
 
-import Siko.Config
+
 import Siko.Trace
 import Siko.Util.DependencyProcessorLinear
 import Siko.MIR.Backend.Ownership.GroupDependencyMap
@@ -24,22 +24,22 @@ data FilterInfo = { ordered_dep_map :: Map GroupTypeVariable [TypeVariableInfo],
                     groups :: [DependencyGroup TypeVariableInfo]
                    }
 
-buildFilterInfoFromTypeLoweringInfo :: Config -> TypeLoweringInfo -> FilterInfo
-buildFilterInfoFromTypeLoweringInfo config lowering_info =
-    buildFilterInfo config lowering_info.members lowering_info.ownershipinfos [lowering_info.root]
+buildFilterInfoFromTypeLoweringInfo :: TypeLoweringInfo -> FilterInfo
+buildFilterInfoFromTypeLoweringInfo lowering_info =
+    buildFilterInfo lowering_info.members lowering_info.ownershipinfos [lowering_info.root]
 
-buildFilterInfoFromFunctionLoweringInfo :: Config -> FunctionLoweringInfo -> FilterInfo
-buildFilterInfoFromFunctionLoweringInfo config lowering_info =
-    buildFilterInfo config lowering_info.members lowering_info.ownershipinfos (List.push lowering_info.args lowering_info.result)
+buildFilterInfoFromFunctionLoweringInfo :: FunctionLoweringInfo -> FilterInfo
+buildFilterInfoFromFunctionLoweringInfo lowering_info =
+    buildFilterInfo lowering_info.members lowering_info.ownershipinfos (List.push lowering_info.args lowering_info.result)
 
-buildFilterInfo :: Config -> [M.MemberInfo] -> [M.OwnershipInfo] -> [TypeVariableInfo] -> FilterInfo
-buildFilterInfo config members ownershipinfos sources = do
+buildFilterInfo :: [M.MemberInfo] -> [M.OwnershipInfo] -> [TypeVariableInfo] -> FilterInfo
+buildFilterInfo members ownershipinfos sources = do
     ordered_dep_map <- getOrderedDependencyMap members
-    ownership_dep_map <- calculateOwnershipDepMap config members
+    ownership_dep_map <- calculateOwnershipDepMap members
     deps_map <- M.getInfoDependencyMap members
     kind_map <- M.toOwnershipKind ownershipinfos
     info_dep_map <- getInfoDependencyMap sources members deps_map
-    groups <- processDependencies config info_dep_map
+    groups <- processDependencies info_dep_map
     // println "-------------"
     // println "sources {}" % sources
     // println "members {}" % members

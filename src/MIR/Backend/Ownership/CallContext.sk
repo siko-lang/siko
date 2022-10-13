@@ -6,7 +6,7 @@ import Siko.MIR.Backend.Ownership.GroupDependencyMap
 import Siko.MIR.Backend.Ownership.MemberInfo as M
 import Siko.Util.DependencyProcessorLinear
 import Map
-import Siko.Config
+
 
 data CallContext = { sub_map :: Map OwnershipTypeVariable (List OwnershipTypeVariable) } deriving (PartialEq, Eq, PartialOrd, Ord, Show)
 
@@ -19,9 +19,9 @@ addOwnershipVarToCallContext call_context_set var = do
         call_context { sub_map = sub_map })
     call_context_set { call_contexts = call_contexts }
 
-createBaseCallContexts :: Config -> InferenceInfo -> InferenceInfo
-createBaseCallContexts config inference_info = do
-    (accumulated_group_deps_map, group_deps_map, groups) <- calculateGroupDepMap config inference_info.members
+createBaseCallContexts :: InferenceInfo -> InferenceInfo
+createBaseCallContexts inference_info = do
+    (accumulated_group_deps_map, group_deps_map, groups) <- calculateGroupDepMap inference_info.members
     group_index_map <- getGroupIndexMap groups
     // println "group_index_map {}" % group_index_map
     // println "members {}" % members
@@ -44,7 +44,7 @@ createBaseCallContexts config inference_info = do
                     None -> (group_items, deps))
             //println "group {} deps {}" % (group, deps)
             deps <- deps |> List.sort |> List.dedup
-            (group_items, deps, context_map, ownership_vars, base_call_contexts, group_locals) <- List.fold (group_items, deps, Map.empty, [], base_call_contexts, []) members 
+            (group_items, deps, context_map, ownership_vars, base_call_contexts, group_locals) <- List.fold (group_items, deps, Map.empty, [], base_call_contexts, []) members
                               (\(group_items, deps, context_map, ownership_vars, base_call_contexts, group_locals), member -> do
                 group_locals <- if List.contains group_items member.root && List.contains group_items member.info.arg_group_var
                 then List.push group_locals member.info.ownership_var

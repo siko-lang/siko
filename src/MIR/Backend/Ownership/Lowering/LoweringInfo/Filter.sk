@@ -1,6 +1,6 @@
 module Siko.MIR.Backend.Ownership.Lowering.LoweringInfo.Filter where
 
-import Siko.Config
+
 import Siko.Trace
 import Siko.Util.DependencyProcessorLinear
 import Siko.MIR.Backend.Ownership.GroupDependencyMap
@@ -19,27 +19,27 @@ import Set
 filterMember :: [TypeVariableInfo] -> [GroupTypeVariable] -> M.MemberInfo -> Bool
 filterMember infos vars member = List.contains infos member.info && List.contains vars member.root
 
-filterTypeLoweringInfo :: Config -> TypeLoweringInfo -> [TypeVariableInfo] -> FilterInfo -> TypeLoweringInfo
-filterTypeLoweringInfo config lowering_info sources filter_info = do
-    //trace config "------------ start filterInfo {} / {}-----------" % (lowering_info, sources)
-    (members, ownershipinfos, allocator) <- filterLoweringInfo config sources lowering_info.members lowering_info.ownershipinfos filter_info
+filterTypeLoweringInfo :: TypeLoweringInfo -> [TypeVariableInfo] -> FilterInfo -> TypeLoweringInfo
+filterTypeLoweringInfo lowering_info sources filter_info = do
+    //trace "------------ start filterInfo {} / {}-----------" % (lowering_info, sources)
+    (members, ownershipinfos, allocator) <- filterLoweringInfo sources lowering_info.members lowering_info.ownershipinfos filter_info
     lowering_info <- lowering_info { members = members, ownershipinfos = ownershipinfos, allocator = allocator }
-    //trace config "------------ end filterInfo {} / {}-----------" % (lowering_info, sources)
+    //trace "------------ end filterInfo {} / {}-----------" % (lowering_info, sources)
     lowering_info
 
-filterFunctionLoweringInfo :: Config -> FunctionLoweringInfo -> [TypeVariableInfo] -> FilterInfo -> FunctionLoweringInfo
-filterFunctionLoweringInfo config lowering_info sources filter_info = do
-    //trace config "------------ start filterInfo {} / {}-----------" % (lowering_info, sources)
-    (members, ownershipinfos, allocator) <- filterLoweringInfo config sources lowering_info.members lowering_info.ownershipinfos filter_info
+filterFunctionLoweringInfo :: FunctionLoweringInfo -> [TypeVariableInfo] -> FilterInfo -> FunctionLoweringInfo
+filterFunctionLoweringInfo lowering_info sources filter_info = do
+    //trace "------------ start filterInfo {} / {}-----------" % (lowering_info, sources)
+    (members, ownershipinfos, allocator) <- filterLoweringInfo sources lowering_info.members lowering_info.ownershipinfos filter_info
     lowering_info <- lowering_info { members = members, ownershipinfos = ownershipinfos, allocator = allocator }
-    //trace config "------------ end filterInfo {} / {}-----------" % (lowering_info, sources)
+    //trace "------------ end filterInfo {} / {}-----------" % (lowering_info, sources)
     lowering_info
 
-filterLoweringInfo :: Config -> [TypeVariableInfo] ->
+filterLoweringInfo :: [TypeVariableInfo] ->
                       [M.MemberInfo] -> [M.OwnershipInfo] ->
                       FilterInfo ->
                       ([M.MemberInfo], [M.OwnershipInfo], Allocator)
-filterLoweringInfo config sources members ownershipinfos filter_info = do
+filterLoweringInfo sources members ownershipinfos filter_info = do
     relevants <- getRelevants filter_info sources
     //println "borrower_map {}" % borrower_map
     //println "relevants {}" % relevants

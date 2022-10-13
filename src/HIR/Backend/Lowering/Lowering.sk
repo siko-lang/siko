@@ -20,9 +20,10 @@ import Siko.HIR.Backend.Lowering.ClassMemberCalls
 import Siko.HIR.Backend.Lowering.ClosureStore as CS
 import Siko.Constants
 import Siko.FileManager
-import Siko.Config
 import Siko.Trace
+import Siko.Config
 import Siko.Util.Counter
+
 import IO
 import Map
 
@@ -263,9 +264,9 @@ generateExternalImpls context = do
                 context)
         )
 
-lowerProgram :: Config -> FileManager -> TVG.TypeVarGenerator -> CDS.ClassInfoStore -> HP.Program HT.Type -> IR.InstanceResolver -> IR.InstanceResolverHistory -> MP.Program
-lowerProgram config file_manager var_gen class_info_store hir_program instance_resolver instance_resolver_history = do
-    trace config "Lowering to MIR.."
+lowerProgram :: FileManager -> TVG.TypeVarGenerator -> CDS.ClassInfoStore -> HP.Program HT.Type -> IR.InstanceResolver -> IR.InstanceResolverHistory -> MP.Program
+lowerProgram file_manager var_gen class_info_store hir_program instance_resolver instance_resolver_history = do
+    trace "Lowering to MIR.."
     main_qn <- HP.Effectless getMainModuleName getMainFunctionName
     type_store <- createTypeStore
     mir_program <- MP.createProgram
@@ -284,16 +285,17 @@ lowerProgram config file_manager var_gen class_info_store hir_program instance_r
             context
     context <- generateExternalImpls context
     context <- FQ.processItems context
-    trace config "Lowering.. createClosures"
+    trace "Lowering.. createClosures"
     context <- CS.createClosures context
     context <- FQ.processItems context
-    trace config "Lowering.. mostly done"
+    trace "Lowering.. mostly done"
     (context, unit_type) <- processType context (HT.Tuple [])
     mir_program <- context.mir_program
     mir_program <- mir_program { adts = context.type_store.adts, records = context.type_store.records, unit_type = Some unit_type }
+    config <- getConfig ()
     if config.dump
     then do
         s <- MP.dump mir_program
-        writeTextFile (getOutputFileName config (MIR "lowering")) s
+        writeTextFile (getOutputFileName (MIR "lowering")) s
     else ()
     mir_program

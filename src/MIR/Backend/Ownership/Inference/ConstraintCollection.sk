@@ -16,14 +16,13 @@ import Siko.MIR.Expr as E
 import Siko.MIR.Type as T
 import Siko.MIR.Data as D
 import Siko.MIR.Function as F
-import Siko.Config
+
 import Siko.Trace
 
 import Map
 import Set
 
-data Context = { config :: Config,
-                 function_id :: P.Identity,
+data Context = { function_id :: P.Identity,
                  inference_info :: InferenceInfo,
                  program :: P.Program,
                  borrow_info :: BorrowInfo,
@@ -98,7 +97,7 @@ processExpr context expr = do
                         case Map.get context.inference_info.function_converters (GlobalExprId context.function_id expr_id) of
                             Some function_converters -> do
                                 List.fold context function_converters (\context, converter -> do
-                                    if P.isDebugged context.config context.function_id
+                                    if P.isDebugged context.function_id
                                     then println "Adding function converter constraint {} {} -> {}" % (expr_id, converter.from, converter.to)
                                     else ()
                                     addOwnershipConstraint context (C.FunctionConverter (C.FunctionConverterConstraint expr_id converter.from converter.to)))
@@ -218,7 +217,7 @@ processExpr context expr = do
                             context { inference_info = inference_info }
                         else context
             addOwnershipConstraint context (C.Converter (C.ConverterConstraint arg_info info borrowed_var source_id expr_id))
-    // trace context.config "updateInvalidBorrows"
+    //trace "updateInvalidBorrows"
     context <- updateInvalidBorrows context expr_id info None
     context
 
@@ -249,7 +248,7 @@ updateInvalidBorrows context expr_id expr_info shared = do
                          ownership_expr_map = ownership_expr_map, }
     context
 
-collectConstraints :: Config -> P.Identity -> P.Program -> BorrowInfo -> InferenceInfo -> E.Expr ->
+collectConstraints :: P.Identity -> P.Program -> BorrowInfo -> InferenceInfo -> E.Expr ->
                       (InferenceInfo,
                        [C.Constraint],
                        Map E.ExprId [E.ExprId],
@@ -259,9 +258,9 @@ collectConstraints :: Config -> P.Identity -> P.Program -> BorrowInfo -> Inferen
                        [OwnershipTypeVariable],
                        P.Program,
                        Map E.ExprId CC.CallContextSet, Map E.ExprId [OwnershipTypeVariable])
-collectConstraints config function_id program borrow_info inference_info body = do
-    //trace config "collectConstraints {}" % function_id
-    context <- Context config function_id inference_info program borrow_info []
+collectConstraints function_id program borrow_info inference_info body = do
+    //trace "collectConstraints {}" % function_id
+    context <- Context function_id inference_info program borrow_info []
                [] Map.empty Map.empty Map.empty Map.empty Map.empty Map.empty Map.empty
     function_inference_info <- getFunctionInferenceInfo context.inference_info function_id
     E.Expr _ _ body_id <- body

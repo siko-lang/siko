@@ -1,6 +1,6 @@
 module Siko.MIR.Backend.Ownership.Lowering.Data where
 
-import Siko.Config
+
 import Siko.Trace
 import Siko.MIR.Backend.Ownership.MemberInfo as M
 import Siko.MIR.Backend.Ownership.Lowering.LoweringInfo
@@ -39,14 +39,14 @@ instance MemberOwner MemberMerger where
 lowerExternalRecordInfo :: TypeLoweringInfo -> Context -> MD.ExternalRecordInfo -> FilterInfo -> Option TypeVariableInfo -> (Context, LD.ExternalRecordInfo)
 lowerExternalRecordInfo lowering_info context mir_external_record_info filter_info implicit_info = do
     (context, lir_type_args) <- List.mapSE context mir_external_record_info.type_args (\context, index, type_arg -> do
-        lowering_info <- getLoweringInfoForExtern context.config lowering_info index filter_info implicit_info
+        lowering_info <- getLoweringInfoForExtern lowering_info index filter_info implicit_info
         (context, ty) <- lowerType context lowering_info type_arg
         ((context), ty))
     (context, LD.ExternalRecordInfo lir_type_args)
 
 lowerField :: TypeLoweringInfo -> FilterInfo -> Context -> Int -> MD.RecordField -> (Context, LD.RecordField)
 lowerField lowering_info filter_info context index mir_field = do
-    lowering_info <- getLoweringInfoForField context.config lowering_info index filter_info
+    lowering_info <- getLoweringInfoForField lowering_info index filter_info
     (context, lir_type) <- lowerType context lowering_info mir_field.type
     lir_type <- if mir_field.grouped
     then LT.Box lir_type
@@ -55,7 +55,7 @@ lowerField lowering_info filter_info context index mir_field = do
 
 lowerVariant :: TypeLoweringInfo -> FilterInfo -> Context -> Int -> MD.Variant -> (Context, LD.Variant)
 lowerVariant lowering_info filter_info context index mir_variant = do
-    lowering_info <- getLoweringInfoForVariant context.config lowering_info index filter_info
+    lowering_info <- getLoweringInfoForVariant lowering_info index filter_info
     //println "variant_lowering_info: {}/{}" % (mir_variant.name, lowering_info)
     (context, lir_type) <- lowerType context lowering_info mir_variant.type
     (context, LD.Variant mir_variant.name lir_type)
@@ -102,7 +102,7 @@ processExternalClassImpl lowering_info mir_id context mir_class_impl =
             members <- lowering_info.members
             (context, members, allocator) <- expandMembers context lowering_info.members allocator mir_id arg.arg_group_var
             lowering_info <- FunctionLoweringInfo members args result ownershipinfos allocator []
-            (lowering_info, _) <- normalizeFunctionLoweringInfo context.config lowering_info
+            (lowering_info, _) <- normalizeFunctionLoweringInfo lowering_info
             lir_key <- FunctionKey impl_id lowering_info
             (context, lir_id) <- getLIRId context lir_key
             context <- addItem context lir_key
@@ -110,9 +110,9 @@ processExternalClassImpl lowering_info mir_id context mir_class_impl =
 
 lowerRecord :: Context -> TypeLoweringInfo -> MP.Identity -> LP.Identity -> Context
 lowerRecord context lowering_info mir_id lir_id = do
-    trace2 context.config "Lowering record {} {} {}" % (mir_id, lir_id, lowering_info)
+    trace2 "Lowering record {} {} {}" % (mir_id, lir_id, lowering_info)
     mir_record <- MP.getRecord context.mir_program mir_id
-    filter_info <- buildFilterInfoFromTypeLoweringInfo context.config lowering_info
+    filter_info <- buildFilterInfoFromTypeLoweringInfo lowering_info
     (context, fields) <- List.mapSE context mir_record.fields (lowerField lowering_info filter_info)
     lifetimes <- collectLifetimes lowering_info.ownershipinfos
     (context, external_info, implicit_member_lifetime) <- case mir_record.external_info of
@@ -133,9 +133,9 @@ lowerRecord context lowering_info mir_id lir_id = do
 
 lowerAdt :: Context -> TypeLoweringInfo -> MP.Identity -> LP.Identity -> Context
 lowerAdt context lowering_info mir_id lir_id = do
-    trace2 context.config "Lowering adt {} {} {}" % (mir_id, lir_id, lowering_info)
+    trace2 "Lowering adt {} {} {}" % (mir_id, lir_id, lowering_info)
     mir_adt <- MP.getAdt context.mir_program mir_id
-    filter_info <- buildFilterInfoFromTypeLoweringInfo context.config lowering_info
+    filter_info <- buildFilterInfoFromTypeLoweringInfo lowering_info
     (context, variants) <- List.mapSE context mir_adt.variants (lowerVariant lowering_info filter_info)
     lifetimes <- collectLifetimes lowering_info.ownershipinfos
     (context, external_class_impls) <- List.mapS context mir_adt.external_class_impls (processExternalClassImpl lowering_info mir_id)

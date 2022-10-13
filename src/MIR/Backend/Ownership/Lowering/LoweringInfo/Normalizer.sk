@@ -1,6 +1,6 @@
 module Siko.MIR.Backend.Ownership.Lowering.LoweringInfo.Normalizer where
 
-import Siko.Config
+
 import Siko.Trace
 import Siko.MIR.Backend.Ownership.TypeVariableInfo
 import Siko.MIR.Backend.Ownership.MemberInfo as M
@@ -21,9 +21,9 @@ instance Duplicable LifetimeDependency where
         (duplicator, to) <- duplicate duplicator dep.to
         (duplicator, LifetimeDependency from to)
 
-normalizeFunctionLoweringInfo :: Config -> FunctionLoweringInfo -> (FunctionLoweringInfo, Duplicator)
-normalizeFunctionLoweringInfo config lowering_info = do
-    //trace config "normalizeFunctionLoweringInfo: input {}" % lowering_info
+normalizeFunctionLoweringInfo :: FunctionLoweringInfo -> (FunctionLoweringInfo, Duplicator)
+normalizeFunctionLoweringInfo lowering_info = do
+    //trace "normalizeFunctionLoweringInfo: input {}" % lowering_info
     deps_map <- getOrderedDependencyMap lowering_info.members
     duplicator <- createNormalizer
     (visited, duplicator) <- processTypeVariableInfo [] deps_map duplicator lowering_info.result
@@ -40,14 +40,14 @@ normalizeFunctionLoweringInfo config lowering_info = do
     members <- members |> List.sort
     ownershipinfos <- ownershipinfos |> List.sort
     output <- FunctionLoweringInfo members args result ownershipinfos duplicator.allocator lifetime_dependencies
-    //trace config "normalizeFunctionLoweringInfo: output {}" % output
+    //trace "normalizeFunctionLoweringInfo: output {}" % output
     (output, duplicator)
 
-normalizeTypeLoweringInfo :: Config -> TypeLoweringInfo -> (TypeLoweringInfo, Duplicator)
-normalizeTypeLoweringInfo config lowering_info = do
-    //trace config "normalizeTypeLoweringInfo: input {}" % lowering_info
+normalizeTypeLoweringInfo :: TypeLoweringInfo -> (TypeLoweringInfo, Duplicator)
+normalizeTypeLoweringInfo lowering_info = do
+    //trace "normalizeTypeLoweringInfo: input {}" % lowering_info
     deps_map <- getOrderedDependencyMap lowering_info.members
-    //trace config "normalizeTypeLoweringInfo: deps_map {}" % deps_map
+    //trace "normalizeTypeLoweringInfo: deps_map {}" % deps_map
     duplicator <- createNormalizer
     (visited, duplicator) <- processTypeVariableInfo [] deps_map duplicator lowering_info.root
     (duplicator, root) <- duplicate duplicator lowering_info.root
@@ -74,5 +74,5 @@ normalizeTypeLoweringInfo config lowering_info = do
     inverse_borrows <- Map.map inverse_borrows (\(key, value) -> (key, remapBorrow before_reset value))
     duplicator <- duplicator { inverse_borrows = inverse_borrows }
     output <- TypeLoweringInfo members root ownershipinfos allocator
-    //trace config "normalizeTypeLoweringInfo: output {}" % output
+    //trace "normalizeTypeLoweringInfo: output {}" % output
     (output, duplicator)

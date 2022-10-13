@@ -1,6 +1,6 @@
 module Siko.MIR.Backend.Ownership.Lowering.LoweringInfo where
 
-import Siko.Config
+
 import Siko.MIR.Backend.Ownership.TypeVariableInfo
 import Siko.MIR.Backend.Ownership.Allocator
 import Siko.MIR.Backend.Ownership.BorrowId
@@ -31,33 +31,33 @@ data TypeLoweringInfo = { members :: [M.MemberInfo],
                           allocator :: Allocator,
                         } deriving (PartialEq, Eq, PartialOrd, Ord, Show)
 
-convertToFunctionLoweringInfo :: Config -> InferenceInfo -> [TypeVariableInfo] -> TypeVariableInfo -> FilterInfo -> [LifetimeDependency] -> FunctionLoweringInfo
-convertToFunctionLoweringInfo config inference_info args result filter_info lifetime_dependencies = do
+convertToFunctionLoweringInfo :: InferenceInfo -> [TypeVariableInfo] -> TypeVariableInfo -> FilterInfo -> [LifetimeDependency] -> FunctionLoweringInfo
+convertToFunctionLoweringInfo inference_info args result filter_info lifetime_dependencies = do
     //println "Creating function lowering info"
     lowering_info <- FunctionLoweringInfo inference_info.members args result
             (M.toOwnershipInfo inference_info.ownership_values) inference_info.allocator lifetime_dependencies
     //println "Unfiltered {}" % lowering_info
     sources <- List.push args result
-    filterFunctionLoweringInfo config lowering_info sources filter_info
+    filterFunctionLoweringInfo lowering_info sources filter_info
 
-createTypeLoweringInfoFromInferenceInfo :: Config -> InferenceInfo -> TypeVariableInfo -> FilterInfo -> TypeLoweringInfo
-createTypeLoweringInfoFromInferenceInfo config inference_info root filter_info = do
+createTypeLoweringInfoFromInferenceInfo :: InferenceInfo -> TypeVariableInfo -> FilterInfo -> TypeLoweringInfo
+createTypeLoweringInfoFromInferenceInfo inference_info root filter_info = do
     //println "Creating type lowering info"
     lowering_info <- TypeLoweringInfo inference_info.members root
             (M.toOwnershipInfo inference_info.ownership_values) inference_info.allocator
-    filterTypeLoweringInfo config lowering_info [root] filter_info
+    filterTypeLoweringInfo lowering_info [root] filter_info
 
-createTypeLoweringInfoFromFunctionLoweringInfo :: Config -> FunctionLoweringInfo -> TypeVariableInfo -> FilterInfo -> TypeLoweringInfo
-createTypeLoweringInfoFromFunctionLoweringInfo config lowering_info root filter_info = do
+createTypeLoweringInfoFromFunctionLoweringInfo :: FunctionLoweringInfo -> TypeVariableInfo -> FilterInfo -> TypeLoweringInfo
+createTypeLoweringInfoFromFunctionLoweringInfo lowering_info root filter_info = do
     //println "Creating type lowering info"
     output <- TypeLoweringInfo lowering_info.members root lowering_info.ownershipinfos lowering_info.allocator
-    filterTypeLoweringInfo config output [root] filter_info
+    filterTypeLoweringInfo output [root] filter_info
 
-createTypeLoweringInfoFromTypeLoweringInfo :: Config -> TypeLoweringInfo -> TypeVariableInfo -> FilterInfo -> TypeLoweringInfo
-createTypeLoweringInfoFromTypeLoweringInfo config lowering_info root filter_info = do
+createTypeLoweringInfoFromTypeLoweringInfo :: TypeLoweringInfo -> TypeVariableInfo -> FilterInfo -> TypeLoweringInfo
+createTypeLoweringInfoFromTypeLoweringInfo lowering_info root filter_info = do
     //println "Creating type lowering info"
     output <- TypeLoweringInfo lowering_info.members root lowering_info.ownershipinfos lowering_info.allocator
-    filterTypeLoweringInfo config output [root] filter_info
+    filterTypeLoweringInfo output [root] filter_info
 
 normalizeRef :: TypeLoweringInfo -> (TypeLoweringInfo, Option BorrowId)
 normalizeRef lowering_info = do
@@ -84,14 +84,14 @@ normalizeRef lowering_info = do
                     then (List.push ownershipinfos ownershipinfo, None, True)
                     else (List.push ownershipinfos ownershipinfo, ref, found)
 
-getLoweringInfoForArg :: Config -> FunctionLoweringInfo -> Int -> FilterInfo -> TypeLoweringInfo
-getLoweringInfoForArg config lowering_info index filter_info = do
+getLoweringInfoForArg :: FunctionLoweringInfo -> Int -> FilterInfo -> TypeLoweringInfo
+getLoweringInfoForArg lowering_info index filter_info = do
     arg <- List.atIndex lowering_info.args index
-    createTypeLoweringInfoFromFunctionLoweringInfo config lowering_info arg filter_info
+    createTypeLoweringInfoFromFunctionLoweringInfo lowering_info arg filter_info
 
-getLoweringInfoForResult :: Config -> FunctionLoweringInfo -> FilterInfo -> TypeLoweringInfo
-getLoweringInfoForResult config lowering_info filter_info = do
-    createTypeLoweringInfoFromFunctionLoweringInfo config lowering_info lowering_info.result filter_info
+getLoweringInfoForResult :: FunctionLoweringInfo -> FilterInfo -> TypeLoweringInfo
+getLoweringInfoForResult lowering_info filter_info = do
+    createTypeLoweringInfoFromFunctionLoweringInfo lowering_info lowering_info.result filter_info
 
 createEmptyTypeLoweringInfo :: TypeLoweringInfo
 createEmptyTypeLoweringInfo = do
@@ -108,23 +108,23 @@ getInfoForField lowering_info index = do
         Some m -> Some m.info
         None -> None
 
-getLoweringInfoForField :: Config -> TypeLoweringInfo -> Int -> FilterInfo -> TypeLoweringInfo
-getLoweringInfoForField config lowering_info index filter_info = do
+getLoweringInfoForField :: TypeLoweringInfo -> Int -> FilterInfo -> TypeLoweringInfo
+getLoweringInfoForField lowering_info index filter_info = do
     case getInfoForField lowering_info index of
-        Some info -> createTypeLoweringInfoFromTypeLoweringInfo config lowering_info info filter_info
+        Some info -> createTypeLoweringInfoFromTypeLoweringInfo lowering_info info filter_info
         None -> createEmptyTypeLoweringInfo
 
-getLoweringInfoForVariant :: Config -> TypeLoweringInfo -> Int -> FilterInfo -> TypeLoweringInfo
-getLoweringInfoForVariant config lowering_info index filter_info = do
+getLoweringInfoForVariant :: TypeLoweringInfo -> Int -> FilterInfo -> TypeLoweringInfo
+getLoweringInfoForVariant lowering_info index filter_info = do
     variant <- List.filter lowering_info.members (\member -> case member.kind of
             M.Variant i -> i == index && lowering_info.root.arg_group_var == member.root
             _ -> False)
     case List.head variant of
-        Some m -> createTypeLoweringInfoFromTypeLoweringInfo config lowering_info m.info filter_info
+        Some m -> createTypeLoweringInfoFromTypeLoweringInfo lowering_info m.info filter_info
         None -> createEmptyTypeLoweringInfo
 
-getLoweringInfoForExtern :: Config -> TypeLoweringInfo -> Int -> FilterInfo -> Option TypeVariableInfo -> TypeLoweringInfo
-getLoweringInfoForExtern config lowering_info index filter_info implicit_info = do
+getLoweringInfoForExtern :: TypeLoweringInfo -> Int -> FilterInfo -> Option TypeVariableInfo -> TypeLoweringInfo
+getLoweringInfoForExtern lowering_info index filter_info implicit_info = do
     info <- case implicit_info of
         Some info -> info
         None -> lowering_info.root
@@ -132,5 +132,5 @@ getLoweringInfoForExtern config lowering_info index filter_info implicit_info = 
             M.Extern i -> i == index && info.arg_group_var == member.root
             _ -> False)
     case List.head variant of
-        Some m -> createTypeLoweringInfoFromTypeLoweringInfo config lowering_info m.info filter_info
+        Some m -> createTypeLoweringInfoFromTypeLoweringInfo lowering_info m.info filter_info
         None -> createEmptyTypeLoweringInfo
