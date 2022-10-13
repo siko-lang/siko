@@ -92,18 +92,16 @@ initializeFunctionType context fn = do
             context
         None -> context
 
-checkFunctionType :: Context -> F.Function () -> Context
-checkFunctionType context fn = do
-    //trace context.state.config "Checking function {}" % fn.name
+checkFunctionEffects :: Context -> F.Function () -> Context
+checkFunctionEffects context fn = do
+    //trace context.state.config "Checking function effects {}" % fn.name
     case fn.body of
         Some body -> do
-            traversal_context <- createTraversalContext context checkExprType checkPatternType
-            (context, _) <- traverse traversal_context body
             func_type_info <- getFunctionTypeInfo context fn.name
             Expr _ body_id _ location <- body
             eff_signature <- TS.getExprEffectSignature context.type_store body_id
             inferred_effect_names <- getKeys eff_signature.signatures
-            context <- case func_type_info.effects of
+            case func_type_info.effects of
                 Some declared_effects -> do
                     declared_effect_names <- List.map declared_effects T.getNameFromType
                     context <- if not (List.isEmpty inferred_effect_names) || not (List.isEmpty declared_effect_names)
@@ -137,6 +135,36 @@ checkFunctionType context fn = do
                     inferred_effects <- eff_signature.signatures |> Map.iter |> Iterator.map (\(_, eff) -> eff) |> toList
                     function_store <- FS.setFunctionEffects context.function_store fn.name inferred_effects
                     context { function_store = function_store }
+        None -> context
+
+checkMain :: Context -> F.Function () -> Context
+checkMain context fn = do
+    func_type_info <- getFunctionTypeInfo context fn.name
+    context <- if HTI.checkIsomorphicType func_type_info.function_type (T.Tuple []) context.state
+        then context
+        else do
+            err <- IncorrectMainType (SS.create "{}" % TF.toString func_type_info.function_type) fn.location
+            state <- addError context.state err
+            context { state = state }
+    case func_type_info.effects of
+        Some effects -> if List.isEmpty effects
+                        then context
+                        else do
+                            effect_names <- List.map effects (\e -> TF.toString e |> SS.create)
+                            err <- MainEffectFound effect_names fn.location
+                            state <- addError context.state err
+                            context { state = state }
+        None -> context
+
+checkFunctionType :: Context -> F.Function () -> Context
+checkFunctionType context fn = do
+    //trace context.state.config "Checking function {}" % fn.name
+    case fn.body of
+        Some body -> do
+            traversal_context <- createTraversalContext context checkExprType checkPatternType
+            (context, _) <- traverse traversal_context body
+            func_type_info <- getFunctionTypeInfo context fn.name
+            Expr _ body_id _ location <- body
             context <- matchExprWith context body_id func_type_info.result_type location
             returns <- context.returns
             context <- List.fold context returns (\context, (arg_id, arg_location) -> do
@@ -145,25 +173,8 @@ checkFunctionType context fn = do
                     context)
             main <- P.FullPath getMainModuleName getMainFunctionName
             context <- if fn.name == main
-                then do
-                    func_type_info <- getFunctionTypeInfo context fn.name
-                    context <- if HTI.checkIsomorphicType func_type_info.function_type (T.Tuple []) context.state
-                        then context
-                        else do
-                            err <- IncorrectMainType (SS.create "{}" % TF.toString func_type_info.function_type) fn.location
-                            state <- addError context.state err
-                            context { state = state }
-                    context <- case func_type_info.effects of
-                        Some effects -> if List.isEmpty effects
-                                        then context
-                                        else do
-                                            effect_names <- List.map effects (\e -> TF.toString e |> SS.create)
-                                            err <- MainEffectFound effect_names fn.location
-                                            state <- addError context.state err
-                                            context { state = state }
-                        None -> context
-                    context
-                else context
+            then do checkMain context fn
+            else context
             context <- context { returns = [] }
             context
         None -> context
@@ -197,12 +208,39 @@ processGroup state  group function_store type_store = do
 
     //println "After init"
     //TS.dump context.type_store
+
     context <- List.fold context group.items (\context, name -> do
                         fn <- P.getFunction context.state.program name
                         checkFunctionType context fn)
 
+    (context, group_effects) <- List.fold (context, emptyEffectSignatureSet) group.items (\(context, group_effects), name -> do
+                        fn <- P.getFunction context.state.program name
+                        case fn.body of
+                        Some body -> do
+                            func_type_info <- getFunctionTypeInfo context fn.name
+                            Expr _ body_id _ location <- body
+                            eff_signature <- TS.getExprEffectSignature context.type_store body_id
+                            (context, group_effects) <- mergeEffectSignatureSets context group_effects eff_signature location
+                            (context, group_effects)
+                        None -> (context, group_effects))
+
+    context <- List.fold context group.items (\context, name -> do
+                        fn <- P.getFunction context.state.program name
+                        case fn.body of
+                        Some body -> do
+                            func_type_info <- getFunctionTypeInfo context fn.name
+                            Expr _ body_id _ location <- body
+                            type_store <- TS.addExprEffectSignatureSet context.type_store body_id group_effects
+                            context { type_store = type_store }
+                        None -> context)
+
+    context <- List.fold context group.items (\context, name -> do
+                        fn <- P.getFunction context.state.program name
+                        checkFunctionEffects context fn)
+
     //println "After check"
     //TS.dump context.type_store
+
     context <- List.fold context group.items (\context, name -> do
                         fn <- P.getFunction context.state.program name
                         checkMissingTypes context fn)
