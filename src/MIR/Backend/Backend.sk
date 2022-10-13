@@ -115,11 +115,14 @@ processDataGroups mir_program data_groups =
         processDataGroup :: MP.Program -> DependencyGroup MP.Identity -> MP.Program
         processDataGroup mir_program data_group = do
             List.fold mir_program data_group.items (\mir_program, id -> do
-                case get mir_program.records id of
+                case MP.getRecordOpt mir_program id of
                     Some record -> do
                         fields <- List.map record.fields (\field -> do
                             id <- T.getIdentity field.type
-                            if List.contains data_group.items id
+                            external <- case MP.getRecordOpt mir_program id of
+                                Some field_record -> isSome field_record.external_info
+                                _ -> False
+                            if List.contains data_group.items id && not external
                             then field { grouped = True }
                             else field)
                         MP.updateRecordFields mir_program id fields
