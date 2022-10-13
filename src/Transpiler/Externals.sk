@@ -784,6 +784,12 @@ generateAbort :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateAbort program type_store arg_types result_type = do
     R.Block [R.FunctionCall "panic!" [R.StringLiteral "Abort called"]]
 
+generateExit :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
+generateExit program type_store arg_types result_type = do
+    arg0 <- R.VarRef (getArgName 0)
+    field_access0 <- R.FieldAccess innerValueField arg0
+    R.Block [R.FunctionCall "std::process::exit" [R.As field_access0 "i32"]]
+
 generateMapEmpty :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateMapEmpty program type_store arg_types result_type = do
     rust_type <- convertType result_type
@@ -1105,6 +1111,7 @@ initializeExternalFunctions = do
     (externals, _) <- insert externals (ExternalId "IO" "getArgs") (ExternFnBuilder generateGetArgs)
     (externals, _) <- insert externals (ExternalId "IO" "isDir") (ExternFnBuilder generateIsDir)
     (externals, _) <- insert externals (ExternalId "IO" "listDir") (ExternFnBuilder generateListDir)
+    (externals, _) <- insert externals (ExternalId "IO" "exit") (ExternFnBuilder generateExit)
 
     (externals, _) <- insert externals (ExternalId "String" "addString") (ExternFnBuilder generateStringAdd)
     (externals, _) <- insert externals (ExternalId "String" "partialCmpString") (ExternFnBuilder generatePartialCmp)
