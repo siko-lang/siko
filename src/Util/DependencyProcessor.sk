@@ -5,6 +5,31 @@ import Map
 import Siko.Trace
 import Siko.Util.SCC as SCC
 
+data GroupIndexMap a = { groups :: Map a Int } deriving (Show)
+
+getGroupIndex a :: (Ord a) => GroupIndexMap a -> a -> Int
+getGroupIndex group_index_map item = do
+    case Map.get group_index_map.groups item of
+        Some index -> index
+        None -> panic "Item not found in group_index_map"
+
+getGroupIndexOpt a :: (Ord a) => GroupIndexMap a -> a -> Option Int
+getGroupIndexOpt group_index_map item = do
+    case Map.get group_index_map.groups item of
+        Some index -> Some index
+        None -> None
+
+getGroupIndexMap a :: (Ord a) => [DependencyGroup a] -> GroupIndexMap a
+getGroupIndexMap groups =
+    loop (group_index_map, index) <- (Map.empty, 0) do
+        if index >= List.getLength groups
+        then break (GroupIndexMap group_index_map)
+        else do
+            group <- List.atIndex groups index
+            group_index_map <- List.fold group_index_map group.items (\group_index_map, item -> do
+                Map.put group_index_map item index)
+            (group_index_map, index + 1)
+
 data DependencyGroup a = { items :: [a] } deriving (Show)
 
 createIdMaps a :: (PartialEq a, Ord a) => SCC.Graph -> Map a [a] -> (SCC.Graph, Map a SCC.NodeId, Map SCC.NodeId a)
@@ -16,7 +41,7 @@ createIdMaps graph all_dependencies = do
     where
         mapKey a :: (PartialEq a, Ord a) => (SCC.Graph, Map a SCC.NodeId) -> a -> (SCC.Graph, Map a SCC.NodeId)
         mapKey (graph, id_map) id = do
-            (graph, _, id_map) <- addS graph id id_map (\graph, id -> SCC.addNode graph)
+            (graph, _, id_map) <- Map.addS graph id id_map (\graph, id -> SCC.addNode graph)
             (graph, id_map)
 
 initGraph a :: (PartialEq a, Ord a) => SCC.Graph -> Map a SCC.NodeId -> Map a [a] -> SCC.Graph
@@ -41,12 +66,10 @@ processDependencies all_dependencies = do
         graph <- initGraph graph item_id_map all_dependencies
         sccs <- SCC.collectSCCs graph
         ordered_groups <- List.map sccs (mapSCC id_item_map)
-        ordered_groups <- ordered_groups |> List.iter |> List.toList
         //trace "new processDependencies done"
         ordered_groups
     where
         mapSCC a :: Map SCC.NodeId a -> [SCC.NodeId] -> DependencyGroup a
         mapSCC id_item_map scc = do
             items <- List.map scc (\id -> Option.unwrap (get id_item_map id))
-            items <- items |> List.iter |> List.toList
             DependencyGroup items
