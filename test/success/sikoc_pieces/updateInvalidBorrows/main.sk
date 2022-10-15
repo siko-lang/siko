@@ -1,0 +1,41 @@
+module Main where
+
+import Map
+
+data Context = { inference_info :: InferenceInfo,
+                 ownership_group_map :: Map GroupTypeVariable [GroupTypeVariable],
+                 group_expr_map :: Map GroupTypeVariable [ExprId],
+                 program :: Program }
+
+data InferenceInfo = { ownership_dep_map_info :: OwnershipDependencyMapInfo }
+
+data OwnershipDependencyMapInfo = { ownership_dep_map :: Map GroupTypeVariable [GroupTypeVariable] }
+
+data ExprId = ExprId deriving (PartialEq, Eq, PartialOrd, Ord)
+
+data GroupTypeVariable = GroupTypeVariable deriving (PartialEq, Eq, PartialOrd, Ord)
+
+data TypeVariableInfo = { arg_group_var :: GroupTypeVariable }
+
+data Program = { name :: String } deriving (Move)
+
+updateInvalidBorrows :: Context -> ExprId -> TypeVariableInfo -> Context
+updateInvalidBorrows context expr_id expr_info = do
+    context <- case Map.get context.inference_info.ownership_dep_map_info.ownership_dep_map expr_info.arg_group_var of
+                Some vars -> List.fold context vars (\context, var -> do
+                                ownership_group_map <- Map.add context.ownership_group_map var expr_info.arg_group_var
+                                context { ownership_group_map = ownership_group_map })
+                None -> context
+    group_expr_map <- Map.add context.group_expr_map expr_info.arg_group_var expr_id
+    context <- context { group_expr_map = group_expr_map }
+    context
+
+main = do
+    program <- Program "a"
+    inference_info <- InferenceInfo (OwnershipDependencyMapInfo Map.empty)
+    context <- Context inference_info Map.empty Map.empty program
+    expr_id <- ExprId
+    expr_info <- TypeVariableInfo GroupTypeVariable
+    new <- updateInvalidBorrows context ExprId expr_info
+    program
+    ()
