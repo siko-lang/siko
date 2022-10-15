@@ -15,9 +15,7 @@ import Map
 import Map
 import Set
 
-data FilterInfo = { ordered_dep_map :: Map GroupTypeVariable [TypeVariableInfo],
-                    ownership_dep_map :: Map GroupTypeVariable [OwnershipTypeVariable],
-                    deps_map :: Map GroupTypeVariable [TypeVariableInfo],
+data FilterInfo = { deps_map :: Map GroupTypeVariable [TypeVariableInfo],
                     group_index_map :: GroupIndexMap TypeVariableInfo,
                     group_borrow_map :: Map Int Bool,
                     group_dep_map :: Map Int [Int],
@@ -34,8 +32,6 @@ buildFilterInfoFromFunctionLoweringInfo lowering_info =
 
 buildFilterInfo :: [M.MemberInfo] -> [M.OwnershipInfo] -> [TypeVariableInfo] -> FilterInfo
 buildFilterInfo members ownershipinfos sources = do
-    ordered_dep_map <- getOrderedDependencyMap members
-    ownership_dep_map <- calculateOwnershipDepMap members
     deps_map <- M.getInfoDependencyMap members
     kind_map <- M.toOwnershipKind ownershipinfos
     info_dep_map <- getInfoDependencyMap sources members deps_map
@@ -58,7 +54,7 @@ buildFilterInfo members ownershipinfos sources = do
             (group_dep_map, group_index + 1)
     group_dep_map <- Map.map group_dep_map (\(k, v) -> (k, v |> List.sort |> List.dedup))
     //println "group_dep_map {}" % group_dep_map
-    filter_info <- FilterInfo ordered_dep_map ownership_dep_map deps_map group_index_map group_borrow_map group_dep_map groups
+    filter_info <- FilterInfo deps_map group_index_map group_borrow_map group_dep_map groups
     filter_info
 
 getInfoDependencyMap :: [TypeVariableInfo] -> [M.MemberInfo] -> Map GroupTypeVariable [TypeVariableInfo] ->

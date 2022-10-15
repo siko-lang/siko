@@ -75,7 +75,7 @@ processExpr context expr = do
                     info <- getTypeVariableInfoByExprId context.inference_info id context.function_id
                     //println "{}: {}" % (f_id, info)
                     //println "arg_group_var {}" % info.arg_group_var
-                    group_index <- getGroupIndexOpt context.inference_info.group_index_map info.arg_group_var
+                    group_index <- getGroupIndexOpt context.inference_info.group_dep_map_info.group_index_map info.arg_group_var
                     call_args <- List.push call_args info.ownership_var
                     case group_index of
                         Some group_index -> do
@@ -232,7 +232,7 @@ updateInvalidBorrows context expr_id expr_info shared = do
     context <- case Map.get context.group_expr_map expr_info.arg_group_var of
         Some _ -> context
         None -> // first time seeing this group
-            case Map.get context.inference_info.ownership_dep_map expr_info.arg_group_var of
+            case Map.get context.inference_info.ownership_dep_map_info.ownership_dep_map expr_info.arg_group_var of
                 Some vars -> List.fold context vars (\context, var -> do
                                 ownership_group_map <- Map.add context.ownership_group_map var expr_info.arg_group_var
                                 context { ownership_group_map = ownership_group_map })
@@ -255,8 +255,7 @@ collectConstraints :: P.Identity -> P.Program -> BorrowInfo -> InferenceInfo -> 
                        Map OwnershipTypeVariable [E.ExprId],
                        Map GroupTypeVariable [E.ExprId],
                        Map OwnershipTypeVariable [GroupTypeVariable],
-                       [OwnershipTypeVariable],
-                       P.Program,
+                       [OwnershipTypeVariable], P.Program,
                        Map E.ExprId CC.CallContextSet, Map E.ExprId [OwnershipTypeVariable])
 collectConstraints function_id program borrow_info inference_info body = do
     //trace "collectConstraints {}" % function_id
@@ -269,7 +268,7 @@ collectConstraints function_id program borrow_info inference_info body = do
             context { var_expr_map = var_expr_map }) context function_inference_info.args
     context <- processExpr context body
     body_info <- getTypeVariableInfoByExprId context.inference_info body_id function_id
-    result_vars <- getOwnershipVars context.inference_info.ownership_dep_map body_info
+    result_vars <- getOwnershipVars context.inference_info.ownership_dep_map_info.ownership_dep_map body_info
     (context.inference_info, context.constraints,
      context.invalid_borrow_map, context.ownership_expr_map,
      context.group_expr_map, context.ownership_group_map,

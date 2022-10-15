@@ -64,9 +64,9 @@ data InferenceInfo = { expr_type_variables :: Map GlobalExprId TypeVariableInfo,
                        initials :: Map OwnershipTypeVariable M.OwnershipKind,
                        function_info_bases :: Map P.Identity FunctionInfoBase,
                        function_converter_borrows :: Map E.ExprId [FunctionConverterBorrow],
-                       ownership_dep_map :: Map GroupTypeVariable [OwnershipTypeVariable],
                        base_call_contexts :: [CC.CallContextSet],
-                       group_index_map :: GroupIndexMap GroupTypeVariable,
+                       ownership_dep_map_info :: OwnershipDependencyMapInfo,
+                       group_dep_map_info :: GroupDependencyMapInfo,
                      } deriving (Move)
 
 instance Show InferenceInfo where
@@ -95,7 +95,7 @@ createInferenceInfoFromLoweringInfo lowering_info function_id = do
     inference_info <- InferenceInfo expr_type_variables var_type_variables group
         function_infos ownership_values members converters allocator
         function_converters group_function_converters borrow_sets Map.empty Map.empty Map.empty
-        Map.empty Map.empty Map.empty List.empty (GroupIndexMap Map.empty)
+        Map.empty Map.empty List.empty createOwnershipDependencyMapInfo createGroupDependencyMapInfo
     (inference_info, external_borrows) <- List.fold (inference_info, []) lowering_info.ownershipinfos (\(inference_info, external_borrows), ownershipinfo -> do
             (inference_info, external_borrows, v, kind) <- case ownershipinfo of
                 M.OwnershipInfo v M.Unknown -> panic "Unknown ownership in createInferenceInfoFromLoweringInfo"
@@ -155,7 +155,7 @@ createInferenceInfo = do
     borrow_sets <- Map.empty
     InferenceInfo Map.empty Map.empty [] function_infos ownership_values [] [] allocator
             function_converters group_function_converters borrow_sets Map.empty Map.empty
-            Map.empty Map.empty Map.empty Map.empty List.empty (GroupIndexMap Map.empty)
+            Map.empty Map.empty Map.empty List.empty createOwnershipDependencyMapInfo createGroupDependencyMapInfo
 
 createBorrowSet :: InferenceInfo -> Borrow -> (InferenceInfo, BorrowId)
 createBorrowSet inference_info borrow = do
@@ -341,10 +341,10 @@ createFunctionInfoBase inference_info function_id converter_merge_info_base = do
     // println "borrow_sets: {}" % Map.getSize inference_info.borrow_sets
 
     members <- inference_info.members
-    (group_dep_map, deps_map, groups) <- calculateGroupDepMap members
+    group_dep_map <- inference_info.group_dep_map_info.group_dep_map
     input_group_vars <- List.fold [] function_inference_info.args
         (\input_group_vars, info -> do
-            input_group_vars <- case Map.get group_dep_map info.arg_group_var of
+            input_group_vars <- case Map.get  group_dep_map info.arg_group_var of
                 Some group_vars -> input_group_vars + group_vars
                 None -> input_group_vars
             List.push input_group_vars info.arg_group_var)
@@ -467,8 +467,8 @@ instance Apply InferenceInfo where
             members converters inference_info.allocator
             function_converters group_function_converters inference_info.borrow_sets
             inference_info.external_borrows inference_info.interrnal_borrows inference_info.initials
-            inference_info.function_info_bases inference_info.function_converter_borrows inference_info.ownership_dep_map
-            inference_info.base_call_contexts inference_info.group_index_map
+            inference_info.function_info_bases inference_info.function_converter_borrows
+            inference_info.base_call_contexts inference_info.ownership_dep_map_info inference_info.group_dep_map_info
         (inference_info, ownership_values) <- Map.fold (inference_info, Map.empty) merged_ownership_values (\(inference_info, ownership_values), (var, kinds) -> do
             kinds <- kinds |> List.sort |> List.dedup
             kinds <- List.filter kinds (\kind -> case kind of
@@ -532,5 +532,10 @@ checkInitials inference_info phase = do
 
 updateOwnershipDepMap :: InferenceInfo -> InferenceInfo
 updateOwnershipDepMap inference_info = do
-    ownership_dep_map <- calculateOwnershipDepMap inference_info.members
-    inference_info { ownership_dep_map = ownership_dep_map }
+    ownership_dep_map_info <- calculateOwnershipDepMap inference_info.members
+    inference_info { ownership_dep_map_info = ownership_dep_map_info }
+
+updateGroupDependencyMapInfo  :: InferenceInfo -> InferenceInfo
+updateGroupDependencyMapInfo inference_info = do
+    group_dep_map_info <- calculateGroupDepMap inference_info.members
+    inference_info { group_dep_map_info = group_dep_map_info }

@@ -55,11 +55,11 @@ lowerFunction context lowering_info mir_id lir_id = do
             checkInitials inference_info "after processEqualities"
             //trace2 "after processEqualities {} {}" % (lir_id, inference_info)
             borrow_info <- checkBorrows info.body
-            ownership_dep_map <- calculateOwnershipDepMap inference_info.members
-            (inference_info, ownership_dep_map) <- unpackOwnerships mir_id inference_info ownership_dep_map external_borrows
+            inference_info <- updateOwnershipDepMap inference_info
+            inference_info <- unpackOwnerships mir_id inference_info external_borrows
             checkInitials inference_info "after unpackOwnerships"
             //trace2 "after unpackOwnerships {} {}" % (lir_id, inference_info)
-            inference_info <- updateOwnershipDepMap inference_info
+            inference_info <- updateGroupDependencyMapInfo inference_info
             converter_merge_info_base <- createConverterMergeInfoBase inference_info.converters
             inference_info <- createFunctionInfoBase inference_info mir_id converter_merge_info_base
             inference_info <- CC.createBaseCallContexts inference_info
@@ -109,11 +109,11 @@ lowerFunction context lowering_info mir_id lir_id = do
     //trace "Lowering done"
     context
 
-unpackOwnerships :: MP.Identity -> InferenceInfo ->
-                    Map GroupTypeVariable [OwnershipTypeVariable] ->
+unpackOwnerships :: MP.Identity ->
+                    InferenceInfo ->
                     [BorrowId] ->
-                    (InferenceInfo, Map GroupTypeVariable [OwnershipTypeVariable])
-unpackOwnerships function_id inference_info ownership_dep_map external_borrows = do
+                    InferenceInfo
+unpackOwnerships function_id inference_info external_borrows = do
     // Ownership information is present in the lowering info
     // in a packed way. For example an owned record implies
     // that every field of the record is also owned.
@@ -125,8 +125,8 @@ unpackOwnerships function_id inference_info ownership_dep_map external_borrows =
         vars <- List.push vars info.arg_group_var
         vars)
     vars <- List.push vars function_inference_info.result.arg_group_var
-    List.fold (inference_info, ownership_dep_map) vars (\(inference_info, ownership_dep_map), var -> do
-        case Map.get ownership_dep_map var of
-            Some ownership_vars -> List.fold (inference_info, ownership_dep_map) ownership_vars (\(inference_info, ownership_dep_map), var ->
-                (enforceOwner inference_info var external_borrows, ownership_dep_map))
-            None -> (inference_info, ownership_dep_map))
+    List.fold inference_info vars (\inference_info, var -> do
+        case Map.get inference_info.ownership_dep_map_info.ownership_dep_map var of
+            Some ownership_vars -> List.fold inference_info ownership_vars (\inference_info, var ->
+                enforceOwner inference_info var external_borrows)
+            None -> inference_info)

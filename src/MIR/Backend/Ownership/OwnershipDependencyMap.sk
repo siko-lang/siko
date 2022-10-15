@@ -86,7 +86,12 @@ calculateChildOwnershipVars members =
                     None -> Some [info.ownership_var]) root child_ownership_vars
             child_ownership_vars
 
-calculateOwnershipDepMap :: [MemberInfo] -> Map GroupTypeVariable [OwnershipTypeVariable]
+data OwnershipDependencyMapInfo = { ownership_dep_map :: Map GroupTypeVariable [OwnershipTypeVariable] }
+
+createOwnershipDependencyMapInfo :: OwnershipDependencyMapInfo
+createOwnershipDependencyMapInfo = OwnershipDependencyMapInfo Map.empty
+
+calculateOwnershipDepMap :: [MemberInfo] -> OwnershipDependencyMapInfo
 calculateOwnershipDepMap members = do
     //trace "calculateOwnershipDepMap: start ({})" % (List.getLength members)
     deps_map <- getGroupDependencyMap members
@@ -104,4 +109,4 @@ calculateOwnershipDepMap members = do
             (child_ownership_vars, ownership_dep_map, deps_map) <- calculateDepsForGroup child_ownership_vars ownership_dep_map deps_map group.items
             (child_ownership_vars, ownership_dep_map, deps_map, index + 1)
     //trace "calculateOwnershipDepMap: done"
-    ownership_dep_map
+    OwnershipDependencyMapInfo ownership_dep_map

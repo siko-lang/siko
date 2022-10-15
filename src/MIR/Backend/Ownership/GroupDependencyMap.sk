@@ -55,9 +55,16 @@ collectDepsForGroupVar group deps_map group_dep_map group_vars item =
                     (group_vars, index + 1)
         None -> panic "Dep not found in deps map"
 
-calculateGroupDepMap :: [MemberInfo] -> (Map GroupTypeVariable [GroupTypeVariable],
-                                                       Map GroupTypeVariable [GroupTypeVariable],
-                                                       [DependencyGroup GroupTypeVariable])
+data GroupDependencyMapInfo = { group_dep_map :: Map GroupTypeVariable [GroupTypeVariable],
+                                deps_map :: Map GroupTypeVariable [GroupTypeVariable],
+                                groups :: [DependencyGroup GroupTypeVariable],
+                                group_index_map :: GroupIndexMap GroupTypeVariable,
+                              }
+
+createGroupDependencyMapInfo :: GroupDependencyMapInfo
+createGroupDependencyMapInfo = GroupDependencyMapInfo Map.empty Map.empty [] (GroupIndexMap Map.empty)
+
+calculateGroupDepMap :: [MemberInfo] -> GroupDependencyMapInfo
 calculateGroupDepMap members = do
     //trace "calculateGroupDepMap: start ({})" % (List.getLength members)
     deps_map <- getGroupDependencyMap members
@@ -73,4 +80,5 @@ calculateGroupDepMap members = do
             group_dep_map <- calculateDepsForGroup group_dep_map deps_map group.items
             (group_dep_map, index + 1)
     //trace "calculateGroupDepMap: done"
-    (group_dep_map, deps_map, groups)
+    group_index_map <- getGroupIndexMap groups
+    GroupDependencyMapInfo group_dep_map deps_map groups group_index_map

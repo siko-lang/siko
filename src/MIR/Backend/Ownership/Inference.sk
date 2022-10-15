@@ -121,6 +121,7 @@ processFunction context group inference_info function_id = do
                     (equals, inference_info) <- processFunctionEqualities function_id group [] inference_info function_info_store context.program info.body context.data_group_info_store
                     inference_info <- processEqualities equals inference_info context.program
                     inference_info <- updateOwnershipDepMap inference_info
+                    inference_info <- updateGroupDependencyMapInfo inference_info
                     inference_info <- CC.createBaseCallContexts inference_info
                     converter_merge_info_base <- createConverterMergeInfoBase inference_info.converters
                     inference_info <- createFunctionInfoBase inference_info function_id converter_merge_info_base
@@ -199,9 +200,10 @@ processFunctionGroup index group_count context group = do
                         _ -> panic "Groupped function is not normal!")
             inference_info <- processEqualities equals inference_info context.program
             converter_merge_info_base <- createConverterMergeInfoBase inference_info.converters
+            inference_info <- updateOwnershipDepMap inference_info
+            inference_info <- updateGroupDependencyMapInfo inference_info
             inference_info <- List.fold inference_info group
                 (\inference_info, function_id -> createFunctionInfoBase inference_info function_id converter_merge_info_base)
-            inference_info <- updateOwnershipDepMap inference_info
             inference_info <- CC.createBaseCallContexts inference_info
             inference_info
 

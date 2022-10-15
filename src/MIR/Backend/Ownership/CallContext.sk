@@ -19,65 +19,72 @@ addOwnershipVarToCallContext call_context_set var = do
         call_context { sub_map = sub_map })
     call_context_set { call_contexts = call_contexts }
 
+
+
+createCallContextForGroup :: GroupIndexMap GroupTypeVariable ->
+                             Map GroupTypeVariable [GroupTypeVariable] ->
+                             [M.MemberInfo] ->
+                             List CallContextSet ->
+                             DependencyGroup GroupTypeVariable ->
+                             List CallContextSet
+createCallContextForGroup group_index_map group_deps_map members base_call_contexts group = do
+    (group_items, deps) <- List.fold (group.items, []) group.items (\(group_items, deps), item -> do
+        case Map.get group_deps_map item of
+            Some ds -> do
+                (group_items, ds) <- List.filterS group_items ds (\group_items, dep -> do
+                    res <- not (List.contains group_items dep)
+                    (group_items, res))
+                (group_items, deps + ds)
+            None -> (group_items, deps))
+    //println "group {} deps {}" % (group, deps)
+    deps <- deps |> List.sort |> List.dedup
+    (group_items, deps, context_map, ownership_vars, base_call_contexts, group_locals) <- List.fold (group_items, deps, Map.empty, [], base_call_contexts, []) members
+                        (\(group_items, deps, context_map, ownership_vars, base_call_contexts, group_locals), member -> do
+        group_locals <- if List.contains group_items member.root && List.contains group_items member.info.arg_group_var
+        then List.push group_locals member.info.ownership_var
+        else group_locals
+        if List.contains group_items member.root && List.contains deps member.info.arg_group_var
+        then do
+            group_index <- getGroupIndex group_index_map member.info.arg_group_var
+            //println "Looking up {} {}" % (member.info.arg_group_var, group_index)
+            dep_call_context_set <- case Map.get context_map group_index of
+                Some dep_call_context_set -> dep_call_context_set
+                None -> List.atIndex base_call_contexts group_index
+            //println "dep cc {}" % dep_call_context_set
+            // member.info.ownership_var will affect everything
+            dep_call_context_set <- addOwnershipVarToCallContext dep_call_context_set member.info.ownership_var
+            context_map <- Map.put context_map group_index dep_call_context_set
+            ownership_vars <- List.push ownership_vars member.info.ownership_var
+            (group_items, deps, context_map, ownership_vars, base_call_contexts, group_locals)
+        else (group_items, deps, context_map, ownership_vars, base_call_contexts, group_locals))
+    //println "context_map {}" % context_map
+    //println "ownership_vars {}" % ownership_vars
+    current <- if Map.getSize context_map == 0
+    then CallContextSet ([CallContext Map.empty])
+    else CallContextSet List.empty
+    current <- Map.fold current context_map (\current, (index, dep_set) -> do
+        call_contexts <- current.call_contexts + dep_set.call_contexts
+        (current { call_contexts = call_contexts }))
+    // add all group vars as vars that can be affected by parents
+    call_contexts <- List.map current.call_contexts (\call_context ->
+        List.fold call_context (ownership_vars + group_locals) (\call_context, var -> do
+            sub_map <- Map.put call_context.sub_map var List.empty
+            call_context { sub_map = sub_map }))
+    call_contexts <- call_contexts |> List.sort |> List.dedup
+    current <- current { call_contexts = call_contexts }
+    //println "current {}" % current
+    base_call_contexts <- List.push base_call_contexts current
+    base_call_contexts
+
 createBaseCallContexts :: InferenceInfo -> InferenceInfo
 createBaseCallContexts inference_info = do
-    (accumulated_group_deps_map, group_deps_map, groups) <- calculateGroupDepMap inference_info.members
-    group_index_map <- getGroupIndexMap groups
+    group_deps_map <- inference_info.group_dep_map_info.deps_map
+    groups <- inference_info.group_dep_map_info.groups
+    group_index_map <- inference_info.group_dep_map_info.group_index_map
     // println "group_index_map {}" % group_index_map
     // println "members {}" % members
     // println "groups {}" % groups
     base_call_contexts <- List.fold List.empty groups (createCallContextForGroup group_index_map group_deps_map inference_info.members)
     //println "Full version {}" % base_call_contexts
-    inference_info { group_index_map = group_index_map, base_call_contexts = base_call_contexts }
-        where
-        createCallContextForGroup :: GroupIndexMap GroupTypeVariable -> Map GroupTypeVariable [GroupTypeVariable] -> [M.MemberInfo] -> List CallContextSet ->
-                                     DependencyGroup GroupTypeVariable ->
-                                     List CallContextSet
-        createCallContextForGroup group_index_map group_deps_map members base_call_contexts group = do
-            (group_items, deps) <- List.fold (group.items, []) group.items (\(group_items, deps), item -> do
-                case Map.get group_deps_map item of
-                    Some ds -> do
-                        (group_items, ds) <- List.filterS group_items ds (\group_items, dep -> do
-                            res <- not (List.contains group_items dep)
-                            (group_items, res))
-                        (group_items, deps + ds)
-                    None -> (group_items, deps))
-            //println "group {} deps {}" % (group, deps)
-            deps <- deps |> List.sort |> List.dedup
-            (group_items, deps, context_map, ownership_vars, base_call_contexts, group_locals) <- List.fold (group_items, deps, Map.empty, [], base_call_contexts, []) members
-                              (\(group_items, deps, context_map, ownership_vars, base_call_contexts, group_locals), member -> do
-                group_locals <- if List.contains group_items member.root && List.contains group_items member.info.arg_group_var
-                then List.push group_locals member.info.ownership_var
-                else group_locals
-                if List.contains group_items member.root && List.contains deps member.info.arg_group_var
-                then do
-                    group_index <- getGroupIndex group_index_map member.info.arg_group_var
-                    //println "Looking up {} {}" % (member.info.arg_group_var, group_index)
-                    dep_call_context_set <- case Map.get context_map group_index of
-                        Some dep_call_context_set -> dep_call_context_set
-                        None -> List.atIndex base_call_contexts group_index
-                    //println "dep cc {}" % dep_call_context_set
-                    // member.info.ownership_var will affect everything
-                    dep_call_context_set <- addOwnershipVarToCallContext dep_call_context_set member.info.ownership_var
-                    context_map <- Map.put context_map group_index dep_call_context_set
-                    ownership_vars <- List.push ownership_vars member.info.ownership_var
-                    (group_items, deps, context_map, ownership_vars, base_call_contexts, group_locals)
-                else (group_items, deps, context_map, ownership_vars, base_call_contexts, group_locals))
-            //println "context_map {}" % context_map
-            //println "ownership_vars {}" % ownership_vars
-            current <- if Map.getSize context_map == 0
-            then CallContextSet ([CallContext Map.empty])
-            else CallContextSet List.empty
-            current <- Map.fold current context_map (\current, (index, dep_set) -> do
-                call_contexts <- current.call_contexts + dep_set.call_contexts
-                (current { call_contexts = call_contexts }))
-            // add all group vars as vars that can be affected by parents
-            call_contexts <- List.map current.call_contexts (\call_context ->
-                List.fold call_context (ownership_vars + group_locals) (\call_context, var -> do
-                    sub_map <- Map.put call_context.sub_map var List.empty
-                    call_context { sub_map = sub_map }))
-            call_contexts <- call_contexts |> List.sort |> List.dedup
-            current <- current { call_contexts = call_contexts }
-            //println "current {}" % current
-            base_call_contexts <- List.push base_call_contexts current
-            base_call_contexts
+    inference_info { base_call_contexts = base_call_contexts }
+
