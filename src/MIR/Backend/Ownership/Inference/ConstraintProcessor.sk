@@ -128,17 +128,13 @@ canPropagateBorrow context ownership_var borrow_id = do
 
 getParentKind :: Context -> [OwnershipTypeVariable] -> M.OwnershipKind
 getParentKind context parents = do
-    kinds <- List.map parents (getOwnershipValue context)
-    //debugPrint context "getParentKind kinds {}" % kinds
-    if List.contains kinds M.Unknown
-    then M.Unknown
-    else do
-        first_borrower <- List.find kinds (\k -> case k of
-                    M.Borrower _ -> True
-                    _ -> False)
-        case first_borrower of
-            Some b -> b
-            None -> M.Owner
+    List.fold M.Owner parents (\parent_kind, var -> do
+        kind <- getOwnershipValue context var
+        case (kind, parent_kind) of
+            (M.Unknown, _) -> M.Unknown
+            (_, M.Unknown) -> M.Unknown
+            (M.Borrower a, M.Owner) -> M.Borrower a
+            (_, p) -> p)
 
 processCallContext :: Context -> E.ExprId -> Int -> OwnershipTypeVariable -> OwnershipTypeVariable -> Option BorrowId -> Context
 processCallContext context call_id index from to to_borrow = do
