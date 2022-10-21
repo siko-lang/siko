@@ -1,8 +1,18 @@
 module List where
 
 import Map
+import Json
+import Json.Serialize
 
 data List a = extern
+
+instance (ToJson a) => ToJson [a] where
+    toJson l = JsonList (List.map l toJson)
+
+instance (FromJson a) => FromJson [a] where
+    fromJson json = case json of
+        JsonList items -> List.map items fromJson
+        _ -> panic "Json convert failed"
 
 instance (Show a) => Show [a] where
     show l = do

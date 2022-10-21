@@ -1,22 +1,25 @@
 module Main where
 
-//import Json
-//import Json.Serialize
+import Json
+import Json.Serialize
+import Json.Writer
+import Json.Parser
+import Std.Util
 
-data Record = { attr1 :: String } //deriving (ToJson)
+data Record = { attr1 :: String, attr2 :: [String] } deriving (ToJson, FromJson, Show, PartialEq, Eq)
 
-//instance ToJson Record where
-//    toJson r = Json.JsonObject []
+data Adt = Variant1 String
+         | Variant2 String Int
+         deriving (ToJson, FromJson, PartialEq, Eq)
 
-data JsonObjectItem = { name :: String, value :: Json } //deriving (Show, PartialEq, Eq)
-
-data Json = JsonString String
-          | JsonObject [JsonObjectItem]
-          | JsonList [Json]
-          //deriving (Show, PartialEq, Eq)
-
-data Foo = Foo [Foo] deriving (Show)
+testJson item :: (FromJson item, ToJson item, Eq item) => item -> ()
+testJson item = do
+    output_json <- toJson item
+    input_json <- Result.unwrap (parse (write output_json))
+    item2 <- fromJson input_json
+    assert (item2 == item)
 
 main = do
-    Foo []
-    ()
+    testJson (Record "a" ["b"])
+    testJson (Variant2 5 5)
+    testJson (Variant1 "a")

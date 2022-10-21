@@ -13,6 +13,21 @@ import Siko.Constants
 
 data FieldInfo = { lhs :: E.Expr, rhs :: E.Expr }
 
+effect LocationProvider where
+    getLocation :: () -> Location
+
+createStringLiteral :: SS.SharedString -> Location -> E.Expr
+createStringLiteral string location = E.Expr (E.StringLiteral string) location
+
+createIdentL :: String -> Ident
+createIdentL s = Ident (SS.create s) (getLocation ())
+
+createPath :: String -> Location -> E.Expr
+createPath name location = E.Expr (E.Path (createIdent name location)) location
+
+createPathL :: String -> E.Expr
+createPathL name = E.Expr (E.Path (createIdent name (getLocation ()))) (getLocation ())
+
 getLhsIdent location = Ident (SS.create "lhs") location
 getRhsIdent location = Ident (SS.create "rhs") location
 
