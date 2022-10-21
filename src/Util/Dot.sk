@@ -1,5 +1,8 @@
 module Siko.Dot where
 
+import Map
+import IO
+
 data NodeId = NodeId Int
 
 instance Show NodeId where
@@ -21,6 +24,27 @@ data Edge = { name :: Option String,
               from :: NodeId,
               to :: NodeId,
             }
+
+fromMap a :: (Show a, Ord a) => Map a [a] -> String -> String -> ()
+fromMap deps name filename = do
+    graph <- createGraph name
+    (node_map, graph) <- Map.fold (Map.empty, graph) deps (\(node_map, graph), (key, values) -> do
+        case Map.get node_map key of
+            Some _ -> (node_map, graph)
+            None -> do
+                (graph, node_id) <- addNode graph (show key)
+                node_map <- Map.put node_map key node_id
+                (node_map, graph))
+    graph <- Map.fold graph deps (\graph, (key, values) -> do
+        key_id <- case Map.get node_map key of
+            Some key_id -> key_id
+            None -> panic "No id for {}" % key
+        List.fold graph values (\graph, value -> do
+            value_id <- case Map.get node_map value of
+                Some value_id -> value_id
+                None -> panic "No id for {}" % value
+            addEdge graph None key_id value_id))
+    writeTextFile filename (generateDot graph)
 
 createGraph :: String -> Graph
 createGraph name = Graph name 0 [] []
