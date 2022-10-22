@@ -1,0 +1,128 @@
+module Siko.Syntax.Format where
+
+import Siko.Syntax.Expr as E
+import Siko.Syntax.Pattern as P
+import Siko.Util.SharedString as SS
+
+data FormatterContext = {}
+
+createContext :: FormatterContext
+createContext = FormatterContext
+
+class Format a where
+    format a :: FormatterContext -> a -> (FormatterContext, String)
+
+instance Format E.Expr where
+    format context (E.Expr expr location) = format context expr
+
+instance Format E.Case where
+    format context c = do
+        (context, pat) <- format context c.pattern
+        (context, body) <- format context c.body
+        (context, "{} -> {}" % (pat, body))
+
+instance Format E.SimpleExpr where
+    format context expr = case expr of
+        E.Lambda args body -> do
+            (context, args) <- List.mapS context args format
+            (context, body) <- format context body
+            (context, "\\{} -> {}" % (join args ", ", body))
+        E.Paren arg -> do
+            (context, arg) <- format context arg
+            (context, "({})" % arg)
+        E.FunctionCall fn args -> do
+            (context, args) <- List.mapS context args format
+            (context, fn) <- format context fn
+            (context, "{} {}" % (fn, join args " "))
+        E.BinaryOp op lhs rhs -> do
+            (context, lhs) <- format context lhs
+            (context, rhs) <- format context rhs
+            (context, "{} {} {}" % (lhs, op, rhs))
+        E.If cond true false -> do
+            (context, cond) <- format context cond
+            (context, true) <- format context true
+            (context, false) <- format context false
+            (context, "if {} then {} else {}" % (cond, true, false))
+        E.Tuple args -> do
+            (context, args) <- List.mapS context args format
+            (context, "({})" % (join args ", "))
+        E.List args -> do
+            (context, args) <- List.mapS context args format
+            (context, "[{}]" % (join args ", "))
+        E.Path name -> do
+            (context, "{}" % name)
+        E.IntegerLiteral lit -> (context, "{}" % lit)
+        E.FloatLiteral lit -> (context, "{}" % lit)
+        E.StringLiteral lit -> (context, "{}" % lit)
+        E.CharLiteral lit -> ((context, "{}" % lit))
+        E.Do items -> do
+            (context, items) <- List.mapS context items format
+            (context, "do\n    {}" % (join items "\n    " ))
+        E.Bind pat rhs -> do
+            (context, pat) <- format context pat
+            (context, rhs) <- format context rhs
+            (context, "{} <- {}" % (pat, rhs))
+        E.FieldAccess name receiver -> do
+            (context, receiver) <- format context receiver
+            (context, "{}.{}" % (receiver, name))
+        E.TupleFieldAccess id receiver -> do
+            (context, receiver) <- format context receiver
+            (context, "{}.{}" % (receiver, id))
+        E.Formatter fmt args -> do
+            (context, args) <- List.mapS context args format
+            (context, SS.get fmt + " % ({})" % (join args ", "))
+        E.CaseOf body cases -> do
+            (context, body) <- format context body
+            (context, cases) <- List.mapS context cases format
+            (context, "case {} of\n{}" % (body, join cases "\n    "))
+        E.Not arg -> do
+            (context, arg) <- format context arg
+            (context, "!{}" % arg)
+        E.Negative arg -> do
+            (context, arg) <- format context arg
+            (context, "-{}" % arg)
+        E.RecordInitialization name items -> do
+            (context, "<RecordInitialization>")
+        E.RecordUpdate name item -> do
+            (context, "<RecordUpdate>")
+        E.Return arg -> do
+            (context, arg) <- format context arg
+            (context, "return {}" % arg)
+        E.Try arg -> do
+            (context, arg) <- format context arg
+            (context, "try {}" % arg)
+        E.Continue arg -> do
+            (context, arg) <- format context arg
+            (context, "continue {}" % arg)
+        E.Break arg -> do
+            (context, arg) <- format context arg
+            (context, "break {}" % arg)
+        E.Loop pat init body -> do
+            (context, "<loop>")
+        E.ArgRef index -> (context, "argref({})" % index)
+        E.With handler body -> do
+            (context, "<with>")
+
+instance Format P.Pattern where
+    format context (P.Pattern pat location) = format context pat
+
+instance Format P.SimplePattern where
+    format context pat = case pat of
+      P.Binding id -> (context, "{}" % id)
+      P.Tuple pats -> do
+        (context, pats) <- List.mapS context pats format
+        (context, "({})" % (join pats ", "))
+      P.Constructor id pats -> do
+        (context, "<constructor>")
+      P.Guarded pat body -> do
+        (context, pat) <- format context pat
+        (context, body) <- format context body
+        (context, "{} if {}" % (pat, body))
+      P.Wildcard -> (context, "-")
+      P.IntegerLiteral lit -> (context, "{}" % lit)
+      P.StringLiteral lit -> (context, "\"{}\"" % lit)
+      P.CharLiteral lit -> (context, "{}" % lit)
+      P.CharRange start end kind -> (context, "<range>")
+      P.Typed pat type -> (context, "<typed>")
+      P.Record id pats -> (context, "<record>")
+      P.Or patterns -> (context, "<or>")
