@@ -6,36 +6,48 @@ import Item as I
 data DatabaseHook = { name :: String,
                       hook_fn :: Database -> I.Key -> I.Item -> Database }
 
-data SourceItemInfo = { source :: String,
-                        item_name :: String } deriving (PartialEq, Eq, PartialOrd, Ord, Show)
-
 data Database = { items :: Map I.Key I.Item,
-                  hooks :: Map I.ItemKind DatabaseHook }
+                  hooks :: Map I.ItemKind DatabaseHook,
+                  cmd_generators :: Map I.ItemKind (I.Key -> I.Command)
+                }
 
 createDatabase :: Database
-createDatabase = Database Map.empty Map.empty
+createDatabase = Database Map.empty Map.empty Map.empty
 
 addHook :: Database -> I.ItemKind -> DatabaseHook -> Database
 addHook db kind hook = do
     hooks <- Map.put db.hooks kind hook
     db { hooks = hooks }
 
-addItem :: Database -> I.Key -> I.Item -> Database
+addCommandGenerator :: Database -> I.ItemKind -> (I.Key -> I.Command) -> Database
+addCommandGenerator db kind gen = do
+    cmd_generators <- Map.put db.cmd_generators kind gen
+    db { cmd_generators = cmd_generators }
+
+get :: Database -> I.Key -> I.Item
+get db key = case Map.get db.items key of
+    Some item -> item
+    None -> panic "No item found in db with key {}" % key
+
+addItem :: Database -> I.Key -> I.Item -> (Database, Option I.Command)
 addItem db key item = do
+    kind <- I.getKind item
+    println "Adding item {}" % key
     (items, old) <- Map.insert db.items key item
     db <- db { items = items }
-    case old of
-        Some old -> if old != item
-            then do
-                // the object was updated, run its hook
-                case Map.get db.hooks (I.getKind item) of
-                    Some hook -> hook.hook_fn db key item
-                    None -> db
-            else db
-        None -> do
-                // the object is brand new, run its hook
-                case Map.get db.hooks (I.getKind item) of
-                    Some hook -> hook.hook_fn db key item
-                    None -> db
+    cmd <- case Map.get db.cmd_generators kind of
+        Some gen -> do
+            cmd <- gen key
+            case old of
+                Some old -> if old == item
+                    then None
+                    else Some cmd
+                None -> Some cmd
+        None -> None
+    (db, cmd)
 
-
+removeItem :: Database -> I.Key -> Database
+removeItem db key = do
+    println "Removing item {}" % key
+    (items, _) <- Map.remove db.items key
+    db { items = items }

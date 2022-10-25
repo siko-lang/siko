@@ -1,14 +1,30 @@
 module Item where
 
 import Siko.Syntax.Module as M
+import Siko.Resolver.Item as RI
+
+data Command = CollectLocalItems Key
+             | ProcessImports
+             deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
 data ItemKind = UnresolvedModuleKind
+              | LocalItemsKind
               deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
-data Item = UnresolvedModule M.Module deriving (Show, PartialEq, Eq)
+data Item = UnresolvedModule M.Module
+          | LocalItems [RI.Item]
+          deriving (Show, PartialEq, Eq)
 
-data Key = UnresolvedModuleKey String deriving (Show, PartialEq, Eq, PartialOrd, Ord)
+data Key = UnresolvedModuleKey String
+         | LocalItemsKey String
+         deriving (Show, PartialEq, Eq, PartialOrd, Ord)
+
+asUnresolvedModule :: Item -> M.Module
+asUnresolvedModule item = case item of
+    UnresolvedModule m -> m
+    _ -> panic "{} is not asUnresolvedModule" % item
 
 getKind :: Item -> ItemKind
 getKind item = case item of
     UnresolvedModule _ -> UnresolvedModuleKind
+    LocalItems _ -> LocalItemsKind

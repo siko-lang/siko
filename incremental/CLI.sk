@@ -21,13 +21,35 @@ commitChanges :: D.Driver -> [String] -> D.Driver
 commitChanges driver args = do
     D.commitChanges driver
 
+compile :: D.Driver -> [String] -> D.Driver
+compile driver args = do
+    names <- List.fold [] args (\names, arg -> names + processPath arg)
+    driver <- addFile driver names
+    commitChanges driver []
+
 createCLI :: CLI
 createCLI = do
     cmds <- Map.empty
-    cmds <- Map.put cmds ":addFile" (CommandHandler addFile)
-    cmds <- Map.put cmds ":removeFile" (CommandHandler removeFile)
-    cmds <- Map.put cmds ":commit" (CommandHandler commitChanges)
+    cmds <- Map.put cmds "addFile" (CommandHandler addFile)
+    cmds <- Map.put cmds "removeFile" (CommandHandler removeFile)
+    cmds <- Map.put cmds "commit" (CommandHandler commitChanges)
+    cmds <- Map.put cmds "compile" (CommandHandler compile)
     CLI D.createDriver cmds
+
+processPath :: String -> [String]
+processPath path = do
+    if isDir path
+    then do
+        entries <- listDir path
+        List.fold [] entries (\files, entry -> if isDir entry
+            then files + processPath entry
+            else do
+                subs <- String.split entry "/"
+                file <- last subs
+                if endsWith file ".sk"
+                then List.push files (entry)
+                else files)
+    else [path]
 
 runCLI :: CLI -> ()
 runCLI cli = do
@@ -36,7 +58,8 @@ runCLI cli = do
         print ">"
         input <- readLine
         case input of
-            ":exit" -> break ()
+            "exit" -> break ()
+            "quit" -> break ()
             input -> do
                 subs <- String.split input " "
                 if List.isEmpty subs

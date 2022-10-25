@@ -7,25 +7,24 @@ import Item as I
 import Siko.Syntax.SourceFile
 import Siko.Syntax.Module
 import Siko.Syntax.Location
+import Siko.Syntax.Ident
 import Database as DB
 import Resolver as R
+import Siko.Util.SharedString as SS
+import Siko.Resolver.Local
 
 data Driver = { sources :: Map String SourceFile,
                 resolver :: R.Resolver,
-                db :: DB.Database }
-
-moduleHook :: DB.Database -> I.Key -> I.Item -> DB.Database
-moduleHook db key item = do
-    println "Module hook called for {}" % key
-    //exports <- I.collectExports (I.asModule item.item)
-    db
+                db :: DB.Database,
+                pending_commands :: [I.Command] }
 
 createDriver :: Driver
 createDriver = do
     db <- DB.createDatabase
+    db <- DB.addCommandGenerator db I.UnresolvedModuleKind I.CollectLocalItems
+    db <- DB.addCommandGenerator db I.LocalItemsKind (\_ -> I.ProcessImports)
     resolver <- R.createResolver
-    //db <- addHook db I.ModuleKind (DatabaseHook "module_hook" moduleHook)
-    Driver Map.empty resolver db
+    Driver Map.empty resolver db []
 
 addModule :: String -> Driver -> Module -> Driver
 addModule file_name driver mod = do
@@ -46,8 +45,68 @@ removeSource driver file_name = do
     resolver <- R.purgeFile driver.resolver file_name
     driver { resolver = resolver }
 
+addCommand :: Driver -> I.Command -> Driver
+addCommand driver cmd = do
+    pending_commands <- List.push driver.pending_commands cmd
+    driver { pending_commands = pending_commands }
+
+executeCommands :: Driver -> Driver
+executeCommands driver = do
+    loop driver <- driver do
+        driver :: Driver <- driver // FIXME
+        if List.isEmpty driver.pending_commands
+        then break driver
+        else do
+            pending_commands <- driver.pending_commands
+            pending_commands <- pending_commands |> List.sort |> List.dedup
+            driver <- driver { pending_commands = [] }
+            List.fold driver pending_commands executeCommand
+
+executeCommand :: Driver -> I.Command -> Driver
+executeCommand driver cmd =
+    case cmd of
+        I.CollectLocalItems key -> do
+            mod <- DB.get driver.db key
+            mod <- I.asUnresolvedModule mod
+            name <- SS.get (getString mod.name)
+            local_items <- collectLocals mod
+            key <- I.LocalItemsKey name
+            item <- I.LocalItems local_items
+            addToDb driver key item
+        I.ProcessImports -> do
+            println "Processing imports!"
+            driver
+
+addToDb :: Driver -> I.Key -> I.Item -> Driver
+addToDb driver key item = do
+    (db, cmd) <- DB.addItem driver.db key item
+    driver <- driver { db = db }
+    case cmd of
+        Some cmd -> addCommand driver cmd
+        None -> driver
+
 commitChanges :: Driver -> Driver
 commitChanges driver = do
     (resolver, updates) <- R.processModuleUpdates driver.resolver
-    println "Updates {}" % updates
-    driver { resolver = resolver }
+    driver <- driver { resolver = resolver }
+    driver <- List.fold driver updates (\driver, update ->
+        case update of
+            R.UpdatedModule unresolved_module -> do
+                driver :: Driver <- driver // FIXME
+                case Map.get driver.sources unresolved_module.file of
+                    Some source_file -> do
+                        mod <- List.filter source_file.modules (\mod -> mod.name == unresolved_module.name)
+                        mod <- List.atIndex mod 0
+                        name <- SS.get (getString mod.name)
+                        key <- I.UnresolvedModuleKey name
+                        item <- I.UnresolvedModule mod
+                        addToDb driver key item
+                    None -> panic "Updated module not found in sources!"
+            R.RemovedModule name -> do
+                key <- I.UnresolvedModuleKey name
+                db <- DB.removeItem driver.db key
+                driver { db = db }
+        )
+    executeCommands driver
+
+
