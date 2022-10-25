@@ -8,11 +8,11 @@ import Siko.Util.SharedString as SS
 
 data Case = { pattern :: P.Pattern,
               body :: Expr,
-            } deriving (Show)
+            } deriving (Show, PartialEq, Eq)
 
 data RecordConstructionItem = { field_name :: Ident,
                                 body :: Expr,
-                              } deriving (Show)
+                              } deriving (Show, PartialEq, Eq)
 
 data Op = Equal
         | NotEqual
@@ -29,11 +29,11 @@ data Op = Equal
         | PipeForward
         deriving (Show, PartialEq)
 
-data Expr = Expr SimpleExpr Location
+data Expr = Expr SimpleExpr Location deriving (PartialEq, Eq)
 
 data EffectHandler = { name :: Ident,
                        value :: Expr
-                     } deriving (Show)
+                     } deriving (Show, PartialEq, Eq)
 
 instance Show Expr where
     show (Expr s _) = show s
@@ -67,4 +67,4 @@ data SimpleExpr = Lambda [P.Pattern] Expr
                 | Loop P.Pattern Expr Expr
                 | ArgRef Int
                 | With [EffectHandler] Expr
-                deriving (Show)
+                deriving (Show, PartialEq, Eq)
