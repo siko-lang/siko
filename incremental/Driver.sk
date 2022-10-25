@@ -1,0 +1,53 @@
+module Driver where
+
+import Map
+import Siko.Parser as P
+import IO
+import Item as I
+import Siko.Syntax.SourceFile
+import Siko.Syntax.Module
+import Siko.Syntax.Location
+import Database as DB
+import Resolver as R
+
+data Driver = { sources :: Map String SourceFile,
+                resolver :: R.Resolver,
+                db :: DB.Database }
+
+moduleHook :: DB.Database -> I.Key -> I.Item -> DB.Database
+moduleHook db key item = do
+    println "Module hook called for {}" % key
+    //exports <- I.collectExports (I.asModule item.item)
+    db
+
+createDriver :: Driver
+createDriver = do
+    db <- DB.createDatabase
+    resolver <- R.createResolver
+    //db <- addHook db I.ModuleKind (DatabaseHook "module_hook" moduleHook)
+    Driver Map.empty resolver db
+
+addModule :: String -> Driver -> Module -> Driver
+addModule file_name driver mod = do
+    resolver <- R.addModule driver.resolver file_name mod.name
+    driver { resolver = resolver }
+
+addSource :: Driver -> String -> Driver
+addSource driver file_name = do
+    driver <- removeSource driver file_name
+    content <- readTextFile file_name
+    (source_file, lexer_errors, parser_errors) <- P.parse (FileId 0) file_name content
+    driver <- List.fold driver source_file.modules (addModule file_name)
+    sources <- Map.put driver.sources file_name source_file
+    driver { sources = sources }
+
+removeSource :: Driver -> String -> Driver
+removeSource driver file_name = do
+    resolver <- R.purgeFile driver.resolver file_name
+    driver { resolver = resolver }
+
+commitChanges :: Driver -> Driver
+commitChanges driver = do
+    (resolver, updates) <- R.processModuleUpdates driver.resolver
+    println "Updates {}" % updates
+    driver { resolver = resolver }

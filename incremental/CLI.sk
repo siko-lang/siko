@@ -1,0 +1,53 @@
+module CLI where
+
+import IO
+import Map
+import Driver as D
+
+data CommandHandler = { handler_fn :: D.Driver -> [String] -> D.Driver }
+
+data CLI = { driver :: D.Driver,
+             commands :: Map String CommandHandler }
+
+addFile :: D.Driver -> [String] -> D.Driver
+addFile driver args = do
+    List.fold driver args (\driver, arg -> D.addSource driver arg)
+
+removeFile :: D.Driver -> [String] -> D.Driver
+removeFile driver args = do
+    List.fold driver args (\driver, arg -> D.removeSource driver arg)
+
+commitChanges :: D.Driver -> [String] -> D.Driver
+commitChanges driver args = do
+    D.commitChanges driver
+
+createCLI :: CLI
+createCLI = do
+    cmds <- Map.empty
+    cmds <- Map.put cmds ":addFile" (CommandHandler addFile)
+    cmds <- Map.put cmds ":removeFile" (CommandHandler removeFile)
+    cmds <- Map.put cmds ":commit" (CommandHandler commitChanges)
+    CLI D.createDriver cmds
+
+runCLI :: CLI -> ()
+runCLI cli = do
+    println "Siko cli"
+    loop cli <- cli do
+        print ">"
+        input <- readLine
+        case input of
+            ":exit" -> break ()
+            input -> do
+                subs <- String.split input " "
+                if List.isEmpty subs
+                then cli
+                else do
+                    (cmd, args) <- List.remove subs 0
+                    cli :: CLI <- cli // FIXME
+                    case Map.get cli.commands cmd of
+                        Some handler -> do
+                            driver <- handler.handler_fn cli.driver args
+                            cli { driver = driver }
+                        None -> do
+                            println "Unknown command: {}" % cmd
+                            cli

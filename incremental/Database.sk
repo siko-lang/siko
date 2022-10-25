@@ -1,0 +1,41 @@
+module Database where
+
+import Map
+import Item as I
+
+data DatabaseHook = { name :: String,
+                      hook_fn :: Database -> I.Key -> I.Item -> Database }
+
+data SourceItemInfo = { source :: String,
+                        item_name :: String } deriving (PartialEq, Eq, PartialOrd, Ord, Show)
+
+data Database = { items :: Map I.Key I.Item,
+                  hooks :: Map I.ItemKind DatabaseHook }
+
+createDatabase :: Database
+createDatabase = Database Map.empty Map.empty
+
+addHook :: Database -> I.ItemKind -> DatabaseHook -> Database
+addHook db kind hook = do
+    hooks <- Map.put db.hooks kind hook
+    db { hooks = hooks }
+
+addItem :: Database -> I.Key -> I.Item -> Database
+addItem db key item = do
+    (items, old) <- Map.insert db.items key item
+    db <- db { items = items }
+    case old of
+        Some old -> if old != item
+            then do
+                // the object was updated, run its hook
+                case Map.get db.hooks (I.getKind item) of
+                    Some hook -> hook.hook_fn db key item
+                    None -> db
+            else db
+        None -> do
+                // the object is brand new, run its hook
+                case Map.get db.hooks (I.getKind item) of
+                    Some hook -> hook.hook_fn db key item
+                    None -> db
+
+
