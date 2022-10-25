@@ -790,6 +790,18 @@ generateExit program type_store arg_types result_type = do
     field_access0 <- R.FieldAccess innerValueField arg0
     R.Block [R.FunctionCall "std::process::exit" [R.As field_access0 "i32"]]
 
+generateReadLine :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
+generateReadLine program type_store arg_types result_type = do
+    rust_type <- convertType result_type
+    stdin_decl <- R.VarDecl "stdin" (R.FunctionCall "std::io::stdin" []) None
+    lock_call <- R.MethodCall (R.VarRef "stdin") "lock" []
+    lines_call <- R.FunctionCall "std::io::BufRead::lines" [lock_call]
+    next_call <- R.MethodCall lines_call "next" []
+    unwrap_call <- R.MethodCall next_call "unwrap" []
+    unwrap_call <- R.MethodCall unwrap_call "unwrap" []
+    line_decl <- R.VarDecl "line" unwrap_call None
+    R.Block [stdin_decl, line_decl, R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef "line")]]
+
 generateMapEmpty :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateMapEmpty program type_store arg_types result_type = do
     rust_type <- convertType result_type
@@ -1112,6 +1124,7 @@ initializeExternalFunctions = do
     (externals, _) <- insert externals (ExternalId "IO" "isDir") (ExternFnBuilder generateIsDir)
     (externals, _) <- insert externals (ExternalId "IO" "listDir") (ExternFnBuilder generateListDir)
     (externals, _) <- insert externals (ExternalId "IO" "exit") (ExternFnBuilder generateExit)
+    (externals, _) <- insert externals (ExternalId "IO" "readLine") (ExternFnBuilder generateReadLine)
 
     (externals, _) <- insert externals (ExternalId "String" "addString") (ExternFnBuilder generateStringAdd)
     (externals, _) <- insert externals (ExternalId "String" "partialCmpString") (ExternFnBuilder generatePartialCmp)
