@@ -63,8 +63,8 @@ deriveRecordToJson record derive_location = do
         op_fn <- F.Function fn_name fn_args body [] [] []
         C.Instance class_name type_signature [] constraints [op_fn] []
 
-deriveAdtToJson :: D.AlgebraicDataType -> Location -> C.Instance
-deriveAdtToJson adt derive_location = do
+deriveAdtToJson :: D.AlgebraicDataType -> Location -> String -> C.Instance
+deriveAdtToJson adt derive_location mod_name = do
     class_name <- createIdent "Json.Serialize.ToJson" derive_location
     type_arguments <- List.map adt.type_arguments (\type_arg -> T.TypeSignature (T.TypeArg type_arg) derive_location)
     type_signature <- T.TypeSignature (T.Named adt.name type_arguments) derive_location
@@ -86,7 +86,7 @@ deriveAdtToJson adt derive_location = do
             item_bindings <- List.foldE (\bindings, index, item -> do
                 binding <- P.Pattern (P.Binding (createIdent ("i{}" % index) derive_location)) derive_location
                 List.push bindings binding) [] variant.items
-            case_pattern <- P.Pattern (P.Constructor variant.name item_bindings) derive_location
+            case_pattern <- P.Pattern (P.Constructor (createIdent ("{}.{}" % (mod_name, variant_name)) derive_location) item_bindings) derive_location
             item_to_json_exprs <- List.foldE (\to_json_exprs, index, item -> do
                 item_expr <- E.Expr (E.Path (createIdent ("i{}" % index) derive_location)) derive_location
                 to_json_expr <- callToJson item_expr derive_location

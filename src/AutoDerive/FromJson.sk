@@ -83,8 +83,8 @@ deriveRecordFromJson record derive_location = do
     op_fn <- F.Function fn_name fn_args body [] [] []
     C.Instance class_name type_signature [] constraints [op_fn] []
 
-deriveAdtFromJson :: D.AlgebraicDataType -> Location -> C.Instance
-deriveAdtFromJson adt derive_location = do
+deriveAdtFromJson :: D.AlgebraicDataType -> Location -> String -> C.Instance
+deriveAdtFromJson adt derive_location mod_name = do
     class_name <- createIdent "Json.Serialize.FromJson" derive_location
     type_arguments <- List.map adt.type_arguments (\type_arg -> T.TypeSignature (T.TypeArg type_arg) derive_location)
     type_signature <- T.TypeSignature (T.Named adt.name type_arguments) derive_location
@@ -122,7 +122,7 @@ deriveAdtFromJson adt derive_location = do
             items_var <- P.Pattern (P.Binding items_ident) derive_location
             items_expr <- callGetJsonListItems first_value derive_location
             items_decl <- E.Expr (E.Bind items_var items_expr) derive_location
-            ctor_call <- E.Expr (E.FunctionCall (E.Expr (E.Path variant.name) derive_location) ctor_args) derive_location
+            ctor_call <- E.Expr (E.FunctionCall (E.Expr (E.Path (createIdent ("{}.{}" % (mod_name, variant_name)) derive_location)) derive_location) ctor_args) derive_location
             do_items <- [items_decl, ctor_call]
             case_body <- E.Expr (E.Do do_items) derive_location
             E.Case case_pattern case_body)

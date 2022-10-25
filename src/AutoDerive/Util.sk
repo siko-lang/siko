@@ -99,8 +99,8 @@ deriveRecordGeneralCompare record comparator = do
     op_fn <- F.Function comparator.fn_name fn_args body sub_items [] []
     C.Instance comparator.class_name type_signature [] constraints [op_fn] []
 
-deriveAdtGeneralCompare :: D.AlgebraicDataType -> Comparator-> C.Instance
-deriveAdtGeneralCompare adt comparator = do
+deriveAdtGeneralCompare :: D.AlgebraicDataType -> Comparator-> String -> C.Instance
+deriveAdtGeneralCompare adt comparator mod_name = do
     location <- comparator.location
     type_arguments <- List.map adt.type_arguments (\type_arg -> T.TypeSignature (T.TypeArg type_arg) location)
     type_signature <- T.TypeSignature (T.Named adt.name type_arguments) location
@@ -114,10 +114,11 @@ deriveAdtGeneralCompare adt comparator = do
     rhs_expr <- E.Expr (E.Path (getRhsIdent location)) location
     case_body <- E.Expr (E.Tuple [lhs_expr, rhs_expr]) location
     cases <- List.map adt.variants (\variant -> do
+        Ident variant_name _ <- variant.name
         lhs_patterns <- getFieldPatternsForVariant variant "lhs" location
         rhs_patterns <- getFieldPatternsForVariant variant "rhs" location
-        lhs_ctor_pattern <- P.Pattern (P.Constructor variant.name lhs_patterns) location
-        rhs_ctor_pattern <- P.Pattern (P.Constructor variant.name rhs_patterns) location
+        lhs_ctor_pattern <- P.Pattern (P.Constructor (createIdent ("{}.{}" % (mod_name, variant_name)) location) lhs_patterns) location
+        rhs_ctor_pattern <- P.Pattern (P.Constructor (createIdent ("{}.{}" % (mod_name, variant_name)) location) rhs_patterns) location
         case_pattern <- P.Pattern (P.Tuple [lhs_ctor_pattern, rhs_ctor_pattern]) location
         field_info <- getFieldInfoForVariant variant location
         body <- generateCase field_info location
