@@ -21,19 +21,20 @@ commitChanges :: D.Driver -> [String] -> D.Driver
 commitChanges driver args = do
     D.commitChanges driver
 
-compile :: D.Driver -> [String] -> D.Driver
-compile driver args = do
+compile :: String -> D.Driver -> [String] -> D.Driver
+compile std_path driver args = do
+    args <- List.push args std_path
     names <- List.fold [] args (\names, arg -> names + processPath arg)
     driver <- addFile driver names
     commitChanges driver []
 
-createCLI :: CLI
-createCLI = do
+createCLI :: String -> CLI
+createCLI std_path = do
     cmds <- Map.empty
     cmds <- Map.put cmds "addFile" (CommandHandler addFile)
     cmds <- Map.put cmds "removeFile" (CommandHandler removeFile)
     cmds <- Map.put cmds "commit" (CommandHandler commitChanges)
-    cmds <- Map.put cmds "compile" (CommandHandler compile)
+    cmds <- Map.put cmds "compile" (CommandHandler (compile std_path))
     CLI D.createDriver cmds
 
 processPath :: String -> [String]

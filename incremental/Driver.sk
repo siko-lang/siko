@@ -12,6 +12,9 @@ import Database as DB
 import Resolver as R
 import Siko.Util.SharedString as SS
 import Siko.Resolver.Local
+import Siko.Resolver.Export
+import Siko.Resolver.Import
+import Siko.Resolver.Item as RI
 
 data Driver = { sources :: Map String SourceFile,
                 resolver :: R.Resolver,
@@ -22,7 +25,8 @@ createDriver :: Driver
 createDriver = do
     db <- DB.createDatabase
     db <- DB.addCommandGenerator db I.UnresolvedModuleKind I.CollectLocalItems
-    db <- DB.addCommandGenerator db I.LocalItemsKind (\_ -> I.ProcessImports)
+    db <- DB.addCommandGenerator db I.LocalItemsKind I.CollectExports
+    db <- DB.addCommandGenerator db I.ExportedItemsKind I.ProcessImports
     resolver <- R.createResolver
     Driver Map.empty resolver db []
 
@@ -62,8 +66,16 @@ executeCommands driver = do
             driver <- driver { pending_commands = [] }
             List.fold driver pending_commands executeCommand
 
+getExports :: Driver -> SS.SharedString -> Option [RI.Item]
+getExports driver name = do
+    name <- SS.get name
+    key <- I.ExportedItemsKey name
+    case DB.getOpt driver.db key of
+        Some exported_items -> Some (I.asExportedItems exported_items)
+        None -> None
+
 executeCommand :: Driver -> I.Command -> Driver
-executeCommand driver cmd =
+executeCommand driver cmd = do
     case cmd of
         I.CollectLocalItems key -> do
             mod <- DB.get driver.db key
@@ -73,9 +85,28 @@ executeCommand driver cmd =
             key <- I.LocalItemsKey name
             item <- I.LocalItems local_items
             addToDb driver key item
-        I.ProcessImports -> do
-            println "Processing imports!"
-            driver
+        I.CollectExports key -> do
+            local_items <- DB.get driver.db key
+            local_items <- I.asLocalItems local_items
+            name <- I.getModuleName key
+            mod <- DB.get driver.db (I.UnresolvedModuleKey name)
+            mod <- I.asUnresolvedModule mod
+            exported_items <- collectExports local_items mod
+            key <- I.ExportedItemsKey name
+            item <- I.ExportedItems exported_items
+            addToDb driver key item
+        I.ProcessImports key -> do
+            name <- I.getModuleName key
+            mod <- DB.get driver.db (I.UnresolvedModuleKey name)
+            mod <- I.asUnresolvedModule mod
+            local_items <- DB.get driver.db (I.LocalItemsKey name)
+            local_items <- I.asLocalItems local_items
+            (imported_items, errors) <- processImports mod (ExportProvider (getExports driver)) local_items
+            if List.isEmpty errors
+            then do
+                module_resolver <- createModuleResolver (SS.create name) imported_items
+                driver
+            else driver
 
 addToDb :: Driver -> I.Key -> I.Item -> Driver
 addToDb driver key item = do
@@ -108,5 +139,3 @@ commitChanges driver = do
                 driver { db = db }
         )
     executeCommands driver
-
-

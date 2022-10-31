@@ -1,0 +1,30 @@
+module Siko.Resolver.ResolvedItem where
+
+import Siko.HIR.FullyQualifiedName
+import Siko.Syntax.Ident
+import Siko.Resolver.Item
+import Siko.Resolver.Error
+import Map
+import Siko.Util.SharedString as SS
+
+data ResolvedItem = ResolvedItem FullyQualifiedName Item Explicitness deriving (Show)
+
+instance PartialEq ResolvedItem where
+    opEq (ResolvedItem qn1 _ _) (ResolvedItem qn2 _ _) = qn1 == qn2
+
+getCandidates :: [ResolvedItem] -> [SS.SharedString]
+getCandidates resolved_items = resolved_items |> List.iter |> Iterator.map (\(ResolvedItem name _ _) -> getResolvableName name) |> toList
+
+resolveItem :: Map SS.SharedString [ResolvedItem] -> (Ident -> ResolverError) -> Ident -> Result ResolvedItem ResolverError
+resolveItem items err name = do
+    n <- getString name
+    case get items n of
+        Some resolved_items ->
+            if getLength resolved_items > 1
+            then do
+                resolved_items <- List.filter resolved_items (\(ResolvedItem _ _ explicitness) -> explicitness == Explicit)
+                case getLength resolved_items of
+                    1 -> Ok (atIndex resolved_items 0)
+                    _ ->  Err (AmbiguousName name (getCandidates resolved_items))
+            else Ok (atIndex resolved_items 0)
+        None -> Err (err name)

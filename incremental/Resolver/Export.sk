@@ -1,0 +1,16 @@
+module Siko.Resolver.Export(collectExports) where
+
+import Siko.Syntax.Module as M
+import Siko.Resolver.Item
+import Siko.Syntax.Import as SI
+
+processExport :: SI.Export -> Item -> Bool
+processExport export item = case export of
+    SI.ExportAll -> True
+    SI.ExportSpecific filters -> matchFilters filters item
+
+processModule :: [Item] -> SI.Export -> [Item]
+processModule locals export = List.filter locals (processExport export)
+
+collectExports :: [Item] -> M.Module -> [Item]
+collectExports locals mod = processModule locals mod.export

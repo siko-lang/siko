@@ -4,27 +4,48 @@ import Siko.Syntax.Module as M
 import Siko.Resolver.Item as RI
 
 data Command = CollectLocalItems Key
-             | ProcessImports
+             | CollectExports Key
+             | ProcessImports Key
              deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
 data ItemKind = UnresolvedModuleKind
               | LocalItemsKind
+              | ExportedItemsKind
               deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
 data Item = UnresolvedModule M.Module
           | LocalItems [RI.Item]
+          | ExportedItems [RI.Item]
           deriving (Show, PartialEq, Eq)
 
 data Key = UnresolvedModuleKey String
          | LocalItemsKey String
+         | ExportedItemsKey String
          deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
 asUnresolvedModule :: Item -> M.Module
 asUnresolvedModule item = case item of
     UnresolvedModule m -> m
-    _ -> panic "{} is not asUnresolvedModule" % item
+    _ -> panic "{} is not UnresolvedModule" % item
+
+getModuleName :: Key -> String
+getModuleName key = case key of
+    UnresolvedModuleKey n -> n
+    LocalItemsKey n -> n
+    ExportedItemsKey n -> n
+
+asLocalItems :: Item -> [RI.Item]
+asLocalItems item = case item of
+    LocalItems items -> items
+    _ -> panic "{} is not LocalItems" % item
+
+asExportedItems :: Item -> [RI.Item]
+asExportedItems item = case item of
+    ExportedItems items -> items
+    _ -> panic "{} is not LocalItems" % item
 
 getKind :: Item -> ItemKind
 getKind item = case item of
     UnresolvedModule _ -> UnresolvedModuleKind
     LocalItems _ -> LocalItemsKind
+    ExportedItems _ -> ExportedItemsKind
