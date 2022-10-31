@@ -1,0 +1,108 @@
+module Siko.Query.Item where
+
+import Siko.Syntax.Module as M
+import Siko.Syntax.Data as SD
+import Siko.HIR.Data as HD
+import Siko.Resolver.Item as RI
+import Siko.HIR.FullyQualifiedName as FQ
+import Siko.Resolver.ModuleResolver as RMR
+
+data Command = CollectLocalItems Key
+             | CollectExports Key
+             | ProcessImports Key
+             | ResolveRecord Key
+             | ResolveAdt Key
+             deriving (Show, PartialEq, Eq, PartialOrd, Ord)
+
+data ItemKind = UnresolvedModuleKind
+              | LocalItemsKind
+              | ExportedItemsKind
+              | ModuleResolverKind
+              | UnresolvedRecordKind
+              | UnresolvedAdtKind
+              | ResolvedRecordKind
+              | ResolvedAdtKind
+              deriving (Show, PartialEq, Eq, PartialOrd, Ord)
+
+data Item = UnresolvedModule M.Module
+          | LocalItems [RI.Item]
+          | ExportedItems [RI.Item]
+          | ModuleResolver RMR.ModuleResolver
+          | UnresolvedRecord SD.Record
+          | UnresolvedAdt SD.AlgebraicDataType
+          | ResolvedRecord HD.Record
+          | ResolvedAdt HD.AlgebraicDataType
+          deriving (Show, PartialEq, Eq)
+
+data Key = UnresolvedModuleKey String
+         | LocalItemsKey String
+         | ExportedItemsKey String
+         | ModuleResolverKey String
+         | UnresolvedRecordKey FQ.FullyQualifiedName
+         | UnresolvedAdtKey FQ.FullyQualifiedName
+         | ResolvedRecordKey FQ.FullyQualifiedName
+         | ResolvedAdtKey FQ.FullyQualifiedName
+         deriving (Show, PartialEq, Eq, PartialOrd, Ord)
+
+asUnresolvedModule :: Item -> M.Module
+asUnresolvedModule item = case item of
+    UnresolvedModule m -> m
+    _ -> panic "{} is not UnresolvedModule" % item
+
+asLocalItems :: Item -> [RI.Item]
+asLocalItems item = case item of
+    LocalItems items -> items
+    _ -> panic "{} is not LocalItems" % item
+
+asExportedItems :: Item -> [RI.Item]
+asExportedItems item = case item of
+    ExportedItems items -> items
+    _ -> panic "{} is not ExportedItems" % item
+
+asModuleResolver :: Item -> RMR.ModuleResolver
+asModuleResolver item = case item of
+    ModuleResolver module_resolver -> module_resolver
+    _ -> panic "{} is not ModuleResolver" % item
+
+asUnresolvedRecord :: Item -> SD.Record
+asUnresolvedRecord item = case item of
+    UnresolvedRecord record -> record
+    _ -> panic "{} is not UnresolvedRecord" % item
+
+asUnresolvedAdt :: Item -> SD.AlgebraicDataType
+asUnresolvedAdt item = case item of
+    UnresolvedAdt adt -> adt
+    _ -> panic "{} is not UnresolvedAdt" % item
+
+getModuleName :: Key -> String
+getModuleName key = case key of
+    UnresolvedModuleKey n -> n
+    LocalItemsKey n -> n
+    ExportedItemsKey n -> n
+    ModuleResolverKey n -> n
+    UnresolvedRecordKey _ -> panic "getModuleName called for {}" % key
+    UnresolvedAdtKey _ -> panic "getModuleName called for {}" % key
+    ResolvedRecordKey _ -> panic "getModuleName called for {}" % key
+    ResolvedAdtKey _ -> panic "getModuleName called for {}" % key
+
+getFullyQualifiedName :: Key -> FQ.FullyQualifiedName
+getFullyQualifiedName key = case key of
+    UnresolvedModuleKey n -> panic "getFullyQualifiedName called for {}" % key
+    LocalItemsKey n -> panic "getFullyQualifiedName called for {}" % key
+    ExportedItemsKey n -> panic "getFullyQualifiedName called for {}" % key
+    ModuleResolverKey n -> panic "getFullyQualifiedName called for {}" % key
+    UnresolvedRecordKey qn -> qn
+    UnresolvedAdtKey qn -> qn
+    ResolvedRecordKey qn -> qn
+    ResolvedAdtKey qn -> qn
+
+getKind :: Item -> ItemKind
+getKind item = case item of
+    UnresolvedModule _ -> UnresolvedModuleKind
+    LocalItems _ -> LocalItemsKind
+    ExportedItems _ -> ExportedItemsKind
+    ModuleResolver _ -> ModuleResolverKind
+    UnresolvedRecord _ -> UnresolvedRecordKind
+    UnresolvedAdt _ -> UnresolvedAdtKind
+    ResolvedRecord _ -> ResolvedRecordKind
+    ResolvedAdt _ -> ResolvedAdtKind
