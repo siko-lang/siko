@@ -6,12 +6,14 @@ import Siko.HIR.Data as HD
 import Siko.Resolver.Item as RI
 import Siko.HIR.FullyQualifiedName as FQ
 import Siko.Resolver.ModuleResolver as RMR
+import Siko.Resolver.Function as RF
 
 data Command = CollectLocalItems Key
              | CollectExports Key
              | ProcessImports Key
              | ResolveRecord Key
              | ResolveAdt Key
+             | ResolveFunction Key
              deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
 data ItemKind = UnresolvedModuleKind
@@ -22,6 +24,7 @@ data ItemKind = UnresolvedModuleKind
               | UnresolvedAdtKind
               | ResolvedRecordKind
               | ResolvedAdtKind
+              | UnresolvedFunctionKind
               deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
 data Item = UnresolvedModule M.Module
@@ -32,6 +35,7 @@ data Item = UnresolvedModule M.Module
           | UnresolvedAdt SD.AlgebraicDataType
           | ResolvedRecord HD.Record
           | ResolvedAdt HD.AlgebraicDataType
+          | UnresolvedFunction RF.UnresolvedFunction
           deriving (Show, PartialEq, Eq)
 
 data Key = UnresolvedModuleKey String
@@ -42,6 +46,7 @@ data Key = UnresolvedModuleKey String
          | UnresolvedAdtKey FQ.FullyQualifiedName
          | ResolvedRecordKey FQ.FullyQualifiedName
          | ResolvedAdtKey FQ.FullyQualifiedName
+         | UnresolvedFunctionKey FQ.FullyQualifiedName
          deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
 asUnresolvedModule :: Item -> M.Module
@@ -74,6 +79,11 @@ asUnresolvedAdt item = case item of
     UnresolvedAdt adt -> adt
     _ -> panic "{} is not UnresolvedAdt" % item
 
+asUnresolvedFunction :: Item -> RF.UnresolvedFunction
+asUnresolvedFunction item = case item of
+    UnresolvedFunction function -> function
+    _ -> panic "{} is not UnresolvedFunction" % item
+
 getModuleName :: Key -> String
 getModuleName key = case key of
     UnresolvedModuleKey n -> n
@@ -84,6 +94,7 @@ getModuleName key = case key of
     UnresolvedAdtKey _ -> panic "getModuleName called for {}" % key
     ResolvedRecordKey _ -> panic "getModuleName called for {}" % key
     ResolvedAdtKey _ -> panic "getModuleName called for {}" % key
+    UnresolvedFunctionKey _ -> panic "getModuleName called for {}" % key
 
 getFullyQualifiedName :: Key -> FQ.FullyQualifiedName
 getFullyQualifiedName key = case key of
@@ -95,6 +106,7 @@ getFullyQualifiedName key = case key of
     UnresolvedAdtKey qn -> qn
     ResolvedRecordKey qn -> qn
     ResolvedAdtKey qn -> qn
+    UnresolvedFunctionKey qn -> qn
 
 getKind :: Item -> ItemKind
 getKind item = case item of
@@ -106,3 +118,4 @@ getKind item = case item of
     UnresolvedAdt _ -> UnresolvedAdtKind
     ResolvedRecord _ -> ResolvedRecordKind
     ResolvedAdt _ -> ResolvedAdtKind
+    UnresolvedFunction _ -> UnresolvedFunctionKind

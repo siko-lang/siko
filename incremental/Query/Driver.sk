@@ -16,6 +16,7 @@ import Siko.Resolver.Export
 import Siko.Resolver.Import
 import Siko.Resolver.Item as RI
 import Siko.Resolver.Data as RD
+import Siko.Resolver.Function as RF
 import Siko.HIR.FullyQualifiedName
 
 data Driver = { sources :: Map String SourceFile,
@@ -31,6 +32,7 @@ createDriver = do
     db <- DB.addCommandGenerator db I.ExportedItemsKind I.ProcessImports
     db <- DB.addCommandGenerator db I.UnresolvedRecordKind I.ResolveRecord
     db <- DB.addCommandGenerator db I.UnresolvedAdtKind I.ResolveAdt
+    db <- DB.addCommandGenerator db I.UnresolvedFunctionKind I.ResolveFunction
     resolver <- R.createResolver
     Driver Map.empty resolver db []
 
@@ -124,7 +126,12 @@ executeCommand driver cmd = do
                         item <- I.UnresolvedAdt adt
                         addToDb driver key item
                     _ -> driver)
-                driver
+                unresolved_functions <- RF.collectUnresolvedFunctions mod.items
+                List.fold driver unresolved_functions (\driver, unresolved_function -> do
+                    qn <- FullPath module_resolver.module_name (getString unresolved_function.name)
+                    key <- I.UnresolvedFunctionKey qn
+                    item <- I.UnresolvedFunction unresolved_function
+                    addToDb driver key item)
             else do
                 // TODO: error
                 driver
@@ -154,6 +161,13 @@ executeCommand driver cmd = do
             key <- I.ResolvedAdtKey qn
             item <- I.ResolvedAdt hir_adt
             addToDb driver key item
+        I.ResolveFunction qn -> do
+            qn <- I.getFullyQualifiedName qn
+            module_name <- getModuleName qn
+            module_resolver <- DB.get driver.db (I.ModuleResolverKey (SS.get module_name))
+            module_resolver <- I.asModuleResolver module_resolver
+            println "Resolving function {}" % qn
+            driver
 
 addToDb :: Driver -> I.Key -> I.Item -> Driver
 addToDb driver key item = do

@@ -1,0 +1,43 @@
+module Siko.Resolver.Function where
+
+import Siko.Syntax.Module as SM
+import Siko.Syntax.Function as SF
+import Siko.Syntax.Ident
+import Map
+
+data UnresolvedFunction = { name :: Ident,
+                            functions :: [SF.Function],
+                            signatures :: [SF.FunctionSignature],
+                          } deriving (Show, PartialEq, Eq)
+
+createUnresolvedFunction :: Ident -> UnresolvedFunction
+createUnresolvedFunction name = UnresolvedFunction name [] []
+
+addFunction :: SF.Function -> UnresolvedFunction -> UnresolvedFunction
+addFunction function f = do
+    functions <- List.push f.functions function
+    f { functions = functions }
+
+addFunctionSignature :: SF.FunctionSignature -> UnresolvedFunction -> UnresolvedFunction
+addFunctionSignature signature f = do
+    signatures <- List.push f.signatures signature
+    f { signatures = signatures }
+
+collectUnresolvedFunctions :: [SM.Item] -> [UnresolvedFunction]
+collectUnresolvedFunctions items = do
+    unresolved_functions <- List.fold Map.empty items (\unresolved_functions, item ->
+        case item of
+            SM.Function f -> do
+                unresolved_function <- case get unresolved_functions f.name of
+                    Some unresolved_function -> unresolved_function
+                    None -> createUnresolvedFunction f.name
+                unresolved_function <- addFunction f unresolved_function
+                Map.put unresolved_functions f.name unresolved_function
+            SM.FunctionSignature s -> do
+                unresolved_function <- case get unresolved_functions s.name of
+                    Some unresolved_function -> unresolved_function
+                    None -> createUnresolvedFunction s.name
+                unresolved_function <- addFunctionSignature s unresolved_function
+                Map.put unresolved_functions s.name unresolved_function
+            _ -> unresolved_functions)
+    Map.fold [] unresolved_functions (\unresolved_functions, (_, unresolved_function) -> List.push unresolved_functions unresolved_function)
