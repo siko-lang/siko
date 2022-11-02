@@ -3,17 +3,39 @@ module Siko.Resolver where
 import Siko.Syntax.Ident
 import Siko.Resolver.Error
 import Map
+import Siko.HIR.FullyQualifiedName
+import Siko.HIR.Data as HD
+import Siko.HIR.Expr
+import Siko.HIR.Pattern
 import Siko.HIR.Backend.Unification
 import Siko.HIR.Backend.Unification.TypeVarGenerator as TVG
+import Siko.HIR.Backend.ExprIdGenerator
+import Siko.HIR.Backend.PatternIdGenerator
 import Siko.Util.SharedString as SS
 
 class (TypeVarGenerator a) => ResolverState a where
     addError a :: a -> ResolverError -> a
+    getNextExprId a :: a -> (a, ExprId)
+    getNextPatternId a :: a -> (a, PatternId)
+    getRecord a :: a -> FullyQualifiedName -> HD.Record
+    getAdt a :: a -> FullyQualifiedName -> HD.AlgebraicDataType
+    getRecordOrVariantInfo a :: a -> FullyQualifiedName -> Either HD.Record HD.VariantInfo
 
-data ResolverStateProvider = { var_gen :: TVG.TypeVarGenerator, errors :: [ResolverError] }
+data ResolverStateProvider = { var_gen :: TVG.TypeVarGenerator,
+                               expr_id_gen :: ExprIdGenerator,
+                               pattern_id_gen :: PatternIdGenerator,
+                               errors :: [ResolverError],
+                               getRecord :: (FullyQualifiedName -> HD.Record),
+                               getAdt :: (FullyQualifiedName -> HD.AlgebraicDataType),
+                               getRecordOrVariantInfo :: (FullyQualifiedName -> Either HD.Record HD.VariantInfo) }
 
-createStateProvider :: ResolverStateProvider
-createStateProvider = ResolverStateProvider TVG.createTypeVarGenerator []
+createStateProvider :: (FullyQualifiedName -> HD.Record) ->
+                       (FullyQualifiedName -> HD.AlgebraicDataType) ->
+                       (FullyQualifiedName -> Either HD.Record HD.VariantInfo) ->
+                       ResolverStateProvider
+createStateProvider record_provider adt_provider record_or_variantinfo_provider =
+    ResolverStateProvider TVG.createTypeVarGenerator createExprIdGenerator
+        createPatternIdGenerator [] record_provider adt_provider record_or_variantinfo_provider
 
 instance TypeVarGenerator ResolverStateProvider where
     getNewTypeVar state = do
@@ -28,6 +50,20 @@ instance ResolverState ResolverStateProvider where
     addError state err = do
         errors <- List.push state.errors err
         state { errors = errors }
+
+    getNextExprId state = do
+        (expr_id_gen, expr_id) <- getNewExprId state.expr_id_gen
+        (state { expr_id_gen = expr_id_gen }, expr_id)
+
+    getNextPatternId state = do
+        (pattern_id_gen, pattern_id) <- getNewPatternId state.pattern_id_gen
+        (state { pattern_id_gen = pattern_id_gen }, pattern_id)
+
+    getRecord state qn = state.getRecord qn
+
+    getAdt state qn = state.getAdt qn
+
+    getRecordOrVariantInfo state qn = state.getRecordOrVariantInfo qn
 
 data UnresolvedModule = { file :: String,
                           name :: Ident,

@@ -57,7 +57,7 @@ createFunctionFromArgs args result_ty = do
             Function from to
         None -> result_ty
 
-processAdt a :: (ResolverState a) => a -> ModuleResolver -> SD.AlgebraicDataType -> (a, HD.AlgebraicDataType, [HD.VariantInfo])
+processAdt a :: (ResolverState a) => a -> ModuleResolver -> SD.AlgebraicDataType -> (a, HD.AlgebraicDataType, [(HD.VariantInfo, FullyQualifiedName)])
 processAdt state module_resolver (SD.AlgebraicDataType name type_arguments variants derived_classes) = do
     (type_resolver, state) <- initTypeResolver module_resolver state type_arguments
     state <- checkTypeArguments state type_arguments
@@ -67,7 +67,7 @@ processAdt state module_resolver (SD.AlgebraicDataType name type_arguments varia
                 (state, type_resolver, variants)) (state, type_resolver, [])
     type_args <- processTypeArgs type_resolver type_arguments
     (state, derived_classes) <- processDerivedClasses state module_resolver derived_classes
-    (Ident n location) <- name
+    Ident n location <- name
     qn <- FullPath module_resolver.module_name n
     type <- Named qn type_args
     variant_ctors <- variants |> List.iter |> Iterator.fold (\variant_ctors, (HD.Variant name location args) -> do
@@ -77,7 +77,7 @@ processAdt state module_resolver (SD.AlgebraicDataType name type_arguments varia
     (_, variant_infos) <- variants |> List.iter |> Iterator.fold (\(index, variant_infos), (HD.Variant name location _) -> do
                                                 variant_qn <- FullPathWithVariant module_resolver.module_name n name
                                                 info <- HD.VariantInfo qn index location
-                                                variant_infos <- List.push variant_infos info
+                                                variant_infos <- List.push variant_infos (info, variant_qn)
                                                 (index + 1, variant_infos)) (0, [])
     adt <- HD.AlgebraicDataType qn location type_args variants variant_ctors derived_classes type
     (state, adt, variant_infos)
@@ -94,7 +94,7 @@ processRecord state module_resolver (SD.Record name type_arguments fields extern
                             else state) state
     type_args <- processTypeArgs type_resolver type_arguments
     (state, derived_classes) <- processDerivedClasses state module_resolver derived_classes
-    (Ident n location) <- name
+    Ident n location <- name
     qn <- FullPath module_resolver.module_name n
     type <- Named qn type_args
     ctor_arg_types <- fields |> List.iter |> Iterator.map (\(HD.RecordField _ type) -> type) |> toList

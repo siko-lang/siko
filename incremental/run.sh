@@ -2,6 +2,8 @@
 
 set -e
 
-../stage1 ../std . -o incremental
+SIKOC=../stage1
+
+ ${SIKOC} ../std src -o incremental -v
 rustc incremental.rs -o incremental
 ./incremental ../std

@@ -13,20 +13,20 @@ data ConstraintPath = Argument Int
                     | Variant Int ConstraintPath
                     | Implicit Int ConstraintPath
                     | Result
-                    deriving (Show)
+                    deriving (Show, PartialEq, Eq)
 
 data Converter = { from :: ConstraintPath,
                    to :: ConstraintPath,
-                 } deriving (Show)
+                 } deriving (Show, PartialEq, Eq)
 
 data Equal = { left :: ConstraintPath,
                right :: ConstraintPath,
-             } deriving (Show)
+             } deriving (Show, PartialEq, Eq)
 
 data ExternConstraint = ExternConverter Converter
                       | ExternEquality Equal
                       | Independent ConstraintPath
-                      deriving (Show)
+                      deriving (Show, PartialEq, Eq)
 
 data LambdaId = LambdaId Int deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
@@ -35,7 +35,7 @@ data FunctionKind = Normal
                   | EffectMember FullyQualifiedName
                   | InstanceMember InstanceId
                   | Lambda LambdaId
-                  deriving (Show)
+                  deriving (Show, PartialEq, Eq)
 
 isNormal kind = case kind of
     Normal -> True
@@ -58,7 +58,7 @@ data Function a = { location :: Location,
                     effects :: Option [Type],
                     attributes :: [Attribute],
                     extern_constraints :: [ExternConstraint],
-                  }
+                  } deriving (PartialEq, Eq)
 
 isInlined a :: Function a -> Bool
 isInlined function = List.contains function.attributes Inline

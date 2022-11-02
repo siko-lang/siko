@@ -1,0 +1,625 @@
+module Siko.Resolver.Expr where
+
+import Siko.Constants
+import Siko.Syntax.Ident
+import Siko.Syntax.Expr as SE
+import Siko.Syntax.Pattern as SP
+import Siko.HIR.Expr as HE
+import Siko.HIR.Pattern as HP
+import Siko.HIR.FullyQualifiedName as FQ
+import Siko.HIR.Data as HD
+import Siko.HIR.Function as HF
+import Siko.Resolver.Pattern
+import Siko.Resolver
+import Siko.Resolver.Item as RI
+import Siko.Resolver.Error
+import Siko.Resolver.Function as F
+import Siko.Resolver.Type
+import Siko.Syntax.Location
+import Siko.Resolver.Environment
+import Siko.Resolver.ModuleResolver
+import Siko.Resolver.ResolvedItem
+import Map
+import Std.Util
+import Siko.Util.SharedString as SS
+
+data LambdaHelper = { captured_values :: [HP.BindRef],
+                    } deriving (Show)
+
+data LoopHelper = { continues :: [HE.ExprRef],
+                    breaks :: [HE.ExprRef],
+                  } deriving (Show)
+
+data Context a = { function_name :: FQ.FullyQualifiedName,
+                   type_resolver :: TypeResolverState,
+                   state :: a,
+                   module_resolver :: ModuleResolver,
+                   next_lambda_id :: Int,
+                   lambda_helper :: Option LambdaHelper,
+                   lambdas :: [F.LambdaInfo],
+                   loop_helper :: Option LoopHelper,
+                   function_scope_resolver :: F.FunctionScopeResolver
+                 } deriving (Move)
+
+createContext a :: FQ.FullyQualifiedName ->
+                   TypeResolverState ->
+                   a ->
+                   ModuleResolver ->
+                   F.FunctionScopeResolver ->
+                   Context a
+createContext function_name type_resolver state module_resolver function_scope_resolver = Context {
+    function_name = function_name,
+    type_resolver = type_resolver,
+    state = state,
+    module_resolver = module_resolver,
+    next_lambda_id = 1,
+    lambda_helper = None,
+    lambdas = [],
+    loop_helper = None,
+    function_scope_resolver = function_scope_resolver }
+
+getExprId a :: (ResolverState a) => Context a -> (Context a, HE.ExprId)
+getExprId context = do
+    (state, expr_id) <- getNextExprId context.state
+    context <- context { state = state }
+    (context, expr_id)
+
+getPatternId a :: (ResolverState a) => Context a -> (Context a, HP.PatternId)
+getPatternId context = do
+    (state, pattern_id) <- getNextPatternId context.state
+    context <- context { state = state }
+    (context, pattern_id)
+
+createLambdaName a :: Context a -> (Context a, HF.LambdaId, FQ.FullyQualifiedName)
+createLambdaName context = do
+    id <- context.next_lambda_id
+    context <- context { next_lambda_id = id + 1 }
+    id <- HF.LambdaId id
+    name <- context.function_name
+    (context, id, FQ.FullPathWithLambda name id)
+
+captureValue a :: Context a -> HP.BindRef -> (Context a, Int)
+captureValue context bind_ref = do
+    lambda_helper <- Option.unwrap context.lambda_helper
+    case containsAtIndex lambda_helper.captured_values bind_ref of
+        Some index -> (context, index)
+        None -> do
+            index <- getLength lambda_helper.captured_values
+            captured_values <- push lambda_helper.captured_values bind_ref
+            lambda_helper <- lambda_helper { captured_values = captured_values }
+            context <- context { lambda_helper = Some lambda_helper }
+            (context, index)
+
+addContinue a :: (ResolverState a) => Context a -> HE.ExprId -> Location -> Context a
+addContinue context continue_expr location = do
+    case context.loop_helper of
+        Some loop_helper -> do
+            continues <- push loop_helper.continues (HE.ExprRef continue_expr location)
+            loop_helper <- Some (loop_helper { continues = continues })
+            context { loop_helper = loop_helper }
+        None -> do
+            addErrorToContext context (ContinueWithoutLoop location)
+
+addBreak a :: (ResolverState a) => Context a -> HE.ExprId -> Location -> Context a
+addBreak context break_expr location = do
+    case context.loop_helper of
+        Some loop_helper -> do
+            breaks <- push loop_helper.breaks (HE.ExprRef break_expr location)
+            loop_helper <- Some (loop_helper { breaks = breaks })
+            context { loop_helper = loop_helper }
+        None -> do
+            addErrorToContext context (BreakWithoutLoop location)
+
+addErrorToContext a :: (ResolverState a) => Context a -> ResolverError -> Context a
+addErrorToContext context err = do
+    state <- addError context.state err
+    context <- context { state = state }
+    context
+
+processFunctionArgs :: [SP.Pattern] -> (SP.Pattern, Location)
+processFunctionArgs patterns = do
+    location <- patterns |> List.iter |> Iterator.fold (\merged, (SP.Pattern _ location) -> case merged of
+        Some l -> Some (mergeLocations l location)
+        None -> Some location) None
+    location <- case location of
+        Some location -> location
+        None -> panic "No arg!"
+    pattern_tuple <- SP.Pattern (SP.Tuple patterns) location
+    (pattern_tuple, location)
+
+createCaseBody :: [SP.Pattern] -> Location -> SE.Expr
+createCaseBody patterns location = do
+    (arg_refs, _) <- patterns |> List.iter |> Iterator.fold (\(arg_refs, index), _ -> do
+                    arg_ref <- SE.Expr (SE.ArgRef index) location
+                    arg_refs <- push arg_refs arg_ref
+                    (arg_refs, index + 1)) ([], 0)
+    case_body <- SE.Expr (SE.Tuple arg_refs) location
+    case_body
+
+desugarFunctionArgs :: [SP.Pattern] -> SE.Expr -> SE.Expr
+desugarFunctionArgs patterns orig_body = do
+        (pattern_tuple, location) <- processFunctionArgs patterns
+        if isSimple patterns
+        then do
+            arg_refs <- List.mapE patterns (\index, pattern -> do
+                arg <- SE.Expr (SE.ArgRef index) location
+                SE.Expr (SE.Bind pattern arg) location)
+            items <- push arg_refs orig_body
+            SE.Expr (SE.Do items) location
+        else do
+            case_body <- createCaseBody patterns location
+            c <- SE.Case pattern_tuple orig_body
+            SE.Expr (SE.CaseOf case_body [c]) location
+    where
+        isSimple :: [SP.Pattern] -> Bool
+        isSimple patterns = do
+            List.fold True patterns (\all_simple, p -> do
+                SP.Pattern s _ <- p
+                case s of
+                    SP.Binding _ -> all_simple
+                    _ -> False)
+
+desugarFunctionArgsMulti :: [([SP.Pattern], SE.Expr)] -> SE.Expr
+desugarFunctionArgsMulti arg_cases = do
+    first_patterns <- (atIndex arg_cases 0).0
+    cases <- arg_cases |> List.iter |> Iterator.map (\(patterns, body) -> do
+            (pattern_tuple, location) <- processFunctionArgs patterns
+            c <- SE.Case pattern_tuple body
+            c) |> toList
+    SE.Case (SP.Pattern _ location) _ <- atIndex cases 0
+    case_body <- createCaseBody first_patterns location
+    SE.Expr (SE.CaseOf case_body cases) location
+
+validatePatternEnv a :: (ResolverState a) => PatternEnvironment -> Context a -> Context a
+validatePatternEnv pattern_env context = do
+    context <- pattern_env.bindings |> Map.iter
+                                   |> Iterator.filter (\(name, positions) -> getLength positions != 1)
+                                   |> Iterator.fold (\context, (name, positions) -> do
+                                      err <- BindNotUnique positions
+                                      addErrorToContext context err) context
+    context
+
+processCase a :: (ResolverState a) => Context a -> Environment -> SE.Case -> (Context a, [HE.Case ()], Option HP.BindGroup)
+processCase context env (SE.Case pattern body) = do
+    block_env <- createEnvironment env.lambda_id (Some env)
+    SP.Pattern p location <- pattern
+    (context, cases, bind_group) <- case p of
+        SP.Or patterns -> do
+            (context, cases, bind_group) <- patterns |> List.iter |> Iterator.fold (\(context, cases, bind_group), pattern -> do
+                    pattern_env <- createPatternEnvironment False
+                    (context, pattern_env, block_env, p) <- processPattern context pattern_env block_env pattern
+                    context <- validatePatternEnv pattern_env context
+                    bind_group <- envToBindGroup pattern_env block_env bind_group
+                    (context, _, b) <- processExpr context block_env body
+                    cases <- push cases (HE.Case p b)
+                    (context, cases, bind_group)
+                ) (context, [], HP.BindGroup empty)
+            context <- bind_group.bindings |> Map.iter |> Iterator.fold (\context, (name, instances) -> do
+                    if getLength instances != getLength patterns
+                        then addErrorToContext context (OrPatternMismatch name location)
+                        else context
+                ) context
+            (context, cases, Some bind_group)
+        _ -> do
+            pattern_env <- createPatternEnvironment False
+            (context, pattern_env, block_env, p) <- processPattern context pattern_env block_env pattern
+            context <- validatePatternEnv pattern_env context
+            (context, _, b) <- processExpr context block_env body
+            (context, [HE.Case p b], None)
+    (context, cases, bind_group)
+
+data PathResolveResult = FunctionCall ([HE.Expr ()] -> HE.SimpleExpr ())
+
+resolvePath a :: (ResolverState a) => Context a -> Ident -> Result (Context a, PathResolveResult) (Context a)
+resolvePath context path = do
+    Ident name _ <- path
+    case F.resolveLocalFunction context.function_scope_resolver name of
+        Some qn -> Ok (context, FunctionCall (HE.StaticFunctionCall qn))
+        None -> case resolveItem context.module_resolver.term_names UnknownFunction path of
+            Ok (ResolvedItem qn item _) -> do
+                case item of
+                    RI.Record _ _ -> Ok (context, FunctionCall (HE.RecordConstructorCall qn))
+                    RI.Variant _ _ -> Ok (context, FunctionCall (HE.VariantConstructorCall qn))
+                    RI.Function _ -> Ok (context, FunctionCall (HE.StaticFunctionCall qn))
+                    RI.ClassMember _ _ -> Ok (context, FunctionCall (HE.ClassMemberCall qn))
+                    RI.EffectMember _ _ -> Ok (context, FunctionCall (HE.EffectMemberCall qn))
+                    _ -> do
+                        err <- NotAFunction path
+                        Err (addErrorToContext context err)
+            Err err -> Err (addErrorToContext context err)
+
+processBinaryOp :: SE.Op -> HE.Expr () -> HE.Expr () -> HE.SimpleExpr ()
+processBinaryOp op lhs rhs = do
+    module_name <- getStdOpsModuleName
+    qn <- case op of
+            SE.Equal -> FQ.FullPath module_name (SS.create "opEq")
+            SE.NotEqual -> FQ.FullPath module_name (SS.create "opNotEq")
+            SE.And -> FQ.FullPath module_name (SS.create "opAnd")
+            SE.Or -> FQ.FullPath module_name (SS.create "opOr")
+            SE.LessThan -> FQ.FullPath module_name (SS.create "opLessThan")
+            SE.GreaterThan -> FQ.FullPath module_name (SS.create "opGreaterThan")
+            SE.LessOrEqualThan -> FQ.FullPath module_name (SS.create "opLessEqual")
+            SE.GreaterOrEqualThan -> FQ.FullPath module_name (SS.create "opGreaterEqual")
+            SE.Add -> FQ.FullPath module_name (SS.create "opAdd")
+            SE.Sub -> FQ.FullPath module_name (SS.create "opSub")
+            SE.Mul -> FQ.FullPath module_name (SS.create "opMul")
+            SE.Div -> FQ.FullPath module_name (SS.create "opDiv")
+            SE.PipeForward -> do
+                HE.Expr s_expr type id location <- rhs
+                case s_expr of
+                    HE.StaticFunctionCall qn args -> return HE.StaticFunctionCall qn (List.push args lhs)
+                    _ -> return HE.DynamicFunctionCall rhs [lhs]
+    if op == SE.And || op == SE.Or
+        then HE.StaticFunctionCall qn [lhs, rhs]
+        else HE.ClassMemberCall qn [lhs, rhs]
+
+processExprs a :: (ResolverState a) => Context a -> Environment -> [SE.Expr] -> (Context a, [HE.Expr ()])
+processExprs context env exprs = do
+    (context, hir_exprs) <- exprs |> List.iter |> Iterator.fold (\(context, hir_exprs), expr -> do
+                (context, _, hir_expr) <- processExpr context env expr
+                hir_exprs <- push hir_exprs hir_expr
+                (context, hir_exprs)) (context, [])
+    (context, hir_exprs)
+
+processDo a :: (ResolverState a) => Context a -> Environment -> [SE.Expr] -> (Context a, [HE.Expr ()])
+processDo context env exprs = do
+    (context, _, hir_exprs) <- exprs |> List.iter |> Iterator.fold (\(context, env, hir_exprs), expr -> do
+                (context, env, hir_expr) <- processExpr context env expr
+                hir_exprs <- push hir_exprs hir_expr
+                (context, env, hir_exprs)) (context, env, [])
+    (context, hir_exprs)
+
+validateUsedFields :: [Ident] -> HD.Record -> Result () ([SS.SharedString], [Ident], [Ident])
+validateUsedFields used_fields record = do
+    used_fields_s <- used_fields |> List.iter |> Iterator.map (\i -> getString i) |> toList
+    real_fields <- record.fields |> List.iter |> Iterator.map (\(HD.RecordField field_name _) -> field_name) |> toList
+    unused_fields <- real_fields |> List.iter |> Iterator.filter (\f -> not (contains used_fields_s f)) |> toList
+    not_real_fields <- used_fields |> List.iter |> Iterator.filter (\(Ident f _) -> not (contains real_fields f)) |> toList
+    multi_used <- used_fields
+                |> List.iter
+                |> Iterator.filter (\f -> not (contains not_real_fields f))
+                |> Iterator.filter (\f -> do
+                    arg_list <- used_fields |> List.iter |> Iterator.filter (\i -> getString i == getString f) |> toList
+                    getLength arg_list > 1)
+                |> toList
+    if List.isEmpty unused_fields && List.isEmpty not_real_fields && List.isEmpty multi_used
+        then Ok ()
+        else Err (unused_fields, not_real_fields, multi_used)
+
+processRecordFieldInit a :: (ResolverState a) => [SE.RecordConstructionItem] -> (Context a, Environment, [HE.Expr ()]) -> HD.RecordField -> (Context a, Environment, [HE.Expr ()])
+processRecordFieldInit field_inits (context, env, args) (HD.RecordField field_name _) = do
+    field_init <- field_inits |> List.iter |> Iterator.filter (\(SE.RecordConstructionItem name _) -> getString name == field_name) |> toList
+    (SE.RecordConstructionItem name expr) <- atIndex field_init 0
+    (context, env, hir_expr) <- processExpr context env expr
+    args <- push args hir_expr
+    (context, env, args)
+
+shiftLambdaArgs a :: (ResolverState a) => Context a -> HE.Expr () -> Int -> Int -> (Context a, HE.Expr ())
+shiftLambdaArgs context (HE.Expr full_body full_body_id _ full_body_location) offset orig_arg_count =
+        case full_body of
+            HE.CaseOf body_expr cases _ -> do
+                (HE.Expr body_expr body_id _ body_location) <- body_expr
+                case body_expr of
+                    HE.Tuple arg_refs ->
+                        do
+                        (context, extras) <- repeatSE context (createExtraArg full_body_location) offset
+                        extra_arg_refs <- List.map extras (\(arg_ref, _) -> arg_ref)
+                        extra_patterns <- List.map extras (\(_, pattern) -> pattern)
+                        arg_refs <- List.map arg_refs (shiftArgRef offset)
+                        arg_refs <- extra_arg_refs + arg_refs
+                        assert (getLength cases == 1)
+                        only_case <- atIndex cases 0
+                        HP.Pattern p pattern_id _ pattern_location <- only_case.pattern
+                        pattern <- case p of
+                            (HP.Tuple args) -> do
+                                args <- extra_patterns + args
+                                HP.Pattern (HP.Tuple args) pattern_id () pattern_location
+                            _ -> panic "Case body is not a tuple"
+                        cases <- [HE.Case pattern only_case.body]
+                        case_of <- HE.CaseOf (HE.Expr (HE.Tuple arg_refs) body_id () body_location) cases []
+                        expr <- HE.Expr case_of full_body_id () full_body_location
+                        (context, expr)
+                    _ -> panic "Body is not a tuple"
+            HE.Do items -> do
+                items <- List.mapE items (processBoundArg offset orig_arg_count)
+                (context, HE.Expr (HE.Do items) full_body_id () full_body_location)
+            _ -> panic "Unexpected lambda body in shiftLambdaArgs"
+    where
+        processBoundArg :: Int -> Int -> Int -> HE.Expr () -> HE.Expr ()
+        processBoundArg offset orig_arg_count index arg =
+            if index >= orig_arg_count
+            then arg
+            else do
+                HE.Expr bind_expr bind_id _ bind_location <- arg
+                case bind_expr of
+                    HE.Bind pattern rhs -> do
+                        rhs <- shiftArgRef offset rhs
+                        HE.Expr (HE.Bind pattern rhs) bind_id () bind_location
+                    _ -> panic "Bind is not a bind!"
+
+        createExtraArg a :: (ResolverState a) => Location -> Context a -> Int -> (Context a, (HE.Expr (), HP.Pattern ()))
+        createExtraArg location context index = do
+            (context, expr_id) <- getExprId context
+            arg_ref <- (HE.Expr (HE.ArgRef index) expr_id () location)
+            (context, pattern_id) <- getPatternId context
+            pattern <- HP.Pattern (HP.Wildcard) pattern_id () location
+            (context, (arg_ref, pattern))
+
+        shiftArgRef :: Int -> HE.Expr () -> HE.Expr ()
+        shiftArgRef offset expr = do
+            HE.Expr s_expr id _ location <- expr
+            case s_expr of
+                HE.ArgRef index -> HE.Expr (HE.ArgRef (index + offset)) id () location
+                _ -> panic "Arg ref in shiftArgRef is not arg ref expr"
+
+desugarTry :: SE.Expr -> SE.Expr
+desugarTry expr = do
+    SE.Expr _ location <- expr
+    result_ok <- Ident (FQ.getResolvableName (FQ.FullPathWithVariant
+                    getResultModuleName getResultTypeName getResultOkVariantName)) location
+    result_err <- Ident (FQ.getResolvableName (FQ.FullPathWithVariant
+                    getResultModuleName getResultTypeName getResultErrVariantName)) location
+    ok <- Ident (SS.create "ok") location
+    err <- Ident (SS.create "err")  location
+    ce <- \e -> SE.Expr e location
+    cp <- \p -> SP.Pattern p location
+    ok_body <- ce (SE.Path ok)
+    err_body <- ce (SE.Return (ce (SE.FunctionCall (ce (SE.Path result_err)) [ce (SE.Path err)])))
+    ok_pattern <- cp (SP.Constructor result_ok [cp (SP.Binding ok)])
+    err_pattern <- cp (SP.Constructor result_err [cp (SP.Binding err)])
+    ok_case <- SE.Case ok_pattern ok_body
+    err_case <- SE.Case err_pattern err_body
+    ce (SE.CaseOf expr [ok_case, err_case])
+
+processEffectHandlers a :: (ResolverState a) => Context a -> Environment -> [SE.EffectHandler] -> (Context a, [HE.EffectHandler ()])
+processEffectHandlers context env handlers =
+        List.fold (context, []) handlers (\(context, hir_handlers), handler ->
+                case resolveEffectMember context.module_resolver handler.name of
+                    Ok qn -> do
+                        (context, env, hir_value) <- processExpr context env handler.value
+                        HE.Expr s_expr _ _ location <- hir_value
+                        selection <- case s_expr of
+                            HE.StaticFunctionCall call_qn args -> if List.isEmpty args
+                                then HE.Static call_qn
+                                else HE.Dynamic hir_value
+                            HE.EffectMemberCall call_qn args -> if List.isEmpty args
+                                then if call_qn == qn
+                                    then HE.Default
+                                    else HE.Dynamic hir_value
+                                else HE.Dynamic hir_value
+                            _ -> HE.Dynamic hir_value
+                        hir_handler <- HE.EffectHandler qn selection location
+                        (context, List.push hir_handlers hir_handler)
+                    Err err -> do
+                        context <- addErrorToContext context err
+                        (context, hir_handlers)
+            )
+
+processExpr a :: (ResolverState a) => Context a -> Environment -> SE.Expr -> (Context a, Environment, HE.Expr ())
+processExpr context env (SE.Expr expr location) = do
+    (context, env, hir_expr) <- case expr of
+        SE.Lambda arg_patterns lambda_body -> do
+            desugared_body <- desugarFunctionArgs arg_patterns lambda_body
+            (context, lambda_id, lambda_name) <- createLambdaName context
+            lambda_env <- createEnvironment lambda_id (Some env)
+            parent_lambda_helper <- context.lambda_helper
+            context <- context { lambda_helper = Some (LambdaHelper []) }
+            (context, _, final_lambda_body) <- processExpr context lambda_env desugared_body
+            lambda_helper <- Option.unwrap context.lambda_helper
+            context <- context { lambda_helper = parent_lambda_helper }
+            (context, args) <- lambda_helper.captured_values |> List.iter
+                |> Iterator.fold (\(context, args), c -> do
+                            HP.BindRef name _ <- c
+                            case getBinding env name of
+                                Some (bind_ref, level) -> do
+                                        (context, expr_id) <- getExprId context
+                                        (context, arg) <- if level != env.lambda_id
+                                            then do
+                                                (context, index) <- captureValue context bind_ref
+                                                (context, HE.Expr (HE.ArgRef index) expr_id () location)
+                                            else (context, HE.Expr (HE.ValueRef c) expr_id () location)
+                                        args <- push args arg
+                                        (context, args)
+                                None -> panic "captured variable not found in parent scope"
+                        ) (context, [])
+            total_arg_count <- getLength args + getLength arg_patterns
+            (context, final_lambda_body) <- shiftLambdaArgs context final_lambda_body (getLength args) (getLength arg_patterns)
+            lambda <- F.LambdaInfo lambda_id total_arg_count context.function_name final_lambda_body
+            lambdas <- push context.lambdas lambda
+            context <- context { lambdas = lambdas }
+            (context, env, HE.StaticFunctionCall lambda_name args)
+        SE.Paren expr -> return processExpr context env expr
+        SE.FunctionCall receiver args -> do
+            (context, hir_args) <- processExprs context env args
+            case receiver of
+                SE.Expr p _ -> case p of
+                    SE.Path p -> do
+                        case getBinding env (getString p) of
+                            Some (bind_ref, level) -> do
+                                (context, _, hir_receiver) <- processExpr context env receiver
+                                (context, env, HE.DynamicFunctionCall hir_receiver hir_args)
+                            None -> case resolvePath context p of
+                                        Ok (context, result) -> case result of
+                                                FunctionCall fn -> do
+                                                    (context, env, fn hir_args)
+                                        Err context -> (context, env, HE.Tuple [])
+                    _ -> do
+                        (context, _, hir_receiver) <- processExpr context env receiver
+                        (context, env, HE.DynamicFunctionCall hir_receiver hir_args)
+        SE.BinaryOp op lhs rhs -> do
+            (context, env, hir_lhs) <- processExpr context env lhs
+            (context, env, hir_rhs) <- processExpr context env rhs
+            (context, env, processBinaryOp op hir_lhs hir_rhs)
+        SE.If cond true_branch false_branch -> do
+            (context, _, hir_cond) <- processExpr context env cond
+            (context, _, hir_true_branch) <- processExpr context env true_branch
+            (context, _, hir_false_branch) <- processExpr context env false_branch
+            (context, env, HE.If hir_cond hir_true_branch hir_false_branch)
+        SE.Tuple items -> do
+            (context, hir_items) <- processExprs context env items
+            (context, env, HE.Tuple hir_items)
+        SE.List items -> do
+            (context, hir_items) <- processExprs context env items
+            (context, env, HE.List hir_items)
+        SE.Path p -> do
+            case getBinding env (getString p) of
+                Some (bind_ref, level) -> do
+                    (context, e) <- if level != env.lambda_id
+                        then do
+                            (context, index) <- captureValue context bind_ref
+                            (context, HE.ArgRef index)
+                        else (context, HE.ValueRef bind_ref)
+                    (context, env, e)
+                None -> case resolvePath context p of
+                            Ok (context, result) -> case result of
+                                    FunctionCall fn -> do
+                                        (context, env, fn [])
+                            Err context -> (context, env, HE.Tuple [])
+        SE.IntegerLiteral lit -> (context, env, HE.IntegerLiteral lit)
+        SE.FloatLiteral lit -> (context, env, HE.FloatLiteral lit)
+        SE.StringLiteral lit -> (context, env, HE.StringLiteral lit)
+        SE.CharLiteral lit -> (context, env, HE.CharLiteral lit)
+        SE.Do items -> do
+            block_env <- createEnvironment env.lambda_id (Some env)
+            (context, hir_items) <- processDo context block_env items
+            (context, env, HE.Do hir_items)
+        SE.Bind p rhs -> do
+            (context, env, hir_rhs) <- processExpr context env rhs
+            pattern_env <- createPatternEnvironment True
+            (context, pattern_env, env, hir_p) <- processPattern context pattern_env env p
+            context <- validatePatternEnv pattern_env context
+            (context, env, HE.Bind hir_p hir_rhs)
+        SE.FieldAccess field receiver -> do
+            (context, env, hir_receiver) <- processExpr context env receiver
+            (context, env, HE.FieldAccess field hir_receiver)
+        SE.TupleFieldAccess index receiver -> do
+            (context, env, hir_receiver) <- processExpr context env receiver
+            case Int.parse (SS.get index) of
+                Some i -> (context, env, HE.TupleFieldAccess i hir_receiver)
+                None -> panic "TupleField index not a number {}" % index
+        SE.Formatter fmt args -> do
+            subs <- String.split (SS.get fmt) "{}"
+            context <- if getLength subs != getLength args + 1
+                then addErrorToContext context (InvalidFormatString location)
+                else context
+            (context, hir_args) <- processExprs context env args
+            (context, env, HE.Formatter fmt hir_args)
+        SE.CaseOf body cases -> do
+            (context, env, hir_body) <- processExpr context env body
+            (context, env, cases, bind_groups) <- cases |> List.iter |> Iterator.fold (\(context, env, cases, bind_groups), c -> do
+                (context, hir_cases, bind_group) <- processCase context env c
+                cases <- cases + hir_cases
+                bind_groups <- case bind_group of
+                    Some bind_group -> push bind_groups bind_group
+                    None -> bind_groups
+                (context, env, cases, bind_groups)) (context, env, [], [])
+            (context, env, HE.CaseOf hir_body cases bind_groups)
+        SE.Not arg -> do
+            qn <- FQ.FullPath getStdOpsModuleName (SS.create "opNot")
+            (context, env, hir_arg) <- processExpr context env arg
+            (context, env, HE.StaticFunctionCall qn [hir_arg])
+        SE.Negative arg -> do
+            qn <- FQ.FullPath getStdOpsModuleName (SS.create "opNegative")
+            (context, env, hir_arg) <- processExpr context env arg
+            (context, env, HE.ClassMemberCall qn [hir_arg])
+        SE.RecordInitialization name field_inits -> do
+            case resolveItem context.module_resolver.type_names NotARecord name of
+                Ok (ResolvedItem qn item _) -> do
+                    case item of
+                        RI.Record _ _ -> do
+                            context :: Context a <- context // FIXME
+                            record <- getRecord context.state qn
+                            used_fields <- field_inits |> List.iter |> Iterator.map (\(SE.RecordConstructionItem field _) -> field) |> toList
+                            case validateUsedFields used_fields record of
+                                Ok () -> do
+                                    (context, env, args) <- record.fields |> List.iter |> Iterator.fold (processRecordFieldInit field_inits) (context, env, [])
+                                    (context, env, HE.RecordConstructorCall qn args)
+                                Err (unused_fields, not_real_fields, multi_used) -> do
+                                    context <- if not (List.isEmpty unused_fields)
+                                        then addErrorToContext context (UninitalizedFields unused_fields)
+                                        else context
+                                    context <- if not (List.isEmpty not_real_fields)
+                                        then addErrorToContext context (UnknownInitFields not_real_fields)
+                                        else context
+                                    context <- if not (List.isEmpty multi_used)
+                                        then addErrorToContext context (MultiInitFields multi_used)
+                                        else context
+                                    (context, env, HE.Tuple [])
+                        _ -> do
+                            context <- addErrorToContext context (NotARecord name)
+                            (context, env, HE.Tuple [])
+                Err err -> do
+                    context <- addErrorToContext context err
+                    (context, env, HE.Tuple [])
+        SE.RecordUpdate path updates -> do
+            (context, env, updates, fields) <- updates
+                |> List.iter
+                |> Iterator.fold (\(context, env, updates, fields), (SE.RecordConstructionItem field_name expr) -> do
+                        (Ident f_name _) <- field_name
+                        (context, env, hir_expr) <- processExpr context env expr
+                        update <- HE.RecordConstructionItem field_name hir_expr
+                        updates <- push updates update
+                        (fields, _) <- alter (\names -> case names of
+                                    Some names -> Some (push names field_name)
+                                    None -> Some [field_name]) f_name fields
+                        (context, env, updates, fields)
+                    ) (context, env, [], empty)
+            Ident path_name path_location <- path
+            case getBinding env path_name of
+                Some (bind_ref, level) -> do
+                    (context, err) <- fields |> Map.iter |> Iterator.fold (\(context, err), (field_name, instances) -> do
+                        if getLength instances > 1
+                            then do
+                                context <- addErrorToContext context (MultiUsedFields instances)
+                                (context, True)
+                            else (context, err)) (context, False)
+                    (context, ref_expr) <- if level != env.lambda_id
+                        then do
+                            (context, index) <- captureValue context bind_ref
+                            (context, HE.ArgRef index)
+                        else (context, HE.ValueRef bind_ref)
+                    (context, expr_id) <- getExprId context
+                    ref_expr <- HE.Expr ref_expr expr_id () path_location
+                    (context, env, HE.RecordUpdate ref_expr updates)
+                None -> do
+                    context <- addErrorToContext context (NotAVariable path)
+                    (context, env, HE.Tuple [])
+        SE.Return expr -> do
+            (context, env, hir_expr) <- processExpr context env expr
+            (context, env, HE.Return hir_expr)
+        SE.Try expr -> do
+            desugared_expr <- desugarTry expr
+            (context, env, hir_expr) <- processExpr context env desugared_expr
+            return (context, env, hir_expr)
+        SE.Continue expr -> do
+            (context, env, hir_expr) <- processExpr context env expr
+            HE.Expr _ id _ location <- hir_expr
+            context <- addContinue context id location
+            (context, env, HE.Continue hir_expr)
+        SE.Break expr -> do
+            (context, env, hir_expr) <- processExpr context env expr
+            HE.Expr _ id _ location <- hir_expr
+            context <- addBreak context id location
+            (context, env, HE.Break hir_expr)
+        SE.Loop pattern initializer body -> do
+            (context, env, hir_initializer) <- processExpr context env initializer
+            pattern_env <- createPatternEnvironment True
+            block_env <- createEnvironment env.lambda_id (Some env)
+            (context, pattern_env, block_env, hir_pattern) <- processPattern context pattern_env block_env pattern
+            context <- validatePatternEnv pattern_env context
+            prev_loop_helper <- context.loop_helper
+            loop_helper <- LoopHelper [] []
+            context <- context { loop_helper = Some loop_helper }
+            (context, _, hir_body) <- processExpr context block_env body
+            loop_helper <- Option.unwrap context.loop_helper
+            context <- context { loop_helper = prev_loop_helper }
+            continues <- loop_helper.continues
+            breaks <- loop_helper.breaks
+            (context, env, HE.Loop hir_pattern hir_initializer hir_body continues breaks)
+        SE.ArgRef i -> (context, env, HE.ArgRef i)
+        SE.With handlers body -> do
+            (context, hir_handlers) <- processEffectHandlers context env handlers
+            (context, env, hir_body) <- processExpr context env body
+            (context, env, HE.With hir_handlers hir_body [])
+    (context, expr_id) <- getExprId context
+    (context, env, HE.Expr hir_expr expr_id () location)

@@ -86,14 +86,25 @@ instance (Show a, Show b, Show c) => Show (a, b, c) where
 instance (Show a, Show b, Show c, Show d) => Show (a, b, c, d) where
     show (a, b, c, d) = "({}, {}, {}, {})" % (a, b, c, d)
 
+instance PartialEq () where
+    opEq () () = True
+
+instance Eq ()
+
+instance PartialOrd () where
+    partialCmp () () = Some Equal
+
+instance Ord () where
+    cmp () () = Equal
+
 instance (PartialEq a, PartialEq b) => PartialEq (a, b) where
-    opEq (a1, b1) (a2, b2) = 
+    opEq (a1, b1) (a2, b2) =
         if opEq a1 a2
         then opEq b1 b2
         else False
 
 instance (PartialOrd a, PartialOrd b) => PartialOrd (a, b) where
-    partialCmp (a1, b1) (a2, b2) = 
+    partialCmp (a1, b1) (a2, b2) =
         case partialCmp a1 a2 of
             Some Equal -> partialCmp b1 b2
             r -> r
@@ -101,9 +112,7 @@ instance (PartialOrd a, PartialOrd b) => PartialOrd (a, b) where
 instance (Eq a, Eq b) => Eq (a, b)
 
 instance (Ord a, Ord b) => Ord (a, b) where
-    cmp (a1, b1) (a2, b2) = 
+    cmp (a1, b1) (a2, b2) =
         case cmp a1 a2 of
             Equal -> cmp b1 b2
             r -> r
-
-

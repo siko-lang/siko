@@ -363,7 +363,6 @@ createFunctionInfoBase inference_info function_id converter_merge_info_base = do
             List.push vars member.info.ownership_var)
     output_ownership_vars <- List.fold output_ownership_vars output_members (\vars, member ->
             List.push vars member.info.ownership_var)
-    relevant_ownership_vars <- input_ownership_vars + output_ownership_vars
 
     converter_merge_info <- mergeConverters input_ownership_vars converter_merge_info_base
 
@@ -378,7 +377,11 @@ createFunctionInfoBase inference_info function_id converter_merge_info_base = do
             List.fold filtered_converters outputs (\filtered_converters, output -> List.push filtered_converters (Converter input output)))
         (input_ownership_vars, output_ownership_vars, filtered_converters))
 
-    members <- (input_members + output_members) |> List.sort |> List.dedup
+    output_in_input <- List.fold False output_ownership_vars (\contains, output_var -> contains || List.contains input_ownership_vars output_var)
+
+    (members, relevant_ownership_vars) <- if List.isEmpty filtered_converters && not output_in_input
+    then (output_members, output_ownership_vars)
+    else ((input_members + output_members) |> List.sort |> List.dedup, input_ownership_vars + output_ownership_vars)
 
     result_only_vars <- output_ownership_vars
 

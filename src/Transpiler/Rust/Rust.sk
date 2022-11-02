@@ -225,7 +225,10 @@ generateFunction function indent = do
         else args
     lifetime_deps <- Map.empty
     lifetime_deps <- List.fold lifetime_deps function.lifetimes (\lifetime_deps, l -> Map.put lifetime_deps l [])
-    lifetime_deps <- List.fold lifetime_deps function.lifetime_dependencies (\lifetime_deps, dep -> Map.add lifetime_deps dep.from dep.to)
+    lifetime_deps <- List.fold lifetime_deps function.lifetime_dependencies (\lifetime_deps, dep ->
+        if List.contains function.lifetimes dep.to // FIXME: lifetime_deps should not contain any 'extra' lifetime, this check hides faults!
+        then Map.add lifetime_deps dep.from dep.to
+        else lifetime_deps)
     lifetimes <- lifetime_deps |> Map.iter |> Iterator.map (\(lifetime, deps) -> if List.isEmpty deps
         then show lifetime
         else "{}: {}" % (lifetime, join (List.map deps show) " + ")) |> toList

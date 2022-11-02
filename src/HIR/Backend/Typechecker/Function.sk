@@ -29,6 +29,9 @@ processFunction state f = do
             (state, generated_func_type) <- createGeneralFunction f.arg_count state
             (state, generated_func_type, False)
     args <- T.getArgs ty
+    if getLength args < f.arg_count
+    then panic "arg count mismatch {}" % f.name
+    else ()
     (args, _) <- List.split args f.arg_count
     result_ty <- T.getResultType ty (getLength args)
     func_type_info <- FunctionTypeInfo f.name args ty result_ty f.effects defined

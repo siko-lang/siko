@@ -1,0 +1,224 @@
+module Siko.Query.Item where
+
+import Siko.Syntax.Module as M
+import Siko.Syntax.Data as SD
+import Siko.Syntax.Class as SC
+import Siko.Syntax.Effect as SEff
+import Siko.HIR.Data as HD
+import Siko.HIR.Class as HC
+import Siko.HIR.Effect as HEff
+import Siko.Resolver.Item as RI
+import Siko.HIR.FullyQualifiedName as FQ
+import Siko.HIR.Function as HF
+import Siko.Resolver.ModuleResolver as RMR
+import Siko.Resolver.Function as RF
+
+import Siko.Util.SharedString as SS
+
+data Command = CollectLocalItems Key
+             | CollectExports Key
+             | ProcessImports Key
+             | ResolveRecord Key
+             | ResolveAdt Key
+             | ResolveFunction Key
+             | ResolveClass Key
+             | ResolveInstance Key
+             | ResolveEffect Key
+             deriving (Show, PartialEq, Eq, PartialOrd, Ord)
+
+data ItemKind = UnresolvedModuleKind
+              | LocalItemsKind
+              | ExportedItemsKind
+              | ModuleResolverKind
+              | UnresolvedRecordKind
+              | UnresolvedAdtKind
+              | ResolvedRecordKind
+              | ResolvedAdtKind
+              | UnresolvedFunctionKind
+              | ResolvedVariantInfoKind
+              | ResolvedFunctionKind
+              | UnresolvedClassKind
+              | ResolvedClassKind
+              | UnresolvedInstanceKind
+              | ResolvedInstanceKind
+              | UnresolvedEffectKind
+              | ResolvedEffectKind
+              deriving (Show, PartialEq, Eq, PartialOrd, Ord)
+
+data Item = UnresolvedModule M.Module
+          | LocalItems [RI.Item]
+          | ExportedItems [RI.Item]
+          | ModuleResolver RMR.ModuleResolver
+          | UnresolvedRecord SD.Record
+          | UnresolvedAdt SD.AlgebraicDataType
+          | ResolvedRecord HD.Record
+          | ResolvedAdt HD.AlgebraicDataType
+          | UnresolvedFunction RF.UnresolvedFunctionInfo
+          | ResolvedVariantInfo HD.VariantInfo
+          | ResolvedFunction (HF.Function ())
+          | UnresolvedClass SC.Class
+          | ResolvedClass HC.Class
+          | UnresolvedInstance SC.Instance
+          | ResolvedInstance HC.Instance
+          | UnresolvedEffect SEff.Effect
+          | ResolvedEffect HEff.Effect
+          deriving (Show, PartialEq, Eq)
+
+data Key = UnresolvedModuleKey String
+         | LocalItemsKey String
+         | ExportedItemsKey String
+         | ModuleResolverKey String
+         | UnresolvedRecordKey FQ.FullyQualifiedName
+         | UnresolvedAdtKey FQ.FullyQualifiedName
+         | ResolvedRecordKey FQ.FullyQualifiedName
+         | ResolvedAdtKey FQ.FullyQualifiedName
+         | UnresolvedFunctionKey FQ.FullyQualifiedName
+         | ResolvedVariantInfoKey FQ.FullyQualifiedName
+         | ResolvedFunctionKey FQ.FullyQualifiedName
+         | UnresolvedClassKey FQ.FullyQualifiedName
+         | ResolvedClassKey FQ.FullyQualifiedName
+         | UnresolvedInstanceKey FQ.FullyQualifiedName
+         | ResolvedInstanceKey FQ.FullyQualifiedName
+         | UnresolvedEffectKey FQ.FullyQualifiedName
+         | ResolvedEffectKey FQ.FullyQualifiedName
+         deriving (Show, PartialEq, Eq, PartialOrd, Ord)
+
+asUnresolvedModule :: Item -> M.Module
+asUnresolvedModule item = case item of
+    UnresolvedModule m -> m
+    _ -> panic "{} is not UnresolvedModule" % item
+
+asLocalItems :: Item -> [RI.Item]
+asLocalItems item = case item of
+    LocalItems items -> items
+    _ -> panic "{} is not LocalItems" % item
+
+asExportedItems :: Item -> [RI.Item]
+asExportedItems item = case item of
+    ExportedItems items -> items
+    _ -> panic "{} is not ExportedItems" % item
+
+asModuleResolver :: Item -> RMR.ModuleResolver
+asModuleResolver item = case item of
+    ModuleResolver module_resolver -> module_resolver
+    _ -> panic "{} is not ModuleResolver" % item
+
+asUnresolvedRecord :: Item -> SD.Record
+asUnresolvedRecord item = case item of
+    UnresolvedRecord record -> record
+    _ -> panic "{} is not UnresolvedRecord" % item
+
+asUnresolvedAdt :: Item -> SD.AlgebraicDataType
+asUnresolvedAdt item = case item of
+    UnresolvedAdt adt -> adt
+    _ -> panic "{} is not UnresolvedAdt" % item
+
+asUnresolvedFunction :: Item -> RF.UnresolvedFunctionInfo
+asUnresolvedFunction item = case item of
+    UnresolvedFunction function_info -> function_info
+    _ -> panic "{} is not UnresolvedFunction" % item
+
+asUnresolvedClass :: Item -> SC.Class
+asUnresolvedClass item = case item of
+    UnresolvedClass c -> c
+    _ -> panic "{} is not UnresolvedClass" % item
+
+asResolvedClass :: Item -> HC.Class
+asResolvedClass item = case item of
+    ResolvedClass c -> c
+    _ -> panic "{} is not ResolvedClass" % item
+
+asUnresolvedInstance :: Item -> SC.Instance
+asUnresolvedInstance item = case item of
+    UnresolvedInstance i -> i
+    _ -> panic "{} is not UnresolvedInstance" % item
+
+asResolvedInstance :: Item -> HC.Instance
+asResolvedInstance item = case item of
+    ResolvedInstance i -> i
+    _ -> panic "{} is not ResolvedInstance" % item
+
+asUnresolvedEffect :: Item -> SEff.Effect
+asUnresolvedEffect item = case item of
+    UnresolvedEffect e -> e
+    _ -> panic "{} is not UnresolvedEffect" % item
+
+asResolvedEffect :: Item -> HEff.Effect
+asResolvedEffect item = case item of
+    ResolvedEffect e -> e
+    _ -> panic "{} is not ResolvedEffect" % item
+
+asResolvedRecord :: Item -> HD.Record
+asResolvedRecord item = case item of
+    ResolvedRecord record -> record
+    _ -> panic "{} is not ResolvedRecord" % item
+
+asResolvedAdt :: Item -> HD.AlgebraicDataType
+asResolvedAdt item = case item of
+    ResolvedAdt adt -> adt
+    _ -> panic "{} is not ResolvedAdt" % item
+
+asResolvedVariantInfo :: Item -> HD.VariantInfo
+asResolvedVariantInfo item = case item of
+    ResolvedVariantInfo variant_info -> variant_info
+    _ -> panic "{} is not ResolvedVariantInfo" % item
+
+getModuleName :: Key -> String
+getModuleName key = case key of
+    UnresolvedModuleKey n -> n
+    LocalItemsKey n -> n
+    ExportedItemsKey n -> n
+    ModuleResolverKey n -> n
+    UnresolvedRecordKey qn -> SS.get (FQ.getModuleName qn)
+    UnresolvedAdtKey qn -> SS.get (FQ.getModuleName qn)
+    ResolvedRecordKey qn -> SS.get (FQ.getModuleName qn)
+    ResolvedAdtKey qn -> SS.get (FQ.getModuleName qn)
+    UnresolvedFunctionKey qn -> SS.get (FQ.getModuleName qn)
+    ResolvedVariantInfoKey qn -> SS.get (FQ.getModuleName qn)
+    ResolvedFunctionKey qn -> SS.get (FQ.getModuleName qn)
+    UnresolvedClassKey qn -> SS.get (FQ.getModuleName qn)
+    ResolvedClassKey qn -> SS.get (FQ.getModuleName qn)
+    UnresolvedInstanceKey qn -> SS.get (FQ.getModuleName qn)
+    ResolvedInstanceKey qn -> SS.get (FQ.getModuleName qn)
+    UnresolvedEffectKey qn -> SS.get (FQ.getModuleName qn)
+    ResolvedEffectKey qn -> SS.get (FQ.getModuleName qn)
+
+getFullyQualifiedName :: Key -> FQ.FullyQualifiedName
+getFullyQualifiedName key = case key of
+    UnresolvedModuleKey n -> panic "getFullyQualifiedName called for {}" % key
+    LocalItemsKey n -> panic "getFullyQualifiedName called for {}" % key
+    ExportedItemsKey n -> panic "getFullyQualifiedName called for {}" % key
+    ModuleResolverKey n -> panic "getFullyQualifiedName called for {}" % key
+    UnresolvedRecordKey qn -> qn
+    UnresolvedAdtKey qn -> qn
+    ResolvedRecordKey qn -> qn
+    ResolvedAdtKey qn -> qn
+    UnresolvedFunctionKey qn -> qn
+    ResolvedVariantInfoKey qn -> qn
+    ResolvedFunctionKey qn -> qn
+    UnresolvedClassKey qn -> qn
+    ResolvedClassKey qn -> qn
+    UnresolvedInstanceKey qn -> qn
+    ResolvedInstanceKey qn -> qn
+    UnresolvedEffectKey qn -> qn
+    ResolvedEffectKey qn -> qn
+
+getKind :: Item -> ItemKind
+getKind item = case item of
+    UnresolvedModule _ -> UnresolvedModuleKind
+    LocalItems _ -> LocalItemsKind
+    ExportedItems _ -> ExportedItemsKind
+    ModuleResolver _ -> ModuleResolverKind
+    UnresolvedRecord _ -> UnresolvedRecordKind
+    UnresolvedAdt _ -> UnresolvedAdtKind
+    ResolvedRecord _ -> ResolvedRecordKind
+    ResolvedAdt _ -> ResolvedAdtKind
+    UnresolvedFunction _ -> UnresolvedFunctionKind
+    ResolvedVariantInfo _ -> ResolvedVariantInfoKind
+    ResolvedFunction _ -> ResolvedFunctionKind
+    UnresolvedClass _ -> UnresolvedClassKind
+    ResolvedClass _ -> ResolvedClassKind
+    UnresolvedInstance _ -> UnresolvedInstanceKind
+    ResolvedInstance _ -> ResolvedInstanceKind
+    UnresolvedEffect _ -> UnresolvedEffectKind
+    ResolvedEffect _ -> ResolvedEffectKind

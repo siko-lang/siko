@@ -1108,6 +1108,10 @@ generateCellTake program type_store arg_types result_type = do
     take <- R.MethodCall take "unwrap" []
     R.Block [cell_decl, take]
 
+generateIntrinsicsClone :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
+generateIntrinsicsClone program type_store arg_types result_type = do
+    R.Block [R.MethodCall (R.VarRef (getArgName 0)) cloneName []]
+
 initializeExternalFunctions :: Map ExternalId ExternFnBuilder
 initializeExternalFunctions = do
     externals <- Map.empty
@@ -1203,6 +1207,8 @@ initializeExternalFunctions = do
     (externals, _) <- insert externals (ExternalId "Cell" "get") (ExternFnBuilder generateCellGet)
     (externals, _) <- insert externals (ExternalId "Cell" "put") (ExternFnBuilder generateCellPut)
     (externals, _) <- insert externals (ExternalId "Cell" "take") (ExternFnBuilder generateCellTake)
+
+    (externals, _) <- insert externals (ExternalId "Std.Intrinsics" "clone") (ExternFnBuilder generateIntrinsicsClone)
     externals
 
 generateStringFields :: [LT.Type] -> Option LT.Lifetime -> [R.StructField]

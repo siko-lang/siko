@@ -21,12 +21,20 @@ commitChanges :: D.Driver -> [String] -> D.Driver
 commitChanges driver args = do
     D.commitChanges driver
 
-compile :: String -> D.Driver -> [String] -> D.Driver
-compile std_path driver args = do
-    args <- List.push args std_path
+compile :: Option String -> Bool -> D.Driver -> [String] -> D.Driver
+compile std_path clear driver args = do
+    driver <- if clear then D.clearSources driver else driver
+    args <- case std_path of
+        Some std_path -> List.push args std_path
+        None -> args
     names <- List.fold [] args (\names, arg -> names + processPath arg)
     driver <- addFile driver names
     commitChanges driver []
+
+reset :: D.Driver -> [String] -> D.Driver
+reset driver args = do
+    println "DB reset done"
+    D.createDriver
 
 createCLI :: String -> CLI
 createCLI std_path = do
@@ -34,7 +42,9 @@ createCLI std_path = do
     cmds <- Map.put cmds "addFile" (CommandHandler addFile)
     cmds <- Map.put cmds "removeFile" (CommandHandler removeFile)
     cmds <- Map.put cmds "commit" (CommandHandler commitChanges)
-    cmds <- Map.put cmds "compile" (CommandHandler (compile std_path))
+    cmds <- Map.put cmds "compile" (CommandHandler (compile (Some std_path) False))
+    cmds <- Map.put cmds "c" (CommandHandler (compile None True))
+    cmds <- Map.put cmds "reset" (CommandHandler reset)
     CLI D.createDriver cmds
 
 processPath :: String -> [String]
