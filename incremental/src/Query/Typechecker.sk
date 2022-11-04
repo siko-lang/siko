@@ -1,0 +1,63 @@
+module Siko.Query.Typechecker where
+
+import Siko.Query.Driver
+import Siko.Query.Item as I
+import Siko.Query.Database as DB
+import Siko.HIR.Function as HF
+import Siko.HIR.Backend.Typechecker as TCK
+import Siko.HIR.Backend.Typechecker.Class as TC
+import Siko.HIR.Backend.Typechecker.Function as TF
+import Siko.Query.Util
+import Siko.Query.Lookup
+
+refreshClassDeps :: Driver -> Driver
+refreshClassDeps driver = do
+    classes <- DB.getWatchedKeys driver.db I.ResolvedClassKind
+    classes <- List.map classes (\key -> I.asResolvedClass (DB.get driver.db key))
+    errors <- TC.checkClassDependencies classes
+    // TODO: error
+    driver
+
+createFunctionTypeInfo :: Driver -> I.Key -> Driver
+createFunctionTypeInfo driver key = do
+    qn <- I.getFullyQualifiedName key
+    function <- DB.get driver.db (I.ResolvedFunctionKey qn)
+    function <- I.asResolvedFunction function
+    state <- TCK.createTypecheckerStateProvider driver
+    case function.kind of
+        HF.InstanceMember instance_qn -> do
+            i <- DB.get driver.db (I.ResolvedInstanceKey instance_qn)
+            i <- I.asResolvedInstance i
+            c <- getClass driver i.class_name
+            class_type_info <- DB.get driver.db (I.ClassTypeInfoKey i.class_name)
+            class_type_info <- I.asClassTypeInfo class_type_info
+            (state, type) <- TC.getMemberType state i function class_type_info
+            // TODO: error
+            case type of
+                Some type -> do
+                    function <- function { type = Some type }
+                    (state, func_type_info) <- TF.createFunctionTypeInfo state function
+                    // TODO: error
+                    key <- I.FunctionTypeInfoKey qn
+                    item <- I.FunctionTypeInfo func_type_info
+                    addToDb driver key item
+                None -> //FIXME: TODO: use result!!
+                        driver
+        _ -> do
+            (state, func_type_info) <- TF.createFunctionTypeInfo state function
+            // TODO: error
+            key <- I.FunctionTypeInfoKey qn
+            item <- I.FunctionTypeInfo func_type_info
+            addToDb driver key item
+
+createClassTypeInfo :: Driver -> I.Key -> Driver
+createClassTypeInfo driver key = do
+    qn <- I.getFullyQualifiedName key
+    c <- DB.get driver.db (I.ResolvedClassKey qn)
+    c <- I.asResolvedClass c
+    state <- TCK.createTypecheckerStateProvider driver
+    (state, class_type_info) <- TC.createClassTypeInfo state c
+    // TODO: error
+    key <- I.ClassTypeInfoKey qn
+    item <- I.ClassTypeInfo class_type_info
+    addToDb driver key item

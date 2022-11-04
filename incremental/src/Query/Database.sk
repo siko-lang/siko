@@ -1,23 +1,24 @@
 module Siko.Query.Database where
 
 import Map
+import Set
 import Siko.Query.Item as I
 
-data DatabaseHook = { name :: String,
-                      hook_fn :: Database -> I.Key -> I.Item -> Database }
+data WatchedCollection = { update_cmd :: I.Command,
+                           keys :: Set I.Key }
 
 data Database = { items :: Map I.Key I.Item,
-                  hooks :: Map I.ItemKind DatabaseHook,
+                  collections :: Map I.ItemKind WatchedCollection,
                   cmd_generators :: Map I.ItemKind (I.Key -> I.Command)
                 }
 
 createDatabase :: Database
 createDatabase = Database Map.empty Map.empty Map.empty
 
-addHook :: Database -> I.ItemKind -> DatabaseHook -> Database
-addHook db kind hook = do
-    hooks <- Map.put db.hooks kind hook
-    db { hooks = hooks }
+addWatchedKind :: Database -> I.ItemKind -> I.Command -> Database
+addWatchedKind db kind update_cmd = do
+    collections <- Map.put db.collections kind (WatchedCollection update_cmd Set.empty)
+    db { collections = collections }
 
 addCommandGenerator :: Database -> I.ItemKind -> (I.Key -> I.Command) -> Database
 addCommandGenerator db kind gen = do
@@ -32,25 +33,52 @@ get db key = case Map.get db.items key of
 getOpt :: Database -> I.Key -> Option I.Item
 getOpt db key = Map.get db.items key
 
-addItem :: Database -> I.Key -> I.Item -> (Database, Option I.Command)
+getWatchedKeys :: Database -> I.ItemKind -> [I.Key]
+getWatchedKeys db kind =
+    case Map.get db.collections kind of
+        Some collection -> collection.keys |> Set.iter |> toList
+        None -> panic "Kind is not watched! {}" % kind
+
+addItem :: Database -> I.Key -> I.Item -> (Database, [I.Command])
 addItem db key item = do
     kind <- I.getKind item
     println "Adding item {}" % key
     (items, old) <- Map.insert db.items key item
     db <- db { items = items }
-    cmd <- case Map.get db.cmd_generators kind of
+    cmds <- case Map.get db.cmd_generators kind of
         Some gen -> do
             cmd <- gen key
             case old of
                 Some old -> if old == item
-                    then None
-                    else Some cmd
-                None -> Some cmd
-        None -> None
-    (db, cmd)
+                    then []
+                    else [cmd]
+                None -> [cmd]
+        None -> []
+    (db, cmds) <- case Map.get db.collections kind of
+        Some collection -> do
+            keys <- Set.put collection.keys key
+            cmds <- List.push cmds collection.update_cmd
+            collection <- collection { keys = keys }
+            collections <- Map.put db.collections kind collection
+            (db { collections = collections }, cmds)
+        None -> (db, cmds)
+    (db, cmds)
 
-removeItem :: Database -> I.Key -> Database
+removeItem :: Database -> I.Key -> (Database, [I.Command])
 removeItem db key = do
     println "Removing item {}" % key
-    (items, _) <- Map.remove db.items key
-    db { items = items }
+    (items, old) <- Map.remove db.items key
+    db <- db { items = items }
+    case old of
+        Some item -> do
+            kind <- I.getKind item
+            case Map.get db.collections kind of
+                Some collection -> do
+                    keys <- Set.remove collection.keys key
+                    cmds <- [collection.update_cmd]
+                    collection <- collection { keys = keys }
+                    collections <- Map.put db.collections kind collection
+                    (db { collections = collections }, cmds)
+                None -> (db, [])
+        None -> (db, [])
+

@@ -1,0 +1,69 @@
+module Siko.Query.Lookup where
+
+import Siko.Query.Driver
+import Siko.HIR.FullyQualifiedName as FQ
+import Siko.Query.Item as I
+import Siko.Query.Database as DB
+import Siko.HIR.Class as HC
+import Siko.HIR.Data as HD
+import Siko.HIR.Function as HF
+
+class ClassProvider a where
+    getClass a :: a -> FQ.FullyQualifiedName -> HC.Class
+
+class RecordProvider a where
+    getRecord a :: a -> FQ.FullyQualifiedName -> HD.Record
+    getRecordOpt a :: a -> FQ.FullyQualifiedName -> Option HD.Record
+
+class AdtProvider a where
+    getAdt a :: a -> FQ.FullyQualifiedName -> HD.AlgebraicDataType
+    getAdtOpt a :: a -> FQ.FullyQualifiedName -> Option HD.AlgebraicDataType
+
+class FunctionProvider a where
+    getFunction a :: a -> FQ.FullyQualifiedName -> HF.Function ()
+
+class VariantInfoProvider a where
+    getVariantInfoOpt a :: a -> FQ.FullyQualifiedName -> Option HD.VariantInfo
+
+instance VariantInfoProvider Driver where
+    getVariantInfoOpt driver qn = do
+        key <- I.ResolvedVariantInfoKey qn
+        case DB.getOpt driver.db key of
+            Some variant_info -> Some (I.asResolvedVariantInfo variant_info)
+            None -> None
+
+instance ClassProvider Driver where
+    getClass driver qn = do
+        key <- I.ResolvedClassKey qn
+        c <- DB.get driver.db key
+        I.asResolvedClass c
+
+instance RecordProvider Driver where
+    getRecord driver qn = do
+        key <- I.ResolvedRecordKey qn
+        record <- DB.get driver.db key
+        I.asResolvedRecord record
+
+    getRecordOpt driver qn = do
+        key <- I.ResolvedRecordKey qn
+        case DB.getOpt driver.db key of
+            Some record -> Some (I.asResolvedRecord record)
+            None -> None
+
+instance AdtProvider Driver where
+    getAdt driver qn = do
+        key <- I.ResolvedAdtKey qn
+        adt <- DB.get driver.db key
+        I.asResolvedAdt adt
+
+    getAdtOpt driver qn = do
+        key <- I.ResolvedAdtKey qn
+        case DB.getOpt driver.db key of
+            Some adt -> Some (I.asResolvedAdt adt)
+            None -> None
+
+instance FunctionProvider Driver where
+    getFunction driver qn = do
+        key <- I.ResolvedFunctionKey qn
+        f <- DB.get driver.db key
+        I.asResolvedFunction f

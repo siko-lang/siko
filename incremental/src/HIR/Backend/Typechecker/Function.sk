@@ -1,0 +1,39 @@
+module Siko.HIR.Backend.Typechecker.Function where
+
+import Siko.HIR.Type as T
+import Siko.HIR.Backend.Util
+import Siko.HIR.FullyQualifiedName
+import Siko.HIR.Function as F
+import Siko.HIR.Backend.Typechecker
+import Siko.HIR.Backend.Typechecker.Error
+
+data FunctionTypeInfo = { name :: FullyQualifiedName,
+                          args :: [T.Type],
+                          function_type :: T.Type,
+                          result_type :: T.Type,
+                          effects :: Option [T.Type],
+                          defined :: Bool,
+                        } deriving (Show, PartialEq, Eq)
+
+createFunctionTypeInfo a :: (TypecheckerState a) => a -> F.Function () -> (a, FunctionTypeInfo)
+createFunctionTypeInfo state f = do
+    (state, ty, defined) <- case f.type of
+        Some ty -> do
+            type_arg_count <- getLength (T.getArgs ty)
+            state <- if type_arg_count < f.arg_count
+                then do
+                    err <- IncorrectArgCount type_arg_count f.arg_count f.location
+                    addError state err
+                else state
+            (state, ty, True)
+        None -> do
+            (state, generated_func_type) <- createGeneralFunction f.arg_count state
+            (state, generated_func_type, False)
+    args <- T.getArgs ty
+    if getLength args < f.arg_count
+    then panic "arg count mismatch {}" % f.name // FIXME
+    else ()
+    (args, _) <- List.split args f.arg_count
+    result_ty <- T.getResultType ty (getLength args)
+    func_type_info <- FunctionTypeInfo f.name args ty result_ty f.effects defined
+    (state, func_type_info)

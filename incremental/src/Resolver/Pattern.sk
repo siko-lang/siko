@@ -15,6 +15,7 @@ import Siko.Resolver.ResolvedItem
 import Siko.Resolver.Type
 import Siko.Syntax.Ident
 import Siko.Resolver
+import Siko.Query.Lookup
 
 resolveConstructor a :: (ResolverState a) => Context a -> Ident -> Bool -> Result (Context a, FQ.FullyQualifiedName) (Context a)
 resolveConstructor context name mustBeRecord = do
@@ -66,8 +67,8 @@ processPattern context pattern_env env (SP.Pattern pattern location) = do
             case resolveConstructor context name False of
                 Ok (context, qn) -> do
                     context :: Context a <- context // FIXME
-                    case getRecordOrVariantInfo context.state qn of
-                        Right (HD.VariantInfo adt_name index _) -> do
+                    case getVariantInfoOpt context.state qn of
+                        Some (HD.VariantInfo adt_name index _) -> do
                             adt <- getAdt context.state adt_name
                             HD.Variant _ _ items <- atIndex adt.variants index
                             context <- if getLength adt.variants > 1 && pattern_env.irrefutable
@@ -80,7 +81,8 @@ processPattern context pattern_env env (SP.Pattern pattern location) = do
                                 context <- addErrorToContext context (InvalidVariantArgCountInPattern name expected found)
                                 (context, pattern_env, env, HP.Tuple [])
                             else (context, pattern_env, env, HP.Variant adt_name index hir_args)
-                        Left record -> do
+                        None -> do
+                            record <- getRecord context.state qn
                             expected <- getLength record.fields
                             found <- getLength args
                             if expected != found

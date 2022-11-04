@@ -12,6 +12,8 @@ import Siko.HIR.FullyQualifiedName as FQ
 import Siko.HIR.Function as HF
 import Siko.Resolver.ModuleResolver as RMR
 import Siko.Resolver.Function as RF
+import Siko.HIR.Backend.Typechecker.Function as TF
+import Siko.HIR.Backend.Typechecker.Class as TC
 
 import Siko.Util.SharedString as SS
 
@@ -24,6 +26,9 @@ data Command = CollectLocalItems Key
              | ResolveClass Key
              | ResolveInstance Key
              | ResolveEffect Key
+             | RefreshClassDeps
+             | CreateClassTypeInfo Key
+             | CreateFunctionTypeInfo Key
              deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
 data ItemKind = UnresolvedModuleKind
@@ -43,6 +48,8 @@ data ItemKind = UnresolvedModuleKind
               | ResolvedInstanceKind
               | UnresolvedEffectKind
               | ResolvedEffectKind
+              | FunctionTypeInfoKind
+              | ClassTypeInfoKind
               deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
 data Item = UnresolvedModule M.Module
@@ -62,6 +69,8 @@ data Item = UnresolvedModule M.Module
           | ResolvedInstance HC.Instance
           | UnresolvedEffect SEff.Effect
           | ResolvedEffect HEff.Effect
+          | FunctionTypeInfo TF.FunctionTypeInfo
+          | ClassTypeInfo TC.ClassTypeInfo
           deriving (Show, PartialEq, Eq)
 
 data Key = UnresolvedModuleKey String
@@ -81,6 +90,8 @@ data Key = UnresolvedModuleKey String
          | ResolvedInstanceKey FQ.FullyQualifiedName
          | UnresolvedEffectKey FQ.FullyQualifiedName
          | ResolvedEffectKey FQ.FullyQualifiedName
+         | FunctionTypeInfoKey FQ.FullyQualifiedName
+         | ClassTypeInfoKey FQ.FullyQualifiedName
          deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
 asUnresolvedModule :: Item -> M.Module
@@ -163,6 +174,21 @@ asResolvedVariantInfo item = case item of
     ResolvedVariantInfo variant_info -> variant_info
     _ -> panic "{} is not ResolvedVariantInfo" % item
 
+asResolvedFunction :: Item -> HF.Function ()
+asResolvedFunction item = case item of
+    ResolvedFunction function -> function
+    _ -> panic "{} is not ResolvedFunction" % item
+
+asFunctionTypeInfo :: Item -> TF.FunctionTypeInfo
+asFunctionTypeInfo item = case item of
+    FunctionTypeInfo i -> i
+    _ -> panic "{} is not FunctionTypeInfo" % item
+
+asClassTypeInfo :: Item -> TC.ClassTypeInfo
+asClassTypeInfo item = case item of
+    ClassTypeInfo i -> i
+    _ -> panic "{} is not ClassTypeInfo" % item
+
 getModuleName :: Key -> String
 getModuleName key = case key of
     UnresolvedModuleKey n -> n
@@ -182,6 +208,8 @@ getModuleName key = case key of
     ResolvedInstanceKey qn -> SS.get (FQ.getModuleName qn)
     UnresolvedEffectKey qn -> SS.get (FQ.getModuleName qn)
     ResolvedEffectKey qn -> SS.get (FQ.getModuleName qn)
+    FunctionTypeInfoKey qn -> SS.get (FQ.getModuleName qn)
+    ClassTypeInfoKey qn -> SS.get (FQ.getModuleName qn)
 
 getFullyQualifiedName :: Key -> FQ.FullyQualifiedName
 getFullyQualifiedName key = case key of
@@ -202,6 +230,8 @@ getFullyQualifiedName key = case key of
     ResolvedInstanceKey qn -> qn
     UnresolvedEffectKey qn -> qn
     ResolvedEffectKey qn -> qn
+    FunctionTypeInfoKey qn -> qn
+    ClassTypeInfoKey qn -> qn
 
 getKind :: Item -> ItemKind
 getKind item = case item of
@@ -222,3 +252,5 @@ getKind item = case item of
     ResolvedInstance _ -> ResolvedInstanceKind
     UnresolvedEffect _ -> UnresolvedEffectKind
     ResolvedEffect _ -> ResolvedEffectKind
+    FunctionTypeInfo _ -> FunctionTypeInfoKind
+    ClassTypeInfo _ -> ClassTypeInfoKind

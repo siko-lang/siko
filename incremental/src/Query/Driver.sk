@@ -11,17 +11,8 @@ import Siko.Syntax.Location
 import Siko.Syntax.Ident
 import Siko.Resolver as R
 import Siko.Util.SharedString as SS
-import Siko.Resolver.Local
-import Siko.Resolver.Export
-import Siko.Resolver.Effect
-import Siko.Resolver.Import
-import Siko.Resolver.Class
-import Siko.Resolver.Item as RI
-import Siko.Resolver.Data as RD
-import Siko.Resolver.Function as RF
-import Siko.HIR.FullyQualifiedName
-import Siko.HIR.Data as HD
-import Siko.HIR.Class as HC
+import Siko.Query.Resolver as QR
+import Siko.Query.Typechecker as QT
 
 data Driver = { sources :: Map String SourceFile,
                 resolver :: R.Resolver,
@@ -40,6 +31,9 @@ createDriver = do
     db <- DB.addCommandGenerator db I.UnresolvedClassKind I.ResolveClass
     db <- DB.addCommandGenerator db I.UnresolvedInstanceKind I.ResolveInstance
     db <- DB.addCommandGenerator db I.UnresolvedEffectKind I.ResolveEffect
+    db <- DB.addCommandGenerator db I.ResolvedFunctionKind I.CreateFunctionTypeInfo
+    db <- DB.addCommandGenerator db I.ResolvedClassKind I.CreateClassTypeInfo
+    db <- DB.addWatchedKind db I.ResolvedClassKind I.RefreshClassDeps
     resolver <- R.createResolver
     Driver Map.empty resolver db []
 
@@ -67,11 +61,6 @@ removeSource driver file_name = do
     resolver <- R.purgeFile driver.resolver file_name
     driver { resolver = resolver }
 
-addCommand :: Driver -> I.Command -> Driver
-addCommand driver cmd = do
-    pending_commands <- List.push driver.pending_commands cmd
-    driver { pending_commands = pending_commands }
-
 executeCommands :: Driver -> Driver
 executeCommands driver = do
     loop driver <- driver do
@@ -84,221 +73,27 @@ executeCommands driver = do
             driver <- driver { pending_commands = [] }
             List.fold driver pending_commands executeCommand
 
-getExports :: Driver -> SS.SharedString -> Option [RI.Item]
-getExports driver name = do
-    name <- SS.get name
-    key <- I.ExportedItemsKey name
-    case DB.getOpt driver.db key of
-        Some exported_items -> Some (I.asExportedItems exported_items)
-        None -> None
-
-getRecord :: Driver -> FullyQualifiedName -> HD.Record
-getRecord driver qn = do
-    key <- I.ResolvedRecordKey qn
-    record <- DB.get driver.db key
-    I.asResolvedRecord record
-
-getAdt :: Driver -> FullyQualifiedName -> HD.AlgebraicDataType
-getAdt driver qn = do
-    key <- I.ResolvedAdtKey qn
-    adt <- DB.get driver.db key
-    I.asResolvedAdt adt
-
-getRecordOrVariantInfo :: Driver -> FullyQualifiedName -> Either HD.Record HD.VariantInfo
-getRecordOrVariantInfo driver qn = do
-    key <- I.ResolvedRecordKey qn
-    case DB.getOpt driver.db key of
-        Some record -> Left (I.asResolvedRecord record)
-        None -> do
-            key <- I.ResolvedVariantInfoKey qn
-            variant_info <- DB.get driver.db key
-            Right (I.asResolvedVariantInfo variant_info)
-
 executeCommand :: Driver -> I.Command -> Driver
 executeCommand driver cmd = do
     case cmd of
-        I.CollectLocalItems key -> do
-            mod <- DB.get driver.db key
-            mod <- I.asUnresolvedModule mod
-            name <- SS.get (getString mod.name)
-            local_items <- collectLocals mod
-            key <- I.LocalItemsKey name
-            item <- I.LocalItems local_items
-            addToDb driver key item
-        I.CollectExports key -> do
-            local_items <- DB.get driver.db key
-            local_items <- I.asLocalItems local_items
-            name <- I.getModuleName key
-            mod <- DB.get driver.db (I.UnresolvedModuleKey name)
-            mod <- I.asUnresolvedModule mod
-            exported_items <- collectExports local_items mod
-            key <- I.ExportedItemsKey name
-            item <- I.ExportedItems exported_items
-            addToDb driver key item
-        I.ProcessImports key -> do
-            name <- I.getModuleName key
-            mod <- DB.get driver.db (I.UnresolvedModuleKey name)
-            mod <- I.asUnresolvedModule mod
-            local_items <- DB.get driver.db (I.LocalItemsKey name)
-            local_items <- I.asLocalItems local_items
-            (imported_items, errors) <- processImports mod (ExportProvider (getExports driver)) local_items
-            if List.isEmpty errors
-            then do
-                module_resolver <- createModuleResolver (SS.create name) imported_items
-                key <- I.ModuleResolverKey name
-                item <- I.ModuleResolver module_resolver
-                driver <- addToDb driver key item
-                driver <- List.fold driver mod.items (\driver, item -> case item of
-                    SM.Record record -> do
-                        qn <- FullPath module_resolver.module_name (getString record.name)
-                        key <- I.UnresolvedRecordKey qn
-                        item <- I.UnresolvedRecord record
-                        addToDb driver key item
-                    SM.Adt adt -> do
-                        qn <- FullPath module_resolver.module_name (getString adt.name)
-                        key <- I.UnresolvedAdtKey qn
-                        item <- I.UnresolvedAdt adt
-                        addToDb driver key item
-                    SM.Class c -> do
-                        qn <- FullPath module_resolver.module_name (getString c.name)
-                        key <- I.UnresolvedClassKey qn
-                        item <- I.UnresolvedClass c
-                        addToDb driver key item
-                    SM.Instance i -> do
-                        Ident name location <- i.class_name
-                        instance_id <- HC.InstanceId location
-                        qn <- FullPathWithInstanceId module_resolver.module_name name instance_id
-                        key <- I.UnresolvedInstanceKey qn
-                        item <- I.UnresolvedInstance i
-                        addToDb driver key item
-                    SM.Effect e -> do
-                        qn <- FullPath module_resolver.module_name (getString e.name)
-                        key <- I.UnresolvedEffectKey qn
-                        item <- I.UnresolvedEffect e
-                        addToDb driver key item
-                    _ -> driver)
-                unresolved_functions <- RF.collectUnresolvedFunctions mod.items
-                List.fold driver unresolved_functions (\driver, unresolved_function -> do
-                    qn <- FullPath module_resolver.module_name (getString unresolved_function.name)
-                    key <- I.UnresolvedFunctionKey qn
-                    unresolved_function_info <- RF.createNormalUnresolvedFunctionInfo unresolved_function qn
-                    item <- I.UnresolvedFunction unresolved_function_info
-                    addToDb driver key item)
-            else do
-                // TODO: error
-                driver
-        I.ResolveRecord qn -> do
-            qn <- I.getFullyQualifiedName qn
-            state <- R.createStateProvider (getRecord driver) (getAdt driver) (getRecordOrVariantInfo driver)
-            module_name <- getModuleName qn
-            module_resolver <- DB.get driver.db (I.ModuleResolverKey (SS.get module_name))
-            module_resolver <- I.asModuleResolver module_resolver
-            record <- DB.get driver.db (I.UnresolvedRecordKey qn)
-            record <- I.asUnresolvedRecord record
-            (state, hir_record) <- RD.processRecord state module_resolver record
-            // TODO: error
-            key <- I.ResolvedRecordKey qn
-            item <- I.ResolvedRecord hir_record
-            addToDb driver key item
-        I.ResolveAdt qn -> do
-            qn <- I.getFullyQualifiedName qn
-            state <- R.createStateProvider (getRecord driver) (getAdt driver) (getRecordOrVariantInfo driver)
-            module_name <- getModuleName qn
-            module_resolver <- DB.get driver.db (I.ModuleResolverKey (SS.get module_name))
-            module_resolver <- I.asModuleResolver module_resolver
-            adt <- DB.get driver.db (I.UnresolvedAdtKey qn)
-            adt <- I.asUnresolvedAdt adt
-            (state, hir_adt, variant_infos) <- RD.processAdt state module_resolver adt
-            // TODO: error
-            driver <- List.fold driver variant_infos (\driver, (variant_info, qn) -> do
-                key <- I.ResolvedVariantInfoKey qn
-                item <- I.ResolvedVariantInfo variant_info
-                addToDb driver key item)
-            key <- I.ResolvedAdtKey qn
-            item <- I.ResolvedAdt hir_adt
-            addToDb driver key item
-        I.ResolveFunction qn -> do
-            qn <- I.getFullyQualifiedName qn
-            module_name <- getModuleName qn
-            module_resolver <- DB.get driver.db (I.ModuleResolverKey (SS.get module_name))
-            module_resolver <- I.asModuleResolver module_resolver
-            unresolved_function <- DB.get driver.db (I.UnresolvedFunctionKey qn)
-            unresolved_function <- Std.Intrinsics.clone unresolved_function // FIXME: borrow error workaround
-            unresolved_function_info <- I.asUnresolvedFunction unresolved_function
-            state <- R.createStateProvider (getRecord driver) (getAdt driver) (getRecordOrVariantInfo driver)
-            (state, functions, sub_unresolved_function_infos) <- RF.processUnresolvedFunction state module_resolver unresolved_function_info
-            // TODO: error
-            driver <- List.fold driver functions (\driver, function -> do
-                key <- I.ResolvedFunctionKey function.name
-                item <- I.ResolvedFunction function
-                addToDb driver key item)
-            driver <- List.fold driver sub_unresolved_function_infos (\driver, unresolved_function_info -> do
-                    key <- I.UnresolvedFunctionKey unresolved_function_info.name
-                    item <- I.UnresolvedFunction unresolved_function_info
-                    addToDb driver key item)
-            driver
-        I.ResolveClass qn -> do
-            qn <- I.getFullyQualifiedName qn
-            module_name <- getModuleName qn
-            module_resolver <- DB.get driver.db (I.ModuleResolverKey (SS.get module_name))
-            module_resolver <- I.asModuleResolver module_resolver
-            unresolved_class <- DB.get driver.db (I.UnresolvedClassKey qn)
-            unresolved_class <- Std.Intrinsics.clone (I.asUnresolvedClass unresolved_class)
-            state <- R.createStateProvider (getRecord driver) (getAdt driver) (getRecordOrVariantInfo driver)
-            (state, hir_class, unresolved_function_infos) <- processClass state module_resolver unresolved_class
-            // TODO: error
-            key <- I.ResolvedClassKey qn
-            item <- I.ResolvedClass hir_class
-            driver <- addToDb driver key item
-            driver <- List.fold driver unresolved_function_infos (\driver, unresolved_function_info -> do
-                    key <- I.UnresolvedFunctionKey unresolved_function_info.name
-                    item <- I.UnresolvedFunction unresolved_function_info
-                    addToDb driver key item)
-            driver
-        I.ResolveInstance qn -> do
-            qn <- I.getFullyQualifiedName qn
-            module_name <- getModuleName qn
-            module_resolver <- DB.get driver.db (I.ModuleResolverKey (SS.get module_name))
-            module_resolver <- I.asModuleResolver module_resolver
-            unresolved_instance <- DB.get driver.db (I.UnresolvedInstanceKey qn)
-            unresolved_instance <- Std.Intrinsics.clone (I.asUnresolvedInstance unresolved_instance)
-            state <- R.createStateProvider (getRecord driver) (getAdt driver) (getRecordOrVariantInfo driver)
-            (state, hir_instance, unresolved_function_infos) <- processInstance state module_resolver unresolved_instance
-            // TODO: error
-            key <- I.ResolvedInstanceKey qn
-            item <- I.ResolvedInstance hir_instance
-            driver <- addToDb driver key item
-            driver <- List.fold driver unresolved_function_infos (\driver, unresolved_function_info -> do
-                    key <- I.UnresolvedFunctionKey unresolved_function_info.name
-                    item <- I.UnresolvedFunction unresolved_function_info
-                    addToDb driver key item)
-            driver
-        I.ResolveEffect qn -> do
-            qn <- I.getFullyQualifiedName qn
-            module_name <- getModuleName qn
-            module_resolver <- DB.get driver.db (I.ModuleResolverKey (SS.get module_name))
-            module_resolver <- I.asModuleResolver module_resolver
-            unresolved_effect <- DB.get driver.db (I.UnresolvedEffectKey qn)
-            unresolved_effect <- Std.Intrinsics.clone (I.asUnresolvedEffect unresolved_effect)
-            state <- R.createStateProvider (getRecord driver) (getAdt driver) (getRecordOrVariantInfo driver)
-            (state, hir_effect, unresolved_function_infos) <- processEffect state module_resolver unresolved_effect
-            // TODO: error
-            key <- I.ResolvedEffectKey qn
-            item <- I.ResolvedEffect hir_effect
-            driver <- addToDb driver key item
-            driver <- List.fold driver unresolved_function_infos (\driver, unresolved_function_info -> do
-                    key <- I.UnresolvedFunctionKey unresolved_function_info.name
-                    item <- I.UnresolvedFunction unresolved_function_info
-                    addToDb driver key item)
-            driver
+        I.CollectLocalItems key -> QR.collectLocalItems driver key
+        I.CollectExports key -> QR.collectExports driver key
+        I.ProcessImports key -> QR.processImports driver key
+        I.ResolveRecord key -> QR.resolveRecord driver key
+        I.ResolveAdt key -> QR.resolveAdt driver key
+        I.ResolveFunction key -> QR.resolveFunction driver key
+        I.ResolveClass key -> QR.resolveClass driver key
+        I.ResolveInstance key -> QR.resolveInstance driver key
+        I.ResolveEffect key -> QR.resolveEffect driver key
+        I.RefreshClassDeps -> QT.refreshClassDeps driver
+        I.CreateFunctionTypeInfo key -> QT.createFunctionTypeInfo driver key
+        I.CreateClassTypeInfo key -> QT.createClassTypeInfo driver key
 
 addToDb :: Driver -> I.Key -> I.Item -> Driver
 addToDb driver key item = do
-    (db, cmd) <- DB.addItem driver.db key item
-    driver <- driver { db = db }
-    case cmd of
-        Some cmd -> addCommand driver cmd
-        None -> driver
+    (db, cmds) <- DB.addItem driver.db key item
+    pending_commands <- driver.pending_commands + cmds
+    driver { db = db, pending_commands = pending_commands }
 
 commitChanges :: Driver -> Driver
 commitChanges driver = do
@@ -319,7 +114,8 @@ commitChanges driver = do
                     None -> panic "Updated module not found in sources!"
             R.RemovedModule name -> do
                 key <- I.UnresolvedModuleKey name
-                db <- DB.removeItem driver.db key
-                driver { db = db }
+                (db, cmds) <- DB.removeItem driver.db key
+                pending_commands <- driver.pending_commands + cmds
+                driver { db = db, pending_commands = pending_commands }
         )
     executeCommands driver

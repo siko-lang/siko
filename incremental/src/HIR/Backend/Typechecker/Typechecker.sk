@@ -1,0 +1,57 @@
+module Siko.HIR.Backend.Typechecker where
+
+import Siko.HIR.Backend.TypeIsomorphism
+import Siko.HIR.Backend.Typechecker.Error
+import Siko.HIR.Backend.Unification as U
+import Siko.HIR.Data as HD
+import Siko.HIR.Backend.Unification.TypeVarGenerator as TVG
+import Siko.HIR.FullyQualifiedName as FQ
+import Siko.Query.Lookup
+
+class (DependencyProvider a, U.Context a, FunctionProvider a, ClassProvider a, RecordProvider a) => TypecheckerState a where
+    addError a :: a -> TypecheckerError -> a
+
+data TypecheckerStateProvider a = { errors :: [TypecheckerError],
+                                    var_gen :: TVG.TypeVarGenerator,
+                                    provider :: a
+                                  }
+
+createTypecheckerStateProvider a :: (FunctionProvider a, ClassProvider a, RecordProvider a) => a -> TypecheckerStateProvider a
+createTypecheckerStateProvider provider = TypecheckerStateProvider [] TVG.createTypeVarGenerator provider
+
+instance TypecheckerState TypecheckerStateProvider a where
+    addError state err = do
+        errors <- List.push state.errors err
+        state { errors = errors }
+
+instance (ClassProvider a) => DependencyProvider TypecheckerStateProvider a where
+    getAllDependencies state qn = (getClass state qn).dependencies
+
+instance U.Context TypecheckerStateProvider a where
+    ignoreConstraints state = False
+
+instance U.TypeVarGenerator TypecheckerStateProvider a where
+    getNewTypeVar state = do
+        (var_gen, var) <- TVG.getNewTypeVar state.var_gen
+        (state { var_gen = var_gen }, var)
+
+    getNewTypeVarType state = do
+        (var_gen, type) <- TVG.getNewTypeVarType state.var_gen
+        (state { var_gen = var_gen }, type)
+
+instance (RecordProvider a) => U.DataProvider TypecheckerStateProvider a where
+    getRecord state qn = getRecordOpt state.provider qn
+
+instance (RecordProvider a) => RecordProvider TypecheckerStateProvider a where
+    getRecord state qn = getRecord state.provider qn
+    getRecordOpt state qn = getRecordOpt state.provider qn
+
+instance (ClassProvider a) => U.ClassProvider TypecheckerStateProvider a where
+    getAllClassDependencies state qn = (getClass state.provider qn).dependencies
+    getAssociatedTypeCount state qn = getLength (getClass state.provider qn).associated_types
+
+instance (FunctionProvider a) => FunctionProvider TypecheckerStateProvider a where
+    getFunction state qn = getFunction state.provider qn
+
+instance (ClassProvider a) => ClassProvider TypecheckerStateProvider a where
+    getClass state qn = getClass state.provider qn
