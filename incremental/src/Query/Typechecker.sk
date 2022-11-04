@@ -61,3 +61,27 @@ createClassTypeInfo driver key = do
     key <- I.ClassTypeInfoKey qn
     item <- I.ClassTypeInfo class_type_info
     addToDb driver key item
+
+checkInstance :: Driver -> I.Key -> Driver
+checkInstance driver key = do
+    qn <- I.getFullyQualifiedName key
+    i <- DB.get driver.db (I.ResolvedInstanceKey qn)
+    i <- I.asResolvedInstance i
+    c <- getClass driver i.class_name
+    class_type_info <- DB.get driver.db (I.ClassTypeInfoKey i.class_name)
+    class_type_info <- I.asClassTypeInfo class_type_info
+    state <- TCK.createTypecheckerStateProvider driver
+    state <- TC.checkInstance state class_type_info i
+    // TODO: error
+    driver
+
+createFunctionDependencyInfo :: Driver -> I.Key -> Driver
+createFunctionDependencyInfo driver key = do
+    qn <- I.getFullyQualifiedName key
+    f <- DB.get driver.db (I.ResolvedFunctionKey qn)
+    f <- I.asResolvedFunction f
+    state <- TCK.createTypecheckerStateProvider driver
+    func_dep_info <- TF.createFunctionDependencyInfo state f
+    key <- I.FunctionDependencyInfoKey qn
+    item <- I.FunctionDependencyInfo func_dep_info
+    addToDb driver key item

@@ -32,7 +32,9 @@ createDriver = do
     db <- DB.addCommandGenerator db I.UnresolvedInstanceKind I.ResolveInstance
     db <- DB.addCommandGenerator db I.UnresolvedEffectKind I.ResolveEffect
     db <- DB.addCommandGenerator db I.ResolvedFunctionKind I.CreateFunctionTypeInfo
+    db <- DB.addCommandGenerator db I.ResolvedFunctionKind I.CreateFunctionDependencyInfo
     db <- DB.addCommandGenerator db I.ResolvedClassKind I.CreateClassTypeInfo
+    db <- DB.addCommandGenerator db I.ResolvedInstanceKind I.CheckInstance
     db <- DB.addWatchedKind db I.ResolvedClassKind I.RefreshClassDeps
     resolver <- R.createResolver
     Driver Map.empty resolver db []
@@ -65,13 +67,14 @@ executeCommands :: Driver -> Driver
 executeCommands driver = do
     loop driver <- driver do
         driver :: Driver <- driver // FIXME
-        if List.isEmpty driver.pending_commands
-        then break driver
-        else do
-            pending_commands <- driver.pending_commands
-            pending_commands <- pending_commands |> List.sort |> List.dedup
-            driver <- driver { pending_commands = [] }
-            List.fold driver pending_commands executeCommand
+        prios <- List.map driver.pending_commands I.getPriority
+        case List.min prios of
+            Some min_prio -> do
+                currents <- List.filter driver.pending_commands (\cmd -> I.getPriority cmd == min_prio)
+                rest <- List.filter driver.pending_commands (\cmd -> I.getPriority cmd != min_prio)
+                driver <- driver { pending_commands = rest }
+                List.fold driver currents executeCommand
+            None -> break driver
 
 executeCommand :: Driver -> I.Command -> Driver
 executeCommand driver cmd = do
@@ -88,6 +91,8 @@ executeCommand driver cmd = do
         I.RefreshClassDeps -> QT.refreshClassDeps driver
         I.CreateFunctionTypeInfo key -> QT.createFunctionTypeInfo driver key
         I.CreateClassTypeInfo key -> QT.createClassTypeInfo driver key
+        I.CheckInstance key -> QT.checkInstance driver key
+        I.CreateFunctionDependencyInfo key -> QT.createFunctionDependencyInfo driver key
 
 addToDb :: Driver -> I.Key -> I.Item -> Driver
 addToDb driver key item = do

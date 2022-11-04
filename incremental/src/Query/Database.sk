@@ -9,7 +9,7 @@ data WatchedCollection = { update_cmd :: I.Command,
 
 data Database = { items :: Map I.Key I.Item,
                   collections :: Map I.ItemKind WatchedCollection,
-                  cmd_generators :: Map I.ItemKind (I.Key -> I.Command)
+                  cmd_generators :: Map I.ItemKind [(I.Key -> I.Command)]
                 }
 
 createDatabase :: Database
@@ -22,7 +22,7 @@ addWatchedKind db kind update_cmd = do
 
 addCommandGenerator :: Database -> I.ItemKind -> (I.Key -> I.Command) -> Database
 addCommandGenerator db kind gen = do
-    cmd_generators <- Map.put db.cmd_generators kind gen
+    cmd_generators <- Map.add db.cmd_generators kind gen
     db { cmd_generators = cmd_generators }
 
 get :: Database -> I.Key -> I.Item
@@ -46,13 +46,14 @@ addItem db key item = do
     (items, old) <- Map.insert db.items key item
     db <- db { items = items }
     cmds <- case Map.get db.cmd_generators kind of
-        Some gen -> do
-            cmd <- gen key
-            case old of
-                Some old -> if old == item
-                    then []
-                    else [cmd]
-                None -> [cmd]
+        Some gens -> do
+            List.fold [] gens (\cmds, gen -> do
+                cmd <- gen key
+                case old of
+                    Some old -> if old == item
+                        then cmds
+                        else List.push cmds cmd
+                    None -> List.push cmds cmd)
         None -> []
     (db, cmds) <- case Map.get db.collections kind of
         Some collection -> do

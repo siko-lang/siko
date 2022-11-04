@@ -29,7 +29,26 @@ data Command = CollectLocalItems Key
              | RefreshClassDeps
              | CreateClassTypeInfo Key
              | CreateFunctionTypeInfo Key
+             | CheckInstance Key
+             | CreateFunctionDependencyInfo Key
              deriving (Show, PartialEq, Eq, PartialOrd, Ord)
+
+getPriority :: Command -> Int
+getPriority cmd = case cmd of
+    CollectLocalItems _ -> 0
+    CollectExports _ -> 1
+    ProcessImports _ -> 2
+    ResolveRecord _ -> 3
+    ResolveAdt _ -> 4
+    ResolveFunction _ -> 5
+    ResolveClass _ -> 6
+    ResolveInstance _ -> 7
+    ResolveEffect _ -> 8
+    RefreshClassDeps -> 9
+    CreateClassTypeInfo _ -> 10
+    CreateFunctionTypeInfo _ -> 11
+    CheckInstance _ -> 12
+    CreateFunctionDependencyInfo _ -> 13
 
 data ItemKind = UnresolvedModuleKind
               | LocalItemsKind
@@ -50,6 +69,7 @@ data ItemKind = UnresolvedModuleKind
               | ResolvedEffectKind
               | FunctionTypeInfoKind
               | ClassTypeInfoKind
+              | FunctionDependencyInfoKind
               deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
 data Item = UnresolvedModule M.Module
@@ -71,6 +91,7 @@ data Item = UnresolvedModule M.Module
           | ResolvedEffect HEff.Effect
           | FunctionTypeInfo TF.FunctionTypeInfo
           | ClassTypeInfo TC.ClassTypeInfo
+          | FunctionDependencyInfo TF.FunctionDependencyInfo
           deriving (Show, PartialEq, Eq)
 
 data Key = UnresolvedModuleKey String
@@ -92,6 +113,7 @@ data Key = UnresolvedModuleKey String
          | ResolvedEffectKey FQ.FullyQualifiedName
          | FunctionTypeInfoKey FQ.FullyQualifiedName
          | ClassTypeInfoKey FQ.FullyQualifiedName
+         | FunctionDependencyInfoKey FQ.FullyQualifiedName
          deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
 asUnresolvedModule :: Item -> M.Module
@@ -189,6 +211,11 @@ asClassTypeInfo item = case item of
     ClassTypeInfo i -> i
     _ -> panic "{} is not ClassTypeInfo" % item
 
+asFunctionDependencyInfo :: Item -> TF.FunctionDependencyInfo
+asFunctionDependencyInfo item = case item of
+    FunctionDependencyInfo i -> i
+    _ -> panic "{} is not FunctionDependencyInfo" % item
+
 getModuleName :: Key -> String
 getModuleName key = case key of
     UnresolvedModuleKey n -> n
@@ -210,6 +237,7 @@ getModuleName key = case key of
     ResolvedEffectKey qn -> SS.get (FQ.getModuleName qn)
     FunctionTypeInfoKey qn -> SS.get (FQ.getModuleName qn)
     ClassTypeInfoKey qn -> SS.get (FQ.getModuleName qn)
+    FunctionDependencyInfoKey qn -> SS.get (FQ.getModuleName qn)
 
 getFullyQualifiedName :: Key -> FQ.FullyQualifiedName
 getFullyQualifiedName key = case key of
@@ -232,6 +260,7 @@ getFullyQualifiedName key = case key of
     ResolvedEffectKey qn -> qn
     FunctionTypeInfoKey qn -> qn
     ClassTypeInfoKey qn -> qn
+    FunctionDependencyInfoKey qn -> qn
 
 getKind :: Item -> ItemKind
 getKind item = case item of
@@ -254,3 +283,4 @@ getKind item = case item of
     ResolvedEffect _ -> ResolvedEffectKind
     FunctionTypeInfo _ -> FunctionTypeInfoKind
     ClassTypeInfo _ -> ClassTypeInfoKind
+    FunctionDependencyInfo _ -> FunctionDependencyInfoKind
