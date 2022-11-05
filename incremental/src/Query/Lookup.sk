@@ -8,6 +8,7 @@ import Siko.HIR.Class as HC
 import Siko.HIR.Data as HD
 import Siko.HIR.Function as HF
 import Siko.HIR.Effect as HE
+import Siko.HIR.Backend.Typechecker.Function as TF
 
 class ClassProvider a where
     getClass a :: a -> FQ.FullyQualifiedName -> HC.Class
@@ -30,6 +31,12 @@ class VariantInfoProvider a where
 class EffectProvider a where
     getEffect a :: a -> FQ.FullyQualifiedName -> HE.Effect
     getEffectOpt a :: a -> FQ.FullyQualifiedName -> Option HE.Effect
+
+class FunctionTypeInfoProvider a where
+    getFunctionTypeInfo a :: a -> FQ.FullyQualifiedName -> TF.FunctionTypeInfo
+
+class CheckedFunctionTypeInfoProvider a where
+    getCheckedFunctionTypeInfo a :: a -> FQ.FullyQualifiedName -> TF.FunctionTypeInfo
 
 instance VariantInfoProvider Driver where
     getVariantInfo driver qn = do
@@ -90,3 +97,15 @@ instance EffectProvider Driver where
         case DB.getOpt driver.db key of
             Some e -> Some (I.asResolvedEffect e)
             None -> None
+
+instance FunctionTypeInfoProvider Driver where
+    getFunctionTypeInfo driver qn = do
+        key <- I.FunctionTypeInfoKey qn
+        f <- DB.get driver.db key
+        I.asFunctionTypeInfo f
+
+instance CheckedFunctionTypeInfoProvider Driver where
+    getCheckedFunctionTypeInfo driver qn = do
+        key <- I.CheckedFunctionTypeInfoKey qn
+        f <- DB.get driver.db key
+        I.asCheckedFunctionTypeInfo f

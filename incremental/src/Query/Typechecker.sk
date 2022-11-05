@@ -107,5 +107,14 @@ typeCheckFunctionGroup :: Driver -> I.Key -> Driver
 typeCheckFunctionGroup driver key = do
     function_group <- DB.get driver.db key
     function_group <- I.asFunctionGroup function_group
-    println "Function group {}" % function_group
+    state <- TCK.createTypecheckerStateProvider driver
+    (state, typed_functions) <- TF.processGroup state function_group.items
+    // TODO: error
+    driver <- Map.fold driver typed_functions (\driver, (name, fn) -> do
+        key <- I.CheckedFunctionTypeInfoKey fn.name
+        state <- TCK.createTypecheckerStateProvider driver
+        (state, func_type_info) <- TF.createFunctionTypeInfo state fn
+        // FIXME, TODO: this must not fail at this point!
+        item <- I.CheckedFunctionTypeInfo func_type_info
+        addToDb driver key item)
     driver

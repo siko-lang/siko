@@ -22,6 +22,7 @@ processVariant state type_resolver variant = do
         (type_resolver, state, arg) <- processTypeSignature type_resolver state item
         items <- push items arg
         (state, type_resolver, items)) (state, type_resolver, [])
+    name <- Std.Intrinsics.clone name
     (state, type_resolver, HD.Variant name location items)
 
 processRecordField a :: (ResolverState a) =>
@@ -43,6 +44,8 @@ processDerivedClasses state module_resolver derived_classes = do
             case resolveClass module_resolver derived_class of
                 Ok name -> do
                     (Ident _ location) <- derived_class
+                    name <- Std.Intrinsics.clone name
+                    location <- Std.Intrinsics.clone location
                     (state, push derived_classes (HD.DeriveInfo name location))
                 Err err -> do
                     (addError state err, derived_classes)) (state, [])

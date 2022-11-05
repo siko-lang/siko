@@ -143,6 +143,12 @@ getPatternEffectSignature store pattern_id =
         Some eff -> eff
         _ -> panic "No effect signature found for {}" % pattern_id
 
+getWithEffects :: TypeStore -> E.ExprId -> [T.Type]
+getWithEffects store expr_id =
+    case get store.with_effects expr_id of
+        Some eff -> eff
+        _ -> panic "No with effects found for {}" % expr_id
+
 instance S.Apply TypeStore where
     apply store sub = do
             expr_types <- Map.update store.expr_types (applySub sub)

@@ -15,7 +15,9 @@ class (DependencyProvider a,
        RecordProvider a,
        EffectProvider a,
        AdtProvider a,
-       VariantInfoProvider a) => TypecheckerState a where
+       VariantInfoProvider a,
+       FunctionTypeInfoProvider a,
+       CheckedFunctionTypeInfoProvider a) => TypecheckerState a where
     addError a :: a -> TypecheckerError -> a
 
 data TypecheckerStateProvider a = { errors :: [TypecheckerError],
@@ -74,3 +76,9 @@ instance (AdtProvider a) => AdtProvider TypecheckerStateProvider a where
 instance (VariantInfoProvider a) => VariantInfoProvider TypecheckerStateProvider a where
     getVariantInfo state qn = getVariantInfo state.provider qn
     getVariantInfoOpt state qn = getVariantInfoOpt state.provider qn
+
+instance (FunctionTypeInfoProvider a) => FunctionTypeInfoProvider TypecheckerStateProvider a where
+    getFunctionTypeInfo state qn = getFunctionTypeInfo state.provider qn
+
+instance (CheckedFunctionTypeInfoProvider a) => CheckedFunctionTypeInfoProvider TypecheckerStateProvider a where
+    getCheckedFunctionTypeInfo state qn = getCheckedFunctionTypeInfo state.provider qn
