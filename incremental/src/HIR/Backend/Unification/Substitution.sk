@@ -32,6 +32,9 @@ class Apply a where
 instance (Apply a) => Apply [a] where
     apply xs sub = List.map xs (\x -> apply x sub)
 
+instance (Ord k, Apply v) => Apply Map k v where
+    apply xs sub = Map.map xs (\(k, v) -> (k, apply v sub))
+
 instance Apply UnificationConstraint where
     apply constraint sub = do
         type <- apply constraint.type sub

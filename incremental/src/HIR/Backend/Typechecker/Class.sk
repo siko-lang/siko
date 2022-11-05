@@ -1,5 +1,6 @@
 module Siko.HIR.Backend.Typechecker.Class where
 
+import Siko.Syntax.Location
 import Siko.HIR.Class as C
 import Siko.HIR.Type as T
 import Siko.HIR.Function as F
@@ -23,6 +24,31 @@ data ClassMemberInfo = { type :: T.Type,
 data ClassTypeInfo = {  arg_type :: T.Type,
                         associated_types :: [T.Type],
                         members :: Map SS.SharedString ClassMemberInfo } deriving (Show, PartialEq, Eq)
+
+data BaseType = Tuple Int
+              | Named FQ.FullyQualifiedName
+              | Function
+              | Generic
+              deriving (Show, PartialEq, Eq, PartialOrd, Ord)
+
+getBaseType :: T.Type -> BaseType
+getBaseType type = case type of
+    T.Tuple args -> Tuple (getLength args)
+    T.Named qn _ -> Named qn
+    T.Function _ _ -> Function
+    T.Var _ _ -> Generic
+    T.FixedTypeArg _ _ _ -> Generic
+    T.Ref _ t -> getBaseType t
+    T.Owner t -> getBaseType t
+    T.Never _ -> Generic
+
+data InstanceInfo = { instance_type :: T.Type,
+                      associated_types :: [T.Type],
+                      id :: FQ.FullyQualifiedName,
+                      location :: Location
+                    } deriving (Show, PartialEq, Eq)
+
+data InstanceKey = { class_name :: FQ.FullyQualifiedName, base_type :: BaseType } deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
 addMemberInfo :: ClassTypeInfo -> SS.SharedString -> T.Type -> Bool -> ClassTypeInfo
 addMemberInfo class_type_info name type has_default_impl = do
@@ -143,3 +169,9 @@ checkInstance state class_type_info i = do
                     then state
                     else addError state (MissingInstanceMember name i.location)
         )
+
+createInstanceInfo :: C.Instance -> (InstanceKey, InstanceInfo)
+createInstanceInfo i = do
+    base_type <- getBaseType i.type
+    class_name <- i.class_name
+    (InstanceKey class_name base_type, InstanceInfo i.type i.associated_types i.name i.location)

@@ -1,6 +1,8 @@
 module Siko.HIR.Backend.InstanceResolver where
 
 import Siko.HIR.Class
+import Siko.HIR.Backend.Typechecker
+import Siko.HIR.Backend.Typechecker.Class as TC
 import Siko.HIR.Type as T
 import Siko.HIR.TypeFormatter as TF
 import Siko.HIR.FullyQualifiedName as FQ
@@ -9,90 +11,19 @@ import Siko.HIR.Backend.Unification as U
 import Siko.HIR.Backend.Util as BUtil
 import Siko.HIR.Util as Util
 import Siko.HIR.Backend.Unification.Substitution as S
+import Siko.Query.Lookup as QL
 import Map
 
-data InstanceResolverHistory = { items :: Map T.Type [FQ.FullyQualifiedName] }
-
-addToHistory :: InstanceResolverHistory -> T.Type -> FQ.FullyQualifiedName -> InstanceResolverHistory
-addToHistory history type qn = do
-    items <- Map.add history.items type qn
-    history { items = items }
-
-createInstanceResolverHistory :: InstanceResolverHistory
-createInstanceResolverHistory = InstanceResolverHistory Map.empty
-
-wasChecked :: InstanceResolverHistory -> T.Type -> FQ.FullyQualifiedName -> Bool
-wasChecked history type qn = case get history.items type of
-    Some names -> List.contains names qn
-    None -> False
-
-class HistoryProvider a where
-    addEntry a :: a -> T.Type -> FQ.FullyQualifiedName -> a
-
-class InstanceResolverProvider a where
-    getResolver a :: a -> InstanceResolver
-
-data BaseType = Tuple Int
-              | Named FQ.FullyQualifiedName
-              | Function
-              | Generic
-              deriving (Show, PartialEq, Eq, PartialOrd, Ord)
-
-getBaseType :: T.Type -> BaseType
-getBaseType type = case type of
-    T.Tuple args -> Tuple (getLength args)
-    T.Named qn _ -> Named qn
-    T.Function _ _ -> Function
-    T.Var _ _ -> Generic
-    T.FixedTypeArg _ _ _ -> Generic
-    T.Ref _ t -> getBaseType t
-    T.Owner t -> getBaseType t
-    T.Never _ -> Generic
-
-data InstanceInfo = { instance_type :: T.Type,
-                      associated_types :: [T.Type],
-                      id :: FQ.FullyQualifiedName,
-                      location :: Location
-                    } deriving (Show)
-
-instantiateInstanceInfo a :: (U.TypeVarGenerator a, U.DataProvider a, U.ClassProvider a, U.Context a) => a -> InstanceInfo -> (a, InstanceInfo)
+instantiateInstanceInfo a :: (TypecheckerState a) => a -> TC.InstanceInfo -> (a, TC.InstanceInfo)
 instantiateInstanceInfo context instance_info = do
     vars <- Util.collectVars [] instance_info.instance_type
     vars <- List.fold vars instance_info.associated_types Util.collectVars
     (mapper, context) <- BUtil.initMapper vars context
     type <- BUtil.remap mapper instance_info.instance_type
     associated_types <- List.map instance_info.associated_types (BUtil.remap mapper)
-    (context, InstanceInfo type associated_types instance_info.id instance_info.location)
+    (context, TC.InstanceInfo type associated_types instance_info.id instance_info.location)
 
-data InstanceResolver = { instance_map :: Map FQ.FullyQualifiedName (Map BaseType InstanceInfo) }
-
-createInstanceResolver :: InstanceResolver
-createInstanceResolver = InstanceResolver empty
-
-addInstanceInfoToResolver :: InstanceResolver -> FQ.FullyQualifiedName -> BaseType -> InstanceInfo -> Result InstanceResolver (InstanceResolver, Location)
-addInstanceInfoToResolver instance_resolver class_name base_type instance_info = do
-    case get instance_resolver.instance_map class_name of
-        Some instance_info_map -> case get instance_info_map base_type of
-            Some instance_info -> do
-                return Err (instance_resolver, instance_info.location)
-            _ -> ()
-        _ -> ()
-    (instance_map, _) <- alter (\instance_info_map -> case instance_info_map of
-            Some instance_info_map -> do
-                (instance_info_map, _) <- insert instance_info_map base_type instance_info
-                Some instance_info_map
-            None -> do
-                (instance_info_map, _) <- insert empty base_type instance_info
-                Some instance_info_map) class_name instance_resolver.instance_map
-    Ok (instance_resolver { instance_map = instance_map })
-
-addUserDefinedInstance :: InstanceResolver -> FQ.FullyQualifiedName -> InstanceInfo -> Result InstanceResolver (InstanceResolver, Location)
-addUserDefinedInstance instance_resolver class_name instance_info = do
-    //println "Added user defined instance for {} {}" % (class_name, T.toLongString instance_info.instance_type)
-    base_type <- getBaseType instance_info.instance_type
-    addInstanceInfoToResolver instance_resolver class_name base_type instance_info
-
-unifyTypes a :: (U.DataProvider a, U.ClassProvider a, U.TypeVarGenerator a, U.Context a) => a -> S.Substitution -> T.Type -> T.Type -> (a, S.Substitution, Bool)
+unifyTypes a :: (TypecheckerState a) => a -> S.Substitution -> T.Type -> T.Type -> (a, S.Substitution, Bool)
 unifyTypes context sub type1 type2 =
     case U.unify context sub type1 type2 of
         Ok (context, sub) -> (context, sub, True)
@@ -100,56 +31,41 @@ unifyTypes context sub type1 type2 =
             //println "instance check, unifyTypes failed: {} {}" % (T.toLongString type1, T.toLongString type2)
             (context, sub, False)
 
-checkInstancesForBaseType a :: (U.DataProvider a, U.ClassProvider a, U.TypeVarGenerator a, U.Context a, HistoryProvider a) => a ->
+checkInstancesForBaseType a :: (TypecheckerState a) => a ->
                              S.Substitution ->
                              T.Type ->
-                             BaseType ->
-                             Map BaseType InstanceInfo ->
+                             TC.InstanceInfo ->
                              FQ.FullyQualifiedName ->
-                             Result (a, S.Substitution, InstanceInfo) a
-checkInstancesForBaseType context sub type base_type instance_info_map class_name = do
-    //println "checkInstancesForBaseType {} {}" % (TF.toLongString type, base_type)
-    case get instance_info_map base_type of
-        Some instance_info -> do
-                (context, instance_info) <- instantiateInstanceInfo context instance_info
-                //println "Cloned instance info {}/{}" % (TF.toString instance_info.instance_type, TF.toStringTypes instance_info.associated_types)
-                //println "Cloned instance info {}/{}" % (instance_info.instance_type, instance_info.associated_types)
-                (context, sub, success) <- unifyTypes context sub type instance_info.instance_type
-                if success
-                then ()
-                else panic "checkInstancesForBaseType: unify failed {} {}" % (TF.toString type, TF.toString instance_info.instance_type)
-                instance_type <- S.apply instance_info.instance_type sub
-                associated_types <- S.apply instance_info.associated_types sub
-                instance_info <- instance_info { instance_type = instance_type, associated_types = associated_types }
-                context <- if T.isConcreteType type && success
-                then addEntry context type class_name
-                else context
-                Ok (context, sub, instance_info)
-        None -> do
-            //println "checkInstancesForBaseType: not found"
-            Err context
+                             Result (a, S.Substitution, TC.InstanceInfo) a
+checkInstancesForBaseType context sub type instance_info class_name = do
+    //println "checkInstancesForBaseType {} {}" % (TF.toLongString type,)
+    (context, instance_info) <- instantiateInstanceInfo context instance_info
+    //println "Cloned instance info {}/{}" % (TF.toString instance_info.instance_type, TF.toStringTypes instance_info.associated_types)
+    //println "Cloned instance info {}/{}" % (instance_info.instance_type, instance_info.associated_types)
+    (context, sub, success) <- unifyTypes context sub type instance_info.instance_type
+    if success
+    then ()
+    else panic "checkInstancesForBaseType: unify failed {} {}" % (TF.toString type, TF.toString instance_info.instance_type)
+    instance_type <- S.apply instance_info.instance_type sub
+    associated_types <- S.apply instance_info.associated_types sub
+    instance_info <- instance_info { instance_type = instance_type, associated_types = associated_types }
+    Ok (context, sub, instance_info)
 
-hasInstance a :: (U.DataProvider a, U.ClassProvider a, U.TypeVarGenerator a, U.Context a, HistoryProvider a, InstanceResolverProvider a) => a ->
-                 S.Substitution ->
-                 T.Type ->
-                 FQ.FullyQualifiedName ->
-                 Result (a, S.Substitution, InstanceInfo) a
+hasInstance a :: (TypecheckerState a) => a -> S.Substitution -> T.Type -> FQ.FullyQualifiedName -> Result (a, S.Substitution, TC.InstanceInfo) a
 hasInstance context sub type class_name = do
-    base_type <- getBaseType type
-    instance_resolver <- getResolver context
-    case get instance_resolver.instance_map class_name of
-        Some instance_info_map -> do
-            case checkInstancesForBaseType context sub type base_type instance_info_map class_name of
+    base_type <- TC.getBaseType type
+    case QL.getRegisteredInstanceOpt context (TC.InstanceKey class_name base_type) of
+        Some instance_info -> case checkInstancesForBaseType context sub type instance_info class_name of
                 Ok (context, sub, instance_info) -> Ok (context, sub, instance_info)
-                Err context -> checkInstancesForBaseType context sub type Generic instance_info_map class_name
-        None -> do
-            //println "Class {} has no instances, at all" % (class_name)
-            Err context
+                Err context -> do
+                    case QL.getRegisteredInstanceOpt context (TC.InstanceKey class_name TC.Generic) of
+                        Some instance_info -> case checkInstancesForBaseType context sub type instance_info class_name of
+                            Ok (context, sub, instance_info) -> Ok (context, sub, instance_info)
+                            Err context -> Err context
+                        None -> Err context
+        None -> Err context
 
-checkInstance a :: (U.DataProvider a, U.ClassProvider a, U.TypeVarGenerator a, U.Context a, HistoryProvider a, InstanceResolverProvider a) => a ->
-                    T.Type ->
-                    FQ.FullyQualifiedName ->
-                    Result (a, S.Substitution, InstanceInfo) a
+checkInstance a :: (TypecheckerState a) => a -> T.Type -> FQ.FullyQualifiedName -> Result (a, S.Substitution, TC.InstanceInfo) a
 checkInstance context type class_name = do
     //println "checkInstance: type: {}, class_name: {}" % (TF.toLongString type, class_name)
     case type of

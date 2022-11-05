@@ -12,10 +12,14 @@ instance S.Apply D.Record where
 instance S.Transform D.Record where
     transform record f = do
         type_args <- List.map record.type_args f
-        fields <- List.map record.fields (\D.RecordField name type -> D.RecordField name (f type))
+        fields <- List.map record.fields (\D.RecordField name type -> do
+            name <- Std.Intrinsics.clone name
+            D.RecordField name (f type))
         type <- f record.type
         record_ctor <- f record.record_ctor
-        D.Record record.name record.location type_args fields record.external record_ctor record.derived_classes type record.implicit_member
+        derived_classes <- Std.Intrinsics.clone record.derived_classes
+        name <- Std.Intrinsics.clone record.name
+        D.Record name record.location type_args fields record.external record_ctor derived_classes type record.implicit_member
 
 instance S.Apply D.AlgebraicDataType where
     apply adt sub = S.transform adt (\t -> S.apply t sub)
@@ -25,10 +29,13 @@ instance S.Transform D.AlgebraicDataType where
         type_args <- List.map adt.type_args f
         variants <- List.map adt.variants (\variant -> do
             items <- List.map variant.items f
-            variant { items = items })
+            name <- Std.Intrinsics.clone variant.name
+            variant { name = name, items = items })
         type <- f adt.type
         variant_ctors <- List.map adt.variant_ctors f
-        D.AlgebraicDataType adt.name adt.location type_args variants variant_ctors adt.derived_classes type
+        derived_classes <- Std.Intrinsics.clone adt.derived_classes
+        name <- Std.Intrinsics.clone adt.name
+        D.AlgebraicDataType name adt.location type_args variants variant_ctors derived_classes type
 
 remapRecord a :: (U.Context a) => D.Record -> a -> (D.Record, a)
 remapRecord record context = do

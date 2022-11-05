@@ -84,18 +84,20 @@ mergeUnresolvedFunctions :: [SF.Function] -> [SF.FunctionSignature] -> [Unresolv
 mergeUnresolvedFunctions functions signatures = do
 
     unresolved_functions <- List.fold Map.empty functions (\unresolved_functions, function -> do
-                unresolved_function <- case get unresolved_functions function.name of
+                name <- getString function.name
+                unresolved_function <- case get unresolved_functions name of
                     Some unresolved_function -> unresolved_function
                     None -> createUnresolvedFunction function.name
                 unresolved_function <- addFunction function unresolved_function
-                Map.put unresolved_functions function.name unresolved_function)
+                Map.put unresolved_functions name unresolved_function)
 
     unresolved_functions <- List.fold unresolved_functions signatures (\unresolved_functions, signature -> do
-                unresolved_function <- case get unresolved_functions signature.name of
+                name <- getString signature.name
+                unresolved_function <- case get unresolved_functions name of
                     Some unresolved_function -> unresolved_function
                     None -> createUnresolvedFunction signature.name
                 unresolved_function <- addFunctionSignature signature unresolved_function
-                Map.put unresolved_functions signature.name unresolved_function)
+                Map.put unresolved_functions name unresolved_function)
 
     Map.fold [] unresolved_functions (\unresolved_functions, (_, unresolved_function) -> List.push unresolved_functions unresolved_function)
 

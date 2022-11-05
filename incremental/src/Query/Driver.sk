@@ -54,8 +54,8 @@ clearSources driver = do
 addSource :: Driver -> String -> Driver
 addSource driver file_name = do
     driver <- removeSource driver file_name
-    content <- readTextFile file_name
-    (source_file, lexer_errors, parser_errors) <- P.parse (FileId 0) file_name content
+    source <- readTextFile file_name
+    (source_file, lexer_errors, parser_errors) <- P.parse (FileId 0) file_name source
     driver <- List.fold driver source_file.modules (addModule file_name)
     sources <- Map.put driver.sources file_name source_file
     driver { sources = sources }

@@ -25,16 +25,14 @@ import Siko.HIR.Backend.Typechecker.Error
 import Siko.Constants
 import Map
 import Siko.Util.SharedString as SS
-import Siko.Query.Lookup
+import Siko.Query.Lookup as QL
 
 data Context a = { type_store :: TS.TypeStore,
                    state :: a,
                    returns :: [(E.ExprId, Location)],
                    group_items :: [FQ.FullyQualifiedName],
+                   func_type_infos :: Map FQ.FullyQualifiedName FunctionTypeInfo,
                    class_constraints :: [S.UnificationConstraint] } deriving (Move)
-
-instance IR.HistoryProvider Context a where
-    addEntry context ty qn = panic "addEntry NYI"
 
 instance (U.TypeVarGenerator a) => U.TypeVarGenerator Context a where
     getNewTypeVar context = do
@@ -57,12 +55,9 @@ instance (U.ClassProvider a) => U.ClassProvider Context a where
     getAllClassDependencies context qn = U.getAllClassDependencies context.state qn
     getAssociatedTypeCount context qn = U.getAssociatedTypeCount context.state qn
 
-instance IR.InstanceResolverProvider Context a where
-    getResolver context = panic "getResolver NYI"
-
 initializeContext a :: (TypecheckerState a) => a -> [FQ.FullyQualifiedName] -> Context a
 initializeContext state group_items =
-    Context TS.initializeTypeStore state [] group_items []
+    Context TS.initializeTypeStore state [] group_items Map.empty []
 
 addExprType :: Context a -> E.ExprId -> TS.ExprTypeState -> Context a
 addExprType context expr_id expr_type = do
@@ -85,14 +80,26 @@ getNewVarWithConstraints context constraints = do
     (context, var) <- U.getNewTypeVar context
     (context, T.Var var constraints)
 
-getFunctionTypeInfo :: Context a -> FQ.FullyQualifiedName -> FunctionTypeInfo
-getFunctionTypeInfo context name = panic "getFunctionTypeInfo" // FS.getFunctionTypeInfo context.function_store name // TODO
+getFunctionTypeInfo :: (TypecheckerState a) => Context a -> FQ.FullyQualifiedName -> (Context a, FunctionTypeInfo)
+getFunctionTypeInfo context name = do
+    if List.contains context.group_items name
+    then case Map.get context.func_type_infos name of
+            Some func_type_info -> (context, func_type_info)
+            None -> do
+                func_type_info <- QL.getFunctionTypeInfo context.state name
+                func_type_infos <- Map.put context.func_type_infos name func_type_info
+                (context { func_type_infos = func_type_infos }, func_type_info)
+    else do
+        func_type_info <- QL.getCheckedFunctionTypeInfo context.state name
+        (context, func_type_info)
 
 applyToContext a :: (TypecheckerState a) => Context a -> S.Substitution -> Context a
 applyToContext context sub = do
     type_store <- S.apply context.type_store sub
     class_constraints <- S.apply context.class_constraints sub
+    func_type_infos <- S.apply context.func_type_infos sub
     context { type_store = type_store,
+              func_type_infos = func_type_infos,
               class_constraints = class_constraints }
 
 addClassConstraints :: Context a -> [S.UnificationConstraint] -> Context a
@@ -101,7 +108,7 @@ addClassConstraints context constraints = context { class_constraints = context.
 processClassConstraints a :: (TypecheckerState a) => Context a -> Location -> Result (Context a) (Context a)
 processClassConstraints context location = do
     loop context <- context do
-        content :: Context a <- context // FIXME: type inference
+        context :: Context a <- context // FIXME: type inference
         if List.isEmpty context.class_constraints
         then break Ok context
         else do
@@ -109,15 +116,17 @@ processClassConstraints context location = do
             context <- context { class_constraints = class_constraints }
             S.UnificationConstraint class_name type associated_types <- constraint
             //println "processClassConstraints: {} {} {}" % (class_name, TF.toString type, TF.toStringTypes associated_types)
-            case IR.checkInstance context type class_name of // FIXME: put instance resolver behind type class!
-                Ok (context, sub, instance_info) -> do
+            case IR.checkInstance context.state type class_name of // FIXME: put instance resolver behind type class!
+                Ok (state, sub, instance_info) -> do
+                    context <- context { state = state }
                     //println "processClassConstraints: sub {}" % sub
                     context <- applyToContext context sub
                     context <- addClassConstraints context sub.constraints
                     //println "processClassConstraints2: {} {} {}" % (class_name, TF.toStringTypes associated_types, TF.toStringTypes instance_info.associated_types)
                     List.zipS context associated_types instance_info.associated_types (\context, ty1, ty2 -> do
                             unify context S.createSubstitution ty1 ty2 location)
-                Err context -> do
+                Err state -> do
+                    context <- context { state = state }
                     //println "processClassConstraints failed: {} {}" % (TF.toString type, class_name)
                     break Err context
 
@@ -212,9 +221,9 @@ remapEffectTypeInfo eff_type_info context = do
 
 createEffectTypeInfo :: (TypecheckerState a) => Context a -> FQ.FullyQualifiedName -> EffectTypeInfo
 createEffectTypeInfo context qn = do
-    eff <- getEffect context.state qn
+    eff <- QL.getEffect context.state qn
     members <- eff.members |> List.iter |> Iterator.map (\member_name -> do
-        function <- getFunction context.state member_name
+        function <- QL.getFunction context.state member_name
         function_type <- Option.unwrap function.type
         (member_name, function_type)) |> toMap
     EffectTypeInfo eff.type members
@@ -229,7 +238,7 @@ data HandledEffectInfo = { handled_effects :: Map FQ.FullyQualifiedName HandledE
 
 addHandler a :: (TypecheckerState a) => Context a -> HandledEffectInfo -> Int -> E.EffectHandler () -> HandledEffectInfo
 addHandler context info index (E.EffectHandler qn _ location) = do
-        function <- getFunction context.state qn
+        function <- QL.getFunction context.state qn
         effect_name <- getEffectName function.kind
         (handled_effects, _) <- alter (addEffect qn location index effect_name) effect_name info.handled_effects
         info { handled_effects = handled_effects }
@@ -252,7 +261,7 @@ addHandler context info index (E.EffectHandler qn _ location) = do
 checkHandlerConsistency a :: (TypecheckerState a) => Context a -> Location -> HandledEffectInfo -> Context a
 checkHandlerConsistency context location info = do
     (context, missing_members) <- Map.fold (context, []) info.handled_effects (\(context, missing_members), (effect_name, handled_effect) -> do
-            eff <- getEffect context.state effect_name
+            eff <- QL.getEffect context.state effect_name
             context <- Map.fold context handled_effect.handlers (\context, (name, locations) -> do
                 case getLength locations of
                     1 -> context
@@ -277,7 +286,7 @@ getEffectHandlerType a :: (TypecheckerState a) => Context a -> E.EffectHandler (
 getEffectHandlerType context E.EffectHandler _ selection _ = do
     case selection of
         E.Static qn -> do
-            func_type_info <- getFunctionTypeInfo context qn
+            (context, func_type_info) <- getFunctionTypeInfo context qn
             (context, function_type) <- if contains context.group_items qn
             then (context, func_type_info.function_type)
             else instantiateType context func_type_info.function_type
@@ -321,7 +330,7 @@ initializeExprType current_fn_name context orig_expr = do
     //println "initializeExprType: expr {} {}" % (expr, id)
     context <- case expr of
         E.StaticFunctionCall qn args -> do
-            func_type_info <- getFunctionTypeInfo context qn
+            (context, func_type_info) <- getFunctionTypeInfo context qn
             (context, function_type) <- if contains context.group_items qn && not func_type_info.defined
                 then (context, func_type_info.function_type)
                 else instantiateType context func_type_info.function_type
@@ -335,14 +344,14 @@ initializeExprType current_fn_name context orig_expr = do
             context <- addExprType context id (TS.FunctionCall var function_type)
             context
         E.ClassMemberCall qn args -> do
-            function <- getFunction context.state qn
+            function <- QL.getFunction context.state qn
             (context, function_type) <- instantiateType context (Option.unwrap function.type)
             //println "class member call {} {}" % (qn, TF.toString function_type)
             (context, var) <- U.getNewTypeVarType context
             context <- addExprType context id (TS.FunctionCall var function_type)
             context
         E.EffectMemberCall qn args -> do
-            function <- getFunction context.state qn
+            function <- QL.getFunction context.state qn
             effect_name <- getEffectName function.kind
             eff_type_info <- createEffectTypeInfo context effect_name
             (eff_type_info, context) <- remapEffectTypeInfo eff_type_info context
@@ -352,14 +361,14 @@ initializeExprType current_fn_name context orig_expr = do
             context <- addExprEffectSignatureSet context id (TEff.createEffectSignatureSetFrom eff_type_info.effect_type)
             context
         E.VariantConstructorCall qn args -> do
-            D.VariantInfo qn index _ <- getVariantInfo context.state qn
+            D.VariantInfo qn index _ <- QL.getVariantInfo context.state qn
             function_type <- panic "NYI" // PO.getVariantCtor context.state.program qn index FIXME: TODO:
             (context, function_type) <- instantiateType context function_type
             (context, var) <- U.getNewTypeVarType context
             context <- addExprType context id (TS.FunctionCall var function_type)
             context
         E.RecordConstructorCall qn args -> do
-            record <- getRecord context.state qn
+            record <- QL.getRecord context.state qn
             (context, new_ctor) <- instantiateType context record.record_ctor
             (context, var) <- U.getNewTypeVarType context
             context <- addExprType context id (TS.FunctionCall var new_ctor)
@@ -440,7 +449,7 @@ initializeExprType current_fn_name context orig_expr = do
             context <- addExprType context id (TS.ExprType never_type)
             context
         E.ArgRef index -> do
-            func_type_info <- getFunctionTypeInfo context current_fn_name
+            (context, func_type_info) <- getFunctionTypeInfo context current_fn_name
             arg_type <- atIndex func_type_info.args index
             context <- addExprType context id (TS.ExprType arg_type)
             context
@@ -493,7 +502,7 @@ checkExprType context orig_expr = do
             (context, sub_signatures) <- if contains context.group_items qn
                 then (context, sub_signatures) // TODO: group effects
                 else do
-                    func_type_info <- getFunctionTypeInfo context qn
+                    (context, func_type_info) <- getFunctionTypeInfo context qn
                     case func_type_info.effects of
                         Some called_fn_effects -> do
                             (context, sigs) <- List.mapS context called_fn_effects (\context, eff -> do
