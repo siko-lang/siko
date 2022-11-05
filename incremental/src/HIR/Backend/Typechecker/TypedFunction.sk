@@ -1,0 +1,132 @@
+module Siko.HIR.Backend.Typechecker.TypedFunction where
+
+import Siko.HIR.FullyQualifiedName as FQ
+import Siko.HIR.Expr as E
+import Siko.HIR.Function as F
+import Siko.HIR.Pattern as P
+import Siko.HIR.Type as T
+import Siko.HIR.TypeFormatter as TF
+
+import Map
+
+class TypeProvider a where
+    getExprType a :: a -> E.ExprId -> T.Type
+    getPatternType a :: a -> P.PatternId -> T.Type
+    getWithEffects a :: a -> E.ExprId -> [T.Type]
+    getFunctionTypeInfo a :: a -> FQ.FullyQualifiedName -> (T.Type, Option [T.Type])
+
+data Context a = { type_store :: a }
+
+createTypedRecordConstructionItem a :: (TypeProvider a) => Context a -> E.RecordConstructionItem () -> E.RecordConstructionItem T.Type
+createTypedRecordConstructionItem context item =
+    E.RecordConstructionItem {
+        field_name = item.field_name,
+        body = createTypedExpr context item.body
+     }
+
+createTypedCase a :: (TypeProvider a) => Context a -> E.Case () -> E.Case T.Type
+createTypedCase context c =
+    E.Case {
+        pattern = createTypedPattern context c.pattern,
+        body = createTypedExpr context c.body
+     }
+
+createTypedSimplePattern a :: (TypeProvider a) => Context a -> P.SimplePattern () -> P.SimplePattern T.Type
+createTypedSimplePattern context s_pattern = case s_pattern of
+    P.Binding ref -> P.Binding ref
+    P.Tuple patterns -> P.Tuple (List.map patterns (createTypedPattern context))
+    P.Guarded pattern body -> P.Guarded (createTypedPattern context pattern) (createTypedExpr context body)
+    P.Wildcard -> P.Wildcard
+    P.IntegerLiteral lit -> P.IntegerLiteral lit
+    P.StringLiteral lit -> P.StringLiteral lit
+    P.CharLiteral lit -> P.CharLiteral lit
+    P.CharRange c1 c2 kind -> P.CharRange c1 c2 kind
+    P.Typed pattern type -> P.Typed (createTypedPattern context pattern) type
+    P.Record name args -> P.Record name (List.map args (createTypedPattern context))
+    P.Variant name index args -> P.Variant name index (List.map args (createTypedPattern context))
+
+createTypedPattern a :: (TypeProvider a) => Context a -> P.Pattern () -> P.Pattern T.Type
+createTypedPattern context (P.Pattern s_pattern id _ location) = do
+    context :: Context a <- context // FIXME: why is this needed?
+    type <- getPatternType context.type_store id
+    s_pattern <- createTypedSimplePattern context s_pattern
+    P.Pattern s_pattern id type location
+
+processExprs a :: (TypeProvider a) => Context a -> [E.Expr ()]  -> [E.Expr T.Type]
+processExprs context exprs = List.map exprs (createTypedExpr context)
+
+createTypedEffectHandlerSelection a :: (TypeProvider a) => Context a -> E.EffectHandlerSelection () -> E.EffectHandlerSelection T.Type
+createTypedEffectHandlerSelection context selection = case selection of
+    E.Static qn -> E.Static qn
+    E.Dynamic expr -> E.Dynamic (createTypedExpr context expr)
+    E.Default -> E.Default
+
+createTypeHandler a :: (TypeProvider a) => Context a -> E.EffectHandler () -> E.EffectHandler T.Type
+createTypeHandler context handler =
+    E.EffectHandler {
+        name = handler.name,
+        selection = createTypedEffectHandlerSelection context handler.selection,
+        location = handler.location
+     }
+
+createTypedSimpleExpr a :: (TypeProvider a) => Context a -> E.ExprId -> E.SimpleExpr () -> E.SimpleExpr T.Type
+createTypedSimpleExpr context id s_expr = case s_expr of
+    E.StaticFunctionCall qn args -> E.StaticFunctionCall qn (processExprs context args)
+    E.DynamicFunctionCall receiver args -> E.DynamicFunctionCall (createTypedExpr context receiver) (processExprs context args)
+    E.ClassMemberCall qn args -> E.ClassMemberCall qn (processExprs context args)
+    E.EffectMemberCall qn args -> E.EffectMemberCall qn (processExprs context args)
+    E.VariantConstructorCall qn args -> E.VariantConstructorCall qn (processExprs context args)
+    E.RecordConstructorCall qn args -> E.RecordConstructorCall qn (processExprs context args)
+    E.If cond true_branch false_branch ->
+        E.If (createTypedExpr context cond) (createTypedExpr context true_branch) (createTypedExpr context false_branch)
+    E.Tuple items -> E.Tuple (processExprs context items)
+    E.List items -> E.List (processExprs context items)
+    E.IntegerLiteral lit -> E.IntegerLiteral lit
+    E.FloatLiteral lit -> E.FloatLiteral lit
+    E.StringLiteral lit -> E.StringLiteral lit
+    E.CharLiteral lit -> E.CharLiteral lit
+    E.Do items -> E.Do (processExprs context items)
+    E.Bind pattern rhs -> E.Bind (createTypedPattern context pattern) (createTypedExpr context rhs)
+    E.FieldAccess name receiver -> E.FieldAccess name (createTypedExpr context receiver)
+    E.TupleFieldAccess index receiver -> E.TupleFieldAccess index (createTypedExpr context receiver)
+    E.Formatter fmt args -> E.Formatter fmt (processExprs context args)
+    E.CaseOf body cases bind_groups -> E.CaseOf
+        (createTypedExpr context body) (List.map cases (createTypedCase context)) bind_groups
+    E.RecordUpdate ref items -> E.RecordUpdate (createTypedExpr context ref) (List.map items (createTypedRecordConstructionItem context))
+    E.Return arg -> E.Return (createTypedExpr context arg)
+    E.Continue arg -> E.Continue (createTypedExpr context arg)
+    E.Break arg -> E.Break (createTypedExpr context arg)
+    E.Loop pattern initializer body continues breaks -> E.Loop
+        (createTypedPattern context pattern) (createTypedExpr context initializer) (createTypedExpr context body) continues breaks
+    E.ArgRef i -> E.ArgRef i
+    E.ValueRef ref -> E.ValueRef ref
+    E.With handlers body _ -> do
+        eff_types <- Option.unwrap (get context.type_store.with_effects id)
+        eff_types <- List.map eff_types (\t -> E.EffectType t)
+        E.With (List.map handlers (createTypeHandler context)) (createTypedExpr context body) eff_types
+
+createTypedExpr a :: (TypeProvider a) => Context a -> E.Expr () -> E.Expr T.Type
+createTypedExpr context (E.Expr s_expr id _ location) = do
+    context :: Context a <- context // FIXME: why is this needed?
+    type <- getExprType context.type_store id
+    s_expr <- createTypedSimpleExpr context id s_expr
+    E.Expr s_expr id type location
+
+createTypedFunction a :: (TypeProvider a) => Context a -> F.Function () -> F.Function T.Type
+createTypedFunction context function = do
+    (type, effects) <- getFunctionTypeInfo context.type_store function.name
+    F.Function {
+        location = function.location,
+        name = function.name,
+        arg_count = function.arg_count,
+        kind = function.kind,
+        type = Some type,
+        type_with_ownership = function.type_with_ownership,
+        body = case function.body of
+            Some body -> Some (createTypedExpr context body)
+            None -> None
+        , // FIXME: why is this comma needed? fix parser
+        effects = effects,
+        attributes = function.attributes,
+        extern_constraints = function.extern_constraints,
+     }

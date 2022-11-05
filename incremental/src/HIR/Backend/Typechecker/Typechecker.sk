@@ -8,7 +8,14 @@ import Siko.HIR.Backend.Unification.TypeVarGenerator as TVG
 import Siko.HIR.FullyQualifiedName as FQ
 import Siko.Query.Lookup
 
-class (DependencyProvider a, U.Context a, FunctionProvider a, ClassProvider a, RecordProvider a) => TypecheckerState a where
+class (DependencyProvider a,
+       U.Context a,
+       FunctionProvider a,
+       ClassProvider a,
+       RecordProvider a,
+       EffectProvider a,
+       AdtProvider a,
+       VariantInfoProvider a) => TypecheckerState a where
     addError a :: a -> TypecheckerError -> a
 
 data TypecheckerStateProvider a = { errors :: [TypecheckerError],
@@ -16,7 +23,7 @@ data TypecheckerStateProvider a = { errors :: [TypecheckerError],
                                     provider :: a
                                   }
 
-createTypecheckerStateProvider a :: (FunctionProvider a, ClassProvider a, RecordProvider a) => a -> TypecheckerStateProvider a
+createTypecheckerStateProvider a :: a -> TypecheckerStateProvider a
 createTypecheckerStateProvider provider = TypecheckerStateProvider [] TVG.createTypeVarGenerator provider
 
 instance TypecheckerState TypecheckerStateProvider a where
@@ -55,3 +62,15 @@ instance (FunctionProvider a) => FunctionProvider TypecheckerStateProvider a whe
 
 instance (ClassProvider a) => ClassProvider TypecheckerStateProvider a where
     getClass state qn = getClass state.provider qn
+
+instance (EffectProvider a) => EffectProvider TypecheckerStateProvider a where
+    getEffect state qn = getEffect state.provider qn
+    getEffectOpt state qn = getEffectOpt state.provider qn
+
+instance (AdtProvider a) => AdtProvider TypecheckerStateProvider a where
+    getAdt state qn = getAdt state.provider qn
+    getAdtOpt state qn = getAdtOpt state.provider qn
+
+instance (VariantInfoProvider a) => VariantInfoProvider TypecheckerStateProvider a where
+    getVariantInfo state qn = getVariantInfo state.provider qn
+    getVariantInfoOpt state qn = getVariantInfoOpt state.provider qn

@@ -7,6 +7,7 @@ import Siko.Query.Database as DB
 import Siko.HIR.Class as HC
 import Siko.HIR.Data as HD
 import Siko.HIR.Function as HF
+import Siko.HIR.Effect as HE
 
 class ClassProvider a where
     getClass a :: a -> FQ.FullyQualifiedName -> HC.Class
@@ -23,9 +24,19 @@ class FunctionProvider a where
     getFunction a :: a -> FQ.FullyQualifiedName -> HF.Function ()
 
 class VariantInfoProvider a where
+    getVariantInfo a :: a -> FQ.FullyQualifiedName -> HD.VariantInfo
     getVariantInfoOpt a :: a -> FQ.FullyQualifiedName -> Option HD.VariantInfo
 
+class EffectProvider a where
+    getEffect a :: a -> FQ.FullyQualifiedName -> HE.Effect
+    getEffectOpt a :: a -> FQ.FullyQualifiedName -> Option HE.Effect
+
 instance VariantInfoProvider Driver where
+    getVariantInfo driver qn = do
+        key <- I.ResolvedVariantInfoKey qn
+        i <- DB.get driver.db key
+        I.asResolvedVariantInfo i
+
     getVariantInfoOpt driver qn = do
         key <- I.ResolvedVariantInfoKey qn
         case DB.getOpt driver.db key of
@@ -67,3 +78,15 @@ instance FunctionProvider Driver where
         key <- I.ResolvedFunctionKey qn
         f <- DB.get driver.db key
         I.asResolvedFunction f
+
+instance EffectProvider Driver where
+    getEffect driver qn = do
+        key <- I.ResolvedEffectKey qn
+        e <- DB.get driver.db key
+        I.asResolvedEffect e
+
+    getEffectOpt driver qn = do
+        key <- I.ResolvedEffectKey qn
+        case DB.getOpt driver.db key of
+            Some e -> Some (I.asResolvedEffect e)
+            None -> None

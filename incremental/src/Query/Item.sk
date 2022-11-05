@@ -31,6 +31,8 @@ data Command = CollectLocalItems Key
              | CreateFunctionTypeInfo Key
              | CheckInstance Key
              | CreateFunctionDependencyInfo Key
+             | CreateFunctionGroups
+             | TypeCheckFunctionGroup Key
              deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
 getPriority :: Command -> Int
@@ -49,6 +51,8 @@ getPriority cmd = case cmd of
     CreateFunctionTypeInfo _ -> 11
     CheckInstance _ -> 12
     CreateFunctionDependencyInfo _ -> 13
+    CreateFunctionGroups -> 14
+    TypeCheckFunctionGroup _ -> 15
 
 data ItemKind = UnresolvedModuleKind
               | LocalItemsKind
@@ -70,6 +74,7 @@ data ItemKind = UnresolvedModuleKind
               | FunctionTypeInfoKind
               | ClassTypeInfoKind
               | FunctionDependencyInfoKind
+              | FunctionGroupKind
               deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
 data Item = UnresolvedModule M.Module
@@ -92,6 +97,7 @@ data Item = UnresolvedModule M.Module
           | FunctionTypeInfo TF.FunctionTypeInfo
           | ClassTypeInfo TC.ClassTypeInfo
           | FunctionDependencyInfo TF.FunctionDependencyInfo
+          | FunctionGroup TF.FunctionGroup
           deriving (Show, PartialEq, Eq)
 
 data Key = UnresolvedModuleKey String
@@ -114,6 +120,7 @@ data Key = UnresolvedModuleKey String
          | FunctionTypeInfoKey FQ.FullyQualifiedName
          | ClassTypeInfoKey FQ.FullyQualifiedName
          | FunctionDependencyInfoKey FQ.FullyQualifiedName
+         | FunctionGroupKey Int
          deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
 asUnresolvedModule :: Item -> M.Module
@@ -216,6 +223,11 @@ asFunctionDependencyInfo item = case item of
     FunctionDependencyInfo i -> i
     _ -> panic "{} is not FunctionDependencyInfo" % item
 
+asFunctionGroup :: Item -> TF.FunctionGroup
+asFunctionGroup item = case item of
+    FunctionGroup f -> f
+    _ -> panic "{} is not FunctionGroup" % item
+
 getModuleName :: Key -> String
 getModuleName key = case key of
     UnresolvedModuleKey n -> n
@@ -238,6 +250,7 @@ getModuleName key = case key of
     FunctionTypeInfoKey qn -> SS.get (FQ.getModuleName qn)
     ClassTypeInfoKey qn -> SS.get (FQ.getModuleName qn)
     FunctionDependencyInfoKey qn -> SS.get (FQ.getModuleName qn)
+    FunctionGroupKey _ -> panic "getModuleName called for {}" % key
 
 getFullyQualifiedName :: Key -> FQ.FullyQualifiedName
 getFullyQualifiedName key = case key of
@@ -261,6 +274,7 @@ getFullyQualifiedName key = case key of
     FunctionTypeInfoKey qn -> qn
     ClassTypeInfoKey qn -> qn
     FunctionDependencyInfoKey qn -> qn
+    FunctionGroupKey _ -> panic "getFullyQualifiedName called for {}" % key
 
 getKind :: Item -> ItemKind
 getKind item = case item of
@@ -284,3 +298,4 @@ getKind item = case item of
     FunctionTypeInfo _ -> FunctionTypeInfoKind
     ClassTypeInfo _ -> ClassTypeInfoKind
     FunctionDependencyInfo _ -> FunctionDependencyInfoKind
+    FunctionGroup _ -> FunctionGroupKind

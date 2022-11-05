@@ -9,6 +9,8 @@ import Siko.HIR.Backend.Typechecker.Class as TC
 import Siko.HIR.Backend.Typechecker.Function as TF
 import Siko.Query.Util
 import Siko.Query.Lookup
+import Siko.Util.DependencyProcessor
+import Map
 
 refreshClassDeps :: Driver -> Driver
 refreshClassDeps driver = do
@@ -85,3 +87,25 @@ createFunctionDependencyInfo driver key = do
     key <- I.FunctionDependencyInfoKey qn
     item <- I.FunctionDependencyInfo func_dep_info
     addToDb driver key item
+
+createFunctionGroups :: Driver -> Driver
+createFunctionGroups driver = do
+    deps <- DB.getWatchedKeys driver.db I.FunctionDependencyInfoKind
+    deps <- List.fold Map.empty deps (\deps, key -> do
+        qn <- I.getFullyQualifiedName key
+        func_dep_info <- I.asFunctionDependencyInfo (DB.get driver.db key)
+        Map.put deps qn func_dep_info.deps)
+    groups <- processDependencies deps
+    (driver, _) <- List.fold (driver, 0) groups (\(driver, index), group -> do
+    key <- I.FunctionGroupKey index
+    item <- I.FunctionGroup (TF.FunctionGroup group.items)
+    driver <- addToDb driver key item
+    (driver, index + 1))
+    driver
+
+typeCheckFunctionGroup :: Driver -> I.Key -> Driver
+typeCheckFunctionGroup driver key = do
+    function_group <- DB.get driver.db key
+    function_group <- I.asFunctionGroup function_group
+    println "Function group {}" % function_group
+    driver

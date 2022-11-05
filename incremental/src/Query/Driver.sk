@@ -35,7 +35,9 @@ createDriver = do
     db <- DB.addCommandGenerator db I.ResolvedFunctionKind I.CreateFunctionDependencyInfo
     db <- DB.addCommandGenerator db I.ResolvedClassKind I.CreateClassTypeInfo
     db <- DB.addCommandGenerator db I.ResolvedInstanceKind I.CheckInstance
+    db <- DB.addCommandGenerator db I.FunctionGroupKind I.TypeCheckFunctionGroup
     db <- DB.addWatchedKind db I.ResolvedClassKind I.RefreshClassDeps
+    db <- DB.addWatchedKind db I.FunctionDependencyInfoKind I.CreateFunctionGroups
     resolver <- R.createResolver
     Driver Map.empty resolver db []
 
@@ -72,6 +74,7 @@ executeCommands driver = do
             Some min_prio -> do
                 currents <- List.filter driver.pending_commands (\cmd -> I.getPriority cmd == min_prio)
                 rest <- List.filter driver.pending_commands (\cmd -> I.getPriority cmd != min_prio)
+                currents <- currents |> List.sort |> List.dedup
                 driver <- driver { pending_commands = rest }
                 List.fold driver currents executeCommand
             None -> break driver
@@ -93,6 +96,8 @@ executeCommand driver cmd = do
         I.CreateClassTypeInfo key -> QT.createClassTypeInfo driver key
         I.CheckInstance key -> QT.checkInstance driver key
         I.CreateFunctionDependencyInfo key -> QT.createFunctionDependencyInfo driver key
+        I.CreateFunctionGroups -> QT.createFunctionGroups driver
+        I.TypeCheckFunctionGroup key -> QT.typeCheckFunctionGroup driver key
 
 addToDb :: Driver -> I.Key -> I.Item -> Driver
 addToDb driver key item = do
