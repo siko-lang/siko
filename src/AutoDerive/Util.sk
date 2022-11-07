@@ -38,13 +38,13 @@ getFieldAccessorsForRecord record root location = do
 
 getFieldAccessorsForVariant :: D.Variant -> String -> Location -> [E.Expr]
 getFieldAccessorsForVariant variant root location = do
-    List.foldE (\accessors, index, item -> do
-        List.push accessors (E.Expr (E.Path (Ident (SS.create "{}{}" % (root, index)) location)) location)) [] variant.items
+    List.foldE [] variant.items (\accessors, index, item -> do
+        List.push accessors (E.Expr (E.Path (Ident (SS.create "{}{}" % (root, index)) location)) location))
 
 getFieldPatternsForVariant :: D.Variant -> String -> Location -> [P.Pattern]
 getFieldPatternsForVariant variant root location = do
-    List.foldE (\patterns, index, item -> do
-        List.push patterns (P.Pattern (P.Binding (Ident (SS.create "{}{}" % (root, index)) location)) location)) [] variant.items
+    List.foldE [] variant.items (\patterns, index, item -> do
+        List.push patterns (P.Pattern (P.Binding (Ident (SS.create "{}{}" % (root, index)) location)) location))
 
 getFieldInfoForVariant :: D.Variant -> Location -> [FieldInfo]
 getFieldInfoForVariant variant location = do

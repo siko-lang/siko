@@ -132,22 +132,22 @@ checkPatternType context pat = do
             sub_ids <- List.map args (\P.Pattern _ id _ _ -> id)
             sub_signatures <- TEff.getPatternEffectSignatures context sub_ids
             context <- TEff.setPatternEffect context id sub_signatures location
-            context <- List.foldE (\context, index, (P.Pattern _ arg_id _ arg_location) -> do
+            context <- List.foldE context args (\context, index, (P.Pattern _ arg_id _ arg_location) -> do
                     record <- TS.getRecord context.type_store id
                     D.RecordField name field_type <- atIndex record.fields index
                     context <- matchPatternWith context arg_id field_type arg_location
-                    context) context args
+                    context)
             context
         P.Variant _ index args -> do
             sub_ids <- List.map args (\P.Pattern _ id _ _ -> id)
             sub_signatures <- TEff.getPatternEffectSignatures context sub_ids
             context <- TEff.setPatternEffect context id sub_signatures location
-            context <- List.foldE (\context, arg_index, (P.Pattern _ arg_id _ arg_location) -> do
+            context <- List.foldE context args (\context, arg_index, (P.Pattern _ arg_id _ arg_location) -> do
                     adt <- TS.getAdt context.type_store id
                     variant <- atIndex adt.variants index
                     item_type <- atIndex variant.items arg_index
                     context <- matchPatternWith context arg_id item_type arg_location
-                    context) context args
+                    context)
             context
     (context, pat)
 

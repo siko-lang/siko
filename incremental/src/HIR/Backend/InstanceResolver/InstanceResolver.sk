@@ -1,29 +1,20 @@
 module Siko.HIR.Backend.InstanceResolver where
 
 import Siko.HIR.Class
-import Siko.HIR.Backend.Typechecker
+import Siko.HIR.Backend.StateProvider
 import Siko.HIR.Backend.Typechecker.Class as TC
 import Siko.HIR.Type as T
 import Siko.HIR.TypeFormatter as TF
 import Siko.HIR.FullyQualifiedName as FQ
 import Siko.Syntax.Location
 import Siko.HIR.Backend.Unification as U
-import Siko.HIR.Backend.Util as BUtil
 import Siko.HIR.Util as Util
 import Siko.HIR.Backend.Unification.Substitution as S
+import Siko.HIR.Backend.Unification.Util as UUtil
 import Siko.Query.Lookup as QL
 import Map
 
-instantiateInstanceInfo a :: (TypecheckerState a) => a -> TC.InstanceInfo -> (a, TC.InstanceInfo)
-instantiateInstanceInfo context instance_info = do
-    vars <- Util.collectVars [] instance_info.instance_type
-    vars <- List.fold vars instance_info.associated_types Util.collectVars
-    (mapper, context) <- BUtil.initMapper vars context
-    type <- BUtil.remap mapper instance_info.instance_type
-    associated_types <- List.map instance_info.associated_types (BUtil.remap mapper)
-    (context, TC.InstanceInfo type associated_types instance_info.id instance_info.location)
-
-unifyTypes a :: (TypecheckerState a) => a -> S.Substitution -> T.Type -> T.Type -> (a, S.Substitution, Bool)
+unifyTypes a :: (StateProvider a) => a -> S.Substitution -> T.Type -> T.Type -> (a, S.Substitution, Bool)
 unifyTypes context sub type1 type2 =
     case U.unify context sub type1 type2 of
         Ok (context, sub) -> (context, sub, True)
@@ -31,7 +22,7 @@ unifyTypes context sub type1 type2 =
             //println "instance check, unifyTypes failed: {} {}" % (T.toLongString type1, T.toLongString type2)
             (context, sub, False)
 
-checkInstancesForBaseType a :: (TypecheckerState a) => a ->
+checkInstancesForBaseType a :: (StateProvider a) => a ->
                              S.Substitution ->
                              T.Type ->
                              TC.InstanceInfo ->
@@ -39,7 +30,7 @@ checkInstancesForBaseType a :: (TypecheckerState a) => a ->
                              Result (a, S.Substitution, TC.InstanceInfo) a
 checkInstancesForBaseType context sub type instance_info class_name = do
     //println "checkInstancesForBaseType {} {}" % (TF.toLongString type,)
-    (context, instance_info) <- instantiateInstanceInfo context instance_info
+    (instance_info, context) <- UUtil.instantiateGeneric instance_info context
     //println "Cloned instance info {}/{}" % (TF.toString instance_info.instance_type, TF.toStringTypes instance_info.associated_types)
     //println "Cloned instance info {}/{}" % (instance_info.instance_type, instance_info.associated_types)
     (context, sub, success) <- unifyTypes context sub type instance_info.instance_type
@@ -51,7 +42,7 @@ checkInstancesForBaseType context sub type instance_info class_name = do
     instance_info <- instance_info { instance_type = instance_type, associated_types = associated_types }
     Ok (context, sub, instance_info)
 
-hasInstance a :: (TypecheckerState a) => a -> S.Substitution -> T.Type -> FQ.FullyQualifiedName -> Result (a, S.Substitution, TC.InstanceInfo) a
+hasInstance a :: (StateProvider a) => a -> S.Substitution -> T.Type -> FQ.FullyQualifiedName -> Result (a, S.Substitution, TC.InstanceInfo) a
 hasInstance context sub type class_name = do
     base_type <- TC.getBaseType type
     case QL.getRegisteredInstanceOpt context (TC.InstanceKey class_name base_type) of
@@ -65,7 +56,7 @@ hasInstance context sub type class_name = do
                         None -> Err context
         None -> Err context
 
-checkInstance a :: (TypecheckerState a) => a -> T.Type -> FQ.FullyQualifiedName -> Result (a, S.Substitution, TC.InstanceInfo) a
+checkInstance a :: (StateProvider a) => a -> T.Type -> FQ.FullyQualifiedName -> Result (a, S.Substitution, TC.InstanceInfo) a
 checkInstance context type class_name = do
     //println "checkInstance: type: {}, class_name: {}" % (TF.toLongString type, class_name)
     case type of

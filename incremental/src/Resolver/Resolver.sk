@@ -9,25 +9,22 @@ import Siko.HIR.Expr
 import Siko.HIR.Pattern
 import Siko.HIR.Backend.Unification
 import Siko.HIR.Backend.Unification.TypeVarGenerator as TVG
-import Siko.HIR.Backend.ExprIdGenerator
 import Siko.HIR.Backend.PatternIdGenerator
 import Siko.Util.SharedString as SS
 import Siko.Query.Lookup as QL
 
 class (TypeVarGenerator a, QL.RecordProvider a, QL.AdtProvider a, QL.VariantInfoProvider a) => ResolverState a where
     addError a :: a -> ResolverError -> a
-    getNextExprId a :: a -> (a, ExprId)
     getNextPatternId a :: a -> (a, PatternId)
 
 data ResolverStateProvider a = { var_gen :: TVG.TypeVarGenerator,
-                                 expr_id_gen :: ExprIdGenerator,
                                  pattern_id_gen :: PatternIdGenerator,
                                  errors :: [ResolverError],
                                  provider :: a }
 
 createStateProvider a :: a -> ResolverStateProvider a
 createStateProvider provider =
-    ResolverStateProvider TVG.createTypeVarGenerator createExprIdGenerator createPatternIdGenerator [] provider
+    ResolverStateProvider TVG.createTypeVarGenerator createPatternIdGenerator [] provider
 
 instance TypeVarGenerator ResolverStateProvider a where
     getNewTypeVar state = do
@@ -54,10 +51,6 @@ instance ResolverState ResolverStateProvider a where
     addError state err = do
         errors <- List.push state.errors err
         state { errors = errors }
-
-    getNextExprId state = do
-        (expr_id_gen, expr_id) <- getNewExprId state.expr_id_gen
-        (state { expr_id_gen = expr_id_gen }, expr_id)
 
     getNextPatternId state = do
         (pattern_id_gen, pattern_id) <- getNewPatternId state.pattern_id_gen

@@ -315,7 +315,7 @@ getEffectType info handlers context effect_name handled_effect  = do
 processHandledEffects :: Context -> [E.EffectHandler ()] -> Location -> (Context, [T.Type])
 processHandledEffects context handlers location = do
     info <- HandledEffectInfo Map.empty
-    info <- List.foldE (\info, index, handler -> addHandler context info index handler) info handlers
+    info <- List.foldE info handlers (\info, index, handler -> addHandler context info index handler)
     context <- checkHandlerConsistency context location info
     (context, eff_types) <- Map.fold (context, []) info.handled_effects (\(context, eff_types), (effect_name, handled_effect) -> do
         (context, eff_type) <- getEffectType info handlers context effect_name handled_effect

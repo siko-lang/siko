@@ -11,13 +11,13 @@ import Siko.HIR.Data as D
 import Siko.HIR.Function
 import Siko.HIR.Pattern as P
 import Siko.HIR.Backend.Unification.TypeVarGenerator
-import Siko.HIR.Backend.Typechecker
+import Siko.HIR.Backend.StateProvider
 import Siko.HIR.Backend.Typechecker.Function
 import Siko.HIR.Backend.Typechecker.Pattern
-import Siko.HIR.Backend.Util as BUtil
 import Siko.HIR.Util as Util
 import Siko.HIR.Backend.Unification as U
 import Siko.HIR.Backend.Unification.Substitution as S
+import Siko.HIR.Backend.Unification.Util as UUtil
 import Siko.HIR.Backend.Typechecker.TypeStore as TS
 import Siko.HIR.Backend.Typechecker.Effect as TEff
 import Siko.HIR.Backend.InstanceResolver as IR
@@ -32,7 +32,8 @@ data Context a = { type_store :: TS.TypeStore,
                    returns :: [(E.ExprId, Location)],
                    group_items :: [FQ.FullyQualifiedName],
                    func_type_infos :: Map FQ.FullyQualifiedName FunctionTypeInfo,
-                   class_constraints :: [S.UnificationConstraint] } deriving (Move)
+                   class_constraints :: [S.UnificationConstraint],
+                   group_index :: Int, } deriving (Move)
 
 instance (U.TypeVarGenerator a) => U.TypeVarGenerator Context a where
     getNewTypeVar context = do
@@ -55,45 +56,51 @@ instance (U.ClassProvider a) => U.ClassProvider Context a where
     getAllClassDependencies context qn = U.getAllClassDependencies context.state qn
     getAssociatedTypeCount context qn = U.getAssociatedTypeCount context.state qn
 
-initializeContext a :: (TypecheckerState a) => a -> [FQ.FullyQualifiedName] -> Context a
+initializeContext a :: (StateProvider a) => a -> [FQ.FullyQualifiedName] -> Context a
 initializeContext state group_items =
-    Context TS.initializeTypeStore state [] group_items Map.empty []
+    Context TS.initializeTypeStore state [] group_items Map.empty [] 0
 
 addExprType :: Context a -> E.ExprId -> TS.ExprTypeState -> Context a
 addExprType context expr_id expr_type = do
-    type_store <- TS.addExprType context.type_store expr_id expr_type
+    type_store <- TS.addExprType context.type_store context.group_index expr_id expr_type
     context { type_store = type_store }
 
 addExprEffectSignatureSet :: Context a -> E.ExprId -> TEff.EffectSignatureSet -> Context a
 addExprEffectSignatureSet context expr_id effects = do
-    type_store <- TS.addExprEffectSignatureSet context.type_store expr_id effects
+    type_store <- TS.addExprEffectSignatureSet context.type_store context.group_index expr_id effects
     context { type_store = type_store }
 
 getExprType :: Context a -> E.ExprId -> T.Type
-getExprType context expr_id = TS.getExprType context.type_store expr_id
+getExprType context expr_id = TS.getExprType context.type_store context.group_index expr_id
 
 getExprAndFunctionCallType :: Context a -> E.ExprId -> (T.Type, T.Type)
-getExprAndFunctionCallType context expr_id = TS.getExprAndFunctionCallType context.type_store expr_id
+getExprAndFunctionCallType context expr_id = TS.getExprAndFunctionCallType context.type_store context.group_index expr_id
 
-getNewVarWithConstraints a :: (TypecheckerState a) => Context a -> [T.Constraint] -> (Context a, T.Type)
+getNewVarWithConstraints a :: (StateProvider a) => Context a -> [T.Constraint] -> (Context a, T.Type)
 getNewVarWithConstraints context constraints = do
     (context, var) <- U.getNewTypeVar context
     (context, T.Var var constraints)
 
-getFunctionTypeInfo :: (TypecheckerState a) => Context a -> FQ.FullyQualifiedName -> (Context a, FunctionTypeInfo)
+getFunctionTypeInfo :: (StateProvider a) => Context a -> FQ.FullyQualifiedName -> (Context a, FunctionTypeInfo)
 getFunctionTypeInfo context name = do
     if List.contains context.group_items name
     then case Map.get context.func_type_infos name of
             Some func_type_info -> (context, func_type_info)
             None -> do
                 func_type_info <- QL.getFunctionTypeInfo context.state name
+                (func_type_info, context) <- UUtil.remap func_type_info context
                 func_type_infos <- Map.put context.func_type_infos name func_type_info
                 (context { func_type_infos = func_type_infos }, func_type_info)
     else do
-        func_type_info <- QL.getCheckedFunctionTypeInfo context.state name
-        (context, func_type_info)
+        case QL.getCheckedFunctionTypeInfoOpt context.state name of
+            Some func_type_info -> (context, func_type_info)
+            None -> do
+                func_type_info <- QL.getFunctionTypeInfo context.state name
+                if func_type_info.defined
+                then (context, func_type_info)
+                else panic "Neither checked nor defined func_type_info found for {}" % name
 
-applyToContext a :: (TypecheckerState a) => Context a -> S.Substitution -> Context a
+applyToContext a :: (StateProvider a) => Context a -> S.Substitution -> Context a
 applyToContext context sub = do
     type_store <- S.apply context.type_store sub
     class_constraints <- S.apply context.class_constraints sub
@@ -105,7 +112,7 @@ applyToContext context sub = do
 addClassConstraints :: Context a -> [S.UnificationConstraint] -> Context a
 addClassConstraints context constraints = context { class_constraints = context.class_constraints + constraints }
 
-processClassConstraints a :: (TypecheckerState a) => Context a -> Location -> Result (Context a) (Context a)
+processClassConstraints a :: (StateProvider a) => Context a -> Location -> Result (Context a) (Context a)
 processClassConstraints context location = do
     loop context <- context do
         context :: Context a <- context // FIXME: type inference
@@ -130,7 +137,7 @@ processClassConstraints context location = do
                     //println "processClassConstraints failed: {} {}" % (TF.toString type, class_name)
                     break Err context
 
-unify a :: (TypecheckerState a) => Context a -> S.Substitution -> T.Type -> T.Type -> Location -> Context a
+unify a :: (StateProvider a) => Context a -> S.Substitution -> T.Type -> T.Type -> Location -> Context a
 unify context sub ty1 ty2 location = do
     //println "Unifying {} {}" % (TF.toString ty1, TF.toString ty2)
     case U.unify context sub ty1 ty2 of
@@ -154,7 +161,7 @@ unify context sub ty1 ty2 location = do
             context
 
 // FIXME: is this really needed??
-unify2 a :: (TypecheckerState a) => Context a -> S.Substitution -> T.Type -> T.Type -> Location -> (Context a, S.Substitution)
+unify2 a :: (StateProvider a) => Context a -> S.Substitution -> T.Type -> T.Type -> Location -> (Context a, S.Substitution)
 unify2 context sub ty1 ty2 location = do
     //println "Unifying {} {}" % (TF.toString ty1, TF.toString ty2)
     case U.unify context sub ty1 ty2 of
@@ -169,33 +176,33 @@ unify2 context sub ty1 ty2 location = do
             context <- context { state = state }
             (context, sub)
 
-matchExprWith a :: (TypecheckerState a) => Context a -> E.ExprId -> T.Type -> Location -> Context a
+matchExprWith a :: (StateProvider a) => Context a -> E.ExprId -> T.Type -> Location -> Context a
 matchExprWith context expr_id type location = do
     expr_type <- getExprType context expr_id
     context <- unify context S.createSubstitution type expr_type location
     context
 
-matchExprs a :: (TypecheckerState a) => Context a -> E.ExprId -> E.ExprId -> Location -> Context a
+matchExprs a :: (StateProvider a) => Context a -> E.ExprId -> E.ExprId -> Location -> Context a
 matchExprs context expr_id1 expr_id2 location = do
     expr_type1 <- getExprType context expr_id1
     expr_type2 <- getExprType context expr_id2
     context <- unify context S.createSubstitution expr_type1 expr_type2 location
     context
 
-matchExprWithPattern a :: (TypecheckerState a) => Context a -> E.ExprId -> P.PatternId -> Location -> Context a
+matchExprWithPattern a :: (StateProvider a) => Context a -> E.ExprId -> P.PatternId -> Location -> Context a
 matchExprWithPattern context expr_id pattern_id location = do
     expr_type <- getExprType context expr_id
     patter_type <- getPatternType context pattern_id
     context <- unify context S.createSubstitution patter_type expr_type location
     context
 
-instantiateType a :: (TypecheckerState a) => Context a -> T.Type -> (Context a, T.Type)
+instantiateType a :: (StateProvider a) => Context a -> T.Type -> (Context a, T.Type)
 instantiateType context type = do
-    (new_type, context) <- BUtil.instantiateType type context
+    (new_type, context) <- UUtil.instantiateGeneric type context
     (new_type) <- T.removeOwnership new_type
     (context, new_type)
 
-getNeverType a :: (TypecheckerState a) => Context a -> (Context a, T.Type)
+getNeverType a :: (StateProvider a) => Context a -> (Context a, T.Type)
 getNeverType context = do
     (context, var) <- U.getNewTypeVar context
     (context, T.Never var)
@@ -212,14 +219,12 @@ instance S.Transform EffectTypeInfo where
         type <- f eff_type_info.effect_type
         EffectTypeInfo type members
 
-remapEffectTypeInfo a :: (U.Context a) => EffectTypeInfo -> a -> (EffectTypeInfo, a)
-remapEffectTypeInfo eff_type_info context = do
-    types <- Map.fold [eff_type_info.effect_type] eff_type_info.members (\types, (qn, t) -> List.push types t)
-    (sub, context) <- BUtil.newSub types context
-    eff_type_info <- S.transform eff_type_info (\t -> S.apply (T.removeFixed t) sub)
-    (eff_type_info, context)
+instance S.Collectable EffectTypeInfo where
+    collect collector eff_type_info = do
+        collector <- S.collect collector eff_type_info.effect_type
+        S.collect collector eff_type_info.members
 
-createEffectTypeInfo :: (TypecheckerState a) => Context a -> FQ.FullyQualifiedName -> EffectTypeInfo
+createEffectTypeInfo :: (StateProvider a) => Context a -> FQ.FullyQualifiedName -> EffectTypeInfo
 createEffectTypeInfo context qn = do
     eff <- QL.getEffect context.state qn
     members <- eff.members |> List.iter |> Iterator.map (\member_name -> do
@@ -236,7 +241,7 @@ data HandledEffect = { handlers :: Map FQ.FullyQualifiedName [HandlerInfo] } der
 
 data HandledEffectInfo = { handled_effects :: Map FQ.FullyQualifiedName HandledEffect } deriving (Show)
 
-addHandler a :: (TypecheckerState a) => Context a -> HandledEffectInfo -> Int -> E.EffectHandler () -> HandledEffectInfo
+addHandler a :: (StateProvider a) => Context a -> HandledEffectInfo -> Int -> E.EffectHandler () -> HandledEffectInfo
 addHandler context info index (E.EffectHandler qn _ location) = do
         function <- QL.getFunction context.state qn
         effect_name <- getEffectName function.kind
@@ -258,7 +263,7 @@ addHandler context info index (E.EffectHandler qn _ location) = do
             handlers <- add handled_effect.handlers qn (HandlerInfo location index)
             handled_effect { handlers = handlers }
 
-checkHandlerConsistency a :: (TypecheckerState a) => Context a -> Location -> HandledEffectInfo -> Context a
+checkHandlerConsistency a :: (StateProvider a) => Context a -> Location -> HandledEffectInfo -> Context a
 checkHandlerConsistency context location info = do
     (context, missing_members) <- Map.fold (context, []) info.handled_effects (\(context, missing_members), (effect_name, handled_effect) -> do
             eff <- QL.getEffect context.state effect_name
@@ -282,7 +287,7 @@ checkHandlerConsistency context location info = do
         state <- addError context.state err
         context { state = state }
 
-getEffectHandlerType a :: (TypecheckerState a) => Context a -> E.EffectHandler () -> (Context a, T.Type)
+getEffectHandlerType a :: (StateProvider a) => Context a -> E.EffectHandler () -> (Context a, T.Type)
 getEffectHandlerType context E.EffectHandler _ selection _ = do
     case selection of
         E.Static qn -> do
@@ -298,14 +303,14 @@ getEffectHandlerType context E.EffectHandler _ selection _ = do
             (context, body_type)
         E.Default -> panic "Default eff not yet implemented"
 
-getEffectType a :: (TypecheckerState a) => HandledEffectInfo -> [E.EffectHandler ()] -> Context a -> FQ.FullyQualifiedName -> HandledEffect -> (Context a, T.Type)
+getEffectType a :: (StateProvider a) => HandledEffectInfo -> [E.EffectHandler ()] -> Context a -> FQ.FullyQualifiedName -> HandledEffect -> (Context a, T.Type)
 getEffectType info handlers context effect_name handled_effect  = do
         eff_type_info <- createEffectTypeInfo context effect_name
-        (eff_type_info, context) <- remapEffectTypeInfo eff_type_info context
+        (eff_type_info, context) <- UUtil.instantiateGeneric eff_type_info context
         (context, eff_type_info) <- Map.fold (context, eff_type_info) handled_effect.handlers (checkEffectHandlerType handlers)
         (context, eff_type_info.effect_type)
     where
-        checkEffectHandlerType a :: (TypecheckerState a) => [E.EffectHandler ()] -> (Context a, EffectTypeInfo) -> (FQ.FullyQualifiedName, [HandlerInfo]) -> (Context a, EffectTypeInfo)
+        checkEffectHandlerType a :: (StateProvider a) => [E.EffectHandler ()] -> (Context a, EffectTypeInfo) -> (FQ.FullyQualifiedName, [HandlerInfo]) -> (Context a, EffectTypeInfo)
         checkEffectHandlerType handlers (context, eff_type_info) (handler_name, handler_infos) = do
             HandlerInfo location index <- atIndex handler_infos 0
             (context, handler_type) <- getEffectHandlerType context (atIndex handlers index)
@@ -314,17 +319,17 @@ getEffectType info handlers context effect_name handled_effect  = do
             eff_type_info <- S.apply eff_type_info sub
             (context, eff_type_info)
 
-processHandledEffects a :: (TypecheckerState a) => Context a -> [E.EffectHandler ()] -> Location -> (Context a, [T.Type])
+processHandledEffects a :: (StateProvider a) => Context a -> [E.EffectHandler ()] -> Location -> (Context a, [T.Type])
 processHandledEffects context handlers location = do
     info <- HandledEffectInfo Map.empty
-    info <- List.foldE (\info, index, handler -> addHandler context info index handler) info handlers
+    info <- List.foldE info handlers (\info, index, handler -> addHandler context info index handler)
     context <- checkHandlerConsistency context location info
     (context, eff_types) <- Map.fold (context, []) info.handled_effects (\(context, eff_types), (effect_name, handled_effect) -> do
         (context, eff_type) <- getEffectType info handlers context effect_name handled_effect
         (context, List.push eff_types eff_type))
     (context, eff_types)
 
-initializeExprType a :: (TypecheckerState a) => FQ.FullyQualifiedName -> Context a -> E.Expr () -> (Context a, E.Expr ())
+initializeExprType a :: (StateProvider a) => FQ.FullyQualifiedName -> Context a -> E.Expr () -> (Context a, E.Expr ())
 initializeExprType current_fn_name context orig_expr = do
     E.Expr expr id _ location <- orig_expr
     //println "initializeExprType: expr {} {}" % (expr, id)
@@ -339,7 +344,7 @@ initializeExprType current_fn_name context orig_expr = do
             context <- addExprType context id (TS.FunctionCall var function_type)
             context
         E.DynamicFunctionCall receiver args -> do
-            (context, function_type) <- BUtil.createGeneralFunction (getLength args) context
+            (context, function_type) <- createGeneralFunction (getLength args) context
             (context, var) <- U.getNewTypeVarType context
             context <- addExprType context id (TS.FunctionCall var function_type)
             context
@@ -354,7 +359,7 @@ initializeExprType current_fn_name context orig_expr = do
             function <- QL.getFunction context.state qn
             effect_name <- getEffectName function.kind
             eff_type_info <- createEffectTypeInfo context effect_name
-            (eff_type_info, context) <- remapEffectTypeInfo eff_type_info context
+            (eff_type_info, context) <- UUtil.instantiateGeneric eff_type_info context
             function_type <- Option.unwrap (get eff_type_info.members qn)
             (context, var) <- U.getNewTypeVarType context
             context <- addExprType context id (TS.FunctionCall var function_type)
@@ -362,7 +367,8 @@ initializeExprType current_fn_name context orig_expr = do
             context
         E.VariantConstructorCall qn args -> do
             D.VariantInfo qn index _ <- QL.getVariantInfo context.state qn
-            function_type <- panic "NYI" // PO.getVariantCtor context.state.program qn index FIXME: TODO:
+            adt <- QL.getAdt context.state qn
+            function_type <- List.atIndex adt.variant_ctors index
             (context, function_type) <- instantiateType context function_type
             (context, var) <- U.getNewTypeVarType context
             context <- addExprType context id (TS.FunctionCall var function_type)
@@ -463,7 +469,7 @@ initializeExprType current_fn_name context orig_expr = do
             context
     (context, orig_expr)
 
-checkFunctionCall a :: (TypecheckerState a) => Context a -> Option FQ.FullyQualifiedName -> E.ExprId -> [E.Expr ()] -> Location -> Context a
+checkFunctionCall a :: (StateProvider a) => Context a -> Option FQ.FullyQualifiedName -> E.ExprId -> [E.Expr ()] -> Location -> Context a
 checkFunctionCall context qn expr_id args call_location =
     loop (context, index) <- (context, 0) do
         (ty, fn_ty) <- getExprAndFunctionCallType context expr_id
@@ -491,7 +497,7 @@ checkFunctionCall context qn expr_id args call_location =
                 context <- matchExprWith context arg_id arg_ty location
                 (context, index + 1)
 
-checkExprType a :: (TypecheckerState a) => Context a -> E.Expr () -> (Context a, E.Expr ())
+checkExprType a :: (StateProvider a) => Context a -> E.Expr () -> (Context a, E.Expr ())
 checkExprType context orig_expr = do
     E.Expr expr id _ location <- orig_expr
     //println "checkExprType: expr {} {} {}" % (expr, id, TF.toString (getExprType context id))
@@ -596,8 +602,8 @@ checkExprType context orig_expr = do
         E.Bind p rhs -> do
             P.Pattern _ pattern_id _ pattern_location <- p
             E.Expr _ rhs_id _ _ <- rhs
-            pattern_sig <- TS.getPatternEffectSignature context.type_store pattern_id
-            rhs_sig <- TS.getExprEffectSignature context.type_store rhs_id
+            pattern_sig <- TS.getPatternEffectSignature context.type_store context.group_index pattern_id
+            rhs_sig <- TS.getExprEffectSignature context.type_store context.group_index rhs_id
             context <- TEff.setExprEffect context id [pattern_sig, rhs_sig] location
             context <- matchExprWithPattern context rhs_id pattern_id pattern_location
             context <- matchExprWith context id (T.Tuple []) location
@@ -632,10 +638,10 @@ checkExprType context orig_expr = do
             context
         E.CaseOf body cases bind_groups -> do
             E.Expr _ body_id _ body_location <- body
-            body_sig <- TS.getExprEffectSignature context.type_store body_id
+            body_sig <- TS.getExprEffectSignature context.type_store context.group_index body_id
             case_sigs <- List.fold [] cases (\case_sigs, E.Case (P.Pattern _ pattern_id () _) (E.Expr _ case_body_id () _) -> do
-                case_pattern_sig <- TS.getPatternEffectSignature context.type_store pattern_id
-                case_body_sig <- TS.getExprEffectSignature context.type_store case_body_id
+                case_pattern_sig <- TS.getPatternEffectSignature context.type_store context.group_index pattern_id
+                case_body_sig <- TS.getExprEffectSignature context.type_store context.group_index case_body_id
                 sigs <- push case_sigs case_pattern_sig
                 push sigs case_body_sig)
             context <- TEff.setExprEffect context id ([body_sig] + case_sigs) location
@@ -649,7 +655,7 @@ checkExprType context orig_expr = do
                     bind_group.bindings |> Map.iter |> Iterator.fold (\context, (name, instances) -> do
                             P.BindRef _ first_pattern_id <- atIndex instances 0
                             instances |> List.iter |> Iterator.fold (\context, P.BindRef _ pattern_id -> do
-                                    pattern_location <- TS.getPatternLocation context.type_store pattern_id
+                                    pattern_location <- TS.getPatternLocation context.type_store context.group_index pattern_id
                                     context <- matchPatterns context pattern_id first_pattern_id pattern_location
                                     context
                                 ) context
@@ -684,7 +690,7 @@ checkExprType context orig_expr = do
             E.Expr _ initializer_id _ _ <- initializer
             E.Expr _ body_id _ body_location <- body
             P.Pattern _ pattern_id _ pattern_location <- pattern
-            pattern_sig <- TS.getPatternEffectSignature context.type_store pattern_id
+            pattern_sig <- TS.getPatternEffectSignature context.type_store context.group_index pattern_id
             expr_sigs <- TEff.getExprEffectSignatures context [initializer_id, body_id]
             context <- TEff.setExprEffect context id ([pattern_sig] + expr_sigs) location
             context <- matchExprs context initializer_id body_id body_location
@@ -701,21 +707,21 @@ checkExprType context orig_expr = do
             context
         E.With handlers body _ -> do
             (context, effects) <- processHandledEffects context handlers location
-            type_store <- TS.addWithEffects context.type_store id effects
+            type_store <- TS.addWithEffects context.type_store context.group_index id effects
             context <- context { type_store = type_store }
             handler_sigs <- List.map handlers (\E.EffectHandler _ selection _ -> case selection of
                 E.Static qn -> TEff.emptyEffectSignatureSet
-                E.Dynamic (E.Expr _ handler_id () _) -> TS.getExprEffectSignature context.type_store handler_id
+                E.Dynamic (E.Expr _ handler_id () _) -> TS.getExprEffectSignature context.type_store context.group_index handler_id
                 E.Default -> TEff.emptyEffectSignatureSet)
             E.Expr _ body_id _ _ <- body
-            body_sig <- TS.getExprEffectSignature context.type_store body_id
+            body_sig <- TS.getExprEffectSignature context.type_store context.group_index body_id
             (context, body_sig) <- TEff.removeEffects context body_sig effects location
             context <- TEff.setExprEffect context id ([body_sig] + handler_sigs) location
             context <- matchExprs context id body_id location
             context
     (context, orig_expr)
 
-addUndefinedVarToContext a :: (TypecheckerState a) => Context a -> [T.TypeVar] -> T.TypeVar -> Location -> (Context a, [T.TypeVar])
+addUndefinedVarToContext a :: (StateProvider a) => Context a -> [T.TypeVar] -> T.TypeVar -> Location -> (Context a, [T.TypeVar])
 addUndefinedVarToContext context undefined_vars var location =
     if contains undefined_vars var
         then (context, undefined_vars)
@@ -726,7 +732,7 @@ addUndefinedVarToContext context undefined_vars var location =
             undefined_vars <- push undefined_vars var
             (context, undefined_vars)
 
-checkUndefinedVars a :: (TypecheckerState a) => Context a -> [T.TypeVar] -> T.Type -> [T.TypeVar] -> Location -> (Context a, [T.TypeVar])
+checkUndefinedVars a :: (StateProvider a) => Context a -> [T.TypeVar] -> T.Type -> [T.TypeVar] -> Location -> (Context a, [T.TypeVar])
 checkUndefinedVars context undefined_vars type signature_vars location = do
     case type of
         T.Never _ -> (context, undefined_vars)
@@ -738,7 +744,7 @@ checkUndefinedVars context undefined_vars type signature_vars location = do
                             then (context, undefined_vars)
                             else addUndefinedVarToContext context undefined_vars v location) (context, undefined_vars)
 
-checkMissingTypeInExpr a :: (TypecheckerState a) => [T.TypeVar] -> (Context a, [T.TypeVar]) -> E.Expr () -> ((Context a, [T.TypeVar]), E.Expr ())
+checkMissingTypeInExpr a :: (StateProvider a) => [T.TypeVar] -> (Context a, [T.TypeVar]) -> E.Expr () -> ((Context a, [T.TypeVar]), E.Expr ())
 checkMissingTypeInExpr signature_vars (context, undefined_vars) expr = do
     E.Expr s_expr id _ location <- expr
     type <- getExprType context id

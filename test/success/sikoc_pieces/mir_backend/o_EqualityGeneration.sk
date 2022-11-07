@@ -247,7 +247,7 @@ processExpr context expr = do
         E.CaseOf body cases -> do
             E.Expr _ body_type body_id <- body
             context <- processExpr context body
-            context <- List.foldE (\context, index, c -> do
+            context <- List.foldE context cases (\context, index, c -> do
                     context <- processExpr context c.body
                     case_body <- getExprId c.body
                     context <- addEqualExprs context case_body expr_id
@@ -275,7 +275,7 @@ processExpr context expr = do
                                     addEqualInfo context body_info var_info
                                 _ -> panic "VariantCheckers' type is nor adt nor record"
                         _ -> context
-                ) context cases
+                )
             context
         E.Clone _ -> context
         E.Deref _ -> context

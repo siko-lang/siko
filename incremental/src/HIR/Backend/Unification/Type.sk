@@ -1,0 +1,61 @@
+module Siko.HIR.Backend.Unification.Type where
+
+import Siko.HIR.Type as T
+import Siko.HIR.Backend.Unification as U
+import Siko.HIR.Backend.Unification.Util as UUtil
+import Siko.HIR.Backend.Unification.Substitution as S
+
+import Map
+
+instance S.Collectable T.Constraint where
+    collect collector constraint = case constraint of
+        T.ClassConstraint qn associated_types -> S.collect collector associated_types
+        T.RowConstraint kind type -> S.collect collector type
+
+instance S.Collectable T.Type where
+    collect collector type = case type of
+        T.Var var constraints -> do
+            collector <- S.addVar collector var
+            S.collect collector constraints
+        T.FixedTypeArg _ var constraints -> do
+            collector <- S.addVar collector var
+            S.collect collector constraints
+        T.Named _ args -> S.collect collector args
+        T.Function from to -> do
+            collector <- S.collect collector from
+            S.collect collector to
+        T.Never var -> S.addVar collector var
+        T.Ref _ t -> S.collect collector t
+        T.Owner t -> S.collect collector t
+        T.Tuple args -> S.collect collector args
+
+instance S.Apply T.Constraint where
+    apply constraint sub =
+        case constraint of
+            T.ClassConstraint s associated_types -> T.ClassConstraint s (List.map associated_types (\ty -> S.apply ty sub))
+            T.RowConstraint name ty -> T.RowConstraint name (S.apply ty sub)
+
+instance S.Apply T.Type where
+    apply :: T.Type -> S.Substitution -> T.Type
+    apply type sub = case type of
+        T.Var var constraints -> case get sub.vars var of
+            Some t -> S.apply t sub
+            None -> (T.Var var (List.map constraints (\c -> S.apply c sub)))
+        T.FixedTypeArg _ var _ -> case get sub.vars var of
+            Some t -> S.apply t sub
+            None -> type
+        T.Named n args -> do
+            T.Named n (List.map args (\arg -> S.apply arg sub))
+        T.Function from to -> do
+            from <- S.apply from sub
+            to <- S.apply to sub
+            T.Function from to
+        T.Never var -> case get sub.vars var of
+            Some t -> S.apply t sub
+            None -> type
+        T.Ref lifetime t -> T.Ref lifetime (S.apply t sub)
+        T.Owner t -> T.Owner (S.apply t sub)
+        T.Tuple args -> T.Tuple (List.map args (\arg -> S.apply arg sub))
+
+instance S.Transform T.Type where
+    transform ty f = f ty

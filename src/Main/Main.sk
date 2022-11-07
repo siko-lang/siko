@@ -76,17 +76,17 @@ dumpErrors :: Context -> ()
 dumpErrors context = do
     context.lexer_errors
         |> Map.iter
-        |> forEach (\(file_id, lexer_errors) -> lexer_errors
+        |> Iterator.forEach (\(file_id, lexer_errors) -> lexer_errors
                                                  |> List.iter
-                                                 |> forEach \error -> printLexerError error)
+                                                 |> Iterator.forEach \error -> printLexerError error)
     context.parser_errors
         |> Map.iter
-        |> forEach (\(file_id, parser_errors) -> parser_errors
+        |> Iterator.forEach (\(file_id, parser_errors) -> parser_errors
                                                   |> List.iter
-                                                  |> forEach \error -> printParserError context.file_manager file_id error)
+                                                  |> Iterator.forEach \error -> printParserError context.file_manager file_id error)
 
-    context.resolver_errors |> List.iter |> forEach \error -> printResolverError context.file_manager error
-    context.typechecker_errors |> List.iter |> forEach \error -> printTypecheckerError context.file_manager error
+    context.resolver_errors |> List.iter |> Iterator.forEach \error -> printResolverError context.file_manager error
+    context.typechecker_errors |> List.iter |> Iterator.forEach \error -> printTypecheckerError context.file_manager error
 
 isOk :: Context -> Bool
 isOk context = Map.isEmpty context.lexer_errors &&

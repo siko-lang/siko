@@ -24,10 +24,10 @@ mapType context steps type = case type of
     FixedTypeArg name -> do
         addVarPosition context name steps
     Named  args -> do
-        context <- List.foldE (\context, index, arg -> do
+        context <- List.foldE context args (\context, index, arg -> do
             steps <- steps + [External index]
             context <- mapType context steps arg
-            context) context args
+            context)
         context
 
 main = do

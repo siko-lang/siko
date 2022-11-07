@@ -13,6 +13,7 @@ import Siko.Resolver as R
 import Siko.Util.SharedString as SS
 import Siko.Query.Resolver as QR
 import Siko.Query.Typechecker as QT
+import Siko.Query.HIRLowering as HL
 
 data Driver = { sources :: Map String SourceFile,
                 resolver :: R.Resolver,
@@ -36,6 +37,7 @@ createDriver = do
     db <- DB.addCommandGenerator db I.ResolvedClassKind I.CreateClassTypeInfo
     db <- DB.addCommandGenerator db I.ResolvedInstanceKind I.CheckInstance
     db <- DB.addCommandGenerator db I.FunctionGroupKind I.TypeCheckFunctionGroup
+    db <- DB.addCommandGenerator db I.TypedFunctionKind I.TransformUpdates
     db <- DB.addWatchedKind db I.ResolvedClassKind I.RefreshClassDeps
     db <- DB.addWatchedKind db I.FunctionDependencyInfoKind I.CreateFunctionGroups
     resolver <- R.createResolver
@@ -98,6 +100,7 @@ executeCommand driver cmd = do
         I.CreateFunctionDependencyInfo key -> QT.createFunctionDependencyInfo driver key
         I.CreateFunctionGroups -> QT.createFunctionGroups driver
         I.TypeCheckFunctionGroup key -> QT.typeCheckFunctionGroup driver key
+        I.TransformUpdates key -> HL.transformUpdates driver key
 
 addToDb :: Driver -> I.Key -> I.Item -> Driver
 addToDb driver key item = do

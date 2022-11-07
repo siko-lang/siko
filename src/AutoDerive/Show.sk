@@ -60,15 +60,15 @@ deriveAdtShow adt derive_location mod_name = do
         cases <- List.map adt.variants (\variant -> do
             Ident variant_name _ <- variant.name
             variant_name_expr <- E.Expr (E.StringLiteral variant_name) derive_location
-            item_bindings <- List.foldE (\bindings, index, item -> do
+            item_bindings <- List.foldE [] variant.items (\bindings, index, item -> do
                 binding <- P.Pattern (P.Binding (createIdent ("i{}" % index) derive_location)) derive_location
-                List.push bindings binding) [] variant.items
+                List.push bindings binding)
             case_pattern <- P.Pattern (P.Constructor (createIdent ("{}.{}" % (mod_name, variant_name)) derive_location) item_bindings) derive_location
-            item_show_exprs <- List.foldE (\show_exprs, index, item -> do
+            item_show_exprs <- List.foldE [] variant.items (\show_exprs, index, item -> do
                 item_expr <- E.Expr (E.Path (createIdent ("i{}" % index) derive_location)) derive_location
                 show_name_expr <- E.Expr (E.Path (createIdent "Std.Ops.show" derive_location)) derive_location
                 show_expr <- E.Expr (E.FunctionCall show_name_expr [item_expr]) derive_location
-                List.push show_exprs show_expr) [] variant.items
+                List.push show_exprs show_expr)
             arg_fmts <- repeat "({})" (getLength item_show_exprs)
             fmt <- if List.isEmpty arg_fmts
             then "{}"

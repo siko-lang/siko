@@ -149,7 +149,7 @@ processFunction :: F.Function -> F.Function
 processFunction function = case function.kind of
     F.Normal info -> do
         context <- createContext info.expr_id_gen info.temp_var_gen
-        context <- List.foldE (\context, index, _ -> addArg context (E.Arg index)) context function.type.args
+        context <- List.foldE context function.type.args (\context, index, _ -> addArg context (E.Arg index))
         (context, body) <- processExpr context info.body
         info <- info { body = body, expr_id_gen = context.expr_id_gen, temp_var_gen = context.temp_var_gen }
         new_kind <- F.Normal info

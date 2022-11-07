@@ -174,7 +174,7 @@ find l f = do
             else index + 1
 
 join a :: (Show a) => [a] -> String -> String
-join items separator = List.foldE (joiner separator) "" items
+join items separator = List.foldE "" items (joiner separator)
     where
         joiner a :: (Show a) => String -> String -> Int -> a -> String
         joiner separator state index item = case index of
@@ -283,8 +283,8 @@ mapE l f = do
     l
 
 @Inline
-foldE a b :: (a -> Int -> b -> a) -> a -> [b] -> a
-foldE f s l = do
+foldE a b :: a -> [b] -> (a -> Int -> b -> a) -> a
+foldE s l f = do
     (s, i) <- l |> List.iter |> Iterator.fold (\(s, index), i -> do
         s <- f s index i
         (s, index + 1)) (s, 0)
@@ -352,3 +352,7 @@ max a :: (Ord a) => [a] -> Option a
 max list = List.fold None list (\m, item -> case m of
     Some m -> Some (Std.Ops.max m item)
     None -> Some item)
+
+@Inline
+forEach a :: [a] -> (a -> ()) -> ()
+forEach list f = list |> List.iter |> Iterator.forEach f

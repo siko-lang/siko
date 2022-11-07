@@ -38,6 +38,7 @@ class FunctionTypeInfoProvider a where
 
 class CheckedFunctionTypeInfoProvider a where
     getCheckedFunctionTypeInfo a :: a -> FQ.FullyQualifiedName -> TF.FunctionTypeInfo
+    getCheckedFunctionTypeInfoOpt a :: a -> FQ.FullyQualifiedName -> Option TF.FunctionTypeInfo
 
 class RegisteredInstanceProvider a where
     getRegisteredInstance a :: a -> TC.InstanceKey -> TC.InstanceInfo
@@ -114,6 +115,12 @@ instance CheckedFunctionTypeInfoProvider Driver where
         key <- I.CheckedFunctionTypeInfoKey qn
         f <- DB.get driver.db key
         I.asCheckedFunctionTypeInfo f
+
+    getCheckedFunctionTypeInfoOpt driver qn = do
+        key <- I.CheckedFunctionTypeInfoKey qn
+        case DB.getOpt driver.db key of
+            Some f -> Some (I.asCheckedFunctionTypeInfo f)
+            None -> None
 
 instance RegisteredInstanceProvider Driver where
     getRegisteredInstance driver key = do

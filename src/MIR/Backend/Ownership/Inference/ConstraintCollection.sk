@@ -263,9 +263,9 @@ collectConstraints function_id program borrow_info inference_info body = do
                [] Map.empty Map.empty Map.empty Map.empty Map.empty Map.empty Map.empty
     function_inference_info <- getFunctionInferenceInfo context.inference_info function_id
     E.Expr _ _ body_id <- body
-    context <- List.foldE (\context, index, arg -> do
+    context <- List.foldE context function_inference_info.args (\context, index, arg -> do
             var_expr_map <- Map.put context.var_expr_map (E.Arg index) body_id
-            context { var_expr_map = var_expr_map }) context function_inference_info.args
+            context { var_expr_map = var_expr_map })
     context <- processExpr context body
     body_info <- getTypeVariableInfoByExprId context.inference_info body_id function_id
     result_vars <- getOwnershipVars context.inference_info.ownership_dep_map_info.ownership_dep_map body_info

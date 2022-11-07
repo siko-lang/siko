@@ -5,6 +5,7 @@ import Siko.Syntax.Ident
 import Siko.Syntax.Expr as SE
 import Siko.Syntax.Pattern as SP
 import Siko.HIR.Expr as HE
+import Siko.HIR.ExprIdGenerator
 import Siko.HIR.Pattern as HP
 import Siko.HIR.FullyQualifiedName as FQ
 import Siko.HIR.Data as HD
@@ -34,6 +35,7 @@ data LoopHelper = { continues :: [HE.ExprRef],
 data Context a = { function_name :: FQ.FullyQualifiedName,
                    type_resolver :: TypeResolverState,
                    state :: a,
+                   expr_id_gen :: ExprIdGenerator,
                    module_resolver :: ModuleResolver,
                    next_lambda_id :: Int,
                    lambda_helper :: Option LambdaHelper,
@@ -45,13 +47,15 @@ data Context a = { function_name :: FQ.FullyQualifiedName,
 createContext a :: FQ.FullyQualifiedName ->
                    TypeResolverState ->
                    a ->
+                   ExprIdGenerator ->
                    ModuleResolver ->
                    F.FunctionScopeResolver ->
                    Context a
-createContext function_name type_resolver state module_resolver function_scope_resolver = Context {
+createContext function_name type_resolver state expr_id_gen module_resolver function_scope_resolver = Context {
     function_name = function_name,
     type_resolver = type_resolver,
     state = state,
+    expr_id_gen = expr_id_gen,
     module_resolver = module_resolver,
     next_lambda_id = 1,
     lambda_helper = None,
@@ -61,8 +65,8 @@ createContext function_name type_resolver state module_resolver function_scope_r
 
 getExprId a :: (ResolverState a) => Context a -> (Context a, HE.ExprId)
 getExprId context = do
-    (state, expr_id) <- getNextExprId context.state
-    context <- context { state = state }
+    (expr_id_gen, expr_id) <- getNewExprId context.expr_id_gen
+    context <- context { expr_id_gen = expr_id_gen }
     (context, expr_id)
 
 getPatternId a :: (ResolverState a) => Context a -> (Context a, HP.PatternId)

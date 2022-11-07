@@ -1,0 +1,32 @@
+module Siko.HIR.Backend.Unification.Substitution.Generic where
+
+import Siko.HIR.Backend.Unification.Substitution
+import Map
+
+instance (Transform a) => Transform [a] where
+    transform xs f = List.map xs (\x -> transform x f)
+
+instance (Transform v, Ord k) => Transform Map k v where
+    transform m f = Map.map m (\(k, v) -> (k, transform v f))
+
+instance (Transform a) => Transform Option a where
+    transform input f = case input of
+            Some i -> Some (transform i f)
+            None -> None
+
+instance (Collectable a) => Collectable [a] where
+    collect collector xs = List.fold collector xs collect
+
+instance (Collectable v, Ord k) => Collectable Map k v where
+    collect collector m = Map.fold collector m (\collector, (k, v) -> collect collector v)
+
+instance (Collectable a) => Collectable Option a where
+    collect collector input = case input of
+        Some i -> collect collector i
+        None -> collector
+
+instance (Apply a) => Apply [a] where
+    apply xs sub = List.map xs (\x -> apply x sub)
+
+instance (Ord k, Apply v) => Apply Map k v where
+    apply xs sub = Map.map xs (\(k, v) -> (k, apply v sub))

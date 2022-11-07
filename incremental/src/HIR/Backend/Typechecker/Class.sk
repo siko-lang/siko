@@ -8,12 +8,12 @@ import Siko.Util.DependencyProcessor
 import Siko.HIR.Backend.Typechecker.Error
 import Siko.HIR.FullyQualifiedName as FQ
 import Siko.HIR.Backend.Unification as U
-import Siko.HIR.Backend.Typechecker
+import Siko.HIR.Backend.StateProvider
 import Siko.HIR.Backend.Unification.Substitution as S
+import Siko.HIR.Backend.Unification.Util as UUtil
 import Siko.HIR.TypeFormatter as TF
 import Siko.HIR.Backend.TypeIsomorphism
 import Siko.HIR.Util as Util
-import Siko.HIR.Backend.Util as BUtil
 import Map
 import Siko.Util.SharedString as SS
 import Siko.Query.Lookup
@@ -24,6 +24,27 @@ data ClassMemberInfo = { type :: T.Type,
 data ClassTypeInfo = {  arg_type :: T.Type,
                         associated_types :: [T.Type],
                         members :: Map SS.SharedString ClassMemberInfo } deriving (Show, PartialEq, Eq)
+
+instance S.Transform ClassMemberInfo where
+    transform class_member_info f = do
+        type <- S.transform class_member_info.type f
+        class_member_info { type = type }
+
+instance S.Transform ClassTypeInfo where
+    transform class_type_info f = do
+        arg_type <- S.transform class_type_info.arg_type f
+        associated_types <- S.transform class_type_info.associated_types f
+        members <- S.transform class_type_info.members f
+        ClassTypeInfo arg_type associated_types members
+
+instance S.Collectable ClassMemberInfo where
+    collect collector class_member_info = S.collect collector class_member_info.type
+
+instance S.Collectable ClassTypeInfo where
+    collect collector class_type_info = do
+        collector <- S.collect collector class_type_info.arg_type
+        collector <- S.collect collector class_type_info.associated_types
+        S.collect collector class_type_info.members
 
 data BaseType = Tuple Int
               | Named FQ.FullyQualifiedName
@@ -48,6 +69,17 @@ data InstanceInfo = { instance_type :: T.Type,
                       location :: Location
                     } deriving (Show, PartialEq, Eq)
 
+instance S.Transform InstanceInfo where
+    transform info f = do
+        instance_type <- S.transform info.instance_type f
+        associated_types <- S.transform info.associated_types f
+        InstanceInfo instance_type associated_types info.id info.location
+
+instance S.Collectable InstanceInfo where
+    collect collector info = do
+        collector <- S.collect collector info.instance_type
+        S.collect collector info.associated_types
+
 data InstanceKey = { class_name :: FQ.FullyQualifiedName, base_type :: BaseType } deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
 addMemberInfo :: ClassTypeInfo -> SS.SharedString -> T.Type -> Bool -> ClassTypeInfo
@@ -55,7 +87,7 @@ addMemberInfo class_type_info name type has_default_impl = do
     (members, _) <- Map.insert class_type_info.members name (ClassMemberInfo type has_default_impl)
     class_type_info { members = members }
 
-createClassTypeInfo a :: (TypecheckerState a) => a -> C.Class -> (a, ClassTypeInfo)
+createClassTypeInfo a :: (StateProvider a) => a -> C.Class -> (a, ClassTypeInfo)
 createClassTypeInfo state c = do
     class_type_info <- ClassTypeInfo c.arg_type c.associated_types Map.empty
     List.fold (state, class_type_info) c.members (\(state, class_type_info), qn -> do
@@ -104,39 +136,44 @@ isSpecializedType type = case type of
     T.Tuple args -> args |> List.iter |> Iterator.fold (\specialized, arg -> specialized || not (isVar arg)) False
     _ -> True
 
-getMemberType a :: (TypecheckerState a) => a -> C.Instance -> F.Function () -> ClassTypeInfo -> (a, Option T.Type)
+data InstanceMemberInfo = { instance_type :: T.Type,
+                            associated_types :: [T.Type],
+                            member_type :: Option T.Type }
+
+instance S.Transform InstanceMemberInfo where
+    transform info f = do
+        instance_type <- S.transform info.instance_type f
+        associated_types <- S.transform info.associated_types f
+        member_type <- S.transform info.member_type f
+        InstanceMemberInfo instance_type associated_types member_type
+
+instance S.Collectable InstanceMemberInfo where
+    collect collector info = do
+        collector <- S.collect collector info.instance_type
+        collector <- S.collect collector info.associated_types
+        S.collect collector info.member_type
+
+getMemberType a :: (StateProvider a) => a -> C.Instance -> F.Function () -> ClassTypeInfo -> (a, Option T.Type)
 getMemberType state i instance_member class_type_info = do
     short_name <- FQ.getShortName instance_member.name
+    (class_type_info, state) <- UUtil.instantiateGeneric class_type_info state
     case get class_type_info.members short_name of
         Some class_member_info -> do
             sub <- S.createSubstitution
-            class_vars <- Util.collectVars [] class_type_info.arg_type
-            class_vars <- Util.collectVars class_vars class_member_info.type
-            class_vars <- List.fold class_vars class_type_info.associated_types Util.collectVars
-            (class_mapper, state) <- BUtil.initMapper class_vars state
-            class_arg_type <- BUtil.remap class_mapper class_type_info.arg_type
-            class_member_type <- BUtil.remap class_mapper class_member_info.type
-            class_associated_types <- List.map class_type_info.associated_types (BUtil.remap class_mapper)
-            instance_vars <- Util.collectVars [] i.type
-            instance_vars <- case instance_member.type of
-                Some instance_member_type -> Util.collectVars instance_vars instance_member_type
-                None -> instance_vars
-            (instance_mapper, state) <- BUtil.initMapper instance_vars state
-            instance_type <- BUtil.remap instance_mapper i.type
-            instance_associated_types <- List.map i.associated_types (BUtil.remap instance_mapper)
-            (state, sub) <- case U.unify state sub class_arg_type instance_type of
+            instance_member_info <- InstanceMemberInfo i.type i.associated_types instance_member.type
+            (instance_member_info, state) <- UUtil.instantiateGeneric instance_member_info state
+            (state, sub) <- case U.unify state sub class_type_info.arg_type instance_member_info.instance_type of
                 Ok (state, sub) -> (state, sub)
                 Err _ -> panic "Class arg unification failed!"
-            (state, sub) <- List.zipS (state, sub) class_associated_types instance_associated_types (
+            (state, sub) <- List.zipS (state, sub) class_type_info.associated_types instance_member_info.associated_types (
                     \(state, sub), class_associated_type, instance_associated_type -> do
                     case U.unify state sub class_associated_type instance_associated_type of
                         Ok (state, sub) -> (state, sub)
                         Err _ -> panic "Associated type unification failed! {} {}" % (TF.toString class_associated_type, TF.toString instance_associated_type)
                 )
-            inferred_instance_member_type <- S.apply class_member_type sub
-            (final_member_type, state) <- case instance_member.type of
+            inferred_instance_member_type <- S.apply class_member_info.type sub
+            (final_member_type, state) <- case instance_member_info.member_type of
                 Some instance_member_type -> do
-                    instance_member_type <- BUtil.remap instance_mapper instance_member_type
                     state <- if checkIsomorphicType inferred_instance_member_type instance_member_type state
                         then state
                         else do
@@ -150,7 +187,7 @@ getMemberType state i instance_member class_type_info = do
             state <- addError state (InstanceMemberNotClassMember short_name instance_member.location)
             (state, None)
 
-checkInstance a :: (TypecheckerState a) => a -> ClassTypeInfo -> C.Instance -> a
+checkInstance a :: (StateProvider a) => a -> ClassTypeInfo -> C.Instance -> a
 checkInstance state class_type_info i = do
     state <- if isSpecializedType i.type
     then addError state (SpecializedInstance i.location)

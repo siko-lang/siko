@@ -17,13 +17,13 @@ check id context expr = do
     E.Expr s_expr expr_type expr_id <- expr
     case s_expr of
         E.StaticFunctionCall f_id args -> do
-            (vardecls, args) <- List.foldE (\(vardecls, args), index, arg -> do
+            (vardecls, args) <- List.foldE ([], []) args (\(vardecls, args), index, arg -> do
                 E.Expr _ arg_type arg_id <- arg
                 vardecl <- E.Expr (E.VarDecl (E.FnArg index) arg) context.unit_type arg_id
                 new_arg <- E.Expr (E.VarRef (E.FnArg index)) arg_type arg_id
                 vardecls <- List.push vardecls vardecl
                 args <- List.push args new_arg
-                (vardecls, args)) ([], []) args
+                (vardecls, args))
             if List.isEmpty vardecls
             then (context, expr)
             else do

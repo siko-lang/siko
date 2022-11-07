@@ -5,6 +5,8 @@ import Siko.HIR.Backend.Unification.Substitution as S
 import Siko.HIR.Type as T
 import Siko.HIR.TypeFormatter as TF
 
+import Map
+
 unify a :: (U.Context a) => a -> S.Substitution -> T.Type -> T.Type -> (a, S.Substitution)
 unify context sub type1 type2 =
     case U.unify context sub type1 type2 of
@@ -29,3 +31,46 @@ getFunctionType context arg_types expected_result_type function_type = do
 
 getFieldName :: Int -> String
 getFieldName index = "field{}" % index
+
+remap a d :: (U.Context a, S.Collectable d, S.Transform d) => d -> a -> (d, a)
+remap data_type context = do
+    collector <- S.collect S.createCollector data_type
+    (mapper, context) <- initMapper collector.type_vars context
+    data_type <- S.transform data_type (remapType mapper)
+    (data_type, context)
+
+data Mapper = { vars :: Map T.TypeVar T.TypeVar } deriving (Show)
+
+initMapper a :: (U.TypeVarGenerator a) => [T.TypeVar] -> a -> (Mapper, a)
+initMapper vars var_gen = do
+    (vars, var_gen) <- List.fold (empty, var_gen) vars (\(vars, var_gen), old_var -> do
+            (var_gen, new_var) <- U.getNewTypeVar var_gen
+            (vars, _) <- insert vars old_var new_var
+            (vars, var_gen))
+    (Mapper vars, var_gen)
+
+remapType :: Mapper -> T.Type -> T.Type
+remapType mapper type = T.traverse (helper mapper) type
+    where
+        helper :: Mapper -> T.Type -> T.Type
+        helper mapper type = do
+        case type of
+            T.Var var constraints -> case get mapper.vars var of
+                Some new_var -> T.Var new_var constraints
+                None -> panic "old var {} not found" % var
+            T.FixedTypeArg n var constraints -> case get mapper.vars var of
+                Some new_var -> T.FixedTypeArg n new_var constraints
+                None -> panic "fixed old var {} not found" % var
+            T.Never var -> case get mapper.vars var of
+                Some new_var -> T.Never new_var
+                None -> panic "old var {} not found" % var
+            _ -> type
+
+removeFixed a :: (S.Transform a) => a -> a
+removeFixed data_type = S.transform data_type T.removeFixed
+
+instantiateGeneric a :: (U.Context a, S.Collectable d, S.Transform d) => d -> a -> (d, a)
+instantiateGeneric data_type context = do
+    (data_type, context) <- remap data_type context
+    data_type <- removeFixed data_type
+    (data_type, context)

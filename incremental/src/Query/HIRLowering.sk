@@ -1,0 +1,17 @@
+module Siko.Query.HIRLowering where
+
+import Siko.Query.Driver
+import Siko.HIR.Backend.StateProvider as BSP
+import Siko.Query.Item as I
+import Siko.Query.Database as DB
+import Siko.HIR.Backend.UpdateTransformer as UT
+
+transformUpdates :: Driver -> I.Key -> Driver
+transformUpdates driver key = do
+    fn <- DB.get driver.db key
+    fn <- I.asTypedFunction fn
+    state <- BSP.createStateProvider driver
+    (state, fn) <- UT.processFunction state fn
+    key <- I.UpdateTransformedFunctionKey fn.name
+    item <- I.UpdateTransformedFunction fn
+    addToDb driver key item

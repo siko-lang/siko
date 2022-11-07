@@ -1,22 +1,28 @@
 module Siko.HIR.Backend.Unification.Data where
 
 import Siko.HIR.Type as T
-import Siko.HIR.Backend.Util as Util
 import Siko.HIR.Data as D
 import Siko.HIR.Backend.Unification as U
+import Siko.HIR.Backend.Unification.Util as UUtil
 import Siko.HIR.Backend.Unification.Substitution as S
 
 instance S.Apply D.Record where
     apply record sub = S.transform record (\t -> S.apply t sub)
 
+instance S.Transform D.RecordField where
+    transform (D.RecordField name type) f = D.RecordField name (f type)
+
+instance S.Transform D.Variant where
+    transform variant f = do
+        items <- S.transform variant.items f
+        variant { items = items }
+
 instance S.Transform D.Record where
     transform record f = do
-        type_args <- List.map record.type_args f
-        fields <- List.map record.fields (\D.RecordField name type -> do
-            name <- Std.Intrinsics.clone name
-            D.RecordField name (f type))
-        type <- f record.type
-        record_ctor <- f record.record_ctor
+        type_args <- S.transform record.type_args f
+        fields <- S.transform record.fields f
+        type <- S.transform record.type f
+        record_ctor <- S.transform record.record_ctor f
         derived_classes <- Std.Intrinsics.clone record.derived_classes
         name <- Std.Intrinsics.clone record.name
         D.Record name record.location type_args fields record.external record_ctor derived_classes type record.implicit_member
@@ -26,33 +32,24 @@ instance S.Apply D.AlgebraicDataType where
 
 instance S.Transform D.AlgebraicDataType where
     transform adt f = do
-        type_args <- List.map adt.type_args f
-        variants <- List.map adt.variants (\variant -> do
-            items <- List.map variant.items f
-            name <- Std.Intrinsics.clone variant.name
-            variant { name = name, items = items })
-        type <- f adt.type
-        variant_ctors <- List.map adt.variant_ctors f
+        type_args <- S.transform adt.type_args f
+        variants <- S.transform adt.variants f
+        type <- S.transform adt.type f
+        variant_ctors <- S.transform adt.variant_ctors f
         derived_classes <- Std.Intrinsics.clone adt.derived_classes
         name <- Std.Intrinsics.clone adt.name
         D.AlgebraicDataType name adt.location type_args variants variant_ctors derived_classes type
 
-remapRecord a :: (U.Context a) => D.Record -> a -> (D.Record, a)
-remapRecord record context = do
-    (sub, context) <- Util.newSub [record.type] context
-    record <- S.transform record (\t -> S.apply (T.removeFixed t) sub)
-    (record, context)
+instance S.Collectable D.Record where
+    collect collector record = S.collect collector record.type
 
-remapAdt a :: (U.Context a) => D.AlgebraicDataType -> a -> (D.AlgebraicDataType, a)
-remapAdt adt context = do
-    (sub, context) <- Util.newSub [adt.type] context
-    adt <- S.transform adt (\t -> S.apply (T.removeFixed t) sub)
-    (adt, context)
+instance S.Collectable D.AlgebraicDataType where
+    collect collector adt = S.collect collector adt.type
 
 instantiateAdt a :: (U.Context a) => a -> D.AlgebraicDataType -> T.Type -> Result (a, D.AlgebraicDataType) a
 instantiateAdt context adt adt_type = do
     sub <- S.createSubstitution
-    (adt, context) <- remapAdt adt context
+    (adt, context) <- UUtil.instantiateGeneric adt context
     (context, sub) <- case U.unify context sub adt.type adt_type of
         Ok (context, sub) -> (context, sub)
         Err (context, sub) -> return Err context
@@ -62,7 +59,7 @@ instantiateAdt context adt adt_type = do
 instantiateRecord a :: (U.Context a) => a -> D.Record -> T.Type -> Result (a, D.Record) a
 instantiateRecord context record record_type = do
     sub <- S.createSubstitution
-    (record, context) <- remapRecord record context
+    (record, context) <- UUtil.instantiateGeneric record context
     (context, sub) <- case U.unify context sub record.type record_type of
         Ok (context, sub) -> (context, sub)
         Err (context, sub) -> return Err context

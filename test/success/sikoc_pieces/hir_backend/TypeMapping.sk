@@ -58,28 +58,28 @@ mapType context steps type = case type of
             HP.Record record -> do
                 if record.external
                     then do
-                        context <- List.foldE (\context, index, arg -> do
+                        context <- List.foldE context args (\context, index, arg -> do
                             steps <- steps + [MF.External index]
                             context <- mapType context steps arg
-                            context) context args
+                            context)
                         context
                     else do
                         (lowering_context, record) <- TS.instantiateRecord context.lowering_context record type
                         context <- context { lowering_context = lowering_context }
-                        List.foldE (\context, index, (HD.RecordField name field_type) -> do
+                        List.foldE context record.fields (\context, index, (HD.RecordField name field_type) -> do
                             steps <- steps + [MF.Field name index]
                             context <- mapType context steps field_type
-                            context) context record.fields
+                            context)
             HP.Adt adt -> do
                 (lowering_context, adt) <- TS.instantiateAdt context.lowering_context adt type
                 context <- context { lowering_context = lowering_context }
-                List.foldE (\context, index, v -> do
+                List.foldE context adt.variants (\context, index, v -> do
                     steps <- steps + [MF.Variant index]
-                    context <- List.foldE (\context, index, t -> do
+                    context <- List.foldE context v.items (\context, index, t -> do
                             steps <- steps + [MF.Field (getFieldName index) index]
                             context <- mapType context steps t
-                            context) context v.items
-                    context) context adt.variants
+                            context)
+                    context)
             _ -> panic "Named type is not an adt nor a record in type mapping"
     HT.Function from to -> panic "Function type in type mapping!"
     HT.Never var -> context

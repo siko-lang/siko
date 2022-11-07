@@ -83,14 +83,14 @@ deriveAdtToJson adt derive_location mod_name = do
         cases <- List.map adt.variants (\variant -> do
             Ident variant_name _ <- variant.name
             variant_name_expr <- createStringLiteral variant_name derive_location
-            item_bindings <- List.foldE (\bindings, index, item -> do
+            item_bindings <- List.foldE [] variant.items (\bindings, index, item -> do
                 binding <- P.Pattern (P.Binding (createIdent ("i{}" % index) derive_location)) derive_location
-                List.push bindings binding) [] variant.items
+                List.push bindings binding)
             case_pattern <- P.Pattern (P.Constructor (createIdent ("{}.{}" % (mod_name, variant_name)) derive_location) item_bindings) derive_location
-            item_to_json_exprs <- List.foldE (\to_json_exprs, index, item -> do
+            item_to_json_exprs <- List.foldE [] variant.items (\to_json_exprs, index, item -> do
                 item_expr <- E.Expr (E.Path (createIdent ("i{}" % index) derive_location)) derive_location
                 to_json_expr <- callToJson item_expr derive_location
-                List.push to_json_exprs to_json_expr) [] variant.items
+                List.push to_json_exprs to_json_expr)
             jsonList_expr <- callJsonList item_to_json_exprs derive_location
             item <- createJsonObjectItem [createStringLiteral variant_name derive_location, jsonList_expr] derive_location
             case_body <- callJsonObject [item] derive_location

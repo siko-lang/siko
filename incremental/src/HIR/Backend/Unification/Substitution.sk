@@ -1,18 +1,18 @@
 module Siko.HIR.Backend.Unification.Substitution where
 
-import Siko.HIR.Type
+import Siko.HIR.Type as T
 import Siko.HIR.TypeFormatter as TF
 import Siko.HIR.FullyQualifiedName
+import Siko.HIR.Backend.Unification as U
 import Siko.HIR.Backend.Unification.TypeVarGenerator
-import Siko.HIR.Data as D
 import Map
 
 data UnificationConstraint = { class_name :: FullyQualifiedName,
-                               type :: Type,
-                               associated_types :: [Type]
+                               type :: T.Type,
+                               associated_types :: [T.Type]
                              } deriving (Show)
 
-data Substitution = { vars :: Map TypeVar Type,
+data Substitution = { vars :: Map T.TypeVar T.Type,
                       constraints :: [UnificationConstraint]
                     }
 
@@ -24,16 +24,23 @@ instance Show Substitution where
 createSubstitution = Substitution empty []
 
 class Transform a where
-    transform a :: a -> (Type -> Type) -> a
+    transform a :: a -> (T.Type -> T.Type) -> a
+
+data Collector = { type_vars :: [T.TypeVar] }
+
+createCollector :: Collector
+createCollector = Collector []
+
+addVar :: Collector -> T.TypeVar -> Collector
+addVar collector var = do
+    type_vars <- List.push collector.type_vars var
+    collector { type_vars = type_vars }
+
+class Collectable a where
+    collect a :: Collector -> a -> Collector
 
 class Apply a where
     apply a :: a -> Substitution -> a
-
-instance (Apply a) => Apply [a] where
-    apply xs sub = List.map xs (\x -> apply x sub)
-
-instance (Ord k, Apply v) => Apply Map k v where
-    apply xs sub = Map.map xs (\(k, v) -> (k, apply v sub))
 
 instance Apply UnificationConstraint where
     apply constraint sub = do
@@ -47,55 +54,24 @@ instance Apply Substitution where
         constraints <- apply sub1.constraints sub2
         sub1 { vars = vars, constraints = constraints }
 
-instance Apply Constraint where
-    apply constraint sub =
-        case constraint of
-            ClassConstraint s associated_types -> ClassConstraint s (List.map associated_types (\ty -> apply ty sub))
-            RowConstraint name ty -> RowConstraint name (apply ty sub)
-
-instance Apply Type where
-    //apply :: Type -> Substitution -> Type
-    apply type sub = case type of
-        Var var constraints -> case get sub.vars var of
-            Some t -> apply t sub
-            None -> (Var var (List.map constraints (\c -> apply c sub)))
-        FixedTypeArg _ var _ -> case get sub.vars var of
-            Some t -> apply t sub
-            None -> type
-        Named n args -> do
-            args <- args |> List.iter |> Iterator.map (\arg -> apply arg sub) |> toList
-            Named n args
-        Function from to -> do
-            from <- apply from sub
-            to <- apply to sub
-            Function from to
-        Never var -> case get sub.vars var of
-            Some t -> apply t sub
-            None -> type
-        Ref lifetime t -> Ref lifetime (apply t sub)
-        Owner t -> Owner (apply t sub)
-        Tuple args -> do
-            args <- args |> List.iter |> Iterator.map (\arg -> apply arg sub) |> toList
-            Tuple args
-
-constraintsContainsVar :: [Constraint] -> TypeVar -> Bool
+constraintsContainsVar :: [T.Constraint] -> T.TypeVar -> Bool
 constraintsContainsVar constraints var = List.fold False constraints (\contains, constraint -> contains || case constraint of
-    ClassConstraint _  associated_types -> List.fold contains associated_types (\contains, ty -> contains || containsVar ty var)
-    RowConstraint _ row_type -> containsVar row_type var)
+    T.ClassConstraint _  associated_types -> List.fold contains associated_types (\contains, ty -> contains || containsVar ty var)
+    T.RowConstraint _ row_type -> containsVar row_type var)
 
-containsVar :: Type -> TypeVar -> Bool
+containsVar :: T.Type -> T.TypeVar -> Bool
 containsVar type var = case type of
-    Var v constraints -> v == var || constraintsContainsVar constraints var
-    FixedTypeArg _ v constraints -> v == var || constraintsContainsVar constraints var
-    Named _ args -> List.fold False args (\contains, arg -> contains || containsVar arg var)
-    Function from to -> containsVar from var || containsVar to var
-    Never v -> v == var
-    Ref _ t -> containsVar t var
-    Owner t -> containsVar t var
-    Tuple args -> List.fold False args (\contains, arg -> contains || containsVar arg var)
+    T.Var v constraints -> v == var || constraintsContainsVar constraints var
+    T.FixedTypeArg _ v constraints -> v == var || constraintsContainsVar constraints var
+    T.Named _ args -> List.fold False args (\contains, arg -> contains || containsVar arg var)
+    T.Function from to -> containsVar from var || containsVar to var
+    T.Never v -> v == var
+    T.Ref _ t -> containsVar t var
+    T.Owner t -> containsVar t var
+    T.Tuple args -> List.fold False args (\contains, arg -> contains || containsVar arg var)
 
-add :: Substitution -> TypeVar -> Type -> Result Substitution Substitution
-add sub var type = do
+addSubstitution :: Substitution -> T.TypeVar -> T.Type -> Result Substitution Substitution
+addSubstitution sub var type = do
     if containsVar type var
         then return Err sub
         else do

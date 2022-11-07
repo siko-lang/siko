@@ -10,7 +10,7 @@ import Siko.HIR.Backend.Typechecker.TypeStore as TS
 
 import Map
 
-data Context = { type_store :: TS.TypeStore }
+data Context = { type_store :: TS.TypeStore, group_index :: Int }
 
 createTypedRecordConstructionItem :: Context -> E.RecordConstructionItem () -> E.RecordConstructionItem T.Type
 createTypedRecordConstructionItem context item =
@@ -43,7 +43,7 @@ createTypedSimplePattern context s_pattern = case s_pattern of
 createTypedPattern :: Context -> P.Pattern () -> P.Pattern T.Type
 createTypedPattern context (P.Pattern s_pattern id _ location) = do
     context :: Context <- context // FIXME: why is this needed?
-    type <- Std.Intrinsics.clone (TS.getPatternType context.type_store id)
+    type <- Std.Intrinsics.clone (TS.getPatternType context.type_store context.group_index id)
     s_pattern <- createTypedSimplePattern context s_pattern
     P.Pattern s_pattern id type location
 
@@ -96,14 +96,14 @@ createTypedSimpleExpr context id s_expr = case s_expr of
     E.ArgRef i -> E.ArgRef i
     E.ValueRef ref -> E.ValueRef (Std.Intrinsics.clone ref)
     E.With handlers body _ -> do
-        eff_types <- Std.Intrinsics.clone (TS.getWithEffects context.type_store id)
+        eff_types <- Std.Intrinsics.clone (TS.getWithEffects context.type_store context.group_index id)
         eff_types <- List.map eff_types (\t -> E.EffectType (Std.Intrinsics.clone t))
         E.With (List.map (Std.Intrinsics.clone handlers) (createTypeHandler context)) (createTypedExpr context body) eff_types
 
 createTypedExpr :: Context -> E.Expr () -> E.Expr T.Type
 createTypedExpr context (E.Expr s_expr id _ location) = do
     context :: Context <- context // FIXME: why is this needed?
-    type <- Std.Intrinsics.clone (TS.getExprType context.type_store id)
+    type <- Std.Intrinsics.clone (TS.getExprType context.type_store context.group_index id)
     s_expr <- createTypedSimpleExpr context id s_expr
     E.Expr s_expr id type location
 
@@ -123,4 +123,5 @@ createTypedFunction context function type effects = do
         effects = Some effects,
         attributes = Std.Intrinsics.clone function.attributes,
         extern_constraints = Std.Intrinsics.clone function.extern_constraints,
+        expr_id_gen = function.expr_id_gen,
      }
