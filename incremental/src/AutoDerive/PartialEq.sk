@@ -1,0 +1,26 @@
+module Siko.AutoDerive.PartialEq where
+
+import Siko.AutoDerive.Util
+import Siko.Syntax.Location
+import Siko.Syntax.Ident
+import Siko.Syntax.Data as D
+import Siko.Syntax.Class as C
+import Siko.Syntax.Expr as E
+import Siko.Syntax.Pattern as P
+
+getPartialEqComparator :: Location -> Comparator
+getPartialEqComparator location = do
+    class_name <- createIdent "Std.Ops.PartialEq" location
+    fn_name <- createIdent "opEq" location
+    true_ident <- createIdent "Bool.True" location
+    failure_value_ident <- createIdent "failure_value" location
+    success_pattern <- P.Pattern (P.Constructor true_ident []) location
+    success_expr <- E.Expr (E.FunctionCall (E.Expr (E.Path true_ident) location) []) location
+    failure_expr <- E.Expr (E.Path failure_value_ident) location
+    Comparator class_name fn_name success_pattern success_expr failure_expr location
+
+deriveRecordPartialEq :: D.Record -> Location -> C.Instance
+deriveRecordPartialEq record location = deriveRecordGeneralCompare record (getPartialEqComparator location)
+
+deriveAdtPartialEq :: D.AlgebraicDataType -> Location -> String -> C.Instance
+deriveAdtPartialEq adt location mod_name = deriveAdtGeneralCompare adt (getPartialEqComparator location) mod_name

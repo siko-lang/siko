@@ -38,6 +38,6 @@ processEffect state module_resolver eff = do
     (effect_members, unresolved_function_infos) <- List.mapS [] unresolved_functions (\effect_members, f -> do
         Ident name _ <- f.name
         qn <- FQ.FullPath module_resolver.module_name name
-        (List.push effect_members qn, UnresolvedFunctionInfo f qn kind createEmptyFunctionScopeResolver))
+        (List.push effect_members qn, UnresolvedFunctionInfo f qn kind createEmptyFunctionScopeResolver type_resolver (getVarGen state)))
     hir_effect <- HE.Effect qn location eff_type effect_members
     (state, hir_effect, unresolved_function_infos)

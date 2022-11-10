@@ -3,15 +3,13 @@ module Siko.HIR.Backend.TypeIsomorphism where
 import Siko.HIR.Type as T
 import Siko.HIR.Util as Util
 import Siko.HIR.FullyQualifiedName as FQ
+import Siko.Query.Lookup
 import Map
-
-class DependencyProvider a where
-    getAllDependencies a :: a -> FQ.FullyQualifiedName -> [FQ.FullyQualifiedName]
 
 data IsomorphicTestFailure = Reshape T.TypeVar T.TypeVar
                              | Mismatch
 
-checkClassConstraintIsomorphism a :: (DependencyProvider a) => [FQ.FullyQualifiedName] -> [FQ.FullyQualifiedName] -> a -> Bool
+checkClassConstraintIsomorphism a :: (ClassProvider a) => [FQ.FullyQualifiedName] -> [FQ.FullyQualifiedName] -> a -> Bool
 checkClassConstraintIsomorphism classes1 classes2 dependency_provider = do
     classes1 |> List.iter |> Iterator.fold (\ok, class_name -> ok &&
         if contains classes2 class_name
@@ -22,7 +20,7 @@ checkClassConstraintIsomorphism classes1 classes2 dependency_provider = do
                     all) []
                 contains all class_name) True
 
-checkIsomorphicConstraints a :: (DependencyProvider a) => [T.Constraint] -> [T.Constraint] -> a -> Result () IsomorphicTestFailure
+checkIsomorphicConstraints a :: (ClassProvider a) => [T.Constraint] -> [T.Constraint] -> a -> Result () IsomorphicTestFailure
 checkIsomorphicConstraints cs1 cs2 dependency_provider = do // FIXME: associated_types!
     classes1 <- Util.collectClassesFromClassConstraints cs1
     classes2 <- Util.collectClassesFromClassConstraints cs2
@@ -38,7 +36,7 @@ reshape var1 var2 type = T.traverse (reshape_ var1 var2) type
         T.Never v -> if v == var1 then T.Never var2 else type
         _ -> type
 
-checkIsomorphicType a :: (DependencyProvider a) => T.Type -> T.Type -> a -> Bool
+checkIsomorphicType a :: (ClassProvider a) => T.Type -> T.Type -> a -> Bool
 checkIsomorphicType type1 type2 dependency_provider = do
     case isIsomorphicType type1 type2 dependency_provider of
         Ok _ -> return True
@@ -48,7 +46,7 @@ checkIsomorphicType type1 type2 dependency_provider = do
                     checkIsomorphicType new_type1 type2 dependency_provider
                 Mismatch -> return False
 
-isIsomorphicType a :: (DependencyProvider a) => T.Type -> T.Type -> a -> Result () IsomorphicTestFailure
+isIsomorphicType a :: (ClassProvider a) => T.Type -> T.Type -> a -> Result () IsomorphicTestFailure
 isIsomorphicType type1 type2 dependency_provider = do
     case (type1, type2) of
         (T.Var var1 cs1, T.Var var2 cs2) -> do

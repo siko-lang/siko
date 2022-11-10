@@ -1,0 +1,34 @@
+module Siko.Syntax.Pattern where
+
+import Siko.Syntax.Location
+import Siko.Syntax.Ident
+import Siko.Syntax.Expr as E
+import Siko.Syntax.TypeSignature as T
+import Siko.Util.SharedString as SS
+
+data RangeKind = Exclusive
+               | Inclusive deriving (Show, PartialEq, Eq)
+
+data RecordFieldPattern = {
+                            name :: Ident,
+                            pattern :: Pattern,
+                          } deriving (Show, PartialEq, Eq)
+
+data Pattern = Pattern SimplePattern Location deriving (PartialEq, Eq)
+
+instance Show Pattern where
+  show (Pattern p _) = show p
+
+data SimplePattern = Binding Ident
+                   | Tuple [Pattern]
+                   | Constructor Ident [Pattern]
+                   | Guarded Pattern E.Expr
+                   | Wildcard
+                   | IntegerLiteral SS.SharedString
+                   | StringLiteral SS.SharedString
+                   | CharLiteral Char
+                   | CharRange Char Char RangeKind
+                   | Typed Pattern T.TypeSignature
+                   | Record Ident [RecordFieldPattern]
+                   | Or [Pattern]
+                   deriving (Show, PartialEq, Eq)

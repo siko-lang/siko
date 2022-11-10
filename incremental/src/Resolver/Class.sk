@@ -69,7 +69,7 @@ processClass state module_resolver c = do
     (class_members, unresolved_function_infos) <- List.mapS [] unresolved_functions (\class_members, f -> do
         Ident name _ <- f.name
         qn <- FQ.FullPath module_resolver.module_name name
-        (List.push class_members qn, UnresolvedFunctionInfo f qn kind createEmptyFunctionScopeResolver))
+        (List.push class_members qn, UnresolvedFunctionInfo f qn kind createEmptyFunctionScopeResolver type_resolver (getVarGen state)))
     hir_class <- HC.Class qn location arg_type associated_types dependencies class_members
     (state, hir_class, unresolved_function_infos)
 
@@ -102,6 +102,6 @@ processInstance state module_resolver qn i = do
     (instance_members, unresolved_function_infos) <- List.mapS [] unresolved_functions (\instance_members, f -> do
         Ident name _ <- f.name
         qn <- FQ.FullPathWithInstanceId module_resolver.module_name name qn
-        (List.push instance_members qn, UnresolvedFunctionInfo f qn kind createEmptyFunctionScopeResolver))
+        (List.push instance_members qn, UnresolvedFunctionInfo f qn kind createEmptyFunctionScopeResolver type_resolver (getVarGen state)))
     hir_instance <- HC.Instance qn class_location class_name hir_type associated_types instance_members
     (state, hir_instance, unresolved_function_infos)

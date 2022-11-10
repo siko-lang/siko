@@ -16,14 +16,16 @@ import Siko.HIR.Backend.TypeIsomorphism
 import Siko.HIR.Util as Util
 import Map
 import Siko.Util.SharedString as SS
-import Siko.Query.Lookup
+import Siko.Query.Lookup as QL
 
 data ClassMemberInfo = { type :: T.Type,
                          has_default_impl :: Bool } deriving (Show, PartialEq, Eq)
 
 data ClassTypeInfo = {  arg_type :: T.Type,
                         associated_types :: [T.Type],
-                        members :: Map SS.SharedString ClassMemberInfo } deriving (Show, PartialEq, Eq)
+                        members :: Map SS.SharedString ClassMemberInfo,
+                        all_dependencies :: [FQ.FullyQualifiedName],
+                        } deriving (Show, PartialEq, Eq)
 
 instance S.Transform ClassMemberInfo where
     transform class_member_info f = do
@@ -35,7 +37,7 @@ instance S.Transform ClassTypeInfo where
         arg_type <- S.transform class_type_info.arg_type f
         associated_types <- S.transform class_type_info.associated_types f
         members <- S.transform class_type_info.members f
-        ClassTypeInfo arg_type associated_types members
+        ClassTypeInfo arg_type associated_types members class_type_info.all_dependencies
 
 instance S.Collectable ClassMemberInfo where
     collect collector class_member_info = S.collect collector class_member_info.type
@@ -89,9 +91,10 @@ addMemberInfo class_type_info name type has_default_impl = do
 
 createClassTypeInfo a :: (StateProvider a) => a -> C.Class -> (a, ClassTypeInfo)
 createClassTypeInfo state c = do
-    class_type_info <- ClassTypeInfo c.arg_type c.associated_types Map.empty
+    all_dependencies <- getAllDependencies state c.name
+    class_type_info <- ClassTypeInfo c.arg_type c.associated_types Map.empty all_dependencies
     List.fold (state, class_type_info) c.members (\(state, class_type_info), qn -> do
-            member <- getFunction state qn
+            member <- QL.getFunction state qn
             short_name <- FQ.getShortName qn
             (state, class_type_info) <- case member.type of
                 Some type -> do
@@ -138,7 +141,7 @@ isSpecializedType type = case type of
 
 data InstanceMemberInfo = { instance_type :: T.Type,
                             associated_types :: [T.Type],
-                            member_type :: Option T.Type }
+                            member_type :: Option T.Type } deriving (Show)
 
 instance S.Transform InstanceMemberInfo where
     transform info f = do
@@ -156,12 +159,12 @@ instance S.Collectable InstanceMemberInfo where
 getMemberType a :: (StateProvider a) => a -> C.Instance -> F.Function () -> ClassTypeInfo -> (a, Option T.Type)
 getMemberType state i instance_member class_type_info = do
     short_name <- FQ.getShortName instance_member.name
+    instance_member_info <- InstanceMemberInfo i.type i.associated_types instance_member.type
     (class_type_info, state) <- UUtil.instantiateGeneric class_type_info state
+    (instance_member_info, state) <- UUtil.instantiateGeneric instance_member_info state
     case get class_type_info.members short_name of
         Some class_member_info -> do
             sub <- S.createSubstitution
-            instance_member_info <- InstanceMemberInfo i.type i.associated_types instance_member.type
-            (instance_member_info, state) <- UUtil.instantiateGeneric instance_member_info state
             (state, sub) <- case U.unify state sub class_type_info.arg_type instance_member_info.instance_type of
                 Ok (state, sub) -> (state, sub)
                 Err _ -> panic "Class arg unification failed!"
@@ -194,7 +197,7 @@ checkInstance state class_type_info i = do
     else state
     (state, member_names) <- List.fold (state, []) i.members (\(state, member_names), instance_member_name -> do
         short_name <- FQ.getShortName instance_member_name
-        instance_member <- getFunction state instance_member_name
+        instance_member <- QL.getFunction state instance_member_name
         state <- case get class_type_info.members short_name of
             Some class_member_info -> state
             None -> addError state (InstanceMemberNotClassMember short_name instance_member.location)
@@ -212,3 +215,11 @@ createInstanceInfo i = do
     base_type <- getBaseType i.type
     class_name <- i.class_name
     (InstanceKey class_name base_type, InstanceInfo i.type i.associated_types i.name i.location)
+
+getAllDependencies a :: (StateProvider a) => a -> FQ.FullyQualifiedName -> [FQ.FullyQualifiedName]
+getAllDependencies state class_name = do
+    c <- QL.getClass state class_name
+    deps <- List.fold c.dependencies c.dependencies (\deps, dep -> do
+            recursive_deps <- getAllDependencies state dep
+            deps + recursive_deps)
+    deps |> List.sort |> List.dedup

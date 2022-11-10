@@ -35,6 +35,7 @@ getFieldName index = "field{}" % index
 remap a d :: (U.Context a, S.Collectable d, S.Transform d) => d -> a -> (d, a)
 remap data_type context = do
     collector <- S.collect S.createCollector data_type
+    vars <- collector.type_vars |> List.sort |> List.dedup
     (mapper, context) <- initMapper collector.type_vars context
     data_type <- S.transform data_type (remapType mapper)
     (data_type, context)

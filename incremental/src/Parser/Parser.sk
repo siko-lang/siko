@@ -1,0 +1,254 @@
+module Siko.Parser where
+
+import Siko.Parser.Type
+import Siko.Parser.Class
+import Siko.Parser.Function
+import Siko.Parser.Module
+
+import Siko.Syntax.Ident
+import Siko.Syntax.SourceFile
+import Siko.Syntax.Module as M
+import Siko.Syntax.TypeSignature
+import Siko.Syntax.Location
+import Siko.Parser.Token
+import Siko.Parser.Token.Kind as Kind
+import Siko.Parser.Layout
+import Siko.Parser.Lexer
+import Siko.Parser.Error
+import Siko.Util.SharedString as SS
+
+data ParserState =
+    {
+        tokens :: [TokenInfo],
+        index :: Int,
+        errors :: [ParserError],
+        modules :: [M.Module],
+        file_id :: FileId,
+        ops_table :: [[Kind.TokenKind]],
+        sub_items :: [M.Item],
+    }  deriving (Move)
+
+initState :: FileId -> [TokenInfo] -> ParserState
+initState file_id tokens = do
+    ops_table <- [[Kind.And, Kind.Or],
+                  [Kind.DoubleEqual, Kind.NotEqual],
+                  [Kind.LessThan, Kind.GreaterThan, Kind.LessOrEqualThan, Kind.GreaterOrEqualThan],
+                  [Kind.Add, Kind.Sub],
+                  [Kind.Mul, Kind.Div],
+                  [Kind.PipeForward]
+                 ]
+    ParserState tokens 0 [] [] file_id ops_table []
+
+parseSubItems :: ParserState -> Result (ParserState, [M.Item]) (ParserState, ParserError)
+parseSubItems state = do
+    state <- try expect state Kind.KeywordWhere
+    (state, sub_items) <- loop (state, sub_items) <- (state, []) do
+        ti <- peek state
+        (state, item) <- case getKind ti.token of
+            Kind.EndOfBlock -> break (state, sub_items)
+            _ -> case parseFunction state of
+                    Ok (state, f) -> case f of
+                            Left function -> (state, M.Function function)
+                            Right function_signature -> (state, M.FunctionSignature function_signature)
+                    Err (state, err) -> return Err (state, err)
+        sub_items <- push sub_items item
+        (state, sub_items)
+    state <- try expect state Kind.EndOfBlock
+    Ok (state, sub_items)
+
+buildLocation :: Int -> ParserState -> Location
+buildLocation index state = do
+    start_span <- (atIndex state.tokens index).span
+    end_span <- (atIndex state.tokens state.index).span
+    span <- mergeSpan start_span end_span
+    getLocation span state
+
+getLocation :: Span -> ParserState -> Location
+getLocation span state = Location state.file_id span
+
+isDone :: ParserState -> Bool
+isDone state = state.index >= getLength state.tokens
+
+peek :: ParserState -> TokenInfo
+peek state = atIndex state.tokens state.index
+
+peekAt :: ParserState -> Int -> TokenInfo
+peekAt state index = atIndex state.tokens index
+
+step :: ParserState -> ParserState
+step state = do
+    state { index = state.index + 1 }
+
+addError :: ParserState -> ParserError -> ParserState
+addError state error = state { errors = push state.errors error }
+
+addModule :: ParserState -> M.Module -> ParserState
+addModule state mod = state { modules = push state.modules mod }
+
+unexpectedToken :: ParserState -> String -> ParserError
+unexpectedToken state expected = do
+    ti <- peek state
+    found <- show ti.token
+    UnexpectedToken expected found ti.span
+
+expect :: ParserState -> Kind.TokenKind -> Result ParserState (ParserState, ParserError)
+expect state kind = do
+    ti <- peek state
+    if getKind ti.token == kind
+    then Ok (step state)
+    else do
+        err <-unexpectedToken state (show kind)
+        Err (state, err)
+
+check :: ParserState -> Kind.TokenKind -> Bool
+check state kind = do
+    ti <- peek state
+    getKind ti.token == kind
+
+expectTypeIdent :: ParserState -> String -> Result (ParserState, Ident) (ParserState, ParserError)
+expectTypeIdent state msg = do
+    ti <- peek state
+    case ti.token of
+        TypeIdentifier id -> do
+            location <- (getLocation ti.span state)
+            state <- step state
+            Ok (state, Ident (SS.create id) location)
+        _ -> do
+            err <- unexpectedToken state msg
+            Err (state, err)
+
+expectVarIdent :: ParserState -> String -> Result (ParserState, Ident) (ParserState, ParserError)
+expectVarIdent state msg = do
+    ti <- peek state
+    case ti.token of
+        VarIdentifier id -> do
+            location <- (getLocation ti.span state)
+            state <- step state
+            Ok (state, Ident (SS.create id) location)
+        _ -> do
+            err <- unexpectedToken state msg
+            Err (state, err)
+
+expectAnyIdent :: ParserState -> String -> Result (ParserState, Ident) (ParserState, ParserError)
+expectAnyIdent state msg = do
+    ti <- peek state
+    case ti.token of
+        VarIdentifier id -> do
+            location <- (getLocation ti.span state)
+            state <- step state
+            Ok (state, Ident (SS.create id) location)
+        TypeIdentifier id -> do
+            location <- (getLocation ti.span state)
+            state <- step state
+            Ok (state, Ident (SS.create id) location)
+        _ -> do
+            err <- unexpectedToken state msg
+            Err (state, err)
+
+parseQualifiedTypeName :: ParserState -> String -> Result (ParserState, Ident) (ParserState, ParserError)
+parseQualifiedTypeName state msg = do
+    (state, name) <- try expectTypeIdent state msg
+    (state, name) <- loop (state, name) <- (state, name) do
+        ti <- peek state
+        case ti.token of
+            Dot -> do
+                dot <- Ident (SS.create".") (getLocation ti.span state)
+                name <- mergeIdents name dot
+                state <- step state
+                (state, n) <- try expectTypeIdent state msg
+                name <- mergeIdents name n
+                (state, name)
+            _ -> break (state, name)
+    Ok (state, name)
+
+parseQualifiedName :: ParserState -> String -> Result (ParserState, Ident) (ParserState, ParserError)
+parseQualifiedName state msg = do
+    if check state Kind.VarIdentifier
+    then expectVarIdent state msg
+    else do
+        (state, name) <- try expectTypeIdent state msg
+        (state, name) <- loop (state, name) <- (state, name) do
+            ti <- peek state
+            case ti.token of
+                Dot -> do
+                    dot <- Ident (SS.create ".") (getLocation ti.span state)
+                    name <- mergeIdents name dot
+                    state <- step state
+                    ti <- peek state
+                    case ti.token of
+                        TypeIdentifier id -> do
+                            (state, n) <- try expectTypeIdent state msg
+                            name <- mergeIdents name n
+                            (state, name)
+                        VarIdentifier id -> do
+                            (state, n) <- try expectVarIdent state msg
+                            name <- mergeIdents name n
+                            break (state, name)
+                        _ -> return do
+                            err <- unexpectedToken state "identifier"
+                            Err (state, err)
+                _ -> break (state, name)
+        Ok (state, name)
+
+data ParenParse a = Single a | Multi [a]
+
+parseParens a :: ParserState -> (ParserState -> Result (ParserState, a) (ParserState, ParserError)) -> String -> Result (ParserState, ParenParse a) (ParserState, ParserError)
+parseParens state parser msg = do
+    state <- try expect state Kind.LParen
+    (state, items, comma_found) <- loop (state, items, comma_found) <- (state, [], False) do
+        if check state Kind.RParen
+        then break (state, items, comma_found)
+        else do
+            (state, item) <- try parser state
+            items <- push items item
+            if check state Kind.Comma
+            then do
+                state <- try expect state Kind.Comma
+                (state, items, True)
+            else if check state Kind.RParen
+                then break (state, items, comma_found)
+                else return do
+                    err <- unexpectedToken state msg
+                    Err (state, err)
+    state <- try expect state Kind.RParen
+    if comma_found || isEmpty items
+    then Ok (state, Multi items)
+    else Ok (state, Single (atIndex items 0))
+
+parseList a :: ParserState -> (ParserState -> Result (ParserState, a) (ParserState, ParserError)) -> Kind.TokenKind -> Kind.TokenKind -> Result (ParserState, [a]) (ParserState, ParserError)
+parseList state parser start end = do
+    state <- try expect state start
+    (state, items) <- loop (state, items) <- (state, []) do
+        if check state end
+        then break (state, items)
+        else do
+            (state, item) <- try parser state
+            items <- push items item
+            if check state Kind.Comma
+            then do
+                state <- try expect state Kind.Comma
+                (state, items)
+            else break (state, items)
+    state <- try expect state end
+    Ok (state, items)
+
+processTokens :: ParserState -> String -> (SourceFile, [ParserError])
+processTokens state file_name = do
+    state <- loop state <- state do
+        if not (isDone state)
+        then do
+            case parseModule state of
+                Ok state -> state
+                Err (state, err) -> do
+                    state <- addError state err
+                    break state
+        else break state
+    (SourceFile file_name state.modules, state.errors)
+
+parse :: FileId -> String -> String -> (SourceFile, [LexerError], [ParserError])
+parse file_id file_name input = do
+    (tokens, lexer_errors) <- lex input
+    //println "Tokens: {}" % tokens
+    state <- initState file_id tokens
+    (source_file, parser_errors) <- processTokens state file_name
+    (source_file, lexer_errors, parser_errors)

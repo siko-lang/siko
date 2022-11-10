@@ -36,7 +36,6 @@ data Context a = { function_name :: FQ.FullyQualifiedName,
                    type_resolver :: TypeResolverState,
                    state :: a,
                    expr_id_gen :: ExprIdGenerator,
-                   module_resolver :: ModuleResolver,
                    next_lambda_id :: Int,
                    lambda_helper :: Option LambdaHelper,
                    lambdas :: [F.LambdaInfo],
@@ -48,15 +47,13 @@ createContext a :: FQ.FullyQualifiedName ->
                    TypeResolverState ->
                    a ->
                    ExprIdGenerator ->
-                   ModuleResolver ->
                    F.FunctionScopeResolver ->
                    Context a
-createContext function_name type_resolver state expr_id_gen module_resolver function_scope_resolver = Context {
+createContext function_name type_resolver state expr_id_gen function_scope_resolver = Context {
     function_name = function_name,
     type_resolver = type_resolver,
     state = state,
     expr_id_gen = expr_id_gen,
-    module_resolver = module_resolver,
     next_lambda_id = 1,
     lambda_helper = None,
     lambdas = [],
@@ -220,7 +217,7 @@ resolvePath context path = do
     Ident name _ <- path
     case F.resolveLocalFunction context.function_scope_resolver name of
         Some qn -> Ok (context, FunctionCall (HE.StaticFunctionCall qn))
-        None -> case resolveItem context.module_resolver.term_names UnknownFunction path of
+        None -> case resolveItem context.type_resolver.module_resolver.term_names UnknownFunction path of
             Ok (ResolvedItem qn item _) -> do
                 case item of
                     RI.Record _ _ -> Ok (context, FunctionCall (HE.RecordConstructorCall qn))
@@ -379,7 +376,7 @@ desugarTry expr = do
 processEffectHandlers a :: (ResolverState a) => Context a -> Environment -> [SE.EffectHandler] -> (Context a, [HE.EffectHandler ()])
 processEffectHandlers context env handlers =
         List.fold (context, []) handlers (\(context, hir_handlers), handler ->
-                case resolveEffectMember context.module_resolver handler.name of
+                case resolveEffectMember context.type_resolver.module_resolver handler.name of
                     Ok qn -> do
                         (context, env, hir_value) <- processExpr context env handler.value
                         HE.Expr s_expr _ _ location <- hir_value
@@ -528,7 +525,7 @@ processExpr context env (SE.Expr expr location) = do
             (context, env, hir_arg) <- processExpr context env arg
             (context, env, HE.ClassMemberCall qn [hir_arg])
         SE.RecordInitialization name field_inits -> do
-            case resolveItem context.module_resolver.type_names NotARecord name of
+            case resolveItem context.type_resolver.module_resolver.type_names NotARecord name of
                 Ok (ResolvedItem qn item _) -> do
                     case item of
                         RI.Record _ _ -> do

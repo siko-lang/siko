@@ -11,6 +11,7 @@ import Siko.HIR.Type as HT
 import Siko.HIR.Function as HF
 import Siko.HIR.FullyQualifiedName as FQ
 import Siko.HIR.ExprIdGenerator
+import Siko.HIR.TypeVarGenerator
 import Map
 import Siko.Util.SharedString as SS
 import Siko.Resolver
@@ -44,10 +45,13 @@ data UnresolvedFunctionInfo = { function :: UnresolvedFunction,
                                 name :: FQ.FullyQualifiedName,
                                 kind :: HF.FunctionKind,
                                 function_scope_resolver :: FunctionScopeResolver,
+                                type_resolver :: TypeResolverState,
+                                var_gen :: TypeVarGenerator,
                               } deriving (Show, PartialEq, Eq)
 
-createNormalUnresolvedFunctionInfo :: UnresolvedFunction -> FQ.FullyQualifiedName -> UnresolvedFunctionInfo
-createNormalUnresolvedFunctionInfo unresolved_function qn = UnresolvedFunctionInfo unresolved_function qn HF.Normal createEmptyFunctionScopeResolver
+createNormalUnresolvedFunctionInfo :: UnresolvedFunction -> FQ.FullyQualifiedName -> ModuleResolver -> UnresolvedFunctionInfo
+createNormalUnresolvedFunctionInfo unresolved_function qn module_resolver =
+    UnresolvedFunctionInfo unresolved_function qn HF.Normal createEmptyFunctionScopeResolver (createTypeResolverState module_resolver) createTypeVarGenerator
 
 data UnresolvedFunction = { name :: Ident,
                             functions :: [SF.Function],
@@ -150,13 +154,12 @@ processLambdas lambdas qn expr_id_gen  =
 
 processSubFunctions a :: (ResolverState a) =>
                        a ->
-                       ModuleResolver ->
                        FunctionScopeResolver ->
                        TypeResolverState ->
                        [SM.Item] ->
                        FQ.FullyQualifiedName ->
                        (a, [UnresolvedFunctionInfo], FunctionScopeResolver)
-processSubFunctions state module_resolver function_scope_resolver type_resolver sub_items qn = do
+processSubFunctions state function_scope_resolver type_resolver sub_items qn = do
     unresolved_functions <- collectUnresolvedFunctions sub_items
     local_functions_map <- unresolved_functions |> List.iter |> Iterator.map (\f -> do
         name <- (getString f.name)
@@ -165,11 +168,11 @@ processSubFunctions state module_resolver function_scope_resolver type_resolver 
     function_scope_resolver <- FunctionScopeResolver local_functions_map (Some (function_scope_resolver))
     sub_unresolved_function_infos <- List.map unresolved_functions (\unresolved_function -> do
         qn <- FQ.SubItem qn (getString unresolved_function.name)
-        UnresolvedFunctionInfo unresolved_function qn HF.Normal function_scope_resolver)
+        UnresolvedFunctionInfo unresolved_function qn HF.Normal function_scope_resolver type_resolver (getVarGen state))
     (state, sub_unresolved_function_infos, function_scope_resolver)
 
-processFunctionSignature a :: (ResolverState a) => a -> ModuleResolver -> TypeResolverState -> SF.FunctionSignature -> (a, TypeResolverState, Option [HT.Type], HT.Type)
-processFunctionSignature state module_resolver type_resolver signature = do
+processFunctionSignature a :: (ResolverState a) => a -> TypeResolverState -> SF.FunctionSignature -> (a, TypeResolverState, Option [HT.Type], HT.Type)
+processFunctionSignature state type_resolver signature = do
     ((type_resolver, state), _) <- addTypeArguments type_resolver state signature.type_arguments
     state <- checkTypeArguments state signature.type_arguments
     (state, type_resolver) <- processClassConstraints state type_resolver signature.constraints
@@ -177,7 +180,7 @@ processFunctionSignature state module_resolver type_resolver signature = do
     (state, type_resolver, effects) <- case signature.effects of
         Some effects -> do
             (state, type_resolver, effects) <- List.fold (state, type_resolver, []) effects (\(state, type_resolver, effects), eff ->
-                case resolveEffect module_resolver eff.name of
+                case resolveEffect type_resolver.module_resolver eff.name of
                     Ok (qn, count) -> do
                         state <- checkTypeArguments state eff.arguments
                         (state, type_resolver, args) <- List.fold (state, type_resolver, []) eff.arguments (\(state, type_resolver, args), arg -> do
@@ -199,14 +202,13 @@ processFunctionSignature state module_resolver type_resolver signature = do
 
 processSingleFunction a :: (ResolverState a) =>
                             a ->
-                            ModuleResolver ->
                             TypeResolverState ->
                             UnresolvedFunctionInfo ->
                             Option [HT.Type] ->
                             Option HT.Type ->
                             ExprIdGenerator ->
                             (a, [HF.Function ()], [UnresolvedFunctionInfo])
-processSingleFunction state module_resolver type_resolver unresolved_function_info effects type expr_id_gen = do
+processSingleFunction state type_resolver unresolved_function_info effects type expr_id_gen = do
     function <- atIndex unresolved_function_info.function.functions 0
     (state, attributes) <- processAttributes state unresolved_function_info.function
     (state, effects, desugared_body) <- case function.body of
@@ -221,10 +223,10 @@ processSingleFunction state module_resolver type_resolver unresolved_function_in
                 then addError state (ExternEffect function.name)
                 else state
             (state, Some [], None)
-    (state, sub_unresolved_function_infos, function_scope_resolver) <- processSubFunctions state module_resolver unresolved_function_info.function_scope_resolver type_resolver function.sub_items unresolved_function_info.name
+    (state, sub_unresolved_function_infos, function_scope_resolver) <- processSubFunctions state unresolved_function_info.function_scope_resolver type_resolver function.sub_items unresolved_function_info.name
     (state, expr_id_gen, hir_body, lambdas) <- case desugared_body of
                 Some expr -> do
-                    context <- createContext unresolved_function_info.name type_resolver state expr_id_gen module_resolver function_scope_resolver
+                    context <- createContext unresolved_function_info.name type_resolver state expr_id_gen function_scope_resolver
                     env <- createEnvironment (HF.LambdaId 0) None
                     (context, env, expr) <- processExpr context env expr
                     (context.state, context.expr_id_gen, Some expr, context.lambdas)
@@ -245,14 +247,13 @@ processSingleFunction state module_resolver type_resolver unresolved_function_in
 
 processFunctionMulti a :: (ResolverState a) =>
                         a ->
-                        ModuleResolver ->
                         TypeResolverState ->
                         UnresolvedFunctionInfo ->
                         Option [HT.Type] ->
                         Option HT.Type ->
                         ExprIdGenerator ->
                         (a, [HF.Function ()], [UnresolvedFunctionInfo])
-processFunctionMulti state module_resolver type_resolver unresolved_function_info effects type expr_id_gen = do
+processFunctionMulti state type_resolver unresolved_function_info effects type expr_id_gen = do
     (state, attributes) <- processAttributes state unresolved_function_info.function
     (state, arg_count_map, err) <- unresolved_function_info.function.functions |> List.iter |> Iterator.fold (\(state, arg_count_map, err), f -> do
                 (state, err) <- if isNone f.body
@@ -280,8 +281,8 @@ processFunctionMulti state module_resolver type_resolver unresolved_function_inf
             sub_items <- unresolved_function_info.function.functions |> List.iter |> Iterator.fold (\sub_items, f -> sub_items + f.sub_items) []
             desugared_body <- desugarFunctionArgsMulti arg_cases
             (state, expr_id_gen, hir_body, lambdas, sub_unresolved_function_infos) <- do
-                (state, sub_unresolved_function_infos, function_scope_resolver) <- processSubFunctions state module_resolver unresolved_function_info.function_scope_resolver type_resolver sub_items unresolved_function_info.name
-                context <- createContext unresolved_function_info.name type_resolver state expr_id_gen module_resolver function_scope_resolver
+                (state, sub_unresolved_function_infos, function_scope_resolver) <- processSubFunctions state unresolved_function_info.function_scope_resolver type_resolver sub_items unresolved_function_info.name
+                context <- createContext unresolved_function_info.name type_resolver state expr_id_gen function_scope_resolver
                 env <- createEnvironment (HF.LambdaId 0) None
                 (context, env, expr) <- processExpr context env desugared_body
                 (context.state, context.expr_id_gen, Some expr, context.lambdas, sub_unresolved_function_infos)
@@ -293,22 +294,22 @@ processFunctionMulti state module_resolver type_resolver unresolved_function_inf
             function <- HF.Function location unresolved_function_info.name 0 unresolved_function_info.kind type type None effects attributes [] expr_id_gen
             (state, [function], [])
 
-processUnresolvedFunction a :: (ResolverState a) => a -> ModuleResolver -> UnresolvedFunctionInfo -> (a, [HF.Function ()], [UnresolvedFunctionInfo])
-processUnresolvedFunction state module_resolver unresolved_function_info = do
+processUnresolvedFunction a :: (ResolverState a) => a -> UnresolvedFunctionInfo -> (a, [HF.Function ()], [UnresolvedFunctionInfo])
+processUnresolvedFunction state unresolved_function_info = do
     expr_id_gen <- createExprIdGenerator
-    (type_resolver, state) <- initTypeResolver module_resolver state []
+    state <- setVarGen state unresolved_function_info.var_gen
     (state, effects, type, type_resolver) <- case getLength unresolved_function_info.function.signatures of
-        0 -> (state, None, None, type_resolver)
+        0 -> (state, None, None, unresolved_function_info.type_resolver)
         1 -> do
             signature <- atIndex unresolved_function_info.function.signatures 0
             signature <- Std.Intrinsics.clone signature // FIXME: borrow error workaround
-            (state, type_resolver, effects, type) <- processFunctionSignature state module_resolver type_resolver signature
+            (state, type_resolver, effects, type) <- processFunctionSignature state unresolved_function_info.type_resolver signature
             (state, effects, Some type, type_resolver)
         _ ->
             do
             signatures <- List.map unresolved_function_info.function.signatures (\s -> s.name)
             state <- addError state (ConflictingSignatures signatures)
-            (state, None, None, type_resolver)
+            (state, None, None, unresolved_function_info.type_resolver)
     (state, functions, sub_unresolved_function_infos) <- case getLength unresolved_function_info.function.functions of
         0 -> do
             arg_count <- case type of
@@ -318,6 +319,6 @@ processUnresolvedFunction state module_resolver unresolved_function_info = do
             (state, attributes) <- processAttributes state unresolved_function_info.function
             function <- HF.Function location unresolved_function_info.name arg_count unresolved_function_info.kind type type None effects attributes [] expr_id_gen
             (state, [function], [])
-        1 -> processSingleFunction state module_resolver type_resolver unresolved_function_info effects type expr_id_gen
-        _ -> processFunctionMulti state module_resolver type_resolver unresolved_function_info effects type expr_id_gen
+        1 -> processSingleFunction state type_resolver unresolved_function_info effects type expr_id_gen
+        _ -> processFunctionMulti state type_resolver unresolved_function_info effects type expr_id_gen
     (state, functions, sub_unresolved_function_infos)

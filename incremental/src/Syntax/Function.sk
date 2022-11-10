@@ -1,0 +1,50 @@
+module Siko.Syntax.Function where
+
+import Siko.Syntax.TypeSignature
+import Siko.Syntax.Class
+import Siko.Syntax.Ident
+import Siko.Syntax.Expr
+import Siko.Syntax.Attribute
+import Siko.Syntax.Pattern
+import Siko.Syntax.Module as M
+
+data ConstraintPath = Argument Int
+                    | Field Int ConstraintPath
+                    | Extern Int ConstraintPath
+                    | Variant Int ConstraintPath
+                    | Implicit Int ConstraintPath
+                    | Result
+                    deriving (Show, PartialEq, Eq)
+
+data Converter = { from :: ConstraintPath,
+                   to :: ConstraintPath,
+                 } deriving (Show, PartialEq, Eq)
+
+data Equal = { left :: ConstraintPath,
+               right :: ConstraintPath,
+             } deriving (Show, PartialEq, Eq)
+
+data ExternConstraint = ExternConverter Converter
+                      | ExternEquality Equal
+                      | Independent ConstraintPath
+                      deriving (Show, PartialEq, Eq)
+
+data EffectSignature = { name :: Ident,
+                         arguments :: [Ident],
+                       } deriving (Show, PartialEq, Eq)
+
+data FunctionSignature = { name :: Ident,
+                           type_arguments :: [Ident],
+                           constraints :: [Constraint],
+                           type_signature :: TypeSignature,
+                           attributes :: [Attribute],
+                           effects :: Option [EffectSignature]
+                         } deriving (Show, PartialEq, Eq)
+
+data Function = { name :: Ident,
+                  arguments :: [Pattern],
+                  body :: Option Expr,
+                  sub_items :: [M.Item],
+                  attributes :: [Attribute],
+                  extern_constraints :: [ExternConstraint],
+                } deriving (Show, PartialEq, Eq)
