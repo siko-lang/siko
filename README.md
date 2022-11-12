@@ -120,7 +120,7 @@ MIT
 
 ## Community
 
-[Discord](https://discord.gg/fZRrRUrJ)
+[Discord](https://discord.com/invite/Gfd8YDrYVC)
 
 ## VSCode support
 
