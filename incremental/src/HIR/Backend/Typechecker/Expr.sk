@@ -88,7 +88,11 @@ getFunctionTypeInfo context name = do
             Some func_type_info -> (context, func_type_info)
             None -> do
                 func_type_info <- QL.getFunctionTypeInfo context.state name
-                (func_type_info, context) <- UUtil.remap func_type_info context
+                (func_type_info, context) <- if func_type_info.defined
+                then (func_type_info, context)
+                else do
+                    (func_type_info, context) <- UUtil.instantiateGeneric func_type_info context
+                    (func_type_info, context)
                 func_type_infos <- Map.put context.func_type_infos name func_type_info
                 (context { func_type_infos = func_type_infos }, func_type_info)
     else do
@@ -148,14 +152,15 @@ unify context sub ty1 ty2 location = do
             case processClassConstraints context location of
                 Ok context -> context
                 Err context -> do
+                    //println "Not Ok! {}, {}" % (TF.toString ty1, TF.toString ty2)
                     context :: Context a <- context // FIXME type inference
-                    err <- TypeMismatch (SS.create (ty1 |> TF.fixedType |> TF.toString)) (SS.create (ty2 |> TF.fixedType |> TF.toString)) location
+                    err <- TypeMismatch (SS.create (ty1 |> T.fixedType |> TF.toString)) (SS.create (ty2 |> T.fixedType |> TF.toString)) location
                     state <- addError context.state err
                     context <- context { state = state }
                     context
         Err (context, sub) -> do
             //println "Not Ok! {}, {}" % (TF.toString ty1, TF.toString ty2)
-            err <- TypeMismatch (SS.create (ty1 |> TF.fixedType |> TF.toString)) (SS.create (ty2 |> TF.fixedType |> TF.toString)) location
+            err <- TypeMismatch (SS.create (ty1 |> T.fixedType |> TF.toString)) (SS.create (ty2 |> T.fixedType |> TF.toString)) location
             state <- addError context.state err
             context <- context { state = state }
             context
@@ -171,7 +176,7 @@ unify2 context sub ty1 ty2 location = do
             (context, sub)
         Err (context, sub) -> do
             //println "Not Ok! {}, {}" % (TF.toString ty1, TF.toString ty2)
-            err <- TypeMismatch (SS.create (ty1 |> TF.fixedType |> TF.toString)) (SS.create (ty2 |> TF.fixedType |> TF.toString)) location
+            err <- TypeMismatch (SS.create (ty1 |> T.fixedType |> TF.toString)) (SS.create (ty2 |> T.fixedType |> TF.toString)) location
             state <- addError context.state err
             context <- context { state = state }
             (context, sub)
@@ -186,6 +191,14 @@ matchExprs a :: (StateProvider a) => Context a -> E.ExprId -> E.ExprId -> Locati
 matchExprs context expr_id1 expr_id2 location = do
     expr_type1 <- getExprType context expr_id1
     expr_type2 <- getExprType context expr_id2
+    context <- case (expr_type1, expr_type2) of // FIXME: fix handling of Never type
+        (T.Never, other) -> do
+            type_store <- TS.overwriteExprType context.type_store context.group_index expr_id1 (TS.ExprType other)
+            context { type_store = type_store }
+        (other, T.Never) -> do
+            type_store <- TS.overwriteExprType context.type_store context.group_index expr_id2 (TS.ExprType other)
+            context { type_store = type_store }
+        _ -> context
     context <- unify context S.createSubstitution expr_type1 expr_type2 location
     context
 
@@ -204,8 +217,7 @@ instantiateType context type = do
 
 getNeverType a :: (StateProvider a) => Context a -> (Context a, T.Type)
 getNeverType context = do
-    (context, var) <- U.getNewTypeVar context
-    (context, T.Never var)
+    (context, T.Never)
 
 data EffectTypeInfo = { effect_type :: T.Type,
                         members :: Map FQ.FullyQualifiedName T.Type }
@@ -735,7 +747,7 @@ addUndefinedVarToContext context undefined_vars var location =
 checkUndefinedVars a :: (StateProvider a) => Context a -> [T.TypeVar] -> T.Type -> [T.TypeVar] -> Location -> (Context a, [T.TypeVar])
 checkUndefinedVars context undefined_vars type signature_vars location = do
     case type of
-        T.Never _ -> (context, undefined_vars)
+        T.Never -> (context, undefined_vars)
         _ -> do
             type_vars <- Util.collectVars [] type
             type_vars |> List.iter

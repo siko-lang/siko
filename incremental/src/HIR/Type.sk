@@ -8,13 +8,15 @@ module Siko.HIR.Type(Type(..),
                      getResultType,
                      isConcreteType,
                      isFunction,
-                     removeFixed,
                      removeOwnership,
                      traverse,
+                     fixedType,
                      getNameFromType) where
 
 import Siko.HIR.FullyQualifiedName
 import Siko.Util.SharedString as SS
+import Siko.HIR.Util as Util
+import Map
 
 data TypeVar = TypeVar Int deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
@@ -27,10 +29,10 @@ data Constraint = ClassConstraint FullyQualifiedName [Type]
                 deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
 data Type = Var TypeVar [Constraint]
-          | FixedTypeArg SS.SharedString TypeVar [Constraint]
+          | FixedTypeArg SS.SharedString [Constraint]
           | Named FullyQualifiedName [Type]
           | Function Type Type
-          | Never TypeVar
+          | Never
           | Ref Int Type
           | Owner Type
           | Tuple [Type]
@@ -49,12 +51,12 @@ collectVarsFromConstraints constraints = List.fold [] constraints (\all, c -> ca
 collectVars :: Type -> [TypeVar]
 collectVars type = case type of
     Var var constraints -> [var] + collectVarsFromConstraints constraints
-    FixedTypeArg _ var constraints -> [var] + collectVarsFromConstraints constraints
+    FixedTypeArg _ constraints -> collectVarsFromConstraints constraints
     Named _ args -> List.fold [] args (\vars, arg -> do
         vs <- collectVars arg
         vars + vs)
     Function from to -> collectVars from + collectVars to
-    Never var -> [var]
+    Never -> []
     Ref _ t -> collectVars t
     Owner t -> collectVars t
     Tuple args -> List.fold [] args (\vars, arg -> do
@@ -82,11 +84,11 @@ getResultType type arg_count =
 isConcreteType :: Type -> Bool
 isConcreteType type = case type of
     Var _ _ -> False
-    FixedTypeArg _ _ _ -> False
+    FixedTypeArg _ _ -> False
     Named _ args -> args |> List.iter |> Iterator.fold (\concrete, arg -> do
         concrete && isConcreteType arg) True
     Function from to -> isConcreteType from && isConcreteType to
-    Never var -> True
+    Never -> True
     Ref _ t -> isConcreteType t
     Owner t -> isConcreteType t
     Tuple args -> args |> List.iter |> Iterator.fold (\concrete, arg -> do
@@ -102,7 +104,7 @@ traverse f type = case type of
     Var var constraints -> do
         constraints <- List.map constraints (traverseConstraints f)
         f (Var var constraints)
-    FixedTypeArg name var constraints -> f (FixedTypeArg name var (List.map constraints (traverseConstraints f)))
+    FixedTypeArg name constraints -> f (FixedTypeArg name (List.map constraints (traverseConstraints f)))
     Named qn args -> do
         args <- List.map args (traverse f)
         f (Named qn args)
@@ -110,18 +112,12 @@ traverse f type = case type of
         from <- traverse f from
         to <- traverse f to
         f (Function from to)
-    Never var -> f type
+    Never -> f type
     Ref lifetime t -> f (Ref lifetime (traverse f t))
     Owner t -> f (Owner (traverse f t))
     Tuple args -> do
         args <- List.map args (traverse f)
         f (Tuple args)
-
-removeFixed :: Type -> Type
-removeFixed type = traverse removeFixed_ type // FIXME: name!
-    where removeFixed_ type = case type of
-            FixedTypeArg _ var constraints -> Var var constraints
-            _ -> type
 
 removeOwnership :: Type -> Type
 removeOwnership type = traverse removeOwnership_ type // FIXME: name!
@@ -134,3 +130,29 @@ getNameFromType :: Type -> FullyQualifiedName
 getNameFromType type = case type of
     Named qn _ -> qn
     _ -> panic "getNameFromType: type is not Named! {}" % type
+
+convertConstraintsToFixed :: Constraint -> Constraint
+convertConstraintsToFixed constraint = case constraint of
+    ClassConstraint s associated_types -> ClassConstraint s (List.map associated_types fixedType)
+    RowConstraint row_name row_type -> RowConstraint row_name (fixedType row_type)
+
+fixedType :: Type -> Type
+fixedType type =
+    case type of
+        Var var constraints -> do
+            name <- SS.create "t{}" % var
+            FixedTypeArg name (List.map constraints convertConstraintsToFixed)
+        FixedTypeArg n constraints -> FixedTypeArg n (List.map constraints convertConstraintsToFixed)
+        Named n args -> do
+            args <- List.map args fixedType
+            Named n args
+        Function from to -> do
+            from <- fixedType from
+            to <- fixedType to
+            Function from to
+        Never -> Never
+        Ref l t -> Ref l (fixedType t)
+        Owner t -> Owner (fixedType t)
+        Tuple args -> do
+            args <- List.map args fixedType
+            Tuple args

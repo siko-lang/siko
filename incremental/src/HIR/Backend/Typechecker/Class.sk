@@ -60,10 +60,10 @@ getBaseType type = case type of
     T.Named qn _ -> Named qn
     T.Function _ _ -> Function
     T.Var _ _ -> Generic
-    T.FixedTypeArg _ _ _ -> Generic
+    T.FixedTypeArg _ _ -> Generic
     T.Ref _ t -> getBaseType t
     T.Owner t -> getBaseType t
-    T.Never _ -> Generic
+    T.Never -> Generic
 
 data InstanceInfo = { instance_type :: T.Type,
                       associated_types :: [T.Type],
@@ -128,13 +128,13 @@ checkClassDependencies classes = do
 isVar :: T.Type -> Bool
 isVar type = case type of
     T.Var _ _ -> True
-    T.FixedTypeArg _ _ _ -> True
+    T.FixedTypeArg _ _ -> True
     _ -> False
 
 isSpecializedType :: T.Type -> Bool
 isSpecializedType type = case type of
     T.Var _ _ -> False
-    T.FixedTypeArg _ _ _ -> False
+    T.FixedTypeArg _ _ -> False
     T.Named _ args -> args |> List.iter |> Iterator.fold (\specialized, arg -> specialized || not (isVar arg)) False
     T.Tuple args -> args |> List.iter |> Iterator.fold (\specialized, arg -> specialized || not (isVar arg)) False
     _ -> True
@@ -159,9 +159,9 @@ instance S.Collectable InstanceMemberInfo where
 getMemberType a :: (StateProvider a) => a -> C.Instance -> F.Function () -> ClassTypeInfo -> (a, Option T.Type)
 getMemberType state i instance_member class_type_info = do
     short_name <- FQ.getShortName instance_member.name
-    instance_member_info <- InstanceMemberInfo i.type i.associated_types instance_member.type
+    instance_member_info_fixed <- InstanceMemberInfo i.type i.associated_types instance_member.type
     (class_type_info, state) <- UUtil.instantiateGeneric class_type_info state
-    (instance_member_info, state) <- UUtil.instantiateGeneric instance_member_info state
+    (instance_member_info, state) <- UUtil.instantiateGeneric instance_member_info_fixed state
     case get class_type_info.members short_name of
         Some class_member_info -> do
             sub <- S.createSubstitution
@@ -175,16 +175,16 @@ getMemberType state i instance_member class_type_info = do
                         Err _ -> panic "Associated type unification failed! {} {}" % (TF.toString class_associated_type, TF.toString instance_associated_type)
                 )
             inferred_instance_member_type <- S.apply class_member_info.type sub
-            (final_member_type, state) <- case instance_member_info.member_type of
+            (final_member_type, state) <- case instance_member_info_fixed.member_type of
                 Some instance_member_type -> do
                     state <- if checkIsomorphicType inferred_instance_member_type instance_member_type state
                         then state
                         else do
-                            expected <- inferred_instance_member_type |> TF.fixedType |> TF.toString
-                            found <- instance_member_type |> TF.fixedType |> TF.toString
+                            expected <- inferred_instance_member_type |> T.fixedType |> TF.toString
+                            found <- instance_member_type |> T.fixedType |> TF.toString
                             addError state (InstanceMemberTypeMismatch (SS.create expected) (SS.create found) instance_member.location)
                     (instance_member_type, state)
-                None -> (TF.fixedType inferred_instance_member_type, state)
+                None -> (T.fixedType inferred_instance_member_type, state)
             (state, Some final_member_type)
         None -> do
             state <- addError state (InstanceMemberNotClassMember short_name instance_member.location)

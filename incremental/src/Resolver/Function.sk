@@ -173,7 +173,6 @@ processSubFunctions state function_scope_resolver type_resolver sub_items qn = d
 
 processFunctionSignature a :: (ResolverState a) => a -> TypeResolverState -> SF.FunctionSignature -> (a, TypeResolverState, Option [HT.Type], HT.Type)
 processFunctionSignature state type_resolver signature = do
-    ((type_resolver, state), _) <- addTypeArguments type_resolver state signature.type_arguments
     state <- checkTypeArguments state signature.type_arguments
     (state, type_resolver) <- processClassConstraints state type_resolver signature.constraints
     (type_resolver, state, type) <- processTypeSignature type_resolver state signature.type_signature
@@ -183,10 +182,7 @@ processFunctionSignature state type_resolver signature = do
                 case resolveEffect type_resolver.module_resolver eff.name of
                     Ok (qn, count) -> do
                         state <- checkTypeArguments state eff.arguments
-                        (state, type_resolver, args) <- List.fold (state, type_resolver, []) eff.arguments (\(state, type_resolver, args), arg -> do
-                            (type_resolver, state, var, constraints) <- resolveTypeArg type_resolver state arg
-                            arg_type <- HT.FixedTypeArg (getString arg) var constraints
-                            (state, type_resolver, push args arg_type))
+                        (type_resolver, args) <- List.mapS type_resolver eff.arguments resolveTypeArg
                         state <- if getLength args != count
                         then do
                             (Ident _ location) <- eff.name

@@ -188,16 +188,18 @@ unify context sub type1 type2 = do
                             (context, sub) <- try trySub context sub var1 new_type
                             (context, sub) <- try trySub context sub var2 new_type
                             Ok (context, sub)
-        (FixedTypeArg _ var1 _, FixedTypeArg _ var2 _) ->
-            if var1 == var2
-            then Ok (context, sub)
+        (FixedTypeArg a constraints1, FixedTypeArg b constraints2) ->
+            if a == b
+            then if constraints1 == constraints2
+                then Ok (context, sub)
+                else Err (context, sub)
             else Err (context, sub)
-        (FixedTypeArg _ var1 constraints1, Var var2 constraints2) ->
+        (FixedTypeArg _ constraints1, Var var2 constraints2) ->
             unifyVarWithFixedArg context sub var2 constraints2 constraints1 type1
-        (Var var1 constraints1, FixedTypeArg _ var2 constraints2) ->
+        (Var var1 constraints1, FixedTypeArg _ constraints2) ->
             unifyVarWithFixedArg context sub var1 constraints1 constraints2 type2
-        (Var var1 _, Never var2) -> trySub context sub var1 type2
-        (Never var1, Var var2 _) -> trySub context sub var2 type1
+        (Var var1 _, Never) -> trySub context sub var1 type2
+        (Never, Var var2 _) -> trySub context sub var2 type1
         (Var var constraints, type2) -> unifyVarWithType context var constraints sub type2
         (type1, Var var constraints) -> unifyVarWithType context var constraints sub type1
         (Tuple args1, Tuple args2) -> do
@@ -208,12 +210,17 @@ unify context sub type1 type2 = do
             (context, sub) <- try unify context sub from1 from2
             (context, sub) <- try unify context sub to1 to2
             Ok (context, sub)
-        (Never var1, Never var2) -> do
-            if var1 == var2
-                then Ok (context, sub)
-                else trySub context sub var1 type2
-        (Never var, type2) -> trySub context sub var type2
-        (type1, Never var) -> trySub context sub var type1
+        (Never, Never) -> Ok (context, sub)
+        (Never, type2) -> do
+            strictNever <- False // FIXME: make never strict in function signatures
+            if strictNever
+            then Err (context, sub)
+            else Ok (context, sub)
+        (type1, Never) -> do
+            strictNever <- False // FIXME: make never strict in function signatures
+            if strictNever
+            then Err (context, sub)
+            else Ok (context, sub)
         (Ref _ type1, type2) -> unify context sub type1 type2
         (type1, Ref _ type2) -> unify context sub type1 type2
         (Owner type1, type2) -> unify context sub type1 type2

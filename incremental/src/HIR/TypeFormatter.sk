@@ -1,5 +1,4 @@
-module Siko.HIR.TypeFormatter(fixedType,
-                              toString,
+module Siko.HIR.TypeFormatter(toString,
                               toLongString,
                               toStringTypes) where
 
@@ -10,45 +9,6 @@ import Siko.HIR.FullyQualifiedName as FQ
 import Map
 import Siko.Util.SharedString as SS
 
-fixedType :: Type -> Type
-fixedType type = do
-    vars <- Util.collectVars [] type
-    (var_map, index) <- vars |> List.iter |> Iterator.fold (\(var_map, index), v -> do
-                 new_var <- ((SS.create "t{}" % index), v)
-                 (var_map, _) <- Map.insert var_map v new_var
-                 (var_map, index + 1)) (Map.empty, 0)
-    convertToFixed var_map type
-
-convertConstraintsToFixed :: [Constraint] -> Map TypeVar (SS.SharedString, TypeVar) -> [Constraint]
-convertConstraintsToFixed constraints var_map = List.map constraints (\c -> case c of
-    ClassConstraint s associated_types -> ClassConstraint s (List.map associated_types (convertToFixed var_map))
-    RowConstraint row_name row_type -> RowConstraint row_name (convertToFixed var_map row_type))
-
-convertToFixed :: Map TypeVar (SS.SharedString, TypeVar) -> Type -> Type
-convertToFixed var_map type =
-    case type of
-        Var var constraints -> case get var_map var of
-            Some (name, new_var) -> FixedTypeArg name new_var (convertConstraintsToFixed constraints var_map)
-            None -> panic "old var {} not found" % var
-        FixedTypeArg _ var constraints -> case get var_map var of
-            Some (name, new_var) -> FixedTypeArg name new_var (convertConstraintsToFixed constraints var_map)
-            None -> panic "old var {} not found" % var
-        Named n args -> do
-            args <- args |> List.iter |> Iterator.map (\arg -> convertToFixed var_map arg) |> toList
-            Named n args
-        Function from to -> do
-            from <- convertToFixed var_map from
-            to <- convertToFixed var_map to
-            Function from to
-        Never var -> case get var_map var of
-            Some (_, new_var) -> Never new_var
-            None -> panic "old var {} not found" % var
-        Ref l t -> Ref l (convertToFixed var_map t)
-        Owner t -> Owner (convertToFixed var_map t)
-        Tuple args -> do
-            args <- args |> List.iter |> Iterator.map (\arg -> convertToFixed var_map arg) |> toList
-            Tuple args
-
 toStringComplex :: Type -> Map String Bool -> String
 toStringComplex type names = if Util.isSimple type then convertType type names else "({})" % (convertType type names)
 
@@ -57,7 +17,7 @@ convertType type names = case type of
     Var var _ -> do
         TypeVar v <- var
         "tv{}" % v
-    FixedTypeArg n _ _ -> SS.get n
+    FixedTypeArg n _ -> SS.get n
     Named n args -> do
         n <- FQ.getResolvableName n
         if n == getFullListTypeName
@@ -71,7 +31,7 @@ convertType type names = case type of
         from <- if isFunction from then "({})" % (convertType from names) else convertType from names
         to <- convertType to names
         "{} -> {}" % (from, to)
-    Never _ -> "!"
+    Never -> "!"
     Ref l t -> "&{} {}" % (l, toStringComplex t names)
     Owner t -> "~{}" % (toStringComplex t names)
     Tuple args -> do
@@ -155,7 +115,7 @@ collectNamesFromConstraints constraints = constraints |> List.iter |> Iterator.m
 collectNames :: Type -> Map String [Constraint] -> ([String], Map String [Constraint])
 collectNames type constraint_map = case type of
     Var (TypeVar v)  constraints -> (collectNamesFromConstraints constraints, addConstraint ("t{}" % v) constraints constraint_map)
-    FixedTypeArg n _ constraints -> (collectNamesFromConstraints constraints, addConstraint (SS.get n) constraints constraint_map)
+    FixedTypeArg n constraints -> (collectNamesFromConstraints constraints, addConstraint (SS.get n) constraints constraint_map)
     Named n args -> do
                 n <- SS.get (FQ.getResolvableName n)
                 args |> List.iter |> Iterator.fold (\(all, constraint_map), arg -> do
@@ -165,7 +125,7 @@ collectNames type constraint_map = case type of
         (args_from, constraint_map) <- collectNames from constraint_map
         (args_to, constraint_map) <- collectNames to constraint_map
         (args_from + args_to, constraint_map)
-    Never _ -> ([], constraint_map)
+    Never -> ([], constraint_map)
     Ref _ t -> collectNames t constraint_map
     Owner t -> collectNames t constraint_map
     Tuple args -> args |> List.iter |> Iterator.fold (\(all, constraint_map), arg -> do

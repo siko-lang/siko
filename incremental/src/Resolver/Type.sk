@@ -15,8 +15,7 @@ import Siko.HIR.FullyQualifiedName
 import Map
 import Siko.Util.SharedString as SS
 
-data TypeResolverState = { args :: Map SS.SharedString TypeVar,
-                           constraints :: Map TypeVar [Constraint],
+data TypeResolverState = { constraints :: Map SS.SharedString [Constraint],
                            module_resolver :: ModuleResolver,
                            used_type_args :: [Ident],
                            lifetimes :: Map SS.SharedString Int,
@@ -43,18 +42,18 @@ processClassConstraints state type_resolver constraints = do
                     ClassConstraint qn associated_types
             c -> c
 
-        trimType :: [TypeVar] -> Type -> Type
+        trimType :: [SS.SharedString] -> Type -> Type
         trimType parents ty = case ty of
-            FixedTypeArg n var constraints -> do
-                constraints <- List.map constraints (trimConstraint (List.push parents (Std.Intrinsics.clone var)))
-                FixedTypeArg n var constraints
+            FixedTypeArg n constraints -> do
+                constraints <- List.map constraints (trimConstraint (List.push parents (Std.Intrinsics.clone n)))
+                FixedTypeArg n constraints
             ty -> ty
 
-        trimConstraint :: [TypeVar] -> Constraint -> Constraint
+        trimConstraint :: [SS.SharedString] -> Constraint -> Constraint
         trimConstraint parents constraint = case constraint of
             ClassConstraint qn associated_types -> do
                 associated_types <- List.filter associated_types (\ty -> case ty of
-                    FixedTypeArg n var _ -> not (List.contains parents var)
+                    FixedTypeArg n _ -> not (List.contains parents n)
                     _ -> True)
                 associated_types <- List.map associated_types (trimType parents)
                 ClassConstraint qn associated_types
@@ -68,7 +67,7 @@ processClassConstraints state type_resolver constraints = do
                         (type_resolver, state, ty) <- processTypeSignature type_resolver state ty
                         ((state, type_resolver), ty))
                     constraint <- ClassConstraint class_name associated_types
-                    (type_resolver, state) <- addTypeArgumentConstraint type_resolver state c.argument constraint
+                    type_resolver <- addTypeArgumentConstraint type_resolver c.argument constraint
                     (state, type_resolver)
                 Err err -> do
                     state <- addError state err
@@ -120,69 +119,38 @@ resolveTypeName state name = do
 
 createTypeResolverState :: ModuleResolver -> TypeResolverState
 createTypeResolverState module_resolver =
-    TypeResolverState empty empty module_resolver [] empty
+    TypeResolverState empty module_resolver [] empty
 
-initTypeResolver a :: (ResolverState a) => ModuleResolver -> a -> [Ident] -> (TypeResolverState, a)
-initTypeResolver module_resolver resolver_state type_arguments = do
-    type_resolver <- createTypeResolverState module_resolver
-    ((type_resolver, resolver_state), _) <- addTypeArguments type_resolver resolver_state type_arguments
-    (type_resolver, resolver_state)
-
-processTypeArgs :: TypeResolverState -> [Ident] -> [Type]
-processTypeArgs state type_arguments = do
-    type_args <- type_arguments |> List.iter |> Iterator.map (\(Ident n _) -> do
-        var <- Option.unwrap (get state.args n)
-        FixedTypeArg n var []) |> toList
-    type_args
-
-addTypeArguments a :: (ResolverState a) => TypeResolverState -> a -> [Ident] -> ((TypeResolverState, a), [TypeVar])
-addTypeArguments type_resolver resolver_state type_arguments =
-    List.mapS (type_resolver, resolver_state) type_arguments (\(type_resolver, resolver_state), arg -> do
-        (type_resolver, resolver_state, var) <- addTypeArgument type_resolver resolver_state arg
-        ((type_resolver, resolver_state), var))
-
-addTypeArgument a :: (ResolverState a) => TypeResolverState -> a -> Ident -> (TypeResolverState, a, TypeVar)
-addTypeArgument state resolver_state arg = do
-    arg <- getString arg
-    case get state.args arg of
-        Some var -> (state, resolver_state, var)
-        None -> do
-            (resolver_state, var) <- getNewTypeVar resolver_state
-            (args, _) <- insert state.args arg var
-            (state { args = args }, resolver_state, var)
+processTypeArgs :: [Ident] -> [Type]
+processTypeArgs type_arguments = List.map type_arguments (\(Ident n _) -> FixedTypeArg n [])
 
 addConstraint :: Constraint -> Option [Constraint] -> Option [Constraint]
 addConstraint constraint constraints = case constraints of
     Some constraints -> Some (push constraints constraint)
     None -> Some [constraint]
 
-addTypeArgumentConstraint a :: (ResolverState a) => TypeResolverState -> a -> Ident -> Constraint -> (TypeResolverState, a)
-addTypeArgumentConstraint state resolver_state type_arg constraint = do
-    (state, resolver_state, var) <- addTypeArgument state resolver_state type_arg
-    (constraints, _) <- alter (addConstraint constraint) var state.constraints
-    state <- state { constraints = constraints }
-    (state, resolver_state)
+addTypeArgumentConstraint :: TypeResolverState -> Ident -> Constraint -> TypeResolverState
+addTypeArgumentConstraint state type_arg constraint = do
+    Ident name _ <- type_arg
+    (constraints, _) <- alter (addConstraint constraint) name state.constraints
+    state { constraints = constraints }
 
 updateTypeConstraints :: TypeResolverState -> Type -> Type
 updateTypeConstraints state type = case type of
-    Var var constraints -> do
-        constraints <- case get state.constraints var of
+    Var var constraints -> Var var constraints
+    FixedTypeArg name constraints -> do
+        constraints <- case get state.constraints name of
             Some constraints -> constraints
             None -> constraints
-        Var var constraints
-    FixedTypeArg name var constraints -> do
-        constraints <- case get state.constraints var of
-            Some constraints -> constraints
-            None -> constraints
-        FixedTypeArg name var constraints
+        FixedTypeArg name constraints
     Named qn items -> do
-        items <- items |> List.iter |> Iterator.map (\t -> updateTypeConstraints state t) |> toList
+        items <- List.map items (updateTypeConstraints state)
         Named qn items
     Function from to -> do
         from <- updateTypeConstraints state from
         to <- updateTypeConstraints state to
         Function from to
-    Never var -> Never var
+    Never -> Never
     Ref lifetime item -> do
         item <- updateTypeConstraints state item
         Ref lifetime item
@@ -190,7 +158,7 @@ updateTypeConstraints state type = case type of
         item <- updateTypeConstraints state item
         Owner item
     Tuple items -> do
-        items <- items |> List.iter |> Iterator.map (\t -> updateTypeConstraints state t) |> toList
+        items <- List.map items (updateTypeConstraints state)
         Tuple items
 
 processArgs a :: (ResolverState a) => TypeResolverState -> a -> [ST.TypeSignature] -> (TypeResolverState, a, [Type])
@@ -198,30 +166,21 @@ processArgs state resolver_state args = args |> List.iter |> Iterator.fold (\(st
                         (state, resolver_state, arg) <- processTypeSignature state resolver_state arg
                         (state, resolver_state, push args arg)) (state, resolver_state, [])
 
-resolveTypeArg a :: (ResolverState a) => TypeResolverState -> a -> Ident -> (TypeResolverState, a, TypeVar, [Constraint])
-resolveTypeArg state resolver_state name = do
-        n <- getString name
-        case get state.args n of
-            Some var -> do
-                    constraints <- case get state.constraints var of
-                        Some constraints -> constraints
-                        None -> []
-                    used_type_args <- push state.used_type_args name
-                    state <- state { used_type_args = used_type_args }
-                    (state, resolver_state, var, constraints)
-            None -> do
-                (resolver_state, var) <- getNewTypeVar resolver_state
-                (args, _) <- insert state.args n var
-                (constraints, _) <- insert state.constraints var []
-                state <- state { args  = args, constraints = constraints }
-                (state, resolver_state, var, [])
+resolveTypeArg :: TypeResolverState -> Ident -> (TypeResolverState, Type)
+resolveTypeArg state name = do
+    n <- getString name
+    constraints <- case get state.constraints n of
+        Some constraints -> constraints
+        None -> []
+    used_type_args <- push state.used_type_args name
+    state <- state { used_type_args = used_type_args }
+    (state, FixedTypeArg n constraints)
 
 processTypeSignature a :: (ResolverState a) => TypeResolverState -> a -> ST.TypeSignature -> (TypeResolverState, a, Type)
 processTypeSignature state resolver_state (ST.TypeSignature type_signature location) = case type_signature of
     ST.TypeArg name -> do
-            (state, resolver_state, var, constraints) <- resolveTypeArg state resolver_state name
-            name <- getString name
-            (state, resolver_state, FixedTypeArg name var constraints)
+            (state, type) <- resolveTypeArg state name
+            (state, resolver_state, type)
     ST.Named name args -> do
         case resolveTypeName state name of
             Ok (resolved_name, arg_count) -> do
@@ -246,9 +205,7 @@ processTypeSignature state resolver_state (ST.TypeSignature type_signature locat
         (state, resolver_state, from) <- processTypeSignature state resolver_state from
         (state, resolver_state, to) <- processTypeSignature state resolver_state to
         (state, resolver_state, Function from to)
-    ST.Never -> do
-        (resolver_state, var) <- getNewTypeVar resolver_state
-        (state, resolver_state, Never var)
+    ST.Never -> (state, resolver_state, Never)
     ST.Ref lifetime arg -> do
         lifetimes <- state.lifetimes
         lifetime_name <- getString lifetime

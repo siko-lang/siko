@@ -4,6 +4,7 @@ import Siko.HIR.Type as T
 import Siko.HIR.TypeFormatter as TF
 import Siko.HIR.FullyQualifiedName
 import Siko.HIR.Backend.Unification as U
+import Siko.Util.SharedString as SS
 import Map
 
 data UnificationConstraint = { class_name :: FullyQualifiedName,
@@ -25,12 +26,12 @@ createSubstitution = Substitution empty []
 class Transform a where
     transform a :: a -> (T.Type -> T.Type) -> a
 
-data Collector = { type_vars :: [T.TypeVar] }
+data Collector = { type_vars :: [SS.SharedString] }
 
 createCollector :: Collector
 createCollector = Collector []
 
-addVar :: Collector -> T.TypeVar -> Collector
+addVar :: Collector -> SS.SharedString -> Collector
 addVar collector var = do
     type_vars <- List.push collector.type_vars var
     collector { type_vars = type_vars }
@@ -61,10 +62,10 @@ constraintsContainsVar constraints var = List.fold False constraints (\contains,
 containsVar :: T.Type -> T.TypeVar -> Bool
 containsVar type var = case type of
     T.Var v constraints -> v == var || constraintsContainsVar constraints var
-    T.FixedTypeArg _ v constraints -> v == var || constraintsContainsVar constraints var
+    T.FixedTypeArg _ constraints -> constraintsContainsVar constraints var
     T.Named _ args -> List.fold False args (\contains, arg -> contains || containsVar arg var)
     T.Function from to -> containsVar from var || containsVar to var
-    T.Never v -> v == var
+    T.Never -> False
     T.Ref _ t -> containsVar t var
     T.Owner t -> containsVar t var
     T.Tuple args -> List.fold False args (\contains, arg -> contains || containsVar arg var)

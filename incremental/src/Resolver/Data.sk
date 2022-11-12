@@ -62,13 +62,13 @@ createFunctionFromArgs args result_ty = do
 
 processAdt a :: (ResolverState a) => a -> ModuleResolver -> SD.AlgebraicDataType -> (a, HD.AlgebraicDataType, [(HD.VariantInfo, FullyQualifiedName)])
 processAdt state module_resolver (SD.AlgebraicDataType name type_arguments variants derived_classes) = do
-    (type_resolver, state) <- initTypeResolver module_resolver state type_arguments
+    type_resolver <- createTypeResolverState module_resolver
     state <- checkTypeArguments state type_arguments
     (state, type_resolver, variants) <- variants |> List.iter |> Iterator.fold (\(state, type_resolver, variants), variant -> do
                 (state, type_resolver, variant) <- processVariant state type_resolver variant
                 variants <- push variants variant
                 (state, type_resolver, variants)) (state, type_resolver, [])
-    type_args <- processTypeArgs type_resolver type_arguments
+    type_args <- processTypeArgs type_arguments
     (state, derived_classes) <- processDerivedClasses state module_resolver derived_classes
     Ident n location <- name
     qn <- FullPath module_resolver.module_name n
@@ -87,7 +87,7 @@ processAdt state module_resolver (SD.AlgebraicDataType name type_arguments varia
 
 processRecord a :: (ResolverState a) => a -> ModuleResolver -> SD.Record -> (a, HD.Record)
 processRecord state module_resolver (SD.Record name type_arguments fields external derived_classes implicit_member) = do
-    (type_resolver, state) <- initTypeResolver module_resolver state type_arguments
+    type_resolver <- createTypeResolverState module_resolver
     (state, type_resolver, fields, field_names) <- fields |> List.iter |> Iterator.fold (\(state, type_resolver, fields, field_names), field -> do
                 (state, type_resolver, field, field_names) <- processRecordField state type_resolver field field_names
                 fields <- push fields field
@@ -95,7 +95,7 @@ processRecord state module_resolver (SD.Record name type_arguments fields extern
     state <- field_names |> Map.iter |> Iterator.fold (\state, (name, instances) -> if getLength instances > 1
                             then addError state (RecordFieldConflict instances)
                             else state) state
-    type_args <- processTypeArgs type_resolver type_arguments
+    type_args <- processTypeArgs type_arguments
     (state, derived_classes) <- processDerivedClasses state module_resolver derived_classes
     Ident n location <- name
     qn <- FullPath module_resolver.module_name n

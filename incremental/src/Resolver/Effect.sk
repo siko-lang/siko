@@ -21,17 +21,8 @@ processEffect state module_resolver eff = do
     qn <- FQ.FullPath module_name name
     type_resolver <- createTypeResolverState module_resolver
     state <- checkTypeArguments state eff.arguments
-    (state, type_resolver, arguments) <- List.fold (state, type_resolver, []) eff.arguments (\(state, type_resolver, arguments), arg -> do
-                (type_resolver, state, _) <- addTypeArgument type_resolver state arg
-                arguments <- List.push arguments arg
-                (state, type_resolver, arguments))
     (state, type_resolver) <- processClassConstraints state type_resolver eff.constraints
-    (state, type_resolver, arguments) <- List.fold (state, type_resolver, []) arguments
-            (\(state, type_resolver, arguments), arg -> do
-                (type_resolver, state, var, constraints) <- resolveTypeArg type_resolver state arg
-                arg_type <- HT.FixedTypeArg (getString arg) var constraints
-                arguments <- List.push arguments arg_type
-                (state, type_resolver, arguments))
+    (type_resolver, arguments) <- List.mapS type_resolver eff.arguments resolveTypeArg
     eff_type <- HT.Named qn arguments
     kind <- HF.EffectMember qn
     unresolved_functions <- mergeUnresolvedFunctions eff.member_functions eff.member_function_type_signatures

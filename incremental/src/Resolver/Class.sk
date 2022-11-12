@@ -41,19 +41,13 @@ processClass state module_resolver c = do
     type_resolver <- createTypeResolverState module_resolver
     all_type_args <- List.push c.associated_types c.argument
     state <- checkTypeArguments state all_type_args
-    (type_resolver, state) <- List.fold (type_resolver, state) all_type_args (\(type_resolver, state), ty -> do
-        (type_resolver, state, _) <- addTypeArgument type_resolver state ty
-        (type_resolver, state))
-    ((state, type_resolver), associated_types) <- List.mapS (state, type_resolver) c.associated_types (\(state, type_resolver), ty -> do
-        (type_resolver, state, var, constraints) <- resolveTypeArg type_resolver state ty
-        ((state, type_resolver), (HT.FixedTypeArg (getString ty) var constraints)))
+    (type_resolver, associated_types) <- List.mapS type_resolver c.associated_types resolveTypeArg
     type_arg <- c.argument
     type_arg_str <- getString type_arg
     self_constraint <- HT.ClassConstraint qn associated_types
-    (type_resolver, state) <- addTypeArgumentConstraint type_resolver state type_arg self_constraint
+    type_resolver <- addTypeArgumentConstraint type_resolver type_arg self_constraint
     (state, type_resolver) <- processClassConstraints state type_resolver c.constraints
-    (type_resolver, state, var, constraints) <- resolveTypeArg type_resolver state c.argument
-    arg_type <- HT.FixedTypeArg (getString c.argument) var constraints
+    (type_resolver, arg_type) <- resolveTypeArg type_resolver c.argument
     dependencies <- processClassDependencies module_resolver c type_arg_str
     state <- c.member_function_type_signatures |> List.iter |> Iterator.fold (\state, s -> do
         sig_type_args <- List.map s.type_arguments getString
@@ -88,8 +82,7 @@ processInstance state module_resolver qn i = do
         ST.TypeArg type_arg -> do
             type_arg_str <- getString type_arg
             self_constraint <- HT.ClassConstraint class_name associated_types
-            (type_resolver, state, _) <- addTypeArgument type_resolver state type_arg
-            (type_resolver, state) <- addTypeArgumentConstraint type_resolver state type_arg self_constraint
+            type_resolver <- addTypeArgumentConstraint type_resolver type_arg self_constraint
             (type_resolver, state, hir_type) <- processTypeSignature type_resolver state i.type_signature
             (state, type_resolver, hir_type)
         _ -> do

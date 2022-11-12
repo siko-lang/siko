@@ -14,17 +14,15 @@ instance S.Collectable T.Constraint where
 
 instance S.Collectable T.Type where
     collect collector type = case type of
-        T.Var var constraints -> do
-            collector <- S.addVar collector var
-            S.collect collector constraints
-        T.FixedTypeArg _ var constraints -> do
-            collector <- S.addVar collector var
+        T.Var var constraints -> S.collect collector constraints
+        T.FixedTypeArg n constraints -> do
+            collector <- S.addVar collector n
             S.collect collector constraints
         T.Named _ args -> S.collect collector args
         T.Function from to -> do
             collector <- S.collect collector from
             S.collect collector to
-        T.Never var -> S.addVar collector var
+        T.Never -> collector
         T.Ref _ t -> S.collect collector t
         T.Owner t -> S.collect collector t
         T.Tuple args -> S.collect collector args
@@ -40,22 +38,18 @@ instance S.Apply T.Type where
     apply type sub = case type of
         T.Var var constraints -> case get sub.vars var of
             Some t -> S.apply t sub
-            None -> (T.Var var (List.map constraints (\c -> S.apply c sub)))
-        T.FixedTypeArg _ var _ -> case get sub.vars var of
-            Some t -> S.apply t sub
-            None -> type
+            None -> (T.Var var (S.apply constraints sub))
+        T.FixedTypeArg n constraints -> T.FixedTypeArg n (S.apply constraints sub)
         T.Named n args -> do
-            T.Named n (List.map args (\arg -> S.apply arg sub))
+            T.Named n (S.apply args sub)
         T.Function from to -> do
             from <- S.apply from sub
             to <- S.apply to sub
             T.Function from to
-        T.Never var -> case get sub.vars var of
-            Some t -> S.apply t sub
-            None -> type
+        T.Never -> T.Never
         T.Ref lifetime t -> T.Ref lifetime (S.apply t sub)
         T.Owner t -> T.Owner (S.apply t sub)
-        T.Tuple args -> T.Tuple (List.map args (\arg -> S.apply arg sub))
+        T.Tuple args -> T.Tuple (S.apply args sub)
 
 instance S.Transform T.Type where
     transform ty f = f ty

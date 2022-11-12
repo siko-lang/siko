@@ -43,7 +43,7 @@ createTypedSimplePattern context s_pattern = case s_pattern of
 createTypedPattern :: Context -> P.Pattern () -> P.Pattern T.Type
 createTypedPattern context (P.Pattern s_pattern id _ location) = do
     context :: Context <- context // FIXME: why is this needed?
-    type <- Std.Intrinsics.clone (TS.getPatternType context.type_store context.group_index id)
+    type <- T.fixedType (TS.getPatternType context.type_store context.group_index id)
     s_pattern <- createTypedSimplePattern context s_pattern
     P.Pattern s_pattern id type location
 
@@ -97,18 +97,20 @@ createTypedSimpleExpr context id s_expr = case s_expr of
     E.ValueRef ref -> E.ValueRef (Std.Intrinsics.clone ref)
     E.With handlers body _ -> do
         eff_types <- Std.Intrinsics.clone (TS.getWithEffects context.type_store context.group_index id)
-        eff_types <- List.map eff_types (\t -> E.EffectType (Std.Intrinsics.clone t))
+        eff_types <- List.map eff_types (\t -> E.EffectType (T.fixedType t))
         E.With (List.map (Std.Intrinsics.clone handlers) (createTypeHandler context)) (createTypedExpr context body) eff_types
 
 createTypedExpr :: Context -> E.Expr () -> E.Expr T.Type
 createTypedExpr context (E.Expr s_expr id _ location) = do
     context :: Context <- context // FIXME: why is this needed?
-    type <- Std.Intrinsics.clone (TS.getExprType context.type_store context.group_index id)
+    type <- T.fixedType (TS.getExprType context.type_store context.group_index id)
     s_expr <- createTypedSimpleExpr context id s_expr
     E.Expr s_expr id type location
 
 createTypedFunction :: Context -> F.Function () -> T.Type -> [T.Type] -> F.Function T.Type
 createTypedFunction context function type effects = do
+    type <- T.fixedType type
+    effects <- List.map effects T.fixedType
     F.Function {
         location = function.location,
         name = Std.Intrinsics.clone function.name,

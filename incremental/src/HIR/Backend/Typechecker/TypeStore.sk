@@ -65,6 +65,11 @@ addExprType store group_index expr_id expr_type = do
     else ()
     store { expr_types = expr_types }
 
+overwriteExprType :: TypeStore -> Int -> E.ExprId -> ExprTypeState -> TypeStore
+overwriteExprType store group_index expr_id expr_type = do
+    (expr_types, _) <- insert store.expr_types (ExprKey expr_id group_index) expr_type
+    store { expr_types = expr_types }
+
 addPatternType :: TypeStore -> Int -> P.PatternId -> PatternTypeState -> TypeStore
 addPatternType store group_index pattern_id pattern_type = do
     (pattern_types, prev) <- insert store.pattern_types (PatternKey pattern_id group_index) pattern_type
