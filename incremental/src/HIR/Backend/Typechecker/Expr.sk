@@ -81,6 +81,11 @@ getNewVarWithConstraints context constraints = do
     (context, var) <- U.getNewTypeVar context
     (context, T.Var var constraints)
 
+getNeverType a :: (StateProvider a) => Context a -> (Context a, T.Type)
+getNeverType context = do
+    (context, var) <- U.getNewTypeVar context
+    (context, T.Var var [T.NeverLike])
+
 getFunctionTypeInfo :: (StateProvider a) => Context a -> FQ.FullyQualifiedName -> (Context a, FunctionTypeInfo)
 getFunctionTypeInfo context name = do
     if List.contains context.group_items name
@@ -191,14 +196,6 @@ matchExprs a :: (StateProvider a) => Context a -> E.ExprId -> E.ExprId -> Locati
 matchExprs context expr_id1 expr_id2 location = do
     expr_type1 <- getExprType context expr_id1
     expr_type2 <- getExprType context expr_id2
-    context <- case (expr_type1, expr_type2) of // FIXME: fix handling of Never type
-        (T.Never, other) -> do
-            type_store <- TS.overwriteExprType context.type_store context.group_index expr_id1 (TS.ExprType other)
-            context { type_store = type_store }
-        (other, T.Never) -> do
-            type_store <- TS.overwriteExprType context.type_store context.group_index expr_id2 (TS.ExprType other)
-            context { type_store = type_store }
-        _ -> context
     context <- unify context S.createSubstitution expr_type1 expr_type2 location
     context
 
@@ -215,21 +212,20 @@ instantiateType context type = do
     (new_type) <- T.removeOwnership new_type
     (context, new_type)
 
-getNeverType a :: (StateProvider a) => Context a -> (Context a, T.Type)
-getNeverType context = do
-    (context, T.Never)
-
 data EffectTypeInfo = { effect_type :: T.Type,
                         members :: Map FQ.FullyQualifiedName T.Type }
 
 instance S.Apply EffectTypeInfo where
-    apply eff_type_info sub = S.transform eff_type_info (\t -> S.apply t sub)
+    apply eff_type_info sub = do
+        effect_type <- S.apply eff_type_info.effect_type sub
+        members <- S.apply eff_type_info.members sub
+        EffectTypeInfo effect_type members
 
 instance S.Transform EffectTypeInfo where
-    transform eff_type_info f = do
-        members <- Map.map eff_type_info.members (\(qn, t) -> (qn, f t))
-        type <- f eff_type_info.effect_type
-        EffectTypeInfo type members
+    transform state eff_type_info f = do
+        (state, members) <- S.transform state eff_type_info.members f
+        (state, type) <- S.transform state eff_type_info.effect_type f
+        (state, EffectTypeInfo type members)
 
 instance S.Collectable EffectTypeInfo where
     collect collector eff_type_info = do
@@ -747,7 +743,7 @@ addUndefinedVarToContext context undefined_vars var location =
 checkUndefinedVars a :: (StateProvider a) => Context a -> [T.TypeVar] -> T.Type -> [T.TypeVar] -> Location -> (Context a, [T.TypeVar])
 checkUndefinedVars context undefined_vars type signature_vars location = do
     case type of
-        T.Never -> (context, undefined_vars)
+        T.Var _ constraints if constraints == [T.NeverLike] -> (context, undefined_vars)
         _ -> do
             type_vars <- Util.collectVars [] type
             type_vars |> List.iter

@@ -24,12 +24,12 @@ instance Show Substitution where
 createSubstitution = Substitution empty []
 
 class Transform a where
-    transform a :: a -> (T.Type -> T.Type) -> a
+    transform a s :: s -> a -> (s -> T.Type -> (s, T.Type)) -> (s, a)
 
-data Collector = { type_vars :: [SS.SharedString] }
+data Collector = { type_vars :: [SS.SharedString], nevers :: Int }
 
 createCollector :: Collector
-createCollector = Collector []
+createCollector = Collector [] 0
 
 addVar :: Collector -> SS.SharedString -> Collector
 addVar collector var = do
@@ -57,7 +57,8 @@ instance Apply Substitution where
 constraintsContainsVar :: [T.Constraint] -> T.TypeVar -> Bool
 constraintsContainsVar constraints var = List.fold False constraints (\contains, constraint -> contains || case constraint of
     T.ClassConstraint _  associated_types -> List.fold contains associated_types (\contains, ty -> contains || containsVar ty var)
-    T.RowConstraint _ row_type -> containsVar row_type var)
+    T.RowConstraint _ row_type -> containsVar row_type var
+    T.NeverLike -> False)
 
 containsVar :: T.Type -> T.TypeVar -> Bool
 containsVar type var = case type of

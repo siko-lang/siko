@@ -67,6 +67,7 @@ formatTypeInner type short = do
                     (cs, "{} {} > {}" % (getNiceName (FQ.getResolvableName s) conflicting_names, name, join string_types " "))
             RowConstraint (NamedRow row_name) row_type -> ([], "#{} :: {} {}" % (row_name, toString row_type, name))
             RowConstraint (IndexedRow index) row_type -> ([], "#{} :: {} {}" % (index, toString row_type, name))
+            NeverLike -> ([], "<NeverLike>")
 
         processAssociatedTypes short types = List.fold ([], []) types (\(constraints, string_types), ty -> do
             (cs, string_type) <- formatTypeInner ty short
@@ -107,10 +108,11 @@ getNiceName full_name conflicting_names = do
         _ -> short
 
 collectNamesFromConstraints :: [Constraint] -> [String]
-collectNamesFromConstraints constraints = constraints |> List.iter |> Iterator.map (\c -> case c of
+collectNamesFromConstraints constraints = List.map constraints (\c -> case c of
                 ClassConstraint s _ -> SS.get (FQ.getResolvableName s)
                 RowConstraint (NamedRow name) row_type -> SS.get name
-                RowConstraint (IndexedRow i) row_type -> "{}"  % i) |> toList
+                RowConstraint (IndexedRow i) row_type -> "{}"  % i
+                NeverLike -> "<neverlike>")
 
 collectNames :: Type -> Map String [Constraint] -> ([String], Map String [Constraint])
 collectNames type constraint_map = case type of

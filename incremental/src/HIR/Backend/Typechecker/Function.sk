@@ -43,12 +43,12 @@ instance S.Apply FunctionTypeInfo where
         FunctionTypeInfo func_type_info.name args function_type result_type effects func_type_info.defined
 
 instance S.Transform FunctionTypeInfo where
-    transform func_type_info f = do
-        args <- S.transform func_type_info.args f
-        function_type <- S.transform func_type_info.function_type f
-        result_type <- S.transform func_type_info.result_type f
-        effects <- S.transform func_type_info.effects f
-        FunctionTypeInfo func_type_info.name args function_type result_type effects func_type_info.defined
+    transform state func_type_info f = do
+        (state, args) <- S.transform state func_type_info.args f
+        (state, function_type) <- S.transform state func_type_info.function_type f
+        (state, result_type) <- S.transform state func_type_info.result_type f
+        (state, effects) <- S.transform state func_type_info.effects f
+        (state, FunctionTypeInfo func_type_info.name args function_type result_type effects func_type_info.defined)
 
 instance S.Collectable FunctionTypeInfo where
     collect collector func_type_info = do

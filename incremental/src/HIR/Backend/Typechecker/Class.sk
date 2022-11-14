@@ -28,16 +28,16 @@ data ClassTypeInfo = {  arg_type :: T.Type,
                         } deriving (Show, PartialEq, Eq)
 
 instance S.Transform ClassMemberInfo where
-    transform class_member_info f = do
-        type <- S.transform class_member_info.type f
-        class_member_info { type = type }
+    transform state class_member_info f = do
+        (state, type) <- S.transform state class_member_info.type f
+        (state, class_member_info { type = type })
 
 instance S.Transform ClassTypeInfo where
-    transform class_type_info f = do
-        arg_type <- S.transform class_type_info.arg_type f
-        associated_types <- S.transform class_type_info.associated_types f
-        members <- S.transform class_type_info.members f
-        ClassTypeInfo arg_type associated_types members class_type_info.all_dependencies
+    transform state class_type_info f = do
+        (state, arg_type) <- S.transform state class_type_info.arg_type f
+        (state, associated_types) <- S.transform state class_type_info.associated_types f
+        (state, members) <- S.transform state class_type_info.members f
+        (state, ClassTypeInfo arg_type associated_types members class_type_info.all_dependencies)
 
 instance S.Collectable ClassMemberInfo where
     collect collector class_member_info = S.collect collector class_member_info.type
@@ -72,10 +72,10 @@ data InstanceInfo = { instance_type :: T.Type,
                     } deriving (Show, PartialEq, Eq)
 
 instance S.Transform InstanceInfo where
-    transform info f = do
-        instance_type <- S.transform info.instance_type f
-        associated_types <- S.transform info.associated_types f
-        InstanceInfo instance_type associated_types info.id info.location
+    transform state info f = do
+        (state, instance_type) <- S.transform state info.instance_type f
+        (state, associated_types) <- S.transform state info.associated_types f
+        (state, InstanceInfo instance_type associated_types info.id info.location)
 
 instance S.Collectable InstanceInfo where
     collect collector info = do
@@ -144,11 +144,11 @@ data InstanceMemberInfo = { instance_type :: T.Type,
                             member_type :: Option T.Type } deriving (Show)
 
 instance S.Transform InstanceMemberInfo where
-    transform info f = do
-        instance_type <- S.transform info.instance_type f
-        associated_types <- S.transform info.associated_types f
-        member_type <- S.transform info.member_type f
-        InstanceMemberInfo instance_type associated_types member_type
+    transform state info f = do
+        (state, instance_type) <- S.transform state info.instance_type f
+        (state, associated_types) <- S.transform state info.associated_types f
+        (state, member_type) <- S.transform state info.member_type f
+        (state, InstanceMemberInfo instance_type associated_types member_type)
 
 instance S.Collectable InstanceMemberInfo where
     collect collector info = do

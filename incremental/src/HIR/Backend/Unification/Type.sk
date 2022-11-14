@@ -11,6 +11,7 @@ instance S.Collectable T.Constraint where
     collect collector constraint = case constraint of
         T.ClassConstraint qn associated_types -> S.collect collector associated_types
         T.RowConstraint kind type -> S.collect collector type
+        T.NeverLike -> collector
 
 instance S.Collectable T.Type where
     collect collector type = case type of
@@ -22,7 +23,7 @@ instance S.Collectable T.Type where
         T.Function from to -> do
             collector <- S.collect collector from
             S.collect collector to
-        T.Never -> collector
+        T.Never -> collector { nevers = collector.nevers + 1 }
         T.Ref _ t -> S.collect collector t
         T.Owner t -> S.collect collector t
         T.Tuple args -> S.collect collector args
@@ -32,6 +33,7 @@ instance S.Apply T.Constraint where
         case constraint of
             T.ClassConstraint s associated_types -> T.ClassConstraint s (List.map associated_types (\ty -> S.apply ty sub))
             T.RowConstraint name ty -> T.RowConstraint name (S.apply ty sub)
+            T.NeverLike -> T.NeverLike
 
 instance S.Apply T.Type where
     apply :: T.Type -> S.Substitution -> T.Type
@@ -51,5 +53,40 @@ instance S.Apply T.Type where
         T.Owner t -> T.Owner (S.apply t sub)
         T.Tuple args -> T.Tuple (S.apply args sub)
 
+
+instance S.Transform T.Constraint where
+    transform state constraint f = case constraint of
+        T.ClassConstraint qn associated_types -> do
+            (state, associated_types) <- S.transform state associated_types f
+            (state, T.ClassConstraint qn associated_types)
+        T.RowConstraint kind type -> do
+            (state, type) <- S.transform state type f
+            (state, T.RowConstraint kind type)
+        T.NeverLike -> (state, T.NeverLike)
+
 instance S.Transform T.Type where
-    transform ty f = f ty
+    transform state type f = case type of
+        T.Var var constraints -> do
+            (state, constraints) <- S.transform state constraints f
+            f state (T.Var var constraints)
+        T.FixedTypeArg n constraints -> do
+            (state, constraints) <- S.transform state constraints f
+            f state (T.FixedTypeArg n constraints)
+        T.Named qn args -> do
+            (state, args) <- S.transform state args f
+            f state (T.Named qn args)
+        T.Function from to -> do
+            (state, from) <- S.transform state from f
+            (state, to) <- S.transform state to f
+            f state (T.Function from to)
+        T.Never -> f state T.Never
+        T.Ref lifetime t -> do
+            (state, t) <- S.transform state t f
+            f state (T.Ref lifetime t)
+        T.Owner t -> do
+            (state, t) <- S.transform state t f
+            f state (T.Owner t)
+        T.Tuple args -> do
+            (state, args) <- S.transform state args f
+            f state (T.Tuple args)
+

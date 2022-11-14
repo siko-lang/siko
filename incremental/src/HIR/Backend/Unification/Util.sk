@@ -37,27 +37,27 @@ instantiateGeneric a d :: (U.Context a, S.Collectable d, S.Transform d) => d -> 
 instantiateGeneric data_type context = do
     collector <- S.collect S.createCollector data_type
     vars <- collector.type_vars |> List.sort |> List.dedup
-    (mapper, context) <- initMapper collector.type_vars context
-    data_type <- S.transform data_type (remapType mapper)
+    (mapper, context) <- initMapper collector.type_vars collector.nevers context
+    (mapper, data_type) <- S.transform mapper data_type remapType
     (data_type, context)
 
-data Mapper = { vars :: Map SS.SharedString T.TypeVar } deriving (Show)
+data Mapper = { vars :: Map SS.SharedString T.TypeVar, nevers :: [T.TypeVar] } deriving (Show)
 
-initMapper a :: (U.TypeVarGenerator a) => [SS.SharedString] -> a -> (Mapper, a)
-initMapper vars var_gen = do
+initMapper a :: (U.TypeVarGenerator a) => [SS.SharedString] -> Int -> a -> (Mapper, a)
+initMapper vars never_count var_gen = do
     (vars, var_gen) <- List.fold (empty, var_gen) vars (\(vars, var_gen), old_var -> do
             (var_gen, new_var) <- U.getNewTypeVar var_gen
             (vars, _) <- insert vars old_var new_var
             (vars, var_gen))
-    (Mapper vars, var_gen)
+    (var_gen, nevers) <- repeatS var_gen U.getNewTypeVar never_count
+    (Mapper vars nevers, var_gen)
 
-remapType :: Mapper -> T.Type -> T.Type
-remapType mapper type = T.traverse (helper mapper) type
-    where
-        helper :: Mapper -> T.Type -> T.Type
-        helper mapper type = do
-        case type of
-            T.FixedTypeArg n constraints -> case get mapper.vars n of
-                Some new_var -> T.Var new_var constraints
-                None -> panic "remapType: fixed var {} not found" % n
-            _ -> type
+remapType :: Mapper -> T.Type -> (Mapper, T.Type)
+remapType mapper type = case type of
+    T.FixedTypeArg n constraints -> case get mapper.vars n of
+        Some new_var -> (mapper, T.Var new_var constraints)
+        None -> panic "remapType: fixed var {} not found" % n
+    T.Never -> do
+        (var, nevers) <- List.removeLast mapper.nevers
+        (mapper { nevers = nevers}, T.Var var [T.NeverLike])
+    _ -> (mapper, type)

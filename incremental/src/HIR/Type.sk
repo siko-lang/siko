@@ -26,6 +26,7 @@ data RowKind = NamedRow SS.SharedString
 
 data Constraint = ClassConstraint FullyQualifiedName [Type]
                 | RowConstraint RowKind Type
+                | NeverLike
                 deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
 data Type = Var TypeVar [Constraint]
@@ -46,7 +47,8 @@ isFunction type = case type of
 collectVarsFromConstraints :: [Constraint] -> [TypeVar]
 collectVarsFromConstraints constraints = List.fold [] constraints (\all, c -> case c of
                 ClassConstraint _ associated_types -> List.fold all associated_types (\all, ty -> all + collectVars ty)
-                RowConstraint _ row_type -> all + collectVars row_type)
+                RowConstraint _ row_type -> all + collectVars row_type
+                NeverLike -> all)
 
 collectVars :: Type -> [TypeVar]
 collectVars type = case type of
@@ -98,6 +100,7 @@ traverseConstraints :: (Type -> Type) -> Constraint -> Constraint
 traverseConstraints f constraint = case constraint of
     ClassConstraint qn associated_types -> ClassConstraint qn (List.map associated_types (traverse f))
     RowConstraint kind type -> RowConstraint kind (traverse f type)
+    NeverLike -> NeverLike
 
 traverse :: (Type -> Type) -> Type -> Type
 traverse f type = case type of
@@ -135,6 +138,7 @@ convertConstraintsToFixed :: Constraint -> Constraint
 convertConstraintsToFixed constraint = case constraint of
     ClassConstraint s associated_types -> ClassConstraint s (List.map associated_types fixedType)
     RowConstraint row_name row_type -> RowConstraint row_name (fixedType row_type)
+    NeverLike -> NeverLike
 
 fixedType :: Type -> Type
 fixedType type =
