@@ -6,6 +6,7 @@ import Siko.Query.Item as I
 import Siko.Query.Database as DB
 import Siko.HIR.Class as HC
 import Siko.HIR.Data as HD
+import Siko.HIR.Type as HT
 import Siko.HIR.Function as HF
 import Siko.HIR.Effect as HE
 import Siko.HIR.Backend.Typechecker.Function as TF
@@ -25,6 +26,7 @@ class AdtProvider a where
 
 class FunctionProvider a where
     getFunction a :: a -> FQ.FullyQualifiedName -> HF.Function ()
+    getUpdateTransformedFunction a :: a -> FQ.FullyQualifiedName -> HF.Function HT.Type
 
 class VariantInfoProvider a where
     getVariantInfo a :: a -> FQ.FullyQualifiedName -> HD.VariantInfo
@@ -97,6 +99,11 @@ instance FunctionProvider Driver where
         key <- I.ResolvedFunctionKey qn
         f <- DB.get driver.db key
         I.asResolvedFunction f
+
+    getUpdateTransformedFunction driver qn = do
+        key <- I.UpdateTransformedFunctionKey qn
+        f <- DB.get driver.db key
+        I.asUpdateTransformedFunction f
 
 instance EffectProvider Driver where
     getEffect driver qn = do

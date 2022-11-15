@@ -48,8 +48,7 @@ processPatterns context pattern_env env patterns = do
 processPattern a :: (ResolverState a) => Context a -> PatternEnvironment -> Environment -> SP.Pattern -> (Context a, PatternEnvironment, Environment, HP.Pattern ())
 processPattern context pattern_env env (SP.Pattern pattern location) = do
     context :: Context a <- context // FIXME
-    (state, pattern_id) <- getNextPatternId context.state
-    context <- context { state = state }
+    (context, pattern_id) <- getPatternId context
     (context, pattern_env, env, hir_pattern) <- case pattern of
         SP.Binding name -> do
             bind_ref <- HP.BindRef (getString name) pattern_id

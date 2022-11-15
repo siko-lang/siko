@@ -2,6 +2,7 @@ module Siko.HIR.FullyQualifiedName where
 
 import Siko.Syntax.Location
 import Siko.HIR.Function as F
+import Siko.HIR.Effect as Eff
 import Siko.HIR.Class as C
 import Siko.Util.SharedString as SS
 
@@ -12,7 +13,7 @@ data FullyQualifiedName = FullPath SS.SharedString SS.SharedString
                         | FullPathWithInstanceId SS.SharedString SS.SharedString FullyQualifiedName
                         | ModulePath SS.SharedString
                         | SubItem FullyQualifiedName SS.SharedString
-                        | Effectless SS.SharedString SS.SharedString
+                        | Effectless FullyQualifiedName Eff.EffectResolutionSet
                         deriving (PartialEq, Eq, PartialOrd, Ord)
 
 instance Show FullyQualifiedName where
@@ -24,7 +25,7 @@ instance Show FullyQualifiedName where
         FullPathWithInstanceId m n i -> "{}.{}/#{}" % (m, n, i)
         ModulePath m -> "{}" % m
         SubItem p n -> "{}/{}" % (p, n)
-        Effectless m n -> "{}.{}" % (m, n)
+        Effectless n s -> "{}.{}" % (n, s)
 
 getResolvableName :: FullyQualifiedName -> SS.SharedString
 getResolvableName f = do
@@ -36,7 +37,7 @@ getResolvableName f = do
         FullPathWithInstanceId m n i -> panic "getResolvableName called for a instance member"
         ModulePath m -> panic "getResolvableName called for a module"
         SubItem p n -> panic "getResolvableName called for a sub item"
-        Effectless m n -> "{}.{}" % (m, n)
+        Effectless n s -> return getResolvableName n
     SS.create s
 
 getShortName :: FullyQualifiedName -> SS.SharedString
@@ -48,7 +49,7 @@ getShortName f = case f of
         FullPathWithInstanceId m n i -> n
         ModulePath m -> m
         SubItem p n -> n
-        Effectless m n -> n
+        Effectless n s -> getShortName n
 
 getModuleName :: FullyQualifiedName -> SS.SharedString
 getModuleName f = case f of
@@ -59,4 +60,4 @@ getModuleName f = case f of
         FullPathWithInstanceId m n i -> m
         ModulePath m -> m
         SubItem p n -> getModuleName p
-        Effectless m n -> m
+        Effectless n s -> getModuleName n

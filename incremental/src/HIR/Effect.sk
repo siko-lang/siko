@@ -3,6 +3,17 @@ module Siko.HIR.Effect where
 import Siko.HIR.FullyQualifiedName
 import Siko.HIR.Type
 import Siko.Syntax.Location
+import Map
+
+data MemberId = MemberId Int deriving (PartialEq, Eq, PartialOrd, Ord, Show)
+
+data Resolution = StaticResolution FullyQualifiedName
+                | DynamicResolution MemberId Type
+                deriving (PartialEq, Eq, PartialOrd, Ord, Show)
+
+data EffectResolutionSet = { resolutions :: Map FullyQualifiedName Resolution,
+                             effect_types :: Map FullyQualifiedName Type,
+                           } deriving (PartialEq, Eq, PartialOrd, Ord, Show)
 
 data Effect = { name :: FullyQualifiedName,
                 location :: Location,

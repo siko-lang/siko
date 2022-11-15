@@ -1,10 +1,15 @@
 module Siko.Query.HIRLowering where
 
 import Siko.Query.Driver
+import Siko.HIR.Effect as Eff
+import Siko.HIR.FullyQualifiedName as FQ
 import Siko.HIR.Backend.StateProvider as BSP
 import Siko.Query.Item as I
 import Siko.Query.Database as DB
 import Siko.HIR.Backend.UpdateTransformer as UT
+import Siko.HIR.Backend.EffectResolver as ER
+import Siko.Constants
+import Map
 
 transformUpdates :: Driver -> I.Key -> Driver
 transformUpdates driver key = do
@@ -12,6 +17,32 @@ transformUpdates driver key = do
     fn <- I.asTypedFunction fn
     state <- BSP.createStateProvider driver
     (state, fn) <- UT.processFunction state fn
+    base_main_qn <- FQ.FullPath getMainModuleName getMainFunctionName
+    is_main <- fn.name == base_main_qn
     key <- I.UpdateTransformedFunctionKey fn.name
     item <- I.UpdateTransformedFunction fn
-    addToDb driver key item
+    driver <- addToDb driver key item
+    if is_main
+    then do
+        resolution_set <- Eff.EffectResolutionSet Map.empty Map.empty
+        resolve_main_cmd <- I.ResolveEffects (I.ResolvedEffectsFunctionKey (FQ.Effectless base_main_qn resolution_set))
+        addCommands driver [resolve_main_cmd]
+    else driver
+
+resolveEffects :: Driver -> I.Key -> Driver
+resolveEffects driver key = do
+    case DB.getOpt driver.db key of
+        Some resolved_fn -> driver
+        None -> do
+            case I.getFullyQualifiedName key of
+                FQ.Effectless base_qn resolution_set -> do
+                    fn <- DB.get driver.db (I.UpdateTransformedFunctionKey base_qn)
+                    fn <- I.asUpdateTransformedFunction fn
+                    state <- BSP.createStateProvider driver
+                    (state, fn) <- UT.processFunction state fn
+                    (state, resolved_fn, qns) <- ER.resolveEffects state base_qn resolution_set
+                    item <- I.ResolvedEffectsFunction resolved_fn
+                    cmds <- List.map qns (\qn -> I.ResolveEffects (I.ResolvedEffectsFunctionKey qn))
+                    driver <- addToDb driver key item
+                    addCommands driver cmds
+                qn -> panic "resolveEffects called with unexpected qn {}" % qn

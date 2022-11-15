@@ -9,24 +9,21 @@ import Siko.HIR.Expr
 import Siko.HIR.Pattern
 import Siko.HIR.Backend.Unification
 import Siko.HIR.TypeVarGenerator as TVG
-import Siko.HIR.Backend.PatternIdGenerator
 import Siko.Util.SharedString as SS
 import Siko.Query.Lookup as QL
 
 class (TypeVarGenerator a, QL.RecordProvider a, QL.AdtProvider a, QL.VariantInfoProvider a) => ResolverState a where
     addError a :: a -> ResolverError -> a
-    getNextPatternId a :: a -> (a, PatternId)
     getVarGen a :: a -> TVG.TypeVarGenerator
     setVarGen a :: a -> TVG.TypeVarGenerator -> a
 
 data ResolverStateProvider a = { var_gen :: TVG.TypeVarGenerator,
-                                 pattern_id_gen :: PatternIdGenerator,
                                  errors :: [ResolverError],
                                  provider :: a }
 
 createStateProvider a :: a -> ResolverStateProvider a
 createStateProvider provider =
-    ResolverStateProvider TVG.createTypeVarGenerator createPatternIdGenerator [] provider
+    ResolverStateProvider TVG.createTypeVarGenerator [] provider
 
 instance TypeVarGenerator ResolverStateProvider a where
     getNewTypeVar state = do
@@ -53,10 +50,6 @@ instance ResolverState ResolverStateProvider a where
     addError state err = do
         errors <- List.push state.errors err
         state { errors = errors }
-
-    getNextPatternId state = do
-        (pattern_id_gen, pattern_id) <- getNewPatternId state.pattern_id_gen
-        (state { pattern_id_gen = pattern_id_gen }, pattern_id)
 
     getVarGen state = state.var_gen
 

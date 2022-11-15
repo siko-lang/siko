@@ -6,6 +6,7 @@ import Siko.Syntax.Expr as SE
 import Siko.Syntax.Pattern as SP
 import Siko.HIR.Expr as HE
 import Siko.HIR.ExprIdGenerator
+import Siko.HIR.PatternIdGenerator
 import Siko.HIR.Pattern as HP
 import Siko.HIR.FullyQualifiedName as FQ
 import Siko.HIR.Data as HD
@@ -36,6 +37,7 @@ data Context a = { function_name :: FQ.FullyQualifiedName,
                    type_resolver :: TypeResolverState,
                    state :: a,
                    expr_id_gen :: ExprIdGenerator,
+                   pattern_id_gen :: PatternIdGenerator,
                    next_lambda_id :: Int,
                    lambda_helper :: Option LambdaHelper,
                    lambdas :: [F.LambdaInfo],
@@ -47,13 +49,15 @@ createContext a :: FQ.FullyQualifiedName ->
                    TypeResolverState ->
                    a ->
                    ExprIdGenerator ->
+                   PatternIdGenerator ->
                    F.FunctionScopeResolver ->
                    Context a
-createContext function_name type_resolver state expr_id_gen function_scope_resolver = Context {
+createContext function_name type_resolver state expr_id_gen pattern_id_gen function_scope_resolver = Context {
     function_name = function_name,
     type_resolver = type_resolver,
     state = state,
     expr_id_gen = expr_id_gen,
+    pattern_id_gen = pattern_id_gen,
     next_lambda_id = 1,
     lambda_helper = None,
     lambdas = [],
@@ -68,8 +72,8 @@ getExprId context = do
 
 getPatternId a :: (ResolverState a) => Context a -> (Context a, HP.PatternId)
 getPatternId context = do
-    (state, pattern_id) <- getNextPatternId context.state
-    context <- context { state = state }
+    (pattern_id_gen, pattern_id) <- getNewPatternId context.pattern_id_gen
+    context <- context { pattern_id_gen = pattern_id_gen }
     (context, pattern_id)
 
 createLambdaName a :: Context a -> (Context a, HF.LambdaId, FQ.FullyQualifiedName)

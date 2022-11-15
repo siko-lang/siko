@@ -35,6 +35,7 @@ data Command = CollectLocalItems Key
              | CreateFunctionGroups
              | TypeCheckFunctionGroup Key
              | TransformUpdates Key
+             | ResolveEffects Key
              deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
 getPriority :: Command -> Int
@@ -56,6 +57,7 @@ getPriority cmd = case cmd of
     CreateFunctionGroups -> 14
     TypeCheckFunctionGroup _ -> 15
     TransformUpdates _ -> 16
+    ResolveEffects _ -> 17
 
 data ItemKind = UnresolvedModuleKind
               | LocalItemsKind
@@ -82,6 +84,7 @@ data ItemKind = UnresolvedModuleKind
               | RegisteredInstanceKind
               | TypedFunctionKind
               | UpdateTransformedFunctionKind
+              | ResolvedEffectsFunctionKind
               deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
 data Item = UnresolvedModule M.Module
@@ -109,6 +112,7 @@ data Item = UnresolvedModule M.Module
           | RegisteredInstance TC.InstanceInfo
           | TypedFunction (HF.Function HT.Type)
           | UpdateTransformedFunction (HF.Function HT.Type)
+          | ResolvedEffectsFunction (HF.Function HT.Type)
           deriving (Show, PartialEq, Eq)
 
 data Key = UnresolvedModuleKey String
@@ -136,6 +140,7 @@ data Key = UnresolvedModuleKey String
          | RegisteredInstanceKey TC.InstanceKey
          | TypedFunctionKey FQ.FullyQualifiedName
          | UpdateTransformedFunctionKey FQ.FullyQualifiedName
+         | ResolvedEffectsFunctionKey FQ.FullyQualifiedName
          deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
 asUnresolvedModule :: Item -> M.Module
@@ -263,6 +268,11 @@ asUpdateTransformedFunction item = case item of
     UpdateTransformedFunction f -> f
     _ -> panic "{} is not UpdateTransformedFunction" % item
 
+asResolvedEffectsFunction :: Item -> HF.Function HT.Type
+asResolvedEffectsFunction item = case item of
+    ResolvedEffectsFunction f -> f
+    _ -> panic "{} is not ResolvedEffectsFunction" % item
+
 getModuleName :: Key -> String
 getModuleName key = case key of
     UnresolvedModuleKey n -> n
@@ -290,6 +300,7 @@ getModuleName key = case key of
     RegisteredInstanceKey key -> panic "getModuleName called for {}" % key
     TypedFunctionKey qn -> SS.get (FQ.getModuleName qn)
     UpdateTransformedFunctionKey qn -> SS.get (FQ.getModuleName qn)
+    ResolvedEffectsFunctionKey qn -> SS.get (FQ.getModuleName qn)
 
 getFullyQualifiedName :: Key -> FQ.FullyQualifiedName
 getFullyQualifiedName key = case key of
@@ -318,6 +329,7 @@ getFullyQualifiedName key = case key of
     RegisteredInstanceKey key -> panic "getFullyQualifiedName called for {}" % key
     TypedFunctionKey qn -> qn
     UpdateTransformedFunctionKey qn -> qn
+    ResolvedEffectsFunctionKey qn -> qn
 
 getKind :: Item -> ItemKind
 getKind item = case item of
@@ -346,3 +358,4 @@ getKind item = case item of
     RegisteredInstance _ -> RegisteredInstanceKind
     TypedFunction _ -> TypedFunctionKind
     UpdateTransformedFunction _ -> UpdateTransformedFunctionKind
+    ResolvedEffectsFunction _ -> ResolvedEffectsFunctionKind

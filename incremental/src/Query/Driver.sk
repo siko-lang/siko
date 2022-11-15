@@ -101,12 +101,18 @@ executeCommand driver cmd = do
         I.CreateFunctionGroups -> QT.createFunctionGroups driver
         I.TypeCheckFunctionGroup key -> QT.typeCheckFunctionGroup driver key
         I.TransformUpdates key -> HL.transformUpdates driver key
+        I.ResolveEffects key -> HL.resolveEffects driver key
+
+addCommands :: Driver -> [I.Command] -> Driver
+addCommands driver cmds = do
+    pending_commands <- driver.pending_commands + cmds
+    driver { pending_commands = pending_commands }
 
 addToDb :: Driver -> I.Key -> I.Item -> Driver
 addToDb driver key item = do
     (db, cmds) <- DB.addItem driver.db key item
-    pending_commands <- driver.pending_commands + cmds
-    driver { db = db, pending_commands = pending_commands }
+    driver <- driver { db = db }
+    addCommands driver cmds
 
 commitChanges :: Driver -> Driver
 commitChanges driver = do
@@ -128,7 +134,7 @@ commitChanges driver = do
             R.RemovedModule name -> do
                 key <- I.UnresolvedModuleKey name
                 (db, cmds) <- DB.removeItem driver.db key
-                pending_commands <- driver.pending_commands + cmds
-                driver { db = db, pending_commands = pending_commands }
+                driver <- driver { db = db }
+                addCommands driver cmds
         )
     executeCommands driver
