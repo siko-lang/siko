@@ -174,29 +174,25 @@ processExpr context expr = do
                 None -> (context, body)
         E.StaticFunctionCall qn args -> do
             fn <- QL.getUpdateTransformedFunction context.state qn
-            case fn.body of
-                Some _ -> do
-                    effects <- Option.unwrap fn.effects
-                    if List.isEmpty effects
-                    then do
-                        effectless_id <- FQ.Effectless qn (Eff.EffectResolutionSet Map.empty Map.empty)
-                        context <- context { queue = List.push context.queue effectless_id }
-                        (context, E.Expr (E.StaticFunctionCall effectless_id args) id type location)
-                    else do
-                        effect_context <- getCurrentEffectContext context
-                        effectless_id <- FQ.Effectless qn effect_context.resolution
-                        args <- if isDynamic effect_context
-                        then do
-                            dyn_ref <- getDynRef effect_context
-                            (context, ref_id) <- getNextExprId context
-                            dynamic_context_type <- getDynamicResolutionTupleType effect_context.resolution
-                            arg_ref <- E.Expr dyn_ref ref_id dynamic_context_type location
-                            [arg_ref] + args
-                        else args
-                        context <- context { queue = List.push context.queue effectless_id }
-                        (context, E.Expr (E.StaticFunctionCall effectless_id args) id type location)
-                None -> // extern function
-                    (context, E.Expr (E.StaticFunctionCall qn args) id type location)
+            effects <- Option.unwrap fn.effects
+            if List.isEmpty effects
+            then do
+                effectless_id <- FQ.Effectless qn (Eff.EffectResolutionSet Map.empty Map.empty)
+                context <- context { queue = List.push context.queue effectless_id }
+                (context, E.Expr (E.StaticFunctionCall effectless_id args) id type location)
+            else do
+                effect_context <- getCurrentEffectContext context
+                effectless_id <- FQ.Effectless qn effect_context.resolution
+                args <- if isDynamic effect_context
+                then do
+                    dyn_ref <- getDynRef effect_context
+                    (context, ref_id) <- getNextExprId context
+                    dynamic_context_type <- getDynamicResolutionTupleType effect_context.resolution
+                    arg_ref <- E.Expr dyn_ref ref_id dynamic_context_type location
+                    [arg_ref] + args
+                else args
+                context <- context { queue = List.push context.queue effectless_id }
+                (context, E.Expr (E.StaticFunctionCall effectless_id args) id type location)
         E.EffectMemberCall qn args -> do
             effect_context <- getCurrentEffectContext context
             case get effect_context.resolution.resolutions qn of

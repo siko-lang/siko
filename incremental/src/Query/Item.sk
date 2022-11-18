@@ -36,6 +36,7 @@ data Command = CollectLocalItems Key
              | TypeCheckFunctionGroup Key
              | TransformUpdates Key
              | ResolveEffects Key
+             | Monomorphize Key
              deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
 getPriority :: Command -> Int
@@ -58,6 +59,7 @@ getPriority cmd = case cmd of
     TypeCheckFunctionGroup _ -> 15
     TransformUpdates _ -> 16
     ResolveEffects _ -> 17
+    Monomorphize _ -> 18
 
 data ItemKind = UnresolvedModuleKind
               | LocalItemsKind
@@ -85,6 +87,7 @@ data ItemKind = UnresolvedModuleKind
               | TypedFunctionKind
               | UpdateTransformedFunctionKind
               | ResolvedEffectsFunctionKind
+              | MonomorphizedFunctionKind
               deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
 data Item = UnresolvedModule M.Module
@@ -113,6 +116,7 @@ data Item = UnresolvedModule M.Module
           | TypedFunction (HF.Function HT.Type)
           | UpdateTransformedFunction (HF.Function HT.Type)
           | ResolvedEffectsFunction (HF.Function HT.Type)
+          | MonomorphizedFunction (HF.Function HT.Type)
           deriving (Show, PartialEq, Eq)
 
 data Key = UnresolvedModuleKey String
@@ -141,6 +145,7 @@ data Key = UnresolvedModuleKey String
          | TypedFunctionKey FQ.FullyQualifiedName
          | UpdateTransformedFunctionKey FQ.FullyQualifiedName
          | ResolvedEffectsFunctionKey FQ.FullyQualifiedName
+         | MonomorphizedFunctionKey FQ.FullyQualifiedName
          deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
 asUnresolvedModule :: Item -> M.Module
@@ -273,6 +278,11 @@ asResolvedEffectsFunction item = case item of
     ResolvedEffectsFunction f -> f
     _ -> panic "{} is not ResolvedEffectsFunction" % item
 
+asMonomorphizedFunction :: Item -> HF.Function HT.Type
+asMonomorphizedFunction item = case item of
+    MonomorphizedFunction f -> f
+    _ -> panic "{} is not MonomorphizedFunction" % item
+
 getModuleName :: Key -> String
 getModuleName key = case key of
     UnresolvedModuleKey n -> n
@@ -301,6 +311,7 @@ getModuleName key = case key of
     TypedFunctionKey qn -> SS.get (FQ.getModuleName qn)
     UpdateTransformedFunctionKey qn -> SS.get (FQ.getModuleName qn)
     ResolvedEffectsFunctionKey qn -> SS.get (FQ.getModuleName qn)
+    MonomorphizedFunctionKey qn -> SS.get (FQ.getModuleName qn)
 
 getFullyQualifiedName :: Key -> FQ.FullyQualifiedName
 getFullyQualifiedName key = case key of
@@ -330,6 +341,7 @@ getFullyQualifiedName key = case key of
     TypedFunctionKey qn -> qn
     UpdateTransformedFunctionKey qn -> qn
     ResolvedEffectsFunctionKey qn -> qn
+    MonomorphizedFunctionKey qn -> qn
 
 getKind :: Item -> ItemKind
 getKind item = case item of
@@ -359,3 +371,4 @@ getKind item = case item of
     TypedFunction _ -> TypedFunctionKind
     UpdateTransformedFunction _ -> UpdateTransformedFunctionKind
     ResolvedEffectsFunction _ -> ResolvedEffectsFunctionKind
+    MonomorphizedFunction _ -> MonomorphizedFunctionKind

@@ -4,6 +4,8 @@ import Siko.Syntax.Location
 import Siko.HIR.Function as F
 import Siko.HIR.Effect as Eff
 import Siko.HIR.Class as C
+import Siko.HIR.Type as T
+import Siko.HIR.TypeFormatter as TF
 import Siko.Util.SharedString as SS
 
 data FullyQualifiedName = FullPath SS.SharedString SS.SharedString
@@ -14,6 +16,7 @@ data FullyQualifiedName = FullPath SS.SharedString SS.SharedString
                         | ModulePath SS.SharedString
                         | SubItem FullyQualifiedName SS.SharedString
                         | Effectless FullyQualifiedName Eff.EffectResolutionSet
+                        | Monomorphized FullyQualifiedName T.Type
                         deriving (PartialEq, Eq, PartialOrd, Ord)
 
 instance Show FullyQualifiedName where
@@ -25,7 +28,8 @@ instance Show FullyQualifiedName where
         FullPathWithInstanceId m n i -> "{}.{}/#{}" % (m, n, i)
         ModulePath m -> "{}" % m
         SubItem p n -> "{}/{}" % (p, n)
-        Effectless n s -> "{}.{}" % (n, s)
+        Effectless n s -> "{}=[{}]" % (n, s)
+        Monomorphized n type -> "{}=[{}]" % (n, TF.toString type)
 
 getResolvableName :: FullyQualifiedName -> SS.SharedString
 getResolvableName f = do
@@ -38,6 +42,7 @@ getResolvableName f = do
         ModulePath m -> panic "getResolvableName called for a module"
         SubItem p n -> panic "getResolvableName called for a sub item"
         Effectless n s -> return getResolvableName n
+        Monomorphized n type -> return getResolvableName n
     SS.create s
 
 getShortName :: FullyQualifiedName -> SS.SharedString
@@ -50,6 +55,7 @@ getShortName f = case f of
         ModulePath m -> m
         SubItem p n -> n
         Effectless n s -> getShortName n
+        Monomorphized n type -> getShortName n
 
 getModuleName :: FullyQualifiedName -> SS.SharedString
 getModuleName f = case f of
@@ -61,3 +67,4 @@ getModuleName f = case f of
         ModulePath m -> m
         SubItem p n -> getModuleName p
         Effectless n s -> getModuleName n
+        Monomorphized n type -> getModuleName n

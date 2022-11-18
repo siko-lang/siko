@@ -35,11 +35,15 @@ getFieldName index = "field{}" % index
 
 instantiateGeneric a d :: (U.Context a, S.Collectable d, S.Transform d) => d -> a -> (d, a)
 instantiateGeneric data_type context = do
-    collector <- S.collect S.createCollector data_type
-    vars <- collector.type_vars |> List.sort |> List.dedup
-    (mapper, context) <- initMapper collector.type_vars collector.nevers context
+    (mapper, context) <- instantiateGenericMapper data_type context
     (mapper, data_type) <- S.transform mapper data_type remapType
     (data_type, context)
+
+instantiateGenericMapper a d :: (U.Context a, S.Collectable d, S.Transform d) => d -> a -> (Mapper, a)
+instantiateGenericMapper data_type context = do
+    collector <- S.collect S.createCollector data_type
+    vars <- collector.type_vars |> List.sort |> List.dedup
+    initMapper collector.type_vars collector.nevers context
 
 data Mapper = { vars :: Map SS.SharedString T.TypeVar, nevers :: [T.TypeVar] } deriving (Show)
 

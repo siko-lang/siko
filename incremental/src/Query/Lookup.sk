@@ -27,6 +27,7 @@ class AdtProvider a where
 class FunctionProvider a where
     getFunction a :: a -> FQ.FullyQualifiedName -> HF.Function ()
     getUpdateTransformedFunction a :: a -> FQ.FullyQualifiedName -> HF.Function HT.Type
+    getResolvedEffectsFunction a :: a -> FQ.FullyQualifiedName -> HF.Function HT.Type
 
 class VariantInfoProvider a where
     getVariantInfo a :: a -> FQ.FullyQualifiedName -> HD.VariantInfo
@@ -104,6 +105,11 @@ instance FunctionProvider Driver where
         key <- I.UpdateTransformedFunctionKey qn
         f <- DB.get driver.db key
         I.asUpdateTransformedFunction f
+
+    getResolvedEffectsFunction driver qn = do
+        key <- I.ResolvedEffectsFunctionKey qn
+        f <- DB.get driver.db key
+        I.asResolvedEffectsFunction f
 
 instance EffectProvider Driver where
     getEffect driver qn = do

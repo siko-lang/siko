@@ -10,6 +10,7 @@ data TraversalContext context b = { user_context :: context,
                                     pre_with_hook_fn :: Option (context -> E.ExprId -> [E.EffectHandler b] -> [E.EffectType b] -> Location -> context),
                                     post_with_hook_fn :: Option (context -> E.ExprId -> context),
                                     type_converter_fn :: Option (b -> b),
+                                    type_converter_with_context_fn :: Option (context -> b -> (context, b)),
                                   }
 
 setPreWithHook context b :: TraversalContext context b -> (context -> E.ExprId -> [E.EffectHandler b] -> [E.EffectType b] -> Location -> context) -> TraversalContext context b
@@ -20,6 +21,9 @@ setPostWithHook context hook = context { post_with_hook_fn = Some hook }
 
 setTypeConverter context b :: TraversalContext context b -> (b -> b) -> TraversalContext context b
 setTypeConverter context fn = context { type_converter_fn = Some fn }
+
+setTypeConverterWithContext context b :: TraversalContext context b -> (context -> b -> (context, b)) -> TraversalContext context b
+setTypeConverterWithContext context fn = context { type_converter_with_context_fn = Some fn }
 
 processExprs context b :: TraversalContext context b -> [E.Expr b] -> (TraversalContext context b, [E.Expr b])
 processExprs context args =
@@ -67,6 +71,11 @@ internalTraverse context expr = do
     type <- case context.type_converter_fn of
         Some fn -> fn type
         None -> type
+    (context, type) <- case context.type_converter_with_context_fn of
+        Some fn -> do
+            (user_context, type) <- fn context.user_context type
+            (context { user_context = user_context }, type)
+        None -> (context, type)
     (context, expr) <- case e of
         E.StaticFunctionCall qn args -> do
             (context, args) <- processExprs context args
@@ -173,7 +182,7 @@ internalTraverse context expr = do
 
 createTraversalContext context b :: context -> (context -> E.Expr b -> (context, E.Expr b)) ->
                                                (context -> P.Pattern b -> (context, P.Pattern b)) -> TraversalContext context b
-createTraversalContext context expr_fn pattern_fn = TraversalContext context expr_fn pattern_fn None None None
+createTraversalContext context expr_fn pattern_fn = TraversalContext context expr_fn pattern_fn None None None None
 
 traverse context b :: TraversalContext context b -> E.Expr b -> (context, E.Expr b)
 traverse context expr = do

@@ -1,0 +1,76 @@
+module Siko.HIR.Backend.Monomorphization where
+
+import Siko.Syntax.Ident
+import Siko.HIR.FullyQualifiedName as FQ
+import Siko.HIR.Pattern as Pt
+import Siko.HIR.Expr as E
+import Siko.HIR.Type as T
+import Siko.HIR.Pattern as P
+import Siko.HIR.TypeFormatter as TF
+import Siko.HIR.Data as D
+import Siko.HIR.Function as F
+import Siko.HIR.Backend.Traversal
+import Siko.HIR.Backend.StateProvider
+import Siko.HIR.ExprIdGenerator
+import Siko.HIR.TypeVarGenerator as TVG
+import Siko.HIR.Backend.Unification.Data as UD
+import Siko.HIR.Backend.Unification as U
+import Siko.HIR.Backend.Unification.Util as UUtil
+import Siko.HIR.Backend.Unification.Substitution as S
+import Siko.Query.Lookup as QL
+
+data Context a = { state :: a, queue :: [FQ.FullyQualifiedName], mapper :: UUtil.Mapper }
+
+typeConverter a :: (StateProvider a) => S.Substitution -> Context a -> T.Type -> (Context a, T.Type)
+typeConverter sub context type = do
+    (mapper, type) <- S.transform context.mapper type UUtil.remapType
+    context <- context { mapper = mapper }
+    (context, S.apply type sub)
+
+processExpr a :: (StateProvider a) => Context a -> E.Expr T.Type -> (Context a, E.Expr T.Type)
+processExpr context expr = do
+    E.Expr s_expr id expr_type location <- expr
+    case s_expr of
+        E.StaticFunctionCall qn args -> do
+            fn <- QL.getResolvedEffectsFunction context.state qn
+            fn_type <- Option.unwrap fn.type
+            (fn_type, state) <- UUtil.instantiateGeneric fn_type context.state
+            context <- context { state = state }
+            arg_types <- List.map args (\E.Expr _ _ t _ -> t)
+            // println "calling {}" % qn
+            // println "fn_type {}" % (TF.toString fn_type)
+            // println "arg_types {}" % (TF.toStringTypes arg_types)
+            (state, fn_type, sub) <- UUtil.getFunctionType state arg_types expr_type fn_type
+            //println "result {}" % (TF.toString fn_type)
+            context <- context { state = state }
+            monomorphized_qn <- FQ.Monomorphized qn fn_type
+            context <- context { queue = List.push context.queue monomorphized_qn }
+            (context, E.Expr (E.StaticFunctionCall monomorphized_qn args) id expr_type location)
+        s_expr -> (context, E.Expr s_expr id expr_type location)
+
+processPattern a :: (StateProvider a) => Context a -> P.Pattern T.Type -> (Context a, P.Pattern T.Type)
+processPattern context pattern = (context, pattern)
+
+monomorphizeFunction a :: (StateProvider a) => a -> FQ.FullyQualifiedName -> T.Type -> (a, F.Function T.Type, [FQ.FullyQualifiedName])
+monomorphizeFunction state orig_qn type = do
+    println "monomorphizeFunction {} with {}" % (orig_qn, TF.toString type)
+    fn <- QL.getResolvedEffectsFunction state orig_qn
+    (state, queue, body) <- case fn.body of
+        Some body -> do
+            sub <- S.createSubstitution
+            fn_type <- case fn.type of
+                Some fn_type -> fn_type
+                None -> panic "No type for fn in monomorphization {}" % orig_qn
+            (mapper, state) <- UUtil.instantiateGenericMapper fn_type state
+            (mapper, fn_type) <- S.transform mapper fn_type UUtil.remapType
+            context <- Context state [] mapper
+            (context, sub) <- case U.unify context.state sub type fn_type of
+                Ok (state, sub) -> (context { state = state }, sub)
+                Err _ -> panic "Monomorphization: failed to unify {} {}" % (TF.toString type, TF.toString fn_type)
+            traversal_context <- createTraversalContext context processExpr processPattern
+            traversal_context <- setTypeConverterWithContext traversal_context (typeConverter sub)
+            (context, body) <- traverse traversal_context body
+            (state, context.queue, Some body)
+        None -> (state, [], None)
+    fn <- fn { body = body, type = Some type }
+    (state, fn, queue)
