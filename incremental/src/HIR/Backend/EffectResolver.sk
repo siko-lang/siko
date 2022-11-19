@@ -177,12 +177,12 @@ processExpr context expr = do
             effects <- Option.unwrap fn.effects
             if List.isEmpty effects
             then do
-                effectless_id <- FQ.Effectless qn (Eff.EffectResolutionSet Map.empty Map.empty)
+                effectless_id <- FQ.Effectless qn None
                 context <- context { queue = List.push context.queue effectless_id }
                 (context, E.Expr (E.StaticFunctionCall effectless_id args) id type location)
             else do
                 effect_context <- getCurrentEffectContext context
-                effectless_id <- FQ.Effectless qn effect_context.resolution
+                effectless_id <- FQ.Effectless qn (Some effect_context.resolution)
                 args <- if isDynamic effect_context
                 then do
                     dyn_ref <- getDynRef effect_context
@@ -219,7 +219,6 @@ typeConverter sub type = S.apply type sub
 
 resolveEffects a :: (StateProvider a) => a -> FQ.FullyQualifiedName -> Eff.EffectResolutionSet -> (a, F.Function T.Type, [FQ.FullyQualifiedName])
 resolveEffects state orig_qn resolution_set = do
-    new_qn <- FQ.Effectless orig_qn resolution_set
     fn <- QL.getUpdateTransformedFunction state orig_qn
     context <- Context [] fn.expr_id_gen fn.pattern_id_gen Map.empty state []
     context <- addEffectContext context resolution_set (Some FromArg)
@@ -254,7 +253,7 @@ resolveEffects state orig_qn resolution_set = do
             None -> None
         (fn.arg_count + 1, fn_type)
     else (fn.arg_count, fn.type)
-    fn <- fn { name = new_qn, arg_count = arg_count, type = fn_type, body = body, effects = Some [],
+    fn <- fn { arg_count = arg_count, type = fn_type, body = body, effects = Some [],
                expr_id_gen = context.expr_id_gen, pattern_id_gen = context.pattern_id_gen }
     (context.state, fn, context.queue)
 

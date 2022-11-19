@@ -143,8 +143,9 @@ convertConstraintsToFixed constraint = case constraint of
 fixedType :: Type -> Type
 fixedType type =
     case type of
-        Var var constraints -> do
-            name <- SS.create "t{}" % var
+        Var _ constraints if constraints == [NeverLike] -> Never
+        Var (TypeVar i) constraints -> do
+            name <- SS.create "t{}" % i
             FixedTypeArg name (List.map constraints convertConstraintsToFixed)
         FixedTypeArg n constraints -> FixedTypeArg n (List.map constraints convertConstraintsToFixed)
         Named n args -> do

@@ -23,6 +23,7 @@ class ClassProvider a where
 
 class (TypeVarGenerator a, DataProvider a, ClassProvider a) => Context a where
     ignoreConstraints a :: a -> Bool
+    ignoreNever a :: a -> Bool
 
 trySub a :: a -> Substitution -> TypeVar -> Type -> Result (a, Substitution) (a, Substitution)
 trySub context sub var type =
@@ -211,8 +212,12 @@ unify context sub type1 type2 = do
             (context, sub) <- try unify context sub to1 to2
             Ok (context, sub)
         (Never, Never) -> Ok (context, sub)
-        (Never, type2) -> Err (context, sub)
-        (type1, Never) -> Err (context, sub)
+        (Never, type2) -> if ignoreNever context
+            then Ok (context, sub)
+            else Err (context, sub)
+        (type1, Never) -> if ignoreNever context
+            then Ok (context, sub)
+            else Err (context, sub)
         (Ref _ type1, type2) -> unify context sub type1 type2
         (type1, Ref _ type2) -> unify context sub type1 type2
         (Owner type1, type2) -> unify context sub type1 type2

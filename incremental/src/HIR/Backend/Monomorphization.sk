@@ -23,6 +23,7 @@ data Context a = { state :: a, queue :: [FQ.FullyQualifiedName], mapper :: UUtil
 
 typeConverter a :: (StateProvider a) => S.Substitution -> Context a -> T.Type -> (Context a, T.Type)
 typeConverter sub context type = do
+    //println "type {} context mapper {}" % (TF.toString type, context.mapper)
     (mapper, type) <- S.transform context.mapper type UUtil.remapType
     context <- context { mapper = mapper }
     (context, S.apply type sub)
@@ -34,8 +35,9 @@ processExpr context expr = do
         E.StaticFunctionCall qn args -> do
             fn <- QL.getResolvedEffectsFunction context.state qn
             fn_type <- Option.unwrap fn.type
-            (fn_type, state) <- UUtil.instantiateGeneric fn_type context.state
-            context <- context { state = state }
+            (mapper, state) <- UUtil.instantiateGenericMapper fn_type context.state
+            mapper <- UUtil.skipNever mapper
+            (mapper, fn_type) <- S.transform mapper fn_type UUtil.remapType
             arg_types <- List.map args (\E.Expr _ _ t _ -> t)
             // println "calling {}" % qn
             // println "fn_type {}" % (TF.toString fn_type)
@@ -53,7 +55,7 @@ processPattern context pattern = (context, pattern)
 
 monomorphizeFunction a :: (StateProvider a) => a -> FQ.FullyQualifiedName -> T.Type -> (a, F.Function T.Type, [FQ.FullyQualifiedName])
 monomorphizeFunction state orig_qn type = do
-    println "monomorphizeFunction {} with {}" % (orig_qn, TF.toString type)
+    //println "monomorphizeFunction {} with {}" % (orig_qn, TF.toString type)
     fn <- QL.getResolvedEffectsFunction state orig_qn
     (state, queue, body) <- case fn.body of
         Some body -> do
@@ -62,6 +64,7 @@ monomorphizeFunction state orig_qn type = do
                 Some fn_type -> fn_type
                 None -> panic "No type for fn in monomorphization {}" % orig_qn
             (mapper, state) <- UUtil.instantiateGenericMapper fn_type state
+            mapper <- UUtil.skipNever mapper
             (mapper, fn_type) <- S.transform mapper fn_type UUtil.remapType
             context <- Context state [] mapper
             (context, sub) <- case U.unify context.state sub type fn_type of

@@ -22,12 +22,13 @@ class (U.Context a,
     addError a :: a -> TypecheckerError -> a
 
 data StateProviderInstance a = { errors :: [TypecheckerError],
-                                    var_gen :: TVG.TypeVarGenerator,
-                                    provider :: a
-                                  }
+                                 var_gen :: TVG.TypeVarGenerator,
+                                 provider :: a,
+                                 ignore_never :: Bool,
+                               }
 
 createStateProvider a :: a -> StateProviderInstance a
-createStateProvider provider = StateProviderInstance [] TVG.createTypeVarGenerator provider
+createStateProvider provider = StateProviderInstance [] TVG.createTypeVarGenerator provider False
 
 instance StateProvider StateProviderInstance a where
     addError state err = do
@@ -36,6 +37,7 @@ instance StateProvider StateProviderInstance a where
 
 instance U.Context StateProviderInstance a where
     ignoreConstraints state = False
+    ignoreNever state = state.ignore_never
 
 instance U.TypeVarGenerator StateProviderInstance a where
     getNewTypeVar state = do

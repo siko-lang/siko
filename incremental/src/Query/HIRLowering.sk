@@ -31,8 +31,7 @@ transformUpdates driver key = do
     driver <- addToDb driver key item
     if is_entry_point
     then do
-        resolution_set <- Eff.EffectResolutionSet Map.empty Map.empty
-        resolve_cmd <- I.ResolveEffects (I.ResolvedEffectsFunctionKey (FQ.Effectless fn_name resolution_set))
+        resolve_cmd <- I.ResolveEffects (I.ResolvedEffectsFunctionKey (FQ.Effectless fn_name None))
         addCommands driver [resolve_cmd]
     else driver
 
@@ -43,6 +42,9 @@ resolveEffects driver key = do
         None -> do
             case I.getFullyQualifiedName key of
                 FQ.Effectless base_qn resolution_set -> do
+                    resolution_set <- case resolution_set of
+                        Some resolution_set -> resolution_set
+                        None -> Eff.EffectResolutionSet Map.empty Map.empty
                     fn <- DB.get driver.db (I.UpdateTransformedFunctionKey base_qn)
                     fn <- I.asUpdateTransformedFunction fn
                     base_main_qn <- FQ.FullPath getMainModuleName getMainFunctionName
@@ -70,6 +72,7 @@ monomorphize driver key = do
                     fn <- DB.get driver.db (I.ResolvedEffectsFunctionKey base_qn)
                     fn <- I.asResolvedEffectsFunction fn
                     state <- BSP.createStateProvider driver
+                    state <- state { ignore_never = True }
                     (state, monomorphized_fn, qns) <- MO.monomorphizeFunction state base_qn type
                     item <- I.MonomorphizedFunction monomorphized_fn
                     cmds <- List.map qns (\qn -> I.Monomorphize (I.MonomorphizedFunctionKey qn))

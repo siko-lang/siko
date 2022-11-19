@@ -15,7 +15,7 @@ data FullyQualifiedName = FullPath SS.SharedString SS.SharedString
                         | FullPathWithInstanceId SS.SharedString SS.SharedString FullyQualifiedName
                         | ModulePath SS.SharedString
                         | SubItem FullyQualifiedName SS.SharedString
-                        | Effectless FullyQualifiedName Eff.EffectResolutionSet
+                        | Effectless FullyQualifiedName (Option Eff.EffectResolutionSet)
                         | Monomorphized FullyQualifiedName T.Type
                         deriving (PartialEq, Eq, PartialOrd, Ord)
 
@@ -28,7 +28,9 @@ instance Show FullyQualifiedName where
         FullPathWithInstanceId m n i -> "{}.{}/#{}" % (m, n, i)
         ModulePath m -> "{}" % m
         SubItem p n -> "{}/{}" % (p, n)
-        Effectless n s -> "{}=[{}]" % (n, s)
+        Effectless n s -> case s of
+                Some s -> "{}=[{}]" % (n, s)
+                None -> "{}" % n
         Monomorphized n type -> "{}=[{}]" % (n, TF.toString type)
 
 getResolvableName :: FullyQualifiedName -> SS.SharedString
