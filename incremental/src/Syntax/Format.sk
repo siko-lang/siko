@@ -1,6 +1,9 @@
 module Siko.Syntax.Format where
 
+import Siko.Syntax.Module as M
+import Siko.Syntax.SourceFile
 import Siko.Syntax.Expr as E
+import Siko.Syntax.TypeSignature as T
 import Siko.Syntax.Pattern as P
 import Siko.Util.SharedString as SS
 
@@ -106,6 +109,11 @@ instance Format E.SimpleExpr where
 instance Format P.Pattern where
     format context (P.Pattern pat location) = format context pat
 
+instance Format P.RecordFieldPattern where
+    format context (P.RecordFieldPattern name pat) = do
+        (context, pat) <- format context pat
+        (context, "{} = {}" % (name, pat))
+
 instance Format P.SimplePattern where
     format context pat = case pat of
       P.Binding id -> (context, "{}" % id)
@@ -113,16 +121,53 @@ instance Format P.SimplePattern where
         (context, pats) <- List.mapS context pats format
         (context, "({})" % (join pats ", "))
       P.Constructor id pats -> do
-        (context, "<constructor>")
+        (context, pats) <- List.mapS context pats format
+        (context, "{} {}" % (id, join pats " "))
       P.Guarded pat body -> do
         (context, pat) <- format context pat
         (context, body) <- format context body
         (context, "{} if {}" % (pat, body))
-      P.Wildcard -> (context, "-")
+      P.Wildcard -> (context, "_")
       P.IntegerLiteral lit -> (context, "{}" % lit)
       P.StringLiteral lit -> (context, "\"{}\"" % lit)
       P.CharLiteral lit -> (context, "{}" % lit)
-      P.CharRange start end kind -> (context, "<range>")
-      P.Typed pat type -> (context, "<typed>")
-      P.Record id pats -> (context, "<record>")
-      P.Or patterns -> (context, "<or>")
+      P.CharRange start end kind -> case kind of
+            P.Exclusive -> (context, "{}..{}" % (start, end))
+            P.Inclusive -> (context, "{}..={}" % (start, end))
+      P.Typed pat type -> do
+        (context, pat) <- format context pat
+        (context, type) <- format context type
+        (context, "{} :: {}" % (pat, type))
+      P.Record id fields -> do
+        (context, fields) <- List.mapS context fields format
+        (context, show id + "{" + (join fields ", ") + "}")
+      P.Or pats -> do
+        (context, pats) <- List.mapS context pats format
+        (context, join pats "|")
+
+instance Format T.TypeSignature where
+    format context type_signature = (context, "")
+
+instance Format M.Item where
+    format context item = case item of
+        M.Function f -> (context, "function\n")
+        M.FunctionSignature f -> (context, "functionsig\n")
+        M.Adt adt -> (context, "adt\n")
+        M.Record record -> (context, "record\n")
+        M.Import i -> (context, "import\n")
+        M.Class c -> (context, "class\n")
+        M.Instance i -> (context, "instance\n")
+        M.Effect e -> (context, "effect\n")
+
+instance Format M.Module where
+    format context mod = do
+        m <- "module {} where\n" % (mod.name)
+        (context, m) <- List.fold (context, m) mod.items (\(context, m), item -> do
+            (context, i) <- format context item
+            (context, m + i))
+        (context, m)
+
+instance Format SourceFile where
+    format context source_file = do
+        (context, modules) <- List.mapS context source_file.modules format
+        (context, join modules "\n")

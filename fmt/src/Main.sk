@@ -1,0 +1,34 @@
+module Main where
+
+import Siko.Parser
+import Siko.Syntax.Location
+import Siko.Syntax.Format
+import IO
+
+processPath :: String -> [String]
+processPath path = do
+    if isDir path
+    then do
+        entries <- listDir path
+        List.fold [] entries (\files, entry -> if isDir entry
+            then files + processPath entry
+            else do
+                subs <- String.split entry "/"
+                file <- last subs
+                if endsWith file ".sk"
+                then List.push files (entry)
+                else files)
+    else [path]
+
+main = do
+    args <- getArgs
+    (_, args) <- List.remove args 0
+    names <- List.fold [] args (\names, arg -> names + processPath arg)
+    List.forEach names (\name -> do
+        source <- readTextFile name
+        println "Formatting {}" % name
+        (source_file, lexer_errors, parser_errors) <- parse (FileId 0) name source
+        context <- createContext
+        (context, output) <- format context source_file
+        println output)
+    ()
