@@ -14,7 +14,9 @@ import Siko.HIR.Backend.Typechecker.Class as TC
 
 class ClassProvider a where
     getClass a :: a -> FQ.FullyQualifiedName -> HC.Class
+    getClassTypeInfo a :: a -> FQ.FullyQualifiedName -> TC.ClassTypeInfo
     getAllDependencies a :: a -> FQ.FullyQualifiedName -> [FQ.FullyQualifiedName]
+    getInstance a :: a -> FQ.FullyQualifiedName -> HC.Instance
 
 class RecordProvider a where
     getRecord a :: a -> FQ.FullyQualifiedName -> HD.Record
@@ -66,10 +68,20 @@ instance ClassProvider Driver where
         c <- DB.get driver.db key
         I.asResolvedClass c
 
+    getClassTypeInfo driver qn = do
+        key <- I.ClassTypeInfoKey qn
+        c <- DB.get driver.db key
+        I.asClassTypeInfo c
+
     getAllDependencies driver qn = do
         key <- I.ClassTypeInfoKey qn
         c <- DB.get driver.db key
         (I.asClassTypeInfo c).all_dependencies
+
+    getInstance driver qn = do
+        key <- I.ResolvedInstanceKey qn
+        i <- DB.get driver.db key
+        I.asResolvedInstance i
 
 instance RecordProvider Driver where
     getRecord driver qn = do
