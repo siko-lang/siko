@@ -3,14 +3,27 @@ module Siko.Syntax.Format where
 import Siko.Syntax.Module as M
 import Siko.Syntax.SourceFile
 import Siko.Syntax.Expr as E
+import Siko.Syntax.Data as D
+import Siko.Syntax.Class as C
+import Siko.Syntax.Effect as Eff
+import Siko.Syntax.Import as I
+import Siko.Syntax.Function as F
 import Siko.Syntax.TypeSignature as T
 import Siko.Syntax.Pattern as P
 import Siko.Util.SharedString as SS
 
-data FormatterContext = {}
+data FormatterContext = { indent :: Int }
 
 createContext :: FormatterContext
-createContext = FormatterContext
+createContext = FormatterContext 0
+
+printLine :: FormatterContext -> String -> String
+printLine context line = do
+    ind <- loop (ind, index) <- ("", 0) do
+        if index >= context.indent
+        then break ind
+        else (ind + " ", index + 1)
+    "{}{}\n" % (ind, line)
 
 class Format a where
     format a :: FormatterContext -> a -> (FormatterContext, String)
@@ -23,6 +36,24 @@ instance Format E.Case where
         (context, pat) <- format context c.pattern
         (context, body) <- format context c.body
         (context, "{} -> {}" % (pat, body))
+
+instance Format E.Op where
+    format context op = do
+        op <- case op of
+            E.Equal -> "=="
+            E.NotEqual -> "!="
+            E.And -> "&&"
+            E.Or -> "||"
+            E.LessThan -> "<"
+            E.GreaterThan -> ">"
+            E.LessOrEqualThan -> "<="
+            E.GreaterOrEqualThan -> ">="
+            E.Add -> "+"
+            E.Sub -> "-"
+            E.Mul -> "*"
+            E.Div -> "/"
+            E.PipeForward -> "|>"
+        (context, op)
 
 instance Format E.SimpleExpr where
     format context expr = case expr of
@@ -38,6 +69,7 @@ instance Format E.SimpleExpr where
             (context, fn) <- format context fn
             (context, "{} {}" % (fn, join args " "))
         E.BinaryOp op lhs rhs -> do
+            (context, op) <- format context op
             (context, lhs) <- format context lhs
             (context, rhs) <- format context rhs
             (context, "{} {} {}" % (lhs, op, rhs))
@@ -56,7 +88,7 @@ instance Format E.SimpleExpr where
             (context, "{}" % name)
         E.IntegerLiteral lit -> (context, "{}" % lit)
         E.FloatLiteral lit -> (context, "{}" % lit)
-        E.StringLiteral lit -> (context, "{}" % lit)
+        E.StringLiteral lit -> (context, "\"{}\"" % lit)
         E.CharLiteral lit -> ((context, "{}" % lit))
         E.Do items -> do
             (context, items) <- List.mapS context items format
@@ -73,7 +105,7 @@ instance Format E.SimpleExpr where
             (context, "{}.{}" % (receiver, id))
         E.Formatter fmt args -> do
             (context, args) <- List.mapS context args format
-            (context, SS.get fmt + " % ({})" % (join args ", "))
+            (context, "\"{}\" % ({})" % (SS.get fmt, join args ", "))
         E.CaseOf body cases -> do
             (context, body) <- format context body
             (context, cases) <- List.mapS context cases format
@@ -146,28 +178,121 @@ instance Format P.SimplePattern where
         (context, join pats "|")
 
 instance Format T.TypeSignature where
-    format context type_signature = (context, "")
+    format context type_signature = (context, "<typesignature>")
 
 instance Format M.Item where
     format context item = case item of
-        M.Function f -> (context, "function\n")
-        M.FunctionSignature f -> (context, "functionsig\n")
-        M.Adt adt -> (context, "adt\n")
-        M.Record record -> (context, "record\n")
-        M.Import i -> (context, "import\n")
-        M.Class c -> (context, "class\n")
-        M.Instance i -> (context, "instance\n")
-        M.Effect e -> (context, "effect\n")
+        M.Function f -> do
+            (context, f) <- format context f
+            (context, "{}\n\n" % f)
+        M.FunctionSignature f -> do
+            (context, f) <- format context f
+            (context, "{}\n" % f)
+        M.Adt adt -> do
+            (context, adt) <- format context adt
+            (context, "{}\n\n" % adt)
+        M.Record record -> do
+            (context, record) <- format context record
+            (context, "{}\n\n" % record)
+        M.Import i -> format context i
+        M.Class c -> do
+            (context, c) <- format context c
+            (context, "{}\n\n" % c)
+        M.Instance i -> do
+            (context, i) <- format context i
+            (context, "{}\n\n" % i)
+        M.Effect e ->  do
+            (context, e) <- format context e
+            (context, "{}\n\n" % e)
 
 instance Format M.Module where
     format context mod = do
-        m <- "module {} where\n" % (mod.name)
+        (context, export) <- format context mod.export
+        m <- "module {}{} where\n\n" % (mod.name, export)
         (context, m) <- List.fold (context, m) mod.items (\(context, m), item -> do
             (context, i) <- format context item
             (context, m + i))
+        (context, m)
+
+instance Format D.AlgebraicDataType where
+    format context adt = do
+        m <- "data {} = ???" % adt.name
+        (context, m)
+
+instance Format D.Record where
+    format context record = do
+        m <- "data {} = ???" % record.name
+        (context, m)
+
+instance Format F.FunctionSignature where
+    format context signature = do
+        args <- if List.isEmpty signature.type_arguments
+            then ""
+            else " {}" % join signature.type_arguments " "
+        (context, type_signature) <- format context signature.type_signature
+        s <- "{}{} :: {}" % (signature.name, args, type_signature)
+        (context, s)
+
+instance Format F.Function where
+    format context function = do
+        (context, args) <- List.mapS context function.arguments format
+        (context, body) <- case function.body of
+            Some body -> format context body
+            None -> (context, "extern")
+        args <- if List.isEmpty args
+            then ""
+            else " {}" % join args " "
+        m <- "{}{} = {}" % (function.name, args, body)
         (context, m)
 
 instance Format SourceFile where
     format context source_file = do
         (context, modules) <- List.mapS context source_file.modules format
         (context, join modules "\n")
+
+instance Format I.Export where
+    format context export = case export of
+        I.ExportAll -> (context, "")
+        I.ExportSpecific filters -> do
+            (context, filters) <- List.mapS context filters format
+            (context, "({})" % join filters ", ")
+
+instance Format I.Import where
+    format context i = case i of
+        I.Hiding mod items -> (context, "import {} hiding ({})\n" % (mod, join items ", "))
+        I.ImportAll mod alternative_name -> case alternative_name of
+            Some name -> (context, "import {} as {}\n" % (mod, name))
+            None -> (context, "import {}\n" % mod)
+        I.Implicit _ -> (context, "")
+        I.ImportSpecific mod filters alternative_name -> do
+            (context, filters) <- List.mapS context filters format
+            case alternative_name of
+                Some name -> (context, "import {} ({}) as {}" % (mod, join filters ", ", name))
+                None -> (context, "import {} ({})" % (mod, join filters ", "))
+
+instance Format I.MemberSpecification where
+    format context spec = case spec of
+        I.Specific name -> (context, show name)
+        I.All -> (context, "..")
+
+instance Format I.Filter where
+    format context filter = case filter of
+        I.Single n -> (context, show n)
+        I.Group n specs -> do
+            (context, specs) <- List.mapS context specs format
+            (context, "{}({})" % (n, join specs ", "))
+
+instance Format C.Class where
+    format context c = do
+        s <- "class {} where ???" % (c.name)
+        (context, s)
+
+instance Format C.Instance where
+    format context i = do
+        s <- "instance {} where ???" % (i.class_name)
+        (context, s)
+
+instance Format Eff.Effect where
+    format context e = do
+        s <- "effect {} where ???" % (e.name)
+        (context, s)
