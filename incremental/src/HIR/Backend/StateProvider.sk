@@ -2,6 +2,7 @@ module Siko.HIR.Backend.StateProvider where
 
 import Siko.HIR.Backend.TypeIsomorphism
 import Siko.HIR.Backend.Typechecker.Error
+import Siko.HIR.Backend.CaseChecker.Error
 import Siko.HIR.Backend.Unification as U
 import Siko.HIR.Data as HD
 import Siko.HIR.TypeVarGenerator as TVG
@@ -20,20 +21,26 @@ class (U.Context a,
        RegisteredInstanceProvider a,
        CheckedFunctionTypeInfoProvider a) => StateProvider a where
     addError a :: a -> TypecheckerError -> a
+    addCaseError a :: a -> CaseCheckerError -> a
 
 data StateProviderInstance a = { errors :: [TypecheckerError],
+                                 case_errors :: [CaseCheckerError],
                                  var_gen :: TVG.TypeVarGenerator,
                                  provider :: a,
                                  ignore_never :: Bool,
                                }
 
 createStateProvider a :: a -> StateProviderInstance a
-createStateProvider provider = StateProviderInstance [] TVG.createTypeVarGenerator provider False
+createStateProvider provider = StateProviderInstance [] [] TVG.createTypeVarGenerator provider False
 
 instance StateProvider StateProviderInstance a where
     addError state err = do
         errors <- List.push state.errors err
         state { errors = errors }
+
+    addCaseError state err = do
+        case_errors <- List.push state.case_errors err
+        state { case_errors = case_errors }
 
 instance U.Context StateProviderInstance a where
     ignoreConstraints state = False

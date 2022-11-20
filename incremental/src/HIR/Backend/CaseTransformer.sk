@@ -1,0 +1,49 @@
+module Siko.HIR.Backend.CaseTransformer where
+
+import Siko.Syntax.Ident
+import Siko.HIR.FullyQualifiedName as FQ
+import Siko.HIR.Pattern as Pt
+import Siko.HIR.Expr as E
+import Siko.HIR.Type as T
+import Siko.HIR.Pattern as P
+import Siko.HIR.TypeFormatter as TF
+import Siko.HIR.Data as D
+import Siko.HIR.Function as F
+import Siko.HIR.Backend.Traversal
+import Siko.HIR.Backend.StateProvider
+import Siko.HIR.ExprIdGenerator
+import Siko.HIR.Backend.CaseChecker as CC
+import Siko.HIR.TypeVarGenerator as TVG
+import Siko.Query.Lookup as QL
+import Map
+
+data Context a = { state :: a }
+
+processExpr a :: (StateProvider a) => Context a -> E.Expr T.Type -> (Context a, E.Expr T.Type)
+processExpr context expr = do
+    E.Expr s_expr id expr_type location <- expr
+    case s_expr of
+        E.CaseOf body cases bind_groups -> do
+            case CC.checkCase context.state id body cases of
+                Ok (state, choice) -> do
+                    context <- context { state = state }
+                    (context, E.Expr (E.CaseOf body cases bind_groups) id expr_type location)
+                Err state -> do
+                    context <- context { state = state }
+                    (context, E.Expr (E.CaseOf body cases bind_groups) id expr_type location)
+        s_expr -> (context, E.Expr s_expr id expr_type location)
+
+processPattern a :: (StateProvider a) => Context a -> P.Pattern T.Type -> (Context a, P.Pattern T.Type)
+processPattern context pattern = (context, pattern)
+
+transformCases a :: (StateProvider a) => a -> F.Function T.Type -> (a, F.Function T.Type)
+transformCases state fn = do
+    (state, body) <- case fn.body of
+        Some body -> do
+            context <- Context state
+            traversal_context <- createTraversalContext context processExpr processPattern
+            (context, body) <- traverse traversal_context body
+            (state, Some body)
+        None -> (state, None)
+    fn <- fn { body = body }
+    (state, fn)

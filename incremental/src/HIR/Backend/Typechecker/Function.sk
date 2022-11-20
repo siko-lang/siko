@@ -17,6 +17,7 @@ import Siko.HIR.Backend.Unification as U
 import Siko.HIR.Backend.Unification.Substitution as S
 import Siko.HIR.Backend.Typechecker.TypeStore as TS
 import Siko.HIR.Backend.Typechecker.TypedFunction as TF
+import Siko.HIR.Backend.CaseTransformer as CT
 import Siko.Util.SharedString as SS
 import Siko.HIR.Backend.Traversal
 import Siko.HIR.TypeFormatter as TF
@@ -283,5 +284,7 @@ processGroup state group_items = do
                         type_store <- Std.Intrinsics.clone context.type_store
                         name <- Std.Intrinsics.clone name
                         typed_function <- TF.createTypedFunction (TF.Context type_store context.group_index) fn func_type_info.function_type effects
+                        (state, typed_function) <- CT.transformCases context.state typed_function
+                        context <- context { state = state }
                         (context, Map.put typed_functions name typed_function))
     (context.state, typed_functions)
