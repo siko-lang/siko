@@ -9,6 +9,7 @@ import Siko.Syntax.Class
 import Siko.Syntax.Ident
 import Siko.Syntax.Function
 import Siko.Syntax.TypeSignature
+import Siko.Syntax.Module as M
 import Siko.Parser.Error
 
 parseClassConstraint :: ParserState -> Result (ParserState, Constraint) (ParserState, ParserError)
@@ -45,17 +46,17 @@ parseClassConstraints state =
                     T.DoubleRightArrow -> return True
                     _ -> index + 1
 
-parseBody :: ParserState -> Result (ParserState, [Function], [FunctionSignature]) (ParserState, ParserError)
+parseBody :: ParserState -> Result (ParserState, [M.Item]) (ParserState, ParserError)
 parseBody state = do
     state <- try expect state Kind.KeywordWhere
-    (state, fns, fn_sigs) <- loop (state, fns, fns_sigs) <- (state, [], []) do
+    (state, members) <- loop (state, members) <- (state, []) do
             if check state Kind.EndOfBlock
-            then break (state, fns, fns_sigs)
+            then break (state, members)
             else case try parseFunction state of
-                    (state, Left fn) -> (state, push fns fn, fns_sigs)
-                    (state, Right fn_sig) -> (state, fns, push fns_sigs fn_sig)
+                    (state, Left fn) -> (state, push members (M.Function fn))
+                    (state, Right fn_sig) -> (state, push members (M.FunctionSignature fn_sig))
     state <- try expect state Kind.EndOfBlock
-    Ok (state, fns, fn_sigs)
+    Ok (state, members)
 
 parseAssociatedTypeArgs :: ParserState -> Result (ParserState, [Ident]) (ParserState, ParserError)
 parseAssociatedTypeArgs state = do
@@ -88,17 +89,16 @@ parseClass state = do
     (state, associated_types) <- if check state Kind.GreaterThan
     then try parseAssociatedTypeArgs state
     else (state, [])
-    (state, functions, function_type_signatures) <- if check state Kind.KeywordWhere
+    (state, members) <- if check state Kind.KeywordWhere
         then try parseBody state
-        else (state, [], [])
+        else (state, [])
     state <- try expect state Kind.EndOfItem
     clazz <- Class {
                 name = name,
                 argument = argument,
                 associated_types = associated_types,
                 constraints = constraints,
-                member_functions = functions,
-                member_function_type_signatures = function_type_signatures,
+                members = members,
             }
     Ok (state, clazz)
 
@@ -116,16 +116,15 @@ parseInstance state = do
     (state, associated_types) <- if check state Kind.GreaterThan
         then try parseAssociatedTypes state
         else (state, [])
-    (state, functions, function_type_signatures) <- if check state Kind.KeywordWhere
+    (state, members) <- if check state Kind.KeywordWhere
         then try parseBody state
-        else (state, [], [])
+        else (state, [])
     state <- try expect state Kind.EndOfItem
     inst <- Instance {
                 class_name = class_name,
                 type_signature = type_signature,
                 associated_types = associated_types,
                 constraints = constraints,
-                member_functions = functions,
-                member_function_type_signatures = function_type_signatures,
+                members = members,
             }
     Ok (state, inst)

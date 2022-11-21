@@ -96,6 +96,7 @@ processPattern context pattern_env env (SP.Pattern pattern location) = do
             (context, env, hir_e) <- processExpr context env e
             (context, pattern_env, env, HP.Guarded hir_p hir_e)
         SP.Wildcard -> (context, pattern_env, env, HP.Wildcard)
+        SP.Paren p -> return processPattern context pattern_env env p
         SP.IntegerLiteral lit -> do
             context <- if pattern_env.irrefutable
                 then addErrorToContext context (NotIrrefutablePattern location)

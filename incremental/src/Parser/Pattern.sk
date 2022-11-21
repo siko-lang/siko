@@ -47,7 +47,9 @@ parseTuplePattern :: ParserState -> Result (ParserState, Pattern) (ParserState, 
 parseTuplePattern state = do
     start_index <- state.index
     case try parseParens state (\state -> parsePatternL state False) "pattern" of
-        (state, Single ty) -> Ok (state, ty)
+        (state, Single ty) -> do
+            pattern <- buildPattern (Paren ty) start_index state
+            Ok (state, pattern)
         (state, Multi types) -> do
             pattern <- buildPattern (Tuple types) start_index state
             Ok (state, pattern)
