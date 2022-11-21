@@ -152,7 +152,7 @@ processPattern context pendingPatterns = do
             (additional_info, checks)
     checks
 
-data MatchInfo = MatchInfo Int AdditionalInfo
+data MatchInfo = MatchInfo Int AdditionalInfo deriving (Show)
 
 instance PartialEq MatchInfo where
     opEq (MatchInfo a _) (MatchInfo b _) = opEq a b
@@ -164,9 +164,6 @@ instance PartialOrd MatchInfo where
 
 instance Ord MatchInfo where
     cmp (MatchInfo a _) (MatchInfo b _) = cmp a b
-
-instance Show MatchInfo where
-    show (MatchInfo index additional_info) = "[{}]" % (index)
 
 getAdtVariantCount a :: (SP.StateProvider a) => Context a -> T.Type -> Option Int
 getAdtVariantCount context type = do
@@ -196,6 +193,7 @@ getCondition edge = case edge of
 data Choice = Choice ValuePath (Map Condition Choice)
             | CaseEnd [MatchInfo]
             | ElseNode
+            deriving (Show)
 
 getValuePath :: Choice -> Option ValuePath
 getValuePath choice = case choice of
