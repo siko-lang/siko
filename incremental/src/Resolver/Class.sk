@@ -49,17 +49,19 @@ processClass state module_resolver c = do
     (state, type_resolver) <- processClassConstraints state type_resolver c.constraints
     (type_resolver, arg_type) <- resolveTypeArg type_resolver c.argument
     dependencies <- processClassDependencies module_resolver c type_arg_str
-    state <- c.member_function_type_signatures |> List.iter |> Iterator.fold (\state, s -> do
-        sig_type_args <- List.map s.type_arguments getString
-        state <- if contains sig_type_args type_arg_str
-            then state
-            else do
-                ST.TypeSignature _ location <- s.type_signature
-                state <- addError state (UnusedClassArg type_arg location)
+    state <- List.fold state c.members (\state, s -> case s of
+            SM.FunctionSignature s -> do
+                sig_type_args <- List.map s.type_arguments getString
+                state <- if contains sig_type_args type_arg_str
+                    then state
+                    else do
+                        ST.TypeSignature _ location <- s.type_signature
+                        state <- addError state (UnusedClassArg type_arg location)
+                        state
                 state
-        state) state
+            _ -> state)
     kind <- HF.ClassMember qn
-    unresolved_functions <- mergeUnresolvedFunctions c.member_functions c.member_function_type_signatures
+    unresolved_functions <- collectUnresolvedFunctions c.members
     (class_members, unresolved_function_infos) <- List.mapS [] unresolved_functions (\class_members, f -> do
         Ident name _ <- f.name
         qn <- FQ.FullPath module_resolver.module_name name
@@ -91,7 +93,7 @@ processInstance state module_resolver qn i = do
     (state, type_resolver) <- processClassConstraints state type_resolver i.constraints
     hir_type <- updateTypeConstraints type_resolver hir_type
     kind <- HF.InstanceMember qn
-    unresolved_functions <- mergeUnresolvedFunctions i.member_functions i.member_function_type_signatures
+    unresolved_functions <- collectUnresolvedFunctions i.members
     (instance_members, unresolved_function_infos) <- List.mapS [] unresolved_functions (\instance_members, f -> do
         Ident name _ <- f.name
         qn <- FQ.FullPathWithInstanceId module_resolver.module_name name qn

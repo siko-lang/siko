@@ -10,6 +10,7 @@ import Siko.Syntax.Expr as E
 import Siko.Syntax.Pattern as P
 import Siko.Util.SharedString as SS
 import Siko.AutoDerive.Util
+import Siko.Syntax.Module as M
 
 createFieldAccess :: E.Expr -> String -> E.Expr
 createFieldAccess receiver name = E.Expr (E.FieldAccess (createIdentL name) receiver) (getLocation ())
@@ -81,7 +82,7 @@ deriveRecordFromJson record derive_location = do
     body <- E.Expr (E.Do do_items) derive_location
     body <- Some body
     op_fn <- F.Function fn_name fn_args body [] [] []
-    C.Instance class_name type_signature [] constraints [op_fn] []
+    C.Instance class_name type_signature [] constraints [M.Function op_fn]
 
 deriveAdtFromJson :: D.AlgebraicDataType -> Location -> String -> C.Instance
 deriveAdtFromJson adt derive_location mod_name = do
@@ -143,4 +144,4 @@ deriveAdtFromJson adt derive_location mod_name = do
     body <- E.Expr (E.Do do_items) derive_location
     body <- Some body
     op_fn <- F.Function fn_name fn_args body [] [] []
-    C.Instance class_name type_signature [] constraints [op_fn] []
+    C.Instance class_name type_signature [] constraints [M.Function op_fn]

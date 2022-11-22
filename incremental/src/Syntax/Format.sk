@@ -452,13 +452,6 @@ instance Format I.Filter where
             specs <- formatList specs (Chunk ", ")
             n + [Chunk "("] + specs + [Chunk ")"]
 
-// name :: Ident,
-//                 argument :: Ident,
-//                 associated_types :: [Ident],
-//                 constraints :: [Constraint],
-//                 member_functions :: [Function],
-//                 member_function_type_signatures :: [FunctionSignature],
-
 instance Format C.Constraint where
     format constraint = do
         class_name <- format constraint.class_name
@@ -503,5 +496,17 @@ instance Format C.Instance where
         else output + [Chunk " where"] + sub_items
 
 instance Format Eff.Effect where
-    format e = do
-        [Chunk "effect {} where ???" % (e.name)]
+   format e = do
+        name <- format e.name
+        arguments <- formatList e.arguments (Chunk " ")
+        constraints <- formatList e.constraints (Chunk ", ")
+        constraints <- if List.isEmpty e.constraints
+        then []
+        else [Chunk "("] + constraints + [Chunk ") => "]
+        output <- if List.isEmpty e.arguments
+        then [Chunk "effect "] + constraints + name
+        else [Chunk "effect "] + constraints + name + [Chunk " "] + arguments
+        sub_items <- formatBlock e.members
+        if List.isEmpty e.members
+        then output
+        else output + [Chunk " where"] + sub_items

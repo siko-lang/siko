@@ -9,6 +9,7 @@ import Siko.Syntax.Function as F
 import Siko.Syntax.Expr as E
 import Siko.Syntax.Pattern as P
 import Siko.Util.SharedString as SS
+import Siko.Syntax.Module as M
 
 deriveRecordShow :: D.Record -> Location -> C.Instance
 deriveRecordShow record derive_location = do
@@ -38,7 +39,7 @@ deriveRecordShow record derive_location = do
     body <- Some body
     sub_items <- []
     op_fn <- F.Function fn_name fn_args body sub_items [] []
-    C.Instance class_name type_signature [] constraints [op_fn] []
+    C.Instance class_name type_signature [] constraints [M.Function op_fn]
 
 deriveAdtShow :: D.AlgebraicDataType -> Location -> String -> C.Instance
 deriveAdtShow adt derive_location mod_name = do
@@ -79,4 +80,4 @@ deriveAdtShow adt derive_location mod_name = do
     body <- Some body
     sub_items <- []
     op_fn <- F.Function fn_name fn_args body sub_items [] []
-    C.Instance class_name type_signature [] constraints [op_fn] []
+    C.Instance class_name type_signature [] constraints [M.Function op_fn]

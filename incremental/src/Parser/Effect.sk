@@ -8,19 +8,20 @@ import Siko.Parser.Token.Kind as Kind
 import Siko.Parser.Class (parseClassConstraints)
 import Siko.Syntax.Effect
 import Siko.Syntax.Function
+import Siko.Syntax.Module as M
 import Siko.Parser.Error
 
-parseBody :: ParserState -> Result (ParserState, [Function], [FunctionSignature]) (ParserState, ParserError)
+parseBody :: ParserState -> Result (ParserState, [M.Item]) (ParserState, ParserError)
 parseBody state = do
     state <- try expect state Kind.KeywordWhere
-    (state, fns, fn_sigs) <- loop (state, fns, fns_sigs) <- (state, [], []) do
+    (state, members) <- loop (state, members) <- (state, []) do
             if check state Kind.EndOfBlock
-            then break (state, fns, fns_sigs)
+            then break (state, members)
             else case try parseFunction state of
-                    (state, Left fn) -> (state, push fns fn, fns_sigs)
-                    (state, Right fn_sig) -> (state, fns, push fns_sigs fn_sig)
+                    (state, Left fn) -> (state, push members (M.Function fn))
+                    (state, Right fn_sig) -> (state, push members (M.FunctionSignature fn_sig))
     state <- try expect state Kind.EndOfBlock
-    Ok (state, fns, fn_sigs)
+    Ok (state, members)
 
 parseEffect :: ParserState -> Result (ParserState, Effect) (ParserState, ParserError)
 parseEffect state = do
@@ -33,13 +34,12 @@ parseEffect state = do
         else do
             (state, argument) <- try expectVarIdent state "effect argument"
             (state, List.push arguments argument)
-    (state, functions, function_type_signatures) <- try parseBody state
+    (state, members) <- try parseBody state
     state <- try expect state Kind.EndOfItem
     eff <- Effect {
                 name = name,
                 arguments = arguments,
                 constraints = constraints,
-                member_functions = functions,
-                member_function_type_signatures = function_type_signatures,
+                members = members,
             }
     Ok (state, eff)

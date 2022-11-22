@@ -10,6 +10,7 @@ import Siko.Syntax.Expr as E
 import Siko.Syntax.Pattern as P
 import Siko.Util.SharedString as SS
 import Siko.Constants
+import Siko.Syntax.Module as M
 
 data FieldInfo = { lhs :: E.Expr, rhs :: E.Expr }
 
@@ -97,7 +98,7 @@ deriveRecordGeneralCompare record comparator = do
     body <- Some body
     sub_items <- []
     op_fn <- F.Function comparator.fn_name fn_args body sub_items [] []
-    C.Instance comparator.class_name type_signature [] constraints [op_fn] []
+    C.Instance comparator.class_name type_signature [] constraints [M.Function op_fn]
 
 deriveAdtGeneralCompare :: D.AlgebraicDataType -> Comparator-> String -> C.Instance
 deriveAdtGeneralCompare adt comparator mod_name = do
@@ -140,4 +141,4 @@ deriveAdtGeneralCompare adt comparator mod_name = do
     body <- Some body
     sub_items <- []
     op_fn <- F.Function comparator.fn_name fn_args body sub_items [] []
-    C.Instance comparator.class_name type_signature [] constraints [op_fn] []
+    C.Instance comparator.class_name type_signature [] constraints [M.Function op_fn]

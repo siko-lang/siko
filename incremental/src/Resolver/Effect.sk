@@ -25,7 +25,7 @@ processEffect state module_resolver eff = do
     (type_resolver, arguments) <- List.mapS type_resolver eff.arguments resolveTypeArg
     eff_type <- HT.Named qn arguments
     kind <- HF.EffectMember qn
-    unresolved_functions <- mergeUnresolvedFunctions eff.member_functions eff.member_function_type_signatures
+    unresolved_functions <- collectUnresolvedFunctions eff.members
     (effect_members, unresolved_function_infos) <- List.mapS [] unresolved_functions (\effect_members, f -> do
         Ident name _ <- f.name
         qn <- FQ.FullPath module_resolver.module_name name
