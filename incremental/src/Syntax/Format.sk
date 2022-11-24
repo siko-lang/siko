@@ -324,6 +324,32 @@ instance Format M.Item where
         M.Instance i -> format i + [NewLine]
         M.Effect e ->  format e + [NewLine]
 
+formatItems :: [M.Item] -> [Output]
+formatItems items = do
+    (output, _) <- List.foldE ([StartOfBlock], "") items (\(output, name), index, item -> do
+        (newline, item, name) <- case item of
+            M.Function f -> do
+                fname <- SS.get (getString f.name)
+                (name != fname, format f, fname)
+            M.FunctionSignature f -> (True, format f, SS.get (getString f.name))
+            M.Adt adt -> (True, format adt, "")
+            M.Record record -> (True, format record, "")
+            M.Import i -> (False, format i, "")
+            M.Class c -> (True, format c, "")
+            M.Instance i -> (True, format i, "")
+            M.Effect e ->  (True, format e, "")
+        newline <- if newline && index == 0
+        then False
+        else newline
+        if List.isEmpty item
+        then (output, name)
+        else do
+            output <- if newline
+            then output + [NewLine, StartOfItem] + item + [EndOfItem]
+            else output + [StartOfItem] + item + [EndOfItem]
+            (output, name))
+    output + [EndOfBlock]
+
 instance Format M.Module where
     format mod = do
         export <- format mod.export
@@ -365,7 +391,7 @@ instance Format D.Record where
     format record = do
         name <- format record.name
         type_arguments <- formatList record.type_arguments (Chunk " ")
-        fields <- formatList record.fields (Chunk " | ")
+        fields <- formatList record.fields (Chunk ", ")
         derived_classes <- formatList record.derived_classes (Chunk ", ")
         output <- if List.isEmpty type_arguments
         then [Chunk "data "] + name
@@ -473,7 +499,7 @@ instance Format C.Class where
         output <- if List.isEmpty associated_types
         then [Chunk "class "] + constraints + name + [Chunk " "] + argument
         else [Chunk "class "] + constraints + name + [Chunk " "] + argument + [Chunk " > "] + associated_types
-        sub_items <- formatBlock c.members
+        sub_items <- formatItems c.members
         if List.isEmpty c.members
         then output
         else output + [Chunk " where"] + sub_items
@@ -490,7 +516,7 @@ instance Format C.Instance where
         output <- if List.isEmpty associated_types
         then [Chunk "instance "] + constraints + class_name + [Chunk " "] + type_signature
         else [Chunk "instance "] + constraints + class_name + [Chunk " "] + type_signature + [Chunk " > "] + associated_types
-        sub_items <- formatBlock i.members
+        sub_items <- formatItems i.members
         if List.isEmpty i.members
         then output
         else output + [Chunk " where"] + sub_items
@@ -506,7 +532,7 @@ instance Format Eff.Effect where
         output <- if List.isEmpty e.arguments
         then [Chunk "effect "] + constraints + name
         else [Chunk "effect "] + constraints + name + [Chunk " "] + arguments
-        sub_items <- formatBlock e.members
+        sub_items <- formatItems e.members
         if List.isEmpty e.members
         then output
         else output + [Chunk " where"] + sub_items

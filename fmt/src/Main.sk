@@ -3,6 +3,7 @@ module Main where
 import Siko.Parser
 import Siko.Syntax.Location
 import Siko.Syntax.Format
+import Siko.Syntax.Util
 import IO
 
 processPath :: String -> [String]
@@ -26,9 +27,16 @@ main = do
     names <- List.fold [] args (\names, arg -> names + processPath arg)
     List.forEach names (\name -> do
         source <- readTextFile name
-        println "Formatting {}" % name
+        println "Processing file {}" % name
         (source_file, lexer_errors, parser_errors) <- parse (FileId 0) name source
+        orig_source <- relocate source_file
         chunks <- format source_file
         output <- formatOutput chunks
-        println output)
+        (new_source_file, lexer_errors, parser_errors) <- parse (FileId 0) name output
+        new_source <- relocate new_source_file
+        if new_source == orig_source
+        then println "{} unchanged" % name
+        else do
+            println "{} changed!!" % name
+            println output)
     ()
