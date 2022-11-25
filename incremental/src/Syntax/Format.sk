@@ -12,6 +12,8 @@ import Siko.Syntax.Function as F
 import Siko.Syntax.TypeSignature as T
 import Siko.Syntax.Pattern as P
 import Siko.Util.SharedString as SS
+import Siko.Syntax.Attribute as A
+import Siko.Util.Format
 
 data FormatterContext = { indent :: Int }
 
@@ -156,8 +158,8 @@ instance Format E.SimpleExpr where
         E.Path name -> format name
         E.IntegerLiteral lit -> [Chunk (show lit)]
         E.FloatLiteral lit -> [Chunk (show lit)]
-        E.StringLiteral lit -> [Chunk ("\"{}\"" % lit)]
-        E.CharLiteral lit -> [Chunk (show lit)]
+        E.StringLiteral lit -> [Chunk ("\"{}\"" % escapeString (SS.get lit))]
+        E.CharLiteral lit -> [Chunk "{}" % escapeChar lit]
         E.Do items -> do
             items <- formatBlock items
             [Chunk "do"] + items
@@ -174,7 +176,9 @@ instance Format E.SimpleExpr where
             receiver + [Chunk ".", Chunk "{}" % id]
         E.Formatter fmt args -> do
             args <- formatList args (Chunk ", ")
-            [Chunk "\"{}\" % (" % (SS.get fmt)] + args + [Chunk ")"]
+            if List.getLength args == 1
+            then [Chunk "\"{}\" % " % escapeString (SS.get fmt)] + args
+            else [Chunk "\"{}\" % (" % escapeString (SS.get fmt)] + args + [Chunk ")"]
         E.CaseOf body cases -> do
             body <- format body
             cases <- formatBlock cases
@@ -242,6 +246,9 @@ instance Format P.SimplePattern where
       P.Binding id -> format id
       P.Tuple args -> do
         args <- formatList args (Chunk ", ")
+        args <- if List.getLength args == 1
+        then args + [Chunk ","]
+        else args
         [Chunk "("] + args + [Chunk ")"]
       P.Constructor id args -> do
         id <- format id
@@ -255,11 +262,11 @@ instance Format P.SimplePattern where
         pat + [Chunk " if "] + body
       P.Wildcard -> [Chunk "_"]
       P.IntegerLiteral lit -> [Chunk ("{}" % lit)]
-      P.StringLiteral lit -> [Chunk ("\"{}\"" % lit)]
-      P.CharLiteral lit -> [Chunk ("{}" % lit)]
+      P.StringLiteral lit -> [Chunk ("\"{}\"" % escapeString (SS.get lit))]
+      P.CharLiteral lit -> [Chunk ("{}" % escapeChar lit)]
       P.CharRange start end kind -> case kind of
-            P.Exclusive -> [Chunk "{}..{}" % (start, end)]
-            P.Inclusive -> [Chunk "{}..={}" % (start, end)]
+            P.Exclusive -> [Chunk "{}..{}" % (escapeChar start, escapeChar end)]
+            P.Inclusive -> [Chunk "{}..={}" % (escapeChar start, escapeChar end)]
       P.Typed pat type -> do
         pat <- format pat
         type <- format type
@@ -293,8 +300,8 @@ instance Format T.TypeSignature where
             [Chunk "["] + type + [Chunk "]"]
         T.Tuple args -> do
             args <- formatList args (Chunk ", ")
-            if List.isEmpty args
-            then [Chunk "()"]
+            if List.getLength args == 1
+            then [Chunk "("] + args + [Chunk ",)"]
             else [Chunk "("] + args + [Chunk ")"]
         T.Function from to -> do
             from <- format from
@@ -411,6 +418,10 @@ instance Format D.Record where
 instance Format F.FunctionSignature where
     format signature = do
         type_arguments <- formatList signature.type_arguments (Chunk " ")
+        attributes <- formatList signature.attributes (Chunk "\n")
+        attributes <- if List.isEmpty signature.attributes
+        then attributes
+        else attributes + [Chunk "\n"]
         type_signature <- format signature.type_signature
         name <- format signature.name
         constraints <- formatList signature.constraints (Chunk ", ")
@@ -418,20 +429,29 @@ instance Format F.FunctionSignature where
         then []
         else [Chunk "("] + constraints + [Chunk ") => "]
         if List.isEmpty type_arguments
-        then name + [Chunk " :: "] + constraints + type_signature
-        else name + [Chunk " "] + type_arguments + [Chunk " :: "] + constraints + type_signature
+        then attributes + name + [Chunk " :: "] + constraints + type_signature
+        else attributes + name + [Chunk " "] + type_arguments + [Chunk " :: "] + constraints + type_signature
 
 instance Format F.Function where
     format function = do
         arguments <- formatList function.arguments (Chunk " ")
+        attributes <- formatList function.attributes (Chunk "\n")
+        attributes <- if List.isEmpty function.attributes
+        then attributes
+        else attributes + [Chunk "\n"]
         body <- case function.body of
             Some body -> format body
-            None -> [Chunk "extern"]
+            None -> do
+                if List.isEmpty function.extern_constraints
+                then [Chunk "extern"]
+                else do
+                    constraints <- formatList function.extern_constraints (Chunk ", ")
+                    [Chunk "extern("] + constraints + [Chunk ")"]
         starts_with_do <- (List.atIndex body 0) == Chunk "do"
         name <- format function.name
         output <- if List.isEmpty arguments
-        then name + [Chunk " = "] + body
-        else name + [Chunk " "] + arguments + [Chunk " = "] + body
+        then attributes + name + [Chunk " = "] + body
+        else attributes + name + [Chunk " "] + arguments + [Chunk " = "] + body
         sub_items <- formatBlock function.sub_items
         output <- if List.isEmpty function.sub_items
         then output
@@ -536,3 +556,33 @@ instance Format Eff.Effect where
         if List.isEmpty e.members
         then output
         else output + [Chunk " where"] + sub_items
+
+instance Format A.Attribute where
+    format A.Attribute name = [Chunk "@"] + format name
+
+instance Format F.ConstraintPath where
+    format c = case c of
+        F.Argument index -> [Chunk "arg[{}]" % index]
+        F.Field index path -> format path + [Chunk ".f[{}]" % index]
+        F.Extern index path -> format path + [Chunk ".e[{}]" % index]
+        F.Variant index path -> format path + [Chunk ".v[{}]" % index]
+        F.Implicit index path -> format path + [Chunk ".i[{}]" % index]
+        F.Result -> [Chunk "result"]
+
+instance Format F.Converter where
+    format c = do
+        from <- format c.from
+        to <- format c.to
+        from + [Chunk " -> "] + to
+
+instance Format F.Equal where
+    format e = do
+        left <- format e.left
+        right <- format e.right
+        left + [Chunk " == "] + right
+
+instance Format F.ExternConstraint where
+    format c = case c of
+        F.ExternConverter c -> format c
+        F.ExternEquality e -> format e
+        F.Independent i -> (format i) + [Chunk " == *"]

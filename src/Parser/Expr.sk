@@ -24,21 +24,28 @@ parseDoBlock state = do
         if check state Kind.EndOfBlock
         then break (state, items)
         else do
-            start_index <- state.index
-            (state, item) <- if irrefutablePatternFollows state
-                then do
-                    (state, pattern) <- try parseBindPattern state
-                    state <- try expect state Kind.LeftArrow
-                    (state, expr) <- try parseExpr state
-                    buildExpr (Bind pattern expr) start_index state
-                else try parseExpr state
-            items <- push items item
-            state <- if check state Kind.KeywordWhere
+            (state, items) <- if check state Kind.KeywordWhere
                 then do
                     (state, sub_items) <- try parseSubItems state
                     sub_items <- state.sub_items + sub_items
-                    state { sub_items = sub_items }
-                else state
+                    (state { sub_items = sub_items }, items)
+                else do
+                    start_index <- state.index
+                    (state, item) <- if irrefutablePatternFollows state
+                        then do
+                            (state, pattern) <- try parseBindPattern state
+                            state <- try expect state Kind.LeftArrow
+                            (state, expr) <- try parseExpr state
+                            buildExpr (Bind pattern expr) start_index state
+                        else try parseExpr state
+                    items <- push items item
+                    state <- if check state Kind.KeywordWhere
+                        then do
+                            (state, sub_items) <- try parseSubItems state
+                            sub_items <- state.sub_items + sub_items
+                            state { sub_items = sub_items }
+                        else state
+                    (state, items)
             state <- try expect state Kind.EndOfItem
             (state, items)
     state <- try expect state Kind.EndOfBlock

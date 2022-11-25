@@ -87,13 +87,7 @@ generatePattern pattern guard = case pattern of
                         case guard of
                             Some guard -> "a if " + generateExpr guard (Indent 0)
                             None -> "a if *a.value == \"{}\"" % (escapeString lit)
-    CharPattern lit -> case lit of
-        '\'' -> "a if a.value == '\\''"
-        '\r' -> "a if a.value == '\\r'"
-        '\n' -> "a if a.value == '\\n'"
-        '\t' -> "a if a.value == '\\t'"
-        '\\' -> "a if a.value == '\\\\'"
-        _ -> "a if a.value == '{}'" % lit
+    CharPattern lit -> "a if a.value == {}" % escapeChar lit
     CharRangePattern start end kind -> case kind of
         Exclusive -> "a if std::ops::Range{ start: '" + (show start) + "', end: '" + (show end) + "' }.contains(&a.value)"
         Inclusive -> "a if std::ops::RangeInclusive::new('" + (show start) + "', '" + (show end) + "').contains(&a.value)"
@@ -135,14 +129,7 @@ generateExpr expr indent = case expr of
         True -> "true"
         False -> "false"
     StringLiteral lit -> "\"{}\"" % (escapeString lit)
-    CharLiteral lit -> case lit of
-        '\n' -> "'\\n'"
-        '\r' -> "'\\r'"
-        '\t' -> "'\\t'"
-        '"' -> "'\\\"'"
-        '\'' -> "'\\''"
-        '\\' -> "'\\\\'"
-        _ -> "'{}'" % lit
+    CharLiteral lit -> "{}" % (escapeChar lit)
     VarDecl n rhs type -> case type of
         Some type -> "let {}{}= {}" % (n, getTypeAnnotation type, generateExpr rhs (Indent 0))
         None -> "let {} = {}" % (n, generateExpr rhs (Indent 0))
