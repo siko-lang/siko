@@ -188,7 +188,7 @@ instance Format E.SimpleExpr where
             [Chunk "!"] + arg
         E.Negative arg -> do
             arg <- format arg
-            [Chunk "!"] + arg
+            [Chunk "-"] + arg
         E.RecordInitialization name items -> do
             name <- format name
             items <- formatList items (Chunk ", ")
@@ -361,7 +361,7 @@ instance Format M.Module where
     format mod = do
         export <- format mod.export
         name <- format mod.name
-        items <- formatBlock mod.items
+        items <- formatItems mod.items
         [Chunk "module "] + name + export + [Chunk " where", NewLine] + items
 
 instance Format D.Variant where
@@ -408,9 +408,7 @@ instance Format D.Record where
             then output + [Chunk " = extern (implicit)"]
             else output + [Chunk " = extern"]
         else do
-            output <- if List.isEmpty fields
-            then output
-            else output + [Chunk " = { "] +  fields + [Chunk " }"]
+            output <- output + [Chunk " = { "] +  fields + [Chunk " }"]
             if List.isEmpty derived_classes
             then output
             else output + [Chunk " deriving ("] + derived_classes + [Chunk ")"]
@@ -452,10 +450,14 @@ instance Format F.Function where
         output <- if List.isEmpty arguments
         then attributes + name + [Chunk " = "] + body
         else attributes + name + [Chunk " "] + arguments + [Chunk " = "] + body
-        sub_items <- formatBlock function.sub_items
+        sub_items <- formatItems function.sub_items
         output <- if List.isEmpty function.sub_items
         then output
-        else output + [StartOfItem, Chunk "where"] + sub_items + [EndOfItem]
+        else if starts_with_do
+            then do
+                (_, output) <- List.removeLast output
+                output + [StartOfItem, Chunk "where"] + sub_items + [EndOfItem, EndOfBlock]
+            else output + [StartOfItem, Chunk "where"] + sub_items + [EndOfItem,]
         if starts_with_do
         then output
         else [StartOfBlock] + output + [EndOfBlock]
