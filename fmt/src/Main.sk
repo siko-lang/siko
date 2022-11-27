@@ -27,7 +27,6 @@ main = do
     names <- List.fold [] args (\names, arg -> names + processPath arg)
     List.forEach names (\name -> do
         source <- readTextFile name
-        print "Processing file {}" % name
         (source_file, lexer_errors, parser_errors) <- parse (FileId 0) name source
         orig_source <- relocate source_file
         chunks <- format source_file
@@ -35,7 +34,7 @@ main = do
         (new_source_file, lexer_errors, parser_errors) <- parse (FileId 0) name output
         new_source <- relocate new_source_file
         if new_source == orig_source
-        then println " -> unchanged"
+        then writeTextFile name output
         else do
             newname <- "{}.bak" % name
             writeTextFile newname output

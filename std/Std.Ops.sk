@@ -1,63 +1,64 @@
 module Std.Ops where
 
 class Add a where
-    opAdd a :: a -> a -> a
+   opAdd a :: a -> a -> a
 
 class Sub a where
-    opSub a :: a -> a -> a
+   opSub a :: a -> a -> a
 
 class Mul a where
-    opMul a :: a -> a -> a
+   opMul a :: a -> a -> a
 
 class Div a where
-    opDiv a :: a -> a -> a
+   opDiv a :: a -> a -> a
 
 class (PartialEq a) => PartialOrd a where
-    partialCmp a :: a -> a -> Option Ordering
+   partialCmp a :: a -> a -> Option Ordering
 
-    opLessThan a :: a -> a -> Bool
-    opLessThan a b = case partialCmp a b of
-                        Some Less -> True
-                        _ -> False
+   opLessThan a :: a -> a -> Bool
+   opLessThan a b = case partialCmp a b of
+      Some Less -> True
+      _ -> False
 
-    opLessEqual a :: a -> a -> Bool
-    opLessEqual a b = case partialCmp a b of
-                         Some Less -> True
-                         Some Equal -> True
-                         _ -> False
+   opLessEqual a :: a -> a -> Bool
+   opLessEqual a b = case partialCmp a b of
+      Some Less -> True
+      Some Equal -> True
+      _ -> False
 
-    opGreaterThan a :: a -> a -> Bool
-    opGreaterThan a b = case partialCmp a b of
-                         Some Greater -> True
-                         _ -> False
+   opGreaterThan a :: a -> a -> Bool
+   opGreaterThan a b = case partialCmp a b of
+      Some Greater -> True
+      _ -> False
 
-    opGreaterEqual a :: a -> a -> Bool
-    opGreaterEqual a b = case partialCmp a b of
-                         Some Greater -> True
-                         Some Equal -> True
-                         _ -> False
+   opGreaterEqual a :: a -> a -> Bool
+   opGreaterEqual a b = case partialCmp a b of
+      Some Greater -> True
+      Some Equal -> True
+      _ -> False
 
 class PartialEq a where
-    opEq a :: a -> a -> Bool
-    opNotEq a :: a -> a -> Bool
-    opNotEq a b = not (opEq a b)
+   opEq a :: a -> a -> Bool
+
+   opNotEq a :: a -> a -> Bool
+   opNotEq a b = not (opEq a b)
 
 class (PartialEq a) => Eq a
 
 class (PartialOrd a, Eq a) => Ord a where
-    cmp a :: a -> a -> Ordering
+   cmp a :: a -> a -> Ordering
 
-    max a :: a -> a -> a
-    max a b = if a >= b then a else b
+   max a :: a -> a -> a
+   max a b = if a >= b then a else b
 
-    min a :: a -> a -> a
-    min a b = if a <= b then a else b
+   min a :: a -> a -> a
+   min a b = if a <= b then a else b
 
 class Show a where
-    show a :: a -> String
+   show a :: a -> String
 
 class Negative a where
-    opNegative a :: a -> a
+   opNegative a :: a -> a
 
 opAnd :: ~Bool -> ~Bool -> ~Bool
 opAnd a b = extern
@@ -66,53 +67,50 @@ opOr :: ~Bool -> ~Bool -> ~Bool
 opOr a b = extern
 
 opNot :: ~Bool -> ~Bool
-opNot a  = not a
+opNot a = not a
 
 getDiscriminant a :: ~a -> ~Int
 getDiscriminant a = extern
 
 instance Show () where
-    show _ = "()"
+   show _ = "()"
 
 instance (Show a) => Show (a,) where
-    show (a,) = "({},)" % a
+   show (a,) = "({},)" % a
 
 instance (Show a, Show b) => Show (a, b) where
-    show (a, b) = "({}, {})" % (a, b)
+   show (a, b) = "({}, {})" % (a, b)
 
 instance (Show a, Show b, Show c) => Show (a, b, c) where
-    show (a, b, c) = "({}, {}, {})" % (a, b, c)
+   show (a, b, c) = "({}, {}, {})" % (a, b, c)
 
 instance (Show a, Show b, Show c, Show d) => Show (a, b, c, d) where
-    show (a, b, c, d) = "({}, {}, {}, {})" % (a, b, c, d)
+   show (a, b, c, d) = "({}, {}, {}, {})" % (a, b, c, d)
 
 instance PartialEq () where
-    opEq () () = True
+   opEq () () = True
 
 instance Eq ()
 
 instance PartialOrd () where
-    partialCmp () () = Some Equal
+   partialCmp () () = Some Equal
 
 instance Ord () where
-    cmp () () = Equal
+   cmp () () = Equal
 
 instance (PartialEq a, PartialEq b) => PartialEq (a, b) where
-    opEq (a1, b1) (a2, b2) =
-        if opEq a1 a2
-        then opEq b1 b2
-        else False
+   opEq (a1, b1) (a2, b2) = if opEq a1 a2
+      then opEq b1 b2
+      else False
 
 instance (PartialOrd a, PartialOrd b) => PartialOrd (a, b) where
-    partialCmp (a1, b1) (a2, b2) =
-        case partialCmp a1 a2 of
-            Some Equal -> partialCmp b1 b2
-            r -> r
+   partialCmp (a1, b1) (a2, b2) = case partialCmp a1 a2 of
+      Some Equal -> partialCmp b1 b2
+      r -> r
 
 instance (Eq a, Eq b) => Eq (a, b)
 
 instance (Ord a, Ord b) => Ord (a, b) where
-    cmp (a1, b1) (a2, b2) =
-        case cmp a1 a2 of
-            Equal -> cmp b1 b2
-            r -> r
+   cmp (a1, b1) (a2, b2) = case cmp a1 a2 of
+      Equal -> cmp b1 b2
+      r -> r

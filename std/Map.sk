@@ -3,80 +3,77 @@ module Map where
 data Map k v = extern
 
 instance (Show k, Show v) => Show Map k v where
-    show m = do
-        size <- getSize m
-        (s, _) <- Map.fold ("{", 0) m (\(s, index), (k, v) -> do
-            item <- if index + 1 == size
-                then "{}:{}" % (k, v)
-                else "{}:{}," % (k, v)
-            (s + item, index + 1))
-        s + "}"
+   show m = do
+      size <- getSize m
+      (s, _) <- Map.fold ("{", 0) m (\(s, index), (k, v) -> do
+         item <- if index + 1 == size
+         then "{}:{}" % (k, v)
+         else "{}:{}," % (k, v)
+         (s + item, index + 1))
+      s + "}"
 
 instance (PartialEq k, PartialEq v) => PartialEq Map k v where
-    opEq k v  :: Map k v -> Map k v -> Bool
-    opEq a b = do
-        len_a <- getSize a
-        len_b <- getSize b
-        if len_a != len_b
-        then False
-        else do
-            iter_a :: MapIter k v <- Map.iter a
-            iter_b :: MapIter k v <- Map.iter b
-            loop zipper <- Iterator.zip iter_a iter_b do
-                zipper :: IteratorZip (MapIter k v) (MapIter k v) <- zipper // FIXME
-                (zipper, item) <- Iterator.next zipper
-                case item of
-                    Some ((key_a, value_a), (key_b, value_b)) ->
-                        if opEq key_a key_b
-                        then if opEq value_a value_b
-                            then zipper
-                            else break False
-                        else break False
-                    None -> break True
+   opEq k v :: Map k v -> Map k v -> Bool
+   opEq a b = do
+      len_a <- getSize a
+      len_b <- getSize b
+      if len_a != len_b
+      then False
+      else do
+         iter_a :: MapIter k v <- Map.iter a
+         iter_b :: MapIter k v <- Map.iter b
+         loop zipper <- Iterator.zip iter_a iter_b do
+            zipper :: IteratorZip (MapIter k v) (MapIter k v) <- zipper
+            (zipper, item) <- Iterator.next zipper
+            case item of
+               Some ((key_a, value_a), (key_b, value_b)) -> if opEq key_a key_b
+               then if opEq value_a value_b
+               then zipper
+               else break False
+               else break False
+               None -> break True
 
 instance (PartialOrd k, PartialOrd v) => PartialOrd Map k v where
-    partialCmp k v  :: Map k v -> Map k v -> Option Ordering
-    partialCmp a b = do
-        len_a <- getSize a
-        len_b <- getSize b
-        if len_a != len_b
-        then partialCmp len_a len_b
-        else do
-            iter_a :: MapIter k v <- Map.iter a
-            iter_b :: MapIter k v <- Map.iter b
-            loop zipper <- Iterator.zip iter_a iter_b do
-                zipper :: IteratorZip (MapIter k v) (MapIter k v) <- zipper // FIXME
-                (zipper, item) <- Iterator.next zipper
-                case item of
-                    Some ((key_a, value_a), (key_b, value_b)) ->
-                        case partialCmp key_a key_b of
-                            Some Equal -> case partialCmp value_a value_b of
-                                Some Equal -> zipper
-                                e -> break e
-                            e -> break e
-                    None -> break Some Equal
+   partialCmp k v :: Map k v -> Map k v -> Option Ordering
+   partialCmp a b = do
+      len_a <- getSize a
+      len_b <- getSize b
+      if len_a != len_b
+      then partialCmp len_a len_b
+      else do
+         iter_a :: MapIter k v <- Map.iter a
+         iter_b :: MapIter k v <- Map.iter b
+         loop zipper <- Iterator.zip iter_a iter_b do
+            zipper :: IteratorZip (MapIter k v) (MapIter k v) <- zipper
+            (zipper, item) <- Iterator.next zipper
+            case item of
+               Some ((key_a, value_a), (key_b, value_b)) -> case partialCmp key_a key_b of
+                  Some Equal -> case partialCmp value_a value_b of
+                     Some Equal -> zipper
+                     e -> break e
+                  e -> break e
+               None -> break Some Equal
 
 instance (Ord k, Ord v) => Ord Map k v where
-    cmp k v  :: Map k v -> Map k v -> Ordering
-    cmp a b = do
-        len_a <- getSize a
-        len_b <- getSize b
-        if len_a != len_b
-        then cmp len_a len_b
-        else do
-            iter_a :: MapIter k v <- Map.iter a
-            iter_b :: MapIter k v <- Map.iter b
-            loop zipper <- Iterator.zip iter_a iter_b do
-                zipper :: IteratorZip (MapIter k v) (MapIter k v) <- zipper // FIXME
-                (zipper, item) <- Iterator.next zipper
-                case item of
-                    Some ((key_a, value_a), (key_b, value_b)) ->
-                        case cmp key_a key_b of
-                            Equal -> case cmp value_a value_b of
-                                Equal -> zipper
-                                e -> break e
-                            e -> break e
-                    None -> break Equal
+   cmp k v :: Map k v -> Map k v -> Ordering
+   cmp a b = do
+      len_a <- getSize a
+      len_b <- getSize b
+      if len_a != len_b
+      then cmp len_a len_b
+      else do
+         iter_a :: MapIter k v <- Map.iter a
+         iter_b :: MapIter k v <- Map.iter b
+         loop zipper <- Iterator.zip iter_a iter_b do
+            zipper :: IteratorZip (MapIter k v) (MapIter k v) <- zipper
+            (zipper, item) <- Iterator.next zipper
+            case item of
+               Some ((key_a, value_a), (key_b, value_b)) -> case cmp key_a key_b of
+                  Equal -> case cmp value_a value_b of
+                     Equal -> zipper
+                     e -> break e
+                  e -> break e
+               None -> break Equal
 
 instance (Eq k, Eq v) => Eq Map k v
 
@@ -96,75 +93,75 @@ insert m k v = extern (arg[1] -> result.f[0].e[0],
 @Inline
 put k v :: (Ord k) => Map k v -> k -> v -> Map k v
 put m k v = do
-    (m, _) <- insert m k v
-    m
+   (m, _) <- insert m k v
+   m
 
 get k v :: (Ord k) => Map k v -> k -> ~Option v
-get m k = extern (arg[0].e[1] -> result.v[0].f[0], arg[1] == *)
+get m k = extern (arg[0].e[1] -> result.v[0].f[0],
+                  arg[1] == *)
 
 remove k v :: (Ord k) => Map k v -> k -> ~(~Map k v, ~Option v)
 remove m k = extern (arg[1] == *)
 
 erase k v :: (Ord k) => Map k v -> k -> Map k v
 erase m k = do
-    (m, _) <- remove m k
-    m
+   (m, _) <- remove m k
+   m
 
 @Inline
 alter k v :: (Ord k) => (Option v -> Option v) -> k -> Map k v -> (Map k v, Option v)
-alter f k m = // FIXME: make this builtin and much faster
-    case f (get m k) of
-        Some v -> insert m k v
-        None -> remove m k
+alter f k m = case f (get m k) of // FIXME: make this builtin and much faster
+   Some v -> insert m k v
+   None -> remove m k
 
 @Inline
 alter2 k v :: (Ord k) => (Option v -> Option v) -> k -> Map k v -> (Map k v, Option v)
 alter2 f k m = do // FIXME: this is an ugly hack to make it faster (do not copy prev)
-    (m, prev) <- remove m k
-    v <- f prev
-    case v of
-        Some v -> insert m k v
-        None -> (m, None)
+   (m, prev) <- remove m k
+   v <- f prev
+   case v of
+      Some v -> insert m k v
+      None -> (m, None)
 
 @Inline
 alterS si so k v :: (Ord k) => (si -> Option v -> (so, Option v)) -> si -> k -> Map k v -> (so, Map k v, Option v)
 alterS f s k m = do
-    (s, v) <- f s (get m k)
-    case v of
-        Some v -> do
-            (m, v) <- insert m k v
-            (s, m, v)
-        None -> do
-            (m, v) <- remove m k
-            (s, m, v)
+   (s, v) <- f s (get m k)
+   case v of
+      Some v -> do
+         (m, v) <- insert m k v
+         (s, m, v)
+      None -> do
+         (m, v) <- remove m k
+         (s, m, v)
 
 @Inline
 add k v :: (Ord k) => Map k [v] -> k -> v -> Map k ([v])
 add m k v = do
-    (m, _) <- alter (\old -> case old of
-                        Some vs -> Some (push vs v)
-                        None -> Some ([v])) k m
-    m
+   (m, _) <- alter (\old -> case old of
+      Some vs -> Some (push vs v)
+      None -> Some ([v])) k m
+   m
 
 @Inline
 addS s k v :: (Ord k) => s -> k -> Map k v -> (s -> k -> (s, v)) -> (s, v, Map k v)
 addS s k m f = do
-    ((s, v), m, _) <- alterS (\s, old -> case old of
-            Some v -> ((s, v), Some v)
-            None -> do
-                (s, v) <- f s k
-                ((s, v), Some v)) s k m
-    (s, v, m)
+   ((s, v), m, _) <- alterS (\s, old -> case old of
+      Some v -> ((s, v), Some v)
+      None -> do
+         (s, v) <- f s k
+         ((s, v), Some v)) s k m
+   (s, v, m)
 
 data MapIter k v = { inner :: MapIterator k v }
 
 instance Iterator (MapIter k v) > (k, v) where
-    next iter = do
-        (inner, item) <- Map.nextItem iter.inner
-        iter <- iter { inner = inner }
-        case item of
-            Some a -> (iter, Some a)
-            None -> (iter, None)
+   next iter = do
+      (inner, item) <- Map.nextItem iter.inner
+      iter <- iter { inner = inner }
+      case item of
+         Some a -> (iter, Some a)
+         None -> (iter, None)
 
 @Inline
 iter k v :: Map k v -> MapIter k v
@@ -185,8 +182,8 @@ nextItem iter = extern (arg[0].i[0].e[0] -> result.f[1].v[0].f[0].f[0],
 @Inline
 toMap it k v :: (Iterator it > (k, v), Ord k) => it -> Map k v
 toMap iter = Iterator.fold (\m, (k, v) -> do
-    (m, _) <- insert m k v
-    m) empty iter
+      (m, _) <- insert m k v
+      m) empty iter
 
 getSize k v :: Map k v -> ~Int
 getSize m = extern
@@ -197,15 +194,13 @@ getKeys m = m |> Map.iter |> Iterator.fold (\keys, (k, _) -> push keys k) []
 
 update k v :: (Ord k) => Map k v -> ((k, v) -> v) -> Map k v
 update m f = Map.map m (\(k, v) -> do
-    v <- f (k, v)
-    (k, v))
-// TODO, FIXME: make this extern
+      v <- f (k, v)
+      (k, v))
 
 updateS s k v :: (Ord k) => s -> Map k v -> (s -> (k, v) -> (s, v)) -> (s, Map k v)
 updateS s m f = Map.mapS s m (\s, (k, v) -> do
-    (s, v) <- f s (k, v)
-    (s, k, v))
-// TODO, FIXME: make this extern
+      (s, v) <- f s (k, v)
+      (s, k, v))
 
 @Inline
 fold s k v :: s -> Map k v -> (s -> (k, v) -> s) -> s
@@ -218,10 +213,10 @@ map input f = input |> Map.iter |> Iterator.map f |> toMap
 @Inline
 mapS s k1 v1 k2 v2 :: (Ord k1, Ord k2) => s -> Map k1 v1 -> (s -> (k1, v1) -> (s, k2, v2)) -> (s, Map k2 v2)
 mapS s m f = do
-    m |> Map.iter |> Iterator.fold (\(s, m2), (k, v) -> do
-        (s, k, v) <- f s (k, v)
-        (m2, _) <-insert m2 k v
-        (s, m2)) (s, Map.empty)
+   m |> Map.iter |> Iterator.fold (\(s, m2), (k, v) -> do
+      (s, k, v) <- f s (k, v)
+      (m2, _) <- insert m2 k v
+      (s, m2)) (s, Map.empty)
 
 @Inline
 filter k v :: (Ord k) => Map k v -> ((k, v) -> Bool) -> Map k v
