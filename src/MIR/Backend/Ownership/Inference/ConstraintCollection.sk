@@ -32,7 +32,7 @@ data Context = { function_id :: P.Identity,
                  ownership_expr_map :: Map OwnershipTypeVariable [E.ExprId],
                  group_expr_map :: Map GroupTypeVariable [E.ExprId],
                  ownership_group_map :: Map OwnershipTypeVariable [GroupTypeVariable],
-                 call_context_map :: Map E.ExprId CC.CallContextSet,
+                 call_context_map :: Map E.ExprId CC.CallContext,
                  call_args :: Map E.ExprId [OwnershipTypeVariable],
                  var_expr_map :: Map E.Var E.ExprId,
                }
@@ -70,7 +70,7 @@ processExpr context expr = do
         E.Multi _ -> context
         E.StaticFunctionCall f_id args -> do
                 context <- List.fold context args processExpr
-                (context, call_context_set, call_args) <- List.fold (context, CC.CallContextSet List.empty, []) args (\(context, call_context_set, call_args), arg -> do
+                (context, call_context, call_args) <- List.fold (context, CC.CallContext Map.empty, []) args (\(context, call_context, call_args), arg -> do
                     E.Expr _ _ id <- arg
                     info <- getTypeVariableInfoByExprId context.inference_info id context.function_id
                     //println "{}: {}" % (f_id, info)
@@ -82,14 +82,13 @@ processExpr context expr = do
                             g_call_context <- List.atIndex context.inference_info.base_call_contexts group_index
                             g_call_context <- CC.addOwnershipVarToCallContext g_call_context info.ownership_var
                             //println "g_call_context: {} {}" % (info, g_call_context)
-                            call_contexts <- call_context_set.call_contexts + g_call_context.call_contexts
-                            call_context_set <- call_context_set { call_contexts = call_contexts }
-                            (context, call_context_set, call_args)
-                        None -> (context, call_context_set, call_args))
+                            call_context <- CC.mergeCallContexts g_call_context call_context
+                            (context, call_context, call_args)
+                        None -> (context, call_context, call_args))
                 call_args <- Map.put context.call_args expr_id call_args
                 context <- context { call_args = call_args }
-                //println "{}: cc {} - {}" % (f_id, expr_id, call_context_set)
-                call_context_map <- Map.put context.call_context_map expr_id call_context_set
+                //println "{}: cc {} - {}" % (f_id, expr_id, call_context)
+                call_context_map <- Map.put context.call_context_map expr_id call_context
                 context <- context { call_context_map = call_context_map }
                 function <- P.getFunction context.program f_id
                 context <- case function.kind of
@@ -256,7 +255,7 @@ collectConstraints :: P.Identity -> P.Program -> BorrowInfo -> InferenceInfo -> 
                        Map GroupTypeVariable [E.ExprId],
                        Map OwnershipTypeVariable [GroupTypeVariable],
                        [OwnershipTypeVariable], P.Program,
-                       Map E.ExprId CC.CallContextSet, Map E.ExprId [OwnershipTypeVariable])
+                       Map E.ExprId CC.CallContext, Map E.ExprId [OwnershipTypeVariable])
 collectConstraints function_id program borrow_info inference_info body = do
     //trace "collectConstraints {}" % function_id
     context <- Context function_id inference_info program borrow_info []

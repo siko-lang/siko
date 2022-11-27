@@ -26,7 +26,7 @@ data Context = { inference_info :: InferenceInfo,
                  ownership_expr_map :: Map OwnershipTypeVariable [E.ExprId],
                  group_expr_map :: Map GroupTypeVariable [E.ExprId],
                  ownership_group_map :: Map OwnershipTypeVariable [GroupTypeVariable],
-                 call_context_map :: Map E.ExprId CC.CallContextSet,
+                 call_context_map :: Map E.ExprId CC.CallContext,
                  mode :: InferenceMode,
                  result_vars :: [OwnershipTypeVariable],
                  allow_guess :: Bool,
@@ -140,7 +140,7 @@ processCallContext :: Context -> E.ExprId -> Int -> OwnershipTypeVariable -> Own
 processCallContext context call_id index from to to_borrow = do
     context <- eraseFunctionConverterBorrow context index
     case Map.get context.call_context_map call_id of
-        Some call_context_set -> do
+        Some call_context -> do
             call_args <- case Map.get context.call_args call_id of
                 Some call_args -> call_args
                 None -> panic "Call args not found for call {}" % call_id
@@ -154,10 +154,9 @@ processCallContext context call_id index from to to_borrow = do
                     M.Borrower _ -> ([from_kind], [], [])
                     M.Unknown -> ([], [], [from_kind])
             else do
-                //debugPrint context "Call context set {}" % call_context_set
-                List.fold ([], [], []) call_context_set.call_contexts (\(borrows, owners, unknowns), call_context -> do
-                        case Map.get call_context.sub_map from of
-                            Some parents -> do
+                //debugPrint context "Call context {}" % call_context
+                case Map.get call_context.sub_map from of
+                    Some parent_lists -> List.fold ([], [], []) parent_lists (\(borrows, owners, unknowns), parents -> do
                                 //debugPrint context "Checking parents {}" % parents
                                 parent_kind <- getParentKind context parents
                                 //debugPrint context "Parent kind {}" % parent_kind
@@ -170,8 +169,8 @@ processCallContext context call_id index from to to_borrow = do
                                         (borrows, owners, unknowns)
                                     M.Unknown -> do
                                         unknowns <- List.push unknowns parent_kind
-                                        (borrows, owners, unknowns)
-                            None -> (borrows, owners, unknowns))
+                                        (borrows, owners, unknowns))
+                    None -> ([], [], [])
             //debugPrint context "After checking parents {}/{}/{}" % (borrows, owners, unknowns)
             if not (List.isEmpty unknowns)
             then context
@@ -415,7 +414,7 @@ dumpOwnership context = do
 processConstraints :: P.Identity -> InferenceInfo -> [C.Constraint] ->
                       Map E.ExprId [E.ExprId] -> Map OwnershipTypeVariable [E.ExprId] ->
                       Map GroupTypeVariable [E.ExprId] -> Map OwnershipTypeVariable [GroupTypeVariable] ->
-                      [OwnershipTypeVariable] -> Map E.ExprId CC.CallContextSet -> InferenceMode -> Map E.ExprId [OwnershipTypeVariable] ->
+                      [OwnershipTypeVariable] -> Map E.ExprId CC.CallContext -> InferenceMode -> Map E.ExprId [OwnershipTypeVariable] ->
                       InferenceInfo
 processConstraints function_id inference_info constraints invalid_borrow_map ownership_expr_map
                     group_expr_map ownership_group_map result_vars call_context_map mode call_args = do

@@ -224,6 +224,19 @@ split l n = extern
 reverse a :: [a] -> ~[a]
 reverse list = extern
 
+startsWith a :: (PartialEq a) => [a] -> [a] -> Bool
+startsWith self start = loop index <- 0 do
+   if index >= List.getLength start
+   then break True
+   else if index >= List.getLength self
+      then break False
+      else do
+         current_self <- atIndex self index
+         current_start <- atIndex start index
+         if current_self == current_start
+         then index + 1
+         else break False
+
 @Inline
 zip a b c :: [a] -> [b] -> (a -> b -> c) -> [c]
 zip l1 l2 f = do
