@@ -40,11 +40,12 @@ data ItemState = { state :: LayoutProcessorState,
                    paren_level :: Int,
                    end_of_block :: Bool,
                    first :: Bool,
+                   lambda_args :: Bool,
                  }
 
 processItem :: LayoutProcessorState -> Span -> (LayoutProcessorState, Bool)
 processItem state first_span = do
-    item_state <- ItemState state 0 False True
+    item_state <- ItemState state 0 False True False
     item_state <- loop item_state <- item_state do
         if not (isDone item_state.state)
         then do
@@ -64,6 +65,11 @@ processItem state first_span = do
                 case token.token of
                     KeywordDo | KeywordWhere | KeywordOf -> item_state { state = processBlock item_state.state }
                     KeywordModule -> break item_state { end_of_block = True }
+                    Comma -> if item_state.paren_level > 0 || item_state.lambda_args
+                        then item_state { state = advance item_state.state }
+                        else break item_state { end_of_block = True }
+                    Backslash -> item_state { state = advance item_state.state, lambda_args = True }
+                    RightArrow if item_state.lambda_args -> item_state { state = advance item_state.state, lambda_args = False }
                     LParen | LCurly | LBracket -> item_state { state = advance item_state.state, paren_level = item_state.paren_level + 1}
                     RParen | RCurly | RBracket -> do
                         paren_level <- item_state.paren_level - 1
