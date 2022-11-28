@@ -1,129 +1,112 @@
 module Siko.HIR.Backend.Typechecker.TypedFunction where
 
-import Siko.HIR.FullyQualifiedName as FQ
+import Map
+import Siko.HIR.Backend.Typechecker.TypeStore as TS
 import Siko.HIR.Expr as E
+import Siko.HIR.FullyQualifiedName as FQ
 import Siko.HIR.Function as F
 import Siko.HIR.Pattern as P
 import Siko.HIR.Type as T
 import Siko.HIR.TypeFormatter as TF
-import Siko.HIR.Backend.Typechecker.TypeStore as TS
 
-import Map
-
-data Context = { type_store :: TS.TypeStore, group_index :: Int }
+data Context = { type_store :: TS.TypeStore,
+                 group_index :: Int
+               }
 
 createTypedRecordConstructionItem :: Context -> E.RecordConstructionItem () -> E.RecordConstructionItem T.Type
-createTypedRecordConstructionItem context item =
-    E.RecordConstructionItem {
-        field_name = Std.Intrinsics.clone item.field_name,
-        body = createTypedExpr context item.body
-     }
+createTypedRecordConstructionItem context item = E.RecordConstructionItem { field_name = Std.Intrinsics.clone item.field_name, body = createTypedExpr context item.body }
 
 createTypedCase :: Context -> E.Case () -> E.Case T.Type
-createTypedCase context c =
-    E.Case {
-        pattern = createTypedPattern context c.pattern,
-        body = createTypedExpr context c.body
-     }
+createTypedCase context c = E.Case { pattern = createTypedPattern context c.pattern, body = createTypedExpr context c.body }
 
 createTypedSimplePattern :: Context -> P.SimplePattern () -> P.SimplePattern T.Type
 createTypedSimplePattern context s_pattern = case s_pattern of
-    P.Binding ref -> P.Binding (Std.Intrinsics.clone ref)
-    P.Tuple patterns -> P.Tuple (List.map patterns (createTypedPattern context))
-    P.Guarded pattern body -> P.Guarded (createTypedPattern context pattern) (createTypedExpr context body)
-    P.Wildcard -> P.Wildcard
-    P.IntegerLiteral lit -> P.IntegerLiteral (Std.Intrinsics.clone lit)
-    P.StringLiteral lit -> P.StringLiteral (Std.Intrinsics.clone lit)
-    P.CharLiteral lit -> P.CharLiteral (Std.Intrinsics.clone lit)
-    P.CharRange c1 c2 kind -> P.CharRange c1 c2 kind
-    P.Typed pattern type -> P.Typed (createTypedPattern context pattern) (Std.Intrinsics.clone type)
-    P.Record name args -> P.Record (Std.Intrinsics.clone name) (List.map args (createTypedPattern context))
-    P.Variant name index args -> P.Variant (Std.Intrinsics.clone name) index (List.map args (createTypedPattern context))
+   P.Binding ref -> P.Binding (Std.Intrinsics.clone ref)
+   P.Tuple patterns -> P.Tuple (List.map patterns (createTypedPattern context))
+   P.Guarded pattern body -> P.Guarded (createTypedPattern context pattern) (createTypedExpr context body)
+   P.Wildcard -> P.Wildcard
+   P.IntegerLiteral lit -> P.IntegerLiteral (Std.Intrinsics.clone lit)
+   P.StringLiteral lit -> P.StringLiteral (Std.Intrinsics.clone lit)
+   P.CharLiteral lit -> P.CharLiteral (Std.Intrinsics.clone lit)
+   P.CharRange c1 c2 kind -> P.CharRange c1 c2 kind
+   P.Typed pattern type -> P.Typed (createTypedPattern context pattern) (Std.Intrinsics.clone type)
+   P.Record name args -> P.Record (Std.Intrinsics.clone name) (List.map args (createTypedPattern context))
+   P.Variant name index args -> P.Variant (Std.Intrinsics.clone name) index (List.map args (createTypedPattern context))
 
 createTypedPattern :: Context -> P.Pattern () -> P.Pattern T.Type
 createTypedPattern context (P.Pattern s_pattern id _ location) = do
-    context :: Context <- context // FIXME: why is this needed?
-    type <- T.fixedType (TS.getPatternType context.type_store context.group_index id)
-    s_pattern <- createTypedSimplePattern context s_pattern
-    P.Pattern s_pattern id type location
+   context :: Context <- context // FIXME: why is this needed?
+   type <- T.fixedType (TS.getPatternType context.type_store context.group_index id)
+   s_pattern <- createTypedSimplePattern context s_pattern
+   P.Pattern s_pattern id type location
 
-processExprs :: Context -> [E.Expr ()]  -> [E.Expr T.Type]
+processExprs :: Context -> [E.Expr ()] -> [E.Expr T.Type]
 processExprs context exprs = List.map exprs (createTypedExpr context)
 
 createTypedEffectHandlerSelection :: Context -> E.EffectHandlerSelection () -> E.EffectHandlerSelection T.Type
 createTypedEffectHandlerSelection context selection = case selection of
-    E.Static qn -> E.Static (Std.Intrinsics.clone qn)
-    E.Dynamic expr -> E.Dynamic (createTypedExpr context expr)
-    E.Default -> E.Default
+   E.Static qn -> E.Static (Std.Intrinsics.clone qn)
+   E.Dynamic expr -> E.Dynamic (createTypedExpr context expr)
+   E.Default -> E.Default
 
 createTypeHandler :: Context -> E.EffectHandler () -> E.EffectHandler T.Type
-createTypeHandler context handler =
-    E.EffectHandler {
-        name = Std.Intrinsics.clone handler.name,
-        selection = createTypedEffectHandlerSelection context handler.selection,
-        location = handler.location
-     }
+createTypeHandler context handler = E.EffectHandler { name = Std.Intrinsics.clone handler.name, selection = createTypedEffectHandlerSelection context handler.selection, location = handler.location }
 
 createTypedSimpleExpr :: Context -> E.ExprId -> E.SimpleExpr () -> E.SimpleExpr T.Type
 createTypedSimpleExpr context id s_expr = case s_expr of
-    E.StaticFunctionCall qn args -> E.StaticFunctionCall (Std.Intrinsics.clone qn) (processExprs context args)
-    E.DynamicFunctionCall receiver args -> E.DynamicFunctionCall (createTypedExpr context receiver) (processExprs context args)
-    E.ClassMemberCall qn args -> E.ClassMemberCall (Std.Intrinsics.clone qn) (processExprs context args)
-    E.EffectMemberCall qn args -> E.EffectMemberCall (Std.Intrinsics.clone qn) (processExprs context args)
-    E.VariantConstructorCall qn args -> E.VariantConstructorCall (Std.Intrinsics.clone qn) (processExprs context args)
-    E.RecordConstructorCall qn args -> E.RecordConstructorCall (Std.Intrinsics.clone qn) (processExprs context args)
-    E.If cond true_branch false_branch ->
-        E.If (createTypedExpr context cond) (createTypedExpr context true_branch) (createTypedExpr context false_branch)
-    E.Tuple items -> E.Tuple (processExprs context items)
-    E.List items -> E.List (processExprs context items)
-    E.IntegerLiteral lit -> E.IntegerLiteral (Std.Intrinsics.clone lit)
-    E.FloatLiteral lit -> E.FloatLiteral (Std.Intrinsics.clone lit)
-    E.StringLiteral lit -> E.StringLiteral (Std.Intrinsics.clone lit)
-    E.CharLiteral lit -> E.CharLiteral (Std.Intrinsics.clone lit)
-    E.Do items -> E.Do (processExprs context items)
-    E.Bind pattern rhs -> E.Bind (createTypedPattern context pattern) (createTypedExpr context rhs)
-    E.FieldAccess name receiver -> E.FieldAccess (Std.Intrinsics.clone name) (createTypedExpr context receiver)
-    E.TupleFieldAccess index receiver -> E.TupleFieldAccess index (createTypedExpr context receiver)
-    E.Formatter fmt args -> E.Formatter (Std.Intrinsics.clone fmt) (processExprs context args)
-    E.CaseOf body cases bind_groups -> E.CaseOf
-        (createTypedExpr context body) (List.map cases (createTypedCase context)) (Std.Intrinsics.clone bind_groups)
-    E.RecordUpdate ref items -> E.RecordUpdate (createTypedExpr context ref) (List.map items (createTypedRecordConstructionItem context))
-    E.Return arg -> E.Return (createTypedExpr context arg)
-    E.Continue arg -> E.Continue (createTypedExpr context arg)
-    E.Break arg -> E.Break (createTypedExpr context arg)
-    E.Loop pattern initializer body continues breaks -> E.Loop
-        (createTypedPattern context pattern) (createTypedExpr context initializer) (createTypedExpr context body) (Std.Intrinsics.clone continues) (Std.Intrinsics.clone breaks)
-    E.ArgRef i -> E.ArgRef i
-    E.ValueRef ref -> E.ValueRef (Std.Intrinsics.clone ref)
-    E.With handlers body _ -> do
-        eff_types <- Std.Intrinsics.clone (TS.getWithEffects context.type_store context.group_index id)
-        eff_types <- List.map eff_types (\t -> E.EffectType (T.fixedType t))
-        E.With (List.map (Std.Intrinsics.clone handlers) (createTypeHandler context)) (createTypedExpr context body) eff_types
+   E.StaticFunctionCall qn args -> E.StaticFunctionCall (Std.Intrinsics.clone qn) (processExprs context args)
+   E.DynamicFunctionCall receiver args -> E.DynamicFunctionCall (createTypedExpr context receiver) (processExprs context args)
+   E.ClassMemberCall qn args -> E.ClassMemberCall (Std.Intrinsics.clone qn) (processExprs context args)
+   E.EffectMemberCall qn args -> E.EffectMemberCall (Std.Intrinsics.clone qn) (processExprs context args)
+   E.VariantConstructorCall qn args -> E.VariantConstructorCall (Std.Intrinsics.clone qn) (processExprs context args)
+   E.RecordConstructorCall qn args -> E.RecordConstructorCall (Std.Intrinsics.clone qn) (processExprs context args)
+   E.If cond true_branch false_branch -> E.If (createTypedExpr context cond) (createTypedExpr context true_branch) (createTypedExpr context false_branch)
+   E.Tuple items -> E.Tuple (processExprs context items)
+   E.List items -> E.List (processExprs context items)
+   E.IntegerLiteral lit -> E.IntegerLiteral (Std.Intrinsics.clone lit)
+   E.FloatLiteral lit -> E.FloatLiteral (Std.Intrinsics.clone lit)
+   E.StringLiteral lit -> E.StringLiteral (Std.Intrinsics.clone lit)
+   E.CharLiteral lit -> E.CharLiteral (Std.Intrinsics.clone lit)
+   E.Do items -> E.Do (processExprs context items)
+   E.Bind pattern rhs -> E.Bind (createTypedPattern context pattern) (createTypedExpr context rhs)
+   E.FieldAccess name receiver -> E.FieldAccess (Std.Intrinsics.clone name) (createTypedExpr context receiver)
+   E.TupleFieldAccess index receiver -> E.TupleFieldAccess index (createTypedExpr context receiver)
+   E.Formatter fmt args -> E.Formatter (Std.Intrinsics.clone fmt) (processExprs context args)
+   E.CaseOf body cases bind_groups -> E.CaseOf (createTypedExpr context body) (List.map cases (createTypedCase context)) (Std.Intrinsics.clone bind_groups)
+   E.RecordUpdate ref items -> E.RecordUpdate (createTypedExpr context ref) (List.map items (createTypedRecordConstructionItem context))
+   E.Return arg -> E.Return (createTypedExpr context arg)
+   E.Continue arg -> E.Continue (createTypedExpr context arg)
+   E.Break arg -> E.Break (createTypedExpr context arg)
+   E.Loop pattern initializer body continues breaks -> E.Loop (createTypedPattern context pattern) (createTypedExpr context initializer) (createTypedExpr context body) (Std.Intrinsics.clone continues) (Std.Intrinsics.clone breaks)
+   E.ArgRef i -> E.ArgRef i
+   E.ValueRef ref -> E.ValueRef (Std.Intrinsics.clone ref)
+   E.With handlers body _ -> do
+      eff_types <- Std.Intrinsics.clone (TS.getWithEffects context.type_store context.group_index id)
+      eff_types <- List.map eff_types (\t -> E.EffectType (T.fixedType t))
+      E.With (List.map (Std.Intrinsics.clone handlers) (createTypeHandler context)) (createTypedExpr context body) eff_types
 
 createTypedExpr :: Context -> E.Expr () -> E.Expr T.Type
 createTypedExpr context (E.Expr s_expr id _ location) = do
-    context :: Context <- context // FIXME: why is this needed?
-    type <- T.fixedType (TS.getExprType context.type_store context.group_index id)
-    s_expr <- createTypedSimpleExpr context id s_expr
-    E.Expr s_expr id type location
+   context :: Context <- context // FIXME: why is this needed?
+   type <- T.fixedType (TS.getExprType context.type_store context.group_index id)
+   s_expr <- createTypedSimpleExpr context id s_expr
+   E.Expr s_expr id type location
 
 createTypedFunction :: Context -> F.Function () -> T.Type -> [T.Type] -> F.Function T.Type
 createTypedFunction context function type effects = do
-    type <- T.fixedType type
-    effects <- List.map effects T.fixedType
-    F.Function {
-        location = function.location,
-        name = Std.Intrinsics.clone function.name,
-        arg_count = function.arg_count,
-        kind = Std.Intrinsics.clone function.kind,
-        type = Some type,
-        type_with_ownership = Std.Intrinsics.clone function.type_with_ownership,
-        body = case function.body of
-            Some body -> Some (createTypedExpr context body)
-            None -> None,
-        effects = Some effects,
-        attributes = Std.Intrinsics.clone function.attributes,
-        extern_constraints = Std.Intrinsics.clone function.extern_constraints,
-        expr_id_gen = function.expr_id_gen,
-        pattern_id_gen = function.pattern_id_gen,
-     }
+   type <- T.fixedType type
+   effects <- List.map effects T.fixedType
+   F.Function { location = function.location,
+                name = Std.Intrinsics.clone function.name,
+                arg_count = function.arg_count,
+                kind = Std.Intrinsics.clone function.kind,
+                type = Some type,
+                type_with_ownership = Std.Intrinsics.clone function.type_with_ownership,
+                body = case function.body of
+      Some body -> Some (createTypedExpr context body)
+      None -> None,
+                effects = Some effects,
+                attributes = Std.Intrinsics.clone function.attributes,
+                extern_constraints = Std.Intrinsics.clone function.extern_constraints,
+                expr_id_gen = function.expr_id_gen,
+                pattern_id_gen = function.pattern_id_gen }

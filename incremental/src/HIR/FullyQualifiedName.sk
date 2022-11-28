@@ -1,11 +1,11 @@
 module Siko.HIR.FullyQualifiedName where
 
-import Siko.Syntax.Location
-import Siko.HIR.Function as F
-import Siko.HIR.Effect as Eff
 import Siko.HIR.Class as C
+import Siko.HIR.Effect as Eff
+import Siko.HIR.Function as F
 import Siko.HIR.Type as T
 import Siko.HIR.TypeFormatter as TF
+import Siko.Syntax.Location
 import Siko.Util.SharedString as SS
 
 data FullyQualifiedName = FullPath SS.SharedString SS.SharedString
@@ -20,53 +20,53 @@ data FullyQualifiedName = FullPath SS.SharedString SS.SharedString
                         deriving (PartialEq, Eq, PartialOrd, Ord)
 
 instance Show FullyQualifiedName where
-    show f = case f of
-        FullPath m n -> "{}.{}" % (m, n)
-        FullPathWithVariant m n v -> "{}.{}/{}" % (m, n, v)
-        FullPathWithLambda n i -> "{}/{}" % (n, i)
-        FullPathInstance m l -> "{}/{}" % (m, l)
-        FullPathWithInstanceId m n i -> "{}.{}/#{}" % (m, n, i)
-        ModulePath m -> "{}" % m
-        SubItem p n -> "{}/{}" % (p, n)
-        Effectless n s -> case s of
-                Some s -> "{}=[{}]" % (n, s)
-                None -> "{}" % n
-        Monomorphized n type -> "{}=[{}]" % (n, TF.toString type)
+   show f = case f of
+      FullPath m n -> "{}.{}" % (m, n)
+      FullPathWithVariant m n v -> "{}.{}/{}" % (m, n, v)
+      FullPathWithLambda n i -> "{}/{}" % (n, i)
+      FullPathInstance m l -> "{}/{}" % (m, l)
+      FullPathWithInstanceId m n i -> "{}.{}/#{}" % (m, n, i)
+      ModulePath m -> "{}" % m
+      SubItem p n -> "{}/{}" % (p, n)
+      Effectless n s -> case s of
+         Some s -> "{}=[{}]" % (n, s)
+         None -> "{}" % n
+      Monomorphized n type -> "{}=[{}]" % (n, TF.toString type)
 
 getResolvableName :: FullyQualifiedName -> SS.SharedString
 getResolvableName f = do
-    s <- case f of
-        FullPath m n -> "{}.{}" % (m, n)
-        FullPathWithVariant m n v -> "{}.{}" % (m, v)
-        FullPathWithLambda n i -> panic "getResolvableName called for a lambda"
-        FullPathInstance m l -> panic "getResolvableName called for a instance"
-        FullPathWithInstanceId m n i -> panic "getResolvableName called for a instance member"
-        ModulePath m -> panic "getResolvableName called for a module"
-        SubItem p n -> panic "getResolvableName called for a sub item"
-        Effectless n s -> return getResolvableName n
-        Monomorphized n type -> return getResolvableName n
-    SS.create s
+   s <- case f of
+      FullPath m n -> "{}.{}" % (m, n)
+      FullPathWithVariant m n v -> "{}.{}" % (m, v)
+      FullPathWithLambda n i -> panic "getResolvableName called for a lambda"
+      FullPathInstance m l -> panic "getResolvableName called for a instance"
+      FullPathWithInstanceId m n i -> panic "getResolvableName called for a instance member"
+      ModulePath m -> panic "getResolvableName called for a module"
+      SubItem p n -> panic "getResolvableName called for a sub item"
+      Effectless n s -> return getResolvableName n
+      Monomorphized n type -> return getResolvableName n
+   SS.create s
 
 getShortName :: FullyQualifiedName -> SS.SharedString
 getShortName f = case f of
-        FullPath m n -> n
-        FullPathWithVariant m n v -> n
-        FullPathWithLambda n i -> SS.create "{}_lambda" % getShortName n
-        FullPathInstance m l -> SS.create "{}/#{}" % (m, l)
-        FullPathWithInstanceId m n i -> n
-        ModulePath m -> m
-        SubItem p n -> n
-        Effectless n s -> getShortName n
-        Monomorphized n type -> getShortName n
+   FullPath m n -> n
+   FullPathWithVariant m n v -> n
+   FullPathWithLambda n i -> SS.create "{}_lambda" % getShortName n
+   FullPathInstance m l -> SS.create "{}/#{}" % (m, l)
+   FullPathWithInstanceId m n i -> n
+   ModulePath m -> m
+   SubItem p n -> n
+   Effectless n s -> getShortName n
+   Monomorphized n type -> getShortName n
 
 getModuleName :: FullyQualifiedName -> SS.SharedString
 getModuleName f = case f of
-        FullPath m n -> m
-        FullPathWithVariant m n v -> m
-        FullPathWithLambda n i -> getModuleName n
-        FullPathInstance m l -> m
-        FullPathWithInstanceId m n i -> m
-        ModulePath m -> m
-        SubItem p n -> getModuleName p
-        Effectless n s -> getModuleName n
-        Monomorphized n type -> getModuleName n
+   FullPath m n -> m
+   FullPathWithVariant m n v -> m
+   FullPathWithLambda n i -> getModuleName n
+   FullPathInstance m l -> m
+   FullPathWithInstanceId m n i -> m
+   ModulePath m -> m
+   SubItem p n -> getModuleName p
+   Effectless n s -> getModuleName n
+   Monomorphized n type -> getModuleName n

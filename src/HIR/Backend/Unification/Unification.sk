@@ -1,227 +1,219 @@
 module Siko.HIR.Backend.Unification where
 
-import Siko.HIR.Backend.Unification.Substitution
+import Map as Map
 import Siko.HIR.Backend.Unification.Data as UD
+import Siko.HIR.Backend.Unification.Substitution
+import Siko.HIR.Data as D
+import Siko.HIR.Program as P
 import Siko.HIR.Type
 import Siko.HIR.TypeFormatter as TF
 import Siko.HIR.Util as Util
-import Siko.HIR.Program as P
-import Siko.HIR.Data as D
-import Map as Map
 import Std.Util
 
 class TypeVarGenerator a where
-    getNewTypeVar a :: a -> (a, TypeVar)
-    getNewTypeVarType a :: a -> (a, Type)
+   getNewTypeVar a :: a -> (a, TypeVar)
+
+   getNewTypeVarType a :: a -> (a, Type)
 
 class DataProvider a where
-    getRecord a :: a -> P.FullyQualifiedName -> Option D.Record
+   getRecord a :: a -> P.FullyQualifiedName -> Option D.Record
 
 class ClassProvider a where
-    getAllClassDependencies a :: a -> P.FullyQualifiedName -> [P.FullyQualifiedName]
-    getAssociatedTypeCount a :: a -> P.FullyQualifiedName -> Int
+   getAllClassDependencies a :: a -> P.FullyQualifiedName -> [P.FullyQualifiedName]
+
+   getAssociatedTypeCount a :: a -> P.FullyQualifiedName -> Int
 
 class (TypeVarGenerator a, DataProvider a, ClassProvider a) => Context a where
-    ignoreConstraints a :: a -> Bool
+   ignoreConstraints a :: a -> Bool
 
 trySub a :: a -> Substitution -> TypeVar -> Type -> Result (a, Substitution) (a, Substitution)
-trySub context sub var type =
-    case add sub var type of
-        Ok sub -> Ok (context, sub)
-        Err sub -> Err (context, sub)
+trySub context sub var type = case add sub var type of
+   Ok sub -> Ok (context, sub)
+   Err sub -> Err (context, sub)
 
 unifyArgs a :: (Context a) => a -> Substitution -> [Type] -> [Type] -> Result (a, Substitution) (a, Substitution)
 unifyArgs context sub args1 args2 = do
-    loop (context, sub, index) <- (context, sub, 0) do
-        if index == getLength args1
-            then return Ok (context, sub)
-            else do
-                arg1 <- atIndex args1 index
-                arg2 <- atIndex args2 index
-                (context, sub) <- try unify context sub arg1 arg2
-                (context, sub, index + 1)
+   loop (context, sub, index) <- (context, sub, 0) do
+      if index == getLength args1
+      then return Ok (context, sub)
+      else do
+         arg1 <- atIndex args1 index
+         arg2 <- atIndex args2 index
+         (context, sub) <- try unify context sub arg1 arg2
+         (context, sub, index + 1)
 
 getClassConstraints :: [Constraint] -> [P.FullyQualifiedName]
 getClassConstraints constraints = constraints |> List.iter |> Iterator.fold (\class_constraints, c -> case c of
-    ClassConstraint s _ -> push class_constraints s
-    RowConstraint _ _ -> class_constraints) []
+      ClassConstraint s _ -> push class_constraints s
+      RowConstraint _ _ -> class_constraints) []
 
 getRowConstraints :: [Constraint] -> [(RowKind, Type)]
 getRowConstraints constraints = constraints |> List.iter |> Iterator.fold (\row_constraints, c -> case c of
-    ClassConstraint _ _ -> row_constraints
-    RowConstraint kind row_type -> push row_constraints (kind, row_type)) []
+      ClassConstraint _ _ -> row_constraints
+      RowConstraint kind row_type -> push row_constraints (kind, row_type)) []
 
 unifyVarWithType a :: (Context a) => a -> TypeVar -> [Constraint] -> Substitution -> Type -> Result (a, Substitution) (a, Substitution)
 unifyVarWithType context var constraints sub type = do
-    row_constraints <- getRowConstraints constraints
-    //println "Row constraints before unification"
-    //row_constraints |> List.iter |> Iterator.forEach (\(k, t) -> println "{} {}" % (k, toString t))
-    //println "Row constraints before unification -- END"
-    (sub, context) <- if List.isEmpty row_constraints
-        then (sub, context)
-        else case type of
-            Named qn args -> do
-                case getRecord context qn of
-                    None -> return Err (context, sub)
-                    Some record -> do
-                        (context, record) <- case UD.instantiateRecord context record type of
-                            Ok (context, record) -> (context, record)
-                            Err context -> return Err (context, sub)
-                        (success, record, sub, context) <- row_constraints |> List.iter |> Iterator.fold (\(success, record, sub, context), (kind, row_type) -> do
-                                case kind of
-                                    NamedRow row_name -> do
-                                        case D.getFieldByName record row_name of
-                                            Some (D.RecordField _ field_type) -> do
-                                                //println "Field type {} row type {}" % (TF.toString field_type, TF.toString row_type)
-                                                case unify context sub field_type row_type of
-                                                    Ok (context, sub) -> do
-                                                        //println "After field unification, sub: {}" % sub
-                                                        record <- apply record sub
-                                                        (success, record, sub, context)
-                                                    Err (context, sub) -> (False, record, sub, context)
-                                            None -> (False, record, sub, context)
-                                    IndexedRow _ -> (False, record, sub, context)
-                            ) (True, record, sub, context)
-                        if success then (sub, context) else return Err (context, sub)
-            Tuple args -> do
-                    (success, args, sub, context) <- row_constraints |> List.iter |> Iterator.fold (\(success, args, sub, context), (kind, row_type) -> do
-                            case kind of
-                                NamedRow _ -> (False, args, sub, context)
-                                IndexedRow index -> if index < getLength args
-                                    then do
-                                        item_type <- atIndex args index
-                                        case unify context sub item_type row_type of
-                                            Ok (context, sub) -> do
-                                                args <- args |> List.iter |> Iterator.map (\t -> apply t sub) |> toList
-                                                (success, args, sub, context)
-                                            Err (context, sub) -> (False, args, sub, context)
-                                    else (False, args, sub, context)
-                        ) (True, args, sub, context)
-                    if success
-                    then (sub, context)
-                    else return Err (context, sub)
-            _ -> return Err (context, sub)
-    sub <- List.fold sub constraints (\sub, constraint ->
-            case constraint of
-                ClassConstraint class_name associated_types -> do
-                    c <- UnificationConstraint class_name type associated_types
-                    addUnificationConstraint sub c
-                _ -> sub)
-    trySub context sub var type
+   row_constraints <- getRowConstraints constraints
+   //println "Row constraints before unification"
+   //row_constraints |> List.iter |> Iterator.forEach (\(k, t) -> println "{} {}" % (k, toString t))
+   //println "Row constraints before unification -- END"
+   (sub, context) <- if List.isEmpty row_constraints
+   then (sub, context)
+   else case type of
+      Named qn args -> do
+         case getRecord context qn of
+            None -> return Err (context, sub)
+            Some record -> do
+               (context, record) <- case UD.instantiateRecord context record type of
+                  Ok (context, record) -> (context, record)
+                  Err context -> return Err (context, sub)
+               (success, record, sub, context) <- row_constraints |> List.iter |> Iterator.fold (\(success, record, sub, context), (kind, row_type) -> do
+                  case kind of
+                     NamedRow row_name -> do
+                        case D.getFieldByName record row_name of
+                           Some (D.RecordField _ field_type) -> do
+                              //println "Field type {} row type {}" % (TF.toString field_type, TF.toString row_type)
+                              case unify context sub field_type row_type of
+                                 Ok (context, sub) -> do
+                                    //println "After field unification, sub: {}" % sub
+                                    record <- apply record sub
+                                    (success, record, sub, context)
+                                 Err (context, sub) -> (False, record, sub, context)
+                           None -> (False, record, sub, context)
+                     IndexedRow _ -> (False, record, sub, context)) (True, record, sub, context)
+               if success
+               then (sub, context)
+               else return Err (context, sub)
+      Tuple args -> do
+         (success, args, sub, context) <- row_constraints |> List.iter |> Iterator.fold (\(success, args, sub, context), (kind, row_type) -> do
+            case kind of
+               NamedRow _ -> (False, args, sub, context)
+               IndexedRow index -> if index < getLength args
+                  then do
+                     item_type <- atIndex args index
+                     case unify context sub item_type row_type of
+                        Ok (context, sub) -> do
+                           args <- args |> List.iter |> Iterator.map (\t -> apply t sub) |> toList
+                           (success, args, sub, context)
+                        Err (context, sub) -> (False, args, sub, context)
+                  else (False, args, sub, context)) (True, args, sub, context)
+         if success
+         then (sub, context)
+         else return Err (context, sub)
+      _ -> return Err (context, sub)
+   sub <- List.fold sub constraints (\sub, constraint -> case constraint of
+      ClassConstraint class_name associated_types -> do
+         c <- UnificationConstraint class_name type associated_types
+         addUnificationConstraint sub c
+      _ -> sub)
+   trySub context sub var type
 
 createAssociatedTypeMap :: [Constraint] -> Map.Map P.FullyQualifiedName [Type]
-createAssociatedTypeMap constraints = List.fold Map.empty constraints
-    (\associated_type_map, constraint -> case constraint of
-        ClassConstraint qn associated_types -> Map.put associated_type_map qn associated_types
-        _ -> associated_type_map)
+createAssociatedTypeMap constraints = List.fold Map.empty constraints (\associated_type_map, constraint -> case constraint of
+      ClassConstraint qn associated_types -> Map.put associated_type_map qn associated_types
+      _ -> associated_type_map)
 
 unifyVarWithFixedArg a :: (Context a) => a -> Substitution -> TypeVar -> [Constraint] -> [Constraint] -> Type -> Result (a, Substitution) (a, Substitution)
 unifyVarWithFixedArg context sub var var_constraints fixed_arg_constraints fixed_arg_type = do
-    fixed_associated_type_map <- createAssociatedTypeMap fixed_arg_constraints
-    fixed_classes <- Util.collectClassesFromClassConstraints fixed_arg_constraints
-    var_associated_type_map <- createAssociatedTypeMap var_constraints
-    (context, ok, sub) <- Map.fold (context, True, sub) var_associated_type_map (\(context, ok, sub), (class_name, associated_types) ->
-        case Map.get fixed_associated_type_map class_name of
-            Some fixed_associated_types ->
-                List.zipS (context, ok, sub) fixed_associated_types associated_types (\(context, ok, sub), ty1, ty2 -> do
-                    case unify context sub ty1 ty2 of
-                        Ok (context, sub) -> (context, ok, sub)
-                        Err (context, sub) -> (context, False, sub))
-            None -> do
-                all <- fixed_classes |> List.iter |> Iterator.fold (\all, c -> do
-                        all <- all + (getAllClassDependencies context c)
-                        all) []
-                ok <- ok && contains all class_name
-                (context, ok, sub))
-    if ok
-    then trySub context sub var fixed_arg_type
-    else Err (context, sub)
+   fixed_associated_type_map <- createAssociatedTypeMap fixed_arg_constraints
+   fixed_classes <- Util.collectClassesFromClassConstraints fixed_arg_constraints
+   var_associated_type_map <- createAssociatedTypeMap var_constraints
+   (context, ok, sub) <- Map.fold (context, True, sub) var_associated_type_map (\(context, ok, sub), (class_name, associated_types) -> case Map.get fixed_associated_type_map class_name of
+      Some fixed_associated_types -> List.zipS (context, ok, sub) fixed_associated_types associated_types (\(context, ok, sub), ty1, ty2 -> do
+            case unify context sub ty1 ty2 of
+               Ok (context, sub) -> (context, ok, sub)
+               Err (context, sub) -> (context, False, sub))
+      None -> do
+         all <- fixed_classes |> List.iter |> Iterator.fold (\all, c -> do
+            all <- all + (getAllClassDependencies context c)
+            all) []
+         ok <- ok && contains all class_name
+         (context, ok, sub))
+   if ok
+   then trySub context sub var fixed_arg_type
+   else Err (context, sub)
 
 mergeConstraints a :: (Context a) => a -> Substitution -> [Constraint] -> [Constraint] -> Result (a, Substitution) (a, Substitution)
 mergeConstraints context sub var1_constraints var2_constraints = do
-    var1_associated_type_map <- createAssociatedTypeMap var1_constraints
-    var2_associated_type_map <- createAssociatedTypeMap var2_constraints
-    (context, ok, sub) <- Map.fold (context, True, sub) var1_associated_type_map (\(context, ok, sub), (class_name, associated_types) ->
-        case Map.get var2_associated_type_map class_name of
-            Some var2_associated_types ->
-                List.zipS (context, ok, sub) var2_associated_types associated_types (\(context, ok, sub), ty1, ty2 -> do
-                    case unify context sub ty1 ty2 of
-                        Ok (context, sub) -> (context, ok, sub)
-                        Err (context, sub) -> (context, False, sub))
-            None -> (context, ok, sub))
-    if ok
-    then Ok (context, sub)
-    else Err (context, sub)
+   var1_associated_type_map <- createAssociatedTypeMap var1_constraints
+   var2_associated_type_map <- createAssociatedTypeMap var2_constraints
+   (context, ok, sub) <- Map.fold (context, True, sub) var1_associated_type_map (\(context, ok, sub), (class_name, associated_types) -> case Map.get var2_associated_type_map class_name of
+      Some var2_associated_types -> List.zipS (context, ok, sub) var2_associated_types associated_types (\(context, ok, sub), ty1, ty2 -> do
+            case unify context sub ty1 ty2 of
+               Ok (context, sub) -> (context, ok, sub)
+               Err (context, sub) -> (context, False, sub))
+      None -> (context, ok, sub))
+   if ok
+   then Ok (context, sub)
+   else Err (context, sub)
 
 unify a :: (Context a) => a -> Substitution -> Type -> Type -> Result (a, Substitution) (a, Substitution)
 unify context sub type1 type2 = do
-    //println "UNIFICATION {} {}" % (TF.toString type1, TF.toString type2)
-    type1 <- apply type1 sub
-    type2 <- apply type2 sub
-    case (type1, type2) of
-        (Named qn1 args1, Named qn2 args2) ->
-            if qn1 == qn2
-            then unifyArgs context sub args1 args2
-            else Err (context, sub)
-        (Var var1 constraints1, Var var2 constraints2) ->
-            if var1 == var2
-                then if constraints1 != constraints2
-                    then do
-                        println "Constraints changed! {} != {}" % (constraints1, constraints2)
-                        Err (context, sub)
-                    else Ok (context, sub)
-                else do
-                    if constraints1 == constraints2 || ignoreConstraints context
-                        then trySub context sub var1 type2
-                        else do
-                            // FIXME: this is wrong, lost of cases are not covered, like row constraints?
-                            //println "Merging {}/{} and {}/{}" % (var1, constraints1, var2, constraints2)
-                            (context, sub) <- try mergeConstraints context sub constraints1 constraints2
-                            constraints1 <- List.map constraints1 (\c -> apply c sub)
-                            constraints2 <- List.map constraints2 (\c -> apply c sub)
-                            //println "Halfway merging {}/{} and {}/{}" % (var1, constraints1, var2, constraints2)
-                            constraints <- constraints1 + constraints2
-                            constraints <- constraints |> sort |> dedup
-                            (context, new_type_var) <- getNewTypeVar context
-                            //println "Result {}/{}" % (new_type_var, constraints)
-                            new_type <- Var new_type_var constraints
-                            (context, sub) <- try trySub context sub var1 new_type
-                            (context, sub) <- try trySub context sub var2 new_type
-                            Ok (context, sub)
-        (FixedTypeArg _ var1 _, FixedTypeArg _ var2 _) ->
-            if var1 == var2
-            then Ok (context, sub)
-            else Err (context, sub)
-        (FixedTypeArg _ var1 constraints1, Var var2 constraints2) -> do
-            if var1 == var2
-            then panic "Fixed and var at the same time! {}/{}" % (var1, var2)
-            else ()
-            unifyVarWithFixedArg context sub var2 constraints2 constraints1 type1
-        (Var var1 constraints1, FixedTypeArg _ var2 constraints2) -> do
-            if var1 == var2
-            then panic "Fixed and var at the same time! {}/{}" % (var1, var2)
-            else ()
-            unifyVarWithFixedArg context sub var1 constraints1 constraints2 type2
-        (Var var1 _, Never var2) -> trySub context sub var1 type2
-        (Never var1, Var var2 _) -> trySub context sub var2 type1
-        (Var var constraints, type2) -> unifyVarWithType context var constraints sub type2
-        (type1, Var var constraints) -> unifyVarWithType context var constraints sub type1
-        (Tuple args1, Tuple args2) -> do
-            if getLength args1 != getLength args2
-                then Err (context, sub)
-                else unifyArgs context sub args1 args2
-        (Function from1 to1, Function from2 to2) -> do
-            (context, sub) <- try unify context sub from1 from2
-            (context, sub) <- try unify context sub to1 to2
-            Ok (context, sub)
-        (Never var1, Never var2) -> do
-            if var1 == var2
-                then Ok (context, sub)
-                else trySub context sub var1 type2
-        (Never var, type2) -> trySub context sub var type2
-        (type1, Never var) -> trySub context sub var type1
-        (Ref _ type1, type2) -> unify context sub type1 type2
-        (type1, Ref _ type2) -> unify context sub type1 type2
-        (Owner type1, type2) -> unify context sub type1 type2
-        (type1, Owner type2) -> unify context sub type1 type2
-        _ -> Err (context, sub)
+   //println "UNIFICATION {} {}" % (TF.toString type1, TF.toString type2)
+   type1 <- apply type1 sub
+   type2 <- apply type2 sub
+   case (type1, type2) of
+      (Named qn1 args1, Named qn2 args2) -> if qn1 == qn2
+         then unifyArgs context sub args1 args2
+         else Err (context, sub)
+      (Var var1 constraints1, Var var2 constraints2) -> if var1 == var2
+         then if constraints1 != constraints2
+            then do
+               println "Constraints changed! {} != {}" % (constraints1, constraints2)
+               Err (context, sub)
+            else Ok (context, sub)
+         else do
+            if constraints1 == constraints2 || ignoreConstraints context
+            then trySub context sub var1 type2
+            else do
+               // FIXME: this is wrong, lost of cases are not covered, like row constraints?
+               //println "Merging {}/{} and {}/{}" % (var1, constraints1, var2, constraints2)
+               (context, sub) <- try mergeConstraints context sub constraints1 constraints2
+               constraints1 <- List.map constraints1 (\c -> apply c sub)
+               constraints2 <- List.map constraints2 (\c -> apply c sub)
+               //println "Halfway merging {}/{} and {}/{}" % (var1, constraints1, var2, constraints2)
+               constraints <- constraints1 + constraints2
+               constraints <- constraints |> sort |> dedup
+               (context, new_type_var) <- getNewTypeVar context
+               //println "Result {}/{}" % (new_type_var, constraints)
+               new_type <- Var new_type_var constraints
+               (context, sub) <- try trySub context sub var1 new_type
+               (context, sub) <- try trySub context sub var2 new_type
+               Ok (context, sub)
+      (FixedTypeArg _ var1 _, FixedTypeArg _ var2 _) -> if var1 == var2
+         then Ok (context, sub)
+         else Err (context, sub)
+      (FixedTypeArg _ var1 constraints1, Var var2 constraints2) -> do
+         if var1 == var2
+         then panic "Fixed and var at the same time! {}/{}" % (var1, var2)
+         else ()
+         unifyVarWithFixedArg context sub var2 constraints2 constraints1 type1
+      (Var var1 constraints1, FixedTypeArg _ var2 constraints2) -> do
+         if var1 == var2
+         then panic "Fixed and var at the same time! {}/{}" % (var1, var2)
+         else ()
+         unifyVarWithFixedArg context sub var1 constraints1 constraints2 type2
+      (Var var1 _, Never var2) -> trySub context sub var1 type2
+      (Never var1, Var var2 _) -> trySub context sub var2 type1
+      (Var var constraints, type2) -> unifyVarWithType context var constraints sub type2
+      (type1, Var var constraints) -> unifyVarWithType context var constraints sub type1
+      (Tuple args1, Tuple args2) -> do
+         if getLength args1 != getLength args2
+         then Err (context, sub)
+         else unifyArgs context sub args1 args2
+      (Function from1 to1, Function from2 to2) -> do
+         (context, sub) <- try unify context sub from1 from2
+         (context, sub) <- try unify context sub to1 to2
+         Ok (context, sub)
+      (Never var1, Never var2) -> do
+         if var1 == var2
+         then Ok (context, sub)
+         else trySub context sub var1 type2
+      (Never var, type2) -> trySub context sub var type2
+      (type1, Never var) -> trySub context sub var type1
+      (Ref _ type1, type2) -> unify context sub type1 type2
+      (type1, Ref _ type2) -> unify context sub type1 type2
+      (Owner type1, type2) -> unify context sub type1 type2
+      (type1, Owner type2) -> unify context sub type1 type2
+      _ -> Err (context, sub)

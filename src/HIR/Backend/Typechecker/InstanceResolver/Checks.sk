@@ -1,54 +1,52 @@
 module Siko.HIR.Backend.Typechecker.InstanceResolver.Checks where
 
-import Siko.HIR.Class
-import Siko.HIR.Type as T
-import Siko.HIR.TypeFormatter as TF
-import Siko.HIR.Program as P
+import Map
 import Siko.HIR.Backend.InstanceResolver
-import Siko.Syntax.Location
+import Siko.HIR.Backend.TypeIsomorphism as HTI
 import Siko.HIR.Backend.Typechecker
 import Siko.HIR.Backend.Typechecker.ClassStore
 import Siko.HIR.Backend.Typechecker.Error
 import Siko.HIR.Backend.Unification as U
 import Siko.HIR.Backend.Unification.Substitution as S
-import Siko.HIR.Backend.TypeIsomorphism as HTI
-import Map
+import Siko.HIR.Class
+import Siko.HIR.Program as P
+import Siko.HIR.Type as T
+import Siko.HIR.TypeFormatter as TF
+import Siko.Syntax.Location
 import Siko.Util.SharedString as SS
 
 checkConflicts :: TypecheckerState -> TypecheckerState
 checkConflicts state = do
-    instance_map <- state.instance_resolver.instance_map
-    state <- instance_map |> Map.iter |> Iterator.fold (\state, (class_name, instance_info_map) -> do
-        generic_instance_location <- case get instance_info_map Generic of
-            Some instance_info -> Some instance_info.location
-            None -> None
-        state <- instance_info_map |> Map.iter |> Iterator.fold (\state, (_, i) -> do
-                case generic_instance_location of
-                    Some generic_instance_location -> do
-                        location <- i.location
-                        state <- if generic_instance_location == location
-                            then state
-                            else addError state (ConflictingInstances (SS.create "{}" % class_name) generic_instance_location location)
-                        state
-                    None -> state
-            ) state
-        state) state
-    state
+   instance_map <- state.instance_resolver.instance_map
+   state <- instance_map |> Map.iter |> Iterator.fold (\state, (class_name, instance_info_map) -> do
+      generic_instance_location <- case get instance_info_map Generic of
+         Some instance_info -> Some instance_info.location
+         None -> None
+      state <- instance_info_map |> Map.iter |> Iterator.fold (\state, (_, i) -> do
+         case generic_instance_location of
+            Some generic_instance_location -> do
+               location <- i.location
+               state <- if generic_instance_location == location
+               then state
+               else addError state (ConflictingInstances (SS.create "{}" % class_name) generic_instance_location location)
+               state
+            None -> state) state
+      state) state
+   state
 
 checkInstanceDependenciesForInstance :: TypecheckerState -> T.Type -> P.FullyQualifiedName -> Location -> TypecheckerState
 checkInstanceDependenciesForInstance state type class_name location = do
-    deps <- case get state.class_store.classes class_name of
-        Some class_info -> class_info.direct_dependencies
-        None -> panic "Class {} not found in class store" % class_name
-    List.fold state deps (\state, dep -> do
-        case checkInstance state type dep of
-            Ok (state, sub, instance_info) -> state
-            Err state -> addError state (MissingInstance (SS.create "{}" % dep) location))
+   deps <- case get state.class_store.classes class_name of
+      Some class_info -> class_info.direct_dependencies
+      None -> panic "Class {} not found in class store" % class_name
+   List.fold state deps (\state, dep -> do
+      case checkInstance state type dep of
+         Ok (state, sub, instance_info) -> state
+         Err state -> addError state (MissingInstance (SS.create "{}" % dep) location))
 
 checkInstanceDependencies :: TypecheckerState -> TypecheckerState
 checkInstanceDependencies state = do
-    instance_map <- state.instance_resolver.instance_map
-    Map.fold state instance_map (\state, (class_name, instance_info_map) -> do
-            Map.fold state instance_info_map (\state, (_, i) -> do
-                checkInstanceDependenciesForInstance state i.instance_type class_name i.location)
-        )
+   instance_map <- state.instance_resolver.instance_map
+   Map.fold state instance_map (\state, (class_name, instance_info_map) -> do
+      Map.fold state instance_info_map (\state, (_, i) -> do
+         checkInstanceDependenciesForInstance state i.instance_type class_name i.location))

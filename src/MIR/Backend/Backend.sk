@@ -1,232 +1,225 @@
 module Siko.MIR.Backend where
 
-import Siko.MIR.Backend.Ownership.Inference as Inference
-import Siko.MIR.Backend.Ownership.AddConverter as AddConverter
-import Siko.MIR.Backend.SanityCheck as SanityCheck
-import Siko.MIR.Backend.Rebinder as Rebinder
+import IO
+import Map
+import Siko.Config
+import Siko.LIR.Program as LP
 import Siko.MIR.Backend.Inliner as Inliner
 import Siko.MIR.Backend.LocalArgCreator as LocalArgCreator
-import Siko.MIR.Backend.Simplification.WildcardRemover as WildcardRemover
-import Siko.MIR.Backend.Simplification.VarReplacer as VarReplacer
+import Siko.MIR.Backend.Ownership.AddConverter as AddConverter
+import Siko.MIR.Backend.Ownership.Inference as Inference
+import Siko.MIR.Backend.Rebinder as Rebinder
+import Siko.MIR.Backend.SanityCheck as SanityCheck
 import Siko.MIR.Backend.Simplification.DoMerger as DoMerger
+import Siko.MIR.Backend.Simplification.VarReplacer as VarReplacer
+import Siko.MIR.Backend.Simplification.WildcardRemover as WildcardRemover
 import Siko.MIR.Backend.Traversal
-import Siko.MIR.Program as MP
-import Siko.LIR.Program as LP
 import Siko.MIR.Data
-import Siko.MIR.Type as T
-import Siko.MIR.Function as F
 import Siko.MIR.Expr
+import Siko.MIR.Function as F
+import Siko.MIR.Program as MP
+import Siko.MIR.Type as T
 import Siko.Trace
-import Siko.Config
 import Siko.Util.DependencyProcessor
-
-import Map
-import IO
 
 collectDataDeps :: MP.Program -> Map MP.Identity [MP.Identity]
 collectDataDeps mir_program = do
-    dependencies <- empty
-    dependencies <- Map.fold dependencies mir_program.adts (\dependencies, (id, adt) -> do
-            dependencies <- Map.put dependencies id []
-            List.fold dependencies adt.variants (\dependencies, variant ->
-                Map.add dependencies id (T.getIdentity variant.type))
-        )
-    dependencies <- Map.fold dependencies mir_program.records (\dependencies, (id, record) -> do
-            dependencies <- Map.put dependencies id []
-            dependencies <- List.fold dependencies record.fields (\dependencies, field -> do
-                Map.add dependencies id (T.getIdentity field.type))
-            dependencies <- case record.external_info of
-                Some external_record_info -> do
-                    external_record_info :: ExternalRecordInfo <- external_record_info
-                    List.fold dependencies external_record_info.type_args (\dependencies, type -> do
-                        Map.add dependencies id (T.getIdentity type))
-                None -> dependencies
-            dependencies
-        )
-    dependencies
+   dependencies <- empty
+   dependencies <- Map.fold dependencies mir_program.adts (\dependencies, (id, adt) -> do
+      dependencies <- Map.put dependencies id []
+      List.fold dependencies adt.variants (\dependencies, variant -> Map.add dependencies id (T.getIdentity variant.type)))
+   dependencies <- Map.fold dependencies mir_program.records (\dependencies, (id, record) -> do
+      dependencies <- Map.put dependencies id []
+      dependencies <- List.fold dependencies record.fields (\dependencies, field -> do
+         Map.add dependencies id (T.getIdentity field.type))
+      dependencies <- case record.external_info of
+         Some external_record_info -> do
+            external_record_info :: ExternalRecordInfo <- external_record_info
+            List.fold dependencies external_record_info.type_args (\dependencies, type -> do
+               Map.add dependencies id (T.getIdentity type))
+         None -> dependencies
+      dependencies)
+   dependencies
 
 data Context = { deps :: [MP.Identity] }
 
 processExpr :: Context -> Expr -> (Context, Expr)
 processExpr context expr = do
-    Expr s_expr _ _ <- expr
-    case s_expr of
-        StaticFunctionCall id _ -> do
-            deps <- push context.deps id
-            context <- context { deps = deps }
-            (context, expr)
-        _ -> (context, expr)
+   Expr s_expr _ _ <- expr
+   case s_expr of
+      StaticFunctionCall id _ -> do
+         deps <- push context.deps id
+         context <- context { deps = deps }
+         (context, expr)
+      _ -> (context, expr)
 
 getDepsForFunction :: MP.Program -> F.Function -> [MP.Identity]
 getDepsForFunction mir_program function = case function.kind of
-    F.Normal info -> do
-        context <- Context []
-        (context, _) <- traverse context info.body (Some processExpr) None None
-        context.deps
-    _ -> []
+   F.Normal info -> do
+      context <- Context []
+      (context, _) <- traverse context info.body (Some processExpr) None None
+      context.deps
+   _ -> []
 
 collectFunctionDeps :: MP.Program -> Map MP.Identity [MP.Identity]
 collectFunctionDeps mir_program = do
-    dependencies <- empty
-    dependencies <- mir_program.functions |> Map.iter |> Iterator.fold (\dependencies, (id, function) -> do
-            deps <- getDepsForFunction mir_program function
-            (dependencies, _) <- insert dependencies id deps
-            dependencies
-        ) dependencies
-    dependencies
+   dependencies <- empty
+   dependencies <- mir_program.functions |> Map.iter |> Iterator.fold (\dependencies, (id, function) -> do
+      deps <- getDepsForFunction mir_program function
+      (dependencies, _) <- insert dependencies id deps
+      dependencies) dependencies
+   dependencies
 
 dumpProgram :: MP.Program -> OutputFileType -> ()
 dumpProgram mir_program type = do
-    config <- getConfig ()
-    if config.dump
-    then do
-        s <- MP.dump mir_program
-        writeTextFile (getOutputFileName type) s
-    else ()
+   config <- getConfig ()
+   if config.dump
+   then do
+      s <- MP.dump mir_program
+      writeTextFile (getOutputFileName type) s
+   else ()
 
 dumpLIRProgram :: LP.Program -> OutputFileType -> ()
 dumpLIRProgram lir_program type = do
-    config <- getConfig ()
-    if config.dump
-    then do
-        s <- LP.dump lir_program
-        writeTextFile (getOutputFileName type) s
-    else ()
+   config <- getConfig ()
+   if config.dump
+   then do
+      s <- LP.dump lir_program
+      writeTextFile (getOutputFileName type) s
+   else ()
 
 createGroups :: MP.Program -> ([DependencyGroup MP.Identity], [DependencyGroup MP.Identity])
 createGroups mir_program = do
-    trace "collectDataDeps.."
-    data_dependencies <- collectDataDeps mir_program
-    trace "processing data deps.."
-    data_groups <- processDependencies data_dependencies
-    trace "collectFunctionDeps.."
-    function_dependencies <- collectFunctionDeps mir_program
-    trace "processing function deps.."
-    function_groups <- processDependencies function_dependencies
-    (data_groups, function_groups)
+   trace "collectDataDeps.."
+   data_dependencies <- collectDataDeps mir_program
+   trace "processing data deps.."
+   data_groups <- processDependencies data_dependencies
+   trace "collectFunctionDeps.."
+   function_dependencies <- collectFunctionDeps mir_program
+   trace "processing function deps.."
+   function_groups <- processDependencies function_dependencies
+   (data_groups, function_groups)
 
 addCopyable :: [Attribute] -> [Attribute]
 addCopyable attributes = if List.contains attributes Copyable
-    then attributes
-    else List.push attributes Copyable
+   then attributes
+   else List.push attributes Copyable
 
 processDataGroups :: MP.Program -> [DependencyGroup MP.Identity] -> MP.Program
-processDataGroups mir_program data_groups =
-    List.fold mir_program data_groups processDataGroup
-    where
-        processDataGroup :: MP.Program -> DependencyGroup MP.Identity -> MP.Program
-        processDataGroup mir_program data_group = do
-            List.fold mir_program data_group.items (\mir_program, id -> do
-                case MP.getRecordOpt mir_program id of
-                    Some record -> do
-                        fields <- List.map record.fields (\field -> do
-                            id <- T.getIdentity field.type
-                            external <- case MP.getRecordOpt mir_program id of
-                                Some field_record -> isSome field_record.external_info
-                                _ -> False
-                            if List.contains data_group.items id && not external
-                            then field { grouped = True }
-                            else field)
-                        MP.updateRecordFields mir_program id fields
-                    None -> mir_program)
+processDataGroups mir_program data_groups = List.fold mir_program data_groups processDataGroup
+   where
+      processDataGroup :: MP.Program -> DependencyGroup MP.Identity -> MP.Program
+      processDataGroup mir_program data_group = do
+         List.fold mir_program data_group.items (\mir_program, id -> do
+            case MP.getRecordOpt mir_program id of
+               Some record -> do
+                  fields <- List.map record.fields (\field -> do
+                     id <- T.getIdentity field.type
+                     external <- case MP.getRecordOpt mir_program id of
+                        Some field_record -> isSome field_record.external_info
+                        _ -> False
+                     if List.contains data_group.items id && not external
+                     then field { grouped = True }
+                     else field)
+                  MP.updateRecordFields mir_program id fields
+               None -> mir_program)
 
 processCopyables :: MP.Program -> [DependencyGroup MP.Identity] -> MP.Program
 processCopyables mir_program data_groups = do
-        (mir_program, copyables) <- List.fold (mir_program, []) data_groups processCopyable
-        mir_program { copyables = copyables }
-    where
-        processCopyable :: (MP.Program, [MP.Identity]) -> DependencyGroup MP.Identity -> (MP.Program, [MP.Identity])
-        processCopyable (mir_program, copyables) data_group = do
-            if List.getLength data_group.items > 1
-            then (mir_program, copyables)
-            else do
-                id <- List.atIndex data_group.items 0
-                item <- MP.getAdtOrRecord mir_program id
-                case item of
-                    Left adt -> do
-                        is_copyable <- False
-                        is_copyable <- is_copyable || List.contains adt.attributes Copyable
-                        is_copyable <- is_copyable || List.fold True adt.variants (\is_copyable, variant -> do
-                            variant_id <- T.getIdentity variant.type
-                            if List.contains copyables variant_id
-                            then is_copyable
-                            else False)
-                        if is_copyable
-                        then do
-                            attributes <- addCopyable adt.attributes
-                            mir_program <- MP.updateAdtAttributes mir_program id attributes
-                            (mir_program, List.push copyables id)
-                        else (mir_program, copyables)
-                    Right record -> do
-                        is_copyable <- False
-                        is_copyable <- is_copyable || List.contains record.attributes Copyable
-                        is_copyable <- is_copyable || List.fold (isNone record.external_info) record.fields (\is_copyable, field -> do
-                            field_id <- T.getIdentity field.type
-                            if List.contains copyables field_id
-                            then is_copyable
-                            else False)
-                        if is_copyable
-                        then do
-                            attributes <- addCopyable record.attributes
-                            mir_program <- MP.updateRecordAttributes mir_program id attributes
-                            (mir_program, List.push copyables id)
-                        else (mir_program, copyables)
+   (mir_program, copyables) <- List.fold (mir_program, []) data_groups processCopyable
+   mir_program { copyables = copyables }
+   where
+      processCopyable :: (MP.Program, [MP.Identity]) -> DependencyGroup MP.Identity -> (MP.Program, [MP.Identity])
+      processCopyable (mir_program, copyables) data_group = do
+         if List.getLength data_group.items > 1
+         then (mir_program, copyables)
+         else do
+            id <- List.atIndex data_group.items 0
+            item <- MP.getAdtOrRecord mir_program id
+            case item of
+               Left adt -> do
+                  is_copyable <- False
+                  is_copyable <- is_copyable || List.contains adt.attributes Copyable
+                  is_copyable <- is_copyable || List.fold True adt.variants (\is_copyable, variant -> do
+                     variant_id <- T.getIdentity variant.type
+                     if List.contains copyables variant_id
+                     then is_copyable
+                     else False)
+                  if is_copyable
+                  then do
+                     attributes <- addCopyable adt.attributes
+                     mir_program <- MP.updateAdtAttributes mir_program id attributes
+                     (mir_program, List.push copyables id)
+                  else (mir_program, copyables)
+               Right record -> do
+                  is_copyable <- False
+                  is_copyable <- is_copyable || List.contains record.attributes Copyable
+                  is_copyable <- is_copyable || List.fold (isNone record.external_info) record.fields (\is_copyable, field -> do
+                     field_id <- T.getIdentity field.type
+                     if List.contains copyables field_id
+                     then is_copyable
+                     else False)
+                  if is_copyable
+                  then do
+                     attributes <- addCopyable record.attributes
+                     mir_program <- MP.updateRecordAttributes mir_program id attributes
+                     (mir_program, List.push copyables id)
+                  else (mir_program, copyables)
 
 processNonCopyables :: MP.Program -> [DependencyGroup MP.Identity] -> MP.Program
 processNonCopyables mir_program data_groups = do
-        (mir_program, noncopyables) <- List.fold (mir_program, []) data_groups processNonCopyable
-        mir_program { noncopyables = noncopyables }
-    where
-        processNonCopyable :: (MP.Program, [MP.Identity]) -> DependencyGroup MP.Identity -> (MP.Program, [MP.Identity])
-        processNonCopyable (mir_program, noncopyables) data_group =
-            List.fold (mir_program, noncopyables) data_group.items (\(mir_program, noncopyables), id -> do
-                item <- MP.getAdtOrRecord mir_program id
-                case item of
-                    Left adt -> do
-                        if List.contains adt.attributes NonCopyable
-                        then (mir_program, List.push noncopyables id)
-                        else (mir_program, noncopyables)
-                    Right record -> do
-                        if List.contains record.attributes NonCopyable
-                        then (mir_program, List.push noncopyables id)
-                        else (mir_program, noncopyables))
+   (mir_program, noncopyables) <- List.fold (mir_program, []) data_groups processNonCopyable
+   mir_program { noncopyables = noncopyables }
+   where
+      processNonCopyable :: (MP.Program, [MP.Identity]) -> DependencyGroup MP.Identity -> (MP.Program, [MP.Identity])
+      processNonCopyable (mir_program, noncopyables) data_group = List.fold (mir_program, noncopyables) data_group.items (\(mir_program, noncopyables), id -> do
+            item <- MP.getAdtOrRecord mir_program id
+            case item of
+               Left adt -> do
+                  if List.contains adt.attributes NonCopyable
+                  then (mir_program, List.push noncopyables id)
+                  else (mir_program, noncopyables)
+               Right record -> do
+                  if List.contains record.attributes NonCopyable
+                  then (mir_program, List.push noncopyables id)
+                  else (mir_program, noncopyables))
 
 processProgram :: MP.Program -> LP.Program
 processProgram mir_program = do
-    (data_groups, function_groups) <- createGroups mir_program
-    trace "Process groups.."
-    mir_program <- processDataGroups mir_program data_groups
-    mir_program <- processCopyables mir_program data_groups
-    mir_program <- processNonCopyables mir_program data_groups
-    trace "Inliner.."
-    mir_program <- Inliner.processProgram mir_program function_groups
-    dumpProgram mir_program (MIR "inliner")
-    trace "Rebinder.."
-    mir_program <- Rebinder.processProgram mir_program
-    dumpProgram mir_program (MIR "rebinder")
-    (data_groups, function_groups) <- createGroups mir_program
-    trace "WildcardRemover.."
-    mir_program <- WildcardRemover.processProgram mir_program
-    dumpProgram mir_program (MIR "wildcardremover")
-    trace "VarReplacer.."
-    mir_program <- VarReplacer.processProgram mir_program
-    dumpProgram mir_program (MIR "varreplacer")
-    trace "DoMerger.."
-    mir_program <- DoMerger.processProgram mir_program
-    dumpProgram mir_program (MIR "domerger")
-    trace "LocalArgCreator.."
-    mir_program <- LocalArgCreator.processProgram mir_program
-    dumpProgram mir_program (MIR "localargcreator")
-    trace "Rebinder.."
-    mir_program <- Rebinder.processProgram mir_program
-    dumpProgram mir_program (MIR "rebinder_simplified")
-    trace "SanityCheck1.."
-    SanityCheck.processProgram mir_program
-    trace "AddConverter.."
-    mir_program <- AddConverter.processProgram mir_program
-    dumpProgram mir_program (MIR "addconverter")
-    trace "Inference start.."
-    lir_program <- Inference.processProgram mir_program data_groups function_groups
-    dumpLIRProgram lir_program (LIR "first")
-    trace "Inference end.."
-    return lir_program
+   (data_groups, function_groups) <- createGroups mir_program
+   trace "Process groups.."
+   mir_program <- processDataGroups mir_program data_groups
+   mir_program <- processCopyables mir_program data_groups
+   mir_program <- processNonCopyables mir_program data_groups
+   trace "Inliner.."
+   mir_program <- Inliner.processProgram mir_program function_groups
+   dumpProgram mir_program (MIR "inliner")
+   trace "Rebinder.."
+   mir_program <- Rebinder.processProgram mir_program
+   dumpProgram mir_program (MIR "rebinder")
+   (data_groups, function_groups) <- createGroups mir_program
+   trace "WildcardRemover.."
+   mir_program <- WildcardRemover.processProgram mir_program
+   dumpProgram mir_program (MIR "wildcardremover")
+   trace "VarReplacer.."
+   mir_program <- VarReplacer.processProgram mir_program
+   dumpProgram mir_program (MIR "varreplacer")
+   trace "DoMerger.."
+   mir_program <- DoMerger.processProgram mir_program
+   dumpProgram mir_program (MIR "domerger")
+   trace "LocalArgCreator.."
+   mir_program <- LocalArgCreator.processProgram mir_program
+   dumpProgram mir_program (MIR "localargcreator")
+   trace "Rebinder.."
+   mir_program <- Rebinder.processProgram mir_program
+   dumpProgram mir_program (MIR "rebinder_simplified")
+   trace "SanityCheck1.."
+   SanityCheck.processProgram mir_program
+   trace "AddConverter.."
+   mir_program <- AddConverter.processProgram mir_program
+   dumpProgram mir_program (MIR "addconverter")
+   trace "Inference start.."
+   lir_program <- Inference.processProgram mir_program data_groups function_groups
+   dumpLIRProgram lir_program (LIR "first")
+   trace "Inference end.."
+   return lir_program

@@ -1,94 +1,91 @@
 module Siko.MIR.Backend.Ownership.Converter where
 
-import Siko.MIR.Backend.Ownership.TypeVariableInfo
+import Map
 import Siko.MIR.Backend.Ownership.EqualitySolver
+import Siko.MIR.Backend.Ownership.TypeVariableInfo
 import Siko.Util.DependencyProcessor
 
-
-import Map
-
 data Converter = { from :: OwnershipTypeVariable,
-                   to :: OwnershipTypeVariable,
+                   to :: OwnershipTypeVariable
                  } deriving (PartialEq, Eq, PartialOrd, Ord)
 
 instance Apply Converter where
-    apply applier converter = do
-        (applier, from) <- apply applier converter.from
-        (applier, to) <- apply applier converter.to
-        (applier, Converter from to)
+   apply applier converter = do
+      (applier, from) <- apply applier converter.from
+      (applier, to) <- apply applier converter.to
+      (applier, Converter from to)
 
 instance Show Converter where
-    show converter = "{} -> {}" % (converter.from, converter.to)
+   show converter = "{} -> {}" % (converter.from, converter.to)
 
 data ConverterStore = { converters :: [Converter] }
 
 instance Apply ConverterStore where
-    apply applier store = do
-        (applier, converters) <- apply applier store.converters
-        (applier, store { converters = converters })
+   apply applier store = do
+      (applier, converters) <- apply applier store.converters
+      (applier, store { converters = converters })
 
 instance MemberOwner ConverterStore where
-    getMembers store = []
+   getMembers store = []
 
 data ConverterMergeInfo = { converters :: [Converter],
-                            cycle_groups :: [[OwnershipTypeVariable]],
+                            cycle_groups :: [[OwnershipTypeVariable]]
                           } deriving (Show)
 
 data ConverterMergeInfoBase = { groups :: [(DependencyGroup OwnershipTypeVariable)],
                                 converter_map :: Map OwnershipTypeVariable [OwnershipTypeVariable],
-                                cycle_groups :: [[OwnershipTypeVariable]],
+                                cycle_groups :: [[OwnershipTypeVariable]]
                               } deriving (Show)
 
 createConverterMergeInfoBase :: [Converter] -> ConverterMergeInfoBase
 createConverterMergeInfoBase converters = do
-        deps_map <- List.fold Map.empty converters (\deps_map, converter -> do
-            deps_map <- Map.put deps_map converter.from []
-            Map.put deps_map converter.to [])
-        (deps_map, converter_map) <- List.fold (deps_map, Map.empty) converters (\(deps_map, converter_map), converter -> do
-            deps_map <- Map.add deps_map converter.to converter.from
-            converter_map <- Map.add converter_map converter.from converter.to
-            (deps_map, converter_map))
-        groups <- processDependencies deps_map
-        (cycle_groups, equals) <- List.fold ([], []) groups (\(cycle_groups, equals), group -> if List.getLength group.items > 1
-             then do
-                first <- List.atIndex group.items 0
-                equals <- List.fold equals group.items (\equals, item -> List.push equals (EqualOwnership first item))
-                (List.push cycle_groups group.items, equals)
-            else (cycle_groups, equals))
-        store <- ConverterStore converters
-        store <- processEquals equals store
-        converters <- store.converters
-        deps_map <- List.fold Map.empty converters (\deps_map, converter -> do
-            deps_map <- Map.put deps_map converter.from []
-            Map.put deps_map converter.to [])
-        (deps_map, converter_map) <- List.fold (deps_map, Map.empty) converters (\(deps_map, converter_map), converter -> do
-            deps_map <- Map.add deps_map converter.to converter.from
-            converter_map <- Map.add converter_map converter.from converter.to
-            (deps_map, converter_map))
-        groups <- processDependencies deps_map
-        ConverterMergeInfoBase groups converter_map cycle_groups
+   deps_map <- List.fold Map.empty converters (\deps_map, converter -> do
+      deps_map <- Map.put deps_map converter.from []
+      Map.put deps_map converter.to [])
+   (deps_map, converter_map) <- List.fold (deps_map, Map.empty) converters (\(deps_map, converter_map), converter -> do
+      deps_map <- Map.add deps_map converter.to converter.from
+      converter_map <- Map.add converter_map converter.from converter.to
+      (deps_map, converter_map))
+   groups <- processDependencies deps_map
+   (cycle_groups, equals) <- List.fold ([], []) groups (\(cycle_groups, equals), group -> if List.getLength group.items > 1
+      then do
+         first <- List.atIndex group.items 0
+         equals <- List.fold equals group.items (\equals, item -> List.push equals (EqualOwnership first item))
+         (List.push cycle_groups group.items, equals)
+      else (cycle_groups, equals))
+   store <- ConverterStore converters
+   store <- processEquals equals store
+   converters <- store.converters
+   deps_map <- List.fold Map.empty converters (\deps_map, converter -> do
+      deps_map <- Map.put deps_map converter.from []
+      Map.put deps_map converter.to [])
+   (deps_map, converter_map) <- List.fold (deps_map, Map.empty) converters (\(deps_map, converter_map), converter -> do
+      deps_map <- Map.add deps_map converter.to converter.from
+      converter_map <- Map.add converter_map converter.from converter.to
+      (deps_map, converter_map))
+   groups <- processDependencies deps_map
+   ConverterMergeInfoBase groups converter_map cycle_groups
 
 mergeConverters :: [OwnershipTypeVariable] -> ConverterMergeInfoBase -> ConverterMergeInfo
 mergeConverters input_ownership_vars converter_merge_info_base = do
-        conversion_map <- Map.empty
-        conversion_map <- List.fold conversion_map converter_merge_info_base.groups (\conversion_map, group -> do
-            List.fold conversion_map group.items (\conversion_map, item -> do
-                    sources <- case Map.get conversion_map item of
-                        Some sources -> sources
-                        None -> []
-                    sources <- if List.contains input_ownership_vars item
-                    then List.push sources item
-                    else sources
-                    case Map.get converter_merge_info_base.converter_map item of
-                        Some targets -> List.fold conversion_map targets (\conversion_map, target -> addSources conversion_map target sources)
-                        None -> conversion_map
-                ))
-        converters <- Map.fold [] conversion_map (\converters, (to, froms) -> List.fold converters froms (\converters, from -> List.push converters (Converter from to)))
-        ConverterMergeInfo converters converter_merge_info_base.cycle_groups
-    where
-        addSources :: Map OwnershipTypeVariable [OwnershipTypeVariable] -> OwnershipTypeVariable -> [OwnershipTypeVariable] -> Map OwnershipTypeVariable [OwnershipTypeVariable]
-        addSources conversion_map target sources = do
-            (conversion_map, _) <- Map.alter2 (\old -> case old of
-                        Some vs -> Some ((vs + sources) |> List.sort |> List.dedup)
-                        None -> Some sources) target conversion_map
-            conversion_map
+   conversion_map <- Map.empty
+   conversion_map <- List.fold conversion_map converter_merge_info_base.groups (\conversion_map, group -> do
+      List.fold conversion_map group.items (\conversion_map, item -> do
+         sources <- case Map.get conversion_map item of
+            Some sources -> sources
+            None -> []
+         sources <- if List.contains input_ownership_vars item
+         then List.push sources item
+         else sources
+         case Map.get converter_merge_info_base.converter_map item of
+            Some targets -> List.fold conversion_map targets (\conversion_map, target -> addSources conversion_map target sources)
+            None -> conversion_map))
+   converters <- Map.fold [] conversion_map (\converters, (to, froms) -> List.fold converters froms (\converters, from -> List.push converters (Converter from to)))
+   ConverterMergeInfo converters converter_merge_info_base.cycle_groups
+   where
+      addSources :: Map OwnershipTypeVariable [OwnershipTypeVariable] -> OwnershipTypeVariable -> [OwnershipTypeVariable] -> Map OwnershipTypeVariable [OwnershipTypeVariable]
+      addSources conversion_map target sources = do
+         (conversion_map, _) <- Map.alter2 (\old -> case old of
+            Some vs -> Some ((vs + sources) |> List.sort |> List.dedup)
+            None -> Some sources) target conversion_map
+         conversion_map

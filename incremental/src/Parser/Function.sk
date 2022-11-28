@@ -2,217 +2,215 @@ module Siko.Parser.Function where
 
 import Siko.Parser
 import Siko.Parser.Class
-import Siko.Parser.Type
+import Siko.Parser.Error
 import Siko.Parser.Expr
-import Siko.Parser.Token.Kind as Kind
-import Siko.Parser.Token as T
 import Siko.Parser.Pattern
+import Siko.Parser.Token as T
+import Siko.Parser.Token.Kind as Kind
+import Siko.Parser.Type
+import Siko.Syntax.Attribute
 import Siko.Syntax.Function
 import Siko.Syntax.Ident
-import Siko.Syntax.Pattern
 import Siko.Syntax.Location
-import Siko.Syntax.Attribute
 import Siko.Syntax.Module as M
-import Siko.Parser.Error
+import Siko.Syntax.Pattern
 import Siko.Util.SharedString as SS
 
 checkTypeArgs :: ([Ident], [ParserError]) -> Pattern -> ([Ident], [ParserError])
 checkTypeArgs (args, errors) (Pattern pattern (Location _ span)) = do
-    case pattern of
-        Binding arg -> (push args arg, errors)
-        _ -> (args, push errors (InvalidTypeArgument span))
+   case pattern of
+      Binding arg -> (push args arg, errors)
+      _ -> (args, push errors (InvalidTypeArgument span))
 
 parseAttributes :: ParserState -> Result (ParserState, [Attribute]) (ParserState, ParserError)
 parseAttributes state = do
-    loop (state, attributes) <- (state, []) do
-        ti <- peek state
-        case ti.token of
-            T.At -> do
-                state <- try expect state Kind.At
-                (state, name) <- try expectTypeIdent state "attribute name"
-                state <- try expect state Kind.EndOfItem
-                (state, List.push attributes (Attribute name))
-            _ -> break Ok (state, attributes)
+   loop (state, attributes) <- (state, []) do
+      ti <- peek state
+      case ti.token of
+         T.At -> do
+            state <- try expect state Kind.At
+            (state, name) <- try expectTypeIdent state "attribute name"
+            state <- try expect state Kind.EndOfItem
+            (state, List.push attributes (Attribute name))
+         _ -> break Ok (state, attributes)
 
 parseEffectSignatures :: ParserState -> Result (ParserState, Option [EffectSignature]) (ParserState, ParserError)
 parseEffectSignatures state = do
-    (state, effects) <- if check state Kind.KeywordUsing
-        then do
-            state <- try expect state Kind.KeywordUsing
-            state <- try expect state Kind.LParen
-            (state, effects) <- loop (state, effects) <- (state, []) do
-                if check state Kind.RParen
-                then break (state, effects)
-                else do
-                    (state, name) <- try expectTypeIdent state "effect name"
-                    (state, arguments) <- loop (state, arguments) <- (state, []) do
-                        if (check state Kind.RParen) || (check state Kind.Comma)
-                        then break (state, arguments)
-                        else do
-                            (state, argument) <- try expectVarIdent state "effect argument"
-                            (state, List.push arguments argument)
-                    eff <- EffectSignature name arguments
-                    effects <- List.push effects eff
-                    if check state Kind.RParen
-                    then break (state, effects)
-                    else do
-                        state <- try expect state Kind.Comma
-                        (state, effects)
-            state <- try expect state Kind.RParen
-            (state, Some effects)
-        else (state, None)
-    Ok (state, effects)
+   (state, effects) <- if check state Kind.KeywordUsing
+   then do
+      state <- try expect state Kind.KeywordUsing
+      state <- try expect state Kind.LParen
+      (state, effects) <- loop (state, effects) <- (state, []) do
+         if check state Kind.RParen
+         then break (state, effects)
+         else do
+            (state, name) <- try expectTypeIdent state "effect name"
+            (state, arguments) <- loop (state, arguments) <- (state, []) do
+               if (check state Kind.RParen) || (check state Kind.Comma)
+               then break (state, arguments)
+               else do
+                  (state, argument) <- try expectVarIdent state "effect argument"
+                  (state, List.push arguments argument)
+            eff <- EffectSignature name arguments
+            effects <- List.push effects eff
+            if check state Kind.RParen
+            then break (state, effects)
+            else do
+               state <- try expect state Kind.Comma
+               (state, effects)
+      state <- try expect state Kind.RParen
+      (state, Some effects)
+   else (state, None)
+   Ok (state, effects)
 
 parseExternConstraints :: ParserState -> Result (ParserState, List ExternConstraint) (ParserState, ParserError)
 parseExternConstraints state = parseList state parseExternConstraint Kind.LParen Kind.RParen
-    where
-        parseExternConstraint :: ParserState -> Result (ParserState, ExternConstraint) (ParserState, ParserError)
-        parseExternConstraint state = do
-            (state, from) <- try parseConstraintPath state
-            if check state Kind.RightArrow
+   where
+      parseExternConstraint :: ParserState -> Result (ParserState, ExternConstraint) (ParserState, ParserError)
+      parseExternConstraint state = do
+         (state, from) <- try parseConstraintPath state
+         if check state Kind.RightArrow
+         then do
+            state <- try expect state Kind.RightArrow
+            (state, to) <- try parseConstraintPath state
+            Ok (state, ExternConverter (Converter from to))
+         else do
+            state <- try expect state Kind.DoubleEqual
+            if check state Kind.Mul
             then do
-                state <- try expect state Kind.RightArrow
-                (state, to) <- try parseConstraintPath state
-                Ok (state, ExternConverter (Converter from to))
+               state <- try expect state Kind.Mul
+               Ok (state, Independent from)
             else do
-                state <- try expect state Kind.DoubleEqual
-                if check state Kind.Mul
-                then do
-                    state <- try expect state Kind.Mul
-                    Ok (state, Independent from)
-                else do
-                    (state, to) <- try parseConstraintPath state
-                    Ok (state, ExternEquality (Equal from to))
+               (state, to) <- try parseConstraintPath state
+               Ok (state, ExternEquality (Equal from to))
 
-        parseConstraintPath :: ParserState -> Result (ParserState, ConstraintPath) (ParserState, ParserError)
-        parseConstraintPath state =
-            loop (state, parent) <- (state, None) do
-                (state, path) <- try expectVarIdent state "path name"
-                p <- SS.get (getString path)
-                (state, path) <- case p of
-                    "arg" -> do
-                        (state, index) <- try parseIndex state
-                        (state, Argument index)
-                    "result" -> (state, Result)
-                    "f" -> do
-                        (state, index) <- try parseIndex state
-                        parent <- case parent of
-                            Some parent -> parent
-                            None -> return do
-                                err <- unexpectedToken state "field with parent path"
-                                Err (state, err)
-                        (state, Field index parent)
-                    "e" -> do
-                        (state, index) <- try parseIndex state
-                        parent <- case parent of
-                            Some parent -> parent
-                            None -> return do
-                                err <- unexpectedToken state "extern field with parent path"
-                                Err (state, err)
-                        (state, Extern index parent)
-                    "v" -> do
-                        (state, index) <- try parseIndex state
-                        parent <- case parent of
-                            Some parent -> parent
-                            None -> return do
-                                err <- unexpectedToken state "variant with parent path"
-                                Err (state, err)
-                        (state, Variant index parent)
-                    "i" -> do
-                        (state, index) <- try parseIndex state
-                        parent <- case parent of
-                            Some parent -> parent
-                            None -> return do
-                                err <- unexpectedToken state "implicit with parent path"
-                                Err (state, err)
-                        (state, Implicit index parent)
-                    _ -> return do
-                        err <- unexpectedToken state "path name"
-                        Err (state, err)
-                if check state Kind.Dot
-                then do
-                    state <- step state
-                    (state, Some path)
-                else break Ok (state, path)
+      parseConstraintPath :: ParserState -> Result (ParserState, ConstraintPath) (ParserState, ParserError)
+      parseConstraintPath state = loop (state, parent) <- (state, None) do
+            (state, path) <- try expectVarIdent state "path name"
+            p <- SS.get (getString path)
+            (state, path) <- case p of
+               "arg" -> do
+                  (state, index) <- try parseIndex state
+                  (state, Argument index)
+               "result" -> (state, Result)
+               "f" -> do
+                  (state, index) <- try parseIndex state
+                  parent <- case parent of
+                     Some parent -> parent
+                     None -> return do
+                           err <- unexpectedToken state "field with parent path"
+                           Err (state, err)
+                  (state, Field index parent)
+               "e" -> do
+                  (state, index) <- try parseIndex state
+                  parent <- case parent of
+                     Some parent -> parent
+                     None -> return do
+                           err <- unexpectedToken state "extern field with parent path"
+                           Err (state, err)
+                  (state, Extern index parent)
+               "v" -> do
+                  (state, index) <- try parseIndex state
+                  parent <- case parent of
+                     Some parent -> parent
+                     None -> return do
+                           err <- unexpectedToken state "variant with parent path"
+                           Err (state, err)
+                  (state, Variant index parent)
+               "i" -> do
+                  (state, index) <- try parseIndex state
+                  parent <- case parent of
+                     Some parent -> parent
+                     None -> return do
+                           err <- unexpectedToken state "implicit with parent path"
+                           Err (state, err)
+                  (state, Implicit index parent)
+               _ -> return do
+                     err <- unexpectedToken state "path name"
+                     Err (state, err)
+            if check state Kind.Dot
+            then do
+               state <- step state
+               (state, Some path)
+            else break Ok (state, path)
 
-        parseIndex :: ParserState -> Result (ParserState, Int) (ParserState, ParserError)
-        parseIndex state = do
-            state <- try expect state Kind.LBracket
-            ti <- peek state
-            case ti.token of
-                T.IntegerLiteral n -> do
-                    state <- step state
-                    case Int.parse n of
-                        Some index -> do
-                            state <- try expect state Kind.RBracket
-                            Ok (state, index)
-                        None -> do
-                            err <- unexpectedToken state "numeric literal"
-                            Err (state, err)
-                _ -> do
-                    err <- unexpectedToken state "numeric literal"
-                    Err (state, err)
-
+      parseIndex :: ParserState -> Result (ParserState, Int) (ParserState, ParserError)
+      parseIndex state = do
+         state <- try expect state Kind.LBracket
+         ti <- peek state
+         case ti.token of
+            T.IntegerLiteral n -> do
+               state <- step state
+               case Int.parse n of
+                  Some index -> do
+                     state <- try expect state Kind.RBracket
+                     Ok (state, index)
+                  None -> do
+                     err <- unexpectedToken state "numeric literal"
+                     Err (state, err)
+            _ -> do
+               err <- unexpectedToken state "numeric literal"
+               Err (state, err)
 
 parseFunction :: ParserState -> Result (ParserState, Either Function FunctionSignature) (ParserState, ParserError)
 parseFunction state = do
-    (state, attributes) <- try parseAttributes state
-    ti <- peek state
-    case ti.token of
-        T.VarIdentifier id -> do
-            (state, name) <- try expectVarIdent state "function name"
-            (state, args, sep) <- loop (state, args) <- (state, []) do
-                ti <- peek state
-                case ti.token of
-                    T.Equal -> break (state, args, Some T.Equal)
-                    T.DoubleColon -> break (state, args, Some T.DoubleColon)
-                    _ -> do
-                        (state, arg) <- try parsePattern state
-                        args <- push args arg
-                        (state, args)
-            case sep of
-                Some T.Equal -> do
-                    state <- try expect state Kind.Equal
-                    (state, body, extern_constraints) <- if check state Kind.KeywordExtern
-                        then do
-                            state <- try expect state Kind.KeywordExtern
-                            if check state Kind.LParen
-                            then do
-                                (state, extern_constraints) <- try parseExternConstraints state
-                                (state, None, extern_constraints)
-                            else (state, None, [])
-                        else do
-                            (state, body) <- try parseExpr state
-                            (state, Some body, [])
-                    (state, sub_items) <- if check state Kind.KeywordWhere
-                        then try parseSubItems state
-                        else (state, [])
-                    state <- try expect state Kind.EndOfItem
-                    sub_items <- sub_items + state.sub_items
-                    state <- state { sub_items = [] }
-                    function <- Function { name = name,
-                                           arguments = args,
-                                           body = body,
-                                           sub_items = sub_items,
-                                           attributes = attributes,
-                                           extern_constraints = extern_constraints }
-                    Ok (state, Left function)
-                Some T.DoubleColon -> do
-                    state <- try expect state Kind.DoubleColon
-                    (args, errors) <- Iterator.fold checkTypeArgs ([], []) (args |> List.iter)
-                    state <- state { errors = state.errors + errors }
-                    (state, constraints) <- try parseClassConstraints state
-                    (state, type_signature) <- try parseTypeSignature state False False
-                    (state, effects) <- try parseEffectSignatures state
-                    state <- try expect state Kind.EndOfItem
-                    function_signature <- FunctionSignature { name = name,
-                                                              type_arguments = args,
-                                                              constraints = constraints,
-                                                              type_signature = type_signature,
-                                                              attributes = attributes,
-                                                              effects = effects }
-                    Ok (state, Right function_signature)
-                _ -> panic "Unexpected separator"
-        _ -> do
-            err <- unexpectedToken state "function name"
-            Err (state, err)
+   (state, attributes) <- try parseAttributes state
+   ti <- peek state
+   case ti.token of
+      T.VarIdentifier id -> do
+         (state, name) <- try expectVarIdent state "function name"
+         (state, args, sep) <- loop (state, args) <- (state, []) do
+            ti <- peek state
+            case ti.token of
+               T.Equal -> break (state, args, Some T.Equal)
+               T.DoubleColon -> break (state, args, Some T.DoubleColon)
+               _ -> do
+                  (state, arg) <- try parsePattern state
+                  args <- push args arg
+                  (state, args)
+         case sep of
+            Some T.Equal -> do
+               state <- try expect state Kind.Equal
+               (state, body, extern_constraints) <- if check state Kind.KeywordExtern
+               then do
+                  state <- try expect state Kind.KeywordExtern
+                  if check state Kind.LParen
+                  then do
+                     (state, extern_constraints) <- try parseExternConstraints state
+                     (state, None, extern_constraints)
+                  else (state, None, [])
+               else do
+                  (state, body) <- try parseExpr state
+                  (state, Some body, [])
+               (state, sub_items) <- if check state Kind.KeywordWhere
+               then try parseSubItems state
+               else (state, [])
+               state <- try expect state Kind.EndOfItem
+               sub_items <- sub_items + state.sub_items
+               state <- state { sub_items = [] }
+               function <- Function { name = name,
+                                      arguments = args,
+                                      body = body,
+                                      sub_items = sub_items,
+                                      attributes = attributes,
+                                      extern_constraints = extern_constraints }
+               Ok (state, Left function)
+            Some T.DoubleColon -> do
+               state <- try expect state Kind.DoubleColon
+               (args, errors) <- Iterator.fold checkTypeArgs ([], []) (args |> List.iter)
+               state <- state { errors = state.errors + errors }
+               (state, constraints) <- try parseClassConstraints state
+               (state, type_signature) <- try parseTypeSignature state False False
+               (state, effects) <- try parseEffectSignatures state
+               state <- try expect state Kind.EndOfItem
+               function_signature <- FunctionSignature { name = name,
+                                                         type_arguments = args,
+                                                         constraints = constraints,
+                                                         type_signature = type_signature,
+                                                         attributes = attributes,
+                                                         effects = effects }
+               Ok (state, Right function_signature)
+            _ -> panic "Unexpected separator"
+      _ -> do
+         err <- unexpectedToken state "function name"
+         Err (state, err)

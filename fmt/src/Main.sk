@@ -1,42 +1,57 @@
 module Main where
 
-import Siko.Parser
-import Siko.Syntax.Location
-import Siko.Syntax.Format
-import Siko.Syntax.Util
 import IO
+import Siko.Parser
+import Siko.Syntax.Format
+import Siko.Syntax.Location
+import Siko.Syntax.Util
 
 processPath :: String -> [String]
 processPath path = do
-    if isDir path
-    then do
-        entries <- listDir path
-        List.fold [] entries (\files, entry -> if isDir entry
-            then files + processPath entry
-            else do
-                subs <- String.split entry "/"
-                file <- last subs
-                if endsWith file ".sk"
-                then List.push files (entry)
-                else files)
-    else [path]
+   if isDir path
+   then do
+      entries <- listDir path
+      List.fold [] entries (\files, entry -> if isDir entry
+         then files + processPath entry
+         else do
+            subs <- String.split entry "/"
+            file <- last subs
+            if endsWith file ".sk"
+            then List.push files (entry)
+            else files)
+   else [path]
 
 main = do
-    args <- getArgs
-    (_, args) <- List.remove args 0
-    names <- List.fold [] args (\names, arg -> names + processPath arg)
-    List.forEach names (\name -> do
-        source <- readTextFile name
-        (source_file, lexer_errors, parser_errors) <- parse (FileId 0) name source
-        orig_source <- relocate source_file
-        chunks <- format source_file
-        output <- formatOutput chunks
-        (new_source_file, lexer_errors, parser_errors) <- parse (FileId 0) name output
-        new_source <- relocate new_source_file
-        if new_source == orig_source
-        then writeTextFile name output
-        else do
+   args <- getArgs
+   (_, args) <- List.remove args 0
+   names <- List.fold [] args (\names, arg -> names + processPath arg)
+   List.forEach names (\name -> do
+      source <- readTextFile name
+      (source_file, lexer_errors, parser_errors) <- parse (FileId 0) name source True
+      failed <- if List.isEmpty lexer_errors
+      then False
+      else do
+         println "Error in {}" % name
+         println lexer_errors
+         True
+      failed <- if List.isEmpty parser_errors
+      then failed
+      else do
+         println "Error in {}" % name
+         println parser_errors
+         True
+      if failed
+      then ()
+      else do
+         orig_source <- relocate source_file
+         chunks <- format source_file
+         output <- formatOutput chunks
+         (new_source_file, lexer_errors, parser_errors) <- parse (FileId 0) name output True
+         new_source <- relocate new_source_file
+         if new_source == orig_source
+         then writeTextFile name output
+         else do
             newname <- "{}.bak" % name
             writeTextFile newname output
-            println " -> changed!!")
-    ()
+            println "AST of {} changed!!" % name)
+   ()

@@ -1,107 +1,113 @@
 module Siko.HIR.Backend.TypeIsomorphism where
 
+import Map
+import Siko.HIR.Program as P
 import Siko.HIR.Type as T
 import Siko.HIR.Util as Util
-import Siko.HIR.Program as P
-import Map
 
 class DependencyProvider a where
-    getAllDependencies a :: a -> P.FullyQualifiedName -> [P.FullyQualifiedName]
+   getAllDependencies a :: a -> P.FullyQualifiedName -> [P.FullyQualifiedName]
 
 data IsomorphicTestFailure = Reshape T.TypeVar T.TypeVar
-                             | Mismatch
+                           | Mismatch
 
 checkClassConstraintIsomorphism a :: (DependencyProvider a) => [P.FullyQualifiedName] -> [P.FullyQualifiedName] -> a -> Bool
 checkClassConstraintIsomorphism classes1 classes2 dependency_provider = do
-    classes1 |> List.iter |> Iterator.fold (\ok, class_name -> ok &&
-        if contains classes2 class_name
-            then True
-            else do
-                all <- classes2 |> List.iter |> Iterator.fold (\all, c -> do
-                    all <- all + getAllDependencies dependency_provider c
-                    all) []
-                contains all class_name) True
+   classes1 |> List.iter |> Iterator.fold (\ok, class_name -> ok && if contains classes2 class_name
+      then True
+      else do
+         all <- classes2 |> List.iter |> Iterator.fold (\all, c -> do
+            all <- all + getAllDependencies dependency_provider c
+            all) []
+         contains all class_name) True
 
 checkIsomorphicConstraints a :: (DependencyProvider a) => [T.Constraint] -> [T.Constraint] -> a -> Result () IsomorphicTestFailure
-checkIsomorphicConstraints cs1 cs2 dependency_provider = do // FIXME: associated_types!
-    classes1 <- Util.collectClassesFromClassConstraints cs1
-    classes2 <- Util.collectClassesFromClassConstraints cs2
-    if checkClassConstraintIsomorphism classes1 classes2 dependency_provider && checkClassConstraintIsomorphism classes2 classes1 dependency_provider
-        then Ok ()
-        else Err Mismatch
+checkIsomorphicConstraints cs1 cs2 dependency_provider = do
+   // FIXME: associated_types!
+   classes1 <- Util.collectClassesFromClassConstraints cs1
+   classes2 <- Util.collectClassesFromClassConstraints cs2
+   if checkClassConstraintIsomorphism classes1 classes2 dependency_provider && checkClassConstraintIsomorphism classes2 classes1 dependency_provider
+   then Ok ()
+   else Err Mismatch
 
 reshape :: T.TypeVar -> T.TypeVar -> T.Type -> T.Type
 reshape var1 var2 type = T.traverse (reshape_ var1 var2) type
-    where reshape_ var1 var2 type = case type of
-        T.Var v constraints -> if v == var1 then T.Var var2 constraints else type
-        T.FixedTypeArg n v constraints -> if v == var1 then T.FixedTypeArg n var2 constraints else type
-        T.Never v -> if v == var1 then T.Never var2 else type
-        _ -> type
+   where
+      reshape_ var1 var2 type = case type of
+         T.Var v constraints -> if v == var1
+            then T.Var var2 constraints
+            else type
+         T.FixedTypeArg n v constraints -> if v == var1
+            then T.FixedTypeArg n var2 constraints
+            else type
+         T.Never v -> if v == var1
+            then T.Never var2
+            else type
+         _ -> type
 
 checkIsomorphicType a :: (DependencyProvider a) => T.Type -> T.Type -> a -> Bool
 checkIsomorphicType type1 type2 dependency_provider = do
-    case isIsomorphicType type1 type2 dependency_provider of
-        Ok _ -> return True
-        Err err -> case err of
-                Reshape var1 var2 -> do
-                    new_type1 <- reshape var1 var2 type1
-                    checkIsomorphicType new_type1 type2 dependency_provider
-                Mismatch -> return False
+   case isIsomorphicType type1 type2 dependency_provider of
+      Ok _ -> return True
+      Err err -> case err of
+         Reshape var1 var2 -> do
+            new_type1 <- reshape var1 var2 type1
+            checkIsomorphicType new_type1 type2 dependency_provider
+         Mismatch -> return False
 
 isIsomorphicType a :: (DependencyProvider a) => T.Type -> T.Type -> a -> Result () IsomorphicTestFailure
 isIsomorphicType type1 type2 dependency_provider = do
-    case (type1, type2) of
-        (T.Var var1 cs1, T.Var var2 cs2) -> do
-            if var1 == var2
-                then checkIsomorphicConstraints cs1 cs2 dependency_provider
-                else Err (Reshape var1 var2)
-        (T.FixedTypeArg _ var1 cs1, T.FixedTypeArg _ var2 cs2) -> do
-            if var1 == var2
-                then checkIsomorphicConstraints cs1 cs2 dependency_provider
-                else Err (Reshape var1 var2)
-        (T.Named qn1 args1, T.Named qn2 args2) -> do
-            if qn1 == qn2
-                then
-                    if getLength args1 != getLength args2
-                        then Err Mismatch
-                        else do
-                            _ <- loop index <- 0 do
-                                if index >= getLength args1
-                                    then return Ok ()
-                                    else do
-                                        arg1 <- atIndex args1 index
-                                        arg2 <- atIndex args2 index
-                                        try isIsomorphicType arg1 arg2 dependency_provider
-                                        index + 1
-                            Ok ()
-                else Err Mismatch
-        (T.Function from1 to1, T.Function from2 to2) -> do
-            try isIsomorphicType from1 from2 dependency_provider
-            try isIsomorphicType to1 to2 dependency_provider
+   case (type1, type2) of
+      (T.Var var1 cs1, T.Var var2 cs2) -> do
+         if var1 == var2
+         then checkIsomorphicConstraints cs1 cs2 dependency_provider
+         else Err (Reshape var1 var2)
+      (T.FixedTypeArg _ var1 cs1, T.FixedTypeArg _ var2 cs2) -> do
+         if var1 == var2
+         then checkIsomorphicConstraints cs1 cs2 dependency_provider
+         else Err (Reshape var1 var2)
+      (T.Named qn1 args1, T.Named qn2 args2) -> do
+         if qn1 == qn2
+         then if getLength args1 != getLength args2
+            then Err Mismatch
+            else do
+               _ <- loop index <- 0 do
+                  if index >= getLength args1
+                  then return Ok ()
+                  else do
+                     arg1 <- atIndex args1 index
+                     arg2 <- atIndex args2 index
+                     try isIsomorphicType arg1 arg2 dependency_provider
+                     index + 1
+               Ok ()
+         else Err Mismatch
+      (T.Function from1 to1, T.Function from2 to2) -> do
+         try isIsomorphicType from1 from2 dependency_provider
+         try isIsomorphicType to1 to2 dependency_provider
+         Ok ()
+      (T.Never var1, T.Never var2) -> do
+         if var1 == var2
+         then Ok ()
+         else Err (Reshape var1 var2)
+      (T.Ref l1 t1, T.Ref l2 t2) -> do
+         try isIsomorphicType t1 t2 dependency_provider
+         if l1 == l2
+         then Ok ()
+         else Err Mismatch
+      (T.Owner t1, T.Owner t2) -> isIsomorphicType t1 t2 dependency_provider
+      (T.Owner t1, t2) -> isIsomorphicType t1 t2 dependency_provider
+      (t1, T.Owner t2) -> isIsomorphicType t1 t2 dependency_provider
+      (T.Tuple args1, T.Tuple args2) -> do
+         if getLength args1 != getLength args2
+         then Err Mismatch
+         else do
+            _ <- loop index <- 0 do
+               if index >= getLength args1
+               then return Ok ()
+               else do
+                  arg1 <- atIndex args1 index
+                  arg2 <- atIndex args2 index
+                  try isIsomorphicType arg1 arg2 dependency_provider
+                  index + 1
             Ok ()
-        (T.Never var1, T.Never var2) -> do
-            if var1 == var2
-                then Ok ()
-                else Err (Reshape var1 var2)
-        (T.Ref l1 t1, T.Ref l2 t2) -> do
-            try isIsomorphicType t1 t2 dependency_provider
-            if l1 == l2
-            then Ok ()
-            else Err Mismatch
-        (T.Owner t1, T.Owner t2) -> isIsomorphicType t1 t2 dependency_provider
-        (T.Owner t1, t2) -> isIsomorphicType t1 t2 dependency_provider
-        (t1, T.Owner t2) -> isIsomorphicType t1 t2 dependency_provider
-        (T.Tuple args1, T.Tuple args2) -> do
-            if getLength args1 != getLength args2
-                        then Err Mismatch
-                        else do
-                            _ <- loop index <- 0 do
-                                if index >= getLength args1
-                                    then return Ok ()
-                                    else do
-                                        arg1 <- atIndex args1 index
-                                        arg2 <- atIndex args2 index
-                                        try isIsomorphicType arg1 arg2 dependency_provider
-                                        index + 1
-                            Ok ()
-        (_, _) -> Err Mismatch
+      (_, _) -> Err Mismatch

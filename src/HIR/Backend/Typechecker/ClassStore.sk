@@ -1,12 +1,12 @@
 module Siko.HIR.Backend.Typechecker.ClassStore where
 
+import Map
 import Siko.HIR.Backend.Typechecker.Class
 import Siko.HIR.Program as P
 import Siko.HIR.Type as T
-import Map
 
 data ClassInfo = { direct_dependencies :: [P.FullyQualifiedName],
-                   all_dependencies :: [P.FullyQualifiedName],
+                   all_dependencies :: [P.FullyQualifiedName]
                  } deriving (Show)
 
 data ClassStore = { classes :: Map P.FullyQualifiedName ClassInfo,
@@ -15,25 +15,25 @@ data ClassStore = { classes :: Map P.FullyQualifiedName ClassInfo,
 
 getAllDependencies :: Map P.FullyQualifiedName [P.FullyQualifiedName] -> P.FullyQualifiedName -> [P.FullyQualifiedName] -> [P.FullyQualifiedName]
 getAllDependencies direct_dependencies class_name deps = do
-    direct_deps <- case get direct_dependencies class_name of
-        Some direct_deps -> direct_deps
-        None -> panic "Class not found in dependency map"
-    deps <- direct_deps |> List.iter |> Iterator.fold (\deps, dep -> do
-            deps <- getAllDependencies direct_dependencies dep deps
-            deps) ((direct_deps + deps) |> sort |> dedup)
-    deps
+   direct_deps <- case get direct_dependencies class_name of
+      Some direct_deps -> direct_deps
+      None -> panic "Class not found in dependency map"
+   deps <- direct_deps |> List.iter |> Iterator.fold (\deps, dep -> do
+      deps <- getAllDependencies direct_dependencies dep deps
+      deps) ((direct_deps + deps) |> sort |> dedup)
+   deps
 
 initializeEmptyClassStore :: ClassStore
 initializeEmptyClassStore = ClassStore empty empty
 
 initializeClassStore :: Map P.FullyQualifiedName [P.FullyQualifiedName] -> Bool -> Map P.FullyQualifiedName ClassTypeInfo -> ClassStore
 initializeClassStore direct_dependencies is_circular class_type_info_map = do
-    if is_circular
-        then do
-            classes <- direct_dependencies |> Map.iter |> Iterator.map (\(class_name, direct_dependencies) -> do
-                (class_name, ClassInfo direct_dependencies direct_dependencies)) |> toMap
-            ClassStore classes class_type_info_map
-        else do
-            classes <- direct_dependencies |> Map.iter |> Iterator.map (\(class_name, direct_class_dependencies) -> do
-                (class_name, ClassInfo direct_class_dependencies (getAllDependencies direct_dependencies class_name []))) |> toMap
-            ClassStore classes class_type_info_map
+   if is_circular
+   then do
+      classes <- direct_dependencies |> Map.iter |> Iterator.map (\(class_name, direct_dependencies) -> do
+         (class_name, ClassInfo direct_dependencies direct_dependencies)) |> toMap
+      ClassStore classes class_type_info_map
+   else do
+      classes <- direct_dependencies |> Map.iter |> Iterator.map (\(class_name, direct_class_dependencies) -> do
+         (class_name, ClassInfo direct_class_dependencies (getAllDependencies direct_dependencies class_name []))) |> toMap
+      ClassStore classes class_type_info_map

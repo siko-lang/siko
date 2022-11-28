@@ -1,56 +1,50 @@
 module Siko.Resolver.Local(collectLocals) where
 
-import Siko.Syntax.Module as M
-import Siko.Syntax.Data as D
-import Siko.Syntax.Class as C
-import Siko.Syntax.TypeSignature as T
-import Siko.Syntax.Ident
-import Siko.Syntax.Function as F
-import Siko.Syntax.Effect as E
-import Siko.Resolver.Item
 import Map
+import Siko.Resolver.Item
+import Siko.Syntax.Class as C
+import Siko.Syntax.Data as D
+import Siko.Syntax.Effect as E
+import Siko.Syntax.Function as F
+import Siko.Syntax.Ident
+import Siko.Syntax.Module as M
+import Siko.Syntax.TypeSignature as T
 
 getVariants :: D.AlgebraicDataType -> [Item]
-getVariants adt =
-    List.map adt.variants (\variant -> Variant (getString adt.name) (getString variant.name))
+getVariants adt = List.map adt.variants (\variant -> Variant (getString adt.name) (getString variant.name))
 
 getClassMemberFunctions :: C.Class -> [Item]
-getClassMemberFunctions c =
-    List.filterMap c.members (\item -> case item of
-        M.FunctionSignature fs -> Some (ClassMember (getString c.name) (getString fs.name))
-        _ -> None)
+getClassMemberFunctions c = List.filterMap c.members (\item -> case item of
+      M.FunctionSignature fs -> Some (ClassMember (getString c.name) (getString fs.name))
+      _ -> None)
 
 getEffectMemberFunctions :: E.Effect -> [Item]
-getEffectMemberFunctions eff =
-    List.filterMap eff.members (\item -> case item of
-        M.FunctionSignature fs -> Some (EffectMember (getString eff.name) (getString fs.name))
-        _ -> None)
+getEffectMemberFunctions eff = List.filterMap eff.members (\item -> case item of
+      M.FunctionSignature fs -> Some (EffectMember (getString eff.name) (getString fs.name))
+      _ -> None)
 
 processItem :: M.Item -> [Item]
 processItem m_item = case m_item of
-    M.Function f -> [Function (getString f.name)]
-    M.Adt a -> [Adt (getString a.name) (getLength a.type_arguments)] + getVariants a
-    M.Record r -> [Record (getString r.name) (getLength r.type_arguments)]
-    M.Class c -> [Class (getString c.name)] + getClassMemberFunctions c
-    M.Effect eff -> [Effect (getString eff.name) (getLength eff.arguments)] + getEffectMemberFunctions eff
-    _ -> panic "Unnamed item is exported"
+   M.Function f -> [Function (getString f.name)]
+   M.Adt a -> [Adt (getString a.name) (getLength a.type_arguments)] + getVariants a
+   M.Record r -> [Record (getString r.name) (getLength r.type_arguments)]
+   M.Class c -> [Class (getString c.name)] + getClassMemberFunctions c
+   M.Effect eff -> [Effect (getString eff.name) (getLength eff.arguments)] + getEffectMemberFunctions eff
+   _ -> panic "Unnamed item is exported"
 
 exportable :: M.Item -> Bool
 exportable m_item = case m_item of
-    M.FunctionSignature _ -> False
-    M.Function _ -> True
-    M.Adt _ -> True
-    M.Record _ -> True
-    M.Import _ -> False
-    M.Class _ -> True
-    M.Instance _ -> False
-    M.Effect _ -> True
+   M.FunctionSignature _ -> False
+   M.Function _ -> True
+   M.Adt _ -> True
+   M.Record _ -> True
+   M.Import _ -> False
+   M.Class _ -> True
+   M.Instance _ -> False
+   M.Effect _ -> True
+   M.Comment _ -> False
 
 collectLocals :: M.Module -> [Item]
 collectLocals mod = do
-    items <- mod.items |>
-             List.iter |>
-             Iterator.filter exportable |>
-             Iterator.map processItem |>
-             Iterator.fold (\total, items -> total + items)  []
-    items
+   items <- mod.items |> List.iter |> Iterator.filter exportable |> Iterator.map processItem |> Iterator.fold (\total, items -> total + items) []
+   items

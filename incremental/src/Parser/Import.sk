@@ -1,67 +1,65 @@
-module Siko.Parser.Import(parseImport, parseExport) where
+module Siko.Parser.Import(parseImport,
+                          parseExport) where
 
 import Siko.Parser
 import Siko.Parser hiding (Single)
-import Siko.Syntax.Ident
+import Siko.Parser.Error
 import Siko.Parser.Token
 import Siko.Parser.Token.Kind as Kind
+import Siko.Syntax.Ident
 import Siko.Syntax.Import
-import Siko.Parser.Error
 
 parseMember :: ParserState -> String -> Result (ParserState, MemberSpecification) (ParserState, ParserError)
-parseMember state msg =
-    if check state Kind.DoubleDot
-    then do
-        state <- try expect state Kind.DoubleDot
-        Ok (state, All)
-    else do
-        (state, name) <- try expectAnyIdent state msg
-        Ok (state, Specific name)
+parseMember state msg = if check state Kind.DoubleDot
+   then do
+      state <- try expect state Kind.DoubleDot
+      Ok (state, All)
+   else do
+      (state, name) <- try expectAnyIdent state msg
+      Ok (state, Specific name)
 
 parseFilter :: ParserState -> String -> Result (ParserState, Filter) (ParserState, ParserError)
 parseFilter state msg = do
-    (state, name) <- try expectAnyIdent state msg
-    if check state Kind.LParen
-    then do
-        (state, members) <- try parseList state (\state -> parseMember state (msg + " member")) Kind.LParen Kind.RParen
-        Ok (state, Group name members)
-    else Ok (state, Single name)
+   (state, name) <- try expectAnyIdent state msg
+   if check state Kind.LParen
+   then do
+      (state, members) <- try parseList state (\state -> parseMember state (msg + " member")) Kind.LParen Kind.RParen
+      Ok (state, Group name members)
+   else Ok (state, Single name)
 
 parseExport :: ParserState -> Result (ParserState, Export) (ParserState, ParserError)
-parseExport state =
-    if check state Kind.LParen
-    then do
-        (state, exported_filters) <- try parseList state (\state -> parseFilter state "exported item") Kind.LParen Kind.RParen
-        Ok (state, ExportSpecific exported_filters)
-    else Ok (state, ExportAll)
+parseExport state = if check state Kind.LParen
+   then do
+      (state, exported_filters) <- try parseList state (\state -> parseFilter state "exported item") Kind.LParen Kind.RParen
+      Ok (state, ExportSpecific exported_filters)
+   else Ok (state, ExportAll)
 
 parseAlternativeName :: ParserState -> Result (ParserState, Option Ident) (ParserState, ParserError)
-parseAlternativeName state =
-    if check state Kind.KeywordAs
-    then do
-        state <- try expect state Kind.KeywordAs
-        (state, alternative_name) <- try expectTypeIdent state "module name"
-        Ok (state, Some alternative_name)
-    else Ok (state, None)
+parseAlternativeName state = if check state Kind.KeywordAs
+   then do
+      state <- try expect state Kind.KeywordAs
+      (state, alternative_name) <- try expectTypeIdent state "module name"
+      Ok (state, Some alternative_name)
+   else Ok (state, None)
 
 parseImport :: ParserState -> Result (ParserState, Import) (ParserState, ParserError)
 parseImport state = do
-    state <- try expect state Kind.KeywordImport
-    (state, name) <- try parseQualifiedTypeName state "module name"
-    if check state Kind.KeywordHiding
-    then do
-        state <- try expect state Kind.KeywordHiding
-        (state, hidden_items) <- try parseList state (\state -> expectAnyIdent state "hidden item") Kind.LParen Kind.RParen
-        state <- try expect state Kind.EndOfItem
-        Ok (state, Hiding name hidden_items)
-    else do
-        (state, import_def) <- if check state Kind.LParen
-            then do
-                (state, imported_filters) <- try parseList state (\state -> parseFilter state "imported item") Kind.LParen Kind.RParen
-                (state, alternative_name) <- try parseAlternativeName state
-                (state, ImportSpecific name imported_filters alternative_name)
-            else do
-                (state, alternative_name) <- try parseAlternativeName state
-                (state, ImportAll name alternative_name)
-        state <- try expect state Kind.EndOfItem
-        Ok (state, import_def)
+   state <- try expect state Kind.KeywordImport
+   (state, name) <- try parseQualifiedTypeName state "module name"
+   if check state Kind.KeywordHiding
+   then do
+      state <- try expect state Kind.KeywordHiding
+      (state, hidden_items) <- try parseList state (\state -> expectAnyIdent state "hidden item") Kind.LParen Kind.RParen
+      state <- try expect state Kind.EndOfItem
+      Ok (state, Hiding name hidden_items)
+   else do
+      (state, import_def) <- if check state Kind.LParen
+      then do
+         (state, imported_filters) <- try parseList state (\state -> parseFilter state "imported item") Kind.LParen Kind.RParen
+         (state, alternative_name) <- try parseAlternativeName state
+         (state, ImportSpecific name imported_filters alternative_name)
+      else do
+         (state, alternative_name) <- try parseAlternativeName state
+         (state, ImportAll name alternative_name)
+      state <- try expect state Kind.EndOfItem
+      Ok (state, import_def)

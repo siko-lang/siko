@@ -1,30 +1,30 @@
 module Siko.Resolver where
 
-import Siko.Syntax.Location
-import Siko.Syntax.Ident
-import Siko.Syntax.SourceFile as SF
-import Siko.Syntax.Module as SM
-import Siko.Syntax.Class as SC
-import Siko.HIR.Program as HP
-import Siko.HIR.Expr as HE
-import Siko.HIR.Pattern as HP
-import Siko.HIR.Backend.Unification.TypeVarGenerator
+import Map
+import Siko.AutoDerive as AD
 import Siko.HIR.Backend.ExprIdGenerator
 import Siko.HIR.Backend.PatternIdGenerator
-import Siko.Resolver.Error
-import Siko.Resolver.Module
-import Siko.Resolver.Data
-import Siko.Resolver.Function
+import Siko.HIR.Backend.Unification.TypeVarGenerator
+import Siko.HIR.Expr as HE
+import Siko.HIR.Pattern as HP
+import Siko.HIR.Program as HP
 import Siko.Resolver.Class
+import Siko.Resolver.Data
 import Siko.Resolver.Effect
-import Siko.AutoDerive as AD
-import Map
+import Siko.Resolver.Error
+import Siko.Resolver.Function
+import Siko.Resolver.Module
+import Siko.Syntax.Class as SC
+import Siko.Syntax.Ident
+import Siko.Syntax.Location
+import Siko.Syntax.Module as SM
+import Siko.Syntax.SourceFile as SF
 import Siko.Util.SharedString as SS
 
 data ResolverState = { errors :: [ResolverError],
                        expr_id_gen :: ExprIdGenerator,
                        pattern_id_gen :: PatternIdGenerator,
-                       var_gen :: TypeVarGenerator,
+                       var_gen :: TypeVarGenerator
                      } deriving (Move)
 
 emptyState :: ResolverState
@@ -32,66 +32,58 @@ emptyState = ResolverState [] createExprIdGenerator createPatternIdGenerator cre
 
 getNextExprId :: ResolverState -> (ResolverState, HE.ExprId)
 getNextExprId state = do
-    (expr_id_gen, id) <- getNewExprId state.expr_id_gen
-    state <- state { expr_id_gen = expr_id_gen }
-    (state, id)
+   (expr_id_gen, id) <- getNewExprId state.expr_id_gen
+   state <- state { expr_id_gen = expr_id_gen }
+   (state, id)
 
 getNextPatternId :: ResolverState -> (ResolverState, HP.PatternId)
 getNextPatternId state = do
-    (pattern_id_gen, id) <- getNewPatternId state.pattern_id_gen
-    state <- state { pattern_id_gen = pattern_id_gen }
-    (state, id)
+   (pattern_id_gen, id) <- getNewPatternId state.pattern_id_gen
+   state <- state { pattern_id_gen = pattern_id_gen }
+   (state, id)
 
 handleItemConflict :: ResolverState -> Option Location -> Location -> ResolverState
 handleItemConflict state l1 l2 = do
-    case l1 of
-        Some l1 -> do
-                err <- ItemConflict l1 l2
-                state { errors = push state.errors err }
-        None -> state
+   case l1 of
+      Some l1 -> do
+         err <- ItemConflict l1 l2
+         state { errors = push state.errors err }
+      None -> state
 
 processAutoDerives :: [SF.SourceFile] -> [SF.SourceFile]
 processAutoDerives source_files = do
-        List.map source_files processSourceFile
-    where
-        processSourceFile :: SF.SourceFile -> SF.SourceFile
-        processSourceFile source_file = do
-            modules <- List.map source_file.modules processADModule
-            source_file { modules = modules }
+   List.map source_files processSourceFile
+   where
+      processSourceFile :: SF.SourceFile -> SF.SourceFile
+      processSourceFile source_file = do
+         modules <- List.map source_file.modules processModule
+         source_file { modules = modules }
 
-        processADModule :: SM.Module -> SM.Module // FIXME: name of this function!
-        processADModule mod = do
-            mod_name <- getString mod.name
-            (instances, items) <- List.mapS [] mod.items (processADItem mod_name)
-            instances <- List.map instances (\i -> SM.Instance i)
-            mod { items = items + instances }
+      processModule :: SM.Module -> SM.Module
+      processModule mod = do
+         mod_name <- getString mod.name
+         (instances, items) <- List.mapS [] mod.items (processItem mod_name)
+         instances <- List.map instances (\i -> SM.Instance i)
+         mod { items = items + instances }
 
-        processADItem :: SS.SharedString -> [SC.Instance] -> SM.Item -> ([SC.Instance], SM.Item) // FIXME: name of this function!
-        processADItem mod_name instances item = case item of
-            SM.Record record -> do
-                (record, record_instances) <- AD.processRecordDerives record
-                (instances + record_instances, SM.Record record)
-            SM.Adt adt -> do
-                (adt, adt_instances) <- AD.processAdtDerives adt (SS.get mod_name)
-                (instances + adt_instances, SM.Adt adt)
-            _ -> (instances, item)
+      processItem :: SS.SharedString -> [SC.Instance] -> SM.Item -> ([SC.Instance], SM.Item)
+      processItem mod_name instances item = case item of
+         SM.Record record -> do
+            (record, record_instances) <- AD.processRecordDerives record
+            (instances + record_instances, SM.Record record)
+         SM.Adt adt -> do
+            (adt, adt_instances) <- AD.processAdtDerives adt (SS.get mod_name)
+            (instances + adt_instances, SM.Adt adt)
+         _ -> (instances, item)
 
-processProgram :: [SF.SourceFile] -> (HP.Program (),
-                                      ExprIdGenerator,
-                                      PatternIdGenerator,
-                                      TypeVarGenerator,
-                                      [ResolverError])
+processProgram :: [SF.SourceFile] -> (HP.Program (), ExprIdGenerator, PatternIdGenerator, TypeVarGenerator, [ResolverError])
 processProgram source_files = do
-    source_files <- processAutoDerives source_files
-    state <- emptyState
-    hir_program <- HP.Program empty empty
-    (state, hir_program, modules) <- processExportsImports source_files state hir_program
-    (state, hir_program) <- Map.fold (state, hir_program) modules (\(state, hir_program), (module_name, (mod, module_resolver)) ->
-        processData state hir_program module_resolver mod)
-    (state, hir_program) <- Map.fold (state, hir_program) modules (\(state, hir_program), (module_name, (mod, module_resolver)) ->
-        processFunctions state hir_program module_resolver mod)
-    (state, hir_program) <- Map.fold (state, hir_program) modules (\(state, hir_program), (module_name, (mod, module_resolver)) ->
-        processClassesAndInstances state hir_program module_resolver mod)
-    (state, hir_program) <- Map.fold (state, hir_program) modules (\(state, hir_program), (module_name, (mod, module_resolver)) ->
-        processEffects state hir_program module_resolver mod)
-    (hir_program, state.expr_id_gen, state.pattern_id_gen, state.var_gen, state.errors)
+   source_files <- processAutoDerives source_files
+   state <- emptyState
+   hir_program <- HP.Program empty empty
+   (state, hir_program, modules) <- processExportsImports source_files state hir_program
+   (state, hir_program) <- Map.fold (state, hir_program) modules (\(state, hir_program), (module_name, (mod, module_resolver)) -> processData state hir_program module_resolver mod)
+   (state, hir_program) <- Map.fold (state, hir_program) modules (\(state, hir_program), (module_name, (mod, module_resolver)) -> processFunctions state hir_program module_resolver mod)
+   (state, hir_program) <- Map.fold (state, hir_program) modules (\(state, hir_program), (module_name, (mod, module_resolver)) -> processClassesAndInstances state hir_program module_resolver mod)
+   (state, hir_program) <- Map.fold (state, hir_program) modules (\(state, hir_program), (module_name, (mod, module_resolver)) -> processEffects state hir_program module_resolver mod)
+   (hir_program, state.expr_id_gen, state.pattern_id_gen, state.var_gen, state.errors)

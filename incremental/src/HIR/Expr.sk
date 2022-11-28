@@ -1,13 +1,13 @@
 module Siko.HIR.Expr where
 
-import Siko.Syntax.Ident
-import Siko.HIR.Pattern as P
 import Siko.HIR.FullyQualifiedName
+import Siko.HIR.Pattern as P
+import Siko.Syntax.Ident
 import Siko.Syntax.Location
 import Siko.Util.SharedString as SS
 
 data Case a = { pattern :: P.Pattern a,
-                body :: Expr a,
+                body :: Expr a
               } deriving (Show, PartialEq, Eq)
 
 data ExprRef = { source :: ExprId,
@@ -15,23 +15,23 @@ data ExprRef = { source :: ExprId,
                } deriving (Show, PartialEq, Eq)
 
 data RecordConstructionItem a = { field_name :: Ident,
-                                  body :: Expr a,
+                                  body :: Expr a
                                 } deriving (Show, PartialEq, Eq)
 
 data ExprId = ExprId Int deriving (PartialEq, Eq, PartialOrd, Ord)
 
 instance Show ExprId where
-  show (ExprId id) = "#{}" % id
+   show (ExprId id) = "#{}" % id
 
 data Expr a = Expr (SimpleExpr a) ExprId a Location deriving (PartialEq, Eq)
 
 instance (Show a) => Show Expr a where
-  show (Expr e id _ _) = "{}({})" % (e, id)
+   show (Expr e id _ _) = "{}({})" % (e, id)
 
-data EffectHandler a =  { name :: FullyQualifiedName,
-                          selection :: EffectHandlerSelection a,
-                          location :: Location,
-                        } deriving (Show, PartialEq, Eq)
+data EffectHandler a = { name :: FullyQualifiedName,
+                         selection :: EffectHandlerSelection a,
+                         location :: Location
+                       } deriving (Show, PartialEq, Eq)
 
 data EffectHandlerSelection a = Static FullyQualifiedName
                               | Dynamic (Expr a)
@@ -41,7 +41,7 @@ data EffectHandlerSelection a = Static FullyQualifiedName
 data EffectType a = EffectType a deriving (PartialEq, Eq)
 
 instance Show EffectType a where
-    show (EffectType ts) = "EffectType" // FIXME
+   show (EffectType ts) = "EffectType" // FIXME
 
 data SimpleExpr a = StaticFunctionCall FullyQualifiedName [Expr a]
                   | DynamicFunctionCall (Expr a) [Expr a]

@@ -1,33 +1,32 @@
 module Siko.HIR.Backend.Unification.Util where
 
+import Siko.HIR.Backend.ClassInfoStore
 import Siko.HIR.Backend.Unification as U
 import Siko.HIR.Backend.Unification.Substitution as S
-import Siko.HIR.Type as T
 import Siko.HIR.Program as P
-import Siko.HIR.Backend.ClassInfoStore
+import Siko.HIR.Type as T
 import Siko.HIR.TypeFormatter as TF
 
 unify a :: (U.Context a) => a -> S.Substitution -> T.Type -> T.Type -> (a, S.Substitution)
-unify context sub type1 type2 =
-    case U.unify context sub type1 type2 of
-        Ok (context, sub) -> (context, sub)
-        Err _ -> panic "getFunctionType: failed to unify {} {}" % (TF.toString type1, TF.toString type2)
+unify context sub type1 type2 = case U.unify context sub type1 type2 of
+   Ok (context, sub) -> (context, sub)
+   Err _ -> panic "getFunctionType: failed to unify {} {}" % (TF.toString type1, TF.toString type2)
 
 getFunctionType a :: (U.Context a) => a -> [T.Type] -> T.Type -> T.Type -> (a, T.Type, S.Substitution)
 getFunctionType context arg_types expected_result_type function_type = do
-    (context, function_type, sub) <- loop (context, function_type, sub, index) <- (context, function_type, S.createSubstitution, 0) do
-        if index >= getLength arg_types
-            then break (context, function_type, sub)
-            else do
-                arg_type <- atIndex arg_types index
-                fn_arg_types <- T.getArgs function_type
-                fn_arg_type <- atIndex fn_arg_types index
-                (context, sub) <- unify context sub fn_arg_type arg_type
-                function_type <- S.apply function_type sub
-                (context, function_type, sub, index + 1)
-    result_type <- T.getResultType function_type (getLength arg_types)
-    (context, sub) <- unify context sub result_type expected_result_type
-    (context, S.apply function_type sub, sub)
+   (context, function_type, sub) <- loop (context, function_type, sub, index) <- (context, function_type, S.createSubstitution, 0) do
+      if index >= getLength arg_types
+      then break (context, function_type, sub)
+      else do
+         arg_type <- atIndex arg_types index
+         fn_arg_types <- T.getArgs function_type
+         fn_arg_type <- atIndex fn_arg_types index
+         (context, sub) <- unify context sub fn_arg_type arg_type
+         function_type <- S.apply function_type sub
+         (context, function_type, sub, index + 1)
+   result_type <- T.getResultType function_type (getLength arg_types)
+   (context, sub) <- unify context sub result_type expected_result_type
+   (context, S.apply function_type sub, sub)
 
 getFieldName :: Int -> String
 getFieldName index = "field{}" % index

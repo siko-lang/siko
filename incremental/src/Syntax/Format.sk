@@ -1,25 +1,26 @@
 module Siko.Syntax.Format where
 
-import Siko.Syntax.Module as M
-import Siko.Syntax.SourceFile
-import Siko.Syntax.Ident
-import Siko.Syntax.Expr as E
-import Siko.Syntax.Data as D
-import Siko.Syntax.Class as C
-import Siko.Syntax.Effect as Eff
-import Siko.Syntax.Import as I
-import Siko.Syntax.Function as F
-import Siko.Syntax.TypeSignature as T
-import Siko.Syntax.Pattern as P
-import Siko.Util.SharedString as SS
 import Siko.Syntax.Attribute as A
+import Siko.Syntax.Class as C
+import Siko.Syntax.Data as D
+import Siko.Syntax.Effect as Eff
+import Siko.Syntax.Expr as E
+import Siko.Syntax.Function as F
+import Siko.Syntax.Ident
+import Siko.Syntax.Import as I
+import Siko.Syntax.Module as M
+import Siko.Syntax.Pattern as P
+import Siko.Syntax.SourceFile
+import Siko.Syntax.TypeSignature as T
+import Siko.Syntax.Util as U
 import Siko.Util.Format as UF
+import Siko.Util.SharedString as SS
 
 getSpaces :: Int -> String
 getSpaces indent = loop (ind, index) <- ("", 0) do
-        if index >= indent
-        then break ind
-        else (ind + " ", index + 1)
+      if index >= indent
+      then break ind
+      else (ind + " ", index + 1)
 
 data Output = Chunk String
             | StartOfBlock
@@ -30,7 +31,6 @@ data Output = Chunk String
             | PushOffset
             | Break
             | PopOffset
-
             deriving (Show, PartialEq)
 
 data PrinterState = { output :: String,
@@ -38,11 +38,16 @@ data PrinterState = { output :: String,
                       indent :: Int,
                       saved_offsets :: [Int],
                       line_start :: Int,
-                      total_len :: Int,
+                      total_len :: Int
                     }
 
 createPrinterState :: PrinterState
-createPrinterState = PrinterState { output = "", index = 0, indent = -1, saved_offsets = [], line_start = 0, total_len = 0 }
+createPrinterState = PrinterState { output = "",
+                                    index = 0,
+                                    indent = -1,
+                                    saved_offsets = [],
+                                    line_start = 0,
+                                    total_len = 0 }
 
 inc :: PrinterState -> PrinterState
 inc state = state { indent = state.indent + 1 }
@@ -55,601 +60,629 @@ step state = state { index = state.index + 1 }
 
 startLine :: PrinterState -> PrinterState
 startLine state = do
-    state <- state { output = state.output + "\n", total_len = state.total_len + 1 }
-    state { line_start = state.total_len }
+   state <- state { output = state.output + "\n", total_len = state.total_len + 1 }
+   state { line_start = state.total_len }
 
 addString :: PrinterState -> String -> PrinterState
 addString state s = do
-    len <- getLength (chars s)
-    state { output = state.output + s, total_len = state.total_len + len }
+   len <- getLength (chars s)
+   state { output = state.output + s, total_len = state.total_len + len }
 
 pushOffset :: PrinterState -> PrinterState
 pushOffset state = do
-    state { saved_offsets = List.push state.saved_offsets (state.total_len - state.line_start) }
+   state { saved_offsets = List.push state.saved_offsets (state.total_len - state.line_start) }
 
 popOffset :: PrinterState -> PrinterState
 popOffset state = do
-    state { saved_offsets = List.dropLast state.saved_offsets }
+   state { saved_offsets = List.dropLast state.saved_offsets }
 
 formatOutput :: [Output] -> String
-formatOutput outputs = loop state  <- createPrinterState do
-    if state.index >= List.getLength outputs
-    then break state.output
-    else do
-        state <- case atIndex outputs state.index of
+formatOutput outputs = loop state <- createPrinterState do
+      if state.index >= List.getLength outputs
+      then break state.output
+      else do
+         state <- case atIndex outputs state.index of
             Chunk s -> addString state s
             StartOfBlock -> inc state
             StartOfItem -> do
-                i <- getSpaces (state.indent * 3)
-                state <- startLine state
-                addString state i
+               i <- getSpaces (state.indent * 3)
+               state <- startLine state
+               addString state i
             EndOfItem -> state
             EndOfBlock -> dec state
             NewLine -> startLine state
             PushOffset -> pushOffset state
             Break -> do
-                offset <- List.last state.saved_offsets
-                spaces <- getSpaces offset
-                state <- startLine state
-                addString state spaces
+               offset <- List.last state.saved_offsets
+               spaces <- getSpaces offset
+               state <- startLine state
+               addString state spaces
             PopOffset -> popOffset state
-        step state
+         step state
 
 formatList a :: (Format a) => [a] -> Output -> [Output]
 formatList items separator = do
-    output <- List.foldE [PushOffset] items (joiner separator)
-    List.push output PopOffset
-    where
-        joiner a :: (Format a) => Output -> [Output] -> Int -> a -> [Output]
-        joiner separator state index item = case index of
-            0 -> state + (format item)
-            _ -> do
-                item_output <- format item
-                if List.isEmpty item_output
-                then state
-                else do
-                    state <- List.push state separator
-                    state + item_output
+   output <- List.foldE [PushOffset] items (joiner separator)
+   List.push output PopOffset
+   where
+      joiner a :: (Format a) => Output -> [Output] -> Int -> a -> [Output]
+      joiner separator state index item = case index of
+         0 -> state + (format item)
+         _ -> do
+            item_output <- format item
+            if List.isEmpty item_output
+            then state
+            else do
+               state <- List.push state separator
+               state + item_output
 
 formatList2 a :: (Format a) => [a] -> [Output] -> [Output]
 formatList2 items separator = do
-    List.foldE [] items (joiner separator)
-    where
-        joiner a :: (Format a) => [Output] -> [Output] -> Int -> a -> [Output]
-        joiner separator state index item = case index of
-            0 -> state + (format item)
-            _ -> do
-                item_output <- format item
-                if List.isEmpty item_output
-                then state
-                else do
-                    state <- state + separator
-                    state + item_output
+   List.foldE [] items (joiner separator)
+   where
+      joiner a :: (Format a) => [Output] -> [Output] -> Int -> a -> [Output]
+      joiner separator state index item = case index of
+         0 -> state + (format item)
+         _ -> do
+            item_output <- format item
+            if List.isEmpty item_output
+            then state
+            else do
+               state <- state + separator
+               state + item_output
 
 formatBlock a :: (Format a) => [a] -> [Output]
 formatBlock items = do
-    items <- List.fold [StartOfBlock] items joiner
-    List.push items EndOfBlock
-        where
-            joiner a :: (Format a) => [Output] -> a -> [Output]
-            joiner state item = do
-                item <- format item
-                if List.isEmpty item
-                then state
-                else do
-                    state <- List.push state StartOfItem
-                    state <- state + item
-                    List.push state EndOfItem
+   items <- List.fold [StartOfBlock] items joiner
+   List.push items EndOfBlock
+   where
+      joiner a :: (Format a) => [Output] -> a -> [Output]
+      joiner state item = do
+         item <- format item
+         if List.isEmpty item
+         then state
+         else do
+            state <- List.push state StartOfItem
+            state <- state + item
+            List.push state EndOfItem
+
+addImplicitBlock :: [Output] -> [Output]
+addImplicitBlock body = do
+   starts_with_block <- case (List.atIndex body 0) of
+      Chunk "do" -> True
+      Chunk "case " -> True
+      Chunk "loop " -> True
+      _ -> False
+   if starts_with_block
+   then body
+   else [StartOfBlock] + body + [EndOfBlock]
 
 class Format a where
-    format a :: a -> [Output]
+   format a :: a -> [Output]
 
 instance Format E.Expr where
-    format (E.Expr expr location) = format expr
+   format (E.Expr expr location) = format expr
 
 instance (Format a) => Format [a] where
-    format xs = List.fold [] xs (\result, x -> result + format x)
+   format xs = List.fold [] xs (\result, x -> result + format x)
 
 instance Format E.Case where
-    format c = do
-        pat <- format c.pattern
-        body <- format c.body
-        pat + [Chunk " -> "] + body
+   format c = do
+      pat <- format c.pattern
+      body <- format c.body
+      body <- addImplicitBlock body
+      pat + [Chunk " -> "] + body
 
 instance Format E.Op where
-    format op = do
-        op <- case op of
-            E.Equal -> "=="
-            E.NotEqual -> "!="
-            E.And -> "&&"
-            E.Or -> "||"
-            E.LessThan -> "<"
-            E.GreaterThan -> ">"
-            E.LessOrEqualThan -> "<="
-            E.GreaterOrEqualThan -> ">="
-            E.Add -> "+"
-            E.Sub -> "-"
-            E.Mul -> "*"
-            E.Div -> "/"
-            E.PipeForward -> "|>"
-        [Chunk " {} " % op]
+   format op = do
+      op <- case op of
+         E.Equal -> "=="
+         E.NotEqual -> "!="
+         E.And -> "&&"
+         E.Or -> "||"
+         E.LessThan -> "<"
+         E.GreaterThan -> ">"
+         E.LessOrEqualThan -> "<="
+         E.GreaterOrEqualThan -> ">="
+         E.Add -> "+"
+         E.Sub -> "-"
+         E.Mul -> "*"
+         E.Div -> "/"
+         E.PipeForward -> "|>"
+      [Chunk " {} " % op]
 
 instance Format Ident where
-    format name = [Chunk (show name)]
+   format name = [Chunk (show name)]
 
 instance Format E.SimpleExpr where
-    format expr = case expr of
-        E.Lambda args body -> do
-            args <- formatList args (Chunk ", ")
-            body <- format body
-            [Chunk "\\"] + args + [Chunk " -> "] + body
-        E.Paren arg -> do
-            arg <- format arg
-            [Chunk "("] + arg + [Chunk ")"]
-        E.FunctionCall fn args -> do
-            args <- formatList args (Chunk " ")
-            fn <- format fn
-            fn + [(Chunk " ")] + args
-        E.BinaryOp op lhs rhs -> do
-            op <- format op
-            lhs <- format lhs
-            rhs <- format rhs
-            lhs + op + rhs
-        E.If cond true false -> do
-            cond <- format cond
-            true <- format true
-            false <- format false
-            total_length <- List.getLength cond + List.getLength true + List.getLength false
-            if List.contains true StartOfBlock || total_length > 5
-            then [Chunk "if "] + cond + [StartOfItem, Chunk "then "] + true + [EndOfItem, StartOfItem, Chunk "else "] + false + [EndOfItem]
-            else [Chunk "if "] + cond + [Chunk " then "] + true + [Chunk " else "] + false
-        E.Tuple args -> do
-            args <- formatList args (Chunk ", ")
-            [Chunk "("] + args + [Chunk ")"]
-        E.List args -> do
+   format expr = case expr of
+      E.Lambda args body -> do
+         args <- formatList args (Chunk ", ")
+         body <- format body
+         body <- addImplicitBlock body
+         [Chunk "\\"] + args + [Chunk " -> "] + body
+      E.Paren arg -> do
+         arg <- format arg
+         [Chunk "("] + arg + [Chunk ")"]
+      E.FunctionCall fn args -> do
+         args <- formatList args (Chunk " ")
+         fn <- format fn
+         fn + [(Chunk " ")] + args
+      E.BinaryOp op lhs rhs -> do
+         op <- format op
+         lhs <- format lhs
+         rhs <- format rhs
+         lhs + op + rhs
+      E.If cond true false -> do
+         cond <- format cond
+         true <- format true
+         false <- format false
+         total_length <- List.getLength cond + List.getLength true + List.getLength false
+         if List.contains true StartOfBlock || List.contains false StartOfBlock || total_length > 5
+         then [Chunk "if "] + cond + [StartOfItem, Chunk "then "] + (addImplicitBlock true) + [EndOfItem, StartOfItem, Chunk "else "] + (addImplicitBlock false) + [EndOfItem]
+         else [Chunk "if "] + cond + [Chunk " then "] + true + [Chunk " else "] + false
+      E.Tuple args -> do
+         args <- formatList args (Chunk ", ")
+         [Chunk "("] + args + [Chunk ")"]
+      E.List args -> do
+         if List.getLength args > 3
+         then do
+            args <- formatList2 args [Chunk ",", Break]
+            [Chunk "[", PushOffset] + args + [Chunk "]", PopOffset]
+         else do
             args <- formatList args (Chunk ", ")
             [Chunk "["] + args + [Chunk "]"]
-        E.Path name -> format name
-        E.IntegerLiteral lit -> [Chunk (show lit)]
-        E.FloatLiteral lit -> [Chunk (show lit)]
-        E.StringLiteral lit -> [Chunk ("\"{}\"" % UF.escapeString (SS.get lit))]
-        E.CharLiteral lit -> [Chunk "{}" % UF.escapeChar lit]
-        E.Do items -> do
-            items <- formatBlock items
-            [Chunk "do"] + items
-        E.Bind pat rhs -> do
-            pat <- format pat
-            rhs <- format rhs
-            pat + [Chunk " <- "] + rhs
-        E.FieldAccess name receiver -> do
-            name <- format name
-            receiver <- format receiver
-            receiver + [Chunk "."] + name
-        E.TupleFieldAccess id receiver -> do
-            receiver <- format receiver
-            receiver + [Chunk ".", Chunk "{}" % id]
-        E.Formatter fmt args -> do
-            args_output <- formatList args (Chunk ", ")
-            if List.getLength args == 1
-            then [Chunk "\"{}\" % " % UF.escapeString (SS.get fmt)] + args_output
-            else [Chunk "\"{}\" % (" % UF.escapeString (SS.get fmt)] + args_output + [Chunk ")"]
-        E.CaseOf body cases -> do
-            body <- format body
-            cases <- formatBlock cases
-            [Chunk "case "] + body + [Chunk " of"] + cases
-        E.Not arg -> do
-            arg <- format arg
-            [Chunk "!"] + arg
-        E.Negative arg -> do
-            arg <- format arg
-            [Chunk "-"] + arg
-        E.RecordInitialization name items -> do
-            name <- format name
+      E.Path name -> format name
+      E.IntegerLiteral lit -> [Chunk (show lit)]
+      E.FloatLiteral lit -> [Chunk (show lit)]
+      E.StringLiteral lit -> [Chunk ("\"{}\"" % UF.escapeString (SS.get lit))]
+      E.CharLiteral lit -> [Chunk "{}" % UF.escapeChar lit]
+      E.Do items -> do
+         items <- formatBlock items
+         [Chunk "do"] + items
+      E.Bind pat rhs -> do
+         pat <- format pat
+         rhs <- format rhs
+         pat + [Chunk " <- "] + rhs
+      E.FieldAccess name receiver -> do
+         name <- format name
+         receiver <- format receiver
+         receiver + [Chunk "."] + name
+      E.TupleFieldAccess id receiver -> do
+         receiver <- format receiver
+         receiver + [Chunk ".", Chunk "{}" % id]
+      E.Formatter fmt args in_parens -> do
+         args_output <- formatList args (Chunk ", ")
+         if List.getLength args == 1 && not in_parens
+         then [Chunk "\"{}\" % " % UF.escapeString (SS.get fmt)] + args_output
+         else [Chunk "\"{}\" % (" % UF.escapeString (SS.get fmt)] + args_output + [Chunk ")"]
+      E.CaseOf body cases -> do
+         body <- format body
+         cases <- formatBlock cases
+         [Chunk "case "] + body + [Chunk " of"] + cases
+      E.Not arg -> do
+         arg <- format arg
+         [Chunk "!"] + arg
+      E.Negative arg -> do
+         arg <- format arg
+         [Chunk "-"] + arg
+      E.RecordInitialization name items -> do
+         name <- format name
+         if List.getLength items > 3
+         then do
+            items <- formatList2 items [Chunk ",", Break]
+            name + [Chunk " { ", PushOffset] + items + [Chunk " }", PopOffset]
+         else do
             items <- formatList items (Chunk ", ")
             name + [Chunk " { "] + items + [Chunk " }"]
-        E.RecordUpdate receiver items -> do
-            receiver <- format receiver
-            items <- formatList items (Chunk ", ")
-            receiver + [Chunk " { "] + items + [Chunk " }"]
-        E.Return arg -> do
-            arg <- format arg
-            [Chunk "return "] + arg
-        E.Try arg -> do
-            arg <- format arg
-            [Chunk "try "] + arg
-        E.Continue arg -> do
-            arg <- format arg
-            [Chunk "continue "] + arg
-        E.Break arg -> do
-            arg <- format arg
-            [Chunk "break "] + arg
-        E.Loop pat init body -> do
-            pat <- format pat
-            init <- format init
-            body <- format body
-            [Chunk "loop "] + pat + [Chunk " <- "] + init + [Chunk " "] + body
-        E.ArgRef index -> [Chunk "argref({})" % index]
-        E.With handlers body -> do
-            handlers <- formatList handlers (Chunk ", ")
-            body <- format body
-            [Chunk "with { "] + handlers + [Chunk " } "] + body
+      E.RecordUpdate receiver items -> do
+         receiver <- format receiver
+         items <- formatList items (Chunk ", ")
+         receiver + [Chunk " { "] + items + [Chunk " }"]
+      E.Return arg -> do
+         arg <- format arg
+         [Chunk "return "] + arg
+      E.Try arg -> do
+         arg <- format arg
+         [Chunk "try "] + arg
+      E.Continue arg -> do
+         arg <- format arg
+         [Chunk "continue "] + arg
+      E.Break arg -> do
+         arg <- format arg
+         [Chunk "break "] + arg
+      E.Loop pat init body -> do
+         pat <- format pat
+         init <- format init
+         body <- format body
+         [Chunk "loop "] + pat + [Chunk " <- "] + init + [Chunk " "] + body
+      E.ArgRef index -> [Chunk "argref({})" % index]
+      E.With handlers body -> do
+         handlers <- formatList handlers (Chunk ", ")
+         body <- format body
+         [Chunk "with { "] + handlers + [Chunk " } "] + body
+      E.Comment comment -> [Chunk "//{}" % comment]
 
 instance Format E.EffectHandler where
-    format (E.EffectHandler name body) = do
-        name <- format name
-        body <- format body
-        name + [Chunk " = "] + body
+   format (E.EffectHandler name body) = do
+      name <- format name
+      body <- format body
+      name + [Chunk " = "] + body
 
 instance Format E.RecordConstructionItem where
-    format (E.RecordConstructionItem name body) = do
-        name <- format name
-        body <- format body
-        name + [Chunk " = "] + body
+   format (E.RecordConstructionItem name body) = do
+      name <- format name
+      body <- format body
+      name + [Chunk " = "] + body
 
 instance Format P.Pattern where
-    format (P.Pattern pat location) = format pat
+   format (P.Pattern pat location) = format pat
 
 instance Format P.RecordFieldPattern where
-    format (P.RecordFieldPattern name pat) = do
-        name <- format name
-        pat <- format pat
-        name + [Chunk " = "] + pat
+   format (P.RecordFieldPattern name pat) = do
+      name <- format name
+      pat <- format pat
+      name + [Chunk " = "] + pat
 
 instance Format P.SimplePattern where
-    format pat = case pat of
+   format pat = case pat of
       P.Binding id -> format id
       P.Tuple args -> do
-        args_output <- formatList args (Chunk ", ")
-        args_output <- if List.getLength args == 1
-        then args_output + [Chunk ","]
-        else args_output
-        [Chunk "("] + args_output + [Chunk ")"]
+         args_output <- formatList args (Chunk ", ")
+         args_output <- if List.getLength args == 1
+         then args_output + [Chunk ","]
+         else args_output
+         [Chunk "("] + args_output + [Chunk ")"]
       P.Constructor id args -> do
-        id <- format id
-        args_output <- formatList args (Chunk " ")
-        if List.isEmpty args
-        then id
-        else id + [Chunk " "] + args_output
+         id <- format id
+         args_output <- formatList args (Chunk " ")
+         if List.isEmpty args
+         then id
+         else id + [Chunk " "] + args_output
       P.Guarded pat body -> do
-        pat <- format pat
-        body <- format body
-        pat + [Chunk " if "] + body
+         pat <- format pat
+         body <- format body
+         pat + [Chunk " if "] + body
       P.Wildcard -> [Chunk "_"]
       P.IntegerLiteral lit -> [Chunk ("{}" % lit)]
       P.StringLiteral lit -> [Chunk ("\"{}\"" % UF.escapeString (SS.get lit))]
       P.CharLiteral lit -> [Chunk ("{}" % UF.escapeChar lit)]
       P.CharRange start end kind -> case kind of
-            P.Exclusive -> [Chunk "{}..{}" % (UF.escapeChar start, UF.escapeChar end)]
-            P.Inclusive -> [Chunk "{}..={}" % (UF.escapeChar start, UF.escapeChar end)]
+         P.Exclusive -> [Chunk "{}..{}" % (UF.escapeChar start, UF.escapeChar end)]
+         P.Inclusive -> [Chunk "{}..={}" % (UF.escapeChar start, UF.escapeChar end)]
       P.Typed pat type -> do
-        pat <- format pat
-        type <- format type
-        pat + [Chunk " :: "] + type
+         pat <- format pat
+         type <- format type
+         pat + [Chunk " :: "] + type
       P.Record id fields -> do
-        id <- format id
-        fields <- formatList fields (Chunk ", ")
-        id + [Chunk " {"] + fields + [Chunk "}"]
-      P.Or pats -> formatList pats (Chunk "|")
+         id <- format id
+         fields <- formatList fields (Chunk ", ")
+         id + [Chunk " {"] + fields + [Chunk "}"]
+      P.Or pats -> [PushOffset] + formatList2 pats [Break, Chunk " | "] + [PopOffset]
       P.Paren arg -> do
-        arg <- format arg
-        [Chunk "("] + arg + [Chunk ")"]
+         arg <- format arg
+         [Chunk "("] + arg + [Chunk ")"]
 
 instance Format T.TypeSignature where
-    format (T.TypeSignature s _) =  case s of
-        T.TypeArg name -> format name
-        T.Named name args -> do
-            name <- format name
-            args_output <- formatList args (Chunk " ")
-            if List.isEmpty args
-            then name
-            else name + [Chunk " "] + args_output
-        T.Variant name args -> do
-            name <- format name
-            args_output <- formatList args (Chunk " ")
-            if List.isEmpty args
-            then name
-            else name + [Chunk " "] + args_output
-        T.List type -> do
-            type <- format type
-            [Chunk "["] + type + [Chunk "]"]
-        T.Tuple args -> do
-            args_output <- formatList args (Chunk ", ")
-            if List.getLength args == 1
-            then [Chunk "("] + args_output + [Chunk ",)"]
-            else [Chunk "("] + args_output + [Chunk ")"]
-        T.Function from to -> do
-            from <- format from
-            to <- format to
-            from + [Chunk " -> "] + to
-        T.Never -> [Chunk "!"]
-        T.Ref l type -> do
-            l <- format l
-            type <- format type
-            [Chunk "&'"] + l + [Chunk " "] + type
-        T.Owner type -> do
-            type <- format type
-            [Chunk "~"] + type
-        T.Wildcard -> [Chunk "_"]
-        T.Paren arg -> do
-            arg <- format arg
-            [Chunk "("] + arg + [Chunk ")"]
+   format (T.TypeSignature s _) = case s of
+      T.TypeArg name -> format name
+      T.Named name args -> do
+         name <- format name
+         args_output <- formatList args (Chunk " ")
+         if List.isEmpty args
+         then name
+         else name + [Chunk " "] + args_output
+      T.Variant name args -> do
+         name <- format name
+         args_output <- formatList args (Chunk " ")
+         if List.isEmpty args
+         then name
+         else name + [Chunk " "] + args_output
+      T.List type -> do
+         type <- format type
+         [Chunk "["] + type + [Chunk "]"]
+      T.Tuple args -> do
+         args_output <- formatList args (Chunk ", ")
+         if List.getLength args == 1
+         then [Chunk "("] + args_output + [Chunk ",)"]
+         else [Chunk "("] + args_output + [Chunk ")"]
+      T.Function from to -> do
+         from <- format from
+         to <- format to
+         from + [Chunk " -> "] + to
+      T.Never -> [Chunk "!"]
+      T.Ref l type -> do
+         l <- format l
+         type <- format type
+         [Chunk "&'"] + l + [Chunk " "] + type
+      T.Owner type -> do
+         type <- format type
+         [Chunk "~"] + type
+      T.Wildcard -> [Chunk "_"]
+      T.Paren arg -> do
+         arg <- format arg
+         [Chunk "("] + arg + [Chunk ")"]
 
 instance Format M.Item where
-    format item = case item of
-        M.Function f -> format f + [NewLine]
-        M.FunctionSignature f -> format f
-        M.Adt adt -> format adt + [NewLine]
-        M.Record record -> format record + [NewLine]
-        M.Import i -> format i
-        M.Class c -> format c + [NewLine]
-        M.Instance i -> format i + [NewLine]
-        M.Effect e ->  format e + [NewLine]
+   format item = case item of
+      M.Function f -> format f + [NewLine]
+      M.FunctionSignature f -> format f
+      M.Adt adt -> format adt + [NewLine]
+      M.Record record -> format record + [NewLine]
+      M.Import i -> format i
+      M.Class c -> format c + [NewLine]
+      M.Instance i -> format i + [NewLine]
+      M.Effect e -> format e + [NewLine]
 
 formatItems :: [M.Item] -> [Output]
 formatItems items = do
-    (output, _) <- List.foldE ([StartOfBlock], "") items (\(output, name), index, item -> do
-        (newline, item, name) <- case item of
-            M.Function f -> do
-                fname <- SS.get (getString f.name)
-                (name != fname, format f, fname)
-            M.FunctionSignature f -> (True, format f, SS.get (getString f.name))
-            M.Adt adt -> (True, format adt, "")
-            M.Record record -> (True, format record, "")
-            M.Import i -> (False, format i, "")
-            M.Class c -> (True, format c, "")
-            M.Instance i -> (True, format i, "")
-            M.Effect e ->  (True, format e, "")
-        newline <- if newline && index == 0
-        then False
-        else newline
-        if List.isEmpty item
-        then (output, name)
-        else do
-            output <- if newline
-            then output + [NewLine, StartOfItem] + item + [EndOfItem]
-            else output + [StartOfItem] + item + [EndOfItem]
-            (output, name))
-    output + [EndOfBlock]
+   (output, _) <- List.foldE ([StartOfBlock], "") items (\(output, name), index, item -> do
+      (newline, item, name) <- case item of
+         M.Function f -> do
+            fname <- SS.get (getString f.name)
+            (name != fname, format f, fname)
+         M.FunctionSignature f -> (True, format f, SS.get (getString f.name))
+         M.Adt adt -> (True, format adt, "")
+         M.Record record -> (True, format record, "")
+         M.Import i -> (False, format i, "")
+         M.Class c -> (True, format c, "")
+         M.Instance i -> (True, format i, "")
+         M.Effect e -> (True, format e, "")
+         M.Comment comment -> (False, [Chunk "//{}" % comment], "")
+      newline <- if newline && index == 0
+      then False
+      else newline
+      if List.isEmpty item
+      then (output, name)
+      else do
+         output <- if newline
+         then output + [NewLine, StartOfItem] + item + [EndOfItem]
+         else output + [StartOfItem] + item + [EndOfItem]
+         (output, name))
+   output + [EndOfBlock]
 
 instance Format M.Module where
-    format mod = do
-        export <- format mod.export
-        name <- format mod.name
-        items <- formatItems mod.items
-        [Chunk "module "] + name + export + [Chunk " where", NewLine] + items
+   format mod = do
+      export <- format mod.export
+      name <- format mod.name
+      items <- U.orderImports mod.items
+      items <- formatItems items
+      [Chunk "module "] + name + export + [Chunk " where", NewLine] + items
 
 instance Format D.Variant where
-    format variant = do
-        name <- format variant.name
-        items <- formatList variant.items (Chunk " ")
-        if List.isEmpty variant.items
-        then name
-        else name + [Chunk " "] + items
+   format variant = do
+      name <- format variant.name
+      items <- formatList variant.items (Chunk " ")
+      if List.isEmpty variant.items
+      then name
+      else name + [Chunk " "] + items
 
 instance Format D.AlgebraicDataType where
-    format adt = do
-        name <- format adt.name
-        type_arguments <- formatList adt.type_arguments (Chunk " ")
-        derived_classes <- formatList adt.derived_classes (Chunk ", ")
-        output <- if List.isEmpty adt.type_arguments
-        then [Chunk "data "] + name
-        else [Chunk "data "] + name + [Chunk " "] + type_arguments
-        derived_classes <- if List.isEmpty adt.derived_classes
-        then []
-        else [Chunk " deriving ("] + derived_classes + [Chunk ")"]
-        case List.getLength adt.variants of
-            0 -> output
-            1 -> do
-                variants <- formatList2 adt.variants [Chunk " | "]
-                output + [Chunk " = "] + variants + derived_classes
-            _ -> do
-                variants <- formatList2 adt.variants [Break, Chunk " | "]
-                output + [PushOffset, Chunk " = "] + variants + [Break] + derived_classes + [PopOffset]
+   format adt = do
+      name <- format adt.name
+      type_arguments <- formatList adt.type_arguments (Chunk " ")
+      derived_classes <- formatList adt.derived_classes (Chunk ", ")
+      output <- if List.isEmpty adt.type_arguments
+      then [Chunk "data "] + name
+      else [Chunk "data "] + name + [Chunk " "] + type_arguments
+      derived_classes <- if List.isEmpty adt.derived_classes
+      then []
+      else [Chunk " deriving ("] + derived_classes + [Chunk ")"]
+      case List.getLength adt.variants of
+         0 -> output
+         1 -> do
+            variants <- formatList2 adt.variants [Chunk " | "]
+            output + [Chunk " = "] + variants + derived_classes
+         _ -> do
+            variants <- formatList2 adt.variants [Break, Chunk " | "]
+            if List.isEmpty adt.derived_classes
+            then output + [PushOffset, Chunk " = "] + variants + [PopOffset]
+            else output + [PushOffset, Chunk " = "] + variants + [Break] + derived_classes + [PopOffset]
 
 instance Format D.RecordField where
-    format D.RecordField name type = do
-        name <- format name
-        type <- format type
-        name + [Chunk " :: "] + type
+   format D.RecordField name type = do
+      name <- format name
+      type <- format type
+      name + [Chunk " :: "] + type
 
 instance Format D.Record where
-    format record = do
-        name <- format record.name
-        type_arguments <- formatList record.type_arguments (Chunk " ")
-        fields <- formatList2 record.fields [Chunk ",", Break]
-        fields <- [PushOffset] + fields + [PopOffset]
-        derived_classes <- formatList record.derived_classes (Chunk ", ")
-        output <- if List.isEmpty record.type_arguments
-        then [Chunk "data "] + name
-        else [Chunk "data "] + name + [Chunk " "] + type_arguments
-        if record.external
-        then if record.implicit_member
-            then output + [Chunk " = extern (implicit)"]
-            else output + [Chunk " = extern"]
-        else do
-            output <- if List.getLength record.fields > 1
-            then output + [Chunk " = ", PushOffset, Chunk "{ "] +  fields + [Break, Chunk "}", PopOffset]
-            else output + [Chunk " = { "] +  fields + [Chunk " }"]
-            output + [Chunk " = { "] +  fields + [Chunk " }"]
-            if List.isEmpty record.derived_classes
-            then output
-            else output + [Chunk " deriving ("] + derived_classes + [Chunk ")"]
+   format record = do
+      name <- format record.name
+      type_arguments <- formatList record.type_arguments (Chunk " ")
+      fields <- formatList2 record.fields [Chunk ",", Break]
+      fields <- [PushOffset] + fields + [PopOffset]
+      derived_classes <- formatList record.derived_classes (Chunk ", ")
+      output <- if List.isEmpty record.type_arguments
+      then [Chunk "data "] + name
+      else [Chunk "data "] + name + [Chunk " "] + type_arguments
+      if record.external
+      then if record.implicit_member
+         then output + [Chunk " = extern (implicit)"]
+         else output + [Chunk " = extern"]
+      else do
+         output <- if List.getLength record.fields > 1
+         then output + [Chunk " = ", PushOffset, Chunk "{ "] + fields + [Break, Chunk "}", PopOffset]
+         else output + [Chunk " = { "] + fields + [Chunk " }"]
+         output + [Chunk " = { "] + fields + [Chunk " }"]
+         if List.isEmpty record.derived_classes
+         then output
+         else output + [Chunk " deriving ("] + derived_classes + [Chunk ")"]
 
 instance Format F.FunctionSignature where
-    format signature = do
-        type_arguments <- formatList signature.type_arguments (Chunk " ")
-        attributes <- formatList signature.attributes (Chunk "\n")
-        attributes <- if List.isEmpty signature.attributes
-        then attributes
-        else attributes + [Chunk "\n"]
-        type_signature <- format signature.type_signature
-        name <- format signature.name
-        constraints <- formatList signature.constraints (Chunk ", ")
-        constraints <- if List.isEmpty signature.constraints
-        then []
-        else [Chunk "("] + constraints + [Chunk ") => "]
-        if List.isEmpty signature.type_arguments
-        then attributes + name + [Chunk " :: "] + constraints + type_signature
-        else attributes + name + [Chunk " "] + type_arguments + [Chunk " :: "] + constraints + type_signature
+   format signature = do
+      type_arguments <- formatList signature.type_arguments (Chunk " ")
+      attributes <- formatList signature.attributes (Chunk "\n")
+      attributes <- if List.isEmpty signature.attributes
+      then attributes
+      else attributes + [Chunk "\n"]
+      type_signature <- format signature.type_signature
+      name <- format signature.name
+      constraints <- formatList signature.constraints (Chunk ", ")
+      constraints <- if List.isEmpty signature.constraints
+      then []
+      else [Chunk "("] + constraints + [Chunk ") => "]
+      if List.isEmpty signature.type_arguments
+      then attributes + name + [Chunk " :: "] + constraints + type_signature
+      else attributes + name + [Chunk " "] + type_arguments + [Chunk " :: "] + constraints + type_signature
 
 instance Format F.Function where
-    format function = do
-        arguments <- formatList function.arguments (Chunk " ")
-        attributes <- formatList function.attributes (Chunk "\n")
-        attributes <- if List.isEmpty function.attributes
-        then attributes
-        else attributes + [Chunk "\n"]
-        body <- case function.body of
-            Some body -> format body
-            None -> do
-                if List.isEmpty function.extern_constraints
-                then [Chunk "extern"]
-                else do
-                    constraints <- formatList2 function.extern_constraints [Chunk ",", Break]
-                    [Chunk "extern (", PushOffset] + constraints + [Chunk ")", PopOffset]
-        starts_with_block <- case (List.atIndex body 0) of
-            Chunk "do" -> True
-            Chunk "case " -> True
-            _ -> False
-        name <- format function.name
-        output <- if List.isEmpty function.arguments
-        then attributes + name + [Chunk " = "] + body
-        else attributes + name + [Chunk " "] + arguments + [Chunk " = "] + body
-        sub_items <- formatItems function.sub_items
-        output <- if List.isEmpty function.sub_items
-        then output
-        else if starts_with_block
-            then do
-                output <- List.dropLast output
-                output + [StartOfItem, Chunk "where"] + sub_items + [EndOfItem, EndOfBlock]
-            else output + [StartOfItem, Chunk "where"] + sub_items + [EndOfItem,]
-        if starts_with_block
-        then output
-        else [StartOfBlock] + output + [EndOfBlock]
+   format function = do
+      arguments <- formatList function.arguments (Chunk " ")
+      attributes <- formatList function.attributes (Chunk "\n")
+      attributes <- if List.isEmpty function.attributes
+      then attributes
+      else attributes + [Chunk "\n"]
+      body <- case function.body of
+         Some body -> format body
+         None -> do
+            if List.isEmpty function.extern_constraints
+            then [Chunk "extern"]
+            else do
+               constraints <- formatList2 function.extern_constraints [Chunk ",", Break]
+               [Chunk "extern (", PushOffset] + constraints + [Chunk ")", PopOffset]
+      starts_with_block <- case (List.atIndex body 0) of
+         Chunk "do" -> True
+         Chunk "case " -> True
+         _ -> False
+      name <- format function.name
+      output <- if List.isEmpty function.arguments
+      then attributes + name + [Chunk " = "] + body
+      else attributes + name + [Chunk " "] + arguments + [Chunk " = "] + body
+      sub_items <- formatItems function.sub_items
+      output <- if List.isEmpty function.sub_items
+      then output
+      else if starts_with_block
+         then do
+            output <- List.dropLast output
+            output + [StartOfItem, Chunk "where"] + sub_items + [EndOfItem, EndOfBlock]
+         else output + [StartOfItem, Chunk "where"] + sub_items + [EndOfItem]
+      if starts_with_block
+      then output
+      else [StartOfBlock] + output + [EndOfBlock]
 
 instance Format SourceFile where
-    format source_file = do
-        format source_file.modules + [NewLine]
+   format source_file = do
+      format source_file.modules + [NewLine]
 
 instance Format I.Export where
-    format export = case export of
-        I.ExportAll -> [Chunk ""]
-        I.ExportSpecific filters -> do
-            filters <- formatList2 filters [Chunk ",", Break]
-            [Chunk "(", PushOffset] + filters + [Chunk ")", PopOffset]
+   format export = case export of
+      I.ExportAll -> [Chunk ""]
+      I.ExportSpecific filters -> do
+         filters <- formatList2 filters [Chunk ",", Break]
+         [Chunk "(", PushOffset] + filters + [Chunk ")", PopOffset]
 
 instance Format I.Import where
-    format i = case i of
-        I.Hiding mod items -> [Chunk "import {} hiding ({})" % (mod, join items ", ")]
-        I.ImportAll mod alternative_name -> case alternative_name of
-            Some name -> [Chunk "import {} as {}" % (mod, name)]
-            None -> [Chunk "import {}" % mod]
-        I.Implicit _ -> []
-        I.ImportSpecific mod filters alternative_name -> do
-            filters <- formatList filters (Chunk ", ")
-            mod <- format mod
-            case alternative_name of
-                Some name -> [Chunk "import "] + mod + [Chunk "("] + filters + [Chunk ") as {}" % name]
-                None -> [Chunk "import "] + mod + [Chunk "("] + filters + [Chunk ")"]
+   format i = case i of
+      I.Hiding mod items -> [Chunk "import {} hiding ({})" % (mod, join items ", ")]
+      I.ImportAll mod alternative_name -> case alternative_name of
+         Some name -> [Chunk "import {} as {}" % (mod, name)]
+         None -> [Chunk "import {}" % mod]
+      I.Implicit _ -> []
+      I.ImportSpecific mod filters alternative_name -> do
+         filters <- formatList filters (Chunk ", ")
+         mod <- format mod
+         case alternative_name of
+            Some name -> [Chunk "import "] + mod + [Chunk "("] + filters + [Chunk ") as {}" % name]
+            None -> [Chunk "import "] + mod + [Chunk "("] + filters + [Chunk ")"]
 
 instance Format I.MemberSpecification where
-    format spec = case spec of
-        I.Specific name -> format name
-        I.All -> [Chunk ".."]
+   format spec = case spec of
+      I.Specific name -> format name
+      I.All -> [Chunk ".."]
 
 instance Format I.Filter where
-    format filter = case filter of
-        I.Single n -> format n
-        I.Group n specs -> do
-            n <- format n
-            specs <- formatList specs (Chunk ", ")
-            n + [Chunk "("] + specs + [Chunk ")"]
+   format filter = case filter of
+      I.Single n -> format n
+      I.Group n specs -> do
+         n <- format n
+         specs <- formatList specs (Chunk ", ")
+         n + [Chunk "("] + specs + [Chunk ")"]
 
 instance Format C.Constraint where
-    format constraint = do
-        class_name <- format constraint.class_name
-        argument <- format constraint.argument
-        associated_types <- formatList constraint.associated_types (Chunk " ")
-        if List.isEmpty constraint.associated_types
-        then class_name + [Chunk " "] + argument
-        else class_name + [Chunk " "] + argument + [Chunk " > "] + associated_types
+   format constraint = do
+      class_name <- format constraint.class_name
+      argument <- format constraint.argument
+      associated_types <- formatList constraint.associated_types (Chunk " ")
+      if List.isEmpty constraint.associated_types
+      then class_name + [Chunk " "] + argument
+      else class_name + [Chunk " "] + argument + [Chunk " > "] + associated_types
 
 instance Format C.Class where
-    format c = do
-        name <- format c.name
-        argument <- format c.argument
-        associated_types <- formatList c.associated_types (Chunk " ")
-        constraints <- formatList c.constraints (Chunk ", ")
-        constraints <- if List.isEmpty c.constraints
-        then []
-        else [Chunk "("] + constraints + [Chunk ") => "]
-        output <- if List.isEmpty c.associated_types
-        then [Chunk "class "] + constraints + name + [Chunk " "] + argument
-        else [Chunk "class "] + constraints + name + [Chunk " "] + argument + [Chunk " > "] + associated_types
-        sub_items <- formatItems c.members
-        if List.isEmpty c.members
-        then output
-        else output + [Chunk " where"] + sub_items
+   format c = do
+      name <- format c.name
+      argument <- format c.argument
+      associated_types <- formatList c.associated_types (Chunk " ")
+      constraints <- formatList c.constraints (Chunk ", ")
+      constraints <- if List.isEmpty c.constraints
+      then []
+      else [Chunk "("] + constraints + [Chunk ") => "]
+      output <- if List.isEmpty c.associated_types
+      then [Chunk "class "] + constraints + name + [Chunk " "] + argument
+      else [Chunk "class "] + constraints + name + [Chunk " "] + argument + [Chunk " > "] + associated_types
+      sub_items <- formatItems c.members
+      if List.isEmpty c.members
+      then output
+      else output + [Chunk " where"] + sub_items
 
 instance Format C.Instance where
-    format i = do
-        class_name <- format i.class_name
-        type_signature <- format i.type_signature
-        associated_types <- formatList i.associated_types (Chunk " ")
-        constraints <- formatList i.constraints (Chunk ", ")
-        constraints <- if List.isEmpty i.constraints
-        then []
-        else [Chunk "("] + constraints + [Chunk ") => "]
-        output <- if List.isEmpty i.associated_types
-        then [Chunk "instance "] + constraints + class_name + [Chunk " "] + type_signature
-        else [Chunk "instance "] + constraints + class_name + [Chunk " "] + type_signature + [Chunk " > "] + associated_types
-        sub_items <- formatItems i.members
-        if List.isEmpty i.members
-        then output
-        else output + [Chunk " where"] + sub_items
+   format i = do
+      class_name <- format i.class_name
+      type_signature <- format i.type_signature
+      associated_types <- formatList i.associated_types (Chunk " ")
+      constraints <- formatList i.constraints (Chunk ", ")
+      constraints <- if List.isEmpty i.constraints
+      then []
+      else [Chunk "("] + constraints + [Chunk ") => "]
+      output <- if List.isEmpty i.associated_types
+      then [Chunk "instance "] + constraints + class_name + [Chunk " "] + type_signature
+      else [Chunk "instance "] + constraints + class_name + [Chunk " "] + type_signature + [Chunk " > "] + associated_types
+      sub_items <- formatItems i.members
+      if List.isEmpty i.members
+      then output
+      else output + [Chunk " where"] + sub_items
 
 instance Format Eff.Effect where
    format e = do
-        name <- format e.name
-        arguments <- formatList e.arguments (Chunk " ")
-        constraints <- formatList e.constraints (Chunk ", ")
-        constraints <- if List.isEmpty e.constraints
-        then []
-        else [Chunk "("] + constraints + [Chunk ") => "]
-        output <- if List.isEmpty e.arguments
-        then [Chunk "effect "] + constraints + name
-        else [Chunk "effect "] + constraints + name + [Chunk " "] + arguments
-        sub_items <- formatItems e.members
-        if List.isEmpty e.members
-        then output
-        else output + [Chunk " where"] + sub_items
+      name <- format e.name
+      arguments <- formatList e.arguments (Chunk " ")
+      constraints <- formatList e.constraints (Chunk ", ")
+      constraints <- if List.isEmpty e.constraints
+      then []
+      else [Chunk "("] + constraints + [Chunk ") => "]
+      output <- if List.isEmpty e.arguments
+      then [Chunk "effect "] + constraints + name
+      else [Chunk "effect "] + constraints + name + [Chunk " "] + arguments
+      sub_items <- formatItems e.members
+      if List.isEmpty e.members
+      then output
+      else output + [Chunk " where"] + sub_items
 
 instance Format A.Attribute where
-    format A.Attribute name = [Chunk "@"] + format name
+   format A.Attribute name = [Chunk "@"] + format name
 
 instance Format F.ConstraintPath where
-    format c = case c of
-        F.Argument index -> [Chunk "arg[{}]" % index]
-        F.Field index path -> format path + [Chunk ".f[{}]" % index]
-        F.Extern index path -> format path + [Chunk ".e[{}]" % index]
-        F.Variant index path -> format path + [Chunk ".v[{}]" % index]
-        F.Implicit index path -> format path + [Chunk ".i[{}]" % index]
-        F.Result -> [Chunk "result"]
+   format c = case c of
+      F.Argument index -> [Chunk "arg[{}]" % index]
+      F.Field index path -> format path + [Chunk ".f[{}]" % index]
+      F.Extern index path -> format path + [Chunk ".e[{}]" % index]
+      F.Variant index path -> format path + [Chunk ".v[{}]" % index]
+      F.Implicit index path -> format path + [Chunk ".i[{}]" % index]
+      F.Result -> [Chunk "result"]
 
 instance Format F.Converter where
-    format c = do
-        from <- format c.from
-        to <- format c.to
-        from + [Chunk " -> "] + to
+   format c = do
+      from <- format c.from
+      to <- format c.to
+      from + [Chunk " -> "] + to
 
 instance Format F.Equal where
-    format e = do
-        left <- format e.left
-        right <- format e.right
-        left + [Chunk " == "] + right
+   format e = do
+      left <- format e.left
+      right <- format e.right
+      left + [Chunk " == "] + right
 
 instance Format F.ExternConstraint where
-    format c = case c of
-        F.ExternConverter c -> format c
-        F.ExternEquality e -> format e
-        F.Independent i -> (format i) + [Chunk " == *"]
+   format c = case c of
+      F.ExternConverter c -> format c
+      F.ExternEquality e -> format e
+      F.Independent i -> (format i) + [Chunk " == *"]

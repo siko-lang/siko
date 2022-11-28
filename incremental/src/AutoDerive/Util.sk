@@ -1,21 +1,23 @@
 module Siko.AutoDerive.Util where
 
-import Siko.Syntax.Location
-import Siko.Syntax.Ident
-import Siko.Syntax.Data as D
-import Siko.Syntax.Class as C
-import Siko.Syntax.TypeSignature as T
-import Siko.Syntax.Function as F
-import Siko.Syntax.Expr as E
-import Siko.Syntax.Pattern as P
-import Siko.Util.SharedString as SS
 import Siko.Constants
+import Siko.Syntax.Class as C
+import Siko.Syntax.Data as D
+import Siko.Syntax.Expr as E
+import Siko.Syntax.Function as F
+import Siko.Syntax.Ident
+import Siko.Syntax.Location
 import Siko.Syntax.Module as M
+import Siko.Syntax.Pattern as P
+import Siko.Syntax.TypeSignature as T
+import Siko.Util.SharedString as SS
 
-data FieldInfo = { lhs :: E.Expr, rhs :: E.Expr }
+data FieldInfo = { lhs :: E.Expr,
+                   rhs :: E.Expr
+                 }
 
 effect LocationProvider where
-    getLocation :: () -> Location
+   getLocation :: () -> Location
 
 createStringLiteral :: SS.SharedString -> Location -> E.Expr
 createStringLiteral string location = E.Expr (E.StringLiteral string) location
@@ -30,115 +32,111 @@ createPathL :: String -> E.Expr
 createPathL name = E.Expr (E.Path (createIdent name (getLocation ()))) (getLocation ())
 
 getLhsIdent location = Ident (SS.create "lhs") location
+
 getRhsIdent location = Ident (SS.create "rhs") location
 
 getFieldAccessorsForRecord :: D.Record -> String -> Location -> [E.Expr]
 getFieldAccessorsForRecord record root location = do
-    root_expr <- E.Expr (E.Path (Ident (SS.create root) location)) location
-    List.map record.fields (\field -> E.Expr (E.FieldAccess field.name root_expr) location)
+   root_expr <- E.Expr (E.Path (Ident (SS.create root) location)) location
+   List.map record.fields (\field -> E.Expr (E.FieldAccess field.name root_expr) location)
 
 getFieldAccessorsForVariant :: D.Variant -> String -> Location -> [E.Expr]
 getFieldAccessorsForVariant variant root location = do
-    List.foldE [] variant.items (\accessors, index, item -> do
-        List.push accessors (E.Expr (E.Path (Ident (SS.create "{}{}" % (root, index)) location)) location))
+   List.foldE [] variant.items (\accessors, index, item -> do
+      List.push accessors (E.Expr (E.Path (Ident (SS.create "{}{}" % (root, index)) location)) location))
 
 getFieldPatternsForVariant :: D.Variant -> String -> Location -> [P.Pattern]
 getFieldPatternsForVariant variant root location = do
-    List.foldE [] variant.items (\patterns, index, item -> do
-        List.push patterns (P.Pattern (P.Binding (Ident (SS.create "{}{}" % (root, index)) location)) location))
+   List.foldE [] variant.items (\patterns, index, item -> do
+      List.push patterns (P.Pattern (P.Binding (Ident (SS.create "{}{}" % (root, index)) location)) location))
 
 getFieldInfoForVariant :: D.Variant -> Location -> [FieldInfo]
 getFieldInfoForVariant variant location = do
-    lhs_accessors <- getFieldAccessorsForVariant variant "lhs" location
-    rhs_accessors <- getFieldAccessorsForVariant variant "rhs" location
-    List.zip lhs_accessors rhs_accessors (\lhs, rhs -> FieldInfo lhs rhs)
+   lhs_accessors <- getFieldAccessorsForVariant variant "lhs" location
+   rhs_accessors <- getFieldAccessorsForVariant variant "rhs" location
+   List.zip lhs_accessors rhs_accessors (\lhs, rhs -> FieldInfo lhs rhs)
 
 getFieldInfoForRecord :: D.Record -> Location -> [FieldInfo]
 getFieldInfoForRecord record location = do
-    lhs_accessors <- getFieldAccessorsForRecord record "lhs" location
-    rhs_accessors <- getFieldAccessorsForRecord record "rhs" location
-    List.zip lhs_accessors rhs_accessors (\lhs, rhs -> FieldInfo lhs rhs)
+   lhs_accessors <- getFieldAccessorsForRecord record "lhs" location
+   rhs_accessors <- getFieldAccessorsForRecord record "rhs" location
+   List.zip lhs_accessors rhs_accessors (\lhs, rhs -> FieldInfo lhs rhs)
 
 generateCase :: [FieldInfo] -> Location -> Ident -> P.Pattern -> E.Expr -> E.Expr -> Int -> E.Expr
 generateCase field_info location cmp_fn success_p success_e failure_e index = do
-    if index < getLength field_info
-    then do
-        info <- atIndex field_info index
-        cmp_fn_expr <- E.Expr (E.Path cmp_fn) location
-        case_body <- E.Expr (E.FunctionCall cmp_fn_expr [info.lhs, info.rhs]) location
-        true_case <- E.Case success_p (generateCase field_info location cmp_fn success_p success_e failure_e (index + 1))
-        false_case_pattern <- P.Pattern (P.Binding (createIdent "failure_value" location)) location
-        false_case <- E.Case false_case_pattern failure_e
-        cases <- [true_case, false_case]
-        E.Expr (E.CaseOf case_body cases) location
-    else success_e
+   if index < getLength field_info
+   then do
+      info <- atIndex field_info index
+      cmp_fn_expr <- E.Expr (E.Path cmp_fn) location
+      case_body <- E.Expr (E.FunctionCall cmp_fn_expr [info.lhs, info.rhs]) location
+      true_case <- E.Case success_p (generateCase field_info location cmp_fn success_p success_e failure_e (index + 1))
+      false_case_pattern <- P.Pattern (P.Binding (createIdent "failure_value" location)) location
+      false_case <- E.Case false_case_pattern failure_e
+      cases <- [true_case, false_case]
+      E.Expr (E.CaseOf case_body cases) location
+   else success_e
 
 data Comparator = { class_name :: Ident,
                     fn_name :: Ident,
                     success_pattern :: P.Pattern,
                     success_expr :: E.Expr,
                     failure_expr :: E.Expr,
-                    location :: Location }
+                    location :: Location
+                  }
 
-deriveRecordGeneralCompare :: D.Record -> Comparator-> C.Instance
+deriveRecordGeneralCompare :: D.Record -> Comparator -> C.Instance
 deriveRecordGeneralCompare record comparator = do
-    location <- comparator.location
-    type_arguments <- List.map record.type_arguments (\type_arg -> T.TypeSignature (T.TypeArg type_arg) location)
-    type_signature <- T.TypeSignature (T.Named record.name type_arguments) location
-    constraints <- List.fold [] record.type_arguments (\constraints, record_type_arg -> do
-        Ident type_arg _ <- record_type_arg
-        constraint <- C.Constraint comparator.class_name (Ident type_arg location) []
-        List.push constraints constraint)
-    fn_args <- [P.Pattern (P.Binding (getLhsIdent location)) location,
-                P.Pattern (P.Binding (getRhsIdent location)) location]
-    field_info <- getFieldInfoForRecord record location
-    body <- generateCase field_info location
-                comparator.fn_name comparator.success_pattern
-                comparator.success_expr comparator.failure_expr 0
-    body <- Some body
-    sub_items <- []
-    op_fn <- F.Function comparator.fn_name fn_args body sub_items [] []
-    C.Instance comparator.class_name type_signature [] constraints [M.Function op_fn]
+   location <- comparator.location
+   type_arguments <- List.map record.type_arguments (\type_arg -> T.TypeSignature (T.TypeArg type_arg) location)
+   type_signature <- T.TypeSignature (T.Named record.name type_arguments) location
+   constraints <- List.fold [] record.type_arguments (\constraints, record_type_arg -> do
+      Ident type_arg _ <- record_type_arg
+      constraint <- C.Constraint comparator.class_name (Ident type_arg location) []
+      List.push constraints constraint)
+   fn_args <- [P.Pattern (P.Binding (getLhsIdent location)) location, P.Pattern (P.Binding (getRhsIdent location)) location]
+   field_info <- getFieldInfoForRecord record location
+   body <- generateCase field_info location comparator.fn_name comparator.success_pattern comparator.success_expr comparator.failure_expr 0
+   body <- Some body
+   sub_items <- []
+   op_fn <- F.Function comparator.fn_name fn_args body sub_items [] []
+   C.Instance comparator.class_name type_signature [] constraints [M.Function op_fn]
 
-deriveAdtGeneralCompare :: D.AlgebraicDataType -> Comparator-> String -> C.Instance
+deriveAdtGeneralCompare :: D.AlgebraicDataType -> Comparator -> String -> C.Instance
 deriveAdtGeneralCompare adt comparator mod_name = do
-    location <- comparator.location
-    type_arguments <- List.map adt.type_arguments (\type_arg -> T.TypeSignature (T.TypeArg type_arg) location)
-    type_signature <- T.TypeSignature (T.Named adt.name type_arguments) location
-    constraints <- List.fold [] adt.type_arguments (\constraints, adt_type_arg -> do
-        Ident type_arg _ <- adt_type_arg
-        constraint <- C.Constraint comparator.class_name (Ident type_arg location) []
-        List.push constraints constraint)
-    fn_args <- [P.Pattern (P.Binding (getLhsIdent location)) location,
-                P.Pattern (P.Binding (getRhsIdent location)) location]
-    lhs_expr <- E.Expr (E.Path (getLhsIdent location)) location
-    rhs_expr <- E.Expr (E.Path (getRhsIdent location)) location
-    case_body <- E.Expr (E.Tuple [lhs_expr, rhs_expr]) location
-    cases <- List.map adt.variants (\variant -> do
-        Ident variant_name _ <- variant.name
-        lhs_patterns <- getFieldPatternsForVariant variant "lhs" location
-        rhs_patterns <- getFieldPatternsForVariant variant "rhs" location
-        lhs_ctor_pattern <- P.Pattern (P.Constructor (createIdent ("{}.{}" % (mod_name, variant_name)) location) lhs_patterns) location
-        rhs_ctor_pattern <- P.Pattern (P.Constructor (createIdent ("{}.{}" % (mod_name, variant_name)) location) rhs_patterns) location
-        case_pattern <- P.Pattern (P.Tuple [lhs_ctor_pattern, rhs_ctor_pattern]) location
-        field_info <- getFieldInfoForVariant variant location
-        body <- generateCase field_info location
-                comparator.fn_name comparator.success_pattern
-                comparator.success_expr comparator.failure_expr 0
-        E.Case case_pattern body)
-    cases <- if getLength adt.variants > 1
-    then do
-        wildcard_pattern <- P.Pattern (P.Tuple fn_args) location
-        get_discriminant_ident_expr <- E.Expr (E.Path (Ident getFnGetDiscriminantNameFullName location)) location
-        lhs_discriminant <- E.Expr (E.FunctionCall get_discriminant_ident_expr [lhs_expr]) location
-        rhs_discriminant <- E.Expr (E.FunctionCall get_discriminant_ident_expr [rhs_expr]) location
-        fn_call <- E.Expr (E.Path comparator.fn_name) location
-        wildcard_body <- E.Expr (E.FunctionCall fn_call [lhs_discriminant, rhs_discriminant]) location
-        wildcard_case <- E.Case wildcard_pattern wildcard_body
-        List.push cases wildcard_case
-    else cases
-    body <- E.Expr (E.CaseOf case_body cases) location
-    body <- Some body
-    sub_items <- []
-    op_fn <- F.Function comparator.fn_name fn_args body sub_items [] []
-    C.Instance comparator.class_name type_signature [] constraints [M.Function op_fn]
+   location <- comparator.location
+   type_arguments <- List.map adt.type_arguments (\type_arg -> T.TypeSignature (T.TypeArg type_arg) location)
+   type_signature <- T.TypeSignature (T.Named adt.name type_arguments) location
+   constraints <- List.fold [] adt.type_arguments (\constraints, adt_type_arg -> do
+      Ident type_arg _ <- adt_type_arg
+      constraint <- C.Constraint comparator.class_name (Ident type_arg location) []
+      List.push constraints constraint)
+   fn_args <- [P.Pattern (P.Binding (getLhsIdent location)) location, P.Pattern (P.Binding (getRhsIdent location)) location]
+   lhs_expr <- E.Expr (E.Path (getLhsIdent location)) location
+   rhs_expr <- E.Expr (E.Path (getRhsIdent location)) location
+   case_body <- E.Expr (E.Tuple [lhs_expr, rhs_expr]) location
+   cases <- List.map adt.variants (\variant -> do
+      Ident variant_name _ <- variant.name
+      lhs_patterns <- getFieldPatternsForVariant variant "lhs" location
+      rhs_patterns <- getFieldPatternsForVariant variant "rhs" location
+      lhs_ctor_pattern <- P.Pattern (P.Constructor (createIdent ("{}.{}" % (mod_name, variant_name)) location) lhs_patterns) location
+      rhs_ctor_pattern <- P.Pattern (P.Constructor (createIdent ("{}.{}" % (mod_name, variant_name)) location) rhs_patterns) location
+      case_pattern <- P.Pattern (P.Tuple [lhs_ctor_pattern, rhs_ctor_pattern]) location
+      field_info <- getFieldInfoForVariant variant location
+      body <- generateCase field_info location comparator.fn_name comparator.success_pattern comparator.success_expr comparator.failure_expr 0
+      E.Case case_pattern body)
+   cases <- if getLength adt.variants > 1
+   then do
+      wildcard_pattern <- P.Pattern (P.Tuple fn_args) location
+      get_discriminant_ident_expr <- E.Expr (E.Path (Ident getFnGetDiscriminantNameFullName location)) location
+      lhs_discriminant <- E.Expr (E.FunctionCall get_discriminant_ident_expr [lhs_expr]) location
+      rhs_discriminant <- E.Expr (E.FunctionCall get_discriminant_ident_expr [rhs_expr]) location
+      fn_call <- E.Expr (E.Path comparator.fn_name) location
+      wildcard_body <- E.Expr (E.FunctionCall fn_call [lhs_discriminant, rhs_discriminant]) location
+      wildcard_case <- E.Case wildcard_pattern wildcard_body
+      List.push cases wildcard_case
+   else cases
+   body <- E.Expr (E.CaseOf case_body cases) location
+   body <- Some body
+   sub_items <- []
+   op_fn <- F.Function comparator.fn_name fn_args body sub_items [] []
+   C.Instance comparator.class_name type_signature [] constraints [M.Function op_fn]

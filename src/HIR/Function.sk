@@ -1,10 +1,10 @@
 module Siko.HIR.Function where
 
-import Siko.HIR.Type
-import Siko.HIR.TypeFormatter as TF
+import Siko.HIR.Class
 import Siko.HIR.Expr
 import Siko.HIR.Program
-import Siko.HIR.Class
+import Siko.HIR.Type
+import Siko.HIR.TypeFormatter as TF
 import Siko.Syntax.Location
 
 data ConstraintPath = Argument Int
@@ -16,11 +16,11 @@ data ConstraintPath = Argument Int
                     deriving (Show)
 
 data Converter = { from :: ConstraintPath,
-                   to :: ConstraintPath,
+                   to :: ConstraintPath
                  } deriving (Show)
 
 data Equal = { left :: ConstraintPath,
-               right :: ConstraintPath,
+               right :: ConstraintPath
              } deriving (Show)
 
 data ExternConstraint = ExternConverter Converter
@@ -38,13 +38,13 @@ data FunctionKind = Normal
                   deriving (Show)
 
 isNormal kind = case kind of
-    Normal -> True
-    _ -> False
+   Normal -> True
+   _ -> False
 
 getEffectName :: FunctionKind -> FullyQualifiedName
 getEffectName kind = case kind of
-    EffectMember qn -> qn
-    _ -> panic "{} is not an effect member" % kind
+   EffectMember qn -> qn
+   _ -> panic "{} is not an effect member" % kind
 
 data Attribute = Inline deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
@@ -57,15 +57,15 @@ data Function a = { location :: Location,
                     body :: Option (Expr a),
                     effects :: Option [Type],
                     attributes :: [Attribute],
-                    extern_constraints :: [ExternConstraint],
+                    extern_constraints :: [ExternConstraint]
                   }
 
 isInlined a :: Function a -> Bool
 isInlined function = List.contains function.attributes Inline
 
 instance (Show a) => Show Function a where
-    show f = do
-        ty <- case f.type of
-            Some t -> TF.toString t
-            None -> "<unknown>"
-        "{} - {} :: {}" % (f.name, ty, f.body)
+   show f = do
+      ty <- case f.type of
+         Some t -> TF.toString t
+         None -> "<unknown>"
+      "{} - {} :: {}" % (f.name, ty, f.body)

@@ -1,10 +1,12 @@
 module Siko.Resolver.Item where
 
-import Siko.Syntax.Import as SI
 import Siko.Syntax.Ident
+import Siko.Syntax.Import as SI
 import Siko.Util.SharedString as SS
 
-data Explicitness = Explicit | Implicit deriving (Show, PartialEq)
+data Explicitness = Explicit
+                  | Implicit
+                  deriving (Show, PartialEq)
 
 data Item = Adt SS.SharedString Int
           | Variant SS.SharedString SS.SharedString
@@ -18,58 +20,58 @@ data Item = Adt SS.SharedString Int
 
 getItemName :: Item -> SS.SharedString
 getItemName item = case item of
-    Adt a _ -> a
-    Variant a v -> v
-    Record r _ -> r
-    Class c -> c
-    ClassMember c m -> m
-    Function f -> f
-    Effect e _ -> e
-    EffectMember e m -> m
+   Adt a _ -> a
+   Variant a v -> v
+   Record r _ -> r
+   Class c -> c
+   ClassMember c m -> m
+   Function f -> f
+   Effect e _ -> e
+   EffectMember e m -> m
 
 getItemArgCount :: Item -> Int
 getItemArgCount item = case item of
-    Adt _ c -> c
-    Variant _ _ -> 0
-    Record _ c -> c
-    Class _ -> 0
-    ClassMember _ _ -> 0
-    Function _ -> 0
-    Effect _ c -> c
-    EffectMember _ _ -> 0
+   Adt _ c -> c
+   Variant _ _ -> 0
+   Record _ c -> c
+   Class _ -> 0
+   ClassMember _ _ -> 0
+   Function _ -> 0
+   Effect _ c -> c
+   EffectMember _ _ -> 0
 
 matchSpecs :: [SI.MemberSpecification] -> SS.SharedString -> Bool
 matchSpecs specs name = List.fold False specs (\total, spec -> total || (matchSpec spec name))
-    where
-        matchSpec :: SI.MemberSpecification -> SS.SharedString -> Bool
-        matchSpec spec name = case spec of
-            SI.Specific n -> getString n == name
-            SI.All -> True
+   where
+      matchSpec :: SI.MemberSpecification -> SS.SharedString -> Bool
+      matchSpec spec name = case spec of
+         SI.Specific n -> getString n == name
+         SI.All -> True
 
 matchFilter :: SI.Filter -> Item -> Bool
 matchFilter filter item = case filter of
-    SI.Single name -> do
-        name <- getString name
-        case item of
-            Adt a _ -> a == name
-            Variant a v -> v == name
-            Record r _ -> r == name
-            Class c -> c == name
-            ClassMember c m -> m == name
-            Function f -> f == name
-            Effect e _ -> e == name
-            EffectMember eff m -> m == name
-    SI.Group name specs -> do
-        name <- getString name
-        case item of
-            Adt a _ -> a == name
-            Variant a v -> a == name && matchSpecs specs v
-            Record r _ -> r == name
-            Class c -> c == name
-            ClassMember c m -> c == name && matchSpecs specs m
-            Function f -> False
-            Effect e _ -> e == name
-            EffectMember eff m -> eff == name && matchSpecs specs m
+   SI.Single name -> do
+      name <- getString name
+      case item of
+         Adt a _ -> a == name
+         Variant a v -> v == name
+         Record r _ -> r == name
+         Class c -> c == name
+         ClassMember c m -> m == name
+         Function f -> f == name
+         Effect e _ -> e == name
+         EffectMember eff m -> m == name
+   SI.Group name specs -> do
+      name <- getString name
+      case item of
+         Adt a _ -> a == name
+         Variant a v -> a == name && matchSpecs specs v
+         Record r _ -> r == name
+         Class c -> c == name
+         ClassMember c m -> c == name && matchSpecs specs m
+         Function f -> False
+         Effect e _ -> e == name
+         EffectMember eff m -> eff == name && matchSpecs specs m
 
 matchFilters :: [SI.Filter] -> Item -> Bool
 matchFilters filters item = List.fold False filters (\total, filter -> total || (matchFilter filter item))

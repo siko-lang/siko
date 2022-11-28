@@ -1,22 +1,22 @@
 module Siko.Resolver.Export(processExports) where
 
-import Siko.Syntax.Module as M
+import Map
 import Siko.Resolver.Item
 import Siko.Syntax.Import as SI
-import Map
+import Siko.Syntax.Module as M
 import Siko.Util.SharedString as SS
 
 processExport :: SI.Export -> Item -> Bool
 processExport export item = case export of
-    SI.ExportAll -> True
-    SI.ExportSpecific filters -> matchFilters filters item
+   SI.ExportAll -> True
+   SI.ExportSpecific filters -> matchFilters filters item
 
 processModule :: [Item] -> SI.Export -> [Item]
 processModule locals export = List.filter locals (processExport export)
 
 processExports :: Map SS.SharedString [Item] -> Map SS.SharedString M.Module -> Map SS.SharedString [Item]
 processExports locals modules = do
-    Map.map locals (\(name, locals) -> do
-                                    mod <- Option.unwrap (get modules name)
-                                    exported_items <- processModule locals mod.export
-                                    (name, exported_items))
+   Map.map locals (\(name, locals) -> do
+      mod <- Option.unwrap (get modules name)
+      exported_items <- processModule locals mod.export
+      (name, exported_items))

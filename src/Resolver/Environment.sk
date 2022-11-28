@@ -1,17 +1,20 @@
 module Siko.Resolver.Environment where
 
-import Siko.Resolver.Expr
-import Siko.HIR.Pattern
-import Siko.HIR.Function
-import Siko.Syntax.Ident
 import Map
+import Siko.HIR.Function
+import Siko.HIR.Pattern
+import Siko.Resolver.Expr
+import Siko.Syntax.Ident
 import Siko.Util.SharedString as SS
 
-data PatternEnvironment = { bindings :: Map SS.SharedString [Ident], irrefutable :: Bool }
+data PatternEnvironment = { bindings :: Map SS.SharedString [Ident],
+                            irrefutable :: Bool
+                          }
 
 data Environment = { lambda_id :: LambdaId,
                      block_bindings :: Map SS.SharedString BindRef,
-                     parent :: Option Environment }
+                     parent :: Option Environment
+                   }
 
 createPatternEnvironment :: Bool -> PatternEnvironment
 createPatternEnvironment irrefutable = PatternEnvironment empty irrefutable
@@ -21,40 +24,39 @@ createEnvironment lambda_id parent = Environment lambda_id empty parent
 
 append :: Ident -> Option [Ident] -> Option [Ident]
 append name names = case names of
-    Some names -> Some (push names name)
-    None -> Some [name]
+   Some names -> Some (push names name)
+   None -> Some [name]
 
 addBindingToPatternEnv :: PatternEnvironment -> Ident -> PatternEnvironment
 addBindingToPatternEnv env name = do
-    (bindings, _) <- alter (append name) (getString name) env.bindings
-    env <- env { bindings = bindings }
-    env
+   (bindings, _) <- alter (append name) (getString name) env.bindings
+   env <- env { bindings = bindings }
+   env
 
 addBinding :: Environment -> BindRef -> Environment
 addBinding env bind_ref = do
-    (BindRef s _) <- bind_ref
-    (block_bindings, _) <- insert env.block_bindings s bind_ref
-    env <- env { block_bindings = block_bindings }
-    env
+   (BindRef s _) <- bind_ref
+   (block_bindings, _) <- insert env.block_bindings s bind_ref
+   env <- env { block_bindings = block_bindings }
+   env
 
 getBinding :: Environment -> SS.SharedString -> Option (BindRef, LambdaId)
 getBinding env name = do
-    case get env.block_bindings name of
-        Some bind_ref -> Some (bind_ref, env.lambda_id)
-        None -> case env.parent of
-            Some env -> getBinding env name
-            None -> None
+   case get env.block_bindings name of
+      Some bind_ref -> Some (bind_ref, env.lambda_id)
+      None -> case env.parent of
+         Some env -> getBinding env name
+         None -> None
 
 getAllBindings :: PatternEnvironment -> [SS.SharedString]
 getAllBindings env = env.bindings |> Map.iter |> Iterator.fold (\names, (name, _) -> push names name) []
 
 envToBindGroup :: PatternEnvironment -> Environment -> BindGroup -> BindGroup
 envToBindGroup pattern_env block_env bind_group = pattern_env.bindings |> Map.iter |> Iterator.fold (\bind_group, (name, _) -> do
-            bind_ref <- case getBinding block_env name of
-                Some (bind_ref, _) -> bind_ref
-                None -> panic "Bind {} not found in block env" % name
-            (bindings, _) <- alter (\instances -> case instances of
-                    Some instances -> Some (push instances bind_ref)
-                    None -> Some [bind_ref]) name bind_group.bindings
-            bind_group { bindings = bindings }
-        ) bind_group
+      bind_ref <- case getBinding block_env name of
+         Some (bind_ref, _) -> bind_ref
+         None -> panic "Bind {} not found in block env" % name
+      (bindings, _) <- alter (\instances -> case instances of
+         Some instances -> Some (push instances bind_ref)
+         None -> Some [bind_ref]) name bind_group.bindings
+      bind_group { bindings = bindings }) bind_group

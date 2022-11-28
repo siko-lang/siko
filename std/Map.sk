@@ -27,10 +27,10 @@ instance (PartialEq k, PartialEq v) => PartialEq Map k v where
             (zipper, item) <- Iterator.next zipper
             case item of
                Some ((key_a, value_a), (key_b, value_b)) -> if opEq key_a key_b
-               then if opEq value_a value_b
-               then zipper
-               else break False
-               else break False
+                  then if opEq value_a value_b
+                     then zipper
+                     else break False
+                  else break False
                None -> break True
 
 instance (PartialOrd k, PartialOrd v) => PartialOrd Map k v where
@@ -110,13 +110,16 @@ erase m k = do
 
 @Inline
 alter k v :: (Ord k) => (Option v -> Option v) -> k -> Map k v -> (Map k v, Option v)
-alter f k m = case f (get m k) of // FIXME: make this builtin and much faster
-   Some v -> insert m k v
-   None -> remove m k
+alter f k m = do
+   // FIXME: make this builtin and much faster
+   case f (get m k) of
+      Some v -> insert m k v
+      None -> remove m k
 
 @Inline
 alter2 k v :: (Ord k) => (Option v -> Option v) -> k -> Map k v -> (Map k v, Option v)
-alter2 f k m = do // FIXME: this is an ugly hack to make it faster (do not copy prev)
+alter2 f k m = do
+   // FIXME: this is an ugly hack to make it faster (do not copy prev)
    (m, prev) <- remove m k
    v <- f prev
    case v of

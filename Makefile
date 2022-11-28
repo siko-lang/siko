@@ -7,7 +7,7 @@ stage1: stage0 $(shell find src -type f)
 stage2: stage1 $(shell find src -type f)
 	@build/build_stage2.sh
 
-sikofmt: stage1 $(shell find fmt -type f)
+sikofmt: stage0 $(shell find fmt -type f)
 	@build/build_fmt.sh
 
 test: stage1

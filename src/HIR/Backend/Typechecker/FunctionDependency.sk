@@ -1,33 +1,33 @@
 module Siko.HIR.Backend.Typechecker.FunctionDependency(getFunctionDependencies) where
 
-import Siko.HIR.Program
-import Siko.HIR.Function
+import Set
 import Siko.HIR.Backend.Traversal
 import Siko.HIR.Expr
-import Set
+import Siko.HIR.Function
+import Siko.HIR.Program
 
 data Context = { items :: Set FullyQualifiedName } deriving (Show)
 
 processExpr :: Context -> Expr () -> (Context, Expr ())
 processExpr context expr = do
-    Expr s_expr id type location <- expr
-    case s_expr of
-        StaticFunctionCall name _ -> do
-            (items, _) <- insert context.items name
-            (context { items = items }, expr)
-        _ -> (context, expr)
+   Expr s_expr id type location <- expr
+   case s_expr of
+      StaticFunctionCall name _ -> do
+         (items, _) <- insert context.items name
+         (context { items = items }, expr)
+      _ -> (context, expr)
 
 getFunctionDependencies :: Function () -> ([FullyQualifiedName], [FullyQualifiedName])
 getFunctionDependencies function = do
-    case function.body of
-        Some body -> do
-            context <- Context empty
-            traversal_context <- createTraversalContext context processExpr (\c, p -> (c, p))
-            (context, _) <- traverse traversal_context body
-            deps <- context.items |> Set.iter |> toList
-            // Add dependency for hosting function of the lambda, they have to be in the same group
-            forced_deps <- case function.name of
-                    FullPathWithLambda qn _ -> [qn]
-                    _ -> []
-            (deps, forced_deps)
-        None -> ([], [])
+   case function.body of
+      Some body -> do
+         context <- Context empty
+         traversal_context <- createTraversalContext context processExpr (\c, p -> (c, p))
+         (context, _) <- traverse traversal_context body
+         deps <- context.items |> Set.iter |> toList
+         // Add dependency for hosting function of the lambda, they have to be in the same group
+         forced_deps <- case function.name of
+            FullPathWithLambda qn _ -> [qn]
+            _ -> []
+         (deps, forced_deps)
+      None -> ([], [])

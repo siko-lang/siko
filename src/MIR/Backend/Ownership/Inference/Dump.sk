@@ -1,44 +1,44 @@
 module Siko.MIR.Backend.Ownership.DumpOwnership(dumpOwnership) where
 
-import Siko.MIR.Program as P
-import Siko.MIR.Backend.Ownership.InferenceInfo
 import Siko.MIR.Backend.Ownership.BorrowInfo
+import Siko.MIR.Backend.Ownership.FunctionInfoStore
+import Siko.MIR.Backend.Ownership.InferenceInfo
 import Siko.MIR.Backend.Ownership.MemberInfo as M
 import Siko.MIR.Backend.Ownership.OwnershipDependencyMap
 import Siko.MIR.Backend.Ownership.TypeVariableInfo
-import Siko.MIR.Backend.Ownership.FunctionInfoStore
 import Siko.MIR.Backend.Traversal
 import Siko.MIR.Expr as E
-import Siko.MIR.Type as T
 import Siko.MIR.Function as F
-
+import Siko.MIR.Program as P
+import Siko.MIR.Type as T
 import Siko.Trace
 
 data Context = { function_id :: P.Identity,
-                 inference_info :: InferenceInfo }
+                 inference_info :: InferenceInfo
+               }
 
 getOwnershipValue :: Context -> OwnershipTypeVariable -> M.OwnershipKind
 getOwnershipValue context var = do
-    result <- getOwnership context.inference_info var
-    case result of
-        Some o -> o
-        None -> M.Unknown
+   result <- getOwnership context.inference_info var
+   case result of
+      Some o -> o
+      None -> M.Unknown
 
 getTypeVariableInfoByExprId2 :: Context -> E.ExprId -> TypeVariableInfo
 getTypeVariableInfoByExprId2 context expr_id = getTypeVariableInfoByExprId context.inference_info expr_id context.function_id
 
 dumpExpr :: Context -> E.Expr -> (Context, E.Expr)
 dumpExpr context expr = do
-    E.Expr s_expr _ expr_id <- expr
-    info <- getTypeVariableInfoByExprId2 context expr_id
-    o1 <- getOwnershipValue context info.ownership_var
-    println "dumpOwnership {}/{} {} {}" % (expr_id, E.short expr, info, o1)
-    (context, expr)
+   E.Expr s_expr _ expr_id <- expr
+   info <- getTypeVariableInfoByExprId2 context expr_id
+   o1 <- getOwnershipValue context info.ownership_var
+   println "dumpOwnership {}/{} {} {}" % (expr_id, E.short expr, info, o1)
+   (context, expr)
 
 dumpOwnership :: InferenceInfo -> P.Identity -> E.Expr -> ()
 dumpOwnership inference_info identity body = do
-    context <- Context identity inference_info
-    println "----------- BEGIN"
-    (context, body) <- traverse context body (Some dumpExpr) None None
-    println "----------- END"
-    ()
+   context <- Context identity inference_info
+   println "----------- BEGIN"
+   (context, body) <- traverse context body (Some dumpExpr) None None
+   println "----------- END"
+   ()

@@ -1,67 +1,65 @@
 module Siko.HIR.Backend.Util where
 
-import Siko.HIR.Type as T
-import Siko.HIR.Util as Util
-import Siko.HIR.Program as P
+import Map
+import Siko.Constants
 import Siko.HIR.Backend.Unification as U
 import Siko.HIR.Backend.Unification.Substitution as S
-import Siko.Constants
-
-import Map
+import Siko.HIR.Program as P
+import Siko.HIR.Type as T
+import Siko.HIR.Util as Util
 
 createGeneralFunction a :: (U.TypeVarGenerator a) => Int -> a -> (a, T.Type)
-createGeneralFunction arg_count var_gen =
-    if arg_count == 0
-    then U.getNewTypeVarType var_gen
-    else do
-        (var_gen, from) <- U.getNewTypeVarType var_gen
-        (var_gen, to) <- createGeneralFunction (arg_count - 1) var_gen
-        (var_gen, T.Function from to)
+createGeneralFunction arg_count var_gen = if arg_count == 0
+   then U.getNewTypeVarType var_gen
+   else do
+      (var_gen, from) <- U.getNewTypeVarType var_gen
+      (var_gen, to) <- createGeneralFunction (arg_count - 1) var_gen
+      (var_gen, T.Function from to)
 
 data Mapper = Mapper (Map T.TypeVar T.TypeVar) deriving (Show)
 
 initMapper a :: (U.TypeVarGenerator a) => [T.TypeVar] -> a -> (Mapper, a)
 initMapper vars var_gen = do
-    (vars, var_gen) <- vars |> List.iter |> Iterator.fold (\(vars, var_gen), old_var -> do
-            (var_gen, new_var) <- U.getNewTypeVar var_gen
-            (vars, _) <- insert vars old_var new_var
-            (vars, var_gen)) (empty, var_gen)
-    (Mapper vars, var_gen)
+   (vars, var_gen) <- vars |> List.iter |> Iterator.fold (\(vars, var_gen), old_var -> do
+      (var_gen, new_var) <- U.getNewTypeVar var_gen
+      (vars, _) <- insert vars old_var new_var
+      (vars, var_gen)) (empty, var_gen)
+   (Mapper vars, var_gen)
 
 instantiateType a :: (U.TypeVarGenerator a) => T.Type -> a -> (T.Type, a)
 instantiateType type var_gen = do
-    vars <- Util.collectVars [] type
-    (mapper, var_gen) <- initMapper vars var_gen
-    type <- remap mapper type
-    (type, var_gen)
+   vars <- Util.collectVars [] type
+   (mapper, var_gen) <- initMapper vars var_gen
+   type <- remap mapper type
+   (type, var_gen)
 
 remapConstraint :: Mapper -> T.Constraint -> T.Constraint
-remapConstraint mapper constraint =
-    case constraint of
-        T.ClassConstraint qn associated_types -> T.ClassConstraint qn (List.map associated_types (remap mapper))
-        c -> c
+remapConstraint mapper constraint = case constraint of
+   T.ClassConstraint qn associated_types -> T.ClassConstraint qn (List.map associated_types (remap mapper))
+   c -> c
 
 remap :: Mapper -> T.Type -> T.Type
-remap mapper type =  T.traverse (remap_ mapper) type
-    where remap_ mapper type = do
-        (Mapper vars) <- mapper
-        case type of
+remap mapper type = T.traverse (remap_ mapper) type
+   where
+      remap_ mapper type = do
+         (Mapper vars) <- mapper
+         case type of
             T.Var var constraints -> case get vars var of
-                Some new_var -> T.Var new_var (List.map constraints (remapConstraint mapper))
-                None -> panic "old var {} not found" % var
+               Some new_var -> T.Var new_var (List.map constraints (remapConstraint mapper))
+               None -> panic "old var {} not found" % var
             T.FixedTypeArg _ var constraints -> case get vars var of
-                Some new_var -> T.Var new_var constraints
-                None -> panic "old var {} not found" % var
+               Some new_var -> T.Var new_var constraints
+               None -> panic "old var {} not found" % var
             T.Never var -> case get vars var of
-                Some new_var -> T.Never new_var
-                None -> panic "old var {} not found" % var
+               Some new_var -> T.Never new_var
+               None -> panic "old var {} not found" % var
             _ -> type
 
 newSub a :: (U.TypeVarGenerator a) => [T.Type] -> a -> (S.Substitution, a)
 newSub types var_gen = do
-    vars <- List.fold [] types (\vars, t -> Util.collectVars vars t)
-    (var_gen, new_vars) <- repeatS var_gen (\var_gen -> U.getNewTypeVar var_gen) (getLength vars)
-    sub <- S.createSubstitution
-    sub <- List.zipS sub vars new_vars (\sub, var, new_var -> do
-        Result.unwrap (S.add sub var (T.Var new_var [])))
-    (sub, var_gen)
+   vars <- List.fold [] types (\vars, t -> Util.collectVars vars t)
+   (var_gen, new_vars) <- repeatS var_gen (\var_gen -> U.getNewTypeVar var_gen) (getLength vars)
+   sub <- S.createSubstitution
+   sub <- List.zipS sub vars new_vars (\sub, var, new_var -> do
+      Result.unwrap (S.add sub var (T.Var new_var [])))
+   (sub, var_gen)

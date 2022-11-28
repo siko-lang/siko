@@ -1,82 +1,82 @@
 module Siko.AutoDerive.Show where
 
-import Siko.Syntax.Location
-import Siko.Syntax.Ident
-import Siko.Syntax.Data as D
 import Siko.Syntax.Class as C
-import Siko.Syntax.TypeSignature as T
-import Siko.Syntax.Function as F
+import Siko.Syntax.Data as D
 import Siko.Syntax.Expr as E
+import Siko.Syntax.Function as F
+import Siko.Syntax.Ident
+import Siko.Syntax.Location
 import Siko.Syntax.Pattern as P
+import Siko.Syntax.TypeSignature as T
 import Siko.Util.SharedString as SS
 
 deriveRecordShow :: D.Record -> Location -> C.Instance
 deriveRecordShow record derive_location = do
-    class_name <- createIdent "Std.Ops.Show" derive_location
-    type_arguments <- List.map record.type_arguments (\type_arg -> T.TypeSignature (T.TypeArg type_arg) derive_location)
-    type_signature <- T.TypeSignature (T.Named record.name type_arguments) derive_location
-    constraints <- List.fold [] record.type_arguments (\constraints, record_type_arg -> do
-        Ident type_arg _ <- record_type_arg
-        constraint <- C.Constraint class_name (Ident type_arg derive_location) []
-        List.push constraints constraint)
-    fn_name <- createIdent "show" derive_location
-    fn_args <- [P.Pattern (P.Binding (createIdent "record" derive_location)) derive_location]
-    Ident record_name _ <- record.name
-    record_name_expr <- E.Expr (E.StringLiteral record_name) derive_location
-    field_show_exprs <- List.map record.fields (\field -> do
-        arg_ref_expr <- E.Expr (E.Path (createIdent "record" derive_location)) derive_location
-        field_name_expr <- E.Expr (E.FieldAccess field.name arg_ref_expr) derive_location
-        show_name_expr <- E.Expr (E.Path (createIdent "Std.Ops.show" derive_location)) derive_location
-        E.Expr (E.FunctionCall show_name_expr [field_name_expr]) derive_location)
-    arg_fmts <- List.map record.fields (\field -> do
-        Ident f _ <- field.name
-        (SS.get f) + " : ({})")
-    fmt <- if List.isEmpty arg_fmts
-    then "{}"
-    else "{} { " + join arg_fmts ", " + " }"
-    body <- E.Expr (E.Formatter (SS.create fmt) ([record_name_expr] + field_show_exprs)) derive_location
-    body <- Some body
-    sub_items <- []
-    op_fn <- F.Function fn_name fn_args body sub_items [] []
-    C.Instance class_name type_signature [] constraints [op_fn] []
+   class_name <- createIdent "Std.Ops.Show" derive_location
+   type_arguments <- List.map record.type_arguments (\type_arg -> T.TypeSignature (T.TypeArg type_arg) derive_location)
+   type_signature <- T.TypeSignature (T.Named record.name type_arguments) derive_location
+   constraints <- List.fold [] record.type_arguments (\constraints, record_type_arg -> do
+      Ident type_arg _ <- record_type_arg
+      constraint <- C.Constraint class_name (Ident type_arg derive_location) []
+      List.push constraints constraint)
+   fn_name <- createIdent "show" derive_location
+   fn_args <- [P.Pattern (P.Binding (createIdent "record" derive_location)) derive_location]
+   Ident record_name _ <- record.name
+   record_name_expr <- E.Expr (E.StringLiteral record_name) derive_location
+   field_show_exprs <- List.map record.fields (\field -> do
+      arg_ref_expr <- E.Expr (E.Path (createIdent "record" derive_location)) derive_location
+      field_name_expr <- E.Expr (E.FieldAccess field.name arg_ref_expr) derive_location
+      show_name_expr <- E.Expr (E.Path (createIdent "Std.Ops.show" derive_location)) derive_location
+      E.Expr (E.FunctionCall show_name_expr [field_name_expr]) derive_location)
+   arg_fmts <- List.map record.fields (\field -> do
+      Ident f _ <- field.name
+      (SS.get f) + " : ({})")
+   fmt <- if List.isEmpty arg_fmts
+   then "{}"
+   else "{} { " + join arg_fmts ", " + " }"
+   body <- E.Expr (E.Formatter (SS.create fmt) ([record_name_expr] + field_show_exprs)) derive_location
+   body <- Some body
+   sub_items <- []
+   op_fn <- F.Function fn_name fn_args body sub_items [] []
+   C.Instance class_name type_signature [] constraints [op_fn] []
 
 deriveAdtShow :: D.AlgebraicDataType -> Location -> String -> C.Instance
 deriveAdtShow adt derive_location mod_name = do
-    class_name <- createIdent "Std.Ops.Show" derive_location
-    type_arguments <- List.map adt.type_arguments (\type_arg -> T.TypeSignature (T.TypeArg type_arg) derive_location)
-    type_signature <- T.TypeSignature (T.Named adt.name type_arguments) derive_location
-    constraints <- List.fold [] adt.type_arguments (\constraints, adt_type_arg -> do
-        Ident type_arg _ <- adt_type_arg
-        constraint <- C.Constraint class_name (Ident type_arg derive_location) []
-        List.push constraints constraint)
-    fn_name <- createIdent "show" derive_location
-    fn_args <- [P.Pattern (P.Binding (createIdent "adt" derive_location)) derive_location]
-    arg_ref_expr <- E.Expr (E.Path (createIdent "adt" derive_location)) derive_location
-    body <- if List.isEmpty adt.variants
-    then do
-        unreachable_expr <- E.Expr (E.Path (createIdent "unreachable" derive_location)) derive_location
-        E.Expr (E.FunctionCall unreachable_expr []) derive_location
-    else do
-        cases <- List.map adt.variants (\variant -> do
-            Ident variant_name _ <- variant.name
-            variant_name_expr <- E.Expr (E.StringLiteral variant_name) derive_location
-            item_bindings <- List.foldE [] variant.items (\bindings, index, item -> do
-                binding <- P.Pattern (P.Binding (createIdent ("i{}" % index) derive_location)) derive_location
-                List.push bindings binding)
-            case_pattern <- P.Pattern (P.Constructor (createIdent ("{}.{}" % (mod_name, variant_name)) derive_location) item_bindings) derive_location
-            item_show_exprs <- List.foldE [] variant.items (\show_exprs, index, item -> do
-                item_expr <- E.Expr (E.Path (createIdent ("i{}" % index) derive_location)) derive_location
-                show_name_expr <- E.Expr (E.Path (createIdent "Std.Ops.show" derive_location)) derive_location
-                show_expr <- E.Expr (E.FunctionCall show_name_expr [item_expr]) derive_location
-                List.push show_exprs show_expr)
-            arg_fmts <- repeat "({})" (getLength item_show_exprs)
-            fmt <- if List.isEmpty arg_fmts
-            then "{}"
-            else "{} " + join arg_fmts " "
-            case_body <- E.Expr (E.Formatter (SS.create fmt) ([variant_name_expr] + item_show_exprs)) derive_location
-            E.Case case_pattern case_body)
-        E.Expr (E.CaseOf arg_ref_expr cases) derive_location
-    body <- Some body
-    sub_items <- []
-    op_fn <- F.Function fn_name fn_args body sub_items [] []
-    C.Instance class_name type_signature [] constraints [op_fn] []
+   class_name <- createIdent "Std.Ops.Show" derive_location
+   type_arguments <- List.map adt.type_arguments (\type_arg -> T.TypeSignature (T.TypeArg type_arg) derive_location)
+   type_signature <- T.TypeSignature (T.Named adt.name type_arguments) derive_location
+   constraints <- List.fold [] adt.type_arguments (\constraints, adt_type_arg -> do
+      Ident type_arg _ <- adt_type_arg
+      constraint <- C.Constraint class_name (Ident type_arg derive_location) []
+      List.push constraints constraint)
+   fn_name <- createIdent "show" derive_location
+   fn_args <- [P.Pattern (P.Binding (createIdent "adt" derive_location)) derive_location]
+   arg_ref_expr <- E.Expr (E.Path (createIdent "adt" derive_location)) derive_location
+   body <- if List.isEmpty adt.variants
+   then do
+      unreachable_expr <- E.Expr (E.Path (createIdent "unreachable" derive_location)) derive_location
+      E.Expr (E.FunctionCall unreachable_expr []) derive_location
+   else do
+      cases <- List.map adt.variants (\variant -> do
+         Ident variant_name _ <- variant.name
+         variant_name_expr <- E.Expr (E.StringLiteral variant_name) derive_location
+         item_bindings <- List.foldE [] variant.items (\bindings, index, item -> do
+            binding <- P.Pattern (P.Binding (createIdent ("i{}" % index) derive_location)) derive_location
+            List.push bindings binding)
+         case_pattern <- P.Pattern (P.Constructor (createIdent ("{}.{}" % (mod_name, variant_name)) derive_location) item_bindings) derive_location
+         item_show_exprs <- List.foldE [] variant.items (\show_exprs, index, item -> do
+            item_expr <- E.Expr (E.Path (createIdent ("i{}" % index) derive_location)) derive_location
+            show_name_expr <- E.Expr (E.Path (createIdent "Std.Ops.show" derive_location)) derive_location
+            show_expr <- E.Expr (E.FunctionCall show_name_expr [item_expr]) derive_location
+            List.push show_exprs show_expr)
+         arg_fmts <- repeat "({})" (getLength item_show_exprs)
+         fmt <- if List.isEmpty arg_fmts
+         then "{}"
+         else "{} " + join arg_fmts " "
+         case_body <- E.Expr (E.Formatter (SS.create fmt) ([variant_name_expr] + item_show_exprs)) derive_location
+         E.Case case_pattern case_body)
+      E.Expr (E.CaseOf arg_ref_expr cases) derive_location
+   body <- Some body
+   sub_items <- []
+   op_fn <- F.Function fn_name fn_args body sub_items [] []
+   C.Instance class_name type_signature [] constraints [op_fn] []

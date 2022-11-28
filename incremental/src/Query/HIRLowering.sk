@@ -1,81 +1,81 @@
 module Siko.Query.HIRLowering where
 
-import Siko.Query.Driver
-import Siko.HIR.Effect as Eff
-import Siko.HIR.Function as F
-import Siko.HIR.Type as T
-import Siko.HIR.FullyQualifiedName as FQ
-import Siko.HIR.Backend.StateProvider as BSP
-import Siko.Query.Item as I
-import Siko.Query.Database as DB
-import Siko.HIR.Backend.UpdateTransformer as UT
+import Map
+import Siko.Constants
 import Siko.HIR.Backend.EffectResolver as ER
 import Siko.HIR.Backend.Monomorphization as MO
-import Siko.Constants
-import Map
+import Siko.HIR.Backend.StateProvider as BSP
+import Siko.HIR.Backend.UpdateTransformer as UT
+import Siko.HIR.Effect as Eff
+import Siko.HIR.FullyQualifiedName as FQ
+import Siko.HIR.Function as F
+import Siko.HIR.Type as T
+import Siko.Query.Database as DB
+import Siko.Query.Driver
+import Siko.Query.Item as I
 
 transformUpdates :: Driver -> I.Key -> Driver
 transformUpdates driver key = do
-    fn <- DB.get driver.db key
-    fn <- I.asTypedFunction fn
-    state <- BSP.createStateProvider driver
-    (state, fn) <- UT.processFunction state fn
-    base_main_qn <- FQ.FullPath getMainModuleName getMainFunctionName
-    fn_name <- fn.name
-    is_entry_point <- case fn.kind of
-            F.ClassMember _ -> True
-            F.InstanceMember _ -> True
-            _ -> fn.name == base_main_qn
-    key <- I.UpdateTransformedFunctionKey fn.name
-    item <- I.UpdateTransformedFunction fn
-    driver <- addToDb driver key item
-    if is_entry_point
-    then do
-        resolve_cmd <- I.ResolveEffects (I.ResolvedEffectsFunctionKey (FQ.Effectless fn_name None))
-        addCommands driver [resolve_cmd]
-    else driver
+   fn <- DB.get driver.db key
+   fn <- I.asTypedFunction fn
+   state <- BSP.createStateProvider driver
+   (state, fn) <- UT.processFunction state fn
+   base_main_qn <- FQ.FullPath getMainModuleName getMainFunctionName
+   fn_name <- fn.name
+   is_entry_point <- case fn.kind of
+      F.ClassMember _ -> True
+      F.InstanceMember _ -> True
+      _ -> fn.name == base_main_qn
+   key <- I.UpdateTransformedFunctionKey fn.name
+   item <- I.UpdateTransformedFunction fn
+   driver <- addToDb driver key item
+   if is_entry_point
+   then do
+      resolve_cmd <- I.ResolveEffects (I.ResolvedEffectsFunctionKey (FQ.Effectless fn_name None))
+      addCommands driver [resolve_cmd]
+   else driver
 
 resolveEffects :: Driver -> I.Key -> Driver
 resolveEffects driver key = do
-    case DB.getOpt driver.db key of
-        Some resolved_fn -> driver
-        None -> do
-            case I.getFullyQualifiedName key of
-                FQ.Effectless base_qn resolution_set -> do
-                    resolution_set <- case resolution_set of
-                        Some resolution_set -> resolution_set
-                        None -> Eff.EffectResolutionSet Map.empty Map.empty
-                    fn <- DB.get driver.db (I.UpdateTransformedFunctionKey base_qn)
-                    fn <- I.asUpdateTransformedFunction fn
-                    base_main_qn <- FQ.FullPath getMainModuleName getMainFunctionName
-                    fn_name <- fn.name
-                    state <- BSP.createStateProvider driver
-                    (state, resolved_fn, qns) <- ER.resolveEffects state base_qn resolution_set
-                    item <- I.ResolvedEffectsFunction resolved_fn
-                    cmds <- List.map qns (\qn -> I.ResolveEffects (I.ResolvedEffectsFunctionKey qn))
-                    driver <- addToDb driver key item
-                    driver <- if fn.name == base_main_qn
-                    then do
-                        cmd <- I.Monomorphize (I.MonomorphizedFunctionKey (FQ.Monomorphized (I.getFullyQualifiedName key) (T.Tuple [])))
-                        addCommands driver [cmd]
-                    else driver
-                    addCommands driver cmds
-                qn -> panic "resolveEffects called with unexpected qn {}" % qn
+   case DB.getOpt driver.db key of
+      Some resolved_fn -> driver
+      None -> do
+         case I.getFullyQualifiedName key of
+            FQ.Effectless base_qn resolution_set -> do
+               resolution_set <- case resolution_set of
+                  Some resolution_set -> resolution_set
+                  None -> Eff.EffectResolutionSet Map.empty Map.empty
+               fn <- DB.get driver.db (I.UpdateTransformedFunctionKey base_qn)
+               fn <- I.asUpdateTransformedFunction fn
+               base_main_qn <- FQ.FullPath getMainModuleName getMainFunctionName
+               fn_name <- fn.name
+               state <- BSP.createStateProvider driver
+               (state, resolved_fn, qns) <- ER.resolveEffects state base_qn resolution_set
+               item <- I.ResolvedEffectsFunction resolved_fn
+               cmds <- List.map qns (\qn -> I.ResolveEffects (I.ResolvedEffectsFunctionKey qn))
+               driver <- addToDb driver key item
+               driver <- if fn.name == base_main_qn
+               then do
+                  cmd <- I.Monomorphize (I.MonomorphizedFunctionKey (FQ.Monomorphized (I.getFullyQualifiedName key) (T.Tuple [])))
+                  addCommands driver [cmd]
+               else driver
+               addCommands driver cmds
+            qn -> panic "resolveEffects called with unexpected qn {}" % qn
 
 monomorphize :: Driver -> I.Key -> Driver
 monomorphize driver key = do
-    case DB.getOpt driver.db key of
-        Some monomorphized_fn -> driver
-        None -> do
-            case I.getFullyQualifiedName key of
-                FQ.Monomorphized base_qn type -> do
-                    fn <- DB.get driver.db (I.ResolvedEffectsFunctionKey base_qn)
-                    fn <- I.asResolvedEffectsFunction fn
-                    state <- BSP.createStateProvider driver
-                    state <- state { ignore_never = True }
-                    (state, monomorphized_fn, qns) <- MO.monomorphizeFunction state base_qn type
-                    item <- I.MonomorphizedFunction monomorphized_fn
-                    cmds <- List.map qns (\qn -> I.Monomorphize (I.MonomorphizedFunctionKey qn))
-                    driver <- addToDb driver key item
-                    addCommands driver cmds
-                qn -> panic "monomorphize called with unexpected qn {}" % qn
+   case DB.getOpt driver.db key of
+      Some monomorphized_fn -> driver
+      None -> do
+         case I.getFullyQualifiedName key of
+            FQ.Monomorphized base_qn type -> do
+               fn <- DB.get driver.db (I.ResolvedEffectsFunctionKey base_qn)
+               fn <- I.asResolvedEffectsFunction fn
+               state <- BSP.createStateProvider driver
+               state <- state { ignore_never = True }
+               (state, monomorphized_fn, qns) <- MO.monomorphizeFunction state base_qn type
+               item <- I.MonomorphizedFunction monomorphized_fn
+               cmds <- List.map qns (\qn -> I.Monomorphize (I.MonomorphizedFunctionKey qn))
+               driver <- addToDb driver key item
+               addCommands driver cmds
+            qn -> panic "monomorphize called with unexpected qn {}" % qn

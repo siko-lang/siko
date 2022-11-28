@@ -1,20 +1,19 @@
 module Siko.Query.Util where
 
+import Siko.HIR.Class as HC
+import Siko.HIR.Data as HD
+import Siko.HIR.FullyQualifiedName
+import Siko.Query.Database as DB
 import Siko.Query.Driver
 import Siko.Query.Item as I
-import Siko.Query.Database as DB
-import Siko.Util.SharedString as SS
 import Siko.Resolver.Import as RI
 import Siko.Resolver.Item as RI
-import Siko.HIR.FullyQualifiedName
-import Siko.HIR.Data as HD
-import Siko.HIR.Class as HC
+import Siko.Util.SharedString as SS
 
 getExports :: Driver -> SS.SharedString -> Option [RI.Item]
 getExports driver name = do
-    name <- SS.get name
-    key <- I.ExportedItemsKey name
-    case DB.getOpt driver.db key of
-        Some exported_items -> Some (I.asExportedItems exported_items)
-        None -> None
-
+   name <- SS.get name
+   key <- I.ExportedItemsKey name
+   case DB.getOpt driver.db key of
+      Some exported_items -> Some (I.asExportedItems exported_items)
+      None -> None

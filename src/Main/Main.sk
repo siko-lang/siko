@@ -1,155 +1,142 @@
 module Main where
 
 import IO
+import Map
+import Siko.Config
+import Siko.Diagnostics
+import Siko.FileManager
+import Siko.HIR.Backend as HB
+import Siko.HIR.Backend.Typechecker as TC
+import Siko.HIR.Backend.Typechecker.Error
+import Siko.LIR.Backend as LB
+import Siko.MIR.Backend as MB
 import Siko.Parser
 import Siko.Parser.Error
 import Siko.Resolver as R
 import Siko.Resolver.Error
-import Siko.HIR.Backend.Typechecker as TC
-import Siko.HIR.Backend.Typechecker.Error
-import Siko.Transpiler as Transpiler
-import Siko.Diagnostics
 import Siko.Syntax.Location
 import Siko.Syntax.SourceFile
-import Siko.MIR.Backend as MB
-import Siko.HIR.Backend as HB
-import Siko.LIR.Backend as LB
-import Siko.Config
 import Siko.Trace
-import Siko.FileManager
-import Map
+import Siko.Transpiler as Transpiler
 
 processPath :: String -> [FileName]
 processPath path = do
-    if isDir path
-    then do
-        entries <- listDir path
-        List.fold [] entries (\files, entry -> if isDir entry
-            then files + processPath entry
-            else do
-                subs <- String.split entry "/"
-                file <- last subs
-                if endsWith file ".sk"
-                then List.push files (FileName entry)
-                else files)
-    else [FileName path]
+   if isDir path
+   then do
+      entries <- listDir path
+      List.fold [] entries (\files, entry -> if isDir entry
+         then files + processPath entry
+         else do
+            subs <- String.split entry "/"
+            file <- last subs
+            if endsWith file ".sk"
+            then List.push files (FileName entry)
+            else files)
+   else [FileName path]
 
 processArgs :: [String] -> Config
 processArgs args = loop (config, args) <- (getDefaultConfig, args) do
-    case pop args of
-        Some (arg, rest) -> do
+      case pop args of
+         Some (arg, rest) -> do
             case arg of
-                "-o" -> do
-                    case pop rest of
-                        Some (arg, rest) -> do
-                            config <- config { output_file_name = Some arg }
-                            (config, rest)
-                        None -> do
-                            panic "Missing output_file"
-                "-m" -> do
-                    case pop rest of
-                        Some (arg, rest) -> do
-                            mir_functions <- List.push config.mir_functions arg
-                            config <- config { mir_functions = mir_functions }
-                            (config, rest)
-                        None -> do
-                            panic "Missing mir function"
-                "-v" -> (config { trace_level = Leve1 }, rest)
-                "-vv" -> (config { trace_level = Level2 }, rest)
-                "-d" -> (config { dump = True }, rest)
-                "-pfi" -> (config { print_function_info = True }, rest)
-                "-dlt" -> (config { disable_lir_transforms = True }, rest)
-                _ -> do
-                        input_files <- push config.input_files (FileName arg)
-                        config <- config { input_files = input_files }
+               "-o" -> do
+                  case pop rest of
+                     Some (arg, rest) -> do
+                        config <- config { output_file_name = Some arg }
                         (config, rest)
-        None -> break config
+                     None -> do
+                        panic "Missing output_file"
+               "-m" -> do
+                  case pop rest of
+                     Some (arg, rest) -> do
+                        mir_functions <- List.push config.mir_functions arg
+                        config <- config { mir_functions = mir_functions }
+                        (config, rest)
+                     None -> do
+                        panic "Missing mir function"
+               "-v" -> (config { trace_level = Leve1 }, rest)
+               "-vv" -> (config { trace_level = Level2 }, rest)
+               "-d" -> (config { dump = True }, rest)
+               "-pfi" -> (config { print_function_info = True }, rest)
+               "-dlt" -> (config { disable_lir_transforms = True }, rest)
+               _ -> do
+                  input_files <- push config.input_files (FileName arg)
+                  config <- config { input_files = input_files }
+                  (config, rest)
+         None -> break config
 
 data Context = { file_manager :: FileManager,
                  lexer_errors :: Map FileId [LexerError],
                  parser_errors :: Map FileId [ParserError],
                  resolver_errors :: [ResolverError],
-                 typechecker_errors :: [TypecheckerError],
+                 typechecker_errors :: [TypecheckerError]
                }
 
 dumpErrors :: Context -> ()
 dumpErrors context = do
-    context.lexer_errors
-        |> Map.iter
-        |> Iterator.forEach (\(file_id, lexer_errors) -> lexer_errors
-                                                 |> List.iter
-                                                 |> Iterator.forEach \error -> printLexerError error)
-    context.parser_errors
-        |> Map.iter
-        |> Iterator.forEach (\(file_id, parser_errors) -> parser_errors
-                                                  |> List.iter
-                                                  |> Iterator.forEach \error -> printParserError context.file_manager file_id error)
-
-    context.resolver_errors |> List.iter |> Iterator.forEach \error -> printResolverError context.file_manager error
-    context.typechecker_errors |> List.iter |> Iterator.forEach \error -> printTypecheckerError context.file_manager error
+   context.lexer_errors |> Map.iter |> Iterator.forEach (\(file_id, lexer_errors) -> lexer_errors |> List.iter |> Iterator.forEach \error -> printLexerError error)
+   context.parser_errors |> Map.iter |> Iterator.forEach (\(file_id, parser_errors) -> parser_errors |> List.iter |> Iterator.forEach \error -> printParserError context.file_manager file_id error)
+   context.resolver_errors |> List.iter |> Iterator.forEach \error -> printResolverError context.file_manager error
+   context.typechecker_errors |> List.iter |> Iterator.forEach \error -> printTypecheckerError context.file_manager error
 
 isOk :: Context -> Bool
-isOk context = Map.isEmpty context.lexer_errors &&
-               Map.isEmpty context.parser_errors &&
-               List.isEmpty context.resolver_errors &&
-               List.isEmpty context.typechecker_errors
+isOk context = Map.isEmpty context.lexer_errors && Map.isEmpty context.parser_errors && List.isEmpty context.resolver_errors && List.isEmpty context.typechecker_errors
 
 parseFile :: Config -> Context -> FileName -> (Context, SourceFile)
 parseFile config context (FileName file_name) = do
-    source <- readTextFile file_name
-    (file_manager, file_id) <- addFile context.file_manager file_name
-    context <- context { file_manager = file_manager }
-    (source_file, lexer_errors, parser_errors) <- parse file_id file_name source
-    context <- if List.isEmpty lexer_errors
-    then context
-    else do
-        lexer_errors <- Map.put context.lexer_errors file_id lexer_errors
-        context { lexer_errors = lexer_errors }
-    context <- if List.isEmpty parser_errors
-    then context
-    else do
-        parser_errors <- Map.put context.parser_errors file_id parser_errors
-        context { parser_errors = parser_errors }
-    (context, source_file)
+   source <- readTextFile file_name
+   (file_manager, file_id) <- addFile context.file_manager file_name
+   context <- context { file_manager = file_manager }
+   (source_file, lexer_errors, parser_errors) <- parse file_id file_name source
+   context <- if List.isEmpty lexer_errors
+   then context
+   else do
+      lexer_errors <- Map.put context.lexer_errors file_id lexer_errors
+      context { lexer_errors = lexer_errors }
+   context <- if List.isEmpty parser_errors
+   then context
+   else do
+      parser_errors <- Map.put context.parser_errors file_id parser_errors
+      context { parser_errors = parser_errors }
+   (context, source_file)
 
 compile :: Config -> Context
 compile config = do
-    with { getConfig = \() -> config } do
-        file_manager <- createFileManager
-        context <- Context file_manager Map.empty Map.empty [] []
-        trace "Parsing inputs.."
-        files <- List.fold [] config.input_files (\files, (FileName path) -> files + processPath path)
-        (context, source_files) <-  List.mapS context files (parseFile config)
-        trace "Resolving names.."
-        (hir_program, expr_id_gen, pattern_id_gen, var_gen, resolver_errors) <- R.processProgram source_files
-        context <- context { resolver_errors = resolver_errors }
-        if isOk context
-        then do
-            trace "HIR processing"
-            case HB.processProgram hir_program expr_id_gen pattern_id_gen var_gen context.file_manager of
-                Ok mir_program -> do
-                    trace "MIR processing.."
-                    lir_program <- MB.processProgram mir_program
-                    lir_program <- if config.disable_lir_transforms
-                    then lir_program
-                    else do
-                        trace "LIR processing.."
-                        LB.processProgram lir_program
-                    trace "Transpiling.."
-                    rust_output <- Transpiler.transpile lir_program
-                    writeTextFile (getOutputFileName Normal) rust_output
-                    context
-                Err tc_errors -> context { typechecker_errors = tc_errors }
-        else context
+   with { getConfig = \() -> config } do
+      file_manager <- createFileManager
+      context <- Context file_manager Map.empty Map.empty [] []
+      trace "Parsing inputs.."
+      files <- List.fold [] config.input_files (\files, (FileName path) -> files + processPath path)
+      (context, source_files) <- List.mapS context files (parseFile config)
+      trace "Resolving names.."
+      (hir_program, expr_id_gen, pattern_id_gen, var_gen, resolver_errors) <- R.processProgram source_files
+      context <- context { resolver_errors = resolver_errors }
+      if isOk context
+      then do
+         trace "HIR processing"
+         case HB.processProgram hir_program expr_id_gen pattern_id_gen var_gen context.file_manager of
+            Ok mir_program -> do
+               trace "MIR processing.."
+               lir_program <- MB.processProgram mir_program
+               lir_program <- if config.disable_lir_transforms
+               then lir_program
+               else do
+                  trace "LIR processing.."
+                  LB.processProgram lir_program
+               trace "Transpiling.."
+               rust_output <- Transpiler.transpile lir_program
+               writeTextFile (getOutputFileName Normal) rust_output
+               context
+            Err tc_errors -> context { typechecker_errors = tc_errors }
+      else context
 
 main = do
-    args <- Option.unwrap (tail getArgs)
-    config <- processArgs args
-    context <- compile config
-    if isOk context
-    then ()
-    else do
-        dumpErrors context
-        println "Compilation failed"
-        exit 1
-
+   args <- Option.unwrap (tail getArgs)
+   config <- processArgs args
+   context <- compile config
+   if isOk context
+   then ()
+   else do
+      dumpErrors context
+      println "Compilation failed"
+      exit 1

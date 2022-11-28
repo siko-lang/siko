@@ -1,107 +1,111 @@
-module Siko.MIR.Backend.Ownership.DataGroupInfo(initializeDataGroupInfoStore, getDataGroupInfo, DataGroupInfoStore, DataGroupInfo(..)) where
-
-import Siko.Util.DependencyProcessor
-import Siko.MIR.Program as P
-import Siko.MIR.Data as D
-import Siko.MIR.Type as T
-import Siko.MIR.Backend.Ownership.Allocator
-import Siko.MIR.Backend.Ownership.TypeVariableInfo
-import Siko.MIR.Backend.Ownership.MemberInfo as M
-import Siko.MIR.Backend.Ownership.Duplicator
+module Siko.MIR.Backend.Ownership.DataGroupInfo(initializeDataGroupInfoStore,
+                                                getDataGroupInfo,
+                                                DataGroupInfoStore,
+                                                DataGroupInfo(..)) where
 
 import Map
+import Siko.MIR.Backend.Ownership.Allocator
+import Siko.MIR.Backend.Ownership.Duplicator
+import Siko.MIR.Backend.Ownership.MemberInfo as M
+import Siko.MIR.Backend.Ownership.TypeVariableInfo
+import Siko.MIR.Data as D
+import Siko.MIR.Program as P
+import Siko.MIR.Type as T
+import Siko.Util.DependencyProcessor
 
 data DataGroupInfo = { members :: [M.MemberInfo],
-                       info_map :: Map P.Identity TypeVariableInfo } deriving (Show, Move)
+                       info_map :: Map P.Identity TypeVariableInfo
+                     } deriving (Show, Move)
 
 duplicateDataGroupInfo :: Allocator -> DataGroupInfo -> (Allocator, DataGroupInfo)
 duplicateDataGroupInfo allocator data_group_info = do
-    duplicator <- createDuplicator allocator
-    (duplicator, members) <- List.mapS duplicator data_group_info.members duplicate
-    (duplicator, info_map) <- Map.mapS duplicator data_group_info.info_map (\duplicator, (id, info) -> do
-        (duplicator, info) <- duplicate duplicator info
-        (duplicator, id, info))
-    (duplicator.allocator, DataGroupInfo members info_map)
+   duplicator <- createDuplicator allocator
+   (duplicator, members) <- List.mapS duplicator data_group_info.members duplicate
+   (duplicator, info_map) <- Map.mapS duplicator data_group_info.info_map (\duplicator, (id, info) -> do
+      (duplicator, info) <- duplicate duplicator info
+      (duplicator, id, info))
+   (duplicator.allocator, DataGroupInfo members info_map)
 
 data DataGroupInfoStore = { group_info_map :: Map P.Identity DataGroupInfo } deriving (Show)
 
 data Context = { program :: P.Program,
                  data_group_info :: DataGroupInfo,
                  allocator :: Allocator,
-                 group :: [P.Identity] }
+                 group :: [P.Identity]
+               }
 
 getDataGroupInfo :: DataGroupInfoStore -> Allocator -> P.Identity -> (Allocator, Option (DataGroupInfo, TypeVariableInfo))
 getDataGroupInfo store allocator id = case Map.get store.group_info_map id of
-    Some info -> do
-        (allocator, info) <- duplicateDataGroupInfo allocator info
-        var_info <- case Map.get info.info_map id of
-            Some var_info -> var_info
-            None -> panic "Type {} not found in info map of data group info"
-        (allocator, Some (info, var_info))
-    None -> (allocator, None)
+   Some info -> do
+      (allocator, info) <- duplicateDataGroupInfo allocator info
+      var_info <- case Map.get info.info_map id of
+         Some var_info -> var_info
+         None -> panic "Type {} not found in info map of data group info"
+      (allocator, Some (info, var_info))
+   None -> (allocator, None)
 
 addMemberInfo :: Context -> M.MemberInfo -> Context
 addMemberInfo context member = do
-    data_group_info <- context.data_group_info
-    members <- List.push data_group_info.members member
-    data_group_info <- data_group_info { members = members }
-    context { data_group_info = data_group_info }
+   data_group_info <- context.data_group_info
+   members <- List.push data_group_info.members member
+   data_group_info <- data_group_info { members = members }
+   context { data_group_info = data_group_info }
 
 processType :: Context -> P.Identity -> (Context, Option TypeVariableInfo)
 processType context id = do
-    if List.contains context.group id
-    then case Map.get context.data_group_info.info_map id of
-        Some info -> (context, Some info)
-        None -> do
-            (allocator, info) <- getNextTypeVariableInfo context.allocator
-            data_group_info <- context.data_group_info
-            info_map <- Map.put data_group_info.info_map id info
-            data_group_info <- data_group_info { info_map = info_map }
-            context <- context { allocator = allocator, data_group_info = data_group_info }
-            res <- P.getAdtOrRecord context.program id
-            context <- case res of
-                    Left adt -> do
-                        (context, _) <- List.fold (context, 0) adt.variants (\(context, index), variant -> do
-                            variant_type_id <- T.getIdentity variant.type
-                            (context, member_info) <- processType context variant_type_id
-                            context <- case member_info of
-                                Some member_info -> addMemberInfo context (M.MemberInfo (M.Variant index) info.arg_group_var member_info)
-                                None -> context
-                            (context, index + 1))
-                        context
-                    Right record -> do
-                        context <- List.fold context record.fields (\context, field -> do
-                            field_type_id <- T.getIdentity field.type
-                            (context, member_info) <- processType context field_type_id
-                            context <- case member_info of
-                                Some member_info -> addMemberInfo context (M.MemberInfo (M.Field field.index) info.arg_group_var member_info)
-                                None -> context
-                            context)
-                        case record.external_info of
-                            Some external_record_info -> do
-                                (context, _) <- List.fold (context, 0) external_record_info.type_args (\(context, index), arg -> do
-                                    arg_id <- T.getIdentity arg
-                                    (context, member_info) <- processType context arg_id
-                                    context <- case member_info of
-                                        Some member_info -> addMemberInfo context (M.MemberInfo (M.Extern index) info.arg_group_var member_info)
-                                        None -> context
-                                    (context, index + 1))
-                                context
-                            None -> context
-            (context, Some info)
-    else (context, None)
+   if List.contains context.group id
+   then case Map.get context.data_group_info.info_map id of
+      Some info -> (context, Some info)
+      None -> do
+         (allocator, info) <- getNextTypeVariableInfo context.allocator
+         data_group_info <- context.data_group_info
+         info_map <- Map.put data_group_info.info_map id info
+         data_group_info <- data_group_info { info_map = info_map }
+         context <- context { allocator = allocator, data_group_info = data_group_info }
+         res <- P.getAdtOrRecord context.program id
+         context <- case res of
+            Left adt -> do
+               (context, _) <- List.fold (context, 0) adt.variants (\(context, index), variant -> do
+                  variant_type_id <- T.getIdentity variant.type
+                  (context, member_info) <- processType context variant_type_id
+                  context <- case member_info of
+                     Some member_info -> addMemberInfo context (M.MemberInfo (M.Variant index) info.arg_group_var member_info)
+                     None -> context
+                  (context, index + 1))
+               context
+            Right record -> do
+               context <- List.fold context record.fields (\context, field -> do
+                  field_type_id <- T.getIdentity field.type
+                  (context, member_info) <- processType context field_type_id
+                  context <- case member_info of
+                     Some member_info -> addMemberInfo context (M.MemberInfo (M.Field field.index) info.arg_group_var member_info)
+                     None -> context
+                  context)
+               case record.external_info of
+                  Some external_record_info -> do
+                     (context, _) <- List.fold (context, 0) external_record_info.type_args (\(context, index), arg -> do
+                        arg_id <- T.getIdentity arg
+                        (context, member_info) <- processType context arg_id
+                        context <- case member_info of
+                           Some member_info -> addMemberInfo context (M.MemberInfo (M.Extern index) info.arg_group_var member_info)
+                           None -> context
+                        (context, index + 1))
+                     context
+                  None -> context
+         (context, Some info)
+   else (context, None)
 
 createDataGroupInfo :: P.Program -> Map P.Identity DataGroupInfo -> DependencyGroup P.Identity -> Map P.Identity DataGroupInfo
 createDataGroupInfo program group_info_map group = do
-    data_group_info <- DataGroupInfo [] Map.empty
-    context <- Context program data_group_info createAllocator group.items
-    context <- List.fold context group.items (\context, id -> do
-        (context, info) <- processType context id
-        context)
-    group_info_map <- List.fold group_info_map group.items (\group_info_map, id -> Map.put group_info_map id context.data_group_info)
-    group_info_map
+   data_group_info <- DataGroupInfo [] Map.empty
+   context <- Context program data_group_info createAllocator group.items
+   context <- List.fold context group.items (\context, id -> do
+      (context, info) <- processType context id
+      context)
+   group_info_map <- List.fold group_info_map group.items (\group_info_map, id -> Map.put group_info_map id context.data_group_info)
+   group_info_map
 
 initializeDataGroupInfoStore :: P.Program -> [DependencyGroup P.Identity] -> DataGroupInfoStore
 initializeDataGroupInfoStore program data_groups = do
-    group_info_map <- List.fold Map.empty data_groups (createDataGroupInfo program)
-    DataGroupInfoStore group_info_map
+   group_info_map <- List.fold Map.empty data_groups (createDataGroupInfo program)
+   DataGroupInfoStore group_info_map

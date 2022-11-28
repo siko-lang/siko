@@ -1,147 +1,142 @@
 module Siko.Resolver.Class where
 
-import Siko.HIR.Type as HT
-import Siko.HIR.TypeFormatter as TF
-import Siko.HIR.Program as HP
+import Map
 import Siko.HIR.Class as HC
 import Siko.HIR.Function as HF
+import Siko.HIR.Program as HP
+import Siko.HIR.Type as HT
+import Siko.HIR.TypeFormatter as TF
 import Siko.Resolver
-import Siko.Resolver.Module
 import Siko.Resolver.Error
 import Siko.Resolver.Function
-import Siko.Resolver.Type
 import Siko.Resolver.Import
+import Siko.Resolver.Module
+import Siko.Resolver.ModuleResolver
+import Siko.Resolver.Type
+import Siko.Syntax.Class as SC
+import Siko.Syntax.Function
+import Siko.Syntax.Ident
 import Siko.Syntax.Module as SM
 import Siko.Syntax.TypeSignature as ST
-import Siko.Syntax.Class as SC
-import Siko.Syntax.Ident
-import Siko.Resolver.ModuleResolver
-import Siko.Syntax.Function
-import Map
 import Siko.Util.SharedString as SS
 
 processClassDependencies :: ModuleResolver -> SC.Class -> SS.SharedString -> [HP.FullyQualifiedName]
-processClassDependencies module_resolver c type_arg =
-    List.fold [] c.constraints (processClassDependency module_resolver type_arg)
-        where
-            processClassDependency :: ModuleResolver -> SS.SharedString -> [HP.FullyQualifiedName] -> SC.Constraint -> [HP.FullyQualifiedName]
-            processClassDependency module_resolver type_arg constraints constraint = do
-                case resolveClass module_resolver constraint.class_name of
-                    Ok class_name -> do
-                        if getString constraint.argument == type_arg
-                        then List.push constraints class_name
-                        else constraints
-                    Err err -> constraints
+processClassDependencies module_resolver c type_arg = List.fold [] c.constraints (processClassDependency module_resolver type_arg)
+   where
+      processClassDependency :: ModuleResolver -> SS.SharedString -> [HP.FullyQualifiedName] -> SC.Constraint -> [HP.FullyQualifiedName]
+      processClassDependency module_resolver type_arg constraints constraint = do
+         case resolveClass module_resolver constraint.class_name of
+            Ok class_name -> do
+               if getString constraint.argument == type_arg
+               then List.push constraints class_name
+               else constraints
+            Err err -> constraints
 
 processClass :: ResolverState -> HP.Program () -> ModuleResolver -> SC.Class -> (ResolverState, HP.Program ())
 processClass state hir_program module_resolver c = do
-    module_name <- module_resolver.module_name
-    (Ident name location) <- c.name
-    qn <- HP.FullPath module_name name
-    type_resolver <- createTypeResolverState module_resolver
-    all_type_args <- List.push c.associated_types c.argument
-    state <- checkTypeArguments state all_type_args
-    (type_resolver, state) <- List.fold (type_resolver, state) all_type_args (\(type_resolver, state), ty -> do
-        (type_resolver, state, _) <- addTypeArgument type_resolver state ty
-        (type_resolver, state))
-    ((state, type_resolver), associated_types) <- List.mapS (state, type_resolver) c.associated_types (\(state, type_resolver), ty -> do
-        (type_resolver, state, var, constraints) <- resolveTypeArg type_resolver state ty
-        ((state, type_resolver), (HT.FixedTypeArg (getString ty) var constraints)))
-    type_arg <- c.argument
-    type_arg_str <- getString type_arg
-    self_constraint <- HT.ClassConstraint qn associated_types
-    (type_resolver, state) <- addTypeArgumentConstraint type_resolver state type_arg self_constraint
-    (state, type_resolver) <- processClassConstraints state type_resolver c.constraints
-    (type_resolver, state, var, constraints) <- resolveTypeArg type_resolver state c.argument
-    arg_type <- HT.FixedTypeArg (getString c.argument) var constraints
-    dependencies <- processClassDependencies module_resolver c type_arg_str
-    state <- c.member_function_type_signatures |> List.iter |> Iterator.fold (\state, s -> do
-        sig_type_args <- List.map s.type_arguments getString
-        state <- if contains sig_type_args type_arg_str
-            then state
-            else do
-                ST.TypeSignature _ location <- s.type_signature
-                state <- addError state (UnusedClassArg type_arg location)
-                state
-        state) state
-    kind <- HF.ClassMember qn
-    (state, members) <- processFunctionsAndSignatures state hir_program module_resolver createEmptyFunctionScopeResolver type_resolver
-                            kind c.member_functions c.member_function_type_signatures (HP.FullPath module_resolver.module_name)
-    (state, hir_program, class_members) <- members |> List.iter |> Iterator.fold (\(state, hir_program, class_members), member -> case member.kind of
-            HF.ClassMember _ -> do
-                (hir_program, other_item) <- HP.addItem hir_program member.name (HP.Function member)
-                state <- handleItemConflict state other_item location
-                class_members <- push class_members member.name
-                (state, hir_program, class_members)
-            _ -> do
-                (hir_program, other_item) <- HP.addItem hir_program member.name (HP.Function member)
-                state <- handleItemConflict state other_item location
-                (state, hir_program, class_members)
-        ) (state, hir_program, [])
-    hir_class <- HC.Class qn location arg_type associated_types dependencies class_members
-    (hir_program, other_item) <- HP.addItem hir_program qn (HP.Class hir_class)
-    state <- handleItemConflict state other_item location
-    (state, hir_program)
+   module_name <- module_resolver.module_name
+   (Ident name location) <- c.name
+   qn <- HP.FullPath module_name name
+   type_resolver <- createTypeResolverState module_resolver
+   all_type_args <- List.push c.associated_types c.argument
+   state <- checkTypeArguments state all_type_args
+   (type_resolver, state) <- List.fold (type_resolver, state) all_type_args (\(type_resolver, state), ty -> do
+      (type_resolver, state, _) <- addTypeArgument type_resolver state ty
+      (type_resolver, state))
+   ((state, type_resolver), associated_types) <- List.mapS (state, type_resolver) c.associated_types (\(state, type_resolver), ty -> do
+      (type_resolver, state, var, constraints) <- resolveTypeArg type_resolver state ty
+      ((state, type_resolver), (HT.FixedTypeArg (getString ty) var constraints)))
+   type_arg <- c.argument
+   type_arg_str <- getString type_arg
+   self_constraint <- HT.ClassConstraint qn associated_types
+   (type_resolver, state) <- addTypeArgumentConstraint type_resolver state type_arg self_constraint
+   (state, type_resolver) <- processClassConstraints state type_resolver c.constraints
+   (type_resolver, state, var, constraints) <- resolveTypeArg type_resolver state c.argument
+   arg_type <- HT.FixedTypeArg (getString c.argument) var constraints
+   dependencies <- processClassDependencies module_resolver c type_arg_str
+   state <- c.member_function_type_signatures |> List.iter |> Iterator.fold (\state, s -> do
+      sig_type_args <- List.map s.type_arguments getString
+      state <- if contains sig_type_args type_arg_str
+      then state
+      else do
+         ST.TypeSignature _ location <- s.type_signature
+         state <- addError state (UnusedClassArg type_arg location)
+         state
+      state) state
+   kind <- HF.ClassMember qn
+   (state, members) <- processFunctionsAndSignatures state hir_program module_resolver createEmptyFunctionScopeResolver type_resolver kind c.member_functions c.member_function_type_signatures (HP.FullPath module_resolver.module_name)
+   (state, hir_program, class_members) <- members |> List.iter |> Iterator.fold (\(state, hir_program, class_members), member -> case member.kind of
+      HF.ClassMember _ -> do
+         (hir_program, other_item) <- HP.addItem hir_program member.name (HP.Function member)
+         state <- handleItemConflict state other_item location
+         class_members <- push class_members member.name
+         (state, hir_program, class_members)
+      _ -> do
+         (hir_program, other_item) <- HP.addItem hir_program member.name (HP.Function member)
+         state <- handleItemConflict state other_item location
+         (state, hir_program, class_members)) (state, hir_program, [])
+   hir_class <- HC.Class qn location arg_type associated_types dependencies class_members
+   (hir_program, other_item) <- HP.addItem hir_program qn (HP.Class hir_class)
+   state <- handleItemConflict state other_item location
+   (state, hir_program)
 
 processInstance :: ResolverState -> HP.Program () -> ModuleResolver -> SC.Instance -> Int -> (ResolverState, HP.Program ())
 processInstance state hir_program module_resolver i instance_id = do
-    (Ident _ class_location) <- i.class_name
-    (state, class_name) <- case resolveClass module_resolver i.class_name of
-        Ok class_name -> (state, class_name)
-        Err err -> (addError state err, HP.FullPath (SS.create "") (SS.create ""))
-    type_resolver <- createTypeResolverState module_resolver
-    ((type_resolver, state), associated_types) <- List.mapS (type_resolver, state) i.associated_types (\(type_resolver, state), ty -> do
-        (type_resolver, state, ty) <- processTypeSignature type_resolver state ty
-        ((type_resolver, state), ty))
-    ST.TypeSignature type _ <- i.type_signature
-    (state, type_resolver, hir_type) <- case type of
-        ST.TypeArg type_arg -> do
-            type_arg_str <- getString type_arg
-            self_constraint <- HT.ClassConstraint class_name associated_types
-            (type_resolver, state, _) <- addTypeArgument type_resolver state type_arg
-            (type_resolver, state) <- addTypeArgumentConstraint type_resolver state type_arg self_constraint
-            (type_resolver, state, hir_type) <- processTypeSignature type_resolver state i.type_signature
-            (state, type_resolver, hir_type)
-        _ -> do
-            (type_resolver, state, hir_type) <- processTypeSignature type_resolver state i.type_signature
-            (state, type_resolver, hir_type)
-    (state, type_resolver) <- processClassConstraints state type_resolver i.constraints
-    hir_type <- updateTypeConstraints type_resolver hir_type
-    instance_id <- HC.InstanceId instance_id
-    kind <- HF.InstanceMember instance_id
-    qn_creator <- \n -> HP.FullPathWithInstanceId module_resolver.module_name n instance_id
-    (state, members) <- processFunctionsAndSignatures state hir_program module_resolver createEmptyFunctionScopeResolver type_resolver
-                            kind i.member_functions i.member_function_type_signatures qn_creator
-    (state, hir_program, instance_members) <- members |> List.iter |> Iterator.fold (\(state, hir_program, instance_members), member -> case member.kind of
-            HF.InstanceMember _ -> do
-                (hir_program, other_item) <- HP.addItem hir_program member.name (HP.Function member)
-                state <- handleItemConflict state other_item class_location
-                instance_members <- push instance_members member.name
-                (state, hir_program, instance_members)
-            _ -> do
-                (hir_program, other_item) <- HP.addItem hir_program member.name (HP.Function member)
-                state <- handleItemConflict state other_item class_location
-                (state, hir_program, instance_members)
-        ) (state, hir_program, [])
-    hir_instance <- HC.Instance class_location instance_id class_name hir_type associated_types instance_members
-    hir_program <- HP.addInstance hir_program hir_instance
-    (state, hir_program)
+   (Ident _ class_location) <- i.class_name
+   (state, class_name) <- case resolveClass module_resolver i.class_name of
+      Ok class_name -> (state, class_name)
+      Err err -> (addError state err, HP.FullPath (SS.create "") (SS.create ""))
+   type_resolver <- createTypeResolverState module_resolver
+   ((type_resolver, state), associated_types) <- List.mapS (type_resolver, state) i.associated_types (\(type_resolver, state), ty -> do
+      (type_resolver, state, ty) <- processTypeSignature type_resolver state ty
+      ((type_resolver, state), ty))
+   ST.TypeSignature type _ <- i.type_signature
+   (state, type_resolver, hir_type) <- case type of
+      ST.TypeArg type_arg -> do
+         type_arg_str <- getString type_arg
+         self_constraint <- HT.ClassConstraint class_name associated_types
+         (type_resolver, state, _) <- addTypeArgument type_resolver state type_arg
+         (type_resolver, state) <- addTypeArgumentConstraint type_resolver state type_arg self_constraint
+         (type_resolver, state, hir_type) <- processTypeSignature type_resolver state i.type_signature
+         (state, type_resolver, hir_type)
+      _ -> do
+         (type_resolver, state, hir_type) <- processTypeSignature type_resolver state i.type_signature
+         (state, type_resolver, hir_type)
+   (state, type_resolver) <- processClassConstraints state type_resolver i.constraints
+   hir_type <- updateTypeConstraints type_resolver hir_type
+   instance_id <- HC.InstanceId instance_id
+   kind <- HF.InstanceMember instance_id
+   qn_creator <- \n -> HP.FullPathWithInstanceId module_resolver.module_name n instance_id
+   (state, members) <- processFunctionsAndSignatures state hir_program module_resolver createEmptyFunctionScopeResolver type_resolver kind i.member_functions i.member_function_type_signatures qn_creator
+   (state, hir_program, instance_members) <- members |> List.iter |> Iterator.fold (\(state, hir_program, instance_members), member -> case member.kind of
+      HF.InstanceMember _ -> do
+         (hir_program, other_item) <- HP.addItem hir_program member.name (HP.Function member)
+         state <- handleItemConflict state other_item class_location
+         instance_members <- push instance_members member.name
+         (state, hir_program, instance_members)
+      _ -> do
+         (hir_program, other_item) <- HP.addItem hir_program member.name (HP.Function member)
+         state <- handleItemConflict state other_item class_location
+         (state, hir_program, instance_members)) (state, hir_program, [])
+   hir_instance <- HC.Instance class_location instance_id class_name hir_type associated_types instance_members
+   hir_program <- HP.addInstance hir_program hir_instance
+   (state, hir_program)
 
 processClassesAndInstances :: ResolverState -> HP.Program () -> ModuleResolver -> SM.Module -> (ResolverState, HP.Program ())
 processClassesAndInstances state hir_program module_resolver mod = do
-        id <- getSize hir_program.instances
-        init <- (state, hir_program, id)
-        (state, hir_program, _) <- List.fold init mod.items (processClassOrInstance module_resolver)
-        (state, hir_program)
-    where
-        processClassOrInstance :: ModuleResolver -> (ResolverState, HP.Program (), Int) -> SM.Item -> (ResolverState, HP.Program (), Int)
-        processClassOrInstance module_resolver (state, hir_program, next_instance_id) item = do
-            (state, hir_program, next_instance_id) <- case item of
-                    SM.Class c -> do
-                        (state, hir_program) <- processClass state hir_program module_resolver c
-                        (state, hir_program, next_instance_id)
-                    SM.Instance i -> do
-                        (state, hir_program) <- processInstance state hir_program module_resolver i next_instance_id
-                        (state, hir_program, next_instance_id + 1)
-                    _ -> (state, hir_program, next_instance_id)
-            (state, hir_program, next_instance_id)
+   id <- getSize hir_program.instances
+   init <- (state, hir_program, id)
+   (state, hir_program, _) <- List.fold init mod.items (processClassOrInstance module_resolver)
+   (state, hir_program)
+   where
+      processClassOrInstance :: ModuleResolver -> (ResolverState, HP.Program (), Int) -> SM.Item -> (ResolverState, HP.Program (), Int)
+      processClassOrInstance module_resolver (state, hir_program, next_instance_id) item = do
+         (state, hir_program, next_instance_id) <- case item of
+            SM.Class c -> do
+               (state, hir_program) <- processClass state hir_program module_resolver c
+               (state, hir_program, next_instance_id)
+            SM.Instance i -> do
+               (state, hir_program) <- processInstance state hir_program module_resolver i next_instance_id
+               (state, hir_program, next_instance_id + 1)
+            _ -> (state, hir_program, next_instance_id)
+         (state, hir_program, next_instance_id)

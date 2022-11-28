@@ -1,63 +1,66 @@
 module Siko.Parser.Module where
 
+import Siko.Constants
 import Siko.Parser
 import Siko.Parser.Class
-import Siko.Parser.Effect
-import Siko.Parser.Function
 import Siko.Parser.Data
-import Siko.Syntax.Ident
+import Siko.Parser.Effect
+import Siko.Parser.Error
+import Siko.Parser.Function
+import Siko.Parser.Import
 import Siko.Parser.Token
 import Siko.Parser.Token.Kind as Kind
-import Siko.Syntax.Module
-import Siko.Parser.Import
-import Siko.Parser.Error
-import Siko.Constants
+import Siko.Syntax.Ident
 import Siko.Syntax.Import
+import Siko.Syntax.Module as M
 
 parseModule :: ParserState -> Result ParserState (ParserState, ParserError)
 parseModule state = do
-    state <- try expect state Kind.KeywordModule
-    (state, name) <- try parseQualifiedTypeName state "module name"
-    (state, export) <- try parseExport state
-    mod <- Module {
-                name = name,
-                items = [],
-                export = export
-            }
-    state <- try expect state Kind.KeywordWhere
-    (state, mod) <- loop (state, mod) <- (state, mod) do
-        ti <- peek state
-        (state, item) <- case getKind ti.token of
-            Kind.EndOfBlock -> break (state, mod)
-            Kind.KeywordClass -> case parseClass state of
-                                    Ok (state, c) -> (state, Class c)
-                                    Err (state, err) -> return Err (state, err)
-            Kind.KeywordEffect -> case parseEffect state of
-                                    Ok (state, eff) -> (state, Effect eff)
-                                    Err (state, err) -> return Err (state, err)
-            Kind.KeywordData -> case parseData state of
-                                    Ok (state, d) -> case d of
-                                        Left adt -> (state, Adt adt)
-                                        Right record -> (state, Record record)
-                                    Err (state, err) -> return Err (state, err)
-            Kind.KeywordInstance -> case parseInstance state of
-                                    Ok (state, i) -> (state, Instance i)
-                                    Err (state, err) -> return Err (state, err)
-            Kind.KeywordImport -> case parseImport state of
-                                    Ok (state, i) -> (state, Import i)
-                                    Err (state, err) -> return Err (state, err)
-            _ -> case parseFunction state of
-                    Ok (state, f) -> case f of
-                            Left function -> (state, Function function)
-                            Right function_signature -> (state, FunctionSignature function_signature)
-                    Err (state, err) -> return Err (state, err)
-        mod <- mod { items = push mod.items item }
-        (state, mod)
-    state <- try expect state Kind.EndOfBlock
-    state <- try expect state Kind.EndOfModule
-    mod <- List.fold mod getImplicitModules (\mod, implicit -> do
-        item <- Import (Implicit implicit)
-        mod <- mod { items = push mod.items item }
-        mod)
-    state <- addModule state mod
-    Ok state
+   state <- try expect state Kind.KeywordModule
+   (state, name) <- try parseQualifiedTypeName state "module name"
+   (state, export) <- try parseExport state
+   mod <- M.Module { name = name, items = [], export = export }
+   state <- try expect state Kind.KeywordWhere
+   (state, mod) <- loop (state, mod) <- (state, mod) do
+      ti <- peek state
+      (state, item) <- case getKind ti.token of
+         Kind.EndOfBlock -> break (state, mod)
+         Kind.KeywordClass -> case parseClass state of
+            Ok (state, c) -> (state, M.Class c)
+            Err (state, err) -> return Err (state, err)
+         Kind.KeywordEffect -> case parseEffect state of
+            Ok (state, eff) -> (state, M.Effect eff)
+            Err (state, err) -> return Err (state, err)
+         Kind.KeywordData -> case parseData state of
+            Ok (state, d) -> case d of
+               Left adt -> (state, M.Adt adt)
+               Right record -> (state, M.Record record)
+            Err (state, err) -> return Err (state, err)
+         Kind.KeywordInstance -> case parseInstance state of
+            Ok (state, i) -> (state, M.Instance i)
+            Err (state, err) -> return Err (state, err)
+         Kind.KeywordImport -> case parseImport state of
+            Ok (state, i) -> (state, M.Import i)
+            Err (state, err) -> return Err (state, err)
+         Kind.Comment -> do
+            case ti.token of
+               Comment comment -> do
+                  state <- try expect state Kind.Comment
+                  state <- try expect state Kind.EndOfItem
+                  (state, M.Comment comment)
+               _ -> unreachable
+         _ -> case parseFunction state of
+            Ok (state, f) -> case f of
+               Left function -> (state, M.Function function)
+               Right function_signature -> (state, M.FunctionSignature function_signature)
+            Err (state, err) -> return Err (state, err)
+      mod <- mod { items = push mod.items item }
+      (state, mod)
+   state <- try expect state Kind.EndOfBlock
+   state <- try expect state Kind.EndOfModule
+   mod <- List.fold mod getImplicitModules (\mod, implicit -> do
+      item <- M.Import (Implicit implicit)
+      mod <- mod { items = push mod.items item }
+      mod)
+   state <- addModule state mod
+   Ok state

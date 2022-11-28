@@ -1,34 +1,34 @@
 module Siko.Resolver.Effect where
 
-import Siko.Syntax.Ident
-import Siko.Syntax.Module as SM
-import Siko.Syntax.Effect as SE
-import Siko.Syntax.TypeSignature as ST
-import Siko.HIR.Type as HT
-import Siko.HIR.Function as HF
 import Siko.HIR.Effect as HE
 import Siko.HIR.FullyQualifiedName as FQ
+import Siko.HIR.Function as HF
+import Siko.HIR.Type as HT
 import Siko.Resolver
-import Siko.Resolver.Type
+import Siko.Resolver.Error
 import Siko.Resolver.Function
 import Siko.Resolver.ModuleResolver
-import Siko.Resolver.Error
+import Siko.Resolver.Type
+import Siko.Syntax.Effect as SE
+import Siko.Syntax.Ident
+import Siko.Syntax.Module as SM
+import Siko.Syntax.TypeSignature as ST
 
-processEffect a:: (ResolverState a) => a -> ModuleResolver -> SE.Effect -> (a, HE.Effect, [UnresolvedFunctionInfo])
+processEffect a :: (ResolverState a) => a -> ModuleResolver -> SE.Effect -> (a, HE.Effect, [UnresolvedFunctionInfo])
 processEffect state module_resolver eff = do
-    module_name <- module_resolver.module_name
-    Ident name location <- eff.name
-    qn <- FQ.FullPath module_name name
-    type_resolver <- createTypeResolverState module_resolver
-    state <- checkTypeArguments state eff.arguments
-    (state, type_resolver) <- processClassConstraints state type_resolver eff.constraints
-    (type_resolver, arguments) <- List.mapS type_resolver eff.arguments resolveTypeArg
-    eff_type <- HT.Named qn arguments
-    kind <- HF.EffectMember qn
-    unresolved_functions <- collectUnresolvedFunctions eff.members
-    (effect_members, unresolved_function_infos) <- List.mapS [] unresolved_functions (\effect_members, f -> do
-        Ident name _ <- f.name
-        qn <- FQ.FullPath module_resolver.module_name name
-        (List.push effect_members qn, UnresolvedFunctionInfo f qn kind createEmptyFunctionScopeResolver type_resolver (getVarGen state)))
-    hir_effect <- HE.Effect qn location eff_type effect_members
-    (state, hir_effect, unresolved_function_infos)
+   module_name <- module_resolver.module_name
+   Ident name location <- eff.name
+   qn <- FQ.FullPath module_name name
+   type_resolver <- createTypeResolverState module_resolver
+   state <- checkTypeArguments state eff.arguments
+   (state, type_resolver) <- processClassConstraints state type_resolver eff.constraints
+   (type_resolver, arguments) <- List.mapS type_resolver eff.arguments resolveTypeArg
+   eff_type <- HT.Named qn arguments
+   kind <- HF.EffectMember qn
+   unresolved_functions <- collectUnresolvedFunctions eff.members
+   (effect_members, unresolved_function_infos) <- List.mapS [] unresolved_functions (\effect_members, f -> do
+      Ident name _ <- f.name
+      qn <- FQ.FullPath module_resolver.module_name name
+      (List.push effect_members qn, UnresolvedFunctionInfo f qn kind createEmptyFunctionScopeResolver type_resolver (getVarGen state)))
+   hir_effect <- HE.Effect qn location eff_type effect_members
+   (state, hir_effect, unresolved_function_infos)

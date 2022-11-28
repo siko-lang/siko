@@ -1,41 +1,41 @@
 module Siko.MIR.Backend.Simplification.DoMerger where
 
-import Siko.MIR.Program as P
+import Map
+import Siko.MIR.Backend.Traversal
 import Siko.MIR.Expr as E
 import Siko.MIR.Function as F
-import Siko.MIR.Backend.Traversal
-import Map
+import Siko.MIR.Program as P
 
 data Context = Context
 
 processExpr :: Context -> E.Expr -> (Context, E.Expr)
 processExpr context expr = do
-    E.Expr s_expr type id <- expr
-    case s_expr of
-        E.Do items -> do
-            (context, items) <- List.fold (context, []) items (\(context, items), item -> do
-                E.Expr s_expr _ _ <- item
-                case s_expr of
-                    E.Do sub_items -> do
-                        (context, items + sub_items)
-                    _ -> (context, push items item))
-            (context, items) <- List.mapS context items processExpr
-            (context, E.Expr (E.Do items) type id)
-        _ -> (context, expr)
+   E.Expr s_expr type id <- expr
+   case s_expr of
+      E.Do items -> do
+         (context, items) <- List.fold (context, []) items (\(context, items), item -> do
+            E.Expr s_expr _ _ <- item
+            case s_expr of
+               E.Do sub_items -> do
+                  (context, items + sub_items)
+               _ -> (context, push items item))
+         (context, items) <- List.mapS context items processExpr
+         (context, E.Expr (E.Do items) type id)
+      _ -> (context, expr)
 
 processFunction :: Context -> F.Function -> (Context, F.Function)
 processFunction context function = case function.kind of
-    F.Normal info -> do
-        (context, body) <- traverse context info.body (Some processExpr) None None
-        info <- info { body = body }
-        new_kind <- F.Normal info
-        (context, function { kind = new_kind})
-    _ -> (context, function)
+   F.Normal info -> do
+      (context, body) <- traverse context info.body (Some processExpr) None None
+      info <- info { body = body }
+      new_kind <- F.Normal info
+      (context, function { kind = new_kind })
+   _ -> (context, function)
 
 processProgram :: P.Program -> P.Program
 processProgram program = do
-    context <- Context
-    (context, functions) <- Map.mapS context program.functions (\context, (id, function) -> do
-        (context, function) <- processFunction context function
-        (context, id, function))
-    program { functions = functions }
+   context <- Context
+   (context, functions) <- Map.mapS context program.functions (\context, (id, function) -> do
+      (context, function) <- processFunction context function
+      (context, id, function))
+   program { functions = functions }

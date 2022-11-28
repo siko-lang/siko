@@ -1,8 +1,8 @@
 module List where
 
-import Map
 import Json
 import Json.Serialize
+import Map
 
 data List a = extern
 
@@ -27,12 +27,13 @@ instance (PartialEq a) => PartialEq [a] where
          iter_a :: ListIter a <- List.iter a
          iter_b :: ListIter a <- List.iter b
          loop zipper <- Iterator.zip iter_a iter_b do
-            zipper :: IteratorZip (ListIter a) (ListIter a) <- zipper // FIXME: investigate why this is needed
+            // FIXME: investigate why this is needed
+            zipper :: IteratorZip (ListIter a) (ListIter a) <- zipper
             (zipper, item) <- Iterator.next zipper
             case item of
                Some (item_a, item_b) -> if item_a != item_b
-               then break False
-               else zipper
+                  then break False
+                  else zipper
                None -> break True
 
 instance (Eq a) => Eq [a]
@@ -48,7 +49,8 @@ instance (PartialOrd a) => PartialOrd [a] where
          iter_a :: ListIter a <- List.iter a
          iter_b :: ListIter a <- List.iter b
          loop zipper <- Iterator.zip iter_a iter_b do
-            zipper :: IteratorZip (ListIter a) (ListIter a) <- zipper // FIXME: investigate why this is needed
+            // FIXME: investigate why this is needed
+            zipper :: IteratorZip (ListIter a) (ListIter a) <- zipper
             (zipper, item) <- Iterator.next zipper
             case item of
                Some (item_a, item_b) -> case partialCmp item_a item_b of
@@ -67,7 +69,8 @@ instance (Ord a) => Ord [a] where
          iter_a :: ListIter a <- List.iter a
          iter_b :: ListIter a <- List.iter b
          loop zipper <- Iterator.zip iter_a iter_b do
-            zipper :: IteratorZip (ListIter a) (ListIter a) <- zipper // FIXME: investigate why this is needed
+            // FIXME: investigate why this is needed
+            zipper :: IteratorZip (ListIter a) (ListIter a) <- zipper
             (zipper, item) <- Iterator.next zipper
             case item of
                Some (item_a, item_b) -> case cmp item_a item_b of
@@ -226,16 +229,16 @@ reverse list = extern
 
 startsWith a :: (PartialEq a) => [a] -> [a] -> Bool
 startsWith self start = loop index <- 0 do
-   if index >= List.getLength start
-   then break True
-   else if index >= List.getLength self
-      then break False
-      else do
-         current_self <- atIndex self index
-         current_start <- atIndex start index
-         if current_self == current_start
-         then index + 1
-         else break False
+      if index >= List.getLength start
+      then break True
+      else if index >= List.getLength self
+         then break False
+         else do
+            current_self <- atIndex self index
+            current_start <- atIndex start index
+            if current_self == current_start
+            then index + 1
+            else break False
 
 @Inline
 zip a b c :: [a] -> [b] -> (a -> b -> c) -> [c]

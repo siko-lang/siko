@@ -1,92 +1,91 @@
 module Siko.HIR.Backend.CaseTransformer where
 
-import Siko.Syntax.Ident
-import Siko.Syntax.Location
-import Siko.HIR.FullyQualifiedName as FQ
-import Siko.HIR.Pattern as Pt
-import Siko.HIR.Expr as E
-import Siko.HIR.Type as T
-import Siko.HIR.Pattern as P
-import Siko.HIR.TypeFormatter as TF
-import Siko.HIR.Data as D
-import Siko.HIR.Function as F
-import Siko.HIR.Backend.Traversal
-import Siko.HIR.Backend.StateProvider
-import Siko.HIR.ExprIdGenerator
-import Siko.HIR.PatternIdGenerator
+import Map
 import Siko.HIR.Backend.CaseChecker as CC
+import Siko.HIR.Backend.StateProvider
+import Siko.HIR.Backend.Traversal
+import Siko.HIR.Data as D
+import Siko.HIR.Expr as E
+import Siko.HIR.ExprIdGenerator
+import Siko.HIR.FullyQualifiedName as FQ
+import Siko.HIR.Function as F
+import Siko.HIR.Pattern as Pt
+import Siko.HIR.Pattern as P
+import Siko.HIR.PatternIdGenerator
+import Siko.HIR.Type as T
+import Siko.HIR.TypeFormatter as TF
 import Siko.HIR.TypeVarGenerator as TVG
 import Siko.Query.Lookup as QL
-import Map
+import Siko.Syntax.Ident
+import Siko.Syntax.Location
 
 data Context a = { state :: a,
                    expr_id_gen :: ExprIdGenerator,
-                   pattern_id_gen :: PatternIdGenerator, }
+                   pattern_id_gen :: PatternIdGenerator
+                 }
 
 data ValuePathAccessor = { normal :: E.ExprId -> E.Expr T.Type,
-                           internal :: E.ExprId -> E.Expr T.Type }
+                           internal :: E.ExprId -> E.Expr T.Type
+                         }
 
 getExpr a :: Context a -> (E.ExprId -> E.Expr T.Type) -> (Context a, E.Expr T.Type)
 getExpr context gen = do
-    (context, id) <- getNextExprId context
-    expr <- gen id
-    (context, expr)
+   (context, id) <- getNextExprId context
+   expr <- gen id
+   (context, expr)
 
 getNextExprId a :: Context a -> (Context a, E.ExprId)
 getNextExprId context = do
-    (expr_id_gen, id) <- getNewExprId context.expr_id_gen
-    (context { expr_id_gen = expr_id_gen }, id)
+   (expr_id_gen, id) <- getNewExprId context.expr_id_gen
+   (context { expr_id_gen = expr_id_gen }, id)
 
 getNextPatternId a :: Context a -> (Context a, P.PatternId)
 getNextPatternId context = do
-    (pattern_id_gen, id) <- getNewPatternId context.pattern_id_gen
-    (context { pattern_id_gen = pattern_id_gen }, id)
+   (pattern_id_gen, id) <- getNewPatternId context.pattern_id_gen
+   (context { pattern_id_gen = pattern_id_gen }, id)
 
 processBindVars a :: (StateProvider a) => Context a -> CC.AdditionalInfo -> Map CC.ValuePath ValuePathAccessor -> T.Type -> Location -> (Context a, [E.Expr T.Type])
 processBindVars context additional_info path_info_map unit_type location = do
-    (context, var_decls) <- List.fold (context, []) additional_info.binds (\(context, var_decls), CC.CaseBind path bind_ref -> do
-        ref_expr <- case get path_info_map path of
-            Some parent_expr -> do
-                parent_expr.normal
-            None -> panic "Path {} not found in path_info_map" % path
-        (context, ref_expr) <- getExpr context ref_expr
-        E.Expr _ _ ref_type _ <- ref_expr
-        (context, pat_id) <- getNextPatternId context
-        bind_pattern <- P.Pattern (P.Binding bind_ref) pat_id ref_type location
-        var_decl <- E.Bind bind_pattern ref_expr
-        (context, var_decl) <- getExpr context (\id -> E.Expr var_decl id unit_type location)
-        var_decls <- push var_decls var_decl
-        (context, var_decls))
-    (context, var_decls)
+   (context, var_decls) <- List.fold (context, []) additional_info.binds (\(context, var_decls), CC.CaseBind path bind_ref -> do
+      ref_expr <- case get path_info_map path of
+         Some parent_expr -> do
+            parent_expr.normal
+         None -> panic "Path {} not found in path_info_map" % path
+      (context, ref_expr) <- getExpr context ref_expr
+      E.Expr _ _ ref_type _ <- ref_expr
+      (context, pat_id) <- getNextPatternId context
+      bind_pattern <- P.Pattern (P.Binding bind_ref) pat_id ref_type location
+      var_decl <- E.Bind bind_pattern ref_expr
+      (context, var_decl) <- getExpr context (\id -> E.Expr var_decl id unit_type location)
+      var_decls <- push var_decls var_decl
+      (context, var_decls))
+   (context, var_decls)
 
-processCaseEnds a :: (StateProvider a) => Context a -> [CC.MatchInfo] ->
-                     [E.Expr T.Type] -> [Option (E.Expr T.Type)] ->
-                     Map CC.ValuePath ValuePathAccessor -> T.Type -> Location -> (Context a, E.Expr T.Type)
+processCaseEnds a :: (StateProvider a) => Context a -> [CC.MatchInfo] -> [E.Expr T.Type] -> [Option (E.Expr T.Type)] -> Map CC.ValuePath ValuePathAccessor -> T.Type -> Location -> (Context a, E.Expr T.Type)
 processCaseEnds context match_infos case_bodies guards path_info_map unit_type location = do
-    if getLength match_infos == 1
-        then do
-            CC.MatchInfo index additional_info <- atIndex match_infos 0
-            case_body <- atIndex case_bodies index
+   if getLength match_infos == 1
+   then do
+      CC.MatchInfo index additional_info <- atIndex match_infos 0
+      case_body <- atIndex case_bodies index
+      (context, var_decls) <- processBindVars context additional_info path_info_map unit_type location
+      E.Expr _ _ case_type _ <- case_body
+      (context, result) <- getExpr context (\id -> E.Expr (E.Do (push var_decls case_body)) id case_type location)
+      (context, result)
+   else do
+      case pop match_infos of
+         Some (match_info, match_infos) -> do
+            CC.MatchInfo index additional_info <- match_info
+            cond_expr <- case atIndex guards index of
+               Some g -> g
+               None -> panic "guard expr not found"
             (context, var_decls) <- processBindVars context additional_info path_info_map unit_type location
-            E.Expr _ _ case_type _ <- case_body
-            (context, result) <- getExpr context (\id -> E.Expr (E.Do (push var_decls case_body)) id case_type location)
+            case_body <- atIndex case_bodies index
+            (context, else_expr) <- processCaseEnds context match_infos case_bodies guards path_info_map unit_type location
+            E.Expr _ _ then_type _ <- case_body
+            (context, if_expr) <- getExpr context (\id -> E.Expr (E.If cond_expr case_body else_expr) id then_type location)
+            (context, result) <- getExpr context (\id -> E.Expr (E.Do (push var_decls if_expr)) id then_type location)
             (context, result)
-        else do
-            case pop match_infos of
-                Some (match_info, match_infos) -> do
-                    CC.MatchInfo index additional_info <- match_info
-                    cond_expr <- case atIndex guards index of
-                        Some g -> g
-                        None -> panic "guard expr not found"
-                    (context, var_decls) <- processBindVars context additional_info path_info_map unit_type location
-                    case_body <- atIndex case_bodies index
-                    (context, else_expr) <- processCaseEnds context match_infos case_bodies guards path_info_map unit_type location
-                    E.Expr _ _ then_type _ <- case_body
-                    (context, if_expr) <- getExpr context (\id -> E.Expr (E.If cond_expr case_body else_expr) id then_type location)
-                    (context, result) <- getExpr context (\id -> E.Expr (E.Do (push var_decls if_expr)) id then_type location)
-                    (context, result)
-                None -> panic "Matchinfos ran out!"
-
+         None -> panic "Matchinfos ran out!"
 // processChoiceTree a :: (StateProvider a) => Context a -> CC.Choice -> Map CC.ValuePath ValuePathAccessor -> [E.Expr T.Type] -> [Option (E.Expr T.Type)] -> (Context a, E.Expr T.Type)
 // processChoiceTree context choice path_info_map case_bodies guards = do
 //     (context, unit_type) <- processType context (HT.Tuple [])
@@ -179,40 +178,40 @@ processCaseEnds context match_infos case_bodies guards path_info_map unit_type l
 
 processExpr a :: (StateProvider a) => Context a -> E.Expr T.Type -> (Context a, E.Expr T.Type)
 processExpr context expr = do
-    E.Expr s_expr id expr_type location <- expr
-    case s_expr of
-        E.CaseOf body cases bind_groups -> do
-            case CC.checkCase context.state id body cases of
-                Ok (state, choice_tree) -> do
-                    context <- context { state = state }
-                    p <- Option.unwrap (CC.getValuePath choice_tree)
-                    body_expr_accessor <- \_ -> body
-                    case_bodies <- List.map cases (\E.Case _ body -> body)
-                    guards <- List.map cases (\E.Case p _ -> do
-                        P.Pattern p _ _ _ <- p
-                        case p of
-                            P.Guarded _ expr -> Some expr
-                            _ -> None)
-                    path_info_map <- Map.put Map.empty p (ValuePathAccessor body_expr_accessor body_expr_accessor)
-                    println "choice_tree {}" % choice_tree
-                    //processChoiceTree context choice_tree path_info_map case_bodies guards
-                    (context, E.Expr (E.CaseOf body cases bind_groups) id expr_type location)
-                Err state -> do
-                    context <- context { state = state }
-                    (context, E.Expr (E.CaseOf body cases bind_groups) id expr_type location)
-        s_expr -> (context, E.Expr s_expr id expr_type location)
+   E.Expr s_expr id expr_type location <- expr
+   case s_expr of
+      E.CaseOf body cases bind_groups -> do
+         case CC.checkCase context.state id body cases of
+            Ok (state, choice_tree) -> do
+               context <- context { state = state }
+               p <- Option.unwrap (CC.getValuePath choice_tree)
+               body_expr_accessor <- \_ -> body
+               case_bodies <- List.map cases (\E.Case _ body -> body)
+               guards <- List.map cases (\E.Case p _ -> do
+                  P.Pattern p _ _ _ <- p
+                  case p of
+                     P.Guarded _ expr -> Some expr
+                     _ -> None)
+               path_info_map <- Map.put Map.empty p (ValuePathAccessor body_expr_accessor body_expr_accessor)
+               println "choice_tree {}" % choice_tree
+               //processChoiceTree context choice_tree path_info_map case_bodies guards
+               (context, E.Expr (E.CaseOf body cases bind_groups) id expr_type location)
+            Err state -> do
+               context <- context { state = state }
+               (context, E.Expr (E.CaseOf body cases bind_groups) id expr_type location)
+      s_expr -> (context, E.Expr s_expr id expr_type location)
 
 processPattern a :: (StateProvider a) => Context a -> P.Pattern T.Type -> (Context a, P.Pattern T.Type)
 processPattern context pattern = (context, pattern)
 
 transformCases a :: (StateProvider a) => a -> F.Function T.Type -> (a, F.Function T.Type)
 transformCases state fn = do
-    (state, expr_id_gen, pattern_id_gen, body) <- case fn.body of
-        Some body -> do
-            context <- Context state fn.expr_id_gen fn.pattern_id_gen
-            traversal_context <- createTraversalContext context processExpr processPattern
-            (context, body) <- traverse traversal_context body
-            (context.state, context.expr_id_gen, context.pattern_id_gen, Some body)
-        None -> (state, fn.expr_id_gen, fn.pattern_id_gen, None)
-    fn <- fn { body = body, expr_id_gen = expr_id_gen, pattern_id_gen = pattern_id_gen }
-    (state, fn)
+   (state, expr_id_gen, pattern_id_gen, body) <- case fn.body of
+      Some body -> do
+         context <- Context state fn.expr_id_gen fn.pattern_id_gen
+         traversal_context <- createTraversalContext context processExpr processPattern
+         (context, body) <- traverse traversal_context body
+         (context.state, context.expr_id_gen, context.pattern_id_gen, Some body)
+      None -> (state, fn.expr_id_gen, fn.pattern_id_gen, None)
+   fn <- fn { body = body, expr_id_gen = expr_id_gen, pattern_id_gen = pattern_id_gen }
+   (state, fn)

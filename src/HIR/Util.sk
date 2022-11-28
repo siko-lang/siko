@@ -1,10 +1,9 @@
 module Siko.HIR.Util where
 
-import Siko.HIR.Type as T
-import Siko.HIR.Program as P
-import Siko.Constants
-
 import Map
+import Siko.Constants
+import Siko.HIR.Program as P
+import Siko.HIR.Type as T
 
 getIntType :: T.Type
 getIntType = T.Named (P.FullPath getIntModuleName getIntTypeName) []
@@ -37,19 +36,19 @@ collectVars :: [T.TypeVar] -> T.Type -> [T.TypeVar]
 collectVars vars type = (T.collectVars type + vars) |> sort |> dedup
 
 collectClassesFromClassConstraints :: [T.Constraint] -> [P.FullyQualifiedName]
-collectClassesFromClassConstraints constraints =
-    List.filterMap constraints getClass
-        where getClass c = case c of
-                T.ClassConstraint n _ -> Some n
-                _ -> None
+collectClassesFromClassConstraints constraints = List.filterMap constraints getClass
+   where
+      getClass c = case c of
+         T.ClassConstraint n _ -> Some n
+         _ -> None
 
 isSimple :: T.Type -> Bool
 isSimple type = case type of
-    T.Var _  _ -> True
-    T.FixedTypeArg _ _ _ -> True
-    T.Named n args -> getLength args == 0
-    T.Function _ _ -> False
-    T.Never _ -> True
-    T.Ref _ _ -> True
-    T.Owner _ -> True
-    T.Tuple _ -> True
+   T.Var _ _ -> True
+   T.FixedTypeArg _ _ _ -> True
+   T.Named n args -> getLength args == 0
+   T.Function _ _ -> False
+   T.Never _ -> True
+   T.Ref _ _ -> True
+   T.Owner _ -> True
+   T.Tuple _ -> True

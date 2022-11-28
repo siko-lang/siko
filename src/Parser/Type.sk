@@ -1,103 +1,103 @@
 module Siko.Parser.Type(parseTypeSignature) where
 
 import Siko.Parser
-import Siko.Syntax.TypeSignature
-import Siko.Syntax.Ident
+import Siko.Parser.Error
 import Siko.Parser.Token as T
 import Siko.Parser.Token.Kind as Kind
-import Siko.Parser.Error
+import Siko.Syntax.Ident
+import Siko.Syntax.TypeSignature
 
 buildTypeSignature :: SimpleTypeSignature -> Int -> ParserState -> (ParserState, TypeSignature)
 buildTypeSignature ty start_index state = do
-    ty <- TypeSignature ty (buildLocation start_index state)
-    (state, ty)
+   ty <- TypeSignature ty (buildLocation start_index state)
+   (state, ty)
 
 parseTypeSignature :: ParserState -> Bool -> Bool -> Result (ParserState, TypeSignature) (ParserState, ParserError)
 parseTypeSignature state parsingVariant allow_wildcard = do
-    start_index <- state.index
-    if parsingVariant
-    then do
-        (state, name) <- try expectTypeIdent state "variant name"
-        (state, items) <- loop (state, items) <- (state, []) do
-                if isValidTypeSignaturePart state
-                then do
-                    (state, item) <- try parseTypeSignaturePart state False False
-                    (state, push items item)
-                else break (state, items)
-        Ok (buildTypeSignature (Named name items) start_index state)
-    else do
-        (state, from) <- try parseTypeSignaturePart state True allow_wildcard
-        loop (state, from) <- (state, from) do
-                ti <- peek state
-                case ti.token of
-                    T.RightArrow -> do
-                        state <- try expect state Kind.RightArrow
-                        (state, to) <- try parseTypeSignature state False allow_wildcard
-                        buildTypeSignature (Function from to) start_index state
-                    _ -> break Ok (state, from)
+   start_index <- state.index
+   if parsingVariant
+   then do
+      (state, name) <- try expectTypeIdent state "variant name"
+      (state, items) <- loop (state, items) <- (state, []) do
+         if isValidTypeSignaturePart state
+         then do
+            (state, item) <- try parseTypeSignaturePart state False False
+            (state, push items item)
+         else break (state, items)
+      Ok (buildTypeSignature (Named name items) start_index state)
+   else do
+      (state, from) <- try parseTypeSignaturePart state True allow_wildcard
+      loop (state, from) <- (state, from) do
+         ti <- peek state
+         case ti.token of
+            T.RightArrow -> do
+               state <- try expect state Kind.RightArrow
+               (state, to) <- try parseTypeSignature state False allow_wildcard
+               buildTypeSignature (Function from to) start_index state
+            _ -> break Ok (state, from)
 
 parseTupleType :: ParserState -> Bool -> Result (ParserState, TypeSignature) (ParserState, ParserError)
 parseTupleType state allow_wildcard = do
-    start_index <- state.index
-    case try parseParens state (\state -> parseTypeSignature state False allow_wildcard) "type signature" of
-        (state, Single ty) -> Ok (state, ty)
-        (state, Multi types) -> Ok (buildTypeSignature (Tuple types) start_index state)
+   start_index <- state.index
+   case try parseParens state (\state -> parseTypeSignature state False allow_wildcard) "type signature" of
+      (state, Single ty) -> Ok (state, ty)
+      (state, Multi types) -> Ok (buildTypeSignature (Tuple types) start_index state)
 
 isValidTypeSignaturePart :: ParserState -> Bool
 isValidTypeSignaturePart state = do
-    ti <- peek state
-    case ti.token of
-        T.LParen
-         | T.LBracket
-         | T.VarIdentifier _
-         | T.TypeIdentifier _
-         | T.Wildcard
-         | T.ExclamationMark
-         | T.Ampersand
-         | T.Tilde -> True
-        _ -> False
+   ti <- peek state
+   case ti.token of
+      T.LParen
+       | T.LBracket
+       | T.VarIdentifier _
+       | T.TypeIdentifier _
+       | T.Wildcard
+       | T.ExclamationMark
+       | T.Ampersand
+       | T.Tilde -> True
+      _ -> False
 
 parseTypeSignaturePart :: ParserState -> Bool -> Bool -> Result (ParserState, TypeSignature) (ParserState, ParserError)
 parseTypeSignaturePart state with_args allow_wildcard = do
-    start_index <- state.index
-    ti <- peek state
-    case ti.token of
-        T.LParen -> parseTupleType state allow_wildcard
-        T.LBracket -> do
-            state <- try expect state Kind.LBracket
-            (state, ty) <- try parseTypeSignature state False allow_wildcard
-            state <- try expect state Kind.RBracket
-            Ok (buildTypeSignature (List ty) start_index state)
-        T.VarIdentifier id -> do
-            (state, ident) <- try expectVarIdent state "type argument"
-            Ok (buildTypeSignature (TypeArg ident) start_index state)
-        T.TypeIdentifier id -> do
-            (state, name) <- try parseQualifiedTypeName state "type name"
-            (state, args) <- if with_args
-                then loop (state, args) <- (state, []) do
-                        if isValidTypeSignaturePart state
-                        then do
-                            (state, arg) <- try parseTypeSignaturePart state False allow_wildcard
-                            args <- push args arg
-                            (state, args)
-                        else break (state, args)
-                else (state, [])
-            Ok (buildTypeSignature (Named name args) start_index state)
-        T.Wildcard -> do
-            state <- try expect state Kind.Wildcard
-            Ok (buildTypeSignature Wildcard start_index state)
-        T.ExclamationMark -> do
-            state <- try expect state Kind.ExclamationMark
-            Ok (buildTypeSignature Never start_index state)
-        T.Ampersand -> do
-            state <- try expect state Kind.Ampersand
-            (state, lifetime) <- try expectVarIdent state "lifetime type"
-            (state, ty) <- try parseTypeSignaturePart state with_args allow_wildcard
-            Ok (buildTypeSignature (Ref lifetime ty) start_index state)
-        T.Tilde -> do
-            state <- try expect state Kind.Tilde
-            (state, ty) <- try parseTypeSignaturePart state with_args allow_wildcard
-            Ok (buildTypeSignature (Owner ty) start_index state)
-        _ -> do
-            err <- unexpectedToken state "type signature"
-            Err (state, err)
+   start_index <- state.index
+   ti <- peek state
+   case ti.token of
+      T.LParen -> parseTupleType state allow_wildcard
+      T.LBracket -> do
+         state <- try expect state Kind.LBracket
+         (state, ty) <- try parseTypeSignature state False allow_wildcard
+         state <- try expect state Kind.RBracket
+         Ok (buildTypeSignature (List ty) start_index state)
+      T.VarIdentifier id -> do
+         (state, ident) <- try expectVarIdent state "type argument"
+         Ok (buildTypeSignature (TypeArg ident) start_index state)
+      T.TypeIdentifier id -> do
+         (state, name) <- try parseQualifiedTypeName state "type name"
+         (state, args) <- if with_args
+         then loop (state, args) <- (state, []) do
+            if isValidTypeSignaturePart state
+            then do
+               (state, arg) <- try parseTypeSignaturePart state False allow_wildcard
+               args <- push args arg
+               (state, args)
+            else break (state, args)
+         else (state, [])
+         Ok (buildTypeSignature (Named name args) start_index state)
+      T.Wildcard -> do
+         state <- try expect state Kind.Wildcard
+         Ok (buildTypeSignature Wildcard start_index state)
+      T.ExclamationMark -> do
+         state <- try expect state Kind.ExclamationMark
+         Ok (buildTypeSignature Never start_index state)
+      T.Ampersand -> do
+         state <- try expect state Kind.Ampersand
+         (state, lifetime) <- try expectVarIdent state "lifetime type"
+         (state, ty) <- try parseTypeSignaturePart state with_args allow_wildcard
+         Ok (buildTypeSignature (Ref lifetime ty) start_index state)
+      T.Tilde -> do
+         state <- try expect state Kind.Tilde
+         (state, ty) <- try parseTypeSignaturePart state with_args allow_wildcard
+         Ok (buildTypeSignature (Owner ty) start_index state)
+      _ -> do
+         err <- unexpectedToken state "type signature"
+         Err (state, err)

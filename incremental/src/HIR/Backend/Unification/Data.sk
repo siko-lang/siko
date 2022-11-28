@@ -1,73 +1,73 @@
 module Siko.HIR.Backend.Unification.Data where
 
-import Siko.HIR.Type as T
-import Siko.HIR.Data as D
 import Siko.HIR.Backend.Unification as U
-import Siko.HIR.Backend.Unification.Util as UUtil
 import Siko.HIR.Backend.Unification.Substitution as S
+import Siko.HIR.Backend.Unification.Util as UUtil
+import Siko.HIR.Data as D
+import Siko.HIR.Type as T
 
 instance S.Apply D.Record where
-    apply record sub = do
-        (_, record) <- S.transform () record (\_, t -> ((), S.apply t sub))
-        record
+   apply record sub = do
+      (_, record) <- S.transform () record (\_, t -> ((), S.apply t sub))
+      record
 
 instance S.Transform D.RecordField where
-    transform state (D.RecordField name type) f = do
-        (state, type) <- S.transform state type f
-        (state, D.RecordField name type)
+   transform state (D.RecordField name type) f = do
+      (state, type) <- S.transform state type f
+      (state, D.RecordField name type)
 
 instance S.Transform D.Variant where
-    transform state variant f = do
-        (state, items) <- S.transform state variant.items f
-        (state, variant { items = items })
+   transform state variant f = do
+      (state, items) <- S.transform state variant.items f
+      (state, variant { items = items })
 
 instance S.Transform D.Record where
-    transform state record f = do
-        (state, type_args) <- S.transform state record.type_args f
-        (state, fields) <- S.transform state record.fields f
-        (state, type) <- S.transform state record.type f
-        (state, record_ctor) <- S.transform state record.record_ctor f
-        derived_classes <- Std.Intrinsics.clone record.derived_classes
-        name <- Std.Intrinsics.clone record.name
-        (state, D.Record name record.location type_args fields record.external record_ctor derived_classes type record.implicit_member)
+   transform state record f = do
+      (state, type_args) <- S.transform state record.type_args f
+      (state, fields) <- S.transform state record.fields f
+      (state, type) <- S.transform state record.type f
+      (state, record_ctor) <- S.transform state record.record_ctor f
+      derived_classes <- Std.Intrinsics.clone record.derived_classes
+      name <- Std.Intrinsics.clone record.name
+      (state, D.Record name record.location type_args fields record.external record_ctor derived_classes type record.implicit_member)
 
 instance S.Apply D.AlgebraicDataType where
-    apply adt sub = do
-        (_, adt) <- S.transform () adt (\_, t -> ((), S.apply t sub))
-        adt
+   apply adt sub = do
+      (_, adt) <- S.transform () adt (\_, t -> ((), S.apply t sub))
+      adt
 
 instance S.Transform D.AlgebraicDataType where
-    transform state adt f = do
-        (state, type_args) <- S.transform state adt.type_args f
-        (state, variants) <- S.transform state adt.variants f
-        (state, type) <- S.transform state adt.type f
-        (state, variant_ctors) <- S.transform state adt.variant_ctors f
-        derived_classes <- Std.Intrinsics.clone adt.derived_classes
-        name <- Std.Intrinsics.clone adt.name
-        (state, D.AlgebraicDataType name adt.location type_args variants variant_ctors derived_classes type)
+   transform state adt f = do
+      (state, type_args) <- S.transform state adt.type_args f
+      (state, variants) <- S.transform state adt.variants f
+      (state, type) <- S.transform state adt.type f
+      (state, variant_ctors) <- S.transform state adt.variant_ctors f
+      derived_classes <- Std.Intrinsics.clone adt.derived_classes
+      name <- Std.Intrinsics.clone adt.name
+      (state, D.AlgebraicDataType name adt.location type_args variants variant_ctors derived_classes type)
 
 instance S.Collectable D.Record where
-    collect collector record = S.collect collector record.type
+   collect collector record = S.collect collector record.type
 
 instance S.Collectable D.AlgebraicDataType where
-    collect collector adt = S.collect collector adt.type
+   collect collector adt = S.collect collector adt.type
 
 instantiateAdt a :: (U.Context a) => a -> D.AlgebraicDataType -> T.Type -> Result (a, D.AlgebraicDataType) a
 instantiateAdt context adt adt_type = do
-    sub <- S.createSubstitution
-    (adt, context) <- UUtil.instantiateGeneric adt context
-    (context, sub) <- case U.unify context sub adt.type adt_type of
-        Ok (context, sub) -> (context, sub)
-        Err (context, sub) -> return Err context
-    adt <- S.apply adt sub
-    Ok (context, adt)
+   sub <- S.createSubstitution
+   (adt, context) <- UUtil.instantiateGeneric adt context
+   (context, sub) <- case U.unify context sub adt.type adt_type of
+      Ok (context, sub) -> (context, sub)
+      Err (context, sub) -> return Err context
+   adt <- S.apply adt sub
+   Ok (context, adt)
 
 instantiateRecord a :: (U.Context a) => a -> D.Record -> T.Type -> Result (a, D.Record) a
 instantiateRecord context record record_type = do
-    sub <- S.createSubstitution
-    (record, context) <- UUtil.instantiateGeneric record context
-    (context, sub) <- case U.unify context sub record.type record_type of
-        Ok (context, sub) -> (context, sub)
-        Err (context, sub) -> return Err context
-    record <- S.apply record sub
-    Ok (context, record)
+   sub <- S.createSubstitution
+   (record, context) <- UUtil.instantiateGeneric record context
+   (context, sub) <- case U.unify context sub record.type record_type of
+      Ok (context, sub) -> (context, sub)
+      Err (context, sub) -> return Err context
+   record <- S.apply record sub
+   Ok (context, record)
