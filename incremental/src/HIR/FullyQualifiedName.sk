@@ -17,6 +17,8 @@ data FullyQualifiedName = FullPath SS.SharedString SS.SharedString
                         | SubItem FullyQualifiedName SS.SharedString
                         | Effectless FullyQualifiedName (Option Eff.EffectResolutionSet)
                         | Monomorphized FullyQualifiedName T.Type
+                        | ClosureConverted FullyQualifiedName
+                        | ClosureName T.Type
                         deriving (PartialEq, Eq, PartialOrd, Ord)
 
 instance Show FullyQualifiedName where
@@ -32,6 +34,8 @@ instance Show FullyQualifiedName where
          Some s -> "{}=[{}]" % (n, s)
          None -> "{}" % n
       Monomorphized n type -> "{}=[{}]" % (n, TF.toString type)
+      ClosureConverted n -> "{}" % n
+      ClosureName type -> "Closure({})" % TF.toString type
 
 getResolvableName :: FullyQualifiedName -> SS.SharedString
 getResolvableName f = do
@@ -45,6 +49,8 @@ getResolvableName f = do
       SubItem p n -> panic "getResolvableName called for a sub item"
       Effectless n s -> return getResolvableName n
       Monomorphized n type -> return getResolvableName n
+      ClosureConverted n -> return getResolvableName n
+      ClosureName type -> panic "getResolvableName called for closurename"
    SS.create s
 
 getShortName :: FullyQualifiedName -> SS.SharedString
@@ -58,6 +64,8 @@ getShortName f = case f of
    SubItem p n -> n
    Effectless n s -> getShortName n
    Monomorphized n type -> getShortName n
+   ClosureConverted n -> getShortName n
+   ClosureName type -> panic "getShortName called for closurename"
 
 getModuleName :: FullyQualifiedName -> SS.SharedString
 getModuleName f = case f of
@@ -70,3 +78,5 @@ getModuleName f = case f of
    SubItem p n -> getModuleName p
    Effectless n s -> getModuleName n
    Monomorphized n type -> getModuleName n
+   ClosureConverted n -> getModuleName n
+   ClosureName type -> panic "getModuleName called for closurename"

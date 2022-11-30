@@ -1,0 +1,183 @@
+module Siko.HIR.Format where
+
+import Siko.Format
+import Siko.HIR.Expr as E
+import Siko.HIR.FullyQualifiedName as FQ
+import Siko.HIR.Pattern as P
+import Siko.HIR.Type as T
+import Siko.HIR.TypeFormatter as TF
+import Siko.Util.Format as UF
+import Siko.Util.SharedString as SS
+
+instance Format FQ.FullyQualifiedName where
+   format qn = [Chunk "{}" % qn]
+
+instance Format E.Expr a where
+   format (E.Expr expr _ _ location) = format expr
+
+instance Format E.Case a where
+   format c = do
+      pat <- format c.pattern
+      body <- format c.body
+      body <- addImplicitBlock body
+      pat + [Chunk " -> "] + body
+
+instance Format E.ExprRef where
+   format E.ExprRef source _ = [Chunk "#{}" % source]
+
+instance Format E.RecordConstructionItem a where
+   format E.RecordConstructionItem name body = do
+      name <- format name
+      body <- format body
+      name + [Chunk " = "] + body
+
+instance Format E.EffectHandler a where
+   format E.EffectHandler name selection _ = do
+      name <- format name
+      selection <- format selection
+      name + [Chunk " = "] + selection
+
+instance Format E.EffectHandlerSelection a where
+   format selection = case selection of
+      E.Static name -> format name
+      E.Dynamic body -> format body
+      E.Default -> [Chunk "<default>"]
+
+instance Format E.SimpleExpr a where
+   format expr = case expr of
+      E.StaticFunctionCall name args -> do
+         name <- format name
+         args <- formatList args (Chunk " ")
+         name + [Chunk " "] + args
+      E.DynamicFunctionCall fn args -> do
+         fn <- format fn
+         args <- formatList args (Chunk " ")
+         fn + [Chunk " "] + args
+      E.ClassMemberCall name args -> do
+         name <- format name
+         args <- formatList args (Chunk " ")
+         name + [Chunk " "] + args
+      E.EffectMemberCall name args -> do
+         name <- format name
+         args <- formatList args (Chunk " ")
+         name + [Chunk " "] + args
+      E.VariantConstructorCall name args -> do
+         name <- format name
+         args <- formatList args (Chunk " ")
+         name + [Chunk " "] + args
+      E.RecordConstructorCall name args -> do
+         name <- format name
+         args <- formatList args (Chunk " ")
+         name + [Chunk " "] + args
+      E.If cond true false -> do
+         cond <- format cond
+         true <- format true
+         false <- format false
+         total_length <- List.getLength cond + List.getLength true + List.getLength false
+         if List.contains true StartOfBlock || List.contains false StartOfBlock || total_length > 5
+         then [Chunk "if "] + cond + [StartOfItem, Chunk "then "] + (addImplicitBlock true) + [EndOfItem, StartOfItem, Chunk "else "] + (addImplicitBlock false) + [EndOfItem]
+         else [Chunk "if "] + cond + [Chunk " then "] + true + [Chunk " else "] + false
+      E.Tuple args -> do
+         args <- formatList args (Chunk ", ")
+         [Chunk "("] + args + [Chunk ")"]
+      E.List args -> do
+         if List.getLength args > 3
+         then do
+            args <- formatList2 args [Chunk ",", Break]
+            [Chunk "[", PushOffset] + args + [Chunk "]", PopOffset]
+         else do
+            args <- formatList args (Chunk ", ")
+            [Chunk "["] + args + [Chunk "]"]
+      E.IntegerLiteral lit -> [Chunk (show lit)]
+      E.FloatLiteral lit -> [Chunk (show lit)]
+      E.StringLiteral lit -> [Chunk ("\"{}\"" % UF.escapeString (SS.get lit))]
+      E.CharLiteral lit -> [Chunk "{}" % UF.escapeChar lit]
+      E.Do items -> do
+         items <- formatBlock items
+         [Chunk "do"] + items
+      E.Bind pat rhs -> do
+         pat <- format pat
+         rhs <- format rhs
+         pat + [Chunk " <- "] + rhs
+      E.FieldAccess name receiver -> do
+         name <- format name
+         receiver <- format receiver
+         receiver + [Chunk "."] + name
+      E.TupleFieldAccess id receiver -> do
+         receiver <- format receiver
+         receiver + [Chunk ".", Chunk "{}" % id]
+      E.Formatter fmt args -> do
+         args_output <- formatList args (Chunk ", ")
+         [Chunk "\"{}\" % (" % UF.escapeString (SS.get fmt)] + args_output + [Chunk ")"]
+      E.CaseOf body cases _ -> do
+         body <- format body
+         cases <- formatBlock cases
+         [Chunk "case "] + body + [Chunk " of"] + cases
+      E.RecordUpdate receiver items -> do
+         receiver <- format receiver
+         items <- formatList items (Chunk ", ")
+         receiver + [Chunk " { "] + items + [Chunk " }"]
+      E.Return arg -> do
+         arg <- format arg
+         [Chunk "return "] + arg
+      E.Continue arg -> do
+         arg <- format arg
+         [Chunk "continue "] + arg
+      E.Break arg -> do
+         arg <- format arg
+         [Chunk "break "] + arg
+      E.Loop pat init body _ _ -> do
+         pat <- format pat
+         init <- format init
+         body <- format body
+         [Chunk "loop "] + pat + [Chunk " <- "] + init + [Chunk " "] + body
+      E.ArgRef index -> [Chunk "argref({})" % index]
+      E.ValueRef bind_ref -> do
+         bind_ref <- format bind_ref
+         [Chunk "$"] + bind_ref
+      E.With handlers body _ -> do
+         handlers <- formatList handlers (Chunk ", ")
+         body <- format body
+         [Chunk "with { "] + handlers + [Chunk " } "] + body
+
+instance Format P.BindRef where
+   format P.BindRef s id = [Chunk "{}-{}" % (s, id)]
+
+instance Format P.Pattern a where
+   format P.Pattern pat _ _ location = format pat
+
+instance Format P.SimplePattern a where
+   format p = case p of
+      P.Binding bind_ref -> format bind_ref
+      P.Tuple args -> do
+         args_output <- formatList args (Chunk ", ")
+         args_output <- if List.getLength args == 1
+         then args_output + [Chunk ","]
+         else args_output
+         [Chunk "("] + args_output + [Chunk ")"]
+      P.Guarded pat body -> do
+         pat <- format pat
+         body <- format body
+         pat + [Chunk " if "] + body
+      P.Wildcard -> [Chunk "_"]
+      P.IntegerLiteral lit -> [Chunk ("{}" % lit)]
+      P.StringLiteral lit -> [Chunk ("\"{}\"" % UF.escapeString (SS.get lit))]
+      P.CharLiteral lit -> [Chunk ("{}" % UF.escapeChar lit)]
+      P.CharRange start end kind -> case kind of
+         P.Exclusive -> [Chunk "{}..{}" % (UF.escapeChar start, UF.escapeChar end)]
+         P.Inclusive -> [Chunk "{}..={}" % (UF.escapeChar start, UF.escapeChar end)]
+      P.Typed pat type -> do
+         pat <- format pat
+         type <- format type
+         pat + [Chunk " :: "] + type
+      P.Record id fields -> do
+         id <- format id
+         fields <- formatList fields (Chunk ", ")
+         id + [Chunk " {"] + fields + [Chunk "}"]
+      P.Variant id index fields -> do
+         id <- format id
+         fields <- formatList fields (Chunk ", ")
+         id + [Chunk "/{}" % index, Chunk " {"] + fields + [Chunk "}"]
+
+instance Format T.Type where
+   format type = [Chunk (TF.toString type)]

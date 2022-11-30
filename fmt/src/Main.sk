@@ -2,7 +2,7 @@ module Main where
 
 import IO
 import Siko.Parser
-import Siko.Syntax.Format
+import Siko.Format
 import Siko.Syntax.Location
 import Siko.Syntax.Util
 
@@ -44,8 +44,8 @@ main = do
       then ()
       else do
          orig_source <- relocate source_file
-         chunks <- format source_file
-         output <- formatOutput chunks
+         tokens <- format source_file
+         output <- formatToken tokens
          (new_source_file, lexer_errors, parser_errors) <- parse (FileId 0) name output True
          new_source <- relocate new_source_file
          if new_source == orig_source

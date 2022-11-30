@@ -35,7 +35,7 @@ deriveRecordShow record derive_location = do
    fmt <- if List.isEmpty arg_fmts
    then "{}"
    else "{} { " + join arg_fmts ", " + " }"
-   body <- E.Expr (E.Formatter (SS.create fmt) ([record_name_expr] + field_show_exprs)) derive_location
+   body <- E.Expr (E.Formatter (SS.create fmt) ([record_name_expr] + field_show_exprs) True) derive_location
    body <- Some body
    sub_items <- []
    op_fn <- F.Function fn_name fn_args body sub_items [] []
@@ -74,7 +74,7 @@ deriveAdtShow adt derive_location mod_name = do
          fmt <- if List.isEmpty arg_fmts
          then "{}"
          else "{} " + join arg_fmts " "
-         case_body <- E.Expr (E.Formatter (SS.create fmt) ([variant_name_expr] + item_show_exprs)) derive_location
+         case_body <- E.Expr (E.Formatter (SS.create fmt) ([variant_name_expr] + item_show_exprs) True) derive_location
          E.Case case_pattern case_body)
       E.Expr (E.CaseOf arg_ref_expr cases) derive_location
    body <- Some body
