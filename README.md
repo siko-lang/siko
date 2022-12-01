@@ -2,7 +2,7 @@
 
 Status: ![](https://github.com/siko-lang/siko/workflows/Master/badge.svg)
 
-## Website/Playground
+## Website
 
 https://www.siko-lang.org
 
@@ -50,8 +50,7 @@ make test
 
 ## Documentation
 
-The documentation is basically non existent. There are a few unfinished attempts at writing various versions of the documentation
-in the doc folder, check them out for a peek into my brain.
+[Book](https://www.siko-lang.org/book/book/index.html)
 
 ## Language features
 - [X] Functions
@@ -104,7 +103,7 @@ in the doc folder, check them out for a peek into my brain.
 
 ## Tooling progress
 - [ ] LSP Server
-- [ ] Auto formatter
+- [X] Auto formatter
 - [ ] Package manager
 
 
