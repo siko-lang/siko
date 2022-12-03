@@ -2,7 +2,11 @@ module Siko.Resolver.Data where
 
 import Map
 import Siko.HIR.Data as HD
+import Siko.HIR.Expr as HE
+import Siko.HIR.ExprIdGenerator
 import Siko.HIR.FullyQualifiedName
+import Siko.HIR.Function as HF
+import Siko.HIR.PatternIdGenerator
 import Siko.HIR.Type
 import Siko.Resolver
 import Siko.Resolver.Error
@@ -56,7 +60,7 @@ createFunctionFromArgs args result_ty = do
          Function from to
       None -> result_ty
 
-processAdt a :: (ResolverState a) => a -> ModuleResolver -> SD.AlgebraicDataType -> (a, HD.AlgebraicDataType, [(HD.VariantInfo, FullyQualifiedName)])
+processAdt a :: (ResolverState a) => a -> ModuleResolver -> SD.AlgebraicDataType -> (a, HD.AlgebraicDataType, [(HD.VariantInfo, FullyQualifiedName)], [HF.Function ()])
 processAdt state module_resolver (SD.AlgebraicDataType name type_arguments variants derived_classes) = do
    type_resolver <- createTypeResolverState module_resolver
    state <- checkTypeArguments state type_arguments
@@ -69,19 +73,20 @@ processAdt state module_resolver (SD.AlgebraicDataType name type_arguments varia
    Ident n location <- name
    qn <- FullPath module_resolver.module_name n
    type <- Named qn type_args
-   variant_ctors <- variants |> List.iter |> Iterator.fold (\variant_ctors, (HD.Variant name location args) -> do
+   ctors <- List.map variants (\HD.Variant name location args -> do
       ctor_type <- createFunctionFromArgs args type
-      variant_ctors <- push variant_ctors ctor_type
-      variant_ctors) []
-   (_, variant_infos) <- variants |> List.iter |> Iterator.fold (\(index, variant_infos), (HD.Variant name location _) -> do
+      expr_id_gen <- createExprIdGenerator
+      pattern_id_gen <- createPatternIdGenerator
+      variant_qn <- FullPathWithVariant module_resolver.module_name n name
+      HF.Function location variant_qn (getLength args) HF.VariantCtor (Some ctor_type) (Some ctor_type) None None [] [] expr_id_gen pattern_id_gen)
+   variant_infos <- List.foldE [] variants (\variant_infos, index, (HD.Variant name location _) -> do
       variant_qn <- FullPathWithVariant module_resolver.module_name n name
       info <- HD.VariantInfo qn index location
-      variant_infos <- List.push variant_infos (info, variant_qn)
-      (index + 1, variant_infos)) (0, [])
-   adt <- HD.AlgebraicDataType qn location type_args variants variant_ctors derived_classes type
-   (state, adt, variant_infos)
+      List.push variant_infos (info, variant_qn))
+   adt <- HD.AlgebraicDataType qn location type_args variants derived_classes type
+   (state, adt, variant_infos, ctors)
 
-processRecord a :: (ResolverState a) => a -> ModuleResolver -> SD.Record -> (a, HD.Record)
+processRecord a :: (ResolverState a) => a -> ModuleResolver -> SD.Record -> (a, HD.Record, Option (HF.Function ()))
 processRecord state module_resolver (SD.Record name type_arguments fields external derived_classes implicit_member) = do
    type_resolver <- createTypeResolverState module_resolver
    (state, type_resolver, fields, field_names) <- fields |> List.iter |> Iterator.fold (\(state, type_resolver, fields, field_names), field -> do
@@ -98,5 +103,12 @@ processRecord state module_resolver (SD.Record name type_arguments fields extern
    type <- Named qn type_args
    ctor_arg_types <- fields |> List.iter |> Iterator.map (\(HD.RecordField _ type) -> type) |> toList
    ctor_type <- createFunctionFromArgs ctor_arg_types type
-   record <- HD.Record qn location type_args fields external ctor_type derived_classes type implicit_member
-   (state, record)
+   record <- HD.Record qn location type_args fields external derived_classes type implicit_member
+   ctor_fn <- if not external
+   then do
+      expr_id_gen <- createExprIdGenerator
+      pattern_id_gen <- createPatternIdGenerator
+      ctor_fn <- HF.Function location qn (getLength fields) HF.RecordCtor (Some ctor_type) (Some ctor_type) None None [] [] expr_id_gen pattern_id_gen
+      Some ctor_fn
+   else None
+   (state, record, ctor_fn)

@@ -38,6 +38,8 @@ class FunctionProvider a where
 
    getResolvedEffectsFunction a :: a -> FQ.FullyQualifiedName -> HF.Function HT.Type
 
+   getMonomorphizedFunction a :: a -> FQ.FullyQualifiedName -> HF.Function HT.Type
+
 class VariantInfoProvider a where
    getVariantInfo a :: a -> FQ.FullyQualifiedName -> HD.VariantInfo
 
@@ -133,6 +135,11 @@ instance FunctionProvider Driver where
       key <- I.ResolvedEffectsFunctionKey qn
       f <- DB.get driver.db key
       I.asResolvedEffectsFunction f
+
+   getMonomorphizedFunction driver qn = do
+      key <- I.MonomorphizedFunctionKey qn
+      f <- DB.get driver.db key
+      I.asMonomorphizedFunction f
 
 instance EffectProvider Driver where
    getEffect driver qn = do

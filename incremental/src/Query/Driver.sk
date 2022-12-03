@@ -39,6 +39,7 @@ createDriver = do
    db <- DB.addCommandGenerator db I.ResolvedInstanceKind I.CheckInstance
    db <- DB.addCommandGenerator db I.FunctionGroupKind I.TypeCheckFunctionGroup
    db <- DB.addCommandGenerator db I.TypedFunctionKind I.TransformUpdates
+   db <- DB.addCommandGenerator db I.MonomorphizedFunctionKind I.ConvertClosures
    db <- DB.addWatchedKind db I.ResolvedClassKind I.RefreshClassDeps
    db <- DB.addWatchedKind db I.FunctionDependencyInfoKind I.CreateFunctionGroups
    resolver <- R.createResolver
@@ -104,6 +105,7 @@ executeCommand driver cmd = do
       I.TransformUpdates key -> HL.transformUpdates driver key
       I.ResolveEffects key -> HL.resolveEffects driver key
       I.Monomorphize key -> HL.monomorphize driver key
+      I.ConvertClosures key -> HL.convertClosures driver key
 
 addCommands :: Driver -> [I.Command] -> Driver
 addCommands driver cmds = do

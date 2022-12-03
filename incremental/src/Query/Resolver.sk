@@ -119,8 +119,14 @@ resolveRecord driver key = do
    module_resolver <- I.asModuleResolver module_resolver
    record <- DB.get driver.db (I.UnresolvedRecordKey qn)
    record <- I.asUnresolvedRecord record
-   (state, hir_record) <- RD.processRecord state module_resolver record
+   (state, hir_record, ctor_fn) <- RD.processRecord state module_resolver record
    // TODO: error
+   driver <- case ctor_fn of
+      Some ctor_fn -> do
+         key <- I.ResolvedFunctionKey ctor_fn.name
+         item <- I.ResolvedFunction ctor_fn
+         addToDb driver key item
+      None -> driver
    key <- I.ResolvedRecordKey qn
    item <- I.ResolvedRecord hir_record
    addToDb driver key item
@@ -134,8 +140,12 @@ resolveAdt driver key = do
    module_resolver <- I.asModuleResolver module_resolver
    adt <- DB.get driver.db (I.UnresolvedAdtKey qn)
    adt <- I.asUnresolvedAdt adt
-   (state, hir_adt, variant_infos) <- RD.processAdt state module_resolver adt
+   (state, hir_adt, variant_infos, variant_ctors) <- RD.processAdt state module_resolver adt
    // TODO: error
+   driver <- List.fold driver variant_ctors (\driver, variant_ctor -> do
+      key <- I.ResolvedFunctionKey variant_ctor.name
+      item <- I.ResolvedFunction variant_ctor
+      addToDb driver key item)
    driver <- List.fold driver variant_infos (\driver, (variant_info, qn) -> do
       key <- I.ResolvedVariantInfoKey qn
       item <- I.ResolvedVariantInfo variant_info

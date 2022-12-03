@@ -1,12 +1,15 @@
 module Siko.HIR.Backend.ClosureConverter where
 
 import Siko.HIR.Backend.StateProvider
+import Siko.HIR.Backend.Traversal
 import Siko.HIR.Expr as E
 import Siko.HIR.ExprIdGenerator
 import Siko.HIR.FullyQualifiedName as FQ
+import Siko.HIR.Function as F
 import Siko.HIR.Pattern as P
 import Siko.HIR.PatternIdGenerator
 import Siko.HIR.Type as T
+import Siko.Query.Lookup as QL
 import Siko.Syntax.Location
 import Siko.Util.SharedString as SS
 
@@ -14,9 +17,16 @@ data ClosureType = { closure_type :: T.Type,
                      arg_types :: [T.Type]
                    } deriving (Show)
 
+data ClosureInstance = { closure_name :: FQ.FullyQualifiedName,
+                         arg_types :: [T.Type],
+                         successor :: FQ.FullyQualifiedName
+                       } deriving (Show, PartialEq, Eq, PartialOrd, Ord)
+
 data Context a = { state :: a,
                    expr_id_gen :: ExprIdGenerator,
-                   pattern_id_gen :: PatternIdGenerator
+                   pattern_id_gen :: PatternIdGenerator,
+                   closure_names :: [FQ.FullyQualifiedName],
+                   closure_instances :: [ClosureInstance]
                  }
 
 getExpr a :: Context a -> (E.ExprId -> E.Expr T.Type) -> (Context a, E.Expr T.Type)
@@ -35,10 +45,16 @@ getNextPatternId context = do
    (pattern_id_gen, id) <- getNewPatternId context.pattern_id_gen
    (context { pattern_id_gen = pattern_id_gen }, id)
 
+getClosureName a :: Context a -> T.Type -> (Context a, FQ.FullyQualifiedName)
+getClosureName context closure_type = do
+   closure_name <- FQ.ClosureName closure_type
+   context <- context { closure_names = List.push context.closure_names closure_name }
+   (context, closure_name)
+
 processDynamicFunctionCall a :: (StateProvider a) => Context a -> T.Type -> [E.Expr T.Type] -> E.Expr T.Type -> Location -> (Context a, [E.Expr T.Type])
 processDynamicFunctionCall context receiver_type args receiver location = do
    loop (context, receiver_type, args, receiver, calls) <- (context, receiver_type, args, receiver, []) do
-      closure_name <- FQ.ClosureName receiver_type
+      (context, closure_name) <- getClosureName context receiver_type
       result_type <- T.getResultType receiver_type 1
       case pop args of
          Some (arg, rest) -> do
@@ -85,8 +101,9 @@ processStaticFunctionCall context args function_type qn arg_count location = do
             then break (context, qn)
             else do
                closure <- List.atIndex closures next
-               closure_name <- FQ.ClosureName closure.closure_type
-               closure_instance <- (closure_name, closure.arg_types, qn)
+               (context, closure_name) <- getClosureName context closure.closure_type
+               closure_instance <- ClosureInstance closure_name closure.arg_types qn
+               context <- context { closure_instances = List.push context.closure_instances closure_instance }
                next_fn_qn <- FQ.ClosureConverted closure_name
                (context, closures, next, next_fn_qn)
          (context, call_expr) <- getExpr context (\id -> E.Expr (E.StaticFunctionCall qn args) id result_type location)
@@ -109,3 +126,41 @@ processStaticFunctionCall context args function_type qn arg_count location = do
          result_type <- T.getResultType function_type current_arg_count
          (context, do_expr) <- getExpr context (\id -> E.Expr (E.Do ([decl_expr] + calls)) id result_type location)
          (context, do_expr)
+
+processExpr a :: (StateProvider a) => Context a -> E.Expr T.Type -> (Context a, E.Expr T.Type)
+processExpr context expr = do
+   E.Expr s_expr id expr_type location <- expr
+   case s_expr of
+      E.StaticFunctionCall qn args -> do
+         fn <- QL.getMonomorphizedFunction context.state qn
+         function_type <- Option.unwrap fn.type
+         processStaticFunctionCall context args function_type qn fn.arg_count location
+      E.VariantConstructorCall qn args -> do
+         fn <- QL.getMonomorphizedFunction context.state qn
+         function_type <- Option.unwrap fn.type
+         processStaticFunctionCall context args function_type qn fn.arg_count location
+      E.RecordConstructorCall qn args -> do
+         fn <- QL.getMonomorphizedFunction context.state qn
+         function_type <- Option.unwrap fn.type
+         processStaticFunctionCall context args function_type qn fn.arg_count location
+      E.ClassMemberCall _ _ -> panic "Class member call in closure converter/after monomorphization!"
+      E.DynamicFunctionCall receiver args -> do
+         E.Expr _ _ receiver_type _ <- receiver
+         (context, calls) <- processDynamicFunctionCall context receiver_type args receiver location
+         getExpr context (\id -> E.Expr (E.Do calls) id expr_type location)
+      s_expr -> (context, E.Expr s_expr id expr_type location)
+
+processPattern a :: (StateProvider a) => Context a -> P.Pattern T.Type -> (Context a, P.Pattern T.Type)
+processPattern context pattern = (context, pattern)
+
+convertClosures a :: (StateProvider a) => a -> F.Function T.Type -> (a, F.Function T.Type, [FQ.FullyQualifiedName], [ClosureInstance])
+convertClosures state fn = do
+   (state, fn, closure_names, closure_instances) <- case fn.body of
+      Some body -> do
+         context <- Context state fn.expr_id_gen fn.pattern_id_gen [] []
+         traversal_context <- createTraversalContext context processExpr processPattern
+         (context, body) <- traverse traversal_context body
+         fn <- fn { body = Some body, expr_id_gen = context.expr_id_gen, pattern_id_gen = context.pattern_id_gen }
+         (state, fn, context.closure_names |> List.sort |> List.dedup, context.closure_instances |> List.sort |> List.dedup)
+      None -> (state, fn, [], [])
+   (state, fn, closure_names, closure_instances)

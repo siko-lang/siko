@@ -26,10 +26,9 @@ instance S.Transform D.Record where
       (state, type_args) <- S.transform state record.type_args f
       (state, fields) <- S.transform state record.fields f
       (state, type) <- S.transform state record.type f
-      (state, record_ctor) <- S.transform state record.record_ctor f
       derived_classes <- Std.Intrinsics.clone record.derived_classes
       name <- Std.Intrinsics.clone record.name
-      (state, D.Record name record.location type_args fields record.external record_ctor derived_classes type record.implicit_member)
+      (state, D.Record name record.location type_args fields record.external derived_classes type record.implicit_member)
 
 instance S.Apply D.AlgebraicDataType where
    apply adt sub = do
@@ -41,10 +40,9 @@ instance S.Transform D.AlgebraicDataType where
       (state, type_args) <- S.transform state adt.type_args f
       (state, variants) <- S.transform state adt.variants f
       (state, type) <- S.transform state adt.type f
-      (state, variant_ctors) <- S.transform state adt.variant_ctors f
       derived_classes <- Std.Intrinsics.clone adt.derived_classes
       name <- Std.Intrinsics.clone adt.name
-      (state, D.AlgebraicDataType name adt.location type_args variants variant_ctors derived_classes type)
+      (state, D.AlgebraicDataType name adt.location type_args variants derived_classes type)
 
 instance S.Collectable D.Record where
    collect collector record = S.collect collector record.type

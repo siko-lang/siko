@@ -2,6 +2,7 @@ module Siko.Query.HIRLowering where
 
 import Map
 import Siko.Constants
+import Siko.HIR.Backend.ClosureConverter as CC
 import Siko.HIR.Backend.EffectResolver as ER
 import Siko.HIR.Backend.Monomorphization as MO
 import Siko.HIR.Backend.StateProvider as BSP
@@ -79,3 +80,16 @@ monomorphize driver key = do
                driver <- addToDb driver key item
                addCommands driver cmds
             qn -> panic "monomorphize called with unexpected qn {}" % qn
+
+convertClosures :: Driver -> I.Key -> Driver
+convertClosures driver key = do
+   fn <- DB.get driver.db key
+   println "ClosureConverting {}" % key
+   fn <- I.asMonomorphizedFunction fn
+   state <- BSP.createStateProvider driver
+   (state, fn, closure_names, closure_instances) <- CC.convertClosures state fn
+   println "closure_instances {}" % closure_instances
+   println "closure_names {}" % closure_names
+   key <- I.ClosureConvertedFunctionKey (FQ.ClosureConverted (I.getFullyQualifiedName key))
+   item <- I.ClosureConvertedFunction fn
+   addToDb driver key item

@@ -207,6 +207,14 @@ processExpr context expr = do
                field_access <- E.Expr (E.TupleFieldAccess index arg_ref) field_access_id handler_type location
                (context, E.Expr (E.DynamicFunctionCall field_access args) id type location)
             None -> panic "Effect member call not found in resolution set!"
+      E.VariantConstructorCall qn args -> do
+         effectless_id <- FQ.Effectless qn None
+         context <- context { queue = List.push context.queue effectless_id }
+         (context, E.Expr (E.VariantConstructorCall effectless_id args) id type location)
+      E.RecordConstructorCall qn args -> do
+         effectless_id <- FQ.Effectless qn None
+         context <- context { queue = List.push context.queue effectless_id }
+         (context, E.Expr (E.RecordConstructorCall effectless_id args) id type location)
       _ -> (context, expr)
 
 processPattern a :: (StateProvider a) => Context a -> P.Pattern T.Type -> (Context a, P.Pattern T.Type)

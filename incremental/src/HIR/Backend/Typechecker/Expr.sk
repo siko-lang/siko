@@ -375,18 +375,16 @@ initializeExprType current_fn_name context orig_expr = do
          context <- addExprEffectSignatureSet context id (TEff.createEffectSignatureSetFrom eff_type_info.effect_type)
          context
       E.VariantConstructorCall qn args -> do
-         D.VariantInfo qn index _ <- QL.getVariantInfo context.state qn
-         adt <- QL.getAdt context.state qn
-         function_type <- List.atIndex adt.variant_ctors index
-         (context, function_type) <- instantiateType context function_type
+         function <- QL.getFunction context.state qn
+         (context, function_type) <- instantiateType context (Option.unwrap function.type)
          (context, var) <- U.getNewTypeVarType context
          context <- addExprType context id (TS.FunctionCall var function_type)
          context
       E.RecordConstructorCall qn args -> do
-         record <- QL.getRecord context.state qn
-         (context, new_ctor) <- instantiateType context record.record_ctor
+         function <- QL.getFunction context.state qn
+         (context, function_type) <- instantiateType context (Option.unwrap function.type)
          (context, var) <- U.getNewTypeVarType context
-         context <- addExprType context id (TS.FunctionCall var new_ctor)
+         context <- addExprType context id (TS.FunctionCall var function_type)
          context
       E.If cond true_branch false_branch -> do
          (context, var) <- U.getNewTypeVarType context

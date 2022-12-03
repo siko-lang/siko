@@ -53,6 +53,30 @@ processExpr context expr = do
          monomorphized_qn <- FQ.Monomorphized qn fn_type
          context <- context { queue = List.push context.queue monomorphized_qn }
          (context, E.Expr (E.StaticFunctionCall monomorphized_qn args) id expr_type location)
+      E.VariantConstructorCall qn args -> do
+         fn <- QL.getResolvedEffectsFunction context.state qn
+         fn_type <- Option.unwrap fn.type
+         (mapper, state) <- UUtil.instantiateGenericMapper fn_type context.state
+         mapper <- UUtil.skipNever mapper
+         (mapper, fn_type) <- S.transform mapper fn_type UUtil.remapType
+         arg_types <- List.map args (\E.Expr _ _ t _ -> t)
+         (state, fn_type, sub) <- UUtil.getFunctionType state arg_types expr_type fn_type
+         context <- context { state = state }
+         monomorphized_qn <- FQ.Monomorphized qn fn_type
+         context <- context { queue = List.push context.queue monomorphized_qn }
+         (context, E.Expr (E.VariantConstructorCall monomorphized_qn args) id expr_type location)
+      E.RecordConstructorCall qn args -> do
+         fn <- QL.getResolvedEffectsFunction context.state qn
+         fn_type <- Option.unwrap fn.type
+         (mapper, state) <- UUtil.instantiateGenericMapper fn_type context.state
+         mapper <- UUtil.skipNever mapper
+         (mapper, fn_type) <- S.transform mapper fn_type UUtil.remapType
+         arg_types <- List.map args (\E.Expr _ _ t _ -> t)
+         (state, fn_type, sub) <- UUtil.getFunctionType state arg_types expr_type fn_type
+         context <- context { state = state }
+         monomorphized_qn <- FQ.Monomorphized qn fn_type
+         context <- context { queue = List.push context.queue monomorphized_qn }
+         (context, E.Expr (E.RecordConstructorCall monomorphized_qn args) id expr_type location)
       E.ClassMemberCall qn args -> do
          arg_types <- List.map args (\E.Expr _ _ t _ -> t)
          qn <- FQ.Effectless qn None
@@ -85,12 +109,11 @@ processExpr context expr = do
                      selected_member_name <- case selected_member_name of
                         Some selected_member_name -> selected_member_name
                         None -> qn
-                     monomorphized_qn <- FQ.Monomorphized (FQ.Effectless selected_member_name None) fn_type
+                     monomorphized_qn <- FQ.Monomorphized (FQ.Effectless selected_member_name None) function_type
                      //println "Calling instance {}" % monomorphized_qn
                      context <- context { queue = List.push context.queue monomorphized_qn }
                      (context, E.Expr (E.StaticFunctionCall monomorphized_qn args) id expr_type location)
                   None -> panic "class member {} not found" % member_name
-               (context, E.Expr s_expr id expr_type location)
             _ -> panic "ClassMember calls non class member"
       s_expr -> (context, E.Expr s_expr id expr_type location)
 
