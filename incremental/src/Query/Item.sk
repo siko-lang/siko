@@ -1,5 +1,6 @@
 module Siko.Query.Item where
 
+import Siko.HIR.Backend.ClosureConverter as CC
 import Siko.HIR.Backend.Typechecker.Class as TC
 import Siko.HIR.Backend.Typechecker.Function as TF
 import Siko.HIR.Class as HC
@@ -37,6 +38,8 @@ data Command = CollectLocalItems Key
              | ResolveEffects Key
              | Monomorphize Key
              | ConvertClosures Key
+             | CreateClosureInstance Key
+             | CreateClosure Key
              deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
 getPriority :: Command -> Int
@@ -61,6 +64,8 @@ getPriority cmd = case cmd of
    ResolveEffects _ -> 17
    Monomorphize _ -> 18
    ConvertClosures _ -> 19
+   CreateClosureInstance _ -> 20
+   CreateClosure _ -> 21
 
 data ItemKind = UnresolvedModuleKind
               | LocalItemsKind
@@ -90,6 +95,8 @@ data ItemKind = UnresolvedModuleKind
               | ResolvedEffectsFunctionKind
               | MonomorphizedFunctionKind
               | ClosureConvertedFunctionKind
+              | ClosureInstanceKind
+              | ClosureKind
               deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
 data Item = UnresolvedModule M.Module
@@ -120,6 +127,8 @@ data Item = UnresolvedModule M.Module
           | ResolvedEffectsFunction (HF.Function HT.Type)
           | MonomorphizedFunction (HF.Function HT.Type)
           | ClosureConvertedFunction (HF.Function HT.Type)
+          | ClosureInstance
+          | Closure
           deriving (Show, PartialEq, Eq)
 
 data Key = UnresolvedModuleKey String
@@ -150,6 +159,8 @@ data Key = UnresolvedModuleKey String
          | ResolvedEffectsFunctionKey FQ.FullyQualifiedName
          | MonomorphizedFunctionKey FQ.FullyQualifiedName
          | ClosureConvertedFunctionKey FQ.FullyQualifiedName
+         | ClosureInstanceKey CC.ClosureInstance
+         | ClosureKey FQ.FullyQualifiedName
          deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
 asUnresolvedModule :: Item -> M.Module
@@ -322,6 +333,8 @@ getModuleName key = case key of
    ResolvedEffectsFunctionKey qn -> SS.get (FQ.getModuleName qn)
    MonomorphizedFunctionKey qn -> SS.get (FQ.getModuleName qn)
    ClosureConvertedFunctionKey qn -> SS.get (FQ.getModuleName qn)
+   ClosureInstanceKey _ -> "getModuleName called for {}" % key
+   ClosureKey qn -> SS.get (FQ.getModuleName qn)
 
 getFullyQualifiedName :: Key -> FQ.FullyQualifiedName
 getFullyQualifiedName key = case key of
@@ -353,6 +366,8 @@ getFullyQualifiedName key = case key of
    ResolvedEffectsFunctionKey qn -> qn
    MonomorphizedFunctionKey qn -> qn
    ClosureConvertedFunctionKey qn -> qn
+   ClosureInstanceKey _ -> panic "getFullyQualifiedName called for {}" % key
+   ClosureKey qn -> qn
 
 getKind :: Item -> ItemKind
 getKind item = case item of
@@ -384,3 +399,5 @@ getKind item = case item of
    ResolvedEffectsFunction _ -> ResolvedEffectsFunctionKind
    MonomorphizedFunction _ -> MonomorphizedFunctionKind
    ClosureConvertedFunction _ -> ClosureConvertedFunctionKind
+   ClosureInstance -> ClosureInstanceKind
+   Closure -> ClosureKind

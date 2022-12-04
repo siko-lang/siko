@@ -4,7 +4,7 @@ import Map
 import Set
 import Siko.Query.Item as I
 
-data WatchedCollection = { update_cmd :: I.Command,
+data WatchedCollection = { update_cmd :: Option I.Command,
                            keys :: Set I.Key
                          }
 
@@ -16,7 +16,7 @@ data Database = { items :: Map I.Key I.Item,
 createDatabase :: Database
 createDatabase = Database Map.empty Map.empty Map.empty
 
-addWatchedKind :: Database -> I.ItemKind -> I.Command -> Database
+addWatchedKind :: Database -> I.ItemKind -> Option I.Command -> Database
 addWatchedKind db kind update_cmd = do
    collections <- Map.put db.collections kind (WatchedCollection update_cmd Set.empty)
    db { collections = collections }
@@ -59,7 +59,9 @@ addItem db key item = do
    (db, cmds) <- case Map.get db.collections kind of
       Some collection -> do
          keys <- Set.put collection.keys key
-         cmds <- List.push cmds collection.update_cmd
+         cmds <- case collection.update_cmd of
+            Some cmd -> List.push cmds cmd
+            None -> cmds
          collection <- collection { keys = keys }
          collections <- Map.put db.collections kind collection
          (db { collections = collections }, cmds)
@@ -77,7 +79,9 @@ removeItem db key = do
          case Map.get db.collections kind of
             Some collection -> do
                keys <- Set.remove collection.keys key
-               cmds <- [collection.update_cmd]
+               cmds <- case collection.update_cmd of
+                  Some cmd -> [cmd]
+                  None -> []
                collection <- collection { keys = keys }
                collections <- Map.put db.collections kind collection
                (db { collections = collections }, cmds)

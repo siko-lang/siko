@@ -84,12 +84,33 @@ monomorphize driver key = do
 convertClosures :: Driver -> I.Key -> Driver
 convertClosures driver key = do
    fn <- DB.get driver.db key
-   println "ClosureConverting {}" % key
    fn <- I.asMonomorphizedFunction fn
    state <- BSP.createStateProvider driver
    (state, fn, closure_names, closure_instances) <- CC.convertClosures state fn
-   println "closure_instances {}" % closure_instances
-   println "closure_names {}" % closure_names
+   cmds <- List.map closure_instances (\i -> I.CreateClosureInstance (I.ClosureInstanceKey i))
+   driver <- addCommands driver cmds
+   cmds <- List.map closure_names (\i -> I.CreateClosure (I.ClosureKey i))
+   driver <- addCommands driver cmds
    key <- I.ClosureConvertedFunctionKey (FQ.ClosureConverted (I.getFullyQualifiedName key))
    item <- I.ClosureConvertedFunction fn
    addToDb driver key item
+
+createClosureInstance :: Driver -> I.Key -> Driver
+createClosureInstance driver key = do
+   case DB.getOpt driver.db key of
+      Some _ -> driver
+      None -> do
+         addToDb driver key I.ClosureInstance
+
+createClosure :: Driver -> I.Key -> Driver
+createClosure driver key = do
+   case DB.getOpt driver.db key of
+      Some _ -> driver
+      None -> do
+         qn <- I.getFullyQualifiedName key
+         closure_instances <- DB.getWatchedKeys driver.db I.ClosureInstanceKind
+         instances <- List.filter closure_instances (\i -> case i of
+            I.ClosureInstanceKey i -> i.closure_name == qn
+            _ -> panic "Closure instance key is not closure instance key")
+         println "Create closure {} with {} instances {}" % (qn, getLength instances, instances)
+         addToDb driver key I.Closure
