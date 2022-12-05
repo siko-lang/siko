@@ -14,117 +14,117 @@ import Siko.Util.DependencyProcessor
 
 refreshClassDeps :: Driver -> Driver
 refreshClassDeps driver = do
-   classes <- DB.getWatchedKeys driver.db I.ResolvedClassKind
-   classes <- List.map classes (\key -> I.asResolvedClass (DB.get driver.db key))
-   errors <- TC.checkClassDependencies classes
-   // TODO: error
-   driver
+    classes <- DB.getWatchedKeys driver.db I.ResolvedClassKind
+    classes <- List.map classes (\key -> I.asResolvedClass (DB.get driver.db key))
+    errors <- TC.checkClassDependencies classes
+    // TODO: error
+    driver
 
 createFunctionTypeInfo :: Driver -> I.Key -> Driver
 createFunctionTypeInfo driver key = do
-   qn <- I.getFullyQualifiedName key
-   function <- DB.get driver.db (I.ResolvedFunctionKey qn)
-   function <- I.asResolvedFunction function
-   state <- BSP.createStateProvider driver
-   case function.kind of
-      HF.InstanceMember instance_qn -> do
-         i <- DB.get driver.db (I.ResolvedInstanceKey instance_qn)
-         i <- I.asResolvedInstance i
-         c <- getClass driver i.class_name
-         class_type_info <- DB.get driver.db (I.ClassTypeInfoKey i.class_name)
-         class_type_info <- I.asClassTypeInfo class_type_info
-         (state, type) <- TC.getMemberType state i function class_type_info
-         // TODO: error
-         case type of
-            Some type -> do
-               function <- function { type = Some type }
-               (state, func_type_info) <- TF.createFunctionTypeInfo state function
-               // TODO: error
-               key <- I.FunctionTypeInfoKey qn
-               item <- I.FunctionTypeInfo func_type_info
-               addToDb driver key item
-            None -> do
-               //FIXME: TODO: use result!!
-               driver
-      _ -> do
-         (state, func_type_info) <- TF.createFunctionTypeInfo state function
-         // TODO: error
-         key <- I.FunctionTypeInfoKey qn
-         item <- I.FunctionTypeInfo func_type_info
-         addToDb driver key item
+    qn <- I.getFullyQualifiedName key
+    function <- DB.get driver.db (I.ResolvedFunctionKey qn)
+    function <- I.asResolvedFunction function
+    state <- BSP.createStateProvider driver
+    case function.kind of
+        HF.InstanceMember instance_qn -> do
+            i <- DB.get driver.db (I.ResolvedInstanceKey instance_qn)
+            i <- I.asResolvedInstance i
+            c <- getClass driver i.class_name
+            class_type_info <- DB.get driver.db (I.ClassTypeInfoKey i.class_name)
+            class_type_info <- I.asClassTypeInfo class_type_info
+            (state, type) <- TC.getMemberType state i function class_type_info
+            // TODO: error
+            case type of
+                Some type -> do
+                    function <- function { type = Some type }
+                    (state, func_type_info) <- TF.createFunctionTypeInfo state function
+                    // TODO: error
+                    key <- I.FunctionTypeInfoKey qn
+                    item <- I.FunctionTypeInfo func_type_info
+                    addToDb driver key item
+                None -> do
+                    //FIXME: TODO: use result!!
+                    driver
+        _ -> do
+            (state, func_type_info) <- TF.createFunctionTypeInfo state function
+            // TODO: error
+            key <- I.FunctionTypeInfoKey qn
+            item <- I.FunctionTypeInfo func_type_info
+            addToDb driver key item
 
 createClassTypeInfo :: Driver -> I.Key -> Driver
 createClassTypeInfo driver key = do
-   qn <- I.getFullyQualifiedName key
-   c <- DB.get driver.db (I.ResolvedClassKey qn)
-   c <- I.asResolvedClass c
-   state <- BSP.createStateProvider driver
-   (state, class_type_info) <- TC.createClassTypeInfo state c
-   // TODO: error
-   key <- I.ClassTypeInfoKey qn
-   item <- I.ClassTypeInfo class_type_info
-   addToDb driver key item
+    qn <- I.getFullyQualifiedName key
+    c <- DB.get driver.db (I.ResolvedClassKey qn)
+    c <- I.asResolvedClass c
+    state <- BSP.createStateProvider driver
+    (state, class_type_info) <- TC.createClassTypeInfo state c
+    // TODO: error
+    key <- I.ClassTypeInfoKey qn
+    item <- I.ClassTypeInfo class_type_info
+    addToDb driver key item
 
 checkInstance :: Driver -> I.Key -> Driver
 checkInstance driver key = do
-   qn <- I.getFullyQualifiedName key
-   i <- DB.get driver.db (I.ResolvedInstanceKey qn)
-   i <- I.asResolvedInstance i
-   c <- getClass driver i.class_name
-   class_type_info <- DB.get driver.db (I.ClassTypeInfoKey i.class_name)
-   class_type_info <- I.asClassTypeInfo class_type_info
-   state <- BSP.createStateProvider driver
-   state <- TC.checkInstance state class_type_info i
-   // TODO: error
-   (instance_key, instance_info) <- TC.createInstanceInfo i
-   key <- I.RegisteredInstanceKey instance_key
-   item <- I.RegisteredInstance instance_info
-   addToDb driver key item
+    qn <- I.getFullyQualifiedName key
+    i <- DB.get driver.db (I.ResolvedInstanceKey qn)
+    i <- I.asResolvedInstance i
+    c <- getClass driver i.class_name
+    class_type_info <- DB.get driver.db (I.ClassTypeInfoKey i.class_name)
+    class_type_info <- I.asClassTypeInfo class_type_info
+    state <- BSP.createStateProvider driver
+    state <- TC.checkInstance state class_type_info i
+    // TODO: error
+    (instance_key, instance_info) <- TC.createInstanceInfo i
+    key <- I.RegisteredInstanceKey instance_key
+    item <- I.RegisteredInstance instance_info
+    addToDb driver key item
 
 createFunctionDependencyInfo :: Driver -> I.Key -> Driver
 createFunctionDependencyInfo driver key = do
-   qn <- I.getFullyQualifiedName key
-   f <- DB.get driver.db (I.ResolvedFunctionKey qn)
-   f <- I.asResolvedFunction f
-   state <- BSP.createStateProvider driver
-   func_dep_info <- TF.createFunctionDependencyInfo state f
-   key <- I.FunctionDependencyInfoKey qn
-   item <- I.FunctionDependencyInfo func_dep_info
-   addToDb driver key item
+    qn <- I.getFullyQualifiedName key
+    f <- DB.get driver.db (I.ResolvedFunctionKey qn)
+    f <- I.asResolvedFunction f
+    state <- BSP.createStateProvider driver
+    func_dep_info <- TF.createFunctionDependencyInfo state f
+    key <- I.FunctionDependencyInfoKey qn
+    item <- I.FunctionDependencyInfo func_dep_info
+    addToDb driver key item
 
 createFunctionGroups :: Driver -> Driver
 createFunctionGroups driver = do
-   deps <- DB.getWatchedKeys driver.db I.FunctionDependencyInfoKind
-   deps <- List.fold Map.empty deps (\deps, key -> do
-      qn <- I.getFullyQualifiedName key
-      func_dep_info <- I.asFunctionDependencyInfo (DB.get driver.db key)
-      Map.put deps qn func_dep_info.deps)
-   groups <- processDependencies deps
-   (driver, _) <- List.fold (driver, 0) groups (\(driver, index), group -> do
-      key <- I.FunctionGroupKey index
-      item <- I.FunctionGroup (TF.FunctionGroup group.items)
-      driver <- addToDb driver key item
-      (driver, index + 1))
-   driver
+    deps <- DB.getWatchedKeys driver.db I.FunctionDependencyInfoKind
+    deps <- List.fold Map.empty deps (\deps, key -> do
+        qn <- I.getFullyQualifiedName key
+        func_dep_info <- I.asFunctionDependencyInfo (DB.get driver.db key)
+        Map.put deps qn func_dep_info.deps)
+    groups <- processDependencies deps
+    (driver, _) <- List.fold (driver, 0) groups (\(driver, index), group -> do
+        key <- I.FunctionGroupKey index
+        item <- I.FunctionGroup (TF.FunctionGroup group.items)
+        driver <- addToDb driver key item
+        (driver, index + 1))
+    driver
 
 typeCheckFunctionGroup :: Driver -> I.Key -> Driver
 typeCheckFunctionGroup driver key = do
-   function_group <- DB.get driver.db key
-   function_group <- I.asFunctionGroup function_group
-   state <- BSP.createStateProvider driver
-   (state, typed_functions) <- TF.processGroup state function_group.items
-   if not (List.isEmpty state.errors)
-   then panic "TYPECHECK FAILED {}, NYI {}" % (function_group, state.errors)
-   else ()
-   // TODO: error
-   driver <- Map.fold driver typed_functions (\driver, (name, fn) -> do
-      key <- I.CheckedFunctionTypeInfoKey fn.name
-      state <- BSP.createStateProvider driver
-      (state, func_type_info) <- TF.createFunctionTypeInfo state fn
-      // FIXME, TODO: this must not fail at this point!
-      item <- I.CheckedFunctionTypeInfo func_type_info
-      driver <- addToDb driver key item
-      key <- I.TypedFunctionKey fn.name
-      item <- I.TypedFunction fn
-      addToDb driver key item)
-   driver
+    function_group <- DB.get driver.db key
+    function_group <- I.asFunctionGroup function_group
+    state <- BSP.createStateProvider driver
+    (state, typed_functions) <- TF.processGroup state function_group.items
+    if not (List.isEmpty state.errors)
+    then panic "TYPECHECK FAILED {}, NYI {}" % (function_group, state.errors)
+    else ()
+    // TODO: error
+    driver <- Map.fold driver typed_functions (\driver, (name, fn) -> do
+        key <- I.CheckedFunctionTypeInfoKey fn.name
+        state <- BSP.createStateProvider driver
+        (state, func_type_info) <- TF.createFunctionTypeInfo state fn
+        // FIXME, TODO: this must not fail at this point!
+        item <- I.CheckedFunctionTypeInfo func_type_info
+        driver <- addToDb driver key item
+        key <- I.TypedFunctionKey fn.name
+        item <- I.TypedFunction fn
+        addToDb driver key item)
+    driver

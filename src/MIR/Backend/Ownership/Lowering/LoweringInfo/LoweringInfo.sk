@@ -33,99 +33,99 @@ data TypeLoweringInfo = { members :: [M.MemberInfo],
 
 convertToFunctionLoweringInfo :: InferenceInfo -> [TypeVariableInfo] -> TypeVariableInfo -> FilterInfo -> [LifetimeDependency] -> FunctionLoweringInfo
 convertToFunctionLoweringInfo inference_info args result filter_info lifetime_dependencies = do
-   //println "Creating function lowering info"
-   lowering_info <- FunctionLoweringInfo inference_info.members args result (M.toOwnershipInfo inference_info.ownership_values) inference_info.allocator lifetime_dependencies
-   //println "Unfiltered {}" % lowering_info
-   sources <- List.push args result
-   filterFunctionLoweringInfo lowering_info sources filter_info
+    //println "Creating function lowering info"
+    lowering_info <- FunctionLoweringInfo inference_info.members args result (M.toOwnershipInfo inference_info.ownership_values) inference_info.allocator lifetime_dependencies
+    //println "Unfiltered {}" % lowering_info
+    sources <- List.push args result
+    filterFunctionLoweringInfo lowering_info sources filter_info
 
 createTypeLoweringInfoFromInferenceInfo :: InferenceInfo -> TypeVariableInfo -> FilterInfo -> TypeLoweringInfo
 createTypeLoweringInfoFromInferenceInfo inference_info root filter_info = do
-   //println "Creating type lowering info"
-   lowering_info <- TypeLoweringInfo inference_info.members root (M.toOwnershipInfo inference_info.ownership_values) inference_info.allocator
-   filterTypeLoweringInfo lowering_info [root] filter_info
+    //println "Creating type lowering info"
+    lowering_info <- TypeLoweringInfo inference_info.members root (M.toOwnershipInfo inference_info.ownership_values) inference_info.allocator
+    filterTypeLoweringInfo lowering_info [root] filter_info
 
 createTypeLoweringInfoFromFunctionLoweringInfo :: FunctionLoweringInfo -> TypeVariableInfo -> FilterInfo -> TypeLoweringInfo
 createTypeLoweringInfoFromFunctionLoweringInfo lowering_info root filter_info = do
-   //println "Creating type lowering info"
-   output <- TypeLoweringInfo lowering_info.members root lowering_info.ownershipinfos lowering_info.allocator
-   filterTypeLoweringInfo output [root] filter_info
+    //println "Creating type lowering info"
+    output <- TypeLoweringInfo lowering_info.members root lowering_info.ownershipinfos lowering_info.allocator
+    filterTypeLoweringInfo output [root] filter_info
 
 createTypeLoweringInfoFromTypeLoweringInfo :: TypeLoweringInfo -> TypeVariableInfo -> FilterInfo -> TypeLoweringInfo
 createTypeLoweringInfoFromTypeLoweringInfo lowering_info root filter_info = do
-   //println "Creating type lowering info"
-   output <- TypeLoweringInfo lowering_info.members root lowering_info.ownershipinfos lowering_info.allocator
-   filterTypeLoweringInfo output [root] filter_info
+    //println "Creating type lowering info"
+    output <- TypeLoweringInfo lowering_info.members root lowering_info.ownershipinfos lowering_info.allocator
+    filterTypeLoweringInfo output [root] filter_info
 
 normalizeRef :: TypeLoweringInfo -> (TypeLoweringInfo, Option BorrowId)
 normalizeRef lowering_info = do
-   ownershipinfos <- lowering_info.ownershipinfos
-   rootvar <- lowering_info.root.ownership_var
-   (ownershipinfos, ref, found) <- List.fold ((List.withCapacity (List.getLength ownershipinfos)), None, False) ownershipinfos (\(ownershipinfos, ref, found), ownershipinfo -> normalize rootvar (ownershipinfos, ref, found) ownershipinfo)
-   ownershipinfos <- if not found
-   then List.push ownershipinfos (M.OwnershipInfo rootvar M.Owner)
-   else ownershipinfos
-   lowering_info <- lowering_info { ownershipinfos = ownershipinfos }
-   (lowering_info, ref)
-   where
-      normalize rootvar (ownershipinfos, ref, found) ownershipinfo = case ownershipinfo of
-         M.OwnershipInfo v M.Unknown -> if v == rootvar
-            then (List.push ownershipinfos (M.OwnershipInfo v M.Owner), None, True)
-            else (List.push ownershipinfos (M.OwnershipInfo v M.Owner), ref, found)
-         M.OwnershipInfo v (M.Borrower id) -> if v == rootvar
-            then (List.push ownershipinfos (M.OwnershipInfo v M.Owner), Some id, True)
-            else (List.push ownershipinfos ownershipinfo, ref, found)
-         M.OwnershipInfo v M.Owner -> if v == rootvar
-            then (List.push ownershipinfos ownershipinfo, None, True)
-            else (List.push ownershipinfos ownershipinfo, ref, found)
+    ownershipinfos <- lowering_info.ownershipinfos
+    rootvar <- lowering_info.root.ownership_var
+    (ownershipinfos, ref, found) <- List.fold ((List.withCapacity (List.getLength ownershipinfos)), None, False) ownershipinfos (\(ownershipinfos, ref, found), ownershipinfo -> normalize rootvar (ownershipinfos, ref, found) ownershipinfo)
+    ownershipinfos <- if not found
+    then List.push ownershipinfos (M.OwnershipInfo rootvar M.Owner)
+    else ownershipinfos
+    lowering_info <- lowering_info { ownershipinfos = ownershipinfos }
+    (lowering_info, ref)
+    where
+        normalize rootvar (ownershipinfos, ref, found) ownershipinfo = case ownershipinfo of
+            M.OwnershipInfo v M.Unknown -> if v == rootvar
+                then (List.push ownershipinfos (M.OwnershipInfo v M.Owner), None, True)
+                else (List.push ownershipinfos (M.OwnershipInfo v M.Owner), ref, found)
+            M.OwnershipInfo v (M.Borrower id) -> if v == rootvar
+                then (List.push ownershipinfos (M.OwnershipInfo v M.Owner), Some id, True)
+                else (List.push ownershipinfos ownershipinfo, ref, found)
+            M.OwnershipInfo v M.Owner -> if v == rootvar
+                then (List.push ownershipinfos ownershipinfo, None, True)
+                else (List.push ownershipinfos ownershipinfo, ref, found)
 
 getLoweringInfoForArg :: FunctionLoweringInfo -> Int -> FilterInfo -> TypeLoweringInfo
 getLoweringInfoForArg lowering_info index filter_info = do
-   arg <- List.atIndex lowering_info.args index
-   createTypeLoweringInfoFromFunctionLoweringInfo lowering_info arg filter_info
+    arg <- List.atIndex lowering_info.args index
+    createTypeLoweringInfoFromFunctionLoweringInfo lowering_info arg filter_info
 
 getLoweringInfoForResult :: FunctionLoweringInfo -> FilterInfo -> TypeLoweringInfo
 getLoweringInfoForResult lowering_info filter_info = do
-   createTypeLoweringInfoFromFunctionLoweringInfo lowering_info lowering_info.result filter_info
+    createTypeLoweringInfoFromFunctionLoweringInfo lowering_info lowering_info.result filter_info
 
 createEmptyTypeLoweringInfo :: TypeLoweringInfo
 createEmptyTypeLoweringInfo = do
-   allocator <- createAllocator
-   (allocator, root) <- getNextTypeVariableInfo allocator
-   TypeLoweringInfo [] root [M.OwnershipInfo root.ownership_var M.Owner] allocator
+    allocator <- createAllocator
+    (allocator, root) <- getNextTypeVariableInfo allocator
+    TypeLoweringInfo [] root [M.OwnershipInfo root.ownership_var M.Owner] allocator
 
 getInfoForField :: TypeLoweringInfo -> Int -> Option TypeVariableInfo
 getInfoForField lowering_info index = do
-   member <- List.filter lowering_info.members (\member -> case member.kind of
-      M.Field i -> i == index && lowering_info.root.arg_group_var == member.root
-      _ -> False)
-   case List.head member of
-      Some m -> Some m.info
-      None -> None
+    member <- List.filter lowering_info.members (\member -> case member.kind of
+        M.Field i -> i == index && lowering_info.root.arg_group_var == member.root
+        _ -> False)
+    case List.head member of
+        Some m -> Some m.info
+        None -> None
 
 getLoweringInfoForField :: TypeLoweringInfo -> Int -> FilterInfo -> TypeLoweringInfo
 getLoweringInfoForField lowering_info index filter_info = do
-   case getInfoForField lowering_info index of
-      Some info -> createTypeLoweringInfoFromTypeLoweringInfo lowering_info info filter_info
-      None -> createEmptyTypeLoweringInfo
+    case getInfoForField lowering_info index of
+        Some info -> createTypeLoweringInfoFromTypeLoweringInfo lowering_info info filter_info
+        None -> createEmptyTypeLoweringInfo
 
 getLoweringInfoForVariant :: TypeLoweringInfo -> Int -> FilterInfo -> TypeLoweringInfo
 getLoweringInfoForVariant lowering_info index filter_info = do
-   variant <- List.filter lowering_info.members (\member -> case member.kind of
-      M.Variant i -> i == index && lowering_info.root.arg_group_var == member.root
-      _ -> False)
-   case List.head variant of
-      Some m -> createTypeLoweringInfoFromTypeLoweringInfo lowering_info m.info filter_info
-      None -> createEmptyTypeLoweringInfo
+    variant <- List.filter lowering_info.members (\member -> case member.kind of
+        M.Variant i -> i == index && lowering_info.root.arg_group_var == member.root
+        _ -> False)
+    case List.head variant of
+        Some m -> createTypeLoweringInfoFromTypeLoweringInfo lowering_info m.info filter_info
+        None -> createEmptyTypeLoweringInfo
 
 getLoweringInfoForExtern :: TypeLoweringInfo -> Int -> FilterInfo -> Option TypeVariableInfo -> TypeLoweringInfo
 getLoweringInfoForExtern lowering_info index filter_info implicit_info = do
-   info <- case implicit_info of
-      Some info -> info
-      None -> lowering_info.root
-   variant <- List.filter lowering_info.members (\member -> case member.kind of
-      M.Extern i -> i == index && info.arg_group_var == member.root
-      _ -> False)
-   case List.head variant of
-      Some m -> createTypeLoweringInfoFromTypeLoweringInfo lowering_info m.info filter_info
-      None -> createEmptyTypeLoweringInfo
+    info <- case implicit_info of
+        Some info -> info
+        None -> lowering_info.root
+    variant <- List.filter lowering_info.members (\member -> case member.kind of
+        M.Extern i -> i == index && info.arg_group_var == member.root
+        _ -> False)
+    case List.head variant of
+        Some m -> createTypeLoweringInfoFromTypeLoweringInfo lowering_info m.info filter_info
+        None -> createEmptyTypeLoweringInfo

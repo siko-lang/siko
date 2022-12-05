@@ -25,20 +25,20 @@ import Siko.Util.SharedString as SS
 
 processAttributes :: ResolverState -> FunctionInfo -> (ResolverState, [HF.Attribute])
 processAttributes state function_info = do
-   (state, attributes) <- List.fold (state, []) function_info.signatures (\(state, attributes), signature -> do
-      (state, attrs) <- processAttributeList state signature.attributes
-      (state, attributes + attrs))
-   List.fold (state, attributes) function_info.functions (\(state, attributes), function -> do
-      (state, attrs) <- processAttributeList state function.attributes
-      (state, attributes + attrs))
-   where
-      processAttributeList :: ResolverState -> [SA.Attribute] -> (ResolverState, [HF.Attribute])
-      processAttributeList state attributes = do
-         List.fold (state, []) attributes (\(state, attributes), attribute -> do
-            Ident name _ <- attribute.name
-            case (SS.get name) of
-               "Inline" -> (state, List.push attributes HF.Inline)
-               _ -> (addError state (InvalidAttribute attribute.name), attributes))
+    (state, attributes) <- List.fold (state, []) function_info.signatures (\(state, attributes), signature -> do
+        (state, attrs) <- processAttributeList state signature.attributes
+        (state, attributes + attrs))
+    List.fold (state, attributes) function_info.functions (\(state, attributes), function -> do
+        (state, attrs) <- processAttributeList state function.attributes
+        (state, attributes + attrs))
+    where
+        processAttributeList :: ResolverState -> [SA.Attribute] -> (ResolverState, [HF.Attribute])
+        processAttributeList state attributes = do
+            List.fold (state, []) attributes (\(state, attributes), attribute -> do
+                Ident name _ <- attribute.name
+                case (SS.get name) of
+                    "Inline" -> (state, List.push attributes HF.Inline)
+                    _ -> (addError state (InvalidAttribute attribute.name), attributes))
 
 data LambdaInfo = { id :: HF.LambdaId,
                     arg_count :: Int,
@@ -59,234 +59,234 @@ createEmptyFunctionScopeResolver = FunctionScopeResolver Map.empty None
 
 resolveLocalFunction :: FunctionScopeResolver -> SS.SharedString -> Option HP.FullyQualifiedName
 resolveLocalFunction function_scope_resolver name = do
-   case get function_scope_resolver.functions name of
-      Some qn -> Some qn
-      None -> case function_scope_resolver.parent of
-         Some parent -> resolveLocalFunction parent name
-         None -> None
+    case get function_scope_resolver.functions name of
+        Some qn -> Some qn
+        None -> case function_scope_resolver.parent of
+            Some parent -> resolveLocalFunction parent name
+            None -> None
 
 addFunction :: SF.Function -> Option FunctionInfo -> Option FunctionInfo
 addFunction function info = case info of
-   Some info -> do
-      info <- info { functions = push info.functions function }
-      Some info
-   None -> Some (FunctionInfo [] [function])
+    Some info -> do
+        info <- info { functions = push info.functions function }
+        Some info
+    None -> Some (FunctionInfo [] [function])
 
 addFunctionSignature :: SF.FunctionSignature -> Option FunctionInfo -> Option FunctionInfo
 addFunctionSignature signature info = case info of
-   Some info -> do
-      info <- info { signatures = push info.signatures signature }
-      Some info
-   None -> Some (FunctionInfo [signature] [])
+    Some info -> do
+        info <- info { signatures = push info.signatures signature }
+        Some info
+    None -> Some (FunctionInfo [signature] [])
 
 processFunctionSignature :: ResolverState -> ModuleResolver -> TypeResolverState -> SF.FunctionSignature -> (ResolverState, TypeResolverState, Option [HT.Type], HT.Type)
 processFunctionSignature state module_resolver type_resolver signature = do
-   ((type_resolver, state), _) <- addTypeArguments type_resolver state signature.type_arguments
-   state <- checkTypeArguments state signature.type_arguments
-   (state, type_resolver) <- processClassConstraints state type_resolver signature.constraints
-   (type_resolver, state, type) <- processTypeSignature type_resolver state signature.type_signature
-   (state, type_resolver, effects) <- case signature.effects of
-      Some effects -> do
-         (state, type_resolver, effects) <- List.fold (state, type_resolver, []) effects (\(state, type_resolver, effects), eff -> case resolveEffect module_resolver eff.name of
-            Ok (qn, count) -> do
-               state <- checkTypeArguments state eff.arguments
-               (state, type_resolver, args) <- List.fold (state, type_resolver, []) eff.arguments (\(state, type_resolver, args), arg -> do
-                  (type_resolver, state, var, constraints) <- resolveTypeArg type_resolver state arg
-                  arg_type <- HT.FixedTypeArg (getString arg) var constraints
-                  (state, type_resolver, push args arg_type))
-               state <- if getLength args != count
-               then do
-                  (Ident _ location) <- eff.name
-                  addError state (InvalidEffectArgCount count (getLength args) location)
-               else state
-               (state, type_resolver, List.push effects (HT.Named qn args))
-            Err err -> do
-               state <- addError state err
-               (state, type_resolver, effects))
-         (state, type_resolver, Some effects)
-      None -> (state, type_resolver, None)
-   (state, type_resolver, effects, type)
+    ((type_resolver, state), _) <- addTypeArguments type_resolver state signature.type_arguments
+    state <- checkTypeArguments state signature.type_arguments
+    (state, type_resolver) <- processClassConstraints state type_resolver signature.constraints
+    (type_resolver, state, type) <- processTypeSignature type_resolver state signature.type_signature
+    (state, type_resolver, effects) <- case signature.effects of
+        Some effects -> do
+            (state, type_resolver, effects) <- List.fold (state, type_resolver, []) effects (\(state, type_resolver, effects), eff -> case resolveEffect module_resolver eff.name of
+                Ok (qn, count) -> do
+                    state <- checkTypeArguments state eff.arguments
+                    (state, type_resolver, args) <- List.fold (state, type_resolver, []) eff.arguments (\(state, type_resolver, args), arg -> do
+                        (type_resolver, state, var, constraints) <- resolveTypeArg type_resolver state arg
+                        arg_type <- HT.FixedTypeArg (getString arg) var constraints
+                        (state, type_resolver, push args arg_type))
+                    state <- if getLength args != count
+                    then do
+                        (Ident _ location) <- eff.name
+                        addError state (InvalidEffectArgCount count (getLength args) location)
+                    else state
+                    (state, type_resolver, List.push effects (HT.Named qn args))
+                Err err -> do
+                    state <- addError state err
+                    (state, type_resolver, effects))
+            (state, type_resolver, Some effects)
+        None -> (state, type_resolver, None)
+    (state, type_resolver, effects, type)
 
 processLambdas :: [LambdaInfo] -> HP.FullyQualifiedName -> [HF.Function ()]
 processLambdas lambdas qn = lambdas |> List.iter |> Iterator.map (\lambda -> do
-      lambda_qn <- HP.FullPathWithLambda qn lambda.id
-      kind <- (HF.Lambda lambda.id)
-      arg_count <- lambda.arg_count
-      HE.Expr _ _ _ location <- lambda.body
-      HF.Function location lambda_qn arg_count kind None None (Some lambda.body) None [HF.Inline] []) |> toList
+        lambda_qn <- HP.FullPathWithLambda qn lambda.id
+        kind <- (HF.Lambda lambda.id)
+        arg_count <- lambda.arg_count
+        HE.Expr _ _ _ location <- lambda.body
+        HF.Function location lambda_qn arg_count kind None None (Some lambda.body) None [HF.Inline] []) |> toList
 
 processSubFunctions :: ResolverState -> HP.Program () -> ModuleResolver -> FunctionScopeResolver -> TypeResolverState -> [SM.Item] -> HP.FullyQualifiedName -> (ResolverState, [HF.Function ()], FunctionScopeResolver)
 processSubFunctions state hir_program module_resolver function_scope_resolver type_resolver sub_items qn = do
-   (functions, signatures) <- collectFunctionsAndFunctionSignatures sub_items
-   local_functions_map <- functions |> List.iter |> Iterator.map (\f -> do
-      name <- (getString f.name)
-      qn <- HP.SubItem qn name
-      (name, qn)) |> toMap
-   function_scope_resolver <- FunctionScopeResolver local_functions_map (Some (function_scope_resolver))
-   (state, sub_functions) <- processFunctionsAndSignatures state hir_program module_resolver function_scope_resolver type_resolver HF.Normal functions signatures (HP.SubItem qn)
-   (state, sub_functions, function_scope_resolver)
+    (functions, signatures) <- collectFunctionsAndFunctionSignatures sub_items
+    local_functions_map <- functions |> List.iter |> Iterator.map (\f -> do
+        name <- (getString f.name)
+        qn <- HP.SubItem qn name
+        (name, qn)) |> toMap
+    function_scope_resolver <- FunctionScopeResolver local_functions_map (Some (function_scope_resolver))
+    (state, sub_functions) <- processFunctionsAndSignatures state hir_program module_resolver function_scope_resolver type_resolver HF.Normal functions signatures (HP.SubItem qn)
+    (state, sub_functions, function_scope_resolver)
 
 processExternConstraints :: [SF.ExternConstraint] -> [HF.ExternConstraint]
 processExternConstraints extern_constraints = List.map extern_constraints processExternConstraint
-   where
-      processExternConstraint :: SF.ExternConstraint -> HF.ExternConstraint
-      processExternConstraint extern_constraint = case extern_constraint of
-         SF.ExternConverter (SF.Converter from to) -> HF.ExternConverter (HF.Converter (processConstraintPath from) (processConstraintPath to))
-         SF.ExternEquality (SF.Equal from to) -> HF.ExternEquality (HF.Equal (processConstraintPath from) (processConstraintPath to))
-         SF.Independent path -> HF.Independent (processConstraintPath path)
+    where
+        processExternConstraint :: SF.ExternConstraint -> HF.ExternConstraint
+        processExternConstraint extern_constraint = case extern_constraint of
+            SF.ExternConverter (SF.Converter from to) -> HF.ExternConverter (HF.Converter (processConstraintPath from) (processConstraintPath to))
+            SF.ExternEquality (SF.Equal from to) -> HF.ExternEquality (HF.Equal (processConstraintPath from) (processConstraintPath to))
+            SF.Independent path -> HF.Independent (processConstraintPath path)
 
-      processConstraintPath :: SF.ConstraintPath -> HF.ConstraintPath
-      processConstraintPath path = case path of
-         SF.Argument index -> HF.Argument index
-         SF.Result -> HF.Result
-         SF.Field index parent -> HF.Field index (processConstraintPath parent)
-         SF.Extern index parent -> HF.Extern index (processConstraintPath parent)
-         SF.Variant index parent -> HF.Variant index (processConstraintPath parent)
-         SF.Implicit index parent -> HF.Implicit index (processConstraintPath parent)
+        processConstraintPath :: SF.ConstraintPath -> HF.ConstraintPath
+        processConstraintPath path = case path of
+            SF.Argument index -> HF.Argument index
+            SF.Result -> HF.Result
+            SF.Field index parent -> HF.Field index (processConstraintPath parent)
+            SF.Extern index parent -> HF.Extern index (processConstraintPath parent)
+            SF.Variant index parent -> HF.Variant index (processConstraintPath parent)
+            SF.Implicit index parent -> HF.Implicit index (processConstraintPath parent)
 
 processFunction :: ResolverState -> HP.Program () -> ModuleResolver -> FunctionScopeResolver -> TypeResolverState -> HF.FunctionKind -> SF.Function -> Option [HT.Type] -> Option HT.Type -> (SS.SharedString -> HP.FullyQualifiedName) -> [HF.Attribute] -> (ResolverState, [HF.Function ()])
 processFunction state hir_program module_resolver function_scope_resolver type_resolver kind function effects type qn_creator attributes = do
-   (state, effects, desugared_body) <- case function.body of
-      Some body if List.isEmpty function.arguments -> (state, effects, Some body)
-      Some body -> (state, effects, Some (desugarFunctionArgs function.arguments body))
-      None -> do
-         state <- function.arguments |> List.iter |> Iterator.fold (\state, p -> case p of
-            SP.Pattern binding location -> case binding of
-               SP.Binding _ -> state
-               _ -> addError state (InvalidExternArg location)) state
-         state <- if isSome effects
-         then addError state (ExternEffect function.name)
-         else state
-         (state, Some [], None)
-   (Ident name location) <- function.name
-   qn <- qn_creator name
-   (state, sub_functions, function_scope_resolver) <- processSubFunctions state hir_program module_resolver function_scope_resolver type_resolver function.sub_items qn
-   (state, hir_body, lambdas) <- case desugared_body of
-      Some expr -> do
-         context <- createContext qn type_resolver state module_resolver hir_program function_scope_resolver
-         env <- createEnvironment (HF.LambdaId 0) None
-         (context, env, expr) <- processExpr context env expr
-         (context.state, Some expr, context.lambdas)
-      None -> if isNone type && HF.isNormal kind
-         then do
-            state <- addError state (ExternFnWithoutType function.name)
-            (state, None, [])
-         else (state, None, [])
-   arg_count <- getLength function.arguments
-   simplified_type <- case type of
-      Some type -> Some (HT.removeOwnership type)
-      None -> None
-   function <- HF.Function location qn arg_count kind simplified_type type hir_body effects attributes (processExternConstraints function.extern_constraints)
-   lambdas <- processLambdas lambdas qn
-   (state, [function] + lambdas + sub_functions)
+    (state, effects, desugared_body) <- case function.body of
+        Some body if List.isEmpty function.arguments -> (state, effects, Some body)
+        Some body -> (state, effects, Some (desugarFunctionArgs function.arguments body))
+        None -> do
+            state <- function.arguments |> List.iter |> Iterator.fold (\state, p -> case p of
+                SP.Pattern binding location -> case binding of
+                    SP.Binding _ -> state
+                    _ -> addError state (InvalidExternArg location)) state
+            state <- if isSome effects
+            then addError state (ExternEffect function.name)
+            else state
+            (state, Some [], None)
+    (Ident name location) <- function.name
+    qn <- qn_creator name
+    (state, sub_functions, function_scope_resolver) <- processSubFunctions state hir_program module_resolver function_scope_resolver type_resolver function.sub_items qn
+    (state, hir_body, lambdas) <- case desugared_body of
+        Some expr -> do
+            context <- createContext qn type_resolver state module_resolver hir_program function_scope_resolver
+            env <- createEnvironment (HF.LambdaId 0) None
+            (context, env, expr) <- processExpr context env expr
+            (context.state, Some expr, context.lambdas)
+        None -> if isNone type && HF.isNormal kind
+            then do
+                state <- addError state (ExternFnWithoutType function.name)
+                (state, None, [])
+            else (state, None, [])
+    arg_count <- getLength function.arguments
+    simplified_type <- case type of
+        Some type -> Some (HT.removeOwnership type)
+        None -> None
+    function <- HF.Function location qn arg_count kind simplified_type type hir_body effects attributes (processExternConstraints function.extern_constraints)
+    lambdas <- processLambdas lambdas qn
+    (state, [function] + lambdas + sub_functions)
 
 processFunctionMulti :: ResolverState -> HP.Program () -> ModuleResolver -> FunctionScopeResolver -> TypeResolverState -> HF.FunctionKind -> FunctionInfo -> Option [HT.Type] -> Option HT.Type -> (SS.SharedString -> HP.FullyQualifiedName) -> [HF.Attribute] -> (ResolverState, [HF.Function ()])
 processFunctionMulti state hir_program module_resolver function_scope_resolver type_resolver kind function_info effects type qn_creator attributes = do
-   (state, arg_count_map, err) <- function_info.functions |> List.iter |> Iterator.fold (\(state, arg_count_map, err), f -> do
-      (state, err) <- if isNone f.body
-      then do
-         state <- addError state (ExternFnWithMultiDef f.name)
-         (state, True)
-      else (state, err)
-      (state, err) <- if List.isEmpty f.arguments
-      then do
-         state <- addError state (MultiDefNoArg f.name)
-         (state, True)
-      else (state, err)
-      (arg_count_map, _) <- alter (addArgCount f.name) (getLength (f.arguments)) arg_count_map
-      (state, arg_count_map, err)) (state, empty, False)
-   (state, err) <- if getSize arg_count_map != 1
-   then do
-      names <- function_info.functions |> List.iter |> Iterator.map (\f -> DefArgCount f.name (getLength f.arguments)) |> toList
-      state <- addError state (MultiDefArgCountMismatch names)
-      (state, True)
-   else (state, err)
-   (Ident name location) <- (atIndex function_info.functions 0).name
-   qn <- qn_creator name
-   if not err
-   then do
-      arg_cases <- function_info.functions |> List.iter |> Iterator.map (\f -> (f.arguments, Option.unwrap f.body)) |> toList
-      sub_items <- function_info.functions |> List.iter |> Iterator.fold (\sub_items, f -> sub_items + f.sub_items) []
-      desugared_body <- desugarFunctionArgsMulti arg_cases
-      (state, hir_body, lambdas, sub_functions) <- do
-         (state, sub_functions, function_scope_resolver) <- processSubFunctions state hir_program module_resolver function_scope_resolver type_resolver sub_items qn
-         context <- createContext qn type_resolver state module_resolver hir_program function_scope_resolver
-         env <- createEnvironment (HF.LambdaId 0) None
-         (context, env, expr) <- processExpr context env desugared_body
-         (context.state, Some expr, context.lambdas, sub_functions)
-      arg_count <- getLength (atIndex function_info.functions 0).arguments
-      function <- HF.Function location qn arg_count kind type type hir_body effects attributes []
-      lambdas <- processLambdas lambdas qn
-      (state, [function] + lambdas + sub_functions)
-   else do
-      function <- HF.Function location qn 0 kind type type None effects attributes []
-      (state, [function])
+    (state, arg_count_map, err) <- function_info.functions |> List.iter |> Iterator.fold (\(state, arg_count_map, err), f -> do
+        (state, err) <- if isNone f.body
+        then do
+            state <- addError state (ExternFnWithMultiDef f.name)
+            (state, True)
+        else (state, err)
+        (state, err) <- if List.isEmpty f.arguments
+        then do
+            state <- addError state (MultiDefNoArg f.name)
+            (state, True)
+        else (state, err)
+        (arg_count_map, _) <- alter (addArgCount f.name) (getLength (f.arguments)) arg_count_map
+        (state, arg_count_map, err)) (state, empty, False)
+    (state, err) <- if getSize arg_count_map != 1
+    then do
+        names <- function_info.functions |> List.iter |> Iterator.map (\f -> DefArgCount f.name (getLength f.arguments)) |> toList
+        state <- addError state (MultiDefArgCountMismatch names)
+        (state, True)
+    else (state, err)
+    (Ident name location) <- (atIndex function_info.functions 0).name
+    qn <- qn_creator name
+    if not err
+    then do
+        arg_cases <- function_info.functions |> List.iter |> Iterator.map (\f -> (f.arguments, Option.unwrap f.body)) |> toList
+        sub_items <- function_info.functions |> List.iter |> Iterator.fold (\sub_items, f -> sub_items + f.sub_items) []
+        desugared_body <- desugarFunctionArgsMulti arg_cases
+        (state, hir_body, lambdas, sub_functions) <- do
+            (state, sub_functions, function_scope_resolver) <- processSubFunctions state hir_program module_resolver function_scope_resolver type_resolver sub_items qn
+            context <- createContext qn type_resolver state module_resolver hir_program function_scope_resolver
+            env <- createEnvironment (HF.LambdaId 0) None
+            (context, env, expr) <- processExpr context env desugared_body
+            (context.state, Some expr, context.lambdas, sub_functions)
+        arg_count <- getLength (atIndex function_info.functions 0).arguments
+        function <- HF.Function location qn arg_count kind type type hir_body effects attributes []
+        lambdas <- processLambdas lambdas qn
+        (state, [function] + lambdas + sub_functions)
+    else do
+        function <- HF.Function location qn 0 kind type type None effects attributes []
+        (state, [function])
 
 addArgCount :: Ident -> Option [Ident] -> Option [Ident]
 addArgCount name names = case names of
-   Some names -> Some (push names name)
-   None -> Some [name]
+    Some names -> Some (push names name)
+    None -> Some [name]
 
 processFunctionInfo :: ResolverState -> HP.Program () -> ModuleResolver -> FunctionScopeResolver -> TypeResolverState -> HF.FunctionKind -> FunctionInfo -> (SS.SharedString -> HP.FullyQualifiedName) -> (ResolverState, [HF.Function ()])
 processFunctionInfo state hir_program module_resolver function_scope_resolver type_resolver kind function_info qn_creator = do
-   (state, attributes) <- processAttributes state function_info
-   (state, effects, type, type_resolver) <- case getLength function_info.signatures of
-      0 -> (state, None, None, type_resolver)
-      1 -> do
-         (state, type_resolver, effects, type) <- processFunctionSignature state module_resolver type_resolver (atIndex function_info.signatures 0)
-         (state, effects, Some type, type_resolver)
-      _ -> do
-         signatures <- function_info.signatures |> List.iter |> Iterator.map (\s -> s.name) |> toList
-         state <- addError state (ConflictingSignatures signatures)
-         (state, None, None, type_resolver)
-   (state, functions) <- case getLength function_info.functions of
-      0 -> do
-         first_signature <- atIndex function_info.signatures 0
-         (Ident name location) <- first_signature.name
-         qn <- qn_creator name
-         arg_count <- case type of
-            Some t -> getLength (HT.getArgs t)
-            None -> 0
-         function <- HF.Function location qn arg_count kind type type None effects attributes []
-         (state, [function])
-      1 -> processFunction state hir_program module_resolver function_scope_resolver type_resolver kind (atIndex function_info.functions 0) effects type qn_creator attributes
-      _ -> processFunctionMulti state hir_program module_resolver function_scope_resolver type_resolver kind function_info effects type qn_creator attributes
-   (state, functions)
+    (state, attributes) <- processAttributes state function_info
+    (state, effects, type, type_resolver) <- case getLength function_info.signatures of
+        0 -> (state, None, None, type_resolver)
+        1 -> do
+            (state, type_resolver, effects, type) <- processFunctionSignature state module_resolver type_resolver (atIndex function_info.signatures 0)
+            (state, effects, Some type, type_resolver)
+        _ -> do
+            signatures <- function_info.signatures |> List.iter |> Iterator.map (\s -> s.name) |> toList
+            state <- addError state (ConflictingSignatures signatures)
+            (state, None, None, type_resolver)
+    (state, functions) <- case getLength function_info.functions of
+        0 -> do
+            first_signature <- atIndex function_info.signatures 0
+            (Ident name location) <- first_signature.name
+            qn <- qn_creator name
+            arg_count <- case type of
+                Some t -> getLength (HT.getArgs t)
+                None -> 0
+            function <- HF.Function location qn arg_count kind type type None effects attributes []
+            (state, [function])
+        1 -> processFunction state hir_program module_resolver function_scope_resolver type_resolver kind (atIndex function_info.functions 0) effects type qn_creator attributes
+        _ -> processFunctionMulti state hir_program module_resolver function_scope_resolver type_resolver kind function_info effects type qn_creator attributes
+    (state, functions)
 
 processFunctionsAndSignatures :: ResolverState -> HP.Program () -> ModuleResolver -> FunctionScopeResolver -> TypeResolverState -> HF.FunctionKind -> [SF.Function] -> [SF.FunctionSignature] -> (SS.SharedString -> HP.FullyQualifiedName) -> (ResolverState, [HF.Function ()])
 processFunctionsAndSignatures state hir_program module_resolver function_scope_resolver type_resolver kind functions signatures qn_creator = do
-   function_info_map <- empty
-   function_info_map <- functions |> List.iter |> Iterator.fold (\function_info_map, function -> do
-      (function_info_map, _) <- alter (addFunction function) (getString function.name) function_info_map
-      function_info_map) function_info_map
-   function_info_map <- signatures |> List.iter |> Iterator.fold (\function_info_map, signature -> do
-      (function_info_map, _) <- alter (addFunctionSignature signature) (getString signature.name) function_info_map
-      function_info_map) function_info_map
-   (state, functions) <- function_info_map |> Map.iter |> Iterator.fold (\(state, functions), (_, function_info) -> do
-      (state, fns) <- processFunctionInfo state hir_program module_resolver function_scope_resolver type_resolver kind function_info qn_creator
-      functions <- functions + fns
-      (state, functions)) (state, [])
-   (state, functions)
+    function_info_map <- empty
+    function_info_map <- functions |> List.iter |> Iterator.fold (\function_info_map, function -> do
+        (function_info_map, _) <- alter (addFunction function) (getString function.name) function_info_map
+        function_info_map) function_info_map
+    function_info_map <- signatures |> List.iter |> Iterator.fold (\function_info_map, signature -> do
+        (function_info_map, _) <- alter (addFunctionSignature signature) (getString signature.name) function_info_map
+        function_info_map) function_info_map
+    (state, functions) <- function_info_map |> Map.iter |> Iterator.fold (\(state, functions), (_, function_info) -> do
+        (state, fns) <- processFunctionInfo state hir_program module_resolver function_scope_resolver type_resolver kind function_info qn_creator
+        functions <- functions + fns
+        (state, functions)) (state, [])
+    (state, functions)
 
 collectFunctionsAndFunctionSignatures :: [SM.Item] -> ([SF.Function], [SF.FunctionSignature])
 collectFunctionsAndFunctionSignatures items = do
-   (functions, signatures) <- items |> List.iter |> Iterator.fold (\(functions, signatures), item -> case item of
-      SM.Function f -> (push functions f, signatures)
-      SM.FunctionSignature s -> (functions, push signatures s)
-      _ -> (functions, signatures)) ([], [])
-   (functions, signatures)
+    (functions, signatures) <- items |> List.iter |> Iterator.fold (\(functions, signatures), item -> case item of
+        SM.Function f -> (push functions f, signatures)
+        SM.FunctionSignature s -> (functions, push signatures s)
+        _ -> (functions, signatures)) ([], [])
+    (functions, signatures)
 
 processFunctions :: ResolverState -> HP.Program () -> ModuleResolver -> SM.Module -> (ResolverState, HP.Program ())
 processFunctions state hir_program module_resolver mod = do
-   (functions, signatures) <- collectFunctionsAndFunctionSignatures mod.items
-   (type_resolver, state) <- initTypeResolver module_resolver state []
-   function_scope_resolver <- createEmptyFunctionScopeResolver
-   (state, functions) <- processFunctionsAndSignatures state hir_program module_resolver function_scope_resolver type_resolver HF.Normal functions signatures (HP.FullPath module_resolver.module_name)
-   (state, hir_program) <- functions |> List.iter |> Iterator.fold (\(state, hir_program), function -> do
-      qn <- function.name
-      location <- function.location
-      f <- HP.Function function
-      (hir_program, other_item) <- HP.addItem hir_program qn f
-      state <- handleItemConflict state other_item location
-      (state, hir_program)) (state, hir_program)
-   (state, hir_program)
+    (functions, signatures) <- collectFunctionsAndFunctionSignatures mod.items
+    (type_resolver, state) <- initTypeResolver module_resolver state []
+    function_scope_resolver <- createEmptyFunctionScopeResolver
+    (state, functions) <- processFunctionsAndSignatures state hir_program module_resolver function_scope_resolver type_resolver HF.Normal functions signatures (HP.FullPath module_resolver.module_name)
+    (state, hir_program) <- functions |> List.iter |> Iterator.fold (\(state, hir_program), function -> do
+        qn <- function.name
+        location <- function.location
+        f <- HP.Function function
+        (hir_program, other_item) <- HP.addItem hir_program qn f
+        state <- handleItemConflict state other_item location
+        (state, hir_program)) (state, hir_program)
+    (state, hir_program)

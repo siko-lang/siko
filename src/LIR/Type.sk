@@ -5,7 +5,7 @@ import Siko.LIR.Program
 data Lifetime = Lifetime Int deriving (PartialEq, Eq, PartialOrd, Ord)
 
 instance Show Lifetime where
-   show (Lifetime i) = "'l{}" % i
+    show (Lifetime i) = "'l{}" % i
 
 data Type = Adt Identity [Lifetime]
           | Record Identity [Lifetime]
@@ -14,27 +14,27 @@ data Type = Adt Identity [Lifetime]
           | Box Type
 
 instance Show Type where
-   show t = case t of
-      Adt id lifetimes -> "{}" % id
-      Record id lifetimes -> "{}" % id
-      Ref lifetime t -> "&{} {}" % (lifetime, t)
-      Never -> "!"
-      Box t -> "*{}" % t
+    show t = case t of
+        Adt id lifetimes -> "{}" % id
+        Record id lifetimes -> "{}" % id
+        Ref lifetime t -> "&{} {}" % (lifetime, t)
+        Never -> "!"
+        Box t -> "*{}" % t
 
 getIdentity :: Type -> Identity
 getIdentity type = case type of
-   Adt id _ -> id
-   Record id _ -> id
-   Ref _ t -> getIdentity t
-   Never -> panic "getIdentity called on Never!"
-   Box t -> getIdentity t
+    Adt id _ -> id
+    Record id _ -> id
+    Ref _ t -> getIdentity t
+    Never -> panic "getIdentity called on Never!"
+    Box t -> getIdentity t
 
 debox :: Type -> Type
 debox type = case type of
-   Box t -> t
-   t -> t
+    Box t -> t
+    t -> t
 
 isRef :: Type -> Bool
 isRef type = case type of
-   Ref _ _ -> True
-   _ -> False
+    Ref _ _ -> True
+    _ -> False

@@ -33,140 +33,140 @@ data TypeStore = { expr_types :: Map ExprKey ExprTypeState,
                  } deriving (Show)
 
 instance S.Apply ExprTypeState where
-   //apply :: ExprTypeState -> S.Substitution -> ExprTypeState
+    //apply :: ExprTypeState -> S.Substitution -> ExprTypeState
 
-   apply ets sub = case ets of
-      ExprType ty -> ExprType (S.apply ty sub)
-      FunctionCall ty fn_ty -> FunctionCall (S.apply ty sub) (S.apply fn_ty sub)
+    apply ets sub = case ets of
+        ExprType ty -> ExprType (S.apply ty sub)
+        FunctionCall ty fn_ty -> FunctionCall (S.apply ty sub) (S.apply fn_ty sub)
 
 instance S.Apply PatternTypeState where
-   //apply :: PatternTypeState -> S.Substitution -> PatternTypeState
+    //apply :: PatternTypeState -> S.Substitution -> PatternTypeState
 
-   apply pts sub = case pts of
-      PatternType ty -> PatternType (S.apply ty sub)
-      PatternWithRecordType record -> PatternWithRecordType (S.apply record sub)
-      PatternWithAdtType adt -> PatternWithAdtType (S.apply adt sub)
+    apply pts sub = case pts of
+        PatternType ty -> PatternType (S.apply ty sub)
+        PatternWithRecordType record -> PatternWithRecordType (S.apply record sub)
+        PatternWithAdtType adt -> PatternWithAdtType (S.apply adt sub)
 
 initializeTypeStore :: TypeStore
 initializeTypeStore = TypeStore empty empty empty empty empty empty
 
 addExprEffectSignatureSet :: TypeStore -> Int -> E.ExprId -> Eff.EffectSignatureSet -> TypeStore
 addExprEffectSignatureSet store group_index expr_id effects = do
-   (expr_effect_signatures, _) <- insert store.expr_effect_signatures (ExprKey expr_id group_index) effects
-   store { expr_effect_signatures = expr_effect_signatures }
+    (expr_effect_signatures, _) <- insert store.expr_effect_signatures (ExprKey expr_id group_index) effects
+    store { expr_effect_signatures = expr_effect_signatures }
 
 addPatternEffectSignatureSet :: TypeStore -> Int -> P.PatternId -> Eff.EffectSignatureSet -> TypeStore
 addPatternEffectSignatureSet store group_index pattern_id effects = do
-   (pattern_effect_signatures, _) <- insert store.pattern_effect_signatures (PatternKey pattern_id group_index) effects
-   store { pattern_effect_signatures = pattern_effect_signatures }
+    (pattern_effect_signatures, _) <- insert store.pattern_effect_signatures (PatternKey pattern_id group_index) effects
+    store { pattern_effect_signatures = pattern_effect_signatures }
 
 addExprType :: TypeStore -> Int -> E.ExprId -> ExprTypeState -> TypeStore
 addExprType store group_index expr_id expr_type = do
-   (expr_types, prev) <- insert store.expr_types (ExprKey expr_id group_index) expr_type
-   if isSome prev
-   then panic "ExprId is not unique!"
-   else ()
-   store { expr_types = expr_types }
+    (expr_types, prev) <- insert store.expr_types (ExprKey expr_id group_index) expr_type
+    if isSome prev
+    then panic "ExprId is not unique!"
+    else ()
+    store { expr_types = expr_types }
 
 addPatternType :: TypeStore -> Int -> P.PatternId -> PatternTypeState -> TypeStore
 addPatternType store group_index pattern_id pattern_type = do
-   (pattern_types, prev) <- insert store.pattern_types (PatternKey pattern_id group_index) pattern_type
-   if isSome prev
-   then panic "Patternid is not unique!"
-   else ()
-   store { pattern_types = pattern_types }
+    (pattern_types, prev) <- insert store.pattern_types (PatternKey pattern_id group_index) pattern_type
+    if isSome prev
+    then panic "Patternid is not unique!"
+    else ()
+    store { pattern_types = pattern_types }
 
 addPatternLocation :: TypeStore -> Int -> P.PatternId -> Location -> TypeStore
 addPatternLocation store group_index pattern_id location = do
-   key <- PatternKey pattern_id group_index
-   (pattern_locations, _) <- insert store.pattern_locations key location
-   store { pattern_locations = pattern_locations }
+    key <- PatternKey pattern_id group_index
+    (pattern_locations, _) <- insert store.pattern_locations key location
+    store { pattern_locations = pattern_locations }
 
 addWithEffects :: TypeStore -> Int -> E.ExprId -> [T.Type] -> TypeStore
 addWithEffects store group_index expr_id effect_types = do
-   key <- ExprKey expr_id group_index
-   (with_effects, _) <- insert store.with_effects key effect_types
-   store { with_effects = with_effects }
+    key <- ExprKey expr_id group_index
+    (with_effects, _) <- insert store.with_effects key effect_types
+    store { with_effects = with_effects }
 
 getPatternLocation :: TypeStore -> Int -> P.PatternId -> Location
 getPatternLocation store group_index pattern_id = case get store.pattern_locations (PatternKey pattern_id group_index) of
-   Some l -> l
-   None -> panic "Pattern not found in pattern locatios map"
+    Some l -> l
+    None -> panic "Pattern not found in pattern locatios map"
 
 getTypeFromExprTypeState :: ExprTypeState -> T.Type
 getTypeFromExprTypeState expr_type = case expr_type of
-   ExprType type -> type
-   FunctionCall type _ -> type
+    ExprType type -> type
+    FunctionCall type _ -> type
 
 getTypeFromPatternTypeState :: PatternTypeState -> T.Type
 getTypeFromPatternTypeState pattern_type = case pattern_type of
-   PatternType type -> type
-   PatternWithRecordType record -> record.type
-   PatternWithAdtType adt -> adt.type
+    PatternType type -> type
+    PatternWithRecordType record -> record.type
+    PatternWithAdtType adt -> adt.type
 
 getExprType :: TypeStore -> Int -> E.ExprId -> T.Type
 getExprType store group_index expr_id = do
-   case get store.expr_types (ExprKey expr_id group_index) of
-      Some type -> getTypeFromExprTypeState type
-      _ -> panic "No type found for {}" % expr_id
+    case get store.expr_types (ExprKey expr_id group_index) of
+        Some type -> getTypeFromExprTypeState type
+        _ -> panic "No type found for {}" % expr_id
 
 getExprAndFunctionCallType :: TypeStore -> Int -> E.ExprId -> (T.Type, T.Type)
 getExprAndFunctionCallType store group_index expr_id = do
-   case get store.expr_types (ExprKey expr_id group_index) of
-      Some (FunctionCall ty fn_ty) -> (ty, fn_ty)
-      _ -> panic "No fn call type found for {}" % expr_id
+    case get store.expr_types (ExprKey expr_id group_index) of
+        Some (FunctionCall ty fn_ty) -> (ty, fn_ty)
+        _ -> panic "No fn call type found for {}" % expr_id
 
 getPatternType :: TypeStore -> Int -> P.PatternId -> T.Type
 getPatternType store group_index pattern_id = do
-   case get store.pattern_types (PatternKey pattern_id group_index) of
-      Some (PatternType type) -> type
-      Some (PatternWithRecordType record) -> record.type
-      Some (PatternWithAdtType adt) -> adt.type
-      _ -> panic "No type found for {}" % pattern_id
+    case get store.pattern_types (PatternKey pattern_id group_index) of
+        Some (PatternType type) -> type
+        Some (PatternWithRecordType record) -> record.type
+        Some (PatternWithAdtType adt) -> adt.type
+        _ -> panic "No type found for {}" % pattern_id
 
 getRecord :: TypeStore -> Int -> P.PatternId -> D.Record
 getRecord store group_index pattern_id = case get store.pattern_types (PatternKey pattern_id group_index) of
-   Some (PatternWithRecordType record) -> record
-   _ -> panic "No record type info found for {}" % pattern_id
+    Some (PatternWithRecordType record) -> record
+    _ -> panic "No record type info found for {}" % pattern_id
 
 getAdt :: TypeStore -> Int -> P.PatternId -> D.AlgebraicDataType
 getAdt store group_index pattern_id = case get store.pattern_types (PatternKey pattern_id group_index) of
-   Some (PatternWithAdtType adt) -> adt
-   _ -> panic "No adt type info found for {}" % pattern_id
+    Some (PatternWithAdtType adt) -> adt
+    _ -> panic "No adt type info found for {}" % pattern_id
 
 getExprEffectSignature :: TypeStore -> Int -> E.ExprId -> Eff.EffectSignatureSet
 getExprEffectSignature store group_index expr_id = case get store.expr_effect_signatures (ExprKey expr_id group_index) of
-   Some eff -> eff
-   _ -> panic "No effect signature found for {}" % expr_id
+    Some eff -> eff
+    _ -> panic "No effect signature found for {}" % expr_id
 
 getPatternEffectSignature :: TypeStore -> Int -> P.PatternId -> Eff.EffectSignatureSet
 getPatternEffectSignature store group_index pattern_id = case get store.pattern_effect_signatures (PatternKey pattern_id group_index) of
-   Some eff -> eff
-   _ -> panic "No effect signature found for {}" % pattern_id
+    Some eff -> eff
+    _ -> panic "No effect signature found for {}" % pattern_id
 
 getWithEffects :: TypeStore -> Int -> E.ExprId -> [T.Type]
 getWithEffects store group_index expr_id = case get store.with_effects (ExprKey expr_id group_index) of
-   Some eff -> eff
-   _ -> panic "No with effects found for {}" % expr_id
+    Some eff -> eff
+    _ -> panic "No with effects found for {}" % expr_id
 
 instance S.Apply TypeStore where
-   apply store sub = do
-      expr_types <- Map.update store.expr_types (applySub sub)
-      expr_effect_signatures <- Map.update store.expr_effect_signatures (applySub sub)
-      pattern_types <- Map.update store.pattern_types (applySub sub)
-      pattern_effect_signatures <- Map.update store.pattern_effect_signatures (applySub sub)
-      with_effects <- Map.update store.with_effects (applySub sub)
-      store { expr_types = expr_types, expr_effect_signatures = expr_effect_signatures, pattern_types = pattern_types, pattern_effect_signatures = pattern_effect_signatures, with_effects = with_effects }
-      where
-         applySub a b :: (S.Apply b) => S.Substitution -> (a, b) -> b
-         applySub sub (id, item) = S.apply item sub
+    apply store sub = do
+        expr_types <- Map.update store.expr_types (applySub sub)
+        expr_effect_signatures <- Map.update store.expr_effect_signatures (applySub sub)
+        pattern_types <- Map.update store.pattern_types (applySub sub)
+        pattern_effect_signatures <- Map.update store.pattern_effect_signatures (applySub sub)
+        with_effects <- Map.update store.with_effects (applySub sub)
+        store { expr_types = expr_types, expr_effect_signatures = expr_effect_signatures, pattern_types = pattern_types, pattern_effect_signatures = pattern_effect_signatures, with_effects = with_effects }
+        where
+            applySub a b :: (S.Apply b) => S.Substitution -> (a, b) -> b
+            applySub sub (id, item) = S.apply item sub
 
 dump :: TypeStore -> ()
 dump store = do
-   store.expr_types |> Map.iter |> Iterator.forEach (\(expr_id, state) -> case state of
-      ExprType ty -> println "E{}: {}" % (expr_id, TF.toString ty)
-      FunctionCall ty fn_type -> println "E{}: {} = ({})" % (expr_id, TF.toString ty, TF.toString fn_type))
-   store.pattern_types |> Map.iter |> Iterator.forEach (\(pattern_id, state) -> case state of
-      (PatternType ty) -> println "P{}: {}" % (pattern_id, TF.toString ty)
-      (PatternWithRecordType record) -> println "P{}: {}" % (pattern_id, TF.toString record.type)
-      (PatternWithAdtType adt) -> println "P{}: {}" % (pattern_id, TF.toString adt.type))
+    store.expr_types |> Map.iter |> Iterator.forEach (\(expr_id, state) -> case state of
+        ExprType ty -> println "E{}: {}" % (expr_id, TF.toString ty)
+        FunctionCall ty fn_type -> println "E{}: {} = ({})" % (expr_id, TF.toString ty, TF.toString fn_type))
+    store.pattern_types |> Map.iter |> Iterator.forEach (\(pattern_id, state) -> case state of
+        (PatternType ty) -> println "P{}: {}" % (pattern_id, TF.toString ty)
+        (PatternWithRecordType record) -> println "P{}: {}" % (pattern_id, TF.toString record.type)
+        (PatternWithAdtType adt) -> println "P{}: {}" % (pattern_id, TF.toString adt.type))

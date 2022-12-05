@@ -21,8 +21,8 @@ data ItemRef = FullyQualifiedNameRef FullyQualifiedName
 
 unpackItemRef :: ItemRef -> SS.SharedString
 unpackItemRef ref = case ref of
-   FullyQualifiedNameRef n -> getResolvableName n
-   Local n -> n
+    FullyQualifiedNameRef n -> getResolvableName n
+    Local n -> n
 
 data ImportedItem = { name :: ItemRef,
                       source_module :: SS.SharedString,
@@ -32,77 +32,77 @@ data ImportedItem = { name :: ItemRef,
 
 importLocalItem :: SS.SharedString -> Item -> [ImportedItem]
 importLocalItem module_name item = do
-   name <- getItemName item
-   [ImportedItem (Local name) module_name item Explicit, ImportedItem (FullyQualifiedNameRef (FullPath module_name name)) module_name item Explicit]
+    name <- getItemName item
+    [ImportedItem (Local name) module_name item Explicit, ImportedItem (FullyQualifiedNameRef (FullPath module_name name)) module_name item Explicit]
 
 processLocals :: SS.SharedString -> [Item] -> [ImportedItem]
 processLocals module_name locals = do
-   imported_items <- locals |> List.iter |> Iterator.map (importLocalItem module_name) |> Iterator.fold (\total, items -> total + items) []
-   imported_items
+    imported_items <- locals |> List.iter |> Iterator.map (importLocalItem module_name) |> Iterator.fold (\total, items -> total + items) []
+    imported_items
 
 importExportedItem :: Option Ident -> SS.SharedString -> Explicitness -> Item -> [ImportedItem]
 importExportedItem alternative_name module_name explicitness item = do
-   name <- getItemName item
-   names <- case alternative_name of
-      Some alternative_name -> do
-         alternative_name <- getString alternative_name
-         [FullyQualifiedNameRef (FullPath alternative_name name)]
-      None -> [FullyQualifiedNameRef (FullPath module_name name), Local name]
-   names |> List.iter |> Iterator.map (\name -> ImportedItem name module_name item explicitness) |> toList
+    name <- getItemName item
+    names <- case alternative_name of
+        Some alternative_name -> do
+            alternative_name <- getString alternative_name
+            [FullyQualifiedNameRef (FullPath alternative_name name)]
+        None -> [FullyQualifiedNameRef (FullPath module_name name), Local name]
+    names |> List.iter |> Iterator.map (\name -> ImportedItem name module_name item explicitness) |> toList
 
 processImport :: Map SS.SharedString [Item] -> I.Import -> Result [ImportedItem] ResolverError
 processImport exported_items i = case i of
-   I.Hiding name items -> Ok []
-   I.ImportAll name alternative_name -> do
-      module_name <- getString name
-      case get exported_items module_name of
-         Some exported_items -> do
-            imported_items <- exported_items |> List.iter |> Iterator.map (importExportedItem alternative_name module_name Explicit) |> Iterator.fold (\total, items -> total + items) []
-            Ok imported_items
-         None -> Err (ModuleNotFound name)
-   I.Implicit module_name -> do
-      case get exported_items module_name of
-         Some exported_items -> do
-            imported_items <- exported_items |> List.iter |> Iterator.map (importExportedItem None module_name Implicit) |> Iterator.fold (\total, items -> total + items) []
-            Ok imported_items
-         None -> Ok []
-   I.ImportSpecific name filters alternative_name -> do
-      module_name <- getString name
-      case get exported_items module_name of
-         Some exported_items -> do
-            imported_items <- exported_items |> List.iter |> Iterator.filter (matchFilters filters) |> Iterator.map (importExportedItem alternative_name module_name Explicit) |> Iterator.fold (\total, items -> total + items) []
-            Ok imported_items
-         None -> Err (ModuleNotFound name)
+    I.Hiding name items -> Ok []
+    I.ImportAll name alternative_name -> do
+        module_name <- getString name
+        case get exported_items module_name of
+            Some exported_items -> do
+                imported_items <- exported_items |> List.iter |> Iterator.map (importExportedItem alternative_name module_name Explicit) |> Iterator.fold (\total, items -> total + items) []
+                Ok imported_items
+            None -> Err (ModuleNotFound name)
+    I.Implicit module_name -> do
+        case get exported_items module_name of
+            Some exported_items -> do
+                imported_items <- exported_items |> List.iter |> Iterator.map (importExportedItem None module_name Implicit) |> Iterator.fold (\total, items -> total + items) []
+                Ok imported_items
+            None -> Ok []
+    I.ImportSpecific name filters alternative_name -> do
+        module_name <- getString name
+        case get exported_items module_name of
+            Some exported_items -> do
+                imported_items <- exported_items |> List.iter |> Iterator.filter (matchFilters filters) |> Iterator.map (importExportedItem alternative_name module_name Explicit) |> Iterator.fold (\total, items -> total + items) []
+                Ok imported_items
+            None -> Err (ModuleNotFound name)
 
 isHidden :: [I.Import] -> ImportedItem -> Bool
 isHidden imports imported_item = List.fold False imports (\total, i -> total || checkHiddenImport i imported_item)
-   where
-      checkHiddenImport :: I.Import -> ImportedItem -> Bool
-      checkHiddenImport i (ImportedItem _ source_module item _) = case i of
-         I.Hiding module_name hidden_items -> do
-            module_name <- getString module_name
-            if module_name == source_module
-            then do
-               hidden_items <- List.map hidden_items (\name -> getString name)
-               contains hidden_items (getItemName item)
-            else False
-         _ -> False
+    where
+        checkHiddenImport :: I.Import -> ImportedItem -> Bool
+        checkHiddenImport i (ImportedItem _ source_module item _) = case i of
+            I.Hiding module_name hidden_items -> do
+                module_name <- getString module_name
+                if module_name == source_module
+                then do
+                    hidden_items <- List.map hidden_items (\name -> getString name)
+                    contains hidden_items (getItemName item)
+                else False
+            _ -> False
 
 processAllImports :: R.ResolverState -> Map SS.SharedString [Item] -> Map SS.SharedString [Item] -> Map SS.SharedString [I.Import] -> (R.ResolverState, Map SS.SharedString [ImportedItem])
 processAllImports state all_locals all_exports all_imports = Map.fold (state, empty) all_locals (processModule all_exports all_imports)
-   where
-      processModule :: Map SS.SharedString [Item] -> Map SS.SharedString [I.Import] -> (R.ResolverState, Map SS.SharedString [ImportedItem]) -> (SS.SharedString, [Item]) -> (R.ResolverState, Map SS.SharedString [ImportedItem])
-      processModule all_exports all_imports (state, all_imported_items) (module_name, locals) = do
-         module_imports <- Option.unwrap (get all_imports module_name)
-         local_imported_items <- processLocals module_name locals
-         (imported_items, errors) <- List.fold ([], []) module_imports (processImports all_exports)
-         imported_items <- List.filter imported_items (\item -> not (isHidden module_imports item))
-         (all_imported_items, _) <- insert all_imported_items module_name (local_imported_items + imported_items)
-         state <- List.fold state errors (\state, error -> addError state error)
-         (state, all_imported_items)
+    where
+        processModule :: Map SS.SharedString [Item] -> Map SS.SharedString [I.Import] -> (R.ResolverState, Map SS.SharedString [ImportedItem]) -> (SS.SharedString, [Item]) -> (R.ResolverState, Map SS.SharedString [ImportedItem])
+        processModule all_exports all_imports (state, all_imported_items) (module_name, locals) = do
+            module_imports <- Option.unwrap (get all_imports module_name)
+            local_imported_items <- processLocals module_name locals
+            (imported_items, errors) <- List.fold ([], []) module_imports (processImports all_exports)
+            imported_items <- List.filter imported_items (\item -> not (isHidden module_imports item))
+            (all_imported_items, _) <- insert all_imported_items module_name (local_imported_items + imported_items)
+            state <- List.fold state errors (\state, error -> addError state error)
+            (state, all_imported_items)
 
-      processImports :: Map SS.SharedString [Item] -> ([ImportedItem], [ResolverError]) -> I.Import -> ([ImportedItem], [ResolverError])
-      processImports all_exports (all_imported_items, all_errors) import_ = do
-         case processImport all_exports import_ of
-            Ok imported_items -> (all_imported_items + imported_items, all_errors)
-            Err error -> (all_imported_items, push all_errors error)
+        processImports :: Map SS.SharedString [Item] -> ([ImportedItem], [ResolverError]) -> I.Import -> ([ImportedItem], [ResolverError])
+        processImports all_exports (all_imported_items, all_errors) import_ = do
+            case processImport all_exports import_ of
+                Ok imported_items -> (all_imported_items + imported_items, all_errors)
+                Err error -> (all_imported_items, push all_errors error)

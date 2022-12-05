@@ -27,52 +27,52 @@ processPattern context pattern = (context, pattern)
 
 getNextExprId a :: (StateProvider a) => Context a -> (Context a, E.ExprId)
 getNextExprId context = do
-   (expr_id_gen, v) <- getNewExprId context.expr_id_gen
-   (context { expr_id_gen = expr_id_gen }, v)
+    (expr_id_gen, v) <- getNewExprId context.expr_id_gen
+    (context { expr_id_gen = expr_id_gen }, v)
 
 processExpr a :: (StateProvider a) => Context a -> E.Expr T.Type -> (Context a, E.Expr T.Type)
 processExpr context expr = do
-   E.Expr s_expr id type location <- expr
-   case s_expr of
-      E.RecordUpdate receiver updates -> do
-         E.Expr s_receiver _ receiver_type receiver_location <- receiver
-         var_ref <- case s_receiver of
-            E.ValueRef _ -> s_receiver
-            E.ArgRef _ -> s_receiver
-            _ -> panic "Record update's receiver is not a ref!"
-         qn <- case type of
-            T.Named qn _ -> qn
-            t -> panic "Record update's type is not a record! {}" % TF.toString t
-         record <- QL.getRecord context.state qn
-         (state, record) <- Result.unwrap (UD.instantiateRecord context.state record type)
-         context <- context { state = state }
-         (context, args) <- List.fold (context, []) record.fields (\(context, args), field -> do
-            D.RecordField field_name field_type <- field
-            (context, arg) <- case find updates (\update -> do
-               update_name <- getString update.field_name
-               update_name == field_name) of
-               Some update -> do
-                  (context, update.body)
-               None -> do
-                  (context, expr_id) <- getNextExprId context
-                  var_ref_expr <- E.Expr var_ref expr_id type location
-                  field_access <- E.FieldAccess (Ident field_name location) var_ref_expr
-                  (context, expr_id) <- getNextExprId context
-                  field_access_expr <- E.Expr field_access expr_id field_type location
-                  (context, field_access_expr)
-            (context, List.push args arg))
-         s_expr <- E.RecordConstructorCall qn args
-         expr <- E.Expr s_expr id type location
-         (context, expr)
-      s_expr -> (context, E.Expr s_expr id type location)
+    E.Expr s_expr id type location <- expr
+    case s_expr of
+        E.RecordUpdate receiver updates -> do
+            E.Expr s_receiver _ receiver_type receiver_location <- receiver
+            var_ref <- case s_receiver of
+                E.ValueRef _ -> s_receiver
+                E.ArgRef _ -> s_receiver
+                _ -> panic "Record update's receiver is not a ref!"
+            qn <- case type of
+                T.Named qn _ -> qn
+                t -> panic "Record update's type is not a record! {}" % TF.toString t
+            record <- QL.getRecord context.state qn
+            (state, record) <- Result.unwrap (UD.instantiateRecord context.state record type)
+            context <- context { state = state }
+            (context, args) <- List.fold (context, []) record.fields (\(context, args), field -> do
+                D.RecordField field_name field_type <- field
+                (context, arg) <- case find updates (\update -> do
+                    update_name <- getString update.field_name
+                    update_name == field_name) of
+                    Some update -> do
+                        (context, update.body)
+                    None -> do
+                        (context, expr_id) <- getNextExprId context
+                        var_ref_expr <- E.Expr var_ref expr_id type location
+                        field_access <- E.FieldAccess (Ident field_name location) var_ref_expr
+                        (context, expr_id) <- getNextExprId context
+                        field_access_expr <- E.Expr field_access expr_id field_type location
+                        (context, field_access_expr)
+                (context, List.push args arg))
+            s_expr <- E.StaticFunctionCall qn args
+            expr <- E.Expr s_expr id type location
+            (context, expr)
+        s_expr -> (context, E.Expr s_expr id type location)
 
 processFunction a :: (StateProvider a) => a -> F.Function T.Type -> (a, F.Function T.Type)
 processFunction state function = do
-   (state, body, expr_id_gen) <- case function.body of
-      Some body -> do
-         context <- Context function.expr_id_gen state
-         traversal_context <- createTraversalContext context processExpr processPattern
-         (context, body) <- traverse traversal_context body
-         (context.state, Some body, context.expr_id_gen)
-      None -> (state, None, function.expr_id_gen)
-   (state, function { body = body, expr_id_gen = expr_id_gen })
+    (state, body, expr_id_gen) <- case function.body of
+        Some body -> do
+            context <- Context function.expr_id_gen state
+            traversal_context <- createTraversalContext context processExpr processPattern
+            (context, body) <- traverse traversal_context body
+            (context.state, Some body, context.expr_id_gen)
+        None -> (state, None, function.expr_id_gen)
+    (state, function { body = body, expr_id_gen = expr_id_gen })

@@ -1,0 +1,110 @@
+module Siko.HIR.Backend.Lowering where
+
+import Siko.HIR.Backend.StateProvider
+import Siko.HIR.Expr as HE
+import Siko.HIR.FullyQualifiedName as FQ
+import Siko.HIR.Function as HF
+import Siko.HIR.Type as HT
+import Siko.MIR.Expr as ME
+import Siko.MIR.Function as MF
+import Siko.MIR.Identity as MI
+import Siko.MIR.Type as MT
+import Siko.Query.Lookup as QL
+import Siko.Util.Counter
+import Siko.Util.SharedString as SS
+
+data Context a = { state :: a }
+
+lowerFullyQualifiedName :: FQ.FullyQualifiedName -> MI.Identity
+lowerFullyQualifiedName qn = MI.Identity qn
+
+lowerTuple a :: (StateProvider a) => Context a -> [HT.Type] -> (Context a, MI.Identity)
+lowerTuple context args = (context, lowerFullyQualifiedName (FQ.Tuple args))
+
+lowerType a :: (StateProvider a) => Context a -> HT.Type -> (Context a, MT.Type)
+lowerType context hir_type = case hir_type of
+    HT.Var _ _ -> panic "TypeVar type in MIR lowering"
+    HT.FixedTypeArg _ _ -> panic "FixedTypeArg type in MIR lowering"
+    HT.Named qn args -> (context, MT.Never)
+    HT.Function from to -> panic "Function type in MIR lowering"
+    HT.Never -> (context, MT.Never)
+    HT.Ref lifetime ty -> do
+        (context, ty) <- lowerType context ty
+        (context, MT.Ref lifetime ty)
+    HT.Owner ty -> do
+        (context, ty) <- lowerType context ty
+        (context, MT.Owner ty)
+    HT.Tuple args -> do
+        (context, mir_id) <- lowerTuple context args
+        (context, MT.Record mir_id)
+
+lowerExpr a :: (StateProvider a) => Context a -> HE.Expr HT.Type -> (Context a, ME.Expr)
+lowerExpr context hir_expr = do
+    HE.Expr s_expr expr_id hir_type location <- hir_expr
+    (context, mir_type) <- lowerType context hir_type
+    (context, mir_s_expr) <- case s_expr of
+        HE.StaticFunctionCall qn args -> do
+            (context, args) <- List.mapS context args lowerExpr
+            (context, ME.StaticFunctionCall (lowerFullyQualifiedName qn) args)
+        HE.DynamicFunctionCall receiver args -> panic "DynamicFunctionCall found in MIR lowering"
+        HE.ClassMemberCall qn args -> panic "ClassMemberCall found in MIR lowering"
+        HE.EffectMemberCall qn args -> panic "EffectMemberCall found in MIR lowering"
+        HE.If cond true false -> do
+            (context, cond) <- lowerExpr context cond
+            (context, true) <- lowerExpr context true
+            (context, false) <- lowerExpr context false
+            (context, ME.If cond true false)
+        HE.Tuple args -> panic "Tuple found in MIR lowering"
+        HE.List args -> do
+            (context, args) <- List.mapS context args lowerExpr
+            (context, ME.List args)
+        HE.IntegerLiteral lit -> (context, ME.IntegerLiteral (SS.get lit))
+        HE.FloatLiteral lit -> (context, ME.FloatLiteral (SS.get lit))
+        HE.StringLiteral lit -> (context, ME.StringLiteral (SS.get lit))
+        HE.CharLiteral lit -> (context, ME.CharLiteral lit)
+        HE.Do args -> do
+            (context, args) <- List.mapS context args lowerExpr
+            (context, ME.Do args)
+        HE.Bind pat rhs -> unimplemented
+        HE.FieldAccess name receiver -> unimplemented
+        HE.TupleFieldAccess index receiver -> panic "Tuple field access in MIR lowering"
+        HE.Formatter fmt args -> panic "Formatter in MIR lowering"
+        HE.CaseOf body cases bind_groups -> unimplemented
+        HE.RecordUpdate receiver items -> panic "RecordUpdate in MIR lowering"
+        HE.Return arg -> do
+            (context, arg) <- lowerExpr context arg
+            (context, ME.Return arg)
+        HE.Continue arg -> do
+            (context, arg) <- lowerExpr context arg
+            (context, ME.Continue arg)
+        HE.Break arg -> do
+            (context, arg) <- lowerExpr context arg
+            (context, ME.Break arg)
+        HE.Loop pat init body continues breaks -> unimplemented
+        HE.ArgRef index -> (context, ME.VarRef (ME.Arg index))
+        HE.ValueRef var -> unimplemented
+        HE.With handlers body effects -> panic "With in MIR lowering"
+    (context, ME.Expr mir_s_expr mir_type (ME.ExprId 0))
+
+lowerFunction a :: (StateProvider a) => a -> FQ.FullyQualifiedName -> HF.Function HT.Type -> (a, MF.Function)
+lowerFunction state qn hir_function = do
+    mir_id <- lowerFullyQualifiedName qn
+    println "Lowering HIR -> MIR {}" % mir_id
+    context <- Context state
+    hir_function_type <- Option.unwrap hir_function.type
+    args <- HT.getArgsLimited hir_function_type hir_function.arg_count
+    (context, mir_args) <- List.mapS context args lowerType
+    result_type <- HT.getResultType hir_function_type hir_function.arg_count
+    (context, mir_result_type) <- lowerType context result_type
+    (context, kind) <- case hir_function.body of
+        Some hir_body -> do
+            (context, mir_body) <- lowerExpr context hir_body
+            attributes <- []
+            function_info <- MF.FunctionInfo mir_body (Counter ME.ExprId 0) (Counter ME.Temp 0) attributes
+            (context, MF.Normal function_info)
+        None -> do
+            kind <- MF.RecordCtor
+            (context, kind)
+    mir_function_type <- MF.FunctionType mir_args mir_result_type
+    println "MIR function type {}" % mir_function_type
+    (context.state, MF.Function mir_id kind mir_function_type)

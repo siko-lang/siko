@@ -10,22 +10,22 @@ data Type = Adt Identity
           deriving (PartialEq, Eq, PartialOrd, Ord)
 
 instance Show Type where
-   show t = case t of
-      Adt id -> "{}" % id
-      Record id -> "{}" % id
-      Ref index t -> "&^{} {}" % (index, t)
-      Owner t -> "~{}" % t
-      Never -> "!"
+    show t = case t of
+        Adt id -> "{}" % id
+        Record id -> "{}" % id
+        Ref index t -> "&^{} {}" % (index, t)
+        Owner t -> "~{}" % t
+        Never -> "!"
 
 getIdentity :: Type -> Identity
 getIdentity type = case type of
-   Adt id -> id
-   Record id -> id
-   Ref _ t -> getIdentity t
-   Owner t -> getIdentity t
-   Never -> panic "getIdentity called on Never!"
+    Adt id -> id
+    Record id -> id
+    Ref _ t -> getIdentity t
+    Owner t -> getIdentity t
+    Never -> panic "getIdentity called on Never!"
 
 isNever :: Type -> Bool
 isNever type = case type of
-   Never -> True
-   _ -> False
+    Never -> True
+    _ -> False

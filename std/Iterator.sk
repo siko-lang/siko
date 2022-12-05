@@ -1,76 +1,76 @@
 module Iterator where
 
 class Iterator a > b where
-   next a b :: a -> (a, Option b)
+    next a b :: a -> (a, Option b)
 
 data IteratorMap i1 a b = { inner :: i1,
                             f :: a -> b
                           }
 
 instance (Iterator i1 > a) => Iterator (IteratorMap i1 a b) > b where
-   next iter = do
-      (inner, value) <- next iter.inner
-      iter <- iter { inner = inner }
-      case value of
-         Some a -> do
-            b <- iter.f a
-            (iter, Some b)
-         None -> (iter, None)
+    next iter = do
+        (inner, value) <- next iter.inner
+        iter <- iter { inner = inner }
+        case value of
+            Some a -> do
+                b <- iter.f a
+                (iter, Some b)
+            None -> (iter, None)
 
 data IteratorFilter i1 a = { inner :: i1,
                              f :: a -> Bool
                            }
 
 instance (Iterator i1 > a) => Iterator (IteratorFilter i1 a) > a where
-   next i1 a :: IteratorFilter i1 a -> (IteratorFilter i1 a, Option a)
-   next iter = do
-      loop iter <- iter do
-         iter :: IteratorFilter i1 a <- iter // FIXME
-         (inner, value) <- next iter.inner
-         iter <- iter { inner = inner }
-         case value of
-            Some n -> do
-               if iter.f n
-               then break (iter, Some n)
-               else iter
-            None -> break (iter, None)
+    next i1 a :: IteratorFilter i1 a -> (IteratorFilter i1 a, Option a)
+    next iter = do
+        loop iter <- iter do
+            iter :: IteratorFilter i1 a <- iter // FIXME
+            (inner, value) <- next iter.inner
+            iter <- iter { inner = inner }
+            case value of
+                Some n -> do
+                    if iter.f n
+                    then break (iter, Some n)
+                    else iter
+                None -> break (iter, None)
 
 data IteratorFilterMap i1 a b = { inner :: i1,
                                   f :: a -> Option b
                                 }
 
 instance (Iterator i1 > a) => Iterator (IteratorFilterMap i1 a b) > b where
-   next i1 a b :: IteratorFilterMap i1 a b -> (IteratorFilterMap i1 a b, Option b)
-   next iter = do
-      loop iter <- iter do
-         iter :: IteratorFilterMap i1 a b <- iter // FIXME
-         (inner, value) <- next iter.inner
-         iter <- iter { inner = inner }
-         case value of
-            Some n -> do
-               case iter.f n of
-                  Some n -> break (iter, Some n)
-                  None -> iter
-            None -> break (iter, None)
+    next i1 a b :: IteratorFilterMap i1 a b -> (IteratorFilterMap i1 a b, Option b)
+    next iter = do
+        loop iter <- iter do
+            iter :: IteratorFilterMap i1 a b <- iter // FIXME
+            (inner, value) <- next iter.inner
+            iter <- iter { inner = inner }
+            case value of
+                Some n -> do
+                    case iter.f n of
+                        Some n -> break (iter, Some n)
+                        None -> iter
+                None -> break (iter, None)
 
 data IteratorZip i1 i2 = { iter1 :: i1,
                            iter2 :: i2
                          }
 
 instance (Iterator i1 > a, Iterator i2 > b) => Iterator (IteratorZip i1 i2) > (a, b) where
-   next i1 i2 a b :: IteratorZip i1 i2 -> (IteratorZip i1 i2, Option (a, b))
-   next iter = do
-      iter :: IteratorZip i1 i2 <- iter // FIXME
-      (iter1, value1) <- next iter.iter1
-      iter <- iter { iter1 = iter1 }
-      case value1 of
-         Some value1 -> do
-            (iter2, value2) <- next iter.iter2
-            iter <- iter { iter2 = iter2 }
-            case value2 of
-               Some value2 -> (iter, Some (value1, value2))
-               None -> (iter, None)
-         None -> (iter, None)
+    next i1 i2 a b :: IteratorZip i1 i2 -> (IteratorZip i1 i2, Option (a, b))
+    next iter = do
+        iter :: IteratorZip i1 i2 <- iter // FIXME
+        (iter1, value1) <- next iter.iter1
+        iter <- iter { iter1 = iter1 }
+        case value1 of
+            Some value1 -> do
+                (iter2, value2) <- next iter.iter2
+                iter <- iter { iter2 = iter2 }
+                case value2 of
+                    Some value2 -> (iter, Some (value1, value2))
+                    None -> (iter, None)
+            None -> (iter, None)
 
 @Inline
 map a b i1 :: (Iterator i1 > a) => (a -> b) -> i1 -> IteratorMap i1 a b
@@ -87,24 +87,24 @@ filterMap f iter = IteratorFilterMap iter f
 @Inline
 fold a b i1 :: (Iterator i1 > b) => (a -> b -> a) -> a -> i1 -> a
 fold f s iter = do
-   loop (s, iter) <- (s, iter) do
-      (iter, value) <- next iter
-      case value of
-         Some n -> do
-            s <- f s n
-            (s, iter)
-         None -> break s
+    loop (s, iter) <- (s, iter) do
+        (iter, value) <- next iter
+        case value of
+            Some n -> do
+                s <- f s n
+                (s, iter)
+            None -> break s
 
 @Inline
 forEach i1 a :: (Iterator i1 > a) => (a -> ()) -> i1 -> ()
 forEach f iter = do
-   loop iter <- iter do
-      (iter, value) <- next iter
-      case value of
-         Some n -> do
-            f n
-            iter
-         None -> break ()
+    loop iter <- iter do
+        (iter, value) <- next iter
+        case value of
+            Some n -> do
+                f n
+                iter
+            None -> break ()
 
 @Inline
 zip i1 i2 a b :: (Iterator i1 > a, Iterator i2 > b) => i1 -> i2 -> IteratorZip i1 i2

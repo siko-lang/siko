@@ -23,50 +23,50 @@ data FunctionInfo = { args :: [TypeVariableInfo],
 
 normalizeFunctionInfo :: FunctionInfo -> FunctionInfo
 normalizeFunctionInfo function_info = do
-   deps_map <- getOrderedDependencyMap function_info.members
-   duplicator <- createNormalizer
-   (visited, duplicator) <- processTypeVariableInfo [] deps_map duplicator function_info.result
-   (visited, duplicator) <- List.fold (visited, duplicator) function_info.args (\(visited, duplicator), arg -> do
-      processTypeVariableInfo visited deps_map duplicator arg)
-   (duplicator, args) <- List.mapS duplicator function_info.args duplicate
-   (duplicator, result) <- duplicate duplicator function_info.result
-   (duplicator, members) <- List.mapS duplicator function_info.members duplicate
-   (duplicator, converters) <- List.mapS duplicator function_info.converters duplicate
-   (duplicator, ownershipinfos) <- List.mapS duplicator function_info.ownershipinfos duplicate
-   members <- members |> List.sort
-   ownershipinfos <- ownershipinfos |> List.sort
-   FunctionInfo args result members converters ownershipinfos
+    deps_map <- getOrderedDependencyMap function_info.members
+    duplicator <- createNormalizer
+    (visited, duplicator) <- processTypeVariableInfo [] deps_map duplicator function_info.result
+    (visited, duplicator) <- List.fold (visited, duplicator) function_info.args (\(visited, duplicator), arg -> do
+        processTypeVariableInfo visited deps_map duplicator arg)
+    (duplicator, args) <- List.mapS duplicator function_info.args duplicate
+    (duplicator, result) <- duplicate duplicator function_info.result
+    (duplicator, members) <- List.mapS duplicator function_info.members duplicate
+    (duplicator, converters) <- List.mapS duplicator function_info.converters duplicate
+    (duplicator, ownershipinfos) <- List.mapS duplicator function_info.ownershipinfos duplicate
+    members <- members |> List.sort
+    ownershipinfos <- ownershipinfos |> List.sort
+    FunctionInfo args result members converters ownershipinfos
 
 enforceUnknownArgOwnership :: FunctionInfo -> FunctionInfo
 enforceUnknownArgOwnership function_info = do
-   arg_ownership_vars <- List.fold [] function_info.args (\arg_ownership_vars, info -> List.push arg_ownership_vars info.ownership_var)
-   ownershipinfos <- List.map function_info.ownershipinfos (\info -> if List.contains arg_ownership_vars info.var
-      then info { kind = M.Unknown }
-      else info)
-   ownershipinfos <- ownershipinfos |> List.sort
-   function_info { ownershipinfos = ownershipinfos }
+    arg_ownership_vars <- List.fold [] function_info.args (\arg_ownership_vars, info -> List.push arg_ownership_vars info.ownership_var)
+    ownershipinfos <- List.map function_info.ownershipinfos (\info -> if List.contains arg_ownership_vars info.var
+        then info { kind = M.Unknown }
+        else info)
+    ownershipinfos <- ownershipinfos |> List.sort
+    function_info { ownershipinfos = ownershipinfos }
 
 duplicateFunctionInfo :: Allocator -> FunctionInfo -> (Allocator, FunctionInfo)
 duplicateFunctionInfo allocator function_info = do
-   duplicator <- createDuplicator allocator
-   (duplicator, args) <- List.mapS duplicator function_info.args duplicate
-   (duplicator, result) <- duplicate duplicator function_info.result
-   (duplicator, members) <- List.mapS duplicator function_info.members duplicate
-   (duplicator, converters) <- List.mapS duplicator function_info.converters duplicate
-   (duplicator, ownershipinfos) <- List.mapS duplicator function_info.ownershipinfos duplicate
-   (duplicator.allocator, FunctionInfo args result members converters ownershipinfos)
+    duplicator <- createDuplicator allocator
+    (duplicator, args) <- List.mapS duplicator function_info.args duplicate
+    (duplicator, result) <- duplicate duplicator function_info.result
+    (duplicator, members) <- List.mapS duplicator function_info.members duplicate
+    (duplicator, converters) <- List.mapS duplicator function_info.converters duplicate
+    (duplicator, ownershipinfos) <- List.mapS duplicator function_info.ownershipinfos duplicate
+    (duplicator.allocator, FunctionInfo args result members converters ownershipinfos)
 
 instance Apply FunctionInfo where
-   apply applier function_info = do
-      (applier, args) <- apply applier function_info.args
-      (applier, result) <- apply applier function_info.result
-      (applier, members) <- apply applier function_info.members
-      (applier, converters) <- apply applier function_info.converters
-      (applier, ownershipinfos) <- apply applier function_info.ownershipinfos
-      members <- List.dedup (List.sort members)
-      converters <- List.dedup (List.sort converters)
-      function_info <- FunctionInfo args result members converters ownershipinfos
-      (applier, function_info)
+    apply applier function_info = do
+        (applier, args) <- apply applier function_info.args
+        (applier, result) <- apply applier function_info.result
+        (applier, members) <- apply applier function_info.members
+        (applier, converters) <- apply applier function_info.converters
+        (applier, ownershipinfos) <- apply applier function_info.ownershipinfos
+        members <- List.dedup (List.sort members)
+        converters <- List.dedup (List.sort converters)
+        function_info <- FunctionInfo args result members converters ownershipinfos
+        (applier, function_info)
 
 instance MemberOwner FunctionInfo where
-   getMembers function_info = function_info.members
+    getMembers function_info = function_info.members

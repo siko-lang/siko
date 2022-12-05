@@ -13,31 +13,31 @@ data NameMap = { names :: Map Name Int }
 
 getName :: NameMap -> MP.Identity -> (NameMap, LP.Identity)
 getName name_map mir_id = do
-   MP.Identity mod name _ <- mir_id
-   (names, id) <- Map.alter (\old -> case old of
-      Some old_id -> Some (old_id + 1)
-      None -> Some 1) (Name mod name) name_map.names
-   lir_id <- case id of
-      Some id -> LP.Identity mod name id
-      None -> LP.Identity mod name 0
-   (name_map { names = names }, lir_id)
+    MP.Identity mod name _ <- mir_id
+    (names, id) <- Map.alter (\old -> case old of
+        Some old_id -> Some (old_id + 1)
+        None -> Some 1) (Name mod name) name_map.names
+    lir_id <- case id of
+        Some id -> LP.Identity mod name id
+        None -> LP.Identity mod name 0
+    (name_map { names = names }, lir_id)
 
 createId :: MP.Identity -> (NameMap, Option LP.Identity) -> Option LP.Identity -> ((NameMap, Option LP.Identity), Option LP.Identity)
 createId mir_id (name_map, _) old = case old of
-   Some name -> ((name_map, Some name), Some name)
-   None -> do
-      (name_map, lir_id) <- getName name_map mir_id
-      ((name_map, Some lir_id), Some lir_id)
+    Some name -> ((name_map, Some name), Some name)
+    None -> do
+        (name_map, lir_id) <- getName name_map mir_id
+        ((name_map, Some lir_id), Some lir_id)
 
 getMIRId :: LIRKey -> MP.Identity
 getMIRId key = case key of
-   FunctionKey id _ -> id
-   RecordKey id _ -> id
-   AdtKey id _ -> id
+    FunctionKey id _ -> id
+    RecordKey id _ -> id
+    AdtKey id _ -> id
 
 getLIRId :: Context -> LIRKey -> (Context, LP.Identity)
 getLIRId context key = do
-   mir_id <- getMIRId key
-   lir_id :: Option LP.Identity <- None
-   ((name_map, lir_id), lir_ids, _) <- Map.alterS (createId mir_id) (context.name_map, None) key context.lir_ids
-   (context { name_map = name_map, lir_ids = lir_ids }, Option.unwrap lir_id)
+    mir_id <- getMIRId key
+    lir_id :: Option LP.Identity <- None
+    ((name_map, lir_id), lir_ids, _) <- Map.alterS (createId mir_id) (context.name_map, None) key context.lir_ids
+    (context { name_map = name_map, lir_ids = lir_ids }, Option.unwrap lir_id)

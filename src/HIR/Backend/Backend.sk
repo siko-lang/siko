@@ -19,20 +19,20 @@ import Siko.Trace
 
 dumpProgram :: P.Program () -> OutputFileType -> ()
 dumpProgram program type = do
-   config <- getConfig ()
-   if config.dump
-   then do
-      //s <- P.dump program
-      //writeTextFile (getOutputFileName type) s
-      ()
-   else ()
+    config <- getConfig ()
+    if config.dump
+    then do
+        //s <- P.dump program
+        //writeTextFile (getOutputFileName type) s
+        ()
+    else ()
 
 processProgram :: P.Program () -> ExprIdGenerator -> PatternIdGenerator -> TVG.TypeVarGenerator -> FileManager -> Result MP.Program [TypecheckerError]
 processProgram program expr_id_gen pattern_id_gen var_gen file_manager = do
-   trace "Typechecking.."
-   (typed_program, var_gen, class_info_store, instance_resolver, instance_resolver_history) <- try TC.processProgram program var_gen
-   (typed_program, expr_id_gen, var_gen, class_info_store) <- UT.processProgram typed_program expr_id_gen var_gen class_info_store
-   (expr_id_gen, pattern_id_gen, var_gen, typed_program) <- ER.processProgram typed_program expr_id_gen pattern_id_gen var_gen class_info_store
-   (typed_program, expr_id_gen, pattern_id_gen, var_gen) <- Inliner.processProgram typed_program expr_id_gen pattern_id_gen var_gen class_info_store
-   mir_program <- L.lowerProgram file_manager var_gen class_info_store typed_program instance_resolver instance_resolver_history
-   Ok mir_program
+    trace "Typechecking.."
+    (typed_program, var_gen, class_info_store, instance_resolver, instance_resolver_history) <- try TC.processProgram program var_gen
+    (typed_program, expr_id_gen, var_gen, class_info_store) <- UT.processProgram typed_program expr_id_gen var_gen class_info_store
+    (expr_id_gen, pattern_id_gen, var_gen, typed_program) <- ER.processProgram typed_program expr_id_gen pattern_id_gen var_gen class_info_store
+    (typed_program, expr_id_gen, pattern_id_gen, var_gen) <- Inliner.processProgram typed_program expr_id_gen pattern_id_gen var_gen class_info_store
+    mir_program <- L.lowerProgram file_manager var_gen class_info_store typed_program instance_resolver instance_resolver_history
+    Ok mir_program

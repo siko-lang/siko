@@ -23,123 +23,124 @@ data Driver = { sources :: Map String SourceFile,
 
 createDriver :: Driver
 createDriver = do
-   db <- DB.createDatabase
-   db <- DB.addCommandGenerator db I.UnresolvedModuleKind I.CollectLocalItems
-   db <- DB.addCommandGenerator db I.LocalItemsKind I.CollectExports
-   db <- DB.addCommandGenerator db I.ExportedItemsKind I.ProcessImports
-   db <- DB.addCommandGenerator db I.UnresolvedRecordKind I.ResolveRecord
-   db <- DB.addCommandGenerator db I.UnresolvedAdtKind I.ResolveAdt
-   db <- DB.addCommandGenerator db I.UnresolvedFunctionKind I.ResolveFunction
-   db <- DB.addCommandGenerator db I.UnresolvedClassKind I.ResolveClass
-   db <- DB.addCommandGenerator db I.UnresolvedInstanceKind I.ResolveInstance
-   db <- DB.addCommandGenerator db I.UnresolvedEffectKind I.ResolveEffect
-   db <- DB.addCommandGenerator db I.ResolvedFunctionKind I.CreateFunctionTypeInfo
-   db <- DB.addCommandGenerator db I.ResolvedFunctionKind I.CreateFunctionDependencyInfo
-   db <- DB.addCommandGenerator db I.ResolvedClassKind I.CreateClassTypeInfo
-   db <- DB.addCommandGenerator db I.ResolvedInstanceKind I.CheckInstance
-   db <- DB.addCommandGenerator db I.FunctionGroupKind I.TypeCheckFunctionGroup
-   db <- DB.addCommandGenerator db I.TypedFunctionKind I.TransformUpdates
-   db <- DB.addCommandGenerator db I.MonomorphizedFunctionKind I.ConvertClosures
-   db <- DB.addWatchedKind db I.ResolvedClassKind (Some I.RefreshClassDeps)
-   db <- DB.addWatchedKind db I.FunctionDependencyInfoKind (Some I.CreateFunctionGroups)
-   db <- DB.addWatchedKind db I.ClosureInstanceKind None
-   resolver <- R.createResolver
-   Driver Map.empty resolver db []
+    db <- DB.createDatabase
+    db <- DB.addCommandGenerator db I.UnresolvedModuleKind I.CollectLocalItems
+    db <- DB.addCommandGenerator db I.LocalItemsKind I.CollectExports
+    db <- DB.addCommandGenerator db I.ExportedItemsKind I.ProcessImports
+    db <- DB.addCommandGenerator db I.UnresolvedRecordKind I.ResolveRecord
+    db <- DB.addCommandGenerator db I.UnresolvedAdtKind I.ResolveAdt
+    db <- DB.addCommandGenerator db I.UnresolvedFunctionKind I.ResolveFunction
+    db <- DB.addCommandGenerator db I.UnresolvedClassKind I.ResolveClass
+    db <- DB.addCommandGenerator db I.UnresolvedInstanceKind I.ResolveInstance
+    db <- DB.addCommandGenerator db I.UnresolvedEffectKind I.ResolveEffect
+    db <- DB.addCommandGenerator db I.ResolvedFunctionKind I.CreateFunctionTypeInfo
+    db <- DB.addCommandGenerator db I.ResolvedFunctionKind I.CreateFunctionDependencyInfo
+    db <- DB.addCommandGenerator db I.ResolvedClassKind I.CreateClassTypeInfo
+    db <- DB.addCommandGenerator db I.ResolvedInstanceKind I.CheckInstance
+    db <- DB.addCommandGenerator db I.FunctionGroupKind I.TypeCheckFunctionGroup
+    db <- DB.addCommandGenerator db I.TypedFunctionKind I.TransformUpdates
+    db <- DB.addCommandGenerator db I.MonomorphizedFunctionKind I.ConvertClosures
+    db <- DB.addWatchedKind db I.ResolvedClassKind (Some I.RefreshClassDeps)
+    db <- DB.addWatchedKind db I.FunctionDependencyInfoKind (Some I.CreateFunctionGroups)
+    db <- DB.addWatchedKind db I.ClosureInstanceKind None
+    resolver <- R.createResolver
+    Driver Map.empty resolver db []
 
 addModule :: String -> Driver -> SM.Module -> Driver
 addModule file_name driver mod = do
-   resolver <- R.addModule driver.resolver file_name mod.name
-   driver { resolver = resolver }
+    resolver <- R.addModule driver.resolver file_name mod.name
+    driver { resolver = resolver }
 
 clearSources :: Driver -> Driver
 clearSources driver = do
-   names <- Map.getKeys driver.sources
-   List.fold driver names removeSource
+    names <- Map.getKeys driver.sources
+    List.fold driver names removeSource
 
 addSource :: Driver -> String -> Driver
 addSource driver file_name = do
-   driver <- removeSource driver file_name
-   source <- readTextFile file_name
-   (source_file, lexer_errors, parser_errors) <- P.parse (FileId 0) file_name source False
-   driver <- List.fold driver source_file.modules (addModule file_name)
-   sources <- Map.put driver.sources file_name source_file
-   driver { sources = sources }
+    driver <- removeSource driver file_name
+    source <- readTextFile file_name
+    (source_file, lexer_errors, parser_errors) <- P.parse (FileId 0) file_name source False
+    driver <- List.fold driver source_file.modules (addModule file_name)
+    sources <- Map.put driver.sources file_name source_file
+    driver { sources = sources }
 
 removeSource :: Driver -> String -> Driver
 removeSource driver file_name = do
-   resolver <- R.purgeFile driver.resolver file_name
-   driver { resolver = resolver }
+    resolver <- R.purgeFile driver.resolver file_name
+    driver { resolver = resolver }
 
 executeCommands :: Driver -> Driver
 executeCommands driver = do
-   loop driver <- driver do
-      driver :: Driver <- driver // FIXME
-      prios <- List.map driver.pending_commands I.getPriority
-      case List.min prios of
-         Some min_prio -> do
-            currents <- List.filter driver.pending_commands (\cmd -> I.getPriority cmd == min_prio)
-            rest <- List.filter driver.pending_commands (\cmd -> I.getPriority cmd != min_prio)
-            currents <- currents |> List.sort |> List.dedup
-            driver <- driver { pending_commands = rest }
-            List.fold driver currents executeCommand
-         None -> break driver
+    loop driver <- driver do
+        driver :: Driver <- driver // FIXME
+        prios <- List.map driver.pending_commands I.getPriority
+        case List.min prios of
+            Some min_prio -> do
+                currents <- List.filter driver.pending_commands (\cmd -> I.getPriority cmd == min_prio)
+                rest <- List.filter driver.pending_commands (\cmd -> I.getPriority cmd != min_prio)
+                currents <- currents |> List.sort |> List.dedup
+                driver <- driver { pending_commands = rest }
+                List.fold driver currents executeCommand
+            None -> break driver
 
 executeCommand :: Driver -> I.Command -> Driver
 executeCommand driver cmd = do
-   case cmd of
-      I.CollectLocalItems key -> QR.collectLocalItems driver key
-      I.CollectExports key -> QR.collectExports driver key
-      I.ProcessImports key -> QR.processImports driver key
-      I.ResolveRecord key -> QR.resolveRecord driver key
-      I.ResolveAdt key -> QR.resolveAdt driver key
-      I.ResolveFunction key -> QR.resolveFunction driver key
-      I.ResolveClass key -> QR.resolveClass driver key
-      I.ResolveInstance key -> QR.resolveInstance driver key
-      I.ResolveEffect key -> QR.resolveEffect driver key
-      I.RefreshClassDeps -> QT.refreshClassDeps driver
-      I.CreateFunctionTypeInfo key -> QT.createFunctionTypeInfo driver key
-      I.CreateClassTypeInfo key -> QT.createClassTypeInfo driver key
-      I.CheckInstance key -> QT.checkInstance driver key
-      I.CreateFunctionDependencyInfo key -> QT.createFunctionDependencyInfo driver key
-      I.CreateFunctionGroups -> QT.createFunctionGroups driver
-      I.TypeCheckFunctionGroup key -> QT.typeCheckFunctionGroup driver key
-      I.TransformUpdates key -> HL.transformUpdates driver key
-      I.ResolveEffects key -> HL.resolveEffects driver key
-      I.Monomorphize key -> HL.monomorphize driver key
-      I.ConvertClosures key -> HL.convertClosures driver key
-      I.CreateClosureInstance key -> HL.createClosureInstance driver key
-      I.CreateClosure key -> HL.createClosure driver key
+    case cmd of
+        I.CollectLocalItems key -> QR.collectLocalItems driver key
+        I.CollectExports key -> QR.collectExports driver key
+        I.ProcessImports key -> QR.processImports driver key
+        I.ResolveRecord key -> QR.resolveRecord driver key
+        I.ResolveAdt key -> QR.resolveAdt driver key
+        I.ResolveFunction key -> QR.resolveFunction driver key
+        I.ResolveClass key -> QR.resolveClass driver key
+        I.ResolveInstance key -> QR.resolveInstance driver key
+        I.ResolveEffect key -> QR.resolveEffect driver key
+        I.RefreshClassDeps -> QT.refreshClassDeps driver
+        I.CreateFunctionTypeInfo key -> QT.createFunctionTypeInfo driver key
+        I.CreateClassTypeInfo key -> QT.createClassTypeInfo driver key
+        I.CheckInstance key -> QT.checkInstance driver key
+        I.CreateFunctionDependencyInfo key -> QT.createFunctionDependencyInfo driver key
+        I.CreateFunctionGroups -> QT.createFunctionGroups driver
+        I.TypeCheckFunctionGroup key -> QT.typeCheckFunctionGroup driver key
+        I.TransformUpdates key -> HL.transformUpdates driver key
+        I.ResolveEffects key -> HL.resolveEffects driver key
+        I.Monomorphize key -> HL.monomorphize driver key
+        I.ConvertClosures key -> HL.convertClosures driver key
+        I.CreateClosureInstance key -> HL.createClosureInstance driver key
+        I.CreateClosure key -> HL.createClosure driver key
+        I.LowerHIRFunction key -> HL.lowerFunction driver key
 
 addCommands :: Driver -> [I.Command] -> Driver
 addCommands driver cmds = do
-   pending_commands <- driver.pending_commands + cmds
-   driver { pending_commands = pending_commands }
+    pending_commands <- driver.pending_commands + cmds
+    driver { pending_commands = pending_commands }
 
 addToDb :: Driver -> I.Key -> I.Item -> Driver
 addToDb driver key item = do
-   (db, cmds) <- DB.addItem driver.db key item
-   driver <- driver { db = db }
-   addCommands driver cmds
+    (db, cmds) <- DB.addItem driver.db key item
+    driver <- driver { db = db }
+    addCommands driver cmds
 
 commitChanges :: Driver -> Driver
 commitChanges driver = do
-   (resolver, updates) <- R.processModuleUpdates driver.resolver
-   driver <- driver { resolver = resolver }
-   driver <- List.fold driver updates (\driver, update -> case update of
-      R.UpdatedModule unresolved_module -> do
-         driver :: Driver <- driver // FIXME
-         case Map.get driver.sources unresolved_module.file of
-            Some source_file -> do
-               mod <- List.filter source_file.modules (\mod -> mod.name == unresolved_module.name)
-               mod <- List.atIndex mod 0
-               name <- SS.get (getString mod.name)
-               key <- I.UnresolvedModuleKey name
-               item <- I.UnresolvedModule mod
-               addToDb driver key item
-            None -> panic "Updated module not found in sources!"
-      R.RemovedModule name -> do
-         key <- I.UnresolvedModuleKey name
-         (db, cmds) <- DB.removeItem driver.db key
-         driver <- driver { db = db }
-         addCommands driver cmds)
-   executeCommands driver
+    (resolver, updates) <- R.processModuleUpdates driver.resolver
+    driver <- driver { resolver = resolver }
+    driver <- List.fold driver updates (\driver, update -> case update of
+        R.UpdatedModule unresolved_module -> do
+            driver :: Driver <- driver // FIXME
+            case Map.get driver.sources unresolved_module.file of
+                Some source_file -> do
+                    mod <- List.filter source_file.modules (\mod -> mod.name == unresolved_module.name)
+                    mod <- List.atIndex mod 0
+                    name <- SS.get (getString mod.name)
+                    key <- I.UnresolvedModuleKey name
+                    item <- I.UnresolvedModule mod
+                    addToDb driver key item
+                None -> panic "Updated module not found in sources!"
+        R.RemovedModule name -> do
+            key <- I.UnresolvedModuleKey name
+            (db, cmds) <- DB.removeItem driver.db key
+            driver <- driver { db = db }
+            addCommands driver cmds)
+    executeCommands driver

@@ -25,144 +25,144 @@ processPatterns context args = List.mapS context args (\context, arg -> traverse
 
 traversePattern context b :: TraversalContext context b -> P.Pattern b -> (TraversalContext context b, P.Pattern b)
 traversePattern context pattern = do
-   P.Pattern p id type location <- pattern
-   type <- case context.type_converter_fn of
-      Some fn -> fn type
-      None -> type
-   (context, pattern) <- case p of
-      P.Binding b -> (context, P.Pattern (P.Binding b) id type location)
-      P.Tuple args -> do
-         (context, args) <- processPatterns context args
-         (context, P.Pattern (P.Tuple args) id type location)
-      P.Guarded arg guard_expr -> do
-         (context, arg) <- traversePattern context arg
-         (context, guard_expr) <- internalTraverse context guard_expr
-         (context, P.Pattern (P.Guarded arg guard_expr) id type location)
-      P.Wildcard -> (context, P.Pattern P.Wildcard id type location)
-      P.IntegerLiteral lit -> (context, P.Pattern (P.IntegerLiteral lit) id type location)
-      P.StringLiteral lit -> (context, P.Pattern (P.StringLiteral lit) id type location)
-      P.CharLiteral lit -> (context, P.Pattern (P.CharLiteral lit) id type location)
-      P.CharRange start end kind -> (context, P.Pattern (P.CharRange start end kind) id type location)
-      P.Typed arg t -> do
-         (context, arg) <- traversePattern context arg
-         (context, P.Pattern (P.Typed arg t) id type location)
-      P.Record qn args -> do
-         (context, args) <- processPatterns context args
-         (context, P.Pattern (P.Record qn args) id type location)
-      P.Variant qn index args -> do
-         (context, args) <- processPatterns context args
-         (context, P.Pattern (P.Variant qn index args) id type location)
-   (user_context, pattern) <- context.pattern_fn context.user_context pattern
-   (context { user_context = user_context }, pattern)
+    P.Pattern p id type location <- pattern
+    type <- case context.type_converter_fn of
+        Some fn -> fn type
+        None -> type
+    (context, pattern) <- case p of
+        P.Binding b -> (context, P.Pattern (P.Binding b) id type location)
+        P.Tuple args -> do
+            (context, args) <- processPatterns context args
+            (context, P.Pattern (P.Tuple args) id type location)
+        P.Guarded arg guard_expr -> do
+            (context, arg) <- traversePattern context arg
+            (context, guard_expr) <- internalTraverse context guard_expr
+            (context, P.Pattern (P.Guarded arg guard_expr) id type location)
+        P.Wildcard -> (context, P.Pattern P.Wildcard id type location)
+        P.IntegerLiteral lit -> (context, P.Pattern (P.IntegerLiteral lit) id type location)
+        P.StringLiteral lit -> (context, P.Pattern (P.StringLiteral lit) id type location)
+        P.CharLiteral lit -> (context, P.Pattern (P.CharLiteral lit) id type location)
+        P.CharRange start end kind -> (context, P.Pattern (P.CharRange start end kind) id type location)
+        P.Typed arg t -> do
+            (context, arg) <- traversePattern context arg
+            (context, P.Pattern (P.Typed arg t) id type location)
+        P.Record qn args -> do
+            (context, args) <- processPatterns context args
+            (context, P.Pattern (P.Record qn args) id type location)
+        P.Variant qn index args -> do
+            (context, args) <- processPatterns context args
+            (context, P.Pattern (P.Variant qn index args) id type location)
+    (user_context, pattern) <- context.pattern_fn context.user_context pattern
+    (context { user_context = user_context }, pattern)
 
 internalTraverse context b :: TraversalContext context b -> E.Expr b -> (TraversalContext context b, E.Expr b)
 internalTraverse context expr = do
-   E.Expr e id type location <- expr
-   type <- case context.type_converter_fn of
-      Some fn -> fn type
-      None -> type
-   (context, expr) <- case e of
-      E.StaticFunctionCall qn args -> do
-         (context, args) <- processExprs context args
-         (context, E.Expr (E.StaticFunctionCall qn args) id type location)
-      E.DynamicFunctionCall receiver args -> do
-         (context, receiver) <- internalTraverse context receiver
-         (context, args) <- processExprs context args
-         (context, E.Expr (E.DynamicFunctionCall receiver args) id type location)
-      E.ClassMemberCall qn args -> do
-         (context, args) <- processExprs context args
-         (context, E.Expr (E.ClassMemberCall qn args) id type location)
-      E.EffectMemberCall qn args -> do
-         (context, args) <- processExprs context args
-         (context, E.Expr (E.EffectMemberCall qn args) id type location)
-      E.VariantConstructorCall qn args -> do
-         (context, args) <- processExprs context args
-         (context, E.Expr (E.VariantConstructorCall qn args) id type location)
-      E.RecordConstructorCall qn args -> do
-         (context, args) <- processExprs context args
-         (context, E.Expr (E.RecordConstructorCall qn args) id type location)
-      E.If cond true_branch false_branch -> do
-         (context, cond) <- internalTraverse context cond
-         (context, true_branch) <- internalTraverse context true_branch
-         (context, false_branch) <- internalTraverse context false_branch
-         (context, E.Expr (E.If cond true_branch false_branch) id type location)
-      E.Tuple args -> do
-         (context, args) <- processExprs context args
-         (context, E.Expr (E.Tuple args) id type location)
-      E.List args -> do
-         (context, args) <- processExprs context args
-         (context, E.Expr (E.List args) id type location)
-      E.IntegerLiteral lit -> (context, E.Expr (E.IntegerLiteral lit) id type location)
-      E.FloatLiteral lit -> (context, E.Expr (E.FloatLiteral lit) id type location)
-      E.StringLiteral lit -> (context, E.Expr (E.StringLiteral lit) id type location)
-      E.CharLiteral lit -> (context, E.Expr (E.CharLiteral lit) id type location)
-      E.Do args -> do
-         (context, args) <- processExprs context args
-         (context, E.Expr (E.Do args) id type location)
-      E.Bind pattern rhs -> do
-         (context, rhs) <- internalTraverse context rhs
-         (context, pattern) <- traversePattern context pattern
-         (context, E.Expr (E.Bind pattern rhs) id type location)
-      E.FieldAccess name receiver -> do
-         (context, receiver) <- internalTraverse context receiver
-         (context, E.Expr (E.FieldAccess name receiver) id type location)
-      E.TupleFieldAccess index receiver -> do
-         (context, receiver) <- internalTraverse context receiver
-         (context, E.Expr (E.TupleFieldAccess index receiver) id type location)
-      E.Formatter fmt args -> do
-         (context, args) <- processExprs context args
-         (context, E.Expr (E.Formatter fmt args) id type location)
-      E.CaseOf body cases bind_group -> do
-         (context, body) <- internalTraverse context body
-         (context, cases) <- List.mapS context cases (\context, c -> do
-            (context, pattern) <- traversePattern context c.pattern
-            (context, body) <- internalTraverse context c.body
-            (context, c { pattern = pattern, body = body }))
-         (context, E.Expr (E.CaseOf body cases bind_group) id type location)
-      E.RecordUpdate ref args -> do
-         (context, ref) <- internalTraverse context ref
-         (context, args) <- List.mapS context args (\context, arg -> do
-            (context, body) <- internalTraverse context arg.body
-            (context, arg { body = body }))
-         (context, E.Expr (E.RecordUpdate ref args) id type location)
-      E.Return arg -> do
-         (context, arg) <- internalTraverse context arg
-         (context, E.Expr (E.Return arg) id type location)
-      E.Continue arg -> do
-         (context, arg) <- internalTraverse context arg
-         (context, E.Expr (E.Continue arg) id type location)
-      E.Break arg -> do
-         (context, arg) <- internalTraverse context arg
-         (context, E.Expr (E.Break arg) id type location)
-      E.Loop pattern initializer body continues breaks -> do
-         (context, initializer) <- internalTraverse context initializer
-         (context, pattern) <- traversePattern context pattern
-         (context, body) <- internalTraverse context body
-         (context, E.Expr (E.Loop pattern initializer body continues breaks) id type location)
-      E.ArgRef i -> (context, E.Expr (E.ArgRef i) id type location)
-      E.ValueRef b -> (context, E.Expr (E.ValueRef b) id type location)
-      E.With handlers body eff_types -> do
-         (context, handlers) <- List.mapS context handlers (\context, handler -> do
-            (context, selection) <- case handler.selection of
-               E.Dynamic body -> do
-                  (context, body) <- internalTraverse context body
-                  (context, E.Dynamic body)
-               s -> (context, s)
-            (context, handler { selection = selection }))
-         context <- case context.pre_with_hook_fn of
-            Some pre_with_hook_fn -> do
-               user_context <- pre_with_hook_fn context.user_context id handlers eff_types location
-               context { user_context = user_context }
-            None -> context
-         (context, body) <- internalTraverse context body
-         (context, E.Expr (E.With handlers body eff_types) id type location)
-   (user_context, expr) <- context.expr_fn context.user_context expr
-   (context { user_context = user_context }, expr)
+    E.Expr e id type location <- expr
+    type <- case context.type_converter_fn of
+        Some fn -> fn type
+        None -> type
+    (context, expr) <- case e of
+        E.StaticFunctionCall qn args -> do
+            (context, args) <- processExprs context args
+            (context, E.Expr (E.StaticFunctionCall qn args) id type location)
+        E.DynamicFunctionCall receiver args -> do
+            (context, receiver) <- internalTraverse context receiver
+            (context, args) <- processExprs context args
+            (context, E.Expr (E.DynamicFunctionCall receiver args) id type location)
+        E.ClassMemberCall qn args -> do
+            (context, args) <- processExprs context args
+            (context, E.Expr (E.ClassMemberCall qn args) id type location)
+        E.EffectMemberCall qn args -> do
+            (context, args) <- processExprs context args
+            (context, E.Expr (E.EffectMemberCall qn args) id type location)
+        E.VariantConstructorCall qn args -> do
+            (context, args) <- processExprs context args
+            (context, E.Expr (E.VariantConstructorCall qn args) id type location)
+        E.RecordConstructorCall qn args -> do
+            (context, args) <- processExprs context args
+            (context, E.Expr (E.RecordConstructorCall qn args) id type location)
+        E.If cond true_branch false_branch -> do
+            (context, cond) <- internalTraverse context cond
+            (context, true_branch) <- internalTraverse context true_branch
+            (context, false_branch) <- internalTraverse context false_branch
+            (context, E.Expr (E.If cond true_branch false_branch) id type location)
+        E.Tuple args -> do
+            (context, args) <- processExprs context args
+            (context, E.Expr (E.Tuple args) id type location)
+        E.List args -> do
+            (context, args) <- processExprs context args
+            (context, E.Expr (E.List args) id type location)
+        E.IntegerLiteral lit -> (context, E.Expr (E.IntegerLiteral lit) id type location)
+        E.FloatLiteral lit -> (context, E.Expr (E.FloatLiteral lit) id type location)
+        E.StringLiteral lit -> (context, E.Expr (E.StringLiteral lit) id type location)
+        E.CharLiteral lit -> (context, E.Expr (E.CharLiteral lit) id type location)
+        E.Do args -> do
+            (context, args) <- processExprs context args
+            (context, E.Expr (E.Do args) id type location)
+        E.Bind pattern rhs -> do
+            (context, rhs) <- internalTraverse context rhs
+            (context, pattern) <- traversePattern context pattern
+            (context, E.Expr (E.Bind pattern rhs) id type location)
+        E.FieldAccess name receiver -> do
+            (context, receiver) <- internalTraverse context receiver
+            (context, E.Expr (E.FieldAccess name receiver) id type location)
+        E.TupleFieldAccess index receiver -> do
+            (context, receiver) <- internalTraverse context receiver
+            (context, E.Expr (E.TupleFieldAccess index receiver) id type location)
+        E.Formatter fmt args -> do
+            (context, args) <- processExprs context args
+            (context, E.Expr (E.Formatter fmt args) id type location)
+        E.CaseOf body cases bind_group -> do
+            (context, body) <- internalTraverse context body
+            (context, cases) <- List.mapS context cases (\context, c -> do
+                (context, pattern) <- traversePattern context c.pattern
+                (context, body) <- internalTraverse context c.body
+                (context, c { pattern = pattern, body = body }))
+            (context, E.Expr (E.CaseOf body cases bind_group) id type location)
+        E.RecordUpdate ref args -> do
+            (context, ref) <- internalTraverse context ref
+            (context, args) <- List.mapS context args (\context, arg -> do
+                (context, body) <- internalTraverse context arg.body
+                (context, arg { body = body }))
+            (context, E.Expr (E.RecordUpdate ref args) id type location)
+        E.Return arg -> do
+            (context, arg) <- internalTraverse context arg
+            (context, E.Expr (E.Return arg) id type location)
+        E.Continue arg -> do
+            (context, arg) <- internalTraverse context arg
+            (context, E.Expr (E.Continue arg) id type location)
+        E.Break arg -> do
+            (context, arg) <- internalTraverse context arg
+            (context, E.Expr (E.Break arg) id type location)
+        E.Loop pattern initializer body continues breaks -> do
+            (context, initializer) <- internalTraverse context initializer
+            (context, pattern) <- traversePattern context pattern
+            (context, body) <- internalTraverse context body
+            (context, E.Expr (E.Loop pattern initializer body continues breaks) id type location)
+        E.ArgRef i -> (context, E.Expr (E.ArgRef i) id type location)
+        E.ValueRef b -> (context, E.Expr (E.ValueRef b) id type location)
+        E.With handlers body eff_types -> do
+            (context, handlers) <- List.mapS context handlers (\context, handler -> do
+                (context, selection) <- case handler.selection of
+                    E.Dynamic body -> do
+                        (context, body) <- internalTraverse context body
+                        (context, E.Dynamic body)
+                    s -> (context, s)
+                (context, handler { selection = selection }))
+            context <- case context.pre_with_hook_fn of
+                Some pre_with_hook_fn -> do
+                    user_context <- pre_with_hook_fn context.user_context id handlers eff_types location
+                    context { user_context = user_context }
+                None -> context
+            (context, body) <- internalTraverse context body
+            (context, E.Expr (E.With handlers body eff_types) id type location)
+    (user_context, expr) <- context.expr_fn context.user_context expr
+    (context { user_context = user_context }, expr)
 
 createTraversalContext context b :: context -> (context -> E.Expr b -> (context, E.Expr b)) -> (context -> P.Pattern b -> (context, P.Pattern b)) -> TraversalContext context b
 createTraversalContext context expr_fn pattern_fn = TraversalContext context expr_fn pattern_fn None None
 
 traverse context b :: TraversalContext context b -> E.Expr b -> (context, E.Expr b)
 traverse context expr = do
-   (context, expr) <- internalTraverse context expr
-   (context.user_context, expr)
+    (context, expr) <- internalTraverse context expr
+    (context.user_context, expr)

@@ -18,20 +18,20 @@ createSingularizer = Singularizer createAllocator Map.empty
 
 processOwnerVar :: Singularizer -> TypeVariableInfo -> (Singularizer, TypeVariableInfo)
 processOwnerVar singularizer info = do
-   (allocator, next) <- getNextOwnershipTypeVariable singularizer.allocator
-   uniques <- Map.add singularizer.uniques info.ownership_var next
-   singularizer <- singularizer { allocator = allocator, uniques = uniques }
-   (singularizer, info { ownership_var = next })
+    (allocator, next) <- getNextOwnershipTypeVariable singularizer.allocator
+    uniques <- Map.add singularizer.uniques info.ownership_var next
+    singularizer <- singularizer { allocator = allocator, uniques = uniques }
+    (singularizer, info { ownership_var = next })
 
 processMembers :: Singularizer -> [M.MemberInfo] -> (Singularizer, [M.MemberInfo])
 processMembers singularizer members = List.mapS singularizer members (\singularizer, m -> do
-      (singularizer, info) <- processOwnerVar singularizer m.info
-      (singularizer, m { info = info }))
+        (singularizer, info) <- processOwnerVar singularizer m.info
+        (singularizer, m { info = info }))
 
 buildOwnershipinfos :: Singularizer -> [M.OwnershipInfo] -> (Singularizer, [M.OwnershipInfo])
 buildOwnershipinfos singularizer ownershipinfos = List.fold (singularizer, []) ownershipinfos (\(singularizer, ownershipinfos), info -> do
-      case Map.get singularizer.uniques info.var of
-         Some new_vars -> do
-            infos <- List.map new_vars (\var -> M.OwnershipInfo var info.kind)
-            (singularizer, ownershipinfos + infos)
-         None -> panic "Ownership var not found in uniques")
+        case Map.get singularizer.uniques info.var of
+            Some new_vars -> do
+                infos <- List.map new_vars (\var -> M.OwnershipInfo var info.kind)
+                (singularizer, ownershipinfos + infos)
+            None -> panic "Ownership var not found in uniques")

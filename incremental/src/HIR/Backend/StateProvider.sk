@@ -10,9 +10,9 @@ import Siko.HIR.TypeVarGenerator as TVG
 import Siko.Query.Lookup
 
 class (U.Context a, FunctionProvider a, ClassProvider a, RecordProvider a, EffectProvider a, AdtProvider a, VariantInfoProvider a, FunctionTypeInfoProvider a, CheckedFunctionTypeInfoProvider a, RegisteredInstanceProvider a, CheckedFunctionTypeInfoProvider a) => StateProvider a where
-   addError a :: a -> TypecheckerError -> a
+    addError a :: a -> TypecheckerError -> a
 
-   addCaseError a :: a -> CaseCheckerError -> a
+    addCaseError a :: a -> CaseCheckerError -> a
 
 data StateProviderInstance a = { errors :: [TypecheckerError],
                                  case_errors :: [CaseCheckerError],
@@ -25,83 +25,83 @@ createStateProvider a :: a -> StateProviderInstance a
 createStateProvider provider = StateProviderInstance [] [] TVG.createTypeVarGenerator provider False
 
 instance StateProvider StateProviderInstance a where
-   addError state err = do
-      errors <- List.push state.errors err
-      state { errors = errors }
+    addError state err = do
+        errors <- List.push state.errors err
+        state { errors = errors }
 
-   addCaseError state err = do
-      case_errors <- List.push state.case_errors err
-      state { case_errors = case_errors }
+    addCaseError state err = do
+        case_errors <- List.push state.case_errors err
+        state { case_errors = case_errors }
 
 instance U.Context StateProviderInstance a where
-   ignoreConstraints state = False
+    ignoreConstraints state = False
 
-   ignoreNever state = state.ignore_never
+    ignoreNever state = state.ignore_never
 
 instance U.TypeVarGenerator StateProviderInstance a where
-   getNewTypeVar state = do
-      (var_gen, var) <- TVG.getNewTypeVar state.var_gen
-      (state { var_gen = var_gen }, var)
+    getNewTypeVar state = do
+        (var_gen, var) <- TVG.getNewTypeVar state.var_gen
+        (state { var_gen = var_gen }, var)
 
-   getNewTypeVarType state = do
-      (var_gen, type) <- TVG.getNewTypeVarType state.var_gen
-      (state { var_gen = var_gen }, type)
+    getNewTypeVarType state = do
+        (var_gen, type) <- TVG.getNewTypeVarType state.var_gen
+        (state { var_gen = var_gen }, type)
 
 instance (RecordProvider a) => U.DataProvider StateProviderInstance a where
-   getRecord state qn = getRecordOpt state.provider qn
+    getRecord state qn = getRecordOpt state.provider qn
 
 instance (RecordProvider a) => RecordProvider StateProviderInstance a where
-   getRecord state qn = getRecord state.provider qn
+    getRecord state qn = getRecord state.provider qn
 
-   getRecordOpt state qn = getRecordOpt state.provider qn
+    getRecordOpt state qn = getRecordOpt state.provider qn
 
 instance (ClassProvider a) => U.ClassProvider StateProviderInstance a where
-   getAllClassDependencies state qn = getAllDependencies state.provider qn
+    getAllClassDependencies state qn = getAllDependencies state.provider qn
 
-   getAssociatedTypeCount state qn = getLength (getClass state.provider qn).associated_types
+    getAssociatedTypeCount state qn = getLength (getClass state.provider qn).associated_types
 
 instance (FunctionProvider a) => FunctionProvider StateProviderInstance a where
-   getFunction state qn = getFunction state.provider qn
+    getFunction state qn = getFunction state.provider qn
 
-   getUpdateTransformedFunction state qn = getUpdateTransformedFunction state.provider qn
+    getUpdateTransformedFunction state qn = getUpdateTransformedFunction state.provider qn
 
-   getResolvedEffectsFunction state qn = getResolvedEffectsFunction state.provider qn
+    getResolvedEffectsFunction state qn = getResolvedEffectsFunction state.provider qn
 
-   getMonomorphizedFunction state qn = getMonomorphizedFunction state.provider qn
+    getMonomorphizedFunction state qn = getMonomorphizedFunction state.provider qn
 
 instance (ClassProvider a) => ClassProvider StateProviderInstance a where
-   getClass state qn = getClass state.provider qn
+    getClass state qn = getClass state.provider qn
 
-   getClassTypeInfo state qn = getClassTypeInfo state.provider qn
+    getClassTypeInfo state qn = getClassTypeInfo state.provider qn
 
-   getAllDependencies state qn = getAllDependencies state.provider qn
+    getAllDependencies state qn = getAllDependencies state.provider qn
 
-   getInstance state qn = getInstance state.provider qn
+    getInstance state qn = getInstance state.provider qn
 
 instance (EffectProvider a) => EffectProvider StateProviderInstance a where
-   getEffect state qn = getEffect state.provider qn
+    getEffect state qn = getEffect state.provider qn
 
-   getEffectOpt state qn = getEffectOpt state.provider qn
+    getEffectOpt state qn = getEffectOpt state.provider qn
 
 instance (AdtProvider a) => AdtProvider StateProviderInstance a where
-   getAdt state qn = getAdt state.provider qn
+    getAdt state qn = getAdt state.provider qn
 
-   getAdtOpt state qn = getAdtOpt state.provider qn
+    getAdtOpt state qn = getAdtOpt state.provider qn
 
 instance (VariantInfoProvider a) => VariantInfoProvider StateProviderInstance a where
-   getVariantInfo state qn = getVariantInfo state.provider qn
+    getVariantInfo state qn = getVariantInfo state.provider qn
 
-   getVariantInfoOpt state qn = getVariantInfoOpt state.provider qn
+    getVariantInfoOpt state qn = getVariantInfoOpt state.provider qn
 
 instance (FunctionTypeInfoProvider a) => FunctionTypeInfoProvider StateProviderInstance a where
-   getFunctionTypeInfo state qn = getFunctionTypeInfo state.provider qn
+    getFunctionTypeInfo state qn = getFunctionTypeInfo state.provider qn
 
 instance (CheckedFunctionTypeInfoProvider a) => CheckedFunctionTypeInfoProvider StateProviderInstance a where
-   getCheckedFunctionTypeInfo state qn = getCheckedFunctionTypeInfo state.provider qn
+    getCheckedFunctionTypeInfo state qn = getCheckedFunctionTypeInfo state.provider qn
 
-   getCheckedFunctionTypeInfoOpt state qn = getCheckedFunctionTypeInfoOpt state.provider qn
+    getCheckedFunctionTypeInfoOpt state qn = getCheckedFunctionTypeInfoOpt state.provider qn
 
 instance (RegisteredInstanceProvider a) => RegisteredInstanceProvider StateProviderInstance a where
-   getRegisteredInstance state key = getRegisteredInstance state.provider key
+    getRegisteredInstance state key = getRegisteredInstance state.provider key
 
-   getRegisteredInstanceOpt state key = getRegisteredInstanceOpt state.provider key
+    getRegisteredInstanceOpt state key = getRegisteredInstanceOpt state.provider key

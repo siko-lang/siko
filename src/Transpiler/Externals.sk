@@ -10,1184 +10,1184 @@ import Siko.Transpiler.Rust.Type as RT
 
 getVariantRecordTypeId :: Program -> LT.Type -> String -> Identity
 getVariantRecordTypeId program lir_type name = do
-   adt_id <- LT.getIdentity lir_type
-   adt <- getAdt program adt_id
-   loop index <- 0 do
-      variant <- atIndex adt.variants index
-      if variant.name == name
-      then return (LT.getIdentity variant.type)
-      else index + 1
+    adt_id <- LT.getIdentity lir_type
+    adt <- getAdt program adt_id
+    loop index <- 0 do
+        variant <- atIndex adt.variants index
+        if variant.name == name
+        then return (LT.getIdentity variant.type)
+        else index + 1
 
 getVariantRecordType :: Program -> LT.Type -> String -> LT.Type
 getVariantRecordType program lir_type name = do
-   adt_id <- LT.getIdentity lir_type
-   adt <- getAdt program adt_id
-   loop index <- 0 do
-      variant <- atIndex adt.variants index
-      if variant.name == name
-      then return variant.type
-      else index + 1
+    adt_id <- LT.getIdentity lir_type
+    adt <- getAdt program adt_id
+    loop index <- 0 do
+        variant <- atIndex adt.variants index
+        if variant.name == name
+        then return variant.type
+        else index + 1
 
 generatePrintStr :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generatePrintStr program type_store arg_types result_type = do
-   rust_type <- convertType result_type
-   field_access <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
-   print_call <- R.FunctionCall "std::io::Write::write_all" [R.FunctionCall "&mut std::io::stdout" [], R.MethodCall field_access "as_ref" []]
-   flush_call <- R.FunctionCall "std::io::Write::flush" [R.FunctionCall "&mut std::io::stdout" []]
-   unwrap_call <- R.MethodCall flush_call "unwrap" []
-   unit <- R.StructCtor (RT.showBase rust_type) []
-   R.Block [print_call, unwrap_call, unit]
+    rust_type <- convertType result_type
+    field_access <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
+    print_call <- R.FunctionCall "std::io::Write::write_all" [R.FunctionCall "&mut std::io::stdout" [], R.MethodCall field_access "as_ref" []]
+    flush_call <- R.FunctionCall "std::io::Write::flush" [R.FunctionCall "&mut std::io::stdout" []]
+    unwrap_call <- R.MethodCall flush_call "unwrap" []
+    unit <- R.StructCtor (RT.showBase rust_type) []
+    R.Block [print_call, unwrap_call, unit]
 
 generateStringAdd :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateStringAdd program type_store arg_types result_type = do
-   rust_type <- convertType result_type
-   new <- "new"
-   value_ref <- if LT.isRef (atIndex arg_types 0)
-   then R.MethodCall (R.VarRef (getArgName 0)) cloneName []
-   else R.VarRef (getArgName 0)
-   new_decl <- R.VarDeclMut new value_ref None
-   field_access0 <- R.FieldAccess innerValueField (R.VarRef new)
-   field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
-   extend_call <- R.MethodCall (field_access0) "push_str" [R.Ref field_access1]
-   R.Block [new_decl, extend_call, R.VarRef new]
+    rust_type <- convertType result_type
+    new <- "new"
+    value_ref <- if LT.isRef (atIndex arg_types 0)
+    then R.MethodCall (R.VarRef (getArgName 0)) cloneName []
+    else R.VarRef (getArgName 0)
+    new_decl <- R.VarDeclMut new value_ref None
+    field_access0 <- R.FieldAccess innerValueField (R.VarRef new)
+    field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
+    extend_call <- R.MethodCall (field_access0) "push_str" [R.Ref field_access1]
+    R.Block [new_decl, extend_call, R.VarRef new]
 
 generateAdd :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateAdd program type_store arg_types result_type = do
-   rust_type <- convertType result_type
-   field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
-   field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
-   add_call <- R.FunctionCall stdOpsAdd [R.Ref field_access0, R.Ref field_access1]
-   new <- "new"
-   new_decl <- R.VarDecl new add_call None
-   struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef new)]
-   R.Block [new_decl, struct_ctor]
+    rust_type <- convertType result_type
+    field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
+    field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
+    add_call <- R.FunctionCall stdOpsAdd [R.Ref field_access0, R.Ref field_access1]
+    new <- "new"
+    new_decl <- R.VarDecl new add_call None
+    struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef new)]
+    R.Block [new_decl, struct_ctor]
 
 generateSub :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateSub program type_store arg_types result_type = do
-   rust_type <- convertType result_type
-   field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
-   field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
-   sub_call <- R.FunctionCall stdOpsSub [R.Ref field_access0, R.Ref field_access1]
-   new <- "new"
-   new_decl <- R.VarDecl new sub_call None
-   struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef new)]
-   R.Block [new_decl, struct_ctor]
+    rust_type <- convertType result_type
+    field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
+    field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
+    sub_call <- R.FunctionCall stdOpsSub [R.Ref field_access0, R.Ref field_access1]
+    new <- "new"
+    new_decl <- R.VarDecl new sub_call None
+    struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef new)]
+    R.Block [new_decl, struct_ctor]
 
 generateMul :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateMul program type_store arg_types result_type = do
-   rust_type <- convertType result_type
-   field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
-   field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
-   mul_call <- R.FunctionCall stdOpsMul [R.Ref field_access0, R.Ref field_access1]
-   new <- "new"
-   new_decl <- R.VarDecl new mul_call None
-   struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef new)]
-   R.Block [new_decl, struct_ctor]
+    rust_type <- convertType result_type
+    field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
+    field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
+    mul_call <- R.FunctionCall stdOpsMul [R.Ref field_access0, R.Ref field_access1]
+    new <- "new"
+    new_decl <- R.VarDecl new mul_call None
+    struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef new)]
+    R.Block [new_decl, struct_ctor]
 
 generateDiv :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateDiv program type_store arg_types result_type = do
-   rust_type <- convertType result_type
-   field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
-   field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
-   div_call <- R.FunctionCall stdOpsDiv [R.Ref field_access0, R.Ref field_access1]
-   new <- "new"
-   new_decl <- R.VarDecl new div_call None
-   struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef new)]
-   R.Block [new_decl, struct_ctor]
+    rust_type <- convertType result_type
+    field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
+    field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
+    div_call <- R.FunctionCall stdOpsDiv [R.Ref field_access0, R.Ref field_access1]
+    new <- "new"
+    new_decl <- R.VarDecl new div_call None
+    struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef new)]
+    R.Block [new_decl, struct_ctor]
 
 generateNegative :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateNegative program type_store arg_types result_type = do
-   rust_type <- convertType result_type
-   field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
-   new <- "new"
-   new_decl <- R.VarDecl new (R.FunctionCall "-" [field_access0]) None
-   struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef new)]
-   R.Block [new_decl, struct_ctor]
+    rust_type <- convertType result_type
+    field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
+    new <- "new"
+    new_decl <- R.VarDecl new (R.FunctionCall "-" [field_access0]) None
+    struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef new)]
+    R.Block [new_decl, struct_ctor]
 
 generateShow :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateShow program type_store arg_types result_type = do
-   rust_type <- convertType result_type
-   field_access <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
-   format <- R.FunctionCall "format!" [(R.StringLiteral "{}"), field_access]
-   struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField format]
-   R.Block [struct_ctor]
+    rust_type <- convertType result_type
+    field_access <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
+    format <- R.FunctionCall "format!" [(R.StringLiteral "{}"), field_access]
+    struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField format]
+    R.Block [struct_ctor]
 
 generatePartialCmp :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generatePartialCmp program type_store arg_types result_type = do
-   field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
-   field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
-   partial_cmp_call <- R.MethodCall field_access0 "partial_cmp" [R.Ref field_access1]
-   rust_result_type <- convertType result_type
-   some_record_type <- getVariantRecordTypeId program result_type "Some"
-   none_record_type <- getVariantRecordTypeId program result_type "None"
-   rust_some_record_type <- convertType (LT.Record some_record_type [])
-   rust_none_record_type <- convertType (LT.Record none_record_type [])
-   some_record <- getRecord program some_record_type
-   ordering_field <- atIndex some_record.fields 0
-   ordering_type <- ordering_field.type
-   greater_record_type <- getVariantRecordTypeId program ordering_type "Greater"
-   equal_record_type <- getVariantRecordTypeId program ordering_type "Equal"
-   less_record_type <- getVariantRecordTypeId program ordering_type "Less"
-   rust_ordering_type <- convertType ordering_type
-   ordering_var <- "o"
-   greater_ctor <- R.StructCtor (RT.showBase (convertType (LT.Record greater_record_type []))) []
-   equal_ctor <- R.StructCtor (RT.showBase (convertType (LT.Record equal_record_type []))) []
-   less_ctor <- R.StructCtor (RT.showBase (convertType (LT.Record less_record_type []))) []
-   greater_ctor <- R.FunctionCall ("{}::Greater" % RT.showBase rust_ordering_type) [greater_ctor]
-   equal_ctor <- R.FunctionCall ("{}::Equal" % RT.showBase rust_ordering_type) [equal_ctor]
-   less_ctor <- R.FunctionCall ("{}::Less" % RT.showBase rust_ordering_type) [less_ctor]
-   greater_case <- R.MatchCase (R.VariantPattern "std::cmp::Ordering::Greater" None) greater_ctor None
-   equal_case <- R.MatchCase (R.VariantPattern "std::cmp::Ordering::Equal" None) equal_ctor None
-   less_case <- R.MatchCase (R.VariantPattern "std::cmp::Ordering::Less" None) less_ctor None
-   init <- R.FieldInitItem (getFieldName 0) (R.Match (R.VarRef ordering_var) [greater_case, equal_case, less_case])
-   some_struct_ctor <- R.StructCtor (RT.showBase rust_some_record_type) [init]
-   none_struct_ctor <- R.StructCtor (RT.showBase rust_none_record_type) []
-   result_some_ctor <- R.FunctionCall ("{}::Some" % RT.showBase rust_result_type) [some_struct_ctor]
-   result_none_ctor <- R.FunctionCall ("{}::None" % RT.showBase rust_result_type) [none_struct_ctor]
-   some_case <- R.MatchCase (R.VariantPattern "std::option::Option::Some" (Some ordering_var)) result_some_ctor None
-   none_case <- R.MatchCase (R.VariantPattern "std::option::Option::None" None) result_none_ctor None
-   match <- R.Match partial_cmp_call [some_case, none_case]
-   R.Block [match]
+    field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
+    field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
+    partial_cmp_call <- R.MethodCall field_access0 "partial_cmp" [R.Ref field_access1]
+    rust_result_type <- convertType result_type
+    some_record_type <- getVariantRecordTypeId program result_type "Some"
+    none_record_type <- getVariantRecordTypeId program result_type "None"
+    rust_some_record_type <- convertType (LT.Record some_record_type [])
+    rust_none_record_type <- convertType (LT.Record none_record_type [])
+    some_record <- getRecord program some_record_type
+    ordering_field <- atIndex some_record.fields 0
+    ordering_type <- ordering_field.type
+    greater_record_type <- getVariantRecordTypeId program ordering_type "Greater"
+    equal_record_type <- getVariantRecordTypeId program ordering_type "Equal"
+    less_record_type <- getVariantRecordTypeId program ordering_type "Less"
+    rust_ordering_type <- convertType ordering_type
+    ordering_var <- "o"
+    greater_ctor <- R.StructCtor (RT.showBase (convertType (LT.Record greater_record_type []))) []
+    equal_ctor <- R.StructCtor (RT.showBase (convertType (LT.Record equal_record_type []))) []
+    less_ctor <- R.StructCtor (RT.showBase (convertType (LT.Record less_record_type []))) []
+    greater_ctor <- R.FunctionCall ("{}::Greater" % RT.showBase rust_ordering_type) [greater_ctor]
+    equal_ctor <- R.FunctionCall ("{}::Equal" % RT.showBase rust_ordering_type) [equal_ctor]
+    less_ctor <- R.FunctionCall ("{}::Less" % RT.showBase rust_ordering_type) [less_ctor]
+    greater_case <- R.MatchCase (R.VariantPattern "std::cmp::Ordering::Greater" None) greater_ctor None
+    equal_case <- R.MatchCase (R.VariantPattern "std::cmp::Ordering::Equal" None) equal_ctor None
+    less_case <- R.MatchCase (R.VariantPattern "std::cmp::Ordering::Less" None) less_ctor None
+    init <- R.FieldInitItem (getFieldName 0) (R.Match (R.VarRef ordering_var) [greater_case, equal_case, less_case])
+    some_struct_ctor <- R.StructCtor (RT.showBase rust_some_record_type) [init]
+    none_struct_ctor <- R.StructCtor (RT.showBase rust_none_record_type) []
+    result_some_ctor <- R.FunctionCall ("{}::Some" % RT.showBase rust_result_type) [some_struct_ctor]
+    result_none_ctor <- R.FunctionCall ("{}::None" % RT.showBase rust_result_type) [none_struct_ctor]
+    some_case <- R.MatchCase (R.VariantPattern "std::option::Option::Some" (Some ordering_var)) result_some_ctor None
+    none_case <- R.MatchCase (R.VariantPattern "std::option::Option::None" None) result_none_ctor None
+    match <- R.Match partial_cmp_call [some_case, none_case]
+    R.Block [match]
 
 generateCmp :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateCmp program type_store arg_types result_type = do
-   field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
-   field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
-   cmp_call <- R.MethodCall field_access0 "cmp" [R.Ref field_access1]
-   rust_ordering_type <- convertType result_type
-   greater_record_type <- getVariantRecordTypeId program result_type "Greater"
-   equal_record_type <- getVariantRecordTypeId program result_type "Equal"
-   less_record_type <- getVariantRecordTypeId program result_type "Less"
-   greater_ctor <- R.StructCtor (RT.showBase (convertType (LT.Record greater_record_type []))) []
-   equal_ctor <- R.StructCtor (RT.showBase (convertType (LT.Record equal_record_type []))) []
-   less_ctor <- R.StructCtor (RT.showBase (convertType (LT.Record less_record_type []))) []
-   greater_ctor <- R.FunctionCall ("{}::Greater" % RT.showBase rust_ordering_type) [greater_ctor]
-   equal_ctor <- R.FunctionCall ("{}::Equal" % RT.showBase rust_ordering_type) [equal_ctor]
-   less_ctor <- R.FunctionCall ("{}::Less" % RT.showBase rust_ordering_type) [less_ctor]
-   greater_case <- R.MatchCase (R.VariantPattern "std::cmp::Ordering::Greater" None) greater_ctor None
-   equal_case <- R.MatchCase (R.VariantPattern "std::cmp::Ordering::Equal" None) equal_ctor None
-   less_case <- R.MatchCase (R.VariantPattern "std::cmp::Ordering::Less" None) less_ctor None
-   match <- R.Match cmp_call [greater_case, equal_case, less_case]
-   R.Block [match]
+    field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
+    field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
+    cmp_call <- R.MethodCall field_access0 "cmp" [R.Ref field_access1]
+    rust_ordering_type <- convertType result_type
+    greater_record_type <- getVariantRecordTypeId program result_type "Greater"
+    equal_record_type <- getVariantRecordTypeId program result_type "Equal"
+    less_record_type <- getVariantRecordTypeId program result_type "Less"
+    greater_ctor <- R.StructCtor (RT.showBase (convertType (LT.Record greater_record_type []))) []
+    equal_ctor <- R.StructCtor (RT.showBase (convertType (LT.Record equal_record_type []))) []
+    less_ctor <- R.StructCtor (RT.showBase (convertType (LT.Record less_record_type []))) []
+    greater_ctor <- R.FunctionCall ("{}::Greater" % RT.showBase rust_ordering_type) [greater_ctor]
+    equal_ctor <- R.FunctionCall ("{}::Equal" % RT.showBase rust_ordering_type) [equal_ctor]
+    less_ctor <- R.FunctionCall ("{}::Less" % RT.showBase rust_ordering_type) [less_ctor]
+    greater_case <- R.MatchCase (R.VariantPattern "std::cmp::Ordering::Greater" None) greater_ctor None
+    equal_case <- R.MatchCase (R.VariantPattern "std::cmp::Ordering::Equal" None) equal_ctor None
+    less_case <- R.MatchCase (R.VariantPattern "std::cmp::Ordering::Less" None) less_ctor None
+    match <- R.Match cmp_call [greater_case, equal_case, less_case]
+    R.Block [match]
 
 rustBoolToSikoBool :: Program -> R.Expr -> LT.Type -> R.Expr
 rustBoolToSikoBool program bool_expr bool_type = do
-   rust_bool_type <- convertType bool_type
-   true_record_type <- getVariantRecordTypeId program bool_type "True"
-   false_record_type <- getVariantRecordTypeId program bool_type "False"
-   true_pattern <- R.VariantPattern "true" None
-   false_pattern <- R.VariantPattern "false" None
-   rust_true_record_type <- convertType (LT.Record true_record_type [])
-   rust_false_record_type <- convertType (LT.Record false_record_type [])
-   true_ctor <- R.StructCtor (RT.showBase (rust_true_record_type)) []
-   false_ctor <- R.StructCtor (RT.showBase (rust_false_record_type)) []
-   true_case <- R.MatchCase true_pattern (R.FunctionCall ("{}::True" % RT.showBase rust_bool_type) [true_ctor]) None
-   false_case <- R.MatchCase false_pattern (R.FunctionCall ("{}::False" % RT.showBase rust_bool_type) [false_ctor]) None
-   cases <- [true_case, false_case]
-   R.Match bool_expr cases
+    rust_bool_type <- convertType bool_type
+    true_record_type <- getVariantRecordTypeId program bool_type "True"
+    false_record_type <- getVariantRecordTypeId program bool_type "False"
+    true_pattern <- R.VariantPattern "true" None
+    false_pattern <- R.VariantPattern "false" None
+    rust_true_record_type <- convertType (LT.Record true_record_type [])
+    rust_false_record_type <- convertType (LT.Record false_record_type [])
+    true_ctor <- R.StructCtor (RT.showBase (rust_true_record_type)) []
+    false_ctor <- R.StructCtor (RT.showBase (rust_false_record_type)) []
+    true_case <- R.MatchCase true_pattern (R.FunctionCall ("{}::True" % RT.showBase rust_bool_type) [true_ctor]) None
+    false_case <- R.MatchCase false_pattern (R.FunctionCall ("{}::False" % RT.showBase rust_bool_type) [false_ctor]) None
+    cases <- [true_case, false_case]
+    R.Match bool_expr cases
 
 sikoBoolToRustBool :: R.Expr -> RT.Type -> R.Expr
 sikoBoolToRustBool bool_expr bool_type = do
-   true_pattern <- R.VariantPattern ("{}::True" % RT.showBase bool_type) (Some "_")
-   false_pattern <- R.VariantPattern ("{}::False" % RT.showBase bool_type) (Some "_")
-   true_case <- R.MatchCase true_pattern (R.BoolLiteral True) None
-   false_case <- R.MatchCase false_pattern (R.BoolLiteral False) None
-   cases <- [true_case, false_case]
-   R.Match bool_expr cases
+    true_pattern <- R.VariantPattern ("{}::True" % RT.showBase bool_type) (Some "_")
+    false_pattern <- R.VariantPattern ("{}::False" % RT.showBase bool_type) (Some "_")
+    true_case <- R.MatchCase true_pattern (R.BoolLiteral True) None
+    false_case <- R.MatchCase false_pattern (R.BoolLiteral False) None
+    cases <- [true_case, false_case]
+    R.Match bool_expr cases
 
 sikoOrderingToRustOrdering :: R.Expr -> RT.Type -> R.Expr
 sikoOrderingToRustOrdering ord_expr ordering_type = do
-   greater_pattern <- R.VariantPattern ("{}::Greater" % RT.showBase ordering_type) (Some "_")
-   equal_pattern <- R.VariantPattern ("{}::Equal" % RT.showBase ordering_type) (Some "_")
-   less_pattern <- R.VariantPattern ("{}::Less" % RT.showBase ordering_type) (Some "_")
-   greater_case <- R.MatchCase greater_pattern (R.EnumCtor "std::cmp::Ordering::Greater") None
-   equal_case <- R.MatchCase equal_pattern (R.EnumCtor "std::cmp::Ordering::Equal") None
-   less_case <- R.MatchCase less_pattern (R.EnumCtor "std::cmp::Ordering::Less") None
-   cases <- [greater_case, equal_case, less_case]
-   R.Match ord_expr cases
+    greater_pattern <- R.VariantPattern ("{}::Greater" % RT.showBase ordering_type) (Some "_")
+    equal_pattern <- R.VariantPattern ("{}::Equal" % RT.showBase ordering_type) (Some "_")
+    less_pattern <- R.VariantPattern ("{}::Less" % RT.showBase ordering_type) (Some "_")
+    greater_case <- R.MatchCase greater_pattern (R.EnumCtor "std::cmp::Ordering::Greater") None
+    equal_case <- R.MatchCase equal_pattern (R.EnumCtor "std::cmp::Ordering::Equal") None
+    less_case <- R.MatchCase less_pattern (R.EnumCtor "std::cmp::Ordering::Less") None
+    cases <- [greater_case, equal_case, less_case]
+    R.Match ord_expr cases
 
 sikoOptionalOrderingToRustOptionalOrdering :: Program -> R.Expr -> LT.Type -> R.Expr
 sikoOptionalOrderingToRustOptionalOrdering program partial_ord_expr optional_ordering_type = do
-   rust_optional_ordering_type <- convertType optional_ordering_type
-   some_ordering <- "some_ordering"
-   some_pattern <- R.VariantPattern ("{}::Some" % RT.showBase rust_optional_ordering_type) (Some some_ordering)
-   none_pattern <- R.VariantPattern ("{}::None" % RT.showBase rust_optional_ordering_type) (Some "_")
-   some_record_type <- getVariantRecordTypeId program optional_ordering_type "Some"
-   some_record <- getRecord program some_record_type
-   ordering_type_field <- atIndex some_record.fields 0
-   rust_some_record_type <- convertType ordering_type_field.type
-   field_access <- R.FieldAccess (getFieldName 0) (R.VarRef some_ordering)
-   some_match <- sikoOrderingToRustOrdering (R.Ref field_access) rust_some_record_type
-   some_case <- R.MatchCase some_pattern (R.FunctionCall "Some" [some_match]) None
-   none_case <- R.MatchCase none_pattern (R.EnumCtor "None") None
-   cases <- [some_case, none_case]
-   R.Match partial_ord_expr cases
+    rust_optional_ordering_type <- convertType optional_ordering_type
+    some_ordering <- "some_ordering"
+    some_pattern <- R.VariantPattern ("{}::Some" % RT.showBase rust_optional_ordering_type) (Some some_ordering)
+    none_pattern <- R.VariantPattern ("{}::None" % RT.showBase rust_optional_ordering_type) (Some "_")
+    some_record_type <- getVariantRecordTypeId program optional_ordering_type "Some"
+    some_record <- getRecord program some_record_type
+    ordering_type_field <- atIndex some_record.fields 0
+    rust_some_record_type <- convertType ordering_type_field.type
+    field_access <- R.FieldAccess (getFieldName 0) (R.VarRef some_ordering)
+    some_match <- sikoOrderingToRustOrdering (R.Ref field_access) rust_some_record_type
+    some_case <- R.MatchCase some_pattern (R.FunctionCall "Some" [some_match]) None
+    none_case <- R.MatchCase none_pattern (R.EnumCtor "None") None
+    cases <- [some_case, none_case]
+    R.Match partial_ord_expr cases
 
 generateEq :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateEq program type_store arg_types result_type = do
-   rust_result_type <- convertType result_type
-   field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
-   field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
-   eq_call <- R.MethodCall field_access0 "eq" [R.Ref field_access1]
-   match <- rustBoolToSikoBool program eq_call result_type
-   R.Block [match]
+    rust_result_type <- convertType result_type
+    field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
+    field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
+    eq_call <- R.MethodCall field_access0 "eq" [R.Ref field_access1]
+    match <- rustBoolToSikoBool program eq_call result_type
+    R.Block [match]
 
 generateOpAnd :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateOpAnd program type_store arg_types result_type = do
-   rust_result_type <- convertType result_type
-   field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
-   field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
-   rust_result_type <- convertType result_type
-   arg_type <- atIndex arg_types 0
-   true_record_type <- getVariantRecordTypeId program arg_type "True"
-   false_record_type <- getVariantRecordTypeId program arg_type "False"
-   true_pattern <- R.VariantPattern "true" None
-   false_pattern <- R.VariantPattern "false" None
-   rust_true_record_type <- convertType (LT.Record true_record_type [])
-   rust_false_record_type <- convertType (LT.Record false_record_type [])
-   true_ctor <- R.StructCtor (RT.showBase (rust_true_record_type)) []
-   false_ctor <- R.StructCtor (RT.showBase (rust_false_record_type)) []
-   true_pattern <- R.VariantPattern ("{}::True" % RT.showBase rust_result_type) (Some "_")
-   false_pattern <- R.VariantPattern ("{}::False" % RT.showBase rust_result_type) (Some "_")
-   true_case <- R.MatchCase true_pattern (R.FunctionCall ("{}::True" % RT.showBase rust_result_type) [true_ctor]) None
-   false_case <- R.MatchCase false_pattern (R.FunctionCall ("{}::False" % RT.showBase rust_result_type) [false_ctor]) None
-   cases <- [true_case, false_case]
-   match_true <- R.Match (R.VarRef (getArgName 1)) cases
-   true_case <- R.MatchCase true_pattern (R.FunctionCall ("{}::False" % RT.showBase rust_result_type) [false_ctor]) None
-   false_case <- R.MatchCase false_pattern (R.FunctionCall ("{}::False" % RT.showBase rust_result_type) [false_ctor]) None
-   cases <- [true_case, false_case]
-   match_false <- R.Match (R.VarRef (getArgName 1)) cases
-   true_case <- R.MatchCase true_pattern match_true None
-   false_case <- R.MatchCase false_pattern match_false None
-   cases <- [true_case, false_case]
-   match <- R.Match (R.VarRef (getArgName 0)) cases
-   R.Block [match]
+    rust_result_type <- convertType result_type
+    field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
+    field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
+    rust_result_type <- convertType result_type
+    arg_type <- atIndex arg_types 0
+    true_record_type <- getVariantRecordTypeId program arg_type "True"
+    false_record_type <- getVariantRecordTypeId program arg_type "False"
+    true_pattern <- R.VariantPattern "true" None
+    false_pattern <- R.VariantPattern "false" None
+    rust_true_record_type <- convertType (LT.Record true_record_type [])
+    rust_false_record_type <- convertType (LT.Record false_record_type [])
+    true_ctor <- R.StructCtor (RT.showBase (rust_true_record_type)) []
+    false_ctor <- R.StructCtor (RT.showBase (rust_false_record_type)) []
+    true_pattern <- R.VariantPattern ("{}::True" % RT.showBase rust_result_type) (Some "_")
+    false_pattern <- R.VariantPattern ("{}::False" % RT.showBase rust_result_type) (Some "_")
+    true_case <- R.MatchCase true_pattern (R.FunctionCall ("{}::True" % RT.showBase rust_result_type) [true_ctor]) None
+    false_case <- R.MatchCase false_pattern (R.FunctionCall ("{}::False" % RT.showBase rust_result_type) [false_ctor]) None
+    cases <- [true_case, false_case]
+    match_true <- R.Match (R.VarRef (getArgName 1)) cases
+    true_case <- R.MatchCase true_pattern (R.FunctionCall ("{}::False" % RT.showBase rust_result_type) [false_ctor]) None
+    false_case <- R.MatchCase false_pattern (R.FunctionCall ("{}::False" % RT.showBase rust_result_type) [false_ctor]) None
+    cases <- [true_case, false_case]
+    match_false <- R.Match (R.VarRef (getArgName 1)) cases
+    true_case <- R.MatchCase true_pattern match_true None
+    false_case <- R.MatchCase false_pattern match_false None
+    cases <- [true_case, false_case]
+    match <- R.Match (R.VarRef (getArgName 0)) cases
+    R.Block [match]
 
 generateOpOr :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateOpOr program type_store arg_types result_type = do
-   rust_result_type <- convertType result_type
-   field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
-   field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
-   rust_result_type <- convertType result_type
-   arg_type <- atIndex arg_types 0
-   true_record_type <- getVariantRecordTypeId program arg_type "True"
-   false_record_type <- getVariantRecordTypeId program arg_type "False"
-   true_pattern <- R.VariantPattern "true" None
-   false_pattern <- R.VariantPattern "false" None
-   rust_true_record_type <- convertType (LT.Record true_record_type [])
-   rust_false_record_type <- convertType (LT.Record false_record_type [])
-   true_ctor <- R.StructCtor (RT.showBase (rust_true_record_type)) []
-   false_ctor <- R.StructCtor (RT.showBase (rust_false_record_type)) []
-   true_pattern <- R.VariantPattern ("{}::True" % RT.showBase rust_result_type) (Some "_")
-   false_pattern <- R.VariantPattern ("{}::False" % RT.showBase rust_result_type) (Some "_")
-   true_case <- R.MatchCase true_pattern (R.FunctionCall ("{}::True" % RT.showBase rust_result_type) [true_ctor]) None
-   false_case <- R.MatchCase false_pattern (R.FunctionCall ("{}::True" % RT.showBase rust_result_type) [true_ctor]) None
-   cases <- [true_case, false_case]
-   match_true <- R.Match (R.VarRef (getArgName 1)) cases
-   true_case <- R.MatchCase true_pattern (R.FunctionCall ("{}::True" % RT.showBase rust_result_type) [true_ctor]) None
-   false_case <- R.MatchCase false_pattern (R.FunctionCall ("{}::False" % RT.showBase rust_result_type) [false_ctor]) None
-   cases <- [true_case, false_case]
-   match_false <- R.Match (R.VarRef (getArgName 1)) cases
-   true_case <- R.MatchCase true_pattern match_true None
-   false_case <- R.MatchCase false_pattern match_false None
-   cases <- [true_case, false_case]
-   match <- R.Match (R.VarRef (getArgName 0)) cases
-   R.Block [match]
+    rust_result_type <- convertType result_type
+    field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
+    field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
+    rust_result_type <- convertType result_type
+    arg_type <- atIndex arg_types 0
+    true_record_type <- getVariantRecordTypeId program arg_type "True"
+    false_record_type <- getVariantRecordTypeId program arg_type "False"
+    true_pattern <- R.VariantPattern "true" None
+    false_pattern <- R.VariantPattern "false" None
+    rust_true_record_type <- convertType (LT.Record true_record_type [])
+    rust_false_record_type <- convertType (LT.Record false_record_type [])
+    true_ctor <- R.StructCtor (RT.showBase (rust_true_record_type)) []
+    false_ctor <- R.StructCtor (RT.showBase (rust_false_record_type)) []
+    true_pattern <- R.VariantPattern ("{}::True" % RT.showBase rust_result_type) (Some "_")
+    false_pattern <- R.VariantPattern ("{}::False" % RT.showBase rust_result_type) (Some "_")
+    true_case <- R.MatchCase true_pattern (R.FunctionCall ("{}::True" % RT.showBase rust_result_type) [true_ctor]) None
+    false_case <- R.MatchCase false_pattern (R.FunctionCall ("{}::True" % RT.showBase rust_result_type) [true_ctor]) None
+    cases <- [true_case, false_case]
+    match_true <- R.Match (R.VarRef (getArgName 1)) cases
+    true_case <- R.MatchCase true_pattern (R.FunctionCall ("{}::True" % RT.showBase rust_result_type) [true_ctor]) None
+    false_case <- R.MatchCase false_pattern (R.FunctionCall ("{}::False" % RT.showBase rust_result_type) [false_ctor]) None
+    cases <- [true_case, false_case]
+    match_false <- R.Match (R.VarRef (getArgName 1)) cases
+    true_case <- R.MatchCase true_pattern match_true None
+    false_case <- R.MatchCase false_pattern match_false None
+    cases <- [true_case, false_case]
+    match <- R.Match (R.VarRef (getArgName 0)) cases
+    R.Block [match]
 
 generateGetDiscriminant :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateGetDiscriminant program type_store arg_types result_type = do
-   arg_type <- atIndex arg_types 0
-   case arg_type of
-      LT.Adt adt_id _ -> do
-         adt <- getAdt program adt_id
-         var_ref <- R.VarRef (getArgName 0)
-         rust_type <- convertType arg_type
-         rust_result_type <- convertType result_type
-         cases <- adt.variants |> List.iter |> Iterator.fold (\cases, variant -> do
-            index <- getLength cases
-            name <- "{}::{}" % (RT.showBase rust_type, variant.name)
-            pattern <- R.VariantPattern name (Some "_")
-            struct_ctor <- R.StructCtor (RT.showBase rust_result_type) [R.FieldInitItem innerValueField (R.IntegerLiteral "{}" % index)]
-            c <- R.MatchCase pattern struct_ctor None
-            cases <- push cases c
-            cases) []
-         R.Block [R.Match var_ref cases]
-      LT.Record _ _ -> do
-         rust_result_type <- convertType result_type
-         struct_ctor <- R.StructCtor (RT.showBase rust_result_type) [R.FieldInitItem innerValueField (R.IntegerLiteral "0")]
-         R.Block [struct_ctor]
-      _ -> panic "getDiscriminant not implemented for special types {}" % arg_type
+    arg_type <- atIndex arg_types 0
+    case arg_type of
+        LT.Adt adt_id _ -> do
+            adt <- getAdt program adt_id
+            var_ref <- R.VarRef (getArgName 0)
+            rust_type <- convertType arg_type
+            rust_result_type <- convertType result_type
+            cases <- adt.variants |> List.iter |> Iterator.fold (\cases, variant -> do
+                index <- getLength cases
+                name <- "{}::{}" % (RT.showBase rust_type, variant.name)
+                pattern <- R.VariantPattern name (Some "_")
+                struct_ctor <- R.StructCtor (RT.showBase rust_result_type) [R.FieldInitItem innerValueField (R.IntegerLiteral "{}" % index)]
+                c <- R.MatchCase pattern struct_ctor None
+                cases <- push cases c
+                cases) []
+            R.Block [R.Match var_ref cases]
+        LT.Record _ _ -> do
+            rust_result_type <- convertType result_type
+            struct_ctor <- R.StructCtor (RT.showBase rust_result_type) [R.FieldInitItem innerValueField (R.IntegerLiteral "0")]
+            R.Block [struct_ctor]
+        _ -> panic "getDiscriminant not implemented for special types {}" % arg_type
 
 generateAssert :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateAssert program type_store arg_types result_type = do
-   rust_result_type <- convertType result_type
-   arg_type <- atIndex arg_types 0
-   rust_type <- convertType arg_type
-   rust_result_type <- convertType result_type
-   true_pattern <- R.VariantPattern ("{}::True" % RT.showBase rust_type) (Some "_")
-   false_pattern <- R.VariantPattern ("{}::False" % RT.showBase rust_type) (Some "_")
-   true_case <- R.MatchCase true_pattern (R.StructCtor (RT.showBase rust_result_type) []) None
-   false_case <- R.MatchCase false_pattern (R.Block [R.FunctionCall "panic!" [R.StringLiteral "Assertion failed"]]) None
-   cases <- [true_case, false_case]
-   match <- R.Match (R.VarRef (getArgName 0)) cases
-   R.Block [match]
+    rust_result_type <- convertType result_type
+    arg_type <- atIndex arg_types 0
+    rust_type <- convertType arg_type
+    rust_result_type <- convertType result_type
+    true_pattern <- R.VariantPattern ("{}::True" % RT.showBase rust_type) (Some "_")
+    false_pattern <- R.VariantPattern ("{}::False" % RT.showBase rust_type) (Some "_")
+    true_case <- R.MatchCase true_pattern (R.StructCtor (RT.showBase rust_result_type) []) None
+    false_case <- R.MatchCase false_pattern (R.Block [R.FunctionCall "panic!" [R.StringLiteral "Assertion failed"]]) None
+    cases <- [true_case, false_case]
+    match <- R.Match (R.VarRef (getArgName 0)) cases
+    R.Block [match]
 
 generateIsUppercase :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateIsUppercase program type_store arg_types result_type = do
-   field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
-   call <- R.MethodCall field_access0 "is_uppercase" []
-   match <- rustBoolToSikoBool program call result_type
-   R.Block [match]
+    field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
+    call <- R.MethodCall field_access0 "is_uppercase" []
+    match <- rustBoolToSikoBool program call result_type
+    R.Block [match]
 
 generateReadTextFile :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateReadTextFile program type_store arg_types result_type = do
-   rust_result_type <- convertType result_type
-   field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
-   read_call <- R.FunctionCall "std::fs::read" [field_access0]
-   read_call <- R.MethodCall read_call "expect" [R.StringLiteral "ReadTextFile failed"]
-   convert <- R.FunctionCall "String::from_utf8_lossy" [R.Ref read_call]
-   to_string_call <- R.MethodCall convert "to_string" []
-   struct_ctor <- R.StructCtor (RT.showBase rust_result_type) [R.FieldInitItem innerValueField to_string_call]
-   R.Block [struct_ctor]
+    rust_result_type <- convertType result_type
+    field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
+    read_call <- R.FunctionCall "std::fs::read" [field_access0]
+    read_call <- R.MethodCall read_call "expect" [R.StringLiteral "ReadTextFile failed"]
+    convert <- R.FunctionCall "String::from_utf8_lossy" [R.Ref read_call]
+    to_string_call <- R.MethodCall convert "to_string" []
+    struct_ctor <- R.StructCtor (RT.showBase rust_result_type) [R.FieldInitItem innerValueField to_string_call]
+    R.Block [struct_ctor]
 
 generateWriteTextFile :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateWriteTextFile program type_store arg_types result_type = do
-   rust_result_type <- convertType result_type
-   field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
-   field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
-   write_call <- R.FunctionCall "std::fs::write" [field_access0, field_access1]
-   write_call <- R.MethodCall write_call "expect" [R.StringLiteral "WriteTextFile failed"]
-   struct_ctor <- R.StructCtor (RT.showBase rust_result_type) []
-   R.Block [write_call, struct_ctor]
+    rust_result_type <- convertType result_type
+    field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
+    field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
+    write_call <- R.FunctionCall "std::fs::write" [field_access0, field_access1]
+    write_call <- R.MethodCall write_call "expect" [R.StringLiteral "WriteTextFile failed"]
+    struct_ctor <- R.StructCtor (RT.showBase rust_result_type) []
+    R.Block [write_call, struct_ctor]
 
 generateGetArgs :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateGetArgs program type_store arg_types result_type = do
-   rust_result_type <- convertType result_type
-   args_call <- R.FunctionCall "std::env::args" []
-   arg <- "arg"
-   string_ctor <- R.StructCtor stringTypeName [R.FieldInitItem innerValueField (R.VarRef arg)]
-   map_body <- R.Lambda ("|{}|" % arg) string_ctor
-   map <- R.MethodCall args_call "map" [map_body]
-   collect <- R.MethodCall map "collect" []
-   args <- "args"
-   args_decl <- R.VarDecl args collect (Some (RT.Named "Vec<_>" []))
-   struct_ctor <- R.StructCtor (RT.showBase rust_result_type) [R.FieldInitItem innerValueField (R.VarRef args)]
-   R.Block [args_decl, struct_ctor]
+    rust_result_type <- convertType result_type
+    args_call <- R.FunctionCall "std::env::args" []
+    arg <- "arg"
+    string_ctor <- R.StructCtor stringTypeName [R.FieldInitItem innerValueField (R.VarRef arg)]
+    map_body <- R.Lambda ("|{}|" % arg) string_ctor
+    map <- R.MethodCall args_call "map" [map_body]
+    collect <- R.MethodCall map "collect" []
+    args <- "args"
+    args_decl <- R.VarDecl args collect (Some (RT.Named "Vec<_>" []))
+    struct_ctor <- R.StructCtor (RT.showBase rust_result_type) [R.FieldInitItem innerValueField (R.VarRef args)]
+    R.Block [args_decl, struct_ctor]
 
 generateIsDir :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateIsDir program type_store arg_types result_type = do
-   field_access <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
-   is_dir_call <- R.MethodCall (R.FunctionCall "std::path::Path::new" [R.Ref field_access]) "is_dir" []
-   R.Block [rustBoolToSikoBool program is_dir_call result_type]
+    field_access <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
+    is_dir_call <- R.MethodCall (R.FunctionCall "std::path::Path::new" [R.Ref field_access]) "is_dir" []
+    R.Block [rustBoolToSikoBool program is_dir_call result_type]
 
 generateListDir :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateListDir program type_store arg_types result_type = do
-   entries <- "entries"
-   rust_result_type <- convertType result_type
-   read_dir_call <- R.FunctionCall "std::fs::read_dir" [R.Ref (R.FieldAccess innerValueField (R.VarRef (getArgName 0)))]
-   read_dir_expect <- R.MethodCall read_dir_call "expect" [R.StringLiteral "read dir failed"]
-   entry <- "entry"
-   entry_ref <- R.MethodCall (R.VarRef entry) "expect" [R.StringLiteral "read dir entry failed"]
-   entry_ref <- R.MethodCall entry_ref "path" []
-   entry_ref <- R.MethodCall entry_ref "to_string_lossy" []
-   entry_ref <- R.MethodCall entry_ref "into_owned" []
-   string_ctor <- R.StructCtor stringTypeName [R.FieldInitItem innerValueField entry_ref]
-   map_body <- R.Lambda ("|{}|" % entry) string_ctor
-   map <- R.MethodCall read_dir_expect "map" [map_body]
-   collect <- R.MethodCall map "collect" []
-   entries_decl <- R.VarDecl entries collect (Some (RT.Named "Vec<_>" []))
-   struct_ctor <- R.StructCtor (RT.showBase rust_result_type) [R.FieldInitItem innerValueField (R.VarRef entries)]
-   R.Block [entries_decl, struct_ctor]
+    entries <- "entries"
+    rust_result_type <- convertType result_type
+    read_dir_call <- R.FunctionCall "std::fs::read_dir" [R.Ref (R.FieldAccess innerValueField (R.VarRef (getArgName 0)))]
+    read_dir_expect <- R.MethodCall read_dir_call "expect" [R.StringLiteral "read dir failed"]
+    entry <- "entry"
+    entry_ref <- R.MethodCall (R.VarRef entry) "expect" [R.StringLiteral "read dir entry failed"]
+    entry_ref <- R.MethodCall entry_ref "path" []
+    entry_ref <- R.MethodCall entry_ref "to_string_lossy" []
+    entry_ref <- R.MethodCall entry_ref "into_owned" []
+    string_ctor <- R.StructCtor stringTypeName [R.FieldInitItem innerValueField entry_ref]
+    map_body <- R.Lambda ("|{}|" % entry) string_ctor
+    map <- R.MethodCall read_dir_expect "map" [map_body]
+    collect <- R.MethodCall map "collect" []
+    entries_decl <- R.VarDecl entries collect (Some (RT.Named "Vec<_>" []))
+    struct_ctor <- R.StructCtor (RT.showBase rust_result_type) [R.FieldInitItem innerValueField (R.VarRef entries)]
+    R.Block [entries_decl, struct_ctor]
 
 generateIntParse :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateIntParse program type_store arg_types result_type = do
-   rust_result_type <- convertType result_type
-   field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
-   parse_call <- R.MethodCall field_access0 "parse::<i64>" []
-   rust_result_type <- convertType result_type
-   some_record_type <- getVariantRecordTypeId program result_type "Some"
-   none_record_type <- getVariantRecordTypeId program result_type "None"
-   rust_some_record_type <- convertType (LT.Record some_record_type [])
-   rust_none_record_type <- convertType (LT.Record none_record_type [])
-   some_record <- getRecord program some_record_type
-   int_field <- atIndex some_record.fields 0
-   rust_int_type <- convertType int_field.type
-   int_ctor <- R.StructCtor (RT.showBase rust_int_type) [R.FieldInitItem innerValueField (R.VarRef "v")]
-   some_ctor <- R.StructCtor (RT.showBase rust_some_record_type) [R.FieldInitItem (getFieldName 0) (int_ctor)]
-   none_ctor <- R.StructCtor (RT.showBase rust_none_record_type) []
-   ok_pattern <- R.VariantPattern ("Ok") (Some "v")
-   err_pattern <- R.VariantPattern ("Err") (Some "_")
-   ok_case <- R.MatchCase ok_pattern (R.FunctionCall ("{}::Some" % RT.showBase rust_result_type) [some_ctor]) None
-   err_case <- R.MatchCase err_pattern (R.FunctionCall ("{}::None" % RT.showBase rust_result_type) [none_ctor]) None
-   cases <- [ok_case, err_case]
-   match <- R.Match parse_call cases
-   R.Block [match]
+    rust_result_type <- convertType result_type
+    field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
+    parse_call <- R.MethodCall field_access0 "parse::<i64>" []
+    rust_result_type <- convertType result_type
+    some_record_type <- getVariantRecordTypeId program result_type "Some"
+    none_record_type <- getVariantRecordTypeId program result_type "None"
+    rust_some_record_type <- convertType (LT.Record some_record_type [])
+    rust_none_record_type <- convertType (LT.Record none_record_type [])
+    some_record <- getRecord program some_record_type
+    int_field <- atIndex some_record.fields 0
+    rust_int_type <- convertType int_field.type
+    int_ctor <- R.StructCtor (RT.showBase rust_int_type) [R.FieldInitItem innerValueField (R.VarRef "v")]
+    some_ctor <- R.StructCtor (RT.showBase rust_some_record_type) [R.FieldInitItem (getFieldName 0) (int_ctor)]
+    none_ctor <- R.StructCtor (RT.showBase rust_none_record_type) []
+    ok_pattern <- R.VariantPattern ("Ok") (Some "v")
+    err_pattern <- R.VariantPattern ("Err") (Some "_")
+    ok_case <- R.MatchCase ok_pattern (R.FunctionCall ("{}::Some" % RT.showBase rust_result_type) [some_ctor]) None
+    err_case <- R.MatchCase err_pattern (R.FunctionCall ("{}::None" % RT.showBase rust_result_type) [none_ctor]) None
+    cases <- [ok_case, err_case]
+    match <- R.Match parse_call cases
+    R.Block [match]
 
 generateListAtIndex :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateListAtIndex program type_store arg_types result_type = do
-   rust_type <- convertType result_type
-   arg0 <- R.VarRef (getArgName 0)
-   arg1 <- R.VarRef (getArgName 1)
-   inner0 <- R.FieldAccess innerValueField arg0
-   inner1 <- R.FieldAccess innerValueField arg1
-   index <- R.FunctionCall "std::ops::Index::index" [R.Ref inner0, R.As inner1 "usize"]
-   if RT.isRef rust_type
-   then R.Block [index]
-   else R.Block [R.MethodCall (R.Deref index) cloneName []]
+    rust_type <- convertType result_type
+    arg0 <- R.VarRef (getArgName 0)
+    arg1 <- R.VarRef (getArgName 1)
+    inner0 <- R.FieldAccess innerValueField arg0
+    inner1 <- R.FieldAccess innerValueField arg1
+    index <- R.FunctionCall "std::ops::Index::index" [R.Ref inner0, R.As inner1 "usize"]
+    if RT.isRef rust_type
+    then R.Block [index]
+    else R.Block [R.MethodCall (R.Deref index) cloneName []]
 
 generateListGetLength :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateListGetLength program type_store arg_types result_type = do
-   rust_type <- convertType result_type
-   arg0 <- R.VarRef (getArgName 0)
-   inner0 <- R.FieldAccess innerValueField arg0
-   len_call <- R.MethodCall inner0 "len" []
-   R.Block [R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.As len_call "i64")]]
+    rust_type <- convertType result_type
+    arg0 <- R.VarRef (getArgName 0)
+    inner0 <- R.FieldAccess innerValueField arg0
+    len_call <- R.MethodCall inner0 "len" []
+    R.Block [R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.As len_call "i64")]]
 
 generateListDedup :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateListDedup program type_store arg_types result_type = do
-   rust_type <- convertType result_type
-   arg0 <- R.VarRef (getArgName 0)
-   inner0 <- R.FieldAccess innerValueField arg0
-   new <- "new"
-   new_decl <- R.VarDeclMut new inner0 None
-   dedup_call <- R.MethodCall (R.VarRef new) "dedup" []
-   R.Block [new_decl, dedup_call, R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef new)]]
+    rust_type <- convertType result_type
+    arg0 <- R.VarRef (getArgName 0)
+    inner0 <- R.FieldAccess innerValueField arg0
+    new <- "new"
+    new_decl <- R.VarDeclMut new inner0 None
+    dedup_call <- R.MethodCall (R.VarRef new) "dedup" []
+    R.Block [new_decl, dedup_call, R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef new)]]
 
 generateListIsEmpty :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateListIsEmpty program type_store arg_types result_type = do
-   rust_type <- convertType result_type
-   arg0 <- R.VarRef (getArgName 0)
-   inner0 <- R.FieldAccess innerValueField arg0
-   empty_call <- R.MethodCall inner0 "is_empty" []
-   R.Block [rustBoolToSikoBool program empty_call result_type]
+    rust_type <- convertType result_type
+    arg0 <- R.VarRef (getArgName 0)
+    inner0 <- R.FieldAccess innerValueField arg0
+    empty_call <- R.MethodCall inner0 "is_empty" []
+    R.Block [rustBoolToSikoBool program empty_call result_type]
 
 generateListSort :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateListSort program type_store arg_types result_type = do
-   rust_type <- convertType result_type
-   list_type <- atIndex arg_types 0
-   arg0 <- R.VarRef (getArgName 0)
-   field_access0 <- R.FieldAccess innerValueField arg0
-   list_ref <- if LT.isRef list_type
-   then R.MethodCall field_access0 cloneName []
-   else field_access0
-   new <- "new"
-   new_decl <- R.VarDeclMut new list_ref None
-   sort_call <- R.MethodCall (R.VarRef new) "sort" []
-   R.Block [new_decl, sort_call, R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef new)]]
+    rust_type <- convertType result_type
+    list_type <- atIndex arg_types 0
+    arg0 <- R.VarRef (getArgName 0)
+    field_access0 <- R.FieldAccess innerValueField arg0
+    list_ref <- if LT.isRef list_type
+    then R.MethodCall field_access0 cloneName []
+    else field_access0
+    new <- "new"
+    new_decl <- R.VarDeclMut new list_ref None
+    sort_call <- R.MethodCall (R.VarRef new) "sort" []
+    R.Block [new_decl, sort_call, R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef new)]]
 
 generateListReverse :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateListReverse program type_store arg_types result_type = do
-   rust_type <- convertType result_type
-   list_type <- atIndex arg_types 0
-   arg0 <- R.VarRef (getArgName 0)
-   field_access0 <- R.FieldAccess innerValueField arg0
-   list_ref <- if LT.isRef list_type
-   then R.MethodCall field_access0 cloneName []
-   else field_access0
-   new <- "new"
-   new_decl <- R.VarDeclMut new list_ref None
-   reverse_call <- R.MethodCall (R.VarRef new) "reverse" []
-   R.Block [new_decl, reverse_call, R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef new)]]
+    rust_type <- convertType result_type
+    list_type <- atIndex arg_types 0
+    arg0 <- R.VarRef (getArgName 0)
+    field_access0 <- R.FieldAccess innerValueField arg0
+    list_ref <- if LT.isRef list_type
+    then R.MethodCall field_access0 cloneName []
+    else field_access0
+    new <- "new"
+    new_decl <- R.VarDeclMut new list_ref None
+    reverse_call <- R.MethodCall (R.VarRef new) "reverse" []
+    R.Block [new_decl, reverse_call, R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef new)]]
 
 generateListTail :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateListTail program type_store arg_types result_type = do
-   arg_type <- atIndex arg_types 0
-   rust_arg_type <- convertType arg_type
-   arg0 <- R.VarRef (getArgName 0)
-   inner0 <- R.FieldAccess innerValueField arg0
-   is_empty_call <- R.MethodCall inner0 "is_empty" []
-   rust_result_type <- convertType result_type
-   some_record_type <- getVariantRecordTypeId program result_type "Some"
-   none_record_type <- getVariantRecordTypeId program result_type "None"
-   rust_some_record_type <- convertType (LT.Record some_record_type [])
-   rust_none_record_type <- convertType (LT.Record none_record_type [])
-   none_ctor <- R.StructCtor (RT.showBase rust_none_record_type) []
-   non_empty_branch <- do
-      new <- "new"
-      new_decl <- R.VarDeclMut new inner0 None
-      remove_call <- R.MethodCall (R.VarRef new) "remove" [R.IntegerLiteral "0"]
-      list_ctor <- R.StructCtor (RT.showBase rust_arg_type) [R.FieldInitItem innerValueField (R.VarRef new)]
-      some_ctor <- R.StructCtor (RT.showBase rust_some_record_type) [R.FieldInitItem "field0" list_ctor]
-      some_ctor <- R.FunctionCall ("{}::Some" % RT.showBase rust_result_type) [some_ctor]
-      R.Block [new_decl, remove_call, some_ctor]
-   empty_branch <- R.FunctionCall ("{}::None" % RT.showBase rust_result_type) [none_ctor]
-   if_expr <- R.If is_empty_call empty_branch non_empty_branch
-   R.Block [if_expr]
+    arg_type <- atIndex arg_types 0
+    rust_arg_type <- convertType arg_type
+    arg0 <- R.VarRef (getArgName 0)
+    inner0 <- R.FieldAccess innerValueField arg0
+    is_empty_call <- R.MethodCall inner0 "is_empty" []
+    rust_result_type <- convertType result_type
+    some_record_type <- getVariantRecordTypeId program result_type "Some"
+    none_record_type <- getVariantRecordTypeId program result_type "None"
+    rust_some_record_type <- convertType (LT.Record some_record_type [])
+    rust_none_record_type <- convertType (LT.Record none_record_type [])
+    none_ctor <- R.StructCtor (RT.showBase rust_none_record_type) []
+    non_empty_branch <- do
+        new <- "new"
+        new_decl <- R.VarDeclMut new inner0 None
+        remove_call <- R.MethodCall (R.VarRef new) "remove" [R.IntegerLiteral "0"]
+        list_ctor <- R.StructCtor (RT.showBase rust_arg_type) [R.FieldInitItem innerValueField (R.VarRef new)]
+        some_ctor <- R.StructCtor (RT.showBase rust_some_record_type) [R.FieldInitItem "field0" list_ctor]
+        some_ctor <- R.FunctionCall ("{}::Some" % RT.showBase rust_result_type) [some_ctor]
+        R.Block [new_decl, remove_call, some_ctor]
+    empty_branch <- R.FunctionCall ("{}::None" % RT.showBase rust_result_type) [none_ctor]
+    if_expr <- R.If is_empty_call empty_branch non_empty_branch
+    R.Block [if_expr]
 
 generateListAdd :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateListAdd program type_store arg_types result_type = do
-   rust_type <- convertType result_type
-   list_type0 <- atIndex arg_types 0
-   list_type1 <- atIndex arg_types 1
-   field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
-   field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
-   new0 <- "new0"
-   list_ref0 <- if LT.isRef list_type0
-   then R.MethodCall field_access0 cloneName []
-   else field_access0
-   list_ref1 <- if LT.isRef list_type1
-   then R.MethodCall field_access1 cloneName []
-   else field_access1
-   new0_decl <- R.VarDeclMut new0 list_ref0 None
-   new1 <- "new1"
-   new1_decl <- R.VarDecl new1 list_ref1 None
-   add_call <- R.MethodCall (R.VarRef new0) "extend" [R.VarRef new1]
-   struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef new0)]
-   R.Block [new0_decl,
-            new1_decl,
-            add_call,
-            struct_ctor]
+    rust_type <- convertType result_type
+    list_type0 <- atIndex arg_types 0
+    list_type1 <- atIndex arg_types 1
+    field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
+    field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
+    new0 <- "new0"
+    list_ref0 <- if LT.isRef list_type0
+    then R.MethodCall field_access0 cloneName []
+    else field_access0
+    list_ref1 <- if LT.isRef list_type1
+    then R.MethodCall field_access1 cloneName []
+    else field_access1
+    new0_decl <- R.VarDeclMut new0 list_ref0 None
+    new1 <- "new1"
+    new1_decl <- R.VarDecl new1 list_ref1 None
+    add_call <- R.MethodCall (R.VarRef new0) "extend" [R.VarRef new1]
+    struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef new0)]
+    R.Block [new0_decl,
+             new1_decl,
+             add_call,
+             struct_ctor]
 
 generateListPush :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateListPush program type_store arg_types result_type = do
-   rust_type <- convertType result_type
-   list_type <- atIndex arg_types 0
-   arg_item_type <- atIndex arg_types 1
-   list_record <- getRecord program (LT.getIdentity list_type)
-   list_info <- Option.unwrap list_record.external_info
-   item_type <- atIndex list_info.type_args 0
-   field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
-   list_ref <- if LT.isRef list_type
-   then R.MethodCall field_access0 cloneName []
-   else field_access0
-   arg_ref <- if LT.isRef arg_item_type && (not (LT.isRef item_type))
-   then R.MethodCall (R.VarRef (getArgName 1)) cloneName []
-   else R.VarRef (getArgName 1)
-   new0 <- "new0"
-   new0_decl <- R.VarDeclMut new0 list_ref None
-   add_call <- R.MethodCall (R.VarRef new0) "push" [arg_ref]
-   struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef new0)]
-   R.Block [new0_decl, add_call, struct_ctor]
+    rust_type <- convertType result_type
+    list_type <- atIndex arg_types 0
+    arg_item_type <- atIndex arg_types 1
+    list_record <- getRecord program (LT.getIdentity list_type)
+    list_info <- Option.unwrap list_record.external_info
+    item_type <- atIndex list_info.type_args 0
+    field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
+    list_ref <- if LT.isRef list_type
+    then R.MethodCall field_access0 cloneName []
+    else field_access0
+    arg_ref <- if LT.isRef arg_item_type && (not (LT.isRef item_type))
+    then R.MethodCall (R.VarRef (getArgName 1)) cloneName []
+    else R.VarRef (getArgName 1)
+    new0 <- "new0"
+    new0_decl <- R.VarDeclMut new0 list_ref None
+    add_call <- R.MethodCall (R.VarRef new0) "push" [arg_ref]
+    struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef new0)]
+    R.Block [new0_decl, add_call, struct_ctor]
 
 generateListRemove :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateListRemove program type_store arg_types result_type = do
-   rust_type <- convertType result_type
-   list_type <- convertType (atIndex arg_types 0)
-   result_record <- case result_type of
-      LT.Record i _ -> getRecord program i
-      _ -> panic "Result is not a record in generateListRemove"
-   item_field <- atIndex result_record.fields 0
-   list_field <- atIndex result_record.fields 1
-   field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
-   field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
-   list_ref <- if RT.isRef list_type
-   then R.MethodCall field_access0 cloneName []
-   else field_access0
-   list <- "list"
-   list_decl <- R.VarDeclMut list list_ref None
-   index <- "index"
-   index_decl <- R.VarDecl index field_access1 None
-   remove_call <- R.MethodCall (R.VarRef list) "remove" [R.As (R.VarRef index) "usize"]
-   removed <- "removed"
-   remove_decl <- R.VarDecl removed remove_call None
-   list_ctor <- R.StructCtor (RT.showBase list_type) [R.FieldInitItem innerValueField (R.VarRef list)]
-   struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem (getFieldName 1) list_ctor, R.FieldInitItem (getFieldName 0) (R.VarRef removed)]
-   R.Block [list_decl,
-            index_decl,
-            remove_decl,
-            struct_ctor]
+    rust_type <- convertType result_type
+    list_type <- convertType (atIndex arg_types 0)
+    result_record <- case result_type of
+        LT.Record i _ -> getRecord program i
+        _ -> panic "Result is not a record in generateListRemove"
+    item_field <- atIndex result_record.fields 0
+    list_field <- atIndex result_record.fields 1
+    field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
+    field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
+    list_ref <- if RT.isRef list_type
+    then R.MethodCall field_access0 cloneName []
+    else field_access0
+    list <- "list"
+    list_decl <- R.VarDeclMut list list_ref None
+    index <- "index"
+    index_decl <- R.VarDecl index field_access1 None
+    remove_call <- R.MethodCall (R.VarRef list) "remove" [R.As (R.VarRef index) "usize"]
+    removed <- "removed"
+    remove_decl <- R.VarDecl removed remove_call None
+    list_ctor <- R.StructCtor (RT.showBase list_type) [R.FieldInitItem innerValueField (R.VarRef list)]
+    struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem (getFieldName 1) list_ctor, R.FieldInitItem (getFieldName 0) (R.VarRef removed)]
+    R.Block [list_decl,
+             index_decl,
+             remove_decl,
+             struct_ctor]
 
 generateListSplit :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateListSplit program type_store arg_types result_type = do
-   rust_type <- convertType result_type
-   result_record <- case result_type of
-      LT.Record i _ -> getRecord program i
-      _ -> panic "Result is not a record in generateListSplit"
-   item_field <- atIndex result_record.fields 0
-   list_field <- atIndex result_record.fields 1
-   field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
-   field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
-   list <- "list"
-   list_decl <- R.VarDeclMut list field_access0 None
-   index <- "index"
-   index_decl <- R.VarDecl index field_access1 None
-   split_call <- R.MethodCall (R.VarRef list) "split_off" [R.As (R.VarRef index) "usize"]
-   second <- "second"
-   second_decl <- R.VarDecl second split_call None
-   list_type <- convertType (atIndex arg_types 0)
-   list_ctor <- R.StructCtor (RT.showBase list_type) [R.FieldInitItem innerValueField (R.VarRef list)]
-   second_ctor <- R.StructCtor (RT.showBase list_type) [R.FieldInitItem innerValueField (R.VarRef second)]
-   struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem (getFieldName 0) list_ctor, R.FieldInitItem (getFieldName 1) second_ctor]
-   R.Block [list_decl,
-            index_decl,
-            second_decl,
-            struct_ctor]
+    rust_type <- convertType result_type
+    result_record <- case result_type of
+        LT.Record i _ -> getRecord program i
+        _ -> panic "Result is not a record in generateListSplit"
+    item_field <- atIndex result_record.fields 0
+    list_field <- atIndex result_record.fields 1
+    field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
+    field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
+    list <- "list"
+    list_decl <- R.VarDeclMut list field_access0 None
+    index <- "index"
+    index_decl <- R.VarDecl index field_access1 None
+    split_call <- R.MethodCall (R.VarRef list) "split_off" [R.As (R.VarRef index) "usize"]
+    second <- "second"
+    second_decl <- R.VarDecl second split_call None
+    list_type <- convertType (atIndex arg_types 0)
+    list_ctor <- R.StructCtor (RT.showBase list_type) [R.FieldInitItem innerValueField (R.VarRef list)]
+    second_ctor <- R.StructCtor (RT.showBase list_type) [R.FieldInitItem innerValueField (R.VarRef second)]
+    struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem (getFieldName 0) list_ctor, R.FieldInitItem (getFieldName 1) second_ctor]
+    R.Block [list_decl,
+             index_decl,
+             second_decl,
+             struct_ctor]
 
 generateListIntoIter :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateListIntoIter program type_store arg_types result_type = do
-   iterator_id <- LT.getIdentity result_type
-   iterator_record <- getRecord program iterator_id
-   is_iterator_ref <- Option.isSome iterator_record.implicit_member_lifetime
-   rust_type <- convertType result_type
-   list_type <- atIndex arg_types 0
-   field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
-   list_ref <- if LT.isRef list_type
-   then if is_iterator_ref
-      then R.Ref field_access0
-      else R.MethodCall field_access0 cloneName []
-   else field_access0
-   new0 <- "new0"
-   new0_decl <- R.VarDecl new0 list_ref None
-   iter_call <- if is_iterator_ref
-   then R.MethodCall (R.VarRef new0) "iter" []
-   else R.MethodCall (R.VarRef new0) "into_iter" []
-   struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField iter_call]
-   R.Block [new0_decl, struct_ctor]
+    iterator_id <- LT.getIdentity result_type
+    iterator_record <- getRecord program iterator_id
+    is_iterator_ref <- Option.isSome iterator_record.implicit_member_lifetime
+    rust_type <- convertType result_type
+    list_type <- atIndex arg_types 0
+    field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
+    list_ref <- if LT.isRef list_type
+    then if is_iterator_ref
+        then R.Ref field_access0
+        else R.MethodCall field_access0 cloneName []
+    else field_access0
+    new0 <- "new0"
+    new0_decl <- R.VarDecl new0 list_ref None
+    iter_call <- if is_iterator_ref
+    then R.MethodCall (R.VarRef new0) "iter" []
+    else R.MethodCall (R.VarRef new0) "into_iter" []
+    struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField iter_call]
+    R.Block [new0_decl, struct_ctor]
 
 generateListNextItem :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateListNextItem program type_store arg_types result_type = do
-   result_id <- LT.getIdentity result_type
-   result_record <- getRecord program result_id
-   option_type <- (atIndex result_record.fields 1).type
-   rust_option_type <- convertType option_type
-   iterator_type <- atIndex arg_types 0
-   iterator_id <- LT.getIdentity iterator_type
-   iterator_record <- getRecord program iterator_id
-   iterator_info <- Option.unwrap iterator_record.external_info
-   is_iterator_ref <- Option.isSome iterator_record.implicit_member_lifetime
-   iterator_item_type <- atIndex iterator_info.type_args 0
-   field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
-   iter_ref <- if LT.isRef iterator_type
-   then R.MethodCall field_access0 cloneName []
-   else field_access0
-   state <- "state"
-   state_decl <- R.VarDeclMut state iter_ref None
-   value <- "value"
-   value_decl <- R.VarDecl value (R.MethodCall (R.VarRef state) "next" []) None
-   item <- "item"
-   some_pattern <- R.VariantPattern "Some" (Some item)
-   none_pattern <- R.VariantPattern "None" None
-   rust_result_type <- convertType result_type
-   some_record_type <- getVariantRecordTypeId program option_type "Some"
-   none_record_type <- getVariantRecordTypeId program option_type "None"
-   rust_some_record_type <- convertType (LT.Record some_record_type [])
-   rust_none_record_type <- convertType (LT.Record none_record_type [])
-   some_record <- getRecord program some_record_type
-   item_field <- atIndex some_record.fields 0
-   rust_item_type <- convertType item_field.type
-   tuple_record <- case result_type of
-      LT.Record record_id _ -> getRecord program record_id
-      ty -> panic "Tuple is not a record {}" % ty
-   state_field <- atIndex tuple_record.fields 0
-   value_field <- atIndex tuple_record.fields 1
-   rust_state_type <- convertType state_field.type
-   item_ref <- if not (LT.isRef item_field.type) && (LT.isRef iterator_item_type || is_iterator_ref)
-   then R.MethodCall (R.Deref (R.VarRef item)) cloneName []
-   else R.VarRef item
-   item_ref <- if RT.isBoxed rust_item_type
-   then boxExpr item_ref
-   else item_ref
-   state_ctor <- R.StructCtor (RT.showBase rust_state_type) [R.FieldInitItem innerValueField (R.VarRef state)]
-   some_ctor <- R.StructCtor (RT.showBase rust_some_record_type) [R.FieldInitItem (getFieldName 0) item_ref]
-   some_ctor <- R.FunctionCall ("{}::Some" % RT.showBase rust_option_type) [some_ctor]
-   none_ctor <- R.StructCtor (RT.showBase rust_none_record_type) []
-   none_ctor <- R.FunctionCall ("{}::None" % RT.showBase rust_option_type) [none_ctor]
-   tuple_ctor_some <- R.StructCtor (RT.showBase rust_result_type) [R.FieldInitItem (getFieldName 0) state_ctor, R.FieldInitItem (getFieldName 1) some_ctor]
-   tuple_ctor_none <- R.StructCtor (RT.showBase rust_result_type) [R.FieldInitItem (getFieldName 0) state_ctor, R.FieldInitItem (getFieldName 1) none_ctor]
-   some_case <- R.MatchCase some_pattern tuple_ctor_some None
-   none_case <- R.MatchCase none_pattern tuple_ctor_none None
-   cases <- [some_case, none_case]
-   match <- R.Match (R.VarRef value) cases
-   R.Block [state_decl, value_decl, match]
+    result_id <- LT.getIdentity result_type
+    result_record <- getRecord program result_id
+    option_type <- (atIndex result_record.fields 1).type
+    rust_option_type <- convertType option_type
+    iterator_type <- atIndex arg_types 0
+    iterator_id <- LT.getIdentity iterator_type
+    iterator_record <- getRecord program iterator_id
+    iterator_info <- Option.unwrap iterator_record.external_info
+    is_iterator_ref <- Option.isSome iterator_record.implicit_member_lifetime
+    iterator_item_type <- atIndex iterator_info.type_args 0
+    field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
+    iter_ref <- if LT.isRef iterator_type
+    then R.MethodCall field_access0 cloneName []
+    else field_access0
+    state <- "state"
+    state_decl <- R.VarDeclMut state iter_ref None
+    value <- "value"
+    value_decl <- R.VarDecl value (R.MethodCall (R.VarRef state) "next" []) None
+    item <- "item"
+    some_pattern <- R.VariantPattern "Some" (Some item)
+    none_pattern <- R.VariantPattern "None" None
+    rust_result_type <- convertType result_type
+    some_record_type <- getVariantRecordTypeId program option_type "Some"
+    none_record_type <- getVariantRecordTypeId program option_type "None"
+    rust_some_record_type <- convertType (LT.Record some_record_type [])
+    rust_none_record_type <- convertType (LT.Record none_record_type [])
+    some_record <- getRecord program some_record_type
+    item_field <- atIndex some_record.fields 0
+    rust_item_type <- convertType item_field.type
+    tuple_record <- case result_type of
+        LT.Record record_id _ -> getRecord program record_id
+        ty -> panic "Tuple is not a record {}" % ty
+    state_field <- atIndex tuple_record.fields 0
+    value_field <- atIndex tuple_record.fields 1
+    rust_state_type <- convertType state_field.type
+    item_ref <- if not (LT.isRef item_field.type) && (LT.isRef iterator_item_type || is_iterator_ref)
+    then R.MethodCall (R.Deref (R.VarRef item)) cloneName []
+    else R.VarRef item
+    item_ref <- if RT.isBoxed rust_item_type
+    then boxExpr item_ref
+    else item_ref
+    state_ctor <- R.StructCtor (RT.showBase rust_state_type) [R.FieldInitItem innerValueField (R.VarRef state)]
+    some_ctor <- R.StructCtor (RT.showBase rust_some_record_type) [R.FieldInitItem (getFieldName 0) item_ref]
+    some_ctor <- R.FunctionCall ("{}::Some" % RT.showBase rust_option_type) [some_ctor]
+    none_ctor <- R.StructCtor (RT.showBase rust_none_record_type) []
+    none_ctor <- R.FunctionCall ("{}::None" % RT.showBase rust_option_type) [none_ctor]
+    tuple_ctor_some <- R.StructCtor (RT.showBase rust_result_type) [R.FieldInitItem (getFieldName 0) state_ctor, R.FieldInitItem (getFieldName 1) some_ctor]
+    tuple_ctor_none <- R.StructCtor (RT.showBase rust_result_type) [R.FieldInitItem (getFieldName 0) state_ctor, R.FieldInitItem (getFieldName 1) none_ctor]
+    some_case <- R.MatchCase some_pattern tuple_ctor_some None
+    none_case <- R.MatchCase none_pattern tuple_ctor_none None
+    cases <- [some_case, none_case]
+    match <- R.Match (R.VarRef value) cases
+    R.Block [state_decl, value_decl, match]
 
 generateListWrite :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateListWrite program type_store arg_types result_type = do
-   rust_type <- convertType result_type
-   arg0 <- R.VarRef (getArgName 0)
-   inner0 <- R.FieldAccess innerValueField arg0
-   arg1 <- R.VarRef (getArgName 1)
-   inner1 <- R.FieldAccess innerValueField arg1
-   arg2 <- R.VarRef (getArgName 2)
-   new <- "new"
-   new_decl <- R.VarDeclMut new inner0 None
-   assign0 <- R.Assign (R.Deref (R.FunctionCall "std::ops::IndexMut::index_mut" [R.MutRef (R.VarRef new), R.As inner1 "usize"])) arg2
-   R.Block [new_decl, assign0, R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef new)]]
+    rust_type <- convertType result_type
+    arg0 <- R.VarRef (getArgName 0)
+    inner0 <- R.FieldAccess innerValueField arg0
+    arg1 <- R.VarRef (getArgName 1)
+    inner1 <- R.FieldAccess innerValueField arg1
+    arg2 <- R.VarRef (getArgName 2)
+    new <- "new"
+    new_decl <- R.VarDeclMut new inner0 None
+    assign0 <- R.Assign (R.Deref (R.FunctionCall "std::ops::IndexMut::index_mut" [R.MutRef (R.VarRef new), R.As inner1 "usize"])) arg2
+    R.Block [new_decl, assign0, R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef new)]]
 
 generateListWithCapacity :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateListWithCapacity program type_store arg_types result_type = do
-   rust_type <- convertType result_type
-   arg0 <- R.VarRef (getArgName 0)
-   inner0 <- R.FieldAccess innerValueField arg0
-   R.Block [R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.FunctionCall "std::vec::Vec::with_capacity" [R.As inner0 "usize"])]]
+    rust_type <- convertType result_type
+    arg0 <- R.VarRef (getArgName 0)
+    inner0 <- R.FieldAccess innerValueField arg0
+    R.Block [R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.FunctionCall "std::vec::Vec::with_capacity" [R.As inner0 "usize"])]]
 
 generateStringChars :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateStringChars program type_store arg_types result_type = do
-   rust_type <- convertType result_type
-   arg0 <- R.VarRef (getArgName 0)
-   inner0 <- R.FieldAccess innerValueField arg0
-   chars_call <- R.MethodCall inner0 "chars" []
-   map_body <- R.Lambda "|item|" (R.StructCtor charTypeName [R.FieldInitItem innerValueField (R.VarRef "item")])
-   map <- R.MethodCall chars_call "map" [map_body]
-   collect_call <- R.MethodCall map "collect" []
-   new <- "new"
-   new_decl <- R.VarDecl new collect_call (Some (RT.Named "Vec<_>" []))
-   R.Block [new_decl, R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef new)]]
+    rust_type <- convertType result_type
+    arg0 <- R.VarRef (getArgName 0)
+    inner0 <- R.FieldAccess innerValueField arg0
+    chars_call <- R.MethodCall inner0 "chars" []
+    map_body <- R.Lambda "|item|" (R.StructCtor charTypeName [R.FieldInitItem innerValueField (R.VarRef "item")])
+    map <- R.MethodCall chars_call "map" [map_body]
+    collect_call <- R.MethodCall map "collect" []
+    new <- "new"
+    new_decl <- R.VarDecl new collect_call (Some (RT.Named "Vec<_>" []))
+    R.Block [new_decl, R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef new)]]
 
 generateStringReplace :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateStringReplace program type_store arg_types result_type = do
-   rust_type <- convertType result_type
-   arg0 <- R.VarRef (getArgName 0)
-   inner0 <- R.FieldAccess innerValueField arg0
-   arg1 <- R.VarRef (getArgName 1)
-   inner1 <- R.FieldAccess innerValueField arg1
-   arg2 <- R.VarRef (getArgName 2)
-   inner2 <- R.FieldAccess innerValueField arg2
-   new <- "new"
-   new_decl <- R.VarDecl new (R.MethodCall inner0 "replace" [R.Ref inner1, R.MethodCall inner2 "as_ref" []]) None
-   R.Block [new_decl, R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef new)]]
+    rust_type <- convertType result_type
+    arg0 <- R.VarRef (getArgName 0)
+    inner0 <- R.FieldAccess innerValueField arg0
+    arg1 <- R.VarRef (getArgName 1)
+    inner1 <- R.FieldAccess innerValueField arg1
+    arg2 <- R.VarRef (getArgName 2)
+    inner2 <- R.FieldAccess innerValueField arg2
+    new <- "new"
+    new_decl <- R.VarDecl new (R.MethodCall inner0 "replace" [R.Ref inner1, R.MethodCall inner2 "as_ref" []]) None
+    R.Block [new_decl, R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef new)]]
 
 generateStringSplit :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateStringSplit program type_store arg_types result_type = do
-   rust_type <- convertType result_type
-   arg0 <- R.VarRef (getArgName 0)
-   inner0 <- R.FieldAccess innerValueField arg0
-   arg1 <- R.VarRef (getArgName 1)
-   inner1 <- R.FieldAccess innerValueField arg1
-   new <- "new"
-   split_call <- R.MethodCall inner0 "split" [R.Ref inner1]
-   to_string_call <- R.MethodCall (R.VarRef "item") "to_string" []
-   map_body <- R.Lambda "|item|" (R.StructCtor stringTypeName [R.FieldInitItem innerValueField (to_string_call)])
-   map <- R.MethodCall split_call "map" [map_body]
-   collect_call <- R.MethodCall map "collect" []
-   new <- "new"
-   new_decl <- R.VarDecl new collect_call (Some (RT.Named "Vec<_>" []))
-   R.Block [new_decl, R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef new)]]
+    rust_type <- convertType result_type
+    arg0 <- R.VarRef (getArgName 0)
+    inner0 <- R.FieldAccess innerValueField arg0
+    arg1 <- R.VarRef (getArgName 1)
+    inner1 <- R.FieldAccess innerValueField arg1
+    new <- "new"
+    split_call <- R.MethodCall inner0 "split" [R.Ref inner1]
+    to_string_call <- R.MethodCall (R.VarRef "item") "to_string" []
+    map_body <- R.Lambda "|item|" (R.StructCtor stringTypeName [R.FieldInitItem innerValueField (to_string_call)])
+    map <- R.MethodCall split_call "map" [map_body]
+    collect_call <- R.MethodCall map "collect" []
+    new <- "new"
+    new_decl <- R.VarDecl new collect_call (Some (RT.Named "Vec<_>" []))
+    R.Block [new_decl, R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef new)]]
 
 generateStringStartsWith :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateStringStartsWith program type_store arg_types result_type = do
-   arg1_type <- atIndex arg_types 1
-   arg0 <- R.VarRef (getArgName 0)
-   field_access0 <- R.FieldAccess innerValueField arg0
-   arg1 <- R.VarRef (getArgName 1)
-   field_access1 <- if LT.isRef arg1_type
-   then R.FieldAccess innerValueField arg1
-   else R.Ref (R.FieldAccess innerValueField arg1)
-   starts_with_call <- R.MethodCall field_access0 "starts_with" [field_access1]
-   R.Block [rustBoolToSikoBool program starts_with_call result_type]
+    arg1_type <- atIndex arg_types 1
+    arg0 <- R.VarRef (getArgName 0)
+    field_access0 <- R.FieldAccess innerValueField arg0
+    arg1 <- R.VarRef (getArgName 1)
+    field_access1 <- if LT.isRef arg1_type
+    then R.FieldAccess innerValueField arg1
+    else R.Ref (R.FieldAccess innerValueField arg1)
+    starts_with_call <- R.MethodCall field_access0 "starts_with" [field_access1]
+    R.Block [rustBoolToSikoBool program starts_with_call result_type]
 
 generateStringEndsWith :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateStringEndsWith program type_store arg_types result_type = do
-   arg1_type <- atIndex arg_types 1
-   arg0 <- R.VarRef (getArgName 0)
-   field_access0 <- R.FieldAccess innerValueField arg0
-   arg1 <- R.VarRef (getArgName 1)
-   field_access1 <- if LT.isRef arg1_type
-   then R.FieldAccess innerValueField arg1
-   else R.Ref (R.FieldAccess innerValueField arg1)
-   starts_with_call <- R.MethodCall field_access0 "ends_with" [field_access1]
-   R.Block [rustBoolToSikoBool program starts_with_call result_type]
+    arg1_type <- atIndex arg_types 1
+    arg0 <- R.VarRef (getArgName 0)
+    field_access0 <- R.FieldAccess innerValueField arg0
+    arg1 <- R.VarRef (getArgName 1)
+    field_access1 <- if LT.isRef arg1_type
+    then R.FieldAccess innerValueField arg1
+    else R.Ref (R.FieldAccess innerValueField arg1)
+    starts_with_call <- R.MethodCall field_access0 "ends_with" [field_access1]
+    R.Block [rustBoolToSikoBool program starts_with_call result_type]
 
 generateAbort :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateAbort program type_store arg_types result_type = do
-   R.Block [R.FunctionCall "panic!" [R.StringLiteral "Abort called"]]
+    R.Block [R.FunctionCall "panic!" [R.StringLiteral "Abort called"]]
 
 generateExit :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateExit program type_store arg_types result_type = do
-   arg0 <- R.VarRef (getArgName 0)
-   field_access0 <- R.FieldAccess innerValueField arg0
-   R.Block [R.FunctionCall "std::process::exit" [R.As field_access0 "i32"]]
+    arg0 <- R.VarRef (getArgName 0)
+    field_access0 <- R.FieldAccess innerValueField arg0
+    R.Block [R.FunctionCall "std::process::exit" [R.As field_access0 "i32"]]
 
 generateReadLine :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateReadLine program type_store arg_types result_type = do
-   rust_type <- convertType result_type
-   stdin_decl <- R.VarDecl "stdin" (R.FunctionCall "std::io::stdin" []) None
-   lock_call <- R.MethodCall (R.VarRef "stdin") "lock" []
-   lines_call <- R.FunctionCall "std::io::BufRead::lines" [lock_call]
-   next_call <- R.MethodCall lines_call "next" []
-   unwrap_call <- R.MethodCall next_call "unwrap" []
-   unwrap_call <- R.MethodCall unwrap_call "unwrap" []
-   line_decl <- R.VarDecl "line" unwrap_call None
-   R.Block [stdin_decl, line_decl, R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef "line")]]
+    rust_type <- convertType result_type
+    stdin_decl <- R.VarDecl "stdin" (R.FunctionCall "std::io::stdin" []) None
+    lock_call <- R.MethodCall (R.VarRef "stdin") "lock" []
+    lines_call <- R.FunctionCall "std::io::BufRead::lines" [lock_call]
+    next_call <- R.MethodCall lines_call "next" []
+    unwrap_call <- R.MethodCall next_call "unwrap" []
+    unwrap_call <- R.MethodCall unwrap_call "unwrap" []
+    line_decl <- R.VarDecl "line" unwrap_call None
+    R.Block [stdin_decl, line_decl, R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef "line")]]
 
 generateMapEmpty :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateMapEmpty program type_store arg_types result_type = do
-   rust_type <- convertType result_type
-   R.Block [R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.FunctionCall "std::collections::BTreeMap::new" [])]]
+    rust_type <- convertType result_type
+    R.Block [R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.FunctionCall "std::collections::BTreeMap::new" [])]]
 
 generateMapInsert :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateMapInsert program type_store arg_types result_type = do
-   map_type <- atIndex arg_types 0
-   arg_key_type <- atIndex arg_types 1
-   arg_value_type <- atIndex arg_types 2
-   map_def <- getRecord program (LT.getIdentity map_type)
-   map_info <- Option.unwrap map_def.external_info
-   key_type <- atIndex map_info.type_args 0
-   value_type <- atIndex map_info.type_args 1
-   clone_key <- not (LT.isRef key_type) && LT.isRef arg_key_type
-   clone_value <- not (LT.isRef value_type) && LT.isRef arg_value_type
-   value_ref <- if clone_value
-   then R.MethodCall (R.VarRef (getArgName 2)) cloneName []
-   else R.VarRef (getArgName 2)
-   key_ref <- if clone_key
-   then R.MethodCall (R.VarRef (getArgName 1)) cloneName []
-   else R.VarRef (getArgName 1)
-   rust_type <- convertType result_type
-   result_record <- case result_type of
-      LT.Record i _ -> getRecord program i
-      _ -> panic "Result is not a record in generateMapInsert"
-   map_field <- atIndex result_record.fields 0
-   value_field <- atIndex result_record.fields 1
-   rust_map_type <- convertType map_field.type
-   rust_value_type <- convertType value_field.type
-   field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
-   map_ref <- if LT.isRef map_type
-   then R.MethodCall field_access0 cloneName []
-   else field_access0
-   map <- "map"
-   value <- "value"
-   map_decl <- R.VarDeclMut map map_ref None
-   insert_call <- R.MethodCall (R.VarRef map) "insert" [key_ref, value_ref]
-   some_pattern <- R.VariantPattern "Some" (Some value)
-   none_pattern <- R.VariantPattern "None" None
-   some_record_type <- getVariantRecordTypeId program value_field.type "Some"
-   none_record_type <- getVariantRecordTypeId program value_field.type "None"
-   rust_some_record_type <- convertType (LT.Record some_record_type [])
-   rust_none_record_type <- convertType (LT.Record none_record_type [])
-   some_record <- getRecord program some_record_type
-   item_field <- atIndex some_record.fields 0
-   some_ctor <- R.StructCtor (RT.showBase rust_some_record_type) [R.FieldInitItem (getFieldName 0) (R.VarRef value)]
-   none_ctor <- R.StructCtor (RT.showBase rust_none_record_type) []
-   some_case <- R.MatchCase some_pattern (R.FunctionCall ("{}::Some" % RT.showBase rust_value_type) [some_ctor]) None
-   none_case <- R.MatchCase none_pattern (R.FunctionCall ("{}::None" % RT.showBase rust_value_type) [none_ctor]) None
-   match <- R.Match insert_call [some_case, none_case]
-   value_decl <- R.VarDecl value match None
-   map_ctor <- R.Block [R.StructCtor (RT.showBase rust_map_type) [R.FieldInitItem innerValueField (R.VarRef map)]]
-   field0_init <- R.FieldInitItem (getFieldName 0) map_ctor
-   field1_init <- R.FieldInitItem (getFieldName 1) (R.VarRef value)
-   result_ctor <- R.StructCtor (RT.showBase rust_type) [field0_init, field1_init]
-   R.Block [map_decl, value_decl, result_ctor]
+    map_type <- atIndex arg_types 0
+    arg_key_type <- atIndex arg_types 1
+    arg_value_type <- atIndex arg_types 2
+    map_def <- getRecord program (LT.getIdentity map_type)
+    map_info <- Option.unwrap map_def.external_info
+    key_type <- atIndex map_info.type_args 0
+    value_type <- atIndex map_info.type_args 1
+    clone_key <- not (LT.isRef key_type) && LT.isRef arg_key_type
+    clone_value <- not (LT.isRef value_type) && LT.isRef arg_value_type
+    value_ref <- if clone_value
+    then R.MethodCall (R.VarRef (getArgName 2)) cloneName []
+    else R.VarRef (getArgName 2)
+    key_ref <- if clone_key
+    then R.MethodCall (R.VarRef (getArgName 1)) cloneName []
+    else R.VarRef (getArgName 1)
+    rust_type <- convertType result_type
+    result_record <- case result_type of
+        LT.Record i _ -> getRecord program i
+        _ -> panic "Result is not a record in generateMapInsert"
+    map_field <- atIndex result_record.fields 0
+    value_field <- atIndex result_record.fields 1
+    rust_map_type <- convertType map_field.type
+    rust_value_type <- convertType value_field.type
+    field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
+    map_ref <- if LT.isRef map_type
+    then R.MethodCall field_access0 cloneName []
+    else field_access0
+    map <- "map"
+    value <- "value"
+    map_decl <- R.VarDeclMut map map_ref None
+    insert_call <- R.MethodCall (R.VarRef map) "insert" [key_ref, value_ref]
+    some_pattern <- R.VariantPattern "Some" (Some value)
+    none_pattern <- R.VariantPattern "None" None
+    some_record_type <- getVariantRecordTypeId program value_field.type "Some"
+    none_record_type <- getVariantRecordTypeId program value_field.type "None"
+    rust_some_record_type <- convertType (LT.Record some_record_type [])
+    rust_none_record_type <- convertType (LT.Record none_record_type [])
+    some_record <- getRecord program some_record_type
+    item_field <- atIndex some_record.fields 0
+    some_ctor <- R.StructCtor (RT.showBase rust_some_record_type) [R.FieldInitItem (getFieldName 0) (R.VarRef value)]
+    none_ctor <- R.StructCtor (RT.showBase rust_none_record_type) []
+    some_case <- R.MatchCase some_pattern (R.FunctionCall ("{}::Some" % RT.showBase rust_value_type) [some_ctor]) None
+    none_case <- R.MatchCase none_pattern (R.FunctionCall ("{}::None" % RT.showBase rust_value_type) [none_ctor]) None
+    match <- R.Match insert_call [some_case, none_case]
+    value_decl <- R.VarDecl value match None
+    map_ctor <- R.Block [R.StructCtor (RT.showBase rust_map_type) [R.FieldInitItem innerValueField (R.VarRef map)]]
+    field0_init <- R.FieldInitItem (getFieldName 0) map_ctor
+    field1_init <- R.FieldInitItem (getFieldName 1) (R.VarRef value)
+    result_ctor <- R.StructCtor (RT.showBase rust_type) [field0_init, field1_init]
+    R.Block [map_decl, value_decl, result_ctor]
 
 generateMapGet :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateMapGet program type_store arg_types result_type = do
-   rust_type <- convertType result_type
-   map_type <- atIndex arg_types 0
-   field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
-   map <- "map"
-   value <- "value"
-   map_decl <- if LT.isRef map_type
-   then R.VarDecl map (R.Ref field_access0) None
-   else R.VarDecl map field_access0 None
-   get_call <- if LT.isRef (atIndex arg_types 1)
-   then R.MethodCall (R.VarRef map) "get" [R.VarRef (getArgName 1)]
-   else R.MethodCall (R.VarRef map) "get" [R.Ref (R.VarRef (getArgName 1))]
-   some_pattern <- R.VariantPattern "Some" (Some value)
-   none_pattern <- R.VariantPattern "None" None
-   some_record_type <- getVariantRecordTypeId program result_type "Some"
-   none_record_type <- getVariantRecordTypeId program result_type "None"
-   rust_some_record_type <- convertType (LT.Record some_record_type [])
-   rust_none_record_type <- convertType (LT.Record none_record_type [])
-   some_record <- getRecord program some_record_type
-   item_field <- atIndex some_record.fields 0
-   value_clone <- if LT.isRef item_field.type
-   then R.Ref (R.VarRef value)
-   else R.MethodCall (R.VarRef value) cloneName []
-   some_ctor <- R.StructCtor (RT.showBase rust_some_record_type) [R.FieldInitItem (getFieldName 0) (value_clone)]
-   none_ctor <- R.StructCtor (RT.showBase rust_none_record_type) []
-   some_case <- R.MatchCase some_pattern (R.FunctionCall ("{}::Some" % RT.showBase rust_type) [some_ctor]) None
-   none_case <- R.MatchCase none_pattern (R.FunctionCall ("{}::None" % RT.showBase rust_type) [none_ctor]) None
-   match <- R.Match get_call [some_case, none_case]
-   R.Block [map_decl, match]
+    rust_type <- convertType result_type
+    map_type <- atIndex arg_types 0
+    field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
+    map <- "map"
+    value <- "value"
+    map_decl <- if LT.isRef map_type
+    then R.VarDecl map (R.Ref field_access0) None
+    else R.VarDecl map field_access0 None
+    get_call <- if LT.isRef (atIndex arg_types 1)
+    then R.MethodCall (R.VarRef map) "get" [R.VarRef (getArgName 1)]
+    else R.MethodCall (R.VarRef map) "get" [R.Ref (R.VarRef (getArgName 1))]
+    some_pattern <- R.VariantPattern "Some" (Some value)
+    none_pattern <- R.VariantPattern "None" None
+    some_record_type <- getVariantRecordTypeId program result_type "Some"
+    none_record_type <- getVariantRecordTypeId program result_type "None"
+    rust_some_record_type <- convertType (LT.Record some_record_type [])
+    rust_none_record_type <- convertType (LT.Record none_record_type [])
+    some_record <- getRecord program some_record_type
+    item_field <- atIndex some_record.fields 0
+    value_clone <- if LT.isRef item_field.type
+    then R.Ref (R.VarRef value)
+    else R.MethodCall (R.VarRef value) cloneName []
+    some_ctor <- R.StructCtor (RT.showBase rust_some_record_type) [R.FieldInitItem (getFieldName 0) (value_clone)]
+    none_ctor <- R.StructCtor (RT.showBase rust_none_record_type) []
+    some_case <- R.MatchCase some_pattern (R.FunctionCall ("{}::Some" % RT.showBase rust_type) [some_ctor]) None
+    none_case <- R.MatchCase none_pattern (R.FunctionCall ("{}::None" % RT.showBase rust_type) [none_ctor]) None
+    match <- R.Match get_call [some_case, none_case]
+    R.Block [map_decl, match]
 
 generateMapGetSize :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateMapGetSize program type_store arg_types result_type = do
-   rust_type <- convertType result_type
-   arg0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
-   len_call <- R.MethodCall arg0 "len" []
-   R.Block [R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.As len_call "i64")]]
+    rust_type <- convertType result_type
+    arg0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
+    len_call <- R.MethodCall arg0 "len" []
+    R.Block [R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.As len_call "i64")]]
 
 generateMapRemove :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateMapRemove program type_store arg_types result_type = do
-   rust_type <- convertType result_type
-   map_type <- atIndex arg_types 0
-   result_record <- case result_type of
-      LT.Record i _ -> getRecord program i
-      _ -> panic "Result is not a record in generateMapInsert"
-   map_field <- atIndex result_record.fields 0
-   value_field <- atIndex result_record.fields 1
-   rust_map_type <- convertType map_field.type
-   rust_value_type <- convertType value_field.type
-   field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
-   map_ref <- if LT.isRef map_type
-   then R.MethodCall field_access0 cloneName []
-   else field_access0
-   map <- "map"
-   value <- "value"
-   map_decl <- R.VarDeclMut map map_ref None
-   remove_call <- if LT.isRef (atIndex arg_types 1)
-   then R.MethodCall (R.VarRef map) "remove" [R.VarRef (getArgName 1)]
-   else R.MethodCall (R.VarRef map) "remove" [R.Ref (R.VarRef (getArgName 1))]
-   some_pattern <- R.VariantPattern "Some" (Some value)
-   none_pattern <- R.VariantPattern "None" None
-   some_record_type <- getVariantRecordTypeId program value_field.type "Some"
-   none_record_type <- getVariantRecordTypeId program value_field.type "None"
-   rust_some_record_type <- convertType (LT.Record some_record_type [])
-   rust_none_record_type <- convertType (LT.Record none_record_type [])
-   some_record <- getRecord program some_record_type
-   item_field <- atIndex some_record.fields 0
-   some_ctor <- R.StructCtor (RT.showBase rust_some_record_type) [R.FieldInitItem (getFieldName 0) (R.VarRef value)]
-   none_ctor <- R.StructCtor (RT.showBase rust_none_record_type) []
-   some_case <- R.MatchCase some_pattern (R.FunctionCall ("{}::Some" % RT.showBase rust_value_type) [some_ctor]) None
-   none_case <- R.MatchCase none_pattern (R.FunctionCall ("{}::None" % RT.showBase rust_value_type) [none_ctor]) None
-   match <- R.Match remove_call [some_case, none_case]
-   value_decl <- R.VarDecl value match None
-   map_ctor <- R.Block [R.StructCtor (RT.showBase rust_map_type) [R.FieldInitItem innerValueField (R.VarRef map)]]
-   field0_init <- R.FieldInitItem (getFieldName 0) map_ctor
-   field1_init <- R.FieldInitItem (getFieldName 1) (R.VarRef value)
-   result_ctor <- R.StructCtor (RT.showBase rust_type) [field0_init, field1_init]
-   R.Block [map_decl, value_decl, result_ctor]
+    rust_type <- convertType result_type
+    map_type <- atIndex arg_types 0
+    result_record <- case result_type of
+        LT.Record i _ -> getRecord program i
+        _ -> panic "Result is not a record in generateMapInsert"
+    map_field <- atIndex result_record.fields 0
+    value_field <- atIndex result_record.fields 1
+    rust_map_type <- convertType map_field.type
+    rust_value_type <- convertType value_field.type
+    field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
+    map_ref <- if LT.isRef map_type
+    then R.MethodCall field_access0 cloneName []
+    else field_access0
+    map <- "map"
+    value <- "value"
+    map_decl <- R.VarDeclMut map map_ref None
+    remove_call <- if LT.isRef (atIndex arg_types 1)
+    then R.MethodCall (R.VarRef map) "remove" [R.VarRef (getArgName 1)]
+    else R.MethodCall (R.VarRef map) "remove" [R.Ref (R.VarRef (getArgName 1))]
+    some_pattern <- R.VariantPattern "Some" (Some value)
+    none_pattern <- R.VariantPattern "None" None
+    some_record_type <- getVariantRecordTypeId program value_field.type "Some"
+    none_record_type <- getVariantRecordTypeId program value_field.type "None"
+    rust_some_record_type <- convertType (LT.Record some_record_type [])
+    rust_none_record_type <- convertType (LT.Record none_record_type [])
+    some_record <- getRecord program some_record_type
+    item_field <- atIndex some_record.fields 0
+    some_ctor <- R.StructCtor (RT.showBase rust_some_record_type) [R.FieldInitItem (getFieldName 0) (R.VarRef value)]
+    none_ctor <- R.StructCtor (RT.showBase rust_none_record_type) []
+    some_case <- R.MatchCase some_pattern (R.FunctionCall ("{}::Some" % RT.showBase rust_value_type) [some_ctor]) None
+    none_case <- R.MatchCase none_pattern (R.FunctionCall ("{}::None" % RT.showBase rust_value_type) [none_ctor]) None
+    match <- R.Match remove_call [some_case, none_case]
+    value_decl <- R.VarDecl value match None
+    map_ctor <- R.Block [R.StructCtor (RT.showBase rust_map_type) [R.FieldInitItem innerValueField (R.VarRef map)]]
+    field0_init <- R.FieldInitItem (getFieldName 0) map_ctor
+    field1_init <- R.FieldInitItem (getFieldName 1) (R.VarRef value)
+    result_ctor <- R.StructCtor (RT.showBase rust_type) [field0_init, field1_init]
+    R.Block [map_decl, value_decl, result_ctor]
 
 generateMapIntoIter :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateMapIntoIter program type_store arg_types result_type = do
-   rust_type <- convertType result_type
-   iterator_type <- result_type
-   iterator_id <- LT.getIdentity iterator_type
-   iterator_record <- getRecord program iterator_id
-   is_iterator_ref <- Option.isSome iterator_record.implicit_member_lifetime
-   map_type <- atIndex arg_types 0
-   field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
-   map_ref <- if LT.isRef map_type
-   then if is_iterator_ref
-      then R.Ref field_access0
-      else R.MethodCall field_access0 cloneName []
-   else field_access0
-   new0 <- "new0"
-   if is_iterator_ref
-   then do
-      new0_decl <- R.VarDecl new0 (R.Ref map_ref) None
-      iter_call <- R.MethodCall (R.VarRef new0) "iter" []
-      struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField iter_call]
-      R.Block [new0_decl, struct_ctor]
-   else do
-      new0_decl <- R.VarDecl new0 map_ref None
-      into_iter_call <- R.MethodCall (R.VarRef new0) "into_iter" []
-      collect <- R.MethodCall into_iter_call "collect" []
-      v <- "v"
-      v_decl <- R.VarDecl v collect (Some (RT.Named "Vec<_>" []))
-      v_into_iter_call <- R.MethodCall (R.VarRef v) "into_iter" []
-      struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField v_into_iter_call]
-      R.Block [new0_decl, v_decl, struct_ctor]
+    rust_type <- convertType result_type
+    iterator_type <- result_type
+    iterator_id <- LT.getIdentity iterator_type
+    iterator_record <- getRecord program iterator_id
+    is_iterator_ref <- Option.isSome iterator_record.implicit_member_lifetime
+    map_type <- atIndex arg_types 0
+    field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
+    map_ref <- if LT.isRef map_type
+    then if is_iterator_ref
+        then R.Ref field_access0
+        else R.MethodCall field_access0 cloneName []
+    else field_access0
+    new0 <- "new0"
+    if is_iterator_ref
+    then do
+        new0_decl <- R.VarDecl new0 (R.Ref map_ref) None
+        iter_call <- R.MethodCall (R.VarRef new0) "iter" []
+        struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField iter_call]
+        R.Block [new0_decl, struct_ctor]
+    else do
+        new0_decl <- R.VarDecl new0 map_ref None
+        into_iter_call <- R.MethodCall (R.VarRef new0) "into_iter" []
+        collect <- R.MethodCall into_iter_call "collect" []
+        v <- "v"
+        v_decl <- R.VarDecl v collect (Some (RT.Named "Vec<_>" []))
+        v_into_iter_call <- R.MethodCall (R.VarRef v) "into_iter" []
+        struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField v_into_iter_call]
+        R.Block [new0_decl, v_decl, struct_ctor]
 
 generateMapNextItem :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateMapNextItem program type_store arg_types result_type = do
-   iterator_type <- atIndex arg_types 0
-   iterator_id <- LT.getIdentity iterator_type
-   iterator_record <- getRecord program iterator_id
-   rust_iterator_type <- convertType iterator_type
-   is_iterator_ref <- Option.isSome iterator_record.implicit_member_lifetime
-   iterator_info <- Option.unwrap iterator_record.external_info
-   iterator_item_type_key <- atIndex iterator_info.type_args 0
-   iterator_item_type_value <- atIndex iterator_info.type_args 1
-   rust_result_type <- convertType result_type
-   result_id <- LT.getIdentity result_type
-   result_record <- getRecord program result_id
-   option_type <- (atIndex result_record.fields 1).type
-   rust_option_type <- convertType option_type
-   field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
-   iter_ref <- if LT.isRef iterator_type
-   then R.MethodCall field_access0 cloneName []
-   else field_access0
-   state <- "state"
-   state_decl <- R.VarDeclMut state iter_ref None
-   value <- "value"
-   value_decl <- R.VarDecl value (R.MethodCall (R.VarRef state) "next" []) None
-   item <- "item"
-   some_pattern <- R.VariantPattern "Some" (Some item)
-   none_pattern <- R.VariantPattern "None" None
-   some_record_type <- getVariantRecordTypeId program option_type "Some"
-   none_record_type <- getVariantRecordTypeId program option_type "None"
-   rust_some_record_type <- convertType (LT.Record some_record_type [])
-   rust_none_record_type <- convertType (LT.Record none_record_type [])
-   some_record <- getRecord program some_record_type
-   item_field <- atIndex some_record.fields 0
-   rust_item_type <- convertType item_field.type
-   tuple_record <- case item_field.type of
-      LT.Record record_id _ -> getRecord program record_id
-      _ -> panic "Tuple is not a record"
-   state_field <- atIndex tuple_record.fields 0
-   value_field <- atIndex tuple_record.fields 1
-   rust_state_type <- convertType state_field.type
-   rust_value_type <- convertType value_field.type
-   key_ctor <- if LT.isRef state_field.type
-   then R.Ref (R.FieldAccess "0" (R.VarRef item))
-   else if not (LT.isRef item_field.type) && (LT.isRef iterator_item_type_key || is_iterator_ref)
-      then R.MethodCall (R.FieldAccess "0" (R.VarRef item)) cloneName []
-      else R.FieldAccess "0" (R.VarRef item)
-   value_ctor <- if LT.isRef value_field.type
-   then R.Ref (R.FieldAccess "1" (R.VarRef item))
-   else if not (LT.isRef value_field.type) && (LT.isRef iterator_item_type_value || is_iterator_ref)
-      then R.MethodCall (R.FieldAccess "1" (R.VarRef item)) cloneName []
-      else R.FieldAccess "1" (R.VarRef item)
-   value_tuple_ctor <- R.StructCtor (RT.showBase rust_item_type) [R.FieldInitItem (getFieldName 0) key_ctor, R.FieldInitItem (getFieldName 1) value_ctor]
-   some_ctor <- R.StructCtor (RT.showBase rust_some_record_type) [R.FieldInitItem (getFieldName 0) value_tuple_ctor]
-   some_ctor <- R.FunctionCall ("{}::Some" % RT.showBase rust_option_type) [some_ctor]
-   none_ctor <- R.StructCtor (RT.showBase rust_none_record_type) []
-   none_ctor <- R.FunctionCall ("{}::None" % RT.showBase rust_option_type) [none_ctor]
-   state_ctor <- R.StructCtor (RT.showBase rust_iterator_type) [R.FieldInitItem innerValueField (R.VarRef state)]
-   tuple_ctor_some <- R.StructCtor (RT.showBase rust_result_type) [R.FieldInitItem (getFieldName 0) state_ctor, R.FieldInitItem (getFieldName 1) some_ctor]
-   tuple_ctor_none <- R.StructCtor (RT.showBase rust_result_type) [R.FieldInitItem (getFieldName 0) state_ctor, R.FieldInitItem (getFieldName 1) none_ctor]
-   some_case <- R.MatchCase some_pattern tuple_ctor_some None
-   none_case <- R.MatchCase none_pattern tuple_ctor_none None
-   cases <- [some_case, none_case]
-   match <- R.Match (R.VarRef value) cases
-   R.Block [state_decl, value_decl, match]
+    iterator_type <- atIndex arg_types 0
+    iterator_id <- LT.getIdentity iterator_type
+    iterator_record <- getRecord program iterator_id
+    rust_iterator_type <- convertType iterator_type
+    is_iterator_ref <- Option.isSome iterator_record.implicit_member_lifetime
+    iterator_info <- Option.unwrap iterator_record.external_info
+    iterator_item_type_key <- atIndex iterator_info.type_args 0
+    iterator_item_type_value <- atIndex iterator_info.type_args 1
+    rust_result_type <- convertType result_type
+    result_id <- LT.getIdentity result_type
+    result_record <- getRecord program result_id
+    option_type <- (atIndex result_record.fields 1).type
+    rust_option_type <- convertType option_type
+    field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
+    iter_ref <- if LT.isRef iterator_type
+    then R.MethodCall field_access0 cloneName []
+    else field_access0
+    state <- "state"
+    state_decl <- R.VarDeclMut state iter_ref None
+    value <- "value"
+    value_decl <- R.VarDecl value (R.MethodCall (R.VarRef state) "next" []) None
+    item <- "item"
+    some_pattern <- R.VariantPattern "Some" (Some item)
+    none_pattern <- R.VariantPattern "None" None
+    some_record_type <- getVariantRecordTypeId program option_type "Some"
+    none_record_type <- getVariantRecordTypeId program option_type "None"
+    rust_some_record_type <- convertType (LT.Record some_record_type [])
+    rust_none_record_type <- convertType (LT.Record none_record_type [])
+    some_record <- getRecord program some_record_type
+    item_field <- atIndex some_record.fields 0
+    rust_item_type <- convertType item_field.type
+    tuple_record <- case item_field.type of
+        LT.Record record_id _ -> getRecord program record_id
+        _ -> panic "Tuple is not a record"
+    state_field <- atIndex tuple_record.fields 0
+    value_field <- atIndex tuple_record.fields 1
+    rust_state_type <- convertType state_field.type
+    rust_value_type <- convertType value_field.type
+    key_ctor <- if LT.isRef state_field.type
+    then R.Ref (R.FieldAccess "0" (R.VarRef item))
+    else if not (LT.isRef item_field.type) && (LT.isRef iterator_item_type_key || is_iterator_ref)
+        then R.MethodCall (R.FieldAccess "0" (R.VarRef item)) cloneName []
+        else R.FieldAccess "0" (R.VarRef item)
+    value_ctor <- if LT.isRef value_field.type
+    then R.Ref (R.FieldAccess "1" (R.VarRef item))
+    else if not (LT.isRef value_field.type) && (LT.isRef iterator_item_type_value || is_iterator_ref)
+        then R.MethodCall (R.FieldAccess "1" (R.VarRef item)) cloneName []
+        else R.FieldAccess "1" (R.VarRef item)
+    value_tuple_ctor <- R.StructCtor (RT.showBase rust_item_type) [R.FieldInitItem (getFieldName 0) key_ctor, R.FieldInitItem (getFieldName 1) value_ctor]
+    some_ctor <- R.StructCtor (RT.showBase rust_some_record_type) [R.FieldInitItem (getFieldName 0) value_tuple_ctor]
+    some_ctor <- R.FunctionCall ("{}::Some" % RT.showBase rust_option_type) [some_ctor]
+    none_ctor <- R.StructCtor (RT.showBase rust_none_record_type) []
+    none_ctor <- R.FunctionCall ("{}::None" % RT.showBase rust_option_type) [none_ctor]
+    state_ctor <- R.StructCtor (RT.showBase rust_iterator_type) [R.FieldInitItem innerValueField (R.VarRef state)]
+    tuple_ctor_some <- R.StructCtor (RT.showBase rust_result_type) [R.FieldInitItem (getFieldName 0) state_ctor, R.FieldInitItem (getFieldName 1) some_ctor]
+    tuple_ctor_none <- R.StructCtor (RT.showBase rust_result_type) [R.FieldInitItem (getFieldName 0) state_ctor, R.FieldInitItem (getFieldName 1) none_ctor]
+    some_case <- R.MatchCase some_pattern tuple_ctor_some None
+    none_case <- R.MatchCase none_pattern tuple_ctor_none None
+    cases <- [some_case, none_case]
+    match <- R.Match (R.VarRef value) cases
+    R.Block [state_decl, value_decl, match]
 
 generateRcCreate :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateRcCreate program type_store arg_types result_type = do
-   rust_type <- convertType result_type
-   item_type <- convertType (atIndex arg_types 0)
-   item_ref <- if RT.isRef item_type
-   then R.MethodCall (R.VarRef (getArgName 0)) cloneName []
-   else R.VarRef (getArgName 0)
-   new0 <- "new0"
-   create_call <- R.FunctionCall "std::rc::Rc::new" [item_ref]
-   new0_decl <- R.VarDecl new0 create_call None
-   struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef new0)]
-   R.Block [new0_decl, struct_ctor]
+    rust_type <- convertType result_type
+    item_type <- convertType (atIndex arg_types 0)
+    item_ref <- if RT.isRef item_type
+    then R.MethodCall (R.VarRef (getArgName 0)) cloneName []
+    else R.VarRef (getArgName 0)
+    new0 <- "new0"
+    create_call <- R.FunctionCall "std::rc::Rc::new" [item_ref]
+    new0_decl <- R.VarDecl new0 create_call None
+    struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef new0)]
+    R.Block [new0_decl, struct_ctor]
 
 generateRcGet :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateRcGet program type_store arg_types result_type = do
-   rust_type <- convertType result_type
-   field_access0 <- R.Deref (R.FieldAccess innerValueField (R.VarRef (getArgName 0)))
-   item_ref <- if not (RT.isRef rust_type)
-   then R.MethodCall field_access0 cloneName []
-   else R.Ref field_access0
-   R.Block [item_ref]
+    rust_type <- convertType result_type
+    field_access0 <- R.Deref (R.FieldAccess innerValueField (R.VarRef (getArgName 0)))
+    item_ref <- if not (RT.isRef rust_type)
+    then R.MethodCall field_access0 cloneName []
+    else R.Ref field_access0
+    R.Block [item_ref]
 
 generateCellCreate :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateCellCreate program type_store arg_types result_type = do
-   rust_type <- convertType result_type
-   item_type <- convertType (atIndex arg_types 0)
-   item_ref <- if RT.isRef item_type
-   then R.MethodCall (R.VarRef (getArgName 0)) cloneName []
-   else R.VarRef (getArgName 0)
-   new0 <- "new0"
-   create_call <- R.FunctionCall "std::option::Option::Some" [item_ref]
-   create_call <- R.FunctionCall "std::cell::RefCell::new" [create_call]
-   create_call <- R.FunctionCall "std::rc::Rc::new" [create_call]
-   new0_decl <- R.VarDecl new0 create_call None
-   struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef new0)]
-   R.Block [new0_decl, struct_ctor]
+    rust_type <- convertType result_type
+    item_type <- convertType (atIndex arg_types 0)
+    item_ref <- if RT.isRef item_type
+    then R.MethodCall (R.VarRef (getArgName 0)) cloneName []
+    else R.VarRef (getArgName 0)
+    new0 <- "new0"
+    create_call <- R.FunctionCall "std::option::Option::Some" [item_ref]
+    create_call <- R.FunctionCall "std::cell::RefCell::new" [create_call]
+    create_call <- R.FunctionCall "std::rc::Rc::new" [create_call]
+    new0_decl <- R.VarDecl new0 create_call None
+    struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef new0)]
+    R.Block [new0_decl, struct_ctor]
 
 generateCellGet :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateCellGet program type_store arg_types result_type = do
-   rust_type <- convertType result_type
-   field_access0 <- R.Deref (R.FieldAccess innerValueField (R.VarRef (getArgName 0)))
-   item_ref <- if not (RT.isRef rust_type)
-   then R.MethodCall field_access0 cloneName []
-   else R.Ref field_access0
-   item_ref <- R.MethodCall item_ref "into_inner" []
-   item_ref <- R.MethodCall item_ref "unwrap" []
-   R.Block [item_ref]
+    rust_type <- convertType result_type
+    field_access0 <- R.Deref (R.FieldAccess innerValueField (R.VarRef (getArgName 0)))
+    item_ref <- if not (RT.isRef rust_type)
+    then R.MethodCall field_access0 cloneName []
+    else R.Ref field_access0
+    item_ref <- R.MethodCall item_ref "into_inner" []
+    item_ref <- R.MethodCall item_ref "unwrap" []
+    R.Block [item_ref]
 
 generateCellPut :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateCellPut program type_store arg_types result_type = do
-   rust_type <- convertType result_type
-   field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
-   borrow_mut <- R.MethodCall field_access0 "borrow_mut" []
-   cell_decl <- R.VarDeclMut "cell" borrow_mut None
-   struct_ctor <- R.StructCtor (RT.showBase rust_type) []
-   assign <- R.Assign (R.Deref (R.VarRef "cell")) (R.FunctionCall "std::option::Option::Some" [R.VarRef (getArgName 1)])
-   R.Block [cell_decl, assign, struct_ctor]
+    rust_type <- convertType result_type
+    field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
+    borrow_mut <- R.MethodCall field_access0 "borrow_mut" []
+    cell_decl <- R.VarDeclMut "cell" borrow_mut None
+    struct_ctor <- R.StructCtor (RT.showBase rust_type) []
+    assign <- R.Assign (R.Deref (R.VarRef "cell")) (R.FunctionCall "std::option::Option::Some" [R.VarRef (getArgName 1)])
+    R.Block [cell_decl, assign, struct_ctor]
 
 generateCellTake :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateCellTake program type_store arg_types result_type = do
-   field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
-   borrow_mut <- R.MethodCall field_access0 "borrow_mut" []
-   cell_decl <- R.VarDeclMut "cell" borrow_mut None
-   take <- R.MethodCall (R.VarRef "cell") "take" []
-   take <- R.MethodCall take "take" []
-   take <- R.MethodCall take "unwrap" []
-   R.Block [cell_decl, take]
+    field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
+    borrow_mut <- R.MethodCall field_access0 "borrow_mut" []
+    cell_decl <- R.VarDeclMut "cell" borrow_mut None
+    take <- R.MethodCall (R.VarRef "cell") "take" []
+    take <- R.MethodCall take "take" []
+    take <- R.MethodCall take "unwrap" []
+    R.Block [cell_decl, take]
 
 generateIntrinsicsClone :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateIntrinsicsClone program type_store arg_types result_type = do
-   R.Block [R.MethodCall (R.VarRef (getArgName 0)) cloneName []]
+    R.Block [R.MethodCall (R.VarRef (getArgName 0)) cloneName []]
 
 initializeExternalFunctions :: Map ExternalId ExternFnBuilder
 initializeExternalFunctions = do
-   externals <- Map.empty
-   (externals, _) <- insert externals (ExternalId "Std.Util.Basic" "printStr") (ExternFnBuilder generatePrintStr)
-   (externals, _) <- insert externals (ExternalId "Std.Util.Basic" "abort") (ExternFnBuilder generateAbort)
-   (externals, _) <- insert externals (ExternalId "Std.Ops" "getDiscriminant") (ExternFnBuilder generateGetDiscriminant)
-   (externals, _) <- insert externals (ExternalId "Std.Ops" "opAnd") (ExternFnBuilder generateOpAnd)
-   (externals, _) <- insert externals (ExternalId "Std.Ops" "opOr") (ExternFnBuilder generateOpOr)
-   (externals, _) <- insert externals (ExternalId "Std.Util" "assert") (ExternFnBuilder generateAssert)
-   (externals, _) <- insert externals (ExternalId "IO" "readTextFile") (ExternFnBuilder generateReadTextFile)
-   (externals, _) <- insert externals (ExternalId "IO" "writeTextFile") (ExternFnBuilder generateWriteTextFile)
-   (externals, _) <- insert externals (ExternalId "IO" "getArgs") (ExternFnBuilder generateGetArgs)
-   (externals, _) <- insert externals (ExternalId "IO" "isDir") (ExternFnBuilder generateIsDir)
-   (externals, _) <- insert externals (ExternalId "IO" "listDir") (ExternFnBuilder generateListDir)
-   (externals, _) <- insert externals (ExternalId "IO" "exit") (ExternFnBuilder generateExit)
-   (externals, _) <- insert externals (ExternalId "IO" "readLine") (ExternFnBuilder generateReadLine)
-   (externals, _) <- insert externals (ExternalId "String" "addString") (ExternFnBuilder generateStringAdd)
-   (externals, _) <- insert externals (ExternalId "String" "partialCmpString") (ExternFnBuilder generatePartialCmp)
-   (externals, _) <- insert externals (ExternalId "String" "cmpString") (ExternFnBuilder generateCmp)
-   (externals, _) <- insert externals (ExternalId "String" "eqString") (ExternFnBuilder generateEq)
-   (externals, _) <- insert externals (ExternalId "String" "chars") (ExternFnBuilder generateStringChars)
-   (externals, _) <- insert externals (ExternalId "String" "replace") (ExternFnBuilder generateStringReplace)
-   (externals, _) <- insert externals (ExternalId "String" "split") (ExternFnBuilder generateStringSplit)
-   (externals, _) <- insert externals (ExternalId "String" "startsWith") (ExternFnBuilder generateStringStartsWith)
-   (externals, _) <- insert externals (ExternalId "String" "endsWith") (ExternFnBuilder generateStringEndsWith)
-   (externals, _) <- insert externals (ExternalId "Int" "addInt") (ExternFnBuilder generateAdd)
-   (externals, _) <- insert externals (ExternalId "Int" "subInt") (ExternFnBuilder generateSub)
-   (externals, _) <- insert externals (ExternalId "Int" "mulInt") (ExternFnBuilder generateMul)
-   (externals, _) <- insert externals (ExternalId "Int" "divInt") (ExternFnBuilder generateDiv)
-   (externals, _) <- insert externals (ExternalId "Int" "showInt") (ExternFnBuilder generateShow)
-   (externals, _) <- insert externals (ExternalId "Int" "partialCmpInt") (ExternFnBuilder generatePartialCmp)
-   (externals, _) <- insert externals (ExternalId "Int" "cmpInt") (ExternFnBuilder generateCmp)
-   (externals, _) <- insert externals (ExternalId "Int" "eqInt") (ExternFnBuilder generateEq)
-   (externals, _) <- insert externals (ExternalId "Int" "negativeInt") (ExternFnBuilder generateNegative)
-   (externals, _) <- insert externals (ExternalId "Int" "parse") (ExternFnBuilder generateIntParse)
-   (externals, _) <- insert externals (ExternalId "Float" "addFloat") (ExternFnBuilder generateAdd)
-   (externals, _) <- insert externals (ExternalId "Float" "subFloat") (ExternFnBuilder generateSub)
-   (externals, _) <- insert externals (ExternalId "Float" "mulFloat") (ExternFnBuilder generateMul)
-   (externals, _) <- insert externals (ExternalId "Float" "divFloat") (ExternFnBuilder generateDiv)
-   (externals, _) <- insert externals (ExternalId "Float" "showFloat") (ExternFnBuilder generateShow)
-   (externals, _) <- insert externals (ExternalId "Float" "partialCmpFloat") (ExternFnBuilder generatePartialCmp)
-   (externals, _) <- insert externals (ExternalId "Float" "eqFloat") (ExternFnBuilder generateEq)
-   (externals, _) <- insert externals (ExternalId "Float" "negativeFloat") (ExternFnBuilder generateNegative)
-   (externals, _) <- insert externals (ExternalId "Char" "partialCmpChar") (ExternFnBuilder generatePartialCmp)
-   (externals, _) <- insert externals (ExternalId "Char" "cmpChar") (ExternFnBuilder generateCmp)
-   (externals, _) <- insert externals (ExternalId "Char" "eqChar") (ExternFnBuilder generateEq)
-   (externals, _) <- insert externals (ExternalId "Char" "isUppercase") (ExternFnBuilder generateIsUppercase)
-   (externals, _) <- insert externals (ExternalId "Char" "showChar") (ExternFnBuilder generateShow)
-   (externals, _) <- insert externals (ExternalId "List" "addList") (ExternFnBuilder generateListAdd)
-   (externals, _) <- insert externals (ExternalId "List" "push") (ExternFnBuilder generateListPush)
-   (externals, _) <- insert externals (ExternalId "List" "remove") (ExternFnBuilder generateListRemove)
-   (externals, _) <- insert externals (ExternalId "List" "split") (ExternFnBuilder generateListSplit)
-   (externals, _) <- insert externals (ExternalId "List" "withCapacity") (ExternFnBuilder generateListWithCapacity)
-   (externals, _) <- insert externals (ExternalId "List" "atIndex") (ExternFnBuilder generateListAtIndex)
-   (externals, _) <- insert externals (ExternalId "List" "getLength") (ExternFnBuilder generateListGetLength)
-   (externals, _) <- insert externals (ExternalId "List" "dedup") (ExternFnBuilder generateListDedup)
-   (externals, _) <- insert externals (ExternalId "List" "isEmpty") (ExternFnBuilder generateListIsEmpty)
-   (externals, _) <- insert externals (ExternalId "List" "sort") (ExternFnBuilder generateListSort)
-   (externals, _) <- insert externals (ExternalId "List" "reverse") (ExternFnBuilder generateListReverse)
-   (externals, _) <- insert externals (ExternalId "List" "tail") (ExternFnBuilder generateListTail)
-   (externals, _) <- insert externals (ExternalId "List" "write") (ExternFnBuilder generateListWrite)
-   (externals, _) <- insert externals (ExternalId "List" "intoIter") (ExternFnBuilder generateListIntoIter)
-   (externals, _) <- insert externals (ExternalId "List" "nextItem") (ExternFnBuilder generateListNextItem)
-   (externals, _) <- insert externals (ExternalId "Map" "empty") (ExternFnBuilder generateMapEmpty)
-   (externals, _) <- insert externals (ExternalId "Map" "insert") (ExternFnBuilder generateMapInsert)
-   (externals, _) <- insert externals (ExternalId "Map" "getSize") (ExternFnBuilder generateMapGetSize)
-   (externals, _) <- insert externals (ExternalId "Map" "get") (ExternFnBuilder generateMapGet)
-   (externals, _) <- insert externals (ExternalId "Map" "remove") (ExternFnBuilder generateMapRemove)
-   (externals, _) <- insert externals (ExternalId "Map" "intoIter") (ExternFnBuilder generateMapIntoIter)
-   (externals, _) <- insert externals (ExternalId "Map" "nextItem") (ExternFnBuilder generateMapNextItem)
-   (externals, _) <- insert externals (ExternalId "Map" "empty") (ExternFnBuilder generateMapEmpty)
-   (externals, _) <- insert externals (ExternalId "Map" "insert") (ExternFnBuilder generateMapInsert)
-   (externals, _) <- insert externals (ExternalId "Map" "getSize") (ExternFnBuilder generateMapGetSize)
-   (externals, _) <- insert externals (ExternalId "Map" "get") (ExternFnBuilder generateMapGet)
-   (externals, _) <- insert externals (ExternalId "Map" "remove") (ExternFnBuilder generateMapRemove)
-   (externals, _) <- insert externals (ExternalId "Map" "intoIter") (ExternFnBuilder generateMapIntoIter)
-   (externals, _) <- insert externals (ExternalId "Map" "nextItem") (ExternFnBuilder generateMapNextItem)
-   (externals, _) <- insert externals (ExternalId "Rc" "create") (ExternFnBuilder generateRcCreate)
-   (externals, _) <- insert externals (ExternalId "Rc" "get") (ExternFnBuilder generateRcGet)
-   (externals, _) <- insert externals (ExternalId "Cell" "create") (ExternFnBuilder generateCellCreate)
-   (externals, _) <- insert externals (ExternalId "Cell" "get") (ExternFnBuilder generateCellGet)
-   (externals, _) <- insert externals (ExternalId "Cell" "put") (ExternFnBuilder generateCellPut)
-   (externals, _) <- insert externals (ExternalId "Cell" "take") (ExternFnBuilder generateCellTake)
-   (externals, _) <- insert externals (ExternalId "Std.Intrinsics" "clone") (ExternFnBuilder generateIntrinsicsClone)
-   externals
+    externals <- Map.empty
+    (externals, _) <- insert externals (ExternalId "Std.Util.Basic" "printStr") (ExternFnBuilder generatePrintStr)
+    (externals, _) <- insert externals (ExternalId "Std.Util.Basic" "abort") (ExternFnBuilder generateAbort)
+    (externals, _) <- insert externals (ExternalId "Std.Ops" "getDiscriminant") (ExternFnBuilder generateGetDiscriminant)
+    (externals, _) <- insert externals (ExternalId "Std.Ops" "opAnd") (ExternFnBuilder generateOpAnd)
+    (externals, _) <- insert externals (ExternalId "Std.Ops" "opOr") (ExternFnBuilder generateOpOr)
+    (externals, _) <- insert externals (ExternalId "Std.Util" "assert") (ExternFnBuilder generateAssert)
+    (externals, _) <- insert externals (ExternalId "IO" "readTextFile") (ExternFnBuilder generateReadTextFile)
+    (externals, _) <- insert externals (ExternalId "IO" "writeTextFile") (ExternFnBuilder generateWriteTextFile)
+    (externals, _) <- insert externals (ExternalId "IO" "getArgs") (ExternFnBuilder generateGetArgs)
+    (externals, _) <- insert externals (ExternalId "IO" "isDir") (ExternFnBuilder generateIsDir)
+    (externals, _) <- insert externals (ExternalId "IO" "listDir") (ExternFnBuilder generateListDir)
+    (externals, _) <- insert externals (ExternalId "IO" "exit") (ExternFnBuilder generateExit)
+    (externals, _) <- insert externals (ExternalId "IO" "readLine") (ExternFnBuilder generateReadLine)
+    (externals, _) <- insert externals (ExternalId "String" "addString") (ExternFnBuilder generateStringAdd)
+    (externals, _) <- insert externals (ExternalId "String" "partialCmpString") (ExternFnBuilder generatePartialCmp)
+    (externals, _) <- insert externals (ExternalId "String" "cmpString") (ExternFnBuilder generateCmp)
+    (externals, _) <- insert externals (ExternalId "String" "eqString") (ExternFnBuilder generateEq)
+    (externals, _) <- insert externals (ExternalId "String" "chars") (ExternFnBuilder generateStringChars)
+    (externals, _) <- insert externals (ExternalId "String" "replace") (ExternFnBuilder generateStringReplace)
+    (externals, _) <- insert externals (ExternalId "String" "split") (ExternFnBuilder generateStringSplit)
+    (externals, _) <- insert externals (ExternalId "String" "startsWith") (ExternFnBuilder generateStringStartsWith)
+    (externals, _) <- insert externals (ExternalId "String" "endsWith") (ExternFnBuilder generateStringEndsWith)
+    (externals, _) <- insert externals (ExternalId "Int" "addInt") (ExternFnBuilder generateAdd)
+    (externals, _) <- insert externals (ExternalId "Int" "subInt") (ExternFnBuilder generateSub)
+    (externals, _) <- insert externals (ExternalId "Int" "mulInt") (ExternFnBuilder generateMul)
+    (externals, _) <- insert externals (ExternalId "Int" "divInt") (ExternFnBuilder generateDiv)
+    (externals, _) <- insert externals (ExternalId "Int" "showInt") (ExternFnBuilder generateShow)
+    (externals, _) <- insert externals (ExternalId "Int" "partialCmpInt") (ExternFnBuilder generatePartialCmp)
+    (externals, _) <- insert externals (ExternalId "Int" "cmpInt") (ExternFnBuilder generateCmp)
+    (externals, _) <- insert externals (ExternalId "Int" "eqInt") (ExternFnBuilder generateEq)
+    (externals, _) <- insert externals (ExternalId "Int" "negativeInt") (ExternFnBuilder generateNegative)
+    (externals, _) <- insert externals (ExternalId "Int" "parse") (ExternFnBuilder generateIntParse)
+    (externals, _) <- insert externals (ExternalId "Float" "addFloat") (ExternFnBuilder generateAdd)
+    (externals, _) <- insert externals (ExternalId "Float" "subFloat") (ExternFnBuilder generateSub)
+    (externals, _) <- insert externals (ExternalId "Float" "mulFloat") (ExternFnBuilder generateMul)
+    (externals, _) <- insert externals (ExternalId "Float" "divFloat") (ExternFnBuilder generateDiv)
+    (externals, _) <- insert externals (ExternalId "Float" "showFloat") (ExternFnBuilder generateShow)
+    (externals, _) <- insert externals (ExternalId "Float" "partialCmpFloat") (ExternFnBuilder generatePartialCmp)
+    (externals, _) <- insert externals (ExternalId "Float" "eqFloat") (ExternFnBuilder generateEq)
+    (externals, _) <- insert externals (ExternalId "Float" "negativeFloat") (ExternFnBuilder generateNegative)
+    (externals, _) <- insert externals (ExternalId "Char" "partialCmpChar") (ExternFnBuilder generatePartialCmp)
+    (externals, _) <- insert externals (ExternalId "Char" "cmpChar") (ExternFnBuilder generateCmp)
+    (externals, _) <- insert externals (ExternalId "Char" "eqChar") (ExternFnBuilder generateEq)
+    (externals, _) <- insert externals (ExternalId "Char" "isUppercase") (ExternFnBuilder generateIsUppercase)
+    (externals, _) <- insert externals (ExternalId "Char" "showChar") (ExternFnBuilder generateShow)
+    (externals, _) <- insert externals (ExternalId "List" "addList") (ExternFnBuilder generateListAdd)
+    (externals, _) <- insert externals (ExternalId "List" "push") (ExternFnBuilder generateListPush)
+    (externals, _) <- insert externals (ExternalId "List" "remove") (ExternFnBuilder generateListRemove)
+    (externals, _) <- insert externals (ExternalId "List" "split") (ExternFnBuilder generateListSplit)
+    (externals, _) <- insert externals (ExternalId "List" "withCapacity") (ExternFnBuilder generateListWithCapacity)
+    (externals, _) <- insert externals (ExternalId "List" "atIndex") (ExternFnBuilder generateListAtIndex)
+    (externals, _) <- insert externals (ExternalId "List" "getLength") (ExternFnBuilder generateListGetLength)
+    (externals, _) <- insert externals (ExternalId "List" "dedup") (ExternFnBuilder generateListDedup)
+    (externals, _) <- insert externals (ExternalId "List" "isEmpty") (ExternFnBuilder generateListIsEmpty)
+    (externals, _) <- insert externals (ExternalId "List" "sort") (ExternFnBuilder generateListSort)
+    (externals, _) <- insert externals (ExternalId "List" "reverse") (ExternFnBuilder generateListReverse)
+    (externals, _) <- insert externals (ExternalId "List" "tail") (ExternFnBuilder generateListTail)
+    (externals, _) <- insert externals (ExternalId "List" "write") (ExternFnBuilder generateListWrite)
+    (externals, _) <- insert externals (ExternalId "List" "intoIter") (ExternFnBuilder generateListIntoIter)
+    (externals, _) <- insert externals (ExternalId "List" "nextItem") (ExternFnBuilder generateListNextItem)
+    (externals, _) <- insert externals (ExternalId "Map" "empty") (ExternFnBuilder generateMapEmpty)
+    (externals, _) <- insert externals (ExternalId "Map" "insert") (ExternFnBuilder generateMapInsert)
+    (externals, _) <- insert externals (ExternalId "Map" "getSize") (ExternFnBuilder generateMapGetSize)
+    (externals, _) <- insert externals (ExternalId "Map" "get") (ExternFnBuilder generateMapGet)
+    (externals, _) <- insert externals (ExternalId "Map" "remove") (ExternFnBuilder generateMapRemove)
+    (externals, _) <- insert externals (ExternalId "Map" "intoIter") (ExternFnBuilder generateMapIntoIter)
+    (externals, _) <- insert externals (ExternalId "Map" "nextItem") (ExternFnBuilder generateMapNextItem)
+    (externals, _) <- insert externals (ExternalId "Map" "empty") (ExternFnBuilder generateMapEmpty)
+    (externals, _) <- insert externals (ExternalId "Map" "insert") (ExternFnBuilder generateMapInsert)
+    (externals, _) <- insert externals (ExternalId "Map" "getSize") (ExternFnBuilder generateMapGetSize)
+    (externals, _) <- insert externals (ExternalId "Map" "get") (ExternFnBuilder generateMapGet)
+    (externals, _) <- insert externals (ExternalId "Map" "remove") (ExternFnBuilder generateMapRemove)
+    (externals, _) <- insert externals (ExternalId "Map" "intoIter") (ExternFnBuilder generateMapIntoIter)
+    (externals, _) <- insert externals (ExternalId "Map" "nextItem") (ExternFnBuilder generateMapNextItem)
+    (externals, _) <- insert externals (ExternalId "Rc" "create") (ExternFnBuilder generateRcCreate)
+    (externals, _) <- insert externals (ExternalId "Rc" "get") (ExternFnBuilder generateRcGet)
+    (externals, _) <- insert externals (ExternalId "Cell" "create") (ExternFnBuilder generateCellCreate)
+    (externals, _) <- insert externals (ExternalId "Cell" "get") (ExternFnBuilder generateCellGet)
+    (externals, _) <- insert externals (ExternalId "Cell" "put") (ExternFnBuilder generateCellPut)
+    (externals, _) <- insert externals (ExternalId "Cell" "take") (ExternFnBuilder generateCellTake)
+    (externals, _) <- insert externals (ExternalId "Std.Intrinsics" "clone") (ExternFnBuilder generateIntrinsicsClone)
+    externals
 
 generateStringFields :: [LT.Type] -> Option LT.Lifetime -> [R.StructField]
 generateStringFields args _ = [R.StructField innerValueField (RT.Named "std::string::String" [])]
@@ -1203,61 +1203,61 @@ generateCharFields args _ = [R.StructField innerValueField (RT.Named "char" [])]
 
 generateListFields :: [LT.Type] -> Option LT.Lifetime -> [R.StructField]
 generateListFields args _ = do
-   first <- atIndex args 0
-   rust_type_arg <- convertType first
-   [R.StructField innerValueField (RT.Named ("std::vec::Vec<{}>" % RT.showAll rust_type_arg) [])]
+    first <- atIndex args 0
+    rust_type_arg <- convertType first
+    [R.StructField innerValueField (RT.Named ("std::vec::Vec<{}>" % RT.showAll rust_type_arg) [])]
 
 generateListIteratorFields :: [LT.Type] -> Option LT.Lifetime -> [R.StructField]
 generateListIteratorFields args implicit_member_lifetime = do
-   first <- atIndex args 0
-   rust_type_arg <- convertType first
-   case implicit_member_lifetime of
-      Some lifetime -> [R.StructField innerValueField (RT.Named ("std::slice::Iter<{}, {}>" % (lifetime, RT.showAll rust_type_arg)) [])]
-      None -> [R.StructField innerValueField (RT.Named ("std::vec::IntoIter<{}>" % RT.showAll rust_type_arg) [])]
+    first <- atIndex args 0
+    rust_type_arg <- convertType first
+    case implicit_member_lifetime of
+        Some lifetime -> [R.StructField innerValueField (RT.Named ("std::slice::Iter<{}, {}>" % (lifetime, RT.showAll rust_type_arg)) [])]
+        None -> [R.StructField innerValueField (RT.Named ("std::vec::IntoIter<{}>" % RT.showAll rust_type_arg) [])]
 
 generateMapFields :: [LT.Type] -> Option LT.Lifetime -> [R.StructField]
 generateMapFields args _ = do
-   first <- atIndex args 0
-   second <- atIndex args 1
-   rust_type_arg1 <- convertType first
-   rust_type_arg2 <- convertType second
-   [R.StructField innerValueField (RT.Named "std::collections::BTreeMap<{}, {}>" % (RT.showAll rust_type_arg1, RT.showAll rust_type_arg2) [])]
+    first <- atIndex args 0
+    second <- atIndex args 1
+    rust_type_arg1 <- convertType first
+    rust_type_arg2 <- convertType second
+    [R.StructField innerValueField (RT.Named "std::collections::BTreeMap<{}, {}>" % (RT.showAll rust_type_arg1, RT.showAll rust_type_arg2) [])]
 
 generateMapIteratorFields :: [LT.Type] -> Option LT.Lifetime -> [R.StructField]
 generateMapIteratorFields args implicit_member_lifetime = do
-   first <- atIndex args 0
-   second <- atIndex args 1
-   rust_type_arg1 <- convertType first
-   rust_type_arg2 <- convertType second
-   case implicit_member_lifetime of
-      Some lifetime -> [R.StructField innerValueField (RT.Named "std::collections::btree_map::Iter<{}, {}, {}>" % (lifetime, RT.showAll rust_type_arg1, RT.showAll rust_type_arg2) [])]
-      None -> [R.StructField innerValueField (RT.Named "std::vec::IntoIter<({}, {})>" % (RT.showAll rust_type_arg1, RT.showAll rust_type_arg2) [])]
+    first <- atIndex args 0
+    second <- atIndex args 1
+    rust_type_arg1 <- convertType first
+    rust_type_arg2 <- convertType second
+    case implicit_member_lifetime of
+        Some lifetime -> [R.StructField innerValueField (RT.Named "std::collections::btree_map::Iter<{}, {}, {}>" % (lifetime, RT.showAll rust_type_arg1, RT.showAll rust_type_arg2) [])]
+        None -> [R.StructField innerValueField (RT.Named "std::vec::IntoIter<({}, {})>" % (RT.showAll rust_type_arg1, RT.showAll rust_type_arg2) [])]
 
 generateRcFields :: [LT.Type] -> Option LT.Lifetime -> [R.StructField]
 generateRcFields args _ = do
-   first <- atIndex args 0
-   rust_type_arg <- convertType first
-   [R.StructField innerValueField (RT.Named ("std::rc::Rc<{}>" % RT.showAll rust_type_arg) [])]
+    first <- atIndex args 0
+    rust_type_arg <- convertType first
+    [R.StructField innerValueField (RT.Named ("std::rc::Rc<{}>" % RT.showAll rust_type_arg) [])]
 
 generateCellFields :: [LT.Type] -> Option LT.Lifetime -> [R.StructField]
 generateCellFields args _ = do
-   first <- atIndex args 0
-   rust_type_arg <- convertType first
-   [R.StructField innerValueField (RT.Named ("std::rc::Rc<std::cell::RefCell<std::option::Option<{}>>>" % RT.showAll rust_type_arg) [])]
+    first <- atIndex args 0
+    rust_type_arg <- convertType first
+    [R.StructField innerValueField (RT.Named ("std::rc::Rc<std::cell::RefCell<std::option::Option<{}>>>" % RT.showAll rust_type_arg) [])]
 
 initializeExternalStructFields :: Map ExternalId ExternStructBuilder
 initializeExternalStructFields = do
-   externals <- Map.empty
-   (externals, _) <- insert externals (ExternalId "String" "String") (ExternStructBuilder generateStringFields)
-   (externals, _) <- insert externals (ExternalId "Int" "Int") (ExternStructBuilder generateIntFields)
-   (externals, _) <- insert externals (ExternalId "Float" "Float") (ExternStructBuilder generateFloatFields)
-   (externals, _) <- insert externals (ExternalId "Char" "Char") (ExternStructBuilder generateCharFields)
-   (externals, _) <- insert externals (ExternalId "List" "List") (ExternStructBuilder generateListFields)
-   (externals, _) <- insert externals (ExternalId "List" "ListIterator") (ExternStructBuilder generateListIteratorFields)
-   (externals, _) <- insert externals (ExternalId "Map" "Map") (ExternStructBuilder generateMapFields)
-   (externals, _) <- insert externals (ExternalId "Map" "Map") (ExternStructBuilder generateMapFields)
-   (externals, _) <- insert externals (ExternalId "Map" "MapIterator") (ExternStructBuilder generateMapIteratorFields)
-   (externals, _) <- insert externals (ExternalId "Map" "MapIterator") (ExternStructBuilder generateMapIteratorFields)
-   (externals, _) <- insert externals (ExternalId "Rc" "Rc") (ExternStructBuilder generateRcFields)
-   (externals, _) <- insert externals (ExternalId "Cell" "Cell") (ExternStructBuilder generateCellFields)
-   externals
+    externals <- Map.empty
+    (externals, _) <- insert externals (ExternalId "String" "String") (ExternStructBuilder generateStringFields)
+    (externals, _) <- insert externals (ExternalId "Int" "Int") (ExternStructBuilder generateIntFields)
+    (externals, _) <- insert externals (ExternalId "Float" "Float") (ExternStructBuilder generateFloatFields)
+    (externals, _) <- insert externals (ExternalId "Char" "Char") (ExternStructBuilder generateCharFields)
+    (externals, _) <- insert externals (ExternalId "List" "List") (ExternStructBuilder generateListFields)
+    (externals, _) <- insert externals (ExternalId "List" "ListIterator") (ExternStructBuilder generateListIteratorFields)
+    (externals, _) <- insert externals (ExternalId "Map" "Map") (ExternStructBuilder generateMapFields)
+    (externals, _) <- insert externals (ExternalId "Map" "Map") (ExternStructBuilder generateMapFields)
+    (externals, _) <- insert externals (ExternalId "Map" "MapIterator") (ExternStructBuilder generateMapIteratorFields)
+    (externals, _) <- insert externals (ExternalId "Map" "MapIterator") (ExternStructBuilder generateMapIteratorFields)
+    (externals, _) <- insert externals (ExternalId "Rc" "Rc") (ExternStructBuilder generateRcFields)
+    (externals, _) <- insert externals (ExternalId "Cell" "Cell") (ExternStructBuilder generateCellFields)
+    externals

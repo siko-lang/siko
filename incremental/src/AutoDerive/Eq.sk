@@ -11,14 +11,14 @@ import Siko.Syntax.TypeSignature as T
 
 deriveEq :: Ident -> [Ident] -> Location -> C.Instance
 deriveEq name type_args location = do
-   class_name <- createIdent "Std.Ops.Eq" location
-   type_arguments <- List.map type_args (\type_arg -> T.TypeSignature (T.TypeArg type_arg) location)
-   type_signature <- T.TypeSignature (T.Named name type_arguments) location
-   constraints <- List.fold [] type_args (\constraints, type_arg -> do
-      Ident type_arg _ <- type_arg
-      constraint <- C.Constraint class_name (Ident type_arg location) []
-      List.push constraints constraint)
-   C.Instance class_name type_signature [] constraints []
+    class_name <- createIdent "Std.Ops.Eq" location
+    type_arguments <- List.map type_args (\type_arg -> T.TypeSignature (T.TypeArg type_arg) location)
+    type_signature <- T.TypeSignature (T.Named name type_arguments) location
+    constraints <- List.fold [] type_args (\constraints, type_arg -> do
+        Ident type_arg _ <- type_arg
+        constraint <- C.Constraint class_name (Ident type_arg location) []
+        List.push constraints constraint)
+    C.Instance class_name type_signature [] constraints []
 
 deriveRecordEq :: D.Record -> Location -> C.Instance
 deriveRecordEq record derive_location = deriveEq record.name record.type_arguments derive_location

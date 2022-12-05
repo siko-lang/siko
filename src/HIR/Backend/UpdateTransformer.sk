@@ -24,89 +24,89 @@ data Context = { program :: P.Program T.Type,
                }
 
 instance U.TypeVarGenerator Context where
-   getNewTypeVar context = do
-      (var_gen, var) <- TVG.getNewTypeVar context.var_gen
-      context <- context { var_gen = var_gen }
-      (context, var)
+    getNewTypeVar context = do
+        (var_gen, var) <- TVG.getNewTypeVar context.var_gen
+        context <- context { var_gen = var_gen }
+        (context, var)
 
-   getNewTypeVarType context = do
-      (var_gen, t) <- TVG.getNewTypeVarType context.var_gen
-      context <- context { var_gen = var_gen }
-      (context, t)
+    getNewTypeVarType context = do
+        (var_gen, t) <- TVG.getNewTypeVarType context.var_gen
+        context <- context { var_gen = var_gen }
+        (context, t)
 
 instance U.Context Context where
-   ignoreConstraints context = False
+    ignoreConstraints context = False
 
 instance U.DataProvider Context where
-   getRecord context qn = P.getRecordOpt context.program qn
+    getRecord context qn = P.getRecordOpt context.program qn
 
 instance U.ClassProvider Context where
-   getAllClassDependencies context qn = U.getAllClassDependencies context.class_info_store qn
+    getAllClassDependencies context qn = U.getAllClassDependencies context.class_info_store qn
 
-   getAssociatedTypeCount context qn = U.getAssociatedTypeCount context.class_info_store qn
+    getAssociatedTypeCount context qn = U.getAssociatedTypeCount context.class_info_store qn
 
 processPattern :: Context -> Pt.Pattern T.Type -> (Context, Pt.Pattern T.Type)
 processPattern context pattern = (context, pattern)
 
 getNextExprId :: Context -> (Context, E.ExprId)
 getNextExprId context = do
-   (expr_id_gen, v) <- getNewExprId context.expr_id_gen
-   (context { expr_id_gen = expr_id_gen }, v)
+    (expr_id_gen, v) <- getNewExprId context.expr_id_gen
+    (context { expr_id_gen = expr_id_gen }, v)
 
 processExpr :: Context -> E.Expr T.Type -> (Context, E.Expr T.Type)
 processExpr context expr = do
-   E.Expr s_expr id type location <- expr
-   case s_expr of
-      E.RecordUpdate receiver updates -> do
-         E.Expr s_receiver _ receiver_type receiver_location <- receiver
-         var_ref <- case s_receiver of
-            E.ValueRef _ -> s_receiver
-            E.ArgRef _ -> s_receiver
-            _ -> panic "Record update's receiver is not a ref!"
-         qn <- case type of
-            T.Named qn _ -> qn
-            t -> panic "Record update's type is not a record! {}" % TF.toString t
-         record <- P.getRecord context.program qn
-         (context, record) <- Result.unwrap (UD.instantiateRecord context record type)
-         (context, args) <- List.fold (context, []) record.fields (\(context, args), field -> do
-            D.RecordField field_name field_type <- field
-            (context, arg) <- case find updates (\update -> do
-               update_name <- getString update.field_name
-               update_name == field_name) of
-               Some update -> do
-                  (context, update.body)
-               None -> do
-                  (context, expr_id) <- getNextExprId context
-                  var_ref_expr <- E.Expr var_ref expr_id type location
-                  field_access <- E.FieldAccess (Ident field_name location) var_ref_expr
-                  (context, expr_id) <- getNextExprId context
-                  field_access_expr <- E.Expr field_access expr_id field_type location
-                  (context, field_access_expr)
-            (context, List.push args arg))
-         s_expr <- E.RecordConstructorCall qn args
-         expr <- E.Expr s_expr id type location
-         (context, expr)
-      s_expr -> (context, E.Expr s_expr id type location)
+    E.Expr s_expr id type location <- expr
+    case s_expr of
+        E.RecordUpdate receiver updates -> do
+            E.Expr s_receiver _ receiver_type receiver_location <- receiver
+            var_ref <- case s_receiver of
+                E.ValueRef _ -> s_receiver
+                E.ArgRef _ -> s_receiver
+                _ -> panic "Record update's receiver is not a ref!"
+            qn <- case type of
+                T.Named qn _ -> qn
+                t -> panic "Record update's type is not a record! {}" % TF.toString t
+            record <- P.getRecord context.program qn
+            (context, record) <- Result.unwrap (UD.instantiateRecord context record type)
+            (context, args) <- List.fold (context, []) record.fields (\(context, args), field -> do
+                D.RecordField field_name field_type <- field
+                (context, arg) <- case find updates (\update -> do
+                    update_name <- getString update.field_name
+                    update_name == field_name) of
+                    Some update -> do
+                        (context, update.body)
+                    None -> do
+                        (context, expr_id) <- getNextExprId context
+                        var_ref_expr <- E.Expr var_ref expr_id type location
+                        field_access <- E.FieldAccess (Ident field_name location) var_ref_expr
+                        (context, expr_id) <- getNextExprId context
+                        field_access_expr <- E.Expr field_access expr_id field_type location
+                        (context, field_access_expr)
+                (context, List.push args arg))
+            s_expr <- E.RecordConstructorCall qn args
+            expr <- E.Expr s_expr id type location
+            (context, expr)
+        s_expr -> (context, E.Expr s_expr id type location)
 
 processFunction :: Context -> F.Function T.Type -> (Context, F.Function T.Type)
 processFunction context function = do
-   (context, body) <- case function.body of
-      Some body -> do
-         traversal_context <- createTraversalContext context processExpr processPattern
-         (context, body) <- traverse traversal_context body
-         (context, Some body)
-      None -> (context, None)
-   (context, function { body = body })
+    (context, body) <- case function.body of
+        Some body -> do
+            traversal_context <- createTraversalContext context processExpr processPattern
+            (context, body) <- traverse traversal_context body
+            (context, Some body)
+        None -> (context, None)
+    (context, function { body = body })
 
 processProgram :: P.Program T.Type -> ExprIdGenerator -> TVG.TypeVarGenerator -> CDS.ClassInfoStore -> (P.Program T.Type, ExprIdGenerator, TVG.TypeVarGenerator, CDS.ClassInfoStore)
 processProgram program expr_id_gen var_gen class_info_store = do
-   items <- program.items
-   context <- Context program expr_id_gen var_gen class_info_store
-   (context, items) <- Map.mapS context items (\context, (qn, item) -> do
-      case item of
-         P.Function fn -> do
-            (context, fn) <- processFunction context fn
-            (context, qn, P.Function fn)
-         other -> (context, qn, other))
-   program <- context.program
-   (program { items = items }, context.expr_id_gen, context.var_gen, context.class_info_store)
+    items <- program.items
+    context <- Context program expr_id_gen var_gen class_info_store
+    (context, items) <- Map.mapS context items (\context, (qn, item) -> do
+        case item of
+            P.Function fn -> do
+                (context, fn) <- processFunction context fn
+                (context, qn, P.Function fn)
+            other -> (context, qn, other))
+    program <- context.program
+    (program { items = items }, context.expr_id_gen, context.var_gen, context.class_info_store)

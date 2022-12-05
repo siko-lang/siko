@@ -35,49 +35,49 @@ unreachable = panic "unreachable code called"
 
 unwrap a b :: Result a b -> a
 unwrap a = case a of
-   Ok a -> a
-   Err _ -> abort
+    Ok a -> a
+    Err _ -> abort
 
 panic a :: (Show a) => a -> !
 panic msg = do
-   println msg
-   abort
+    println msg
+    abort
 
 @Inline
 repeat a :: a -> Int -> [a]
 repeat item count = do
-   (items, _) <- loop (items, c) <- ([], 0) do
-      if c < count
-      then (push items item, c + 1)
-      else break (items, 0)
-   items
+    (items, _) <- loop (items, c) <- ([], 0) do
+        if c < count
+        then (push items item, c + 1)
+        else break (items, 0)
+    items
 
 @Inline
 repeatS s a :: s -> (s -> (s, a)) -> Int -> (s, [a])
 repeatS state fn count = do
-   loop (state, items, c) <- (state, [], 0) do
-      if c < count
-      then do
-         (state, item) <- fn state
-         (state, push items item, c + 1)
-      else break (state, items)
+    loop (state, items, c) <- (state, [], 0) do
+        if c < count
+        then do
+            (state, item) <- fn state
+            (state, push items item, c + 1)
+        else break (state, items)
 
 @Inline
 repeatSE s a :: s -> (s -> Int -> (s, a)) -> Int -> (s, [a])
 repeatSE state fn count = do
-   loop (state, items, c) <- (state, [], 0) do
-      if c < count
-      then do
-         (state, item) <- fn state c
-         (state, push items item, c + 1)
-      else break (state, items)
+    loop (state, items, c) <- (state, [], 0) do
+        if c < count
+        then do
+            (state, item) <- fn state c
+            (state, push items item, c + 1)
+        else break (state, items)
 
 @Inline
 repeatE a :: (Int -> a) -> Int -> [a]
 repeatE fn count = do
-   loop (items, c) <- ([], 0) do
-      if c < count
-      then do
-         (item) <- fn c
-         (push items item, c + 1)
-      else break items
+    loop (items, c) <- ([], 0) do
+        if c < count
+        then do
+            (item) <- fn c
+            (push items item, c + 1)
+        else break items

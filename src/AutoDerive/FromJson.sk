@@ -19,125 +19,125 @@ createFieldAccessByVar receiver name location = E.Expr (E.FieldAccess name (crea
 
 createJsonObjectItem :: [E.Expr] -> Location -> E.Expr
 createJsonObjectItem items location = do
-   name <- createIdent "Json.JsonObjectItem" location
-   E.Expr (E.FunctionCall (E.Expr (E.Path name) location) items) location
+    name <- createIdent "Json.JsonObjectItem" location
+    E.Expr (E.FunctionCall (E.Expr (E.Path name) location) items) location
 
 callToJson :: E.Expr -> Location -> E.Expr
 callToJson arg location = do
-   name <- E.Expr (E.Path (createIdent "Json.Serialize.toJson" location)) location
-   E.Expr (E.FunctionCall name [arg]) location
+    name <- E.Expr (E.Path (createIdent "Json.Serialize.toJson" location)) location
+    E.Expr (E.FunctionCall name [arg]) location
 
 callJsonObject :: [E.Expr] -> Location -> E.Expr
 callJsonObject items location = do
-   name <- createIdent "Json.JsonObject" location
-   items <- E.Expr (E.List items) location
-   E.Expr (E.FunctionCall (E.Expr (E.Path name) location) [items]) location
+    name <- createIdent "Json.JsonObject" location
+    items <- E.Expr (E.List items) location
+    E.Expr (E.FunctionCall (E.Expr (E.Path name) location) [items]) location
 
 callJsonList :: [E.Expr] -> Location -> E.Expr
 callJsonList items location = do
-   name <- createIdent "Json.JsonList" location
-   items <- E.Expr (E.List items) location
-   E.Expr (E.FunctionCall (E.Expr (E.Path name) location) [items]) location
+    name <- createIdent "Json.JsonList" location
+    items <- E.Expr (E.List items) location
+    E.Expr (E.FunctionCall (E.Expr (E.Path name) location) [items]) location
 
 callGetJsonObjectItems :: E.Expr -> Location -> E.Expr
 callGetJsonObjectItems arg location = do
-   name <- createIdent "Json.getJsonObjectItems" location
-   E.Expr (E.FunctionCall (E.Expr (E.Path name) location) [arg]) location
+    name <- createIdent "Json.getJsonObjectItems" location
+    E.Expr (E.FunctionCall (E.Expr (E.Path name) location) [arg]) location
 
 callGetJsonListItems :: E.Expr -> Location -> E.Expr
 callGetJsonListItems arg location = do
-   name <- createIdent "Json.getJsonListItems" location
-   E.Expr (E.FunctionCall (E.Expr (E.Path name) location) [arg]) location
+    name <- createIdent "Json.getJsonListItems" location
+    E.Expr (E.FunctionCall (E.Expr (E.Path name) location) [arg]) location
 
 deriveRecordFromJson :: D.Record -> Location -> C.Instance
 deriveRecordFromJson record derive_location = do
-   class_name <- createIdent "Json.Serialize.FromJson" derive_location
-   type_arguments <- List.map record.type_arguments (\type_arg -> T.TypeSignature (T.TypeArg type_arg) derive_location)
-   type_signature <- T.TypeSignature (T.Named record.name type_arguments) derive_location
-   constraints <- List.fold [] record.type_arguments (\constraints, record_type_arg -> do
-      Ident type_arg _ <- record_type_arg
-      constraint <- C.Constraint class_name (Ident type_arg derive_location) []
-      List.push constraints constraint)
-   fn_name <- createIdent "fromJson" derive_location
-   items_ident <- createIdent "items" derive_location
-   at_index_ident <- createIdent "List.atIndex" derive_location
-   fn_args <- [P.Pattern (P.Binding (createIdent "json" derive_location)) derive_location]
-   Ident record_name _ <- record.name
-   ctor_args <- List.fold [] record.fields (\ctor_args, field -> do
-      index <- getLength ctor_args
-      integer_literal <- E.IntegerLiteral (SS.create (show index))
-      at_index_args <- [E.Expr (E.Path items_ident) derive_location, E.Expr integer_literal derive_location]
-      at_index_call <- E.Expr (E.FunctionCall (E.Expr (E.Path at_index_ident) derive_location) at_index_args) derive_location
-      from_json_args <- [E.Expr (E.FieldAccess (createIdent "value" derive_location) at_index_call) derive_location]
-      from_json_ident <- createIdent "Json.Serialize.fromJson" derive_location
-      ctor_arg <- E.Expr (E.FunctionCall (E.Expr (E.Path from_json_ident) derive_location) from_json_args) derive_location
-      List.push ctor_args ctor_arg)
-   items_var <- P.Pattern (P.Binding items_ident) derive_location
-   items_expr <- callGetJsonObjectItems (E.Expr (E.ArgRef 0) derive_location) derive_location
-   items_decl <- E.Expr (E.Bind items_var items_expr) derive_location
-   ctor_call <- E.Expr (E.FunctionCall (E.Expr (E.Path record.name) derive_location) ctor_args) derive_location
-   do_items <- [items_decl, ctor_call]
-   body <- E.Expr (E.Do do_items) derive_location
-   body <- Some body
-   op_fn <- F.Function fn_name fn_args body [] [] []
-   C.Instance class_name type_signature [] constraints [op_fn] []
+    class_name <- createIdent "Json.Serialize.FromJson" derive_location
+    type_arguments <- List.map record.type_arguments (\type_arg -> T.TypeSignature (T.TypeArg type_arg) derive_location)
+    type_signature <- T.TypeSignature (T.Named record.name type_arguments) derive_location
+    constraints <- List.fold [] record.type_arguments (\constraints, record_type_arg -> do
+        Ident type_arg _ <- record_type_arg
+        constraint <- C.Constraint class_name (Ident type_arg derive_location) []
+        List.push constraints constraint)
+    fn_name <- createIdent "fromJson" derive_location
+    items_ident <- createIdent "items" derive_location
+    at_index_ident <- createIdent "List.atIndex" derive_location
+    fn_args <- [P.Pattern (P.Binding (createIdent "json" derive_location)) derive_location]
+    Ident record_name _ <- record.name
+    ctor_args <- List.fold [] record.fields (\ctor_args, field -> do
+        index <- getLength ctor_args
+        integer_literal <- E.IntegerLiteral (SS.create (show index))
+        at_index_args <- [E.Expr (E.Path items_ident) derive_location, E.Expr integer_literal derive_location]
+        at_index_call <- E.Expr (E.FunctionCall (E.Expr (E.Path at_index_ident) derive_location) at_index_args) derive_location
+        from_json_args <- [E.Expr (E.FieldAccess (createIdent "value" derive_location) at_index_call) derive_location]
+        from_json_ident <- createIdent "Json.Serialize.fromJson" derive_location
+        ctor_arg <- E.Expr (E.FunctionCall (E.Expr (E.Path from_json_ident) derive_location) from_json_args) derive_location
+        List.push ctor_args ctor_arg)
+    items_var <- P.Pattern (P.Binding items_ident) derive_location
+    items_expr <- callGetJsonObjectItems (E.Expr (E.ArgRef 0) derive_location) derive_location
+    items_decl <- E.Expr (E.Bind items_var items_expr) derive_location
+    ctor_call <- E.Expr (E.FunctionCall (E.Expr (E.Path record.name) derive_location) ctor_args) derive_location
+    do_items <- [items_decl, ctor_call]
+    body <- E.Expr (E.Do do_items) derive_location
+    body <- Some body
+    op_fn <- F.Function fn_name fn_args body [] [] []
+    C.Instance class_name type_signature [] constraints [op_fn] []
 
 deriveAdtFromJson :: D.AlgebraicDataType -> Location -> String -> C.Instance
 deriveAdtFromJson adt derive_location mod_name = do
-   class_name <- createIdent "Json.Serialize.FromJson" derive_location
-   type_arguments <- List.map adt.type_arguments (\type_arg -> T.TypeSignature (T.TypeArg type_arg) derive_location)
-   type_signature <- T.TypeSignature (T.Named adt.name type_arguments) derive_location
-   constraints <- List.fold [] adt.type_arguments (\constraints, adt_type_arg -> do
-      Ident type_arg _ <- adt_type_arg
-      constraint <- C.Constraint class_name (Ident type_arg derive_location) []
-      List.push constraints constraint)
-   fn_name <- createIdent "fromJson" derive_location
-   items_ident <- createIdent "items" derive_location
-   first_ident <- createIdent "first" derive_location
-   at_index_ident <- createIdent "List.atIndex" derive_location
-   first_name <- createFieldAccessByVar "first" (createIdent "name" derive_location) derive_location
-   first_value <- createFieldAccessByVar "first" (createIdent "value" derive_location) derive_location
-   fn_args <- [P.Pattern (P.Binding (createIdent "json" derive_location)) derive_location]
-   arg_ref_expr <- createPath "adt" derive_location
-   case_expr <- if List.isEmpty adt.variants
-   then do
-      unreachable_expr <- E.Expr (E.Path (createIdent "unreachable" derive_location)) derive_location
-      E.Expr (E.FunctionCall unreachable_expr []) derive_location
-   else do
-      cases <- List.map adt.variants (\variant -> do
-         Ident variant_name _ <- variant.name
-         case_pattern <- P.Pattern (P.StringLiteral variant_name) derive_location
-         ctor_args <- List.fold [] variant.items (\ctor_args, item -> do
-            index <- getLength ctor_args
-            integer_literal <- E.IntegerLiteral (SS.create (show index))
-            at_index_args <- [E.Expr (E.Path items_ident) derive_location, E.Expr integer_literal derive_location]
-            at_index_call <- E.Expr (E.FunctionCall (E.Expr (E.Path at_index_ident) derive_location) at_index_args) derive_location
-            from_json_args <- [E.Expr (E.Paren at_index_call) derive_location]
-            from_json_ident <- createIdent "Json.Serialize.fromJson" derive_location
-            ctor_arg <- E.Expr (E.FunctionCall (E.Expr (E.Path from_json_ident) derive_location) from_json_args) derive_location
-            ctor_arg <- E.Expr (E.Paren ctor_arg) derive_location
-            List.push ctor_args ctor_arg)
-         items_var <- P.Pattern (P.Binding items_ident) derive_location
-         items_expr <- callGetJsonListItems first_value derive_location
-         items_decl <- E.Expr (E.Bind items_var items_expr) derive_location
-         ctor_call <- E.Expr (E.FunctionCall (E.Expr (E.Path (createIdent ("{}.{}" % (mod_name, variant_name)) derive_location)) derive_location) ctor_args) derive_location
-         do_items <- [items_decl, ctor_call]
-         case_body <- E.Expr (E.Do do_items) derive_location
-         E.Case case_pattern case_body)
-      abort_expr <- E.Expr (E.FunctionCall (E.Expr (E.Path (createIdent "Std.Util.Basic.abort" derive_location)) derive_location) []) derive_location
-      wildcard <- E.Case (P.Pattern P.Wildcard derive_location) abort_expr
-      cases <- List.push cases wildcard
-      E.Expr (E.CaseOf first_name cases) derive_location
-   items_var <- P.Pattern (P.Binding items_ident) derive_location
-   items_expr <- callGetJsonObjectItems (E.Expr (E.ArgRef 0) derive_location) derive_location
-   items_decl <- E.Expr (E.Bind items_var items_expr) derive_location
-   first_var <- P.Pattern (P.Binding first_ident) derive_location
-   integer_literal <- E.IntegerLiteral (SS.create "0")
-   at_index_args <- [E.Expr (E.Path items_ident) derive_location, E.Expr integer_literal derive_location]
-   at_index_call <- E.Expr (E.FunctionCall (E.Expr (E.Path at_index_ident) derive_location) at_index_args) derive_location
-   first_decl <- E.Expr (E.Bind first_var at_index_call) derive_location
-   do_items <- [items_decl, first_decl, case_expr]
-   body <- E.Expr (E.Do do_items) derive_location
-   body <- Some body
-   op_fn <- F.Function fn_name fn_args body [] [] []
-   C.Instance class_name type_signature [] constraints [op_fn] []
+    class_name <- createIdent "Json.Serialize.FromJson" derive_location
+    type_arguments <- List.map adt.type_arguments (\type_arg -> T.TypeSignature (T.TypeArg type_arg) derive_location)
+    type_signature <- T.TypeSignature (T.Named adt.name type_arguments) derive_location
+    constraints <- List.fold [] adt.type_arguments (\constraints, adt_type_arg -> do
+        Ident type_arg _ <- adt_type_arg
+        constraint <- C.Constraint class_name (Ident type_arg derive_location) []
+        List.push constraints constraint)
+    fn_name <- createIdent "fromJson" derive_location
+    items_ident <- createIdent "items" derive_location
+    first_ident <- createIdent "first" derive_location
+    at_index_ident <- createIdent "List.atIndex" derive_location
+    first_name <- createFieldAccessByVar "first" (createIdent "name" derive_location) derive_location
+    first_value <- createFieldAccessByVar "first" (createIdent "value" derive_location) derive_location
+    fn_args <- [P.Pattern (P.Binding (createIdent "json" derive_location)) derive_location]
+    arg_ref_expr <- createPath "adt" derive_location
+    case_expr <- if List.isEmpty adt.variants
+    then do
+        unreachable_expr <- E.Expr (E.Path (createIdent "unreachable" derive_location)) derive_location
+        E.Expr (E.FunctionCall unreachable_expr []) derive_location
+    else do
+        cases <- List.map adt.variants (\variant -> do
+            Ident variant_name _ <- variant.name
+            case_pattern <- P.Pattern (P.StringLiteral variant_name) derive_location
+            ctor_args <- List.fold [] variant.items (\ctor_args, item -> do
+                index <- getLength ctor_args
+                integer_literal <- E.IntegerLiteral (SS.create (show index))
+                at_index_args <- [E.Expr (E.Path items_ident) derive_location, E.Expr integer_literal derive_location]
+                at_index_call <- E.Expr (E.FunctionCall (E.Expr (E.Path at_index_ident) derive_location) at_index_args) derive_location
+                from_json_args <- [E.Expr (E.Paren at_index_call) derive_location]
+                from_json_ident <- createIdent "Json.Serialize.fromJson" derive_location
+                ctor_arg <- E.Expr (E.FunctionCall (E.Expr (E.Path from_json_ident) derive_location) from_json_args) derive_location
+                ctor_arg <- E.Expr (E.Paren ctor_arg) derive_location
+                List.push ctor_args ctor_arg)
+            items_var <- P.Pattern (P.Binding items_ident) derive_location
+            items_expr <- callGetJsonListItems first_value derive_location
+            items_decl <- E.Expr (E.Bind items_var items_expr) derive_location
+            ctor_call <- E.Expr (E.FunctionCall (E.Expr (E.Path (createIdent ("{}.{}" % (mod_name, variant_name)) derive_location)) derive_location) ctor_args) derive_location
+            do_items <- [items_decl, ctor_call]
+            case_body <- E.Expr (E.Do do_items) derive_location
+            E.Case case_pattern case_body)
+        abort_expr <- E.Expr (E.FunctionCall (E.Expr (E.Path (createIdent "Std.Util.Basic.abort" derive_location)) derive_location) []) derive_location
+        wildcard <- E.Case (P.Pattern P.Wildcard derive_location) abort_expr
+        cases <- List.push cases wildcard
+        E.Expr (E.CaseOf first_name cases) derive_location
+    items_var <- P.Pattern (P.Binding items_ident) derive_location
+    items_expr <- callGetJsonObjectItems (E.Expr (E.ArgRef 0) derive_location) derive_location
+    items_decl <- E.Expr (E.Bind items_var items_expr) derive_location
+    first_var <- P.Pattern (P.Binding first_ident) derive_location
+    integer_literal <- E.IntegerLiteral (SS.create "0")
+    at_index_args <- [E.Expr (E.Path items_ident) derive_location, E.Expr integer_literal derive_location]
+    at_index_call <- E.Expr (E.FunctionCall (E.Expr (E.Path at_index_ident) derive_location) at_index_args) derive_location
+    first_decl <- E.Expr (E.Bind first_var at_index_call) derive_location
+    do_items <- [items_decl, first_decl, case_expr]
+    body <- E.Expr (E.Do do_items) derive_location
+    body <- Some body
+    op_fn <- F.Function fn_name fn_args body [] [] []
+    C.Instance class_name type_signature [] constraints [op_fn] []

@@ -29,25 +29,25 @@ data ClassTypeInfo = { arg_type :: T.Type,
                      } deriving (Show, PartialEq, Eq)
 
 instance S.Transform ClassMemberInfo where
-   transform state class_member_info f = do
-      (state, type) <- S.transform state class_member_info.type f
-      (state, class_member_info { type = type })
+    transform state class_member_info f = do
+        (state, type) <- S.transform state class_member_info.type f
+        (state, class_member_info { type = type })
 
 instance S.Transform ClassTypeInfo where
-   transform state class_type_info f = do
-      (state, arg_type) <- S.transform state class_type_info.arg_type f
-      (state, associated_types) <- S.transform state class_type_info.associated_types f
-      (state, members) <- S.transform state class_type_info.members f
-      (state, ClassTypeInfo arg_type associated_types members class_type_info.all_dependencies)
+    transform state class_type_info f = do
+        (state, arg_type) <- S.transform state class_type_info.arg_type f
+        (state, associated_types) <- S.transform state class_type_info.associated_types f
+        (state, members) <- S.transform state class_type_info.members f
+        (state, ClassTypeInfo arg_type associated_types members class_type_info.all_dependencies)
 
 instance S.Collectable ClassMemberInfo where
-   collect collector class_member_info = S.collect collector class_member_info.type
+    collect collector class_member_info = S.collect collector class_member_info.type
 
 instance S.Collectable ClassTypeInfo where
-   collect collector class_type_info = do
-      collector <- S.collect collector class_type_info.arg_type
-      collector <- S.collect collector class_type_info.associated_types
-      S.collect collector class_type_info.members
+    collect collector class_type_info = do
+        collector <- S.collect collector class_type_info.arg_type
+        collector <- S.collect collector class_type_info.associated_types
+        S.collect collector class_type_info.members
 
 data BaseType = Tuple Int
               | Named FQ.FullyQualifiedName
@@ -57,14 +57,14 @@ data BaseType = Tuple Int
 
 getBaseType :: T.Type -> BaseType
 getBaseType type = case type of
-   T.Tuple args -> Tuple (getLength args)
-   T.Named qn _ -> Named qn
-   T.Function _ _ -> Function
-   T.Var _ _ -> Generic
-   T.FixedTypeArg _ _ -> Generic
-   T.Ref _ t -> getBaseType t
-   T.Owner t -> getBaseType t
-   T.Never -> Generic
+    T.Tuple args -> Tuple (getLength args)
+    T.Named qn _ -> Named qn
+    T.Function _ _ -> Function
+    T.Var _ _ -> Generic
+    T.FixedTypeArg _ _ -> Generic
+    T.Ref _ t -> getBaseType t
+    T.Owner t -> getBaseType t
+    T.Never -> Generic
 
 data InstanceInfo = { instance_type :: T.Type,
                       associated_types :: [T.Type],
@@ -73,15 +73,15 @@ data InstanceInfo = { instance_type :: T.Type,
                     } deriving (Show, PartialEq, Eq)
 
 instance S.Transform InstanceInfo where
-   transform state info f = do
-      (state, instance_type) <- S.transform state info.instance_type f
-      (state, associated_types) <- S.transform state info.associated_types f
-      (state, InstanceInfo instance_type associated_types info.id info.location)
+    transform state info f = do
+        (state, instance_type) <- S.transform state info.instance_type f
+        (state, associated_types) <- S.transform state info.associated_types f
+        (state, InstanceInfo instance_type associated_types info.id info.location)
 
 instance S.Collectable InstanceInfo where
-   collect collector info = do
-      collector <- S.collect collector info.instance_type
-      S.collect collector info.associated_types
+    collect collector info = do
+        collector <- S.collect collector info.instance_type
+        S.collect collector info.associated_types
 
 data InstanceKey = { class_name :: FQ.FullyQualifiedName,
                      base_type :: BaseType
@@ -89,57 +89,57 @@ data InstanceKey = { class_name :: FQ.FullyQualifiedName,
 
 addMemberInfo :: ClassTypeInfo -> SS.SharedString -> T.Type -> Bool -> ClassTypeInfo
 addMemberInfo class_type_info name type has_default_impl = do
-   (members, _) <- Map.insert class_type_info.members name (ClassMemberInfo type has_default_impl)
-   class_type_info { members = members }
+    (members, _) <- Map.insert class_type_info.members name (ClassMemberInfo type has_default_impl)
+    class_type_info { members = members }
 
 createClassTypeInfo a :: (StateProvider a) => a -> C.Class -> (a, ClassTypeInfo)
 createClassTypeInfo state c = do
-   all_dependencies <- getAllDependencies state c.name
-   class_type_info <- ClassTypeInfo c.arg_type c.associated_types Map.empty all_dependencies
-   List.fold (state, class_type_info) c.members (\(state, class_type_info), qn -> do
-      member <- QL.getFunction state qn
-      short_name <- FQ.getShortName qn
-      (state, class_type_info) <- case member.type of
-         Some type -> do
-            class_type_info <- addMemberInfo class_type_info short_name type (isSome member.body)
-            (state, class_type_info)
-         None -> do
-            state <- addError state (ClassMemberWithoutType short_name member.location)
-            (state, class_type_info)
-      (state, class_type_info))
+    all_dependencies <- getAllDependencies state c.name
+    class_type_info <- ClassTypeInfo c.arg_type c.associated_types Map.empty all_dependencies
+    List.fold (state, class_type_info) c.members (\(state, class_type_info), qn -> do
+        member <- QL.getFunction state qn
+        short_name <- FQ.getShortName qn
+        (state, class_type_info) <- case member.type of
+            Some type -> do
+                class_type_info <- addMemberInfo class_type_info short_name type (isSome member.body)
+                (state, class_type_info)
+            None -> do
+                state <- addError state (ClassMemberWithoutType short_name member.location)
+                (state, class_type_info)
+        (state, class_type_info))
 
 checkClassDependencies :: [C.Class] -> [TypecheckerError]
 checkClassDependencies classes = do
-   (deps, class_locations) <- List.fold (Map.empty, Map.empty) classes (\(deps, class_locations), c -> do
-      deps <- Map.put deps c.name c.dependencies
-      class_locations <- Map.put class_locations c.name c.location
-      (deps, class_locations))
-   groups <- processDependencies deps
-   List.fold [] groups (\errors, group -> do
-      if getLength group.items > 1
-      then do
-         (names, locations) <- List.fold ([], []) group.items (\(names, locations), qn -> do
-            location <- Option.unwrap (Map.get class_locations qn)
-            names <- push names (FQ.getResolvableName qn)
-            locations <- push locations location
-            (names, locations))
-         err <- CircularClassDependency names locations
-         List.push errors err
-      else errors)
+    (deps, class_locations) <- List.fold (Map.empty, Map.empty) classes (\(deps, class_locations), c -> do
+        deps <- Map.put deps c.name c.dependencies
+        class_locations <- Map.put class_locations c.name c.location
+        (deps, class_locations))
+    groups <- processDependencies deps
+    List.fold [] groups (\errors, group -> do
+        if getLength group.items > 1
+        then do
+            (names, locations) <- List.fold ([], []) group.items (\(names, locations), qn -> do
+                location <- Option.unwrap (Map.get class_locations qn)
+                names <- push names (FQ.getResolvableName qn)
+                locations <- push locations location
+                (names, locations))
+            err <- CircularClassDependency names locations
+            List.push errors err
+        else errors)
 
 isVar :: T.Type -> Bool
 isVar type = case type of
-   T.Var _ _ -> True
-   T.FixedTypeArg _ _ -> True
-   _ -> False
+    T.Var _ _ -> True
+    T.FixedTypeArg _ _ -> True
+    _ -> False
 
 isSpecializedType :: T.Type -> Bool
 isSpecializedType type = case type of
-   T.Var _ _ -> False
-   T.FixedTypeArg _ _ -> False
-   T.Named _ args -> args |> List.iter |> Iterator.fold (\specialized, arg -> specialized || not (isVar arg)) False
-   T.Tuple args -> args |> List.iter |> Iterator.fold (\specialized, arg -> specialized || not (isVar arg)) False
-   _ -> True
+    T.Var _ _ -> False
+    T.FixedTypeArg _ _ -> False
+    T.Named _ args -> args |> List.iter |> Iterator.fold (\specialized, arg -> specialized || not (isVar arg)) False
+    T.Tuple args -> args |> List.iter |> Iterator.fold (\specialized, arg -> specialized || not (isVar arg)) False
+    _ -> True
 
 data InstanceMemberInfo = { instance_type :: T.Type,
                             associated_types :: [T.Type],
@@ -147,79 +147,79 @@ data InstanceMemberInfo = { instance_type :: T.Type,
                           } deriving (Show)
 
 instance S.Transform InstanceMemberInfo where
-   transform state info f = do
-      (state, instance_type) <- S.transform state info.instance_type f
-      (state, associated_types) <- S.transform state info.associated_types f
-      (state, member_type) <- S.transform state info.member_type f
-      (state, InstanceMemberInfo instance_type associated_types member_type)
+    transform state info f = do
+        (state, instance_type) <- S.transform state info.instance_type f
+        (state, associated_types) <- S.transform state info.associated_types f
+        (state, member_type) <- S.transform state info.member_type f
+        (state, InstanceMemberInfo instance_type associated_types member_type)
 
 instance S.Collectable InstanceMemberInfo where
-   collect collector info = do
-      collector <- S.collect collector info.instance_type
-      collector <- S.collect collector info.associated_types
-      S.collect collector info.member_type
+    collect collector info = do
+        collector <- S.collect collector info.instance_type
+        collector <- S.collect collector info.associated_types
+        S.collect collector info.member_type
 
 getMemberType a :: (StateProvider a) => a -> C.Instance -> F.Function () -> ClassTypeInfo -> (a, Option T.Type)
 getMemberType state i instance_member class_type_info = do
-   short_name <- FQ.getShortName instance_member.name
-   instance_member_info_fixed <- InstanceMemberInfo i.type i.associated_types instance_member.type
-   (class_type_info, state) <- UUtil.instantiateGeneric class_type_info state
-   (instance_member_info, state) <- UUtil.instantiateGeneric instance_member_info_fixed state
-   case get class_type_info.members short_name of
-      Some class_member_info -> do
-         sub <- S.createSubstitution
-         (state, sub) <- case U.unify state sub class_type_info.arg_type instance_member_info.instance_type of
-            Ok (state, sub) -> (state, sub)
-            Err _ -> panic "Class arg unification failed!"
-         (state, sub) <- List.zipS (state, sub) class_type_info.associated_types instance_member_info.associated_types (\(state, sub), class_associated_type, instance_associated_type -> do
-            case U.unify state sub class_associated_type instance_associated_type of
-               Ok (state, sub) -> (state, sub)
-               Err _ -> panic "Associated type unification failed! {} {}" % (TF.toString class_associated_type, TF.toString instance_associated_type))
-         inferred_instance_member_type <- S.apply class_member_info.type sub
-         (final_member_type, state) <- case instance_member_info_fixed.member_type of
-            Some instance_member_type -> do
-               state <- if checkIsomorphicType inferred_instance_member_type instance_member_type state
-               then state
-               else do
-                  expected <- inferred_instance_member_type |> T.fixedType |> TF.toString
-                  found <- instance_member_type |> T.fixedType |> TF.toString
-                  addError state (InstanceMemberTypeMismatch (SS.create expected) (SS.create found) instance_member.location)
-               (instance_member_type, state)
-            None -> (T.fixedType inferred_instance_member_type, state)
-         (state, Some final_member_type)
-      None -> do
-         state <- addError state (InstanceMemberNotClassMember short_name instance_member.location)
-         (state, None)
+    short_name <- FQ.getShortName instance_member.name
+    instance_member_info_fixed <- InstanceMemberInfo i.type i.associated_types instance_member.type
+    (class_type_info, state) <- UUtil.instantiateGeneric class_type_info state
+    (instance_member_info, state) <- UUtil.instantiateGeneric instance_member_info_fixed state
+    case get class_type_info.members short_name of
+        Some class_member_info -> do
+            sub <- S.createSubstitution
+            (state, sub) <- case U.unify state sub class_type_info.arg_type instance_member_info.instance_type of
+                Ok (state, sub) -> (state, sub)
+                Err _ -> panic "Class arg unification failed!"
+            (state, sub) <- List.zipS (state, sub) class_type_info.associated_types instance_member_info.associated_types (\(state, sub), class_associated_type, instance_associated_type -> do
+                case U.unify state sub class_associated_type instance_associated_type of
+                    Ok (state, sub) -> (state, sub)
+                    Err _ -> panic "Associated type unification failed! {} {}" % (TF.toString class_associated_type, TF.toString instance_associated_type))
+            inferred_instance_member_type <- S.apply class_member_info.type sub
+            (final_member_type, state) <- case instance_member_info_fixed.member_type of
+                Some instance_member_type -> do
+                    state <- if checkIsomorphicType inferred_instance_member_type instance_member_type state
+                    then state
+                    else do
+                        expected <- inferred_instance_member_type |> T.fixedType |> TF.toString
+                        found <- instance_member_type |> T.fixedType |> TF.toString
+                        addError state (InstanceMemberTypeMismatch (SS.create expected) (SS.create found) instance_member.location)
+                    (instance_member_type, state)
+                None -> (T.fixedType inferred_instance_member_type, state)
+            (state, Some final_member_type)
+        None -> do
+            state <- addError state (InstanceMemberNotClassMember short_name instance_member.location)
+            (state, None)
 
 checkInstance a :: (StateProvider a) => a -> ClassTypeInfo -> C.Instance -> a
 checkInstance state class_type_info i = do
-   state <- if isSpecializedType i.type
-   then addError state (SpecializedInstance i.location)
-   else state
-   (state, member_names) <- List.fold (state, []) i.members (\(state, member_names), instance_member_name -> do
-      short_name <- FQ.getShortName instance_member_name
-      instance_member <- QL.getFunction state instance_member_name
-      state <- case get class_type_info.members short_name of
-         Some class_member_info -> state
-         None -> addError state (InstanceMemberNotClassMember short_name instance_member.location)
-      (state, push member_names short_name))
-   Map.fold state class_type_info.members (\state, (name, class_member_info) -> do
-      if class_member_info.has_default_impl
-      then state
-      else if List.contains member_names name
-         then state
-         else addError state (MissingInstanceMember name i.location))
+    state <- if isSpecializedType i.type
+    then addError state (SpecializedInstance i.location)
+    else state
+    (state, member_names) <- List.fold (state, []) i.members (\(state, member_names), instance_member_name -> do
+        short_name <- FQ.getShortName instance_member_name
+        instance_member <- QL.getFunction state instance_member_name
+        state <- case get class_type_info.members short_name of
+            Some class_member_info -> state
+            None -> addError state (InstanceMemberNotClassMember short_name instance_member.location)
+        (state, push member_names short_name))
+    Map.fold state class_type_info.members (\state, (name, class_member_info) -> do
+        if class_member_info.has_default_impl
+        then state
+        else if List.contains member_names name
+            then state
+            else addError state (MissingInstanceMember name i.location))
 
 createInstanceInfo :: C.Instance -> (InstanceKey, InstanceInfo)
 createInstanceInfo i = do
-   base_type <- getBaseType i.type
-   class_name <- i.class_name
-   (InstanceKey class_name base_type, InstanceInfo i.type i.associated_types i.name i.location)
+    base_type <- getBaseType i.type
+    class_name <- i.class_name
+    (InstanceKey class_name base_type, InstanceInfo i.type i.associated_types i.name i.location)
 
 getAllDependencies a :: (StateProvider a) => a -> FQ.FullyQualifiedName -> [FQ.FullyQualifiedName]
 getAllDependencies state class_name = do
-   c <- QL.getClass state class_name
-   deps <- List.fold c.dependencies c.dependencies (\deps, dep -> do
-      recursive_deps <- getAllDependencies state dep
-      deps + recursive_deps)
-   deps |> List.sort |> List.dedup
+    c <- QL.getClass state class_name
+    deps <- List.fold c.dependencies c.dependencies (\deps, dep -> do
+        recursive_deps <- getAllDependencies state dep
+        deps + recursive_deps)
+    deps |> List.sort |> List.dedup

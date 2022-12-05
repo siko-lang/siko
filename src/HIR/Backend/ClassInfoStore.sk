@@ -24,25 +24,25 @@ createClassInfoStore = ClassInfoStore Map.empty
 
 addClassInfo :: ClassInfoStore -> P.FullyQualifiedName -> ClassInfo -> ClassInfoStore
 addClassInfo store class_name class_info = do
-   (classes, _) <- Map.insert store.classes class_name class_info
-   store { classes = classes }
+    (classes, _) <- Map.insert store.classes class_name class_info
+    store { classes = classes }
 
 getDependencies :: ClassInfoStore -> P.FullyQualifiedName -> [P.FullyQualifiedName]
 getDependencies store class_name = case get store.classes class_name of
-   Some class_info -> do
-      class_info :: ClassInfo <- class_info // FIXME
-      class_info.dependencies
-   None -> panic "Class {} not found in class dependency store" % class_name
+    Some class_info -> do
+        class_info :: ClassInfo <- class_info // FIXME
+        class_info.dependencies
+    None -> panic "Class {} not found in class dependency store" % class_name
 
 getClassInfo :: ClassInfoStore -> P.FullyQualifiedName -> ClassInfo
 getClassInfo store class_name = case get store.classes class_name of
-   Some class_info -> class_info
-   None -> panic "Class {} not found in class dependency store" % class_name
+    Some class_info -> class_info
+    None -> panic "Class {} not found in class dependency store" % class_name
 
 instance U.ClassProvider ClassInfoStore where
-   getAllClassDependencies store qn = getDependencies store qn
+    getAllClassDependencies store qn = getDependencies store qn
 
-   getAssociatedTypeCount store qn = getLength (getClassInfo store qn).associated_types
+    getAssociatedTypeCount store qn = getLength (getClassInfo store qn).associated_types
 
 instance HTI.DependencyProvider ClassInfoStore where
-   getAllDependencies store qn = getDependencies store qn
+    getAllDependencies store qn = getDependencies store qn

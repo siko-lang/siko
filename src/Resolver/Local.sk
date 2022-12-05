@@ -22,28 +22,28 @@ getEffectMemberFunctions eff = eff.member_function_type_signatures |> List.iter 
 
 processItem :: M.Item -> [Item]
 processItem m_item = case m_item of
-   M.Function f -> [Function (getString f.name)]
-   M.Adt a -> [Adt (getString a.name) (getLength a.type_arguments)] + getVariants a
-   M.Record r -> [Record (getString r.name) (getLength r.type_arguments)]
-   M.Class c -> [Class (getString c.name)] + getClassMemberFunctions c
-   M.Effect eff -> [Effect (getString eff.name) (getLength eff.arguments)] + getEffectMemberFunctions eff
-   _ -> panic "Unnamed item is exported"
+    M.Function f -> [Function (getString f.name)]
+    M.Adt a -> [Adt (getString a.name) (getLength a.type_arguments)] + getVariants a
+    M.Record r -> [Record (getString r.name) (getLength r.type_arguments)]
+    M.Class c -> [Class (getString c.name)] + getClassMemberFunctions c
+    M.Effect eff -> [Effect (getString eff.name) (getLength eff.arguments)] + getEffectMemberFunctions eff
+    _ -> panic "Unnamed item is exported"
 
 exportable :: M.Item -> Bool
 exportable m_item = case m_item of
-   M.FunctionSignature _ -> False
-   M.Function _ -> True
-   M.Adt _ -> True
-   M.Record _ -> True
-   M.Import _ -> False
-   M.Class _ -> True
-   M.Instance _ -> False
-   M.Effect _ -> True
+    M.FunctionSignature _ -> False
+    M.Function _ -> True
+    M.Adt _ -> True
+    M.Record _ -> True
+    M.Import _ -> False
+    M.Class _ -> True
+    M.Instance _ -> False
+    M.Effect _ -> True
 
 processModule :: (SS.SharedString, M.Module) -> (SS.SharedString, [Item])
 processModule (name, mod) = do
-   items <- mod.items |> List.iter |> Iterator.filter exportable |> Iterator.map processItem |> Iterator.fold (\total, items -> total + items) []
-   (name, items)
+    items <- mod.items |> List.iter |> Iterator.filter exportable |> Iterator.map processItem |> Iterator.fold (\total, items -> total + items) []
+    (name, items)
 
 processLocals :: Map SS.SharedString M.Module -> Map SS.SharedString [Item]
 processLocals modules = Map.map modules processModule

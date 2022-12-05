@@ -1,6 +1,7 @@
 module Siko.HIR.FullyQualifiedName where
 
 import Siko.HIR.Class as C
+import Siko.HIR.Closure as CL
 import Siko.HIR.Effect as Eff
 import Siko.HIR.Function as F
 import Siko.HIR.Type as T
@@ -17,66 +18,71 @@ data FullyQualifiedName = FullPath SS.SharedString SS.SharedString
                         | SubItem FullyQualifiedName SS.SharedString
                         | Effectless FullyQualifiedName (Option Eff.EffectResolutionSet)
                         | Monomorphized FullyQualifiedName T.Type
-                        | ClosureConverted FullyQualifiedName
+                        | ClosureInstance CL.ClosureInstance
                         | ClosureName T.Type
+                        | Tuple [T.Type]
                         deriving (PartialEq, Eq, PartialOrd, Ord)
 
 instance Show FullyQualifiedName where
-   show f = case f of
-      FullPath m n -> "{}.{}" % (m, n)
-      FullPathWithVariant m n v -> "{}.{}/{}" % (m, n, v)
-      FullPathWithLambda n i -> "{}/{}" % (n, i)
-      FullPathInstance m l -> "{}/{}" % (m, l)
-      FullPathWithInstanceId m n i -> "{}.{}/#{}" % (m, n, i)
-      ModulePath m -> "{}" % m
-      SubItem p n -> "{}/{}" % (p, n)
-      Effectless n s -> case s of
-         Some s -> "{}=[{}]" % (n, s)
-         None -> "{}" % n
-      Monomorphized n type -> "{}=[{}]" % (n, TF.toString type)
-      ClosureConverted n -> "{}" % n
-      ClosureName type -> "Closure({})" % TF.toString type
+    show f = case f of
+        FullPath m n -> "{}.{}" % (m, n)
+        FullPathWithVariant m n v -> "{}.{}/{}" % (m, n, v)
+        FullPathWithLambda n i -> "{}/{}" % (n, i)
+        FullPathInstance m l -> "{}/{}" % (m, l)
+        FullPathWithInstanceId m n i -> "{}.{}/#{}" % (m, n, i)
+        ModulePath m -> "{}" % m
+        SubItem p n -> "{}/{}" % (p, n)
+        Effectless n s -> case s of
+            Some s -> "{}=[{}]" % (n, s)
+            None -> "{}" % n
+        Monomorphized n type -> "{}=[{}]" % (n, TF.toString type)
+        ClosureInstance closure_instance -> show closure_instance
+        ClosureName type -> "Closure({})" % TF.toString type
+        Tuple args -> "Tuple({})" % TF.toStringTypes args
 
 getResolvableName :: FullyQualifiedName -> SS.SharedString
 getResolvableName f = do
-   s <- case f of
-      FullPath m n -> "{}.{}" % (m, n)
-      FullPathWithVariant m n v -> "{}.{}" % (m, v)
-      FullPathWithLambda n i -> panic "getResolvableName called for a lambda"
-      FullPathInstance m l -> panic "getResolvableName called for a instance"
-      FullPathWithInstanceId m n i -> panic "getResolvableName called for a instance member"
-      ModulePath m -> panic "getResolvableName called for a module"
-      SubItem p n -> panic "getResolvableName called for a sub item"
-      Effectless n s -> return getResolvableName n
-      Monomorphized n type -> return getResolvableName n
-      ClosureConverted n -> return getResolvableName n
-      ClosureName type -> panic "getResolvableName called for closurename"
-   SS.create s
+    s <- case f of
+        FullPath m n -> "{}.{}" % (m, n)
+        FullPathWithVariant m n v -> "{}.{}" % (m, v)
+        FullPathWithLambda n i -> panic "getResolvableName called for a lambda"
+        FullPathInstance m l -> panic "getResolvableName called for a instance"
+        FullPathWithInstanceId m n i -> panic "getResolvableName called for a instance member"
+        ModulePath m -> panic "getResolvableName called for a module"
+        SubItem p n -> panic "getResolvableName called for a sub item"
+        Effectless n s -> return getResolvableName n
+        Monomorphized n type -> return getResolvableName n
+        ClosureInstance closure_instance -> show closure_instance
+        ClosureName type -> "Closure({})" % TF.toString type
+        Tuple args -> "Tuple({})" % TF.toStringTypes args
+    SS.create s
 
 getShortName :: FullyQualifiedName -> SS.SharedString
 getShortName f = case f of
-   FullPath m n -> n
-   FullPathWithVariant m n v -> n
-   FullPathWithLambda n i -> SS.create "{}_lambda" % getShortName n
-   FullPathInstance m l -> SS.create "{}/#{}" % (m, l)
-   FullPathWithInstanceId m n i -> n
-   ModulePath m -> m
-   SubItem p n -> n
-   Effectless n s -> getShortName n
-   Monomorphized n type -> getShortName n
-   ClosureConverted n -> getShortName n
-   ClosureName type -> panic "getShortName called for closurename"
+    FullPath m n -> n
+    FullPathWithVariant m n v -> n
+    FullPathWithLambda n i -> SS.create "{}_lambda" % getShortName n
+    FullPathInstance m l -> SS.create "{}/#{}" % (m, l)
+    FullPathWithInstanceId m n i -> n
+    ModulePath m -> m
+    SubItem p n -> n
+    Effectless n s -> getShortName n
+    Monomorphized n type -> getShortName n
+    ClosureInstance closure_instance -> panic "getShortName called for closure_instance"
+    ClosureName type -> panic "getShortName called for closurename"
+    Tuple args -> panic "getShortName called for tuple"
 
 getModuleName :: FullyQualifiedName -> SS.SharedString
 getModuleName f = case f of
-   FullPath m n -> m
-   FullPathWithVariant m n v -> m
-   FullPathWithLambda n i -> getModuleName n
-   FullPathInstance m l -> m
-   FullPathWithInstanceId m n i -> m
-   ModulePath m -> m
-   SubItem p n -> getModuleName p
-   Effectless n s -> getModuleName n
-   Monomorphized n type -> getModuleName n
-   ClosureConverted n -> getModuleName n
-   ClosureName type -> panic "getModuleName called for closurename"
+    FullPath m n -> m
+    FullPathWithVariant m n v -> m
+    FullPathWithLambda n i -> getModuleName n
+    FullPathInstance m l -> m
+    FullPathWithInstanceId m n i -> m
+    ModulePath m -> m
+    SubItem p n -> getModuleName p
+    Effectless n s -> getModuleName n
+    Monomorphized n type -> getModuleName n
+    ClosureInstance closure_instance -> panic "getModuleName called for closure_instance"
+    ClosureName type -> panic "getModuleName called for closurename"
+    Tuple args -> panic "getModuleName called for tuple"

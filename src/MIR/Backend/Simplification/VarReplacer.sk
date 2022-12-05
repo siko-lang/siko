@@ -11,122 +11,122 @@ data Context = { replaced_vars :: Map E.Var E.Var }
 
 replaceVar :: Context -> E.Var -> E.Var -> Context
 replaceVar context old new = do
-   (replaced_vars, _) <- Map.insert context.replaced_vars old new
-   context <- context { replaced_vars = replaced_vars }
-   context
+    (replaced_vars, _) <- Map.insert context.replaced_vars old new
+    context <- context { replaced_vars = replaced_vars }
+    context
 
 processDoItem :: Context -> E.Expr -> (Context, Option E.Expr)
 processDoItem context expr = do
-   E.Expr item_s_expr type id <- expr
-   context <- case item_s_expr of
-      E.VarDecl v rhs -> do
-         E.Expr rhs_s_expr type id <- rhs
-         case rhs_s_expr of
-            E.VarRef orig_v -> do
-               context <- replaceVar context v orig_v
-               return (context, None)
-            _ -> context
-      _ -> context
-   (context, expr) <- processExpr context expr
-   (context, Some expr)
+    E.Expr item_s_expr type id <- expr
+    context <- case item_s_expr of
+        E.VarDecl v rhs -> do
+            E.Expr rhs_s_expr type id <- rhs
+            case rhs_s_expr of
+                E.VarRef orig_v -> do
+                    context <- replaceVar context v orig_v
+                    return (context, None)
+                _ -> context
+        _ -> context
+    (context, expr) <- processExpr context expr
+    (context, Some expr)
 
 processVar :: Context -> E.Var -> E.Var
 processVar context var = do
-   v <- getVar context var
-   if v == var
-   then v
-   else processVar context v
-   where
-      getVar :: Context -> E.Var -> E.Var
-      getVar context var = case get context.replaced_vars var of
-         Some v -> v
-         None -> var
+    v <- getVar context var
+    if v == var
+    then v
+    else processVar context v
+    where
+        getVar :: Context -> E.Var -> E.Var
+        getVar context var = case get context.replaced_vars var of
+            Some v -> v
+            None -> var
 
 processExpr :: Context -> E.Expr -> (Context, E.Expr)
 processExpr context expr = do
-   E.Expr s_expr type id <- expr
-   case s_expr of
-      E.Do items -> do
-         (context, items) <- List.filterMapS context items processDoItem
-         (context, E.Expr (E.Do items) type id)
-      E.Multi _ -> panic "Multi expr found in rebinder"
-      E.StaticFunctionCall f_id args -> do
-         (context, args) <- List.mapS context args processExpr
-         (context, E.Expr (E.StaticFunctionCall f_id args) type id)
-      E.IntegerLiteral lit -> (context, E.Expr (E.IntegerLiteral lit) type id)
-      E.StringLiteral lit -> (context, E.Expr (E.StringLiteral lit) type id)
-      E.FloatLiteral lit -> (context, E.Expr (E.FloatLiteral lit) type id)
-      E.CharLiteral lit -> (context, E.Expr (E.CharLiteral lit) type id)
-      E.VarDecl v rhs -> do
-         (context, rhs) <- processExpr context rhs
-         (context, E.Expr (E.VarDecl v rhs) type id)
-      E.VarRef v -> do
-         v <- processVar context v
-         (context, E.Expr (E.VarRef v) type id)
-      E.FieldAccess name arg -> do
-         (context, arg) <- processExpr context arg
-         (context, E.Expr (E.FieldAccess name arg) type id)
-      E.If cond true_branch false_branch -> do
-         (context, cond) <- processExpr context cond
-         (context, true_branch) <- processExpr context true_branch
-         (context, false_branch) <- processExpr context false_branch
-         (context, E.Expr (E.If cond true_branch false_branch) type id)
-      E.List args -> do
-         (context, args) <- List.mapS context args processExpr
-         (context, E.Expr (E.List args) type id)
-      E.Return arg -> do
-         (context, arg) <- processExpr context arg
-         (context, E.Expr (E.Return arg) type id)
-      E.Continue arg -> do
-         (context, arg) <- processExpr context arg
-         (context, E.Expr (E.Continue arg) type id)
-      E.Break arg -> do
-         (context, arg) <- processExpr context arg
-         (context, E.Expr (E.Break arg) type id)
-      E.Loop v initializer body continues breaks -> do
-         (context, initializer) <- processExpr context initializer
-         (context, body) <- processExpr context body
-         (context, E.Expr (E.Loop v initializer body continues breaks) type id)
-      E.CaseOf body cases -> do
-         (context, body) <- processExpr context body
-         (context, cases) <- List.mapS context cases (\context, case_branch -> do
-            (context, updated_body) <- processExpr context case_branch.body
-            case_branch <- case_branch { body = updated_body }
-            (context, case_branch))
-         (context, E.Expr (E.CaseOf body cases) type id)
-      E.Clone arg -> do
-         (context, arg) <- processExpr context arg
-         (context, E.Expr (E.Clone arg) type id)
-      E.Deref arg -> do
-         (context, arg) <- processExpr context arg
-         (context, E.Expr (E.Deref arg) type id)
-      E.Ref arg -> do
-         (context, arg) <- processExpr context arg
-         (context, E.Expr (E.Ref arg) type id)
-      E.Move arg -> do
-         (context, arg) <- processExpr context arg
-         (context, E.Expr (E.Move arg) type id)
-      E.Box arg -> do
-         (context, arg) <- processExpr context arg
-         (context, E.Expr (E.Box arg) type id)
-      E.Converter arg kind -> do
-         (context, arg) <- processExpr context arg
-         (context, E.Expr (E.Converter arg kind) type id)
+    E.Expr s_expr type id <- expr
+    case s_expr of
+        E.Do items -> do
+            (context, items) <- List.filterMapS context items processDoItem
+            (context, E.Expr (E.Do items) type id)
+        E.Multi _ -> panic "Multi expr found in rebinder"
+        E.StaticFunctionCall f_id args -> do
+            (context, args) <- List.mapS context args processExpr
+            (context, E.Expr (E.StaticFunctionCall f_id args) type id)
+        E.IntegerLiteral lit -> (context, E.Expr (E.IntegerLiteral lit) type id)
+        E.StringLiteral lit -> (context, E.Expr (E.StringLiteral lit) type id)
+        E.FloatLiteral lit -> (context, E.Expr (E.FloatLiteral lit) type id)
+        E.CharLiteral lit -> (context, E.Expr (E.CharLiteral lit) type id)
+        E.VarDecl v rhs -> do
+            (context, rhs) <- processExpr context rhs
+            (context, E.Expr (E.VarDecl v rhs) type id)
+        E.VarRef v -> do
+            v <- processVar context v
+            (context, E.Expr (E.VarRef v) type id)
+        E.FieldAccess name arg -> do
+            (context, arg) <- processExpr context arg
+            (context, E.Expr (E.FieldAccess name arg) type id)
+        E.If cond true_branch false_branch -> do
+            (context, cond) <- processExpr context cond
+            (context, true_branch) <- processExpr context true_branch
+            (context, false_branch) <- processExpr context false_branch
+            (context, E.Expr (E.If cond true_branch false_branch) type id)
+        E.List args -> do
+            (context, args) <- List.mapS context args processExpr
+            (context, E.Expr (E.List args) type id)
+        E.Return arg -> do
+            (context, arg) <- processExpr context arg
+            (context, E.Expr (E.Return arg) type id)
+        E.Continue arg -> do
+            (context, arg) <- processExpr context arg
+            (context, E.Expr (E.Continue arg) type id)
+        E.Break arg -> do
+            (context, arg) <- processExpr context arg
+            (context, E.Expr (E.Break arg) type id)
+        E.Loop v initializer body continues breaks -> do
+            (context, initializer) <- processExpr context initializer
+            (context, body) <- processExpr context body
+            (context, E.Expr (E.Loop v initializer body continues breaks) type id)
+        E.CaseOf body cases -> do
+            (context, body) <- processExpr context body
+            (context, cases) <- List.mapS context cases (\context, case_branch -> do
+                (context, updated_body) <- processExpr context case_branch.body
+                case_branch <- case_branch { body = updated_body }
+                (context, case_branch))
+            (context, E.Expr (E.CaseOf body cases) type id)
+        E.Clone arg -> do
+            (context, arg) <- processExpr context arg
+            (context, E.Expr (E.Clone arg) type id)
+        E.Deref arg -> do
+            (context, arg) <- processExpr context arg
+            (context, E.Expr (E.Deref arg) type id)
+        E.Ref arg -> do
+            (context, arg) <- processExpr context arg
+            (context, E.Expr (E.Ref arg) type id)
+        E.Move arg -> do
+            (context, arg) <- processExpr context arg
+            (context, E.Expr (E.Move arg) type id)
+        E.Box arg -> do
+            (context, arg) <- processExpr context arg
+            (context, E.Expr (E.Box arg) type id)
+        E.Converter arg kind -> do
+            (context, arg) <- processExpr context arg
+            (context, E.Expr (E.Converter arg kind) type id)
 
 processFunction :: F.Function -> F.Function
 processFunction function = case function.kind of
-   F.Normal info -> do
-      context <- Context Map.empty
-      (context, body) <- processExpr context info.body
-      info <- info { body = body }
-      new_kind <- F.Normal info
-      function { kind = new_kind }
-   _ -> function
+    F.Normal info -> do
+        context <- Context Map.empty
+        (context, body) <- processExpr context info.body
+        info <- info { body = body }
+        new_kind <- F.Normal info
+        function { kind = new_kind }
+    _ -> function
 
 processProgram :: P.Program -> P.Program
 processProgram program = do
-   context <- Context Map.empty
-   functions <- Map.map program.functions (\(id, function) -> do
-      function <- processFunction function
-      (id, function))
-   program { functions = functions }
+    context <- Context Map.empty
+    functions <- Map.map program.functions (\(id, function) -> do
+        function <- processFunction function
+        (id, function))
+    program { functions = functions }

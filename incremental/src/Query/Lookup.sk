@@ -13,172 +13,172 @@ import Siko.Query.Driver
 import Siko.Query.Item as I
 
 class ClassProvider a where
-   getClass a :: a -> FQ.FullyQualifiedName -> HC.Class
+    getClass a :: a -> FQ.FullyQualifiedName -> HC.Class
 
-   getClassTypeInfo a :: a -> FQ.FullyQualifiedName -> TC.ClassTypeInfo
+    getClassTypeInfo a :: a -> FQ.FullyQualifiedName -> TC.ClassTypeInfo
 
-   getAllDependencies a :: a -> FQ.FullyQualifiedName -> [FQ.FullyQualifiedName]
+    getAllDependencies a :: a -> FQ.FullyQualifiedName -> [FQ.FullyQualifiedName]
 
-   getInstance a :: a -> FQ.FullyQualifiedName -> HC.Instance
+    getInstance a :: a -> FQ.FullyQualifiedName -> HC.Instance
 
 class RecordProvider a where
-   getRecord a :: a -> FQ.FullyQualifiedName -> HD.Record
+    getRecord a :: a -> FQ.FullyQualifiedName -> HD.Record
 
-   getRecordOpt a :: a -> FQ.FullyQualifiedName -> Option HD.Record
+    getRecordOpt a :: a -> FQ.FullyQualifiedName -> Option HD.Record
 
 class AdtProvider a where
-   getAdt a :: a -> FQ.FullyQualifiedName -> HD.AlgebraicDataType
+    getAdt a :: a -> FQ.FullyQualifiedName -> HD.AlgebraicDataType
 
-   getAdtOpt a :: a -> FQ.FullyQualifiedName -> Option HD.AlgebraicDataType
+    getAdtOpt a :: a -> FQ.FullyQualifiedName -> Option HD.AlgebraicDataType
 
 class FunctionProvider a where
-   getFunction a :: a -> FQ.FullyQualifiedName -> HF.Function ()
+    getFunction a :: a -> FQ.FullyQualifiedName -> HF.Function ()
 
-   getUpdateTransformedFunction a :: a -> FQ.FullyQualifiedName -> HF.Function HT.Type
+    getUpdateTransformedFunction a :: a -> FQ.FullyQualifiedName -> HF.Function HT.Type
 
-   getResolvedEffectsFunction a :: a -> FQ.FullyQualifiedName -> HF.Function HT.Type
+    getResolvedEffectsFunction a :: a -> FQ.FullyQualifiedName -> HF.Function HT.Type
 
-   getMonomorphizedFunction a :: a -> FQ.FullyQualifiedName -> HF.Function HT.Type
+    getMonomorphizedFunction a :: a -> FQ.FullyQualifiedName -> HF.Function HT.Type
 
 class VariantInfoProvider a where
-   getVariantInfo a :: a -> FQ.FullyQualifiedName -> HD.VariantInfo
+    getVariantInfo a :: a -> FQ.FullyQualifiedName -> HD.VariantInfo
 
-   getVariantInfoOpt a :: a -> FQ.FullyQualifiedName -> Option HD.VariantInfo
+    getVariantInfoOpt a :: a -> FQ.FullyQualifiedName -> Option HD.VariantInfo
 
 class EffectProvider a where
-   getEffect a :: a -> FQ.FullyQualifiedName -> HE.Effect
+    getEffect a :: a -> FQ.FullyQualifiedName -> HE.Effect
 
-   getEffectOpt a :: a -> FQ.FullyQualifiedName -> Option HE.Effect
+    getEffectOpt a :: a -> FQ.FullyQualifiedName -> Option HE.Effect
 
 class FunctionTypeInfoProvider a where
-   getFunctionTypeInfo a :: a -> FQ.FullyQualifiedName -> TF.FunctionTypeInfo
+    getFunctionTypeInfo a :: a -> FQ.FullyQualifiedName -> TF.FunctionTypeInfo
 
 class CheckedFunctionTypeInfoProvider a where
-   getCheckedFunctionTypeInfo a :: a -> FQ.FullyQualifiedName -> TF.FunctionTypeInfo
+    getCheckedFunctionTypeInfo a :: a -> FQ.FullyQualifiedName -> TF.FunctionTypeInfo
 
-   getCheckedFunctionTypeInfoOpt a :: a -> FQ.FullyQualifiedName -> Option TF.FunctionTypeInfo
+    getCheckedFunctionTypeInfoOpt a :: a -> FQ.FullyQualifiedName -> Option TF.FunctionTypeInfo
 
 class RegisteredInstanceProvider a where
-   getRegisteredInstance a :: a -> TC.InstanceKey -> TC.InstanceInfo
+    getRegisteredInstance a :: a -> TC.InstanceKey -> TC.InstanceInfo
 
-   getRegisteredInstanceOpt a :: a -> TC.InstanceKey -> Option TC.InstanceInfo
+    getRegisteredInstanceOpt a :: a -> TC.InstanceKey -> Option TC.InstanceInfo
 
 instance VariantInfoProvider Driver where
-   getVariantInfo driver qn = do
-      key <- I.ResolvedVariantInfoKey qn
-      i <- DB.get driver.db key
-      I.asResolvedVariantInfo i
+    getVariantInfo driver qn = do
+        key <- I.ResolvedVariantInfoKey qn
+        i <- DB.get driver.db key
+        I.asResolvedVariantInfo i
 
-   getVariantInfoOpt driver qn = do
-      key <- I.ResolvedVariantInfoKey qn
-      case DB.getOpt driver.db key of
-         Some variant_info -> Some (I.asResolvedVariantInfo variant_info)
-         None -> None
+    getVariantInfoOpt driver qn = do
+        key <- I.ResolvedVariantInfoKey qn
+        case DB.getOpt driver.db key of
+            Some variant_info -> Some (I.asResolvedVariantInfo variant_info)
+            None -> None
 
 instance ClassProvider Driver where
-   getClass driver qn = do
-      key <- I.ResolvedClassKey qn
-      c <- DB.get driver.db key
-      I.asResolvedClass c
+    getClass driver qn = do
+        key <- I.ResolvedClassKey qn
+        c <- DB.get driver.db key
+        I.asResolvedClass c
 
-   getClassTypeInfo driver qn = do
-      key <- I.ClassTypeInfoKey qn
-      c <- DB.get driver.db key
-      I.asClassTypeInfo c
+    getClassTypeInfo driver qn = do
+        key <- I.ClassTypeInfoKey qn
+        c <- DB.get driver.db key
+        I.asClassTypeInfo c
 
-   getAllDependencies driver qn = do
-      key <- I.ClassTypeInfoKey qn
-      c <- DB.get driver.db key
-      (I.asClassTypeInfo c).all_dependencies
+    getAllDependencies driver qn = do
+        key <- I.ClassTypeInfoKey qn
+        c <- DB.get driver.db key
+        (I.asClassTypeInfo c).all_dependencies
 
-   getInstance driver qn = do
-      key <- I.ResolvedInstanceKey qn
-      i <- DB.get driver.db key
-      I.asResolvedInstance i
+    getInstance driver qn = do
+        key <- I.ResolvedInstanceKey qn
+        i <- DB.get driver.db key
+        I.asResolvedInstance i
 
 instance RecordProvider Driver where
-   getRecord driver qn = do
-      key <- I.ResolvedRecordKey qn
-      record <- DB.get driver.db key
-      I.asResolvedRecord record
+    getRecord driver qn = do
+        key <- I.ResolvedRecordKey qn
+        record <- DB.get driver.db key
+        I.asResolvedRecord record
 
-   getRecordOpt driver qn = do
-      key <- I.ResolvedRecordKey qn
-      case DB.getOpt driver.db key of
-         Some record -> Some (I.asResolvedRecord record)
-         None -> None
+    getRecordOpt driver qn = do
+        key <- I.ResolvedRecordKey qn
+        case DB.getOpt driver.db key of
+            Some record -> Some (I.asResolvedRecord record)
+            None -> None
 
 instance AdtProvider Driver where
-   getAdt driver qn = do
-      key <- I.ResolvedAdtKey qn
-      adt <- DB.get driver.db key
-      I.asResolvedAdt adt
+    getAdt driver qn = do
+        key <- I.ResolvedAdtKey qn
+        adt <- DB.get driver.db key
+        I.asResolvedAdt adt
 
-   getAdtOpt driver qn = do
-      key <- I.ResolvedAdtKey qn
-      case DB.getOpt driver.db key of
-         Some adt -> Some (I.asResolvedAdt adt)
-         None -> None
+    getAdtOpt driver qn = do
+        key <- I.ResolvedAdtKey qn
+        case DB.getOpt driver.db key of
+            Some adt -> Some (I.asResolvedAdt adt)
+            None -> None
 
 instance FunctionProvider Driver where
-   getFunction driver qn = do
-      key <- I.ResolvedFunctionKey qn
-      f <- DB.get driver.db key
-      I.asResolvedFunction f
+    getFunction driver qn = do
+        key <- I.ResolvedFunctionKey qn
+        f <- DB.get driver.db key
+        I.asResolvedFunction f
 
-   getUpdateTransformedFunction driver qn = do
-      key <- I.UpdateTransformedFunctionKey qn
-      f <- DB.get driver.db key
-      I.asUpdateTransformedFunction f
+    getUpdateTransformedFunction driver qn = do
+        key <- I.UpdateTransformedFunctionKey qn
+        f <- DB.get driver.db key
+        I.asUpdateTransformedFunction f
 
-   getResolvedEffectsFunction driver qn = do
-      key <- I.ResolvedEffectsFunctionKey qn
-      f <- DB.get driver.db key
-      I.asResolvedEffectsFunction f
+    getResolvedEffectsFunction driver qn = do
+        key <- I.ResolvedEffectsFunctionKey qn
+        f <- DB.get driver.db key
+        I.asResolvedEffectsFunction f
 
-   getMonomorphizedFunction driver qn = do
-      key <- I.MonomorphizedFunctionKey qn
-      f <- DB.get driver.db key
-      I.asMonomorphizedFunction f
+    getMonomorphizedFunction driver qn = do
+        key <- I.MonomorphizedFunctionKey qn
+        f <- DB.get driver.db key
+        I.asMonomorphizedFunction f
 
 instance EffectProvider Driver where
-   getEffect driver qn = do
-      key <- I.ResolvedEffectKey qn
-      e <- DB.get driver.db key
-      I.asResolvedEffect e
+    getEffect driver qn = do
+        key <- I.ResolvedEffectKey qn
+        e <- DB.get driver.db key
+        I.asResolvedEffect e
 
-   getEffectOpt driver qn = do
-      key <- I.ResolvedEffectKey qn
-      case DB.getOpt driver.db key of
-         Some e -> Some (I.asResolvedEffect e)
-         None -> None
+    getEffectOpt driver qn = do
+        key <- I.ResolvedEffectKey qn
+        case DB.getOpt driver.db key of
+            Some e -> Some (I.asResolvedEffect e)
+            None -> None
 
 instance FunctionTypeInfoProvider Driver where
-   getFunctionTypeInfo driver qn = do
-      key <- I.FunctionTypeInfoKey qn
-      f <- DB.get driver.db key
-      I.asFunctionTypeInfo f
+    getFunctionTypeInfo driver qn = do
+        key <- I.FunctionTypeInfoKey qn
+        f <- DB.get driver.db key
+        I.asFunctionTypeInfo f
 
 instance CheckedFunctionTypeInfoProvider Driver where
-   getCheckedFunctionTypeInfo driver qn = do
-      key <- I.CheckedFunctionTypeInfoKey qn
-      f <- DB.get driver.db key
-      I.asCheckedFunctionTypeInfo f
+    getCheckedFunctionTypeInfo driver qn = do
+        key <- I.CheckedFunctionTypeInfoKey qn
+        f <- DB.get driver.db key
+        I.asCheckedFunctionTypeInfo f
 
-   getCheckedFunctionTypeInfoOpt driver qn = do
-      key <- I.CheckedFunctionTypeInfoKey qn
-      case DB.getOpt driver.db key of
-         Some f -> Some (I.asCheckedFunctionTypeInfo f)
-         None -> None
+    getCheckedFunctionTypeInfoOpt driver qn = do
+        key <- I.CheckedFunctionTypeInfoKey qn
+        case DB.getOpt driver.db key of
+            Some f -> Some (I.asCheckedFunctionTypeInfo f)
+            None -> None
 
 instance RegisteredInstanceProvider Driver where
-   getRegisteredInstance driver key = do
-      key <- I.RegisteredInstanceKey key
-      i <- DB.get driver.db key
-      I.asRegisteredInstance i
+    getRegisteredInstance driver key = do
+        key <- I.RegisteredInstanceKey key
+        i <- DB.get driver.db key
+        I.asRegisteredInstance i
 
-   getRegisteredInstanceOpt driver key = do
-      key <- I.RegisteredInstanceKey key
-      case DB.getOpt driver.db key of
-         Some i -> Some (I.asRegisteredInstance i)
-         None -> None
+    getRegisteredInstanceOpt driver key = do
+        key <- I.RegisteredInstanceKey key
+        case DB.getOpt driver.db key of
+            Some i -> Some (I.asRegisteredInstance i)
+            None -> None

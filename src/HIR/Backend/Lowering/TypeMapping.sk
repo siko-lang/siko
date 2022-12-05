@@ -20,111 +20,111 @@ data Context = { var_mappings :: Map String [MF.Position],
 
 convertPath :: HF.ConstraintPath -> MF.Position
 convertPath path = MF.Position (helper path)
-   where
-      helper :: HF.ConstraintPath -> [MF.Step]
-      helper path = case path of
-         HF.Argument index -> [MF.FunctionArg index]
-         HF.Field index parent -> List.push (helper parent) (MF.Field index)
-         HF.Extern index parent -> List.push (helper parent) (MF.External index)
-         HF.Variant index parent -> List.push (helper parent) (MF.Variant index)
-         HF.Implicit index parent -> List.push (helper parent) (MF.Implicit index)
-         HF.Result -> [MF.FunctionResult]
+    where
+        helper :: HF.ConstraintPath -> [MF.Step]
+        helper path = case path of
+            HF.Argument index -> [MF.FunctionArg index]
+            HF.Field index parent -> List.push (helper parent) (MF.Field index)
+            HF.Extern index parent -> List.push (helper parent) (MF.External index)
+            HF.Variant index parent -> List.push (helper parent) (MF.Variant index)
+            HF.Implicit index parent -> List.push (helper parent) (MF.Implicit index)
+            HF.Result -> [MF.FunctionResult]
 
 getConvertersAndEquals :: [HF.ExternConstraint] -> ([MF.Converter], [MF.Equal], [MF.Position])
 getConvertersAndEquals extern_constraints = List.fold ([], [], []) extern_constraints (\(converters, equals, independents), c -> case c of
-      HF.ExternConverter hir_converter -> do
-         from <- convertPath hir_converter.from
-         to <- convertPath hir_converter.to
-         (List.push converters (MF.Converter from to), equals, independents)
-      HF.ExternEquality equal -> do
-         left <- convertPath equal.left
-         right <- convertPath equal.right
-         (converters, List.push equals (MF.Equal left right), independents)
-      HF.Independent path -> do
-         pos <- convertPath path
-         (converters, equals, List.push independents pos))
+        HF.ExternConverter hir_converter -> do
+            from <- convertPath hir_converter.from
+            to <- convertPath hir_converter.to
+            (List.push converters (MF.Converter from to), equals, independents)
+        HF.ExternEquality equal -> do
+            left <- convertPath equal.left
+            right <- convertPath equal.right
+            (converters, List.push equals (MF.Equal left right), independents)
+        HF.Independent path -> do
+            pos <- convertPath path
+            (converters, equals, List.push independents pos))
 
 createTypeMap :: L.Context -> HT.Type -> Int -> [HF.ExternConstraint] -> (MF.TypeMapping, L.Context)
 createTypeMap lowering_context type arg_count extern_constraints = do
-   args <- HT.getArgs type
-   (args, _) <- List.split args arg_count
-   result_type <- HT.getResultType type arg_count
-   context <- Context empty [] empty lowering_context
-   (context, _) <- args |> List.iter |> Iterator.fold (\(context, index), arg -> do
-      steps <- [MF.FunctionArg index]
-      context <- mapType context steps arg
-      (context, index + 1)) (context, 0)
-   context <- mapType context [MF.FunctionResult] result_type
-   (converters, equals, independents) <- getConvertersAndEquals extern_constraints
-   (MF.TypeMapping context.var_mappings context.owner_positions context.ref_positions converters equals independents, context.lowering_context)
+    args <- HT.getArgs type
+    (args, _) <- List.split args arg_count
+    result_type <- HT.getResultType type arg_count
+    context <- Context empty [] empty lowering_context
+    (context, _) <- args |> List.iter |> Iterator.fold (\(context, index), arg -> do
+        steps <- [MF.FunctionArg index]
+        context <- mapType context steps arg
+        (context, index + 1)) (context, 0)
+    context <- mapType context [MF.FunctionResult] result_type
+    (converters, equals, independents) <- getConvertersAndEquals extern_constraints
+    (MF.TypeMapping context.var_mappings context.owner_positions context.ref_positions converters equals independents, context.lowering_context)
 
 addVarPosition :: Context -> String -> [MF.Step] -> Context
 addVarPosition context name steps = do
-   pos <- MF.Position steps
-   (var_mappings, _) <- alter (\positions -> case positions of
-      Some positions -> Some (push positions pos)
-      None -> Some [pos]) name context.var_mappings
-   context { var_mappings = var_mappings }
+    pos <- MF.Position steps
+    (var_mappings, _) <- alter (\positions -> case positions of
+        Some positions -> Some (push positions pos)
+        None -> Some [pos]) name context.var_mappings
+    context { var_mappings = var_mappings }
 
 addOwnerPosition :: Context -> [MF.Step] -> Context
 addOwnerPosition context steps = do
-   pos <- MF.Position steps
-   owner_positions <- push context.owner_positions pos
-   context { owner_positions = owner_positions }
+    pos <- MF.Position steps
+    owner_positions <- push context.owner_positions pos
+    context { owner_positions = owner_positions }
 
 addRefPosition :: Context -> Int -> [MF.Step] -> Context
 addRefPosition context lifetime steps = do
-   pos <- MF.Position steps
-   ref_positions <- Map.add context.ref_positions lifetime pos
-   context { ref_positions = ref_positions }
+    pos <- MF.Position steps
+    ref_positions <- Map.add context.ref_positions lifetime pos
+    context { ref_positions = ref_positions }
 
 mapType :: Context -> [MF.Step] -> HT.Type -> Context
 mapType context steps type = case type of
-   HT.Var _ _ -> panic "Var type in type mapping!"
-   HT.FixedTypeArg name _ _ -> do
-      addVarPosition context (SS.get name) steps
-   HT.Named qn args -> do
-      case HP.getItem context.lowering_context.hir_program qn of
-         HP.Record record -> do
-            if record.external
-            then do
-               context <- List.foldE context args (\context, index, arg -> do
-                  steps <- if record.implicit_member
-                  then push steps (MF.Implicit 0)
-                  else steps
-                  steps <- push steps (MF.External index)
-                  context <- mapType context steps arg
-                  context)
-               context
-            else do
-               (lowering_context, record) <- TS.instantiateRecord context.lowering_context record type
-               context <- context { lowering_context = lowering_context }
-               List.foldE context record.fields (\context, index, (HD.RecordField name field_type) -> do
-                  steps <- push steps (MF.Field index)
-                  context <- mapType context steps field_type
-                  context)
-         HP.Adt adt -> do
-            (lowering_context, adt) <- TS.instantiateAdt context.lowering_context adt type
-            context <- context { lowering_context = lowering_context }
-            List.foldE context adt.variants (\context, index, v -> do
-               steps <- push steps (MF.Variant index)
-               context <- List.foldE context v.items (\context, index, t -> do
-                  steps <- push steps (MF.Field index)
-                  context <- mapType context steps t
-                  context)
-               context)
-         _ -> panic "Named type is not an adt nor a record in type mapping"
-   HT.Function from to -> panic "Function type in type mapping!"
-   HT.Never var -> context
-   HT.Ref lifetime t -> do
-      context <- addRefPosition context lifetime steps
-      mapType context steps t
-   HT.Owner t -> do
-      context <- addOwnerPosition context steps
-      mapType context steps t
-   HT.Tuple args -> do
-      (context, _) <- args |> List.iter |> Iterator.fold (\(context, index), arg -> do
-         steps <- push steps (MF.Field index)
-         context <- mapType context steps arg
-         (context, index + 1)) (context, 0)
-      context
+    HT.Var _ _ -> panic "Var type in type mapping!"
+    HT.FixedTypeArg name _ _ -> do
+        addVarPosition context (SS.get name) steps
+    HT.Named qn args -> do
+        case HP.getItem context.lowering_context.hir_program qn of
+            HP.Record record -> do
+                if record.external
+                then do
+                    context <- List.foldE context args (\context, index, arg -> do
+                        steps <- if record.implicit_member
+                        then push steps (MF.Implicit 0)
+                        else steps
+                        steps <- push steps (MF.External index)
+                        context <- mapType context steps arg
+                        context)
+                    context
+                else do
+                    (lowering_context, record) <- TS.instantiateRecord context.lowering_context record type
+                    context <- context { lowering_context = lowering_context }
+                    List.foldE context record.fields (\context, index, (HD.RecordField name field_type) -> do
+                        steps <- push steps (MF.Field index)
+                        context <- mapType context steps field_type
+                        context)
+            HP.Adt adt -> do
+                (lowering_context, adt) <- TS.instantiateAdt context.lowering_context adt type
+                context <- context { lowering_context = lowering_context }
+                List.foldE context adt.variants (\context, index, v -> do
+                    steps <- push steps (MF.Variant index)
+                    context <- List.foldE context v.items (\context, index, t -> do
+                        steps <- push steps (MF.Field index)
+                        context <- mapType context steps t
+                        context)
+                    context)
+            _ -> panic "Named type is not an adt nor a record in type mapping"
+    HT.Function from to -> panic "Function type in type mapping!"
+    HT.Never var -> context
+    HT.Ref lifetime t -> do
+        context <- addRefPosition context lifetime steps
+        mapType context steps t
+    HT.Owner t -> do
+        context <- addOwnerPosition context steps
+        mapType context steps t
+    HT.Tuple args -> do
+        (context, _) <- args |> List.iter |> Iterator.fold (\(context, index), arg -> do
+            steps <- push steps (MF.Field index)
+            context <- mapType context steps arg
+            (context, index + 1)) (context, 0)
+        context

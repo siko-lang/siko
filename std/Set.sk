@@ -3,23 +3,23 @@ module Set where
 data Set a = { items :: [a] } deriving (Show)
 
 instance (Ord a) => Add Set a where
-   opAdd a b = Set ((a.items + b.items) |> List.sort |> List.dedup)
+    opAdd a b = Set ((a.items + b.items) |> List.sort |> List.dedup)
 
 instance (Ord a) => Sub Set a where
-   opSub a b = do
-      items <- a.items |> List.iter |> Iterator.filter (\i -> not (Set.contains b i)) |> List.toList
-      Set { items = items }
+    opSub a b = do
+        items <- a.items |> List.iter |> Iterator.filter (\i -> not (Set.contains b i)) |> List.toList
+        Set { items = items }
 
 instance (PartialEq a) => PartialEq Set a where
-   opEq a b = a.items == b.items
+    opEq a b = a.items == b.items
 
 instance (Eq a) => Eq Set a
 
 instance (PartialOrd a) => PartialOrd Set a where
-   partialCmp a b = partialCmp a.items b.items
+    partialCmp a b = partialCmp a.items b.items
 
 instance (Ord a, PartialEq a, PartialOrd a, Eq a) => Ord Set a where
-   cmp a b = cmp a.items b.items
+    cmp a b = cmp a.items b.items
 
 empty a :: Set a
 empty = Set []
@@ -29,16 +29,16 @@ contains set item = List.contains set.items item
 
 insert a :: (Ord a) => Set a -> a -> (Set a, Bool)
 insert set item = do
-   len <- List.getLength set.items
-   items <- push set.items item
-   items <- items |> List.sort |> List.dedup
-   inserted <- len != List.getLength items
-   (set { items = items }, inserted)
+    len <- List.getLength set.items
+    items <- push set.items item
+    items <- items |> List.sort |> List.dedup
+    inserted <- len != List.getLength items
+    (set { items = items }, inserted)
 
 remove a :: (PartialEq a) => Set a -> a -> Set a
 remove set item = do
-   items <- set.items |> List.iter |> Iterator.filter (\i -> i != item) |> List.toList
-   set { items = items }
+    items <- set.items |> List.iter |> Iterator.filter (\i -> i != item) |> List.toList
+    set { items = items }
 
 iter a :: Set a -> List.ListIter a
 iter set = set.items |> List.iter
@@ -51,24 +51,24 @@ isEmpty set = List.isEmpty set.items
 
 collect a b :: [b] -> Set a -> (Set a -> b -> Set a) -> Set a
 collect sources result f = loop result <- result do
-      start_size <- Set.getSize result
-      result <- List.fold result sources f
-      if Set.getSize result != start_size
-      then result
-      else break result
+        start_size <- Set.getSize result
+        result <- List.fold result sources f
+        if Set.getSize result != start_size
+        then result
+        else break result
 
 getSize a :: Set a -> Int
 getSize set = List.getLength set.items
 
 intersection a :: (PartialEq a) => Set a -> Set a -> Set a
 intersection s1 s2 = do
-   items <- s1.items |> List.iter |> Iterator.filter (\i -> Set.contains s2 i) |> List.toList
-   Set { items = items }
+    items <- s1.items |> List.iter |> Iterator.filter (\i -> Set.contains s2 i) |> List.toList
+    Set { items = items }
 
 put a :: (PartialEq a, Ord a) => Set a -> a -> Set a
 put set item = do
-   (set, _) <- insert set item
-   set
+    (set, _) <- insert set item
+    set
 
 map a b :: (Ord a, PartialEq a, Ord b, PartialEq b) => Set a -> (a -> b) -> Set b
 map set f = set |> Set.iter |> Iterator.map f |> toSet

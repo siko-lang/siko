@@ -16,44 +16,44 @@ import Siko.Util.SharedString as SS
 
 processRecordDerive :: D.Record -> Ident -> Option C.Instance
 processRecordDerive record (Ident name derive_location) = do
-   case SS.get name of
-      "Show" -> Some (deriveRecordShow record derive_location)
-      "PartialEq" -> Some (deriveRecordPartialEq record derive_location)
-      "Eq" -> Some (deriveRecordEq record derive_location)
-      "PartialOrd" -> Some (deriveRecordPartialOrd record derive_location)
-      "Ord" -> Some (deriveRecordOrd record derive_location)
-      "ToJson" -> Some (deriveRecordToJson record derive_location)
-      "FromJson" -> Some (deriveRecordFromJson record derive_location)
-      "Copy" -> Some (deriveRecordCopy record derive_location)
-      "Move" -> Some (deriveRecordMove record derive_location)
-      _ -> None
+    case SS.get name of
+        "Show" -> Some (deriveRecordShow record derive_location)
+        "PartialEq" -> Some (deriveRecordPartialEq record derive_location)
+        "Eq" -> Some (deriveRecordEq record derive_location)
+        "PartialOrd" -> Some (deriveRecordPartialOrd record derive_location)
+        "Ord" -> Some (deriveRecordOrd record derive_location)
+        "ToJson" -> Some (deriveRecordToJson record derive_location)
+        "FromJson" -> Some (deriveRecordFromJson record derive_location)
+        "Copy" -> Some (deriveRecordCopy record derive_location)
+        "Move" -> Some (deriveRecordMove record derive_location)
+        _ -> None
 
 processAdtDerive :: D.AlgebraicDataType -> Ident -> String -> Option C.Instance
 processAdtDerive adt (Ident name derive_location) mod_name = do
-   case SS.get name of
-      "Show" -> Some (deriveAdtShow adt derive_location mod_name)
-      "PartialEq" -> Some (deriveAdtPartialEq adt derive_location mod_name)
-      "Eq" -> Some (deriveAdtEq adt derive_location)
-      "PartialOrd" -> Some (deriveAdtPartialOrd adt derive_location mod_name)
-      "Ord" -> Some (deriveAdtOrd adt derive_location mod_name)
-      "ToJson" -> Some (deriveAdtToJson adt derive_location mod_name)
-      "FromJson" -> Some (deriveAdtFromJson adt derive_location mod_name)
-      "Copy" -> Some (deriveAdtCopy adt derive_location)
-      "Move" -> Some (deriveAdtMove adt derive_location)
-      _ -> None
+    case SS.get name of
+        "Show" -> Some (deriveAdtShow adt derive_location mod_name)
+        "PartialEq" -> Some (deriveAdtPartialEq adt derive_location mod_name)
+        "Eq" -> Some (deriveAdtEq adt derive_location)
+        "PartialOrd" -> Some (deriveAdtPartialOrd adt derive_location mod_name)
+        "Ord" -> Some (deriveAdtOrd adt derive_location mod_name)
+        "ToJson" -> Some (deriveAdtToJson adt derive_location mod_name)
+        "FromJson" -> Some (deriveAdtFromJson adt derive_location mod_name)
+        "Copy" -> Some (deriveAdtCopy adt derive_location)
+        "Move" -> Some (deriveAdtMove adt derive_location)
+        _ -> None
 
 processRecordDerives :: D.Record -> (D.Record, [C.Instance])
 processRecordDerives record = do
-   (instances, derived_classes) <- List.fold ([], []) record.derived_classes (\(instances, derived_classes), derived_class -> case processRecordDerive record derived_class of
-      Some i -> (push instances i, derived_classes)
-      None -> (instances, push derived_classes derived_class))
-   record <- record { derived_classes = derived_classes }
-   (record, instances)
+    (instances, derived_classes) <- List.fold ([], []) record.derived_classes (\(instances, derived_classes), derived_class -> case processRecordDerive record derived_class of
+        Some i -> (push instances i, derived_classes)
+        None -> (instances, push derived_classes derived_class))
+    record <- record { derived_classes = derived_classes }
+    (record, instances)
 
 processAdtDerives :: D.AlgebraicDataType -> String -> (D.AlgebraicDataType, [C.Instance])
 processAdtDerives adt mod_name = do
-   (instances, derived_classes) <- List.fold ([], []) adt.derived_classes (\(instances, derived_classes), derived_class -> case processAdtDerive adt derived_class mod_name of
-      Some i -> (push instances i, derived_classes)
-      None -> (instances, push derived_classes derived_class))
-   adt <- adt { derived_classes = derived_classes }
-   (adt, instances)
+    (instances, derived_classes) <- List.fold ([], []) adt.derived_classes (\(instances, derived_classes), derived_class -> case processAdtDerive adt derived_class mod_name of
+        Some i -> (push instances i, derived_classes)
+        None -> (instances, push derived_classes derived_class))
+    adt <- adt { derived_classes = derived_classes }
+    (adt, instances)

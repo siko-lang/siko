@@ -18,143 +18,143 @@ import Siko.Syntax.Location
 
 addPatternType :: Context -> P.PatternId -> TS.PatternTypeState -> Context
 addPatternType context pattern_id pattern_type = do
-   type_store <- TS.addPatternType context.type_store pattern_id pattern_type
-   context { type_store = type_store }
+    type_store <- TS.addPatternType context.type_store pattern_id pattern_type
+    context { type_store = type_store }
 
 addPatternEffectSignatureSet :: Context -> P.PatternId -> TEff.EffectSignatureSet -> Context
 addPatternEffectSignatureSet context pattern_id effects = do
-   type_store <- TS.addPatternEffectSignatureSet context.type_store pattern_id effects
-   context { type_store = type_store }
+    type_store <- TS.addPatternEffectSignatureSet context.type_store pattern_id effects
+    context { type_store = type_store }
 
 getPatternType :: Context -> P.PatternId -> T.Type
 getPatternType context pattern_id = TS.getPatternType context.type_store pattern_id
 
 matchPatternWith :: Context -> P.PatternId -> T.Type -> Location -> Context
 matchPatternWith context pattern_id type location = do
-   pattern_type <- getPatternType context pattern_id
-   context <- unify context S.createSubstitution type pattern_type location
-   context
+    pattern_type <- getPatternType context pattern_id
+    context <- unify context S.createSubstitution type pattern_type location
+    context
 
 matchPatterns :: Context -> P.PatternId -> P.PatternId -> Location -> Context
 matchPatterns context pattern_id1 pattern_id2 location = do
-   pattern_type1 <- getPatternType context pattern_id1
-   pattern_type2 <- getPatternType context pattern_id2
-   context <- unify context S.createSubstitution pattern_type1 pattern_type2 location
-   context
+    pattern_type1 <- getPatternType context pattern_id1
+    pattern_type2 <- getPatternType context pattern_id2
+    context <- unify context S.createSubstitution pattern_type1 pattern_type2 location
+    context
 
 initializePatternType :: Context -> P.Pattern () -> (Context, P.Pattern ())
 initializePatternType context pat = do
-   P.Pattern pattern id _ location <- pat
-   //println "InitializePatternType: pattern {} {}" % (pattern, id)
-   type_store <- TS.addPatternLocation context.type_store id location
-   context <- context { type_store = type_store }
-   context <- case pattern of
-      P.Binding bind_ref -> do
-         (context, var) <- U.getNewTypeVarType context
-         context <- addPatternType context id (TS.PatternType var)
-         context
-      P.Tuple args -> do
-         (context, vars) <- args |> List.iter |> Iterator.fold (\(context, vars), arg -> do
+    P.Pattern pattern id _ location <- pat
+    //println "InitializePatternType: pattern {} {}" % (pattern, id)
+    type_store <- TS.addPatternLocation context.type_store id location
+    context <- context { type_store = type_store }
+    context <- case pattern of
+        P.Binding bind_ref -> do
             (context, var) <- U.getNewTypeVarType context
-            vars <- push vars var
-            (context, vars)) (context, [])
-         context <- addPatternType context id (TS.PatternType (T.Tuple vars))
-         context
-      P.Guarded pattern expr -> do
-         (context, var) <- U.getNewTypeVarType context
-         context <- addPatternType context id (TS.PatternType var)
-         context
-      P.Wildcard -> do
-         (context, var) <- U.getNewTypeVarType context
-         context <- addPatternType context id (TS.PatternType var)
-         context
-      P.IntegerLiteral lit -> do
-         context <- addPatternType context id (TS.PatternType Util.getIntType)
-         context
-      P.StringLiteral lit -> do
-         context <- addPatternType context id (TS.PatternType Util.getStringType)
-         context
-      P.CharLiteral lit -> do
-         context <- addPatternType context id (TS.PatternType Util.getCharType)
-         context
-      P.CharRange _ _ _ -> do
-         context <- addPatternType context id (TS.PatternType Util.getCharType)
-         context
-      P.Typed pattern type -> do
-         context <- addPatternType context id (TS.PatternType type)
-         context
-      P.Record qn args -> do
-         record <- HP.getRecord context.state.program qn
-         (record, context) <- UD.remapRecord record context
-         context <- addPatternType context id (TS.PatternWithRecordType record)
-         context
-      P.Variant qn _ _ -> do
-         adt <- HP.getAdt context.state.program qn
-         (adt, context) <- UD.remapAdt adt context
-         context <- addPatternType context id (TS.PatternWithAdtType adt)
-         context
-   (context, pat)
+            context <- addPatternType context id (TS.PatternType var)
+            context
+        P.Tuple args -> do
+            (context, vars) <- args |> List.iter |> Iterator.fold (\(context, vars), arg -> do
+                (context, var) <- U.getNewTypeVarType context
+                vars <- push vars var
+                (context, vars)) (context, [])
+            context <- addPatternType context id (TS.PatternType (T.Tuple vars))
+            context
+        P.Guarded pattern expr -> do
+            (context, var) <- U.getNewTypeVarType context
+            context <- addPatternType context id (TS.PatternType var)
+            context
+        P.Wildcard -> do
+            (context, var) <- U.getNewTypeVarType context
+            context <- addPatternType context id (TS.PatternType var)
+            context
+        P.IntegerLiteral lit -> do
+            context <- addPatternType context id (TS.PatternType Util.getIntType)
+            context
+        P.StringLiteral lit -> do
+            context <- addPatternType context id (TS.PatternType Util.getStringType)
+            context
+        P.CharLiteral lit -> do
+            context <- addPatternType context id (TS.PatternType Util.getCharType)
+            context
+        P.CharRange _ _ _ -> do
+            context <- addPatternType context id (TS.PatternType Util.getCharType)
+            context
+        P.Typed pattern type -> do
+            context <- addPatternType context id (TS.PatternType type)
+            context
+        P.Record qn args -> do
+            record <- HP.getRecord context.state.program qn
+            (record, context) <- UD.remapRecord record context
+            context <- addPatternType context id (TS.PatternWithRecordType record)
+            context
+        P.Variant qn _ _ -> do
+            adt <- HP.getAdt context.state.program qn
+            (adt, context) <- UD.remapAdt adt context
+            context <- addPatternType context id (TS.PatternWithAdtType adt)
+            context
+    (context, pat)
 
 checkPatternType :: Context -> P.Pattern () -> (Context, P.Pattern ())
 checkPatternType context pat = do
-   P.Pattern pattern id _ location <- pat
-   //println "checkPatternType: pattern {} {} {}" % (pattern, id, TF.toString (getPatternType context id))
-   context <- case pattern of
-      P.Binding _ -> addPatternEffectSignatureSet context id TEff.emptyEffectSignatureSet
-      P.Tuple args -> do
-         sub_ids <- List.map args (\P.Pattern _ id _ _ -> id)
-         sub_signatures <- TEff.getPatternEffectSignatures context sub_ids
-         context <- TEff.setPatternEffect context id sub_signatures location
-         arg_types <- args |> List.iter |> Iterator.map (\(P.Pattern _ arg _ _) -> getPatternType context arg) |> toList
-         context <- matchPatternWith context id (T.Tuple arg_types) location
-         context
-      P.Guarded p expr -> do
-         P.Pattern _ sub_pattern_id _ _ <- p
-         E.Expr _ expr_id _ expr_location <- expr
-         pattern_sig <- TS.getPatternEffectSignature context.type_store sub_pattern_id
-         expr_sig <- TS.getExprEffectSignature context.type_store expr_id
-         context <- TEff.setPatternEffect context id [pattern_sig, expr_sig] location
-         bool_ty <- Util.getBoolType
-         context <- matchExprWith context expr_id bool_ty expr_location
-         context <- matchPatterns context id sub_pattern_id location
-         context
-      P.Wildcard -> addPatternEffectSignatureSet context id TEff.emptyEffectSignatureSet
-      P.IntegerLiteral lit -> addPatternEffectSignatureSet context id TEff.emptyEffectSignatureSet
-      P.StringLiteral lit -> addPatternEffectSignatureSet context id TEff.emptyEffectSignatureSet
-      P.CharLiteral lit -> addPatternEffectSignatureSet context id TEff.emptyEffectSignatureSet
-      P.CharRange _ _ _ -> addPatternEffectSignatureSet context id TEff.emptyEffectSignatureSet
-      P.Typed p _ -> do
-         P.Pattern _ sub_pattern_id _ location <- p
-         context <- TEff.copyPatternEffect context sub_pattern_id id
-         context <- matchPatterns context id sub_pattern_id location
-         context
-      P.Record _ args -> do
-         sub_ids <- List.map args (\P.Pattern _ id _ _ -> id)
-         sub_signatures <- TEff.getPatternEffectSignatures context sub_ids
-         context <- TEff.setPatternEffect context id sub_signatures location
-         context <- List.foldE context args (\context, index, (P.Pattern _ arg_id _ arg_location) -> do
-            record <- TS.getRecord context.type_store id
-            D.RecordField name field_type <- atIndex record.fields index
-            context <- matchPatternWith context arg_id field_type arg_location
-            context)
-         context
-      P.Variant _ index args -> do
-         sub_ids <- List.map args (\P.Pattern _ id _ _ -> id)
-         sub_signatures <- TEff.getPatternEffectSignatures context sub_ids
-         context <- TEff.setPatternEffect context id sub_signatures location
-         context <- List.foldE context args (\context, arg_index, (P.Pattern _ arg_id _ arg_location) -> do
-            adt <- TS.getAdt context.type_store id
-            variant <- atIndex adt.variants index
-            item_type <- atIndex variant.items arg_index
-            context <- matchPatternWith context arg_id item_type arg_location
-            context)
-         context
-   (context, pat)
+    P.Pattern pattern id _ location <- pat
+    //println "checkPatternType: pattern {} {} {}" % (pattern, id, TF.toString (getPatternType context id))
+    context <- case pattern of
+        P.Binding _ -> addPatternEffectSignatureSet context id TEff.emptyEffectSignatureSet
+        P.Tuple args -> do
+            sub_ids <- List.map args (\P.Pattern _ id _ _ -> id)
+            sub_signatures <- TEff.getPatternEffectSignatures context sub_ids
+            context <- TEff.setPatternEffect context id sub_signatures location
+            arg_types <- args |> List.iter |> Iterator.map (\(P.Pattern _ arg _ _) -> getPatternType context arg) |> toList
+            context <- matchPatternWith context id (T.Tuple arg_types) location
+            context
+        P.Guarded p expr -> do
+            P.Pattern _ sub_pattern_id _ _ <- p
+            E.Expr _ expr_id _ expr_location <- expr
+            pattern_sig <- TS.getPatternEffectSignature context.type_store sub_pattern_id
+            expr_sig <- TS.getExprEffectSignature context.type_store expr_id
+            context <- TEff.setPatternEffect context id [pattern_sig, expr_sig] location
+            bool_ty <- Util.getBoolType
+            context <- matchExprWith context expr_id bool_ty expr_location
+            context <- matchPatterns context id sub_pattern_id location
+            context
+        P.Wildcard -> addPatternEffectSignatureSet context id TEff.emptyEffectSignatureSet
+        P.IntegerLiteral lit -> addPatternEffectSignatureSet context id TEff.emptyEffectSignatureSet
+        P.StringLiteral lit -> addPatternEffectSignatureSet context id TEff.emptyEffectSignatureSet
+        P.CharLiteral lit -> addPatternEffectSignatureSet context id TEff.emptyEffectSignatureSet
+        P.CharRange _ _ _ -> addPatternEffectSignatureSet context id TEff.emptyEffectSignatureSet
+        P.Typed p _ -> do
+            P.Pattern _ sub_pattern_id _ location <- p
+            context <- TEff.copyPatternEffect context sub_pattern_id id
+            context <- matchPatterns context id sub_pattern_id location
+            context
+        P.Record _ args -> do
+            sub_ids <- List.map args (\P.Pattern _ id _ _ -> id)
+            sub_signatures <- TEff.getPatternEffectSignatures context sub_ids
+            context <- TEff.setPatternEffect context id sub_signatures location
+            context <- List.foldE context args (\context, index, (P.Pattern _ arg_id _ arg_location) -> do
+                record <- TS.getRecord context.type_store id
+                D.RecordField name field_type <- atIndex record.fields index
+                context <- matchPatternWith context arg_id field_type arg_location
+                context)
+            context
+        P.Variant _ index args -> do
+            sub_ids <- List.map args (\P.Pattern _ id _ _ -> id)
+            sub_signatures <- TEff.getPatternEffectSignatures context sub_ids
+            context <- TEff.setPatternEffect context id sub_signatures location
+            context <- List.foldE context args (\context, arg_index, (P.Pattern _ arg_id _ arg_location) -> do
+                adt <- TS.getAdt context.type_store id
+                variant <- atIndex adt.variants index
+                item_type <- atIndex variant.items arg_index
+                context <- matchPatternWith context arg_id item_type arg_location
+                context)
+            context
+    (context, pat)
 
 checkMissingTypeInPattern :: [T.TypeVar] -> (Context, [T.TypeVar]) -> P.Pattern () -> ((Context, [T.TypeVar]), P.Pattern ())
 checkMissingTypeInPattern signature_vars (context, undefined_vars) pattern = do
-   P.Pattern s_pattern id _ location <- pattern
-   //println "Checking pattern {} {}" % (s_pattern, id)
-   type <- getPatternType context id
-   (context, undefined_vars) <- checkUndefinedVars context undefined_vars type signature_vars location
-   ((context, undefined_vars), pattern)
+    P.Pattern s_pattern id _ location <- pattern
+    //println "Checking pattern {} {}" % (s_pattern, id)
+    type <- getPatternType context id
+    (context, undefined_vars) <- checkUndefinedVars context undefined_vars type signature_vars location
+    ((context, undefined_vars), pattern)

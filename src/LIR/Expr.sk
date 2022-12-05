@@ -10,10 +10,10 @@ data Var = Named String
          deriving (PartialEq, Eq, PartialOrd, Ord)
 
 instance Show Var where
-   show v = case v of
-      Named v -> "_{}" % v
-      Temp v -> "tmp_{}" % v
-      Arg i -> "arg{}" % i
+    show v = case v of
+        Named v -> "_{}" % v
+        Temp v -> "tmp_{}" % v
+        Arg i -> "arg{}" % i
 
 data RangeKind = Inclusive
                | Exclusive
@@ -27,13 +27,13 @@ data Checker = IntegerChecker String
              | WildcardChecker Var
 
 instance Show Checker where
-   show checker = case checker of
-      IntegerChecker lit -> "i:{}" % lit
-      StringChecker lit -> "s:{}" % lit
-      CharChecker lit -> "c:{}" % lit
-      CharRangeChecker s e kind -> "{}:{}:{}" % (s, e, kind)
-      VariantChecker i v _ -> "v:{} {}" % (i, v)
-      WildcardChecker v -> "w({})" % v
+    show checker = case checker of
+        IntegerChecker lit -> "i:{}" % lit
+        StringChecker lit -> "s:{}" % lit
+        CharChecker lit -> "c:{}" % lit
+        CharRangeChecker s e kind -> "{}:{}:{}" % (s, e, kind)
+        VariantChecker i v _ -> "v:{} {}" % (i, v)
+        WildcardChecker v -> "w({})" % v
 
 data Case = { checker :: Checker,
               body :: Expr
@@ -67,96 +67,96 @@ data SimpleExpr = Do [Expr]
 
 prettyPrint :: Expr -> Indent -> (String, Bool)
 prettyPrint expr ind = do
-   Expr expr expr_type <- expr
-   case expr of
-      Do args -> do
-         inner <- inc ind
-         args <- args |> List.iter |> Iterator.map (\arg -> do
-            "{}{}" % (inner, (prettyPrint arg inner).0)) |> toList
-         s <- "do\n{}" % join args "\n"
-         (s, False)
-      StaticFunctionCall id args -> do
-         args <- args |> List.iter |> Iterator.map (\arg -> do
+    Expr expr expr_type <- expr
+    case expr of
+        Do args -> do
+            inner <- inc ind
+            args <- args |> List.iter |> Iterator.map (\arg -> do
+                "{}{}" % (inner, (prettyPrint arg inner).0)) |> toList
+            s <- "do\n{}" % join args "\n"
+            (s, False)
+        StaticFunctionCall id args -> do
+            args <- args |> List.iter |> Iterator.map (\arg -> do
+                (s, simple) <- prettyPrint arg ind
+                if simple
+                then s
+                else "({})" % s) |> toList
+            s <- "{} {}" % (id, join args " ")
+            (s, isEmpty args)
+        IntegerLiteral lit -> ("{}" % lit, True)
+        StringLiteral lit -> ("\"{}\"" % escapeString lit, True)
+        FloatLiteral lit -> ("{}" % lit, True)
+        CharLiteral lit -> ("'{}'" % lit, True)
+        VarDecl v arg -> do
+            Expr _ arg_type <- arg
+            s <- "{} :: {} <- {}" % (v, arg_type, (prettyPrint arg ind).0)
+            (s, False)
+        VarRef v -> ("({} :: {})" % (v, expr_type), True)
+        FieldAccess n rhs -> do
+            (s, simple) <- prettyPrint rhs ind
+            s <- if simple
+            then "{}.{}" % (s, n)
+            else "({}).{}" % (s, n)
+            (s, True)
+        If cond true_branch false_branch -> do
+            s <- "if {} then {} else {}" % ((prettyPrint cond ind).0, (prettyPrint true_branch ind).0, (prettyPrint false_branch ind).0)
+            (s, True)
+        List args -> do
+            args <- args |> List.iter |> Iterator.map (\arg -> do
+                (s, simple) <- prettyPrint arg ind
+                s) |> toList
+            s <- "[{}]" % join args ", "
+            (s, True)
+        Return arg -> do
             (s, simple) <- prettyPrint arg ind
-            if simple
+            s <- if simple
             then s
-            else "({})" % s) |> toList
-         s <- "{} {}" % (id, join args " ")
-         (s, isEmpty args)
-      IntegerLiteral lit -> ("{}" % lit, True)
-      StringLiteral lit -> ("\"{}\"" % escapeString lit, True)
-      FloatLiteral lit -> ("{}" % lit, True)
-      CharLiteral lit -> ("'{}'" % lit, True)
-      VarDecl v arg -> do
-         Expr _ arg_type <- arg
-         s <- "{} :: {} <- {}" % (v, arg_type, (prettyPrint arg ind).0)
-         (s, False)
-      VarRef v -> ("({} :: {})" % (v, expr_type), True)
-      FieldAccess n rhs -> do
-         (s, simple) <- prettyPrint rhs ind
-         s <- if simple
-         then "{}.{}" % (s, n)
-         else "({}).{}" % (s, n)
-         (s, True)
-      If cond true_branch false_branch -> do
-         s <- "if {} then {} else {}" % ((prettyPrint cond ind).0, (prettyPrint true_branch ind).0, (prettyPrint false_branch ind).0)
-         (s, True)
-      List args -> do
-         args <- args |> List.iter |> Iterator.map (\arg -> do
+            else "({})" % s
+            s <- "return {}" % s
+            (s, simple)
+        Continue arg -> do
             (s, simple) <- prettyPrint arg ind
-            s) |> toList
-         s <- "[{}]" % join args ", "
-         (s, True)
-      Return arg -> do
-         (s, simple) <- prettyPrint arg ind
-         s <- if simple
-         then s
-         else "({})" % s
-         s <- "return {}" % s
-         (s, simple)
-      Continue arg -> do
-         (s, simple) <- prettyPrint arg ind
-         s <- if simple
-         then s
-         else "({})" % s
-         s <- "continue {}" % s
-         (s, simple)
-      Break arg -> do
-         (s, simple) <- prettyPrint arg ind
-         s <- if simple
-         then s
-         else "({})" % s
-         s <- "break {}" % s
-         (s, simple)
-      Loop var initializer body -> do
-         (initializer, simple) <- prettyPrint initializer ind
-         initializer <- if simple
-         then initializer
-         else "({})" % initializer
-         (body, simple) <- prettyPrint body ind
-         s <- "loop {} <- {} {}" % (var, initializer, body)
-         (s, False)
-      CaseOf body cases -> do
-         inner <- inc ind
-         args <- cases |> List.iter |> Iterator.map (\case_branch -> do
-            "{}{} -> {}" % (inner, case_branch.checker, (prettyPrint case_branch.body inner).0)) |> toList
-         s <- "case ({}) of\n{}" % ((prettyPrint body inner).0, join args "\n")
-         (s, False)
-      Clone expr -> do
-         (s, simple) <- prettyPrint expr ind
-         ("clone(({}) :: {})" % (s, expr_type), False)
-      Deref expr -> do
-         (s, simple) <- prettyPrint expr ind
-         ("deref(({}) :: {})" % (s, expr_type), False)
-      DerefClone expr -> do
-         (s, simple) <- prettyPrint expr ind
-         ("derefclone(({}) :: {})" % (s, expr_type), False)
-      Ref expr -> do
-         (s, simple) <- prettyPrint expr ind
-         ("ref(({}) :: {})" % (s, expr_type), False)
-      Move expr -> do
-         (s, simple) <- prettyPrint expr ind
-         ("move(({}) :: {})" % (s, expr_type), False)
-      Box expr -> do
-         (s, simple) <- prettyPrint expr ind
-         ("box({})" % s, False)
+            s <- if simple
+            then s
+            else "({})" % s
+            s <- "continue {}" % s
+            (s, simple)
+        Break arg -> do
+            (s, simple) <- prettyPrint arg ind
+            s <- if simple
+            then s
+            else "({})" % s
+            s <- "break {}" % s
+            (s, simple)
+        Loop var initializer body -> do
+            (initializer, simple) <- prettyPrint initializer ind
+            initializer <- if simple
+            then initializer
+            else "({})" % initializer
+            (body, simple) <- prettyPrint body ind
+            s <- "loop {} <- {} {}" % (var, initializer, body)
+            (s, False)
+        CaseOf body cases -> do
+            inner <- inc ind
+            args <- cases |> List.iter |> Iterator.map (\case_branch -> do
+                "{}{} -> {}" % (inner, case_branch.checker, (prettyPrint case_branch.body inner).0)) |> toList
+            s <- "case ({}) of\n{}" % ((prettyPrint body inner).0, join args "\n")
+            (s, False)
+        Clone expr -> do
+            (s, simple) <- prettyPrint expr ind
+            ("clone(({}) :: {})" % (s, expr_type), False)
+        Deref expr -> do
+            (s, simple) <- prettyPrint expr ind
+            ("deref(({}) :: {})" % (s, expr_type), False)
+        DerefClone expr -> do
+            (s, simple) <- prettyPrint expr ind
+            ("derefclone(({}) :: {})" % (s, expr_type), False)
+        Ref expr -> do
+            (s, simple) <- prettyPrint expr ind
+            ("ref(({}) :: {})" % (s, expr_type), False)
+        Move expr -> do
+            (s, simple) <- prettyPrint expr ind
+            ("move(({}) :: {})" % (s, expr_type), False)
+        Box expr -> do
+            (s, simple) <- prettyPrint expr ind
+            ("box({})" % s, False)

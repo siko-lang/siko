@@ -19,7 +19,7 @@ import Siko.Util.SharedString as SS
 data ClosureName = ClosureName String deriving (PartialEq, Eq, PartialOrd, Ord)
 
 instance Show ClosureName where
-   show ClosureName a = a
+    show ClosureName a = a
 
 data ClosureInstanceId = ClosureInstanceId Int deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
@@ -49,58 +49,58 @@ createClosureStore = ClosureStore empty empty empty empty
 
 addClosureInstance :: ClosureStore -> HT.Type -> [HT.Type] -> Identity -> (ClosureStore, ClosureInstance)
 addClosureInstance store closure_type args successor = do
-   (store, name) <- getClosureName store closure_type
-   key <- ClosureInstanceKey name args successor
-   case get store.closure_instances key of
-      Some closure_instance -> (store, closure_instance)
-      None -> do
-         next_id <- case get store.closures name of
-            Some closure -> do
-               closure :: Closure <- closure
-               getLength closure.instances
-            None -> 0
-         instance_id <- ClosureInstanceId next_id
-         closure_instance <- ClosureInstance instance_id name args successor
-         closure_instances <- put store.closure_instances key closure_instance
-         store <- store { closure_instances = closure_instances }
-         (closures, _) <- alter (\closure -> case closure of
-            Some closure -> do
-               closure :: Closure <- closure
-               instances <- push closure.instances closure_instance
-               Some closure { instances = instances }
-            None -> Some (Closure name [closure_instance])) name store.closures
-         (store { closures = closures }, closure_instance)
+    (store, name) <- getClosureName store closure_type
+    key <- ClosureInstanceKey name args successor
+    case get store.closure_instances key of
+        Some closure_instance -> (store, closure_instance)
+        None -> do
+            next_id <- case get store.closures name of
+                Some closure -> do
+                    closure :: Closure <- closure
+                    getLength closure.instances
+                None -> 0
+            instance_id <- ClosureInstanceId next_id
+            closure_instance <- ClosureInstance instance_id name args successor
+            closure_instances <- put store.closure_instances key closure_instance
+            store <- store { closure_instances = closure_instances }
+            (closures, _) <- alter (\closure -> case closure of
+                Some closure -> do
+                    closure :: Closure <- closure
+                    instances <- push closure.instances closure_instance
+                    Some closure { instances = instances }
+                None -> Some (Closure name [closure_instance])) name store.closures
+            (store { closures = closures }, closure_instance)
 
 getClosureName :: ClosureStore -> HT.Type -> (ClosureStore, ClosureName)
 getClosureName store closure_type = do
-   name <- "Closure_{}" % getSize store.closure_type_map
-   name <- ClosureName name
-   // FIXME use a stateful alter here
-   (closure_type_map, _) <- alter (\closure -> case closure of
-      Some closure -> Some closure
-      None -> Some name) closure_type store.closure_type_map
-   store <- store { closure_type_map = closure_type_map }
-   name <- case get store.closure_type_map closure_type of
-      Some name -> name
-      None -> panic "Closure not found after creation"
-   (store, name)
+    name <- "Closure_{}" % getSize store.closure_type_map
+    name <- ClosureName name
+    // FIXME use a stateful alter here
+    (closure_type_map, _) <- alter (\closure -> case closure of
+        Some closure -> Some closure
+        None -> Some name) closure_type store.closure_type_map
+    store <- store { closure_type_map = closure_type_map }
+    name <- case get store.closure_type_map closure_type of
+        Some name -> name
+        None -> panic "Closure not found after creation"
+    (store, name)
 
 addClosureCall :: ClosureStore -> ClosureName -> Identity -> ClosureStore
 addClosureCall store name function_id = do
-   (closure_calls, _) <- insert store.closure_calls name function_id
-   store { closure_calls = closure_calls }
+    (closure_calls, _) <- insert store.closure_calls name function_id
+    store { closure_calls = closure_calls }
 
 getClosureCall :: ClosureStore -> HT.Type -> Identity
 getClosureCall store closure_type = case get store.closure_type_map closure_type of
-   Some closure_name -> case get store.closure_calls closure_name of
-      Some function_id -> function_id
-      None -> panic "Closure call for closure {} not found" % closure_name
-   None -> panic "Closure name for closure type {} not found" % TF.toString closure_type
+    Some closure_name -> case get store.closure_calls closure_name of
+        Some function_id -> function_id
+        None -> panic "Closure call for closure {} not found" % closure_name
+    None -> panic "Closure name for closure type {} not found" % TF.toString closure_type
 
 getVariantName :: ClosureInstance -> String
 getVariantName closure_instance = do
-   ClosureInstanceId id <- closure_instance.id
-   "I{}" % id
+    ClosureInstanceId id <- closure_instance.id
+    "I{}" % id
 
 getVariantRecordIdentity :: ClosureInstance -> Identity
 getVariantRecordIdentity closure_instance = Identity (SS.get getInternalModuleName) ("{}_{}" % (closure_instance.name, getVariantName closure_instance)) 0
@@ -110,104 +110,104 @@ getVariantCtorName closure_instance = "{}_{}" % (closure_instance.name, getVaria
 
 getClosureIdentity :: ClosureName -> Identity
 getClosureIdentity (ClosureName closure_name) = do
-   Identity (SS.get getInternalModuleName) closure_name 0
+    Identity (SS.get getInternalModuleName) closure_name 0
 
 compileClosure :: Context -> Closure -> Identity -> Context
 compileClosure context closure closure_call_identity = do
-   adt_identity <- (getClosureIdentity closure.name)
-   closure_call_function <- getFunction context.mir_program closure_call_identity
-   expr_id_gen <- getExprIdCounter
-   context <- setExprIdCounter context expr_id_gen
-   temp_var_gen <- getTempVarCounter
-   context <- setTempVarCounter context temp_var_gen
-   mir_closure_type <- MT.Adt adt_identity
-   adt <- TS.getAdt context.type_store adt_identity
-   (context, cases, _) <- closure.instances |> List.iter |> Iterator.fold (\(context, cases, index), closure_instance -> do
-      variant <- atIndex adt.variants index
-      variant_type <- TS.getRecord context.type_store (MT.getIdentity variant.type)
-      ClosureInstanceId id <- closure_instance.id
-      (context, prev_var) <- getNextTempVar context
-      prev_var_ref <- ME.VarRef prev_var
-      prev_var_ref_expr <- ME.Expr prev_var_ref variant.type
-      (context, args) <- closure_instance.args |> List.iter |> Iterator.fold (\(context, arg_refs), arg -> do
-         field_index <- getLength arg_refs
-         field <- atIndex variant_type.fields field_index
-         (context, prev_var_ref_expr) <- getExpr context prev_var_ref_expr
-         arg_ref <- ME.FieldAccess field_index prev_var_ref_expr
-         (context, arg_ref_expr) <- getExpr context (ME.Expr arg_ref field.type)
-         (context, push arg_refs arg_ref_expr)) (context, [])
-      next_fn <- closure_instance.successor
-      arg_ref1 <- ME.VarRef (ME.Arg 1)
-      arg_ref1_type <- atIndex closure_call_function.type.args 1
-      (context, arg_ref1_expr) <- getExpr context (ME.Expr arg_ref1 arg_ref1_type)
-      args <- push args arg_ref1_expr
-      (context, body_expr) <- do
-         mir_function <- getFunction context.mir_program next_fn
-         body <- ME.StaticFunctionCall next_fn args
-         (context, body_expr) <- getExpr context (ME.Expr body mir_function.type.result)
-         getExpr context (ME.Expr (ME.Do [body_expr]) mir_function.type.result)
-      checker <- ME.VariantChecker id prev_var mir_closure_type
-      c <- ME.Case checker body_expr
-      cases <- push cases c
-      (context, cases, index + 1)) (context, [], 0)
-   arg_ref0 <- ME.VarRef (ME.Arg 0)
-   arg_ref0_type <- atIndex closure_call_function.type.args 0
-   (context, arg_ref0_expr) <- getExpr context (ME.Expr arg_ref0 arg_ref0_type)
-   new_body <- ME.CaseOf arg_ref0_expr cases
-   (context, new_body_expr) <- getExpr context (ME.Expr new_body closure_call_function.type.result)
-   (context, expr_id_gen) <- resetExprIdCounter context
-   (context, temp_var_gen) <- resetTempVarCounter context
-   attributes <- if List.getLength closure.instances < 2
-   then [MF.Inline]
-   else []
-   info <- MF.FunctionInfo new_body_expr expr_id_gen temp_var_gen attributes
-   new_kind <- MF.Normal info
-   mir_program <- context.mir_program
-   mir_program <- updateFunctionKind context.mir_program closure_call_identity new_kind
-   context { mir_program = mir_program }
+    adt_identity <- (getClosureIdentity closure.name)
+    closure_call_function <- getFunction context.mir_program closure_call_identity
+    expr_id_gen <- getExprIdCounter
+    context <- setExprIdCounter context expr_id_gen
+    temp_var_gen <- getTempVarCounter
+    context <- setTempVarCounter context temp_var_gen
+    mir_closure_type <- MT.Adt adt_identity
+    adt <- TS.getAdt context.type_store adt_identity
+    (context, cases, _) <- closure.instances |> List.iter |> Iterator.fold (\(context, cases, index), closure_instance -> do
+        variant <- atIndex adt.variants index
+        variant_type <- TS.getRecord context.type_store (MT.getIdentity variant.type)
+        ClosureInstanceId id <- closure_instance.id
+        (context, prev_var) <- getNextTempVar context
+        prev_var_ref <- ME.VarRef prev_var
+        prev_var_ref_expr <- ME.Expr prev_var_ref variant.type
+        (context, args) <- closure_instance.args |> List.iter |> Iterator.fold (\(context, arg_refs), arg -> do
+            field_index <- getLength arg_refs
+            field <- atIndex variant_type.fields field_index
+            (context, prev_var_ref_expr) <- getExpr context prev_var_ref_expr
+            arg_ref <- ME.FieldAccess field_index prev_var_ref_expr
+            (context, arg_ref_expr) <- getExpr context (ME.Expr arg_ref field.type)
+            (context, push arg_refs arg_ref_expr)) (context, [])
+        next_fn <- closure_instance.successor
+        arg_ref1 <- ME.VarRef (ME.Arg 1)
+        arg_ref1_type <- atIndex closure_call_function.type.args 1
+        (context, arg_ref1_expr) <- getExpr context (ME.Expr arg_ref1 arg_ref1_type)
+        args <- push args arg_ref1_expr
+        (context, body_expr) <- do
+            mir_function <- getFunction context.mir_program next_fn
+            body <- ME.StaticFunctionCall next_fn args
+            (context, body_expr) <- getExpr context (ME.Expr body mir_function.type.result)
+            getExpr context (ME.Expr (ME.Do [body_expr]) mir_function.type.result)
+        checker <- ME.VariantChecker id prev_var mir_closure_type
+        c <- ME.Case checker body_expr
+        cases <- push cases c
+        (context, cases, index + 1)) (context, [], 0)
+    arg_ref0 <- ME.VarRef (ME.Arg 0)
+    arg_ref0_type <- atIndex closure_call_function.type.args 0
+    (context, arg_ref0_expr) <- getExpr context (ME.Expr arg_ref0 arg_ref0_type)
+    new_body <- ME.CaseOf arg_ref0_expr cases
+    (context, new_body_expr) <- getExpr context (ME.Expr new_body closure_call_function.type.result)
+    (context, expr_id_gen) <- resetExprIdCounter context
+    (context, temp_var_gen) <- resetTempVarCounter context
+    attributes <- if List.getLength closure.instances < 2
+    then [MF.Inline]
+    else []
+    info <- MF.FunctionInfo new_body_expr expr_id_gen temp_var_gen attributes
+    new_kind <- MF.Normal info
+    mir_program <- context.mir_program
+    mir_program <- updateFunctionKind context.mir_program closure_call_identity new_kind
+    context { mir_program = mir_program }
 
 compileClosureInstance :: ClosureName -> Context -> ClosureInstance -> Context
 compileClosureInstance (ClosureName name) context closure_instance = do
-   (context, mir_args) <- List.mapS context closure_instance.args TS.processType
-   variant_name <- getVariantName closure_instance
-   record_identity <- getVariantRecordIdentity closure_instance
-   mir_fields <- List.mapE mir_args (\index, mir_arg_type -> MD.RecordField (getFieldName index) index mir_arg_type False)
-   type_store <- context.type_store
-   mir_variant_record <- MD.Record record_identity mir_fields None [] []
-   (records, _) <- insert type_store.records record_identity mir_variant_record
-   type_store <- type_store { records = records }
-   mir_variant <- MD.Variant variant_name (MT.Record record_identity)
-   adt_identity <- Identity (SS.get getInternalModuleName) name 0
-   type_store <- TS.addVariant type_store adt_identity mir_variant
-   context { type_store = type_store }
+    (context, mir_args) <- List.mapS context closure_instance.args TS.processType
+    variant_name <- getVariantName closure_instance
+    record_identity <- getVariantRecordIdentity closure_instance
+    mir_fields <- List.mapE mir_args (\index, mir_arg_type -> MD.RecordField (getFieldName index) index mir_arg_type False)
+    type_store <- context.type_store
+    mir_variant_record <- MD.Record record_identity mir_fields None [] []
+    (records, _) <- insert type_store.records record_identity mir_variant_record
+    type_store <- type_store { records = records }
+    mir_variant <- MD.Variant variant_name (MT.Record record_identity)
+    adt_identity <- Identity (SS.get getInternalModuleName) name 0
+    type_store <- TS.addVariant type_store adt_identity mir_variant
+    context { type_store = type_store }
 
 compileUncallableClosure :: Context -> Identity -> Context
 compileUncallableClosure context closure_call_identity = do
-   expr_id_gen <- getExprIdCounter
-   temp_var_gen <- getTempVarCounter
-   function_type <- HT.Never (HT.TypeVar 0)
-   qn <- HP.FullPath getStdUtilBasicModuleName getUnreachableName
-   queue_item <- FQ.Normal qn function_type
-   (context, mir_function_id) <- FQ.insert context queue_item
-   body <- ME.StaticFunctionCall mir_function_id []
-   context <- setExprIdCounter context expr_id_gen
-   (context, body) <- getExpr context (ME.Expr body MT.Never)
-   (context, expr_id_gen) <- resetExprIdCounter context
-   info <- MF.FunctionInfo body expr_id_gen temp_var_gen []
-   new_kind <- MF.Normal info
-   mir_program <- context.mir_program
-   mir_program <- updateFunctionKind context.mir_program closure_call_identity new_kind
-   context { mir_program = mir_program }
+    expr_id_gen <- getExprIdCounter
+    temp_var_gen <- getTempVarCounter
+    function_type <- HT.Never (HT.TypeVar 0)
+    qn <- HP.FullPath getStdUtilBasicModuleName getUnreachableName
+    queue_item <- FQ.Normal qn function_type
+    (context, mir_function_id) <- FQ.insert context queue_item
+    body <- ME.StaticFunctionCall mir_function_id []
+    context <- setExprIdCounter context expr_id_gen
+    (context, body) <- getExpr context (ME.Expr body MT.Never)
+    (context, expr_id_gen) <- resetExprIdCounter context
+    info <- MF.FunctionInfo body expr_id_gen temp_var_gen []
+    new_kind <- MF.Normal info
+    mir_program <- context.mir_program
+    mir_program <- updateFunctionKind context.mir_program closure_call_identity new_kind
+    context { mir_program = mir_program }
 
 createClosures :: Context -> Context
 createClosures context = do
-   closures <- context.closure_store.closures
-   context <- Map.fold context closures (\context, (name, closure) -> do
-      List.fold context closure.instances (compileClosureInstance name))
-   calls <- context.closure_store.closure_calls
-   Map.fold context calls compile
-   where
-      compile :: Context -> (ClosureName, Identity) -> Context
-      compile context (closure_call_name, closure_call_identity) = case get context.closure_store.closures closure_call_name of
-         Some closure -> compileClosure context closure closure_call_identity
-         None -> compileUncallableClosure context closure_call_identity
+    closures <- context.closure_store.closures
+    context <- Map.fold context closures (\context, (name, closure) -> do
+        List.fold context closure.instances (compileClosureInstance name))
+    calls <- context.closure_store.closure_calls
+    Map.fold context calls compile
+    where
+        compile :: Context -> (ClosureName, Identity) -> Context
+        compile context (closure_call_name, closure_call_identity) = case get context.closure_store.closures closure_call_name of
+            Some closure -> compileClosure context closure closure_call_identity
+            None -> compileUncallableClosure context closure_call_identity

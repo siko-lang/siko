@@ -17,94 +17,94 @@ data Substitution = { vars :: Map TypeVar Type,
                     }
 
 instance Show Substitution where
-   show sub = do
-      entries <- Map.fold [] sub.vars (\entries, (var, ty) -> List.push entries ("{} => {}" % (var, TF.toString ty)))
-      "[{}, {}]" % (entries, sub.constraints)
+    show sub = do
+        entries <- Map.fold [] sub.vars (\entries, (var, ty) -> List.push entries ("{} => {}" % (var, TF.toString ty)))
+        "[{}, {}]" % (entries, sub.constraints)
 
 createSubstitution = Substitution empty []
 
 class Transform a where
-   transform a :: a -> (Type -> Type) -> a
+    transform a :: a -> (Type -> Type) -> a
 
 class Apply a where
-   apply a :: a -> Substitution -> a
+    apply a :: a -> Substitution -> a
 
 instance (Apply a) => Apply [a] where
-   apply xs sub = List.map xs (\x -> apply x sub)
+    apply xs sub = List.map xs (\x -> apply x sub)
 
 instance Apply UnificationConstraint where
-   apply constraint sub = do
-      type <- apply constraint.type sub
-      associated_types <- apply constraint.associated_types sub
-      constraint { type = type, associated_types = associated_types }
+    apply constraint sub = do
+        type <- apply constraint.type sub
+        associated_types <- apply constraint.associated_types sub
+        constraint { type = type, associated_types = associated_types }
 
 instance Apply Substitution where
-   apply sub1 sub2 = do
-      vars <- Map.map sub1.vars (\(var, ty) -> (var, apply ty sub2))
-      constraints <- apply sub1.constraints sub2
-      sub1 { vars = vars, constraints = constraints }
+    apply sub1 sub2 = do
+        vars <- Map.map sub1.vars (\(var, ty) -> (var, apply ty sub2))
+        constraints <- apply sub1.constraints sub2
+        sub1 { vars = vars, constraints = constraints }
 
 instance Apply Constraint where
-   apply constraint sub = case constraint of
-      ClassConstraint s associated_types -> ClassConstraint s (List.map associated_types (\ty -> apply ty sub))
-      RowConstraint name ty -> RowConstraint name (apply ty sub)
+    apply constraint sub = case constraint of
+        ClassConstraint s associated_types -> ClassConstraint s (List.map associated_types (\ty -> apply ty sub))
+        RowConstraint name ty -> RowConstraint name (apply ty sub)
 
 instance Apply Type where
-   //apply :: Type -> Substitution -> Type
+    //apply :: Type -> Substitution -> Type
 
-   apply type sub = case type of
-      Var var constraints -> case get sub.vars var of
-         Some t -> apply t sub
-         None -> (Var var (List.map constraints (\c -> apply c sub)))
-      FixedTypeArg _ var _ -> case get sub.vars var of
-         Some t -> apply t sub
-         None -> type
-      Named n args -> do
-         args <- args |> List.iter |> Iterator.map (\arg -> apply arg sub) |> toList
-         Named n args
-      Function from to -> do
-         from <- apply from sub
-         to <- apply to sub
-         Function from to
-      Never var -> case get sub.vars var of
-         Some t -> apply t sub
-         None -> type
-      Ref lifetime t -> Ref lifetime (apply t sub)
-      Owner t -> Owner (apply t sub)
-      Tuple args -> do
-         args <- args |> List.iter |> Iterator.map (\arg -> apply arg sub) |> toList
-         Tuple args
+    apply type sub = case type of
+        Var var constraints -> case get sub.vars var of
+            Some t -> apply t sub
+            None -> (Var var (List.map constraints (\c -> apply c sub)))
+        FixedTypeArg _ var _ -> case get sub.vars var of
+            Some t -> apply t sub
+            None -> type
+        Named n args -> do
+            args <- args |> List.iter |> Iterator.map (\arg -> apply arg sub) |> toList
+            Named n args
+        Function from to -> do
+            from <- apply from sub
+            to <- apply to sub
+            Function from to
+        Never var -> case get sub.vars var of
+            Some t -> apply t sub
+            None -> type
+        Ref lifetime t -> Ref lifetime (apply t sub)
+        Owner t -> Owner (apply t sub)
+        Tuple args -> do
+            args <- args |> List.iter |> Iterator.map (\arg -> apply arg sub) |> toList
+            Tuple args
 
 constraintsContainsVar :: [Constraint] -> TypeVar -> Bool
 constraintsContainsVar constraints var = List.fold False constraints (\contains, constraint -> contains || case constraint of
-         ClassConstraint _ associated_types -> List.fold contains associated_types (\contains, ty -> contains || containsVar ty var)
-         RowConstraint _ row_type -> containsVar row_type var)
+            ClassConstraint _ associated_types -> List.fold contains associated_types (\contains, ty -> contains || containsVar ty var)
+            RowConstraint _ row_type -> containsVar row_type var)
 
 containsVar :: Type -> TypeVar -> Bool
 containsVar type var = case type of
-   Var v constraints -> v == var || constraintsContainsVar constraints var
-   FixedTypeArg _ v constraints -> v == var || constraintsContainsVar constraints var
-   Named _ args -> List.fold False args (\contains, arg -> contains || containsVar arg var)
-   Function from to -> containsVar from var || containsVar to var
-   Never v -> v == var
-   Ref _ t -> containsVar t var
-   Owner t -> containsVar t var
-   Tuple args -> List.fold False args (\contains, arg -> contains || containsVar arg var)
+    Var v constraints -> v == var || constraintsContainsVar constraints var
+    FixedTypeArg _ v constraints -> v == var || constraintsContainsVar constraints var
+    Named _ args -> List.fold False args (\contains, arg -> contains || containsVar arg var)
+    Function from to -> containsVar from var || containsVar to var
+    Never v -> v == var
+    Ref _ t -> containsVar t var
+    Owner t -> containsVar t var
+    Tuple args -> List.fold False args (\contains, arg -> contains || containsVar arg var)
 
 add :: Substitution -> TypeVar -> Type -> Result Substitution Substitution
 add sub var type = do
-   if containsVar type var
-   then return Err sub
-   else do
-      (vars, old) <- insert sub.vars var type
-      sub <- sub { vars = vars }
-      case old of
-         Some old -> if old == type
-            then Ok sub
-            else Err sub
-         None -> Ok sub
+    if containsVar type var
+    then return Err sub
+    else do
+        (vars, old) <- insert sub.vars var type
+        sub <- sub { vars = vars }
+        case old of
+            Some old -> if old == type
+                then Ok sub
+                else Err sub
+            None -> Ok sub
 
 addUnificationConstraint :: Substitution -> UnificationConstraint -> Substitution
 addUnificationConstraint sub c = do
-   cs <- push sub.constraints c
-   sub { constraints = cs }
+    cs <- push sub.constraints c
+    sub { constraints = cs }

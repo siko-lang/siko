@@ -2,9 +2,9 @@ module Siko.Format where
 
 getSpaces :: Int -> String
 getSpaces indent = loop (ind, index) <- ("", 0) do
-      if index >= indent
-      then break ind
-      else (ind + " ", index + 1)
+        if index >= indent
+        then break ind
+        else (ind + " ", index + 1)
 
 data Token = Chunk String
            | StartOfBlock
@@ -44,105 +44,105 @@ step state = state { index = state.index + 1 }
 
 startLine :: PrinterState -> PrinterState
 startLine state = do
-   state <- state { output = state.output + "\n", total_len = state.total_len + 1 }
-   state { line_start = state.total_len }
+    state <- state { output = state.output + "\n", total_len = state.total_len + 1 }
+    state { line_start = state.total_len }
 
 addString :: PrinterState -> String -> PrinterState
 addString state s = do
-   len <- getLength (chars s)
-   state { output = state.output + s, total_len = state.total_len + len }
+    len <- getLength (chars s)
+    state { output = state.output + s, total_len = state.total_len + len }
 
 pushOffset :: PrinterState -> PrinterState
 pushOffset state = do
-   state { saved_offsets = List.push state.saved_offsets (state.total_len - state.line_start) }
+    state { saved_offsets = List.push state.saved_offsets (state.total_len - state.line_start) }
 
 popOffset :: PrinterState -> PrinterState
 popOffset state = do
-   state { saved_offsets = List.dropLast state.saved_offsets }
+    state { saved_offsets = List.dropLast state.saved_offsets }
 
 formatToken :: [Token] -> String
 formatToken tokens = loop state <- createPrinterState do
-      if state.index >= List.getLength tokens
-      then break state.output
-      else do
-         state <- case atIndex tokens state.index of
-            Chunk s -> addString state s
-            StartOfBlock -> inc state
-            StartOfItem -> do
-               i <- getSpaces (state.indent * 3)
-               state <- startLine state
-               addString state i
-            EndOfItem -> state
-            EndOfBlock -> dec state
-            NewLine -> startLine state
-            PushOffset -> pushOffset state
-            Break -> do
-               offset <- List.last state.saved_offsets
-               spaces <- getSpaces offset
-               state <- startLine state
-               addString state spaces
-            PopOffset -> popOffset state
-         step state
+        if state.index >= List.getLength tokens
+        then break state.output
+        else do
+            state <- case atIndex tokens state.index of
+                Chunk s -> addString state s
+                StartOfBlock -> inc state
+                StartOfItem -> do
+                    i <- getSpaces (state.indent * 4)
+                    state <- startLine state
+                    addString state i
+                EndOfItem -> state
+                EndOfBlock -> dec state
+                NewLine -> startLine state
+                PushOffset -> pushOffset state
+                Break -> do
+                    offset <- List.last state.saved_offsets
+                    spaces <- getSpaces offset
+                    state <- startLine state
+                    addString state spaces
+                PopOffset -> popOffset state
+            step state
 
 formatList a :: (Format a) => [a] -> Token -> [Token]
 formatList items separator = do
-   output <- List.foldE [PushOffset] items (joiner separator)
-   List.push output PopOffset
-   where
-      joiner a :: (Format a) => Token -> [Token] -> Int -> a -> [Token]
-      joiner separator state index item = case index of
-         0 -> state + (format item)
-         _ -> do
-            item_output <- format item
-            if List.isEmpty item_output
-            then state
-            else do
-               state <- List.push state separator
-               state + item_output
+    output <- List.foldE [PushOffset] items (joiner separator)
+    List.push output PopOffset
+    where
+        joiner a :: (Format a) => Token -> [Token] -> Int -> a -> [Token]
+        joiner separator state index item = case index of
+            0 -> state + (format item)
+            _ -> do
+                item_output <- format item
+                if List.isEmpty item_output
+                then state
+                else do
+                    state <- List.push state separator
+                    state + item_output
 
 formatList2 a :: (Format a) => [a] -> [Token] -> [Token]
 formatList2 items separator = do
-   List.foldE [] items (joiner separator)
-   where
-      joiner a :: (Format a) => [Token] -> [Token] -> Int -> a -> [Token]
-      joiner separator state index item = case index of
-         0 -> state + (format item)
-         _ -> do
-            item_output <- format item
-            if List.isEmpty item_output
-            then state
-            else do
-               state <- state + separator
-               state + item_output
+    List.foldE [] items (joiner separator)
+    where
+        joiner a :: (Format a) => [Token] -> [Token] -> Int -> a -> [Token]
+        joiner separator state index item = case index of
+            0 -> state + (format item)
+            _ -> do
+                item_output <- format item
+                if List.isEmpty item_output
+                then state
+                else do
+                    state <- state + separator
+                    state + item_output
 
 formatBlock a :: (Format a) => [a] -> [Token]
 formatBlock items = do
-   items <- List.fold [StartOfBlock] items joiner
-   List.push items EndOfBlock
-   where
-      joiner a :: (Format a) => [Token] -> a -> [Token]
-      joiner state item = do
-         item <- format item
-         if List.isEmpty item
-         then state
-         else do
-            state <- List.push state StartOfItem
-            state <- state + item
-            List.push state EndOfItem
+    items <- List.fold [StartOfBlock] items joiner
+    List.push items EndOfBlock
+    where
+        joiner a :: (Format a) => [Token] -> a -> [Token]
+        joiner state item = do
+            item <- format item
+            if List.isEmpty item
+            then state
+            else do
+                state <- List.push state StartOfItem
+                state <- state + item
+                List.push state EndOfItem
 
 addImplicitBlock :: [Token] -> [Token]
 addImplicitBlock body = do
-   starts_with_block <- case (List.atIndex body 0) of
-      Chunk "do" -> True
-      Chunk "case " -> True
-      Chunk "loop " -> True
-      _ -> False
-   if starts_with_block
-   then body
-   else [StartOfBlock] + body + [EndOfBlock]
+    starts_with_block <- case (List.atIndex body 0) of
+        Chunk "do" -> True
+        Chunk "case " -> True
+        Chunk "loop " -> True
+        _ -> False
+    if starts_with_block
+    then body
+    else [StartOfBlock] + body + [EndOfBlock]
 
 class Format a where
-   format a :: a -> [Token]
+    format a :: a -> [Token]
 
 instance (Format a) => Format [a] where
-   format xs = List.fold [] xs (\result, x -> result + format x)
+    format xs = List.fold [] xs (\result, x -> result + format x)

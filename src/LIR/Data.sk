@@ -35,14 +35,14 @@ data Record = { id :: Identity,
 
 dumpAdt :: AlgebraicDataType -> String
 dumpAdt adt = do
-   variants <- adt.variants |> List.iter |> Iterator.map (\v -> "{} {}" % (v.name, v.type)) |> toList
-   "adt {} = {}" % (adt.id, join variants " | ")
+    variants <- adt.variants |> List.iter |> Iterator.map (\v -> "{} {}" % (v.name, v.type)) |> toList
+    "adt {} = {}" % (adt.id, join variants " | ")
 
 dumpRecord :: Record -> String
 dumpRecord record = do
-   fields <- record.fields |> List.iter |> Iterator.map (\field -> "field{} :: {}" % (field.index, field.type)) |> toList
-   if List.isEmpty fields
-   then if isSome record.external_info
-      then "record {} = extern" % record.id
-      else "record {}" % record.id
-   else ("record {}" % record.id) + " = { " + (join fields ", ") + " }"
+    fields <- record.fields |> List.iter |> Iterator.map (\field -> "field{} :: {}" % (field.index, field.type)) |> toList
+    if List.isEmpty fields
+    then if isSome record.external_info
+        then "record {} = extern" % record.id
+        else "record {}" % record.id
+    else ("record {}" % record.id) + " = { " + (join fields ", ") + " }"

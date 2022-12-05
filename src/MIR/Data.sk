@@ -25,7 +25,7 @@ data ExternalClassImplKind = PartialEqKind
                            deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
 instance Show Identity where
-   show (Identity m n i) = "{}.{}_{}" % (m, n, i)
+    show (Identity m n i) = "{}.{}_{}" % (m, n, i)
 
 data Variant = { name :: String,
                  type :: Type
@@ -54,14 +54,14 @@ data Record = { id :: Identity,
 
 dumpAdt :: AlgebraicDataType -> String
 dumpAdt adt = do
-   variants <- adt.variants |> List.iter |> Iterator.map (\v -> "{} {}" % (v.name, v.type)) |> toList
-   "adt {} = {} ({})" % (adt.id, join variants " | ", adt.attributes)
+    variants <- adt.variants |> List.iter |> Iterator.map (\v -> "{} {}" % (v.name, v.type)) |> toList
+    "adt {} = {} ({})" % (adt.id, join variants " | ", adt.attributes)
 
 dumpRecord :: Record -> String
 dumpRecord record = do
-   fields <- record.fields |> List.iter |> Iterator.map (\field -> "{} :: {}" % (field.name, field.type)) |> toList
-   if List.isEmpty fields
-   then if isSome record.external_info
-      then "record {} = extern ({})" % (record.id, record.attributes)
-      else "record {}" % record.id
-   else ("record {} " % record.id) + " = { " + (join fields ", ") + " } (" + (show record.attributes) + "}"
+    fields <- record.fields |> List.iter |> Iterator.map (\field -> "{} :: {}" % (field.name, field.type)) |> toList
+    if List.isEmpty fields
+    then if isSome record.external_info
+        then "record {} = extern ({})" % (record.id, record.attributes)
+        else "record {}" % record.id
+    else ("record {} " % record.id) + " = { " + (join fields ", ") + " } (" + (show record.attributes) + "}"

@@ -25,70 +25,70 @@ addToken state token = state { tokens = push state.tokens token }
 
 consumeSingle :: LexerState -> Token -> LexerState
 consumeSingle state token = do
-   state <- step state
-   addToken state token
+    state <- step state
+    addToken state token
 
 addChar :: String -> Char -> String
 addChar s c = s + "{}" % c // FIXME: optimize this!
 
 consumeString :: LexerState -> Result LexerState Error
 consumeString state = do
-   s <- ""
-   state <- step state
-   (state, s) <- loop (state, s) <- (state, s) do
-      if not (isDone state)
-      then do
-         c <- peek state
-         case c of
-            '"' -> do
-               state <- step state
-               break (state, s)
-            '\\' -> do
-               state <- step state
-               c <- peek state
-               c <- case c of
-                  'n' -> Some '\n'
-                  't' -> Some '\t'
-                  'r' -> Some '\r'
-                  '\\' -> Some '\\'
-                  '"' -> Some '"'
-                  _ -> None
-               (state, s) <- case c of
-                  Some c -> (step state, addChar s c)
-                  None -> do
-                     return Err InvalidEscapeSequence
-                     (step state, s)
-               (state, s)
-            _ -> (step state, addChar s c)
-      else break (state, s)
-   Ok (addToken state (Literal s))
+    s <- ""
+    state <- step state
+    (state, s) <- loop (state, s) <- (state, s) do
+        if not (isDone state)
+        then do
+            c <- peek state
+            case c of
+                '"' -> do
+                    state <- step state
+                    break (state, s)
+                '\\' -> do
+                    state <- step state
+                    c <- peek state
+                    c <- case c of
+                        'n' -> Some '\n'
+                        't' -> Some '\t'
+                        'r' -> Some '\r'
+                        '\\' -> Some '\\'
+                        '"' -> Some '"'
+                        _ -> None
+                    (state, s) <- case c of
+                        Some c -> (step state, addChar s c)
+                        None -> do
+                            return Err InvalidEscapeSequence
+                            (step state, s)
+                    (state, s)
+                _ -> (step state, addChar s c)
+        else break (state, s)
+    Ok (addToken state (Literal s))
 
 processNextChar :: LexerState -> Result LexerState Error
 processNextChar state = do
-   c <- peek state
-   state <- case c of
-      '"' -> try consumeString state
-      '[' -> consumeSingle state LBracket
-      ']' -> consumeSingle state RBracket
-      '{' -> consumeSingle state LCurly
-      '}' -> consumeSingle state RCurly
-      ':' -> consumeSingle state Colon
-      ',' -> consumeSingle state Comma
-      '\n' -> step state
-      '\r' -> step state
-      ' ' -> step state
-      '\t' -> step state
-      _ -> do
-         state <- step state
-         return Err (UnsupportedCharacter c)
-   Ok state
+    c <- peek state
+    state <- case c of
+        '"' -> try consumeString state
+        '[' -> consumeSingle state LBracket
+        ']' -> consumeSingle state RBracket
+        '{' -> consumeSingle state LCurly
+        '}' -> consumeSingle state RCurly
+        ':' -> consumeSingle state Colon
+        ',' -> consumeSingle state Comma
+        '\n' -> step state
+        '\r' -> step state
+        ' ' -> step state
+        '\t' -> step state
+        _ -> do
+            state <- step state
+            return Err (UnsupportedCharacter c)
+    Ok state
 
 lex :: String -> Result [Token] Error
 lex input = do
-   cs <- String.chars input
-   state <- emptyState cs
-   state <- loop state <- state do
-      if not (isDone state)
-      then try processNextChar state
-      else break state
-   Ok state.tokens
+    cs <- String.chars input
+    state <- emptyState cs
+    state <- loop state <- state do
+        if not (isDone state)
+        then try processNextChar state
+        else break state
+    Ok state.tokens

@@ -9,61 +9,61 @@ data Node a = { item :: a,
               }
 
 instance (Show a) => Show List a where
-   show list = do
-      subs <- list |> PersistentList.iter |> Iterator.map show |> List.toList
-      "[" + join subs ", " + "]"
+    show list = do
+        subs <- list |> PersistentList.iter |> Iterator.map show |> List.toList
+        "[" + join subs ", " + "]"
 
 instance (PartialEq a) => PartialEq List a where
-   opEq a b = loop (iter_a, iter_b) <- (iter a, iter b) do
-         (iter_a, item_a) <- Iterator.next iter_a
-         (iter_b, item_b) <- Iterator.next iter_b
-         case (item_a, item_b) of
-            (Some a, Some b) -> if opEq a b
-               then (iter_a, iter_b)
-               else break False
-            (Some _, None) -> break False
-            (None, Some _) -> break False
-            (None, None) -> break True
+    opEq a b = loop (iter_a, iter_b) <- (iter a, iter b) do
+            (iter_a, item_a) <- Iterator.next iter_a
+            (iter_b, item_b) <- Iterator.next iter_b
+            case (item_a, item_b) of
+                (Some a, Some b) -> if opEq a b
+                    then (iter_a, iter_b)
+                    else break False
+                (Some _, None) -> break False
+                (None, Some _) -> break False
+                (None, None) -> break True
 
 instance (Eq a) => Eq List a
 
 instance (PartialOrd a) => PartialOrd List a where
-   partialCmp a b = loop (iter_a, iter_b) <- (iter a, iter b) do
-         (iter_a, item_a) <- Iterator.next iter_a
-         (iter_b, item_b) <- Iterator.next iter_b
-         case (item_a, item_b) of
-            (Some a, Some b) -> case partialCmp a b of
-               Some Equal -> (iter_a, iter_b)
-               r -> break r
-            (Some _, None) -> break Some Greater
-            (None, Some _) -> break Some Less
-            (None, None) -> break Some Equal
+    partialCmp a b = loop (iter_a, iter_b) <- (iter a, iter b) do
+            (iter_a, item_a) <- Iterator.next iter_a
+            (iter_b, item_b) <- Iterator.next iter_b
+            case (item_a, item_b) of
+                (Some a, Some b) -> case partialCmp a b of
+                    Some Equal -> (iter_a, iter_b)
+                    r -> break r
+                (Some _, None) -> break Some Greater
+                (None, Some _) -> break Some Less
+                (None, None) -> break Some Equal
 
 instance (Ord a) => Ord List a where
-   cmp a b = loop (iter_a, iter_b) <- (iter a, iter b) do
-         (iter_a, item_a) <- Iterator.next iter_a
-         (iter_b, item_b) <- Iterator.next iter_b
-         case (item_a, item_b) of
-            (Some a, Some b) -> case cmp a b of
-               Equal -> (iter_a, iter_b)
-               r -> break r
-            (Some _, None) -> break Greater
-            (None, Some _) -> break Less
-            (None, None) -> break Equal
+    cmp a b = loop (iter_a, iter_b) <- (iter a, iter b) do
+            (iter_a, item_a) <- Iterator.next iter_a
+            (iter_b, item_b) <- Iterator.next iter_b
+            case (item_a, item_b) of
+                (Some a, Some b) -> case cmp a b of
+                    Equal -> (iter_a, iter_b)
+                    r -> break r
+                (Some _, None) -> break Greater
+                (None, Some _) -> break Less
+                (None, None) -> break Equal
 
 data ListIter a = { inner :: Option (Rc (Node a)) }
 
 instance Iterator (ListIter a) > a where
-   next iter = do
-      (inner, item) <- case iter.inner of
-         Some node -> do
-            node <- Rc.get node
-            (node.next, Some node.item)
-         None -> (None, None)
-      iter <- iter { inner = inner }
-      case item of
-         Some a -> (iter, Some a)
-         None -> (iter, None)
+    next iter = do
+        (inner, item) <- case iter.inner of
+            Some node -> do
+                node <- Rc.get node
+                (node.next, Some node.item)
+            None -> (None, None)
+        iter <- iter { inner = inner }
+        case item of
+            Some a -> (iter, Some a)
+            None -> (iter, None)
 
 @Inline
 iter it a :: List a -> ListIter a
@@ -76,16 +76,16 @@ empty = List None
 @Inline
 push a :: List a -> a -> List a
 push list item = do
-   prev <- list.root
-   node <- Node item prev
-   List { root = Some (Rc.create node) }
+    prev <- list.root
+    node <- Node item prev
+    List { root = Some (Rc.create node) }
 
 @Inline
 toList it a :: (Iterator it > a) => it -> List a
 toList iter = do
-   items <- List.toList iter
-   items <- List.reverse items
-   List.fold empty items (\list, item -> push list item)
+    items <- List.toList iter
+    items <- List.reverse items
+    List.fold empty items (\list, item -> push list item)
 
 @Inline
 map a b :: List a -> (a -> b) -> List b
