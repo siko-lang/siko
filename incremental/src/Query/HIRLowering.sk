@@ -98,9 +98,8 @@ convertClosures driver key = do
     qn <- I.getFullyQualifiedName key
     base_main_qn <- FQ.FullPath getMainModuleName getMainFunctionName
     is_entry_point <- fn.name == base_main_qn
-    println "convert closure fn {} {} {}" % (fn.name, base_main_qn, is_entry_point)
     driver <- if is_entry_point
-    then addCommands driver [(I.LowerHIRFunction (I.MIRFunctionKey (MI.Identity qn)))]
+    then addCommands driver [I.LowerHIRFunction (I.MIRFunctionKey (MI.Identity qn))]
     else driver
     addToDb driver key item
 
@@ -124,6 +123,9 @@ createClosure driver key = do
                     else None
                 _ -> panic "Closure instance key is not closure instance key")
             state <- BSP.createStateProvider driver
+            driver <- List.fold driver instances (\driver, i -> do
+                fn <- CC.createVariantCtor i
+                addToDb driver (I.ClosureConvertedFunctionKey fn.name) (I.ClosureConvertedFunction fn))
             (state, closure_call_fn) <- CC.createClosureCall state instances qn
             driver <- addToDb driver (I.ClosureConvertedFunctionKey qn) (I.ClosureConvertedFunction closure_call_fn)
             adt <- CC.createClosureAdt instances qn
@@ -141,5 +143,6 @@ lowerFunction driver key = do
             fn <- DB.get driver.db (I.ClosureConvertedFunctionKey qn)
             fn <- I.asClosureConvertedFunction fn
             state <- BSP.createStateProvider driver
-            (state, mir_fn) <- L.lowerFunction state qn fn
+            (state, mir_fn, functions) <- L.lowerFunction state qn fn
+            driver <- List.fold driver functions (\driver, mir_id -> addCommands driver [I.LowerHIRFunction (I.MIRFunctionKey mir_id)])
             driver

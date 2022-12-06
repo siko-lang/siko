@@ -21,6 +21,8 @@ data FullyQualifiedName = FullPath SS.SharedString SS.SharedString
                         | ClosureInstance CL.ClosureInstance
                         | ClosureName T.Type
                         | Tuple [T.Type]
+                        | Adt FullyQualifiedName [T.Type]
+                        | Record FullyQualifiedName [T.Type]
                         deriving (PartialEq, Eq, PartialOrd, Ord)
 
 instance Show FullyQualifiedName where
@@ -39,6 +41,8 @@ instance Show FullyQualifiedName where
         ClosureInstance closure_instance -> show closure_instance
         ClosureName type -> "Closure({})" % TF.toString type
         Tuple args -> "Tuple({})" % TF.toStringTypes args
+        Adt name args -> "Adt({}, {})" % (name, TF.toStringTypes args)
+        Record name args -> "Record({}, {})" % (name, TF.toStringTypes args)
 
 getResolvableName :: FullyQualifiedName -> SS.SharedString
 getResolvableName f = do
@@ -55,6 +59,8 @@ getResolvableName f = do
         ClosureInstance closure_instance -> show closure_instance
         ClosureName type -> "Closure({})" % TF.toString type
         Tuple args -> "Tuple({})" % TF.toStringTypes args
+        Adt name args -> "Adt({}, {})" % (name, TF.toStringTypes args)
+        Record name args -> "Record({}, {})" % (name, TF.toStringTypes args)
     SS.create s
 
 getShortName :: FullyQualifiedName -> SS.SharedString
@@ -71,6 +77,8 @@ getShortName f = case f of
     ClosureInstance closure_instance -> panic "getShortName called for closure_instance"
     ClosureName type -> panic "getShortName called for closurename"
     Tuple args -> panic "getShortName called for tuple"
+    Adt name args -> panic "getShortName called for adt"
+    Record name args -> panic "getShortName called for record"
 
 getModuleName :: FullyQualifiedName -> SS.SharedString
 getModuleName f = case f of
@@ -86,3 +94,5 @@ getModuleName f = case f of
     ClosureInstance closure_instance -> panic "getModuleName called for closure_instance"
     ClosureName type -> panic "getModuleName called for closurename"
     Tuple args -> panic "getModuleName called for tuple"
+    Adt name args -> panic "getModuleName called for adt"
+    Record name args -> panic "getModuleName called for record"

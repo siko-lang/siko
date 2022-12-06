@@ -3,7 +3,7 @@ module Siko.Resolver.Import(processImports,
                             createModuleResolver) where
 
 import Map
-import Siko.HIR.FullyQualifiedName
+import Siko.HIR.FullyQualifiedName as  FQ
 import Siko.Resolver.Error
 import Siko.Resolver.Item
 import Siko.Resolver.ModuleResolver
@@ -13,13 +13,13 @@ import Siko.Syntax.Import as I
 import Siko.Syntax.Module as M
 import Siko.Util.SharedString as SS
 
-data ItemRef = FullyQualifiedNameRef FullyQualifiedName
+data ItemRef = FullyQualifiedNameRef FQ.FullyQualifiedName
              | Local SS.SharedString
              deriving (Show)
 
 unpackItemRef :: ItemRef -> SS.SharedString
 unpackItemRef ref = case ref of
-    FullyQualifiedNameRef n -> getResolvableName n
+    FullyQualifiedNameRef n -> FQ.getResolvableName n
     Local n -> n
 
 data ImportedItem = { name :: ItemRef,
@@ -31,7 +31,7 @@ data ImportedItem = { name :: ItemRef,
 importLocalItem :: SS.SharedString -> Item -> [ImportedItem]
 importLocalItem module_name item = do
     name <- getItemName item
-    [ImportedItem (Local name) module_name item Explicit, ImportedItem (FullyQualifiedNameRef (FullPath module_name name)) module_name item Explicit]
+    [ImportedItem (Local name) module_name item Explicit, ImportedItem (FullyQualifiedNameRef (FQ.FullPath module_name name)) module_name item Explicit]
 
 importLocals :: SS.SharedString -> [Item] -> [ImportedItem]
 importLocals module_name locals = locals |> List.iter |> Iterator.map (importLocalItem module_name) |> Iterator.fold (\total, items -> total + items) []
@@ -61,9 +61,9 @@ importExportedItem alternative_name module_name explicitness item = do
     names <- case alternative_name of
         Some alternative_name -> do
             alternative_name <- getString alternative_name
-            [FullyQualifiedNameRef (FullPath alternative_name name)]
-        None -> [FullyQualifiedNameRef (FullPath module_name name), Local name]
-    names |> List.iter |> Iterator.map (\name -> ImportedItem name module_name item explicitness) |> toList
+            [FullyQualifiedNameRef (FQ.FullPath alternative_name name)]
+        None -> [FullyQualifiedNameRef (FQ.FullPath module_name name), Local name]
+    List.map names (\name -> ImportedItem name module_name item explicitness)
 
 processImport :: ExportProvider -> I.Import -> Result [ImportedItem] ResolverError
 processImport export_provider i = case i of
@@ -129,30 +129,30 @@ addTermName module_resolver item_ref resolved_item = do
 addImportedItem :: ModuleResolver -> ImportedItem -> ModuleResolver
 addImportedItem module_resolver (ImportedItem visible_name source_module item explicitness) = case item of
     Adt name _ -> do
-        resolved_item <- ResolvedItem (FullPath source_module name) item explicitness
+        resolved_item <- ResolvedItem (FQ.FullPath source_module name) item explicitness
         addTypeName module_resolver visible_name resolved_item
     Variant adt name -> do
-        resolved_item <- ResolvedItem (FullPathWithVariant source_module adt name) item explicitness
+        resolved_item <- ResolvedItem (FQ.FullPathWithVariant source_module adt name) item explicitness
         addTermName module_resolver visible_name resolved_item
     Record name _ -> do
-        resolved_item <- ResolvedItem (FullPath source_module name) item explicitness
+        resolved_item <- ResolvedItem (FQ.FullPath source_module name) item explicitness
         module_resolver <- addTypeName module_resolver visible_name resolved_item
         module_resolver <- addTermName module_resolver visible_name resolved_item
         module_resolver
     Class name -> do
-        resolved_item <- ResolvedItem (FullPath source_module name) item explicitness
+        resolved_item <- ResolvedItem (FQ.FullPath source_module name) item explicitness
         addTypeName module_resolver visible_name resolved_item
     ClassMember _ name -> do
-        resolved_item <- ResolvedItem (FullPath source_module name) item explicitness
+        resolved_item <- ResolvedItem (FQ.FullPath source_module name) item explicitness
         addTermName module_resolver visible_name resolved_item
     Function name -> do
-        resolved_item <- ResolvedItem (FullPath source_module name) item explicitness
+        resolved_item <- ResolvedItem (FQ.FullPath source_module name) item explicitness
         addTermName module_resolver visible_name resolved_item
     Effect name _ -> do
-        resolved_item <- ResolvedItem (FullPath source_module name) item explicitness
+        resolved_item <- ResolvedItem (FQ.FullPath source_module name) item explicitness
         addTypeName module_resolver visible_name resolved_item
     EffectMember _ name -> do
-        resolved_item <- ResolvedItem (FullPath source_module name) item explicitness
+        resolved_item <- ResolvedItem (FQ.FullPath source_module name) item explicitness
         addTermName module_resolver visible_name resolved_item
 
 createModuleResolver :: SS.SharedString -> [ImportedItem] -> ModuleResolver

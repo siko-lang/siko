@@ -221,10 +221,88 @@ processChoiceTree context choice path_info_map case_bodies guards location = cas
         (context, expr)
     CC.ElseNode -> panic "ElseNode found"
 
+processBind a :: (StateProvider a) => Context a -> P.Pattern T.Type -> E.Expr T.Type -> (Context a, [E.Expr T.Type])
+processBind context pat rhs = do
+    P.Pattern s_pat pat_id type location <- pat
+    case s_pat of
+        P.Binding _ -> do
+            (context, id) <- getNextExprId context
+            (context, [E.Expr (E.Bind pat rhs) id (T.Tuple []) location])
+        P.Tuple args -> do
+            (context, pat_id) <- getNextPatternId context
+            (context, pat2_id) <- getNextPatternId context
+            bind_ref <- P.BindRef (SS.create "tuple") pat_id
+            bind_pattern <- P.Binding bind_ref
+            bind_pattern <- P.Pattern bind_pattern pat2_id type location
+            (context, id) <- getNextExprId context
+            first_bind <- E.Expr (E.Bind pat rhs) id (T.Tuple []) location
+            List.foldE (context, [first_bind]) args (\(context, sub_items), index, arg -> do
+                P.Pattern _ _ arg_type _ <- arg
+                (context, id) <- getNextExprId context
+                arg_ref_expr <- E.Expr (E.ValueRef bind_ref) id type location
+                (context, id) <- getNextExprId context
+                arg_ref_expr <- E.Expr (E.TupleFieldAccess index arg_ref_expr) id arg_type location
+                (context, exs) <- processBind context arg arg_ref_expr
+                (context, sub_items + exs))
+        P.Guarded _ _ -> panic "Guarded pattern in bind!"
+        P.Wildcard -> (context, [rhs])
+        P.IntegerLiteral _ -> panic "IntegerLiteral in bind!"
+        P.StringLiteral _ -> panic "StringLiteral in bind!"
+        P.CharLiteral _ -> panic "CharLiteral in bind!"
+        P.CharRange _ _ _ -> panic "CharRange in bind!"
+        P.Typed pat _ -> processBind context pat rhs
+        P.Record name args -> do
+            record <- QL.getRecord context.state name
+            (state, record) <- Result.unwrap (UD.instantiateRecord context.state record type)
+            context <- context { state = state }
+            (context, pat_id) <- getNextPatternId context
+            (context, pat2_id) <- getNextPatternId context
+            bind_ref <- P.BindRef (SS.create "rec") pat_id
+            bind_pattern <- P.Binding bind_ref
+            bind_pattern <- P.Pattern bind_pattern pat2_id type location
+            (context, id) <- getNextExprId context
+            first_bind <- E.Expr (E.Bind pat rhs) id (T.Tuple []) location
+            List.foldE (context, [first_bind]) args (\(context, sub_items), index, arg -> do
+                D.RecordField field_name field_type <- atIndex record.fields index
+                P.Pattern _ _ arg_type _ <- arg
+                (context, id) <- getNextExprId context
+                arg_ref_expr <- E.Expr (E.ValueRef bind_ref) id type location
+                (context, id) <- getNextExprId context
+                arg_ref_expr <- E.Expr (E.FieldAccess (Ident field_name location) arg_ref_expr) id arg_type location
+                (context, exs) <- processBind context arg arg_ref_expr
+                (context, sub_items + exs))
+        P.Variant name variant_index args -> do
+            adt <- QL.getAdt context.state name
+            (state, record) <- Result.unwrap (UD.instantiateAdt context.state adt type)
+            context <- context { state = state }
+            (context, pat_id) <- getNextPatternId context
+            (context, pat2_id) <- getNextPatternId context
+            bind_ref <- P.BindRef (SS.create "adt") pat_id
+            bind_pattern <- P.Binding bind_ref
+            bind_pattern <- P.Pattern bind_pattern pat2_id type location
+            (context, id) <- getNextExprId context
+            first_bind <- E.Expr (E.Bind pat rhs) id (T.Tuple []) location
+            List.foldE (context, [first_bind]) args (\(context, sub_items), index, arg -> do
+                P.Pattern _ _ arg_type _ <- arg
+                (context, id) <- getNextExprId context
+                arg_ref_expr <- E.Expr (E.ValueRef bind_ref) id type location
+                (context, id) <- getNextExprId context
+                arg_ref_expr <- E.Expr (E.TupleFieldAccess index arg_ref_expr) id arg_type location
+                (context, exs) <- processBind context arg arg_ref_expr
+                (context, sub_items + exs))
+
 processExpr a :: (StateProvider a) => Context a -> E.Expr T.Type -> (Context a, E.Expr T.Type)
 processExpr context expr = do
     E.Expr s_expr id expr_type location <- expr
     case s_expr of
+        E.Do items -> do
+            (context, items) <- List.fold (context, []) items (\(context, items), item -> do
+                E.Expr s_expr id expr_type location <- item
+                (context, sub_items) <- case s_expr of
+                    E.Bind pat rhs -> processBind context pat rhs
+                    s_expr -> (context, [E.Expr s_expr id expr_type location])
+                (context, items + sub_items))
+            (context, E.Expr (E.Do items) id expr_type location)
         E.CaseOf body cases bind_groups -> do
             case CC.checkCase context.state id body cases of
                 Ok (state, choice_tree) -> do

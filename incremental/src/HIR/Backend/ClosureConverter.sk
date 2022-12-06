@@ -141,12 +141,23 @@ processExpr context expr = do
 processPattern a :: (StateProvider a) => Context a -> P.Pattern T.Type -> (Context a, P.Pattern T.Type)
 processPattern context pattern = (context, pattern)
 
+typeConverter a :: (StateProvider a) => Context a -> T.Type -> (Context a, T.Type)
+typeConverter context type = do
+    case type of
+        T.Function _ _ -> do
+            (context, name) <- getClosureName context type
+            (context, T.Named name [])
+        t -> (context, t)
+
 convertClosures a :: (StateProvider a) => a -> F.Function T.Type -> (a, F.Function T.Type, [FQ.FullyQualifiedName], [ClosureInstance])
 convertClosures state fn = do
     (state, fn, closure_names, closure_instances) <- case fn.body of
         Some body -> do
             context <- Context state fn.expr_id_gen fn.pattern_id_gen [] []
             traversal_context <- createTraversalContext context processExpr processPattern
+            (context, body) <- traverse traversal_context body
+            traversal_context <- createTraversalContext context (\c, e -> (c, e)) (\c, p -> (c, p))
+            traversal_context <- setTypeConverterWithContext traversal_context typeConverter
             (context, body) <- traverse traversal_context body
             fn <- fn { body = Some body, expr_id_gen = context.expr_id_gen, pattern_id_gen = context.pattern_id_gen }
             (state, fn, context.closure_names |> List.sort |> List.dedup, context.closure_instances |> List.sort |> List.dedup)
@@ -167,6 +178,23 @@ createClosureAdt closure_instances closure_name = do
         D.Variant (FQ.ClosureInstance closure_instance) emptyLocation closure_instance.arg_types)
     D.AlgebraicDataType closure_name emptyLocation type_args variants derived_classes type
 
+createVariantCtor :: ClosureInstance -> F.Function T.Type
+createVariantCtor closure_instance = do
+    location <- emptyLocation
+    qn <- FQ.ClosureInstance closure_instance
+    arg_count <- List.getLength closure_instance.arg_types
+    kind <- F.VariantCtor
+    adt_type <- T.Named closure_instance.closure_name []
+    arg_types <- List.reverse closure_instance.arg_types
+    type <- List.fold adt_type arg_types (\result, arg_type -> T.Function arg_type result)
+    body <- None
+    effects <- None
+    attributes <- []
+    extern_constraints <- []
+    expr_id_gen <- createExprIdGenerator
+    pattern_id_gen <- createPatternIdGenerator
+    F.Function location qn arg_count kind (Some type) (Some type) body effects attributes extern_constraints expr_id_gen pattern_id_gen
+
 closureConvertType :: T.Type -> T.Type
 closureConvertType type = case type of
     T.Function _ _ -> T.Named (FQ.ClosureName type) []
@@ -178,8 +206,11 @@ createClosureCall state closure_instances closure_name = do
     arg_count <- 2
     kind <- F.Normal
     type <- getClosureType closure_name
+    //println "createClosureCall {}" % TF.toString type
+    args <- T.getArgsLimited type 1
+    //println "args {}" % TF.toStringTypes args
     closure_arg_type <- T.Named closure_name []
-    second_arg_type <- atIndex (T.getArgsLimited type 1) 0
+    second_arg_type <- atIndex args 0
     second_arg_type <- closureConvertType second_arg_type
     closure_type <- closureConvertType type
     result_type <- T.getResultType type 1
