@@ -777,6 +777,30 @@ generateStringEndsWith program type_store arg_types result_type = do
     starts_with_call <- R.MethodCall field_access0 "ends_with" [field_access1]
     R.Block [rustBoolToSikoBool program starts_with_call result_type]
 
+generateStringHashString ::Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
+generateStringHashString program type_store arg_types result_type = do
+    rust_type <- convertType result_type
+    arg0 <- R.VarRef (getArgName 0)
+    field_access0 <- R.FieldAccess innerValueField arg0
+    arg1 <- R.VarRef (getArgName 1)
+    field_access1 <- R.FieldAccess innerValueField arg1
+    hasher <- "hasher"
+    hasher_decl <- R.VarDeclMut hasher field_access1 None
+    hash_call <- R.FunctionCall "std::hash::Hash::hash" [R.Ref field_access0, R.MutRef (R.VarRef hasher)]
+    R.Block [hasher_decl, hash_call, R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef hasher)]]
+
+generateIntHashInt ::Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
+generateIntHashInt program type_store arg_types result_type = do
+    rust_type <- convertType result_type
+    arg0 <- R.VarRef (getArgName 0)
+    field_access0 <- R.FieldAccess innerValueField arg0
+    arg1 <- R.VarRef (getArgName 1)
+    field_access1 <- R.FieldAccess innerValueField arg1
+    hasher <- "hasher"
+    hasher_decl <- R.VarDeclMut hasher field_access1 None
+    hash_call <- R.FunctionCall "std::hash::Hash::hash" [R.Ref field_access0, R.MutRef (R.VarRef hasher)]
+    R.Block [hasher_decl, hash_call, R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef hasher)]]
+
 generateAbort :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateAbort program type_store arg_types result_type = do
     R.Block [R.FunctionCall "panic!" [R.StringLiteral "Abort called"]]
@@ -1068,6 +1092,21 @@ generateCellCreate program type_store arg_types result_type = do
     struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef new0)]
     R.Block [new0_decl, struct_ctor]
 
+generateHashCreate :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
+generateHashCreate program type_store arg_types result_type = do
+    rust_type <- convertType result_type
+    create_call <- R.FunctionCall "std::collections::hash_map::DefaultHasher::new" []
+    struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField create_call]
+    R.Block [struct_ctor]
+
+generateHashFinish :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
+generateHashFinish program type_store arg_types result_type = do
+    rust_type <- convertType result_type
+    field_access0 <- (R.FieldAccess innerValueField (R.VarRef (getArgName 0)))
+    finish_call <- R.FunctionCall "std::hash::Hasher::finish" [R.Ref field_access0]
+    struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.As finish_call "i64")]
+    R.Block [struct_ctor]
+
 generateCellGet :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateCellGet program type_store arg_types result_type = do
     rust_type <- convertType result_type
@@ -1128,6 +1167,7 @@ initializeExternalFunctions = do
     (externals, _) <- insert externals (ExternalId "String" "split") (ExternFnBuilder generateStringSplit)
     (externals, _) <- insert externals (ExternalId "String" "startsWith") (ExternFnBuilder generateStringStartsWith)
     (externals, _) <- insert externals (ExternalId "String" "endsWith") (ExternFnBuilder generateStringEndsWith)
+    (externals, _) <- insert externals (ExternalId "String" "hashString") (ExternFnBuilder generateStringHashString)
     (externals, _) <- insert externals (ExternalId "Int" "addInt") (ExternFnBuilder generateAdd)
     (externals, _) <- insert externals (ExternalId "Int" "subInt") (ExternFnBuilder generateSub)
     (externals, _) <- insert externals (ExternalId "Int" "mulInt") (ExternFnBuilder generateMul)
@@ -1138,6 +1178,7 @@ initializeExternalFunctions = do
     (externals, _) <- insert externals (ExternalId "Int" "eqInt") (ExternFnBuilder generateEq)
     (externals, _) <- insert externals (ExternalId "Int" "negativeInt") (ExternFnBuilder generateNegative)
     (externals, _) <- insert externals (ExternalId "Int" "parse") (ExternFnBuilder generateIntParse)
+    (externals, _) <- insert externals (ExternalId "Int" "hashInt") (ExternFnBuilder generateIntHashInt)
     (externals, _) <- insert externals (ExternalId "Float" "addFloat") (ExternFnBuilder generateAdd)
     (externals, _) <- insert externals (ExternalId "Float" "subFloat") (ExternFnBuilder generateSub)
     (externals, _) <- insert externals (ExternalId "Float" "mulFloat") (ExternFnBuilder generateMul)
@@ -1187,6 +1228,8 @@ initializeExternalFunctions = do
     (externals, _) <- insert externals (ExternalId "Cell" "put") (ExternFnBuilder generateCellPut)
     (externals, _) <- insert externals (ExternalId "Cell" "take") (ExternFnBuilder generateCellTake)
     (externals, _) <- insert externals (ExternalId "Std.Intrinsics" "clone") (ExternFnBuilder generateIntrinsicsClone)
+    (externals, _) <- insert externals (ExternalId "Hash" "create") (ExternFnBuilder generateHashCreate)
+    (externals, _) <- insert externals (ExternalId "Hash" "finish") (ExternFnBuilder generateHashFinish)
     externals
 
 generateStringFields :: [LT.Type] -> Option LT.Lifetime -> [R.StructField]
@@ -1245,6 +1288,10 @@ generateCellFields args _ = do
     rust_type_arg <- convertType first
     [R.StructField innerValueField (RT.Named ("std::rc::Rc<std::cell::RefCell<std::option::Option<{}>>>" % RT.showAll rust_type_arg) [])]
 
+generateHasherFields :: [LT.Type] -> Option LT.Lifetime -> [R.StructField]
+generateHasherFields args _ = do
+    [R.StructField innerValueField (RT.Named ("std::collections::hash_map::DefaultHasher") [])]
+
 initializeExternalStructFields :: Map ExternalId ExternStructBuilder
 initializeExternalStructFields = do
     externals <- Map.empty
@@ -1260,4 +1307,5 @@ initializeExternalStructFields = do
     (externals, _) <- insert externals (ExternalId "Map" "MapIterator") (ExternStructBuilder generateMapIteratorFields)
     (externals, _) <- insert externals (ExternalId "Rc" "Rc") (ExternStructBuilder generateRcFields)
     (externals, _) <- insert externals (ExternalId "Cell" "Cell") (ExternStructBuilder generateCellFields)
+    (externals, _) <- insert externals (ExternalId "Hash" "Hasher") (ExternStructBuilder generateHasherFields)
     externals
