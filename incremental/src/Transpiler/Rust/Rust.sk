@@ -1,0 +1,280 @@
+module Siko.Transpiler.Rust where
+
+import Map
+import Siko.Constants
+import Siko.Transpiler.Rust.Type as T
+import Siko.Util.Format
+
+data Attribute = Clone
+
+data Variant = { name :: String,
+                 type :: T.Type
+               }
+
+data Enum = { name :: String,
+              lifetimes :: [T.Lifetime],
+              variants :: [Variant],
+              attributes :: [Attribute]
+            }
+
+data StructField = { name :: String,
+                     type :: T.Type
+                   }
+
+data Struct = { name :: String,
+                lifetimes :: [T.Lifetime],
+                fields :: [StructField],
+                attributes :: [Attribute]
+              }
+
+data LifetimeDependency = { from :: T.Lifetime,
+                            to :: T.Lifetime
+                          } deriving (Show)
+
+data Function = { name :: String,
+                  lifetimes :: [T.Lifetime],
+                  is_method :: Bool,
+                  args :: [(String, T.Type)],
+                  result :: T.Type,
+                  body :: Expr,
+                  lifetime_dependencies :: [LifetimeDependency]
+                }
+
+data FieldInitItem = { name :: String,
+                       body :: Expr
+                     }
+
+data RangeKind = Inclusive
+               | Exclusive
+               deriving (Show)
+
+data TraitImpl = { trait_name :: String,
+                   type :: T.Type,
+                   methods :: [Function],
+                   lifetimes :: [T.Lifetime]
+                 }
+
+data Pattern = IntegerPattern String
+             | StringPattern String
+             | CharPattern Char
+             | CharRangePattern Char Char RangeKind
+             | VariantPattern String (Option String)
+             | RecordPattern String
+             | WildcardPattern (Option String)
+
+data MatchCase = { pattern :: Pattern,
+                   body :: Expr,
+                   guard :: Option Expr
+                 }
+
+data Expr = Block [Expr]
+          | FunctionCall String [Expr]
+          | IntegerLiteral String
+          | StringLiteral String
+          | MethodCall Expr String [Expr]
+          | FloatLiteral String
+          | BoolLiteral Bool
+          | CharLiteral Char
+          | VarDecl String Expr (Option T.Type)
+          | VarDeclMut String Expr (Option T.Type)
+          | VarRef String
+          | FieldAccess String Expr
+          | List [Expr]
+          | Return Expr
+          | Continue
+          | Break Expr
+          | Ref Expr
+          | MutRef Expr
+          | Deref Expr
+          | Loop [Expr]
+          | Match Expr [MatchCase]
+          | StructCtor String [FieldInitItem]
+          | Assign Expr Expr
+          | Lambda String Expr
+          | EnumCtor String
+          | As Expr String
+          | If Expr Expr Expr
+
+data Program = { structs :: [Struct],
+                 enums :: [Enum],
+                 functions :: [Function],
+                 impls :: [TraitImpl],
+                 main_function_name :: String
+               }
+
+generatePattern :: Pattern -> Option Expr -> String
+generatePattern pattern guard = case pattern of
+    IntegerPattern lit -> do
+        case guard of
+            Some guard -> "a if " + generateExpr guard (Indent 0)
+            None -> "a if a.value == {}" % lit
+    StringPattern lit -> do
+        case guard of
+            Some guard -> "a if " + generateExpr guard (Indent 0)
+            None -> "a if *a.value == \"{}\"" % (escapeString lit)
+    CharPattern lit -> "a if a.value == {}" % escapeChar lit
+    CharRangePattern start end kind -> case kind of
+        Exclusive -> "a if std::ops::Range{ start: '" + (show start) + "', end: '" + (show end) + "' }.contains(&a.value)"
+        Inclusive -> "a if std::ops::RangeInclusive::new('" + (show start) + "', '" + (show end) + "').contains(&a.value)"
+    VariantPattern variant_name var_name -> case var_name of
+        Some var_name -> "{}({})" % (variant_name, var_name)
+        None -> "{}" % variant_name
+    RecordPattern record_name -> record_name + "{..}"
+    WildcardPattern name -> case name of
+        Some name -> "{}" % name
+        None -> "_"
+
+getTypeAnnotation :: T.Type -> String
+getTypeAnnotation type = case type of
+    T.Never -> " "
+    _ -> " : {} " % T.showBase type
+
+generateExpr :: Expr -> Indent -> String
+generateExpr expr indent = case expr of
+    Block args -> do
+        inner <- inc indent
+        args <- args |> List.iter |> Iterator.map (\arg -> do
+            "{}{}" % (inner, generateExpr arg inner)) |> toList
+        s <- "{" + "\n{}\n{}" % (join args ";\n", indent) + "}"
+        s
+    FunctionCall name args -> do
+        args <- args |> List.iter |> Iterator.map (\arg -> generateExpr arg (Indent 0)) |> toList
+        "{}({})" % (name, join args ", ")
+    StructCtor name fields -> do
+        fields <- fields |> List.iter |> Iterator.map (\field -> do
+            "{}: {}" % (field.name, generateExpr field.body (Indent 0))) |> toList
+        name + " { " + (join fields ", ") + " }"
+    MethodCall receiver name args -> do
+        args <- args |> List.iter |> Iterator.map (\arg -> generateExpr arg (Indent 0)) |> toList
+        receiver <- generateExpr receiver (Indent 0)
+        "{}.{}({})" % (receiver, name, join args ", ")
+    IntegerLiteral lit -> lit
+    FloatLiteral lit -> lit
+    BoolLiteral bool -> case bool of
+        True -> "true"
+        False -> "false"
+    StringLiteral lit -> "\"{}\"" % (escapeString lit)
+    CharLiteral lit -> "{}" % (escapeChar lit)
+    VarDecl n rhs type -> case type of
+        Some type -> "let {}{}= {}" % (n, getTypeAnnotation type, generateExpr rhs (Indent 0))
+        None -> "let {} = {}" % (n, generateExpr rhs (Indent 0))
+    VarDeclMut n rhs type -> case type of
+        Some type -> "let mut {}{}= {}" % (n, getTypeAnnotation type, generateExpr rhs (Indent 0))
+        None -> "let mut {} = {}" % (n, generateExpr rhs (Indent 0))
+    VarRef n -> n
+    Match body cases -> do
+        body <- generateExpr body (Indent 0)
+        inner <- inc indent
+        cases <- cases |> List.iter |> Iterator.map (\c -> do
+            (show inner) + "{} => " % (generatePattern c.pattern c.guard) + "{" + "{}" % (generateExpr c.body inner) + "}") |> toList
+        ("match {} " % body) + "{" + "\n{}\n{}" % (join cases "\n", indent) + "}"
+    FieldAccess name receiver -> do
+        receiver <- generateExpr receiver (Indent 0)
+        "{}.{}" % (receiver, name)
+    Ref rhs -> "(&({}))" % generateExpr rhs (Indent 0)
+    MutRef rhs -> "&mut {}" % generateExpr rhs (Indent 0)
+    Deref rhs -> "(*({}))" % generateExpr rhs (Indent 0)
+    Loop args -> do
+        inner <- inc indent
+        args <- args |> List.iter |> Iterator.map (\arg -> do
+            "{}{}" % (inner, generateExpr arg inner)) |> toList
+        s <- "loop {" + "\n{}\n{}" % (join args ";\n", indent) + "}"
+        s
+    Break expr -> do
+        body <- generateExpr expr (Indent 0)
+        "break {}" % body
+    Continue -> do
+        "continue"
+    Return expr -> do
+        body <- generateExpr expr (Indent 0)
+        "return {}" % body
+    Assign lhs rhs -> do
+        "{} = {}" % (generateExpr lhs (Indent 0), generateExpr rhs (Indent 0))
+    List args -> do
+        args <- args |> List.iter |> Iterator.map (\arg -> do
+            "{}" % generateExpr arg (Indent 0)) |> toList
+        "vec![{}]" % (join args ", ")
+    Lambda args body -> "{} {}" % (args, generateExpr body (Indent 0))
+    EnumCtor name -> name
+    As expr target -> "{} as {}" % (generateExpr expr (Indent 0), target)
+    If cond true_branch false_branch -> "if " + (generateExpr cond (Indent 0)) + " { " + (generateExpr true_branch (Indent 0)) + " } else {" + (generateExpr false_branch (Indent 0)) + " }"
+
+generateStruct :: Struct -> String
+generateStruct struct = do
+    indent <- Indent 2
+    fields <- struct.fields |> List.iter |> Iterator.fold (\fields, field -> do
+        f <- "{}{}: {}," % (indent, field.name, T.showAll field.type)
+        fields <- push fields f
+        fields) []
+    content <- ""
+    content <- struct.attributes |> List.iter |> Iterator.fold (\content, attribute -> do
+        case attribute of
+            Clone -> content + "#[derive(Clone)]\n") content
+    name <- "{}<{}>" % (struct.name, join struct.lifetimes ", ")
+    content <- content + "struct " + name + " {\n" + (join fields "\n") + "\n}"
+    content
+
+generateEnum :: Enum -> String
+generateEnum enum = do
+    indent <- Indent 2
+    variants <- enum.variants |> List.iter |> Iterator.fold (\variants, variant -> do
+        v <- "{}{}({})," % (indent, variant.name, T.showAll variant.type)
+        variants <- push variants v
+        variants) []
+    content <- ""
+    content <- enum.attributes |> List.iter |> Iterator.fold (\content, attribute -> do
+        case attribute of
+            Clone -> content + "#[derive(Clone)]\n") content
+    name <- "{}<{}>" % (enum.name, join enum.lifetimes ", ")
+    content <- content + "enum " + name + " {\n" + (join variants "\n") + "\n}"
+    content
+
+generateFunction :: Function -> Indent -> String
+generateFunction function indent = do
+    args <- function.args |> List.iter |> Iterator.map (\(arg_name, type) -> "{}: {}" % (arg_name, T.showAll type)) |> toList
+    args <- if function.is_method
+    then ["&self"] + args
+    else args
+    lifetime_deps <- Map.empty
+    lifetime_deps <- List.fold lifetime_deps function.lifetimes (\lifetime_deps, l -> Map.put lifetime_deps l [])
+    lifetime_deps <- List.fold lifetime_deps function.lifetime_dependencies (\lifetime_deps, dep -> do
+        // FIXME: lifetime_deps should not contain any 'extra' lifetime, this check hides faults!
+        if List.contains function.lifetimes dep.to
+        then Map.add lifetime_deps dep.from dep.to
+        else lifetime_deps)
+    lifetimes <- lifetime_deps |> Map.iter |> Iterator.map (\(lifetime, deps) -> if List.isEmpty deps
+        then show lifetime
+        else "{}: {}" % (lifetime, join (List.map deps show) " + ")) |> toList
+    signature <- "{}fn {}<{}>({}) -> {}" % (indent, function.name, join lifetimes ", ", join args ", ", T.showAll function.result)
+    body <- generateExpr function.body indent
+    signature + " " + body
+
+generateTraitImpl :: TraitImpl -> String
+generateTraitImpl impl = do
+    signature <- "impl<{}> {} for {}<{}>" % (join impl.lifetimes ", ", impl.trait_name, T.showAll impl.type, join impl.lifetimes ", ") + " {"
+    indent <- Indent 2
+    body <- impl.methods |> List.iter |> Iterator.fold (\body, method -> do
+        m <- generateFunction method indent
+        body + "\n" + m) ""
+    signature + body + "\n}"
+
+generateProgram :: Program -> String
+generateProgram program = do
+    content <- ""
+    content <- content + "#![allow(non_snake_case)]\n"
+    content <- content + "#![allow(non_camel_case_types)]\n"
+    content <- content + "#![allow(unused_variables)]\n"
+    content <- content + "#![allow(dead_code)]\n"
+    content <- content + "#![allow(unused_parens)]\n"
+    content <- content + "#![allow(unreachable_code)]\n"
+    content <- content + "#![allow(path_statements)]\n"
+    content <- content + "#![allow(unused_must_use)]\n"
+    content <- content + "#![allow(unused_assignments)]\n"
+    content <- content + "#![allow(unused_mut)]\n"
+    content <- content + "#![allow(unreachable_patterns)]\n"
+    content <- program.structs |> List.iter |> Iterator.fold (\content, s -> content + "\n\n" + generateStruct s) content
+    content <- program.enums |> List.iter |> Iterator.fold (\content, e -> content + "\n\n" + generateEnum e) content
+    content <- program.functions |> List.iter |> Iterator.fold (\content, f -> content + "\n\n" + generateFunction f (Indent 0)) content
+    content <- program.impls |> List.iter |> Iterator.fold (\content, i -> content + "\n\n" + generateTraitImpl i) content
+    content <- content + "\n\nfn main() " + "{\n" + (show (Indent 2)) + ("{}();\n" % program.main_function_name) + "}"
+    content

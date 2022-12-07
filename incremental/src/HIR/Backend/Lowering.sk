@@ -8,6 +8,7 @@ import Siko.HIR.FullyQualifiedName as FQ
 import Siko.HIR.Function as HF
 import Siko.HIR.Pattern as HP
 import Siko.HIR.Type as HT
+import Siko.MIR.Data as MD
 import Siko.MIR.Expr as ME
 import Siko.MIR.Function as MF
 import Siko.MIR.Identity as MI
@@ -17,7 +18,10 @@ import Siko.Syntax.Ident
 import Siko.Util.Counter
 import Siko.Util.SharedString as SS
 
-data Context a = { state :: a, functions :: [MI.Identity] }
+data Context a = { state :: a,
+                   functions :: [MI.Identity],
+                   tuples :: [MI.Identity]
+                 }
 
 addFunction a :: Context a -> MI.Identity -> Context a
 addFunction context mir_id = do
@@ -27,7 +31,11 @@ lowerFullyQualifiedName :: FQ.FullyQualifiedName -> MI.Identity
 lowerFullyQualifiedName qn = MI.Identity qn
 
 lowerTuple a :: (StateProvider a) => Context a -> [HT.Type] -> (Context a, MI.Identity)
-lowerTuple context args = (context, lowerFullyQualifiedName (FQ.Tuple args))
+lowerTuple context args = do
+    qn <- FQ.Tuple args
+    mir_id <- lowerFullyQualifiedName qn
+    context <- context { tuples = List.push context.tuples mir_id }
+    (context, mir_id)
 
 lowerType a :: (StateProvider a) => Context a -> HT.Type -> (Context a, MT.Type)
 lowerType context hir_type = case hir_type of
@@ -163,11 +171,11 @@ lowerExpr context hir_expr = do
         HE.With handlers body effects -> panic "With in MIR lowering"
     (context, ME.Expr mir_s_expr mir_type (ME.ExprId 0))
 
-lowerFunction a :: (StateProvider a) => a -> FQ.FullyQualifiedName -> HF.Function HT.Type -> (a, MF.Function, [MI.Identity])
+lowerFunction a :: (StateProvider a) => a -> FQ.FullyQualifiedName -> HF.Function HT.Type -> (a, MF.Function, [MI.Identity], [MI.Identity])
 lowerFunction state qn hir_function = do
     mir_id <- lowerFullyQualifiedName qn
     println "Lowering HIR -> MIR {}" % mir_id
-    context <- Context state []
+    context <- Context state [] []
     hir_function_type <- Option.unwrap hir_function.type
     args <- HT.getArgsLimited hir_function_type hir_function.arg_count
     (context, mir_args) <- List.mapS context args lowerType
@@ -180,8 +188,19 @@ lowerFunction state qn hir_function = do
             function_info <- MF.FunctionInfo mir_body (Counter ME.ExprId 0) (Counter ME.Temp 0) attributes
             (context, MF.Normal function_info)
         None -> do
-            kind <- MF.RecordCtor
+            kind <- MF.RecordCtor // TODO
             (context, kind)
     mir_function_type <- MF.FunctionType mir_args mir_result_type
-    println "MIR function type {}" % mir_function_type
-    (context.state, MF.Function mir_id kind mir_function_type, context.functions)
+    //println "MIR function type {}" % mir_function_type
+    functions <- context.functions |> List.sort |> List.dedup
+    tuples <- context.tuples |> List.sort |> List.dedup
+    (context.state, MF.Function mir_id kind mir_function_type, functions, tuples)
+
+createTuple a :: (StateProvider a) => a -> MI.Identity -> [HT.Type] -> (a, MD.Record, MF.Function)
+createTuple state id args = do
+    context <- Context state [] []
+    (context, mir_args) <- List.mapS context args lowerType
+    fields <- List.mapE mir_args (\index, ty -> MD.RecordField ("field{}" % index) index ty False)
+    result_type <- MT.Record id
+    mir_function_type <- MF.FunctionType mir_args result_type
+    (context.state, MD.Record id fields None [] [], MF.Function id MF.RecordCtor mir_function_type)

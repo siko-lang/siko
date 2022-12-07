@@ -9,6 +9,7 @@ import Siko.HIR.Effect as HEff
 import Siko.HIR.FullyQualifiedName as FQ
 import Siko.HIR.Function as HF
 import Siko.HIR.Type as HT
+import Siko.MIR.Data as MD
 import Siko.MIR.Function as MF
 import Siko.MIR.Identity as MI
 import Siko.Resolver.Function as RF
@@ -43,6 +44,8 @@ data Command = CollectLocalItems Key
              | CreateClosureInstance Key
              | CreateClosure Key
              | LowerHIRFunction Key
+             | LowerTuple Key
+             | RunLegacyBackend
              deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
 getPriority :: Command -> Int
@@ -70,6 +73,8 @@ getPriority cmd = case cmd of
     CreateClosureInstance _ -> 20
     CreateClosure _ -> 21
     LowerHIRFunction _ -> 22
+    LowerTuple _ -> 23
+    RunLegacyBackend -> 24
 
 data ItemKind = UnresolvedModuleKind
               | LocalItemsKind
@@ -102,6 +107,7 @@ data ItemKind = UnresolvedModuleKind
               | ClosureInstanceKind
               | ClosureKind
               | MIRFunctionKind
+              | MIRRecordKind
               deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
 data Item = UnresolvedModule M.Module
@@ -135,6 +141,7 @@ data Item = UnresolvedModule M.Module
           | ClosureInstance
           | Closure
           | MIRFunction MF.Function
+          | MIRRecord MD.Record
           deriving (Show, PartialEq, Eq)
 
 data Key = UnresolvedModuleKey String
@@ -168,6 +175,7 @@ data Key = UnresolvedModuleKey String
          | ClosureInstanceKey CL.ClosureInstance
          | ClosureKey FQ.FullyQualifiedName
          | MIRFunctionKey MI.Identity
+         | MIRRecordKey MI.Identity
          deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
 asUnresolvedModule :: Item -> M.Module
@@ -343,6 +351,7 @@ getModuleName key = case key of
     ClosureInstanceKey _ -> "getModuleName called for {}" % key
     ClosureKey qn -> SS.get (FQ.getModuleName qn)
     MIRFunctionKey (MI.Identity qn) -> SS.get (FQ.getModuleName qn)
+    MIRRecordKey (MI.Identity qn) -> SS.get (FQ.getModuleName qn)
 
 getFullyQualifiedName :: Key -> FQ.FullyQualifiedName
 getFullyQualifiedName key = case key of
@@ -377,6 +386,7 @@ getFullyQualifiedName key = case key of
     ClosureInstanceKey _ -> panic "getFullyQualifiedName called for {}" % key
     ClosureKey qn -> qn
     MIRFunctionKey (MI.Identity qn) -> qn
+    MIRRecordKey (MI.Identity qn) -> qn
 
 getKind :: Item -> ItemKind
 getKind item = case item of
@@ -411,3 +421,4 @@ getKind item = case item of
     ClosureInstance -> ClosureInstanceKind
     Closure -> ClosureKind
     MIRFunction _ -> MIRFunctionKind
+    MIRRecord _ -> MIRRecordKind

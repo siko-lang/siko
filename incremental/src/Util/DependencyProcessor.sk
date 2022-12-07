@@ -30,29 +30,33 @@ getGroupIndexMap groups = loop (group_index_map, index) <- (Map.empty, 0) do
 
 data DependencyGroup a = { items :: [a] } deriving (Show)
 
-createIdMaps a :: (PartialEq a, Ord a) => SCC.Graph -> Map a [a] -> (SCC.Graph, Map a SCC.NodeId, Map SCC.NodeId a)
+createIdMaps a :: (Ord a, Show a) => SCC.Graph -> Map a [a] -> (SCC.Graph, Map a SCC.NodeId, Map SCC.NodeId a)
 createIdMaps graph all_dependencies = do
     keys <- getKeys all_dependencies
     (graph, item_id_map) <- List.fold (graph, Map.empty) keys mapKey
     id_item_map <- Map.fold Map.empty item_id_map (\id_item_map, (k, v) -> Map.put id_item_map v k)
     (graph, item_id_map, id_item_map)
     where
-        mapKey a :: (PartialEq a, Ord a) => (SCC.Graph, Map a SCC.NodeId) -> a -> (SCC.Graph, Map a SCC.NodeId)
+        mapKey a :: (Ord a, Show a) => (SCC.Graph, Map a SCC.NodeId) -> a -> (SCC.Graph, Map a SCC.NodeId)
         mapKey (graph, id_map) id = do
             (graph, _, id_map) <- Map.addS graph id id_map (\graph, id -> SCC.addNode graph)
             (graph, id_map)
 
-initGraph a :: (PartialEq a, Ord a) => SCC.Graph -> Map a SCC.NodeId -> Map a [a] -> SCC.Graph
+initGraph a :: (Ord a, Show a) => SCC.Graph -> Map a SCC.NodeId -> Map a [a] -> SCC.Graph
 initGraph graph item_id_map all_dependencies = Map.fold graph all_dependencies (processDeps item_id_map)
     where
-        processDeps a :: (PartialEq a, Ord a) => Map a SCC.NodeId -> SCC.Graph -> (a, [a]) -> SCC.Graph
+        processDeps a :: (Ord a, Show a) => Map a SCC.NodeId -> SCC.Graph -> (a, [a]) -> SCC.Graph
         processDeps item_id_map graph (item, deps) = do
             List.fold graph deps (processDep item item_id_map)
 
-        processDep a :: (PartialEq a, Ord a) => a -> Map a SCC.NodeId -> SCC.Graph -> a -> SCC.Graph
+        processDep a :: (Ord a, Show a) => a -> Map a SCC.NodeId -> SCC.Graph -> a -> SCC.Graph
         processDep item item_id_map graph dep = do
-            item <- Option.unwrap (get item_id_map item)
-            dep <- Option.unwrap (get item_id_map dep)
+            item <- case (get item_id_map item) of
+                Some item -> item
+                None -> panic "item not found in item_id_map {}" % item
+            dep <- case (get item_id_map dep) of
+                Some dep -> dep
+                None -> panic "dep not found in item_id_map {}" % dep
             SCC.addNeighbour graph item dep
 
 processDependencies a :: (PartialEq a, Ord a, Show a) => Map a [a] -> [DependencyGroup a]
@@ -68,5 +72,5 @@ processDependencies all_dependencies = do
     where
         mapSCC a :: Map SCC.NodeId a -> [SCC.NodeId] -> DependencyGroup a
         mapSCC id_item_map scc = do
-            items <- List.map scc (\id -> Option.unwrap (get id_item_map id))
+            items <- List.map scc (\id -> Option.expect (get id_item_map id) "id from scc not found in id_item_map")
             DependencyGroup items

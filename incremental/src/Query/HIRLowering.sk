@@ -1,6 +1,8 @@
 module Siko.Query.HIRLowering where
 
+import IO
 import Map
+import Siko.Config
 import Siko.Constants
 import Siko.HIR.Backend.ClosureConverter as CC
 import Siko.HIR.Backend.EffectResolver as ER
@@ -12,10 +14,15 @@ import Siko.HIR.Effect as Eff
 import Siko.HIR.FullyQualifiedName as FQ
 import Siko.HIR.Function as F
 import Siko.HIR.Type as T
+import Siko.LIR.Backend as LB
+import Siko.MIR.Backend as MB
 import Siko.MIR.Identity as MI
+import Siko.MIR.Program as MP
 import Siko.Query.Database as DB
 import Siko.Query.Driver
 import Siko.Query.Item as I
+import Siko.Trace
+import Siko.Transpiler as Transpiler
 
 transformUpdates :: Driver -> I.Key -> Driver
 transformUpdates driver key = do
@@ -99,7 +106,7 @@ convertClosures driver key = do
     base_main_qn <- FQ.FullPath getMainModuleName getMainFunctionName
     is_entry_point <- fn.name == base_main_qn
     driver <- if is_entry_point
-    then addCommands driver [I.LowerHIRFunction (I.MIRFunctionKey (MI.Identity qn))]
+    then addCommands driver [I.LowerHIRFunction (I.MIRFunctionKey (MI.Identity qn)), I.RunLegacyBackend]
     else driver
     addToDb driver key item
 
@@ -143,6 +150,54 @@ lowerFunction driver key = do
             fn <- DB.get driver.db (I.ClosureConvertedFunctionKey qn)
             fn <- I.asClosureConvertedFunction fn
             state <- BSP.createStateProvider driver
-            (state, mir_fn, functions) <- L.lowerFunction state qn fn
+            (state, mir_fn, functions, tuples) <- L.lowerFunction state qn fn
+            driver <- addToDb driver key (I.MIRFunction mir_fn)
             driver <- List.fold driver functions (\driver, mir_id -> addCommands driver [I.LowerHIRFunction (I.MIRFunctionKey mir_id)])
+            driver <- List.fold driver tuples (\driver, mir_id -> addCommands driver [I.LowerTuple (I.MIRRecordKey mir_id)])
             driver
+
+lowerTuple :: Driver -> I.Key -> Driver
+lowerTuple driver key = do
+    case DB.getOpt driver.db key of
+        Some _ -> driver
+        None -> do
+            qn <- I.getFullyQualifiedName key
+            tuple_args <- case qn of
+                FQ.Tuple args -> args
+                _ -> panic "Tuple is not a tuple!"
+            state <- BSP.createStateProvider driver
+            (state, mir_record, ctor_fn) <- L.createTuple state (MI.Identity qn) tuple_args
+            driver <- addToDb driver key (I.MIRRecord mir_record)
+            addToDb driver (I.MIRFunctionKey ctor_fn.id) (I.MIRFunction ctor_fn)
+
+runlegacyBackend :: Driver -> Driver
+runlegacyBackend driver = do
+    println "Start legacy backend"
+    config <- getDefaultConfig
+    mir_program <- MP.createProgram
+    mir_functions <- DB.getWatchedKeys driver.db I.MIRFunctionKind
+    mir_functions <- List.map mir_functions (\key -> case DB.get driver.db key of
+        I.MIRFunction fn -> fn
+        _ -> panic "MIR function is not a function in runlegacyBackend")
+    mir_records <- DB.getWatchedKeys driver.db I.MIRRecordKind
+    mir_records <- List.map mir_records (\key -> case DB.get driver.db key of
+        I.MIRRecord record -> record
+        _ -> panic "MIR record is not a record in runlegacyBackend")
+    mir_program <- List.fold mir_program mir_functions (\mir_program, fn -> do
+        println "Adding fn {}" % fn.id
+        MP.addFunction mir_program fn.id fn)
+    mir_program <- List.fold mir_program mir_records (\mir_program, r -> do
+        println "Adding record {}" % r.id
+        MP.addRecord mir_program r.id r)
+    with { getConfig = \() -> config } do
+        trace "MIR processing.."
+        lir_program <- MB.processProgram mir_program
+        lir_program <- if config.disable_lir_transforms
+        then lir_program
+        else do
+            trace "LIR processing.."
+            LB.processProgram lir_program
+        trace "Transpiling.."
+        rust_output <- Transpiler.transpile lir_program
+        writeTextFile (getOutputFileName Normal) rust_output
+    driver

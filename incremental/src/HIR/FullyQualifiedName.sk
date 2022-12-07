@@ -23,26 +23,26 @@ data FullyQualifiedName = FullPath SS.SharedString SS.SharedString
                         | Tuple [T.Type]
                         | Adt FullyQualifiedName [T.Type]
                         | Record FullyQualifiedName [T.Type]
-                        deriving (PartialEq, Eq, PartialOrd, Ord)
+                        deriving (PartialEq, Eq, PartialOrd, Ord, Show)
 
-instance Show FullyQualifiedName where
-    show f = case f of
-        FullPath m n -> "{}.{}" % (m, n)
-        FullPathWithVariant m n v -> "{}.{}/{}" % (m, n, v)
-        FullPathWithLambda n i -> "{}/{}" % (n, i)
-        FullPathInstance m l -> "{}/{}" % (m, l)
-        FullPathWithInstanceId m n i -> "{}.{}/#{}" % (m, n, i)
-        ModulePath m -> "{}" % m
-        SubItem p n -> "{}/{}" % (p, n)
-        Effectless n s -> case s of
-            Some s -> "{}=[{}]" % (n, s)
-            None -> "{}" % n
-        Monomorphized n type -> "{}=[{}]" % (n, TF.toString type)
-        ClosureInstance closure_instance -> show closure_instance
-        ClosureName type -> "Closure({})" % TF.toString type
-        Tuple args -> "Tuple({})" % TF.toStringTypes args
-        Adt name args -> "Adt({}, {})" % (name, TF.toStringTypes args)
-        Record name args -> "Record({}, {})" % (name, TF.toStringTypes args)
+// instance Show FullyQualifiedName where
+//     show f = case f of
+//         FullPath m n -> "{}.{}" % (m, n)
+//         FullPathWithVariant m n v -> "{}.{}/{}" % (m, n, v)
+//         FullPathWithLambda n i -> "{}/{}" % (n, i)
+//         FullPathInstance m l -> "{}/{}" % (m, l)
+//         FullPathWithInstanceId m n i -> "{}.{}/#{}" % (m, n, i)
+//         ModulePath m -> "{}" % m
+//         SubItem p n -> "{}/{}" % (p, n)
+//         Effectless n s -> case s of
+//             Some s -> "{}=[{}]" % (n, s)
+//             None -> "{}" % n
+//         Monomorphized n type -> "{}=[{}]" % (n, TF.toString type)
+//         ClosureInstance closure_instance -> show closure_instance
+//         ClosureName type -> "Closure({})" % TF.toString type
+//         Tuple args -> "Tuple({})" % TF.toStringTypes args
+//         Adt name args -> "Adt({}, {})" % (name, TF.toStringTypes args)
+//         Record name args -> "Record({}, {})" % (name, TF.toStringTypes args)
 
 getResolvableName :: FullyQualifiedName -> SS.SharedString
 getResolvableName f = do
@@ -74,11 +74,14 @@ getShortName f = case f of
     SubItem p n -> n
     Effectless n s -> getShortName n
     Monomorphized n type -> getShortName n
-    ClosureInstance closure_instance -> panic "getShortName called for closure_instance"
-    ClosureName type -> panic "getShortName called for closurename"
-    Tuple args -> panic "getShortName called for tuple"
-    Adt name args -> panic "getShortName called for adt"
-    Record name args -> panic "getShortName called for record"
+    ClosureInstance closure_instance -> SS.create "ClosureInstance"
+    ClosureName type -> SS.create "ClosureName"
+    Tuple args -> SS.create "Tuple_{}" % (getLength args)
+    Adt name args -> getShortName name
+    Record name args -> getShortName name
+
+getInternalModule :: SS.SharedString
+getInternalModule = SS.create "siko"
 
 getModuleName :: FullyQualifiedName -> SS.SharedString
 getModuleName f = case f of
@@ -91,8 +94,8 @@ getModuleName f = case f of
     SubItem p n -> getModuleName p
     Effectless n s -> getModuleName n
     Monomorphized n type -> getModuleName n
-    ClosureInstance closure_instance -> panic "getModuleName called for closure_instance"
-    ClosureName type -> panic "getModuleName called for closurename"
-    Tuple args -> panic "getModuleName called for tuple"
-    Adt name args -> panic "getModuleName called for adt"
-    Record name args -> panic "getModuleName called for record"
+    ClosureInstance closure_instance -> getInternalModule
+    ClosureName type -> getInternalModule
+    Tuple args -> getInternalModule
+    Adt name args -> getModuleName name
+    Record name args -> getModuleName name

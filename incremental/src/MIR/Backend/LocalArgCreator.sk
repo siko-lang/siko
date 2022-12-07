@@ -1,0 +1,44 @@
+module Siko.MIR.Backend.LocalArgCreator where
+
+import Map
+import Siko.MIR.Backend.Traversal
+import Siko.MIR.Expr as E
+import Siko.MIR.Function as F
+import Siko.MIR.Program as P
+import Siko.MIR.Type as T
+// The purpose of this pass is to move fn args into local variables
+// because the borrow checker cannot reason about values not owned by expressions
+
+replace :: () -> E.Expr -> ((), E.Expr)
+replace _ expr = do
+    E.Expr s_expr type id <- expr
+    s_expr <- case s_expr of
+        E.VarRef var -> do
+            var <- case var of
+                E.Arg index -> E.LocalArg index
+                var -> var
+            E.VarRef var
+        s_expr -> s_expr
+    ((), E.Expr s_expr type id)
+
+processFunction :: P.Program -> F.Function -> F.Function
+processFunction program function = case function.kind of
+    F.Normal info -> do
+        unit_type <- P.getUnitType program
+        ((), body) <- traverse () info.body (Some replace) None None
+        local_args <- List.fold [] function.type.args (\local_args, arg -> do
+            index <- List.getLength local_args
+            arg_ref <- E.Expr (E.VarRef (E.Arg index)) arg (E.ExprId 0)
+            vardecl <- E.Expr (E.VarDecl (E.LocalArg index) arg_ref) unit_type (E.ExprId 0)
+            List.push local_args vardecl)
+        E.Expr _ body_type _ <- body
+        body <- E.Expr (E.Do (List.push local_args body)) body_type (E.ExprId 0)
+        info <- info { body = body }
+        new_kind <- F.Normal info
+        function { kind = new_kind }
+    _ -> function
+
+processProgram :: P.Program -> P.Program
+processProgram program = do
+    functions <- Map.map program.functions (\(id, function) -> (id, processFunction program function))
+    program { functions = functions }

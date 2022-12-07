@@ -1,0 +1,48 @@
+module Siko.LIR.Data where
+
+import Siko.LIR.Program
+import Siko.LIR.Type
+
+data ExternalClassImpl = PartialEq Identity
+                       | Eq
+                       | PartialOrd Identity
+                       | Ord Identity
+                       deriving (Show)
+
+data Variant = { name :: String,
+                 type :: Type
+               } deriving (Show)
+
+data AlgebraicDataType = { id :: Identity,
+                           lifetimes :: [Lifetime],
+                           variants :: [Variant],
+                           external_class_impls :: [ExternalClassImpl]
+                         }
+
+data RecordField = { index :: Int,
+                     type :: Type
+                   }
+
+data ExternalRecordInfo = { type_args :: [Type] }
+
+data Record = { id :: Identity,
+                lifetimes :: [Lifetime],
+                fields :: [RecordField],
+                external_info :: Option ExternalRecordInfo,
+                external_class_impls :: [ExternalClassImpl],
+                implicit_member_lifetime :: Option Lifetime
+              }
+
+dumpAdt :: AlgebraicDataType -> String
+dumpAdt adt = do
+    variants <- adt.variants |> List.iter |> Iterator.map (\v -> "{} {}" % (v.name, v.type)) |> toList
+    "adt {} = {}" % (adt.id, join variants " | ")
+
+dumpRecord :: Record -> String
+dumpRecord record = do
+    fields <- record.fields |> List.iter |> Iterator.map (\field -> "field{} :: {}" % (field.index, field.type)) |> toList
+    if List.isEmpty fields
+    then if isSome record.external_info
+        then "record {} = extern" % record.id
+        else "record {}" % record.id
+    else ("record {}" % record.id) + " = { " + (join fields ", ") + " }"

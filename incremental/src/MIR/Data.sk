@@ -14,7 +14,7 @@ data ExternalClassImpl = PartialEq Identity
                        | Ord Identity
                        | Copy
                        | Move
-                       deriving (Show)
+                       deriving (Show, PartialEq, Eq)
 
 data ExternalClassImplKind = PartialEqKind
                            | EqKind
@@ -26,28 +26,28 @@ data ExternalClassImplKind = PartialEqKind
 
 data Variant = { name :: String,
                  type :: Type
-               } deriving (Show)
+               } deriving (Show, PartialEq, Eq)
 
 data AlgebraicDataType = { id :: Identity,
                            variants :: [Variant],
                            external_class_impls :: [ExternalClassImpl],
                            attributes :: [Attribute]
-                         }
+                         } deriving (Show, PartialEq, Eq)
 
 data RecordField = { name :: String,
                      index :: Int,
                      type :: Type,
                      grouped :: Bool
-                   }
+                   } deriving (Show, PartialEq, Eq)
 
-data ExternalRecordInfo = { type_args :: [Type] }
+data ExternalRecordInfo = { type_args :: [Type] } deriving (Show, PartialEq, Eq)
 
 data Record = { id :: Identity,
                 fields :: [RecordField],
                 external_info :: Option ExternalRecordInfo,
                 external_class_impls :: [ExternalClassImpl],
                 attributes :: [Attribute]
-              }
+              } deriving (Show, PartialEq, Eq)
 
 dumpAdt :: AlgebraicDataType -> String
 dumpAdt adt = do

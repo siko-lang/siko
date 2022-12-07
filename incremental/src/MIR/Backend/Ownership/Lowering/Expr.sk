@@ -1,0 +1,249 @@
+module Siko.MIR.Backend.Ownership.Lowering.Expr where
+
+import Map
+import Siko.LIR.Expr as LE
+import Siko.LIR.Type as LT
+import Siko.MIR.Backend.Ownership.Converter
+import Siko.MIR.Backend.Ownership.InferenceInfo
+import Siko.MIR.Backend.Ownership.Lowering.Context
+import Siko.MIR.Backend.Ownership.Lowering.LoweringInfo
+import Siko.MIR.Backend.Ownership.Lowering.LoweringInfo.FilterInfo
+import Siko.MIR.Backend.Ownership.Lowering.LoweringInfo.Normalizer
+import Siko.MIR.Backend.Ownership.Lowering.Naming
+import Siko.MIR.Backend.Ownership.Lowering.Type
+import Siko.MIR.Backend.Ownership.MemberInfo as M
+import Siko.MIR.Backend.Ownership.TypeVariableInfo
+import Siko.MIR.Data as MD
+import Siko.MIR.Expr as ME
+import Siko.MIR.Function as MF
+import Siko.MIR.Identity as I
+import Siko.MIR.Program as MP
+import Siko.MIR.Type as MT
+
+data LoweringContext = { function_id :: I.Identity,
+                         inference_info :: InferenceInfo,
+                         borrowers :: [ME.ExprId],
+                         filter_info :: FilterInfo,
+                         type_cache :: Map TypeVariableInfo LT.Type,
+                         type_lowering_info_cache :: Map TypeVariableInfo TypeLoweringInfo
+                       }
+
+getTypeLoweringInfo :: LoweringContext -> TypeVariableInfo -> (LoweringContext, TypeLoweringInfo)
+getTypeLoweringInfo lowering_context info = do
+    case Map.get lowering_context.type_lowering_info_cache info of
+        Some lowering_info -> (lowering_context, lowering_info)
+        None -> do
+            lowering_info <- createTypeLoweringInfoFromInferenceInfo lowering_context.inference_info info lowering_context.filter_info
+            (lowering_info, _) <- normalizeTypeLoweringInfo lowering_info
+            type_lowering_info_cache <- Map.put lowering_context.type_lowering_info_cache info lowering_info
+            lowering_context <- lowering_context { type_lowering_info_cache = type_lowering_info_cache }
+            (lowering_context, lowering_info)
+
+getType :: Context -> LoweringContext -> TypeVariableInfo -> MT.Type -> (Context, LoweringContext, LT.Type)
+getType context lowering_context info mir_type = do
+    case Map.get lowering_context.type_cache info of
+        Some ty -> (context, lowering_context, ty)
+        None -> do
+            (lowering_context, lowering_info) <- getTypeLoweringInfo lowering_context info
+            (context, lir_type) <- lowerType context lowering_info mir_type
+            (context, lowering_context, lir_type)
+
+getOwnershipValue :: LoweringContext -> OwnershipTypeVariable -> M.OwnershipKind
+getOwnershipValue lowering_context var = do
+    result <- getOwnership lowering_context.inference_info var
+    case result of
+        Some o -> o
+        None -> panic "Ownership value not found for {}" % var
+
+lowerVar :: ME.Var -> LE.Var
+lowerVar var = case var of
+    ME.Named n -> LE.Named n
+    ME.Temp i -> LE.Temp i
+    ME.Arg i -> LE.Arg i
+    ME.LocalArg _ -> panic "LocalArg found in lowering"
+
+lowerRangeKind :: ME.RangeKind -> LE.RangeKind
+lowerRangeKind range_kind = case range_kind of
+    ME.Inclusive -> LE.Inclusive
+    ME.Exclusive -> LE.Exclusive
+
+lowerChecker :: TypeLoweringInfo -> Context -> ME.Checker -> (Context, LE.Checker)
+lowerChecker lowering_info context checker = do
+    case checker of
+        ME.IntegerChecker lit -> (context, LE.IntegerChecker lit)
+        ME.StringChecker lit -> (context, LE.StringChecker lit)
+        ME.CharChecker lit -> (context, LE.CharChecker lit)
+        ME.CharRangeChecker s e kind -> (context, LE.CharRangeChecker s e (lowerRangeKind kind))
+        ME.VariantChecker index var ty -> do
+            (context, type) <- lowerType context lowering_info ty
+            (context, LE.VariantChecker index (lowerVar var) type)
+        ME.WildcardChecker var -> (context, LE.WildcardChecker (lowerVar var))
+
+lowerCase :: (LoweringContext, TypeLoweringInfo, Context) -> ME.Case -> ((LoweringContext, TypeLoweringInfo, Context), LE.Case)
+lowerCase (lowering_context, lowering_info, context) c = do
+    (context, checker) <- lowerChecker lowering_info context c.checker
+    (lowering_context, context, body) <- lowerExpr lowering_context context c.body
+    ((lowering_context, lowering_info, context), LE.Case checker body)
+
+lowerExpr :: LoweringContext -> Context -> ME.Expr -> (LoweringContext, Context, LE.Expr)
+lowerExpr lowering_context context expr = do
+    ME.Expr s_expr expr_type expr_id <- expr
+    expr_info <- getTypeVariableInfoByExprId lowering_context.inference_info expr_id lowering_context.function_id
+    (context, lowering_context, lir_type) <- getType context lowering_context expr_info expr_type
+    (lowering_context, context, lir_s_expr) <- case s_expr of
+        ME.Do items -> do
+            ((lowering_context, context), items) <- List.mapS (lowering_context, context) items (\(lowering_context, context), item -> do
+                (lowering_context, context, item) <- lowerExpr lowering_context context item
+                ((lowering_context, context), item))
+            (lowering_context, context, LE.Do items)
+        ME.Multi _ -> panic "Multi in MIR -> LIR lowering"
+        ME.StaticFunctionCall f_id args -> do
+            args_info <- List.map args (\arg -> do
+                ME.Expr _ arg_type arg_id <- arg
+                getTypeVariableInfoByExprId lowering_context.inference_info arg_id lowering_context.function_id)
+            lifetime_dependencies <- case Map.get lowering_context.inference_info.function_converter_borrows expr_id of
+                Some function_converter_borrows -> do
+                    lifetime_dependencies <- List.fold ([]) function_converter_borrows (\lifetime_dependencies, function_converter_borrow -> do
+                        List.push lifetime_dependencies (LifetimeDependency function_converter_borrow.from function_converter_borrow.to))
+                    lifetime_dependencies |> List.sort |> List.dedup
+                None -> []
+            lowering_info <- convertToFunctionLoweringInfo lowering_context.inference_info args_info expr_info lowering_context.filter_info lifetime_dependencies
+            if MP.isDebugged lowering_context.function_id
+            then do
+                println "-----------------------------------------"
+                println "---------------{} from {} ---------------" % (f_id, lowering_context.function_id)
+                println "-----------------------------------------"
+                println "Calling {} Lowering info {}" % (f_id, lowering_info)
+                println "-----------------------------------------"
+            else ()
+            (lowering_info, _) <- normalizeFunctionLoweringInfo lowering_info
+            lir_key <- FunctionKey f_id lowering_info
+            (context, lir_id) <- getLIRId context lir_key
+            context <- addItem context lir_key
+            ((lowering_context, context), lir_args) <- List.mapS (lowering_context, context) args (\(lowering_context, context), arg -> do
+                (lowering_context, context, arg) <- lowerExpr lowering_context context arg
+                ((lowering_context, context), arg))
+            function <- MP.getFunction context.mir_program f_id
+            (context, lir_args) <- case function.kind of
+                MF.VariantCtor index -> do
+                    adt_id <- MT.getIdentity function.type.result
+                    adt <- MP.getAdt context.mir_program adt_id
+                    variant <- List.atIndex adt.variants index
+                    record_id <- MT.getIdentity variant.type
+                    record <- MP.getRecord context.mir_program record_id
+                    lir_args <- List.zipS [] lir_args record.fields (\lir_args, arg, field -> do
+                        if field.grouped
+                        then do
+                            LE.Expr _ arg_type <- arg
+                            arg <- LE.Expr (LE.Box arg) (LT.Box arg_type)
+                            List.push lir_args arg
+                        else List.push lir_args arg)
+                    (context, lir_args)
+                MF.RecordCtor -> do
+                    record_id <- MT.getIdentity function.type.result
+                    record <- MP.getRecord context.mir_program record_id
+                    lir_args <- List.zipS [] lir_args record.fields (\lir_args, arg, field -> do
+                        if field.grouped
+                        then do
+                            LE.Expr _ arg_type <- arg
+                            arg <- LE.Expr (LE.Box arg) (LT.Box arg_type)
+                            List.push lir_args arg
+                        else List.push lir_args arg)
+                    (context, lir_args)
+                _ -> (context, lir_args)
+            (lowering_context, context, LE.StaticFunctionCall lir_id lir_args)
+        ME.IntegerLiteral lit -> (lowering_context, context, LE.IntegerLiteral lit)
+        ME.StringLiteral lit -> (lowering_context, context, LE.StringLiteral lit)
+        ME.FloatLiteral lit -> (lowering_context, context, LE.FloatLiteral lit)
+        ME.CharLiteral lit -> (lowering_context, context, LE.CharLiteral lit)
+        ME.VarDecl var rhs -> do
+            (lowering_context, context, lir_rhs) <- lowerExpr lowering_context context rhs
+            lir_var <- lowerVar var
+            (lowering_context, context, LE.VarDecl lir_var lir_rhs)
+        ME.VarRef var -> do
+            lir_var <- lowerVar var
+            (lowering_context, context, LE.VarRef lir_var)
+        ME.FieldAccess index receiver -> do
+            ME.Expr _ receiver_type _ <- receiver
+            record_id <- MT.getIdentity receiver_type
+            record <- MP.getRecord context.mir_program record_id
+            field <- List.atIndex record.fields index
+            (lowering_context, context, lir_receiver) <- lowerExpr lowering_context context receiver
+            if field.grouped
+            then do
+                case lir_type of
+                    LT.Ref _ _ -> do
+                        field_access <- LE.Expr (LE.FieldAccess index lir_receiver) lir_type
+                        field_access <- LE.Expr (LE.Deref field_access) lir_type
+                        (lowering_context, context, LE.Ref field_access)
+                    _ -> do
+                        field_access <- LE.Expr (LE.FieldAccess index lir_receiver) lir_type
+                        (lowering_context, context, LE.Deref field_access)
+            else case lir_type of
+                LT.Ref _ _ -> do
+                    field_access <- LE.Expr (LE.FieldAccess index lir_receiver) lir_type
+                    (lowering_context, context, LE.Ref field_access)
+                _ -> (lowering_context, context, LE.FieldAccess index lir_receiver)
+        ME.If cond true_branch false_branch -> do
+            (lowering_context, context, lir_cond) <- lowerExpr lowering_context context cond
+            (lowering_context, context, lir_true_branch) <- lowerExpr lowering_context context true_branch
+            (lowering_context, context, lir_false_branch) <- lowerExpr lowering_context context false_branch
+            (lowering_context, context, LE.If lir_cond lir_true_branch lir_false_branch)
+        ME.List args -> do
+            ((lowering_context, context), lir_args) <- List.mapS (lowering_context, context) args (\(lowering_context, context), arg -> do
+                (lowering_context, context, arg) <- lowerExpr lowering_context context arg
+                ((lowering_context, context), arg))
+            (lowering_context, context, LE.List lir_args)
+        ME.Return arg -> do
+            (lowering_context, context, lir_arg) <- lowerExpr lowering_context context arg
+            (lowering_context, context, LE.Return lir_arg)
+        ME.Continue arg -> do
+            (lowering_context, context, lir_arg) <- lowerExpr lowering_context context arg
+            (lowering_context, context, LE.Continue lir_arg)
+        ME.Break arg -> do
+            (lowering_context, context, lir_arg) <- lowerExpr lowering_context context arg
+            (lowering_context, context, LE.Break lir_arg)
+        ME.Loop var initializer body _ _ -> do
+            lir_var <- lowerVar var
+            (lowering_context, context, lir_initializer) <- lowerExpr lowering_context context initializer
+            (lowering_context, context, lir_body) <- lowerExpr lowering_context context body
+            (lowering_context, context, LE.Loop lir_var lir_initializer lir_body)
+        ME.CaseOf body cases -> do
+            ME.Expr _ _ body_id <- body
+            body_info <- getTypeVariableInfoByExprId lowering_context.inference_info body_id lowering_context.function_id
+            (lowering_context, lowering_info) <- getTypeLoweringInfo lowering_context body_info
+            (lowering_context, context, lir_body) <- lowerExpr lowering_context context body
+            ((lowering_context, lowering_info, context), lir_cases) <- List.mapS (lowering_context, lowering_info, context) cases lowerCase
+            (lowering_context, context, LE.CaseOf lir_body lir_cases)
+        ME.Clone arg -> panic "Clone in MIR -> LIR lowering"
+        ME.Deref arg -> panic "Deref in MIR -> LIR lowering"
+        ME.Ref arg -> panic "Ref in MIR -> LIR lowering"
+        ME.Move arg -> panic "Move in MIR -> LIR lowering"
+        ME.Box arg -> panic "Box in MIR -> LIR lowering"
+        ME.Converter arg _ -> do
+            ME.Expr _ _ arg_id <- arg
+            arg_info <- getTypeVariableInfoByExprId lowering_context.inference_info arg_id lowering_context.function_id
+            from <- getOwnershipValue lowering_context arg_info.ownership_var
+            to <- getOwnershipValue lowering_context expr_info.ownership_var
+            (lowering_context, context, lir_arg) <- lowerExpr lowering_context context arg
+            case (from, to) of
+                (M.Owner, M.Owner) -> if List.contains lowering_context.borrowers arg_id
+                    then do
+                        id <- MT.getIdentity expr_type
+                        if List.contains context.mir_program.noncopyables id
+                        then println "{}: copies {}" % (lowering_context.function_id, id)
+                        else ()
+                        (lowering_context, context, LE.Clone lir_arg)
+                    else (lowering_context, context, LE.Move lir_arg)
+                (M.Owner, M.Borrower _) -> (lowering_context, context, LE.Ref lir_arg)
+                (M.Borrower _, M.Borrower _) -> (lowering_context, context, LE.Move lir_arg)
+                (M.Borrower _, M.Owner) -> do
+                    id <- MT.getIdentity expr_type
+                    if List.contains context.mir_program.noncopyables id
+                    then println "{}: copies {}" % (lowering_context.function_id, id)
+                    else ()
+                    (lowering_context, context, LE.DerefClone lir_arg)
+                (from, to) -> panic "Invalid converter in LIR lowering {}/{}" % (from, to)
+    //println "Transforming EXPR {} {}" % ((ME.short expr), expr_info)
+    lir_expr <- LE.Expr lir_s_expr lir_type
+    (lowering_context, context, lir_expr)
