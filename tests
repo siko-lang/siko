@@ -73,7 +73,7 @@ def run(silent, verbose, debug, test_name, source_folder, index, total, target, 
     mkdir_safe("test_runs")
     target_folder = os.path.join("test_runs", test_name)
     mkdir_safe(target_folder)
-    extra_args = ["./std"]
+    extra_args = ["./std", "-nooptimization"]
     if pfi:
         extra_args.append("-pfi")
     if dlt:
@@ -81,13 +81,10 @@ def run(silent, verbose, debug, test_name, source_folder, index, total, target, 
     for m in mir_functions:
         extra_args.append("-m")
         extra_args.append(m)
-    if not run_command(["./%s" % target, debug, verbose] + extra_args + [source_folder, "-o", os.path.join(target_folder, test_name)], target, verbose = True):
+    output_file_name = os.path.join(target_folder, test_name)
+    if not run_command(["./%s" % target, debug, verbose] + extra_args + [source_folder, "-o", output_file_name], target, verbose = True):
         return False
-    normal_output = os.path.join(target_folder, "normal")
-    rc_output = os.path.join(target_folder, "rc")
-    if not run_command(["rustc", "--edition=2018", os.path.join(target_folder, "%s.rs" % test_name), "-o", normal_output], "normal rustc", verbose):
-        return False
-    return run_command([normal_output], "normal build")
+    return run_command([output_file_name], "Execution failed")
 
 test_source_name = "./test"
 tests = []

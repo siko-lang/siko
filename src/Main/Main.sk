@@ -55,6 +55,7 @@ processArgs args = loop (config, args) <- (getDefaultConfig, args) do
                             None -> do
                                 panic "Missing mir function"
                     "-v" -> (config { trace_level = Leve1 }, rest)
+                    "-nooptimization" -> (config { optimized = False }, rest)
                     "-vv" -> (config { trace_level = Level2 }, rest)
                     "-d" -> (config { dump = True }, rest)
                     "-pfi" -> (config { print_function_info = True }, rest)
@@ -69,7 +70,8 @@ data Context = { file_manager :: FileManager,
                  lexer_errors :: Map FileId [LexerError],
                  parser_errors :: Map FileId [ParserError],
                  resolver_errors :: [ResolverError],
-                 typechecker_errors :: [TypecheckerError]
+                 typechecker_errors :: [TypecheckerError],
+                 general_failure :: Bool,
                }
 
 dumpErrors :: Context -> ()
@@ -80,7 +82,7 @@ dumpErrors context = do
     context.typechecker_errors |> List.iter |> Iterator.forEach \error -> printTypecheckerError context.file_manager error
 
 isOk :: Context -> Bool
-isOk context = Map.isEmpty context.lexer_errors && Map.isEmpty context.parser_errors && List.isEmpty context.resolver_errors && List.isEmpty context.typechecker_errors
+isOk context = Map.isEmpty context.lexer_errors && Map.isEmpty context.parser_errors && List.isEmpty context.resolver_errors && List.isEmpty context.typechecker_errors && not context.general_failure
 
 parseFile :: Config -> Context -> FileName -> (Context, SourceFile)
 parseFile config context (FileName file_name) = do
@@ -104,7 +106,7 @@ compile :: Config -> Context
 compile config = do
     with { getConfig = \() -> config } do
         file_manager <- createFileManager
-        context <- Context file_manager Map.empty Map.empty [] []
+        context <- Context file_manager Map.empty Map.empty [] [] False
         trace "Parsing inputs.."
         files <- List.fold [] config.input_files (\files, (FileName path) -> files + processPath path)
         (context, source_files) <- List.mapS context files (parseFile config)
@@ -125,8 +127,16 @@ compile config = do
                         LB.processProgram lir_program
                     trace "Transpiling.."
                     rust_output <- Transpiler.transpile lir_program
-                    writeTextFile (getOutputFileName Normal) rust_output
-                    context
+                    rust_source_file <- getOutputFileName Rust
+                    binary_file <- getOutputFileName Binary
+                    writeTextFile rust_source_file rust_output
+                    trace "Compiling.."
+                    compilation_result <- if config.optimized
+                    then runCommand ["rustc", "-O", "-o", binary_file, rust_source_file]
+                    else runCommand ["rustc", "-o", binary_file, rust_source_file]
+                    if compilation_result
+                    then context
+                    else context { general_failure = True }
                 Err tc_errors -> context { typechecker_errors = tc_errors }
         else context
 

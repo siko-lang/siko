@@ -2,13 +2,13 @@ stage0: bootstrap/source.rs
 	@rustc bootstrap/source.rs -O -o stage0
 
 stage1: stage0 $(shell find src -type f)
-	@build/build_stage1.sh
+	@./stage0 ./src ./std -v -o ./stage1
 
 stage2: stage1 $(shell find src -type f)
-	@build/build_stage2.sh
+	@./stage1 ./src ./std -v -o ./stage2
 
 sikofmt: stage0 $(shell find fmt -type f)
-	@build/build_fmt.sh
+	@./stage1 ./fmt/src ./std -v -o ./sikofmt
 
 test: stage1
 	@./tests stage1

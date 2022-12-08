@@ -13,17 +13,19 @@ data Config = { input_files :: [FileName],
                 dump :: Bool,
                 mir_functions :: [String],
                 print_function_info :: Bool,
-                disable_lir_transforms :: Bool
+                disable_lir_transforms :: Bool,
+                optimized :: Bool,
               }
 
-data OutputFileType = Normal
+data OutputFileType = Rust
+                    | Binary
                     | HIR String
                     | MIR String
                     | LIR String
                     | MIRJson String
 
 getDefaultConfig :: Config
-getDefaultConfig = Config [] None Off False [] False False
+getDefaultConfig = Config [] None Off False [] False False True
 
 getOutputFileName :: OutputFileType -> String
 getOutputFileName type = do
@@ -32,7 +34,8 @@ getOutputFileName type = do
         Some output_file -> output_file
         None -> "sikoc_output"
     case type of
-        Normal -> "{}.rs" % output_file
+        Rust -> "{}.rs" % output_file
+        Binary -> "{}" % output_file
         HIR name -> "{}_hir_{}.sk" % (output_file, name)
         MIR name -> "{}_mir_{}.sk" % (output_file, name)
         LIR name -> "{}_lir_{}.sk" % (output_file, name)

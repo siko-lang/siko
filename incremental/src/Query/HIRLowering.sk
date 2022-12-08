@@ -150,11 +150,32 @@ lowerFunction driver key = do
             fn <- DB.get driver.db (I.ClosureConvertedFunctionKey qn)
             fn <- I.asClosureConvertedFunction fn
             state <- BSP.createStateProvider driver
-            (state, mir_fn, functions, tuples) <- L.lowerFunction state qn fn
+            (state, mir_fn, functions, tuples, records) <- L.lowerFunction state qn fn
             driver <- addToDb driver key (I.MIRFunction mir_fn)
             driver <- List.fold driver functions (\driver, mir_id -> addCommands driver [I.LowerHIRFunction (I.MIRFunctionKey mir_id)])
             driver <- List.fold driver tuples (\driver, mir_id -> addCommands driver [I.LowerTuple (I.MIRRecordKey mir_id)])
+            driver <- List.fold driver records (\driver, mir_id -> addCommands driver [I.LowerHIRRecord (I.MIRRecordKey mir_id)])
             driver
+
+lowerRecord :: Driver -> I.Key -> Driver
+lowerRecord driver key = do
+    case DB.getOpt driver.db key of
+        Some _ -> driver
+        None -> do
+            qn <- I.getFullyQualifiedName key
+            state <- BSP.createStateProvider driver
+            (state, mir_record) <- L.lowerRecord state qn
+            addToDb driver key (I.MIRRecord mir_record)
+
+lowerAdt :: Driver -> I.Key -> Driver
+lowerAdt driver key = do
+    case DB.getOpt driver.db key of
+        Some _ -> driver
+        None -> do
+            qn <- I.getFullyQualifiedName key
+            state <- BSP.createStateProvider driver
+            (state, mir_adt) <- L.lowerAdt state qn
+            addToDb driver key (I.MIRAdt mir_adt)
 
 lowerTuple :: Driver -> I.Key -> Driver
 lowerTuple driver key = do
@@ -174,6 +195,7 @@ runlegacyBackend :: Driver -> Driver
 runlegacyBackend driver = do
     println "Start legacy backend"
     config <- getDefaultConfig
+    config <- config { dump = True }
     mir_program <- MP.createProgram
     mir_functions <- DB.getWatchedKeys driver.db I.MIRFunctionKind
     mir_functions <- List.map mir_functions (\key -> case DB.get driver.db key of
@@ -183,12 +205,19 @@ runlegacyBackend driver = do
     mir_records <- List.map mir_records (\key -> case DB.get driver.db key of
         I.MIRRecord record -> record
         _ -> panic "MIR record is not a record in runlegacyBackend")
+    mir_adts <- DB.getWatchedKeys driver.db I.MIRAdtKind
+    mir_adts <- List.map mir_adts (\key -> case DB.get driver.db key of
+        I.MIRAdt adt -> adt
+        _ -> panic "MIR adt is not an adt in runlegacyBackend")
     mir_program <- List.fold mir_program mir_functions (\mir_program, fn -> do
         println "Adding fn {}" % fn.id
         MP.addFunction mir_program fn.id fn)
     mir_program <- List.fold mir_program mir_records (\mir_program, r -> do
         println "Adding record {}" % r.id
         MP.addRecord mir_program r.id r)
+    mir_program <- List.fold mir_program mir_adts (\mir_program, adt -> do
+        println "Adding adt {}" % adt.id
+        MP.addAdt mir_program adt.id adt)
     with { getConfig = \() -> config } do
         trace "MIR processing.."
         lir_program <- MB.processProgram mir_program
@@ -199,5 +228,18 @@ runlegacyBackend driver = do
             LB.processProgram lir_program
         trace "Transpiling.."
         rust_output <- Transpiler.transpile lir_program
-        writeTextFile (getOutputFileName Normal) rust_output
+        rust_source_file <- getOutputFileName Rust
+        binary_file <- getOutputFileName Binary
+        writeTextFile rust_source_file rust_output
+        trace "Compiling.."
+        compilation_result <- if config.optimized
+        then runCommand ["rustc",
+                         "-O",
+                         "-o",
+                         binary_file,
+                         rust_source_file]
+        else runCommand ["rustc",
+                         "-o",
+                         binary_file,
+                         rust_source_file]
     driver

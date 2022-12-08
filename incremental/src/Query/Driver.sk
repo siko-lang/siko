@@ -45,6 +45,7 @@ createDriver = do
     db <- DB.addWatchedKind db I.ClosureInstanceKind None
     db <- DB.addWatchedKind db I.MIRFunctionKind None
     db <- DB.addWatchedKind db I.MIRRecordKind None
+    db <- DB.addWatchedKind db I.MIRAdtKind None
     resolver <- R.createResolver
     Driver Map.empty resolver db []
 
@@ -114,6 +115,8 @@ executeCommand driver cmd = do
         I.CreateClosure key -> HL.createClosure driver key
         I.LowerHIRFunction key -> HL.lowerFunction driver key
         I.LowerTuple key -> HL.lowerTuple driver key
+        I.LowerHIRRecord key -> HL.lowerRecord driver key
+        I.LowerHIRAdt key -> HL.lowerAdt driver key
         I.RunLegacyBackend -> HL.runlegacyBackend driver
 
 addCommands :: Driver -> [I.Command] -> Driver

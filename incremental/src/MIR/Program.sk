@@ -41,6 +41,11 @@ addRecord program record_id record = do
     records <- Map.put program.records record_id record
     program { records = records }
 
+addAdt :: Program -> Identity -> D.AlgebraicDataType -> Program
+addAdt program adt_id adt = do
+    adts <- Map.put program.adts adt_id adt
+    program { adts = adts }
+
 getUnitType :: Program -> Type
 getUnitType program = Record (Identity (FQ.Tuple []))
 
@@ -113,6 +118,6 @@ dump program = do
         s + D.dumpAdt adt + "\n\n") s
     s <- program.records |> Map.iter |> Iterator.fold (\s, (id, record) -> do
         s + D.dumpRecord record + "\n\n") s
-    //s <- program.functions |> Map.iter |> Iterator.fold (\s, (id, f) -> do
-    //    s + F.dump f + "\n\n") s
+    s <- program.functions |> Map.iter |> Iterator.fold (\s, (id, f) -> do
+        s + F.dump f + "\n\n") s
     s

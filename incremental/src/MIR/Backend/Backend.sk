@@ -187,17 +187,21 @@ processNonCopyables mir_program data_groups = do
 
 processProgram :: MP.Program -> LP.Program
 processProgram mir_program = do
+    dumpProgram mir_program (MIR "first")
     (data_groups, function_groups) <- createGroups mir_program
     trace "Process groups.."
     mir_program <- processDataGroups mir_program data_groups
     mir_program <- processCopyables mir_program data_groups
     mir_program <- processNonCopyables mir_program data_groups
+    trace "Rebinder.."
+    mir_program <- Rebinder.processProgram mir_program
+    dumpProgram mir_program (MIR "rebinder")
     trace "Inliner.."
     mir_program <- Inliner.processProgram mir_program function_groups
     dumpProgram mir_program (MIR "inliner")
     trace "Rebinder.."
     mir_program <- Rebinder.processProgram mir_program
-    dumpProgram mir_program (MIR "rebinder")
+    dumpProgram mir_program (MIR "rebinder2")
     (data_groups, function_groups) <- createGroups mir_program
     trace "WildcardRemover.."
     mir_program <- WildcardRemover.processProgram mir_program

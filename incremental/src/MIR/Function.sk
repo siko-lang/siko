@@ -5,6 +5,7 @@ import Siko.MIR.Expr as E
 import Siko.MIR.Identity
 import Siko.MIR.Type as T
 import Siko.Util.Counter
+import Siko.Util.Format
 
 data Attribute = Inline deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
@@ -46,6 +47,19 @@ data Function = { id :: Identity,
                   kind :: FunctionKind,
                   type :: FunctionType
                 } deriving (PartialEq, Eq, Show)
+
+dump :: Function -> String
+dump function = do
+    s <- "{} :: {}\n" % (short function.id, function.type)
+    args <- function.type.args |> List.iter |> Iterator.fold (\args, arg -> do
+        index <- getLength args
+        push args ("arg{}" % index)) []
+    args <- join args " "
+    case function.kind of
+        Normal info -> s + "{} {} = {}" % (short function.id, args, (E.prettyPrint info.body (Indent 0)).0)
+        VariantCtor index -> s + "{} {} = <variant_ctor:{}>" % (short function.id, args, index)
+        RecordCtor -> s + "{} {} = <record_ctor>" % (short function.id, args)
+        Extern type_mapping -> s + "{} {} = extern" % (short function.id, args)
 
 data Step = External Int
           | Variant Int

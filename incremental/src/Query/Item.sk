@@ -45,6 +45,8 @@ data Command = CollectLocalItems Key
              | CreateClosure Key
              | LowerHIRFunction Key
              | LowerTuple Key
+             | LowerHIRRecord Key
+             | LowerHIRAdt Key
              | RunLegacyBackend
              deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
@@ -74,7 +76,9 @@ getPriority cmd = case cmd of
     CreateClosure _ -> 21
     LowerHIRFunction _ -> 22
     LowerTuple _ -> 23
-    RunLegacyBackend -> 24
+    LowerHIRRecord _ -> 24
+    LowerHIRAdt _ -> 25
+    RunLegacyBackend -> 26
 
 data ItemKind = UnresolvedModuleKind
               | LocalItemsKind
@@ -108,6 +112,7 @@ data ItemKind = UnresolvedModuleKind
               | ClosureKind
               | MIRFunctionKind
               | MIRRecordKind
+              | MIRAdtKind
               deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
 data Item = UnresolvedModule M.Module
@@ -142,6 +147,7 @@ data Item = UnresolvedModule M.Module
           | Closure
           | MIRFunction MF.Function
           | MIRRecord MD.Record
+          | MIRAdt MD.AlgebraicDataType
           deriving (Show, PartialEq, Eq)
 
 data Key = UnresolvedModuleKey String
@@ -176,6 +182,7 @@ data Key = UnresolvedModuleKey String
          | ClosureKey FQ.FullyQualifiedName
          | MIRFunctionKey MI.Identity
          | MIRRecordKey MI.Identity
+         | MIRAdtKey MI.Identity
          deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
 asUnresolvedModule :: Item -> M.Module
@@ -352,6 +359,7 @@ getModuleName key = case key of
     ClosureKey qn -> SS.get (FQ.getModuleName qn)
     MIRFunctionKey (MI.Identity qn) -> SS.get (FQ.getModuleName qn)
     MIRRecordKey (MI.Identity qn) -> SS.get (FQ.getModuleName qn)
+    MIRAdtKey (MI.Identity qn) -> SS.get (FQ.getModuleName qn)
 
 getFullyQualifiedName :: Key -> FQ.FullyQualifiedName
 getFullyQualifiedName key = case key of
@@ -387,6 +395,7 @@ getFullyQualifiedName key = case key of
     ClosureKey qn -> qn
     MIRFunctionKey (MI.Identity qn) -> qn
     MIRRecordKey (MI.Identity qn) -> qn
+    MIRAdtKey (MI.Identity qn) -> qn
 
 getKind :: Item -> ItemKind
 getKind item = case item of
@@ -422,3 +431,4 @@ getKind item = case item of
     Closure -> ClosureKind
     MIRFunction _ -> MIRFunctionKind
     MIRRecord _ -> MIRRecordKind
+    MIRAdt _ -> MIRAdtKind
