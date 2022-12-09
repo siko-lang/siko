@@ -3,10 +3,8 @@ module Siko.Resolver.Data where
 import Map
 import Siko.HIR.Data as HD
 import Siko.HIR.Expr as HE
-import Siko.HIR.ExprIdGenerator
 import Siko.HIR.FullyQualifiedName
 import Siko.HIR.Function as HF
-import Siko.HIR.PatternIdGenerator
 import Siko.HIR.Type
 import Siko.Resolver
 import Siko.Resolver.Error
@@ -73,11 +71,9 @@ processAdt state module_resolver (SD.AlgebraicDataType name type_arguments varia
     (state, derived_classes) <- processDerivedClasses state module_resolver derived_classes
     qn <- FullPath module_resolver.module_name n
     type <- Named qn type_args
-    ctors <- List.map variants (\HD.Variant name location args -> do
+    ctors <- List.mapE variants (\index, HD.Variant name location args -> do
         ctor_type <- createFunctionFromArgs args type
-        expr_id_gen <- createExprIdGenerator
-        pattern_id_gen <- createPatternIdGenerator
-        HF.Function location name (getLength args) HF.VariantCtor (Some ctor_type) (Some ctor_type) None None [] [] expr_id_gen pattern_id_gen)
+        HF.Function location name (getLength args) (HF.VariantCtor index) (Some ctor_type) [])
     variant_infos <- List.foldE [] variants (\variant_infos, index, (HD.Variant name location _) -> do
         info <- HD.VariantInfo qn index location
         List.push variant_infos (info, name))
@@ -104,9 +100,7 @@ processRecord state module_resolver (SD.Record name type_arguments fields extern
     record <- HD.Record qn location type_args fields external derived_classes type implicit_member
     ctor_fn <- if not external
     then do
-        expr_id_gen <- createExprIdGenerator
-        pattern_id_gen <- createPatternIdGenerator
-        ctor_fn <- HF.Function location qn (getLength fields) HF.RecordCtor (Some ctor_type) (Some ctor_type) None None [] [] expr_id_gen pattern_id_gen
+        ctor_fn <- HF.Function location qn (getLength fields) HF.RecordCtor (Some ctor_type) []
         Some ctor_fn
     else None
     (state, record, ctor_fn)

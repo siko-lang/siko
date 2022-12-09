@@ -172,7 +172,9 @@ processExpr context expr = do
                 None -> (context, body)
         E.StaticFunctionCall qn args -> do
             fn <- QL.getUpdateTransformedFunction context.state qn
-            effects <- Option.unwrap fn.effects
+            effects <- case fn.kind of
+                F.Normal info -> Option.expect info.effects "Effect not found"
+                _ -> []
             if List.isEmpty effects
             then do
                 effectless_id <- FQ.Effectless qn None
@@ -218,29 +220,32 @@ typeConverter sub type = S.apply type sub
 resolveEffects a :: (StateProvider a) => a -> FQ.FullyQualifiedName -> Eff.EffectResolutionSet -> (a, F.Function T.Type, [FQ.FullyQualifiedName])
 resolveEffects state orig_qn resolution_set = do
     fn <- QL.getUpdateTransformedFunction state orig_qn
-    context <- Context [] fn.expr_id_gen fn.pattern_id_gen Map.empty state []
-    context <- addEffectContext context resolution_set (Some FromArg)
-    (context, sub) <- case fn.effects of
-        Some effects -> do
-            List.fold (context, S.createSubstitution) effects (\(context, sub), eff -> do
-                eff_name <- T.getNameFromType eff
-                case get resolution_set.effect_types eff_name of
-                    Some specific_eff -> do
-                        eff <- T.fixedType eff
-                        case U.unify context.state sub specific_eff eff of
-                            Ok (state, sub) -> (context { state = state }, sub)
-                            Err _ -> panic "EffectResolver: failed to unify {} {}" % (TF.toString specific_eff, TF.toString eff)
-                    None -> panic "Eff type {} not found in resolution" % eff_name)
-        None -> (context, S.createSubstitution)
-    (context, body) <- case fn.body of
-        Some body -> do
+    (state, queue, kind) <- case fn.kind of
+        F.Normal info -> do
+            context <- Context [] info.expr_id_gen info.pattern_id_gen Map.empty state []
+            context <- addEffectContext context resolution_set (Some FromArg)
+            (context, sub) <- case fn.kind of
+                F.Normal info -> case info.effects of
+                    Some effects -> do
+                        List.fold (context, S.createSubstitution) effects (\(context, sub), eff -> do
+                            eff_name <- T.getNameFromType eff
+                            case get resolution_set.effect_types eff_name of
+                                Some specific_eff -> do
+                                    eff <- T.fixedType eff
+                                    case U.unify context.state sub specific_eff eff of
+                                        Ok (state, sub) -> (context { state = state }, sub)
+                                        Err _ -> panic "EffectResolver: failed to unify {} {}" % (TF.toString specific_eff, TF.toString eff)
+                                None -> panic "Eff type {} not found in resolution" % eff_name)
+                    None -> (context, S.createSubstitution)
+                _ -> (context, S.createSubstitution)
             traversal_context <- createTraversalContext context processExpr processPattern
             traversal_context <- setPreWithHook traversal_context preWithHook
             traversal_context <- setPostWithHook traversal_context postWithHook
             traversal_context <- setTypeConverter traversal_context (typeConverter sub)
-            (context, body) <- traverse traversal_context body
-            (context, Some body)
-        None -> (context, None)
+            (context, body) <- traverse traversal_context info.body
+            info <- info { body = body, expr_id_gen = context.expr_id_gen, pattern_id_gen = context.pattern_id_gen }
+            (context.state, context.queue, F.Normal info)
+        kind -> (state, [], kind)
     (arg_count, fn_type) <- if isDynamic resolution_set
     then do
         fn_type <- case fn.type of
@@ -250,5 +255,5 @@ resolveEffects state orig_qn resolution_set = do
             None -> None
         (fn.arg_count + 1, fn_type)
     else (fn.arg_count, fn.type)
-    fn <- fn { arg_count = arg_count, type = fn_type, body = body, effects = Some [], expr_id_gen = context.expr_id_gen, pattern_id_gen = context.pattern_id_gen }
-    (context.state, fn, context.queue)
+    fn <- fn { arg_count = arg_count, type = fn_type, kind = kind }
+    (state, fn, queue)

@@ -1,6 +1,7 @@
 module Siko.HIR.Backend.Lowering where
 
 import Siko.HIR.Backend.StateProvider
+import Siko.HIR.Backend.TypeMapping
 import Siko.HIR.Backend.Unification.Data as UD
 import Siko.HIR.Data as HD
 import Siko.HIR.Expr as HE
@@ -8,6 +9,7 @@ import Siko.HIR.FullyQualifiedName as FQ
 import Siko.HIR.Function as HF
 import Siko.HIR.Pattern as HP
 import Siko.HIR.Type as HT
+import Siko.HIR.TypeFormatter as TF
 import Siko.MIR.Data as MD
 import Siko.MIR.Expr as ME
 import Siko.MIR.Function as MF
@@ -56,7 +58,7 @@ lowerType context hir_type = case hir_type of
                 mir_id <- lowerFullyQualifiedName (FQ.Record qn args)
                 context <- context { records = List.push context.records mir_id }
                 (context, MT.Record mir_id)
-    HT.Function from to -> panic "Function type in MIR lowering"
+    HT.Function from to -> panic "Function type in MIR lowering: {}" % TF.toString hir_type
     HT.Never -> (context, MT.Never)
     HT.Ref lifetime ty -> do
         (context, ty) <- lowerType context ty
@@ -178,31 +180,44 @@ lowerExpr context hir_expr = do
         HE.With handlers body effects -> panic "With in MIR lowering"
     (context, ME.Expr mir_s_expr mir_type (ME.ExprId 0))
 
-lowerFunction a :: (StateProvider a) => a -> FQ.FullyQualifiedName -> HF.Function HT.Type -> (a, MF.Function, [MI.Identity], [MI.Identity], [MI.Identity])
+lowerFunction a :: (StateProvider a) => a -> FQ.FullyQualifiedName -> HF.Function HT.Type -> (a, MF.Function, [MI.Identity], [MI.Identity], [MI.Identity], [MI.Identity])
 lowerFunction state qn hir_function = do
     mir_id <- lowerFullyQualifiedName qn
     println "Lowering HIR -> MIR {}" % mir_id
     context <- createContext state
-    hir_function_type <- Option.unwrap hir_function.type
+    hir_function_type <- Option.expect hir_function.type "Function has no type"
+    println "Full type {}" % TF.toString hir_function_type
     args <- HT.getArgsLimited hir_function_type hir_function.arg_count
+    println "args {}" % TF.toStringTypes args
     (context, mir_args) <- List.mapS context args lowerType
     result_type <- HT.getResultType hir_function_type hir_function.arg_count
+    println "result_type {}" % TF.toString result_type
     (context, mir_result_type) <- lowerType context result_type
-    (context, kind) <- case hir_function.body of
-        Some hir_body -> do
-            (context, mir_body) <- lowerExpr context hir_body
+    (context, kind) <- case hir_function.kind of
+        HF.Normal info -> do
+            (context, mir_body) <- lowerExpr context info.body
             attributes <- []
             function_info <- MF.FunctionInfo mir_body (Counter ME.ExprId 0) (Counter ME.Temp 0) attributes
             (context, MF.Normal function_info)
-        None -> do
-            kind <- MF.RecordCtor // TODO
+        HF.ExternInfo info -> do
+            (state, type_mapping) <- createTypeMap context.state info.type_with_ownership hir_function.arg_count info.extern_constraints
+            context <- context { state = state }
+            kind <- MF.Extern type_mapping
             (context, kind)
+        HF.VariantCtor index -> do
+            kind <- MF.VariantCtor index
+            (context, kind)
+        HF.RecordCtor -> do
+            kind <- MF.RecordCtor
+            (context, kind)
+        HF.Interface _ -> panic "Trying to lower an interface in MIR lowering! {}" % mir_id
     mir_function_type <- MF.FunctionType mir_args mir_result_type
     //println "MIR function type {}" % mir_function_type
     functions <- context.functions |> List.sort |> List.dedup
     tuples <- context.tuples |> List.sort |> List.dedup
     records <- context.records |> List.sort |> List.dedup
-    (context.state, MF.Function mir_id kind mir_function_type, functions, tuples, records)
+    adts <- context.adts |> List.sort |> List.dedup
+    (context.state, MF.Function mir_id kind mir_function_type, functions, tuples, records, adts)
 
 createTuple a :: (StateProvider a) => a -> MI.Identity -> [HT.Type] -> (a, MD.Record, MF.Function)
 createTuple state id args = do
@@ -218,12 +233,20 @@ lowerRecord state qn = do
     case qn of
         FQ.Record base_qn args -> do
             record <- QL.getRecord state base_qn
-            (state, record) <- Result.unwrap (UD.instantiateRecord state record (HT.Named base_qn args))
+            type <- HT.Named base_qn args
+            (state, record) <- case UD.instantiateRecord state record type of
+                Ok (state, record) -> (state, record)
+                Err _ -> panic "Cannot instantiate record {} with {}" % (TF.toString record.type, TF.toString type)
             context <- createContext state
+            (context, external_record_info) <- if record.external
+            then do
+                (context, type_args) <- List.mapS context record.type_args lowerType
+                (context, Some (MD.ExternalRecordInfo type_args))
+            else (context, None)
             (context, fields) <- List.mapSE context record.fields (\context, index, HD.RecordField _ type -> do
                 (context, mir_type) <- lowerType context type
                 (context, MD.RecordField ("field{}" % index) index mir_type False))
-            (context.state, MD.Record (MI.Identity qn) fields None [] [])
+            (context.state, MD.Record (MI.Identity qn) fields external_record_info [] [])
         _ -> panic "Record's qn is not record! {}" % qn
 
 lowerAdt a :: (StateProvider a) => a -> FQ.FullyQualifiedName -> (a, MD.AlgebraicDataType)
@@ -231,7 +254,10 @@ lowerAdt state qn = do
     case qn of
         FQ.Adt base_qn args -> do
             adt <- QL.getAdt state base_qn
-            (state, adt) <- Result.unwrap (UD.instantiateAdt state adt (HT.Named base_qn args))
+            type <- HT.Named base_qn args
+            (state, adt) <- case UD.instantiateAdt state adt type of
+                Ok (state, adt) -> (state, adt)
+                Err _ -> panic "Cannot instantiate adt {} with {}" % (TF.toString adt.type, TF.toString type)
             context <- createContext state
             // (context, variants) <- List.mapSE context adt.variants (\context, index, HD.Variant name _ items -> do
             //     (context, mir_type) <- lowerType context type

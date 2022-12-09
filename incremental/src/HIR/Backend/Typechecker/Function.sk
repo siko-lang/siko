@@ -91,7 +91,12 @@ createFunctionTypeInfo state f = do
     else ()
     (args, _) <- List.split args f.arg_count
     result_ty <- T.getResultType ty (getLength args)
-    func_type_info <- FunctionTypeInfo f.name args ty result_ty f.effects defined
+    effects <- case f.kind of
+        F.Normal info -> if isSome info.source
+            then Some []
+            else info.effects
+        _ -> Some []
+    func_type_info <- FunctionTypeInfo f.name args ty result_ty effects defined
     (state, func_type_info)
 
 createFunctionDependencyInfo a :: (StateProvider a) => a -> F.Function () -> FunctionDependencyInfo
@@ -99,25 +104,29 @@ createFunctionDependencyInfo state function = do
     (deps, forced_deps) <- getFunctionDependencies function
     untyped_deps <- List.filter deps (\qn -> do
         fn <- QL.getFunction state qn
-        isNone fn.type || isNone fn.effects)
+        defined_types <- isSome fn.type
+        defined_effects <- case fn.kind of
+            F.Normal info -> isSome info.effects
+            _ -> False
+        not defined_types || not defined_effects)
     FunctionDependencyInfo (untyped_deps + forced_deps)
 
 initializeFunctionType a :: (StateProvider a) => Context a -> F.Function () -> Context a
 initializeFunctionType context fn = do
-    case fn.body of
-        Some body -> do
+    case fn.kind of
+        F.Normal info -> do
             traversal_context <- createTraversalContext context (initializeExprType fn.name) initializePatternType
-            (context, body) <- traverse traversal_context body
+            (context, body) <- traverse traversal_context info.body
             context
-        None -> context
+        _ -> context
 
 checkFunctionEffects a :: (StateProvider a) => Context a -> F.Function () -> (Context a, [T.Type])
 checkFunctionEffects context fn = do
     //trace "Checking function effects {}" % fn.name
-    case fn.body of
-        Some body -> do
+    case fn.kind of
+        F.Normal info -> do
             (context, func_type_info) <- getFunctionTypeInfo context fn.name
-            Expr _ body_id _ location <- body
+            Expr _ body_id _ location <- info.body
             eff_signature <- TS.getExprEffectSignature context.type_store context.group_index body_id
             inferred_effect_names <- getKeys eff_signature.signatures
             case func_type_info.effects of
@@ -153,7 +162,7 @@ checkFunctionEffects context fn = do
                 None -> do
                     inferred_effects <- eff_signature.signatures |> Map.iter |> Iterator.map (\(_, eff) -> eff) |> toList
                     (context, inferred_effects)
-        None -> (context, [])
+        _ -> (context, [])
 
 checkMain a :: (StateProvider a) => Context a -> F.Function () -> Context a
 checkMain context fn = do
@@ -177,12 +186,12 @@ checkMain context fn = do
 checkFunctionType a :: (StateProvider a) => Context a -> F.Function () -> Context a
 checkFunctionType context fn = do
     //trace "Checking function {}" % fn.name
-    case fn.body of
-        Some body -> do
+    case fn.kind of
+        F.Normal info -> do
             traversal_context <- createTraversalContext context checkExprType checkPatternType
-            (context, _) <- traverse traversal_context body
+            (context, _) <- traverse traversal_context info.body
             (context, func_type_info) <- getFunctionTypeInfo context fn.name
-            Expr _ body_id _ location <- body
+            Expr _ body_id _ location <- info.body
             context <- matchExprWith context body_id func_type_info.result_type location
             returns <- context.returns
             context <- List.fold context returns (\context, (arg_id, arg_location) -> do
@@ -196,22 +205,22 @@ checkFunctionType context fn = do
             else context
             context <- context { returns = [] }
             context
-        None -> context
+        _ -> context
 
 checkMissingTypes a :: (StateProvider a) => Context a -> F.Function () -> Context a
 checkMissingTypes context fn = do
     //println "Checking missing types {}" % fn.name
-    case fn.body of
-        Some body -> do
+    case fn.kind of
+        F.Normal info -> do
             (context, func_type_info) <- getFunctionTypeInfo context fn.name
             vars <- collectVars [] func_type_info.function_type
             vars <- case func_type_info.effects of
                 Some effects -> List.fold vars effects (\vars, eff -> collectVars vars eff)
                 None -> vars // FIXME: this cannot happen after all fixes!
             traversal_context <- createTraversalContext (context, []) (checkMissingTypeInExpr vars) (checkMissingTypeInPattern vars)
-            ((context, _), _) <- traverse traversal_context body
+            ((context, _), _) <- traverse traversal_context info.body
             context
-        None -> context
+        _ -> context
 
 processGroup a :: (StateProvider a) => a -> [FullyQualifiedName] -> (a, Map FullyQualifiedName (F.Function T.Type))
 processGroup state group_items = do
@@ -233,25 +242,25 @@ processGroup state group_items = do
         context :: Context a <- context // FIXME: inference
         context <- context { group_index = group_index }
         fn <- QL.getFunction context.state name
-        case fn.body of
-            Some body -> do
+        case fn.kind of
+            F.Normal info -> do
                 (context, func_type_info) <- getFunctionTypeInfo context fn.name
-                Expr _ body_id _ location <- body
+                Expr _ body_id _ location <- info.body
                 eff_signature <- TS.getExprEffectSignature context.type_store context.group_index body_id
                 (context, group_effects) <- mergeEffectSignatureSets context group_effects eff_signature location
                 (context, group_effects)
-            None -> (context, group_effects))
+            _ -> (context, group_effects))
     context <- List.foldE context group_items (\context, group_index, name -> do
         context :: Context a <- context // FIXME: inference
         context <- context { group_index = group_index }
         fn <- QL.getFunction context.state name
-        case fn.body of
-            Some body -> do
+        case fn.kind of
+            F.Normal info -> do
                 (context, func_type_info) <- getFunctionTypeInfo context fn.name
-                Expr _ body_id _ location <- body
+                Expr _ body_id _ location <- info.body
                 type_store <- TS.addExprEffectSignatureSet context.type_store context.group_index body_id group_effects
                 context { type_store = type_store }
-            None -> context)
+            _ -> context)
     (context, effect_map) <- List.foldE (context, Map.empty) group_items (\(context, effect_map), group_index, name -> do
         context :: Context a <- context // FIXME: inference
         context <- context { group_index = group_index }
@@ -271,7 +280,7 @@ processGroup state group_items = do
         context <- context { group_index = group_index }
         fn <- QL.getFunction context.state name
         (context, func_type_info) <- getFunctionTypeInfo context name
-        effects <- Option.unwrap (Map.get effect_map name)
+        effects <- Option.expect (Map.get effect_map name) "Effects not found in effect_map"
         fn <- Std.Intrinsics.clone fn
         type_store <- Std.Intrinsics.clone context.type_store
         name <- Std.Intrinsics.clone name

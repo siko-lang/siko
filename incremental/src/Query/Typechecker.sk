@@ -27,25 +27,32 @@ createFunctionTypeInfo driver key = do
     function <- I.asResolvedFunction function
     state <- BSP.createStateProvider driver
     case function.kind of
-        HF.InstanceMember instance_qn -> do
-            i <- DB.get driver.db (I.ResolvedInstanceKey instance_qn)
-            i <- I.asResolvedInstance i
-            c <- getClass driver i.class_name
-            class_type_info <- DB.get driver.db (I.ClassTypeInfoKey i.class_name)
-            class_type_info <- I.asClassTypeInfo class_type_info
-            (state, type) <- TC.getMemberType state i function class_type_info
-            // TODO: error
-            case type of
-                Some type -> do
-                    function <- function { type = Some type }
-                    (state, func_type_info) <- TF.createFunctionTypeInfo state function
-                    // TODO: error
-                    key <- I.FunctionTypeInfoKey qn
-                    item <- I.FunctionTypeInfo func_type_info
-                    addToDb driver key item
-                None -> do
-                    //FIXME: TODO: use result!!
-                    driver
+        HF.Normal info -> case info.source of
+            Some (HF.InstanceMember instance_qn) -> do
+                i <- DB.get driver.db (I.ResolvedInstanceKey instance_qn)
+                i <- I.asResolvedInstance i
+                c <- getClass driver i.class_name
+                class_type_info <- DB.get driver.db (I.ClassTypeInfoKey i.class_name)
+                class_type_info <- I.asClassTypeInfo class_type_info
+                (state, type) <- TC.getMemberType state i function class_type_info
+                // TODO: error
+                case type of
+                    Some type -> do
+                        function <- function { type = Some type }
+                        (state, func_type_info) <- TF.createFunctionTypeInfo state function
+                        // TODO: error
+                        key <- I.FunctionTypeInfoKey qn
+                        item <- I.FunctionTypeInfo func_type_info
+                        addToDb driver key item
+                    None -> do
+                        //FIXME: TODO: use result!!
+                        driver
+            _ -> do
+                (state, func_type_info) <- TF.createFunctionTypeInfo state function
+                // TODO: error
+                key <- I.FunctionTypeInfoKey qn
+                item <- I.FunctionTypeInfo func_type_info
+                addToDb driver key item
         _ -> do
             (state, func_type_info) <- TF.createFunctionTypeInfo state function
             // TODO: error

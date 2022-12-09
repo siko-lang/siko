@@ -240,7 +240,7 @@ createEffectTypeInfo context qn = do
     eff <- QL.getEffect context.state qn
     members <- eff.members |> List.iter |> Iterator.map (\member_name -> do
         function <- QL.getFunction context.state member_name
-        function_type <- Option.unwrap function.type
+        function_type <- Option.expect function.type "Function has no type"
         (member_name, function_type)) |> toMap
     EffectTypeInfo eff.type members
 
@@ -323,7 +323,7 @@ getEffectType info handlers context effect_name handled_effect = do
         checkEffectHandlerType handlers (context, eff_type_info) (handler_name, handler_infos) = do
             HandlerInfo location index <- atIndex handler_infos 0
             (context, handler_type) <- getEffectHandlerType context (atIndex handlers index)
-            eff_type_info_member_type <- Option.unwrap (get eff_type_info.members handler_name)
+            eff_type_info_member_type <- Option.expect (get eff_type_info.members handler_name) "eff_type_info_member_type not found"
             (context, sub) <- unify2 context S.createSubstitution handler_type eff_type_info_member_type location
             eff_type_info <- S.apply eff_type_info sub
             (context, eff_type_info)
@@ -359,7 +359,7 @@ initializeExprType current_fn_name context orig_expr = do
             context
         E.ClassMemberCall qn args -> do
             function <- QL.getFunction context.state qn
-            (context, function_type) <- instantiateType context (Option.unwrap function.type)
+            (context, function_type) <- instantiateType context (Option.expect function.type "class member has no type")
             //println "class member call {} {}" % (qn, TF.toString function_type)
             (context, var) <- U.getNewTypeVarType context
             context <- addExprType context id (TS.FunctionCall var function_type)
@@ -369,7 +369,7 @@ initializeExprType current_fn_name context orig_expr = do
             effect_name <- getEffectName function.kind
             eff_type_info <- createEffectTypeInfo context effect_name
             (eff_type_info, context) <- UUtil.instantiateGeneric eff_type_info context
-            function_type <- Option.unwrap (get eff_type_info.members qn)
+            function_type <- Option.expect (get eff_type_info.members qn) "effect member has no type"
             (context, var) <- U.getNewTypeVarType context
             context <- addExprType context id (TS.FunctionCall var function_type)
             context <- addExprEffectSignatureSet context id (TEff.createEffectSignatureSetFrom eff_type_info.effect_type)

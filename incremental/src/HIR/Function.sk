@@ -32,22 +32,41 @@ data ExternConstraint = ExternConverter Converter
 
 data LambdaId = LambdaId Int deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
-data FunctionKind = Normal
-                  | ClassMember FullyQualifiedName
-                  | EffectMember FullyQualifiedName
-                  | InstanceMember FullyQualifiedName
-                  | Lambda LambdaId
-                  | VariantCtor
-                  | RecordCtor
-                  deriving (Show, PartialEq, Eq)
+data Source = ClassMember FullyQualifiedName
+            | EffectMember FullyQualifiedName
+            | InstanceMember FullyQualifiedName
+            deriving (PartialEq, Eq, Show)
+
+data NormalFunctionInfo a = { body :: Expr a,
+                              effects :: Option [Type],
+                              expr_id_gen :: ExprIdGenerator,
+                              pattern_id_gen :: PatternIdGenerator,
+                              source :: Option Source
+                            } deriving (PartialEq, Eq)
+
+instance (Show a) => Show NormalFunctionInfo a where
+    show info = show info.body
+
+data ExternFunctionInfo = { type_with_ownership :: Type,
+                            extern_constraints :: [ExternConstraint]
+                          } deriving (Show, PartialEq, Eq)
+
+data FunctionKind a = Normal (NormalFunctionInfo a)
+                    | VariantCtor Int
+                    | RecordCtor
+                    | ExternInfo ExternFunctionInfo
+                    | Interface Source
+                    deriving (Show, PartialEq, Eq)
 
 isNormal kind = case kind of
-    Normal -> True
+    Normal _ -> True
     _ -> False
 
-getEffectName :: FunctionKind -> FullyQualifiedName
+getEffectName :: (Show a) => FunctionKind a -> FullyQualifiedName
 getEffectName kind = case kind of
-    EffectMember qn -> qn
+    Normal info -> case info.source of
+        Some (EffectMember qn) -> qn
+        _ -> panic "{} is not an effect member" % kind
     _ -> panic "{} is not an effect member" % kind
 
 data Attribute = Inline deriving (Show, PartialEq, Eq, PartialOrd, Ord)
@@ -55,15 +74,9 @@ data Attribute = Inline deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 data Function a = { location :: Location,
                     name :: FullyQualifiedName,
                     arg_count :: Int,
-                    kind :: FunctionKind,
+                    kind :: FunctionKind a,
                     type :: Option Type,
-                    type_with_ownership :: Option Type,
-                    body :: Option (Expr a),
-                    effects :: Option [Type],
-                    attributes :: [Attribute],
-                    extern_constraints :: [ExternConstraint],
-                    expr_id_gen :: ExprIdGenerator,
-                    pattern_id_gen :: PatternIdGenerator
+                    attributes :: [Attribute]
                   } deriving (PartialEq, Eq)
 
 isInlined a :: Function a -> Bool
@@ -74,4 +87,4 @@ instance (Show a) => Show Function a where
         ty <- case f.type of
             Some t -> TF.toString t
             None -> "<unknown>"
-        "{} - {} :: {}" % (f.name, ty, f.body)
+        "{} - {} :: {}" % (f.name, ty, f.kind)

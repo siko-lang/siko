@@ -24,11 +24,11 @@ processEffect state module_resolver eff = do
     (state, type_resolver) <- processClassConstraints state type_resolver eff.constraints
     (type_resolver, arguments) <- List.mapS type_resolver eff.arguments resolveTypeArg
     eff_type <- HT.Named qn arguments
-    kind <- HF.EffectMember qn
+    source <- Some (HF.EffectMember qn)
     unresolved_functions <- collectUnresolvedFunctions eff.members
     (effect_members, unresolved_function_infos) <- List.mapS [] unresolved_functions (\effect_members, f -> do
         Ident name _ <- f.name
         qn <- FQ.FullPath module_resolver.module_name name
-        (List.push effect_members qn, UnresolvedFunctionInfo f qn kind createEmptyFunctionScopeResolver type_resolver (getVarGen state)))
+        (List.push effect_members qn, UnresolvedFunctionInfo f qn createEmptyFunctionScopeResolver type_resolver (getVarGen state) source))
     hir_effect <- HE.Effect qn location eff_type effect_members
     (state, hir_effect, unresolved_function_infos)

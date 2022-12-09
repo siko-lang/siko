@@ -44,7 +44,7 @@ processExpr context expr = do
     case s_expr of
         E.StaticFunctionCall qn args -> do
             fn <- QL.getResolvedEffectsFunction context.state qn
-            fn_type <- Option.unwrap fn.type
+            fn_type <- Option.expect fn.type "function has no type"
             (mapper, state) <- UUtil.instantiateGenericMapper fn_type context.state
             mapper <- UUtil.skipNever mapper
             (mapper, fn_type) <- S.transform mapper fn_type UUtil.remapType
@@ -62,39 +62,42 @@ processExpr context expr = do
             arg_types <- List.map args (\E.Expr _ _ t _ -> t)
             qn <- addEffectless qn
             fn <- QL.getResolvedEffectsFunction context.state qn
-            fn_type <- Option.unwrap fn.type
-            case fn.kind of
-                F.ClassMember class_name -> do
-                    member_name <- FQ.getShortName qn
-                    //println "Calling {} in {}/ {}" % (member_name, class_name, qn)
-                    class_type_info <- QL.getClassTypeInfo context.state class_name
-                    (class_type_info, state) <- UUtil.instantiateGeneric class_type_info context.state
-                    context <- context { state = state }
-                    case Map.get class_type_info.members member_name of
-                        Some member -> do
-                            (state, function_type, sub) <- UUtil.getFunctionType context.state arg_types expr_type member.type
-                            context <- context { state = state }
-                            arg_type <- S.apply class_type_info.arg_type sub
-                            //println "arg type {}" % TF.toString arg_type
-                            (state, instance_info) <- do
-                                case IR.checkInstance context.state arg_type class_name of
-                                    Ok (state, sub, instance_info) -> (state, instance_info)
-                                    Err context -> panic "{}/{}/{} no instance found" % (TF.toString arg_type, class_name, qn)
-                            context <- context { state = state }
-                            user_instance <- QL.getInstance context.state instance_info.id
-                            selected_member_name <- List.fold None user_instance.members (\selected_member_name, member -> do
-                                name <- FQ.getShortName member
-                                if name == member_name
-                                then Some member
-                                else selected_member_name)
-                            selected_member_name <- case selected_member_name of
-                                Some selected_member_name -> selected_member_name
-                                None -> qn
-                            monomorphized_qn <- FQ.Monomorphized (addEffectless selected_member_name) function_type
-                            context <- context { queue = List.push context.queue monomorphized_qn }
-                            (context, E.Expr (E.StaticFunctionCall monomorphized_qn args) id expr_type location)
-                        None -> panic "class member {} not found" % member_name
+            fn_type <- Option.expect fn.type "function has no type"
+            class_name <- case fn.kind of
+                F.Normal info -> case info.source of
+                    Some (F.ClassMember class_name) -> class_name
+                    _ -> panic "ClassMember calls non class member"
+                F.Interface (F.ClassMember class_name) -> class_name
                 _ -> panic "ClassMember calls non class member"
+            member_name <- FQ.getShortName qn
+            //println "Calling {} in {}/ {}" % (member_name, class_name, qn)
+            class_type_info <- QL.getClassTypeInfo context.state class_name
+            (class_type_info, state) <- UUtil.instantiateGeneric class_type_info context.state
+            context <- context { state = state }
+            case Map.get class_type_info.members member_name of
+                Some member -> do
+                    (state, function_type, sub) <- UUtil.getFunctionType context.state arg_types expr_type member.type
+                    context <- context { state = state }
+                    arg_type <- S.apply class_type_info.arg_type sub
+                    //println "arg type {}" % TF.toString arg_type
+                    (state, instance_info) <- do
+                        case IR.checkInstance context.state arg_type class_name of
+                            Ok (state, sub, instance_info) -> (state, instance_info)
+                            Err context -> panic "{}/{}/{} no instance found" % (TF.toString arg_type, class_name, qn)
+                    context <- context { state = state }
+                    user_instance <- QL.getInstance context.state instance_info.id
+                    selected_member_name <- List.fold None user_instance.members (\selected_member_name, member -> do
+                        name <- FQ.getShortName member
+                        if name == member_name
+                        then Some member
+                        else selected_member_name)
+                    selected_member_name <- case selected_member_name of
+                        Some selected_member_name -> selected_member_name
+                        None -> qn
+                    monomorphized_qn <- FQ.Monomorphized (addEffectless selected_member_name) function_type
+                    context <- context { queue = List.push context.queue monomorphized_qn }
+                    (context, E.Expr (E.StaticFunctionCall monomorphized_qn args) id expr_type location)
+                None -> panic "class member {} not found" % member_name
         s_expr -> (context, E.Expr s_expr id expr_type location)
 
 processPattern a :: (StateProvider a) => Context a -> P.Pattern T.Type -> (Context a, P.Pattern T.Type)
@@ -104,8 +107,8 @@ monomorphizeFunction a :: (StateProvider a) => a -> FQ.FullyQualifiedName -> T.T
 monomorphizeFunction state orig_qn type = do
     //println "monomorphizeFunction {} with {}" % (orig_qn, TF.toString type)
     fn <- QL.getResolvedEffectsFunction state orig_qn
-    (state, queue, body) <- case fn.body of
-        Some body -> do
+    (state, queue, kind) <- case fn.kind of
+        F.Normal info -> do
             sub <- S.createSubstitution
             fn_type <- case fn.type of
                 Some fn_type -> fn_type
@@ -119,8 +122,9 @@ monomorphizeFunction state orig_qn type = do
                 Err _ -> panic "Monomorphization: failed to unify {} {}" % (TF.toString type, TF.toString fn_type)
             traversal_context <- createTraversalContext context processExpr processPattern
             traversal_context <- setTypeConverterWithContext traversal_context (typeConverter sub)
-            (context, body) <- traverse traversal_context body
-            (state, context.queue, Some body)
-        None -> (state, [], None)
-    fn <- fn { body = body, type = Some type }
+            (context, body) <- traverse traversal_context info.body
+            info <- info { body = body }
+            (state, context.queue, F.Normal info)
+        kind -> (state, [], kind)
+    fn <- fn { kind = kind, type = Some type }
     (state, fn, queue)

@@ -68,11 +68,13 @@ processExpr context expr = do
 
 processFunction a :: (StateProvider a) => a -> F.Function T.Type -> (a, F.Function T.Type)
 processFunction state function = do
-    (state, body, expr_id_gen) <- case function.body of
-        Some body -> do
-            context <- Context function.expr_id_gen state
+    (state, kind) <- case function.kind of
+        F.Normal info -> do
+            context <- Context info.expr_id_gen state
             traversal_context <- createTraversalContext context processExpr processPattern
-            (context, body) <- traverse traversal_context body
-            (context.state, Some body, context.expr_id_gen)
-        None -> (state, None, function.expr_id_gen)
-    (state, function { body = body, expr_id_gen = expr_id_gen })
+            (context, body) <- traverse traversal_context info.body
+            info <- info { body = body, expr_id_gen = context.expr_id_gen }
+            kind <- F.Normal info
+            (context.state, kind)
+        kind -> (state, kind)
+    (state, function { kind = kind })

@@ -1,0 +1,120 @@
+module Siko.HIR.Backend.TypeMapping(createTypeMap) where
+
+import Map
+import Siko.HIR.Backend.StateProvider
+import Siko.HIR.Backend.Unification as U
+import Siko.HIR.Backend.Unification.Data as UD
+import Siko.HIR.Backend.Unification.Util
+import Siko.HIR.Data as HD
+import Siko.HIR.Function as HF
+import Siko.HIR.Type as HT
+import Siko.MIR.Function as MF
+import Siko.Query.Lookup as QL
+import Siko.Util.SharedString as SS
+
+data Context a = { state :: a,
+                   var_mappings :: Map String [MF.Position],
+                   owner_positions :: [MF.Position],
+                   ref_positions :: Map Int [MF.Position]
+                 }
+
+convertPath :: HF.ConstraintPath -> MF.Position
+convertPath path = MF.Position (helper path)
+    where
+        helper :: HF.ConstraintPath -> [MF.Step]
+        helper path = case path of
+            HF.Argument index -> [MF.FunctionArg index]
+            HF.Field index parent -> List.push (helper parent) (MF.Field index)
+            HF.Extern index parent -> List.push (helper parent) (MF.External index)
+            HF.Variant index parent -> List.push (helper parent) (MF.Variant index)
+            HF.Implicit index parent -> List.push (helper parent) (MF.Implicit index)
+            HF.Result -> [MF.FunctionResult]
+
+getConvertersAndEquals :: [HF.ExternConstraint] -> ([MF.Converter], [MF.Equal], [MF.Position])
+getConvertersAndEquals extern_constraints = List.fold ([], [], []) extern_constraints (\(converters, equals, independents), c -> case c of
+        HF.ExternConverter hir_converter -> do
+            from <- convertPath hir_converter.from
+            to <- convertPath hir_converter.to
+            (List.push converters (MF.Converter from to), equals, independents)
+        HF.ExternEquality equal -> do
+            left <- convertPath equal.left
+            right <- convertPath equal.right
+            (converters, List.push equals (MF.Equal left right), independents)
+        HF.Independent path -> do
+            pos <- convertPath path
+            (converters, equals, List.push independents pos))
+
+createTypeMap a :: (StateProvider a) => a -> HT.Type -> Int -> [HF.ExternConstraint] -> (a, MF.TypeMapping)
+createTypeMap state type arg_count extern_constraints = do
+    args <- HT.getArgs type
+    (args, _) <- List.split args arg_count
+    result_type <- HT.getResultType type arg_count
+    context <- Context state empty [] empty
+    context <- List.foldE context args (\context, index, arg -> do
+        steps <- [MF.FunctionArg index]
+        mapType context steps arg)
+    context <- mapType context [MF.FunctionResult] result_type
+    (converters, equals, independents) <- getConvertersAndEquals extern_constraints
+    (context.state, MF.TypeMapping context.var_mappings context.owner_positions context.ref_positions converters equals independents)
+
+addVarPosition :: Context a -> String -> [MF.Step] -> Context a
+addVarPosition context name steps = do
+    pos <- MF.Position steps
+    (var_mappings, _) <- alter (\positions -> case positions of
+        Some positions -> Some (push positions pos)
+        None -> Some [pos]) name context.var_mappings
+    context { var_mappings = var_mappings }
+
+addOwnerPosition :: Context a -> [MF.Step] -> Context a
+addOwnerPosition context steps = do
+    pos <- MF.Position steps
+    owner_positions <- push context.owner_positions pos
+    context { owner_positions = owner_positions }
+
+addRefPosition :: Context a -> Int -> [MF.Step] -> Context a
+addRefPosition context lifetime steps = do
+    pos <- MF.Position steps
+    ref_positions <- Map.add context.ref_positions lifetime pos
+    context { ref_positions = ref_positions }
+
+mapType a :: (StateProvider a) => Context a -> [MF.Step] -> HT.Type -> Context a
+mapType context steps type = case type of
+    HT.Var _ _ -> panic "Var type in type mapping!"
+    HT.FixedTypeArg name _ -> do
+        addVarPosition context (SS.get name) steps
+    HT.Named qn args -> do
+        case QL.getRecordOpt context.state qn of
+            Some record -> do
+                if record.external
+                then List.foldE context args (\context, index, arg -> do
+                        steps <- if record.implicit_member
+                        then push steps (MF.Implicit 0)
+                        else steps
+                        steps <- push steps (MF.External index)
+                        mapType context steps arg)
+                else do
+                    (state, record) <- Result.unwrap (UD.instantiateRecord context.state record type)
+                    context <- context { state = state }
+                    List.foldE context record.fields (\context, index, (HD.RecordField name field_type) -> do
+                        steps <- push steps (MF.Field index)
+                        mapType context steps field_type)
+            None -> do
+                adt <- QL.getAdt context.state qn
+                (state, adt) <- Result.unwrap (UD.instantiateAdt context.state adt type)
+                context <- context { state = state }
+                List.foldE context adt.variants (\context, index, v -> do
+                    steps <- push steps (MF.Variant index)
+                    List.foldE context v.items (\context, index, t -> do
+                        steps <- push steps (MF.Field index)
+                        mapType context steps t))
+    HT.Function from to -> panic "Function type in type mapping!"
+    HT.Never -> context
+    HT.Ref lifetime t -> do
+        context <- addRefPosition context lifetime steps
+        mapType context steps t
+    HT.Owner t -> do
+        context <- addOwnerPosition context steps
+        mapType context steps t
+    HT.Tuple args -> List.foldE context args (\context, index, arg -> do
+            steps <- push steps (MF.Field index)
+            mapType context steps arg)

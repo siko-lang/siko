@@ -327,20 +327,20 @@ processPattern context pattern = (context, pattern)
 
 transformCases a :: (StateProvider a) => a -> F.Function T.Type -> (a, F.Function T.Type)
 transformCases state fn = do
-    (state, expr_id_gen, pattern_id_gen, body) <- case fn.body of
-        Some body -> do
-            // tokens <- format body
+    (state, kind) <- case fn.kind of
+        F.Normal info -> do
+            // tokens <- format info.body
             // output <- formatToken tokens
             // println "transformCases for pre {}" % fn.name
             // println output
-            context <- Context state fn.expr_id_gen fn.pattern_id_gen
+            context <- Context state info.expr_id_gen info.pattern_id_gen
             traversal_context <- createTraversalContext context processExpr processPattern
-            (context, body) <- traverse traversal_context body
+            (context, body) <- traverse traversal_context info.body
             // tokens <- format body
             // output <- formatToken tokens
             // println "transformCases for post {}" % fn.name
             // println output
-            (context.state, context.expr_id_gen, context.pattern_id_gen, Some body)
-        None -> (state, fn.expr_id_gen, fn.pattern_id_gen, None)
-    fn <- fn { body = body, expr_id_gen = expr_id_gen, pattern_id_gen = pattern_id_gen }
-    (state, fn)
+            info <- info { body = body, expr_id_gen = context.expr_id_gen, pattern_id_gen = context.pattern_id_gen }
+            (context.state, F.Normal info)
+        kind -> (state, kind)
+    (state, fn { kind = kind })

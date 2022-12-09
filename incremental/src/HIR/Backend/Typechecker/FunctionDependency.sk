@@ -19,15 +19,15 @@ processExpr context expr = do
 
 getFunctionDependencies :: Function () -> ([FullyQualifiedName], [FullyQualifiedName])
 getFunctionDependencies function = do
-    case function.body of
-        Some body -> do
+    case function.kind of
+        Normal info -> do
             context <- Context empty
             traversal_context <- createTraversalContext context processExpr (\c, p -> (c, p))
-            (context, _) <- traverse traversal_context body
+            (context, _) <- traverse traversal_context info.body
             deps <- context.items |> Set.iter |> toList
             // Add dependency for hosting function of the lambda, they have to be in the same group
             forced_deps <- case function.name of
                 FullPathWithLambda qn _ -> [qn]
                 _ -> []
             (deps, forced_deps)
-        None -> ([], [])
+        _ -> ([], [])

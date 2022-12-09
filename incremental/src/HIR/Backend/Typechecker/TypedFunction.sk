@@ -90,6 +90,22 @@ createTypedExpr context (E.Expr s_expr id _ location) = do
     s_expr <- createTypedSimpleExpr context id s_expr
     E.Expr s_expr id type location
 
+createTypedNormalFunctionInfo :: Context -> F.NormalFunctionInfo () -> [T.Type] -> F.NormalFunctionInfo T.Type
+createTypedNormalFunctionInfo context info effects = do
+    F.NormalFunctionInfo { body = createTypedExpr context info.body,
+                           effects = Some effects,
+                           expr_id_gen = info.expr_id_gen,
+                           pattern_id_gen = info.pattern_id_gen,
+                           source = info.source }
+
+createTypedFunctionKind :: Context -> F.FunctionKind () -> [T.Type] -> F.FunctionKind T.Type
+createTypedFunctionKind context function_kind effects = case function_kind of
+    F.Normal info -> F.Normal (createTypedNormalFunctionInfo context info effects)
+    F.VariantCtor index -> F.VariantCtor index
+    F.RecordCtor -> F.RecordCtor
+    F.ExternInfo info -> F.ExternInfo info
+    F.Interface source -> F.Interface source
+
 createTypedFunction :: Context -> F.Function () -> T.Type -> [T.Type] -> F.Function T.Type
 createTypedFunction context function type effects = do
     type <- T.fixedType type
@@ -97,14 +113,6 @@ createTypedFunction context function type effects = do
     F.Function { location = function.location,
                  name = Std.Intrinsics.clone function.name,
                  arg_count = function.arg_count,
-                 kind = Std.Intrinsics.clone function.kind,
+                 kind = createTypedFunctionKind context function.kind effects,
                  type = Some type,
-                 type_with_ownership = Std.Intrinsics.clone function.type_with_ownership,
-                 body = case function.body of
-        Some body -> Some (createTypedExpr context body)
-        None -> None,
-                 effects = Some effects,
-                 attributes = Std.Intrinsics.clone function.attributes,
-                 extern_constraints = Std.Intrinsics.clone function.extern_constraints,
-                 expr_id_gen = function.expr_id_gen,
-                 pattern_id_gen = function.pattern_id_gen }
+                 attributes = Std.Intrinsics.clone function.attributes }

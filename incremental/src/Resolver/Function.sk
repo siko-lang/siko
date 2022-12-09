@@ -45,14 +45,14 @@ resolveLocalFunction function_scope_resolver name = do
 
 data UnresolvedFunctionInfo = { function :: UnresolvedFunction,
                                 name :: FQ.FullyQualifiedName,
-                                kind :: HF.FunctionKind,
                                 function_scope_resolver :: FunctionScopeResolver,
                                 type_resolver :: TypeResolverState,
-                                var_gen :: TypeVarGenerator
+                                var_gen :: TypeVarGenerator,
+                                source :: Option HF.Source
                               } deriving (Show, PartialEq, Eq)
 
 createNormalUnresolvedFunctionInfo :: UnresolvedFunction -> FQ.FullyQualifiedName -> ModuleResolver -> UnresolvedFunctionInfo
-createNormalUnresolvedFunctionInfo unresolved_function qn module_resolver = UnresolvedFunctionInfo unresolved_function qn HF.Normal createEmptyFunctionScopeResolver (createTypeResolverState module_resolver) createTypeVarGenerator
+createNormalUnresolvedFunctionInfo unresolved_function qn module_resolver = UnresolvedFunctionInfo unresolved_function qn createEmptyFunctionScopeResolver (createTypeResolverState module_resolver) createTypeVarGenerator None
 
 data UnresolvedFunction = { name :: Ident,
                             functions :: [SF.Function],
@@ -139,12 +139,13 @@ processExternConstraints extern_constraints = List.map extern_constraints proces
             SF.Implicit index parent -> HF.Implicit index (processConstraintPath parent)
 
 processLambdas :: [LambdaInfo] -> FQ.FullyQualifiedName -> ExprIdGenerator -> PatternIdGenerator -> [HF.Function ()]
-processLambdas lambdas qn expr_id_gen pattern_id_gen = lambdas |> List.iter |> Iterator.map (\lambda -> do
+processLambdas lambdas qn expr_id_gen pattern_id_gen = List.map lambdas (\lambda -> do
         lambda_qn <- FQ.FullPathWithLambda qn lambda.id
-        kind <- (HF.Lambda lambda.id)
+        normal_function_info <- HF.NormalFunctionInfo lambda.body None expr_id_gen pattern_id_gen None
+        kind <- HF.Normal normal_function_info
         arg_count <- lambda.arg_count
         HE.Expr _ _ _ location <- lambda.body
-        HF.Function location lambda_qn arg_count kind None None (Some lambda.body) None [HF.Inline] [] expr_id_gen pattern_id_gen) |> toList
+        HF.Function location lambda_qn arg_count kind None [HF.Inline])
 
 processSubFunctions a :: (ResolverState a) => a -> FunctionScopeResolver -> TypeResolverState -> [SM.Item] -> FQ.FullyQualifiedName -> (a, [UnresolvedFunctionInfo], FunctionScopeResolver)
 processSubFunctions state function_scope_resolver type_resolver sub_items qn = do
@@ -156,7 +157,7 @@ processSubFunctions state function_scope_resolver type_resolver sub_items qn = d
     function_scope_resolver <- FunctionScopeResolver local_functions_map (Some (function_scope_resolver))
     sub_unresolved_function_infos <- List.map unresolved_functions (\unresolved_function -> do
         qn <- FQ.SubItem qn (getString unresolved_function.name)
-        UnresolvedFunctionInfo unresolved_function qn HF.Normal function_scope_resolver type_resolver (getVarGen state))
+        UnresolvedFunctionInfo unresolved_function qn function_scope_resolver type_resolver (getVarGen state) None)
     (state, sub_unresolved_function_infos, function_scope_resolver)
 
 processFunctionSignature a :: (ResolverState a) => a -> TypeResolverState -> SF.FunctionSignature -> (a, TypeResolverState, Option [HT.Type], HT.Type)
@@ -200,31 +201,36 @@ processSingleFunction state type_resolver unresolved_function_info effects type 
             else state
             (state, Some [], None)
     (state, sub_unresolved_function_infos, function_scope_resolver) <- processSubFunctions state unresolved_function_info.function_scope_resolver type_resolver function.sub_items unresolved_function_info.name
-    (state, expr_id_gen, pattern_id_gen, hir_body, lambdas) <- case desugared_body of
+    (state, kind, lambdas) <- case desugared_body of
         Some expr -> do
             context <- createContext unresolved_function_info.name type_resolver state expr_id_gen pattern_id_gen function_scope_resolver
             env <- createEnvironment (HF.LambdaId 0) None
             (context, env, expr) <- processExpr context env expr
-            (context.state, context.expr_id_gen, context.pattern_id_gen, Some expr, context.lambdas)
-        None -> if isNone type && HF.isNormal unresolved_function_info.kind
-            then do
-                state <- addError state (ExternFnWithoutType function.name)
-                (state, expr_id_gen, pattern_id_gen, None, [])
-            else (state, expr_id_gen, pattern_id_gen, None, [])
+            kind <- HF.Normal (HF.NormalFunctionInfo expr effects context.expr_id_gen context.pattern_id_gen unresolved_function_info.source)
+            (context.state, kind, context.lambdas)
+        None -> do
+            extern_constraints <- processExternConstraints function.extern_constraints
+            case type of
+                Some type -> do
+                    kind <- HF.ExternInfo (HF.ExternFunctionInfo type extern_constraints)
+                    (state, kind, [])
+                None -> do
+                    kind <- HF.ExternInfo (HF.ExternFunctionInfo (HT.Tuple []) extern_constraints)
+                    state <- addError state (ExternFnWithoutType function.name)
+                    (state, kind, [])
     arg_count <- getLength function.arguments
-    orig_type <- Std.Intrinsics.clone type // FIXME: borrow error workaround
     simplified_type <- case type of
         Some type -> Some (HT.removeOwnership type)
         None -> None
     location <- getFunctionLocation unresolved_function_info
-    function <- HF.Function location unresolved_function_info.name arg_count unresolved_function_info.kind simplified_type orig_type hir_body effects attributes (processExternConstraints function.extern_constraints) expr_id_gen pattern_id_gen
+    function <- HF.Function location unresolved_function_info.name arg_count kind simplified_type attributes
     lambdas <- processLambdas lambdas unresolved_function_info.name expr_id_gen pattern_id_gen
     (state, [function] + lambdas, sub_unresolved_function_infos)
 
 processFunctionMulti a :: (ResolverState a) => a -> TypeResolverState -> UnresolvedFunctionInfo -> Option [HT.Type] -> Option HT.Type -> ExprIdGenerator -> PatternIdGenerator -> (a, [HF.Function ()], [UnresolvedFunctionInfo])
 processFunctionMulti state type_resolver unresolved_function_info effects type expr_id_gen pattern_id_gen = do
     (state, attributes) <- processAttributes state unresolved_function_info.function
-    (state, arg_count_map, err) <- unresolved_function_info.function.functions |> List.iter |> Iterator.fold (\(state, arg_count_map, err), f -> do
+    (state, arg_count_map, err) <- List.fold (state, empty, False) unresolved_function_info.function.functions (\(state, arg_count_map, err), f -> do
         (state, err) <- if isNone f.body
         then do
             state <- addError state (ExternFnWithMultiDef f.name)
@@ -236,31 +242,32 @@ processFunctionMulti state type_resolver unresolved_function_info effects type e
             (state, True)
         else (state, err)
         arg_count_map <- Map.add arg_count_map f.name (getLength f.arguments)
-        (state, arg_count_map, err)) (state, empty, False)
+        (state, arg_count_map, err))
     (state, err) <- if getSize arg_count_map != 1
     then do
-        names <- unresolved_function_info.function.functions |> List.iter |> Iterator.map (\f -> DefArgCount f.name (getLength f.arguments)) |> toList
+        names <- List.map unresolved_function_info.function.functions (\f -> DefArgCount f.name (getLength f.arguments))
         state <- addError state (MultiDefArgCountMismatch names)
         (state, True)
     else (state, err)
     location <- getFunctionLocation unresolved_function_info
     if not err
     then do
-        arg_cases <- unresolved_function_info.function.functions |> List.iter |> Iterator.map (\f -> (f.arguments, Option.unwrap f.body)) |> toList
-        sub_items <- unresolved_function_info.function.functions |> List.iter |> Iterator.fold (\sub_items, f -> sub_items + f.sub_items) []
+        arg_cases <- List.map unresolved_function_info.function.functions (\f -> (f.arguments, Option.unwrap f.body))
+        sub_items <- List.fold [] unresolved_function_info.function.functions (\sub_items, f -> sub_items + f.sub_items)
         desugared_body <- desugarFunctionArgsMulti arg_cases
         (state, expr_id_gen, pattern_id_gen, hir_body, lambdas, sub_unresolved_function_infos) <- do
             (state, sub_unresolved_function_infos, function_scope_resolver) <- processSubFunctions state unresolved_function_info.function_scope_resolver type_resolver sub_items unresolved_function_info.name
             context <- createContext unresolved_function_info.name type_resolver state expr_id_gen pattern_id_gen function_scope_resolver
             env <- createEnvironment (HF.LambdaId 0) None
             (context, env, expr) <- processExpr context env desugared_body
-            (context.state, context.expr_id_gen, context.pattern_id_gen, Some expr, context.lambdas, sub_unresolved_function_infos)
+            (context.state, context.expr_id_gen, context.pattern_id_gen, expr, context.lambdas, sub_unresolved_function_infos)
         arg_count <- getLength (atIndex unresolved_function_info.function.functions 0).arguments
-        function <- HF.Function location unresolved_function_info.name arg_count unresolved_function_info.kind type type hir_body effects attributes [] expr_id_gen pattern_id_gen
+        kind <- HF.Normal (HF.NormalFunctionInfo hir_body effects expr_id_gen pattern_id_gen unresolved_function_info.source)
+        function <- HF.Function location unresolved_function_info.name arg_count kind type attributes
         lambdas <- processLambdas lambdas unresolved_function_info.name expr_id_gen pattern_id_gen
         (state, [function] + lambdas, sub_unresolved_function_infos)
     else do
-        function <- HF.Function location unresolved_function_info.name 0 unresolved_function_info.kind type type None effects attributes [] expr_id_gen pattern_id_gen
+        function <- HF.Function location unresolved_function_info.name 0 HF.RecordCtor type attributes
         (state, [function], [])
 
 processUnresolvedFunction a :: (ResolverState a) => a -> UnresolvedFunctionInfo -> (a, [HF.Function ()], [UnresolvedFunctionInfo])
@@ -286,7 +293,10 @@ processUnresolvedFunction state unresolved_function_info = do
                 None -> 0
             location <- getFunctionLocation unresolved_function_info
             (state, attributes) <- processAttributes state unresolved_function_info.function
-            function <- HF.Function location unresolved_function_info.name arg_count unresolved_function_info.kind type type None effects attributes [] expr_id_gen pattern_id_gen
+            source <- case unresolved_function_info.source of
+                Some source -> source
+                None -> panic "interface function has no source! {}" % unresolved_function_info.name
+            function <- HF.Function location unresolved_function_info.name arg_count (HF.Interface source) type attributes
             (state, [function], [])
         1 -> processSingleFunction state type_resolver unresolved_function_info effects type expr_id_gen pattern_id_gen
         _ -> processFunctionMulti state type_resolver unresolved_function_info effects type expr_id_gen pattern_id_gen

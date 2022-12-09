@@ -59,12 +59,12 @@ processClass state module_resolver c = do
                 state
             state
         _ -> state)
-    kind <- HF.ClassMember qn
+    source <- Some (HF.ClassMember qn)
     unresolved_functions <- collectUnresolvedFunctions c.members
     (class_members, unresolved_function_infos) <- List.mapS [] unresolved_functions (\class_members, f -> do
         Ident name _ <- f.name
         qn <- FQ.FullPath module_resolver.module_name name
-        (List.push class_members qn, UnresolvedFunctionInfo f qn kind createEmptyFunctionScopeResolver type_resolver (getVarGen state)))
+        (List.push class_members qn, UnresolvedFunctionInfo f qn createEmptyFunctionScopeResolver type_resolver (getVarGen state) source))
     hir_class <- HC.Class qn location arg_type associated_types dependencies class_members
     (state, hir_class, unresolved_function_infos)
 
@@ -91,11 +91,11 @@ processInstance state module_resolver qn i = do
             (state, type_resolver, hir_type)
     (state, type_resolver) <- processClassConstraints state type_resolver i.constraints
     hir_type <- updateTypeConstraints type_resolver hir_type
-    kind <- HF.InstanceMember qn
+    source <- Some (HF.InstanceMember qn)
     unresolved_functions <- collectUnresolvedFunctions i.members
     (instance_members, unresolved_function_infos) <- List.mapS [] unresolved_functions (\instance_members, f -> do
         Ident name _ <- f.name
         qn <- FQ.FullPathWithInstanceId module_resolver.module_name name qn
-        (List.push instance_members qn, UnresolvedFunctionInfo f qn kind createEmptyFunctionScopeResolver type_resolver (getVarGen state)))
+        (List.push instance_members qn, UnresolvedFunctionInfo f qn createEmptyFunctionScopeResolver type_resolver (getVarGen state) source))
     hir_instance <- HC.Instance qn class_location class_name hir_type associated_types instance_members
     (state, hir_instance, unresolved_function_infos)
