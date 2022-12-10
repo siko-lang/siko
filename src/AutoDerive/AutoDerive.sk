@@ -3,6 +3,7 @@ module Siko.AutoDerive where
 import Siko.AutoDerive.Copy
 import Siko.AutoDerive.Eq
 import Siko.AutoDerive.FromJson
+import Siko.AutoDerive.Hash
 import Siko.AutoDerive.Move
 import Siko.AutoDerive.Ord
 import Siko.AutoDerive.PartialEq
@@ -26,6 +27,7 @@ processRecordDerive record (Ident name derive_location) = do
         "FromJson" -> Some (deriveRecordFromJson record derive_location)
         "Copy" -> Some (deriveRecordCopy record derive_location)
         "Move" -> Some (deriveRecordMove record derive_location)
+        "Hash" -> Some (deriveRecordHash record derive_location)
         _ -> None
 
 processAdtDerive :: D.AlgebraicDataType -> Ident -> String -> Option C.Instance
@@ -40,6 +42,7 @@ processAdtDerive adt (Ident name derive_location) mod_name = do
         "FromJson" -> Some (deriveAdtFromJson adt derive_location mod_name)
         "Copy" -> Some (deriveAdtCopy adt derive_location)
         "Move" -> Some (deriveAdtMove adt derive_location)
+        "Hash" -> Some (deriveAdtHash adt derive_location mod_name)
         _ -> None
 
 processRecordDerives :: D.Record -> (D.Record, [C.Instance])

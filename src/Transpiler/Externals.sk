@@ -397,7 +397,10 @@ generateRunCommand program type_store arg_types result_type = do
     status_call <- R.MethodCall args_call "status" []
     expect_call <- R.MethodCall status_call "expect" [R.StringLiteral "Failed to execute command"]
     success_call <- R.MethodCall expect_call "success" []
-    R.Block [args_decl, cmd_decl, args2_decl, rustBoolToSikoBool program success_call result_type]
+    R.Block [args_decl,
+             cmd_decl,
+             args2_decl,
+             rustBoolToSikoBool program success_call result_type]
 
 generateListDir :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateListDir program type_store arg_types result_type = do
@@ -796,7 +799,7 @@ generateStringEndsWith program type_store arg_types result_type = do
     starts_with_call <- R.MethodCall field_access0 "ends_with" [field_access1]
     R.Block [rustBoolToSikoBool program starts_with_call result_type]
 
-generateStringHashString ::Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
+generateStringHashString :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateStringHashString program type_store arg_types result_type = do
     rust_type <- convertType result_type
     arg0 <- R.VarRef (getArgName 0)
@@ -808,7 +811,7 @@ generateStringHashString program type_store arg_types result_type = do
     hash_call <- R.FunctionCall "std::hash::Hash::hash" [R.Ref field_access0, R.MutRef (R.VarRef hasher)]
     R.Block [hasher_decl, hash_call, R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef hasher)]]
 
-generateIntHashInt ::Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
+generateIntHashInt :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateIntHashInt program type_store arg_types result_type = do
     rust_type <- convertType result_type
     arg0 <- R.VarRef (getArgName 0)

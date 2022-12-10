@@ -71,7 +71,7 @@ data Context = { file_manager :: FileManager,
                  parser_errors :: Map FileId [ParserError],
                  resolver_errors :: [ResolverError],
                  typechecker_errors :: [TypecheckerError],
-                 general_failure :: Bool,
+                 general_failure :: Bool
                }
 
 dumpErrors :: Context -> ()
@@ -132,8 +132,15 @@ compile config = do
                     writeTextFile rust_source_file rust_output
                     trace "Compiling.."
                     compilation_result <- if config.optimized
-                    then runCommand ["rustc", "-O", "-o", binary_file, rust_source_file]
-                    else runCommand ["rustc", "-o", binary_file, rust_source_file]
+                    then runCommand ["rustc",
+                                     "-O",
+                                     "-o",
+                                     binary_file,
+                                     rust_source_file]
+                    else runCommand ["rustc",
+                                     "-o",
+                                     binary_file,
+                                     rust_source_file]
                     if compilation_result
                     then context
                     else context { general_failure = True }

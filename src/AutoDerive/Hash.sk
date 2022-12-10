@@ -1,0 +1,81 @@
+module Siko.AutoDerive.Hash where
+
+import Siko.AutoDerive.Util
+import Siko.Syntax.Class as C
+import Siko.Syntax.Data as D
+import Siko.Syntax.Expr as E
+import Siko.Syntax.Function as F
+import Siko.Syntax.Ident
+import Siko.Syntax.Location
+import Siko.Syntax.Pattern as P
+import Siko.Syntax.TypeSignature as T
+import Siko.Util.SharedString as SS
+
+deriveRecordHash :: D.Record -> Location -> C.Instance
+deriveRecordHash record derive_location = do
+    class_name <- createIdent "Hash.Hash" derive_location
+    type_arguments <- List.map record.type_arguments (\type_arg -> T.TypeSignature (T.TypeArg type_arg) derive_location)
+    type_signature <- T.TypeSignature (T.Named record.name type_arguments) derive_location
+    constraints <- List.fold [] record.type_arguments (\constraints, record_type_arg -> do
+        Ident type_arg _ <- record_type_arg
+        constraint <- C.Constraint class_name (Ident type_arg derive_location) []
+        List.push constraints constraint)
+    fn_name <- createIdent "hash" derive_location
+    hasher_name <- createIdent "hasher" derive_location
+    hasher_pattern <- P.Pattern (P.Binding hasher_name) derive_location
+    hasher_ref <- E.Expr (E.Path hasher_name) derive_location
+    hash_name <- createIdent "Hash.hash" derive_location
+    hash_name_expr <- E.Expr (E.Path hash_name) derive_location
+    record_name <- createIdent "record" derive_location
+    record_ref <- E.Expr (E.Path record_name) derive_location
+    fn_args <- [P.Pattern (P.Binding record_name) derive_location, hasher_pattern]
+    field_hash_exprs <- List.map record.fields (\field -> do
+        field_name_expr <- E.Expr (E.FieldAccess field.name record_ref) derive_location
+        args <- [field_name_expr, hasher_ref]
+        hash_call <- E.Expr (E.FunctionCall hash_name_expr args) derive_location
+        E.Expr (E.Bind hasher_pattern hash_call) derive_location)
+    do_items <- field_hash_exprs + [hasher_ref]
+    body <- E.Expr (E.Do do_items) derive_location
+    body <- Some body
+    op_fn <- F.Function fn_name fn_args body [] [] []
+    C.Instance class_name type_signature [] constraints [op_fn] []
+
+deriveAdtHash :: D.AlgebraicDataType -> Location -> String -> C.Instance
+deriveAdtHash adt derive_location mod_name = do
+    class_name <- createIdent "Hash.Hash" derive_location
+    type_arguments <- List.map adt.type_arguments (\type_arg -> T.TypeSignature (T.TypeArg type_arg) derive_location)
+    type_signature <- T.TypeSignature (T.Named adt.name type_arguments) derive_location
+    constraints <- List.fold [] adt.type_arguments (\constraints, adt_type_arg -> do
+        Ident type_arg _ <- adt_type_arg
+        constraint <- C.Constraint class_name (Ident type_arg derive_location) []
+        List.push constraints constraint)
+    fn_name <- createIdent "hash" derive_location
+    hasher_name <- createIdent "hasher" derive_location
+    hasher_pattern <- P.Pattern (P.Binding hasher_name) derive_location
+    hasher_ref <- E.Expr (E.Path hasher_name) derive_location
+    hash_name <- createIdent "Hash.hash" derive_location
+    adt_name <- createIdent "adt" derive_location
+    hash_name_expr <- E.Expr (E.Path hash_name) derive_location
+    adt_ref <- E.Expr (E.Path adt_name) derive_location
+    fn_args <- [P.Pattern (P.Binding adt_name) derive_location, hasher_pattern]
+    body <- if List.isEmpty adt.variants
+    then hash_name_expr
+    else do
+        cases <- List.map adt.variants (\variant -> do
+            Ident variant_name _ <- variant.name
+            item_bindings <- List.foldE [] variant.items (\bindings, index, item -> do
+                binding <- P.Pattern (P.Binding (createIdent ("i{}" % index) derive_location)) derive_location
+                List.push bindings binding)
+            case_pattern <- P.Pattern (P.Constructor (createIdent ("{}.{}" % (mod_name, variant_name)) derive_location) item_bindings) derive_location
+            item_hash_exprs <- List.mapE variant.items (\index, item -> do
+                item_expr <- E.Expr (E.Path (createIdent ("i{}" % index) derive_location)) derive_location
+                args <- [item_expr, hasher_ref]
+                hash_call <- E.Expr (E.FunctionCall hash_name_expr args) derive_location
+                E.Expr (E.Bind hasher_pattern hash_call) derive_location)
+            do_items <- item_hash_exprs + [hasher_ref]
+            body <- E.Expr (E.Do do_items) derive_location
+            E.Case case_pattern body)
+        E.Expr (E.CaseOf adt_ref cases) derive_location
+    body <- Some body
+    op_fn <- F.Function fn_name fn_args body [] [] []
+    C.Instance class_name type_signature [] constraints [op_fn] []
