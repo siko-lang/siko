@@ -200,7 +200,7 @@ runlegacyBackend :: Driver -> Driver
 runlegacyBackend driver = do
     println "Start legacy backend"
     config <- getDefaultConfig
-    config <- config { dump = True, print_function_info = True }
+    config <- config { dump = True }
     mir_program <- MP.createProgram
     mir_functions <- DB.getWatchedKeys driver.db I.MIRFunctionKind
     mir_functions <- List.map mir_functions (\key -> case DB.get driver.db key of
@@ -215,13 +215,13 @@ runlegacyBackend driver = do
         I.MIRAdt adt -> adt
         _ -> panic "MIR adt is not an adt in runlegacyBackend")
     mir_program <- List.fold mir_program mir_functions (\mir_program, fn -> do
-        println "Adding fn {}" % fn.id
+        //println "Adding fn {}" % fn.id
         MP.addFunction mir_program fn.id fn)
     mir_program <- List.fold mir_program mir_records (\mir_program, r -> do
-        println "Adding record {}" % r.id
+        //println "Adding record {}" % r.id
         MP.addRecord mir_program r.id r)
     mir_program <- List.fold mir_program mir_adts (\mir_program, adt -> do
-        println "Adding adt {}" % adt.id
+        //println "Adding adt {}" % adt.id
         MP.addAdt mir_program adt.id adt)
     with { getConfig = \() -> config } do
         trace "MIR processing.."

@@ -1,7 +1,6 @@
 module Siko.HIR.Backend.CaseTransformer where
 
 import Map
-import Siko.Format
 import Siko.HIR.Backend.CaseChecker as CC
 import Siko.HIR.Backend.StateProvider
 import Siko.HIR.Backend.Traversal
@@ -329,17 +328,9 @@ transformCases a :: (StateProvider a) => a -> F.Function T.Type -> (a, F.Functio
 transformCases state fn = do
     (state, kind) <- case fn.kind of
         F.Normal info -> do
-            // tokens <- format info.body
-            // output <- formatToken tokens
-            // println "transformCases for pre {}" % fn.name
-            // println output
             context <- Context state info.expr_id_gen info.pattern_id_gen
             traversal_context <- createTraversalContext context processExpr processPattern
             (context, body) <- traverse traversal_context info.body
-            // tokens <- format body
-            // output <- formatToken tokens
-            // println "transformCases for post {}" % fn.name
-            // println output
             info <- info { body = body, expr_id_gen = context.expr_id_gen, pattern_id_gen = context.pattern_id_gen }
             (context.state, F.Normal info)
         kind -> (state, kind)

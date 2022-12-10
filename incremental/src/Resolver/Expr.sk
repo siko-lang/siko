@@ -111,14 +111,13 @@ addBreak context break_expr location = do
 addErrorToContext a :: (ResolverState a) => Context a -> ResolverError -> Context a
 addErrorToContext context err = do
     state <- addError context.state err
-    context <- context { state = state }
-    context
+    context { state = state }
 
 processFunctionArgs :: [SP.Pattern] -> (SP.Pattern, Location)
 processFunctionArgs patterns = do
-    location <- patterns |> List.iter |> Iterator.fold (\merged, (SP.Pattern _ location) -> case merged of
+    location <- List.fold None patterns (\merged, (SP.Pattern _ location) -> case merged of
         Some l -> Some (mergeLocations l location)
-        None -> Some location) None
+        None -> Some location)
     location <- case location of
         Some location -> location
         None -> panic "No arg!"
@@ -127,43 +126,22 @@ processFunctionArgs patterns = do
 
 createCaseBody :: [SP.Pattern] -> Location -> SE.Expr
 createCaseBody patterns location = do
-    (arg_refs, _) <- patterns |> List.iter |> Iterator.fold (\(arg_refs, index), _ -> do
-        arg_ref <- SE.Expr (SE.ArgRef index) location
-        arg_refs <- push arg_refs arg_ref
-        (arg_refs, index + 1)) ([], 0)
-    case_body <- SE.Expr (SE.Tuple arg_refs) location
-    case_body
+    arg_refs <- List.mapE patterns (\index, _ -> SE.Expr (SE.ArgRef index) location)
+    SE.Expr (SE.Tuple arg_refs) location
 
 desugarFunctionArgs :: [SP.Pattern] -> SE.Expr -> SE.Expr
 desugarFunctionArgs patterns orig_body = do
     (pattern_tuple, location) <- processFunctionArgs patterns
-    if isSimple patterns
-    then do
-        arg_refs <- List.mapE patterns (\index, pattern -> do
-            arg <- SE.Expr (SE.ArgRef index) location
-            SE.Expr (SE.Bind pattern arg) location)
-        items <- push arg_refs orig_body
-        SE.Expr (SE.Do items) location
-    else do
-        case_body <- createCaseBody patterns location
-        c <- SE.Case pattern_tuple orig_body
-        SE.Expr (SE.CaseOf case_body [c]) location
-    where
-        isSimple :: [SP.Pattern] -> Bool
-        isSimple patterns = do
-            List.fold True patterns (\all_simple, p -> do
-                SP.Pattern s _ <- p
-                case s of
-                    SP.Binding _ -> all_simple
-                    _ -> False)
+    case_body <- createCaseBody patterns location
+    c <- SE.Case pattern_tuple orig_body
+    SE.Expr (SE.CaseOf case_body [c]) location
 
 desugarFunctionArgsMulti :: [([SP.Pattern], SE.Expr)] -> SE.Expr
 desugarFunctionArgsMulti arg_cases = do
     first_patterns <- (atIndex arg_cases 0).0
-    cases <- arg_cases |> List.iter |> Iterator.map (\(patterns, body) -> do
+    cases <- List.map arg_cases (\(patterns, body) -> do
         (pattern_tuple, location) <- processFunctionArgs patterns
-        c <- SE.Case pattern_tuple body
-        c) |> toList
+        SE.Case pattern_tuple body)
     SE.Case (SP.Pattern _ location) _ <- atIndex cases 0
     case_body <- createCaseBody first_patterns location
     SE.Expr (SE.CaseOf case_body cases) location
@@ -263,6 +241,28 @@ processDo context env exprs = do
         (context, env, hir_exprs)) (context, env, [])
     (context, hir_exprs)
 
+processDo2 a :: (ResolverState a) => Context a -> Environment -> [SE.Expr] -> (Context a, [HE.Expr ()])
+processDo2 context env exprs = do
+    loop (context, env, hir_exprs, exprs) <- (context, env, [], exprs) do
+        if List.isEmpty exprs
+        then break (context, hir_exprs)
+        else do
+            (first, rest) <- List.remove exprs 0
+            SE.Expr s_expr location <- first
+            case s_expr of
+                SE.Bind pattern rhs -> do
+                    single_case <- if List.isEmpty rest
+                    then SE.Case pattern (SE.Expr (SE.Tuple []) location)
+                    else SE.Case pattern (SE.Expr (SE.Do rest) location)
+                    desugared_bind <- SE.Expr (SE.CaseOf rhs [single_case]) location
+                    (context, env, hir_expr) <- processExpr context env desugared_bind
+                    hir_exprs <- List.push hir_exprs hir_expr
+                    (context, env, hir_exprs, [])
+                _ -> do
+                    (context, env, hir_expr) <- processExpr context env first
+                    hir_exprs <- List.push hir_exprs hir_expr
+                    (context, env, hir_exprs, rest)
+
 validateUsedFields :: [Ident] -> HD.Record -> Result () ([SS.SharedString], [Ident], [Ident])
 validateUsedFields used_fields record = do
     used_fields_s <- used_fields |> List.iter |> Iterator.map (\i -> getString i) |> toList
@@ -309,22 +309,8 @@ shiftLambdaArgs context (HE.Expr full_body full_body_id _ full_body_location) of
                     expr <- HE.Expr case_of full_body_id () full_body_location
                     (context, expr)
                 _ -> panic "Body is not a tuple"
-        HE.Do items -> do
-            items <- List.mapE items (processBoundArg offset orig_arg_count)
-            (context, HE.Expr (HE.Do items) full_body_id () full_body_location)
         _ -> panic "Unexpected lambda body in shiftLambdaArgs"
     where
-        processBoundArg :: Int -> Int -> Int -> HE.Expr () -> HE.Expr ()
-        processBoundArg offset orig_arg_count index arg = if index >= orig_arg_count
-            then arg
-            else do
-                HE.Expr bind_expr bind_id _ bind_location <- arg
-                case bind_expr of
-                    HE.Bind pattern rhs -> do
-                        rhs <- shiftArgRef offset rhs
-                        HE.Expr (HE.Bind pattern rhs) bind_id () bind_location
-                    _ -> panic "Bind is not a bind!"
-
         createExtraArg a :: (ResolverState a) => Location -> Context a -> Int -> (Context a, (HE.Expr (), HP.Pattern ()))
         createExtraArg location context index = do
             (context, expr_id) <- getExprId context
@@ -462,7 +448,7 @@ processExpr context env (SE.Expr expr location) = do
         SE.CharLiteral lit -> (context, env, HE.CharLiteral lit)
         SE.Do items -> do
             block_env <- createEnvironment env.lambda_id (Some env)
-            (context, hir_items) <- processDo context block_env items
+            (context, hir_items) <- processDo2 context block_env items
             (context, env, HE.Do hir_items)
         SE.Bind p rhs -> do
             (context, env, hir_rhs) <- processExpr context env rhs

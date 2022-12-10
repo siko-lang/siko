@@ -183,15 +183,15 @@ lowerExpr context hir_expr = do
 lowerFunction a :: (StateProvider a) => a -> FQ.FullyQualifiedName -> HF.Function HT.Type -> (a, MF.Function, [MI.Identity], [MI.Identity], [MI.Identity], [MI.Identity])
 lowerFunction state qn hir_function = do
     mir_id <- lowerFullyQualifiedName qn
-    println "Lowering HIR -> MIR {}" % mir_id
+    //println "Lowering HIR -> MIR {}" % mir_id
     context <- createContext state
     hir_function_type <- Option.expect hir_function.type "Function has no type"
-    println "Full type {}" % TF.toString hir_function_type
+    //println "Full type {}" % TF.toString hir_function_type
     args <- HT.getArgsLimited hir_function_type hir_function.arg_count
-    println "args {}" % TF.toStringTypes args
+    //println "args {}" % TF.toStringTypes args
     (context, mir_args) <- List.mapS context args lowerType
     result_type <- HT.getResultType hir_function_type hir_function.arg_count
-    println "result_type {}" % TF.toString result_type
+    //println "result_type {}" % TF.toString result_type
     (context, mir_result_type) <- lowerType context result_type
     (context, kind) <- case hir_function.kind of
         HF.Normal info -> do
@@ -259,9 +259,8 @@ lowerAdt state qn = do
                 Ok (state, adt) -> (state, adt)
                 Err _ -> panic "Cannot instantiate adt {} with {}" % (TF.toString adt.type, TF.toString type)
             context <- createContext state
-            // (context, variants) <- List.mapSE context adt.variants (\context, index, HD.Variant name _ items -> do
-            //     (context, mir_type) <- lowerType context type
-            //     (context, MD.RecordField ("field{}" % index) index mir_type False))
-            variants <- []
+            (context, variants) <- List.mapSE context adt.variants (\context, index, HD.Variant name _ items -> do
+                (context, mir_id) <- lowerTuple context items
+                (context, MD.Variant ("variant_{}" % index) (MT.Record mir_id)))
             (context.state, MD.AlgebraicDataType (MI.Identity qn) variants [] [])
         _ -> panic "Adt's qn is not adt! {}" % qn
