@@ -36,19 +36,6 @@ processRecordField state type_resolver (SD.RecordField name type_signature) fiel
         None -> Some [name]) n field_names
     (state, type_resolver, HD.RecordField n type, field_names)
 
-processDerivedClasses a :: (ResolverState a) => a -> ModuleResolver -> [Ident] -> (a, [HD.DeriveInfo])
-processDerivedClasses state module_resolver derived_classes = do
-    (state, derived_classes) <- derived_classes |> List.iter |> Iterator.fold (\(state, derived_classes), derived_class -> do
-        case resolveClass module_resolver derived_class of
-            Ok name -> do
-                (Ident _ location) <- derived_class
-                name <- Std.Intrinsics.clone name
-                location <- Std.Intrinsics.clone location
-                (state, push derived_classes (HD.DeriveInfo name location))
-            Err err -> do
-                (addError state err, derived_classes)) (state, [])
-    (state, derived_classes)
-
 createFunctionFromArgs :: [Type] -> Type -> Type
 createFunctionFromArgs args result_ty = do
     case head args of
@@ -68,7 +55,6 @@ processAdt state module_resolver (SD.AlgebraicDataType name type_arguments varia
         variants <- push variants variant
         (state, type_resolver, variants)) (state, type_resolver, [])
     type_args <- processTypeArgs type_arguments
-    (state, derived_classes) <- processDerivedClasses state module_resolver derived_classes
     qn <- FullPath module_resolver.module_name n
     type <- Named qn type_args
     ctors <- List.mapE variants (\index, HD.Variant name location args -> do
@@ -77,7 +63,7 @@ processAdt state module_resolver (SD.AlgebraicDataType name type_arguments varia
     variant_infos <- List.foldE [] variants (\variant_infos, index, (HD.Variant name location _) -> do
         info <- HD.VariantInfo qn index location
         List.push variant_infos (info, name))
-    adt <- HD.AlgebraicDataType qn location type_args variants derived_classes type
+    adt <- HD.AlgebraicDataType qn location type_args variants type
     (state, adt, variant_infos, ctors)
 
 processRecord a :: (ResolverState a) => a -> ModuleResolver -> SD.Record -> (a, HD.Record, Option (HF.Function ()))
@@ -91,13 +77,12 @@ processRecord state module_resolver (SD.Record name type_arguments fields extern
         then addError state (RecordFieldConflict instances)
         else state) state
     type_args <- processTypeArgs type_arguments
-    (state, derived_classes) <- processDerivedClasses state module_resolver derived_classes
     Ident n location <- name
     qn <- FullPath module_resolver.module_name n
     type <- Named qn type_args
     ctor_arg_types <- fields |> List.iter |> Iterator.map (\(HD.RecordField _ type) -> type) |> toList
     ctor_type <- createFunctionFromArgs ctor_arg_types type
-    record <- HD.Record qn location type_args fields external derived_classes type implicit_member
+    record <- HD.Record qn location type_args fields external type implicit_member
     ctor_fn <- if not external
     then do
         ctor_fn <- HF.Function location qn (getLength fields) HF.RecordCtor (Some ctor_type) []

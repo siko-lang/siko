@@ -3,6 +3,8 @@ module Siko.AutoDerive where
 import Siko.AutoDerive.Copy
 import Siko.AutoDerive.Eq
 import Siko.AutoDerive.FromJson
+import Siko.AutoDerive.GenericFold
+import Siko.AutoDerive.Hash
 import Siko.AutoDerive.Move
 import Siko.AutoDerive.Ord
 import Siko.AutoDerive.PartialEq
@@ -14,8 +16,9 @@ import Siko.Syntax.Data as D
 import Siko.Syntax.Ident
 import Siko.Util.SharedString as SS
 
-processRecordDerive :: D.Record -> Ident -> Option C.Instance
-processRecordDerive record (Ident name derive_location) = do
+processRecordDerive :: D.Record -> D.DeriveInfo -> Option C.Instance
+processRecordDerive record derive_info = do
+    Ident name derive_location <- derive_info.macro_name
     case SS.get name of
         "Show" -> Some (deriveRecordShow record derive_location)
         "PartialEq" -> Some (deriveRecordPartialEq record derive_location)
@@ -26,10 +29,20 @@ processRecordDerive record (Ident name derive_location) = do
         "FromJson" -> Some (deriveRecordFromJson record derive_location)
         "Copy" -> Some (deriveRecordCopy record derive_location)
         "Move" -> Some (deriveRecordMove record derive_location)
+        "Hash" -> Some (deriveRecordHash record derive_location)
+        "GenericFold" -> do
+            if List.getLength derive_info.args < 3
+            then None
+            else do
+                mod_name <- atIndex derive_info.args 0
+                class_name <- atIndex derive_info.args 1
+                function_name <- atIndex derive_info.args 2
+                Some (deriveRecordGenericFold record derive_location mod_name class_name function_name)
         _ -> None
 
-processAdtDerive :: D.AlgebraicDataType -> Ident -> String -> Option C.Instance
-processAdtDerive adt (Ident name derive_location) mod_name = do
+processAdtDerive :: D.AlgebraicDataType -> String -> D.DeriveInfo -> Option C.Instance
+processAdtDerive adt mod_name derive_info = do
+    Ident name derive_location <- derive_info.macro_name
     case SS.get name of
         "Show" -> Some (deriveAdtShow adt derive_location mod_name)
         "PartialEq" -> Some (deriveAdtPartialEq adt derive_location mod_name)
@@ -40,20 +53,25 @@ processAdtDerive adt (Ident name derive_location) mod_name = do
         "FromJson" -> Some (deriveAdtFromJson adt derive_location mod_name)
         "Copy" -> Some (deriveAdtCopy adt derive_location)
         "Move" -> Some (deriveAdtMove adt derive_location)
+        "Hash" -> Some (deriveAdtHash adt derive_location mod_name)
+        "GenericFold" -> do
+            if List.getLength derive_info.args < 3
+            then None
+            else do
+                class_mod_name <- atIndex derive_info.args 0
+                class_name <- atIndex derive_info.args 1
+                function_name <- atIndex derive_info.args 2
+                Some (deriveAdtGenericFold adt derive_location (createIdent mod_name derive_location) class_mod_name class_name function_name)
         _ -> None
 
 processRecordDerives :: D.Record -> (D.Record, [C.Instance])
 processRecordDerives record = do
-    (instances, derived_classes) <- List.fold ([], []) record.derived_classes (\(instances, derived_classes), derived_class -> case processRecordDerive record derived_class of
-        Some i -> (push instances i, derived_classes)
-        None -> (instances, push derived_classes derived_class))
-    record <- record { derived_classes = derived_classes }
+    instances <- List.filterMap record.derived_classes (processRecordDerive record)
+    record <- record { derived_classes = [] }
     (record, instances)
 
 processAdtDerives :: D.AlgebraicDataType -> String -> (D.AlgebraicDataType, [C.Instance])
 processAdtDerives adt mod_name = do
-    (instances, derived_classes) <- List.fold ([], []) adt.derived_classes (\(instances, derived_classes), derived_class -> case processAdtDerive adt derived_class mod_name of
-        Some i -> (push instances i, derived_classes)
-        None -> (instances, push derived_classes derived_class))
-    adt <- adt { derived_classes = derived_classes }
+    instances <- List.filterMap adt.derived_classes (processAdtDerive adt mod_name)
+    adt <- adt { derived_classes = [] }
     (adt, instances)

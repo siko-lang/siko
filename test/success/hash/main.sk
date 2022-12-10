@@ -6,10 +6,16 @@ data Record = { int :: Int, s :: String } deriving (Hash)
 
 data Choice = One Int Int | Other String deriving (Hash)
 
+data Record2 = { int :: Int, s :: String } deriving (GenericFold(Hash, Hash, hash))
+
+data Choice2 = One2 Int Int | Other2 String deriving (GenericFold(Hash, Hash, hash))
+
 main = do
     hasher <- create
     hasher <- hash "string" hasher
     hasher <- hash 128 hasher
     hasher <- hash (Record 1 "a") hasher
     hasher <- hash (One 1 2) hasher
+    hasher <- hash (Record2 1 "a") hasher
+    hasher <- hash (One2 1 2) hasher
     hash <- finish hasher

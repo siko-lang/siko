@@ -303,6 +303,14 @@ instance Format M.Module where
         items <- formatItems items
         [Chunk "module "] + name + export + [Chunk " where", NewLine] + items
 
+instance Format D.DeriveInfo where
+    format derived_info = do
+        name <- format derived_info.macro_name
+        args_output <- formatList derived_info.args (Chunk ", ")
+        if List.isEmpty derived_info.args
+        then name
+        else name + [Chunk "("] + args_output + [Chunk ")"]
+
 instance Format D.Variant where
     format variant = do
         name <- format variant.name

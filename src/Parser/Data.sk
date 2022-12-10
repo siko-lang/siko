@@ -17,10 +17,13 @@ parseRecordField state = do
     (state, type_signature) <- try parseTypeSignature state False False
     Ok (state, RecordField name type_signature)
 
-parseDerivedClass :: ParserState -> Result (ParserState, Ident) (ParserState, ParserError)
-parseDerivedClass state = do
-    (state, derived_class) <- try expectTypeIdent state "class name"
-    Ok (state, derived_class)
+parseDeriveInfo :: ParserState -> Result (ParserState, DeriveInfo) (ParserState, ParserError)
+parseDeriveInfo state = do
+    (state, macro_name) <- try expectTypeIdent state "macro name"
+    (state, args) <- if check state Kind.LParen
+    then try parseList state (\state -> parseQualifiedName state "macro arg") Kind.LParen Kind.RParen
+    else (state, [])
+    Ok (state, DeriveInfo macro_name args)
 
 parseVariant :: ParserState -> Result (ParserState, Variant) (ParserState, ParserError)
 parseVariant state = do
@@ -41,7 +44,7 @@ parseAdt state args name = do
     (state, derived_classes) <- if check state Kind.KeywordDeriving
     then do
         state <- try expect state Kind.KeywordDeriving
-        (state, derived_classes) <- try parseList state parseDerivedClass Kind.LParen Kind.RParen
+        (state, derived_classes) <- try parseList state parseDeriveInfo Kind.LParen Kind.RParen
         (state, derived_classes)
     else (state, [])
     adt <- AlgebraicDataType { name = name,
@@ -56,7 +59,7 @@ parseRecord state args name = do
     (state, derived_classes) <- if check state Kind.KeywordDeriving
     then do
         state <- try expect state Kind.KeywordDeriving
-        try parseList state parseDerivedClass Kind.LParen Kind.RParen
+        try parseList state parseDeriveInfo Kind.LParen Kind.RParen
     else (state, [])
     record <- Record { name = name,
                        type_arguments = args,
@@ -119,7 +122,7 @@ parseData state = do
         (state, derived_classes) <- if check state Kind.KeywordDeriving
         then do
             state <- try expect state Kind.KeywordDeriving
-            try parseList state parseDerivedClass Kind.LParen Kind.RParen
+            try parseList state parseDeriveInfo Kind.LParen Kind.RParen
         else (state, [])
         adt <- AlgebraicDataType { name = name,
                                    type_arguments = [],

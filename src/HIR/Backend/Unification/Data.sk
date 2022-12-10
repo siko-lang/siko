@@ -15,7 +15,7 @@ instance S.Transform D.Record where
         fields <- List.map record.fields (\D.RecordField name type -> D.RecordField name (f type))
         type <- f record.type
         record_ctor <- f record.record_ctor
-        D.Record record.name record.location type_args fields record.external record_ctor record.derived_classes type record.implicit_member
+        D.Record record.name record.location type_args fields record.external record_ctor type record.implicit_member
 
 instance S.Apply D.AlgebraicDataType where
     apply adt sub = S.transform adt (\t -> S.apply t sub)
@@ -28,7 +28,7 @@ instance S.Transform D.AlgebraicDataType where
             variant { items = items })
         type <- f adt.type
         variant_ctors <- List.map adt.variant_ctors f
-        D.AlgebraicDataType adt.name adt.location type_args variants variant_ctors adt.derived_classes type
+        D.AlgebraicDataType adt.name adt.location type_args variants variant_ctors type
 
 remapRecord a :: (U.Context a) => D.Record -> a -> (D.Record, a)
 remapRecord record context = do

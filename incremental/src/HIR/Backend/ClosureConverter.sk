@@ -173,11 +173,10 @@ getClosureType closure_name = case closure_name of
 createClosureAdt :: [ClosureInstance] -> FQ.FullyQualifiedName -> D.AlgebraicDataType
 createClosureAdt closure_instances closure_name = do
     type_args <- []
-    derived_classes <- []
     type <- getClosureType closure_name
     variants <- List.map closure_instances (\closure_instance -> do
         D.Variant (FQ.ClosureInstance closure_instance) emptyLocation closure_instance.arg_types)
-    D.AlgebraicDataType closure_name emptyLocation type_args variants derived_classes (closureConvertType type)
+    D.AlgebraicDataType closure_name emptyLocation type_args variants (closureConvertType type)
 
 createVariantCtor :: ClosureInstance -> Int -> F.Function T.Type
 createVariantCtor closure_instance index = do
