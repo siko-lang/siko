@@ -26,9 +26,9 @@ traverse context expr process_expr process_type preCaseCheck = do
         Some process_type -> process_type context type
         None -> (context, type)
     (context, expr) <- case s_expr of
-        Do items -> do
+        Do (DoBlock items) -> do
             (context, items) <- processBlock context items process_expr process_type preCaseCheck
-            (context, Expr (Do items) type id)
+            (context, Expr (Do (DoBlock items)) type id)
         Multi _ -> panic "Multi expr found in traverse"
         StaticFunctionCall f_id args -> do
             (context, args) <- processArgs context args process_expr process_type preCaseCheck
@@ -40,7 +40,7 @@ traverse context expr process_expr process_type preCaseCheck = do
         VarDecl v arg -> do
             (context, arg) <- traverse context arg process_expr process_type preCaseCheck
             (context, Expr (VarDecl v arg) type id)
-        VarRef v -> (context, Expr (VarRef v) type id)
+        VarRef (VarRefInfo v) -> (context, Expr (VarRef (VarRefInfo v)) type id)
         FieldAccess name arg -> do
             (context, arg) <- traverse context arg process_expr process_type preCaseCheck
             (context, Expr (FieldAccess name arg) type id)
@@ -55,16 +55,16 @@ traverse context expr process_expr process_type preCaseCheck = do
         Return arg -> do
             (context, arg) <- traverse context arg process_expr process_type preCaseCheck
             (context, Expr (Return arg) type id)
-        Continue arg -> do
+        Continue (ContinueInfo arg) -> do
             (context, arg) <- traverse context arg process_expr process_type preCaseCheck
-            (context, Expr (Continue arg) type id)
-        Break arg -> do
+            (context, Expr (Continue (ContinueInfo arg)) type id)
+        Break (BreakInfo arg) -> do
             (context, arg) <- traverse context arg process_expr process_type preCaseCheck
-            (context, Expr (Break arg) type id)
-        Loop v initializer body continues breaks -> do
+            (context, Expr (Break (BreakInfo arg)) type id)
+        Loop (LoopInfo v initializer body continues breaks) -> do
             (context, initializer) <- traverse context initializer process_expr process_type preCaseCheck
             (context, body) <- traverse context body process_expr process_type preCaseCheck
-            (context, Expr (Loop v initializer body continues breaks) type id)
+            (context, Expr (Loop (LoopInfo v initializer body continues breaks)) type id)
         CaseOf body cases -> do
             (context, body) <- traverse context body process_expr process_type preCaseCheck
             context <- case preCaseCheck of
@@ -98,9 +98,9 @@ traverse context expr process_expr process_type preCaseCheck = do
         Box arg -> do
             (context, arg) <- traverse context arg process_expr process_type preCaseCheck
             (context, Expr (Box arg) type id)
-        Converter arg kind -> do
+        Converter arg -> do
             (context, arg) <- traverse context arg process_expr process_type preCaseCheck
-            (context, Expr (Converter arg kind) type id)
+            (context, Expr (Converter arg) type id)
     (context, expr) <- case process_expr of
         Some process_expr -> process_expr context expr
         None -> (context, expr)

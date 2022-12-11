@@ -1,6 +1,7 @@
 module Siko.MIR.Expr where
 
 import Json
+import Siko.MIR.Backend.Rebinder
 import Siko.MIR.Identity as I
 import Siko.MIR.Type as T
 import Siko.Util.Format
@@ -20,7 +21,7 @@ instance Show Var where
 
 data RangeKind = Inclusive
                | Exclusive
-               deriving (PartialEq, Eq, Show)
+               deriving (PartialEq, Eq, Show, GenericTransform(Rebinder))
 
 data Checker = IntegerChecker String
              | StringChecker String
@@ -28,7 +29,7 @@ data Checker = IntegerChecker String
              | CharRangeChecker Char Char RangeKind
              | VariantChecker Int Var T.Type
              | WildcardChecker Var
-             deriving (PartialEq, Eq)
+             deriving (PartialEq, Eq, GenericTransform(Rebinder))
 
 instance Show Checker where
     show checker = case checker of
@@ -41,18 +42,28 @@ instance Show Checker where
 
 data Case = { checker :: Checker,
               body :: Expr
-            } deriving (PartialEq, Eq, Show)
+            } deriving (PartialEq, Eq, Show, GenericTransform(Rebinder))
 
 data ExprId = ExprId Int deriving (PartialEq, Eq, PartialOrd, Ord, Show)
 
 data Expr = Expr SimpleExpr T.Type ExprId deriving (PartialEq, Eq, Show)
 
-data ConverterKind = NormalConverter
-                   | BorrowerConverter
-                   | FieldConverter Bool
-                   deriving (PartialEq, Eq, Show)
+data DoBlock = { items :: [Expr] } deriving (PartialEq, Eq, Show)
 
-data SimpleExpr = Do [Expr]
+data LoopInfo = { var :: Var,
+                  initializer :: Expr,
+                  body :: Expr,
+                  continues :: [ExprId],
+                  breaks :: [ExprId]
+                } deriving (PartialEq, Eq, Show)
+
+data VarRefInfo = { var :: Var } deriving (PartialEq, Eq, Show)
+
+data ContinueInfo = { arg :: Expr } deriving (PartialEq, Eq, Show)
+
+data BreakInfo = { arg :: Expr } deriving (PartialEq, Eq, Show)
+
+data SimpleExpr = Do DoBlock
                 | Multi [Expr]
                 | StaticFunctionCall I.Identity [Expr]
                 | IntegerLiteral String
@@ -60,28 +71,28 @@ data SimpleExpr = Do [Expr]
                 | FloatLiteral String
                 | CharLiteral Char
                 | VarDecl Var Expr
-                | VarRef Var
+                | VarRef VarRefInfo
                 | FieldAccess Int Expr
                 | If Expr Expr Expr
                 | List [Expr]
                 | Return Expr
-                | Continue Expr
-                | Break Expr
-                | Loop Var Expr Expr [ExprId] [ExprId]
+                | Continue ContinueInfo
+                | Break BreakInfo
+                | Loop LoopInfo
                 | CaseOf Expr [Case]
                 | Clone Expr
                 | Deref Expr
                 | Ref Expr
                 | Move Expr
                 | Box Expr
-                | Converter Expr ConverterKind
-                deriving (PartialEq, Eq, Show)
+                | Converter Expr
+                deriving (PartialEq, Eq, Show, GenericTransform(Rebinder))
 
 short :: Expr -> String
 short expr = do
     Expr s _ _ <- expr
     case s of
-        Do args -> "Do"
+        Do block -> "Do"
         Multi args -> "Multi"
         StaticFunctionCall id args -> "StaticFunctionCall({})" % id
         IntegerLiteral lit -> "IntegerLiteral"
@@ -89,21 +100,21 @@ short expr = do
         FloatLiteral lit -> "FloatLiteral"
         CharLiteral lit -> "CharLiteral"
         VarDecl v arg -> "VarDecl({})" % v
-        VarRef v -> "VarRef({})" % v
+        VarRef (VarRefInfo v) -> "VarRef({})" % v
         FieldAccess n rhs -> "FieldAccess"
         If cond true_branch false_branch -> "If"
         List args -> "List"
         Return arg -> "Return"
         Continue arg -> "Continue"
         Break arg -> "Break"
-        Loop var initializer body _ _ -> "Loop"
+        Loop loop_info -> "Loop"
         CaseOf body cases -> "CaseOf"
         Clone expr -> "Clone"
         Deref expr -> "Deref"
         Ref expr -> "Ref"
         Move expr -> "Move"
         Box expr -> "Box"
-        Converter expr _ -> do
+        Converter expr -> do
             Expr _ _ arg_id <- expr
             "Converter({})" % arg_id
 
@@ -111,7 +122,7 @@ prettyPrint :: Expr -> Indent -> (String, Bool)
 prettyPrint expr ind = do
     Expr expr expr_type expr_id <- expr
     case expr of
-        Do args -> do
+        Do (DoBlock args) -> do
             inner <- inc ind
             args <- args |> List.iter |> Iterator.map (\arg -> do
                 "{}{}" % (inner, (prettyPrint arg inner).0)) |> toList
@@ -138,7 +149,7 @@ prettyPrint expr ind = do
             Expr _ arg_type id <- arg
             s <- "{} :: {} <- {}" % (v, arg_type, (prettyPrint arg ind).0)
             (s, False)
-        VarRef v -> ("{}" % v, True)
+        VarRef (VarRefInfo v) -> ("{}" % v, True)
         FieldAccess n rhs -> do
             (s, simple) <- prettyPrint rhs ind
             s <- if simple
@@ -161,21 +172,21 @@ prettyPrint expr ind = do
             else "({})" % s
             s <- "return {}" % s
             (s, simple)
-        Continue arg -> do
+        Continue (ContinueInfo arg) -> do
             (s, simple) <- prettyPrint arg ind
             s <- if simple
             then s
             else "({})" % s
             s <- "continue {}" % s
             (s, simple)
-        Break arg -> do
+        Break (BreakInfo arg) -> do
             (s, simple) <- prettyPrint arg ind
             s <- if simple
             then s
             else "({})" % s
             s <- "break {}" % s
             (s, simple)
-        Loop var initializer body _ _ -> do
+        Loop (LoopInfo var initializer body _ _) -> do
             (initializer, simple) <- prettyPrint initializer ind
             initializer <- if simple
             then initializer
@@ -204,7 +215,7 @@ prettyPrint expr ind = do
         Box expr -> do
             (s, simple) <- prettyPrint expr ind
             ("box({})" % s, False)
-        Converter expr kind -> do
+        Converter expr -> do
             //(s, simple) <- prettyPrint expr ind
             //("(convert[{},{}]({}) :: {})" % (expr_id, kind, s, expr_type), False)
             prettyPrint expr ind

@@ -24,19 +24,19 @@ packExpr context orig_expr = do
     (context, expr_id) <- getNextExprId context
     E.Expr orig_s_expr orig_type orig_id <- orig_expr
     case orig_s_expr of
-        E.Converter _ _ -> (context, orig_expr)
+        E.Converter _ -> (context, orig_expr)
         _ -> do
             type <- case orig_type of
                 T.Owner t -> t
                 T.Ref _ t -> t
                 _ -> orig_type
-            (context, E.Expr (E.Converter orig_expr E.NormalConverter) type expr_id)
+            (context, E.Expr (E.Converter orig_expr) type expr_id)
 
 unpackReceiver :: E.Expr -> E.Expr
 unpackReceiver receiver = do
     E.Expr s_expr type id <- receiver
     case s_expr of
-        E.Converter arg _ -> return unpackReceiver arg
+        E.Converter arg -> return unpackReceiver arg
         E.FieldAccess name receiver -> do
             receiver <- unpackReceiver receiver
             E.Expr (E.FieldAccess name receiver) type id
@@ -46,7 +46,7 @@ processExpr :: Context -> E.Expr -> (Context, E.Expr)
 processExpr context expr = do
     E.Expr s_expr type id <- expr
     case s_expr of
-        E.VarRef v -> do
+        E.VarRef (E.VarRefInfo v) -> do
             (context, expr) <- packExpr context expr
             packExpr context expr
         E.FieldAccess name receiver -> do

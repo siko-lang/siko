@@ -12,15 +12,15 @@ processExpr :: Context -> E.Expr -> (Context, E.Expr)
 processExpr context expr = do
     E.Expr s_expr type id <- expr
     case s_expr of
-        E.Do items -> do
+        E.Do (E.DoBlock items) -> do
             (context, items) <- List.fold (context, []) items (\(context, items), item -> do
                 E.Expr s_expr _ _ <- item
                 case s_expr of
-                    E.Do sub_items -> do
+                    E.Do (E.DoBlock sub_items) -> do
                         (context, items + sub_items)
                     _ -> (context, push items item))
             (context, items) <- List.mapS context items processExpr
-            (context, E.Expr (E.Do items) type id)
+            (context, E.Expr (E.Do (E.DoBlock items)) type id)
         _ -> (context, expr)
 
 processFunction :: Context -> F.Function -> (Context, F.Function)

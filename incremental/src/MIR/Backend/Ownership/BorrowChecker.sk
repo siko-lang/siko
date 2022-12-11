@@ -129,7 +129,7 @@ collectBorrows :: Context -> UsageStore -> E.Expr -> (Context, UsageStore, Execu
 collectBorrows context usage_store expr = do
     E.Expr s_expr _ expr_id <- expr
     (context, usage_store, exec_mode) <- case s_expr of
-        E.Do items -> do
+        E.Do (E.DoBlock items) -> do
             pre_vars <- Map.getKeys usage_store.usages
             (context, usage_store, exec_mode) <- collectBlockBorrows context usage_store items
             all_vars <- Map.getKeys usage_store.usages
@@ -146,7 +146,7 @@ collectBorrows context usage_store expr = do
             (context, usage_store, exec_mode) <- collectBorrows context usage_store rhs
             (context, usage_store) <- addUsageVar context usage_store var expr_id
             (context, usage_store, exec_mode)
-        E.VarRef var -> do
+        E.VarRef (E.VarRefInfo var) -> do
             path <- Whole
             (context, usage_store) <- addUsage context usage_store var expr_id path
             (context, usage_store, Normal)
@@ -155,7 +155,7 @@ collectBorrows context usage_store expr = do
                 E.Expr s_receiver _ _ <- receiver
                 case s_receiver of
                     E.FieldAccess index receiver -> (context, usage_store, [show index] + path, receiver)
-                    E.VarRef var -> do
+                    E.VarRef (E.VarRefInfo var) -> do
                         (context, usage_store) <- addUsage context usage_store var expr_id (Partial path)
                         break (context, usage_store, Normal)
                     _ -> break collectBorrows context usage_store receiver
@@ -167,13 +167,13 @@ collectBorrows context usage_store expr = do
         E.Return arg -> do
             (context, usage_store, exec_mode) <- collectBorrows context usage_store arg
             (context, usage_store, DoesNotReturn)
-        E.Continue arg -> do
+        E.Continue (E.ContinueInfo arg) -> do
             (context, usage_store, exec_mode) <- collectBorrows context usage_store arg
             (context, usage_store, DoesNotReturn)
-        E.Break arg -> do
+        E.Break (E.BreakInfo arg) -> do
             (context, usage_store, exec_mode) <- collectBorrows context usage_store arg
             (context, usage_store, DoesNotReturn)
-        E.Loop var initializer body _ _ -> do
+        E.Loop (E.LoopInfo var initializer body _ _) -> do
             (context, usage_store, exec_mode) <- collectBorrows context usage_store initializer
             (context, usage_store) <- addUsageVar context usage_store var expr_id
             (context, usage_store, exec_mode) <- collectBorrows context usage_store body
@@ -194,7 +194,7 @@ collectBorrows context usage_store expr = do
         E.Ref arg -> panic "Ref in MIR borrow checker"
         E.Move arg -> panic "Move in MIR borrow checker"
         E.Box arg -> panic "Box in MIR borrow checker"
-        E.Converter arg _ -> collectBorrows context usage_store arg
+        E.Converter arg -> collectBorrows context usage_store arg
     (context, usage_store, exec_mode)
 
 checkBorrows :: E.Expr -> BorrowInfo

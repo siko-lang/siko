@@ -1,21 +1,89 @@
 module Siko.MIR.Backend.Rebinder where
 
 import Map
-import Siko.MIR.Backend.Traversal
 import Siko.MIR.Data as D
 import Siko.MIR.Expr as E
 import Siko.MIR.Function as F
+import Siko.MIR.Identity as I
 import Siko.MIR.Program as P
 import Siko.MIR.Type as T
 import Siko.Util.Counter
 
 data Context = { vars :: Map E.Var E.Var,
-                 exprs :: Map E.ExprId E.ExprId,
                  expr_id_gen :: Counter E.ExprId,
                  temp_var_gen :: Counter E.Var,
                  continues :: [E.ExprId],
                  breaks :: [E.ExprId]
                }
+
+class Rebinder a where
+    rebind a :: Context -> a -> (Context, a)
+
+instance Rebinder I.Identity where
+    rebind context i = (context, i)
+
+instance Rebinder T.Type where
+    rebind context t = (context, t)
+
+instance Rebinder Int where
+    rebind context i = (context, i)
+
+instance Rebinder String where
+    rebind context s = (context, s)
+
+instance Rebinder Char where
+    rebind context c = (context, c)
+
+instance (Rebinder a) => Rebinder [a] where
+    rebind context xs = List.mapS context xs rebind
+
+instance Rebinder E.DoBlock where
+    rebind context do_block = do
+        vars <- context.vars
+        (context, items) <- rebind context do_block.items
+        context <- context { vars = vars }
+        (context, E.DoBlock items)
+
+instance Rebinder E.Var where
+    rebind context var = addVar context var
+
+instance Rebinder E.VarRefInfo where
+    rebind context var_info = case get context.vars var_info.var of
+        Some v -> (context, E.VarRefInfo v)
+        None -> panic "Rebinder cannot find mapping for {}" % var_info.var
+
+instance Rebinder E.ContinueInfo where
+    rebind context continue_info = do
+        (context, arg) <- rebind context continue_info.arg
+        E.Expr _ _ arg_id <- arg
+        context <- context { continues = List.push context.continues arg_id }
+        (context, E.ContinueInfo arg)
+
+instance Rebinder E.BreakInfo where
+    rebind context break_info = do
+        (context, arg) <- rebind context break_info.arg
+        E.Expr _ _ arg_id <- arg
+        context <- context { breaks = List.push context.breaks arg_id }
+        (context, E.BreakInfo arg)
+
+instance Rebinder E.LoopInfo where
+    rebind context (E.LoopInfo v initializer body continues breaks) = do
+        (context, v) <- addVar context v
+        (context, initializer) <- rebind context initializer
+        saved_continues <- context.continues
+        saved_breaks <- context.breaks
+        context <- context { breaks = [], continues = [] }
+        (context, body) <- rebind context body
+        continues <- context.continues
+        breaks <- context.breaks
+        context <- context { continues = saved_continues, breaks = saved_breaks }
+        (context, E.LoopInfo v initializer body continues breaks)
+
+instance Rebinder E.Expr where
+    rebind context (E.Expr s_expr type id) = do
+        (context, id) <- getNextExprId context
+        (context, s_expr) <- rebind context s_expr
+        (context, E.Expr s_expr type id)
 
 getNextExprId :: Context -> (Context, E.ExprId)
 getNextExprId context = do
@@ -38,123 +106,15 @@ addArg context var = do
     (vars, _) <- Map.insert context.vars var var
     (context { vars = vars })
 
-addExpr :: Context -> E.ExprId -> (Context, E.ExprId)
-addExpr context expr = do
-    (context, expr_id) <- getNextExprId context
-    (exprs, _) <- Map.insert context.exprs expr expr_id
-    (context { exprs = exprs }, expr_id)
-
-getExpr :: Context -> E.ExprId -> E.ExprId
-getExpr context expr_id = case get context.exprs expr_id of
-    Some expr_id -> expr_id
-    None -> panic "ExprId {} not found in rebinder expr map" % expr_id
-
-processExpr :: Context -> E.Expr -> (Context, E.Expr)
-processExpr context expr = do
-    E.Expr s_expr type id <- expr
-    (context, id) <- addExpr context id
-    case s_expr of
-        E.Do items -> do
-            vars <- context.vars
-            (context, items) <- List.mapS context items processExpr
-            context <- context { vars = vars }
-            (context, E.Expr (E.Do items) type id)
-        E.Multi _ -> panic "Multi expr found in rebinder"
-        E.StaticFunctionCall f_id args -> do
-            (context, args) <- List.mapS context args processExpr
-            (context, E.Expr (E.StaticFunctionCall f_id args) type id)
-        E.IntegerLiteral lit -> (context, E.Expr (E.IntegerLiteral lit) type id)
-        E.StringLiteral lit -> (context, E.Expr (E.StringLiteral lit) type id)
-        E.FloatLiteral lit -> (context, E.Expr (E.FloatLiteral lit) type id)
-        E.CharLiteral lit -> (context, E.Expr (E.CharLiteral lit) type id)
-        E.VarDecl v arg -> do
-            (context, v) <- addVar context v
-            (context, arg) <- processExpr context arg
-            (context, E.Expr (E.VarDecl v arg) type id)
-        E.VarRef v -> do
-            v <- case get context.vars v of
-                Some v -> v
-                None -> panic "Rebinder cannot find mapping for {}" % v
-            (context, E.Expr (E.VarRef v) type id)
-        E.FieldAccess name arg -> do
-            (context, arg) <- processExpr context arg
-            (context, E.Expr (E.FieldAccess name arg) type id)
-        E.If cond true_branch false_branch -> do
-            (context, cond) <- processExpr context cond
-            (context, true_branch) <- processExpr context true_branch
-            (context, false_branch) <- processExpr context false_branch
-            (context, E.Expr (E.If cond true_branch false_branch) type id)
-        E.List args -> do
-            (context, args) <- List.mapS context args processExpr
-            (context, E.Expr (E.List args) type id)
-        E.Return arg -> do
-            (context, arg) <- processExpr context arg
-            (context, E.Expr (E.Return arg) type id)
-        E.Continue arg -> do
-            (context, arg) <- processExpr context arg
-            E.Expr _ _ arg_id <- arg
-            context <- context { continues = List.push context.continues arg_id }
-            (context, E.Expr (E.Continue arg) type id)
-        E.Break arg -> do
-            (context, arg) <- processExpr context arg
-            E.Expr _ _ arg_id <- arg
-            context <- context { breaks = List.push context.breaks arg_id }
-            (context, E.Expr (E.Break arg) type id)
-        E.Loop v initializer body continues breaks -> do
-            (context, v) <- addVar context v
-            (context, initializer) <- processExpr context initializer
-            saved_continues <- context.continues
-            saved_breaks <- context.breaks
-            context <- context { breaks = [], continues = [] }
-            (context, body) <- processExpr context body
-            continues <- context.continues
-            breaks <- context.breaks
-            context <- context { continues = saved_continues, breaks = saved_breaks }
-            (context, E.Expr (E.Loop v initializer body continues breaks) type id)
-        E.CaseOf body cases -> do
-            (context, body) <- processExpr context body
-            (context, cases) <- cases |> List.iter |> Iterator.fold (\(context, cases), case_branch -> do
-                (context, checker) <- case case_branch.checker of
-                    E.VariantChecker index v type -> do
-                        (context, v) <- addVar context v
-                        (context, E.VariantChecker index v type)
-                    E.WildcardChecker v -> do
-                        (context, v) <- addVar context v
-                        (context, E.WildcardChecker v)
-                    c -> (context, c)
-                (context, updated_body) <- processExpr context case_branch.body
-                case_branch <- case_branch { checker = checker, body = updated_body }
-                cases <- push cases case_branch
-                (context, cases)) (context, [])
-            (context, E.Expr (E.CaseOf body cases) type id)
-        E.Clone arg -> do
-            (context, arg) <- processExpr context arg
-            (context, E.Expr (E.Clone arg) type id)
-        E.Deref arg -> do
-            (context, arg) <- processExpr context arg
-            (context, E.Expr (E.Deref arg) type id)
-        E.Ref arg -> do
-            (context, arg) <- processExpr context arg
-            (context, E.Expr (E.Ref arg) type id)
-        E.Move arg -> do
-            (context, arg) <- processExpr context arg
-            (context, E.Expr (E.Move arg) type id)
-        E.Box arg -> do
-            (context, arg) <- processExpr context arg
-            (context, E.Expr (E.Box arg) type id)
-        E.Converter arg kind -> do
-            (context, arg) <- processExpr context arg
-            (context, E.Expr (E.Converter arg kind) type id)
-
 createContext :: Counter E.ExprId -> Counter E.Var -> Context
-createContext expr_id_gen temp_var_gen = Context Map.empty Map.empty expr_id_gen temp_var_gen [] []
+createContext expr_id_gen temp_var_gen = Context Map.empty expr_id_gen temp_var_gen [] []
 
 processFunction :: F.Function -> F.Function
 processFunction function = case function.kind of
     F.Normal info -> do
         context <- createContext info.expr_id_gen info.temp_var_gen
         context <- List.foldE context function.type.args (\context, index, _ -> addArg context (E.Arg index))
-        (context, body) <- processExpr context info.body
+        (context, body) <- rebind context info.body
         info <- info { body = body, expr_id_gen = context.expr_id_gen, temp_var_gen = context.temp_var_gen }
         new_kind <- F.Normal info
         function { kind = new_kind }

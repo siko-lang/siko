@@ -109,7 +109,7 @@ processExpr context expr = do
                     context { inference_info = inference_info, equals = equals }
                 None -> context
     case s_expr of
-        E.Do items -> do
+        E.Do (E.DoBlock items) -> do
             context <- List.fold context items processExpr
             last_item_id <- getExprId (last items)
             context <- addEqualExprs context expr_id last_item_id
@@ -156,7 +156,7 @@ processExpr context expr = do
             rhs_id <- getExprId rhs
             context <- addEqualExprVar context rhs_id var
             context
-        E.VarRef var -> addEqualExprVar context expr_id var
+        E.VarRef (E.VarRefInfo var) -> addEqualExprVar context expr_id var
         E.If cond true_branch false_branch -> do
             context <- processExpr context cond
             context <- processExpr context true_branch
@@ -210,9 +210,9 @@ processExpr context expr = do
             arg_info <- getTypeVariableInfoByExprId inference_info (getExprId arg) context.function_id
             context <- addEqualInfo context result_info arg_info
             context
-        E.Continue arg -> processExpr context arg
-        E.Break arg -> processExpr context arg
-        E.Loop var initializer body continues breaks -> do
+        E.Continue (E.ContinueInfo arg) -> processExpr context arg
+        E.Break (E.BreakInfo arg) -> processExpr context arg
+        E.Loop (E.LoopInfo var initializer body continues breaks) -> do
             context <- processExpr context initializer
             context <- processExpr context body
             context <- addEqualExprVar context (getExprId initializer) var
@@ -263,7 +263,7 @@ processExpr context expr = do
         E.Ref _ -> context
         E.Move _ -> context
         E.Box _ -> context
-        E.Converter arg _ -> do
+        E.Converter arg -> do
             context <- processExpr context arg
             inference_info <- context.inference_info
             equals <- context.equals

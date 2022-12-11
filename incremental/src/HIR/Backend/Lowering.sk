@@ -132,7 +132,7 @@ lowerExpr context hir_expr = do
         HE.CharLiteral lit -> (context, ME.CharLiteral lit)
         HE.Do args -> do
             (context, args) <- List.mapS context args lowerExpr
-            (context, ME.Do args)
+            (context, ME.Do (ME.DoBlock args))
         HE.Bind pat rhs -> do
             HP.Pattern s_pat _ _ _ <- pat
             case s_pat of
@@ -168,15 +168,15 @@ lowerExpr context hir_expr = do
             (context, ME.Return arg)
         HE.Continue arg -> do
             (context, arg) <- lowerExpr context arg
-            (context, ME.Continue arg)
+            (context, ME.Continue (ME.ContinueInfo arg))
         HE.Break arg -> do
             (context, arg) <- lowerExpr context arg
-            (context, ME.Break arg)
+            (context, ME.Break (ME.BreakInfo arg))
         HE.Loop pat init body continues breaks -> unimplemented
-        HE.ArgRef index -> (context, ME.VarRef (ME.Arg index))
+        HE.ArgRef index -> (context, ME.VarRef (ME.VarRefInfo (ME.Arg index)))
         HE.ValueRef var -> do
             var <- bindRefToVar var
-            (context, ME.VarRef var)
+            (context, ME.VarRef (ME.VarRefInfo var))
         HE.With handlers body effects -> panic "With in MIR lowering"
     (context, ME.Expr mir_s_expr mir_type (ME.ExprId 0))
 

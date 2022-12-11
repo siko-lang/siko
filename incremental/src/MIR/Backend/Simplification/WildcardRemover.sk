@@ -31,9 +31,9 @@ processExpr :: Context -> E.Expr -> (Context, E.Expr)
 processExpr context expr = do
     E.Expr s_expr type id <- expr
     case s_expr of
-        E.Do items -> do
+        E.Do (E.DoBlock items) -> do
             (context, items) <- List.mapS context items processExpr
-            (context, E.Expr (E.Do items) type id)
+            (context, E.Expr (E.Do (E.DoBlock items)) type id)
         E.Multi _ -> panic "Multi expr found in rebinder"
         E.StaticFunctionCall f_id args -> do
             (context, args) <- List.mapS context args processExpr
@@ -45,9 +45,9 @@ processExpr context expr = do
         E.VarDecl v rhs -> do
             (context, rhs) <- processExpr context rhs
             (context, E.Expr (E.VarDecl v rhs) type id)
-        E.VarRef v -> do
+        E.VarRef (E.VarRefInfo v) -> do
             v <- processVar context v
-            (context, E.Expr (E.VarRef v) type id)
+            (context, E.Expr (E.VarRef (E.VarRefInfo v)) type id)
         E.FieldAccess name arg -> do
             (context, arg) <- processExpr context arg
             (context, E.Expr (E.FieldAccess name arg) type id)
@@ -62,20 +62,20 @@ processExpr context expr = do
         E.Return arg -> do
             (context, arg) <- processExpr context arg
             (context, E.Expr (E.Return arg) type id)
-        E.Continue arg -> do
+        E.Continue (E.ContinueInfo arg) -> do
             (context, arg) <- processExpr context arg
-            (context, E.Expr (E.Continue arg) type id)
-        E.Break arg -> do
+            (context, E.Expr (E.Continue (E.ContinueInfo arg)) type id)
+        E.Break (E.BreakInfo arg) -> do
             (context, arg) <- processExpr context arg
-            (context, E.Expr (E.Break arg) type id)
-        E.Loop v initializer body continues breaks -> do
+            (context, E.Expr (E.Break (E.BreakInfo arg)) type id)
+        E.Loop (E.LoopInfo v initializer body continues breaks) -> do
             (context, initializer) <- processExpr context initializer
             (context, body) <- processExpr context body
-            (context, E.Expr (E.Loop v initializer body continues breaks) type id)
+            (context, E.Expr (E.Loop (E.LoopInfo v initializer body continues breaks)) type id)
         E.CaseOf body cases -> do
             E.Expr body_expr _ _ <- body
             body_var <- case body_expr of
-                E.VarRef body_var -> body_var
+                E.VarRef (E.VarRefInfo body_var) -> body_var
                 _ -> panic "Case body is not var ref!"
             (context, body) <- processExpr context body
             len <- List.getLength cases
@@ -106,9 +106,9 @@ processExpr context expr = do
         E.Box arg -> do
             (context, arg) <- processExpr context arg
             (context, E.Expr (E.Box arg) type id)
-        E.Converter arg kind -> do
+        E.Converter arg -> do
             (context, arg) <- processExpr context arg
-            (context, E.Expr (E.Converter arg kind) type id)
+            (context, E.Expr (E.Converter arg) type id)
 
 processFunction :: Context -> F.Function -> (Context, F.Function)
 processFunction context function = case function.kind of

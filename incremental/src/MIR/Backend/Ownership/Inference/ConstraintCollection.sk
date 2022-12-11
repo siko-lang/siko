@@ -65,7 +65,7 @@ processExpr context expr = do
         Some _ -> context
         None -> addOwnershipValue context info.ownership_var M.Unknown
     context <- case s_expr of
-        E.Do items -> List.fold context items processExpr
+        E.Do (E.DoBlock items) -> List.fold context items processExpr
         E.Multi _ -> context
         E.StaticFunctionCall f_id args -> do
             context <- List.fold context args processExpr
@@ -154,9 +154,9 @@ processExpr context expr = do
             context <- List.fold context args processExpr
             addOwnershipValue context info.ownership_var M.Owner
         E.Return arg -> processExpr context arg
-        E.Continue arg -> processExpr context arg
-        E.Break arg -> processExpr context arg
-        E.Loop var initializer body _ _ -> do
+        E.Continue (E.ContinueInfo arg) -> processExpr context arg
+        E.Break (E.BreakInfo arg) -> processExpr context arg
+        E.Loop (E.LoopInfo var initializer body _ _) -> do
             var_expr_map <- Map.put context.var_expr_map var expr_id
             context <- context { var_expr_map = var_expr_map }
             context <- processExpr context initializer
@@ -191,12 +191,12 @@ processExpr context expr = do
         E.Ref arg -> panic "Ref in InferOwnership"
         E.Move arg -> panic "Move in InferOwnership"
         E.Box arg -> panic "Box in InferOwnership"
-        E.Converter arg _ -> do
+        E.Converter arg -> do
             context <- processExpr context arg
             E.Expr arg_s_expr arg_type arg_id <- arg
             arg_info <- getTypeVariableInfoByExprId context.inference_info arg_id context.function_id
             (borrowed_var, source_id) <- case arg_s_expr of
-                E.VarRef var -> do
+                E.VarRef (E.VarRefInfo var) -> do
                     is_borrow <- isBorrow context.borrow_info arg_id
                     source_id <- case Map.get context.var_expr_map var of
                         Some source_id -> source_id

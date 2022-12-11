@@ -35,9 +35,9 @@ getInlinedBody unit_type context body args = do
     r_context <- Rebinder.createContext context.expr_id_gen context.temp_var_gen
     (r_context, do_id) <- Rebinder.getNextExprId r_context
     (r_context, args) <- List.mapSE r_context args (bindArg unit_type)
-    (r_context, body) <- Rebinder.processExpr r_context body
+    (r_context, body) <- Rebinder.rebind r_context body
     items <- push args body
-    do_expr <- E.Expr (E.Do items) body_type do_id
+    do_expr <- E.Expr (E.Do (E.DoBlock items)) body_type do_id
     context <- context { expr_id_gen = r_context.expr_id_gen, temp_var_gen = r_context.temp_var_gen }
     (context, do_expr)
 

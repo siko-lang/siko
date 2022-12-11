@@ -91,7 +91,7 @@ lowerExpr lowering_context context expr = do
     expr_info <- getTypeVariableInfoByExprId lowering_context.inference_info expr_id lowering_context.function_id
     (context, lowering_context, lir_type) <- getType context lowering_context expr_info expr_type
     (lowering_context, context, lir_s_expr) <- case s_expr of
-        ME.Do items -> do
+        ME.Do (ME.DoBlock items) -> do
             ((lowering_context, context), items) <- List.mapS (lowering_context, context) items (\(lowering_context, context), item -> do
                 (lowering_context, context, item) <- lowerExpr lowering_context context item
                 ((lowering_context, context), item))
@@ -160,7 +160,7 @@ lowerExpr lowering_context context expr = do
             (lowering_context, context, lir_rhs) <- lowerExpr lowering_context context rhs
             lir_var <- lowerVar var
             (lowering_context, context, LE.VarDecl lir_var lir_rhs)
-        ME.VarRef var -> do
+        ME.VarRef (ME.VarRefInfo var) -> do
             lir_var <- lowerVar var
             (lowering_context, context, LE.VarRef lir_var)
         ME.FieldAccess index receiver -> do
@@ -197,13 +197,13 @@ lowerExpr lowering_context context expr = do
         ME.Return arg -> do
             (lowering_context, context, lir_arg) <- lowerExpr lowering_context context arg
             (lowering_context, context, LE.Return lir_arg)
-        ME.Continue arg -> do
+        ME.Continue (ME.ContinueInfo arg) -> do
             (lowering_context, context, lir_arg) <- lowerExpr lowering_context context arg
             (lowering_context, context, LE.Continue lir_arg)
-        ME.Break arg -> do
+        ME.Break (ME.BreakInfo arg) -> do
             (lowering_context, context, lir_arg) <- lowerExpr lowering_context context arg
             (lowering_context, context, LE.Break lir_arg)
-        ME.Loop var initializer body _ _ -> do
+        ME.Loop (ME.LoopInfo var initializer body _ _) -> do
             lir_var <- lowerVar var
             (lowering_context, context, lir_initializer) <- lowerExpr lowering_context context initializer
             (lowering_context, context, lir_body) <- lowerExpr lowering_context context body
@@ -220,7 +220,7 @@ lowerExpr lowering_context context expr = do
         ME.Ref arg -> panic "Ref in MIR -> LIR lowering"
         ME.Move arg -> panic "Move in MIR -> LIR lowering"
         ME.Box arg -> panic "Box in MIR -> LIR lowering"
-        ME.Converter arg _ -> do
+        ME.Converter arg -> do
             ME.Expr _ _ arg_id <- arg
             arg_info <- getTypeVariableInfoByExprId lowering_context.inference_info arg_id lowering_context.function_id
             from <- getOwnershipValue lowering_context arg_info.ownership_var
