@@ -14,6 +14,7 @@ import Siko.Resolver.Effect
 import Siko.Resolver.Error
 import Siko.Resolver.Function
 import Siko.Resolver.Module
+import Siko.Resolver.ModuleResolver
 import Siko.Syntax.Class as SC
 import Siko.Syntax.Ident
 import Siko.Syntax.Location
@@ -50,40 +51,33 @@ handleItemConflict state l1 l2 = do
             state { errors = push state.errors err }
         None -> state
 
-processAutoDerives :: [SF.SourceFile] -> [SF.SourceFile]
-processAutoDerives source_files = do
-    List.map source_files processSourceFile
+processModuleDerives :: SM.Module -> HP.Program () -> ModuleResolver -> SM.Module
+processModuleDerives mod hir_program module_resolver = do
+    mod_name <- getString mod.name
+    (instances, items) <- List.mapS [] mod.items (processItem mod_name hir_program module_resolver)
+    instances <- List.map instances (\i -> SM.Instance i)
+    mod { items = items + instances }
     where
-        processSourceFile :: SF.SourceFile -> SF.SourceFile
-        processSourceFile source_file = do
-            modules <- List.map source_file.modules processModule
-            source_file { modules = modules }
-
-        processModule :: SM.Module -> SM.Module
-        processModule mod = do
-            mod_name <- getString mod.name
-            (instances, items) <- List.mapS [] mod.items (processItem mod_name)
-            instances <- List.map instances (\i -> SM.Instance i)
-            mod { items = items + instances }
-
-        processItem :: SS.SharedString -> [SC.Instance] -> SM.Item -> ([SC.Instance], SM.Item)
-        processItem mod_name instances item = case item of
+        processItem :: SS.SharedString -> HP.Program () -> ModuleResolver -> [SC.Instance] -> SM.Item -> ([SC.Instance], SM.Item)
+        processItem mod_name hir_program module_resolver instances item = case item of
             SM.Record record -> do
-                (record, record_instances) <- AD.processRecordDerives record
+                (record, record_instances) <- AD.processRecordDerives record (SS.get mod_name) hir_program module_resolver
                 (instances + record_instances, SM.Record record)
             SM.Adt adt -> do
-                (adt, adt_instances) <- AD.processAdtDerives adt (SS.get mod_name)
+                (adt, adt_instances) <- AD.processAdtDerives adt (SS.get mod_name) hir_program module_resolver
                 (instances + adt_instances, SM.Adt adt)
             _ -> (instances, item)
 
 processProgram :: [SF.SourceFile] -> (HP.Program (), ExprIdGenerator, PatternIdGenerator, TypeVarGenerator, [ResolverError])
 processProgram source_files = do
-    source_files <- processAutoDerives source_files
     state <- emptyState
     hir_program <- HP.Program empty empty
     (state, hir_program, modules) <- processExportsImports source_files state hir_program
     (state, hir_program) <- Map.fold (state, hir_program) modules (\(state, hir_program), (module_name, (mod, module_resolver)) -> processData state hir_program module_resolver mod)
     (state, hir_program) <- Map.fold (state, hir_program) modules (\(state, hir_program), (module_name, (mod, module_resolver)) -> processFunctions state hir_program module_resolver mod)
-    (state, hir_program) <- Map.fold (state, hir_program) modules (\(state, hir_program), (module_name, (mod, module_resolver)) -> processClassesAndInstances state hir_program module_resolver mod)
+    (state, hir_program) <- Map.fold (state, hir_program) modules (\(state, hir_program), (module_name, (mod, module_resolver)) -> processClasses state hir_program module_resolver mod)
+    (state, hir_program) <- Map.fold (state, hir_program) modules (\(state, hir_program), (module_name, (mod, module_resolver)) -> do
+        mod <- processModuleDerives mod hir_program module_resolver
+        processInstances state hir_program module_resolver mod)
     (state, hir_program) <- Map.fold (state, hir_program) modules (\(state, hir_program), (module_name, (mod, module_resolver)) -> processEffects state hir_program module_resolver mod)
     (hir_program, state.expr_id_gen, state.pattern_id_gen, state.var_gen, state.errors)

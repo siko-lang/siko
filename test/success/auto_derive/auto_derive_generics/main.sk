@@ -1,0 +1,45 @@
+module Main where
+
+import Hash
+
+data Record = { int :: Int, s :: String } deriving (Hash, GenericTransform(Transform, transform))
+
+data Record2 = { int :: Int, s :: String } deriving (Hash, GenericTransform(Transform))
+
+data Choice = One Int Int | Other String deriving (Hash, GenericTransform(Transform, transform))
+
+data Choice2 = One2 Int Int | Other2 String deriving (Hash, GenericTransform(Transform))
+
+data Record3 = { int :: Int, s :: String } deriving (GenericFold(Hash, hash))
+
+data Record4 = { int :: Int, s :: String } deriving (GenericFold(Hash))
+
+data Choice3 = One3 Int Int | Other3 String deriving (GenericFold(Hash, hash))
+
+data Choice4 = One4 Int Int | Other4 String deriving (GenericFold(Hash))
+
+data Context = {}
+
+class Transform a where
+    transform a :: Context -> a -> (Context, a)
+
+instance Transform Int where
+    transform context i = (context, i)
+
+instance Transform String where
+    transform context s = (context, s)
+
+main = do
+    hasher <- create
+    hasher <- hash hasher "string"
+    hasher <- hash hasher 128
+    hasher <- hash hasher (Record 1 "a")
+    hasher <- hash hasher (Record3 1 "a")
+    hasher <- hash hasher (Record4 1 "a")
+    hasher <- hash hasher (One3 1 2)
+    hasher <- hash hasher (One4 1 2)
+    hash <- finish hasher
+    (context, record) <- transform Context (Record 1 "b")
+    (context, record) <- transform Context (Record2 1 "b")
+    (context, adt) <- transform Context (One 1 1)
+    (context, adt) <- transform Context (One2 1 1)

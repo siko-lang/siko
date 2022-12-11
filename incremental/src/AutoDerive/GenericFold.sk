@@ -18,17 +18,17 @@ deriveRecordGenericFold record derive_location mod_name class_name function_name
         Ident type_arg _ <- record_type_arg
         constraint <- C.Constraint class_name (Ident type_arg derive_location) []
         List.push constraints constraint)
-    state_name <- createIdent "state" derive_location
+    state_name <- createIdent ".state" derive_location
     state_pattern <- P.Pattern (P.Binding state_name) derive_location
     state_ref <- E.Expr (E.Path state_name) derive_location
     full_fn_name <- path mod_name function_name
     full_fn_name_expr <- E.Expr (E.Path full_fn_name) derive_location
-    record_name <- createIdent "record" derive_location
+    record_name <- createIdent ".record" derive_location
     record_ref <- E.Expr (E.Path record_name) derive_location
-    fn_args <- [P.Pattern (P.Binding record_name) derive_location, state_pattern]
+    fn_args <- [state_pattern, P.Pattern (P.Binding record_name) derive_location]
     field_exprs <- List.map record.fields (\field -> do
         field_name_expr <- E.Expr (E.FieldAccess field.name record_ref) derive_location
-        args <- [field_name_expr, state_ref]
+        args <- [state_ref, field_name_expr]
         call <- E.Expr (E.FunctionCall full_fn_name_expr args) derive_location
         E.Expr (E.Bind state_pattern call) derive_location)
     do_items <- field_exprs + [state_ref]
@@ -45,14 +45,14 @@ deriveAdtGenericFold adt derive_location mod_name class_mod_name class_name func
         Ident type_arg _ <- adt_type_arg
         constraint <- C.Constraint class_name (Ident type_arg derive_location) []
         List.push constraints constraint)
-    state_name <- createIdent "state" derive_location
+    state_name <- createIdent ".state" derive_location
     state_pattern <- P.Pattern (P.Binding state_name) derive_location
     state_ref <- E.Expr (E.Path state_name) derive_location
     full_fn_name <- path class_mod_name function_name
-    adt_name <- createIdent "adt" derive_location
+    adt_name <- createIdent ".adt" derive_location
     full_fn_name_expr <- E.Expr (E.Path full_fn_name) derive_location
     adt_ref <- E.Expr (E.Path adt_name) derive_location
-    fn_args <- [P.Pattern (P.Binding adt_name) derive_location, state_pattern]
+    fn_args <- [state_pattern, P.Pattern (P.Binding adt_name) derive_location]
     body <- if List.isEmpty adt.variants
     then full_fn_name_expr
     else do
@@ -63,7 +63,7 @@ deriveAdtGenericFold adt derive_location mod_name class_mod_name class_name func
             case_pattern <- P.Pattern (P.Constructor (path mod_name variant.name) item_bindings) derive_location
             item_exprs <- List.mapE variant.items (\index, item -> do
                 item_expr <- E.Expr (E.Path (createIdent ("i{}" % index) derive_location)) derive_location
-                args <- [item_expr, state_ref]
+                args <- [state_ref, item_expr]
                 call <- E.Expr (E.FunctionCall full_fn_name_expr args) derive_location
                 E.Expr (E.Bind state_pattern call) derive_location)
             do_items <- item_exprs + [state_ref]
