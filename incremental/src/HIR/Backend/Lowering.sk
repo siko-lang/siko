@@ -157,7 +157,6 @@ lowerExpr context hir_expr = do
         HE.TupleFieldAccess index receiver -> do
             (context, mir_receiver) <- lowerExpr context receiver
             (context, ME.FieldAccess index mir_receiver)
-        HE.Formatter fmt args -> panic "Formatter in MIR lowering"
         HE.CaseOf body cases bind_groups -> do
             (context, mir_body) <- lowerExpr context body
             (context, mir_cases) <- List.mapS context cases lowerCase
@@ -172,7 +171,15 @@ lowerExpr context hir_expr = do
         HE.Break arg -> do
             (context, arg) <- lowerExpr context arg
             (context, ME.Break (ME.BreakInfo arg))
-        HE.Loop pat init body continues breaks -> unimplemented
+        HE.Loop pat init body continues breaks -> do
+            HP.Pattern s_pat _ _ _ <- pat
+            case s_pat of
+                HP.Binding bind_ref -> do
+                    var <- bindRefToVar bind_ref
+                    (context, init) <- lowerExpr context init
+                    (context, body) <- lowerExpr context body
+                    (context, ME.Loop (ME.LoopInfo var init body [] []))
+                _ -> panic "Non binding pat found in Loop expr in MIR lowering"
         HE.ArgRef index -> (context, ME.VarRef (ME.VarRefInfo (ME.Arg index)))
         HE.ValueRef var -> do
             var <- bindRefToVar var
@@ -261,6 +268,9 @@ lowerAdt state qn = do
             context <- createContext state
             (context, variants) <- List.mapSE context adt.variants (\context, index, HD.Variant name _ items -> do
                 (context, mir_id) <- lowerTuple context items
-                (context, MD.Variant ("variant_{}" % index) (MT.Record mir_id)))
+                name <- case name of
+                    FQ.FullPathWithVariant m n v -> SS.get v
+                    _ -> "variant_{}" % index
+                (context, MD.Variant name (MT.Record mir_id)))
             (context.state, MD.AlgebraicDataType (MI.Identity qn) variants [] [])
         _ -> panic "Adt's qn is not adt! {}" % qn

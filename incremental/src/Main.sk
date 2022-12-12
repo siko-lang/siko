@@ -1,15 +1,119 @@
 module Main where
 
 import IO
+import Siko.Args
+import Siko.Config
+import Siko.Format
+import Siko.Parser
 import Siko.Query.CLI
 import Siko.Query.Driver
 import Siko.Query.Item as I
+import Siko.Syntax.Location
+import Siko.Syntax.Util
+
+fmt :: [String] -> ()
+fmt files = do
+    List.forEach files (\name -> do
+        source <- readTextFile name
+        (source_file, lexer_errors, parser_errors) <- parse (FileId 0) name source True
+        failed <- if List.isEmpty lexer_errors
+        then False
+        else do
+            println "Error in {}" % name
+            println lexer_errors
+            True
+        failed <- if List.isEmpty parser_errors
+        then failed
+        else do
+            println "Error in {}" % name
+            println parser_errors
+            True
+        if failed
+        then ()
+        else do
+            orig_source <- relocate source_file
+            tokens <- format source_file
+            output <- formatToken tokens
+            (new_source_file, lexer_errors, parser_errors) <- parse (FileId 0) name output True
+            new_source <- relocate new_source_file
+            if new_source == orig_source
+            then writeTextFile name output
+            else do
+                newname <- "{}.bak" % name
+                writeTextFile newname output
+                println "AST of {} changed!!" % name)
+
+outputFileNameOption = "output-file filename"
+
+tracedMirFunctionOption = "traced-mir-function filename"
+
+dumpIROption = "dump-ir"
+
+traceLevel1Option = "trace1"
+
+traceLevel2Option = "trace2"
+
+noOptimizationOption = "no-optimization"
+
+printFunctionInfoOption = "print-function-info"
+
+disableLirTransformOption = "disable-lir-transform"
+
+parseConfig :: ParseResult -> Config
+parseConfig result = do
+    config <- getDefaultConfig
+    config <- case getSingleValue result outputFileNameOption of
+        Some value -> config { output_file_name = Some value }
+        None -> config
+    config <- case getMultiValue result tracedMirFunctionOption of
+        Some values -> config { mir_functions = values }
+        None -> config
+    config <- if isValueSet result traceLevel1Option
+    then config { trace_level = Level1 }
+    else config
+    config <- if isValueSet result traceLevel2Option
+    then config { trace_level = Level2 }
+    else config
+    config <- if isValueSet result noOptimizationOption
+    then config { optimized = False }
+    else config
+    config <- if isValueSet result printFunctionInfoOption
+    then config { print_function_info = True }
+    else config
+    config <- if isValueSet result disableLirTransformOption
+    then config { disable_lir_transforms = True }
+    else config
+    config
 
 main = do
     args <- getArgs
-    std_path <- atIndex args 1
-    (_, args) <- List.remove args 0
-    compile None False createDriver args
-    //cli <- createCLI std_path
-    //runCLI cli
-    ()
+    argparser <- createArgParser "Siko"
+    build_cmd <- Command "build" [Simple (SimpleOption traceLevel1Option "-v" "Enable level 1 traces" "Disabled"),
+                                  Simple (SimpleOption traceLevel2Option "-vv" "Enable level 2 traces" "Disabled"),
+                                  Simple (SimpleOption dumpIROption "-d" "Dump MIR/LIR" "Disabled"),
+                                  Simple (SimpleOption noOptimizationOption "-nooptimization" "Disable optimizations" "Enabled"),
+                                  Simple (SimpleOption printFunctionInfoOption "-pfi" "Print MIR function info" "Disabled"),
+                                  Simple (SimpleOption disableLirTransformOption "-dlt" "Disable LIR transform" "Enabled"),
+                                  WithArg (WithArgOption outputFileNameOption "-o" "Output binary name" "sikoc_output"),
+                                  WithArg (WithArgOption tracedMirFunctionOption "-m" "Traced MIR function" "-")] "Build program"
+    fmt_cmd <- Command "fmt" [] "Format source code"
+    cli_cmd <- Command "cli" [] "Run CLI"
+    argparser <- addCommand argparser build_cmd
+    argparser <- addCommand argparser fmt_cmd
+    argparser <- addCommand argparser cli_cmd
+    case processArgs argparser args of
+        Ok result -> do
+            case result.command of
+                "build" -> do
+                    config <- parseConfig result
+                    driver <- compile None False (createDriver config) result.unused
+                "fmt" -> do
+                    names <- List.fold [] result.unused (\names, arg -> names + processPath arg)
+                    fmt names
+                "cli" -> do
+                    std_path <- atIndex result.unused 0
+                    config <- parseConfig result
+                    cli <- createCLI std_path config
+                    runCLI cli
+                _ -> ()
+        Err _ -> ()

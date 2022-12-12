@@ -69,7 +69,6 @@ createTypedSimpleExpr context id s_expr = case s_expr of
     E.Bind pattern rhs -> E.Bind (createTypedPattern context pattern) (createTypedExpr context rhs)
     E.FieldAccess name receiver -> E.FieldAccess (Std.Intrinsics.clone name) (createTypedExpr context receiver)
     E.TupleFieldAccess index receiver -> E.TupleFieldAccess index (createTypedExpr context receiver)
-    E.Formatter fmt args -> E.Formatter (Std.Intrinsics.clone fmt) (processExprs context args)
     E.CaseOf body cases bind_groups -> E.CaseOf (createTypedExpr context body) (List.map cases (createTypedCase context)) (Std.Intrinsics.clone bind_groups)
     E.RecordUpdate ref items -> E.RecordUpdate (createTypedExpr context ref) (List.map items (createTypedRecordConstructionItem context))
     E.Return arg -> E.Return (createTypedExpr context arg)

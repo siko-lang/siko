@@ -235,14 +235,6 @@ processExprs context env exprs = do
 
 processDo a :: (ResolverState a) => Context a -> Environment -> [SE.Expr] -> (Context a, [HE.Expr ()])
 processDo context env exprs = do
-    (context, _, hir_exprs) <- exprs |> List.iter |> Iterator.fold (\(context, env, hir_exprs), expr -> do
-        (context, env, hir_expr) <- processExpr context env expr
-        hir_exprs <- push hir_exprs hir_expr
-        (context, env, hir_exprs)) (context, env, [])
-    (context, hir_exprs)
-
-processDo2 a :: (ResolverState a) => Context a -> Environment -> [SE.Expr] -> (Context a, [HE.Expr ()])
-processDo2 context env exprs = do
     loop (context, env, hir_exprs, exprs) <- (context, env, [], exprs) do
         if List.isEmpty exprs
         then break (context, hir_exprs)
@@ -364,6 +356,38 @@ processEffectHandlers context env handlers = List.fold (context, []) handlers (\
             context <- addErrorToContext context err
             (context, hir_handlers))
 
+desugarFormat :: String -> [SE.Expr] -> Location -> [SE.Expr]
+desugarFormat fmt args location = do
+    format_var <- createIdent ".format" location
+    format_ref <- SE.Expr (SE.Path format_var) location
+    add_name <- SE.Expr (SE.Path (createIdent "Std.Ops.opAdd" location)) location
+    add_str <- (\other -> do
+        add <- SE.Expr (SE.FunctionCall add_name [format_ref, other]) location
+        pat <- SP.Pattern (SP.Binding format_var) location
+        SE.Expr (SE.Bind pat add) location)
+    subs <- String.split fmt "{}"
+    args <- List.map args (\arg -> do
+        SE.Expr _ arg_location <- arg
+        show_name <- createIdent "Std.Ops.show" arg_location
+        show_path <- SE.Expr (SE.Path show_name) arg_location
+        SE.Expr (SE.FunctionCall show_path [arg]) arg_location)
+    items <- loop (items, args, subs) <- ([], args, subs) do
+        (lit, subs) <- List.remove subs 0
+        string_expr <- SE.Expr (SE.StringLiteral (SS.create lit)) location
+        item <- if List.isEmpty items
+        then do
+            pat <- SP.Pattern (SP.Binding format_var) location
+            SE.Expr (SE.Bind pat string_expr) location
+        else add_str string_expr
+        items <- List.push items item
+        if List.isEmpty args
+        then break items
+        else do
+            (arg, args) <- List.remove args 0
+            items <- List.push items (add_str arg)
+            (items, args, subs)
+    List.push items format_ref
+
 processExpr a :: (ResolverState a) => Context a -> Environment -> SE.Expr -> (Context a, Environment, HE.Expr ())
 processExpr context env (SE.Expr expr location) = do
     (context, env, hir_expr) <- case expr of
@@ -448,7 +472,7 @@ processExpr context env (SE.Expr expr location) = do
         SE.CharLiteral lit -> (context, env, HE.CharLiteral lit)
         SE.Do items -> do
             block_env <- createEnvironment env.lambda_id (Some env)
-            (context, hir_items) <- processDo2 context block_env items
+            (context, hir_items) <- processDo context block_env items
             (context, env, HE.Do hir_items)
         SE.Bind p rhs -> do
             (context, env, hir_rhs) <- processExpr context env rhs
@@ -469,8 +493,10 @@ processExpr context env (SE.Expr expr location) = do
             context <- if getLength subs != getLength args + 1
             then addErrorToContext context (InvalidFormatString location)
             else context
-            (context, hir_args) <- processExprs context env args
-            (context, env, HE.Formatter fmt hir_args)
+            items <- desugarFormat (SS.get fmt) args location
+            block_env <- createEnvironment env.lambda_id (Some env)
+            (context, hir_items) <- processDo context block_env items
+            (context, env, HE.Do hir_items)
         SE.CaseOf body cases -> do
             (context, env, hir_body) <- processExpr context env body
             (context, env, cases, bind_groups) <- cases |> List.iter |> Iterator.fold (\(context, env, cases, bind_groups), c -> do
@@ -566,6 +592,15 @@ processExpr context env (SE.Expr expr location) = do
             context <- addBreak context id location
             (context, env, HE.Break hir_expr)
         SE.Loop pattern initializer body -> do
+            loop_var <- createIdent ".loop" location
+            new_pattern <- SP.Pattern (SP.Binding loop_var) location
+            loop_var_ref <- SE.Expr (SE.Bind pattern (SE.Expr (SE.Path loop_var) location)) location
+            SE.Expr body_s_expr body_location <- body
+            body_s_expr <- case body_s_expr of
+                SE.Do items -> SE.Do ([loop_var_ref] + items)
+                _ -> SE.Do [loop_var_ref, body]
+            body <- SE.Expr body_s_expr body_location
+            pattern <- new_pattern
             (context, env, hir_initializer) <- processExpr context env initializer
             pattern_env <- createPatternEnvironment True
             block_env <- createEnvironment env.lambda_id (Some env)

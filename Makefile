@@ -7,8 +7,8 @@ stage1: stage0 $(shell find src -type f)
 stage2: stage1 $(shell find src -type f)
 	@./stage1 ./src ./std -v -o ./stage2
 
-sikofmt: stage0 $(shell find fmt -type f)
-	@./stage1 ./fmt/src ./std -v -o ./sikofmt
+siko: stage0 $(shell find incremental -type f)
+	@./stage0 ./incremental/src ./std -o ./siko
 
 test: stage1
 	@./tests stage1
@@ -17,8 +17,8 @@ clean:
 	@rm -f stage0
 	@rm -f stage1
 	@rm -f stage2
-	@rm -f sikofmt
+	@rm -f siko
 	@rm -rf build/stage0
 	@rm -rf build/stage1
 	@rm -rf build/stage2
-	@rm -rf build/sikofmt
+	@rm -rf build/siko

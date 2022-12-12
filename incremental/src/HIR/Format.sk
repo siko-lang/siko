@@ -98,9 +98,6 @@ instance Format E.SimpleExpr a where
         E.TupleFieldAccess id receiver -> do
             receiver <- format receiver
             receiver + [Chunk ".", Chunk "{}" % id]
-        E.Formatter fmt args -> do
-            args_output <- formatList args (Chunk ", ")
-            [Chunk "\"{}\" % (" % UF.escapeString (SS.get fmt)] + args_output + [Chunk ")"]
         E.CaseOf body cases _ -> do
             body <- format body
             cases <- formatBlock cases

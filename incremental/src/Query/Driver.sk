@@ -2,6 +2,7 @@ module Siko.Query.Driver where
 
 import IO
 import Map
+import Siko.Config
 import Siko.Parser as P
 import Siko.Query.Database as DB
 import Siko.Query.HIRLowering as HL
@@ -15,14 +16,15 @@ import Siko.Syntax.Module as SM
 import Siko.Syntax.SourceFile
 import Siko.Util.SharedString as SS
 
-data Driver = { sources :: Map String SourceFile,
+data Driver = { config :: Config,
+                sources :: Map String SourceFile,
                 resolver :: R.Resolver,
                 db :: DB.Database,
                 pending_commands :: [I.Command]
               }
 
-createDriver :: Driver
-createDriver = do
+createDriver :: Config -> Driver
+createDriver config = do
     db <- DB.createDatabase
     db <- DB.addCommandGenerator db I.UnresolvedModuleKind I.CollectLocalItems
     db <- DB.addCommandGenerator db I.LocalItemsKind I.CollectExports
@@ -47,7 +49,7 @@ createDriver = do
     db <- DB.addWatchedKind db I.MIRRecordKind None
     db <- DB.addWatchedKind db I.MIRAdtKind None
     resolver <- R.createResolver
-    Driver Map.empty resolver db []
+    Driver config Map.empty resolver db []
 
 addModule :: String -> Driver -> SM.Module -> Driver
 addModule file_name driver mod = do

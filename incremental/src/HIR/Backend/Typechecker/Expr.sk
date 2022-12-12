@@ -417,9 +417,6 @@ initializeExprType current_fn_name context orig_expr = do
             (context, var) <- U.getNewTypeVarType context
             context <- addExprType context id (TS.ExprType var)
             context
-        E.Formatter fmt args -> do
-            context <- addExprType context id (TS.ExprType Util.getStringType)
-            context
         E.CaseOf _ _ _ -> do
             (context, var) <- U.getNewTypeVarType context
             context <- addExprType context id (TS.ExprType var)
@@ -605,18 +602,6 @@ checkExprType context orig_expr = do
             constraints <- [T.RowConstraint (T.IndexedRow index) field_ty]
             (context, expected_receiver_ty) <- getNewVarWithConstraints context constraints
             context <- matchExprWith context receiver_id expected_receiver_ty receiver_location
-            context
-        E.Formatter fmt args -> do
-            sub_ids <- List.map args (\E.Expr _ id _ _ -> id)
-            sub_signatures <- TEff.getExprEffectSignatures context sub_ids
-            context <- TEff.setExprEffect context id sub_signatures location
-            show_class <- FQ.FullPath getStdOpsModuleName getShowClassName
-            constraints <- [T.ClassConstraint show_class []]
-            context <- args |> List.iter |> Iterator.fold (\context, arg -> do
-                (E.Expr _ arg_id _ arg_location) <- arg
-                (context, expected_arg_ty) <- getNewVarWithConstraints context constraints
-                context <- matchExprWith context arg_id expected_arg_ty arg_location
-                context) context
             context
         E.CaseOf body cases bind_groups -> do
             E.Expr _ body_id _ body_location <- body

@@ -2,6 +2,7 @@ module Siko.Query.CLI where
 
 import IO
 import Map
+import Siko.Config
 import Siko.Query.Driver as D
 
 data CommandHandler = { handler_fn :: D.Driver -> [String] -> D.Driver }
@@ -37,10 +38,10 @@ compile std_path clear driver args = do
 reset :: D.Driver -> [String] -> D.Driver
 reset driver args = do
     println "DB reset done"
-    D.createDriver
+    D.createDriver driver.config
 
-createCLI :: String -> CLI
-createCLI std_path = do
+createCLI :: String -> Config -> CLI
+createCLI std_path config = do
     cmds <- Map.empty
     cmds <- Map.put cmds "addFile" (CommandHandler addFile)
     cmds <- Map.put cmds "removeFile" (CommandHandler removeFile)
@@ -48,7 +49,7 @@ createCLI std_path = do
     cmds <- Map.put cmds "compile" (CommandHandler (compile (Some std_path) False))
     cmds <- Map.put cmds "c" (CommandHandler (compile None True))
     cmds <- Map.put cmds "reset" (CommandHandler reset)
-    CLI D.createDriver cmds
+    CLI (D.createDriver config) cmds
 
 processPath :: String -> [String]
 processPath path = do

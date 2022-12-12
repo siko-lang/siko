@@ -163,6 +163,9 @@ resolveFunction driver key = do
     state <- R.createStateProvider driver
     (state, functions, sub_unresolved_function_infos) <- RF.processUnresolvedFunction state unresolved_function_info
     // TODO: error
+    if List.isEmpty state.errors
+    then ()
+    else panic "Resolve errors {}" % state.errors
     driver <- List.fold driver functions (\driver, function -> do
         key <- I.ResolvedFunctionKey function.name
         item <- I.ResolvedFunction function

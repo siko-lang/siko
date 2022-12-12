@@ -1,0 +1,163 @@
+module Siko.Args where
+
+import Map
+import Siko.Format
+
+data SimpleOption = { name :: String,
+                      option :: String,
+                      description :: String,
+                      default_value :: String
+                    } deriving (Show)
+
+data WithArgOption = { name :: String,
+                       option :: String,
+                       description :: String,
+                       default_value :: String
+                     } deriving (Show)
+
+data ArgOption = Simple SimpleOption
+               | WithArg WithArgOption
+               deriving (Show)
+
+data Command = { name :: String,
+                 options :: [ArgOption],
+                 description :: String
+               }
+
+data ArgParser = { name :: String,
+                   commands :: Map String Command
+                 }
+
+data ParseResult = { command :: String,
+                     options :: Map String [String],
+                     unused :: [String]
+                   } deriving (Show)
+
+getSingleValue :: ParseResult -> String -> Option String
+getSingleValue result name = case Map.get result.options name of
+    Some values -> Some (atIndex values 0)
+    None -> None
+
+getMultiValue :: ParseResult -> String -> Option [String]
+getMultiValue result name = Map.get result.options name
+
+isValueSet :: ParseResult -> String -> Bool
+isValueSet result name = isSome (Map.get result.options name)
+
+createArgParser :: String -> ArgParser
+createArgParser name = ArgParser name Map.empty
+
+addCommand :: ArgParser -> Command -> ArgParser
+addCommand argparser cmd = do
+    commands <- Map.put argparser.commands cmd.name cmd
+    argparser { commands = commands }
+
+addOption :: Command -> ArgOption -> Command
+addOption cmd option = do
+    cmd { options = List.push cmd.options option }
+
+getOptionName :: ArgOption -> String
+getOptionName option = case option of
+    Simple o -> o.name
+    WithArg o -> o.name
+
+getOptionOption :: ArgOption -> String
+getOptionOption option = case option of
+    Simple o -> o.option
+    WithArg o -> o.option
+
+getOptionDescription :: ArgOption -> String
+getOptionDescription option = case option of
+    Simple o -> o.description
+    WithArg o -> o.description
+
+getOptionDefaultValue :: ArgOption -> String
+getOptionDefaultValue option = case option of
+    Simple o -> o.default_value
+    WithArg o -> o.default_value
+
+getSLength :: String -> Int
+getSLength s = List.getLength (chars s)
+
+fillString :: String -> Int -> String
+fillString input desired_len = do
+    len <- getSLength input
+    diff <- desired_len - len
+    input + getSpaces diff
+
+printUsage :: ArgParser -> ()
+printUsage argparser = do
+    println "Usage: CMD [OPTIONS] INPUT"
+    println "Commands:"
+    argparser.commands |> Map.iter |> Iterator.forEach (\(name, cmd_def) -> do
+        cmd_def :: Command <- cmd_def
+        println "{}{} - {}" % (getSpaces 3, cmd_def.name, cmd_def.description)
+        if List.isEmpty cmd_def.options
+        then ()
+        else do
+            println "{}Options:" % (getSpaces 6)
+            name_header <- "Name:"
+            option_header <- "Option:"
+            default_value_header <- "Default value:"
+            description_header <- "Description:"
+            (max_name, max_option, max_default) <- List.fold (getSLength name_header + 1, getSLength option_header + 1, getSLength default_value_header + 1) cmd_def.options (\(max_name, max_option, max_default), o -> do
+                name <- getOptionName o
+                option <- getOptionOption o
+                default <- getOptionDefaultValue o
+                (Std.Ops.max max_name (getSLength name), Std.Ops.max max_option (getSLength option), Std.Ops.max max_default (getSLength default)))
+            println "{}{} {} {} {}" % (getSpaces 9, fillString name_header max_name, fillString option_header max_option, fillString default_value_header max_default, description_header)
+            println ""
+            cmd_def.options |> List.iter |> Iterator.forEach (\o -> do
+                name <- getOptionName o
+                option <- getOptionOption o
+                default <- getOptionDefaultValue o
+                description <- getOptionDescription o
+                println "{}{} {} {} {}" % (getSpaces 9, fillString name max_name, fillString option max_option, fillString default max_default, description)))
+
+processArgs :: ArgParser -> [String] -> Result ParseResult ()
+processArgs argparser args = do
+    (self, args) <- List.remove args 0
+    if List.isEmpty args
+    then do
+        println "Missing cmd"
+        printUsage argparser
+        Err ()
+    else do
+        (cmd, args) <- List.remove args 0
+        case Map.get argparser.commands cmd of
+            Some cmd_def -> do
+                result <- ParseResult cmd_def.name Map.empty []
+                result <- loop (result, args) <- (result, args) do
+                    if List.isEmpty args
+                    then break result
+                    else do
+                        (current_arg, args) <- List.remove args 0
+                        loop (result, args, option_iter) <- (result, args, List.iter cmd_def.options) do
+                            (option_iter, option_def) <- Iterator.next option_iter
+                            case option_def of
+                                Some (Simple option_def) -> if current_arg == option_def.option
+                                    then do
+                                        options <- Map.add result.options current_arg ""
+                                        result <- result { options = options }
+                                        break (result, args)
+                                    else (result, args, option_iter)
+                                Some (WithArg option_def) -> if current_arg == option_def.option
+                                    then if List.isEmpty args
+                                        then do
+                                            println "Missing arg for {}" % option_def.option
+                                            printUsage argparser
+                                            return Err ()
+                                        else do
+                                            (extra_value, args) <- List.remove args 0
+                                            options <- Map.add result.options current_arg extra_value
+                                            result <- result { options = options }
+                                            break (result, args)
+                                    else (result, args, option_iter)
+                                None -> do
+                                    result <- result { unused = List.push result.unused current_arg }
+                                    break (result, args)
+                Ok result
+            None -> do
+                println "Unknown command {}" % cmd
+                printUsage argparser
+                Err ()

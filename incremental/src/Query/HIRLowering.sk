@@ -198,9 +198,7 @@ lowerTuple driver key = do
 
 runlegacyBackend :: Driver -> Driver
 runlegacyBackend driver = do
-    println "Start legacy backend"
-    config <- getDefaultConfig
-    config <- config { dump = True }
+    //println "Start legacy backend"
     mir_program <- MP.createProgram
     mir_functions <- DB.getWatchedKeys driver.db I.MIRFunctionKind
     mir_functions <- List.map mir_functions (\key -> case DB.get driver.db key of
@@ -223,10 +221,10 @@ runlegacyBackend driver = do
     mir_program <- List.fold mir_program mir_adts (\mir_program, adt -> do
         //println "Adding adt {}" % adt.id
         MP.addAdt mir_program adt.id adt)
-    with { getConfig = \() -> config } do
+    with { getConfig = \() -> driver.config } do
         trace "MIR processing.."
         lir_program <- MB.processProgram mir_program
-        lir_program <- if config.disable_lir_transforms
+        lir_program <- if driver.config.disable_lir_transforms
         then lir_program
         else do
             trace "LIR processing.."
@@ -237,7 +235,7 @@ runlegacyBackend driver = do
         binary_file <- getOutputFileName Binary
         writeTextFile rust_source_file rust_output
         trace "Compiling.."
-        compilation_result <- if config.optimized
+        compilation_result <- if driver.config.optimized
         then runCommand ["rustc",
                          "-O",
                          "-o",
