@@ -1,0 +1,81 @@
+module Main where
+
+import IO
+import Siko.Args
+
+traceLevel1Option = "trace1"
+
+data TestInfo = { full_path :: String,
+                  name :: String
+                }
+
+instance PartialEq TestInfo where
+    opEq (TestInfo _ n1) (TestInfo _ n2) = opEq n1 n2
+
+instance Eq TestInfo
+
+instance PartialOrd TestInfo where
+    partialCmp (TestInfo _ n1) (TestInfo _ n2) = partialCmp n1 n2
+
+instance Ord TestInfo where
+    cmp (TestInfo _ n1) (TestInfo _ n2) = cmp n1 n2
+
+collectTests :: String -> String -> [String] -> [TestInfo] -> [TestInfo]
+collectTests path parent selected tests = do
+    if isDir path
+    then do
+        files <- listDir path
+        (skip, sub_tests) <- List.fold (False, []) files (\(skip, tests), entry -> do
+            subs <- String.split entry "/"
+            file <- last subs
+            if isDir entry
+            then (skip, collectTests entry file selected tests)
+            else do
+                skip <- if file == "SKIP" then True else skip
+                tests <- if file == "main.sk"
+                then List.push tests (TestInfo entry parent)
+                else tests
+                (skip, tests))
+        if List.isEmpty selected
+        then do
+            if skip
+            then do
+                List.forEach sub_tests (\t -> println "Skipping {}" % t.name)
+                tests
+            else tests + sub_tests
+        else do
+            selected_tests <- List.filter sub_tests (\t -> List.contains selected t.name)
+            tests + selected_tests
+    else tests
+
+data Statistics = { success :: Int, failure :: Int }
+
+runTest :: Int -> Int -> Statistics -> TestInfo -> Statistics
+runTest total index stats test = do
+    println "--- Running test {} - {}/{} --- " % (test.name, total, index + 1)
+    test_runs_path <- "test_runs/{}/{}" % (test.name, test.name)
+    cmd <- ["siko", "build", "./std", test.full_path, "-o", test_runs_path]
+    if runCommand cmd
+    then do
+        if runCommand [test_runs_path]
+        then stats { success = stats.success + 1 }
+        else stats { failure = stats.failure + 1 }
+    else stats { failure = stats.failure + 1 }
+
+main = do
+    args <- getArgs
+    argparser <- createArgParser "Siko"
+    build_cmd <- Command "run" [Simple (SimpleOption traceLevel1Option "-v" "Enable level 1 traces" "Disabled")] "Run tests"
+    argparser <- addCommand argparser build_cmd
+    case processArgs argparser args of
+        Ok result -> do
+            case result.command of
+                "run" -> do
+                    tests <- collectTests "./test" "./test" result.unused []
+                    total <- List.getLength tests
+                    tests <- tests |> List.sort
+                    stats <- Statistics 0 0
+                    stats <- List.foldE stats tests (\stats, index, test -> runTest total index stats test)
+                    println "Success {}, failure {}" % (stats.success, stats.failure)
+                _ -> ()
+        Err _ -> ()
