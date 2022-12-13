@@ -3,6 +3,7 @@ module Siko.Query.Database where
 import Map
 import Set
 import Siko.Query.Item as I
+import Siko.Trace
 
 data WatchedCollection = { update_cmd :: Option I.Command,
                            keys :: Set I.Key
@@ -42,7 +43,7 @@ getWatchedKeys db kind = case Map.get db.collections kind of
 addItem :: Database -> I.Key -> I.Item -> (Database, [I.Command])
 addItem db key item = do
     kind <- I.getKind item
-    //println "Adding item {}" % key
+    trace2 "Adding item {}" % key
     db :: Database <- db // FIXME
     (items, old) <- Map.insert db.items key item
     db <- db { items = items }
@@ -70,7 +71,7 @@ addItem db key item = do
 
 removeItem :: Database -> I.Key -> (Database, [I.Command])
 removeItem db key = do
-    //println "Removing item {}" % key
+    trace2 "Removing item {}" % key
     (items, old) <- Map.remove db.items key
     db <- db { items = items }
     case old of

@@ -17,6 +17,7 @@ import Siko.MIR.Identity as MI
 import Siko.MIR.Type as MT
 import Siko.Query.Lookup as QL
 import Siko.Syntax.Ident
+import Siko.Trace
 import Siko.Util.Counter
 import Siko.Util.SharedString as SS
 
@@ -190,15 +191,15 @@ lowerExpr context hir_expr = do
 lowerFunction a :: (StateProvider a) => a -> FQ.FullyQualifiedName -> HF.Function HT.Type -> (a, MF.Function, [MI.Identity], [MI.Identity], [MI.Identity], [MI.Identity])
 lowerFunction state qn hir_function = do
     mir_id <- lowerFullyQualifiedName qn
-    //println "Lowering HIR -> MIR {}" % mir_id
+    trace2 "Lowering function HIR -> MIR {}" % mir_id
     context <- createContext state
     hir_function_type <- Option.expect hir_function.type "Function has no type"
-    //println "Full type {}" % TF.toString hir_function_type
+    trace2 "Full type {}" % TF.toString hir_function_type
     args <- HT.getArgsLimited hir_function_type hir_function.arg_count
-    //println "args {}" % TF.toStringTypes args
+    trace2 "args {}" % TF.toStringTypes args
     (context, mir_args) <- List.mapS context args lowerType
     result_type <- HT.getResultType hir_function_type hir_function.arg_count
-    //println "result_type {}" % TF.toString result_type
+    trace2 "result_type {}" % TF.toString result_type
     (context, mir_result_type) <- lowerType context result_type
     (context, kind) <- case hir_function.kind of
         HF.Normal info -> do
@@ -228,6 +229,7 @@ lowerFunction state qn hir_function = do
 
 createTuple a :: (StateProvider a) => a -> MI.Identity -> [HT.Type] -> (a, MD.Record, MF.Function)
 createTuple state id args = do
+    trace2 "Creating tuple {} {}" % (id, TF.toStringTypes args)
     context <- createContext state
     (context, mir_args) <- List.mapS context args lowerType
     fields <- List.mapE mir_args (\index, ty -> MD.RecordField ("field{}" % index) index ty False)
@@ -235,8 +237,9 @@ createTuple state id args = do
     mir_function_type <- MF.FunctionType mir_args result_type
     (context.state, MD.Record id fields None [] [], MF.Function id MF.RecordCtor mir_function_type)
 
-lowerRecord a :: (StateProvider a) => a -> FQ.FullyQualifiedName -> (a, MD.Record)
+lowerRecord a :: (StateProvider a) => a -> FQ.FullyQualifiedName -> (a, MD.Record, [MI.Identity], [MI.Identity], [MI.Identity])
 lowerRecord state qn = do
+    trace2 "Lowering record {}" % qn
     case qn of
         FQ.Record base_qn args -> do
             record <- QL.getRecord state base_qn
@@ -253,11 +256,12 @@ lowerRecord state qn = do
             (context, fields) <- List.mapSE context record.fields (\context, index, HD.RecordField _ type -> do
                 (context, mir_type) <- lowerType context type
                 (context, MD.RecordField ("field{}" % index) index mir_type False))
-            (context.state, MD.Record (MI.Identity qn) fields external_record_info [] [])
+            (context.state, MD.Record (MI.Identity qn) fields external_record_info [] [], context.tuples, context.adts, context.records)
         _ -> panic "Record's qn is not record! {}" % qn
 
-lowerAdt a :: (StateProvider a) => a -> FQ.FullyQualifiedName -> (a, MD.AlgebraicDataType)
+lowerAdt a :: (StateProvider a) => a -> FQ.FullyQualifiedName -> (a, MD.AlgebraicDataType, [MI.Identity])
 lowerAdt state qn = do
+    trace2 "Lowering adt {}" % qn
     case qn of
         FQ.Adt base_qn args -> do
             adt <- QL.getAdt state base_qn
@@ -272,5 +276,5 @@ lowerAdt state qn = do
                     FQ.FullPathWithVariant m n v -> SS.get v
                     _ -> "variant_{}" % index
                 (context, MD.Variant name (MT.Record mir_id)))
-            (context.state, MD.AlgebraicDataType (MI.Identity qn) variants [] [])
+            (context.state, MD.AlgebraicDataType (MI.Identity qn) variants [] [], context.tuples)
         _ -> panic "Adt's qn is not adt! {}" % qn

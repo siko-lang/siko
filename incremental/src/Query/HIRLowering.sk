@@ -169,7 +169,10 @@ lowerRecord driver key = do
         None -> do
             qn <- I.getFullyQualifiedName key
             state <- BSP.createStateProvider driver
-            (state, mir_record) <- L.lowerRecord state qn
+            (state, mir_record, tuples, adts, records) <- L.lowerRecord state qn
+            driver <- List.fold driver tuples (\driver, mir_id -> addCommands driver [I.LowerTuple (I.MIRRecordKey mir_id)])
+            driver <- List.fold driver records (\driver, mir_id -> addCommands driver [I.LowerHIRRecord (I.MIRRecordKey mir_id)])
+            driver <- List.fold driver adts (\driver, mir_id -> addCommands driver [I.LowerHIRAdt (I.MIRAdtKey mir_id)])
             addToDb driver key (I.MIRRecord mir_record)
 
 lowerAdt :: Driver -> I.Key -> Driver
@@ -179,7 +182,8 @@ lowerAdt driver key = do
         None -> do
             qn <- I.getFullyQualifiedName key
             state <- BSP.createStateProvider driver
-            (state, mir_adt) <- L.lowerAdt state qn
+            (state, mir_adt, tuples) <- L.lowerAdt state qn
+            driver <- List.fold driver tuples (\driver, mir_id -> addCommands driver [I.LowerTuple (I.MIRRecordKey mir_id)])
             addToDb driver key (I.MIRAdt mir_adt)
 
 lowerTuple :: Driver -> I.Key -> Driver
@@ -221,28 +225,28 @@ runlegacyBackend driver = do
     mir_program <- List.fold mir_program mir_adts (\mir_program, adt -> do
         //println "Adding adt {}" % adt.id
         MP.addAdt mir_program adt.id adt)
-    with { getConfig = \() -> driver.config } do
-        trace "MIR processing.."
-        lir_program <- MB.processProgram mir_program
-        lir_program <- if driver.config.disable_lir_transforms
-        then lir_program
-        else do
-            trace "LIR processing.."
-            LB.processProgram lir_program
-        trace "Transpiling.."
-        rust_output <- Transpiler.transpile lir_program
-        rust_source_file <- getOutputFileName Rust
-        binary_file <- getOutputFileName Binary
-        writeTextFile rust_source_file rust_output
-        trace "Compiling.."
-        compilation_result <- if driver.config.optimized
-        then runCommand ["rustc",
-                         "-O",
-                         "-o",
-                         binary_file,
-                         rust_source_file]
-        else runCommand ["rustc",
-                         "-o",
-                         binary_file,
-                         rust_source_file]
+    trace "MIR processing.."
+    lir_program <- MB.processProgram mir_program
+    config <- getConfig ()
+    lir_program <- if config.disable_lir_transforms
+    then lir_program
+    else do
+        trace "LIR processing.."
+        LB.processProgram lir_program
+    trace "Transpiling.."
+    rust_output <- Transpiler.transpile lir_program
+    rust_source_file <- getOutputFileName Rust
+    binary_file <- getOutputFileName Binary
+    writeTextFile rust_source_file rust_output
+    trace "Compiling.."
+    compilation_result <- if config.optimized
+    then runCommand ["rustc",
+                     "-O",
+                     "-o",
+                     binary_file,
+                     rust_source_file]
+    else runCommand ["rustc",
+                     "-o",
+                     binary_file,
+                     rust_source_file]
     driver

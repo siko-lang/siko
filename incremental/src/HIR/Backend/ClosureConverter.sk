@@ -147,6 +147,12 @@ typeConverter context type = do
         T.Function _ _ -> do
             (context, name) <- getClosureName context type
             (context, T.Named name [])
+        T.Tuple items -> do
+            (context, items) <- List.mapS context items typeConverter
+            (context, T.Tuple items)
+        T.Named name args -> do
+            (context, args) <- List.mapS context args typeConverter
+            (context, T.Named name args)
         t -> (context, t)
 
 convertClosures a :: (StateProvider a) => a -> F.Function T.Type -> (a, F.Function T.Type, [FQ.FullyQualifiedName], [ClosureInstance])
@@ -161,7 +167,13 @@ convertClosures state fn = do
             (context, body) <- traverse traversal_context body
             info <- info { body = body, expr_id_gen = context.expr_id_gen, pattern_id_gen = context.pattern_id_gen }
             kind <- F.Normal info
-            (state, fn { kind = kind }, context.closure_names |> List.sort |> List.dedup, context.closure_instances |> List.sort |> List.dedup)
+            fn_type <- Option.unwrap fn.type
+            args <- T.getArgsLimited fn_type fn.arg_count
+            (context, args) <- List.mapS context args typeConverter
+            result_type <- T.getResultType fn_type fn.arg_count
+            (context, result_type) <- typeConverter context result_type
+            fn_type <- List.fold result_type args (\result, arg_type -> T.Function arg_type result)
+            (state, fn { kind = kind, type = Some fn_type }, context.closure_names |> List.sort |> List.dedup, context.closure_instances |> List.sort |> List.dedup)
         kind -> (state, fn { kind = kind }, [], [])
     (state, fn, closure_names, closure_instances)
 

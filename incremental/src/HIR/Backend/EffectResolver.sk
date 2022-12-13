@@ -198,7 +198,9 @@ processExpr context expr = do
             case get effect_context.resolution.resolutions qn of
                 Some (Eff.StaticResolution handler_qn) -> do
                     //println "Replacing {} with {}" % (qn, handler_qn)
-                    (context, E.Expr (E.StaticFunctionCall handler_qn args) id type location)
+                    effectless_id <- FQ.Effectless handler_qn None
+                    context <- context { queue = List.push context.queue effectless_id }
+                    (context, E.Expr (E.StaticFunctionCall effectless_id args) id type location)
                 Some (Eff.DynamicResolution member_id handler_type) -> do
                     Eff.MemberId index <- member_id
                     (context, arg_ref_id) <- getNextExprId context
