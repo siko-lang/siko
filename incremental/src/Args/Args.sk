@@ -137,7 +137,7 @@ processArgs argparser args = do
                             case option_def of
                                 Some (Simple option_def) -> if current_arg == option_def.option
                                     then do
-                                        options <- Map.add result.options current_arg ""
+                                        options <- Map.add result.options option_def.name ""
                                         result <- result { options = options }
                                         break (result, args)
                                     else (result, args, option_iter)
@@ -149,7 +149,7 @@ processArgs argparser args = do
                                             return Err ()
                                         else do
                                             (extra_value, args) <- List.remove args 0
-                                            options <- Map.add result.options current_arg extra_value
+                                            options <- Map.add result.options option_def.name extra_value
                                             result <- result { options = options }
                                             break (result, args)
                                     else (result, args, option_iter)
