@@ -380,6 +380,28 @@ generateIsDir program type_store arg_types result_type = do
     is_dir_call <- R.MethodCall (R.FunctionCall "std::path::Path::new" [R.Ref field_access]) "is_dir" []
     R.Block [rustBoolToSikoBool program is_dir_call result_type]
 
+generateRunCommand :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
+generateRunCommand program type_store arg_types result_type = do
+    field_access <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
+    args <- "args"
+    args_decl <- R.VarDeclMut args field_access (Some (RT.Named "Vec<_>" []))
+    cmd <- "cmd"
+    cmd_decl <- R.VarDecl cmd (R.FieldAccess innerValueField ((R.MethodCall (R.VarRef args) "remove" [R.IntegerLiteral "0"]))) None
+    into_iter_call <- R.MethodCall (R.VarRef args) "into_iter" []
+    map_body <- R.Lambda ("|arg|") (R.FieldAccess innerValueField (R.VarRef "arg"))
+    map_call <- R.MethodCall into_iter_call "map" [map_body]
+    collect_call <- R.MethodCall map_call "collect" []
+    args2_decl <- R.VarDecl args collect_call (Some (RT.Named "Vec<_>" []))
+    new_call <- R.FunctionCall "std::process::Command::new" [R.VarRef cmd]
+    args_call <- R.MethodCall new_call "args" [R.VarRef args]
+    status_call <- R.MethodCall args_call "status" []
+    expect_call <- R.MethodCall status_call "expect" [R.StringLiteral "Failed to execute command"]
+    success_call <- R.MethodCall expect_call "success" []
+    R.Block [args_decl,
+             cmd_decl,
+             args2_decl,
+             rustBoolToSikoBool program success_call result_type]
+
 generateListDir :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateListDir program type_store arg_types result_type = do
     entries <- "entries"
@@ -1158,6 +1180,7 @@ initializeExternalFunctions = do
     (externals, _) <- insert externals (ExternalId "IO" "listDir") (ExternFnBuilder generateListDir)
     (externals, _) <- insert externals (ExternalId "IO" "exit") (ExternFnBuilder generateExit)
     (externals, _) <- insert externals (ExternalId "IO" "readLine") (ExternFnBuilder generateReadLine)
+    (externals, _) <- insert externals (ExternalId "IO" "runCommand") (ExternFnBuilder generateRunCommand)
     (externals, _) <- insert externals (ExternalId "String" "addString") (ExternFnBuilder generateStringAdd)
     (externals, _) <- insert externals (ExternalId "String" "partialCmpString") (ExternFnBuilder generatePartialCmp)
     (externals, _) <- insert externals (ExternalId "String" "cmpString") (ExternFnBuilder generateCmp)
