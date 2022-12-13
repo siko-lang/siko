@@ -2,6 +2,7 @@ module Main where
 
 import IO
 import Map
+import Siko.Args as Args
 import Siko.Config
 import Siko.Diagnostics
 import Siko.FileManager
@@ -19,6 +20,49 @@ import Siko.Syntax.SourceFile
 import Siko.Trace
 import Siko.Transpiler as Transpiler
 
+outputFileNameOption = "output-file filename"
+
+tracedMirFunctionOption = "traced-mir-function filename"
+
+dumpIROption = "dump-ir"
+
+traceLevel1Option = "trace1"
+
+traceLevel2Option = "trace2"
+
+noOptimizationOption = "no-optimization"
+
+printFunctionInfoOption = "print-function-info"
+
+disableLirTransformOption = "disable-lir-transform"
+
+parseConfig :: Args.ParseResult -> Config
+parseConfig result = do
+    config <- getDefaultConfig
+    config <- case Args.getSingleValue result outputFileNameOption of
+        Some value -> config { output_file_name = Some value }
+        None -> config
+    config <- case Args.getMultiValue result tracedMirFunctionOption of
+        Some values -> config { mir_functions = values }
+        None -> config
+    config <- if Args.isValueSet result traceLevel1Option
+    then config { trace_level = Level1 }
+    else config
+    config <- if Args.isValueSet result traceLevel2Option
+    then config { trace_level = Level2 }
+    else config
+    config <- if Args.isValueSet result noOptimizationOption
+    then config { optimized = False }
+    else config
+    config <- if Args.isValueSet result printFunctionInfoOption
+    then config { print_function_info = True }
+    else config
+    config <- if Args.isValueSet result disableLirTransformOption
+    then config { disable_lir_transforms = True }
+    else config
+    input_files <- List.map result.unused (\f -> FileName f)
+    config { input_files = input_files }
+
 processPath :: String -> [FileName]
 processPath path = do
     if isDir path
@@ -33,38 +77,6 @@ processPath path = do
                 then List.push files (FileName entry)
                 else files)
     else [FileName path]
-
-processArgs :: [String] -> Config
-processArgs args = loop (config, args) <- (getDefaultConfig, args) do
-        case pop args of
-            Some (arg, rest) -> do
-                case arg of
-                    "-o" -> do
-                        case pop rest of
-                            Some (arg, rest) -> do
-                                config <- config { output_file_name = Some arg }
-                                (config, rest)
-                            None -> do
-                                panic "Missing output_file"
-                    "-m" -> do
-                        case pop rest of
-                            Some (arg, rest) -> do
-                                mir_functions <- List.push config.mir_functions arg
-                                config <- config { mir_functions = mir_functions }
-                                (config, rest)
-                            None -> do
-                                panic "Missing mir function"
-                    "-v" -> (config { trace_level = Leve1 }, rest)
-                    "-nooptimization" -> (config { optimized = False }, rest)
-                    "-vv" -> (config { trace_level = Level2 }, rest)
-                    "-d" -> (config { dump = True }, rest)
-                    "-pfi" -> (config { print_function_info = True }, rest)
-                    "-dlt" -> (config { disable_lir_transforms = True }, rest)
-                    _ -> do
-                        input_files <- push config.input_files (FileName arg)
-                        config <- config { input_files = input_files }
-                        (config, rest)
-            None -> break config
 
 data Context = { file_manager :: FileManager,
                  lexer_errors :: Map FileId [LexerError],
@@ -147,13 +159,33 @@ compile config = do
                 Err tc_errors -> context { typechecker_errors = tc_errors }
         else context
 
+processArgs :: [String] -> ()
+processArgs args = do
+    argparser <- Args.createArgParser "Siko"
+    build_cmd <- Args.Command "build" [Args.Simple (Args.SimpleOption traceLevel1Option "-v" "Enable level 1 traces" "Disabled"),
+                                  Args.Simple (Args.SimpleOption traceLevel2Option "-vv" "Enable level 2 traces" "Disabled"),
+                                  Args.Simple (Args.SimpleOption dumpIROption "-d" "Dump MIR/LIR" "Disabled"),
+                                  Args.Simple (Args.SimpleOption noOptimizationOption "-nooptimization" "Disable optimizations" "Enabled"),
+                                  Args.Simple (Args.SimpleOption printFunctionInfoOption "-pfi" "Print MIR function info" "Disabled"),
+                                  Args.Simple (Args.SimpleOption disableLirTransformOption "-dlt" "Disable LIR transform" "Enabled"),
+                                  Args.WithArg (Args.WithArgOption outputFileNameOption "-o" "Output binary name" "sikoc_output"),
+                                  Args.WithArg (Args.WithArgOption tracedMirFunctionOption "-m" "Traced MIR function" "-")] "Build program"
+    argparser <- Args.addCommand argparser build_cmd
+    case Args.processArgs argparser args of
+        Ok result -> do
+            case result.command of
+                "build" -> do
+                    config <- parseConfig result
+                    context <- compile config
+                    if isOk context
+                    then ()
+                    else do
+                        dumpErrors context
+                        println "Compilation failed"
+                        exit 1
+                _ -> ()
+        Err _ -> ()
+
 main = do
-    args <- Option.unwrap (tail getArgs)
-    config <- processArgs args
-    context <- compile config
-    if isOk context
-    then ()
-    else do
-        dumpErrors context
-        println "Compilation failed"
-        exit 1
+    args <- getArgs
+    processArgs args
