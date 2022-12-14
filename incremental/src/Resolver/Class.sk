@@ -23,7 +23,10 @@ import Siko.Util.SharedString as SS
 processClassDependencies :: ModuleResolver -> SC.Class -> SS.SharedString -> [FQ.FullyQualifiedName]
 processClassDependencies module_resolver c type_arg = List.fold [] c.constraints (processClassDependency module_resolver type_arg)
     where
-        processClassDependency :: ModuleResolver -> SS.SharedString -> [FQ.FullyQualifiedName] -> SC.Constraint -> [FQ.FullyQualifiedName]
+        processClassDependency :: ModuleResolver -> 
+                                  SS.SharedString -> 
+                                  [FQ.FullyQualifiedName] -> 
+                                  SC.Constraint -> [FQ.FullyQualifiedName]
         processClassDependency module_resolver type_arg constraints constraint = do
             case resolveClass module_resolver constraint.class_name of
                 Ok class_name -> do
@@ -68,7 +71,11 @@ processClass state module_resolver c = do
     hir_class <- HC.Class qn location arg_type associated_types dependencies class_members
     (state, hir_class, unresolved_function_infos)
 
-processInstance a :: (ResolverState a) => a -> ModuleResolver -> FQ.FullyQualifiedName -> SC.Instance -> (a, HC.Instance, [UnresolvedFunctionInfo])
+processInstance a :: (ResolverState a) => 
+                     a -> 
+                     ModuleResolver -> 
+                     FQ.FullyQualifiedName -> 
+                     SC.Instance -> (a, HC.Instance, [UnresolvedFunctionInfo])
 processInstance state module_resolver qn i = do
     Ident _ class_location <- i.class_name
     (state, class_name) <- case resolveClass module_resolver i.class_name of

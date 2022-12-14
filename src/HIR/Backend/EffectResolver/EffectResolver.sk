@@ -183,7 +183,11 @@ getDynRef effect_context = case effect_context.dyn_ref of
         Value bind_ref -> E.ValueRef bind_ref
     None -> panic "Dynamic effect context has no dyn ref!"
 
-preWithHook :: (Q.Queue FunctionKey, Context) -> E.ExprId -> [E.EffectHandler T.Type] -> [E.EffectType T.Type] -> Location -> (Q.Queue FunctionKey, Context)
+preWithHook :: (Q.Queue FunctionKey, Context) -> 
+               E.ExprId -> 
+               [E.EffectHandler T.Type] -> 
+               [E.EffectType T.Type] -> 
+               Location -> (Q.Queue FunctionKey, Context)
 preWithHook (queue, context) with_id handlers effect_types location = do
     effect_context <- getCurrentEffectContext context
     (resolution_set, dyn_args) <- createEffectResolutionSet effect_context.resolution handlers effect_types
@@ -331,10 +335,30 @@ processItem queue context key = do
     (functions, _) <- Map.insert context.functions effectless_id fn
     (queue, context { functions = functions })
 
-createContext :: PO.Program T.Type -> ExprIdGenerator -> PatternIdGenerator -> TVG.TypeVarGenerator -> CDS.ClassInfoStore -> Context
-createContext program expr_id_gen pattern_id_gen var_gen class_info_store = Context Map.empty Map.empty program [] (NameMap Map.empty) expr_id_gen pattern_id_gen var_gen class_info_store Map.empty
+createContext :: PO.Program T.Type -> 
+                 ExprIdGenerator -> 
+                 PatternIdGenerator -> 
+                 TVG.TypeVarGenerator -> 
+                 CDS.ClassInfoStore -> Context
+createContext program expr_id_gen pattern_id_gen var_gen class_info_store = Context Map.empty 
+                                                                                    Map.empty 
+                                                                                    program 
+                                                                                    [] 
+                                                                                    (NameMap Map.empty) 
+                                                                                    expr_id_gen 
+                                                                                    pattern_id_gen 
+                                                                                    var_gen 
+                                                                                    class_info_store 
+                                                                                    Map.empty
 
-processProgram :: PO.Program T.Type -> ExprIdGenerator -> PatternIdGenerator -> TVG.TypeVarGenerator -> CDS.ClassInfoStore -> (ExprIdGenerator, PatternIdGenerator, TVG.TypeVarGenerator, PO.Program T.Type)
+processProgram :: PO.Program T.Type -> 
+                  ExprIdGenerator -> 
+                  PatternIdGenerator -> 
+                  TVG.TypeVarGenerator -> 
+                  CDS.ClassInfoStore -> (ExprIdGenerator,
+                                         PatternIdGenerator,
+                                         TVG.TypeVarGenerator,
+                                         PO.Program T.Type)
 processProgram program expr_id_gen pattern_id_gen var_gen class_info_store = do
     main_qn <- PO.FullPath getMainModuleName getMainFunctionName
     main_key <- FunctionKey main_qn (EffectResolutionSet Map.empty Map.empty)

@@ -138,7 +138,10 @@ processExternConstraints extern_constraints = List.map extern_constraints proces
             SF.Variant index parent -> HF.Variant index (processConstraintPath parent)
             SF.Implicit index parent -> HF.Implicit index (processConstraintPath parent)
 
-processLambdas :: [LambdaInfo] -> FQ.FullyQualifiedName -> ExprIdGenerator -> PatternIdGenerator -> [HF.Function ()]
+processLambdas :: [LambdaInfo] -> 
+                  FQ.FullyQualifiedName -> 
+                  ExprIdGenerator -> 
+                  PatternIdGenerator -> [HF.Function ()]
 processLambdas lambdas qn expr_id_gen pattern_id_gen = List.map lambdas (\lambda -> do
         lambda_qn <- FQ.FullPathWithLambda qn lambda.id
         normal_function_info <- HF.NormalFunctionInfo lambda.body None expr_id_gen pattern_id_gen None
@@ -147,7 +150,12 @@ processLambdas lambdas qn expr_id_gen pattern_id_gen = List.map lambdas (\lambda
         HE.Expr _ _ _ location <- lambda.body
         HF.Function location lambda_qn arg_count kind None [HF.Inline])
 
-processSubFunctions a :: (ResolverState a) => a -> FunctionScopeResolver -> TypeResolverState -> [SM.Item] -> FQ.FullyQualifiedName -> (a, [UnresolvedFunctionInfo], FunctionScopeResolver)
+processSubFunctions a :: (ResolverState a) => 
+                         a -> 
+                         FunctionScopeResolver -> 
+                         TypeResolverState -> 
+                         [SM.Item] -> 
+                         FQ.FullyQualifiedName -> (a, [UnresolvedFunctionInfo], FunctionScopeResolver)
 processSubFunctions state function_scope_resolver type_resolver sub_items qn = do
     unresolved_functions <- collectUnresolvedFunctions sub_items
     local_functions_map <- unresolved_functions |> List.iter |> Iterator.map (\f -> do
@@ -160,7 +168,10 @@ processSubFunctions state function_scope_resolver type_resolver sub_items qn = d
         UnresolvedFunctionInfo unresolved_function qn function_scope_resolver type_resolver (getVarGen state) None)
     (state, sub_unresolved_function_infos, function_scope_resolver)
 
-processFunctionSignature a :: (ResolverState a) => a -> TypeResolverState -> SF.FunctionSignature -> (a, TypeResolverState, Option [HT.Type], HT.Type)
+processFunctionSignature a :: (ResolverState a) => a -> TypeResolverState -> SF.FunctionSignature -> (a,
+                                                                                                      TypeResolverState,
+                                                                                                      Option [HT.Type],
+                                                                                                      HT.Type)
 processFunctionSignature state type_resolver signature = do
     state <- checkTypeArguments state signature.type_arguments
     (state, type_resolver) <- processClassConstraints state type_resolver signature.constraints
@@ -184,7 +195,14 @@ processFunctionSignature state type_resolver signature = do
         None -> (state, type_resolver, None)
     (state, type_resolver, effects, type)
 
-processSingleFunction a :: (ResolverState a) => a -> TypeResolverState -> UnresolvedFunctionInfo -> Option [HT.Type] -> Option HT.Type -> ExprIdGenerator -> PatternIdGenerator -> (a, [HF.Function ()], [UnresolvedFunctionInfo])
+processSingleFunction a :: (ResolverState a) => 
+                           a -> 
+                           TypeResolverState -> 
+                           UnresolvedFunctionInfo -> 
+                           Option [HT.Type] -> 
+                           Option HT.Type -> 
+                           ExprIdGenerator -> 
+                           PatternIdGenerator -> (a, [HF.Function ()], [UnresolvedFunctionInfo])
 processSingleFunction state type_resolver unresolved_function_info effects type expr_id_gen pattern_id_gen = do
     function <- atIndex unresolved_function_info.function.functions 0
     (state, attributes) <- processAttributes state unresolved_function_info.function
@@ -227,7 +245,14 @@ processSingleFunction state type_resolver unresolved_function_info effects type 
     lambdas <- processLambdas lambdas unresolved_function_info.name expr_id_gen pattern_id_gen
     (state, [function] + lambdas, sub_unresolved_function_infos)
 
-processFunctionMulti a :: (ResolverState a) => a -> TypeResolverState -> UnresolvedFunctionInfo -> Option [HT.Type] -> Option HT.Type -> ExprIdGenerator -> PatternIdGenerator -> (a, [HF.Function ()], [UnresolvedFunctionInfo])
+processFunctionMulti a :: (ResolverState a) => 
+                          a -> 
+                          TypeResolverState -> 
+                          UnresolvedFunctionInfo -> 
+                          Option [HT.Type] -> 
+                          Option HT.Type -> 
+                          ExprIdGenerator -> 
+                          PatternIdGenerator -> (a, [HF.Function ()], [UnresolvedFunctionInfo])
 processFunctionMulti state type_resolver unresolved_function_info effects type expr_id_gen pattern_id_gen = do
     (state, attributes) <- processAttributes state unresolved_function_info.function
     (state, arg_count_map, err) <- List.fold (state, empty, False) unresolved_function_info.function.functions (\(state, arg_count_map, err), f -> do
@@ -298,6 +323,18 @@ processUnresolvedFunction state unresolved_function_info = do
                 None -> panic "interface function has no source! {}" % unresolved_function_info.name
             function <- HF.Function location unresolved_function_info.name arg_count (HF.Interface source) type attributes
             (state, [function], [])
-        1 -> processSingleFunction state type_resolver unresolved_function_info effects type expr_id_gen pattern_id_gen
-        _ -> processFunctionMulti state type_resolver unresolved_function_info effects type expr_id_gen pattern_id_gen
+        1 -> processSingleFunction state 
+                                   type_resolver 
+                                   unresolved_function_info 
+                                   effects 
+                                   type 
+                                   expr_id_gen 
+                                   pattern_id_gen
+        _ -> processFunctionMulti state 
+                                  type_resolver 
+                                  unresolved_function_info 
+                                  effects 
+                                  type 
+                                  expr_id_gen 
+                                  pattern_id_gen
     (state, functions, sub_unresolved_function_infos)

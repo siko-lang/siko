@@ -22,7 +22,9 @@ import Siko.Query.Lookup as QL
 import Siko.Syntax.Ident
 
 data Context a = { state :: a,
-                   queue :: [FQ.FullyQualifiedName],
+                   functions :: [FQ.FullyQualifiedName],
+                   records :: [FQ.FullyQualifiedName],
+                   adts :: [FQ.FullyQualifiedName],
                    mapper :: UUtil.Mapper
                  }
 
@@ -56,7 +58,7 @@ processExpr context expr = do
             //println "result {}" % (TF.toString fn_type)
             context <- context { state = state }
             monomorphized_qn <- FQ.Monomorphized qn fn_type
-            context <- context { queue = List.push context.queue monomorphized_qn }
+            context <- context { functions = List.push context.functions monomorphized_qn }
             (context, E.Expr (E.StaticFunctionCall monomorphized_qn args) id expr_type location)
         E.ClassMemberCall qn args -> do
             arg_types <- List.map args (\E.Expr _ _ t _ -> t)
@@ -95,7 +97,7 @@ processExpr context expr = do
                         Some selected_member_name -> selected_member_name
                         None -> qn
                     monomorphized_qn <- FQ.Monomorphized (addEffectless selected_member_name) function_type
-                    context <- context { queue = List.push context.queue monomorphized_qn }
+                    context <- context { functions = List.push context.functions monomorphized_qn }
                     (context, E.Expr (E.StaticFunctionCall monomorphized_qn args) id expr_type location)
                 None -> panic "class member {} not found" % member_name
         s_expr -> (context, E.Expr s_expr id expr_type location)
@@ -103,11 +105,15 @@ processExpr context expr = do
 processPattern a :: (StateProvider a) => Context a -> P.Pattern T.Type -> (Context a, P.Pattern T.Type)
 processPattern context pattern = (context, pattern)
 
-monomorphizeFunction a :: (StateProvider a) => a -> FQ.FullyQualifiedName -> T.Type -> (a, F.Function T.Type, [FQ.FullyQualifiedName])
+monomorphizeFunction a :: (StateProvider a) => a -> FQ.FullyQualifiedName -> T.Type -> (a,
+                                                                                        F.Function T.Type,
+                                                                                        [FQ.FullyQualifiedName],
+                                                                                        [FQ.FullyQualifiedName],
+                                                                                        [FQ.FullyQualifiedName])
 monomorphizeFunction state orig_qn type = do
     //println "monomorphizeFunction {} with {}" % (orig_qn, TF.toString type)
     fn <- QL.getResolvedEffectsFunction state orig_qn
-    (state, queue, kind) <- case fn.kind of
+    (state, functions, records, adts, kind) <- case fn.kind of
         F.Normal info -> do
             sub <- S.createSubstitution
             fn_type <- case fn.type of
@@ -116,7 +122,7 @@ monomorphizeFunction state orig_qn type = do
             (mapper, state) <- UUtil.instantiateGenericMapper fn_type state
             mapper <- UUtil.skipNever mapper
             (mapper, fn_type) <- S.transform mapper fn_type UUtil.remapType
-            context <- Context state [] mapper
+            context <- Context state [] [] [] mapper
             (context, sub) <- case U.unify context.state sub type fn_type of
                 Ok (state, sub) -> (context { state = state }, sub)
                 Err _ -> panic "Monomorphization: failed to unify {} {}" % (TF.toString type, TF.toString fn_type)
@@ -124,7 +130,7 @@ monomorphizeFunction state orig_qn type = do
             traversal_context <- setTypeConverterWithContext traversal_context (typeConverter sub)
             (context, body) <- traverse traversal_context info.body
             info <- info { body = body }
-            (state, context.queue, F.Normal info)
-        kind -> (state, [], kind)
+            (state, context.functions, context.records, context.adts, F.Normal info)
+        kind -> (state, [], [], [], kind)
     fn <- fn { kind = kind, type = Some type }
-    (state, fn, queue)
+    (state, fn, functions, records, adts)

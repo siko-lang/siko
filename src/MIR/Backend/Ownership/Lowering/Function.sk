@@ -36,7 +36,10 @@ lowerLifetimeDependency dep = LF.LifetimeDependency (toLifetime dep.from) (toLif
         toLifetime :: BorrowId -> LT.Lifetime
         toLifetime BorrowId i = LT.Lifetime i
 
-lowerFunction :: Context -> FunctionLoweringInfo -> MP.Identity -> LP.Identity -> Context
+lowerFunction :: Context -> 
+                 FunctionLoweringInfo -> 
+                 MP.Identity -> 
+                 LP.Identity -> Context
 lowerFunction context lowering_info mir_id lir_id = do
     trace2 "Lowering function {}/{} {}" % (mir_id, lir_id, lowering_info)
     function <- MP.getFunction context.mir_program mir_id
@@ -47,7 +50,14 @@ lowerFunction context lowering_info mir_id lir_id = do
             checkInitials inference_info "after initializeTypeVariables"
             //trace2 "after initializeTypeVariables {} {}" % (lir_id, inference_info)
             function_info_store <- context.function_info_store
-            (equals, inference_info) <- processFunctionEqualities mir_id [] [] inference_info function_info_store context.mir_program info.body context.data_group_info_store
+            (equals, inference_info) <- processFunctionEqualities mir_id 
+                                                                  [] 
+                                                                  [] 
+                                                                  inference_info 
+                                                                  function_info_store 
+                                                                  context.mir_program 
+                                                                  info.body 
+                                                                  context.data_group_info_store
             inference_info <- processEqualities equals inference_info context.mir_program
             checkInitials inference_info "after processEqualities"
             //trace2 "after processEqualities {} {}" % (lir_id, inference_info)
@@ -62,7 +72,17 @@ lowerFunction context lowering_info mir_id lir_id = do
             inference_info <- CC.createBaseCallContexts inference_info
             (inference_info, constraints, invalid_borrow_map, ownership_expr_map, group_expr_map, ownership_group_map, result_vars, mir_program, call_context_map, call_args) <- collectConstraints mir_id context.mir_program borrow_info inference_info info.body
             context <- context { mir_program = mir_program }
-            inference_info <- processConstraints mir_id inference_info constraints invalid_borrow_map ownership_expr_map group_expr_map ownership_group_map result_vars call_context_map Full call_args
+            inference_info <- processConstraints mir_id 
+                                                 inference_info 
+                                                 constraints 
+                                                 invalid_borrow_map 
+                                                 ownership_expr_map 
+                                                 group_expr_map 
+                                                 ownership_group_map 
+                                                 result_vars 
+                                                 call_context_map 
+                                                 Full 
+                                                 call_args
             //trace2 "after processConstraints {} {}" % (lir_id, inference_info)
             if MP.isDebugged mir_id
             then do

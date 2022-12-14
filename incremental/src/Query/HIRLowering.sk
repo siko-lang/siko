@@ -70,14 +70,14 @@ resolveEffects driver key = do
                     driver <- addToDb driver key item
                     driver <- if fn.name == base_main_qn
                     then do
-                        cmd <- I.Monomorphize (I.MonomorphizedFunctionKey (FQ.Monomorphized (I.getFullyQualifiedName key) (T.Tuple [])))
+                        cmd <- I.MonomorphizeFunction (I.MonomorphizedFunctionKey (FQ.Monomorphized (I.getFullyQualifiedName key) (T.Tuple [])))
                         addCommands driver [cmd]
                     else driver
                     addCommands driver cmds
                 qn -> panic "resolveEffects called with unexpected qn {}" % qn
 
-monomorphize :: Driver -> I.Key -> Driver
-monomorphize driver key = do
+monomorphizeFunction :: Driver -> I.Key -> Driver
+monomorphizeFunction driver key = do
     case DB.getOpt driver.db key of
         Some monomorphized_fn -> driver
         None -> do
@@ -87,12 +87,12 @@ monomorphize driver key = do
                     fn <- I.asResolvedEffectsFunction fn
                     state <- BSP.createStateProvider driver
                     state <- state { ignore_never = True }
-                    (state, monomorphized_fn, qns) <- MO.monomorphizeFunction state base_qn type
+                    (state, monomorphized_fn, functions, records, adts) <- MO.monomorphizeFunction state base_qn type
                     item <- I.MonomorphizedFunction monomorphized_fn
-                    cmds <- List.map qns (\qn -> I.Monomorphize (I.MonomorphizedFunctionKey qn))
+                    cmds <- List.map functions (\qn -> I.MonomorphizeFunction (I.MonomorphizedFunctionKey qn))
                     driver <- addToDb driver key item
                     addCommands driver cmds
-                qn -> panic "monomorphize called with unexpected qn {}" % qn
+                qn -> panic "monomorphizeFunction called with unexpected qn {}" % qn
 
 convertClosures :: Driver -> I.Key -> Driver
 convertClosures driver key = do

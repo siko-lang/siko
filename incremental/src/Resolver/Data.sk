@@ -17,7 +17,11 @@ import Siko.Syntax.Module as SM
 import Siko.Syntax.TypeSignature as ST
 import Siko.Util.SharedString as SS
 
-processVariant a :: (ResolverState a) => a -> TypeResolverState -> SD.Variant -> SS.SharedString -> (a, TypeResolverState, HD.Variant)
+processVariant a :: (ResolverState a) => 
+                    a -> 
+                    TypeResolverState -> 
+                    SD.Variant -> 
+                    SS.SharedString -> (a, TypeResolverState, HD.Variant)
 processVariant state type_resolver variant adt_name = do
     Ident name location <- variant.name
     variant_qn <- FullPathWithVariant type_resolver.module_resolver.module_name adt_name name
@@ -27,7 +31,14 @@ processVariant state type_resolver variant adt_name = do
         (state, type_resolver, items)) (state, type_resolver, [])
     (state, type_resolver, HD.Variant variant_qn location items)
 
-processRecordField a :: (ResolverState a) => a -> TypeResolverState -> SD.RecordField -> Map SS.SharedString [Ident] -> (a, TypeResolverState, HD.RecordField, Map SS.SharedString [Ident])
+processRecordField a :: (ResolverState a) => 
+                        a -> 
+                        TypeResolverState -> 
+                        SD.RecordField -> 
+                        Map SS.SharedString [Ident] -> (a,
+                                                        TypeResolverState,
+                                                        HD.RecordField,
+                                                        Map SS.SharedString [Ident])
 processRecordField state type_resolver (SD.RecordField name type_signature) field_names = do
     (type_resolver, state, type) <- processTypeSignature type_resolver state type_signature
     n <- getString name
@@ -45,7 +56,10 @@ createFunctionFromArgs args result_ty = do
             Function from to
         None -> result_ty
 
-processAdt a :: (ResolverState a) => a -> ModuleResolver -> SD.AlgebraicDataType -> (a, HD.AlgebraicDataType, [(HD.VariantInfo, FullyQualifiedName)], [HF.Function ()])
+processAdt a :: (ResolverState a) => a -> ModuleResolver -> SD.AlgebraicDataType -> (a,
+                                                                                     HD.AlgebraicDataType,
+                                                                                     [(HD.VariantInfo, FullyQualifiedName)],
+                                                                                     [HF.Function ()])
 processAdt state module_resolver (SD.AlgebraicDataType name type_arguments variants derived_classes) = do
     type_resolver <- createTypeResolverState module_resolver
     state <- checkTypeArguments state type_arguments
@@ -82,7 +96,13 @@ processRecord state module_resolver (SD.Record name type_arguments fields extern
     type <- Named qn type_args
     ctor_arg_types <- fields |> List.iter |> Iterator.map (\(HD.RecordField _ type) -> type) |> toList
     ctor_type <- createFunctionFromArgs ctor_arg_types type
-    record <- HD.Record qn location type_args fields external type implicit_member
+    record <- HD.Record qn 
+                        location 
+                        type_args 
+                        fields 
+                        external 
+                        type 
+                        implicit_member
     ctor_fn <- if not external
     then do
         ctor_fn <- HF.Function location qn (getLength fields) HF.RecordCtor (Some ctor_type) []

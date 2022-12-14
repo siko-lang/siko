@@ -218,7 +218,10 @@ processExpr context expr = do
     context <- updateInvalidBorrows context expr_id info None
     context
 
-updateInvalidBorrows :: Context -> E.ExprId -> TypeVariableInfo -> Option [E.ExprId] -> Context
+updateInvalidBorrows :: Context -> 
+                        E.ExprId -> 
+                        TypeVariableInfo -> 
+                        Option [E.ExprId] -> Context
 updateInvalidBorrows context expr_id expr_info shared = do
     context <- case Map.get context.borrow_info.invalidations expr_id of
         Some invalidations -> do
@@ -244,10 +247,35 @@ updateInvalidBorrows context expr_id expr_info shared = do
     context <- context { group_expr_map = group_expr_map, invalid_borrow_map = invalid_borrow_map, ownership_expr_map = ownership_expr_map }
     context
 
-collectConstraints :: P.Identity -> P.Program -> BorrowInfo -> InferenceInfo -> E.Expr -> (InferenceInfo, [C.Constraint], Map E.ExprId [E.ExprId], Map OwnershipTypeVariable [E.ExprId], Map GroupTypeVariable [E.ExprId], Map OwnershipTypeVariable [GroupTypeVariable], [OwnershipTypeVariable], P.Program, Map E.ExprId CC.CallContext, Map E.ExprId [OwnershipTypeVariable])
+collectConstraints :: P.Identity -> 
+                      P.Program -> 
+                      BorrowInfo -> 
+                      InferenceInfo -> 
+                      E.Expr -> (InferenceInfo,
+                                 [C.Constraint],
+                                 Map E.ExprId [E.ExprId],
+                                 Map OwnershipTypeVariable [E.ExprId],
+                                 Map GroupTypeVariable [E.ExprId],
+                                 Map OwnershipTypeVariable [GroupTypeVariable],
+                                 [OwnershipTypeVariable],
+                                 P.Program,
+                                 Map E.ExprId CC.CallContext,
+                                 Map E.ExprId [OwnershipTypeVariable])
 collectConstraints function_id program borrow_info inference_info body = do
     //trace "collectConstraints {}" % function_id
-    context <- Context function_id inference_info program borrow_info [] [] Map.empty Map.empty Map.empty Map.empty Map.empty Map.empty Map.empty
+    context <- Context function_id 
+                       inference_info 
+                       program 
+                       borrow_info 
+                       [] 
+                       [] 
+                       Map.empty 
+                       Map.empty 
+                       Map.empty 
+                       Map.empty 
+                       Map.empty 
+                       Map.empty 
+                       Map.empty
     function_inference_info <- getFunctionInferenceInfo context.inference_info function_id
     E.Expr _ _ body_id <- body
     context <- List.foldE context function_inference_info.args (\context, index, arg -> do

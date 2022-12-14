@@ -7,13 +7,21 @@ import Siko.Syntax.Location
 data TraversalContext context b = { user_context :: context,
                                     expr_fn :: (context -> E.Expr b -> (context, E.Expr b)),
                                     pattern_fn :: (context -> P.Pattern b -> (context, P.Pattern b)),
-                                    pre_with_hook_fn :: Option (context -> E.ExprId -> [E.EffectHandler b] -> [E.EffectType b] -> Location -> context),
+                                    pre_with_hook_fn :: Option (context -> 
+                                                                E.ExprId -> 
+                                                                [E.EffectHandler b] -> 
+                                                                [E.EffectType b] -> 
+                                                                Location -> context),
                                     post_with_hook_fn :: Option (context -> E.ExprId -> context),
                                     type_converter_fn :: Option (b -> b),
                                     type_converter_with_context_fn :: Option (context -> b -> (context, b))
                                   }
 
-setPreWithHook context b :: TraversalContext context b -> (context -> E.ExprId -> [E.EffectHandler b] -> [E.EffectType b] -> Location -> context) -> TraversalContext context b
+setPreWithHook context b :: TraversalContext context b -> (context -> 
+                                                           E.ExprId -> 
+                                                           [E.EffectHandler b] -> 
+                                                           [E.EffectType b] -> 
+                                                           Location -> context) -> TraversalContext context b
 setPreWithHook context hook = context { pre_with_hook_fn = Some hook }
 
 setPostWithHook context b :: TraversalContext context b -> (context -> E.ExprId -> context) -> TraversalContext context b
@@ -169,7 +177,13 @@ internalTraverse context expr = do
     (context { user_context = user_context }, expr)
 
 createTraversalContext context b :: context -> (context -> E.Expr b -> (context, E.Expr b)) -> (context -> P.Pattern b -> (context, P.Pattern b)) -> TraversalContext context b
-createTraversalContext context expr_fn pattern_fn = TraversalContext context expr_fn pattern_fn None None None None
+createTraversalContext context expr_fn pattern_fn = TraversalContext context 
+                                                                     expr_fn 
+                                                                     pattern_fn 
+                                                                     None 
+                                                                     None 
+                                                                     None 
+                                                                     None
 
 traverse context b :: TraversalContext context b -> E.Expr b -> (context, E.Expr b)
 traverse context expr = do

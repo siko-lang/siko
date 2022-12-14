@@ -3,14 +3,22 @@ module Siko.MIR.Backend.Traversal(traverse) where
 import Siko.MIR.Expr
 import Siko.MIR.Type as T
 
-processArgs a :: a -> [Expr] -> Option (a -> Expr -> (a, Expr)) -> Option (a -> T.Type -> (a, T.Type)) -> Option (a -> Expr -> a) -> (a, [Expr])
+processArgs a :: a -> 
+                 [Expr] -> 
+                 Option (a -> Expr -> (a, Expr)) -> 
+                 Option (a -> T.Type -> (a, T.Type)) -> 
+                 Option (a -> Expr -> a) -> (a, [Expr])
 processArgs context args process_expr process_type preCaseCheck = do
     args |> List.iter |> Iterator.fold (\(context, args), arg -> do
         (context, arg) <- traverse context arg process_expr process_type preCaseCheck
         args <- push args arg
         (context, args)) (context, [])
 
-processBlock a :: a -> [Expr] -> Option (a -> Expr -> (a, Expr)) -> Option (a -> T.Type -> (a, T.Type)) -> Option (a -> Expr -> a) -> (a, [Expr])
+processBlock a :: a -> 
+                  [Expr] -> 
+                  Option (a -> Expr -> (a, Expr)) -> 
+                  Option (a -> T.Type -> (a, T.Type)) -> 
+                  Option (a -> Expr -> a) -> (a, [Expr])
 processBlock context exprs process_expr process_type preCaseCheck = exprs |> List.iter |> Iterator.fold (\(context, exprs), expr -> do
         (context, expr) <- traverse context expr process_expr process_type preCaseCheck
         Expr inner _ _ <- expr
@@ -19,7 +27,11 @@ processBlock context exprs process_expr process_type preCaseCheck = exprs |> Lis
             _ -> push exprs expr
         (context, exprs)) (context, [])
 
-traverse a :: a -> Expr -> Option (a -> Expr -> (a, Expr)) -> Option (a -> T.Type -> (a, T.Type)) -> Option (a -> Expr -> a) -> (a, Expr)
+traverse a :: a -> 
+              Expr -> 
+              Option (a -> Expr -> (a, Expr)) -> 
+              Option (a -> T.Type -> (a, T.Type)) -> 
+              Option (a -> Expr -> a) -> (a, Expr)
 traverse context expr process_expr process_type preCaseCheck = do
     Expr s_expr type id <- expr
     (context, type) <- case process_type of

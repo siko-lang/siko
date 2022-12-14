@@ -264,14 +264,36 @@ generateExternalImpls context = do
             (context, _) <- resetExprIdCounter context
             context))
 
-lowerProgram :: FileManager -> TVG.TypeVarGenerator -> CDS.ClassInfoStore -> HP.Program HT.Type -> IR.InstanceResolver -> IR.InstanceResolverHistory -> MP.Program
+lowerProgram :: FileManager -> 
+                TVG.TypeVarGenerator -> 
+                CDS.ClassInfoStore -> 
+                HP.Program HT.Type -> 
+                IR.InstanceResolver -> 
+                IR.InstanceResolverHistory -> MP.Program
 lowerProgram file_manager var_gen class_info_store hir_program instance_resolver instance_resolver_history = do
     trace "Lowering to MIR.."
     main_qn <- HP.Effectless getMainModuleName getMainFunctionName
     type_store <- createTypeStore
     mir_program <- MP.createProgram
     main_fn <- HP.getFunctionOpt hir_program main_qn
-    context <- Context hir_program mir_program type_store CS.createClosureStore instance_resolver Map.empty FQ.createFunctionQueue getExternalClassNames Map.empty Map.empty [] [] None None var_gen class_info_store file_manager instance_resolver_history
+    context <- Context hir_program 
+                       mir_program 
+                       type_store 
+                       CS.createClosureStore 
+                       instance_resolver 
+                       Map.empty 
+                       FQ.createFunctionQueue 
+                       getExternalClassNames 
+                       Map.empty 
+                       Map.empty 
+                       [] 
+                       [] 
+                       None 
+                       None 
+                       var_gen 
+                       class_info_store 
+                       file_manager 
+                       instance_resolver_history
     context <- case main_fn of
         Some main -> do
             item <- FQ.Normal main_qn (HT.Tuple [])

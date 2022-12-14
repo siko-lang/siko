@@ -59,9 +59,15 @@ instance Format E.SimpleExpr where
             arg <- format arg
             [Chunk "("] + arg + [Chunk ")"]
         E.FunctionCall fn args -> do
-            args <- formatList args (Chunk " ")
-            fn <- format fn
-            fn + [(Chunk " ")] + args
+            if List.getLength args > 6
+            then do
+                args_output <- formatList2 args [Chunk " ", Break]
+                fn <- format fn
+                fn + [(Chunk " "), PushOffset] + args_output + [PopOffset]
+            else do
+                args_output <- formatList args (Chunk " ")
+                fn <- format fn
+                fn + [(Chunk " ")] + args_output
         E.BinaryOp op lhs rhs -> do
             op <- format op
             lhs <- format lhs
@@ -217,8 +223,15 @@ instance Format P.SimplePattern where
             arg <- format arg
             [Chunk "("] + arg + [Chunk ")"]
 
+splitFunction :: T.TypeSignature -> ([T.TypeSignature], T.TypeSignature)
+splitFunction (T.TypeSignature s l) = case s of
+    T.Function from to -> do
+        (args, result) <- splitFunction to
+        ([from] + args, result)
+    s -> ([], T.TypeSignature s l)
+
 instance Format T.TypeSignature where
-    format (T.TypeSignature s _) = case s of
+    format (T.TypeSignature s l) = case s of
         T.TypeArg name -> format name
         T.Named name args -> do
             name <- format name
@@ -236,14 +249,22 @@ instance Format T.TypeSignature where
             type <- format type
             [Chunk "["] + type + [Chunk "]"]
         T.Tuple args -> do
-            args_output <- formatList args (Chunk ", ")
-            if List.getLength args == 1
-            then [Chunk "("] + args_output + [Chunk ",)"]
-            else [Chunk "("] + args_output + [Chunk ")"]
+            case List.getLength args of
+                1 -> do
+                    args_output <- format (atIndex args 0)
+                    [Chunk "("] + args_output + [Chunk ",)"]
+                n if n < 4 -> do
+                    args_output <- formatList args (Chunk ", ")
+                    [Chunk "("] + args_output + [Chunk ")"]
+                n -> [Chunk "(", PushOffset] + formatList2 args [Chunk ",", Break] + [PopOffset, Chunk ")"]
         T.Function from to -> do
-            from <- format from
-            to <- format to
-            from + [Chunk " -> "] + to
+            (args, result) <- splitFunction (T.TypeSignature s l)
+            if List.getLength args > 3
+            then [PushOffset] + formatList2 args [Chunk " ->", Break] + [Chunk " -> "] + format result + [PopOffset]
+            else do
+                from <- format from
+                to <- format to
+                from + [Chunk " -> "] + to
         T.Never -> [Chunk "!"]
         T.Ref l type -> do
             l <- format l
@@ -373,27 +394,33 @@ instance Format D.Record where
 instance Format F.FunctionSignature where
     format signature = do
         type_arguments <- formatList signature.type_arguments (Chunk " ")
-        attributes <- formatList signature.attributes (Chunk "\n")
+        attributes <- formatList signature.attributes NewLine
         attributes <- if List.isEmpty signature.attributes
         then attributes
-        else attributes + [Chunk "\n"]
+        else attributes + [NewLine]
         type_signature <- format signature.type_signature
         name <- format signature.name
         constraints <- formatList signature.constraints (Chunk ", ")
         constraints <- if List.isEmpty signature.constraints
         then []
         else [Chunk "("] + constraints + [Chunk ") => "]
-        if List.isEmpty signature.type_arguments
-        then attributes + name + [Chunk " :: "] + constraints + type_signature
-        else attributes + name + [Chunk " "] + type_arguments + [Chunk " :: "] + constraints + type_signature
+        (type_signature, constraints) <- if List.isEmpty signature.constraints
+        then (type_signature, constraints)
+        else if (atIndex type_signature 0) == PushOffset
+            then (List.drop type_signature 0, [PushOffset] + constraints + [Break])
+            else (type_signature, constraints)
+        type_arguments <- if List.isEmpty signature.type_arguments
+        then []
+        else [Chunk " "] + type_arguments
+        attributes + name + type_arguments + [Chunk " :: "] + constraints + type_signature
 
 instance Format F.Function where
     format function = do
         arguments <- formatList function.arguments (Chunk " ")
-        attributes <- formatList function.attributes (Chunk "\n")
+        attributes <- formatList function.attributes NewLine
         attributes <- if List.isEmpty function.attributes
         then attributes
-        else attributes + [Chunk "\n"]
+        else attributes + [NewLine]
         body <- case function.body of
             Some body -> format body
             None -> do

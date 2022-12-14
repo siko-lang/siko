@@ -36,7 +36,13 @@ initState file_id tokens = do
                   [Kind.Add, Kind.Sub],
                   [Kind.Mul, Kind.Div],
                   [Kind.PipeForward]]
-    ParserState tokens 0 [] [] file_id ops_table []
+    ParserState tokens 
+                0 
+                [] 
+                [] 
+                file_id 
+                ops_table 
+                []
 
 parseSubItems :: ParserState -> Result (ParserState, [M.Item]) (ParserState, ParserError)
 parseSubItems state = do
@@ -215,7 +221,10 @@ parseParens state parser msg = do
     then Ok (state, Multi items)
     else Ok (state, Single (atIndex items 0))
 
-parseList a :: ParserState -> (ParserState -> Result (ParserState, a) (ParserState, ParserError)) -> Kind.TokenKind -> Kind.TokenKind -> Result (ParserState, [a]) (ParserState, ParserError)
+parseList a :: ParserState -> 
+               (ParserState -> Result (ParserState, a) (ParserState, ParserError)) -> 
+               Kind.TokenKind -> 
+               Kind.TokenKind -> Result (ParserState, [a]) (ParserState, ParserError)
 parseList state parser start end = do
     state <- try expect state start
     (state, items) <- loop (state, items) <- (state, []) do

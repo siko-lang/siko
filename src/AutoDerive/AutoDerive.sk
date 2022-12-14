@@ -21,7 +21,10 @@ import Siko.Syntax.Ident
 import Siko.Syntax.Location
 import Siko.Util.SharedString as SS
 
-parseGenericArgs :: P.Program () -> ModuleResolver -> Location -> [Ident] -> Option (Ident, Ident, Ident)
+parseGenericArgs :: P.Program () -> 
+                    ModuleResolver -> 
+                    Location -> 
+                    [Ident] -> Option (Ident, Ident, Ident)
 parseGenericArgs hir_program module_resolver derive_location args = case List.getLength args of
     1 -> do
         class_name <- atIndex args 0
@@ -49,7 +52,11 @@ parseGenericArgs hir_program module_resolver derive_location args = case List.ge
             Err _ -> None
     _ -> None
 
-processRecordDerive :: D.Record -> String -> P.Program () -> ModuleResolver -> D.DeriveInfo -> Option C.Instance
+processRecordDerive :: D.Record -> 
+                       String -> 
+                       P.Program () -> 
+                       ModuleResolver -> 
+                       D.DeriveInfo -> Option C.Instance
 processRecordDerive record mod_name hir_program module_resolver derive_info = do
     Ident name derive_location <- derive_info.macro_name
     case SS.get name of
@@ -75,7 +82,11 @@ processRecordDerive record mod_name hir_program module_resolver derive_info = do
                 None -> None
         _ -> None
 
-processAdtDerive :: D.AlgebraicDataType -> String -> P.Program () -> ModuleResolver -> D.DeriveInfo -> Option C.Instance
+processAdtDerive :: D.AlgebraicDataType -> 
+                    String -> 
+                    P.Program () -> 
+                    ModuleResolver -> 
+                    D.DeriveInfo -> Option C.Instance
 processAdtDerive adt mod_name hir_program module_resolver derive_info = do
     Ident name derive_location <- derive_info.macro_name
     case SS.get name of
@@ -101,13 +112,19 @@ processAdtDerive adt mod_name hir_program module_resolver derive_info = do
                 None -> None
         _ -> None
 
-processRecordDerives :: D.Record -> String -> P.Program () -> ModuleResolver -> (D.Record, [C.Instance])
+processRecordDerives :: D.Record -> 
+                        String -> 
+                        P.Program () -> 
+                        ModuleResolver -> (D.Record, [C.Instance])
 processRecordDerives record mod_name hir_program module_resolver = do
     instances <- List.filterMap record.derived_classes (processRecordDerive record mod_name hir_program module_resolver)
     record <- record { derived_classes = [] }
     (record, instances)
 
-processAdtDerives :: D.AlgebraicDataType -> String -> P.Program () -> ModuleResolver -> (D.AlgebraicDataType, [C.Instance])
+processAdtDerives :: D.AlgebraicDataType -> 
+                     String -> 
+                     P.Program () -> 
+                     ModuleResolver -> (D.AlgebraicDataType, [C.Instance])
 processAdtDerives adt mod_name hir_program module_resolver = do
     instances <- List.filterMap adt.derived_classes (processAdtDerive adt mod_name hir_program module_resolver)
     adt <- adt { derived_classes = [] }

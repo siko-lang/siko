@@ -193,7 +193,10 @@ checkMissingTypes context fn = do
             context
         None -> context
 
-processGroup :: TypecheckerState -> DependencyGroup P.FullyQualifiedName -> FS.FunctionStore -> TP.TypeStore -> (TypecheckerState, FS.FunctionStore, TP.TypeStore)
+processGroup :: TypecheckerState -> 
+                DependencyGroup P.FullyQualifiedName -> 
+                FS.FunctionStore -> 
+                TP.TypeStore -> (TypecheckerState, FS.FunctionStore, TP.TypeStore)
 processGroup state group function_store type_store = do
     //println "Group items: {}" % (group.items)
     context <- initializeContext state function_store group.items
@@ -242,7 +245,11 @@ processGroup state group function_store type_store = do
         TP.addWithEffects type_store id effect_types)
     (context.state, context.function_store, type_store)
 
-processProgram :: P.Program () -> TVG.TypeVarGenerator -> Result (P.Program T.Type, TVG.TypeVarGenerator, ClassInfoStore, IR.InstanceResolver, IR.InstanceResolverHistory) [TypecheckerError]
+processProgram :: P.Program () -> TVG.TypeVarGenerator -> Result (P.Program T.Type,
+                                                                  TVG.TypeVarGenerator,
+                                                                  ClassInfoStore,
+                                                                  IR.InstanceResolver,
+                                                                  IR.InstanceResolverHistory) [TypecheckerError]
 processProgram program var_gen = do
     state <- TypecheckerState program [] var_gen CS.initializeEmptyClassStore IR.createInstanceResolverHistory IR.createInstanceResolver
     trace "TYCHK processData"

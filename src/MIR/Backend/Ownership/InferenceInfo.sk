@@ -92,7 +92,25 @@ createInferenceInfoFromLoweringInfo lowering_info function_id = do
     group_function_converters <- Map.empty
     borrow_sets <- Map.empty
     group <- [function_id]
-    inference_info <- InferenceInfo expr_type_variables var_type_variables group function_infos ownership_values members converters allocator function_converters group_function_converters borrow_sets Map.empty Map.empty Map.empty Map.empty Map.empty List.empty createOwnershipDependencyMapInfo createGroupDependencyMapInfo
+    inference_info <- InferenceInfo expr_type_variables 
+                                    var_type_variables 
+                                    group 
+                                    function_infos 
+                                    ownership_values 
+                                    members 
+                                    converters 
+                                    allocator 
+                                    function_converters 
+                                    group_function_converters 
+                                    borrow_sets 
+                                    Map.empty 
+                                    Map.empty 
+                                    Map.empty 
+                                    Map.empty 
+                                    Map.empty 
+                                    List.empty 
+                                    createOwnershipDependencyMapInfo 
+                                    createGroupDependencyMapInfo
     (inference_info, external_borrows) <- List.fold (inference_info, []) lowering_info.ownershipinfos (\(inference_info, external_borrows), ownershipinfo -> do
         (inference_info, external_borrows, v, kind) <- case ownershipinfo of
             M.OwnershipInfo v M.Unknown -> panic "Unknown ownership in createInferenceInfoFromLoweringInfo"
@@ -146,7 +164,25 @@ createInferenceInfo = do
     function_converters <- Map.empty
     group_function_converters <- Map.empty
     borrow_sets <- Map.empty
-    InferenceInfo Map.empty Map.empty [] function_infos ownership_values [] [] allocator function_converters group_function_converters borrow_sets Map.empty Map.empty Map.empty Map.empty Map.empty List.empty createOwnershipDependencyMapInfo createGroupDependencyMapInfo
+    InferenceInfo Map.empty 
+                  Map.empty 
+                  [] 
+                  function_infos 
+                  ownership_values 
+                  [] 
+                  [] 
+                  allocator 
+                  function_converters 
+                  group_function_converters 
+                  borrow_sets 
+                  Map.empty 
+                  Map.empty 
+                  Map.empty 
+                  Map.empty 
+                  Map.empty 
+                  List.empty 
+                  createOwnershipDependencyMapInfo 
+                  createGroupDependencyMapInfo
 
 createBorrowSet :: InferenceInfo -> Borrow -> (InferenceInfo, BorrowId)
 createBorrowSet inference_info borrow = do
@@ -250,7 +286,11 @@ addOwnership inference_info var kind = do
     (ownership_values, _) <- Map.insert inference_info.ownership_values var kind
     inference_info { ownership_values = ownership_values }
 
-changeInitialOwnership :: Map OwnershipTypeVariable M.OwnershipKind -> Map OwnershipTypeVariable M.OwnershipKind -> OwnershipTypeVariable -> M.OwnershipKind -> Bool -> (Map OwnershipTypeVariable M.OwnershipKind, Map OwnershipTypeVariable M.OwnershipKind, Bool)
+changeInitialOwnership :: Map OwnershipTypeVariable M.OwnershipKind -> 
+                          Map OwnershipTypeVariable M.OwnershipKind -> 
+                          OwnershipTypeVariable -> 
+                          M.OwnershipKind -> 
+                          Bool -> (Map OwnershipTypeVariable M.OwnershipKind, Map OwnershipTypeVariable M.OwnershipKind, Bool)
 changeInitialOwnership ownership_values initials var kind force = do
     (kind, update) <- case Map.get initials var of
         Some M.Unknown -> (kind, True)
@@ -424,7 +464,25 @@ instance Apply InferenceInfo where
         (applier, group_function_converters) <- apply applier inference_info.group_function_converters
         members <- List.dedup (List.sort members)
         converters <- List.dedup (List.sort converters)
-        inference_info <- InferenceInfo expr_type_variables var_type_variables inference_info.group function_infos inference_info.ownership_values members converters inference_info.allocator function_converters group_function_converters inference_info.borrow_sets inference_info.external_borrows inference_info.interrnal_borrows inference_info.initials inference_info.function_info_bases inference_info.function_converter_borrows inference_info.base_call_contexts inference_info.ownership_dep_map_info inference_info.group_dep_map_info
+        inference_info <- InferenceInfo expr_type_variables 
+                                        var_type_variables 
+                                        inference_info.group 
+                                        function_infos 
+                                        inference_info.ownership_values 
+                                        members 
+                                        converters 
+                                        inference_info.allocator 
+                                        function_converters 
+                                        group_function_converters 
+                                        inference_info.borrow_sets 
+                                        inference_info.external_borrows 
+                                        inference_info.interrnal_borrows 
+                                        inference_info.initials 
+                                        inference_info.function_info_bases 
+                                        inference_info.function_converter_borrows 
+                                        inference_info.base_call_contexts 
+                                        inference_info.ownership_dep_map_info 
+                                        inference_info.group_dep_map_info
         (inference_info, ownership_values) <- Map.fold (inference_info, Map.empty) merged_ownership_values (\(inference_info, ownership_values), (var, kinds) -> do
             kinds <- kinds |> List.sort |> List.dedup
             kinds <- List.filter kinds (\kind -> case kind of

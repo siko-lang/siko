@@ -153,7 +153,10 @@ addConstraint constraint constraints = case constraints of
     Some constraints -> Some (push constraints constraint)
     None -> Some [constraint]
 
-addTypeArgumentConstraint :: TypeResolverState -> ResolverState -> Ident -> Constraint -> (TypeResolverState, ResolverState)
+addTypeArgumentConstraint :: TypeResolverState -> 
+                             ResolverState -> 
+                             Ident -> 
+                             Constraint -> (TypeResolverState, ResolverState)
 addTypeArgumentConstraint state resolver_state type_arg constraint = do
     (state, resolver_state, var) <- addTypeArgument state resolver_state type_arg
     (constraints, _) <- alter (addConstraint constraint) var state.constraints
@@ -201,7 +204,10 @@ processArgs state resolver_state args = args |> List.iter |> Iterator.fold (\(st
         (state, resolver_state, arg) <- processTypeSignature state resolver_state arg
         (state, resolver_state, push args arg)) (state, resolver_state, [])
 
-resolveTypeArg :: TypeResolverState -> ResolverState -> Ident -> (TypeResolverState, ResolverState, TypeVar, [Constraint])
+resolveTypeArg :: TypeResolverState -> ResolverState -> Ident -> (TypeResolverState,
+                                                                  ResolverState,
+                                                                  TypeVar,
+                                                                  [Constraint])
 resolveTypeArg state resolver_state name = do
     n <- getString name
     case get state.args n of

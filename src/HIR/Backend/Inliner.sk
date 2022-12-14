@@ -83,7 +83,10 @@ getNextPatternId context = do
 typeConverter :: S.Substitution -> T.Type -> T.Type
 typeConverter sub type = S.apply type sub
 
-processFunctionBody :: Context -> S.Substitution -> E.Expr T.Type -> [InlinedArg] -> (Context, E.Expr T.Type)
+processFunctionBody :: Context -> 
+                       S.Substitution -> 
+                       E.Expr T.Type -> 
+                       [InlinedArg] -> (Context, E.Expr T.Type)
 processFunctionBody context sub body arg_refs = do
     saved_arg_refs <- context.arg_refs
     saved_removed_binds <- context.removed_binds
@@ -227,11 +230,26 @@ processFunction context function = do
                 _ -> (context, function)
         None -> (context, function)
 
-processProgram :: PO.Program T.Type -> ExprIdGenerator -> PatternIdGenerator -> TVG.TypeVarGenerator -> CDS.ClassInfoStore -> (PO.Program T.Type, ExprIdGenerator, PatternIdGenerator, TVG.TypeVarGenerator)
+processProgram :: PO.Program T.Type -> 
+                  ExprIdGenerator -> 
+                  PatternIdGenerator -> 
+                  TVG.TypeVarGenerator -> 
+                  CDS.ClassInfoStore -> (PO.Program T.Type,
+                                         ExprIdGenerator,
+                                         PatternIdGenerator,
+                                         TVG.TypeVarGenerator)
 processProgram program expr_id_gen pattern_id_gen var_gen class_info_store = do
     trace "Inliner started.."
     functions <- PO.getFunctions program
-    context <- Context program expr_id_gen pattern_id_gen var_gen class_info_store [] Map.empty [] S.createSubstitution
+    context <- Context program 
+                       expr_id_gen 
+                       pattern_id_gen 
+                       var_gen 
+                       class_info_store 
+                       [] 
+                       Map.empty 
+                       [] 
+                       S.createSubstitution
     (context, functions) <- List.mapS context functions processFunction
     program <- List.fold context.program functions (\program, fn -> do
         (program, _) <- PO.addItem program fn.name (PO.Function fn)

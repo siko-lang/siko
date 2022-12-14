@@ -30,7 +30,13 @@ resolveConstructor context name mustBeRecord = do
                     Err (addErrorToContext context err)
         Err err -> Err (addErrorToContext context err)
 
-processRecordFieldPattern :: [SP.RecordFieldPattern] -> (Context, PatternEnvironment, Environment, [HP.Pattern ()]) -> HD.RecordField -> (Context, PatternEnvironment, Environment, [HP.Pattern ()])
+processRecordFieldPattern :: [SP.RecordFieldPattern] -> (Context,
+                                                         PatternEnvironment,
+                                                         Environment,
+                                                         [HP.Pattern ()]) -> HD.RecordField -> (Context,
+                                                                                                PatternEnvironment,
+                                                                                                Environment,
+                                                                                                [HP.Pattern ()])
 processRecordFieldPattern field_patterns (context, pattern_env, env, args) (HD.RecordField field_name _) = do
     field_pattern <- field_patterns |> List.iter |> Iterator.filter (\(SP.RecordFieldPattern name _) -> getString name == field_name) |> toList
     (SP.RecordFieldPattern name pattern) <- atIndex field_pattern 0
@@ -38,7 +44,13 @@ processRecordFieldPattern field_patterns (context, pattern_env, env, args) (HD.R
     args <- push args hir_pattern
     (context, pattern_env, env, args)
 
-processPatterns :: Context -> PatternEnvironment -> Environment -> [SP.Pattern] -> (Context, PatternEnvironment, Environment, [HP.Pattern ()])
+processPatterns :: Context -> 
+                   PatternEnvironment -> 
+                   Environment -> 
+                   [SP.Pattern] -> (Context,
+                                    PatternEnvironment,
+                                    Environment,
+                                    [HP.Pattern ()])
 processPatterns context pattern_env env patterns = do
     (context, pattern_env, env, hir_patterns) <- patterns |> List.iter |> Iterator.fold (\(context, pattern_env, env, hir_patterns), pattern -> do
         (context, pattern_env, env, hir_pattern) <- processPattern context pattern_env env pattern
@@ -46,7 +58,13 @@ processPatterns context pattern_env env patterns = do
         (context, pattern_env, env, hir_patterns)) (context, pattern_env, env, [])
     (context, pattern_env, env, hir_patterns)
 
-processPattern :: Context -> PatternEnvironment -> Environment -> SP.Pattern -> (Context, PatternEnvironment, Environment, HP.Pattern ())
+processPattern :: Context -> 
+                  PatternEnvironment -> 
+                  Environment -> 
+                  SP.Pattern -> (Context,
+                                 PatternEnvironment,
+                                 Environment,
+                                 HP.Pattern ())
 processPattern context pattern_env env (SP.Pattern pattern location) = do
     (state, pattern_id) <- getNextPatternId context.state
     context <- context { state = state }

@@ -19,7 +19,10 @@ data TypeStore = { structs :: Map String R.Struct,
 
 data ExternStructBuilder = ExternStructBuilder ([LT.Type] -> Option LT.Lifetime -> [R.StructField])
 
-data ExternFnBuilder = ExternFnBuilder (Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr)
+data ExternFnBuilder = ExternFnBuilder (Program -> 
+                                        TypeStore -> 
+                                        [LT.Type] -> 
+                                        LT.Type -> R.Expr)
 
 createTypeStore :: TypeStore
 createTypeStore = TypeStore empty empty
@@ -119,7 +122,10 @@ typeToRcType type = RT.Rc type
 boxExpr :: R.Expr -> R.Expr
 boxExpr expr = R.FunctionCall "std::boxed::Box::new" [expr]
 
-getVariant :: TypeStore -> Int -> LE.Var -> LT.Type -> R.Pattern
+getVariant :: TypeStore -> 
+              Int -> 
+              LE.Var -> 
+              LT.Type -> R.Pattern
 getVariant type_store index v type = case type of
     LT.Adt _ _ -> do
         rust_type <- convertType type
@@ -278,7 +284,12 @@ convertImplArg lir_program fn_id arg = do
     then R.Ref arg
     else panic "Non ref arg in impl!"
 
-processImpl :: Program -> R.Program -> Context -> String -> LD.ExternalClassImpl -> [RT.Lifetime] -> R.Program
+processImpl :: Program -> 
+               R.Program -> 
+               Context -> 
+               String -> 
+               LD.ExternalClassImpl -> 
+               [RT.Lifetime] -> R.Program
 processImpl lir_program program context type_name impl lifetimes = do
     rust_type_name <- RT.Named type_name []
     (name, methods) <- case impl of
@@ -287,7 +298,13 @@ processImpl lir_program program context type_name impl lifetimes = do
             result <- RT.Named "bool" []
             op_call <- R.FunctionCall (getRustIdentity fn_id) [convertImplArg lir_program fn_id (R.VarRef "self"), convertImplArg lir_program fn_id (R.VarRef (getArgName 1))]
             body <- R.Block [sikoBoolToRustBool op_call (RT.Named boolTypeName [])]
-            method <- R.Function "eq" [] True args result body []
+            method <- R.Function "eq" 
+                                 [] 
+                                 True 
+                                 args 
+                                 result 
+                                 body 
+                                 []
             ("std::cmp::PartialEq", [method])
         LD.Eq -> do
             ("std::cmp::Eq", [])
@@ -297,7 +314,13 @@ processImpl lir_program program context type_name impl lifetimes = do
             op_call <- R.FunctionCall (getRustIdentity fn_id) [convertImplArg lir_program fn_id (R.VarRef "self"), convertImplArg lir_program fn_id (R.VarRef (getArgName 1))]
             fn <- getFunction lir_program fn_id
             body <- R.Block [sikoOptionalOrderingToRustOptionalOrdering lir_program op_call fn.type.result]
-            method <- R.Function "partial_cmp" [] True args result body []
+            method <- R.Function "partial_cmp" 
+                                 [] 
+                                 True 
+                                 args 
+                                 result 
+                                 body 
+                                 []
             ("std::cmp::PartialOrd", [method])
         LD.Ord fn_id -> do
             args <- [(getArgName 1, (RT.Named "&{}" % type_name) [])]
@@ -306,14 +329,23 @@ processImpl lir_program program context type_name impl lifetimes = do
             fn <- getFunction lir_program fn_id
             ordering_result <- convertType fn.type.result
             body <- R.Block [sikoOrderingToRustOrdering op_call ordering_result]
-            method <- R.Function "cmp" [] True args result body []
+            method <- R.Function "cmp" 
+                                 [] 
+                                 True 
+                                 args 
+                                 result 
+                                 body 
+                                 []
             ("std::cmp::Ord", [method])
     //println "processImpl: {} {}" % (name, rust_type_name)
     trait_impl <- R.TraitImpl name rust_type_name methods lifetimes
     impls <- push program.impls trait_impl
     program { impls = impls }
 
-createVariantCtor :: RT.Type -> Int -> Context -> [R.Expr] -> R.Expr
+createVariantCtor :: RT.Type -> 
+                     Int -> 
+                     Context -> 
+                     [R.Expr] -> R.Expr
 createVariantCtor result index context args = do
     enum <- getEnum context.type_store result
     variant <- atIndex enum.variants index
@@ -343,7 +375,13 @@ createConstructors program = do
         constructors) Map.empty
     constructors
 
-processFunction :: (Context, Program, TypeStore, R.Program) -> (Identity, Function) -> (Context, Program, TypeStore, R.Program)
+processFunction :: (Context,
+                    Program,
+                    TypeStore,
+                    R.Program) -> (Identity, Function) -> (Context,
+                                                           Program,
+                                                           TypeStore,
+                                                           R.Program)
 processFunction (context, program, type_store, rust_program) (_, lir_function) = do
     rust_function_name <- getRustIdentity lir_function.id
     (rust_args, _) <- lir_function.type.args |> List.iter |> Iterator.fold (\(args, index), arg -> do
@@ -372,7 +410,13 @@ processFunction (context, program, type_store, rust_program) (_, lir_function) =
         RecordCtor -> return (context, program, type_store, rust_program)
     lifetimes <- convertLifetimes lir_function.lifetimes
     lifetime_dependencies <- List.map lir_function.lifetime_dependencies convertLifetimeDependency
-    rust_function <- R.Function rust_function_name lifetimes False rust_args rust_result rust_body lifetime_dependencies
+    rust_function <- R.Function rust_function_name 
+                                lifetimes 
+                                False 
+                                rust_args 
+                                rust_result 
+                                rust_body 
+                                lifetime_dependencies
     functions <- push rust_program.functions rust_function
     (context, program, type_store, rust_program { functions = functions })
 

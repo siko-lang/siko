@@ -12,12 +12,16 @@ getOwnershipVars ownership_dep_map info = case Map.get ownership_dep_map info.ar
     Some vars -> List.push vars info.ownership_var
     None -> [info.ownership_var]
 
-collectDepOwnershipVarsForGroupVar :: [GroupTypeVariable] -> Map GroupTypeVariable [GroupTypeVariable] -> Map GroupTypeVariable [OwnershipTypeVariable] -> [OwnershipTypeVariable] -> GroupTypeVariable -> (Map GroupTypeVariable [OwnershipTypeVariable], Map GroupTypeVariable [GroupTypeVariable], [OwnershipTypeVariable])
+collectDepOwnershipVarsForGroupVar :: [GroupTypeVariable] -> 
+                                      Map GroupTypeVariable [GroupTypeVariable] -> 
+                                      Map GroupTypeVariable [OwnershipTypeVariable] -> 
+                                      [OwnershipTypeVariable] -> 
+                                      GroupTypeVariable -> [OwnershipTypeVariable]
 collectDepOwnershipVarsForGroupVar group deps_map ownership_dep_map ownership_vars item = case Map.get deps_map item of
     Some deps -> do
         loop (ownership_vars, index) <- (ownership_vars, 0) do
             if index >= List.getLength deps
-            then break (ownership_dep_map, deps_map, ownership_vars)
+            then break ownership_vars
             else do
                 dep <- List.atIndex deps index
                 ownership_vars <- case Map.get ownership_dep_map dep of
@@ -28,28 +32,30 @@ collectDepOwnershipVarsForGroupVar group deps_map ownership_dep_map ownership_va
                 (ownership_vars, index + 1)
     None -> panic "Dep not found in deps map"
 
-calculateDepsForGroup :: Map GroupTypeVariable [OwnershipTypeVariable] -> Map GroupTypeVariable [OwnershipTypeVariable] -> Map GroupTypeVariable [GroupTypeVariable] -> [GroupTypeVariable] -> (Map GroupTypeVariable [OwnershipTypeVariable], Map GroupTypeVariable [OwnershipTypeVariable], Map GroupTypeVariable [GroupTypeVariable])
+calculateDepsForGroup :: Map GroupTypeVariable [OwnershipTypeVariable] -> 
+                         Map GroupTypeVariable [OwnershipTypeVariable] -> 
+                         Map GroupTypeVariable [GroupTypeVariable] -> 
+                         [GroupTypeVariable] -> (Map GroupTypeVariable [OwnershipTypeVariable])
 calculateDepsForGroup child_ownership_vars ownership_dep_map deps_map group = do
     ownership_vars <- []
-    (ownership_vars, child_ownership_vars, ownership_dep_map, deps_map) <- loop (ownership_vars, child_ownership_vars, ownership_dep_map, deps_map, index) <- (ownership_vars, child_ownership_vars, ownership_dep_map, deps_map, 0) do
+    ownership_vars <- loop (ownership_vars, index) <- (ownership_vars, 0) do
         if index >= List.getLength group
-        then break (ownership_vars, child_ownership_vars, ownership_dep_map, deps_map)
+        then break ownership_vars
         else do
             item <- List.atIndex group index
             ownership_vars <- case Map.get child_ownership_vars item of
                 Some vars -> ownership_vars + vars
                 None -> ownership_vars
-            (ownership_dep_map, deps_map, ownership_vars) <- collectDepOwnershipVarsForGroupVar group deps_map ownership_dep_map ownership_vars item
-            (ownership_vars, child_ownership_vars, ownership_dep_map, deps_map, index + 1)
+            ownership_vars <- collectDepOwnershipVarsForGroupVar group deps_map ownership_dep_map ownership_vars item
+            (ownership_vars, index + 1)
     ownership_vars <- ownership_vars |> List.sort |> List.dedup
-    ownership_dep_map <- loop (ownership_dep_map, index) <- (ownership_dep_map, 0) do
+    loop (ownership_dep_map, index) <- (ownership_dep_map, 0) do
         if index >= List.getLength group
         then break ownership_dep_map
         else do
             item <- List.atIndex group index
             ownership_dep_map <- Map.put ownership_dep_map item ownership_vars
             (ownership_dep_map, index + 1)
-    (child_ownership_vars, ownership_dep_map, deps_map)
 
 calculateChildOwnershipVars :: [MemberInfo] -> Map GroupTypeVariable [OwnershipTypeVariable]
 calculateChildOwnershipVars members = loop (child_ownership_vars, index) <- (Map.empty, 0) do
@@ -82,12 +88,12 @@ calculateOwnershipDepMap members = do
     child_ownership_vars <- calculateChildOwnershipVars members
     //trace "calculateOwnershipDepMap: child ownership vars done"
     ownership_dep_map <- Map.empty
-    (child_ownership_vars, ownership_dep_map) <- loop (child_ownership_vars, ownership_dep_map, deps_map, index) <- (child_ownership_vars, ownership_dep_map, deps_map, 0) do
+    ownership_dep_map <- loop (ownership_dep_map, index) <- (ownership_dep_map, 0) do
         if index >= List.getLength groups
-        then break (child_ownership_vars, ownership_dep_map)
+        then break ownership_dep_map
         else do
             group <- List.atIndex groups index
-            (child_ownership_vars, ownership_dep_map, deps_map) <- calculateDepsForGroup child_ownership_vars ownership_dep_map deps_map group.items
-            (child_ownership_vars, ownership_dep_map, deps_map, index + 1)
+            (ownership_dep_map) <- calculateDepsForGroup child_ownership_vars ownership_dep_map deps_map group.items
+            (ownership_dep_map, index + 1)
     //trace "calculateOwnershipDepMap: done"
     OwnershipDependencyMapInfo ownership_dep_map

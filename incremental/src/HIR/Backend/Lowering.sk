@@ -188,7 +188,12 @@ lowerExpr context hir_expr = do
         HE.With handlers body effects -> panic "With in MIR lowering"
     (context, ME.Expr mir_s_expr mir_type (ME.ExprId 0))
 
-lowerFunction a :: (StateProvider a) => a -> FQ.FullyQualifiedName -> HF.Function HT.Type -> (a, MF.Function, [MI.Identity], [MI.Identity], [MI.Identity], [MI.Identity])
+lowerFunction a :: (StateProvider a) => a -> FQ.FullyQualifiedName -> HF.Function HT.Type -> (a,
+                                                                                              MF.Function,
+                                                                                              [MI.Identity],
+                                                                                              [MI.Identity],
+                                                                                              [MI.Identity],
+                                                                                              [MI.Identity])
 lowerFunction state qn hir_function = do
     mir_id <- lowerFullyQualifiedName qn
     trace2 "Lowering function HIR -> MIR {}" % mir_id
@@ -237,7 +242,11 @@ createTuple state id args = do
     mir_function_type <- MF.FunctionType mir_args result_type
     (context.state, MD.Record id fields None [] [], MF.Function id MF.RecordCtor mir_function_type)
 
-lowerRecord a :: (StateProvider a) => a -> FQ.FullyQualifiedName -> (a, MD.Record, [MI.Identity], [MI.Identity], [MI.Identity])
+lowerRecord a :: (StateProvider a) => a -> FQ.FullyQualifiedName -> (a,
+                                                                     MD.Record,
+                                                                     [MI.Identity],
+                                                                     [MI.Identity],
+                                                                     [MI.Identity])
 lowerRecord state qn = do
     trace2 "Lowering record {}" % qn
     case qn of

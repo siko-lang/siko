@@ -8,7 +8,7 @@ stage2: stage1 $(shell find src -type f)
 	@./stage1 build ./src ./std -v -o ./stage2
 
 siko: stage0 $(shell find incremental -type f)
-	@./stage0 build ./incremental/src ./std -o ./siko
+	@./stage0 build ./incremental/src ./std -v -o ./siko
 
 test: stage1 testrunner
 	@./testrunner stage1

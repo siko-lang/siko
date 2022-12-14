@@ -51,13 +51,19 @@ checkUsages usages usage expr_id = do
             (borrows, invalidations)
         else (borrows, invalidations))
 
-addUsageVar :: Context -> UsageStore -> E.Var -> E.ExprId -> (Context, UsageStore)
+addUsageVar :: Context -> 
+               UsageStore -> 
+               E.Var -> 
+               E.ExprId -> (Context, UsageStore)
 addUsageVar context usage_store var decl_expr_id = do
     usages <- Map.put usage_store.usages var []
     decls <- List.push context.decls (var, decl_expr_id)
     (context { decls = decls }, usage_store { usages = usages })
 
-invalidateAll :: Context -> UsageStore -> E.Var -> E.ExprId -> Context
+invalidateAll :: Context -> 
+                 UsageStore -> 
+                 E.Var -> 
+                 E.ExprId -> Context
 invalidateAll context usage_store var expr_id = do
     invalidations <- List.fold context.invalidations context.decls (\invalidations, (decl_var, decl_expr_id) -> if var == decl_var
         then List.push invalidations (Invalidation expr_id decl_expr_id)
@@ -69,7 +75,11 @@ invalidateAll context usage_store var expr_id = do
                 context { invalidations = invalidations })
         None -> context
 
-addUsage :: Context -> UsageStore -> E.Var -> E.ExprId -> Path -> (Context, UsageStore)
+addUsage :: Context -> 
+            UsageStore -> 
+            E.Var -> 
+            E.ExprId -> 
+            Path -> (Context, UsageStore)
 addUsage context usage_store var expr_id path = do
     usage <- Usage expr_id path
     moves <- List.push context.moves (var, expr_id)
@@ -108,7 +118,10 @@ mergeUsageStores store1 store2 = do
     usages <- Map.map usages (\(var, usages) -> (var, usages |> List.sort |> List.dedup))
     store1 { usages = usages }
 
-processBranches :: Context -> UsageStore -> [(Option E.Var, E.Expr)] -> E.ExprId -> (Context, UsageStore, ExecutionMode)
+processBranches :: Context -> 
+                   UsageStore -> 
+                   [(Option E.Var, E.Expr)] -> 
+                   E.ExprId -> (Context, UsageStore, ExecutionMode)
 processBranches context usage_store branches expr_id = do
     outputs <- List.map branches (\(var, expr) -> processBranch context usage_store var expr expr_id)
     List.fold (context, usage_store, DoesNotReturn) outputs (\(context, usage_store, exec_mode), (c_context, c_usage_store, c_exec_mode) -> do
@@ -118,7 +131,11 @@ processBranches context usage_store branches expr_id = do
             DoesNotReturn -> (exec_mode, usage_store)
         (context, usage_store, exec_mode))
     where
-        processBranch :: Context -> UsageStore -> Option E.Var -> E.Expr -> E.ExprId -> (Context, UsageStore, ExecutionMode)
+        processBranch :: Context -> 
+                         UsageStore -> 
+                         Option E.Var -> 
+                         E.Expr -> 
+                         E.ExprId -> (Context, UsageStore, ExecutionMode)
         processBranch context usage_store var expr expr_id = do
             (context, usage_store) <- case var of
                 Some var -> addUsageVar context usage_store var expr_id

@@ -97,7 +97,10 @@ processFunctionInfo context function_info function_id = do
     context <- context { function_info_store = function_info_store }
     (context, added)
 
-processFunction :: Context -> [I.Identity] -> Option InferenceInfo -> I.Identity -> (Context, Bool, Option InferenceInfo)
+processFunction :: Context -> 
+                   [I.Identity] -> 
+                   Option InferenceInfo -> 
+                   I.Identity -> (Context, Bool, Option InferenceInfo)
 processFunction context group inference_info function_id = do
     function <- P.getFunction context.program function_id
     case function.kind of
@@ -113,7 +116,14 @@ processFunction context group inference_info function_id = do
                     inference_info <- initializeTypeVariables inference_info function_id info.body
                     function_info_store <- context.function_info_store
                     //trace "processEqualities {}" % function_id
-                    (equals, inference_info) <- processFunctionEqualities function_id group [] inference_info function_info_store context.program info.body context.data_group_info_store
+                    (equals, inference_info) <- processFunctionEqualities function_id 
+                                                                          group 
+                                                                          [] 
+                                                                          inference_info 
+                                                                          function_info_store 
+                                                                          context.program 
+                                                                          info.body 
+                                                                          context.data_group_info_store
                     inference_info <- processEqualities equals inference_info context.program
                     inference_info <- updateOwnershipDepMap inference_info
                     inference_info <- updateGroupDependencyMapInfo inference_info
@@ -126,7 +136,17 @@ processFunction context group inference_info function_id = do
             //trace "inferOwnership {}" % function_id
             (inference_info, constraints, invalid_borrow_map, ownership_expr_map, group_expr_map, ownership_group_map, result_vars, program, call_context_map, call_args) <- collectConstraints function_id context.program borrow_info inference_info info.body
             context <- context { program = program }
-            inference_info <- processConstraints function_id inference_info constraints invalid_borrow_map ownership_expr_map group_expr_map ownership_group_map result_vars call_context_map Partial call_args
+            inference_info <- processConstraints function_id 
+                                                 inference_info 
+                                                 constraints 
+                                                 invalid_borrow_map 
+                                                 ownership_expr_map 
+                                                 group_expr_map 
+                                                 ownership_group_map 
+                                                 result_vars 
+                                                 call_context_map 
+                                                 Partial 
+                                                 call_args
             //trace "Processing {}" % function_id
             no_return <- T.isNever function.type.result
             function_info <- toFunctionInfo inference_info function_id no_return
@@ -155,7 +175,10 @@ processFunction context group inference_info function_id = do
             (context, added) <- processFunctionInfo context function_info function_id
             (context, added, None)
 
-processFunctionGroup :: Int -> Int -> Context -> [I.Identity] -> (Int, Context)
+processFunctionGroup :: Int -> 
+                        Int -> 
+                        Context -> 
+                        [I.Identity] -> (Int, Context)
 processFunctionGroup index group_count context group = do
     trace2 "processFunctionGroup {}/{} ({}%) {}" % (index, group_count, index * 100 / group_count, group)
     if getLength group == 1
@@ -190,7 +213,14 @@ processFunctionGroup index group_count context group = do
                 function_info_store <- context.function_info_store
                 function <- P.getFunction context.program function_id
                 case function.kind of
-                    F.Normal info -> processFunctionEqualities function_id group equals inference_info function_info_store context.program info.body context.data_group_info_store
+                    F.Normal info -> processFunctionEqualities function_id 
+                                                               group 
+                                                               equals 
+                                                               inference_info 
+                                                               function_info_store 
+                                                               context.program 
+                                                               info.body 
+                                                               context.data_group_info_store
                     _ -> panic "Groupped function is not normal!")
             inference_info <- processEqualities equals inference_info context.program
             converter_merge_info_base <- createConverterMergeInfoBase inference_info.converters

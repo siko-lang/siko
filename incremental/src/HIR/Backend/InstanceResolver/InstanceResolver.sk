@@ -14,14 +14,23 @@ import Siko.HIR.Util as Util
 import Siko.Query.Lookup as QL
 import Siko.Syntax.Location
 
-unifyTypes a :: (StateProvider a) => a -> S.Substitution -> T.Type -> T.Type -> (a, S.Substitution, Bool)
+unifyTypes a :: (StateProvider a) => 
+                a -> 
+                S.Substitution -> 
+                T.Type -> 
+                T.Type -> (a, S.Substitution, Bool)
 unifyTypes context sub type1 type2 = case U.unify context sub type1 type2 of
     Ok (context, sub) -> (context, sub, True)
     Err (context, sub) -> do
         //println "instance check, unifyTypes failed: {} {}" % (T.toLongString type1, T.toLongString type2)
         (context, sub, False)
 
-checkInstancesForBaseType a :: (StateProvider a) => a -> S.Substitution -> T.Type -> TC.InstanceInfo -> FQ.FullyQualifiedName -> Result (a, S.Substitution, TC.InstanceInfo) a
+checkInstancesForBaseType a :: (StateProvider a) => 
+                               a -> 
+                               S.Substitution -> 
+                               T.Type -> 
+                               TC.InstanceInfo -> 
+                               FQ.FullyQualifiedName -> Result (a, S.Substitution, TC.InstanceInfo) a
 checkInstancesForBaseType context sub type instance_info class_name = do
     //println "checkInstancesForBaseType {} {}" % (TF.toLongString type,)
     (instance_info, context) <- UUtil.instantiateGeneric instance_info context
@@ -36,7 +45,11 @@ checkInstancesForBaseType context sub type instance_info class_name = do
     instance_info <- instance_info { instance_type = instance_type, associated_types = associated_types }
     Ok (context, sub, instance_info)
 
-hasInstance a :: (StateProvider a) => a -> S.Substitution -> T.Type -> FQ.FullyQualifiedName -> Result (a, S.Substitution, TC.InstanceInfo) a
+hasInstance a :: (StateProvider a) => 
+                 a -> 
+                 S.Substitution -> 
+                 T.Type -> 
+                 FQ.FullyQualifiedName -> Result (a, S.Substitution, TC.InstanceInfo) a
 hasInstance context sub type class_name = do
     base_type <- TC.getBaseType type
     case QL.getRegisteredInstanceOpt context (TC.InstanceKey class_name base_type) of

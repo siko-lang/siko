@@ -52,7 +52,11 @@ addEqualExprVar context expr_id var = do
 getExprId :: E.Expr -> E.ExprId
 getExprId (E.Expr _ _ id) = id
 
-mergeFunctionInfo :: Context -> [E.Expr] -> E.ExprId -> FunctionInfo -> Bool -> Context
+mergeFunctionInfo :: Context -> 
+                     [E.Expr] -> 
+                     E.ExprId -> 
+                     FunctionInfo -> 
+                     Bool -> Context
 mergeFunctionInfo context args expr_id function_info in_group = do
     // arg equality
     context <- List.zipS context function_info.args args (\context, info_arg, arg_expr -> do
@@ -274,9 +278,22 @@ processExpr context expr = do
             equals <- List.push equals (EqualGroup info1.arg_group_var info2.arg_group_var)
             context { inference_info = inference_info, equals = equals }
 
-processFunctionEqualities :: I.Identity -> [I.Identity] -> [Equal] -> InferenceInfo -> FunctionInfoStore -> P.Program -> E.Expr -> DataGroupInfoStore -> ([Equal], InferenceInfo)
+processFunctionEqualities :: I.Identity -> 
+                             [I.Identity] -> 
+                             [Equal] -> 
+                             InferenceInfo -> 
+                             FunctionInfoStore -> 
+                             P.Program -> 
+                             E.Expr -> 
+                             DataGroupInfoStore -> ([Equal], InferenceInfo)
 processFunctionEqualities function_id group equals inference_info function_info_store program body data_group_info_store = do
-    context <- Context function_id equals inference_info function_info_store program group data_group_info_store
+    context <- Context function_id 
+                       equals 
+                       inference_info 
+                       function_info_store 
+                       program 
+                       group 
+                       data_group_info_store
     //trace "processEqualities - traverse"
     context <- processExpr context body
     body_info <- getTypeVariableInfoByExprId context.inference_info (getExprId body) context.function_id

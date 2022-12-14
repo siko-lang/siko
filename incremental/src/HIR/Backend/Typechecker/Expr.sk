@@ -61,7 +61,13 @@ instance (U.ClassProvider a) => U.ClassProvider Context a where
     getAssociatedTypeCount context qn = U.getAssociatedTypeCount context.state qn
 
 initializeContext a :: (StateProvider a) => a -> [FQ.FullyQualifiedName] -> Context a
-initializeContext state group_items = Context TS.initializeTypeStore state [] group_items Map.empty [] 0
+initializeContext state group_items = Context TS.initializeTypeStore 
+                                              state 
+                                              [] 
+                                              group_items 
+                                              Map.empty 
+                                              [] 
+                                              0
 
 addExprType :: Context a -> E.ExprId -> TS.ExprTypeState -> Context a
 addExprType context expr_id expr_type = do
@@ -148,7 +154,12 @@ processClassConstraints context location = do
                     //println "processClassConstraints failed: {} {}" % (TF.toString type, class_name)
                     break Err context
 
-unify a :: (StateProvider a) => Context a -> S.Substitution -> T.Type -> T.Type -> Location -> Context a
+unify a :: (StateProvider a) => 
+           Context a -> 
+           S.Substitution -> 
+           T.Type -> 
+           T.Type -> 
+           Location -> Context a
 unify context sub ty1 ty2 location = do
     //println "Unifying {} {}" % (TF.toString ty1, TF.toString ty2)
     case U.unify context sub ty1 ty2 of
@@ -173,7 +184,12 @@ unify context sub ty1 ty2 location = do
             context
 // FIXME: is this really needed??
 
-unify2 a :: (StateProvider a) => Context a -> S.Substitution -> T.Type -> T.Type -> Location -> (Context a, S.Substitution)
+unify2 a :: (StateProvider a) => 
+            Context a -> 
+            S.Substitution -> 
+            T.Type -> 
+            T.Type -> 
+            Location -> (Context a, S.Substitution)
 unify2 context sub ty1 ty2 location = do
     //println "Unifying {} {}" % (TF.toString ty1, TF.toString ty2)
     case U.unify context sub ty1 ty2 of
@@ -188,20 +204,32 @@ unify2 context sub ty1 ty2 location = do
             context <- context { state = state }
             (context, sub)
 
-matchExprWith a :: (StateProvider a) => Context a -> E.ExprId -> T.Type -> Location -> Context a
+matchExprWith a :: (StateProvider a) => 
+                   Context a -> 
+                   E.ExprId -> 
+                   T.Type -> 
+                   Location -> Context a
 matchExprWith context expr_id type location = do
     expr_type <- getExprType context expr_id
     context <- unify context S.createSubstitution type expr_type location
     context
 
-matchExprs a :: (StateProvider a) => Context a -> E.ExprId -> E.ExprId -> Location -> Context a
+matchExprs a :: (StateProvider a) => 
+                Context a -> 
+                E.ExprId -> 
+                E.ExprId -> 
+                Location -> Context a
 matchExprs context expr_id1 expr_id2 location = do
     expr_type1 <- getExprType context expr_id1
     expr_type2 <- getExprType context expr_id2
     context <- unify context S.createSubstitution expr_type1 expr_type2 location
     context
 
-matchExprWithPattern a :: (StateProvider a) => Context a -> E.ExprId -> P.PatternId -> Location -> Context a
+matchExprWithPattern a :: (StateProvider a) => 
+                          Context a -> 
+                          E.ExprId -> 
+                          P.PatternId -> 
+                          Location -> Context a
 matchExprWithPattern context expr_id pattern_id location = do
     expr_type <- getExprType context expr_id
     patter_type <- getPatternType context pattern_id
@@ -252,14 +280,22 @@ data HandledEffect = { handlers :: Map FQ.FullyQualifiedName [HandlerInfo] } der
 
 data HandledEffectInfo = { handled_effects :: Map FQ.FullyQualifiedName HandledEffect } deriving (Show)
 
-addHandler a :: (StateProvider a) => Context a -> HandledEffectInfo -> Int -> E.EffectHandler () -> HandledEffectInfo
+addHandler a :: (StateProvider a) => 
+                Context a -> 
+                HandledEffectInfo -> 
+                Int -> 
+                E.EffectHandler () -> HandledEffectInfo
 addHandler context info index (E.EffectHandler qn _ location) = do
     function <- QL.getFunction context.state qn
     effect_name <- getEffectName function.kind
     (handled_effects, _) <- alter (addEffect qn location index effect_name) effect_name info.handled_effects
     info { handled_effects = handled_effects }
     where
-        addEffect :: FQ.FullyQualifiedName -> Location -> Int -> FQ.FullyQualifiedName -> Option HandledEffect -> Option HandledEffect
+        addEffect :: FQ.FullyQualifiedName -> 
+                     Location -> 
+                     Int -> 
+                     FQ.FullyQualifiedName -> 
+                     Option HandledEffect -> Option HandledEffect
         addEffect handler_name location index effect_name old_effect = case old_effect of
             Some handled_effect -> do
                 handled_effect <- addEffectHandler handled_effect handler_name location index
@@ -268,7 +304,10 @@ addHandler context info index (E.EffectHandler qn _ location) = do
                 handled_effect <- addEffectHandler (HandledEffect Map.empty) handler_name location index
                 Some handled_effect
 
-        addEffectHandler :: HandledEffect -> FQ.FullyQualifiedName -> Location -> Int -> HandledEffect
+        addEffectHandler :: HandledEffect -> 
+                            FQ.FullyQualifiedName -> 
+                            Location -> 
+                            Int -> HandledEffect
         addEffectHandler handled_effect qn location index = do
             handlers <- add handled_effect.handlers qn (HandlerInfo location index)
             handled_effect { handlers = handlers }
@@ -312,7 +351,12 @@ getEffectHandlerType context E.EffectHandler _ selection _ = do
             (context, body_type)
         E.Default -> panic "Default eff not yet implemented"
 
-getEffectType a :: (StateProvider a) => HandledEffectInfo -> [E.EffectHandler ()] -> Context a -> FQ.FullyQualifiedName -> HandledEffect -> (Context a, T.Type)
+getEffectType a :: (StateProvider a) => 
+                   HandledEffectInfo -> 
+                   [E.EffectHandler ()] -> 
+                   Context a -> 
+                   FQ.FullyQualifiedName -> 
+                   HandledEffect -> (Context a, T.Type)
 getEffectType info handlers context effect_name handled_effect = do
     eff_type_info <- createEffectTypeInfo context effect_name
     (eff_type_info, context) <- UUtil.instantiateGeneric eff_type_info context
@@ -461,7 +505,12 @@ initializeExprType current_fn_name context orig_expr = do
             context
     (context, orig_expr)
 
-checkFunctionCall a :: (StateProvider a) => Context a -> Option FQ.FullyQualifiedName -> E.ExprId -> [E.Expr ()] -> Location -> Context a
+checkFunctionCall a :: (StateProvider a) => 
+                       Context a -> 
+                       Option FQ.FullyQualifiedName -> 
+                       E.ExprId -> 
+                       [E.Expr ()] -> 
+                       Location -> Context a
 checkFunctionCall context qn expr_id args call_location = loop (context, index) <- (context, 0) do
         (ty, fn_ty) <- getExprAndFunctionCallType context expr_id
         //println "[{}] Checking {}. arg of {}" % (qn, index, TF.toString fn_ty)
@@ -683,7 +732,11 @@ checkExprType context orig_expr = do
             context
     (context, orig_expr)
 
-addUndefinedVarToContext a :: (StateProvider a) => Context a -> [T.TypeVar] -> T.TypeVar -> Location -> (Context a, [T.TypeVar])
+addUndefinedVarToContext a :: (StateProvider a) => 
+                              Context a -> 
+                              [T.TypeVar] -> 
+                              T.TypeVar -> 
+                              Location -> (Context a, [T.TypeVar])
 addUndefinedVarToContext context undefined_vars var location = if contains undefined_vars var
     then (context, undefined_vars)
     else do
@@ -693,7 +746,12 @@ addUndefinedVarToContext context undefined_vars var location = if contains undef
         undefined_vars <- push undefined_vars var
         (context, undefined_vars)
 
-checkUndefinedVars a :: (StateProvider a) => Context a -> [T.TypeVar] -> T.Type -> [T.TypeVar] -> Location -> (Context a, [T.TypeVar])
+checkUndefinedVars a :: (StateProvider a) => 
+                        Context a -> 
+                        [T.TypeVar] -> 
+                        T.Type -> 
+                        [T.TypeVar] -> 
+                        Location -> (Context a, [T.TypeVar])
 checkUndefinedVars context undefined_vars type signature_vars location = do
     case type of
         T.Var _ constraints if constraints == [T.NeverLike] -> (context, undefined_vars)
