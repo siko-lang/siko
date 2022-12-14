@@ -2,6 +2,7 @@ module Main where
 
 import IO
 import Siko.Args
+import Time
 
 traceLevel1Option = "trace1"
 
@@ -33,7 +34,7 @@ collectTests path parent selected tests = do
             else do
                 skip <- if file == "SKIP" then True else skip
                 tests <- if file == "main.sk"
-                then List.push tests (TestInfo entry parent)
+                then List.push tests (TestInfo path parent)
                 else tests
                 (skip, tests))
         if List.isEmpty selected
@@ -48,34 +49,57 @@ collectTests path parent selected tests = do
             tests + selected_tests
     else tests
 
-data Statistics = { success :: Int, failure :: Int }
+data Statistics = { success :: Int,
+                    failure :: Int
+                  }
 
-runTest :: Int -> Int -> Statistics -> TestInfo -> Statistics
-runTest total index stats test = do
-    println "--- Running test {} - {}/{} --- " % (test.name, total, index + 1)
+runTest :: String -> Int -> Int -> Statistics -> TestInfo -> Statistics
+runTest binary total index stats test = do
+    i1 <- now
+    print "--- Running test {} - {}/{} --- " % (test.name, total, index + 1)
+    createDir "test_runs/{}" % test.name
     test_runs_path <- "test_runs/{}/{}" % (test.name, test.name)
-    cmd <- ["siko", "build", "./std", test.full_path, "-o", test_runs_path]
-    if runCommand cmd
+    cmd <- [binary,
+            "build",
+            "./std",
+            test.full_path,
+            "-nooptimization",
+            "-o",
+            test_runs_path]
+    //println "cmd {}" % cmd
+    stats <- if runCommand cmd
     then do
         if runCommand [test_runs_path]
         then stats { success = stats.success + 1 }
         else stats { failure = stats.failure + 1 }
     else stats { failure = stats.failure + 1 }
+    i2 <- now
+    diff <- diffInMilliseconds i1 i2
+    seconds <- diff / 1000
+    millis <- remInt diff 1000
+    println "{}.{}s" % (seconds, millis)
+    stats
 
 main = do
     args <- getArgs
     argparser <- createArgParser "Siko"
-    build_cmd <- Command "run" [Simple (SimpleOption traceLevel1Option "-v" "Enable level 1 traces" "Disabled")] "Run tests"
-    argparser <- addCommand argparser build_cmd
+    stage0_cmd <- Command "stage0" [] "Run tests with stage0"
+    stage1_cmd <- Command "stage1" [] "Run tests with stage1"
+    stage2_cmd <- Command "stage2" [] "Run tests with stage2"
+    siko_cmd <- Command "siko" [] "Run tests with siko"
+    argparser <- addCommand argparser stage0_cmd
+    argparser <- addCommand argparser stage1_cmd
+    argparser <- addCommand argparser stage2_cmd
+    argparser <- addCommand argparser siko_cmd
     case processArgs argparser args of
         Ok result -> do
             case result.command of
-                "run" -> do
+                cmd -> do
+                    cmd <- "./" + cmd
                     tests <- collectTests "./test" "./test" result.unused []
                     total <- List.getLength tests
                     tests <- tests |> List.sort
                     stats <- Statistics 0 0
-                    stats <- List.foldE stats tests (\stats, index, test -> runTest total index stats test)
+                    stats <- List.foldE stats tests (\stats, index, test -> runTest cmd total index stats test)
                     println "Success {}, failure {}" % (stats.success, stats.failure)
-                _ -> ()
         Err _ -> ()

@@ -95,6 +95,17 @@ generateDiv program type_store arg_types result_type = do
     struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef new)]
     R.Block [new_decl, struct_ctor]
 
+generateRem :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
+generateRem program type_store arg_types result_type = do
+    rust_type <- convertType result_type
+    field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
+    field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
+    div_call <- R.FunctionCall stdOpsRem [R.Ref field_access0, R.Ref field_access1]
+    new <- "new"
+    new_decl <- R.VarDecl new div_call None
+    struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef new)]
+    R.Block [new_decl, struct_ctor]
+
 generateNegative :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateNegative program type_store arg_types result_type = do
     rust_type <- convertType result_type
@@ -379,6 +390,14 @@ generateIsDir program type_store arg_types result_type = do
     field_access <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
     is_dir_call <- R.MethodCall (R.FunctionCall "std::path::Path::new" [R.Ref field_access]) "is_dir" []
     R.Block [rustBoolToSikoBool program is_dir_call result_type]
+
+generateCreateDir :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
+generateCreateDir program type_store arg_types result_type = do
+    field_access <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
+    path <- R.FunctionCall "std::path::Path::new" [R.Ref field_access]
+    create_dir_call <- R.FunctionCall "std::fs::create_dir_all" [path]
+    is_ok_call <- R.MethodCall create_dir_call "is_ok" []
+    R.Block [rustBoolToSikoBool program is_ok_call result_type]
 
 generateRunCommand :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
 generateRunCommand program type_store arg_types result_type = do
@@ -1164,6 +1183,22 @@ generateIntrinsicsClone :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Exp
 generateIntrinsicsClone program type_store arg_types result_type = do
     R.Block [R.MethodCall (R.VarRef (getArgName 0)) cloneName []]
 
+generateTimeNow :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
+generateTimeNow program type_store arg_types result_type = do
+    rust_type <- convertType result_type
+    struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.FunctionCall "std::time::Instant::now" [])]
+    R.Block [struct_ctor]
+
+generateTimeDiffInMilliseconds :: Program -> TypeStore -> [LT.Type] -> LT.Type -> R.Expr
+generateTimeDiffInMilliseconds program type_store arg_types result_type = do
+    rust_type <- convertType result_type
+    field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
+    field_access1 <- R.FieldAccess innerValueField (R.VarRef (getArgName 1))
+    duration_since <- R.MethodCall field_access1 "duration_since" [field_access0]
+    as_millis <- R.MethodCall duration_since "as_millis" []
+    struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.As as_millis "i64")]
+    R.Block [struct_ctor]
+
 initializeExternalFunctions :: Map ExternalId ExternFnBuilder
 initializeExternalFunctions = do
     externals <- Map.empty
@@ -1181,6 +1216,7 @@ initializeExternalFunctions = do
     (externals, _) <- insert externals (ExternalId "IO" "exit") (ExternFnBuilder generateExit)
     (externals, _) <- insert externals (ExternalId "IO" "readLine") (ExternFnBuilder generateReadLine)
     (externals, _) <- insert externals (ExternalId "IO" "runCommand") (ExternFnBuilder generateRunCommand)
+    (externals, _) <- insert externals (ExternalId "IO" "createDir") (ExternFnBuilder generateCreateDir)
     (externals, _) <- insert externals (ExternalId "String" "addString") (ExternFnBuilder generateStringAdd)
     (externals, _) <- insert externals (ExternalId "String" "partialCmpString") (ExternFnBuilder generatePartialCmp)
     (externals, _) <- insert externals (ExternalId "String" "cmpString") (ExternFnBuilder generateCmp)
@@ -1195,6 +1231,7 @@ initializeExternalFunctions = do
     (externals, _) <- insert externals (ExternalId "Int" "subInt") (ExternFnBuilder generateSub)
     (externals, _) <- insert externals (ExternalId "Int" "mulInt") (ExternFnBuilder generateMul)
     (externals, _) <- insert externals (ExternalId "Int" "divInt") (ExternFnBuilder generateDiv)
+    (externals, _) <- insert externals (ExternalId "Int" "remInt") (ExternFnBuilder generateRem)
     (externals, _) <- insert externals (ExternalId "Int" "showInt") (ExternFnBuilder generateShow)
     (externals, _) <- insert externals (ExternalId "Int" "partialCmpInt") (ExternFnBuilder generatePartialCmp)
     (externals, _) <- insert externals (ExternalId "Int" "cmpInt") (ExternFnBuilder generateCmp)
@@ -1253,6 +1290,8 @@ initializeExternalFunctions = do
     (externals, _) <- insert externals (ExternalId "Std.Intrinsics" "clone") (ExternFnBuilder generateIntrinsicsClone)
     (externals, _) <- insert externals (ExternalId "Hash" "create") (ExternFnBuilder generateHashCreate)
     (externals, _) <- insert externals (ExternalId "Hash" "finish") (ExternFnBuilder generateHashFinish)
+    (externals, _) <- insert externals (ExternalId "Time" "now") (ExternFnBuilder generateTimeNow)
+    (externals, _) <- insert externals (ExternalId "Time" "diffInMilliseconds") (ExternFnBuilder generateTimeDiffInMilliseconds)
     externals
 
 generateStringFields :: [LT.Type] -> Option LT.Lifetime -> [R.StructField]
@@ -1315,6 +1354,10 @@ generateHasherFields :: [LT.Type] -> Option LT.Lifetime -> [R.StructField]
 generateHasherFields args _ = do
     [R.StructField innerValueField (RT.Named ("std::collections::hash_map::DefaultHasher") [])]
 
+generateInstantFields :: [LT.Type] -> Option LT.Lifetime -> [R.StructField]
+generateInstantFields args _ = do
+    [R.StructField innerValueField (RT.Named ("std::time::Instant") [])]
+
 initializeExternalStructFields :: Map ExternalId ExternStructBuilder
 initializeExternalStructFields = do
     externals <- Map.empty
@@ -1331,4 +1374,5 @@ initializeExternalStructFields = do
     (externals, _) <- insert externals (ExternalId "Rc" "Rc") (ExternStructBuilder generateRcFields)
     (externals, _) <- insert externals (ExternalId "Cell" "Cell") (ExternStructBuilder generateCellFields)
     (externals, _) <- insert externals (ExternalId "Hash" "Hasher") (ExternStructBuilder generateHasherFields)
+    (externals, _) <- insert externals (ExternalId "Time" "Instant") (ExternStructBuilder generateInstantFields)
     externals

@@ -10,11 +10,11 @@ stage2: stage1 $(shell find src -type f)
 siko: stage0 $(shell find incremental -type f)
 	@./stage0 build ./incremental/src ./std -o ./siko
 
-test: stage1
-	@./tests stage1
+test: stage1 testrunner
+	@./testrunner stage1
 
-testrunner: stage0 $(shell find test_runner -type f)
-	@./stage0 build ./test_runner ./std -o ./testrunner
+testrunner: stage1 $(shell find test_runner -type f)
+	@./stage1 build ./test_runner ./std -o ./testrunner
 
 clean:
 	@rm -f stage0
