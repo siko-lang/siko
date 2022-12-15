@@ -53,8 +53,8 @@ data Statistics = { success :: Int,
                     failure :: Int
                   }
 
-runTest :: String -> Int -> Int -> Statistics -> TestInfo -> Statistics
-runTest binary total index stats test = do
+runTest :: String -> Int -> Int -> Statistics -> TestInfo -> Bool -> Statistics
+runTest binary total index stats test level2 = do
     i1 <- now
     print "--- Running test {} - {}/{} --- " % (test.name, total, index + 1)
     createDir "test_runs/{}" % test.name
@@ -66,6 +66,9 @@ runTest binary total index stats test = do
             "-nooptimization",
             "-o",
             test_runs_path]
+    cmd <- if level2
+    then List.push cmd "-vv"
+    else cmd
     //println "cmd {}" % cmd
     stats <- if runCommand cmd
     then do
@@ -83,16 +86,19 @@ runTest binary total index stats test = do
 main = do
     args <- getArgs
     argparser <- createArgParser "Siko"
-    stage0_cmd <- Command "stage0" [] "Run tests with stage0"
-    stage1_cmd <- Command "stage1" [] "Run tests with stage1"
-    stage2_cmd <- Command "stage2" [] "Run tests with stage2"
-    siko_cmd <- Command "siko" [] "Run tests with siko"
+    traceLevel2Option <- "trace level 2"
+    options <- [Simple (SimpleOption traceLevel2Option "-vv" "Enable level 2 traces" "Disabled")]
+    stage0_cmd <- Command "stage0" options "Run tests with stage0"
+    stage1_cmd <- Command "stage1" options "Run tests with stage1"
+    stage2_cmd <- Command "stage2" options "Run tests with stage2"
+    siko_cmd <- Command "siko" options "Run tests with siko"
     argparser <- addCommand argparser stage0_cmd
     argparser <- addCommand argparser stage1_cmd
     argparser <- addCommand argparser stage2_cmd
     argparser <- addCommand argparser siko_cmd
     case processArgs argparser args of
         Ok result -> do
+            level2 <- isValueSet result traceLevel2Option
             case result.command of
                 cmd -> do
                     cmd <- "./" + cmd
@@ -100,6 +106,6 @@ main = do
                     total <- List.getLength tests
                     tests <- tests |> List.sort
                     stats <- Statistics 0 0
-                    stats <- List.foldE stats tests (\stats, index, test -> runTest cmd total index stats test)
+                    stats <- List.foldE stats tests (\stats, index, test -> runTest cmd total index stats test level2)
                     println "Success {}, failure {}" % (stats.success, stats.failure)
         Err _ -> ()

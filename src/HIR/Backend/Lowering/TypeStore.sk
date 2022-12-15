@@ -127,9 +127,9 @@ checkImpl context type class_name = do
                 (context, exists))
         Err context -> (context, False)
 
-checkExternalImpl :: Context -> 
-                     HT.Type -> 
-                     HP.FullyQualifiedName -> 
+checkExternalImpl :: Context ->
+                     HT.Type ->
+                     HP.FullyQualifiedName ->
                      MD.ExternalClassImplKind -> Context
 checkExternalImpl context hir_type class_name external_class_impl = do
     case hir_type of
@@ -190,10 +190,10 @@ instantiateRecord context record record_type = do
     sub <- S.createSubstitution
     Result.unwrap (UD.instantiateRecord context record record_type)
 
-processAdt :: Context -> 
-              HT.Type -> 
-              HD.AlgebraicDataType -> 
-              String -> 
+processAdt :: Context ->
+              HT.Type ->
+              HD.AlgebraicDataType ->
+              String ->
               MT.Type -> Context
 processAdt context hir_type adt module_name mir_type = do
     identity <- MT.getIdentity mir_type
@@ -230,10 +230,10 @@ processAdt context hir_type adt module_name mir_type = do
         context <- addAdt context identity mir_adt
         context
 
-getMIRAdt :: Context -> 
-             HT.Type -> 
-             HD.AlgebraicDataType -> 
-             String -> 
+getMIRAdt :: Context ->
+             HT.Type ->
+             HD.AlgebraicDataType ->
+             String ->
              String -> (Context, MT.Type)
 getMIRAdt context hir_type adt module_name short_name = do
     (context, identity) <- getIdentity context module_name short_name
@@ -242,10 +242,10 @@ getMIRAdt context hir_type adt module_name short_name = do
     else MT.Adt identity
     (context, mir_type)
 
-processRecord :: Context -> 
-                 HT.Type -> 
-                 HD.Record -> 
-                 [HT.Type] -> 
+processRecord :: Context ->
+                 HT.Type ->
+                 HD.Record ->
+                 [HT.Type] ->
                  MT.Type -> Context
 processRecord context hir_type record type_args mir_type = do
     case mir_type of
@@ -269,9 +269,9 @@ processRecord context hir_type record type_args mir_type = do
             context
         _ -> panic "Record is not a record"
 
-getMIRRecord :: Context -> 
-                HT.Type -> 
-                String -> 
+getMIRRecord :: Context ->
+                HT.Type ->
+                String ->
                 String -> (Context, MT.Type)
 getMIRRecord context hir_type module_name short_name = do
     (context, identity) <- getIdentity context module_name short_name
@@ -301,9 +301,9 @@ getMIRTuple context arg_count = do
     mir_type <- MT.Record identity
     (context, mir_type)
 
-processTuple :: Context -> 
-                HT.Type -> 
-                [HT.Type] -> 
+processTuple :: Context ->
+                HT.Type ->
+                [HT.Type] ->
                 MT.Type -> Context
 processTuple context hir_type args mir_type = do
     case mir_type of

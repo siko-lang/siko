@@ -28,9 +28,9 @@ getVariantRecordType program lir_type name = do
         then return variant.type
         else index + 1
 
-generatePrintStr :: Program -> 
-                    TypeStore -> 
-                    [LT.Type] -> 
+generatePrintStr :: Program ->
+                    TypeStore ->
+                    [LT.Type] ->
                     LT.Type -> R.Expr
 generatePrintStr program type_store arg_types result_type = do
     rust_type <- convertType result_type
@@ -41,9 +41,9 @@ generatePrintStr program type_store arg_types result_type = do
     unit <- R.StructCtor (RT.showBase rust_type) []
     R.Block [print_call, unwrap_call, unit]
 
-generateStringAdd :: Program -> 
-                     TypeStore -> 
-                     [LT.Type] -> 
+generateStringAdd :: Program ->
+                     TypeStore ->
+                     [LT.Type] ->
                      LT.Type -> R.Expr
 generateStringAdd program type_store arg_types result_type = do
     rust_type <- convertType result_type
@@ -57,9 +57,9 @@ generateStringAdd program type_store arg_types result_type = do
     extend_call <- R.MethodCall (field_access0) "push_str" [R.Ref field_access1]
     R.Block [new_decl, extend_call, R.VarRef new]
 
-generateAdd :: Program -> 
-               TypeStore -> 
-               [LT.Type] -> 
+generateAdd :: Program ->
+               TypeStore ->
+               [LT.Type] ->
                LT.Type -> R.Expr
 generateAdd program type_store arg_types result_type = do
     rust_type <- convertType result_type
@@ -71,9 +71,9 @@ generateAdd program type_store arg_types result_type = do
     struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef new)]
     R.Block [new_decl, struct_ctor]
 
-generateSub :: Program -> 
-               TypeStore -> 
-               [LT.Type] -> 
+generateSub :: Program ->
+               TypeStore ->
+               [LT.Type] ->
                LT.Type -> R.Expr
 generateSub program type_store arg_types result_type = do
     rust_type <- convertType result_type
@@ -85,9 +85,9 @@ generateSub program type_store arg_types result_type = do
     struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef new)]
     R.Block [new_decl, struct_ctor]
 
-generateMul :: Program -> 
-               TypeStore -> 
-               [LT.Type] -> 
+generateMul :: Program ->
+               TypeStore ->
+               [LT.Type] ->
                LT.Type -> R.Expr
 generateMul program type_store arg_types result_type = do
     rust_type <- convertType result_type
@@ -99,9 +99,9 @@ generateMul program type_store arg_types result_type = do
     struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef new)]
     R.Block [new_decl, struct_ctor]
 
-generateDiv :: Program -> 
-               TypeStore -> 
-               [LT.Type] -> 
+generateDiv :: Program ->
+               TypeStore ->
+               [LT.Type] ->
                LT.Type -> R.Expr
 generateDiv program type_store arg_types result_type = do
     rust_type <- convertType result_type
@@ -113,9 +113,9 @@ generateDiv program type_store arg_types result_type = do
     struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef new)]
     R.Block [new_decl, struct_ctor]
 
-generateRem :: Program -> 
-               TypeStore -> 
-               [LT.Type] -> 
+generateRem :: Program ->
+               TypeStore ->
+               [LT.Type] ->
                LT.Type -> R.Expr
 generateRem program type_store arg_types result_type = do
     rust_type <- convertType result_type
@@ -127,9 +127,9 @@ generateRem program type_store arg_types result_type = do
     struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef new)]
     R.Block [new_decl, struct_ctor]
 
-generateNegative :: Program -> 
-                    TypeStore -> 
-                    [LT.Type] -> 
+generateNegative :: Program ->
+                    TypeStore ->
+                    [LT.Type] ->
                     LT.Type -> R.Expr
 generateNegative program type_store arg_types result_type = do
     rust_type <- convertType result_type
@@ -139,9 +139,9 @@ generateNegative program type_store arg_types result_type = do
     struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef new)]
     R.Block [new_decl, struct_ctor]
 
-generateShow :: Program -> 
-                TypeStore -> 
-                [LT.Type] -> 
+generateShow :: Program ->
+                TypeStore ->
+                [LT.Type] ->
                 LT.Type -> R.Expr
 generateShow program type_store arg_types result_type = do
     rust_type <- convertType result_type
@@ -150,9 +150,9 @@ generateShow program type_store arg_types result_type = do
     struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField format]
     R.Block [struct_ctor]
 
-generatePartialCmp :: Program -> 
-                      TypeStore -> 
-                      [LT.Type] -> 
+generatePartialCmp :: Program ->
+                      TypeStore ->
+                      [LT.Type] ->
                       LT.Type -> R.Expr
 generatePartialCmp program type_store arg_types result_type = do
     field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
@@ -190,9 +190,9 @@ generatePartialCmp program type_store arg_types result_type = do
     match <- R.Match partial_cmp_call [some_case, none_case]
     R.Block [match]
 
-generateCmp :: Program -> 
-               TypeStore -> 
-               [LT.Type] -> 
+generateCmp :: Program ->
+               TypeStore ->
+               [LT.Type] ->
                LT.Type -> R.Expr
 generateCmp program type_store arg_types result_type = do
     field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
@@ -267,9 +267,9 @@ sikoOptionalOrderingToRustOptionalOrdering program partial_ord_expr optional_ord
     cases <- [some_case, none_case]
     R.Match partial_ord_expr cases
 
-generateEq :: Program -> 
-              TypeStore -> 
-              [LT.Type] -> 
+generateEq :: Program ->
+              TypeStore ->
+              [LT.Type] ->
               LT.Type -> R.Expr
 generateEq program type_store arg_types result_type = do
     rust_result_type <- convertType result_type
@@ -279,9 +279,9 @@ generateEq program type_store arg_types result_type = do
     match <- rustBoolToSikoBool program eq_call result_type
     R.Block [match]
 
-generateOpAnd :: Program -> 
-                 TypeStore -> 
-                 [LT.Type] -> 
+generateOpAnd :: Program ->
+                 TypeStore ->
+                 [LT.Type] ->
                  LT.Type -> R.Expr
 generateOpAnd program type_store arg_types result_type = do
     rust_result_type <- convertType result_type
@@ -313,9 +313,9 @@ generateOpAnd program type_store arg_types result_type = do
     match <- R.Match (R.VarRef (getArgName 0)) cases
     R.Block [match]
 
-generateOpOr :: Program -> 
-                TypeStore -> 
-                [LT.Type] -> 
+generateOpOr :: Program ->
+                TypeStore ->
+                [LT.Type] ->
                 LT.Type -> R.Expr
 generateOpOr program type_store arg_types result_type = do
     rust_result_type <- convertType result_type
@@ -347,9 +347,9 @@ generateOpOr program type_store arg_types result_type = do
     match <- R.Match (R.VarRef (getArgName 0)) cases
     R.Block [match]
 
-generateGetDiscriminant :: Program -> 
-                           TypeStore -> 
-                           [LT.Type] -> 
+generateGetDiscriminant :: Program ->
+                           TypeStore ->
+                           [LT.Type] ->
                            LT.Type -> R.Expr
 generateGetDiscriminant program type_store arg_types result_type = do
     arg_type <- atIndex arg_types 0
@@ -374,9 +374,9 @@ generateGetDiscriminant program type_store arg_types result_type = do
             R.Block [struct_ctor]
         _ -> panic "getDiscriminant not implemented for special types {}" % arg_type
 
-generateAssert :: Program -> 
-                  TypeStore -> 
-                  [LT.Type] -> 
+generateAssert :: Program ->
+                  TypeStore ->
+                  [LT.Type] ->
                   LT.Type -> R.Expr
 generateAssert program type_store arg_types result_type = do
     rust_result_type <- convertType result_type
@@ -391,9 +391,9 @@ generateAssert program type_store arg_types result_type = do
     match <- R.Match (R.VarRef (getArgName 0)) cases
     R.Block [match]
 
-generateIsUppercase :: Program -> 
-                       TypeStore -> 
-                       [LT.Type] -> 
+generateIsUppercase :: Program ->
+                       TypeStore ->
+                       [LT.Type] ->
                        LT.Type -> R.Expr
 generateIsUppercase program type_store arg_types result_type = do
     field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
@@ -401,9 +401,9 @@ generateIsUppercase program type_store arg_types result_type = do
     match <- rustBoolToSikoBool program call result_type
     R.Block [match]
 
-generateReadTextFile :: Program -> 
-                        TypeStore -> 
-                        [LT.Type] -> 
+generateReadTextFile :: Program ->
+                        TypeStore ->
+                        [LT.Type] ->
                         LT.Type -> R.Expr
 generateReadTextFile program type_store arg_types result_type = do
     rust_result_type <- convertType result_type
@@ -415,9 +415,9 @@ generateReadTextFile program type_store arg_types result_type = do
     struct_ctor <- R.StructCtor (RT.showBase rust_result_type) [R.FieldInitItem innerValueField to_string_call]
     R.Block [struct_ctor]
 
-generateWriteTextFile :: Program -> 
-                         TypeStore -> 
-                         [LT.Type] -> 
+generateWriteTextFile :: Program ->
+                         TypeStore ->
+                         [LT.Type] ->
                          LT.Type -> R.Expr
 generateWriteTextFile program type_store arg_types result_type = do
     rust_result_type <- convertType result_type
@@ -428,9 +428,9 @@ generateWriteTextFile program type_store arg_types result_type = do
     struct_ctor <- R.StructCtor (RT.showBase rust_result_type) []
     R.Block [write_call, struct_ctor]
 
-generateGetArgs :: Program -> 
-                   TypeStore -> 
-                   [LT.Type] -> 
+generateGetArgs :: Program ->
+                   TypeStore ->
+                   [LT.Type] ->
                    LT.Type -> R.Expr
 generateGetArgs program type_store arg_types result_type = do
     rust_result_type <- convertType result_type
@@ -445,18 +445,18 @@ generateGetArgs program type_store arg_types result_type = do
     struct_ctor <- R.StructCtor (RT.showBase rust_result_type) [R.FieldInitItem innerValueField (R.VarRef args)]
     R.Block [args_decl, struct_ctor]
 
-generateIsDir :: Program -> 
-                 TypeStore -> 
-                 [LT.Type] -> 
+generateIsDir :: Program ->
+                 TypeStore ->
+                 [LT.Type] ->
                  LT.Type -> R.Expr
 generateIsDir program type_store arg_types result_type = do
     field_access <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
     is_dir_call <- R.MethodCall (R.FunctionCall "std::path::Path::new" [R.Ref field_access]) "is_dir" []
     R.Block [rustBoolToSikoBool program is_dir_call result_type]
 
-generateCreateDir :: Program -> 
-                     TypeStore -> 
-                     [LT.Type] -> 
+generateCreateDir :: Program ->
+                     TypeStore ->
+                     [LT.Type] ->
                      LT.Type -> R.Expr
 generateCreateDir program type_store arg_types result_type = do
     field_access <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
@@ -465,9 +465,9 @@ generateCreateDir program type_store arg_types result_type = do
     is_ok_call <- R.MethodCall create_dir_call "is_ok" []
     R.Block [rustBoolToSikoBool program is_ok_call result_type]
 
-generateRunCommand :: Program -> 
-                      TypeStore -> 
-                      [LT.Type] -> 
+generateRunCommand :: Program ->
+                      TypeStore ->
+                      [LT.Type] ->
                       LT.Type -> R.Expr
 generateRunCommand program type_store arg_types result_type = do
     field_access <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
@@ -490,9 +490,9 @@ generateRunCommand program type_store arg_types result_type = do
              args2_decl,
              rustBoolToSikoBool program success_call result_type]
 
-generateListDir :: Program -> 
-                   TypeStore -> 
-                   [LT.Type] -> 
+generateListDir :: Program ->
+                   TypeStore ->
+                   [LT.Type] ->
                    LT.Type -> R.Expr
 generateListDir program type_store arg_types result_type = do
     entries <- "entries"
@@ -512,9 +512,9 @@ generateListDir program type_store arg_types result_type = do
     struct_ctor <- R.StructCtor (RT.showBase rust_result_type) [R.FieldInitItem innerValueField (R.VarRef entries)]
     R.Block [entries_decl, struct_ctor]
 
-generateIntParse :: Program -> 
-                    TypeStore -> 
-                    [LT.Type] -> 
+generateIntParse :: Program ->
+                    TypeStore ->
+                    [LT.Type] ->
                     LT.Type -> R.Expr
 generateIntParse program type_store arg_types result_type = do
     rust_result_type <- convertType result_type
@@ -539,9 +539,9 @@ generateIntParse program type_store arg_types result_type = do
     match <- R.Match parse_call cases
     R.Block [match]
 
-generateListAtIndex :: Program -> 
-                       TypeStore -> 
-                       [LT.Type] -> 
+generateListAtIndex :: Program ->
+                       TypeStore ->
+                       [LT.Type] ->
                        LT.Type -> R.Expr
 generateListAtIndex program type_store arg_types result_type = do
     rust_type <- convertType result_type
@@ -554,9 +554,9 @@ generateListAtIndex program type_store arg_types result_type = do
     then R.Block [index]
     else R.Block [R.MethodCall (R.Deref index) cloneName []]
 
-generateListGetLength :: Program -> 
-                         TypeStore -> 
-                         [LT.Type] -> 
+generateListGetLength :: Program ->
+                         TypeStore ->
+                         [LT.Type] ->
                          LT.Type -> R.Expr
 generateListGetLength program type_store arg_types result_type = do
     rust_type <- convertType result_type
@@ -565,9 +565,9 @@ generateListGetLength program type_store arg_types result_type = do
     len_call <- R.MethodCall inner0 "len" []
     R.Block [R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.As len_call "i64")]]
 
-generateListDedup :: Program -> 
-                     TypeStore -> 
-                     [LT.Type] -> 
+generateListDedup :: Program ->
+                     TypeStore ->
+                     [LT.Type] ->
                      LT.Type -> R.Expr
 generateListDedup program type_store arg_types result_type = do
     rust_type <- convertType result_type
@@ -578,9 +578,9 @@ generateListDedup program type_store arg_types result_type = do
     dedup_call <- R.MethodCall (R.VarRef new) "dedup" []
     R.Block [new_decl, dedup_call, R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef new)]]
 
-generateListIsEmpty :: Program -> 
-                       TypeStore -> 
-                       [LT.Type] -> 
+generateListIsEmpty :: Program ->
+                       TypeStore ->
+                       [LT.Type] ->
                        LT.Type -> R.Expr
 generateListIsEmpty program type_store arg_types result_type = do
     rust_type <- convertType result_type
@@ -589,9 +589,9 @@ generateListIsEmpty program type_store arg_types result_type = do
     empty_call <- R.MethodCall inner0 "is_empty" []
     R.Block [rustBoolToSikoBool program empty_call result_type]
 
-generateListSort :: Program -> 
-                    TypeStore -> 
-                    [LT.Type] -> 
+generateListSort :: Program ->
+                    TypeStore ->
+                    [LT.Type] ->
                     LT.Type -> R.Expr
 generateListSort program type_store arg_types result_type = do
     rust_type <- convertType result_type
@@ -606,9 +606,9 @@ generateListSort program type_store arg_types result_type = do
     sort_call <- R.MethodCall (R.VarRef new) "sort" []
     R.Block [new_decl, sort_call, R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef new)]]
 
-generateListReverse :: Program -> 
-                       TypeStore -> 
-                       [LT.Type] -> 
+generateListReverse :: Program ->
+                       TypeStore ->
+                       [LT.Type] ->
                        LT.Type -> R.Expr
 generateListReverse program type_store arg_types result_type = do
     rust_type <- convertType result_type
@@ -623,9 +623,9 @@ generateListReverse program type_store arg_types result_type = do
     reverse_call <- R.MethodCall (R.VarRef new) "reverse" []
     R.Block [new_decl, reverse_call, R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef new)]]
 
-generateListTail :: Program -> 
-                    TypeStore -> 
-                    [LT.Type] -> 
+generateListTail :: Program ->
+                    TypeStore ->
+                    [LT.Type] ->
                     LT.Type -> R.Expr
 generateListTail program type_store arg_types result_type = do
     arg_type <- atIndex arg_types 0
@@ -651,9 +651,9 @@ generateListTail program type_store arg_types result_type = do
     if_expr <- R.If is_empty_call empty_branch non_empty_branch
     R.Block [if_expr]
 
-generateListAdd :: Program -> 
-                   TypeStore -> 
-                   [LT.Type] -> 
+generateListAdd :: Program ->
+                   TypeStore ->
+                   [LT.Type] ->
                    LT.Type -> R.Expr
 generateListAdd program type_store arg_types result_type = do
     rust_type <- convertType result_type
@@ -678,9 +678,9 @@ generateListAdd program type_store arg_types result_type = do
              add_call,
              struct_ctor]
 
-generateListPush :: Program -> 
-                    TypeStore -> 
-                    [LT.Type] -> 
+generateListPush :: Program ->
+                    TypeStore ->
+                    [LT.Type] ->
                     LT.Type -> R.Expr
 generateListPush program type_store arg_types result_type = do
     rust_type <- convertType result_type
@@ -702,9 +702,9 @@ generateListPush program type_store arg_types result_type = do
     struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef new0)]
     R.Block [new0_decl, add_call, struct_ctor]
 
-generateListRemove :: Program -> 
-                      TypeStore -> 
-                      [LT.Type] -> 
+generateListRemove :: Program ->
+                      TypeStore ->
+                      [LT.Type] ->
                       LT.Type -> R.Expr
 generateListRemove program type_store arg_types result_type = do
     rust_type <- convertType result_type
@@ -733,9 +733,9 @@ generateListRemove program type_store arg_types result_type = do
              remove_decl,
              struct_ctor]
 
-generateListSplit :: Program -> 
-                     TypeStore -> 
-                     [LT.Type] -> 
+generateListSplit :: Program ->
+                     TypeStore ->
+                     [LT.Type] ->
                      LT.Type -> R.Expr
 generateListSplit program type_store arg_types result_type = do
     rust_type <- convertType result_type
@@ -762,9 +762,9 @@ generateListSplit program type_store arg_types result_type = do
              second_decl,
              struct_ctor]
 
-generateListIntoIter :: Program -> 
-                        TypeStore -> 
-                        [LT.Type] -> 
+generateListIntoIter :: Program ->
+                        TypeStore ->
+                        [LT.Type] ->
                         LT.Type -> R.Expr
 generateListIntoIter program type_store arg_types result_type = do
     iterator_id <- LT.getIdentity result_type
@@ -786,9 +786,9 @@ generateListIntoIter program type_store arg_types result_type = do
     struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField iter_call]
     R.Block [new0_decl, struct_ctor]
 
-generateListNextItem :: Program -> 
-                        TypeStore -> 
-                        [LT.Type] -> 
+generateListNextItem :: Program ->
+                        TypeStore ->
+                        [LT.Type] ->
                         LT.Type -> R.Expr
 generateListNextItem program type_store arg_types result_type = do
     result_id <- LT.getIdentity result_type
@@ -845,9 +845,9 @@ generateListNextItem program type_store arg_types result_type = do
     match <- R.Match (R.VarRef value) cases
     R.Block [state_decl, value_decl, match]
 
-generateListWrite :: Program -> 
-                     TypeStore -> 
-                     [LT.Type] -> 
+generateListWrite :: Program ->
+                     TypeStore ->
+                     [LT.Type] ->
                      LT.Type -> R.Expr
 generateListWrite program type_store arg_types result_type = do
     rust_type <- convertType result_type
@@ -861,9 +861,9 @@ generateListWrite program type_store arg_types result_type = do
     assign0 <- R.Assign (R.Deref (R.FunctionCall "std::ops::IndexMut::index_mut" [R.MutRef (R.VarRef new), R.As inner1 "usize"])) arg2
     R.Block [new_decl, assign0, R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef new)]]
 
-generateListWithCapacity :: Program -> 
-                            TypeStore -> 
-                            [LT.Type] -> 
+generateListWithCapacity :: Program ->
+                            TypeStore ->
+                            [LT.Type] ->
                             LT.Type -> R.Expr
 generateListWithCapacity program type_store arg_types result_type = do
     rust_type <- convertType result_type
@@ -871,9 +871,9 @@ generateListWithCapacity program type_store arg_types result_type = do
     inner0 <- R.FieldAccess innerValueField arg0
     R.Block [R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.FunctionCall "std::vec::Vec::with_capacity" [R.As inner0 "usize"])]]
 
-generateStringChars :: Program -> 
-                       TypeStore -> 
-                       [LT.Type] -> 
+generateStringChars :: Program ->
+                       TypeStore ->
+                       [LT.Type] ->
                        LT.Type -> R.Expr
 generateStringChars program type_store arg_types result_type = do
     rust_type <- convertType result_type
@@ -887,9 +887,9 @@ generateStringChars program type_store arg_types result_type = do
     new_decl <- R.VarDecl new collect_call (Some (RT.Named "Vec<_>" []))
     R.Block [new_decl, R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef new)]]
 
-generateStringReplace :: Program -> 
-                         TypeStore -> 
-                         [LT.Type] -> 
+generateStringReplace :: Program ->
+                         TypeStore ->
+                         [LT.Type] ->
                          LT.Type -> R.Expr
 generateStringReplace program type_store arg_types result_type = do
     rust_type <- convertType result_type
@@ -903,9 +903,9 @@ generateStringReplace program type_store arg_types result_type = do
     new_decl <- R.VarDecl new (R.MethodCall inner0 "replace" [R.Ref inner1, R.MethodCall inner2 "as_ref" []]) None
     R.Block [new_decl, R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef new)]]
 
-generateStringSplit :: Program -> 
-                       TypeStore -> 
-                       [LT.Type] -> 
+generateStringSplit :: Program ->
+                       TypeStore ->
+                       [LT.Type] ->
                        LT.Type -> R.Expr
 generateStringSplit program type_store arg_types result_type = do
     rust_type <- convertType result_type
@@ -923,9 +923,9 @@ generateStringSplit program type_store arg_types result_type = do
     new_decl <- R.VarDecl new collect_call (Some (RT.Named "Vec<_>" []))
     R.Block [new_decl, R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef new)]]
 
-generateStringStartsWith :: Program -> 
-                            TypeStore -> 
-                            [LT.Type] -> 
+generateStringStartsWith :: Program ->
+                            TypeStore ->
+                            [LT.Type] ->
                             LT.Type -> R.Expr
 generateStringStartsWith program type_store arg_types result_type = do
     arg1_type <- atIndex arg_types 1
@@ -938,9 +938,9 @@ generateStringStartsWith program type_store arg_types result_type = do
     starts_with_call <- R.MethodCall field_access0 "starts_with" [field_access1]
     R.Block [rustBoolToSikoBool program starts_with_call result_type]
 
-generateStringEndsWith :: Program -> 
-                          TypeStore -> 
-                          [LT.Type] -> 
+generateStringEndsWith :: Program ->
+                          TypeStore ->
+                          [LT.Type] ->
                           LT.Type -> R.Expr
 generateStringEndsWith program type_store arg_types result_type = do
     arg1_type <- atIndex arg_types 1
@@ -953,9 +953,9 @@ generateStringEndsWith program type_store arg_types result_type = do
     starts_with_call <- R.MethodCall field_access0 "ends_with" [field_access1]
     R.Block [rustBoolToSikoBool program starts_with_call result_type]
 
-generateStringHashString :: Program -> 
-                            TypeStore -> 
-                            [LT.Type] -> 
+generateStringHashString :: Program ->
+                            TypeStore ->
+                            [LT.Type] ->
                             LT.Type -> R.Expr
 generateStringHashString program type_store arg_types result_type = do
     rust_type <- convertType result_type
@@ -968,9 +968,9 @@ generateStringHashString program type_store arg_types result_type = do
     hash_call <- R.FunctionCall "std::hash::Hash::hash" [R.Ref field_access0, R.MutRef (R.VarRef hasher)]
     R.Block [hasher_decl, hash_call, R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef hasher)]]
 
-generateIntHashInt :: Program -> 
-                      TypeStore -> 
-                      [LT.Type] -> 
+generateIntHashInt :: Program ->
+                      TypeStore ->
+                      [LT.Type] ->
                       LT.Type -> R.Expr
 generateIntHashInt program type_store arg_types result_type = do
     rust_type <- convertType result_type
@@ -983,25 +983,25 @@ generateIntHashInt program type_store arg_types result_type = do
     hash_call <- R.FunctionCall "std::hash::Hash::hash" [R.Ref field_access0, R.MutRef (R.VarRef hasher)]
     R.Block [hasher_decl, hash_call, R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef hasher)]]
 
-generateAbort :: Program -> 
-                 TypeStore -> 
-                 [LT.Type] -> 
+generateAbort :: Program ->
+                 TypeStore ->
+                 [LT.Type] ->
                  LT.Type -> R.Expr
 generateAbort program type_store arg_types result_type = do
     R.Block [R.FunctionCall "panic!" [R.StringLiteral "Abort called"]]
 
-generateExit :: Program -> 
-                TypeStore -> 
-                [LT.Type] -> 
+generateExit :: Program ->
+                TypeStore ->
+                [LT.Type] ->
                 LT.Type -> R.Expr
 generateExit program type_store arg_types result_type = do
     arg0 <- R.VarRef (getArgName 0)
     field_access0 <- R.FieldAccess innerValueField arg0
     R.Block [R.FunctionCall "std::process::exit" [R.As field_access0 "i32"]]
 
-generateReadLine :: Program -> 
-                    TypeStore -> 
-                    [LT.Type] -> 
+generateReadLine :: Program ->
+                    TypeStore ->
+                    [LT.Type] ->
                     LT.Type -> R.Expr
 generateReadLine program type_store arg_types result_type = do
     rust_type <- convertType result_type
@@ -1014,17 +1014,17 @@ generateReadLine program type_store arg_types result_type = do
     line_decl <- R.VarDecl "line" unwrap_call None
     R.Block [stdin_decl, line_decl, R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef "line")]]
 
-generateMapEmpty :: Program -> 
-                    TypeStore -> 
-                    [LT.Type] -> 
+generateMapEmpty :: Program ->
+                    TypeStore ->
+                    [LT.Type] ->
                     LT.Type -> R.Expr
 generateMapEmpty program type_store arg_types result_type = do
     rust_type <- convertType result_type
     R.Block [R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.FunctionCall "std::collections::BTreeMap::new" [])]]
 
-generateMapInsert :: Program -> 
-                     TypeStore -> 
-                     [LT.Type] -> 
+generateMapInsert :: Program ->
+                     TypeStore ->
+                     [LT.Type] ->
                      LT.Type -> R.Expr
 generateMapInsert program type_store arg_types result_type = do
     map_type <- atIndex arg_types 0
@@ -1078,9 +1078,9 @@ generateMapInsert program type_store arg_types result_type = do
     result_ctor <- R.StructCtor (RT.showBase rust_type) [field0_init, field1_init]
     R.Block [map_decl, value_decl, result_ctor]
 
-generateMapGet :: Program -> 
-                  TypeStore -> 
-                  [LT.Type] -> 
+generateMapGet :: Program ->
+                  TypeStore ->
+                  [LT.Type] ->
                   LT.Type -> R.Expr
 generateMapGet program type_store arg_types result_type = do
     rust_type <- convertType result_type
@@ -1112,9 +1112,9 @@ generateMapGet program type_store arg_types result_type = do
     match <- R.Match get_call [some_case, none_case]
     R.Block [map_decl, match]
 
-generateMapGetSize :: Program -> 
-                      TypeStore -> 
-                      [LT.Type] -> 
+generateMapGetSize :: Program ->
+                      TypeStore ->
+                      [LT.Type] ->
                       LT.Type -> R.Expr
 generateMapGetSize program type_store arg_types result_type = do
     rust_type <- convertType result_type
@@ -1122,9 +1122,9 @@ generateMapGetSize program type_store arg_types result_type = do
     len_call <- R.MethodCall arg0 "len" []
     R.Block [R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.As len_call "i64")]]
 
-generateMapRemove :: Program -> 
-                     TypeStore -> 
-                     [LT.Type] -> 
+generateMapRemove :: Program ->
+                     TypeStore ->
+                     [LT.Type] ->
                      LT.Type -> R.Expr
 generateMapRemove program type_store arg_types result_type = do
     rust_type <- convertType result_type
@@ -1166,9 +1166,9 @@ generateMapRemove program type_store arg_types result_type = do
     result_ctor <- R.StructCtor (RT.showBase rust_type) [field0_init, field1_init]
     R.Block [map_decl, value_decl, result_ctor]
 
-generateMapIntoIter :: Program -> 
-                       TypeStore -> 
-                       [LT.Type] -> 
+generateMapIntoIter :: Program ->
+                       TypeStore ->
+                       [LT.Type] ->
                        LT.Type -> R.Expr
 generateMapIntoIter program type_store arg_types result_type = do
     rust_type <- convertType result_type
@@ -1200,9 +1200,9 @@ generateMapIntoIter program type_store arg_types result_type = do
         struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField v_into_iter_call]
         R.Block [new0_decl, v_decl, struct_ctor]
 
-generateMapNextItem :: Program -> 
-                       TypeStore -> 
-                       [LT.Type] -> 
+generateMapNextItem :: Program ->
+                       TypeStore ->
+                       [LT.Type] ->
                        LT.Type -> R.Expr
 generateMapNextItem program type_store arg_types result_type = do
     iterator_type <- atIndex arg_types 0
@@ -1267,9 +1267,9 @@ generateMapNextItem program type_store arg_types result_type = do
     match <- R.Match (R.VarRef value) cases
     R.Block [state_decl, value_decl, match]
 
-generateRcCreate :: Program -> 
-                    TypeStore -> 
-                    [LT.Type] -> 
+generateRcCreate :: Program ->
+                    TypeStore ->
+                    [LT.Type] ->
                     LT.Type -> R.Expr
 generateRcCreate program type_store arg_types result_type = do
     rust_type <- convertType result_type
@@ -1283,9 +1283,9 @@ generateRcCreate program type_store arg_types result_type = do
     struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef new0)]
     R.Block [new0_decl, struct_ctor]
 
-generateRcGet :: Program -> 
-                 TypeStore -> 
-                 [LT.Type] -> 
+generateRcGet :: Program ->
+                 TypeStore ->
+                 [LT.Type] ->
                  LT.Type -> R.Expr
 generateRcGet program type_store arg_types result_type = do
     rust_type <- convertType result_type
@@ -1295,9 +1295,9 @@ generateRcGet program type_store arg_types result_type = do
     else R.Ref field_access0
     R.Block [item_ref]
 
-generateCellCreate :: Program -> 
-                      TypeStore -> 
-                      [LT.Type] -> 
+generateCellCreate :: Program ->
+                      TypeStore ->
+                      [LT.Type] ->
                       LT.Type -> R.Expr
 generateCellCreate program type_store arg_types result_type = do
     rust_type <- convertType result_type
@@ -1313,9 +1313,9 @@ generateCellCreate program type_store arg_types result_type = do
     struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.VarRef new0)]
     R.Block [new0_decl, struct_ctor]
 
-generateHashCreate :: Program -> 
-                      TypeStore -> 
-                      [LT.Type] -> 
+generateHashCreate :: Program ->
+                      TypeStore ->
+                      [LT.Type] ->
                       LT.Type -> R.Expr
 generateHashCreate program type_store arg_types result_type = do
     rust_type <- convertType result_type
@@ -1323,9 +1323,9 @@ generateHashCreate program type_store arg_types result_type = do
     struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField create_call]
     R.Block [struct_ctor]
 
-generateHashFinish :: Program -> 
-                      TypeStore -> 
-                      [LT.Type] -> 
+generateHashFinish :: Program ->
+                      TypeStore ->
+                      [LT.Type] ->
                       LT.Type -> R.Expr
 generateHashFinish program type_store arg_types result_type = do
     rust_type <- convertType result_type
@@ -1334,9 +1334,9 @@ generateHashFinish program type_store arg_types result_type = do
     struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.As finish_call "i64")]
     R.Block [struct_ctor]
 
-generateCellGet :: Program -> 
-                   TypeStore -> 
-                   [LT.Type] -> 
+generateCellGet :: Program ->
+                   TypeStore ->
+                   [LT.Type] ->
                    LT.Type -> R.Expr
 generateCellGet program type_store arg_types result_type = do
     rust_type <- convertType result_type
@@ -1348,9 +1348,9 @@ generateCellGet program type_store arg_types result_type = do
     item_ref <- R.MethodCall item_ref "unwrap" []
     R.Block [item_ref]
 
-generateCellPut :: Program -> 
-                   TypeStore -> 
-                   [LT.Type] -> 
+generateCellPut :: Program ->
+                   TypeStore ->
+                   [LT.Type] ->
                    LT.Type -> R.Expr
 generateCellPut program type_store arg_types result_type = do
     rust_type <- convertType result_type
@@ -1361,9 +1361,9 @@ generateCellPut program type_store arg_types result_type = do
     assign <- R.Assign (R.Deref (R.VarRef "cell")) (R.FunctionCall "std::option::Option::Some" [R.VarRef (getArgName 1)])
     R.Block [cell_decl, assign, struct_ctor]
 
-generateCellTake :: Program -> 
-                    TypeStore -> 
-                    [LT.Type] -> 
+generateCellTake :: Program ->
+                    TypeStore ->
+                    [LT.Type] ->
                     LT.Type -> R.Expr
 generateCellTake program type_store arg_types result_type = do
     field_access0 <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
@@ -1374,25 +1374,25 @@ generateCellTake program type_store arg_types result_type = do
     take <- R.MethodCall take "unwrap" []
     R.Block [cell_decl, take]
 
-generateIntrinsicsClone :: Program -> 
-                           TypeStore -> 
-                           [LT.Type] -> 
+generateIntrinsicsClone :: Program ->
+                           TypeStore ->
+                           [LT.Type] ->
                            LT.Type -> R.Expr
 generateIntrinsicsClone program type_store arg_types result_type = do
     R.Block [R.MethodCall (R.VarRef (getArgName 0)) cloneName []]
 
-generateTimeNow :: Program -> 
-                   TypeStore -> 
-                   [LT.Type] -> 
+generateTimeNow :: Program ->
+                   TypeStore ->
+                   [LT.Type] ->
                    LT.Type -> R.Expr
 generateTimeNow program type_store arg_types result_type = do
     rust_type <- convertType result_type
     struct_ctor <- R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.FunctionCall "std::time::Instant::now" [])]
     R.Block [struct_ctor]
 
-generateTimeDiffInMilliseconds :: Program -> 
-                                  TypeStore -> 
-                                  [LT.Type] -> 
+generateTimeDiffInMilliseconds :: Program ->
+                                  TypeStore ->
+                                  [LT.Type] ->
                                   LT.Type -> R.Expr
 generateTimeDiffInMilliseconds program type_store arg_types result_type = do
     rust_type <- convertType result_type

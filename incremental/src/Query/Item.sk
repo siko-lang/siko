@@ -40,7 +40,11 @@ data Command = CollectLocalItems Key
              | TransformUpdates Key
              | ResolveEffects Key
              | MonomorphizeFunction Key
-             | ConvertClosures Key
+             | MonomorphizeRecord Key
+             | MonomorphizeAdt Key
+             | ClosureConvertFunction Key
+             | ClosureConvertRecord Key
+             | ClosureConvertAdt Key
              | CreateClosureInstance Key
              | CreateClosure Key
              | LowerHIRFunction Key
@@ -71,14 +75,18 @@ getPriority cmd = case cmd of
     TransformUpdates _ -> 16
     ResolveEffects _ -> 17
     MonomorphizeFunction _ -> 18
-    ConvertClosures _ -> 19
-    CreateClosureInstance _ -> 20
-    CreateClosure _ -> 21
-    LowerHIRFunction _ -> 22
-    LowerTuple _ -> 23
-    LowerHIRRecord _ -> 24
-    LowerHIRAdt _ -> 25
-    RunLegacyBackend -> 26
+    MonomorphizeRecord _ -> 19
+    MonomorphizeAdt _ -> 20
+    ClosureConvertFunction _ -> 21
+    ClosureConvertRecord _ -> 22
+    ClosureConvertAdt _ -> 23
+    CreateClosureInstance _ -> 24
+    CreateClosure _ -> 25
+    LowerHIRFunction _ -> 26
+    LowerTuple _ -> 27
+    LowerHIRRecord _ -> 28
+    LowerHIRAdt _ -> 29
+    RunLegacyBackend -> 30
 
 data ItemKind = UnresolvedModuleKind
               | LocalItemsKind
@@ -107,7 +115,11 @@ data ItemKind = UnresolvedModuleKind
               | UpdateTransformedFunctionKind
               | ResolvedEffectsFunctionKind
               | MonomorphizedFunctionKind
+              | MonomorphizedRecordKind
+              | MonomorphizedAdtKind
               | ClosureConvertedFunctionKind
+              | ClosureConvertedRecordKind
+              | ClosureConvertedAdtKind
               | ClosureInstanceKind
               | ClosureKind
               | MIRFunctionKind
@@ -142,7 +154,11 @@ data Item = UnresolvedModule M.Module
           | UpdateTransformedFunction (HF.Function HT.Type)
           | ResolvedEffectsFunction (HF.Function HT.Type)
           | MonomorphizedFunction (HF.Function HT.Type)
+          | MonomorphizedRecord HD.Record
+          | MonomorphizedAdt HD.AlgebraicDataType
           | ClosureConvertedFunction (HF.Function HT.Type)
+          | ClosureConvertedRecord HD.Record
+          | ClosureConvertedAdt HD.AlgebraicDataType
           | ClosureInstance
           | Closure
           | MIRFunction MF.Function
@@ -177,7 +193,11 @@ data Key = UnresolvedModuleKey String
          | UpdateTransformedFunctionKey FQ.FullyQualifiedName
          | ResolvedEffectsFunctionKey FQ.FullyQualifiedName
          | MonomorphizedFunctionKey FQ.FullyQualifiedName
+         | MonomorphizedRecordKey FQ.FullyQualifiedName
+         | MonomorphizedAdtKey FQ.FullyQualifiedName
          | ClosureConvertedFunctionKey FQ.FullyQualifiedName
+         | ClosureConvertedRecordKey FQ.FullyQualifiedName
+         | ClosureConvertedAdtKey FQ.FullyQualifiedName
          | ClosureInstanceKey CL.ClosureInstance
          | ClosureKey FQ.FullyQualifiedName
          | MIRFunctionKey MI.Identity
@@ -320,10 +340,30 @@ asMonomorphizedFunction item = case item of
     MonomorphizedFunction f -> f
     _ -> panic "{} is not MonomorphizedFunction" % item
 
+asMonomorphizedRecord :: Item -> HD.Record
+asMonomorphizedRecord item = case item of
+    MonomorphizedRecord r -> r
+    _ -> panic "{} is not MonomorphizedRecord" % item
+
+asMonomorphizedAdt :: Item -> HD.AlgebraicDataType
+asMonomorphizedAdt item = case item of
+    MonomorphizedAdt a -> a
+    _ -> panic "{} is not MonomorphizedAdt" % item
+
 asClosureConvertedFunction :: Item -> HF.Function HT.Type
 asClosureConvertedFunction item = case item of
     ClosureConvertedFunction f -> f
     _ -> panic "{} is not ClosureConvertedFunction" % item
+
+asClosureConvertedRecord :: Item -> HD.Record
+asClosureConvertedRecord item = case item of
+    ClosureConvertedRecord r -> r
+    _ -> panic "{} is not ClosureConvertedRecord" % item
+
+asClosureConvertedAdt :: Item -> HD.AlgebraicDataType
+asClosureConvertedAdt item = case item of
+    ClosureConvertedAdt a -> a
+    _ -> panic "{} is not ClosureConvertedAdt" % item
 
 getModuleName :: Key -> String
 getModuleName key = case key of
@@ -354,7 +394,11 @@ getModuleName key = case key of
     UpdateTransformedFunctionKey qn -> SS.get (FQ.getModuleName qn)
     ResolvedEffectsFunctionKey qn -> SS.get (FQ.getModuleName qn)
     MonomorphizedFunctionKey qn -> SS.get (FQ.getModuleName qn)
+    MonomorphizedRecordKey qn -> SS.get (FQ.getModuleName qn)
+    MonomorphizedAdtKey qn -> SS.get (FQ.getModuleName qn)
     ClosureConvertedFunctionKey qn -> SS.get (FQ.getModuleName qn)
+    ClosureConvertedRecordKey qn -> SS.get (FQ.getModuleName qn)
+    ClosureConvertedAdtKey qn -> SS.get (FQ.getModuleName qn)
     ClosureInstanceKey _ -> "getModuleName called for {}" % key
     ClosureKey qn -> SS.get (FQ.getModuleName qn)
     MIRFunctionKey (MI.Identity qn) -> SS.get (FQ.getModuleName qn)
@@ -390,7 +434,11 @@ getFullyQualifiedName key = case key of
     UpdateTransformedFunctionKey qn -> qn
     ResolvedEffectsFunctionKey qn -> qn
     MonomorphizedFunctionKey qn -> qn
+    MonomorphizedRecordKey qn -> qn
+    MonomorphizedAdtKey qn -> qn
     ClosureConvertedFunctionKey qn -> qn
+    ClosureConvertedRecordKey qn -> qn
+    ClosureConvertedAdtKey qn -> qn
     ClosureInstanceKey _ -> panic "getFullyQualifiedName called for {}" % key
     ClosureKey qn -> qn
     MIRFunctionKey (MI.Identity qn) -> qn
@@ -426,7 +474,11 @@ getKind item = case item of
     UpdateTransformedFunction _ -> UpdateTransformedFunctionKind
     ResolvedEffectsFunction _ -> ResolvedEffectsFunctionKind
     MonomorphizedFunction _ -> MonomorphizedFunctionKind
+    MonomorphizedRecord _ -> MonomorphizedRecordKind
+    MonomorphizedAdt _ -> MonomorphizedAdtKind
     ClosureConvertedFunction _ -> ClosureConvertedFunctionKind
+    ClosureConvertedRecord _ -> ClosureConvertedRecordKind
+    ClosureConvertedAdt _ -> ClosureConvertedAdtKind
     ClosureInstance -> ClosureInstanceKind
     Closure -> ClosureKind
     MIRFunction _ -> MIRFunctionKind

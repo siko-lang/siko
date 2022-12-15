@@ -36,9 +36,9 @@ createEffectSignatureSetFrom type = do
     EffectSignatureSet signatures
 
 removeEffects a :: (StateProvider a) => 
-                   TExpr.Context a -> 
-                   EffectSignatureSet -> 
-                   [T.Type] -> 
+                   TExpr.Context a ->
+                   EffectSignatureSet ->
+                   [T.Type] ->
                    Location -> (TExpr.Context a, EffectSignatureSet)
 removeEffects context sig effects location = List.fold (context, sig) effects (\(context, sig), eff -> do
         qn <- T.getNameFromType eff
@@ -73,9 +73,9 @@ copyPatternEffect context source target = do
     context { type_store = type_store }
 
 setExprEffect a :: (StateProvider a) => 
-                   TExpr.Context a -> 
-                   E.ExprId -> 
-                   [EffectSignatureSet] -> 
+                   TExpr.Context a ->
+                   E.ExprId ->
+                   [EffectSignatureSet] ->
                    Location -> TExpr.Context a
 setExprEffect context expr sub_signatures location = do
     (context, target_signature) <- mergeEffectSignatures context emptyEffectSignatureSet sub_signatures location
@@ -83,9 +83,9 @@ setExprEffect context expr sub_signatures location = do
     context { type_store = type_store }
 
 updateExprEffect a :: (StateProvider a) => 
-                      TExpr.Context a -> 
-                      E.ExprId -> 
-                      [EffectSignatureSet] -> 
+                      TExpr.Context a ->
+                      E.ExprId ->
+                      [EffectSignatureSet] ->
                       Location -> TExpr.Context a
 updateExprEffect context expr sub_signatures location = do
     target_signature <- TS.getExprEffectSignature context.type_store context.group_index expr
@@ -94,9 +94,9 @@ updateExprEffect context expr sub_signatures location = do
     context { type_store = type_store }
 
 setPatternEffect a :: (StateProvider a) => 
-                      TExpr.Context a -> 
-                      P.PatternId -> 
-                      [EffectSignatureSet] -> 
+                      TExpr.Context a ->
+                      P.PatternId ->
+                      [EffectSignatureSet] ->
                       Location -> TExpr.Context a
 setPatternEffect context pattern sub_signatures location = do
     (context, target_signature) <- mergeEffectSignatures context emptyEffectSignatureSet sub_signatures location
@@ -104,17 +104,17 @@ setPatternEffect context pattern sub_signatures location = do
     context { type_store = type_store }
 
 mergeEffectSignatures a :: (StateProvider a) => 
-                           TExpr.Context a -> 
-                           EffectSignatureSet -> 
-                           [EffectSignatureSet] -> 
+                           TExpr.Context a ->
+                           EffectSignatureSet ->
+                           [EffectSignatureSet] ->
                            Location -> (TExpr.Context a, EffectSignatureSet)
 mergeEffectSignatures context target_signature sub_signatures location = List.fold (context, target_signature) sub_signatures (\(context, target_signature), sub_sig -> do
         mergeEffectSignatureSets context target_signature sub_sig location)
 
 mergeEffectSignatureSets a :: (StateProvider a) => 
-                              TExpr.Context a -> 
-                              EffectSignatureSet -> 
-                              EffectSignatureSet -> 
+                              TExpr.Context a ->
+                              EffectSignatureSet ->
+                              EffectSignatureSet ->
                               Location -> (TExpr.Context a, EffectSignatureSet)
 mergeEffectSignatureSets context set1 set2 location = do
     keys1 <- getKeys set1.signatures

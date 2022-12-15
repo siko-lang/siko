@@ -74,10 +74,10 @@ isVarBorrower kind_map var = case Map.get kind_map var of
     Some (M.Borrower _) -> True
     _ -> False
 
-isGroupBorrower :: [TypeVariableInfo] -> 
-                   Map OwnershipTypeVariable M.OwnershipKind -> 
-                   Map TypeVariableInfo [TypeVariableInfo] -> 
-                   GroupIndexMap TypeVariableInfo -> 
+isGroupBorrower :: [TypeVariableInfo] ->
+                   Map OwnershipTypeVariable M.OwnershipKind ->
+                   Map TypeVariableInfo [TypeVariableInfo] ->
+                   GroupIndexMap TypeVariableInfo ->
                    Map Int Bool -> Bool
 isGroupBorrower group_items kind_map info_dep_map group_index_map group_borrow_map = List.fold False group_items (\borrower, item -> do
         b <- isVarBorrower kind_map item.ownership_var
@@ -94,9 +94,9 @@ isGroupBorrower group_items kind_map info_dep_map group_index_map group_borrow_m
                     borrower)
             None -> panic "Info not found in info_dep_map")
 
-getGroupBorrowMap :: [DependencyGroup TypeVariableInfo] -> 
-                     Map TypeVariableInfo [TypeVariableInfo] -> 
-                     Map OwnershipTypeVariable M.OwnershipKind -> 
+getGroupBorrowMap :: [DependencyGroup TypeVariableInfo] ->
+                     Map TypeVariableInfo [TypeVariableInfo] ->
+                     Map OwnershipTypeVariable M.OwnershipKind ->
                      GroupIndexMap TypeVariableInfo -> Map Int Bool
 getGroupBorrowMap groups info_dep_map kind_map group_index_map = do
     loop (group_borrow_map, index) <- (Map.empty, 0) do
@@ -108,10 +108,10 @@ getGroupBorrowMap groups info_dep_map kind_map group_index_map = do
             group_borrow_map <- Map.put group_borrow_map index borrower
             (group_borrow_map, index + 1)
 
-getGroupDepMap :: DependencyGroup TypeVariableInfo -> 
-                  Int -> 
-                  Map TypeVariableInfo [TypeVariableInfo] -> 
-                  GroupIndexMap TypeVariableInfo -> 
+getGroupDepMap :: DependencyGroup TypeVariableInfo ->
+                  Int ->
+                  Map TypeVariableInfo [TypeVariableInfo] ->
+                  GroupIndexMap TypeVariableInfo ->
                   Map Int [Int] -> (Map Int [Int])
 getGroupDepMap group group_index info_dep_map group_index_map group_dep_map = do
     List.fold group_dep_map group.items (\group_dep_map, item -> case Map.get info_dep_map item of

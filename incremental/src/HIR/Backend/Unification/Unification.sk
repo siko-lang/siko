@@ -28,18 +28,18 @@ class (TypeVarGenerator a, DataProvider a, ClassProvider a) => Context a where
 
     ignoreNever a :: a -> Bool
 
-trySub a :: a -> 
-            Substitution -> 
-            TypeVar -> 
+trySub a :: a ->
+            Substitution ->
+            TypeVar ->
             Type -> Result (a, Substitution) (a, Substitution)
 trySub context sub var type = case addSubstitution sub var type of
     Ok sub -> Ok (context, sub)
     Err sub -> Err (context, sub)
 
 unifyArgs a :: (Context a) => 
-               a -> 
-               Substitution -> 
-               [Type] -> 
+               a ->
+               Substitution ->
+               [Type] ->
                [Type] -> Result (a, Substitution) (a, Substitution)
 unifyArgs context sub args1 args2 = do
     loop (context, sub, index) <- (context, sub, 0) do
@@ -64,10 +64,10 @@ getRowConstraints constraints = constraints |> List.iter |> Iterator.fold (\row_
         NeverLike -> row_constraints) []
 
 unifyVarWithType a :: (Context a) => 
-                      a -> 
-                      TypeVar -> 
-                      [Constraint] -> 
-                      Substitution -> 
+                      a ->
+                      TypeVar ->
+                      [Constraint] ->
+                      Substitution ->
                       Type -> Result (a, Substitution) (a, Substitution)
 unifyVarWithType context var constraints sub type = do
     row_constraints <- getRowConstraints constraints
@@ -131,11 +131,11 @@ createAssociatedTypeMap constraints = List.fold Map.empty constraints (\associat
         _ -> associated_type_map)
 
 unifyVarWithFixedArg a :: (Context a) => 
-                          a -> 
-                          Substitution -> 
-                          TypeVar -> 
-                          [Constraint] -> 
-                          [Constraint] -> 
+                          a ->
+                          Substitution ->
+                          TypeVar ->
+                          [Constraint] ->
+                          [Constraint] ->
                           Type -> Result (a, Substitution) (a, Substitution)
 unifyVarWithFixedArg context sub var var_constraints fixed_arg_constraints fixed_arg_type = do
     fixed_associated_type_map <- createAssociatedTypeMap fixed_arg_constraints
@@ -157,9 +157,9 @@ unifyVarWithFixedArg context sub var var_constraints fixed_arg_constraints fixed
     else Err (context, sub)
 
 mergeConstraints a :: (Context a) => 
-                      a -> 
-                      Substitution -> 
-                      [Constraint] -> 
+                      a ->
+                      Substitution ->
+                      [Constraint] ->
                       [Constraint] -> Result (a, Substitution) (a, Substitution)
 mergeConstraints context sub var1_constraints var2_constraints = do
     var1_associated_type_map <- createAssociatedTypeMap var1_constraints
@@ -175,9 +175,9 @@ mergeConstraints context sub var1_constraints var2_constraints = do
     else Err (context, sub)
 
 unify a :: (Context a) => 
-           a -> 
-           Substitution -> 
-           Type -> 
+           a ->
+           Substitution ->
+           Type ->
            Type -> Result (a, Substitution) (a, Substitution)
 unify context sub type1 type2 = do
     //println "UNIFICATION {} {}" % (TF.toString type1, TF.toString type2)

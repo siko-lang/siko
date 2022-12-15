@@ -25,9 +25,9 @@ processVariant state type_resolver variant = do
         (state, type_resolver, items)) (state, type_resolver, [])
     (state, type_resolver, HD.Variant name location items)
 
-processRecordField :: ResolverState -> 
-                      TypeResolverState -> 
-                      SD.RecordField -> 
+processRecordField :: ResolverState ->
+                      TypeResolverState ->
+                      SD.RecordField ->
                       Map SS.SharedString [Ident] -> (ResolverState,
                                                       TypeResolverState,
                                                       HD.RecordField,
@@ -49,9 +49,9 @@ createFunctionFromArgs args result_ty = do
             Function from to
         None -> result_ty
 
-processAdt :: ResolverState -> 
-              HP.Program () -> 
-              ModuleResolver -> 
+processAdt :: ResolverState ->
+              HP.Program () ->
+              ModuleResolver ->
               SD.AlgebraicDataType -> (ResolverState, HP.Program ())
 processAdt state hir_program module_resolver (SD.AlgebraicDataType name type_arguments variants derived_classes) = do
     (type_resolver, state) <- initTypeResolver module_resolver state type_arguments
@@ -79,9 +79,9 @@ processAdt state hir_program module_resolver (SD.AlgebraicDataType name type_arg
     state <- handleItemConflict state other_item location
     (state, hir_program)
 
-processRecord :: ResolverState -> 
-                 HP.Program () -> 
-                 ModuleResolver -> 
+processRecord :: ResolverState ->
+                 HP.Program () ->
+                 ModuleResolver ->
                  SD.Record -> (ResolverState, HP.Program ())
 processRecord state hir_program module_resolver (SD.Record name type_arguments fields external derived_classes implicit_member) = do
     (type_resolver, state) <- initTypeResolver module_resolver state type_arguments
@@ -110,9 +110,9 @@ processRecord state hir_program module_resolver (SD.Record name type_arguments f
     state <- handleItemConflict state other_item location
     (state, hir_program)
 
-processItem :: ResolverState -> 
-               HP.Program () -> 
-               ModuleResolver -> 
+processItem :: ResolverState ->
+               HP.Program () ->
+               ModuleResolver ->
                SM.Item -> (ResolverState, HP.Program ())
 processItem state hir_program module_resolver item = do
     case item of
@@ -124,9 +124,9 @@ processItem state hir_program module_resolver item = do
             (state, hir_program)
         _ -> (state, hir_program)
 
-processData :: ResolverState -> 
-               HP.Program () -> 
-               ModuleResolver -> 
+processData :: ResolverState ->
+               HP.Program () ->
+               ModuleResolver ->
                SM.Module -> (ResolverState, HP.Program ())
 processData state hir_program module_resolver mod = do
     (state, hir_program) <- mod.items |> List.iter |> Iterator.fold (\(state, hir_program), item -> processItem state hir_program module_resolver item) (state, hir_program)

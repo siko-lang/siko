@@ -128,10 +128,10 @@ processClassConstraints context location = do
                     //println "processClassConstraints failed: {} {}" % (TF.toString type, class_name)
                     break Err context
 
-unify :: Context -> 
-         S.Substitution -> 
-         T.Type -> 
-         T.Type -> 
+unify :: Context ->
+         S.Substitution ->
+         T.Type ->
+         T.Type ->
          Location -> Context
 unify context sub ty1 ty2 location = do
     //println "Unifying {} {}" % (TF.toString ty1, TF.toString ty2)
@@ -155,10 +155,10 @@ unify context sub ty1 ty2 location = do
             context
 // FIXME: is this really needed??
 
-unify2 :: Context -> 
-          S.Substitution -> 
-          T.Type -> 
-          T.Type -> 
+unify2 :: Context ->
+          S.Substitution ->
+          T.Type ->
+          T.Type ->
           Location -> (Context, S.Substitution)
 unify2 context sub ty1 ty2 location = do
     //println "Unifying {} {}" % (TF.toString ty1, TF.toString ty2)
@@ -174,18 +174,18 @@ unify2 context sub ty1 ty2 location = do
             context <- context { state = state }
             (context, sub)
 
-matchExprWith :: Context -> 
-                 E.ExprId -> 
-                 T.Type -> 
+matchExprWith :: Context ->
+                 E.ExprId ->
+                 T.Type ->
                  Location -> Context
 matchExprWith context expr_id type location = do
     expr_type <- getExprType context expr_id
     context <- unify context S.createSubstitution type expr_type location
     context
 
-matchExprs :: Context -> 
-              E.ExprId -> 
-              E.ExprId -> 
+matchExprs :: Context ->
+              E.ExprId ->
+              E.ExprId ->
               Location -> Context
 matchExprs context expr_id1 expr_id2 location = do
     expr_type1 <- getExprType context expr_id1
@@ -193,9 +193,9 @@ matchExprs context expr_id1 expr_id2 location = do
     context <- unify context S.createSubstitution expr_type1 expr_type2 location
     context
 
-matchExprWithPattern :: Context -> 
-                        E.ExprId -> 
-                        P.PatternId -> 
+matchExprWithPattern :: Context ->
+                        E.ExprId ->
+                        P.PatternId ->
                         Location -> Context
 matchExprWithPattern context expr_id pattern_id location = do
     expr_type <- getExprType context expr_id
@@ -251,9 +251,9 @@ data HandledEffect = { handlers :: Map PO.FullyQualifiedName [HandlerInfo] } der
 
 data HandledEffectInfo = { handled_effects :: Map PO.FullyQualifiedName HandledEffect } deriving (Show)
 
-addHandler :: Context -> 
-              HandledEffectInfo -> 
-              Int -> 
+addHandler :: Context ->
+              HandledEffectInfo ->
+              Int ->
               E.EffectHandler () -> HandledEffectInfo
 addHandler context info index (E.EffectHandler qn _ location) = do
     function <- PO.getFunction context.state.program qn
@@ -261,10 +261,10 @@ addHandler context info index (E.EffectHandler qn _ location) = do
     (handled_effects, _) <- alter (addEffect qn location index effect_name) effect_name info.handled_effects
     info { handled_effects = handled_effects }
     where
-        addEffect :: PO.FullyQualifiedName -> 
-                     Location -> 
-                     Int -> 
-                     PO.FullyQualifiedName -> 
+        addEffect :: PO.FullyQualifiedName ->
+                     Location ->
+                     Int ->
+                     PO.FullyQualifiedName ->
                      Option HandledEffect -> Option HandledEffect
         addEffect handler_name location index effect_name old_effect = case old_effect of
             Some handled_effect -> do
@@ -274,9 +274,9 @@ addHandler context info index (E.EffectHandler qn _ location) = do
                 handled_effect <- addEffectHandler (HandledEffect Map.empty) handler_name location index
                 Some handled_effect
 
-        addEffectHandler :: HandledEffect -> 
-                            PO.FullyQualifiedName -> 
-                            Location -> 
+        addEffectHandler :: HandledEffect ->
+                            PO.FullyQualifiedName ->
+                            Location ->
                             Int -> HandledEffect
         addEffectHandler handled_effect qn location index = do
             handlers <- add handled_effect.handlers qn (HandlerInfo location index)
@@ -321,10 +321,10 @@ getEffectHandlerType context E.EffectHandler _ selection _ = do
             (context, body_type)
         E.Default -> panic "Default eff not yet implemented"
 
-getEffectType :: HandledEffectInfo -> 
-                 [E.EffectHandler ()] -> 
-                 Context -> 
-                 PO.FullyQualifiedName -> 
+getEffectType :: HandledEffectInfo ->
+                 [E.EffectHandler ()] ->
+                 Context ->
+                 PO.FullyQualifiedName ->
                  HandledEffect -> (Context, T.Type)
 getEffectType info handlers context effect_name handled_effect = do
     eff_type_info <- createEffectTypeInfo context effect_name
@@ -490,10 +490,10 @@ initializeExprType current_fn_name context orig_expr = do
             context
     (context, orig_expr)
 
-checkFunctionCall :: Context -> 
-                     Option PO.FullyQualifiedName -> 
-                     E.ExprId -> 
-                     [E.Expr ()] -> 
+checkFunctionCall :: Context ->
+                     Option PO.FullyQualifiedName ->
+                     E.ExprId ->
+                     [E.Expr ()] ->
                      Location -> Context
 checkFunctionCall context qn expr_id args call_location = loop (context, index) <- (context, 0) do
         (ty, fn_ty) <- getExprAndFunctionCallType context expr_id
@@ -739,9 +739,9 @@ checkExprType context orig_expr = do
             context
     (context, orig_expr)
 
-addUndefinedVarToContext :: Context -> 
-                            [T.TypeVar] -> 
-                            T.TypeVar -> 
+addUndefinedVarToContext :: Context ->
+                            [T.TypeVar] ->
+                            T.TypeVar ->
                             Location -> (Context, [T.TypeVar])
 addUndefinedVarToContext context undefined_vars var location = if contains undefined_vars var
     then (context, undefined_vars)
@@ -752,10 +752,10 @@ addUndefinedVarToContext context undefined_vars var location = if contains undef
         undefined_vars <- push undefined_vars var
         (context, undefined_vars)
 
-checkUndefinedVars :: Context -> 
-                      [T.TypeVar] -> 
-                      T.Type -> 
-                      [T.TypeVar] -> 
+checkUndefinedVars :: Context ->
+                      [T.TypeVar] ->
+                      T.Type ->
+                      [T.TypeVar] ->
                       Location -> (Context, [T.TypeVar])
 checkUndefinedVars context undefined_vars type signature_vars location = do
     case type of

@@ -46,9 +46,9 @@ getNextPatternId context = do
     (context { pattern_id_gen = pattern_id_gen }, id)
 
 processBindVars a :: (StateProvider a) => 
-                     Context a -> 
-                     CC.AdditionalInfo -> 
-                     Map CC.ValuePath ValuePathAccessor -> 
+                     Context a ->
+                     CC.AdditionalInfo ->
+                     Map CC.ValuePath ValuePathAccessor ->
                      Location -> (Context a, [E.Expr T.Type])
 processBindVars context additional_info path_info_map location = do
     (context, var_decls) <- List.fold (context, []) additional_info.binds (\(context, var_decls), CC.CaseBind path bind_ref -> do
@@ -67,11 +67,11 @@ processBindVars context additional_info path_info_map location = do
     (context, var_decls)
 
 processCaseEnds a :: (StateProvider a) => 
-                     Context a -> 
-                     [CC.MatchInfo] -> 
-                     [E.Expr T.Type] -> 
-                     [Option (E.Expr T.Type)] -> 
-                     Map CC.ValuePath ValuePathAccessor -> 
+                     Context a ->
+                     [CC.MatchInfo] ->
+                     [E.Expr T.Type] ->
+                     [Option (E.Expr T.Type)] ->
+                     Map CC.ValuePath ValuePathAccessor ->
                      Location -> (Context a, E.Expr T.Type)
 processCaseEnds context match_infos case_bodies guards path_info_map location = do
     if getLength match_infos == 1
@@ -99,9 +99,9 @@ processCaseEnds context match_infos case_bodies guards path_info_map location = 
             None -> panic "Matchinfos ran out!"
 
 getFieldAccessor a :: (StateProvider a) => 
-                      Context a -> 
-                      CC.ValuePath -> 
-                      ValuePathAccessor -> 
+                      Context a ->
+                      CC.ValuePath ->
+                      ValuePathAccessor ->
                       Location -> (Context a, E.Expr T.Type)
 getFieldAccessor context path parent_accessor location = do
     (context, internal) <- getExpr context parent_accessor.internal
@@ -149,15 +149,15 @@ getFieldAccessor context path parent_accessor location = do
         _ -> (context, internal)
 
 createCase a :: (StateProvider a) => 
-                Context a -> 
-                CC.Condition -> 
-                CC.Choice -> 
-                CC.ValuePath -> 
-                Map CC.ValuePath ValuePathAccessor -> 
-                [E.Expr T.Type] -> 
-                [Option (E.Expr T.Type)] -> 
-                Location -> 
-                T.Type -> 
+                Context a ->
+                CC.Condition ->
+                CC.Choice ->
+                CC.ValuePath ->
+                Map CC.ValuePath ValuePathAccessor ->
+                [E.Expr T.Type] ->
+                [Option (E.Expr T.Type)] ->
+                Location ->
+                T.Type ->
                 (E.ExprId -> E.Expr T.Type) -> (Context a, E.Case T.Type)
 createCase context cond choice path path_info_map case_bodies guards location body_type pattern_var_ref = do
     (context, path_info_map, case_pattern) <- case cond of
@@ -211,11 +211,11 @@ createCase context cond choice path path_info_map case_bodies guards location bo
     (context, E.Case case_pattern choice_expr)
 
 processChoiceTree a :: (StateProvider a) => 
-                       Context a -> 
-                       CC.Choice -> 
-                       Map CC.ValuePath ValuePathAccessor -> 
-                       [E.Expr T.Type] -> 
-                       [Option (E.Expr T.Type)] -> 
+                       Context a ->
+                       CC.Choice ->
+                       Map CC.ValuePath ValuePathAccessor ->
+                       [E.Expr T.Type] ->
+                       [Option (E.Expr T.Type)] ->
                        Location -> (Context a, E.Expr T.Type)
 processChoiceTree context choice path_info_map case_bodies guards location = case choice of
     CC.Choice path subchoices -> do

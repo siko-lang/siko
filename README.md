@@ -26,7 +26,7 @@ The master branch is sometimes broken in various ways.
 
 ## Building instructions
 
-Dependencies: Rust, make, bash, python
+Dependencies: Rust, make
 
 Building the compiler from the generated Rust code
 ```

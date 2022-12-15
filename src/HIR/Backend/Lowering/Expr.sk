@@ -59,10 +59,10 @@ getFieldType mir_record field_name = do
         then return field.type
         else index + 1
 
-processBindArgs :: Context -> 
-                   S.Substitution -> 
-                   [HP.Pattern HT.Type] -> 
-                   (ME.ExprId -> ME.Expr) -> 
+processBindArgs :: Context ->
+                   S.Substitution ->
+                   [HP.Pattern HT.Type] ->
+                   (ME.ExprId -> ME.Expr) ->
                    MD.Record -> (Context, [ME.Expr])
 processBindArgs context sub args var_ref_expr mir_record = do
     (context, arg_exprs, _) <- args |> List.iter |> Iterator.fold (\(context, arg_exprs, index), arg -> do
@@ -75,9 +75,9 @@ processBindArgs context sub args var_ref_expr mir_record = do
         (context, arg_exprs, index + 1)) (context, [], 0)
     (context, arg_exprs)
 
-processBind :: Context -> 
-               S.Substitution -> 
-               HP.Pattern HT.Type -> 
+processBind :: Context ->
+               S.Substitution ->
+               HP.Pattern HT.Type ->
                ME.Expr -> (Context, [ME.Expr])
 processBind context sub (HP.Pattern p id pattern_type _) rhs = do
     (context, unit_type) <- processType context (HT.Tuple [])
@@ -138,9 +138,9 @@ data ValuePathAccessor = { normal :: ME.ExprId -> ME.Expr,
                            internal :: ME.ExprId -> ME.Expr
                          }
 
-processBindVars :: Context -> 
-                   CC.AdditionalInfo -> 
-                   Map CC.ValuePath ValuePathAccessor -> 
+processBindVars :: Context ->
+                   CC.AdditionalInfo ->
+                   Map CC.ValuePath ValuePathAccessor ->
                    MT.Type -> (Context, [ME.Expr])
 processBindVars context additional_info path_info_map unit_type = do
     (context, var_decls) <- additional_info.binds |> List.iter |> Iterator.fold (\(context, var_decls), CC.CaseBind path bind_ref -> do
@@ -156,12 +156,12 @@ processBindVars context additional_info path_info_map unit_type = do
         (context, var_decls)) (context, [])
     (context, var_decls)
 
-processCaseEnds :: Context -> 
-                   S.Substitution -> 
-                   [CC.MatchInfo] -> 
-                   [HE.Expr HT.Type] -> 
-                   [Option (HE.Expr HT.Type)] -> 
-                   Map CC.ValuePath ValuePathAccessor -> 
+processCaseEnds :: Context ->
+                   S.Substitution ->
+                   [CC.MatchInfo] ->
+                   [HE.Expr HT.Type] ->
+                   [Option (HE.Expr HT.Type)] ->
+                   Map CC.ValuePath ValuePathAccessor ->
                    MT.Type -> (Context, ME.Expr)
 processCaseEnds context sub match_infos hir_case_bodies hir_guards path_info_map unit_type = do
     if getLength match_infos == 1
@@ -197,11 +197,11 @@ processCaseEnds context sub match_infos hir_case_bodies hir_guards path_info_map
                 (context, result)
             None -> panic "Matchinfos ran out!"
 
-processChoiceTree :: Context -> 
-                     S.Substitution -> 
-                     CC.Choice -> 
-                     Map CC.ValuePath ValuePathAccessor -> 
-                     [HE.Expr HT.Type] -> 
+processChoiceTree :: Context ->
+                     S.Substitution ->
+                     CC.Choice ->
+                     Map CC.ValuePath ValuePathAccessor ->
+                     [HE.Expr HT.Type] ->
                      [Option (HE.Expr HT.Type)] -> (Context, ME.Expr)
 processChoiceTree context sub choice path_info_map hir_case_bodies hir_guards = do
     (context, unit_type) <- processType context (HT.Tuple [])
@@ -311,9 +311,9 @@ patternToVar context pattern_id = do
             context <- context { pattern_vars = pattern_vars }
             (context, var)
 
-processDynamicFunctionCall :: Context -> 
-                              HT.Type -> 
-                              [ME.Expr] -> 
+processDynamicFunctionCall :: Context ->
+                              HT.Type ->
+                              [ME.Expr] ->
                               ME.Expr -> (Context, [ME.Expr])
 processDynamicFunctionCall context receiver_type mir_args mir_receiver = do
     (context, calls) <- loop (context, receiver_type, args, receiver, calls) <- (context, receiver_type, mir_args, mir_receiver, []) do
@@ -341,12 +341,12 @@ processDynamicFunctionCall context receiver_type mir_args mir_receiver = do
                 break (context, calls)
     (context, calls)
 
-processClassMemberCall :: Context -> 
-                          HT.Type -> 
-                          HT.Type -> 
-                          HPO.FullyQualifiedName -> 
-                          HPO.FullyQualifiedName -> 
-                          [ME.Expr] -> 
+processClassMemberCall :: Context ->
+                          HT.Type ->
+                          HT.Type ->
+                          HPO.FullyQualifiedName ->
+                          HPO.FullyQualifiedName ->
+                          [ME.Expr] ->
                           Bool -> (Context, ME.Expr)
 processClassMemberCall context function_type arg_type class_name qn mir_args has_default_impl = do
     member_name <- HPO.getShortName qn
@@ -368,9 +368,9 @@ processClassMemberCall context function_type arg_type class_name qn mir_args has
     (context, function_id) <- FQ.insert context queue_item
     processStaticFunctionCall context mir_args function_type function_id hir_fn.arg_count
 
-processFormatExpr :: Context -> 
-                     String -> 
-                     [ME.Expr] -> 
+processFormatExpr :: Context ->
+                     String ->
+                     [ME.Expr] ->
                      [ME.Expr] -> (Context, ME.Expr)
 processFormatExpr context fmt exprs args = do
     subs <- String.split fmt "{}"
@@ -425,10 +425,10 @@ data ClosureType = { closure_type :: HT.Type,
                      arg_types :: [HT.Type]
                    } deriving (Show)
 
-processStaticFunctionCall :: Context -> 
-                             [ME.Expr] -> 
-                             HT.Type -> 
-                             MP.Identity -> 
+processStaticFunctionCall :: Context ->
+                             [ME.Expr] ->
+                             HT.Type ->
+                             MP.Identity ->
                              Int -> (Context, ME.Expr)
 processStaticFunctionCall context mir_args function_type function_id arg_count = do
     arg_types <- HT.getArgsLimited function_type (getLength mir_args)

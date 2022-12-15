@@ -41,7 +41,7 @@ createDriver config = do
     db <- DB.addCommandGenerator db I.ResolvedInstanceKind I.CheckInstance
     db <- DB.addCommandGenerator db I.FunctionGroupKind I.TypeCheckFunctionGroup
     db <- DB.addCommandGenerator db I.TypedFunctionKind I.TransformUpdates
-    db <- DB.addCommandGenerator db I.MonomorphizedFunctionKind I.ConvertClosures
+    db <- DB.addCommandGenerator db I.MonomorphizedFunctionKind I.ClosureConvertFunction
     db <- DB.addWatchedKind db I.ResolvedClassKind (Some I.RefreshClassDeps)
     db <- DB.addWatchedKind db I.FunctionDependencyInfoKind (Some I.CreateFunctionGroups)
     db <- DB.addWatchedKind db I.ClosureInstanceKind None
@@ -114,7 +114,11 @@ executeCommand driver cmd = do
             I.TransformUpdates key -> HL.transformUpdates driver key
             I.ResolveEffects key -> HL.resolveEffects driver key
             I.MonomorphizeFunction key -> HL.monomorphizeFunction driver key
-            I.ConvertClosures key -> HL.convertClosures driver key
+            I.MonomorphizeRecord key -> HL.monomorphizeRecord driver key
+            I.MonomorphizeAdt key -> HL.monomorphizeAdt driver key
+            I.ClosureConvertFunction key -> HL.closureConvertFunction driver key
+            I.ClosureConvertRecord key -> HL.closureConvertRecord driver key
+            I.ClosureConvertAdt key -> HL.closureConvertAdt driver key
             I.CreateClosureInstance key -> HL.createClosureInstance driver key
             I.CreateClosure key -> HL.createClosure driver key
             I.LowerHIRFunction key -> HL.lowerFunction driver key

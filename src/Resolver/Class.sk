@@ -23,9 +23,9 @@ import Siko.Util.SharedString as SS
 processClassDependencies :: ModuleResolver -> SC.Class -> SS.SharedString -> [HP.FullyQualifiedName]
 processClassDependencies module_resolver c type_arg = List.fold [] c.constraints (processClassDependency module_resolver type_arg)
     where
-        processClassDependency :: ModuleResolver -> 
-                                  SS.SharedString -> 
-                                  [HP.FullyQualifiedName] -> 
+        processClassDependency :: ModuleResolver ->
+                                  SS.SharedString ->
+                                  [HP.FullyQualifiedName] ->
                                   SC.Constraint -> [HP.FullyQualifiedName]
         processClassDependency module_resolver type_arg constraints constraint = do
             case resolveClass module_resolver constraint.class_name of
@@ -35,9 +35,9 @@ processClassDependencies module_resolver c type_arg = List.fold [] c.constraints
                     else constraints
                 Err err -> constraints
 
-processClass :: ResolverState -> 
-                HP.Program () -> 
-                ModuleResolver -> 
+processClass :: ResolverState ->
+                HP.Program () ->
+                ModuleResolver ->
                 SC.Class -> (ResolverState, HP.Program ())
 processClass state hir_program module_resolver c = do
     module_name <- module_resolver.module_name
@@ -94,10 +94,10 @@ processClass state hir_program module_resolver c = do
     state <- handleItemConflict state other_item location
     (state, hir_program)
 
-processInstance :: ResolverState -> 
-                   HP.Program () -> 
-                   ModuleResolver -> 
-                   SC.Instance -> 
+processInstance :: ResolverState ->
+                   HP.Program () ->
+                   ModuleResolver ->
+                   SC.Instance ->
                    Int -> (ResolverState, HP.Program ())
 processInstance state hir_program module_resolver i instance_id = do
     (Ident _ class_location) <- i.class_name
@@ -148,17 +148,17 @@ processInstance state hir_program module_resolver i instance_id = do
     hir_program <- HP.addInstance hir_program hir_instance
     (state, hir_program)
 
-processClasses :: ResolverState -> 
-                  HP.Program () -> 
-                  ModuleResolver -> 
+processClasses :: ResolverState ->
+                  HP.Program () ->
+                  ModuleResolver ->
                   SM.Module -> (ResolverState, HP.Program ())
 processClasses state hir_program module_resolver mod = List.fold (state, hir_program) mod.items (\(state, hir_program), item -> case item of
         SM.Class c -> processClass state hir_program module_resolver c
         _ -> (state, hir_program))
 
-processInstances :: ResolverState -> 
-                    HP.Program () -> 
-                    ModuleResolver -> 
+processInstances :: ResolverState ->
+                    HP.Program () ->
+                    ModuleResolver ->
                     SM.Module -> (ResolverState, HP.Program ())
 processInstances state hir_program module_resolver mod = do
     id <- getSize hir_program.instances

@@ -13,8 +13,8 @@ siko: stage0 $(shell find incremental -type f)
 test: stage1 testrunner
 	@./testrunner stage1
 
-testrunner: stage1 $(shell find test_runner -type f)
-	@./stage1 build ./test_runner ./std -o ./testrunner
+testrunner: stage0 $(shell find test_runner -type f)
+	@./stage0 build ./test_runner ./std -o ./testrunner
 
 clean:
 	@rm -f stage0

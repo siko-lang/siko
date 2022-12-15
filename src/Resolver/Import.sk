@@ -40,9 +40,9 @@ processLocals module_name locals = do
     imported_items <- locals |> List.iter |> Iterator.map (importLocalItem module_name) |> Iterator.fold (\total, items -> total + items) []
     imported_items
 
-importExportedItem :: Option Ident -> 
-                      SS.SharedString -> 
-                      Explicitness -> 
+importExportedItem :: Option Ident ->
+                      SS.SharedString ->
+                      Explicitness ->
                       Item -> [ImportedItem]
 importExportedItem alternative_name module_name explicitness item = do
     name <- getItemName item
@@ -91,15 +91,15 @@ isHidden imports imported_item = List.fold False imports (\total, i -> total || 
                 else False
             _ -> False
 
-processAllImports :: R.ResolverState -> 
-                     Map SS.SharedString [Item] -> 
-                     Map SS.SharedString [Item] -> 
+processAllImports :: R.ResolverState ->
+                     Map SS.SharedString [Item] ->
+                     Map SS.SharedString [Item] ->
                      Map SS.SharedString [I.Import] -> (R.ResolverState, Map SS.SharedString [ImportedItem])
 processAllImports state all_locals all_exports all_imports = Map.fold (state, empty) all_locals (processModule all_exports all_imports)
     where
-        processModule :: Map SS.SharedString [Item] -> 
-                         Map SS.SharedString [I.Import] -> 
-                         (R.ResolverState, Map SS.SharedString [ImportedItem]) -> 
+        processModule :: Map SS.SharedString [Item] ->
+                         Map SS.SharedString [I.Import] ->
+                         (R.ResolverState, Map SS.SharedString [ImportedItem]) ->
                          (SS.SharedString, [Item]) -> (R.ResolverState, Map SS.SharedString [ImportedItem])
         processModule all_exports all_imports (state, all_imported_items) (module_name, locals) = do
             module_imports <- Option.unwrap (get all_imports module_name)

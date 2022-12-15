@@ -94,9 +94,9 @@ isValidBorrow context ownership_var expr_id = do
         None -> True
     else is_valid_borrow
     where
-        checkExprs :: Context -> 
-                      Bool -> 
-                      [E.ExprId] -> 
+        checkExprs :: Context ->
+                      Bool ->
+                      [E.ExprId] ->
                       E.ExprId -> Bool
         checkExprs context is_valid_borrow expr_ids expr_id = List.fold is_valid_borrow expr_ids (\is_valid_borrow, dep -> do
                 if is_valid_borrow
@@ -137,11 +137,11 @@ getParentKind context parents = do
             (M.Borrower a, M.Owner) -> M.Borrower a
             (_, p) -> p)
 
-processCallContext :: Context -> 
-                      E.ExprId -> 
-                      Int -> 
-                      OwnershipTypeVariable -> 
-                      OwnershipTypeVariable -> 
+processCallContext :: Context ->
+                      E.ExprId ->
+                      Int ->
+                      OwnershipTypeVariable ->
+                      OwnershipTypeVariable ->
                       Option BorrowId -> Context
 processCallContext context call_id index from to to_borrow = do
     context <- eraseFunctionConverterBorrow context index
@@ -249,9 +249,9 @@ eraseFunctionConverterBorrow context index = do
     (function_converter_borrows, _) <- Map.remove context.function_converter_borrows index
     context { function_converter_borrows = function_converter_borrows }
 
-addFunctionConverterBorrow :: Context -> 
-                              Int -> 
-                              BorrowId -> 
+addFunctionConverterBorrow :: Context ->
+                              Int ->
+                              BorrowId ->
                               BorrowId -> Context
 addFunctionConverterBorrow context index a b = do
     //debugPrint context "addFunctionConverterBorrow {} {} {}" % (index, a, b)
@@ -420,16 +420,16 @@ dumpOwnership context = do
         println "dumpOwnership {} {} {}" % (expr_id, info, o1)
         context)
 
-processConstraints :: I.Identity -> 
-                      InferenceInfo -> 
-                      [C.Constraint] -> 
-                      Map E.ExprId [E.ExprId] -> 
-                      Map OwnershipTypeVariable [E.ExprId] -> 
-                      Map GroupTypeVariable [E.ExprId] -> 
-                      Map OwnershipTypeVariable [GroupTypeVariable] -> 
-                      [OwnershipTypeVariable] -> 
-                      Map E.ExprId CC.CallContext -> 
-                      InferenceMode -> 
+processConstraints :: I.Identity ->
+                      InferenceInfo ->
+                      [C.Constraint] ->
+                      Map E.ExprId [E.ExprId] ->
+                      Map OwnershipTypeVariable [E.ExprId] ->
+                      Map GroupTypeVariable [E.ExprId] ->
+                      Map OwnershipTypeVariable [GroupTypeVariable] ->
+                      [OwnershipTypeVariable] ->
+                      Map E.ExprId CC.CallContext ->
+                      InferenceMode ->
                       Map E.ExprId [OwnershipTypeVariable] -> InferenceInfo
 processConstraints function_id inference_info constraints invalid_borrow_map ownership_expr_map group_expr_map ownership_group_map result_vars call_context_map mode call_args = do
     // println "Invalid borrow map {}" % (invalid_borrow_map)

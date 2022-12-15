@@ -69,9 +69,9 @@ data InstanceResolver = { instance_map :: Map P.FullyQualifiedName (Map BaseType
 createInstanceResolver :: InstanceResolver
 createInstanceResolver = InstanceResolver empty
 
-addInstanceInfoToResolver :: InstanceResolver -> 
-                             P.FullyQualifiedName -> 
-                             BaseType -> 
+addInstanceInfoToResolver :: InstanceResolver ->
+                             P.FullyQualifiedName ->
+                             BaseType ->
                              InstanceInfo -> Result InstanceResolver (InstanceResolver, Location)
 addInstanceInfoToResolver instance_resolver class_name base_type instance_info = do
     case get instance_resolver.instance_map class_name of
@@ -96,9 +96,9 @@ addUserDefinedInstance instance_resolver class_name instance_info = do
     addInstanceInfoToResolver instance_resolver class_name base_type instance_info
 
 unifyTypes a :: (U.DataProvider a, U.ClassProvider a, U.TypeVarGenerator a, U.Context a) => 
-                a -> 
-                S.Substitution -> 
-                T.Type -> 
+                a ->
+                S.Substitution ->
+                T.Type ->
                 T.Type -> (a, S.Substitution, Bool)
 unifyTypes context sub type1 type2 = case U.unify context sub type1 type2 of
     Ok (context, sub) -> (context, sub, True)
@@ -107,11 +107,11 @@ unifyTypes context sub type1 type2 = case U.unify context sub type1 type2 of
         (context, sub, False)
 
 checkInstancesForBaseType a :: (U.DataProvider a, U.ClassProvider a, U.TypeVarGenerator a, U.Context a, HistoryProvider a) => 
-                               a -> 
-                               S.Substitution -> 
-                               T.Type -> 
-                               BaseType -> 
-                               Map BaseType InstanceInfo -> 
+                               a ->
+                               S.Substitution ->
+                               T.Type ->
+                               BaseType ->
+                               Map BaseType InstanceInfo ->
                                P.FullyQualifiedName -> Result (a, S.Substitution, InstanceInfo) a
 checkInstancesForBaseType context sub type base_type instance_info_map class_name = do
     //println "checkInstancesForBaseType {} {}" % (TF.toLongString type, base_type)
@@ -136,9 +136,9 @@ checkInstancesForBaseType context sub type base_type instance_info_map class_nam
             Err context
 
 hasInstance a :: (U.DataProvider a, U.ClassProvider a, U.TypeVarGenerator a, U.Context a, HistoryProvider a, InstanceResolverProvider a) => 
-                 a -> 
-                 S.Substitution -> 
-                 T.Type -> 
+                 a ->
+                 S.Substitution ->
+                 T.Type ->
                  P.FullyQualifiedName -> Result (a, S.Substitution, InstanceInfo) a
 hasInstance context sub type class_name = do
     base_type <- getBaseType type

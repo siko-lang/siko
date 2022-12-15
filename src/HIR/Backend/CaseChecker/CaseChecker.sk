@@ -307,9 +307,9 @@ finalizeCaseEnd match_infos = do
         else (match_infos, prev_guarded)) ([], True)
     match_infos
 
-processTree :: Choice -> 
-               Map ValuePath Condition -> 
-               CaseInfo -> 
+processTree :: Choice ->
+               Map ValuePath Condition ->
+               CaseInfo ->
                Bool -> (Choice, Bool)
 processTree choice context case_info finalize = case choice of
     Choice path choices -> do
@@ -406,9 +406,9 @@ checkBranches choice = case choice of
         else ([], found_cases)
     ElseNode -> panic "ElseNode reached"
 
-validateChoiceTree :: Context -> 
-                      Choice -> 
-                      Location -> 
+validateChoiceTree :: Context ->
+                      Choice ->
+                      Location ->
                       [E.Case T.Type] -> Context
 validateChoiceTree context choice location cases = do
     (missing_cases, found_cases) <- checkBranches choice
@@ -422,9 +422,9 @@ validateChoiceTree context choice location cases = do
     then context
     else addError context (NonExhaustiveCase location)
 
-checkCase :: Context -> 
-             E.ExprId -> 
-             E.Expr T.Type -> 
+checkCase :: Context ->
+             E.ExprId ->
+             E.Expr T.Type ->
              [E.Case T.Type] -> Result Choice [CaseCheckerError]
 checkCase context expr_id case_body cases = do
     (E.Expr _ body_id root_type location) <- case_body

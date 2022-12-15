@@ -90,16 +90,54 @@ monomorphizeFunction driver key = do
                     (state, monomorphized_fn, functions, records, adts) <- MO.monomorphizeFunction state base_qn type
                     item <- I.MonomorphizedFunction monomorphized_fn
                     cmds <- List.map functions (\qn -> I.MonomorphizeFunction (I.MonomorphizedFunctionKey qn))
+                    cmds <- List.map records (\qn -> I.MonomorphizeRecord (I.MonomorphizedRecordKey qn))
+                    cmds <- List.map adts (\qn -> I.MonomorphizeAdt (I.MonomorphizedAdtKey qn))
                     driver <- addToDb driver key item
                     addCommands driver cmds
                 qn -> panic "monomorphizeFunction called with unexpected qn {}" % qn
 
-convertClosures :: Driver -> I.Key -> Driver
-convertClosures driver key = do
+monomorphizeRecord :: Driver -> I.Key -> Driver
+monomorphizeRecord driver key = do
+    case DB.getOpt driver.db key of
+        Some monomorphized_record -> driver
+        None -> do
+            qn <- I.getFullyQualifiedName key
+            case qn of
+                FQ.Record name args -> do
+                    state <- BSP.createStateProvider driver
+                    (state, record, records, adts) <- MO.monomorphizeRecord state name args
+                    item <- I.MonomorphizedRecord record
+                    cmds <- List.map records (\qn -> I.MonomorphizeRecord (I.MonomorphizedRecordKey qn))
+                    cmds <- List.map adts (\qn -> I.MonomorphizeAdt (I.MonomorphizedAdtKey qn))
+                    cmds <- List.push cmds (I.ClosureConvertRecord (I.ClosureConvertedRecordKey qn))
+                    driver <- addToDb driver key item
+                    addCommands driver cmds
+                qn -> panic "monomorphizeRecord called with unexpected qn {}" % qn
+
+monomorphizeAdt :: Driver -> I.Key -> Driver
+monomorphizeAdt driver key = do
+    case DB.getOpt driver.db key of
+        Some monomorphized_adt -> driver
+        None -> do
+            qn <- I.getFullyQualifiedName key
+            case qn of
+                FQ.Adt name args -> do
+                    state <- BSP.createStateProvider driver
+                    (state, adt, records, adts) <- MO.monomorphizeAdt state name args
+                    item <- I.MonomorphizedAdt adt
+                    cmds <- List.map records (\qn -> I.MonomorphizeRecord (I.MonomorphizedRecordKey qn))
+                    cmds <- List.map adts (\qn -> I.MonomorphizeAdt (I.MonomorphizedAdtKey qn))
+                    cmds <- List.push cmds (I.ClosureConvertAdt (I.ClosureConvertedAdtKey qn))
+                    driver <- addToDb driver key item
+                    addCommands driver cmds
+                qn -> panic "monomorphizeAdt called with unexpected qn {}" % qn
+
+closureConvertFunction :: Driver -> I.Key -> Driver
+closureConvertFunction driver key = do
     fn <- DB.get driver.db key
     fn <- I.asMonomorphizedFunction fn
     state <- BSP.createStateProvider driver
-    (state, fn, closure_names, closure_instances) <- CC.convertClosures state fn
+    (state, fn, closure_names, closure_instances) <- CC.closureConvertFunction state fn
     cmds <- List.map closure_instances (\i -> I.CreateClosureInstance (I.ClosureInstanceKey i))
     driver <- addCommands driver cmds
     cmds <- List.map closure_names (\i -> I.CreateClosure (I.ClosureKey i))
@@ -113,6 +151,40 @@ convertClosures driver key = do
     then addCommands driver [I.LowerHIRFunction (I.MIRFunctionKey (MI.Identity qn)), I.RunLegacyBackend]
     else driver
     addToDb driver key item
+
+closureConvertRecord :: Driver -> I.Key -> Driver
+closureConvertRecord driver key = do
+    case DB.getOpt driver.db key of
+        Some _ -> driver
+        None -> do
+            qn <- I.getFullyQualifiedName key
+            record <- DB.get driver.db (I.MonomorphizedRecordKey qn)
+            record <- I.asMonomorphizedRecord record
+            state <- BSP.createStateProvider driver
+            (state, record, closure_names, closure_instances) <- CC.closureConvertRecord state record
+            cmds <- List.map closure_instances (\i -> I.CreateClosureInstance (I.ClosureInstanceKey i))
+            driver <- addCommands driver cmds
+            cmds <- List.map closure_names (\i -> I.CreateClosure (I.ClosureKey i))
+            driver <- addCommands driver cmds
+            item <- I.ClosureConvertedRecord record
+            addToDb driver key item
+
+closureConvertAdt :: Driver -> I.Key -> Driver
+closureConvertAdt driver key = do
+    case DB.getOpt driver.db key of
+        Some _ -> driver
+        None -> do
+            qn <- I.getFullyQualifiedName key
+            adt <- DB.get driver.db (I.MonomorphizedAdtKey qn)
+            adt <- I.asMonomorphizedAdt adt
+            state <- BSP.createStateProvider driver
+            (state, adt, closure_names, closure_instances) <- CC.closureConvertAdt state adt
+            cmds <- List.map closure_instances (\i -> I.CreateClosureInstance (I.ClosureInstanceKey i))
+            driver <- addCommands driver cmds
+            cmds <- List.map closure_names (\i -> I.CreateClosure (I.ClosureKey i))
+            driver <- addCommands driver cmds
+            item <- I.ClosureConvertedAdt adt
+            addToDb driver key item
 
 createClosureInstance :: Driver -> I.Key -> Driver
 createClosureInstance driver key = do

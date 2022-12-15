@@ -33,7 +33,9 @@ typeConverter sub context type = do
     //println "type {} context mapper {}" % (TF.toString type, context.mapper)
     (mapper, type) <- S.transform context.mapper type UUtil.remapType
     context <- context { mapper = mapper }
-    (context, S.apply type sub)
+    type <- S.apply type sub
+    (context, type) <- monomorphizeType context type
+    (context, type)
 
 addEffectless :: FQ.FullyQualifiedName -> FQ.FullyQualifiedName
 addEffectless qn = case qn of
@@ -50,10 +52,11 @@ processExpr context expr = do
             (mapper, state) <- UUtil.instantiateGenericMapper fn_type context.state
             mapper <- UUtil.skipNever mapper
             (mapper, fn_type) <- S.transform mapper fn_type UUtil.remapType
+            (context, fn_type) <- monomorphizeType context fn_type
             arg_types <- List.map args (\E.Expr _ _ t _ -> t)
-            // println "calling {}" % qn
-            // println "fn_type {}" % (TF.toString fn_type)
-            // println "arg_types {}" % (TF.toStringTypes arg_types)
+            println "calling {}" % qn
+            println "fn_type {}" % (TF.toString fn_type)
+            println "arg_types {}" % (TF.toStringTypes arg_types)
             (state, fn_type, sub) <- UUtil.getFunctionType state arg_types expr_type fn_type
             //println "result {}" % (TF.toString fn_type)
             context <- context { state = state }
@@ -105,32 +108,96 @@ processExpr context expr = do
 processPattern a :: (StateProvider a) => Context a -> P.Pattern T.Type -> (Context a, P.Pattern T.Type)
 processPattern context pattern = (context, pattern)
 
+monomorphizeType a :: (StateProvider a) => Context a -> T.Type -> (Context a, T.Type)
+monomorphizeType context type = case type of
+    T.Var _ _ -> panic "TypeVar in monomorphizeType"
+    T.FixedTypeArg _ _ -> panic "FixedTypeArg in monomorphizeType"
+    T.Named qn args -> case QL.getAdtOpt context.state qn of
+        Some adt -> do
+            qn <- FQ.Adt qn args
+            context <- context { adts = List.push context.adts qn }
+            (context, T.Named qn [])
+        None -> do
+            qn <- FQ.Record qn args
+            context <- context { records = List.push context.records qn }
+            (context, T.Named qn [])
+    T.Function from to -> do
+        (context, from) <- monomorphizeType context from
+        (context, to) <- monomorphizeType context to
+        (context, T.Function from to)
+    T.Never -> (context, T.Never)
+    T.Ref l t -> do
+        (context, t) <- monomorphizeType context t
+        (context, T.Ref l t)
+    T.Owner t -> do
+        (context, t) <- monomorphizeType context t
+        (context, T.Owner t)
+    T.Tuple args -> do
+        (context, args) <- List.mapS context args monomorphizeType
+        (context, T.Tuple args)
+
 monomorphizeFunction a :: (StateProvider a) => a -> FQ.FullyQualifiedName -> T.Type -> (a,
                                                                                         F.Function T.Type,
                                                                                         [FQ.FullyQualifiedName],
                                                                                         [FQ.FullyQualifiedName],
                                                                                         [FQ.FullyQualifiedName])
 monomorphizeFunction state orig_qn type = do
-    //println "monomorphizeFunction {} with {}" % (orig_qn, TF.toString type)
+    println "monomorphizeFunction {} with {}" % (orig_qn, TF.toString type)
     fn <- QL.getResolvedEffectsFunction state orig_qn
-    (state, functions, records, adts, kind) <- case fn.kind of
+    sub <- S.createSubstitution
+    fn_type <- case fn.type of
+        Some fn_type -> fn_type
+        None -> panic "No type for fn in monomorphization {}" % orig_qn
+    (mapper, state) <- UUtil.instantiateGenericMapper fn_type state
+    mapper <- UUtil.skipNever mapper
+    (mapper, fn_type) <- S.transform mapper fn_type UUtil.remapType
+    context <- Context state [] [] [] mapper
+    (context, sub) <- case U.unify context.state sub type fn_type of
+        Ok (state, sub) -> (context { state = state }, sub)
+        Err _ -> panic "Monomorphization: failed to unify {} {}" % (TF.toString type, TF.toString fn_type)
+    (context, type) <- monomorphizeType context type
+    fn <- fn { type = Some type }
+    (context, kind) <- case fn.kind of
         F.Normal info -> do
-            sub <- S.createSubstitution
-            fn_type <- case fn.type of
-                Some fn_type -> fn_type
-                None -> panic "No type for fn in monomorphization {}" % orig_qn
-            (mapper, state) <- UUtil.instantiateGenericMapper fn_type state
-            mapper <- UUtil.skipNever mapper
-            (mapper, fn_type) <- S.transform mapper fn_type UUtil.remapType
-            context <- Context state [] [] [] mapper
-            (context, sub) <- case U.unify context.state sub type fn_type of
-                Ok (state, sub) -> (context { state = state }, sub)
-                Err _ -> panic "Monomorphization: failed to unify {} {}" % (TF.toString type, TF.toString fn_type)
             traversal_context <- createTraversalContext context processExpr processPattern
             traversal_context <- setTypeConverterWithContext traversal_context (typeConverter sub)
             (context, body) <- traverse traversal_context info.body
             info <- info { body = body }
-            (state, context.functions, context.records, context.adts, F.Normal info)
-        kind -> (state, [], [], [], kind)
-    fn <- fn { kind = kind, type = Some type }
-    (state, fn, functions, records, adts)
+            (context, F.Normal info)
+        kind -> (context, kind)
+    fn <- fn { kind = kind }
+    (state, fn, context.functions, context.records, context.adts)
+
+monomorphizeRecord a :: (StateProvider a) => a -> FQ.FullyQualifiedName -> [T.Type] -> (a,
+                                                                                        D.Record,
+                                                                                        [FQ.FullyQualifiedName],
+                                                                                        [FQ.FullyQualifiedName])
+monomorphizeRecord state qn args = do
+    record <- QL.getRecord state qn
+    (state, record) <- case UD.instantiateRecord state record (T.Named qn args) of
+        Ok ok -> ok
+        Err _ -> panic "instantiateRecord failed with {} {}" % (qn, TF.toStringTypes args)
+    (mapper, state) <- UUtil.initMapper [] 0 state
+    context <- Context state [] [] [] mapper
+    (context, fields) <- List.mapS context record.fields (\context, D.RecordField name t -> do
+        (context, t) <- monomorphizeType context t
+        (context, D.RecordField name t))
+    record <- record { fields = fields }
+    (context.state, record, context.records, context.adts)
+
+monomorphizeAdt a :: (StateProvider a) => a -> FQ.FullyQualifiedName -> [T.Type] -> (a,
+                                                                                     D.AlgebraicDataType,
+                                                                                     [FQ.FullyQualifiedName],
+                                                                                     [FQ.FullyQualifiedName])
+monomorphizeAdt state qn args = do
+    adt <- QL.getAdt state qn
+    (state, adt) <- case UD.instantiateAdt state adt (T.Named qn args) of
+        Ok ok -> ok
+        Err _ -> panic "instantiateAdt failed with {} {}" % (qn, TF.toStringTypes args)
+    (mapper, state) <- UUtil.initMapper [] 0 state
+    context <- Context state [] [] [] mapper
+    (context, variants) <- List.mapS context adt.variants (\context, variant -> do
+        (context, items) <- List.mapS context variant.items monomorphizeType
+        (context, variant { items = items }))
+    adt <- adt { variants = variants }
+    (context.state, adt, context.records, context.adts)

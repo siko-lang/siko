@@ -35,10 +35,10 @@ instance Apply MemberMerger where
 instance MemberOwner MemberMerger where
     getMembers merger = merger.members
 
-lowerExternalRecordInfo :: TypeLoweringInfo -> 
-                           Context -> 
-                           MD.ExternalRecordInfo -> 
-                           FilterInfo -> 
+lowerExternalRecordInfo :: TypeLoweringInfo ->
+                           Context ->
+                           MD.ExternalRecordInfo ->
+                           FilterInfo ->
                            Option TypeVariableInfo -> (Context, LD.ExternalRecordInfo)
 lowerExternalRecordInfo lowering_info context mir_external_record_info filter_info implicit_info = do
     (context, lir_type_args) <- List.mapSE context mir_external_record_info.type_args (\context, index, type_arg -> do
@@ -47,10 +47,10 @@ lowerExternalRecordInfo lowering_info context mir_external_record_info filter_in
         ((context), ty))
     (context, LD.ExternalRecordInfo lir_type_args)
 
-lowerField :: TypeLoweringInfo -> 
-              FilterInfo -> 
-              Context -> 
-              Int -> 
+lowerField :: TypeLoweringInfo ->
+              FilterInfo ->
+              Context ->
+              Int ->
               MD.RecordField -> (Context, LD.RecordField)
 lowerField lowering_info filter_info context index mir_field = do
     lowering_info <- getLoweringInfoForField lowering_info index filter_info
@@ -60,10 +60,10 @@ lowerField lowering_info filter_info context index mir_field = do
     else lir_type
     (context, LD.RecordField index lir_type)
 
-lowerVariant :: TypeLoweringInfo -> 
-                FilterInfo -> 
-                Context -> 
-                Int -> 
+lowerVariant :: TypeLoweringInfo ->
+                FilterInfo ->
+                Context ->
+                Int ->
                 MD.Variant -> (Context, LD.Variant)
 lowerVariant lowering_info filter_info context index mir_variant = do
     lowering_info <- getLoweringInfoForVariant lowering_info index filter_info
@@ -71,10 +71,10 @@ lowerVariant lowering_info filter_info context index mir_variant = do
     (context, lir_type) <- lowerType context lowering_info mir_variant.type
     (context, LD.Variant mir_variant.name lir_type)
 
-expandMembers :: Context -> 
-                 [M.MemberInfo] -> 
-                 Allocator -> 
-                 I.Identity -> 
+expandMembers :: Context ->
+                 [M.MemberInfo] ->
+                 Allocator ->
+                 I.Identity ->
                  GroupTypeVariable -> (Context, [M.MemberInfo], Allocator)
 expandMembers context members allocator type_id group_var = do
     (allocator, group_info) <- getDataGroupInfo context.data_group_info_store allocator type_id
@@ -85,9 +85,9 @@ expandMembers context members allocator type_id group_var = do
     merger <- processEquals equals merger
     (context, merger.members, allocator)
 
-processExternalClassImpl :: TypeLoweringInfo -> 
-                            I.Identity -> 
-                            Context -> 
+processExternalClassImpl :: TypeLoweringInfo ->
+                            I.Identity ->
+                            Context ->
                             MD.ExternalClassImpl -> (Context, LD.ExternalClassImpl)
 processExternalClassImpl lowering_info mir_id context mir_class_impl = do
     case mir_class_impl of
@@ -105,10 +105,10 @@ processExternalClassImpl lowering_info mir_id context mir_class_impl = do
         MD.Copy -> panic "Copy class impl in LIR lowering!"
         MD.Move -> panic "Move class impl in LIR lowering!"
     where
-        processClassImplCall :: Context -> 
-                                TypeLoweringInfo -> 
-                                I.Identity -> 
-                                I.Identity -> 
+        processClassImplCall :: Context ->
+                                TypeLoweringInfo ->
+                                I.Identity ->
+                                I.Identity ->
                                 Int -> (Context, LP.Identity)
         processClassImplCall context lowering_info impl_id mir_id arg_count = do
             (allocator, result) <- getNextTypeVariableInfo lowering_info.allocator
@@ -130,9 +130,9 @@ processExternalClassImpl lowering_info mir_id context mir_class_impl = do
             context <- addItem context lir_key
             (context, lir_id)
 
-lowerRecord :: Context -> 
-               TypeLoweringInfo -> 
-               I.Identity -> 
+lowerRecord :: Context ->
+               TypeLoweringInfo ->
+               I.Identity ->
                LP.Identity -> Context
 lowerRecord context lowering_info mir_id lir_id = do
     trace2 "Lowering record {} {} {}" % (mir_id, lir_id, lowering_info)
@@ -156,9 +156,9 @@ lowerRecord context lowering_info mir_id lir_id = do
     context <- addRecord context lir_record
     context
 
-lowerAdt :: Context -> 
-            TypeLoweringInfo -> 
-            I.Identity -> 
+lowerAdt :: Context ->
+            TypeLoweringInfo ->
+            I.Identity ->
             LP.Identity -> Context
 lowerAdt context lowering_info mir_id lir_id = do
     trace2 "Lowering adt {} {} {}" % (mir_id, lir_id, lowering_info)

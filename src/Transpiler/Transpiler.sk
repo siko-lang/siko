@@ -19,9 +19,9 @@ data TypeStore = { structs :: Map String R.Struct,
 
 data ExternStructBuilder = ExternStructBuilder ([LT.Type] -> Option LT.Lifetime -> [R.StructField])
 
-data ExternFnBuilder = ExternFnBuilder (Program -> 
-                                        TypeStore -> 
-                                        [LT.Type] -> 
+data ExternFnBuilder = ExternFnBuilder (Program ->
+                                        TypeStore ->
+                                        [LT.Type] ->
                                         LT.Type -> R.Expr)
 
 createTypeStore :: TypeStore
@@ -122,9 +122,9 @@ typeToRcType type = RT.Rc type
 boxExpr :: R.Expr -> R.Expr
 boxExpr expr = R.FunctionCall "std::boxed::Box::new" [expr]
 
-getVariant :: TypeStore -> 
-              Int -> 
-              LE.Var -> 
+getVariant :: TypeStore ->
+              Int ->
+              LE.Var ->
               LT.Type -> R.Pattern
 getVariant type_store index v type = case type of
     LT.Adt _ _ -> do
@@ -284,11 +284,11 @@ convertImplArg lir_program fn_id arg = do
     then R.Ref arg
     else panic "Non ref arg in impl!"
 
-processImpl :: Program -> 
-               R.Program -> 
-               Context -> 
-               String -> 
-               LD.ExternalClassImpl -> 
+processImpl :: Program ->
+               R.Program ->
+               Context ->
+               String ->
+               LD.ExternalClassImpl ->
                [RT.Lifetime] -> R.Program
 processImpl lir_program program context type_name impl lifetimes = do
     rust_type_name <- RT.Named type_name []
@@ -342,9 +342,9 @@ processImpl lir_program program context type_name impl lifetimes = do
     impls <- push program.impls trait_impl
     program { impls = impls }
 
-createVariantCtor :: RT.Type -> 
-                     Int -> 
-                     Context -> 
+createVariantCtor :: RT.Type ->
+                     Int ->
+                     Context ->
                      [R.Expr] -> R.Expr
 createVariantCtor result index context args = do
     enum <- getEnum context.type_store result
