@@ -89,10 +89,12 @@ monomorphizeFunction driver key = do
                     state <- state { ignore_never = True }
                     (state, monomorphized_fn, functions, records, adts) <- MO.monomorphizeFunction state base_qn type
                     item <- I.MonomorphizedFunction monomorphized_fn
-                    cmds <- List.map functions (\qn -> I.MonomorphizeFunction (I.MonomorphizedFunctionKey qn))
-                    cmds <- List.map records (\qn -> I.MonomorphizeRecord (I.MonomorphizedRecordKey qn))
-                    cmds <- List.map adts (\qn -> I.MonomorphizeAdt (I.MonomorphizedAdtKey qn))
                     driver <- addToDb driver key item
+                    cmds <- List.map functions (\qn -> I.MonomorphizeFunction (I.MonomorphizedFunctionKey qn))
+                    driver <- addCommands driver cmds
+                    cmds <- List.map records (\qn -> I.MonomorphizeRecord (I.MonomorphizedRecordKey qn))
+                    driver <- addCommands driver cmds
+                    cmds <- List.map adts (\qn -> I.MonomorphizeAdt (I.MonomorphizedAdtKey qn))
                     addCommands driver cmds
                 qn -> panic "monomorphizeFunction called with unexpected qn {}" % qn
 
@@ -107,10 +109,12 @@ monomorphizeRecord driver key = do
                     state <- BSP.createStateProvider driver
                     (state, record, records, adts) <- MO.monomorphizeRecord state name args
                     item <- I.MonomorphizedRecord record
-                    cmds <- List.map records (\qn -> I.MonomorphizeRecord (I.MonomorphizedRecordKey qn))
-                    cmds <- List.map adts (\qn -> I.MonomorphizeAdt (I.MonomorphizedAdtKey qn))
-                    cmds <- List.push cmds (I.ClosureConvertRecord (I.ClosureConvertedRecordKey qn))
                     driver <- addToDb driver key item
+                    cmds <- List.map records (\qn -> I.MonomorphizeRecord (I.MonomorphizedRecordKey qn))
+                    driver <- addCommands driver cmds
+                    cmds <- List.map adts (\qn -> I.MonomorphizeAdt (I.MonomorphizedAdtKey qn))
+                    driver <- addCommands driver cmds
+                    cmds <- List.push cmds (I.ClosureConvertRecord (I.ClosureConvertedRecordKey qn))
                     addCommands driver cmds
                 qn -> panic "monomorphizeRecord called with unexpected qn {}" % qn
 
@@ -125,10 +129,12 @@ monomorphizeAdt driver key = do
                     state <- BSP.createStateProvider driver
                     (state, adt, records, adts) <- MO.monomorphizeAdt state name args
                     item <- I.MonomorphizedAdt adt
-                    cmds <- List.map records (\qn -> I.MonomorphizeRecord (I.MonomorphizedRecordKey qn))
-                    cmds <- List.map adts (\qn -> I.MonomorphizeAdt (I.MonomorphizedAdtKey qn))
-                    cmds <- List.push cmds (I.ClosureConvertAdt (I.ClosureConvertedAdtKey qn))
                     driver <- addToDb driver key item
+                    cmds <- List.map records (\qn -> I.MonomorphizeRecord (I.MonomorphizedRecordKey qn))
+                    driver <- addCommands driver cmds
+                    cmds <- List.map adts (\qn -> I.MonomorphizeAdt (I.MonomorphizedAdtKey qn))
+                    driver <- addCommands driver cmds
+                    cmds <- List.push cmds (I.ClosureConvertAdt (I.ClosureConvertedAdtKey qn))
                     addCommands driver cmds
                 qn -> panic "monomorphizeAdt called with unexpected qn {}" % qn
 
@@ -240,8 +246,10 @@ lowerRecord driver key = do
         Some _ -> driver
         None -> do
             qn <- I.getFullyQualifiedName key
+            record <- DB.get driver.db (I.ClosureConvertedRecordKey qn)
+            record <- I.asClosureConvertedRecord record
             state <- BSP.createStateProvider driver
-            (state, mir_record, tuples, adts, records) <- L.lowerRecord state qn
+            (state, mir_record, tuples, adts, records) <- L.lowerRecord state record
             driver <- List.fold driver tuples (\driver, mir_id -> addCommands driver [I.LowerTuple (I.MIRRecordKey mir_id)])
             driver <- List.fold driver records (\driver, mir_id -> addCommands driver [I.LowerHIRRecord (I.MIRRecordKey mir_id)])
             driver <- List.fold driver adts (\driver, mir_id -> addCommands driver [I.LowerHIRAdt (I.MIRAdtKey mir_id)])
@@ -253,8 +261,10 @@ lowerAdt driver key = do
         Some _ -> driver
         None -> do
             qn <- I.getFullyQualifiedName key
+            adt <- DB.get driver.db (I.ClosureConvertedAdtKey qn)
+            adt <- I.asClosureConvertedAdt adt
             state <- BSP.createStateProvider driver
-            (state, mir_adt, tuples) <- L.lowerAdt state qn
+            (state, mir_adt, tuples) <- L.lowerAdt state adt
             driver <- List.fold driver tuples (\driver, mir_id -> addCommands driver [I.LowerTuple (I.MIRRecordKey mir_id)])
             addToDb driver key (I.MIRAdt mir_adt)
 

@@ -45,6 +45,11 @@ traversePattern context pattern = do
     type <- case context.type_converter_fn of
         Some fn -> fn type
         None -> type
+    (context, type) <- case context.type_converter_with_context_fn of
+        Some fn -> do
+            (user_context, type) <- fn context.user_context type
+            (context { user_context = user_context }, type)
+        None -> (context, type)
     (context, pattern) <- case p of
         P.Binding b -> (context, P.Pattern (P.Binding b) id type location)
         P.Tuple args -> do

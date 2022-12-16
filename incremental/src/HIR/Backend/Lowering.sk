@@ -50,15 +50,16 @@ lowerType context hir_type = case hir_type of
     HT.Var _ _ -> panic "TypeVar type in MIR lowering"
     HT.FixedTypeArg _ _ -> panic "FixedTypeArg type in MIR lowering"
     HT.Named qn args -> do
-        case QL.getAdtOpt context.state qn of
-            Some adt -> do
-                mir_id <- lowerFullyQualifiedName (FQ.Adt qn args)
+        case qn of
+            FQ.Adt _ _ -> do
+                mir_id <- lowerFullyQualifiedName qn
                 context <- context { adts = List.push context.adts mir_id }
                 (context, MT.Adt mir_id)
-            None -> do
-                mir_id <- lowerFullyQualifiedName (FQ.Record qn args)
+            FQ.Record _ _ -> do
+                mir_id <- lowerFullyQualifiedName qn
                 context <- context { records = List.push context.records mir_id }
                 (context, MT.Record mir_id)
+            qn -> panic "Invalid qn in MIR lowerType {}" % qn
     HT.Function from to -> panic "Function type in MIR lowering: {}" % TF.toString hir_type
     HT.Never -> (context, MT.Never)
     HT.Ref lifetime ty -> do
@@ -242,48 +243,32 @@ createTuple state id args = do
     mir_function_type <- MF.FunctionType mir_args result_type
     (context.state, MD.Record id fields None [] [], MF.Function id MF.RecordCtor mir_function_type)
 
-lowerRecord a :: (StateProvider a) => a -> FQ.FullyQualifiedName -> (a,
-                                                                     MD.Record,
-                                                                     [MI.Identity],
-                                                                     [MI.Identity],
-                                                                     [MI.Identity])
-lowerRecord state qn = do
-    trace2 "Lowering record {}" % qn
-    case qn of
-        FQ.Record base_qn args -> do
-            record <- QL.getRecord state base_qn
-            type <- HT.Named base_qn args
-            (state, record) <- case UD.instantiateRecord state record type of
-                Ok (state, record) -> (state, record)
-                Err _ -> panic "Cannot instantiate record {} with {}" % (TF.toString record.type, TF.toString type)
-            context <- createContext state
-            (context, external_record_info) <- if record.external
-            then do
-                (context, type_args) <- List.mapS context record.type_args lowerType
-                (context, Some (MD.ExternalRecordInfo type_args))
-            else (context, None)
-            (context, fields) <- List.mapSE context record.fields (\context, index, HD.RecordField _ type -> do
-                (context, mir_type) <- lowerType context type
-                (context, MD.RecordField ("field{}" % index) index mir_type False))
-            (context.state, MD.Record (MI.Identity qn) fields external_record_info [] [], context.tuples, context.adts, context.records)
-        _ -> panic "Record's qn is not record! {}" % qn
+lowerRecord a :: (StateProvider a) => a -> HD.Record -> (a,
+                                                         MD.Record,
+                                                         [MI.Identity],
+                                                         [MI.Identity],
+                                                         [MI.Identity])
+lowerRecord state record = do
+    trace2 "Lowering record {}" % record.name
+    context <- createContext state
+    (context, external_record_info) <- if record.external
+    then do
+        (context, type_args) <- List.mapS context record.type_args lowerType
+        (context, Some (MD.ExternalRecordInfo type_args))
+    else (context, None)
+    (context, fields) <- List.mapSE context record.fields (\context, index, HD.RecordField _ type -> do
+        (context, mir_type) <- lowerType context type
+        (context, MD.RecordField ("field{}" % index) index mir_type False))
+    (context.state, MD.Record (lowerFullyQualifiedName record.name) fields external_record_info [] [], context.tuples, context.adts, context.records)
 
-lowerAdt a :: (StateProvider a) => a -> FQ.FullyQualifiedName -> (a, MD.AlgebraicDataType, [MI.Identity])
-lowerAdt state qn = do
-    trace2 "Lowering adt {}" % qn
-    case qn of
-        FQ.Adt base_qn args -> do
-            adt <- QL.getAdt state base_qn
-            type <- HT.Named base_qn args
-            (state, adt) <- case UD.instantiateAdt state adt type of
-                Ok (state, adt) -> (state, adt)
-                Err _ -> panic "Cannot instantiate adt {} with {}" % (TF.toString adt.type, TF.toString type)
-            context <- createContext state
-            (context, variants) <- List.mapSE context adt.variants (\context, index, HD.Variant name _ items -> do
-                (context, mir_id) <- lowerTuple context items
-                name <- case name of
-                    FQ.FullPathWithVariant m n v -> SS.get v
-                    _ -> "variant_{}" % index
-                (context, MD.Variant name (MT.Record mir_id)))
-            (context.state, MD.AlgebraicDataType (MI.Identity qn) variants [] [], context.tuples)
-        _ -> panic "Adt's qn is not adt! {}" % qn
+lowerAdt a :: (StateProvider a) => a -> HD.AlgebraicDataType -> (a, MD.AlgebraicDataType, [MI.Identity])
+lowerAdt state adt = do
+    trace2 "Lowering adt {}" % adt.name
+    context <- createContext state
+    (context, variants) <- List.mapSE context adt.variants (\context, index, HD.Variant name _ items -> do
+        (context, mir_id) <- lowerTuple context items
+        name <- case name of
+            FQ.FullPathWithVariant m n v -> SS.get v
+            _ -> "variant_{}" % index
+        (context, MD.Variant name (MT.Record mir_id)))
+    (context.state, MD.AlgebraicDataType (lowerFullyQualifiedName adt.name) variants [] [], context.tuples)

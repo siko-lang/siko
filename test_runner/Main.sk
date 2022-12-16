@@ -53,8 +53,8 @@ data Statistics = { success :: Int,
                     failure :: Int
                   }
 
-runTest :: String -> Int -> Int -> Statistics -> TestInfo -> Bool -> Statistics
-runTest binary total index stats test level2 = do
+runTest :: String -> Int -> Int -> Statistics -> TestInfo -> Bool -> Bool -> Statistics
+runTest binary total index stats test level2 dump = do
     i1 <- now
     print "--- Running test {} - {}/{} --- " % (test.name, total, index + 1)
     createDir "test_runs/{}" % test.name
@@ -68,6 +68,9 @@ runTest binary total index stats test level2 = do
             test_runs_path]
     cmd <- if level2
     then List.push cmd "-vv"
+    else cmd
+    cmd <- if dump
+    then List.push cmd "-d"
     else cmd
     //println "cmd {}" % cmd
     stats <- if runCommand cmd
@@ -87,7 +90,8 @@ main = do
     args <- getArgs
     argparser <- createArgParser "Siko"
     traceLevel2Option <- "trace level 2"
-    options <- [Simple (SimpleOption traceLevel2Option "-vv" "Enable level 2 traces" "Disabled")]
+    dumpOption <- "dump"
+    options <- [Simple (SimpleOption traceLevel2Option "-vv" "Enable level 2 traces" "Disabled"), Simple (SimpleOption dumpOption "-d" "Dump IR" "Disabled")]
     stage0_cmd <- Command "stage0" options "Run tests with stage0"
     stage1_cmd <- Command "stage1" options "Run tests with stage1"
     stage2_cmd <- Command "stage2" options "Run tests with stage2"
@@ -99,6 +103,7 @@ main = do
     case processArgs argparser args of
         Ok result -> do
             level2 <- isValueSet result traceLevel2Option
+            dump <- isValueSet result dumpOption
             case result.command of
                 cmd -> do
                     cmd <- "./" + cmd
@@ -106,6 +111,6 @@ main = do
                     total <- List.getLength tests
                     tests <- tests |> List.sort
                     stats <- Statistics 0 0
-                    stats <- List.foldE stats tests (\stats, index, test -> runTest cmd total index stats test level2)
+                    stats <- List.foldE stats tests (\stats, index, test -> runTest cmd total index stats test level2 dump)
                     println "Success {}, failure {}" % (stats.success, stats.failure)
         Err _ -> ()
