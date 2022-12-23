@@ -59,7 +59,7 @@ getClosureNameC context closure_type = do
     context <- context { closure_context = closure_context }
     (context, closure_name)
 
-processDynamicFunctionCall a :: (StateProvider a) => 
+processDynamicFunctionCall a :: (StateProvider a) =>
                                 Context a ->
                                 T.Type ->
                                 [E.Expr T.Type] ->
@@ -88,7 +88,7 @@ processDynamicFunctionCall context receiver_type args receiver location = do
                 calls <- push calls receiver
                 break (context, calls)
 
-processStaticFunctionCall a :: (StateProvider a) => 
+processStaticFunctionCall a :: (StateProvider a) =>
                                Context a ->
                                [E.Expr T.Type] ->
                                T.Type ->
@@ -192,6 +192,7 @@ convertFnType closure_context fn_type arg_count = do
     (closure_context, args) <- List.mapS closure_context args convertType
     result_type <- T.getResultType fn_type arg_count
     (closure_context, result_type) <- convertType closure_context result_type
+    args <- List.reverse args
     fn_type <- List.fold result_type args (\result, arg_type -> T.Function arg_type result)
     (closure_context, fn_type)
 
@@ -274,7 +275,8 @@ createClosureCall state closure_instances closure_name = do
     (context, body) <- if List.isEmpty closure_instances
     then do
         (context, expr_id) <- getNextExprId context
-        qn <- FQ.FullPath getStdUtilBasicModuleName getUnreachableName
+        qn <- FQ.Effectless (FQ.FullPath getStdUtilBasicModuleName getUnreachableName) None
+        qn <- FQ.Monomorphized qn (T.Tuple [])
         (context, E.Expr (E.StaticFunctionCall qn []) expr_id result_type location)
     else do
         (context, arg0_expr_id) <- getNextExprId context

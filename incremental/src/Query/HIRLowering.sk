@@ -31,13 +31,14 @@ transformUpdates driver key = do
     state <- BSP.createStateProvider driver
     (state, fn) <- UT.processFunction state fn
     base_main_qn <- FQ.FullPath getMainModuleName getMainFunctionName
+    unreachable_qn <- FQ.FullPath getStdUtilBasicModuleName getUnreachableName
     fn_name <- fn.name
     is_entry_point <- case fn.kind of
         F.Normal info -> case info.source of
             Some (F.EffectMember _) -> True
             Some (F.InstanceMember _) -> True
             Some (F.ClassMember _) -> True
-            _ -> fn.name == base_main_qn
+            _ -> fn.name == base_main_qn || fn.name == unreachable_qn
         F.Interface _ -> True
         _ -> False
     key <- I.UpdateTransformedFunctionKey fn.name
@@ -62,13 +63,14 @@ resolveEffects driver key = do
                     fn <- DB.get driver.db (I.UpdateTransformedFunctionKey base_qn)
                     fn <- I.asUpdateTransformedFunction fn
                     base_main_qn <- FQ.FullPath getMainModuleName getMainFunctionName
+                    unreachable_qn <- FQ.FullPath getStdUtilBasicModuleName getUnreachableName
                     fn_name <- fn.name
                     state <- BSP.createStateProvider driver
                     (state, resolved_fn, qns) <- ER.resolveEffects state base_qn resolution_set
                     item <- I.ResolvedEffectsFunction resolved_fn
                     cmds <- List.map qns (\qn -> I.ResolveEffects (I.ResolvedEffectsFunctionKey qn))
                     driver <- addToDb driver key item
-                    driver <- if fn.name == base_main_qn
+                    driver <- if fn.name == base_main_qn || fn.name == unreachable_qn
                     then do
                         cmd <- I.MonomorphizeFunction (I.MonomorphizedFunctionKey (FQ.Monomorphized (I.getFullyQualifiedName key) (T.Tuple [])))
                         addCommands driver [cmd]
@@ -219,8 +221,8 @@ createClosure driver key = do
             driver <- addToDb driver (I.ClosureConvertedFunctionKey qn) (I.ClosureConvertedFunction closure_call_fn)
             adt <- CC.createClosureAdt instances qn
             driver <- addToDb driver key I.Closure
-            key <- I.ResolvedAdtKey qn
-            item <- I.ResolvedAdt adt
+            key <- I.ClosureConvertedAdtKey qn
+            item <- I.ClosureConvertedAdt adt
             addToDb driver key item
 
 lowerFunction :: Driver -> I.Key -> Driver
@@ -249,7 +251,7 @@ lowerRecord driver key = do
             record <- DB.get driver.db (I.ClosureConvertedRecordKey qn)
             record <- I.asClosureConvertedRecord record
             state <- BSP.createStateProvider driver
-            (state, mir_record, tuples, adts, records) <- L.lowerRecord state record
+            (state, mir_record, tuples, adts, records) <- L.lowerRecord state qn record
             driver <- List.fold driver tuples (\driver, mir_id -> addCommands driver [I.LowerTuple (I.MIRRecordKey mir_id)])
             driver <- List.fold driver records (\driver, mir_id -> addCommands driver [I.LowerHIRRecord (I.MIRRecordKey mir_id)])
             driver <- List.fold driver adts (\driver, mir_id -> addCommands driver [I.LowerHIRAdt (I.MIRAdtKey mir_id)])
@@ -264,7 +266,7 @@ lowerAdt driver key = do
             adt <- DB.get driver.db (I.ClosureConvertedAdtKey qn)
             adt <- I.asClosureConvertedAdt adt
             state <- BSP.createStateProvider driver
-            (state, mir_adt, tuples) <- L.lowerAdt state adt
+            (state, mir_adt, tuples) <- L.lowerAdt state qn adt
             driver <- List.fold driver tuples (\driver, mir_id -> addCommands driver [I.LowerTuple (I.MIRRecordKey mir_id)])
             addToDb driver key (I.MIRAdt mir_adt)
 

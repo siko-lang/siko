@@ -35,6 +35,7 @@ typeConverter sub context type = do
     context <- context { mapper = mapper }
     type <- S.apply type sub
     (context, type) <- monomorphizeType context type
+    //println "typeConverter type {}" % type
     (context, type)
 
 addEffectless :: FQ.FullyQualifiedName -> FQ.FullyQualifiedName
@@ -52,19 +53,22 @@ processExpr context expr = do
             (mapper, state) <- UUtil.instantiateGenericMapper fn_type context.state
             mapper <- UUtil.skipNever mapper
             (mapper, fn_type) <- S.transform mapper fn_type UUtil.remapType
-            (context, fn_type) <- monomorphizeType context fn_type
-            arg_types <- List.map args (\E.Expr _ _ t _ -> t)
+            arg_types <- List.map args (\E.Expr _ _ t _ -> unpackType t)
             //println "calling {}" % qn
             //println "fn_type {}" % (TF.toString fn_type)
             //println "arg_types {}" % (TF.toStringTypes arg_types)
-            (state, fn_type, sub) <- UUtil.getFunctionType state arg_types expr_type fn_type
+            //println "fn_type {}" % (TF.toString fn_type)
+            //println "expr_type {}" % (TF.toString expr_type)
+            result_type <- unpackType expr_type
+            (state, fn_type, sub) <- UUtil.getFunctionType state arg_types result_type fn_type
             //println "result {}" % (TF.toString fn_type)
             context <- context { state = state }
+            (context, fn_type) <- monomorphizeType context fn_type
             monomorphized_qn <- FQ.Monomorphized qn fn_type
             context <- context { functions = List.push context.functions monomorphized_qn }
             (context, E.Expr (E.StaticFunctionCall monomorphized_qn args) id expr_type location)
         E.ClassMemberCall qn args -> do
-            arg_types <- List.map args (\E.Expr _ _ t _ -> t)
+            arg_types <- List.map args (\E.Expr _ _ t _ -> unpackType t)
             qn <- addEffectless qn
             fn <- QL.getResolvedEffectsFunction context.state qn
             fn_type <- Option.expect fn.type "function has no type"
@@ -81,7 +85,8 @@ processExpr context expr = do
             context <- context { state = state }
             case Map.get class_type_info.members member_name of
                 Some member -> do
-                    (state, function_type, sub) <- UUtil.getFunctionType context.state arg_types expr_type member.type
+                    result_type <- unpackType expr_type
+                    (state, function_type, sub) <- UUtil.getFunctionType context.state arg_types result_type member.type
                     context <- context { state = state }
                     arg_type <- S.apply class_type_info.arg_type sub
                     //println "arg type {}" % TF.toString arg_type
@@ -99,6 +104,7 @@ processExpr context expr = do
                     selected_member_name <- case selected_member_name of
                         Some selected_member_name -> selected_member_name
                         None -> qn
+                    (context, function_type) <- monomorphizeType context function_type
                     monomorphized_qn <- FQ.Monomorphized (addEffectless selected_member_name) function_type
                     context <- context { functions = List.push context.functions monomorphized_qn }
                     (context, E.Expr (E.StaticFunctionCall monomorphized_qn args) id expr_type location)
@@ -107,6 +113,36 @@ processExpr context expr = do
 
 processPattern a :: (StateProvider a) => Context a -> P.Pattern T.Type -> (Context a, P.Pattern T.Type)
 processPattern context pattern = (context, pattern)
+
+unpackType :: T.Type -> T.Type
+unpackType type = case type of
+    T.Var _ _ -> panic "TypeVar in unpackType"
+    T.FixedTypeArg _ _ -> panic "FixedTypeArg in unpackType"
+    T.Named qn args -> do
+            case qn of
+                FQ.Adt orig_qn args -> do
+                    args <- List.map args unpackType
+                    T.Named orig_qn args
+                FQ.Record orig_qn args -> do
+                    args <- List.map args unpackType
+                    T.Named orig_qn args
+                orig_qn -> do
+                    args <- List.map args unpackType
+                    T.Named orig_qn args
+    T.Function from to -> do
+        from <- unpackType from
+        to <- unpackType to
+        (T.Function from to)
+    T.Never -> T.Never
+    T.Ref l t -> do
+        t <- unpackType t
+        T.Ref l t
+    T.Owner t -> do
+        t <- unpackType t
+        T.Owner t
+    T.Tuple args -> do
+        args <- List.map args unpackType
+        T.Tuple args
 
 monomorphizeType a :: (StateProvider a) => Context a -> T.Type -> (Context a, T.Type)
 monomorphizeType context type = case type of
@@ -125,6 +161,7 @@ monomorphizeType context type = case type of
             None -> do
                 case qn of
                     FQ.Record _ _ -> (context, T.Named qn args)
+                    FQ.Adt _ _ -> (context, T.Named qn args)
                     _ -> do
                         qn <- FQ.Record qn args
                         context <- context { records = List.push context.records qn }
@@ -160,10 +197,10 @@ monomorphizeFunction state orig_qn type = do
     mapper <- UUtil.skipNever mapper
     (mapper, fn_type) <- S.transform mapper fn_type UUtil.remapType
     context <- Context state [] [] [] mapper
-    (context, fn_type) <- monomorphizeType context fn_type
-    (context, sub) <- case U.unify context.state sub type fn_type of
+    input_type <- unpackType type
+    (context, sub) <- case U.unify context.state sub input_type fn_type of
         Ok (state, sub) -> (context { state = state }, sub)
-        Err _ -> panic "Monomorphization: failed to unify {} {}" % (TF.toString type, TF.toString fn_type)
+        Err _ -> panic "Monomorphization: failed to unify {} {}" % (TF.toString input_type, TF.toString fn_type)
     fn <- fn { type = Some type }
     (context, kind) <- case fn.kind of
         F.Normal info -> do

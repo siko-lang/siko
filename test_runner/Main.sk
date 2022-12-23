@@ -21,7 +21,10 @@ instance PartialOrd TestInfo where
 instance Ord TestInfo where
     cmp (TestInfo _ n1) (TestInfo _ n2) = cmp n1 n2
 
-collectTests :: String -> String -> [String] -> [TestInfo] -> [TestInfo]
+collectTests :: String ->
+                String ->
+                [String] ->
+                [TestInfo] -> [TestInfo]
 collectTests path parent selected tests = do
     if isDir path
     then do
@@ -53,7 +56,13 @@ data Statistics = { success :: Int,
                     failure :: Int
                   }
 
-runTest :: String -> Int -> Int -> Statistics -> TestInfo -> Bool -> Bool -> Statistics
+runTest :: String ->
+           Int ->
+           Int ->
+           Statistics ->
+           TestInfo ->
+           Bool ->
+           Bool -> Statistics
 runTest binary total index stats test level2 dump = do
     i1 <- now
     print "--- Running test {} - {}/{} --- " % (test.name, total, index + 1)
@@ -75,9 +84,11 @@ runTest binary total index stats test level2 dump = do
     //println "cmd {}" % cmd
     stats <- if runCommand cmd
     then do
-        if runCommand [test_runs_path]
-        then stats { success = stats.success + 1 }
-        else stats { failure = stats.failure + 1 }
+        if isFile test_runs_path
+        then if runCommand [test_runs_path]
+            then stats { success = stats.success + 1 }
+            else stats { failure = stats.failure + 1 }
+        else stats
     else stats { failure = stats.failure + 1 }
     i2 <- now
     diff <- diffInMilliseconds i1 i2
@@ -111,6 +122,12 @@ main = do
                     total <- List.getLength tests
                     tests <- tests |> List.sort
                     stats <- Statistics 0 0
-                    stats <- List.foldE stats tests (\stats, index, test -> runTest cmd total index stats test level2 dump)
+                    stats <- List.foldE stats tests (\stats, index, test -> runTest cmd 
+                                                                                    total 
+                                                                                    index 
+                                                                                    stats 
+                                                                                    test 
+                                                                                    level2 
+                                                                                    dump)
                     println "Success {}, failure {}" % (stats.success, stats.failure)
         Err _ -> ()

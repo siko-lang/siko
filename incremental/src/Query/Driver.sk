@@ -14,6 +14,7 @@ import Siko.Syntax.Ident
 import Siko.Syntax.Location
 import Siko.Syntax.Module as SM
 import Siko.Syntax.SourceFile
+import Siko.Trace
 import Siko.Util.SharedString as SS
 
 data Driver = { config :: Config,
@@ -91,9 +92,9 @@ executeCommands driver = do
 
 executeCommand :: Driver -> I.Command -> Driver
 executeCommand driver cmd = do
-    //trace2 "Executing cmd {}" % cmd
     config <- driver.config
     with { getConfig = \() -> config } do
+        trace2 "Executing cmd {}" % cmd
         case cmd of
             I.CollectLocalItems key -> QR.collectLocalItems driver key
             I.CollectExports key -> QR.collectExports driver key
@@ -129,7 +130,7 @@ executeCommand driver cmd = do
 
 addCommands :: Driver -> [I.Command] -> Driver
 addCommands driver cmds = do
-    //trace2 "addCommands {}" % cmds
+    trace2 "addCommands {}" % cmds
     pending_commands <- driver.pending_commands + cmds
     driver { pending_commands = pending_commands }
 

@@ -59,6 +59,10 @@ lowerType context hir_type = case hir_type of
                 mir_id <- lowerFullyQualifiedName qn
                 context <- context { records = List.push context.records mir_id }
                 (context, MT.Record mir_id)
+            FQ.ClosureName _ -> do
+                mir_id <- lowerFullyQualifiedName qn
+                context <- context { adts = List.push context.adts mir_id }
+                (context, MT.Adt mir_id)
             qn -> panic "Invalid qn in MIR lowerType {}" % qn
     HT.Function from to -> panic "Function type in MIR lowering: {}" % TF.toString hir_type
     HT.Never -> (context, MT.Never)
@@ -149,6 +153,9 @@ lowerExpr context hir_expr = do
                 HT.Named record_name _ -> record_name
                 _ -> panic "Receiver type is not named in fieldaccess"
             (context, mir_receiver) <- lowerExpr context receiver
+            record_name <- case record_name of
+                FQ.Record qn _ -> qn
+                record_name -> record_name
             record <- QL.getRecord context.state record_name
             index <- loop index <- 0 do
                 HD.RecordField fname _ <- atIndex record.fields index
@@ -243,13 +250,13 @@ createTuple state id args = do
     mir_function_type <- MF.FunctionType mir_args result_type
     (context.state, MD.Record id fields None [] [], MF.Function id MF.RecordCtor mir_function_type)
 
-lowerRecord a :: (StateProvider a) => a -> HD.Record -> (a,
-                                                         MD.Record,
-                                                         [MI.Identity],
-                                                         [MI.Identity],
-                                                         [MI.Identity])
-lowerRecord state record = do
-    trace2 "Lowering record {}" % record.name
+lowerRecord a :: (StateProvider a) => a -> FQ.FullyQualifiedName -> HD.Record -> (a,
+                                                                                  MD.Record,
+                                                                                  [MI.Identity],
+                                                                                  [MI.Identity],
+                                                                                  [MI.Identity])
+lowerRecord state qn record = do
+    trace2 "Lowering record {}" % qn
     context <- createContext state
     (context, external_record_info) <- if record.external
     then do
@@ -259,11 +266,11 @@ lowerRecord state record = do
     (context, fields) <- List.mapSE context record.fields (\context, index, HD.RecordField _ type -> do
         (context, mir_type) <- lowerType context type
         (context, MD.RecordField ("field{}" % index) index mir_type False))
-    (context.state, MD.Record (lowerFullyQualifiedName record.name) fields external_record_info [] [], context.tuples, context.adts, context.records)
+    (context.state, MD.Record (lowerFullyQualifiedName qn) fields external_record_info [] [], context.tuples, context.adts, context.records)
 
-lowerAdt a :: (StateProvider a) => a -> HD.AlgebraicDataType -> (a, MD.AlgebraicDataType, [MI.Identity])
-lowerAdt state adt = do
-    trace2 "Lowering adt {}" % adt.name
+lowerAdt a :: (StateProvider a) => a -> FQ.FullyQualifiedName -> HD.AlgebraicDataType -> (a, MD.AlgebraicDataType, [MI.Identity])
+lowerAdt state qn adt = do
+    trace2 "Lowering adt {}" % qn
     context <- createContext state
     (context, variants) <- List.mapSE context adt.variants (\context, index, HD.Variant name _ items -> do
         (context, mir_id) <- lowerTuple context items
@@ -271,4 +278,4 @@ lowerAdt state adt = do
             FQ.FullPathWithVariant m n v -> SS.get v
             _ -> "variant_{}" % index
         (context, MD.Variant name (MT.Record mir_id)))
-    (context.state, MD.AlgebraicDataType (lowerFullyQualifiedName adt.name) variants [] [], context.tuples)
+    (context.state, MD.AlgebraicDataType (lowerFullyQualifiedName qn) variants [] [], context.tuples)
