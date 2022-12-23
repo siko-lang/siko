@@ -353,6 +353,9 @@ generateGetDiscriminant :: Program ->
                            LT.Type -> R.Expr
 generateGetDiscriminant program type_store arg_types result_type = do
     arg_type <- atIndex arg_types 0
+    arg_type <- case arg_type of
+        LT.Ref _ t -> t
+        arg_type -> arg_type
     case arg_type of
         LT.Adt adt_id _ -> do
             adt <- getAdt program adt_id

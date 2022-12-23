@@ -353,6 +353,9 @@ generateGetDiscriminant :: Program ->
                            LT.Type -> R.Expr
 generateGetDiscriminant program type_store arg_types result_type = do
     arg_type <- atIndex arg_types 0
+    arg_type <- case arg_type of
+        LT.Ref _ t -> t
+        arg_type -> arg_type
     case arg_type of
         LT.Adt adt_id _ -> do
             adt <- getAdt program adt_id
@@ -453,6 +456,15 @@ generateIsDir program type_store arg_types result_type = do
     field_access <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
     is_dir_call <- R.MethodCall (R.FunctionCall "std::path::Path::new" [R.Ref field_access]) "is_dir" []
     R.Block [rustBoolToSikoBool program is_dir_call result_type]
+
+generateIsFile :: Program ->
+                 TypeStore ->
+                 [LT.Type] ->
+                 LT.Type -> R.Expr
+generateIsFile program type_store arg_types result_type = do
+    field_access <- R.FieldAccess innerValueField (R.VarRef (getArgName 0))
+    is_file_call <- R.MethodCall (R.FunctionCall "std::path::Path::new" [R.Ref field_access]) "is_file" []
+    R.Block [rustBoolToSikoBool program is_file_call result_type]
 
 generateCreateDir :: Program ->
                      TypeStore ->
@@ -1416,6 +1428,7 @@ initializeExternalFunctions = do
     (externals, _) <- insert externals (ExternalId "IO" "writeTextFile") (ExternFnBuilder generateWriteTextFile)
     (externals, _) <- insert externals (ExternalId "IO" "getArgs") (ExternFnBuilder generateGetArgs)
     (externals, _) <- insert externals (ExternalId "IO" "isDir") (ExternFnBuilder generateIsDir)
+    (externals, _) <- insert externals (ExternalId "IO" "isFile") (ExternFnBuilder generateIsFile)
     (externals, _) <- insert externals (ExternalId "IO" "listDir") (ExternFnBuilder generateListDir)
     (externals, _) <- insert externals (ExternalId "IO" "exit") (ExternFnBuilder generateExit)
     (externals, _) <- insert externals (ExternalId "IO" "readLine") (ExternFnBuilder generateReadLine)
