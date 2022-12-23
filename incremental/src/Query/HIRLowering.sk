@@ -70,9 +70,14 @@ resolveEffects driver key = do
                     item <- I.ResolvedEffectsFunction resolved_fn
                     cmds <- List.map qns (\qn -> I.ResolveEffects (I.ResolvedEffectsFunctionKey qn))
                     driver <- addToDb driver key item
-                    driver <- if fn.name == base_main_qn || fn.name == unreachable_qn
+                    driver <- if fn.name == base_main_qn
                     then do
                         cmd <- I.MonomorphizeFunction (I.MonomorphizedFunctionKey (FQ.Monomorphized (I.getFullyQualifiedName key) (T.Tuple [])))
+                        addCommands driver [cmd]
+                    else driver
+                    driver <- if fn.name == unreachable_qn
+                    then do
+                        cmd <- I.MonomorphizeFunction (I.MonomorphizedFunctionKey (FQ.Monomorphized (I.getFullyQualifiedName key) T.Never))
                         addCommands driver [cmd]
                     else driver
                     addCommands driver cmds
@@ -214,12 +219,13 @@ createClosure driver key = do
                     else None
                 _ -> panic "Closure instance key is not closure instance key")
             state <- BSP.createStateProvider driver
-            driver <- List.foldE driver instances (\driver, index, i -> do
-                fn <- CC.createVariantCtor i index
-                addToDb driver (I.ClosureConvertedFunctionKey fn.name) (I.ClosureConvertedFunction fn))
+            (state, driver) <- List.foldE (state, driver) instances (\(state, driver), index, i -> do
+                (state, fn) <- CC.createVariantCtor state i index
+                driver <- addToDb driver (I.ClosureConvertedFunctionKey fn.name) (I.ClosureConvertedFunction fn)
+                (state, driver))
             (state, closure_call_fn) <- CC.createClosureCall state instances qn
             driver <- addToDb driver (I.ClosureConvertedFunctionKey qn) (I.ClosureConvertedFunction closure_call_fn)
-            adt <- CC.createClosureAdt instances qn
+            (state, adt) <- CC.createClosureAdt state instances qn
             driver <- addToDb driver key I.Closure
             key <- I.ClosureConvertedAdtKey qn
             item <- I.ClosureConvertedAdt adt

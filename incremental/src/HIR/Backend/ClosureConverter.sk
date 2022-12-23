@@ -224,25 +224,30 @@ getClosureType closure_name = case closure_name of
     FQ.ClosureName type -> type
     closure_name -> panic "Closure is not a closure in createClosureAdt {}" % closure_name
 
-createClosureAdt :: [ClosureInstance] -> FQ.FullyQualifiedName -> D.AlgebraicDataType
-createClosureAdt closure_instances closure_name = do
+createClosureAdt a :: (StateProvider a) => a -> [ClosureInstance] -> FQ.FullyQualifiedName -> (a, D.AlgebraicDataType)
+createClosureAdt state closure_instances closure_name = do
+    closure_context <- createClosureContext state
     type_args <- []
     type <- getClosureType closure_name
-    variants <- List.map closure_instances (\closure_instance -> do
-        D.Variant (FQ.ClosureInstance closure_instance) emptyLocation closure_instance.arg_types)
-    D.AlgebraicDataType closure_name emptyLocation type_args variants (closureConvertType type)
+    (closure_context, variants) <- List.mapS closure_context closure_instances (\closure_context, closure_instance -> do
+        (closure_context, arg_types) <- List.mapS closure_context closure_instance.arg_types convertType
+        variant <- D.Variant (FQ.ClosureInstance closure_instance) emptyLocation arg_types
+        (closure_context, variant))
+    (closure_context.state, D.AlgebraicDataType closure_name emptyLocation type_args variants (closureConvertType type))
 
-createVariantCtor :: ClosureInstance -> Int -> F.Function T.Type
-createVariantCtor closure_instance index = do
+createVariantCtor a :: (StateProvider a) => a -> ClosureInstance -> Int -> (a, F.Function T.Type)
+createVariantCtor state closure_instance index = do
+    closure_context <- createClosureContext state
     location <- emptyLocation
     qn <- FQ.ClosureInstance closure_instance
     arg_count <- List.getLength closure_instance.arg_types
     kind <- F.VariantCtor index
     adt_type <- T.Named closure_instance.closure_name []
     arg_types <- List.reverse closure_instance.arg_types
+    (closure_context, arg_types) <- List.mapS closure_context arg_types convertType
     type <- List.fold adt_type arg_types (\result, arg_type -> T.Function arg_type result)
     attributes <- []
-    F.Function location qn arg_count kind (Some type) attributes
+    (closure_context.state, F.Function location qn arg_count kind (Some type) attributes)
 
 closureConvertType :: T.Type -> T.Type
 closureConvertType type = case type of
@@ -276,7 +281,7 @@ createClosureCall state closure_instances closure_name = do
     then do
         (context, expr_id) <- getNextExprId context
         qn <- FQ.Effectless (FQ.FullPath getStdUtilBasicModuleName getUnreachableName) None
-        qn <- FQ.Monomorphized qn (T.Tuple [])
+        qn <- FQ.Monomorphized qn T.Never
         (context, E.Expr (E.StaticFunctionCall qn []) expr_id result_type location)
     else do
         (context, arg0_expr_id) <- getNextExprId context
@@ -285,10 +290,11 @@ createClosureCall state closure_instances closure_name = do
             (context, bind_pat_id) <- getNextPatternId context
             (context, bind_pat2_id) <- getNextPatternId context
             bind_ref <- P.BindRef (SS.create "variant_var") bind_pat_id
-            bind_pattern <- P.Pattern (P.Binding bind_ref) bind_pat2_id (T.Tuple closure_instance.arg_types) location
-            (context, args) <- List.mapSE context closure_instance.arg_types (\context, index, arg -> do
+            arg_types <- List.map closure_instance.arg_types closureConvertType
+            bind_pattern <- P.Pattern (P.Binding bind_ref) bind_pat2_id (T.Tuple arg_types) location
+            (context, args) <- List.mapSE context arg_types (\context, index, arg -> do
                 (context, expr_id) <- getNextExprId context
-                value_ref <- E.Expr (E.ValueRef bind_ref) expr_id (T.Tuple closure_instance.arg_types) location
+                value_ref <- E.Expr (E.ValueRef bind_ref) expr_id (T.Tuple arg_types) location
                 (context, expr_id) <- getNextExprId context
                 (context, E.Expr (E.TupleFieldAccess index value_ref) expr_id arg location))
             (context, arg1_expr_id) <- getNextExprId context
