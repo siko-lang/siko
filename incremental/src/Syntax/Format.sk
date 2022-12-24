@@ -403,12 +403,12 @@ instance Format F.FunctionSignature where
         constraints <- formatList signature.constraints (Chunk ", ")
         constraints <- if List.isEmpty signature.constraints
         then []
-        else [Chunk "("] + constraints + [Chunk ") => "]
+        else [Chunk "("] + constraints + [Chunk ") =>"]
         (type_signature, constraints) <- if List.isEmpty signature.constraints
         then (type_signature, constraints)
         else if (atIndex type_signature 0) == PushOffset
             then (List.drop type_signature 0, [PushOffset] + constraints + [Break])
-            else (type_signature, constraints)
+            else (type_signature, constraints + [Chunk " "])
         type_arguments <- if List.isEmpty signature.type_arguments
         then []
         else [Chunk " "] + type_arguments

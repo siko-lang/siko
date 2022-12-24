@@ -219,14 +219,15 @@ createClosure driver key = do
                     else None
                 _ -> panic "Closure instance key is not closure instance key")
             state <- BSP.createStateProvider driver
-            (state, driver) <- List.foldE (state, driver) instances (\(state, driver), index, i -> do
+            (state, items) <- List.foldE (state, []) instances (\(state, items), index, i -> do
                 (state, fn) <- CC.createVariantCtor state i index
-                driver <- addToDb driver (I.ClosureConvertedFunctionKey fn.name) (I.ClosureConvertedFunction fn)
-                (state, driver))
+                items <- List.push items (I.ClosureConvertedFunctionKey fn.name, I.ClosureConvertedFunction fn)
+                (state, items))
             (state, closure_call_fn) <- CC.createClosureCall state instances qn
-            driver <- addToDb driver (I.ClosureConvertedFunctionKey qn) (I.ClosureConvertedFunction closure_call_fn)
             (state, adt) <- CC.createClosureAdt state instances qn
             driver <- addToDb driver key I.Closure
+            driver <- List.fold driver items (\driver, (key, item) -> addToDb driver key item)
+            driver <- addToDb driver (I.ClosureConvertedFunctionKey qn) (I.ClosureConvertedFunction closure_call_fn)
             key <- I.ClosureConvertedAdtKey qn
             item <- I.ClosureConvertedAdt adt
             addToDb driver key item
@@ -286,7 +287,9 @@ lowerTuple driver key = do
                 FQ.Tuple args -> args
                 _ -> panic "Tuple is not a tuple!"
             state <- BSP.createStateProvider driver
-            (state, mir_record, ctor_fn) <- L.createTuple state (MI.Identity qn) tuple_args
+            (state, mir_record, ctor_fn, records, adts) <- L.createTuple state (MI.Identity qn) tuple_args
+            driver <- List.fold driver records (\driver, mir_id -> addCommands driver [I.LowerHIRRecord (I.MIRRecordKey mir_id)])
+            driver <- List.fold driver adts (\driver, mir_id -> addCommands driver [I.LowerHIRAdt (I.MIRAdtKey mir_id)])
             driver <- addToDb driver key (I.MIRRecord mir_record)
             addToDb driver (I.MIRFunctionKey ctor_fn.id) (I.MIRFunction ctor_fn)
 

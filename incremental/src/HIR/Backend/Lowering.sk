@@ -240,7 +240,11 @@ lowerFunction state qn hir_function = do
     adts <- context.adts |> List.sort |> List.dedup
     (context.state, MF.Function mir_id kind mir_function_type, functions, tuples, records, adts)
 
-createTuple a :: (StateProvider a) => a -> MI.Identity -> [HT.Type] -> (a, MD.Record, MF.Function)
+createTuple a :: (StateProvider a) => a -> MI.Identity -> [HT.Type] -> (a,
+                                                                        MD.Record,
+                                                                        MF.Function,
+                                                                        [MI.Identity],
+                                                                        [MI.Identity])
 createTuple state id args = do
     trace2 "Creating tuple {} {}" % (id, TF.toStringTypes args)
     context <- createContext state
@@ -248,7 +252,7 @@ createTuple state id args = do
     fields <- List.mapE mir_args (\index, ty -> MD.RecordField ("field{}" % index) index ty False)
     result_type <- MT.Record id
     mir_function_type <- MF.FunctionType mir_args result_type
-    (context.state, MD.Record id fields None [] [], MF.Function id MF.RecordCtor mir_function_type)
+    (context.state, MD.Record id fields None [] [], MF.Function id MF.RecordCtor mir_function_type, context.records, context.adts)
 
 lowerRecord a :: (StateProvider a) => a -> FQ.FullyQualifiedName -> HD.Record -> (a,
                                                                                   MD.Record,

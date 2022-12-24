@@ -119,16 +119,16 @@ unpackType type = case type of
     T.Var _ _ -> panic "TypeVar in unpackType"
     T.FixedTypeArg _ _ -> panic "FixedTypeArg in unpackType"
     T.Named qn args -> do
-            case qn of
-                FQ.Adt orig_qn args -> do
-                    args <- List.map args unpackType
-                    T.Named orig_qn args
-                FQ.Record orig_qn args -> do
-                    args <- List.map args unpackType
-                    T.Named orig_qn args
-                orig_qn -> do
-                    args <- List.map args unpackType
-                    T.Named orig_qn args
+        case qn of
+            FQ.Adt orig_qn args -> do
+                args <- List.map args unpackType
+                T.Named orig_qn args
+            FQ.Record orig_qn args -> do
+                args <- List.map args unpackType
+                T.Named orig_qn args
+            orig_qn -> do
+                args <- List.map args unpackType
+                T.Named orig_qn args
     T.Function from to -> do
         from <- unpackType from
         to <- unpackType to
