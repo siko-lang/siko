@@ -10,12 +10,14 @@ import Siko.HIR.Backend.Lowering as L
 import Siko.HIR.Backend.Monomorphization as MO
 import Siko.HIR.Backend.StateProvider as BSP
 import Siko.HIR.Backend.UpdateTransformer as UT
+import Siko.HIR.Data as HD
 import Siko.HIR.Effect as Eff
 import Siko.HIR.FullyQualifiedName as FQ
 import Siko.HIR.Function as F
 import Siko.HIR.Type as T
 import Siko.LIR.Backend as LB
 import Siko.MIR.Backend as MB
+import Siko.MIR.Data as MD
 import Siko.MIR.Identity as MI
 import Siko.MIR.Program as MP
 import Siko.Query.Database as DB
@@ -94,7 +96,21 @@ monomorphizeFunction driver key = do
                     fn <- I.asResolvedEffectsFunction fn
                     state <- BSP.createStateProvider driver
                     state <- state { ignore_never = True }
-                    (state, monomorphized_fn, functions, records, adts) <- MO.monomorphizeFunction state base_qn type
+                    (state, monomorphized_fn, functions, records, adts, external_class_impls) <- MO.monomorphizeFunction state base_qn type
+                    driver <- List.fold driver external_class_impls (\driver, external_class_impl -> do
+                        key <- I.ExternalClassImplKey external_class_impl
+                        case DB.getOpt driver.db key of
+                            Some _ -> driver
+                            None -> do
+                                state <- BSP.createStateProvider driver
+                                state <- state { ignore_never = True }
+                                (state, function) <- MO.monomorphizeClassImpl state external_class_impl
+                                (driver, item) <- case function of
+                                    Some qn -> do
+                                        cmds <- [I.MonomorphizeFunction (I.MonomorphizedFunctionKey qn)]
+                                        (addCommands driver cmds, I.ExternalClassImpl (Some qn))
+                                    None -> (driver, I.ExternalClassImpl None)
+                                addToDb driver key item)
                     item <- I.MonomorphizedFunction monomorphized_fn
                     driver <- addToDb driver key item
                     cmds <- List.map functions (\qn -> I.MonomorphizeFunction (I.MonomorphizedFunctionKey qn))
@@ -249,6 +265,35 @@ lowerFunction driver key = do
             driver <- List.fold driver adts (\driver, mir_id -> addCommands driver [I.LowerHIRAdt (I.MIRAdtKey mir_id)])
             driver
 
+getExternalClassImpl :: Driver -> FQ.FullyQualifiedName -> (Driver, [MD.ExternalClassImpl])
+getExternalClassImpl driver qn = do
+    type <- T.Named qn []
+    impl_kinds <- [HD.PartialEqKind,
+                   HD.EqKind,
+                   HD.PartialOrdKind,
+                   HD.OrdKind]
+    List.fold (driver, []) impl_kinds (\(driver, external_class_impls), kind -> do
+        case DB.getOpt driver.db (I.ExternalClassImplKey (kind, type)) of
+            Some (I.ExternalClassImpl impl) -> do
+                (driver, impl) <- case (kind, impl) of
+                    (HD.PartialEqKind, Some impl) -> do
+                        mir_id <- MI.Identity impl
+                        driver <- addCommands driver [I.LowerHIRFunction (I.MIRFunctionKey mir_id)]
+                        (driver, MD.PartialEq mir_id)
+                    (HD.EqKind, None) -> (driver, MD.Eq)
+                    (HD.PartialOrdKind, Some impl) -> do
+                        mir_id <- MI.Identity impl
+                        driver <- addCommands driver [I.LowerHIRFunction (I.MIRFunctionKey mir_id)]
+                        (driver, MD.PartialOrd mir_id)
+                    (HD.OrdKind, Some impl) -> do
+                        mir_id <- MI.Identity impl
+                        driver <- addCommands driver [I.LowerHIRFunction (I.MIRFunctionKey mir_id)]
+                        (driver, MD.Ord mir_id)
+                    _ -> panic "Unexpected external class impl {}/{}" % (kind, impl)
+                external_class_impls <- List.push external_class_impls impl
+                (driver, external_class_impls)
+            _ -> (driver, external_class_impls))
+
 lowerRecord :: Driver -> I.Key -> Driver
 lowerRecord driver key = do
     case DB.getOpt driver.db key of
@@ -259,6 +304,8 @@ lowerRecord driver key = do
             record <- I.asClosureConvertedRecord record
             state <- BSP.createStateProvider driver
             (state, mir_record, tuples, adts, records) <- L.lowerRecord state qn record
+            (driver, external_class_impls) <- getExternalClassImpl driver qn
+            mir_record <- mir_record { external_class_impls = external_class_impls }
             driver <- List.fold driver tuples (\driver, mir_id -> addCommands driver [I.LowerTuple (I.MIRRecordKey mir_id)])
             driver <- List.fold driver records (\driver, mir_id -> addCommands driver [I.LowerHIRRecord (I.MIRRecordKey mir_id)])
             driver <- List.fold driver adts (\driver, mir_id -> addCommands driver [I.LowerHIRAdt (I.MIRAdtKey mir_id)])
@@ -274,6 +321,8 @@ lowerAdt driver key = do
             adt <- I.asClosureConvertedAdt adt
             state <- BSP.createStateProvider driver
             (state, mir_adt, tuples) <- L.lowerAdt state qn adt
+            (driver, external_class_impls) <- getExternalClassImpl driver qn
+            mir_adt <- mir_adt { external_class_impls = external_class_impls }
             driver <- List.fold driver tuples (\driver, mir_id -> addCommands driver [I.LowerTuple (I.MIRRecordKey mir_id)])
             addToDb driver key (I.MIRAdt mir_adt)
 
@@ -342,4 +391,7 @@ runlegacyBackend driver = do
                      "-o",
                      binary_file,
                      rust_source_file]
+    if compilation_result
+    then exit 0
+    else exit 1
     driver

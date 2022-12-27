@@ -125,6 +125,7 @@ data ItemKind = UnresolvedModuleKind
               | MIRFunctionKind
               | MIRRecordKind
               | MIRAdtKind
+              | ExternalClassImplKind
               deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
 data Item = UnresolvedModule M.Module
@@ -164,6 +165,7 @@ data Item = UnresolvedModule M.Module
           | MIRFunction MF.Function
           | MIRRecord MD.Record
           | MIRAdt MD.AlgebraicDataType
+          | ExternalClassImpl (Option FQ.FullyQualifiedName)
           deriving (Show, PartialEq, Eq)
 
 data Key = UnresolvedModuleKey String
@@ -203,6 +205,7 @@ data Key = UnresolvedModuleKey String
          | MIRFunctionKey MI.Identity
          | MIRRecordKey MI.Identity
          | MIRAdtKey MI.Identity
+         | ExternalClassImplKey (HD.ExternalClassImpl, HT.Type)
          deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
 asUnresolvedModule :: Item -> M.Module
@@ -399,11 +402,12 @@ getModuleName key = case key of
     ClosureConvertedFunctionKey qn -> SS.get (FQ.getModuleName qn)
     ClosureConvertedRecordKey qn -> SS.get (FQ.getModuleName qn)
     ClosureConvertedAdtKey qn -> SS.get (FQ.getModuleName qn)
-    ClosureInstanceKey _ -> "getModuleName called for {}" % key
+    ClosureInstanceKey _ -> panic "getModuleName called for {}" % key
     ClosureKey qn -> SS.get (FQ.getModuleName qn)
     MIRFunctionKey (MI.Identity qn) -> SS.get (FQ.getModuleName qn)
     MIRRecordKey (MI.Identity qn) -> SS.get (FQ.getModuleName qn)
     MIRAdtKey (MI.Identity qn) -> SS.get (FQ.getModuleName qn)
+    ExternalClassImplKey _ -> panic "getModuleName called for {}" % key
 
 getFullyQualifiedName :: Key -> FQ.FullyQualifiedName
 getFullyQualifiedName key = case key of
@@ -444,6 +448,7 @@ getFullyQualifiedName key = case key of
     MIRFunctionKey (MI.Identity qn) -> qn
     MIRRecordKey (MI.Identity qn) -> qn
     MIRAdtKey (MI.Identity qn) -> qn
+    ExternalClassImplKey _ -> panic "getFullyQualifiedName called for {}" % key
 
 getKind :: Item -> ItemKind
 getKind item = case item of
@@ -484,3 +489,4 @@ getKind item = case item of
     MIRFunction _ -> MIRFunctionKind
     MIRRecord _ -> MIRRecordKind
     MIRAdt _ -> MIRAdtKind
+    ExternalClassImpl _ -> ExternalClassImplKind

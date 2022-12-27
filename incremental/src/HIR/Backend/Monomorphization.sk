@@ -1,6 +1,7 @@
 module Siko.HIR.Backend.Monomorphization where
 
 import Map
+import Siko.Constants
 import Siko.HIR.Backend.InstanceResolver as IR
 import Siko.HIR.Backend.StateProvider
 import Siko.HIR.Backend.Traversal
@@ -18,6 +19,7 @@ import Siko.HIR.Pattern as P
 import Siko.HIR.Type as T
 import Siko.HIR.TypeFormatter as TF
 import Siko.HIR.TypeVarGenerator as TVG
+import Siko.HIR.Util as Util
 import Siko.Query.Lookup as QL
 import Siko.Syntax.Ident
 
@@ -181,11 +183,27 @@ monomorphizeType context type = case type of
         (context, args) <- List.mapS context args monomorphizeType
         (context, T.Tuple args)
 
+collectExternalClassConstraint :: T.Type -> [(FQ.FullyQualifiedName, T.Type)]
+collectExternalClassConstraint type = case type of
+    T.Var v cs -> List.fold [] cs (\cs, constraint -> case constraint of
+            T.ClassConstraint name _ -> List.push cs (name, T.Var v [])
+            _ -> cs)
+    T.FixedTypeArg v cs -> List.fold [] cs (\cs, constraint -> case constraint of
+            T.ClassConstraint name _ -> List.push cs (name, T.FixedTypeArg v [])
+            _ -> cs)
+    T.Named _ args -> List.fold [] args (\cs, arg -> cs + collectExternalClassConstraint arg)
+    T.Function from to -> collectExternalClassConstraint from + collectExternalClassConstraint to
+    T.Never -> []
+    T.Ref _ t -> collectExternalClassConstraint t
+    T.Owner t -> collectExternalClassConstraint t
+    T.Tuple args -> List.fold [] args (\cs, arg -> cs + collectExternalClassConstraint arg)
+
 monomorphizeFunction a :: (StateProvider a) => a -> FQ.FullyQualifiedName -> T.Type -> (a,
                                                                                         F.Function T.Type,
                                                                                         [FQ.FullyQualifiedName],
                                                                                         [FQ.FullyQualifiedName],
-                                                                                        [FQ.FullyQualifiedName])
+                                                                                        [FQ.FullyQualifiedName],
+                                                                                        [(D.ExternalClassImpl, T.Type)])
 monomorphizeFunction state orig_qn type = do
     //println "monomorphizeFunction {} with {}" % (orig_qn, TF.toString type)
     fn <- QL.getResolvedEffectsFunction state orig_qn
@@ -202,16 +220,37 @@ monomorphizeFunction state orig_qn type = do
         Ok (state, sub) -> (context { state = state }, sub)
         Err _ -> panic "Monomorphization: failed to unify {} {}" % (TF.toString input_type, TF.toString fn_type)
     fn <- fn { type = Some type }
-    (context, kind) <- case fn.kind of
+    (context, kind, external_class_impls) <- case fn.kind of
         F.Normal info -> do
             traversal_context <- createTraversalContext context processExpr processPattern
             traversal_context <- setTypeConverterWithContext traversal_context (typeConverter sub)
             (context, body) <- traverse traversal_context info.body
             info <- info { body = body }
-            (context, F.Normal info)
-        kind -> (context, kind)
+            (context, F.Normal info, [])
+        F.ExternInfo info -> do
+            external_class_impls <- collectExternalClassConstraint fn_type
+            external_class_impls <- external_class_impls |> List.sort |> List.dedup
+            partial_eq <- FQ.FullPath getStdOpsModuleName getPartialEqClassName
+            eq <- FQ.FullPath getStdOpsModuleName getEqClassName
+            partial_ord <- FQ.FullPath getStdOpsModuleName getPartialOrdClassName
+            ord <- FQ.FullPath getStdOpsModuleName getOrdClassName
+            (context, external_class_impls) <- List.fold (context, []) external_class_impls (\(context, external_class_impls), (class_name, type) -> do
+                (context, type) <- typeConverter sub context type
+                impls <- case class_name of
+                    c if c == partial_eq -> [D.PartialEqKind]
+                    c if c == eq -> [D.EqKind, D.PartialEqKind]
+                    c if c == partial_ord -> [D.PartialOrdKind, D.PartialEqKind]
+                    c if c == ord -> [D.OrdKind,
+                                      D.PartialOrdKind,
+                                      D.EqKind,
+                                      D.PartialEqKind]
+                    _ -> []
+                impls <- List.map impls (\impl -> (impl, type))
+                (context, external_class_impls + impls))
+            (context, F.ExternInfo info, external_class_impls)
+        kind -> (context, kind, [])
     fn <- fn { kind = kind }
-    (state, fn, context.functions, context.records, context.adts)
+    (state, fn, context.functions, context.records, context.adts, external_class_impls)
 
 monomorphizeRecord a :: (StateProvider a) => a -> FQ.FullyQualifiedName -> [T.Type] -> (a,
                                                                                         D.Record,
@@ -246,3 +285,54 @@ monomorphizeAdt state qn args = do
         (context, variant { items = items }))
     adt <- adt { variants = variants }
     (context.state, adt, context.records, context.adts)
+
+getClassImpl a :: (StateProvider a) =>
+                  a ->
+                  FQ.FullyQualifiedName ->
+                  FQ.FullyQualifiedName ->
+                  T.Type ->
+                  T.Type -> (a, Option FQ.FullyQualifiedName)
+getClassImpl state class_name qn fn_type arg_type = do
+    (mapper, state) <- UUtil.instantiateGenericMapper fn_type state
+    mapper <- UUtil.skipNever mapper
+    (mapper, function_type) <- S.transform mapper fn_type UUtil.remapType
+    context <- Context state [] [] [] mapper
+    (state, instance_info) <- do
+        case IR.checkInstance context.state arg_type class_name of
+            Ok (state, sub, instance_info) -> (state, instance_info)
+            Err context -> panic "{}/{} no instance found" % (TF.toString arg_type, class_name)
+    context <- context { state = state }
+    user_instance <- QL.getInstance context.state instance_info.id
+    member_name <- FQ.getShortName qn
+    selected_member_name <- List.fold None user_instance.members (\selected_member_name, member -> do
+        name <- FQ.getShortName member
+        if name == member_name
+        then Some member
+        else selected_member_name)
+    selected_member_name <- case selected_member_name of
+        Some selected_member_name -> selected_member_name
+        None -> qn
+    (context, function_type) <- monomorphizeType context function_type
+    monomorphized_qn <- FQ.Monomorphized (addEffectless selected_member_name) function_type
+    (state, Some monomorphized_qn)
+
+monomorphizeClassImpl a :: (StateProvider a) => a -> (D.ExternalClassImpl, T.Type) -> (a, Option FQ.FullyQualifiedName)
+monomorphizeClassImpl state (external_class_impl, type) = do
+    arg_type <- unpackType type
+    case external_class_impl of
+        D.PartialEqKind -> do
+            class_name <- FQ.FullPath getStdOpsModuleName getPartialEqClassName
+            qn <- FQ.FullPath getStdOpsModuleName getPartialEqClassMemberName
+            fn_type <- T.Function arg_type (T.Function arg_type Util.getBoolType)
+            getClassImpl state class_name qn fn_type arg_type
+        D.EqKind -> (state, None)
+        D.PartialOrdKind -> do
+            class_name <- FQ.FullPath getStdOpsModuleName getPartialOrdClassName
+            qn <- FQ.FullPath getStdOpsModuleName getPartialOrdClassMemberName
+            fn_type <- T.Function arg_type (T.Function arg_type Util.getOptionalOrderingType)
+            getClassImpl state class_name qn fn_type arg_type
+        D.OrdKind -> do
+            class_name <- FQ.FullPath getStdOpsModuleName getOrdClassName
+            qn <- FQ.FullPath getStdOpsModuleName getOrdClassMemberName
+            fn_type <- T.Function arg_type (T.Function arg_type Util.getOrderingType)
+            getClassImpl state class_name qn fn_type arg_type
