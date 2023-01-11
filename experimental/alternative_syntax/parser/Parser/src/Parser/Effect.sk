@@ -1,0 +1,37 @@
+module Siko.Parser.Effect where
+
+import Siko.Parser
+import Siko.Parser.Class(parseClassConstraints)
+import Siko.Parser.Error
+import Siko.Parser.Function
+import Siko.Parser.Token as T
+import Siko.Parser.Token.Kind as Kind
+import Siko.Parser.Type
+import Siko.Syntax.Effect
+import Siko.Syntax.Function
+import Siko.Syntax.Module as M
+
+parseBody :: ParserState -> Result (ParserState, [M.Item]) (ParserState, ParserError)
+parseBody state = do
+    state <- try expect state Kind.LCurly
+    (state, members) <- loop (state, members) <- (state, []) do
+        if check state Kind.RCurly
+        then break (state, members)
+        else case try parseFunction state of
+            (state, Left fn) -> (state, push members (M.Function fn))
+            (state, Right fn_sig) -> do
+                state <- try expect state Kind.Semicolon
+                (state, push members (M.FunctionSignature fn_sig))
+    state <- try expect state Kind.RCurly
+    Ok (state, members)
+
+parseEffect :: ParserState -> Result (ParserState, Effect) (ParserState, ParserError)
+parseEffect state = do
+    state <- try expect state Kind.KeywordEffect
+    (state, name) <- try expectTypeIdent state "effect name"
+    (state, members) <- try parseBody state
+    eff <- Effect { name = name,
+                    arguments = [],
+                    constraints = [],
+                    members = members }
+    Ok (state, eff)

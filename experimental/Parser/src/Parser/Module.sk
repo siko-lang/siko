@@ -1,0 +1,64 @@
+module Siko.Parser.Module where
+
+import Siko.Constants
+import Siko.Parser
+import Siko.Parser.Class
+import Siko.Parser.Data
+import Siko.Parser.Effect
+import Siko.Parser.Error
+import Siko.Parser.Function
+import Siko.Parser.Import
+import Siko.Parser.Token
+import Siko.Parser.Token.Kind as Kind
+import Siko.Syntax.Ident
+import Siko.Syntax.Import
+import Siko.Syntax.Module as M
+
+parseModule :: ParserState -> Result ParserState (ParserState, ParserError)
+parseModule state = do
+    state <- try expect state Kind.KeywordModule
+    (state, name) <- try parseQualifiedTypeName state "module name"
+    mod <- M.Module { name = name, items = [] }
+    state <- try expect state Kind.LCurly
+    (state, mod) <- loop (state, mod) <- (state, mod) do
+        ti <- peek state
+        (state, item) <- case getKind ti.token of
+            Kind.RCurly -> break (state, mod)
+            Kind.KeywordTrait -> case parseClass state of
+                Ok (state, c) -> (state, M.Class c)
+                Err (state, err) -> return Err (state, err)
+            Kind.KeywordEffect -> case parseEffect state of
+                Ok (state, eff) -> (state, M.Effect eff)
+                Err (state, err) -> return Err (state, err)
+            Kind.KeywordEnum -> case parseEnum state of
+                Ok (state, adt) -> (state, M.Adt adt)
+                Err (state, err) -> return Err (state, err)
+            Kind.KeywordStruct -> case parseStruct state of
+                Ok (state, record) -> (state, M.Record record)
+                Err (state, err) -> return Err (state, err)
+            Kind.KeywordInstance -> case parseInstance state of
+                Ok (state, i) -> (state, M.Instance i)
+                Err (state, err) -> return Err (state, err)
+            Kind.KeywordImport -> case parseImport state of
+                Ok (state, i) -> (state, M.Import i)
+                Err (state, err) -> return Err (state, err)
+            Kind.Comment -> do
+                case ti.token of
+                    Comment comment -> do
+                        state <- try expect state Kind.Comment
+                        (state, M.Comment comment)
+                    _ -> unreachable
+            _ -> case parseFunction state of
+                Ok (state, f) -> case f of
+                    Left function -> (state, M.Function function)
+                    Right function_signature -> (state, M.FunctionSignature function_signature)
+                Err (state, err) -> return Err (state, err)
+        mod <- mod { items = push mod.items item }
+        (state, mod)
+    state <- try expect state Kind.RCurly
+    mod <- List.fold mod getImplicitModules (\mod, implicit -> do
+        item <- M.Import (Implicit implicit)
+        mod <- mod { items = push mod.items item }
+        mod)
+    state <- addModule state mod
+    Ok state

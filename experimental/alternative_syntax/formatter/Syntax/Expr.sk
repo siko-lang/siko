@@ -1,0 +1,70 @@
+module Siko.Syntax.Expr where
+
+import Siko.Syntax.Ident
+import Siko.Syntax.Location
+import Siko.Syntax.Pattern as P
+import Siko.Util.SharedString as SS
+
+data Case = { pattern :: P.Pattern,
+              body :: Expr
+            } deriving (Show, PartialEq, Eq)
+
+data RecordConstructionItem = { field_name :: Ident,
+                                body :: Expr
+                              } deriving (Show, PartialEq, Eq)
+
+data Op = Equal
+        | NotEqual
+        | And
+        | Or
+        | LessThan
+        | GreaterThan
+        | LessOrEqualThan
+        | GreaterOrEqualThan
+        | Add
+        | Sub
+        | Mul
+        | Div
+        | PipeForward
+        deriving (Show, PartialEq)
+
+data Expr = Expr SimpleExpr Location deriving (PartialEq, Eq)
+
+data EffectHandler = { name :: Ident,
+                       value :: Expr
+                     } deriving (Show, PartialEq, Eq)
+
+instance Show Expr where
+    show (Expr s _) = show s
+
+data SimpleExpr = Lambda [P.Pattern] Expr
+                | Paren Expr
+                | FunctionCall Expr [Expr]
+                | BinaryOp Op Expr Expr
+                | If Expr Expr Expr
+                | Tuple [Expr]
+                | List [Expr]
+                | Path Ident
+                | IntegerLiteral SS.SharedString
+                | FloatLiteral SS.SharedString
+                | StringLiteral SS.SharedString
+                | CharLiteral Char
+                | Do [Expr]
+                | Bind P.Pattern Expr
+                | FieldAccess Ident Expr
+                | TupleFieldAccess SS.SharedString Expr
+                | Formatter SS.SharedString [Expr] Bool
+                | CaseOf Expr [Case]
+                | Not Expr
+                | Negative Expr
+                | RecordInitialization Ident [RecordConstructionItem]
+                | RecordUpdate Ident [RecordConstructionItem]
+                | Return Expr
+                | Try Expr
+                | Continue Expr
+                | Break Expr
+                | Loop P.Pattern Expr Expr
+                | ArgRef Int
+                | With [EffectHandler] Expr
+                | Comment String
+                deriving (Show, PartialEq, Eq)

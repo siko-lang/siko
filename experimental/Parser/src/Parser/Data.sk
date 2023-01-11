@@ -1,0 +1,77 @@
+module Siko.Parser.Data where
+
+import Siko.Parser
+import Siko.Parser.Error
+import Siko.Parser.Token
+import Siko.Parser.Token.Kind as Kind
+import Siko.Parser.Type
+import Siko.Syntax.Data
+import Siko.Syntax.Ident
+import Siko.Syntax.TypeSignature as T
+import Siko.Util.SharedString as SS
+
+parseRecordField :: ParserState -> Result (ParserState, RecordField) (ParserState, ParserError)
+parseRecordField state = do
+    (state, name) <- try expectVarIdent state "record field"
+    state <- try expect state Kind.Colon
+    (state, type_signature) <- try parseTypeSignature state False False
+    Ok (state, RecordField name type_signature)
+
+parseDeriveInfo :: ParserState -> Result (ParserState, DeriveInfo) (ParserState, ParserError)
+parseDeriveInfo state = do
+    (state, macro_name) <- try expectTypeIdent state "macro name"
+    (state, args) <- if check state Kind.LParen
+    then try parseList state (\state -> parseQualifiedName state "macro arg") Kind.LParen Kind.RParen
+    else (state, [])
+    Ok (state, DeriveInfo macro_name args)
+
+parseVariant :: ParserState -> Result (ParserState, Variant) (ParserState, ParserError)
+parseVariant state = do
+    (state, variant_type) <- try parseTypeSignature state True False
+    T.TypeSignature t _ <- variant_type
+    case t of
+        T.Named name args -> Ok (state, Variant name args)
+        _ -> panic "Variant parsing error"
+
+parseEnum :: ParserState -> Result (ParserState, AlgebraicDataType) (ParserState, ParserError)
+parseEnum state = do
+    state <- try expect state Kind.KeywordEnum
+    (state, name) <- try expectTypeIdent state "type identifier"
+    state <- try expect state Kind.LCurly
+    (state, variants) <- loop (state, variants) <- (state, []) do
+        (state, variant) <- try parseVariant state
+        variants <- push variants variant
+        if check state Kind.Comma
+        then (try expect state Kind.Comma, variants)
+        else break (state, variants)
+    state <- try expect state Kind.RCurly
+    (state, derived_classes) <- if check state Kind.KeywordDeriving
+    then do
+        state <- try expect state Kind.KeywordDeriving
+        (state, derived_classes) <- try parseList state parseDeriveInfo Kind.LParen Kind.RParen
+        (state, derived_classes)
+    else (state, [])
+    adt <- AlgebraicDataType { name = name,
+                               type_arguments = [],
+                               variants = variants,
+                               derived_classes = derived_classes }
+    Ok (state, adt)
+
+parseStruct :: ParserState -> Result (ParserState, Record) (ParserState, ParserError)
+parseStruct state = do
+    state <- try expect state Kind.KeywordStruct
+    (state, name) <- try expectTypeIdent state "type identifier"
+    (state, fields) <- try parseList state parseRecordField Kind.LCurly Kind.RCurly
+    (state, derived_classes) <- if check state Kind.KeywordDeriving
+    then do
+        state <- try expect state Kind.KeywordDeriving
+        try parseList state parseDeriveInfo Kind.LParen Kind.RParen
+    else (state, [])
+    record <- Record { name = name,
+                       type_arguments = [],
+                       fields = fields,
+                       external = False,
+                       derived_classes = derived_classes,
+                       implicit_member = False }
+    Ok (state, record)
+

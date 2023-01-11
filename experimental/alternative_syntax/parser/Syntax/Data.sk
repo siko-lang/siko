@@ -1,0 +1,32 @@
+module Siko.Syntax.Data where
+
+import Siko.Syntax.Ident
+import Siko.Syntax.TypeSignature(TypeSignature)
+import Json
+import Json.Serialize
+
+data DeriveInfo = { macro_name :: Ident,
+                    args :: [Ident]
+                  } deriving (Show, PartialEq, Eq, FromJson, ToJson)
+
+data Variant = { name :: Ident,
+                 items :: [TypeSignature]
+               } deriving (Show, PartialEq, Eq, FromJson, ToJson)
+
+data AlgebraicDataType = { name :: Ident,
+                           type_arguments :: [Ident],
+                           variants :: [Variant],
+                           derived_classes :: [DeriveInfo]
+                         } deriving (Show, PartialEq, Eq, FromJson, ToJson)
+
+data Record = { name :: Ident,
+                type_arguments :: [Ident],
+                fields :: [RecordField],
+                external :: Bool,
+                derived_classes :: [DeriveInfo],
+                implicit_member :: Bool
+              } deriving (Show, PartialEq, Eq, FromJson, ToJson)
+
+data RecordField = { name :: Ident,
+                     type_signature :: TypeSignature
+                   } deriving (Show, PartialEq, Eq, FromJson, ToJson)

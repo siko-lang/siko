@@ -1,0 +1,22 @@
+module Siko.Syntax.TypeSignature where
+
+import Siko.Syntax.Ident
+import Siko.Syntax.Location
+import Json
+import Json.Serialize
+
+data TypeSignature = TypeSignature SimpleTypeSignature Location deriving (Show, PartialEq, Eq, FromJson, ToJson)
+
+data SimpleTypeSignature = TypeArg Ident
+                         | Named Ident [TypeSignature]
+                         | Variant Ident [TypeSignature]
+                         | List TypeSignature
+                         | Tuple [TypeSignature]
+                         | Function TypeSignature TypeSignature
+                         | Never
+                         | Ref Ident TypeSignature
+                         | Owner TypeSignature
+                         | Wildcard
+                         | Paren TypeSignature
+                         | SelfType
+                         deriving (Show, PartialEq, Eq, FromJson, ToJson)

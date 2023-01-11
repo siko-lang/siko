@@ -1,0 +1,25 @@
+module Siko.Syntax.Class where
+
+import Siko.Syntax.Function
+import Siko.Syntax.Ident
+import Siko.Syntax.Module as M
+import Siko.Syntax.TypeSignature(TypeSignature)
+import Json
+import Json.Serialize
+data Constraint = { class_name :: Ident,
+                    argument :: Ident,
+                    associated_types :: [TypeSignature]
+                  } deriving (Show, PartialEq, Eq, FromJson, ToJson)
+
+data Class = { name :: Ident,
+               associated_types :: [Ident],
+               constraints :: [Constraint],
+               members :: [M.Item]
+             } deriving (Show, PartialEq, Eq, FromJson, ToJson)
+
+data Instance = { class_name :: Ident,
+                  type_signature :: TypeSignature,
+                  associated_types :: [TypeSignature],
+                  constraints :: [Constraint],
+                  members :: [M.Item]
+                } deriving (Show, PartialEq, Eq, FromJson, ToJson)

@@ -16,6 +16,15 @@ test: stage1 testrunner
 testrunner: stage0 $(shell find test_runner -type f)
 	@./stage0 build ./test_runner ./std -o ./testrunner
 
+altfmt: stage0 $(shell find experimental/alternative_syntax -type f)
+	@./stage0 build experimental/alternative_syntax ./std -v -o alt
+
+parser2: stage1 $(shell find experimental/sikov2/Parser -type f)
+	@./stage1 build experimental/sikov2/Parser ./std -v -o parser2
+
+nameresolver2: stage1 $(shell find experimental/sikov2/NameResolver -type f)
+	@./stage1 build experimental/sikov2/NameResolver ./std -v -o nameresolver2
+
 clean:
 	@rm -f stage0
 	@rm -f stage1

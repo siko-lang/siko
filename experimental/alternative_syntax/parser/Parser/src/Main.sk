@@ -1,0 +1,159 @@
+module Main where
+
+import Siko.Parser
+import Siko.Args
+import Siko.Format
+import Siko.Syntax.Ident
+import Siko.Syntax.Util
+import Siko.Syntax.Location
+import IO
+import Json
+import Json.Serialize
+import Json.Writer
+import Json.Parser as J
+import Map
+
+outputFileNameOption = "output-file filename"
+
+tracedMirFunctionOption = "traced-mir-function filename"
+
+dumpIROption = "dump-ir"
+
+traceLevel1Option = "trace1"
+
+traceLevel2Option = "trace2"
+
+noOptimizationOption = "no-optimization"
+
+printFunctionInfoOption = "print-function-info"
+
+disableLirTransformOption = "disable-lir-transform"
+
+fmt :: [String] -> ()
+fmt files = do
+    List.forEach files (\name -> do
+        source <- readTextFile name
+        (source_file, lexer_errors, parser_errors) <- parse (FileId 0) name source True
+        failed <- if List.isEmpty lexer_errors
+        then False
+        else do
+            println "Error in {}" % name
+            println lexer_errors
+            True
+        failed <- if List.isEmpty parser_errors
+        then failed
+        else do
+            println "Error in {}" % name
+            println parser_errors
+            True
+        if failed
+        then ()
+        else do
+            orig_source <- relocate source_file
+            tokens <- format source_file
+            output <- formatToken tokens
+            (new_source_file, lexer_errors, parser_errors) <- parse (FileId 0) name output True
+            new_source <- relocate new_source_file
+            if new_source == orig_source
+            then writeTextFile name output
+            else do
+                newname <- "{}.bak" % name
+                writeTextFile newname output
+                println "AST of {} changed!!" % name)
+
+build :: [String] -> ()
+build files = do
+    (failed, source_files) <- List.fold (False, []) files (\(failed, source_files), name -> do
+        source <- readTextFile name
+        (source_file, lexer_errors, parser_errors) <- parse (FileId 0) name source True
+        failed <- if List.isEmpty lexer_errors
+        then failed
+        else do
+            println "Error in {}" % name
+            println lexer_errors
+            True
+        failed <- if List.isEmpty parser_errors
+        then failed
+        else do
+            println "Error in {}" % name
+            println parser_errors
+            True
+        if failed
+        then (failed, source_files)
+        else (failed, List.push source_files source_file))
+    if failed
+    then exit 1
+    else do
+        modules <- List.fold Map.empty source_files (\modules, source_file -> do
+            List.fold modules source_file.modules (\modules, mod -> Map.add modules (getString mod.name) mod))
+        failed <- Map.fold False modules (\failed, (name, modules) -> if List.getLength modules > 1
+            then do
+                println "Module name conflict {}" % name
+                True
+            else failed)
+        if failed
+        then exit 1
+        else ()
+        if createDir "cache/syntax_modules"
+        then ()
+        else exit 1
+        modules |> Map.iter |> Iterator.forEach (\(name, mods) -> do
+            mod <- atIndex mods 0
+            cache_filename <- "cache/syntax_modules/{}.json" % name
+            update <- if isFile cache_filename
+            then do
+                content <- readTextFile cache_filename
+                json_content <- Result.unwrap(J.parse content)
+                prev_mod <- fromJson json_content
+                prev_mod != mod
+            else True
+            if update
+            then do
+                println "Updating {}" % cache_filename
+                output <- write (toJson mod)
+                writeTextFile cache_filename output
+            else ())
+        ()
+
+processPath :: String -> [String]
+processPath path = do
+    if isDir path
+    then do
+        entries <- listDir path
+        List.fold [] entries (\files, entry -> if isDir entry
+            then files + processPath entry
+            else do
+                subs <- String.split entry "/"
+                file <- last subs
+                if endsWith file ".sk"
+                then List.push files (entry)
+                else files)
+    else [path]
+
+main = do
+    args <- getArgs
+    argparser <- createArgParser "Siko"
+    build_cmd <- Command "build" [Simple (SimpleOption traceLevel1Option "-v" "Enable level 1 traces" "Disabled"),
+                                  Simple (SimpleOption traceLevel2Option "-vv" "Enable level 2 traces" "Disabled"),
+                                  Simple (SimpleOption dumpIROption "-d" "Dump MIR/LIR" "Disabled"),
+                                  Simple (SimpleOption noOptimizationOption "-nooptimization" "Disable optimizations" "Enabled"),
+                                  Simple (SimpleOption printFunctionInfoOption "-pfi" "Print MIR function info" "Disabled"),
+                                  Simple (SimpleOption disableLirTransformOption "-dlt" "Disable LIR transform" "Enabled"),
+                                  WithArg (WithArgOption outputFileNameOption "-o" "Output binary name" "sikoc_output"),
+                                  WithArg (WithArgOption tracedMirFunctionOption "-m" "Traced MIR function" "-")] "Build program"
+    fmt_cmd <- Command "fmt" [] "Format source code"
+    cli_cmd <- Command "cli" [] "Run CLI"
+    argparser <- addCommand argparser build_cmd
+    argparser <- addCommand argparser fmt_cmd
+    argparser <- addCommand argparser cli_cmd
+    case processArgs argparser args of
+        Ok result -> do
+            case result.command of
+                "fmt" -> do
+                    names <- List.fold [] result.unused (\names, arg -> names + processPath arg)
+                    fmt names
+                "build" -> do
+                    names <- List.fold [] result.unused (\names, arg -> names + processPath arg)
+                    build names
+                _ -> ()
+        Err _ -> ()

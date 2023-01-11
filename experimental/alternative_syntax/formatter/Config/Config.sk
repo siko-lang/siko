@@ -1,0 +1,50 @@
+module Siko.Config where
+
+data FileName = FileName String deriving (Show)
+
+data TraceLevel = Off
+                | Level1
+                | Level2
+                deriving (PartialEq, Show)
+
+data Config = { output_file_name :: Option String,
+                trace_level :: TraceLevel,
+                dump :: Bool,
+                mir_functions :: [String],
+                print_function_info :: Bool,
+                disable_lir_transforms :: Bool,
+                optimized :: Bool
+              } deriving (Show)
+
+data OutputFileType = Rust
+                    | Binary
+                    | HIR String
+                    | MIR String
+                    | LIR String
+                    | MIRJson String
+
+getDefaultConfig :: Config
+getDefaultConfig = Config None 
+                          Off 
+                          False 
+                          [] 
+                          False 
+                          False 
+                          True
+
+getOutputFileName :: OutputFileType -> String
+getOutputFileName type = do
+    config <- getConfig ()
+    output_file <- case config.output_file_name of
+        Some output_file -> output_file
+        None -> "sikoc_output"
+    case type of
+        Rust -> "{}.rs" % output_file
+        Binary -> "{}" % output_file
+        HIR name -> "{}_hir_{}.sk" % (output_file, name)
+        MIR name -> "{}_mir_{}.sk" % (output_file, name)
+        LIR name -> "{}_lir_{}.sk" % (output_file, name)
+        MIRJson name -> "{}_mir_{}.json" % (output_file, name)
+
+effect ConfigProvider where
+    getConfig :: () -> Config

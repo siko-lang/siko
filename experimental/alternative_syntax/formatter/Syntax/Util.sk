@@ -1,0 +1,213 @@
+module Siko.Syntax.Util where
+
+import Map
+import Siko.Syntax.Attribute
+import Siko.Syntax.Class as C
+import Siko.Syntax.Data as D
+import Siko.Syntax.Effect as Eff
+import Siko.Syntax.Expr as E
+import Siko.Syntax.Function as F
+import Siko.Syntax.Ident
+import Siko.Syntax.Import as I
+import Siko.Syntax.Location
+import Siko.Syntax.Module as M
+import Siko.Syntax.Pattern as P
+import Siko.Syntax.SourceFile
+import Siko.Syntax.TypeSignature as T
+import Siko.Util.SharedString as SS
+
+orderImports :: [M.Item] -> [M.Item]
+orderImports items = do
+    imports <- List.filterMap items (\item -> case item of
+        M.Import i -> Some i
+        _ -> None)
+    import_map <- List.fold Map.empty imports (\import_map, i -> case i of
+        I.Hiding name _ -> Map.add import_map (getString name) i
+        I.ImportAll name _ -> Map.add import_map (getString name) i
+        I.Implicit _ -> import_map
+        I.ImportSpecific name _ _ -> Map.add import_map (getString name) i)
+    imports <- Map.fold [] import_map (\imports, (_, is) -> imports + is)
+    imports <- List.map imports (\i -> M.Import i)
+    non_imports <- List.filter items (\item -> case item of
+        M.Import _ -> False
+        _ -> True)
+    imports + non_imports
+
+class Relocate a where
+    relocate a :: a -> a
+
+instance (Relocate a) => Relocate [a] where
+    relocate xs = List.map xs relocate
+
+instance (Relocate a) => Relocate Option a where
+    relocate opt = case opt of
+        Some a -> Some (relocate a)
+        None -> None
+
+instance Relocate Ident where
+    relocate Ident s l = Ident s emptyLocation
+
+instance Relocate T.TypeSignature where
+    relocate T.TypeSignature s l = T.TypeSignature (relocate s) emptyLocation
+
+instance Relocate T.SimpleTypeSignature where
+    relocate s = case s of
+        T.TypeArg i -> T.TypeArg (relocate i)
+        T.Named name args -> T.Named (relocate name) (relocate args)
+        T.Variant name args -> T.Variant (relocate name) (relocate args)
+        T.List ty -> T.List (relocate ty)
+        T.Tuple args -> T.Tuple (relocate args)
+        T.Function from to -> T.Function (relocate from) (relocate to)
+        T.Never -> T.Never
+        T.Ref l ty -> T.Ref (relocate l) (relocate ty)
+        T.Owner ty -> T.Owner (relocate ty)
+        T.Wildcard -> T.Wildcard
+        T.Paren ty -> T.Paren (relocate ty)
+
+instance Relocate D.DeriveInfo where
+    relocate D.DeriveInfo name args = D.DeriveInfo (relocate name) (relocate args)
+
+instance Relocate D.Variant where
+    relocate D.Variant name items = D.Variant (relocate name) (relocate items)
+
+instance Relocate D.AlgebraicDataType where
+    relocate D.AlgebraicDataType name type_arguments variants derived_classes = D.AlgebraicDataType (relocate name) (relocate type_arguments) (relocate variants) (relocate derived_classes)
+
+instance Relocate D.Record where
+    relocate D.Record name type_arguments fields external derived_classes implicit_member = D.Record (relocate name) (relocate type_arguments) (relocate fields) external (relocate derived_classes) implicit_member
+
+instance Relocate D.RecordField where
+    relocate D.RecordField name ty = D.RecordField (relocate name) (relocate ty)
+
+instance Relocate E.Case where
+    relocate E.Case pattern body = E.Case (relocate pattern) (relocate body)
+
+instance Relocate E.RecordConstructionItem where
+    relocate E.RecordConstructionItem field_name body = E.RecordConstructionItem (relocate field_name) (relocate body)
+
+instance Relocate E.Expr where
+    relocate E.Expr s l = E.Expr (relocate s) emptyLocation
+
+instance Relocate E.EffectHandler where
+    relocate E.EffectHandler name value = E.EffectHandler (relocate name) (relocate value)
+
+instance Relocate E.SimpleExpr where
+    relocate s = case s of
+        E.Lambda args body -> E.Lambda (relocate args) (relocate body)
+        E.Paren arg -> E.Paren (relocate arg)
+        E.FunctionCall id args -> E.FunctionCall (relocate id) (relocate args)
+        E.BinaryOp op lhs rhs -> E.BinaryOp op (relocate lhs) (relocate rhs)
+        E.If cond t f -> E.If (relocate cond) (relocate t) (relocate f)
+        E.Tuple args -> E.Tuple (relocate args)
+        E.List args -> E.List (relocate args)
+        E.Path n -> E.Path (relocate n)
+        E.IntegerLiteral lit -> E.IntegerLiteral lit
+        E.FloatLiteral lit -> E.FloatLiteral lit
+        E.StringLiteral lit -> E.StringLiteral lit
+        E.CharLiteral c -> E.CharLiteral c
+        E.Do args -> E.Do (relocate args)
+        E.Bind p rhs -> E.Bind (relocate p) (relocate rhs)
+        E.FieldAccess n receiver -> E.FieldAccess (relocate n) (relocate receiver)
+        E.TupleFieldAccess n receiver -> E.TupleFieldAccess n (relocate receiver)
+        E.Formatter fmt args in_parens -> E.Formatter fmt (relocate args) in_parens
+        E.CaseOf body cases -> E.CaseOf (relocate body) (relocate cases)
+        E.Not arg -> E.Not (relocate arg)
+        E.Negative arg -> E.Negative (relocate arg)
+        E.RecordInitialization name args -> E.RecordInitialization (relocate name) (relocate args)
+        E.RecordUpdate name args -> E.RecordUpdate (relocate name) (relocate args)
+        E.Return arg -> E.Return (relocate arg)
+        E.Try arg -> E.Try (relocate arg)
+        E.Continue arg -> E.Continue (relocate arg)
+        E.Break arg -> E.Break (relocate arg)
+        E.Loop pat init body -> E.Loop (relocate pat) (relocate init) (relocate body)
+        E.ArgRef i -> E.ArgRef i
+        E.With handlers body -> E.With (relocate handlers) (relocate body)
+        E.Comment comment -> E.Comment comment
+
+instance Relocate P.RecordFieldPattern where
+    relocate P.RecordFieldPattern name pat = P.RecordFieldPattern (relocate name) (relocate pat)
+
+instance Relocate P.Pattern where
+    relocate P.Pattern s l = P.Pattern (relocate s) emptyLocation
+
+instance Relocate P.SimplePattern where
+    relocate s = case s of
+        P.Binding n -> P.Binding (relocate n)
+        P.Tuple args -> P.Tuple (relocate args)
+        P.Constructor n args -> P.Constructor (relocate n) (relocate args)
+        P.Guarded p guard -> P.Guarded (relocate p) (relocate guard)
+        P.Wildcard -> P.Wildcard
+        P.IntegerLiteral lit -> P.IntegerLiteral lit
+        P.StringLiteral lit -> P.StringLiteral lit
+        P.CharLiteral lit -> P.CharLiteral lit
+        P.CharRange start end kind -> P.CharRange start end kind
+        P.Typed p ty -> P.Typed (relocate p) (relocate ty)
+        P.Record n args -> P.Record (relocate n) (relocate args)
+        P.Or args -> P.Or (relocate args)
+        P.Paren arg -> P.Paren (relocate arg)
+
+instance Relocate F.EffectSignature where
+    relocate F.EffectSignature name arguments = F.EffectSignature (relocate name) (relocate arguments)
+
+instance Relocate F.FunctionSignature where
+    relocate F.FunctionSignature name type_arguments constraints type_signature attributes effects = F.FunctionSignature (relocate name) (relocate type_arguments) (relocate constraints) (relocate type_signature) (relocate attributes) (relocate effects)
+
+instance Relocate F.Function where
+    relocate F.Function name arguments body sub_items attributes extern_constraints = F.Function (relocate name) (relocate arguments) (relocate body) (relocate sub_items) (relocate attributes) extern_constraints
+
+instance Relocate Attribute where
+    relocate Attribute n = Attribute (relocate n)
+
+instance Relocate C.Constraint where
+    relocate C.Constraint class_name argument associated_types = C.Constraint (relocate class_name) (relocate argument) (relocate associated_types)
+
+instance Relocate M.Item where
+    relocate item = case item of
+        M.Function f -> M.Function (relocate f)
+        M.FunctionSignature s -> M.FunctionSignature (relocate s)
+        M.Adt a -> M.Adt (relocate a)
+        M.Record d -> M.Record (relocate d)
+        M.Import i -> M.Import (relocate i)
+        M.Class c -> M.Class (relocate c)
+        M.Instance i -> M.Instance (relocate i)
+        M.Effect e -> M.Effect (relocate e)
+        M.Comment comment -> M.Comment comment
+
+instance Relocate C.Class where
+    relocate C.Class name argument associated_types constraints members = C.Class (relocate name) (relocate argument) (relocate associated_types) (relocate constraints) (relocate members)
+
+instance Relocate C.Instance where
+    relocate C.Instance class_name type_signature associated_types constraints members = C.Instance (relocate class_name) (relocate type_signature) (relocate associated_types) (relocate constraints) (relocate members)
+
+instance Relocate Eff.Effect where
+    relocate Eff.Effect name arguments constraints members = Eff.Effect (relocate name) (relocate arguments) (relocate constraints) (relocate members)
+
+instance Relocate I.Export where
+    relocate export = case export of
+        I.ExportAll -> I.ExportAll
+        I.ExportSpecific filters -> I.ExportSpecific (relocate filters)
+
+instance Relocate I.Import where
+    relocate i = case i of
+        I.Hiding name items -> I.Hiding (relocate name) (relocate items)
+        I.ImportAll name alternative_name -> I.ImportAll (relocate name) (relocate alternative_name)
+        I.Implicit i -> I.Implicit i
+        I.ImportSpecific name filters alternative_name -> I.ImportSpecific (relocate name) (relocate filters) (relocate alternative_name)
+
+instance Relocate I.MemberSpecification where
+    relocate ms = case ms of
+        I.Specific name -> I.Specific (relocate name)
+        I.All -> I.All
+
+instance Relocate I.Filter where
+    relocate filter = case filter of
+        I.Single name -> I.Single (relocate name)
+        I.Group name ms -> I.Group (relocate name) (relocate ms)
+
+instance Relocate SourceFile where
+    relocate SourceFile name mods = SourceFile name (relocate mods)
+
+instance Relocate M.Module where
+    relocate M.Module name items export = do
+        items <- orderImports items
+        M.Module (relocate name) (relocate items) (relocate export)

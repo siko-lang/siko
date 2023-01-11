@@ -49,11 +49,12 @@ callGetJsonListItems arg location = do
     name <- createIdent "Json.getJsonListItems" location
     E.Expr (E.FunctionCall (E.Expr (E.Path name) location) [arg]) location
 
-deriveRecordFromJson :: D.Record -> Location -> C.Instance
-deriveRecordFromJson record derive_location = do
+deriveRecordFromJson :: D.Record -> Location -> String -> C.Instance
+deriveRecordFromJson record derive_location mod_name = do
     class_name <- createIdent "Json.Serialize.FromJson" derive_location
+    record_ident <- createIdent ("{}.{}" % (mod_name, record.name)) derive_location
     type_arguments <- List.map record.type_arguments (\type_arg -> T.TypeSignature (T.TypeArg type_arg) derive_location)
-    type_signature <- T.TypeSignature (T.Named record.name type_arguments) derive_location
+    type_signature <- T.TypeSignature (T.Named record_ident type_arguments) derive_location
     constraints <- List.fold [] record.type_arguments (\constraints, record_type_arg -> do
         Ident type_arg _ <- record_type_arg
         constraint <- C.Constraint class_name (Ident type_arg derive_location) []
@@ -62,7 +63,6 @@ deriveRecordFromJson record derive_location = do
     items_ident <- createIdent "items" derive_location
     at_index_ident <- createIdent "List.atIndex" derive_location
     fn_args <- [P.Pattern (P.Binding (createIdent "json" derive_location)) derive_location]
-    Ident record_name _ <- record.name
     ctor_args <- List.fold [] record.fields (\ctor_args, field -> do
         index <- getLength ctor_args
         integer_literal <- E.IntegerLiteral (SS.create (show index))
@@ -75,7 +75,7 @@ deriveRecordFromJson record derive_location = do
     items_var <- P.Pattern (P.Binding items_ident) derive_location
     items_expr <- callGetJsonObjectItems (E.Expr (E.ArgRef 0) derive_location) derive_location
     items_decl <- E.Expr (E.Bind items_var items_expr) derive_location
-    ctor_call <- E.Expr (E.FunctionCall (E.Expr (E.Path record.name) derive_location) ctor_args) derive_location
+    ctor_call <- E.Expr (E.FunctionCall (E.Expr (E.Path record_ident) derive_location) ctor_args) derive_location
     do_items <- [items_decl, ctor_call]
     body <- E.Expr (E.Do do_items) derive_location
     body <- Some body

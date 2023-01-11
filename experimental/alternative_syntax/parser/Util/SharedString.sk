@@ -1,0 +1,27 @@
+module Siko.Util.SharedString where
+
+import Rc
+import Json
+import Json.Serialize
+
+data SharedString = { value :: Rc String } deriving (PartialEq, Eq, PartialOrd, Ord)
+
+create :: String -> SharedString
+create s = SharedString (Rc.create s)
+
+get :: SharedString -> String
+get ss = Rc.get ss.value
+
+instance Show SharedString where
+    show s = (Rc.get s.value)
+
+instance Add SharedString where
+    opAdd a b = Siko.Util.SharedString.create ((Siko.Util.SharedString.get a) + (Siko.Util.SharedString.get b))
+
+instance ToJson SharedString where
+    toJson s = JsonString (Siko.Util.SharedString.get s)
+
+instance FromJson SharedString where
+    fromJson json = case json of
+        JsonString s -> Siko.Util.SharedString.create s
+        _ -> panic "Expected string in json"

@@ -39,21 +39,21 @@ callJsonList items location = do
     items <- E.Expr (E.List items) location
     E.Expr (E.FunctionCall (E.Expr (E.Path name) location) [items]) location
 
-deriveRecordToJson :: D.Record -> Location -> C.Instance
-deriveRecordToJson record derive_location = do
+deriveRecordToJson :: D.Record -> Location -> String -> C.Instance
+deriveRecordToJson record derive_location mod_name = do
     with { getLocation = \_ -> derive_location } do
         json_object_ctor_name <- createIdentL "Json.JsonObject"
         json_object_item_ctor_name <- createIdentL "Json.JsonObjectItem"
         class_name <- createIdentL "Json.Serialize.ToJson"
+        record_ident <- createIdent ("{}.{}" % (mod_name, record.name)) derive_location
         type_arguments <- List.map record.type_arguments (\type_arg -> T.TypeSignature (T.TypeArg type_arg) derive_location)
-        type_signature <- T.TypeSignature (T.Named record.name type_arguments) derive_location
+        type_signature <- T.TypeSignature (T.Named record_ident type_arguments) derive_location
         constraints <- List.fold [] record.type_arguments (\constraints, record_type_arg -> do
             Ident type_arg _ <- record_type_arg
             constraint <- C.Constraint class_name (Ident type_arg derive_location) []
             List.push constraints constraint)
         fn_name <- createIdentL "toJson"
         fn_args <- [P.Pattern (P.Binding (createIdentL "record")) derive_location]
-        Ident record_name _ <- record.name
         field_to_json_exprs <- List.map record.fields (\field -> do
             field_name_expr <- createFieldAccessByVar "record" field.name derive_location
             Ident name _ <- field.name
