@@ -1,5 +1,7 @@
 module Siko.Syntax.Function where
 
+import Json
+import Json.Serialize
 import Siko.Syntax.Attribute
 import Siko.Syntax.Class
 import Siko.Syntax.Expr
@@ -7,8 +9,6 @@ import Siko.Syntax.Ident
 import Siko.Syntax.Module as M
 import Siko.Syntax.Pattern
 import Siko.Syntax.TypeSignature
-import Json
-import Json.Serialize
 
 data ConstraintPath = Argument Int
                     | Field Int ConstraintPath
@@ -16,41 +16,37 @@ data ConstraintPath = Argument Int
                     | Variant Int ConstraintPath
                     | Implicit Int ConstraintPath
                     | Result
-                    deriving (Show, PartialEq, Eq, FromJson, ToJson)
+                    deriving (Show, PartialEq, Eq, ToJson, FromJson)
 
 data Converter = { from :: ConstraintPath,
                    to :: ConstraintPath
-                 } deriving (Show, PartialEq, Eq, FromJson, ToJson)
+                 } deriving (Show, PartialEq, Eq, ToJson, FromJson)
 
 data Equal = { left :: ConstraintPath,
                right :: ConstraintPath
-             } deriving (Show, PartialEq, Eq, FromJson, ToJson)
+             } deriving (Show, PartialEq, Eq, ToJson, FromJson)
 
 data ExternConstraint = ExternConverter Converter
                       | ExternEquality Equal
                       | Independent ConstraintPath
-                      deriving (Show, PartialEq, Eq, FromJson, ToJson)
+                      deriving (Show, PartialEq, Eq, ToJson, FromJson)
 
 data EffectSignature = { name :: Ident,
                          arguments :: [Ident]
-                       } deriving (Show, PartialEq, Eq, FromJson, ToJson)
+                       } deriving (Show, PartialEq, Eq, ToJson, FromJson)
 
 data FunctionSignature = { name :: Ident,
-                           arguments :: [FunctionArgument],
-                           result :: TypeSignature,
-                         } deriving (Show, PartialEq, Eq, FromJson, ToJson)
-
-data NamedFunctionArgument = { pat :: Pattern,
-                              type_signature :: TypeSignature } deriving (Show, PartialEq, Eq, FromJson, ToJson)
-
-data FunctionArgument = SelfArg
-                      |  NamedArg NamedFunctionArgument  deriving (Show, PartialEq, Eq, FromJson, ToJson)
+                           type_arguments :: [Ident],
+                           constraints :: [Constraint],
+                           type_signature :: TypeSignature,
+                           attributes :: [Attribute],
+                           effects :: Option [EffectSignature]
+                         } deriving (Show, PartialEq, Eq, ToJson, FromJson)
 
 data Function = { name :: Ident,
-                  arguments :: [FunctionArgument],
-                  result :: TypeSignature,
+                  arguments :: [Pattern],
                   body :: Option Expr,
                   sub_items :: [M.Item],
                   attributes :: [Attribute],
                   extern_constraints :: [ExternConstraint]
-                } deriving (Show, PartialEq, Eq, FromJson, ToJson)
+                } deriving (Show, PartialEq, Eq, ToJson, FromJson)

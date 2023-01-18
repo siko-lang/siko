@@ -1,0 +1,131 @@
+module Siko.AutoDerive where
+
+import Siko.AutoDerive.Copy
+import Siko.AutoDerive.Eq
+import Siko.AutoDerive.FromJson
+import Siko.AutoDerive.GenericFold
+import Siko.AutoDerive.GenericTransform
+import Siko.AutoDerive.Hash
+import Siko.AutoDerive.Move
+import Siko.AutoDerive.Ord
+import Siko.AutoDerive.PartialEq
+import Siko.AutoDerive.PartialOrd
+import Siko.AutoDerive.Show
+import Siko.AutoDerive.ToJson
+import Siko.Resolver.ModuleResolver
+import Siko.Resolver.Type
+import Siko.Syntax.Class as C
+import Siko.Syntax.Data as D
+import Siko.Syntax.Ident
+import Siko.HIR.FullyQualifiedName as FQ
+import Siko.HIR.Class as HC
+import Siko.Syntax.Location
+import Siko.Util.SharedString as SS
+import Map
+
+parseGenericArgs :: Map FQ.FullyQualifiedName HC.Class ->
+                    ModuleResolver ->
+                    Location ->
+                    [Ident] -> Option (Ident, Ident, Ident)
+parseGenericArgs classes module_resolver derive_location args = case List.getLength args of
+    1 -> do
+        class_name <- atIndex args 0
+        case resolveClass module_resolver class_name of
+            Ok qn -> do
+                mod_name <- FQ.getModuleName qn
+                mod_name <- Ident mod_name derive_location
+                c <- Option.unwrap (Map.get classes qn)
+                if List.getLength c.members == 1
+                then do
+                    m <- atIndex c.members 0
+                    m <- FQ.getShortName m
+                    function_name <- Ident m derive_location
+                    Some (mod_name, class_name, function_name)
+                else None
+            Err _ -> None
+    2 -> do
+        class_name <- atIndex args 0
+        case resolveClass module_resolver class_name of
+            Ok qn -> do
+                mod_name <- FQ.getModuleName qn
+                mod_name <- Ident mod_name derive_location
+                function_name <- atIndex args 1
+                Some (mod_name, class_name, function_name)
+            Err _ -> None
+    _ -> None
+
+processRecordDerive :: D.Record ->
+                       Map FQ.FullyQualifiedName HC.Class ->
+                       ModuleResolver ->
+                       D.DeriveInfo -> Option C.Instance
+processRecordDerive record classes module_resolver derive_info = do
+    mod_name <- SS.get module_resolver.module_name
+    Ident name derive_location <- derive_info.macro_name
+    case SS.get name of
+        "Show" -> Some (deriveRecordShow record derive_location)
+        "PartialEq" -> Some (deriveRecordPartialEq record derive_location)
+        "Eq" -> Some (deriveRecordEq record derive_location)
+        "PartialOrd" -> Some (deriveRecordPartialOrd record derive_location)
+        "Ord" -> Some (deriveRecordOrd record derive_location)
+        "ToJson" -> Some (deriveRecordToJson record derive_location mod_name)
+        "FromJson" -> Some (deriveRecordFromJson record derive_location mod_name)
+        "Copy" -> Some (deriveRecordCopy record derive_location)
+        "Move" -> Some (deriveRecordMove record derive_location)
+        "Hash" -> Some (deriveRecordHash record derive_location)
+        "GenericFold" -> do
+            case parseGenericArgs classes module_resolver derive_location derive_info.args of
+                Some (mod_name, class_name, function_name) -> do
+                    Some (deriveRecordGenericFold record derive_location mod_name class_name function_name)
+                None -> panic "GenericFold to resolve"
+        "GenericTransform" -> do
+            case parseGenericArgs classes module_resolver derive_location derive_info.args of
+                Some (class_mod_name, class_name, function_name) -> do
+                    Some (deriveRecordGenericTransform record derive_location (createIdent mod_name derive_location) class_mod_name class_name function_name)
+                None -> panic "GenericTransform to resolve"
+        _ -> None
+
+processAdtDerive :: D.AlgebraicDataType ->
+                    Map FQ.FullyQualifiedName HC.Class ->
+                    ModuleResolver ->
+                    D.DeriveInfo -> Option C.Instance
+processAdtDerive adt classes module_resolver derive_info = do
+    mod_name <- SS.get module_resolver.module_name
+    Ident name derive_location <- derive_info.macro_name
+    case SS.get name of
+        "Show" -> Some (deriveAdtShow adt derive_location mod_name)
+        "PartialEq" -> Some (deriveAdtPartialEq adt derive_location mod_name)
+        "Eq" -> Some (deriveAdtEq adt derive_location)
+        "PartialOrd" -> Some (deriveAdtPartialOrd adt derive_location mod_name)
+        "Ord" -> Some (deriveAdtOrd adt derive_location mod_name)
+        "ToJson" -> Some (deriveAdtToJson adt derive_location mod_name)
+        "FromJson" -> Some (deriveAdtFromJson adt derive_location mod_name)
+        "Copy" -> Some (deriveAdtCopy adt derive_location)
+        "Move" -> Some (deriveAdtMove adt derive_location)
+        "Hash" -> Some (deriveAdtHash adt derive_location mod_name)
+        "GenericFold" -> do
+            case parseGenericArgs classes module_resolver derive_location derive_info.args of
+                Some (class_mod_name, class_name, function_name) -> do
+                    Some (deriveAdtGenericFold adt derive_location (createIdent mod_name derive_location) class_mod_name class_name function_name)
+                None -> panic "GenericFold to resolve"
+        "GenericTransform" -> do
+            case parseGenericArgs classes module_resolver derive_location derive_info.args of
+                Some (class_mod_name, class_name, function_name) -> do
+                    Some (deriveAdtGenericTransform adt derive_location (createIdent mod_name derive_location) class_mod_name class_name function_name)
+                None -> panic "GenericTransform to resolve"
+        _ -> None
+
+processRecordDerives :: D.Record ->
+                        Map FQ.FullyQualifiedName HC.Class ->
+                        ModuleResolver -> (D.Record, [C.Instance])
+processRecordDerives record classes module_resolver = do
+    instances <- List.filterMap record.derived_classes (processRecordDerive record classes module_resolver)
+    record <- record { derived_classes = [] }
+    (record, instances)
+
+processAdtDerives :: D.AlgebraicDataType ->
+                     Map FQ.FullyQualifiedName HC.Class ->
+                     ModuleResolver -> (D.AlgebraicDataType, [C.Instance])
+processAdtDerives adt classes module_resolver = do
+    instances <- List.filterMap adt.derived_classes (processAdtDerive adt classes module_resolver)
+    adt <- adt { derived_classes = [] }
+    (adt, instances)

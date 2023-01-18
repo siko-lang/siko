@@ -30,7 +30,7 @@ parseAttributes state = do
             T.At -> do
                 state <- try expect state Kind.At
                 (state, name) <- try expectTypeIdent state "attribute name"
-                state <- try expect state Kind.Semicolon
+                state <- try expect state Kind.EndOfItem
                 (state, List.push attributes (Attribute name))
             _ -> break Ok (state, attributes)
 
@@ -152,41 +152,65 @@ parseExternConstraints state = parseList state parseExternConstraint Kind.LParen
                     err <- unexpectedToken state "numeric literal"
                     Err (state, err)
 
-parseFunctionArg :: ParserState -> Result (ParserState, FunctionArgument) (ParserState, ParserError)
-parseFunctionArg state = do
-    if check state Kind.KeywordSelf
-    then do
-        state <- try expect state Kind.KeywordSelf
-        Ok (state, SelfArg)
-    else do
-        (state, pat) <- try parsePattern state
-        state <- try expect state Kind.Colon
-        (state, ty) <- try parseTypeSignature state False False
-        Ok (state, NamedArg (NamedFunctionArgument pat ty))
-
 parseFunction :: ParserState -> Result (ParserState, Either Function FunctionSignature) (ParserState, ParserError)
 parseFunction state = do
     (state, attributes) <- try parseAttributes state
-    state <- try expect state Kind.KeywordFn
-    (state, name) <- try expectVarIdent state "function name"
-    (state, args) <- try parseList state parseFunctionArg Kind.LParen Kind.RParen
-    state <- try expect state Kind.RightArrow
-    (state, result_ty) <- try parseTypeSignature state False False
-    if check state Kind.LCurly
-    then do
-        (state, body) <- try parseDoBlock state
-        state <- state { sub_items = [] }
-        function <- Function { name = name,
-                            arguments = args,
-                            result = result_ty,
-                            body = Some body,
-                            sub_items = [],
-                            attributes = attributes,
-                            extern_constraints = [] }
-        Ok (state, Left function)
-    else do
-        function <- FunctionSignature { name = name,
-                            arguments = args,
-                            result = result_ty,
-            }
-        Ok (state, Right function)
+    ti <- peek state
+    case ti.token of
+        T.VarIdentifier id -> do
+            (state, name) <- try expectVarIdent state "function name"
+            (state, args, sep) <- loop (state, args) <- (state, []) do
+                ti <- peek state
+                case ti.token of
+                    T.Equal -> break (state, args, Some T.Equal)
+                    T.DoubleColon -> break (state, args, Some T.DoubleColon)
+                    _ -> do
+                        (state, arg) <- try parsePattern state
+                        args <- push args arg
+                        (state, args)
+            case sep of
+                Some T.Equal -> do
+                    state <- try expect state Kind.Equal
+                    (state, body, extern_constraints) <- if check state Kind.KeywordExtern
+                    then do
+                        state <- try expect state Kind.KeywordExtern
+                        if check state Kind.LParen
+                        then do
+                            (state, extern_constraints) <- try parseExternConstraints state
+                            (state, None, extern_constraints)
+                        else (state, None, [])
+                    else do
+                        (state, body) <- try parseExpr state
+                        (state, Some body, [])
+                    (state, sub_items) <- if check state Kind.KeywordWhere
+                    then try parseSubItems state
+                    else (state, [])
+                    state <- try expect state Kind.EndOfItem
+                    sub_items <- sub_items + state.sub_items
+                    state <- state { sub_items = [] }
+                    function <- Function { name = name,
+                                           arguments = args,
+                                           body = body,
+                                           sub_items = sub_items,
+                                           attributes = attributes,
+                                           extern_constraints = extern_constraints }
+                    Ok (state, Left function)
+                Some T.DoubleColon -> do
+                    state <- try expect state Kind.DoubleColon
+                    (args, errors) <- Iterator.fold checkTypeArgs ([], []) (args |> List.iter)
+                    state <- state { errors = state.errors + errors }
+                    (state, constraints) <- try parseClassConstraints state
+                    (state, type_signature) <- try parseTypeSignature state False False
+                    (state, effects) <- try parseEffectSignatures state
+                    state <- try expect state Kind.EndOfItem
+                    function_signature <- FunctionSignature { name = name,
+                                                              type_arguments = args,
+                                                              constraints = constraints,
+                                                              type_signature = type_signature,
+                                                              attributes = attributes,
+                                                              effects = effects }
+                    Ok (state, Right function_signature)
+                _ -> panic "Unexpected separator"
+        _ -> do
+            err <- unexpectedToken state "function name"
+            Err (state, err)

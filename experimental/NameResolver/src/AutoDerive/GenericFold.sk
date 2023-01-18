@@ -1,0 +1,84 @@
+module Siko.AutoDerive.GenericFold where
+
+import Siko.Syntax.Class as C
+import Siko.Syntax.Data as D
+import Siko.Syntax.Expr as E
+import Siko.Syntax.Function as F
+import Siko.Syntax.Ident
+import Siko.Syntax.Module as M
+import Siko.Syntax.Location
+import Siko.Syntax.Pattern as P
+import Siko.Syntax.TypeSignature as T
+
+deriveRecordGenericFold :: D.Record ->
+                           Location ->
+                           Ident ->
+                           Ident ->
+                           Ident -> C.Instance
+deriveRecordGenericFold record derive_location mod_name class_name function_name = do
+    type_arguments <- List.map record.type_arguments (\type_arg -> T.TypeSignature (T.TypeArg type_arg) derive_location)
+    type_signature <- T.TypeSignature (T.Named record.name type_arguments) derive_location
+    constraints <- List.fold [] record.type_arguments (\constraints, record_type_arg -> do
+        Ident type_arg _ <- record_type_arg
+        constraint <- C.Constraint class_name (Ident type_arg derive_location) []
+        List.push constraints constraint)
+    state_name <- createIdent ".state" derive_location
+    state_pattern <- P.Pattern (P.Binding state_name) derive_location
+    state_ref <- E.Expr (E.Path state_name) derive_location
+    full_fn_name <- path mod_name function_name
+    full_fn_name_expr <- E.Expr (E.Path full_fn_name) derive_location
+    record_name <- createIdent ".record" derive_location
+    record_ref <- E.Expr (E.Path record_name) derive_location
+    fn_args <- [state_pattern, P.Pattern (P.Binding record_name) derive_location]
+    field_exprs <- List.map record.fields (\field -> do
+        field_name_expr <- E.Expr (E.FieldAccess field.name record_ref) derive_location
+        args <- [state_ref, field_name_expr]
+        call <- E.Expr (E.FunctionCall full_fn_name_expr args) derive_location
+        E.Expr (E.Bind state_pattern call) derive_location)
+    do_items <- field_exprs + [state_ref]
+    body <- E.Expr (E.Do do_items) derive_location
+    body <- Some body
+    op_fn <- F.Function function_name fn_args body [] [] []
+    C.Instance class_name type_signature [] constraints [M.Function op_fn]
+
+deriveAdtGenericFold :: D.AlgebraicDataType ->
+                        Location ->
+                        Ident ->
+                        Ident ->
+                        Ident ->
+                        Ident -> C.Instance
+deriveAdtGenericFold adt derive_location mod_name class_mod_name class_name function_name = do
+    type_arguments <- List.map adt.type_arguments (\type_arg -> T.TypeSignature (T.TypeArg type_arg) derive_location)
+    type_signature <- T.TypeSignature (T.Named adt.name type_arguments) derive_location
+    constraints <- List.fold [] adt.type_arguments (\constraints, adt_type_arg -> do
+        Ident type_arg _ <- adt_type_arg
+        constraint <- C.Constraint class_name (Ident type_arg derive_location) []
+        List.push constraints constraint)
+    state_name <- createIdent ".state" derive_location
+    state_pattern <- P.Pattern (P.Binding state_name) derive_location
+    state_ref <- E.Expr (E.Path state_name) derive_location
+    full_fn_name <- path class_mod_name function_name
+    adt_name <- createIdent ".adt" derive_location
+    full_fn_name_expr <- E.Expr (E.Path full_fn_name) derive_location
+    adt_ref <- E.Expr (E.Path adt_name) derive_location
+    fn_args <- [state_pattern, P.Pattern (P.Binding adt_name) derive_location]
+    body <- if List.isEmpty adt.variants
+    then full_fn_name_expr
+    else do
+        cases <- List.map adt.variants (\variant -> do
+            item_bindings <- List.foldE [] variant.items (\bindings, index, item -> do
+                binding <- P.Pattern (P.Binding (createIdent ("i{}" % index) derive_location)) derive_location
+                List.push bindings binding)
+            case_pattern <- P.Pattern (P.Constructor (path mod_name variant.name) item_bindings) derive_location
+            item_exprs <- List.mapE variant.items (\index, item -> do
+                item_expr <- E.Expr (E.Path (createIdent ("i{}" % index) derive_location)) derive_location
+                args <- [state_ref, item_expr]
+                call <- E.Expr (E.FunctionCall full_fn_name_expr args) derive_location
+                E.Expr (E.Bind state_pattern call) derive_location)
+            do_items <- item_exprs + [state_ref]
+            body <- E.Expr (E.Do do_items) derive_location
+            E.Case case_pattern body)
+        E.Expr (E.CaseOf adt_ref cases) derive_location
+    body <- Some body
+    op_fn <- F.Function function_name fn_args body [] [] []
+    C.Instance class_name type_signature [] constraints [M.Function op_fn]

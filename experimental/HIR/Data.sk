@@ -1,0 +1,40 @@
+module Siko.HIR.Data where
+
+import Siko.HIR.FullyQualifiedName
+import Siko.HIR.Type
+import Siko.Syntax.Location
+import Siko.Util.SharedString as SS
+
+data ExternalClassImpl = PartialEqKind
+                       | EqKind
+                       | PartialOrdKind
+                       | OrdKind
+                       deriving (Show, PartialEq, Eq, PartialOrd, Ord)
+
+data Variant = { name :: FullyQualifiedName,
+                 location :: Location,
+                 items :: [Type]
+               } deriving (Show, PartialEq, Eq)
+
+data VariantInfo = VariantInfo FullyQualifiedName Int Location deriving (Show, PartialEq, Eq)
+
+data AlgebraicDataType = { name :: FullyQualifiedName,
+                           location :: Location,
+                           type_args :: [Type],
+                           variants :: [Variant],
+                           type :: Type
+                         } deriving (Show, PartialEq, Eq)
+
+data RecordField = RecordField SS.SharedString Type deriving (Show, PartialEq, Eq)
+
+data Record = { name :: FullyQualifiedName,
+                location :: Location,
+                type_args :: [Type],
+                fields :: [RecordField],
+                external :: Bool,
+                type :: Type,
+                implicit_member :: Bool
+              } deriving (Show, PartialEq, Eq)
+
+getFieldByName :: Record -> SS.SharedString -> Option RecordField
+getFieldByName record name = find record.fields (\RecordField field_name _ -> field_name == name)

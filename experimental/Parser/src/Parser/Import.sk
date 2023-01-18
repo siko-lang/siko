@@ -50,6 +50,7 @@ parseImport state = do
     then do
         state <- try expect state Kind.KeywordHiding
         (state, hidden_items) <- try parseList state (\state -> expectAnyIdent state "hidden item") Kind.LParen Kind.RParen
+        state <- try expect state Kind.EndOfItem
         Ok (state, Hiding name hidden_items)
     else do
         (state, import_def) <- if check state Kind.LParen
@@ -60,4 +61,5 @@ parseImport state = do
         else do
             (state, alternative_name) <- try parseAlternativeName state
             (state, ImportAll name alternative_name)
+        state <- try expect state Kind.EndOfItem
         Ok (state, import_def)

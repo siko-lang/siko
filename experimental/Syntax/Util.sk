@@ -63,7 +63,6 @@ instance Relocate T.SimpleTypeSignature where
         T.Owner ty -> T.Owner (relocate ty)
         T.Wildcard -> T.Wildcard
         T.Paren ty -> T.Paren (relocate ty)
-        T.SelfType -> T.SelfType
 
 instance Relocate D.DeriveInfo where
     relocate D.DeriveInfo name args = D.DeriveInfo (relocate name) (relocate args)
@@ -92,9 +91,6 @@ instance Relocate E.Expr where
 instance Relocate E.EffectHandler where
     relocate E.EffectHandler name value = E.EffectHandler (relocate name) (relocate value)
 
-instance Relocate E.Block where
-    relocate E.Block items semicolon_at_end = E.Block (relocate items) semicolon_at_end
-
 instance Relocate E.SimpleExpr where
     relocate s = case s of
         E.Lambda args body -> E.Lambda (relocate args) (relocate body)
@@ -109,7 +105,7 @@ instance Relocate E.SimpleExpr where
         E.FloatLiteral lit -> E.FloatLiteral lit
         E.StringLiteral lit -> E.StringLiteral lit
         E.CharLiteral c -> E.CharLiteral c
-        E.Do block -> E.Do (relocate block)
+        E.Do args -> E.Do (relocate args)
         E.Bind p rhs -> E.Bind (relocate p) (relocate rhs)
         E.FieldAccess n receiver -> E.FieldAccess (relocate n) (relocate receiver)
         E.TupleFieldAccess n receiver -> E.TupleFieldAccess n (relocate receiver)
@@ -154,19 +150,10 @@ instance Relocate F.EffectSignature where
     relocate F.EffectSignature name arguments = F.EffectSignature (relocate name) (relocate arguments)
 
 instance Relocate F.FunctionSignature where
-    relocate F.FunctionSignature name arguments result = F.FunctionSignature (relocate name) (relocate arguments) (relocate result)
-
-instance Relocate F.NamedFunctionArgument where
-    relocate F.NamedFunctionArgument pat type_signature = F.NamedFunctionArgument (relocate pat) (relocate type_signature)
-
-instance Relocate F.FunctionArgument where
-    relocate arg = case arg of
-        F.SelfArg -> F.SelfArg
-        F.NamedArg named -> F.NamedArg (relocate named)
+    relocate F.FunctionSignature name type_arguments constraints type_signature attributes effects = F.FunctionSignature (relocate name) (relocate type_arguments) (relocate constraints) (relocate type_signature) (relocate attributes) (relocate effects)
 
 instance Relocate F.Function where
-    relocate F.Function name arguments result body sub_items attributes extern_constraints =
-        F.Function (relocate name) (relocate arguments) (relocate result) (relocate body) (relocate sub_items) (relocate attributes) extern_constraints
+    relocate F.Function name arguments body sub_items attributes extern_constraints = F.Function (relocate name) (relocate arguments) (relocate body) (relocate sub_items) (relocate attributes) extern_constraints
 
 instance Relocate Attribute where
     relocate Attribute n = Attribute (relocate n)
@@ -187,7 +174,7 @@ instance Relocate M.Item where
         M.Comment comment -> M.Comment comment
 
 instance Relocate C.Class where
-    relocate C.Class name associated_types constraints members = C.Class (relocate name) (relocate associated_types) (relocate constraints) (relocate members)
+    relocate C.Class name argument associated_types constraints members = C.Class (relocate name) (relocate argument) (relocate associated_types) (relocate constraints) (relocate members)
 
 instance Relocate C.Instance where
     relocate C.Instance class_name type_signature associated_types constraints members = C.Instance (relocate class_name) (relocate type_signature) (relocate associated_types) (relocate constraints) (relocate members)
@@ -221,6 +208,6 @@ instance Relocate SourceFile where
     relocate SourceFile name mods = SourceFile name (relocate mods)
 
 instance Relocate M.Module where
-    relocate M.Module name items = do
+    relocate M.Module name items export = do
         items <- orderImports items
-        M.Module (relocate name) (relocate items)
+        M.Module (relocate name) (relocate items) (relocate export)

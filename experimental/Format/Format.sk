@@ -13,7 +13,6 @@ data Token = Chunk String
            | EndOfBlock
            | NewLine
            | PushOffset
-           | PushFix(Int)
            | Break
            | PopOffset
            deriving (Show, PartialEq)
@@ -57,10 +56,6 @@ pushOffset :: PrinterState -> PrinterState
 pushOffset state = do
     state { saved_offsets = List.push state.saved_offsets (state.total_len - state.line_start) }
 
-pushFixOffset :: PrinterState -> Int -> PrinterState
-pushFixOffset state offset = do
-    state { saved_offsets = List.push state.saved_offsets offset }
-
 popOffset :: PrinterState -> PrinterState
 popOffset state = do
     state { saved_offsets = List.dropLast state.saved_offsets }
@@ -81,7 +76,6 @@ formatToken tokens = loop state <- createPrinterState do
                 EndOfBlock -> dec state
                 NewLine -> startLine state
                 PushOffset -> pushOffset state
-                PushFix offset -> pushFixOffset state offset
                 Break -> do
                     offset <- List.last state.saved_offsets
                     spaces <- getSpaces offset
@@ -131,9 +125,8 @@ formatList2 items separator = do
 
 formatBlock a :: (Format a) => [a] -> [Token]
 formatBlock items = do
-    items <- List.fold [StartOfBlock, Chunk "{"] items joiner
-    items <- List.push items EndOfBlock
-    items + [StartOfItem, Chunk "}"]
+    items <- List.fold [StartOfBlock] items joiner
+    List.push items EndOfBlock
     where
         joiner a :: (Format a) => [Token] -> a -> [Token]
         joiner state item = do
@@ -143,7 +136,6 @@ formatBlock items = do
             else do
                 state <- List.push state StartOfItem
                 state <- state + item
-                state <- List.push state (Chunk ";")
                 List.push state EndOfItem
 
 addImplicitBlock :: [Token] -> [Token]

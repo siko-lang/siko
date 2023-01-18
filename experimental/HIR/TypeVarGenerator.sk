@@ -1,0 +1,25 @@
+module Siko.HIR.TypeVarGenerator where
+
+import Siko.HIR.Type
+
+class TypeVarGenerator a where
+    getNewTypeVar a :: a -> (a, TypeVar)
+
+    getNewTypeVarType a :: a -> (a, Type)module Siko.HIR.TypeVarGenerator.Instance where
+
+import Siko.HIR.Type
+
+data TypeVarGenerator = { next_type_id :: Int } deriving (Show, PartialEq, Eq)
+
+createTypeVarGenerator = TypeVarGenerator 0
+
+getNewTypeVar :: TypeVarGenerator -> (TypeVarGenerator, TypeVar)
+getNewTypeVar gen = do
+    id <- gen.next_type_id
+    gen <- gen { next_type_id = id + 1 }
+    (gen, TypeVar id)
+
+getNewTypeVarType :: TypeVarGenerator -> (TypeVarGenerator, Type)
+getNewTypeVarType gen = do
+    (gen, var) <- getNewTypeVar gen
+    (gen, Var var [])

@@ -1,19 +1,19 @@
 module Siko.Syntax.Expr where
 
+import Json
+import Json.Serialize
 import Siko.Syntax.Ident
 import Siko.Syntax.Location
 import Siko.Syntax.Pattern as P
 import Siko.Util.SharedString as SS
-import Json
-import Json.Serialize
 
 data Case = { pattern :: P.Pattern,
               body :: Expr
-            } deriving (Show, PartialEq, Eq, FromJson, ToJson)
+            } deriving (Show, PartialEq, Eq, ToJson, FromJson)
 
 data RecordConstructionItem = { field_name :: Ident,
                                 body :: Expr
-                              } deriving (Show, PartialEq, Eq, FromJson, ToJson)
+                              } deriving (Show, PartialEq, Eq, ToJson, FromJson)
 
 data Op = Equal
         | NotEqual
@@ -28,18 +28,16 @@ data Op = Equal
         | Mul
         | Div
         | PipeForward
-        deriving (Show, PartialEq, FromJson, ToJson)
+        deriving (Show, PartialEq, ToJson, FromJson)
 
-data Expr = Expr SimpleExpr Location deriving (PartialEq, Eq, FromJson, ToJson)
+data Expr = Expr SimpleExpr Location deriving (PartialEq, Eq, ToJson, FromJson)
 
 data EffectHandler = { name :: Ident,
                        value :: Expr
-                     } deriving (Show, PartialEq, Eq, FromJson, ToJson)
+                     } deriving (Show, PartialEq, Eq, ToJson, FromJson)
 
 instance Show Expr where
     show (Expr s _) = show s
-
-data Block = { items :: [Expr], semicolon_at_end :: Bool } deriving (Show, PartialEq, Eq, FromJson, ToJson)
 
 data SimpleExpr = Lambda [P.Pattern] Expr
                 | Paren Expr
@@ -53,7 +51,7 @@ data SimpleExpr = Lambda [P.Pattern] Expr
                 | FloatLiteral SS.SharedString
                 | StringLiteral SS.SharedString
                 | CharLiteral Char
-                | Do Block
+                | Do [Expr]
                 | Bind P.Pattern Expr
                 | FieldAccess Ident Expr
                 | TupleFieldAccess SS.SharedString Expr
@@ -71,4 +69,4 @@ data SimpleExpr = Lambda [P.Pattern] Expr
                 | ArgRef Int
                 | With [EffectHandler] Expr
                 | Comment String
-                deriving (Show, PartialEq, Eq, FromJson, ToJson)
+                deriving (Show, PartialEq, Eq, ToJson, FromJson)

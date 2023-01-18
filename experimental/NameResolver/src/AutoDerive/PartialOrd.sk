@@ -1,0 +1,29 @@
+module Siko.AutoDerive.PartialOrd where
+
+import Siko.AutoDerive.Util
+import Siko.Syntax.Class as C
+import Siko.Syntax.Data as D
+import Siko.Syntax.Expr as E
+import Siko.Syntax.Ident
+import Siko.Syntax.Location
+import Siko.Syntax.Pattern as P
+
+getPartialOrdComparator :: Location -> Comparator
+getPartialOrdComparator location = do
+    class_name <- createIdent "Std.Ops.PartialOrd" location
+    fn_name <- createIdent "partialCmp" location
+    some_ident <- createIdent "Option.Some" location
+    equal_ident <- createIdent "Ordering.Equal" location
+    failure_value_ident <- createIdent "failure_value" location
+    equal_pattern <- P.Pattern (P.Constructor equal_ident []) location
+    success_pattern <- P.Pattern (P.Constructor some_ident [equal_pattern]) location
+    equal_ctor <- E.Expr (E.FunctionCall (E.Expr (E.Path equal_ident) location) []) location
+    success_expr <- E.Expr (E.FunctionCall (E.Expr (E.Path some_ident) location) [equal_ctor]) location
+    failure_expr <- E.Expr (E.Path failure_value_ident) location
+    Comparator class_name fn_name success_pattern success_expr failure_expr location
+
+deriveRecordPartialOrd :: D.Record -> Location -> C.Instance
+deriveRecordPartialOrd record location = deriveRecordGeneralCompare record (getPartialOrdComparator location)
+
+deriveAdtPartialOrd :: D.AlgebraicDataType -> Location -> String -> C.Instance
+deriveAdtPartialOrd adt location mod_name = deriveAdtGeneralCompare adt (getPartialOrdComparator location) mod_name

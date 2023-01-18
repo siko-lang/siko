@@ -1,6 +1,7 @@
 module Siko.Parser.Lexer(lex) where
 
 import Siko.Parser.Error
+import Siko.Parser.Layout
 import Siko.Parser.Token
 import Siko.Syntax.Location
 
@@ -35,12 +36,12 @@ addChar state s c = do
     (state, s)
 
 emptyState :: [Char] -> Bool -> LexerState
-emptyState cs keep_comments = LexerState cs
-                                         0
-                                         0
-                                         1
-                                         []
-                                         []
+emptyState cs keep_comments = LexerState cs 
+                                         0 
+                                         0 
+                                         1 
+                                         [] 
+                                         [] 
                                          keep_comments
 
 isDone :: LexerState -> Bool
@@ -213,11 +214,6 @@ consumeIdentifier state = do
         "hiding" -> KeywordHiding
         "as" -> KeywordAs
         "if" -> KeywordIf
-        "fn" -> KeywordFn
-        "struct" -> KeywordStruct
-        "enum" -> KeywordEnum
-        "let" -> KeywordLet
-        "match" -> KeywordMatch
         "then" -> KeywordThen
         "else" -> KeywordElse
         "return" -> KeywordReturn
@@ -230,9 +226,6 @@ consumeIdentifier state = do
         "effect" -> KeywordEffect
         "with" -> KeywordWith
         "using" -> KeywordUsing
-        "self" -> KeywordSelf
-        "Self" -> KeywordSelfType
-        "trait" -> KeywordTrait
         "_" -> Wildcard
         _ -> if isIntegerLiteral s.value
             then return addToken state (IntegerLiteral s.value) s.span
@@ -302,7 +295,6 @@ processNextChar state = do
         '{' -> consumeSingle state LCurly
         '}' -> consumeSingle state RCurly
         ',' -> consumeSingle state Comma
-        ';' -> consumeSingle state Semicolon
         '~' -> consumeSingle state Tilde
         '@' -> consumeSingle state At
         '\n' -> step state
@@ -322,4 +314,6 @@ lex input keep_comments = do
         if not (isDone state)
         then processNextChar state
         else break state
-    (state.tokens, state.errors)
+    (tokens, errors) <- processLayout state.tokens
+    errors <- errors + state.errors
+    (tokens, errors)

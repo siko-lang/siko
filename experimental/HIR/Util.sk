@@ -1,0 +1,54 @@
+module Siko.HIR.Util where
+
+import Map
+import Siko.Constants
+import Siko.HIR.FullyQualifiedName
+import Siko.HIR.Type as T
+
+getIntType :: T.Type
+getIntType = T.Named (FullPath getIntModuleName getIntTypeName) []
+
+getFloatType :: T.Type
+getFloatType = T.Named (FullPath getFloatModuleName getFloatTypeName) []
+
+getStringType :: T.Type
+getStringType = T.Named (FullPath getStringModuleName getStringTypeName) []
+
+getCharType :: T.Type
+getCharType = T.Named (FullPath getCharModuleName getCharTypeName) []
+
+getBoolType :: T.Type
+getBoolType = T.Named (FullPath getBoolModuleName getBoolTypeName) []
+
+getListType :: T.Type -> T.Type
+getListType arg = T.Named (FullPath getListModuleName getListTypeName) [arg]
+
+getOrderingType :: T.Type
+getOrderingType = T.Named (FullPath getOrderingModuleName getOrderingTypeName) []
+
+getOptionType :: T.Type -> T.Type
+getOptionType arg = T.Named (FullPath getOptionModuleName getOptionTypeName) [arg]
+
+getOptionalOrderingType :: T.Type
+getOptionalOrderingType = getOptionType getOrderingType
+
+collectVars :: [T.TypeVar] -> T.Type -> [T.TypeVar]
+collectVars vars type = (T.collectVars type + vars) |> sort |> dedup
+
+collectClassesFromClassConstraints :: [T.Constraint] -> [FullyQualifiedName]
+collectClassesFromClassConstraints constraints = List.filterMap constraints getClass
+    where
+        getClass c = case c of
+            T.ClassConstraint n _ -> Some n
+            _ -> None
+
+isSimple :: T.Type -> Bool
+isSimple type = case type of
+    T.Var _ _ -> True
+    T.FixedTypeArg _ _ -> True
+    T.Named n args -> getLength args == 0
+    T.Function _ _ -> False
+    T.Never -> True
+    T.Ref _ _ -> True
+    T.Owner _ -> True
+    T.Tuple _ -> True

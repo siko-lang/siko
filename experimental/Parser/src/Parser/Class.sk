@@ -41,22 +41,26 @@ parseClassConstraints state = if check state Kind.LParen && classConstraintFollo
             loop index <- state.index do
                 ti <- peekAt state index
                 case ti.token of
-                    T.Semicolon -> return False
+                    T.EndOfItem -> return False
                     T.DoubleRightArrow -> return True
                     _ -> index + 1
 
 parseBody :: ParserState -> Result (ParserState, [M.Item]) (ParserState, ParserError)
 parseBody state = do
-    state <- try expect state Kind.LCurly
+    state <- try expect state Kind.KeywordWhere
     (state, members) <- loop (state, members) <- (state, []) do
-        if check state Kind.RCurly
+        if check state Kind.EndOfBlock
         then break (state, members)
-        else case try parseFunction state of
-            (state, Left fn) -> (state, push members (M.Function fn))
-            (state, Right fn_sig) -> do
-                state <- try expect state Kind.Semicolon
-                (state, push members (M.FunctionSignature fn_sig))
-    state <- try expect state Kind.RCurly
+        else case (peek state).token of
+            T.Comment comment -> do
+                state <- try expect state Kind.Comment
+                state <- try expect state Kind.EndOfItem
+                (state, push members (M.Comment comment))
+            _ -> do
+                case try parseFunction state of
+                    (state, Left fn) -> (state, push members (M.Function fn))
+                    (state, Right fn_sig) -> (state, push members (M.FunctionSignature fn_sig))
+    state <- try expect state Kind.EndOfBlock
     Ok (state, members)
 
 parseAssociatedTypeArgs :: ParserState -> Result (ParserState, [Ident]) (ParserState, ParserError)
@@ -83,12 +87,21 @@ parseAssociatedTypes state = do
 
 parseClass :: ParserState -> Result (ParserState, Class) (ParserState, ParserError)
 parseClass state = do
-    state <- try expect state Kind.KeywordTrait
-    (state, name) <- try expectTypeIdent state "trait name"
-    (state, members) <- try parseBody state
+    state <- try expect state Kind.KeywordClass
+    (state, constraints) <- try parseClassConstraints state
+    (state, name) <- try expectTypeIdent state "class name"
+    (state, argument) <- try expectVarIdent state "class argument"
+    (state, associated_types) <- if check state Kind.GreaterThan
+    then try parseAssociatedTypeArgs state
+    else (state, [])
+    (state, members) <- if check state Kind.KeywordWhere
+    then try parseBody state
+    else (state, [])
+    state <- try expect state Kind.EndOfItem
     clazz <- Class { name = name,
-                     associated_types = [],
-                     constraints = [],
+                     argument = argument,
+                     associated_types = associated_types,
+                     constraints = constraints,
                      members = members }
     Ok (state, clazz)
 
@@ -109,7 +122,7 @@ parseInstance state = do
     (state, members) <- if check state Kind.KeywordWhere
     then try parseBody state
     else (state, [])
-    state <- try expect state Kind.Semicolon
+    state <- try expect state Kind.EndOfItem
     inst <- Instance { class_name = class_name,
                        type_signature = type_signature,
                        associated_types = associated_types,

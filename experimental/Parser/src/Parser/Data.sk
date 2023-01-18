@@ -13,7 +13,7 @@ import Siko.Util.SharedString as SS
 parseRecordField :: ParserState -> Result (ParserState, RecordField) (ParserState, ParserError)
 parseRecordField state = do
     (state, name) <- try expectVarIdent state "record field"
-    state <- try expect state Kind.Colon
+    state <- try expect state Kind.DoubleColon
     (state, type_signature) <- try parseTypeSignature state False False
     Ok (state, RecordField name type_signature)
 
@@ -33,18 +33,14 @@ parseVariant state = do
         T.Named name args -> Ok (state, Variant name args)
         _ -> panic "Variant parsing error"
 
-parseEnum :: ParserState -> Result (ParserState, AlgebraicDataType) (ParserState, ParserError)
-parseEnum state = do
-    state <- try expect state Kind.KeywordEnum
-    (state, name) <- try expectTypeIdent state "type identifier"
-    state <- try expect state Kind.LCurly
+parseAdt :: ParserState -> [Ident] -> Ident -> Result (ParserState, AlgebraicDataType) (ParserState, ParserError)
+parseAdt state args name = do
     (state, variants) <- loop (state, variants) <- (state, []) do
         (state, variant) <- try parseVariant state
         variants <- push variants variant
-        if check state Kind.Comma
-        then (try expect state Kind.Comma, variants)
+        if check state Kind.Pipe
+        then (try expect state Kind.Pipe, variants)
         else break (state, variants)
-    state <- try expect state Kind.RCurly
     (state, derived_classes) <- if check state Kind.KeywordDeriving
     then do
         state <- try expect state Kind.KeywordDeriving
@@ -52,15 +48,13 @@ parseEnum state = do
         (state, derived_classes)
     else (state, [])
     adt <- AlgebraicDataType { name = name,
-                               type_arguments = [],
+                               type_arguments = args,
                                variants = variants,
                                derived_classes = derived_classes }
     Ok (state, adt)
 
-parseStruct :: ParserState -> Result (ParserState, Record) (ParserState, ParserError)
-parseStruct state = do
-    state <- try expect state Kind.KeywordStruct
-    (state, name) <- try expectTypeIdent state "type identifier"
+parseRecord :: ParserState -> [Ident] -> Ident -> Result (ParserState, Record) (ParserState, ParserError)
+parseRecord state args name = do
     (state, fields) <- try parseList state parseRecordField Kind.LCurly Kind.RCurly
     (state, derived_classes) <- if check state Kind.KeywordDeriving
     then do
@@ -68,10 +62,72 @@ parseStruct state = do
         try parseList state parseDeriveInfo Kind.LParen Kind.RParen
     else (state, [])
     record <- Record { name = name,
-                       type_arguments = [],
+                       type_arguments = args,
                        fields = fields,
                        external = False,
                        derived_classes = derived_classes,
                        implicit_member = False }
     Ok (state, record)
 
+parseData :: ParserState -> Result (ParserState, Either AlgebraicDataType Record) (ParserState, ParserError)
+parseData state = do
+    state <- try expect state Kind.KeywordData
+    (state, name) <- try expectTypeIdent state "type identifier"
+    (state, args) <- loop (state, args) <- (state, []) do
+        ti <- peek state
+        case ti.token of
+            Equal -> break (state, args)
+            EndOfItem -> break (state, args)
+            KeywordDeriving -> break (state, args)
+            _ -> do
+                (state, arg) <- try expectVarIdent state "type argument"
+                args <- push args arg
+                (state, args)
+    (state, data_definition) <- if check state Kind.Equal
+    then do
+        state <- try expect state Kind.Equal
+        if check state Kind.KeywordExtern
+        then do
+            state <- try expect state Kind.KeywordExtern
+            (state, implicit_member) <- if check state Kind.LParen
+            then do
+                state <- try expect state Kind.LParen
+                (state, modifier) <- try expectVarIdent state "extern modifier"
+                modifier <- getString modifier
+                case (SS.get modifier) of
+                    "implicit" -> ()
+                    _ -> return do
+                            err <- unexpectedToken state "extern modifier"
+                            Err (state, err)
+                state <- try expect state Kind.RParen
+                (state, True)
+            else (state, False)
+            record <- Record { name = name,
+                               type_arguments = args,
+                               fields = [],
+                               external = True,
+                               derived_classes = [],
+                               implicit_member = implicit_member }
+            (state, Right record)
+        else do
+            (state, data_definition) <- if check state Kind.LCurly
+            then do
+                (state, record) <- try parseRecord state args name
+                (state, Right record)
+            else do
+                (state, adt) <- try parseAdt state args name
+                (state, Left adt)
+            (state, data_definition)
+    else do
+        (state, derived_classes) <- if check state Kind.KeywordDeriving
+        then do
+            state <- try expect state Kind.KeywordDeriving
+            try parseList state parseDeriveInfo Kind.LParen Kind.RParen
+        else (state, [])
+        adt <- AlgebraicDataType { name = name,
+                                   type_arguments = [],
+                                   variants = [],
+                                   derived_classes = derived_classes }
+        (state, Left adt)
+    state <- try expect state Kind.EndOfItem
+    Ok (state, data_definition)

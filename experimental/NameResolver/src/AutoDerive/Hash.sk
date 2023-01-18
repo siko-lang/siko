@@ -1,0 +1,22 @@
+module Siko.AutoDerive.Hash where
+
+import Siko.AutoDerive.GenericFold
+import Siko.Syntax.Class as C
+import Siko.Syntax.Data as D
+import Siko.Syntax.Ident
+import Siko.Syntax.Location
+
+deriveRecordHash :: D.Record -> Location -> C.Instance
+deriveRecordHash record derive_location = do
+    mod_name <- createIdent "Hash" derive_location
+    class_name <- createIdent "Hash.Hash" derive_location
+    function_name <- createIdent "hash" derive_location
+    deriveRecordGenericFold record derive_location mod_name class_name function_name
+
+deriveAdtHash :: D.AlgebraicDataType -> Location -> String -> C.Instance
+deriveAdtHash adt derive_location mod_name = do
+    mod_name <- createIdent mod_name derive_location
+    class_mod_name <- createIdent "Hash" derive_location
+    class_name <- createIdent "Hash.Hash" derive_location
+    function_name <- createIdent "hash" derive_location
+    deriveAdtGenericFold adt derive_location mod_name class_mod_name class_name function_name

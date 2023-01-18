@@ -27,7 +27,6 @@ data TokenKind = VarIdentifier
                | Comma
                | Colon
                | DoubleColon
-               | Semicolon
                | ExclamationMark
                | Ampersand
                | Pipe
@@ -50,13 +49,8 @@ data TokenKind = VarIdentifier
                | KeywordHiding
                | KeywordAs
                | KeywordIf
-               | KeywordFn
-               | KeywordEnum
-               | KeywordStruct
                | KeywordThen
                | KeywordElse
-               | KeywordLet
-               | KeywordMatch
                | KeywordReturn
                | KeywordTry
                | KeywordLoop
@@ -67,14 +61,14 @@ data TokenKind = VarIdentifier
                | KeywordEffect
                | KeywordWith
                | KeywordUsing
-               | KeywordSelfType
-               | KeywordSelf
-               | KeywordTrait
                | RightArrow
                | LeftArrow
                | InclusiveRange
                | DoubleRightArrow
                | PipeForward
+               | EndOfItem
+               | EndOfBlock
+               | EndOfModule
                | Comment
                deriving (Show, PartialEq, Eq)module Siko.Parser.Token where
 
@@ -108,7 +102,6 @@ data Token = VarIdentifier String
            | Comma
            | Colon
            | DoubleColon
-           | Semicolon
            | ExclamationMark
            | Ampersand
            | Pipe
@@ -131,12 +124,7 @@ data Token = VarIdentifier String
            | KeywordHiding
            | KeywordAs
            | KeywordIf
-           | KeywordFn
-           | KeywordEnum
-           | KeywordStruct
            | KeywordThen
-           | KeywordLet
-           | KeywordMatch
            | KeywordElse
            | KeywordReturn
            | KeywordTry
@@ -148,14 +136,14 @@ data Token = VarIdentifier String
            | KeywordEffect
            | KeywordWith
            | KeywordUsing
-           | KeywordSelfType
-           | KeywordSelf
-           | KeywordTrait
            | RightArrow
            | LeftArrow
            | InclusiveRange
            | DoubleRightArrow
            | PipeForward
+           | EndOfItem
+           | EndOfBlock
+           | EndOfModule
            | Comment String
            deriving (Show)
 
@@ -195,7 +183,6 @@ getKind token = case token of
     Comma -> Kind.Comma
     Colon -> Kind.Colon
     DoubleColon -> Kind.DoubleColon
-    Semicolon -> Kind.Semicolon
     ExclamationMark -> Kind.ExclamationMark
     Ampersand -> Kind.Ampersand
     Pipe -> Kind.Pipe
@@ -218,11 +205,6 @@ getKind token = case token of
     KeywordHiding -> Kind.KeywordHiding
     KeywordAs -> Kind.KeywordAs
     KeywordIf -> Kind.KeywordIf
-    KeywordFn -> Kind.KeywordFn
-    KeywordStruct -> Kind.KeywordStruct
-    KeywordEnum -> Kind.KeywordEnum
-    KeywordLet -> Kind.KeywordLet
-    KeywordMatch -> Kind.KeywordMatch
     KeywordThen -> Kind.KeywordThen
     KeywordElse -> Kind.KeywordElse
     KeywordReturn -> Kind.KeywordReturn
@@ -235,12 +217,12 @@ getKind token = case token of
     KeywordEffect -> Kind.KeywordEffect
     KeywordWith -> Kind.KeywordWith
     KeywordUsing -> Kind.KeywordUsing
-    KeywordSelfType -> Kind.KeywordSelfType
-    KeywordSelf -> Kind.KeywordSelf
-    KeywordTrait -> Kind.KeywordTrait
     RightArrow -> Kind.RightArrow
     LeftArrow -> Kind.LeftArrow
     InclusiveRange -> Kind.InclusiveRange
     DoubleRightArrow -> Kind.DoubleRightArrow
     PipeForward -> Kind.PipeForward
+    EndOfItem -> Kind.EndOfItem
+    EndOfBlock -> Kind.EndOfBlock
+    EndOfModule -> Kind.EndOfModule
     Comment _ -> Kind.Comment

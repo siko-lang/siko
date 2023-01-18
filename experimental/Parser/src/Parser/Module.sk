@@ -18,23 +18,23 @@ parseModule :: ParserState -> Result ParserState (ParserState, ParserError)
 parseModule state = do
     state <- try expect state Kind.KeywordModule
     (state, name) <- try parseQualifiedTypeName state "module name"
-    mod <- M.Module { name = name, items = [] }
-    state <- try expect state Kind.LCurly
+    (state, export) <- try parseExport state
+    mod <- M.Module { name = name, items = [], export = export }
+    state <- try expect state Kind.KeywordWhere
     (state, mod) <- loop (state, mod) <- (state, mod) do
         ti <- peek state
         (state, item) <- case getKind ti.token of
-            Kind.RCurly -> break (state, mod)
-            Kind.KeywordTrait -> case parseClass state of
+            Kind.EndOfBlock -> break (state, mod)
+            Kind.KeywordClass -> case parseClass state of
                 Ok (state, c) -> (state, M.Class c)
                 Err (state, err) -> return Err (state, err)
             Kind.KeywordEffect -> case parseEffect state of
                 Ok (state, eff) -> (state, M.Effect eff)
                 Err (state, err) -> return Err (state, err)
-            Kind.KeywordEnum -> case parseEnum state of
-                Ok (state, adt) -> (state, M.Adt adt)
-                Err (state, err) -> return Err (state, err)
-            Kind.KeywordStruct -> case parseStruct state of
-                Ok (state, record) -> (state, M.Record record)
+            Kind.KeywordData -> case parseData state of
+                Ok (state, d) -> case d of
+                    Left adt -> (state, M.Adt adt)
+                    Right record -> (state, M.Record record)
                 Err (state, err) -> return Err (state, err)
             Kind.KeywordInstance -> case parseInstance state of
                 Ok (state, i) -> (state, M.Instance i)
@@ -46,6 +46,7 @@ parseModule state = do
                 case ti.token of
                     Comment comment -> do
                         state <- try expect state Kind.Comment
+                        state <- try expect state Kind.EndOfItem
                         (state, M.Comment comment)
                     _ -> unreachable
             _ -> case parseFunction state of
@@ -55,7 +56,8 @@ parseModule state = do
                 Err (state, err) -> return Err (state, err)
         mod <- mod { items = push mod.items item }
         (state, mod)
-    state <- try expect state Kind.RCurly
+    state <- try expect state Kind.EndOfBlock
+    state <- try expect state Kind.EndOfModule
     mod <- List.fold mod getImplicitModules (\mod, implicit -> do
         item <- M.Import (Implicit implicit)
         mod <- mod { items = push mod.items item }

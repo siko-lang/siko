@@ -3,6 +3,7 @@ module Siko.Parser where
 import Siko.Parser.Class
 import Siko.Parser.Error
 import Siko.Parser.Function
+import Siko.Parser.Layout
 import Siko.Parser.Lexer
 import Siko.Parser.Module
 import Siko.Parser.Token
@@ -35,12 +36,12 @@ initState file_id tokens = do
                   [Kind.Add, Kind.Sub],
                   [Kind.Mul, Kind.Div],
                   [Kind.PipeForward]]
-    ParserState tokens
-                0
-                []
-                []
-                file_id
-                ops_table
+    ParserState tokens 
+                0 
+                [] 
+                [] 
+                file_id 
+                ops_table 
                 []
 
 parseSubItems :: ParserState -> Result (ParserState, [M.Item]) (ParserState, ParserError)
@@ -49,7 +50,7 @@ parseSubItems state = do
     (state, sub_items) <- loop (state, sub_items) <- (state, []) do
         ti <- peek state
         (state, item) <- case getKind ti.token of
-            Kind.RCurly -> break (state, sub_items)
+            Kind.EndOfBlock -> break (state, sub_items)
             _ -> case parseFunction state of
                 Ok (state, f) -> case f of
                     Left function -> (state, M.Function function)
@@ -57,7 +58,7 @@ parseSubItems state = do
                 Err (state, err) -> return Err (state, err)
         sub_items <- push sub_items item
         (state, sub_items)
-    state <- try expect state Kind.RCurly
+    state <- try expect state Kind.EndOfBlock
     Ok (state, sub_items)
 
 buildLocation :: Int -> ParserState -> Location

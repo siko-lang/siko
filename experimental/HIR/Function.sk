@@ -1,0 +1,91 @@
+module Siko.HIR.Function where
+
+import Siko.HIR.Class
+import Siko.HIR.Expr
+import Siko.HIR.ExprIdGenerator
+import Siko.HIR.FullyQualifiedName
+import Siko.HIR.PatternIdGenerator
+import Siko.HIR.Type
+import Siko.HIR.TypeFormatter as TF
+import Siko.Syntax.Location
+
+data ConstraintPath = Argument Int
+                    | Field Int ConstraintPath
+                    | Extern Int ConstraintPath
+                    | Variant Int ConstraintPath
+                    | Implicit Int ConstraintPath
+                    | Result
+                    deriving (Show, PartialEq, Eq)
+
+data Converter = { from :: ConstraintPath,
+                   to :: ConstraintPath
+                 } deriving (Show, PartialEq, Eq)
+
+data Equal = { left :: ConstraintPath,
+               right :: ConstraintPath
+             } deriving (Show, PartialEq, Eq)
+
+data ExternConstraint = ExternConverter Converter
+                      | ExternEquality Equal
+                      | Independent ConstraintPath
+                      deriving (Show, PartialEq, Eq)
+
+data LambdaId = LambdaId Int deriving (Show, PartialEq, Eq, PartialOrd, Ord)
+
+data Source = ClassMember FullyQualifiedName
+            | EffectMember FullyQualifiedName
+            | InstanceMember FullyQualifiedName
+            deriving (PartialEq, Eq, Show)
+
+data NormalFunctionInfo a = { body :: Expr a,
+                              effects :: Option [Type],
+                              expr_id_gen :: ExprIdGenerator,
+                              pattern_id_gen :: PatternIdGenerator,
+                              source :: Option Source
+                            } deriving (PartialEq, Eq)
+
+instance (Show a) => Show NormalFunctionInfo a where
+    show info = show info.body
+
+data ExternFunctionInfo = { type_with_ownership :: Type,
+                            extern_constraints :: [ExternConstraint]
+                          } deriving (Show, PartialEq, Eq)
+
+data FunctionKind a = Normal (NormalFunctionInfo a)
+                    | VariantCtor Int
+                    | RecordCtor
+                    | ExternInfo ExternFunctionInfo
+                    | Interface Source
+                    deriving (Show, PartialEq, Eq)
+
+isNormal kind = case kind of
+    Normal _ -> True
+    _ -> False
+
+getEffectName :: (Show a) => FunctionKind a -> FullyQualifiedName
+getEffectName kind = case kind of
+    Normal info -> case info.source of
+        Some (EffectMember qn) -> qn
+        _ -> panic "{} is not an effect member" % kind
+    Interface (EffectMember qn) -> qn
+    _ -> panic "{} is not an effect member" % kind
+
+data Attribute = Inline deriving (Show, PartialEq, Eq, PartialOrd, Ord)
+
+data Function a = { location :: Location,
+                    name :: FullyQualifiedName,
+                    arg_count :: Int,
+                    kind :: FunctionKind a,
+                    type :: Option Type,
+                    attributes :: [Attribute]
+                  } deriving (PartialEq, Eq)
+
+isInlined a :: Function a -> Bool
+isInlined function = List.contains function.attributes Inline
+
+instance (Show a) => Show Function a where
+    show f = do
+        ty <- case f.type of
+            Some t -> TF.toString t
+            None -> "<unknown>"
+        "{} - {} :: {}" % (f.name, ty, f.kind)

@@ -1,0 +1,124 @@
+module Siko.Resolver where
+
+import Map
+import Siko.HIR.Data as HD
+import Siko.HIR.Expr
+import Siko.HIR.FullyQualifiedName
+import Siko.HIR.Pattern
+import Siko.HIR.TypeVarGenerator as TVG
+import Siko.HIR.TypeVarGenerator.Instance as TVGI
+import Siko.Resolver.Error
+import Siko.Syntax.Ident
+import Siko.Util.SharedString as SS
+
+class (TVG.TypeVarGenerator a) => ResolverState a where
+    addError a :: a -> ResolverError -> a
+
+    getVarGen a :: a -> TVGI.TypeVarGenerator
+
+    setVarGen a :: a -> TVGI.TypeVarGenerator -> a
+
+    getRecord a :: a -> FullyQualifiedName -> HD.Record
+
+    getAdt a :: a -> FullyQualifiedName -> HD.AlgebraicDataType
+
+    getVariantInfoOpt a :: a -> FullyQualifiedName -> Option HD.VariantInfo
+
+data ResolverStateProvider = { var_gen :: TVGI.TypeVarGenerator,
+                               errors :: [ResolverError]
+                             }
+
+createStateProvider :: ResolverStateProvider
+createStateProvider = ResolverStateProvider TVGI.createTypeVarGenerator []
+
+instance TVG.TypeVarGenerator ResolverStateProvider where
+    getNewTypeVar state = do
+        (var_gen, var) <- TVGI.getNewTypeVar state.var_gen
+        (state { var_gen = var_gen }, var)
+
+    getNewTypeVarType state = do
+        (var_gen, type) <- TVGI.getNewTypeVarType state.var_gen
+        (state { var_gen = var_gen }, type)
+
+instance ResolverState ResolverStateProvider where
+    addError state err = do
+        errors <- List.push state.errors err
+        state { errors = errors }
+
+    getVarGen state = state.var_gen
+
+    setVarGen state var_gen = state { var_gen = var_gen }
+
+    getRecord qn = panic "getRecord NYI"
+
+    getAdt qn = panic "getAdt NYI"
+
+    getVariantInfoOpt qn = panic "getVariantInfoOpt NYI"
+
+data UnresolvedModule = { file :: String,
+                          name :: Ident
+                        } deriving (PartialEq, Eq, Ord, PartialOrd, Show)
+
+data Resolver = { modules :: Map String [UnresolvedModule],
+                  module_updates :: [String]
+                }
+
+data ModuleChange = UpdatedModule UnresolvedModule
+                  | RemovedModule String
+                  deriving (Show)
+
+createResolver :: Resolver
+createResolver = Resolver Map.empty []
+
+moduleUpdated :: Resolver -> String -> Resolver
+moduleUpdated resolver module_name = do
+    module_updates <- List.push resolver.module_updates module_name
+    resolver { module_updates = module_updates }
+
+addModule :: Resolver -> String -> Ident -> Resolver
+addModule resolver file module_name = do
+    name <- SS.get (getString module_name)
+    resolver <- moduleUpdated resolver name
+    modules <- Map.add resolver.modules name (UnresolvedModule file module_name)
+    resolver { modules = modules }
+
+purgeFile :: Resolver -> String -> Resolver
+purgeFile resolver file = do
+    (module_updates, modules) <- Map.mapS resolver.module_updates resolver.modules (\module_updates, (name, modules) -> do
+        (changed, modules) <- List.filterS False modules (\changed, mod -> do
+            r <- mod.file != file
+            changed <- if not r
+            then True
+            else changed
+            (changed, r))
+        module_updates <- if changed
+        then do
+            List.push module_updates name
+        else module_updates
+        (module_updates, name, modules))
+    resolver { module_updates = module_updates, modules = modules }
+
+processModuleUpdates :: Resolver -> (Resolver, [ModuleChange])
+processModuleUpdates resolver = do
+    module_updates <- resolver.module_updates
+    resolver <- resolver { module_updates = [] }
+    module_updates <- module_updates |> List.sort |> List.dedup
+    List.fold (resolver, []) module_updates processModuleUpdate
+    where
+        processModuleUpdate :: (Resolver, [ModuleChange]) -> String -> (Resolver, [ModuleChange])
+        processModuleUpdate (resolver, changes) module_name = do
+            case Map.get resolver.modules module_name of
+                Some modules -> do
+                    case List.getLength modules of
+                        0 -> do
+                            (modules, _) <- Map.remove resolver.modules module_name
+                            (resolver { modules = modules }, List.push changes (RemovedModule module_name))
+                        1 -> do
+                            first <- List.atIndex modules 0
+                            (resolver, List.push changes (UpdatedModule first))
+                        _ -> do
+                            first <- List.atIndex modules 0
+                            //println "More than 1 modules, selected {}" % first
+                            // FIXME: create conflict error
+                            (resolver, List.push changes (UpdatedModule first))
+                None -> panic "updated module not found in module map!"

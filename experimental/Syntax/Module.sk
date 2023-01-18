@@ -1,13 +1,13 @@
 module Siko.Syntax.Module where
 
+import Json
+import Json.Serialize
 import Siko.Syntax.Class as C
 import Siko.Syntax.Data as D
 import Siko.Syntax.Effect as E
 import Siko.Syntax.Function as F
 import Siko.Syntax.Ident
 import Siko.Syntax.Import as I
-import Json
-import Json.Serialize
 
 data Item = Function F.Function
           | FunctionSignature F.FunctionSignature
@@ -18,7 +18,7 @@ data Item = Function F.Function
           | Instance C.Instance
           | Effect E.Effect
           | Comment String
-          deriving (Show, PartialEq, Eq, FromJson, ToJson)
+          deriving (Show, PartialEq, Eq, ToJson, FromJson)
 
 toImport :: Item -> Option I.Import
 toImport item = case item of
@@ -27,4 +27,5 @@ toImport item = case item of
 
 data Module = { name :: Ident,
                 items :: [Item],
-              } deriving (Show, PartialEq, Eq, FromJson, ToJson)
+                export :: I.Export
+              } deriving (Show, PartialEq, Eq, ToJson, FromJson)

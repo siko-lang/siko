@@ -1,20 +1,93 @@
 module Main where
 
+import Siko.AutoDerive as AD
 import IO
 import Json
 import Json.Parser
 import Json.Serialize
+import Map
+import Siko.HIR.Class as HC
+import Siko.HIR.Data as HD
+import Siko.HIR.FullyQualifiedName as FQ
+import Siko.Resolver
+import Siko.Resolver.Class
+import Siko.Resolver.Data
+import Siko.Resolver.Export
+import Siko.Resolver.Import
+import Siko.Resolver.Item as RI
+import Siko.Resolver.Local
+import Siko.Resolver.ModuleResolver
+import Siko.Util.SharedString as SS
+import Siko.Syntax.Ident
 import Siko.Syntax.Module
 
-processModule :: Module -> ()
+processModule :: Module -> ([RI.Item], [RI.Item])
 processModule mod = do
     println "Processing module {}" % mod.name
+    local_items <- collectLocals mod
+    exported_items <- collectExports local_items mod
+    (local_items, exported_items)
+
+processDataTypes :: ModuleResolver -> [Item] -> Map FQ.FullyQualifiedName HC.Class  ->  (Map FQ.FullyQualifiedName HD.Record, Map FQ.FullyQualifiedName HD.AlgebraicDataType) -> (Map FQ.FullyQualifiedName HD.Record, Map FQ.FullyQualifiedName HD.AlgebraicDataType)
+processDataTypes module_resolver items classes (records, adts) = do
+    List.fold (records, adts) items (\(records, adts), item -> case item of
+        Record record -> do
+            record <- Std.Intrinsics.clone record
+            state <- createStateProvider
+            (record, instances)  <- AD.processRecordDerives record classes module_resolver
+            (state, hir_record, ctor) <- processRecord state module_resolver record
+            (Map.put records hir_record.name hir_record, adts)
+        Adt adt -> do
+            adt <- Std.Intrinsics.clone adt
+            state <- createStateProvider
+            (adt, instances) <- AD.processAdtDerives adt classes module_resolver
+            (state, hir_adt, variant_infos, ctor) <- processAdt state module_resolver adt
+            (records, Map.put adts hir_adt.name hir_adt)
+        _ -> (records, adts))
+
+processClasses :: ModuleResolver -> [Item] -> Map FQ.FullyQualifiedName HC.Class -> Map FQ.FullyQualifiedName HC.Class
+processClasses module_resolver items classes = do
+    List.fold classes items (\classes, item -> case item of
+        Class c -> do
+            c <- Std.Intrinsics.clone c
+            state <- createStateProvider
+            (state, hir_class, members) <- processClass state module_resolver c
+            Map.put classes hir_class.name hir_class
+        _ -> classes)
+
+getModuleResolvers :: List Module -> Map SS.SharedString ModuleResolver
+getModuleResolvers modules = do
+    (locals, exports) <- List.fold (Map.empty, Map.empty) modules (\(locals, exports), mod -> do
+        name <- getString mod.name
+        (local_items, exported_items) <- processModule mod
+        (Map.put locals name local_items, Map.put exports name exported_items))
+    List.fold Map.empty modules (\module_resolvers, mod -> do
+        name <- getString mod.name
+        locals <- Option.unwrap (Map.get locals name)
+        export_provider <- ExportProvider (\name -> Map.get exports name)
+        (imported_items, errors) <- processImports mod export_provider locals
+        if List.isEmpty errors
+        then do
+            module_resolver <- createModuleResolver name imported_items
+            Map.put module_resolvers name module_resolver
+        else do
+            println "error {}" % errors
+            exit 1)
 
 main = do
     module_files <- listDir "cache/syntax_modules"
     modules <- List.fold [] module_files (\modules, module_file_name -> do
         content <- readTextFile module_file_name
-        mod <- Result.unwrap(parse content)
+        mod <- Result.unwrap (parse content)
         mod <- fromJson mod
         List.push modules mod)
-    List.fold () modules (\_, mod -> processModule mod)
+    module_resolvers <- getModuleResolvers modules
+    classes <- List.fold Map.empty modules (\classes, mod -> do
+        name <- getString mod.name
+        module_resolver <- Option.unwrap (Map.get module_resolvers name)
+        processClasses module_resolver mod.items classes)
+    (records, adts) <- List.fold (Map.empty, Map.empty) modules (\(records, adts), mod -> do
+        name <- getString mod.name
+        module_resolver <- Option.unwrap (Map.get module_resolvers name)
+        processDataTypes module_resolver mod.items classes (records, adts))
+    ()
