@@ -42,6 +42,7 @@ processRecordField a :: (ResolverState a) =>
 processRecordField state type_resolver (SD.RecordField name type_signature) field_names = do
     (type_resolver, state, type) <- processTypeSignature type_resolver state type_signature
     n <- getString name
+    n <- Std.Intrinsics.clone n
     (field_names, _) <- alter (\names -> case names of
         Some names -> Some (push names name)
         None -> Some [name]) n field_names

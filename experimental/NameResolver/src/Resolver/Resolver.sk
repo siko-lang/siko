@@ -25,11 +25,14 @@ class (TVG.TypeVarGenerator a) => ResolverState a where
     getVariantInfoOpt a :: a -> FullyQualifiedName -> Option HD.VariantInfo
 
 data ResolverStateProvider = { var_gen :: TVGI.TypeVarGenerator,
-                               errors :: [ResolverError]
+                               errors :: [ResolverError],
+                               variant_infos :: Map FullyQualifiedName HD.VariantInfo,
+                               adts :: Map FullyQualifiedName HD.AlgebraicDataType,
+                               records :: Map FullyQualifiedName HD.Record
                              }
 
-createStateProvider :: ResolverStateProvider
-createStateProvider = ResolverStateProvider TVGI.createTypeVarGenerator []
+createStateProvider :: Map FullyQualifiedName HD.VariantInfo -> Map FullyQualifiedName HD.AlgebraicDataType -> Map FullyQualifiedName HD.Record -> ResolverStateProvider
+createStateProvider variant_infos adts records = ResolverStateProvider TVGI.createTypeVarGenerator [] variant_infos adts records
 
 instance TVG.TypeVarGenerator ResolverStateProvider where
     getNewTypeVar state = do
@@ -49,76 +52,12 @@ instance ResolverState ResolverStateProvider where
 
     setVarGen state var_gen = state { var_gen = var_gen }
 
-    getRecord qn = panic "getRecord NYI"
+    getRecord state qn = case Map.get state.records qn of
+        Some record -> record
+        None -> panic "Record not found {}" % qn
 
-    getAdt qn = panic "getAdt NYI"
+    getAdt state qn = case Map.get state.adts qn of
+        Some adt -> adt
+        None -> panic "Adt not found {}" % qn
 
-    getVariantInfoOpt qn = panic "getVariantInfoOpt NYI"
-
-data UnresolvedModule = { file :: String,
-                          name :: Ident
-                        } deriving (PartialEq, Eq, Ord, PartialOrd, Show)
-
-data Resolver = { modules :: Map String [UnresolvedModule],
-                  module_updates :: [String]
-                }
-
-data ModuleChange = UpdatedModule UnresolvedModule
-                  | RemovedModule String
-                  deriving (Show)
-
-createResolver :: Resolver
-createResolver = Resolver Map.empty []
-
-moduleUpdated :: Resolver -> String -> Resolver
-moduleUpdated resolver module_name = do
-    module_updates <- List.push resolver.module_updates module_name
-    resolver { module_updates = module_updates }
-
-addModule :: Resolver -> String -> Ident -> Resolver
-addModule resolver file module_name = do
-    name <- SS.get (getString module_name)
-    resolver <- moduleUpdated resolver name
-    modules <- Map.add resolver.modules name (UnresolvedModule file module_name)
-    resolver { modules = modules }
-
-purgeFile :: Resolver -> String -> Resolver
-purgeFile resolver file = do
-    (module_updates, modules) <- Map.mapS resolver.module_updates resolver.modules (\module_updates, (name, modules) -> do
-        (changed, modules) <- List.filterS False modules (\changed, mod -> do
-            r <- mod.file != file
-            changed <- if not r
-            then True
-            else changed
-            (changed, r))
-        module_updates <- if changed
-        then do
-            List.push module_updates name
-        else module_updates
-        (module_updates, name, modules))
-    resolver { module_updates = module_updates, modules = modules }
-
-processModuleUpdates :: Resolver -> (Resolver, [ModuleChange])
-processModuleUpdates resolver = do
-    module_updates <- resolver.module_updates
-    resolver <- resolver { module_updates = [] }
-    module_updates <- module_updates |> List.sort |> List.dedup
-    List.fold (resolver, []) module_updates processModuleUpdate
-    where
-        processModuleUpdate :: (Resolver, [ModuleChange]) -> String -> (Resolver, [ModuleChange])
-        processModuleUpdate (resolver, changes) module_name = do
-            case Map.get resolver.modules module_name of
-                Some modules -> do
-                    case List.getLength modules of
-                        0 -> do
-                            (modules, _) <- Map.remove resolver.modules module_name
-                            (resolver { modules = modules }, List.push changes (RemovedModule module_name))
-                        1 -> do
-                            first <- List.atIndex modules 0
-                            (resolver, List.push changes (UpdatedModule first))
-                        _ -> do
-                            first <- List.atIndex modules 0
-                            //println "More than 1 modules, selected {}" % first
-                            // FIXME: create conflict error
-                            (resolver, List.push changes (UpdatedModule first))
-                None -> panic "updated module not found in module map!"
+    getVariantInfoOpt state qn = Map.get state.variant_infos qn

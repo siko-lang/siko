@@ -74,9 +74,9 @@ processClass state module_resolver c = do
 processInstance a :: (ResolverState a) =>
                      a ->
                      ModuleResolver ->
-                     FQ.FullyQualifiedName ->
+                     Int ->
                      SC.Instance -> (a, HC.Instance, [UnresolvedFunctionInfo])
-processInstance state module_resolver qn i = do
+processInstance state module_resolver index i = do
     Ident _ class_location <- i.class_name
     (state, class_name) <- case resolveClass module_resolver i.class_name of
         Ok class_name -> (state, class_name)
@@ -98,11 +98,12 @@ processInstance state module_resolver qn i = do
             (state, type_resolver, hir_type)
     (state, type_resolver) <- processClassConstraints state type_resolver i.constraints
     hir_type <- updateTypeConstraints type_resolver hir_type
-    source <- Some (HF.InstanceMember qn)
+    instance_qn <- FQ.FullPathInstance module_resolver.module_name index
+    source <- Some (HF.InstanceMember instance_qn)
     unresolved_functions <- collectUnresolvedFunctions i.members
     (instance_members, unresolved_function_infos) <- List.mapS [] unresolved_functions (\instance_members, f -> do
         Ident name _ <- f.name
-        qn <- FQ.FullPathWithInstanceId module_resolver.module_name name qn
+        qn <- FQ.FullPathWithInstanceId module_resolver.module_name name instance_qn
         (List.push instance_members qn, UnresolvedFunctionInfo f qn createEmptyFunctionScopeResolver type_resolver (getVarGen state) source))
-    hir_instance <- HC.Instance qn class_location class_name hir_type associated_types instance_members
+    hir_instance <- HC.Instance instance_qn class_location class_name hir_type associated_types instance_members
     (state, hir_instance, unresolved_function_infos)

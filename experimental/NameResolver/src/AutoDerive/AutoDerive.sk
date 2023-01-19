@@ -1,5 +1,6 @@
 module Siko.AutoDerive where
 
+import Map
 import Siko.AutoDerive.Copy
 import Siko.AutoDerive.Eq
 import Siko.AutoDerive.FromJson
@@ -12,16 +13,15 @@ import Siko.AutoDerive.PartialEq
 import Siko.AutoDerive.PartialOrd
 import Siko.AutoDerive.Show
 import Siko.AutoDerive.ToJson
+import Siko.HIR.Class as HC
+import Siko.HIR.FullyQualifiedName as FQ
 import Siko.Resolver.ModuleResolver
 import Siko.Resolver.Type
 import Siko.Syntax.Class as C
 import Siko.Syntax.Data as D
 import Siko.Syntax.Ident
-import Siko.HIR.FullyQualifiedName as FQ
-import Siko.HIR.Class as HC
 import Siko.Syntax.Location
 import Siko.Util.SharedString as SS
-import Map
 
 parseGenericArgs :: Map FQ.FullyQualifiedName HC.Class ->
                     ModuleResolver ->
@@ -114,17 +114,13 @@ processAdtDerive adt classes module_resolver derive_info = do
                 None -> panic "GenericTransform to resolve"
         _ -> None
 
-processRecordDerives :: D.Record ->
-                        Map FQ.FullyQualifiedName HC.Class ->
-                        ModuleResolver -> (D.Record, [C.Instance])
+processRecordDerives :: D.Record -> Map FQ.FullyQualifiedName HC.Class -> ModuleResolver -> (D.Record, [C.Instance])
 processRecordDerives record classes module_resolver = do
     instances <- List.filterMap record.derived_classes (processRecordDerive record classes module_resolver)
     record <- record { derived_classes = [] }
     (record, instances)
 
-processAdtDerives :: D.AlgebraicDataType ->
-                     Map FQ.FullyQualifiedName HC.Class ->
-                     ModuleResolver -> (D.AlgebraicDataType, [C.Instance])
+processAdtDerives :: D.AlgebraicDataType -> Map FQ.FullyQualifiedName HC.Class -> ModuleResolver -> (D.AlgebraicDataType, [C.Instance])
 processAdtDerives adt classes module_resolver = do
     instances <- List.filterMap adt.derived_classes (processAdtDerive adt classes module_resolver)
     adt <- adt { derived_classes = [] }

@@ -12,7 +12,7 @@ import Siko.Util.SharedString as SS
 data FullyQualifiedName = FullPath SS.SharedString SS.SharedString
                         | FullPathWithVariant SS.SharedString SS.SharedString SS.SharedString
                         | FullPathWithLambda FullyQualifiedName F.LambdaId
-                        | FullPathInstance SS.SharedString Location
+                        | FullPathInstance SS.SharedString Int
                         | FullPathWithInstanceId SS.SharedString SS.SharedString FullyQualifiedName
                         | ModulePath SS.SharedString
                         | SubItem FullyQualifiedName SS.SharedString
@@ -31,7 +31,7 @@ getResolvableName f = do
         FullPath m n -> "{}.{}" % (m, n)
         FullPathWithVariant m n v -> "{}.{}" % (m, v)
         FullPathWithLambda n i -> panic "getResolvableName called for a lambda"
-        FullPathInstance m l -> panic "getResolvableName called for a instance"
+        FullPathInstance m i -> panic "getResolvableName called for a instance"
         FullPathWithInstanceId m n i -> panic "getResolvableName called for a instance member"
         ModulePath m -> panic "getResolvableName called for a module"
         SubItem p n -> panic "getResolvableName called for a sub item"
@@ -49,7 +49,7 @@ getShortName f = case f of
     FullPath m n -> n
     FullPathWithVariant m n v -> n
     FullPathWithLambda n i -> SS.create "{}_lambda" % getShortName n
-    FullPathInstance m l -> SS.create "{}/#{}" % (m, l)
+    FullPathInstance m i -> SS.create "{}/#{}" % (m, i)
     FullPathWithInstanceId m n i -> n
     ModulePath m -> m
     SubItem p n -> n
@@ -69,7 +69,7 @@ getModuleName f = case f of
     FullPath m n -> m
     FullPathWithVariant m n v -> m
     FullPathWithLambda n i -> getModuleName n
-    FullPathInstance m l -> m
+    FullPathInstance m i -> m
     FullPathWithInstanceId m n i -> m
     ModulePath m -> m
     SubItem p n -> getModuleName p
