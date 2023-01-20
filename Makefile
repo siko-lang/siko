@@ -19,13 +19,22 @@ testrunner: stage0 $(shell find test_runner -type f)
 altfmt: stage0 $(shell find experimental/alternative_syntax -type f)
 	@./stage0 build experimental/alternative_syntax ./std -v -o alt
 
-parser2: stage1 $(shell find experimental/Parser -type f)
-	@./stage1 build experimental/Parser ./std -v -o parser2 -nooptimization
+parser2: stage1 $(shell find multistage/Common multistage/Parser -type f)
+	@./stage1 build multistage/Parser ./std -v -o parser2
 
-nameresolver2: stage1 $(shell find experimental/NameResolver -type f)
-	@./stage1 build experimental/NameResolver ./std -v -o nameresolver2
+nameresolver2: stage1 $(shell find multistage/Common multistage/NameResolver -type f)
+	@./stage1 build multistage/NameResolver ./std -v -o nameresolver2
 
-experimental: parser2 nameresolver2
+typechecker2: stage1 $(shell find multistage/Common multistage/Typechecker -type f)
+	@./stage1 build multistage/Typechecker ./std -v -o typechecker2
+
+multistage: parser2 nameresolver2 typechecker2
+
+run_multistage: multistage
+	@rm -rf cache
+	./parser2 build ./incremental ./std
+	./nameresolver2
+	./typechecker2
 
 clean:
 	@rm -f stage0

@@ -1,0 +1,62 @@
+module Siko.Query.Lookup where
+
+import Siko.HIR.Backend.Typechecker.Class as TC
+import Siko.HIR.Backend.Typechecker.Function as TF
+import Siko.HIR.Class as HC
+import Siko.HIR.Data as HD
+import Siko.HIR.Effect as HE
+import Siko.HIR.FullyQualifiedName as FQ
+import Siko.HIR.Function as HF
+import Siko.HIR.Type as HT
+
+class ClassProvider a where
+    getClass a :: a -> FQ.FullyQualifiedName -> HC.Class
+
+    getClassTypeInfo a :: a -> FQ.FullyQualifiedName -> TC.ClassTypeInfo
+
+    getAllDependencies a :: a -> FQ.FullyQualifiedName -> [FQ.FullyQualifiedName]
+
+    getInstance a :: a -> FQ.FullyQualifiedName -> HC.Instance
+
+class RecordProvider a where
+    getRecord a :: a -> FQ.FullyQualifiedName -> HD.Record
+
+    getRecordOpt a :: a -> FQ.FullyQualifiedName -> Option HD.Record
+
+class AdtProvider a where
+    getAdt a :: a -> FQ.FullyQualifiedName -> HD.AlgebraicDataType
+
+    getAdtOpt a :: a -> FQ.FullyQualifiedName -> Option HD.AlgebraicDataType
+
+class FunctionProvider a where
+    getFunction a :: a -> FQ.FullyQualifiedName -> HF.Function ()
+
+    getUpdateTransformedFunction a :: a -> FQ.FullyQualifiedName -> HF.Function HT.Type
+
+    getResolvedEffectsFunction a :: a -> FQ.FullyQualifiedName -> HF.Function HT.Type
+
+    getMonomorphizedFunction a :: a -> FQ.FullyQualifiedName -> HF.Function HT.Type
+
+class VariantInfoProvider a where
+    getVariantInfo a :: a -> FQ.FullyQualifiedName -> HD.VariantInfo
+
+    getVariantInfoOpt a :: a -> FQ.FullyQualifiedName -> Option HD.VariantInfo
+
+class EffectProvider a where
+    getEffect a :: a -> FQ.FullyQualifiedName -> HE.Effect
+
+    getEffectOpt a :: a -> FQ.FullyQualifiedName -> Option HE.Effect
+
+class FunctionTypeInfoProvider a where
+    getFunctionTypeInfo a :: a -> FQ.FullyQualifiedName -> TF.FunctionTypeInfo
+
+class CheckedFunctionTypeInfoProvider a where
+    getCheckedFunctionTypeInfo a :: a -> FQ.FullyQualifiedName -> TF.FunctionTypeInfo
+
+    getCheckedFunctionTypeInfoOpt a :: a -> FQ.FullyQualifiedName -> Option TF.FunctionTypeInfo
+
+class RegisteredInstanceProvider a where
+    getRegisteredInstance a :: a -> TC.InstanceKey -> TC.InstanceInfo
+
+    getRegisteredInstanceOpt a :: a -> TC.InstanceKey -> Option TC.InstanceInfo
+

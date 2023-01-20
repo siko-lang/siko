@@ -1,6 +1,15 @@
 module Map where
 
+import Json
+import Json.Serialize
+
 data Map k v = extern
+
+instance (ToJson k, ToJson v) => ToJson Map k v where
+    toJson m = m |> Map.iter |> toList |> toJson
+
+instance (FromJson k, FromJson v, Ord k) => FromJson Map k v where
+    fromJson json = fromJson json |> List.iter |> toMap
 
 instance (Show k, Show v) => Show Map k v where
     show m = do

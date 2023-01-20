@@ -1,11 +1,11 @@
 module Siko.Syntax.Expr where
 
+import Json
+import Json.Serialize
 import Siko.Syntax.Ident
 import Siko.Syntax.Location
 import Siko.Syntax.Pattern as P
 import Siko.Util.SharedString as SS
-import Json
-import Json.Serialize
 
 data Case = { pattern :: P.Pattern,
               body :: Expr
@@ -39,7 +39,9 @@ data EffectHandler = { name :: Ident,
 instance Show Expr where
     show (Expr s _) = show s
 
-data Block = { items :: [Expr], semicolon_at_end :: Bool } deriving (Show, PartialEq, Eq, FromJson, ToJson)
+data Block = { items :: [Expr],
+               semicolon_at_end :: Bool
+             } deriving (Show, PartialEq, Eq, FromJson, ToJson)
 
 data SimpleExpr = Lambda [P.Pattern] Expr
                 | Paren Expr

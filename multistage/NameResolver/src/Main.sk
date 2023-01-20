@@ -1,0 +1,178 @@
+module Main where
+
+import Siko.Cache
+import Siko.Syntax.Cache
+import Siko.Resolver.Cache
+import Map
+import IO
+import Siko.AutoDerive as AD
+import Siko.HIR.Class as HC
+import Siko.HIR.Data as HD
+import Siko.HIR.Effect as HE
+import Siko.HIR.FullyQualifiedName as FQ
+import Siko.HIR.Function as HF
+import Siko.Resolver
+import Siko.Resolver.Class
+import Siko.Resolver.Data
+import Siko.Resolver.Effect
+import Siko.Resolver.Export
+import Siko.Resolver.Function
+import Siko.Resolver.Import
+import Siko.Resolver.Item as RI
+import Siko.Resolver.Local
+import Siko.Resolver.ModuleResolver
+import Siko.Syntax.Class as SC
+import Siko.Syntax.Ident
+import Siko.Syntax.Module
+import Siko.Util.SharedString as SS
+
+processModule :: Module -> ([RI.Item], [RI.Item])
+processModule mod = do
+    local_items <- collectLocals mod
+    exported_items <- collectExports local_items mod
+    (local_items, exported_items)
+
+processDataTypes :: ModuleResolver -> [Item] -> (Map FQ.FullyQualifiedName HD.Record,
+                                                 Map FQ.FullyQualifiedName HD.AlgebraicDataType,
+                                                 [HF.Function ()],
+                                                 Map FQ.FullyQualifiedName HD.VariantInfo) -> (Map FQ.FullyQualifiedName HD.Record,
+                                                                                               Map FQ.FullyQualifiedName HD.AlgebraicDataType,
+                                                                                               [HF.Function ()],
+                                                                                               Map FQ.FullyQualifiedName HD.VariantInfo)
+processDataTypes module_resolver items (records, adts, functions, variant_infos) = do
+    List.fold (records, adts, functions, variant_infos) items (\(records, adts, functions, variant_infos), item -> case item of
+        Record record -> do
+            record <- Std.Intrinsics.clone record
+            state <- createStateProvider Map.empty Map.empty Map.empty
+            (state, hir_record, ctor) <- processRecord state module_resolver record
+            functions <- case ctor of
+                Some ctor -> List.push functions ctor
+                None -> functions
+            (Map.put records hir_record.name hir_record, adts, functions, variant_infos)
+        Adt adt -> do
+            adt <- Std.Intrinsics.clone adt
+            state <- createStateProvider Map.empty Map.empty Map.empty
+            (state, hir_adt, infos, ctors) <- processAdt state module_resolver adt
+            variant_infos <- List.fold variant_infos infos (\variant_infos, (info, name) -> Map.put variant_infos name info)
+            (records, Map.put adts hir_adt.name hir_adt, functions + ctors, variant_infos)
+        _ -> (records, adts, functions, variant_infos))
+
+processModuleInstances :: ModuleResolver ->
+                          [Item] ->
+                          Map FQ.FullyQualifiedName HC.Class ->
+                          ([UnresolvedFunctionInfo], [HC.Instance]) -> ([UnresolvedFunctionInfo], [HC.Instance])
+processModuleInstances module_resolver items classes (all_functions, all_instances) = do
+    (functions, instances) <- List.fold ([], []) items (\(functions, instances), item -> case item of
+        Record record -> do
+            record <- Std.Intrinsics.clone record
+            (record, derived_instances) <- AD.processRecordDerives record classes module_resolver
+            List.fold (functions, instances) derived_instances (\(functions, instances), derived_instance -> do
+                index <- List.getLength instances
+                (hir_instance, members) <- processModuleInstance module_resolver derived_instance index
+                (functions + members, List.push instances hir_instance))
+        Adt adt -> do
+            adt <- Std.Intrinsics.clone adt
+            (adt, derived_instances) <- AD.processAdtDerives adt classes module_resolver
+            List.fold (functions, instances) derived_instances (\(functions, instances), derived_instance -> do
+                index <- List.getLength instances
+                (hir_instance, members) <- processModuleInstance module_resolver derived_instance index
+                (functions + members, List.push instances hir_instance))
+        Instance i -> do
+            index <- List.getLength instances
+            (hir_instance, members) <- processModuleInstance module_resolver i index
+            (functions + members, List.push instances hir_instance)
+        _ -> (functions, instances))
+    (all_functions + functions, all_instances + instances)
+    where
+        processModuleInstance :: ModuleResolver -> SC.Instance -> Int -> (HC.Instance, [UnresolvedFunctionInfo])
+        processModuleInstance module_resolver i index = do
+            state <- createStateProvider Map.empty Map.empty Map.empty
+            (state, hir_instance, members) <- processInstance state module_resolver index i
+            (hir_instance, members)
+
+processClasses :: ModuleResolver -> [Item] -> (Map FQ.FullyQualifiedName HC.Class, [UnresolvedFunctionInfo]) -> (Map FQ.FullyQualifiedName HC.Class, [UnresolvedFunctionInfo])
+processClasses module_resolver items (classes, members) = do
+    List.fold (classes, members) items (\(classes, members), item -> case item of
+        Class c -> do
+            c <- Std.Intrinsics.clone c
+            state <- createStateProvider Map.empty Map.empty Map.empty
+            (state, hir_class, ms) <- processClass state module_resolver c
+            (Map.put classes hir_class.name hir_class, members + ms)
+        _ -> (classes, members))
+
+processEffects :: ModuleResolver -> [Item] -> ([HE.Effect], [UnresolvedFunctionInfo]) -> ([HE.Effect], [UnresolvedFunctionInfo])
+processEffects module_resolver items (effects, members) = do
+    List.fold (effects, members) items (\(effects, members), item -> case item of
+        Effect e -> do
+            e <- Std.Intrinsics.clone e
+            state <- createStateProvider Map.empty Map.empty Map.empty
+            (state, hir_effect, ms) <- processEffect state module_resolver e
+            (List.push effects hir_effect, members + ms)
+        _ -> (effects, members))
+
+getModuleResolvers :: List Module -> Map SS.SharedString ModuleResolver
+getModuleResolvers modules = do
+    (locals, exports) <- List.fold (Map.empty, Map.empty) modules (\(locals, exports), mod -> do
+        name <- getString mod.name
+        (local_items, exported_items) <- processModule mod
+        (Map.put locals name local_items, Map.put exports name exported_items))
+    List.fold Map.empty modules (\module_resolvers, mod -> do
+        name <- getString mod.name
+        name <- Std.Intrinsics.clone name
+        locals <- Option.unwrap (Map.get locals name)
+        export_provider <- ExportProvider (\name -> Map.get exports name)
+        (imported_items, errors) <- processImports mod export_provider locals
+        if List.isEmpty errors
+        then do
+            module_resolver <- createModuleResolver name imported_items
+            Map.put module_resolvers name module_resolver
+        else do
+            println "error {}" % errors
+            exit 1)
+
+processFunctions :: [UnresolvedFunctionInfo] ->
+                    Map FQ.FullyQualifiedName HD.VariantInfo ->
+                    Map FQ.FullyQualifiedName HD.AlgebraicDataType ->
+                    Map FQ.FullyQualifiedName HD.Record -> [HF.Function ()]
+processFunctions unresolved_function_infos variant_infos adts records = do
+    loop (unresolved_function_infos, functions) <- (unresolved_function_infos, []) do
+        if List.isEmpty unresolved_function_infos
+        then break functions
+        else do
+            List.fold ([], functions) unresolved_function_infos (\(unresolved_function_infos, functions), unresolved_function_info -> do
+                state <- createStateProvider variant_infos adts records
+                (state, fs, ufs) <- processUnresolvedFunction state unresolved_function_info
+                (unresolved_function_infos + ufs, functions + fs))
+
+main = do
+    modules <- loadCache getSyntaxModuleCachePath
+    module_resolvers <- getModuleResolvers modules
+    (records, adts, ctors, variant_infos) <- List.fold (Map.empty, Map.empty, [], Map.empty) modules (\(records, adts, ctors, variant_infos), mod -> do
+        name <- getString mod.name
+        module_resolver <- Option.unwrap (Map.get module_resolvers name)
+        processDataTypes module_resolver mod.items (records, adts, ctors, variant_infos))
+    (classes, class_members) <- List.fold (Map.empty, []) modules (\(classes, members), mod -> do
+        name <- getString mod.name
+        module_resolver <- Option.unwrap (Map.get module_resolvers name)
+        processClasses module_resolver mod.items (classes, members))
+    (instance_members, instances) <- List.fold ([], []) modules (\(functions, instances), mod -> do
+        name <- getString mod.name
+        module_resolver <- Option.unwrap (Map.get module_resolvers name)
+        processModuleInstances module_resolver mod.items classes (functions, instances))
+    (effects, effect_members) <- List.fold ([], []) modules (\(effects, members), mod -> do
+        name <- getString mod.name
+        module_resolver <- Option.unwrap (Map.get module_resolvers name)
+        processEffects module_resolver mod.items (effects, members))
+    functions <- List.fold [] modules (\functions, mod -> do
+        fns <- collectUnresolvedFunctions mod.items
+        functions + fns)
+    unresolved_function_infos <- class_members + instance_members + effect_members
+    functions <- processFunctions unresolved_function_infos variant_infos adts records
+    functions <- functions + ctors
+    updateCache getResolvedFunctionCachePath functions
+    updateCache getResolvedClassCachePath (classes |> Map.iter |> Iterator.map (\(_, c) -> c) |> toList)
+    updateCache getResolvedInstanceCachePath instances
+    updateCache getResolvedEffectCachePath effects
+    updateCache getResolvedAdtCachePath (adts |> Map.iter |> Iterator.map (\(_, adt) -> adt) |> toList)
+    updateCache getResolvedRecordCachePath (records |> Map.iter |> Iterator.map (\(_, record) -> record) |> toList)
+    ()

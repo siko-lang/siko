@@ -50,27 +50,27 @@ instance Format Ident where
 
 instance Format E.Block where
     format (E.Block items semicolon_at_end) = loop (output, index) <- ([StartOfBlock, Chunk "{"], 0) do
-        if index >= List.getLength items
-        then break (output + [EndOfBlock, StartOfItem, Chunk "}"])
-        else do
-            item <- atIndex items index
-            E.Expr s_expr _ <- item
-            needs_semicolon <- case s_expr of
-                E.Do _ -> False
-                E.If _ _ _ -> False
-                E.CaseOf _ _ -> False
-                E.Loop _ _ _ -> False
-                _ -> True
-            item <- format item
-            output <- output + [StartOfItem] + item
-            if index == List.getLength items - 1
-            then do
-                if semicolon_at_end
-                then (List.push output (Chunk ";"), index + 1)
-                else (output, index + 1)
-            else if needs_semicolon
-                then (List.push output (Chunk ";"), index + 1)
-                else (output, index + 1)
+            if index >= List.getLength items
+            then break (output + [EndOfBlock, StartOfItem, Chunk "}"])
+            else do
+                item <- atIndex items index
+                E.Expr s_expr _ <- item
+                needs_semicolon <- case s_expr of
+                    E.Do _ -> False
+                    E.If _ _ _ -> False
+                    E.CaseOf _ _ -> False
+                    E.Loop _ _ _ -> False
+                    _ -> True
+                item <- format item
+                output <- output + [StartOfItem] + item
+                if index == List.getLength items - 1
+                then do
+                    if semicolon_at_end
+                    then (List.push output (Chunk ";"), index + 1)
+                    else (output, index + 1)
+                else if needs_semicolon
+                    then (List.push output (Chunk ";"), index + 1)
+                    else (output, index + 1)
 
 instance Format E.SimpleExpr where
     format expr = case expr of
@@ -321,7 +321,7 @@ formatItems items = do
         (newline, item) <- case item of
             M.Function f -> (True, format f)
             M.FunctionSignature f -> (True, format f)
-            M.Adt adt ->  (True, format adt)
+            M.Adt adt -> (True, format adt)
             M.Record record -> (True, format record)
             M.Import i -> (False, format i)
             M.Class c -> (True, format c)

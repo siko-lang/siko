@@ -1,5 +1,7 @@
 module Siko.Syntax.Function where
 
+import Json
+import Json.Serialize
 import Siko.Syntax.Attribute
 import Siko.Syntax.Class
 import Siko.Syntax.Expr
@@ -7,8 +9,6 @@ import Siko.Syntax.Ident
 import Siko.Syntax.Module as M
 import Siko.Syntax.Pattern
 import Siko.Syntax.TypeSignature
-import Json
-import Json.Serialize
 
 data ConstraintPath = Argument Int
                     | Field Int ConstraintPath
@@ -37,14 +37,16 @@ data EffectSignature = { name :: Ident,
 
 data FunctionSignature = { name :: Ident,
                            arguments :: [FunctionArgument],
-                           result :: TypeSignature,
+                           result :: TypeSignature
                          } deriving (Show, PartialEq, Eq, FromJson, ToJson)
 
 data NamedFunctionArgument = { pat :: Pattern,
-                              type_signature :: TypeSignature } deriving (Show, PartialEq, Eq, FromJson, ToJson)
+                               type_signature :: TypeSignature
+                             } deriving (Show, PartialEq, Eq, FromJson, ToJson)
 
 data FunctionArgument = SelfArg
-                      |  NamedArg NamedFunctionArgument  deriving (Show, PartialEq, Eq, FromJson, ToJson)
+                      | NamedArg NamedFunctionArgument
+                      deriving (Show, PartialEq, Eq, FromJson, ToJson)
 
 data Function = { name :: Ident,
                   arguments :: [FunctionArgument],

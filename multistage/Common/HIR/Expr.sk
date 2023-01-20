@@ -1,0 +1,72 @@
+module Siko.HIR.Expr where
+
+import Json
+import Json.Serialize
+import Siko.HIR.FullyQualifiedName
+import Siko.HIR.Pattern as P
+import Siko.Syntax.Ident
+import Siko.Syntax.Location
+import Siko.Util.SharedString as SS
+
+data Case a = { pattern :: P.Pattern a,
+                body :: Expr a
+              } deriving (Show, PartialEq, Eq, ToJson, FromJson)
+
+data ExprRef = { source :: ExprId,
+                 location :: Location
+               } deriving (Show, PartialEq, Eq, ToJson, FromJson)
+
+data RecordConstructionItem a = { field_name :: Ident,
+                                  body :: Expr a
+                                } deriving (Show, PartialEq, Eq, ToJson, FromJson)
+
+data ExprId = ExprId Int deriving (PartialEq, Eq, PartialOrd, Ord, ToJson, FromJson)
+
+instance Show ExprId where
+    show (ExprId id) = "#{}" % id
+
+data Expr a = Expr (SimpleExpr a) ExprId a Location deriving (PartialEq, Eq, ToJson, FromJson)
+
+instance (Show a) => Show Expr a where
+    show (Expr e id _ _) = "{}({})" % (e, id)
+
+data EffectHandler a = { name :: FullyQualifiedName,
+                         selection :: EffectHandlerSelection a,
+                         location :: Location
+                       } deriving (Show, PartialEq, Eq, ToJson, FromJson)
+
+data EffectHandlerSelection a = Static FullyQualifiedName
+                              | Dynamic (Expr a)
+                              | Default
+                              deriving (Show, PartialEq, Eq, ToJson, FromJson)
+
+data EffectType a = EffectType a deriving (PartialEq, Eq, ToJson, FromJson)
+
+instance Show EffectType a where
+    show (EffectType ts) = "EffectType" // FIXME
+
+data SimpleExpr a = StaticFunctionCall FullyQualifiedName [Expr a]
+                  | DynamicFunctionCall (Expr a) [Expr a]
+                  | ClassMemberCall FullyQualifiedName [Expr a]
+                  | EffectMemberCall FullyQualifiedName [Expr a]
+                  | If (Expr a) (Expr a) (Expr a)
+                  | Tuple [Expr a]
+                  | List [Expr a]
+                  | IntegerLiteral SS.SharedString
+                  | FloatLiteral SS.SharedString
+                  | StringLiteral SS.SharedString
+                  | CharLiteral Char
+                  | Do [Expr a]
+                  | Bind (P.Pattern a) (Expr a)
+                  | FieldAccess Ident (Expr a)
+                  | TupleFieldAccess Int (Expr a)
+                  | CaseOf (Expr a) [Case a] [P.BindGroup]
+                  | RecordUpdate (Expr a) [RecordConstructionItem a]
+                  | Return (Expr a)
+                  | Continue (Expr a)
+                  | Break (Expr a)
+                  | Loop (P.Pattern a) (Expr a) (Expr a) [ExprRef] [ExprRef]
+                  | ArgRef Int
+                  | ValueRef P.BindRef
+                  | With [EffectHandler a] (Expr a) [EffectType a]
+                  deriving (Show, PartialEq, Eq, ToJson, FromJson)

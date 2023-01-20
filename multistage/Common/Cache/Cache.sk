@@ -1,0 +1,50 @@
+module Siko.Cache where
+
+import IO
+import Json
+import Json.Parser
+import Json.Serialize
+import Json.Writer
+
+class (FromJson a, ToJson a, Eq a) => CacheEntry a where
+    getCacheFileName a :: a -> String
+
+loadCache a :: (FromJson a) => String -> [a]
+loadCache path = do
+    files <- listDir path
+    List.fold [] files (\entries, filename -> do
+        content <- readTextFile filename
+        entry <- Result.unwrap (parse content)
+        entry <- fromJson entry
+        List.push entries entry)
+
+ensureExists :: String -> ()
+ensureExists folder = do
+    if createDir folder
+    then ()
+    else do
+        println "Could not create {}" % folder
+        exit 1
+
+updateCache a :: (CacheEntry a) => String -> [a] -> ()
+updateCache path entries = do
+    ensureExists path
+    List.forEach entries (\entry -> do
+        cache_filename <- getCacheFileName entry
+        filepath <- "{}/{}" % (path, cache_filename)
+        update <- if isFile filepath
+        then do
+            content <- readTextFile filepath
+            json_content <- Result.unwrap (parse content)
+            prev_entry <- fromJson json_content
+            prev_entry != entry
+        else True
+        if update
+        then do
+            println "Updating {}" % filepath
+            output <- write (toJson entry)
+            writeTextFile filepath output
+        else ())
+
+getCachePath :: String
+getCachePath = "cache"

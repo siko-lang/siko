@@ -1,0 +1,34 @@
+module Main where
+
+import IO
+import Siko.Resolver.Cache
+import Siko.Cache
+import Siko.HIR.Function as HF
+import Siko.HIR.Class as HC
+import Siko.HIR.Effect as HE
+import Siko.HIR.Data as HD
+import Siko.HIR.Backend.Typechecker.Class as TC
+import Map
+
+main = do
+    functions :: [HF.Function ()] <- loadCache getResolvedFunctionCachePath
+    classes :: [HC.Class] <- loadCache getResolvedClassCachePath
+    instances :: [HC.Instance] <- loadCache getResolvedInstanceCachePath
+    effects :: [HE.Effect] <- loadCache getResolvedEffectCachePath
+    adts :: [HD.AlgebraicDataType] <- loadCache getResolvedAdtCachePath
+    records :: [HD.Record] <- loadCache getResolvedRecordCachePath
+    println "found {} functions" % getLength functions
+    println "found {} classes" % getLength classes
+    println "found {} instaces" % getLength instances
+    println "found {} effects" % getLength effects
+    println "found {} adts" % getLength adts
+    println "found {} records" % getLength records
+    errors <- TC.checkClassDependencies classes
+    if List.isEmpty errors
+    then ()
+    else do
+        println "checkClassDependencies failed {}" % errors
+    ()
+
+
+

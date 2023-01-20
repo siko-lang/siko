@@ -1,0 +1,95 @@
+module Siko.HIR.FullyQualifiedName where
+
+import Json
+import Json.Serialize
+import Siko.HIR.Class as C
+import Siko.HIR.Closure as CL
+import Siko.HIR.Effect as Eff
+import Siko.HIR.Function as F
+import Siko.HIR.Type as T
+import Siko.HIR.TypeFormatter as TF
+import Siko.Syntax.Location
+import Siko.Util.SharedString as SS
+
+data FullyQualifiedName = FullPath SS.SharedString SS.SharedString
+                        | FullPathWithVariant SS.SharedString SS.SharedString SS.SharedString
+                        | FullPathWithLambda FullyQualifiedName F.LambdaId
+                        | FullPathInstance SS.SharedString Int
+                        | FullPathWithInstanceId SS.SharedString SS.SharedString FullyQualifiedName
+                        | ModulePath SS.SharedString
+                        | SubItem FullyQualifiedName SS.SharedString
+                        | Effectless FullyQualifiedName (Option Eff.EffectResolutionSet)
+                        | Monomorphized FullyQualifiedName T.Type
+                        | ClosureInstance CL.ClosureInstance
+                        | ClosureName T.Type
+                        | Tuple [T.Type]
+                        | Adt FullyQualifiedName [T.Type]
+                        | Record FullyQualifiedName [T.Type]
+                        deriving (PartialEq, Eq, PartialOrd, Ord, ToJson, FromJson)
+
+instance Show FullyQualifiedName where
+    show qn = case qn of
+        FullPath m n -> "{}.{}" % (m, n)
+        FullPathWithVariant m n v -> "{}.{}.{}" % (m, n, v)
+        FullPathWithLambda n i -> "{}_lambda_{}" % (n, i)
+        FullPathInstance m i -> "{}_instance_{}" % (m, i)
+        FullPathWithInstanceId m n i -> "{}_{}_instance_{}" % (m, n, i)
+        ModulePath m -> show m
+        SubItem p n -> "{}_sub_{}" % (p, n)
+        _ -> panic "QN show NYI"
+
+getResolvableName :: FullyQualifiedName -> SS.SharedString
+getResolvableName f = do
+    s <- case f of
+        FullPath m n -> "{}.{}" % (m, n)
+        FullPathWithVariant m n v -> "{}.{}" % (m, v)
+        FullPathWithLambda n i -> panic "getResolvableName called for a lambda"
+        FullPathInstance m i -> panic "getResolvableName called for a instance"
+        FullPathWithInstanceId m n i -> panic "getResolvableName called for a instance member"
+        ModulePath m -> panic "getResolvableName called for a module"
+        SubItem p n -> panic "getResolvableName called for a sub item"
+        Effectless n s -> return getResolvableName n
+        Monomorphized n type -> return getResolvableName n
+        ClosureInstance closure_instance -> show closure_instance
+        ClosureName type -> "Closure({})" % TF.toString type
+        Tuple args -> "Tuple({})" % TF.toStringTypes args
+        Adt name args -> "Adt({}, {})" % (name, TF.toStringTypes args)
+        Record name args -> "Record({}, {})" % (name, TF.toStringTypes args)
+    SS.create s
+
+getShortName :: FullyQualifiedName -> SS.SharedString
+getShortName f = case f of
+    FullPath m n -> n
+    FullPathWithVariant m n v -> n
+    FullPathWithLambda n i -> SS.create "{}_lambda" % getShortName n
+    FullPathInstance m i -> SS.create "{}/#{}" % (m, i)
+    FullPathWithInstanceId m n i -> n
+    ModulePath m -> m
+    SubItem p n -> n
+    Effectless n s -> getShortName n
+    Monomorphized n type -> getShortName n
+    ClosureInstance closure_instance -> SS.create "ClosureInstance"
+    ClosureName type -> SS.create "ClosureName"
+    Tuple args -> SS.create "Tuple_{}" % (getLength args)
+    Adt name args -> getShortName name
+    Record name args -> getShortName name
+
+getInternalModule :: SS.SharedString
+getInternalModule = SS.create "siko"
+
+getModuleName :: FullyQualifiedName -> SS.SharedString
+getModuleName f = case f of
+    FullPath m n -> m
+    FullPathWithVariant m n v -> m
+    FullPathWithLambda n i -> getModuleName n
+    FullPathInstance m i -> m
+    FullPathWithInstanceId m n i -> m
+    ModulePath m -> m
+    SubItem p n -> getModuleName p
+    Effectless n s -> getModuleName n
+    Monomorphized n type -> getModuleName n
+    ClosureInstance closure_instance -> getInternalModule
+    ClosureName type -> getInternalModule
+    Tuple args -> getInternalModule
+    Adt name args -> getModuleName name
+    Record name args -> getModuleName name

@@ -1,0 +1,72 @@
+module Siko.HIR.Backend.InstanceResolver where
+
+import Map
+import Siko.HIR.Backend.StateProvider
+import Siko.HIR.Backend.Typechecker.Class as TC
+import Siko.HIR.Backend.Unification as U
+import Siko.HIR.Backend.Unification.Substitution as S
+import Siko.HIR.Backend.Unification.Util as UUtil
+import Siko.HIR.Class
+import Siko.HIR.FullyQualifiedName as FQ
+import Siko.HIR.Type as T
+import Siko.HIR.TypeFormatter as TF
+import Siko.HIR.Util as Util
+import Siko.Query.Lookup as QL
+import Siko.Syntax.Location
+
+unifyTypes a :: (StateProvider a) =>
+                a ->
+                S.Substitution ->
+                T.Type ->
+                T.Type -> (a, S.Substitution, Bool)
+unifyTypes context sub type1 type2 = case U.unify context sub type1 type2 of
+    Ok (context, sub) -> (context, sub, True)
+    Err (context, sub) -> do
+        //println "instance check, unifyTypes failed: {} {}" % (T.toLongString type1, T.toLongString type2)
+        (context, sub, False)
+
+checkInstancesForBaseType a :: (StateProvider a) =>
+                               a ->
+                               S.Substitution ->
+                               T.Type ->
+                               TC.InstanceInfo ->
+                               FQ.FullyQualifiedName -> Result (a, S.Substitution, TC.InstanceInfo) a
+checkInstancesForBaseType context sub type instance_info class_name = do
+    //println "checkInstancesForBaseType {} {}" % (TF.toLongString type,)
+    (instance_info, context) <- UUtil.instantiateGeneric instance_info context
+    //println "Cloned instance info {}/{}" % (TF.toString instance_info.instance_type, TF.toStringTypes instance_info.associated_types)
+    //println "Cloned instance info {}/{}" % (instance_info.instance_type, instance_info.associated_types)
+    (context, sub, success) <- unifyTypes context sub type instance_info.instance_type
+    if success
+    then ()
+    else panic "checkInstancesForBaseType: unify failed {} {}" % (TF.toString type, TF.toString instance_info.instance_type)
+    instance_type <- S.apply instance_info.instance_type sub
+    associated_types <- S.apply instance_info.associated_types sub
+    instance_info <- instance_info { instance_type = instance_type, associated_types = associated_types }
+    Ok (context, sub, instance_info)
+
+hasInstance a :: (StateProvider a) =>
+                 a ->
+                 S.Substitution ->
+                 T.Type ->
+                 FQ.FullyQualifiedName -> Result (a, S.Substitution, TC.InstanceInfo) a
+hasInstance context sub type class_name = do
+    base_type <- TC.getBaseType type
+    case QL.getRegisteredInstanceOpt context (TC.InstanceKey class_name base_type) of
+        Some instance_info -> case checkInstancesForBaseType context sub type instance_info class_name of
+            Ok (context, sub, instance_info) -> Ok (context, sub, instance_info)
+            Err context -> do
+                case QL.getRegisteredInstanceOpt context (TC.InstanceKey class_name TC.Generic) of
+                    Some instance_info -> case checkInstancesForBaseType context sub type instance_info class_name of
+                        Ok (context, sub, instance_info) -> Ok (context, sub, instance_info)
+                        Err context -> Err context
+                    None -> Err context
+        None -> Err context
+
+checkInstance a :: (StateProvider a) => a -> T.Type -> FQ.FullyQualifiedName -> Result (a, S.Substitution, TC.InstanceInfo) a
+checkInstance context type class_name = do
+    //println "checkInstance: type: {}, class_name: {}" % (TF.toLongString type, class_name)
+    case type of
+        T.Var var _ -> panic "Check instance called on var"
+        T.Never -> panic "Check instance called on never"
+        _ -> hasInstance context S.createSubstitution type class_name

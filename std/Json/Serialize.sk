@@ -7,3 +7,20 @@ class ToJson a where
 
 class FromJson a where
     fromJson a :: Json -> a
+
+instance (FromJson a, FromJson b) => FromJson (a, b) where
+    fromJson json = case json of
+        JsonList items -> do
+            a <- atIndex items 0
+            b <- atIndex items 1
+            (fromJson a, fromJson b)
+        _ -> panic "tuple is not encoded as a list in json!"
+
+instance (ToJson a, ToJson b) => ToJson (a, b) where
+    toJson (a, b) = JsonList [toJson a, toJson b]
+
+instance FromJson () where
+    fromJson json = ()
+
+instance ToJson () where
+    toJson () = JsonString ""

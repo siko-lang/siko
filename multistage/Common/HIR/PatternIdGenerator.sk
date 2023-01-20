@@ -1,0 +1,15 @@
+module Siko.HIR.PatternIdGenerator where
+
+import Json
+import Json.Serialize
+import Siko.HIR.Pattern
+
+data PatternIdGenerator = { next_id :: Int } deriving (PartialEq, Eq, ToJson, FromJson)
+
+createPatternIdGenerator = PatternIdGenerator 0
+
+getNewPatternId :: PatternIdGenerator -> (PatternIdGenerator, PatternId)
+getNewPatternId gen = do
+    id <- gen.next_id
+    gen <- gen { next_id = id + 1 }
+    (gen, PatternId id)

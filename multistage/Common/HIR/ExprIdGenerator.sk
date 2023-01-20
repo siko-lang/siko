@@ -1,0 +1,15 @@
+module Siko.HIR.ExprIdGenerator where
+
+import Json
+import Json.Serialize
+import Siko.HIR.Expr
+
+data ExprIdGenerator = { next_id :: Int } deriving (PartialEq, Eq, ToJson, FromJson)
+
+createExprIdGenerator = ExprIdGenerator 0
+
+getNewExprId :: ExprIdGenerator -> (ExprIdGenerator, ExprId)
+getNewExprId gen = do
+    id <- gen.next_id
+    gen <- gen { next_id = id + 1 }
+    (gen, ExprId id)

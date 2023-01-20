@@ -1,17 +1,17 @@
 module Main where
 
-import Siko.Parser
-import Siko.Args
-import Siko.Format
-import Siko.Syntax.Ident
-import Siko.Syntax.Util
-import Siko.Syntax.Location
 import IO
 import Json
+import Json.Parser as J
 import Json.Serialize
 import Json.Writer
-import Json.Parser as J
 import Map
+import Siko.Args
+import Siko.Format
+import Siko.Parser
+import Siko.Syntax.Ident
+import Siko.Syntax.Location
+import Siko.Syntax.Util
 
 outputFileNameOption = "output-file filename"
 
@@ -103,7 +103,7 @@ build files = do
             update <- if isFile cache_filename
             then do
                 content <- readTextFile cache_filename
-                json_content <- Result.unwrap(J.parse content)
+                json_content <- Result.unwrap (J.parse content)
                 prev_mod <- fromJson json_content
                 prev_mod != mod
             else True
