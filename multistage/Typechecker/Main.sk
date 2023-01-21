@@ -3,6 +3,7 @@ module Main where
 import IO
 import Map
 import Siko.Cache
+import Siko.Typechecker.Cache
 import Siko.HIR.Backend.StateProvider
 import Siko.HIR.Backend.Typechecker.Class as TC
 import Siko.HIR.Backend.Typechecker.Function as TF
@@ -209,3 +210,5 @@ main = do
             checked_func_type_info_map <- Map.put provider.checked_func_type_info_map name func_type_info
             provider <- provider { checked_func_type_info_map = checked_func_type_info_map }
             (typed_function_map, provider)))
+    typed_functions <- typed_function_map |> Map.iter |> Iterator.map (\(_, fn) -> fn) |> toList
+    updateCache getTypedFunctionCachePath typed_functions
