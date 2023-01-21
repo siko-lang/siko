@@ -164,9 +164,14 @@ main = do
         module_resolver <- Option.unwrap (Map.get module_resolvers name)
         processEffects module_resolver mod.items (effects, members))
     functions <- List.fold [] modules (\functions, mod -> do
+        name <- getString mod.name
+        module_resolver <- Option.unwrap (Map.get module_resolvers name)
         fns <- collectUnresolvedFunctions mod.items
+        fns <- List.map fns (\fn -> do
+            qn <- FQ.FullPath module_resolver.module_name (getString fn.name)
+            createNormalUnresolvedFunctionInfo fn qn module_resolver)
         functions + fns)
-    unresolved_function_infos <- class_members + instance_members + effect_members
+    unresolved_function_infos <- functions + class_members + instance_members + effect_members
     functions <- processFunctions unresolved_function_infos variant_infos adts records
     functions <- functions + ctors
     updateCache getResolvedFunctionCachePath functions
