@@ -1,0 +1,50 @@
+module Siko.HIR.Backend.Typechecker.ClassTypeInfo where
+
+import Map
+import Siko.HIR.Backend.InstanceResolver as IR
+import Siko.HIR.Backend.StateProvider
+import Siko.HIR.Backend.TypeIsomorphism
+import Siko.HIR.Backend.Unification as U
+import Siko.HIR.Backend.Unification.Substitution as S
+import Siko.HIR.Backend.Unification.Util as UUtil
+import Siko.HIR.Class as C
+import Siko.HIR.FullyQualifiedName as FQ
+import Siko.HIR.Function as F
+import Siko.HIR.Type as T
+import Siko.HIR.TypeFormatter as TF
+import Siko.HIR.Util as Util
+import Siko.Query.Lookup as QL
+import Siko.Syntax.Location
+import Siko.Util.DependencyProcessor
+import Siko.Util.SharedString as SS
+
+data ClassMemberInfo = { type :: T.Type,
+                         has_default_impl :: Bool
+                       } deriving (Show, PartialEq, Eq)
+
+data ClassTypeInfo = { arg_type :: T.Type,
+                       associated_types :: [T.Type],
+                       members :: Map SS.SharedString ClassMemberInfo,
+                       all_dependencies :: [FQ.FullyQualifiedName]
+                     } deriving (Show, PartialEq, Eq)
+
+instance S.Transform ClassMemberInfo where
+    transform state class_member_info f = do
+        (state, type) <- S.transform state class_member_info.type f
+        (state, class_member_info { type = type })
+
+instance S.Transform ClassTypeInfo where
+    transform state class_type_info f = do
+        (state, arg_type) <- S.transform state class_type_info.arg_type f
+        (state, associated_types) <- S.transform state class_type_info.associated_types f
+        (state, members) <- S.transform state class_type_info.members f
+        (state, ClassTypeInfo arg_type associated_types members class_type_info.all_dependencies)
+
+instance S.Collectable ClassMemberInfo where
+    collect collector class_member_info = S.collect collector class_member_info.type
+
+instance S.Collectable ClassTypeInfo where
+    collect collector class_type_info = do
+        collector <- S.collect collector class_type_info.arg_type
+        collector <- S.collect collector class_type_info.associated_types
+        S.collect collector class_type_info.members

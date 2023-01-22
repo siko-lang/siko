@@ -1,7 +1,8 @@
 module Siko.Query.Lookup where
 
-import Siko.HIR.Backend.Typechecker.Class as TC
-import Siko.HIR.Backend.Typechecker.Function as TF
+import Siko.HIR.Backend.InstanceResolver as IR
+import Siko.HIR.Backend.Typechecker.FunctionTypeInfo as TF
+import Siko.HIR.Backend.Typechecker.ClassTypeInfo as TC
 import Siko.HIR.Class as HC
 import Siko.HIR.Data as HD
 import Siko.HIR.Effect as HE
@@ -31,11 +32,7 @@ class AdtProvider a where
 class FunctionProvider a where
     getFunction a :: a -> FQ.FullyQualifiedName -> HF.Function ()
 
-    getUpdateTransformedFunction a :: a -> FQ.FullyQualifiedName -> HF.Function HT.Type
-
-    getResolvedEffectsFunction a :: a -> FQ.FullyQualifiedName -> HF.Function HT.Type
-
-    getMonomorphizedFunction a :: a -> FQ.FullyQualifiedName -> HF.Function HT.Type
+    getTypedFunction a :: a -> FQ.FullyQualifiedName -> HF.Function HT.Type
 
 class VariantInfoProvider a where
     getVariantInfo a :: a -> FQ.FullyQualifiedName -> HD.VariantInfo
@@ -56,6 +53,6 @@ class CheckedFunctionTypeInfoProvider a where
     getCheckedFunctionTypeInfoOpt a :: a -> FQ.FullyQualifiedName -> Option TF.FunctionTypeInfo
 
 class RegisteredInstanceProvider a where
-    getRegisteredInstance a :: a -> TC.InstanceKey -> TC.InstanceInfo
+    getRegisteredInstance a :: a -> IR.InstanceKey -> IR.InstanceInfo
 
-    getRegisteredInstanceOpt a :: a -> TC.InstanceKey -> Option TC.InstanceInfo
+    getRegisteredInstanceOpt a :: a -> IR.InstanceKey -> Option IR.InstanceInfo

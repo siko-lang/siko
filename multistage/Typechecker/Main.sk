@@ -4,9 +4,12 @@ import IO
 import Map
 import Siko.Cache
 import Siko.Typechecker.Cache
+import Siko.HIR.Backend.InstanceResolver as IR
 import Siko.HIR.Backend.StateProvider
 import Siko.HIR.Backend.Typechecker.Class as TC
+import Siko.HIR.Backend.Typechecker.ClassTypeInfo as TC
 import Siko.HIR.Backend.Typechecker.Function as TF
+import Siko.HIR.Backend.Typechecker.FunctionTypeInfo as TF
 import Siko.HIR.Class as HC
 import Siko.HIR.Data as HD
 import Siko.HIR.Effect as HE
@@ -25,7 +28,7 @@ data TypecheckerStateProvider = { class_map :: Map FQ.FullyQualifiedName HC.Clas
                                   record_map :: Map FQ.FullyQualifiedName HD.Record,
                                   adt_map :: Map FQ.FullyQualifiedName HD.AlgebraicDataType,
                                   effect_map :: Map FQ.FullyQualifiedName HE.Effect,
-                                  instance_info_map :: Map TC.InstanceKey TC.InstanceInfo,
+                                  instance_info_map :: Map IR.InstanceKey IR.InstanceInfo,
                                 }
 
 instance ClassProvider TypecheckerStateProvider where
@@ -46,11 +49,7 @@ instance FunctionProvider TypecheckerStateProvider where
         Some f -> f
         None -> panic "No function found {}" % qn
 
-    getUpdateTransformedFunction = unimplemented
-
-    getResolvedEffectsFunction = unimplemented
-
-    getMonomorphizedFunction = unimplemented
+    getTypedFunction = unimplemented
 
 instance FunctionTypeInfoProvider TypecheckerStateProvider where
     getFunctionTypeInfo p qn = case Map.get p.func_type_info_map qn of

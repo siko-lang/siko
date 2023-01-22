@@ -1,0 +1,376 @@
+module Siko.HIR.Backend.CaseTransformer where
+
+import Map
+import Siko.HIR.Backend.CaseChecker as CC
+import Siko.HIR.Backend.StateProvider
+import Siko.HIR.Backend.Traversal
+import Siko.HIR.Backend.Unification.Data as UD
+import Siko.HIR.Data as D
+import Siko.HIR.Expr as E
+import Siko.HIR.ExprIdGenerator
+import Siko.HIR.FullyQualifiedName as FQ
+import Siko.HIR.Function as F
+import Siko.HIR.Pattern as P
+import Siko.HIR.PatternIdGenerator
+import Siko.HIR.Type as T
+import Siko.HIR.TypeFormatter as TF
+import Siko.HIR.TypeVarGenerator as TVG
+import Siko.Query.Lookup as QL
+import Siko.Syntax.Ident
+import Siko.Syntax.Location
+import Siko.Util.SharedString as SS
+
+data Context a = { state :: a,
+                   expr_id_gen :: ExprIdGenerator,
+                   pattern_id_gen :: PatternIdGenerator
+                 }
+
+data ValuePathAccessor = { normal :: E.ExprId -> E.Expr T.Type,
+                           internal :: E.ExprId -> E.Expr T.Type
+                         }
+
+getExpr a :: Context a -> (E.ExprId -> E.Expr T.Type) -> (Context a, E.Expr T.Type)
+getExpr context gen = do
+    (context, id) <- getNextExprId context
+    expr <- gen id
+    (context, expr)
+
+getNextExprId a :: Context a -> (Context a, E.ExprId)
+getNextExprId context = do
+    (expr_id_gen, id) <- getNewExprId context.expr_id_gen
+    (context { expr_id_gen = expr_id_gen }, id)
+
+getNextPatternId a :: Context a -> (Context a, P.PatternId)
+getNextPatternId context = do
+    (pattern_id_gen, id) <- getNewPatternId context.pattern_id_gen
+    (context { pattern_id_gen = pattern_id_gen }, id)
+
+processBindVars a :: (StateProvider a) =>
+                     Context a ->
+                     CC.AdditionalInfo ->
+                     Map CC.ValuePath ValuePathAccessor ->
+                     Location -> (Context a, [E.Expr T.Type])
+processBindVars context additional_info path_info_map location = do
+    (context, var_decls) <- List.fold (context, []) additional_info.binds (\(context, var_decls), CC.CaseBind path bind_ref -> do
+        ref_expr <- case get path_info_map path of
+            Some parent_expr -> do
+                parent_expr.normal
+            None -> panic "Path {} not found in path_info_map" % path
+        (context, ref_expr) <- getExpr context ref_expr
+        E.Expr _ _ ref_type _ <- ref_expr
+        (context, pat_id) <- getNextPatternId context
+        bind_pattern <- P.Pattern (P.Binding bind_ref) pat_id ref_type location
+        var_decl <- E.Bind bind_pattern ref_expr
+        (context, var_decl) <- getExpr context (\id -> E.Expr var_decl id (T.Tuple []) location)
+        var_decls <- push var_decls var_decl
+        (context, var_decls))
+    (context, var_decls)
+
+processCaseEnds a :: (StateProvider a) =>
+                     Context a ->
+                     [CC.MatchInfo] ->
+                     [E.Expr T.Type] ->
+                     [Option (E.Expr T.Type)] ->
+                     Map CC.ValuePath ValuePathAccessor ->
+                     Location -> (Context a, E.Expr T.Type)
+processCaseEnds context match_infos case_bodies guards path_info_map location = do
+    if getLength match_infos == 1
+    then do
+        CC.MatchInfo index additional_info <- atIndex match_infos 0
+        case_body <- atIndex case_bodies index
+        (context, var_decls) <- processBindVars context additional_info path_info_map location
+        E.Expr _ _ case_type _ <- case_body
+        (context, result) <- getExpr context (\id -> E.Expr (E.Do (push var_decls case_body)) id case_type location)
+        (context, result)
+    else do
+        case pop match_infos of
+            Some (match_info, match_infos) -> do
+                CC.MatchInfo index additional_info <- match_info
+                cond_expr <- case atIndex guards index of
+                    Some g -> g
+                    None -> panic "guard expr not found"
+                (context, var_decls) <- processBindVars context additional_info path_info_map location
+                case_body <- atIndex case_bodies index
+                (context, else_expr) <- processCaseEnds context match_infos case_bodies guards path_info_map location
+                E.Expr _ _ then_type _ <- case_body
+                (context, if_expr) <- getExpr context (\id -> E.Expr (E.If cond_expr case_body else_expr) id then_type location)
+                (context, result) <- getExpr context (\id -> E.Expr (E.Do (push var_decls if_expr)) id then_type location)
+                (context, result)
+            None -> panic "Matchinfos ran out!"
+
+getFieldAccessor a :: (StateProvider a) =>
+                      Context a ->
+                      CC.ValuePath ->
+                      ValuePathAccessor ->
+                      Location -> (Context a, E.Expr T.Type)
+getFieldAccessor context path parent_accessor location = do
+    (context, internal) <- getExpr context parent_accessor.internal
+    E.Expr _ _ parent_type _ <- internal
+    case path of
+        CC.ItemIndex _ index _ -> do
+            case parent_type of
+                T.Named name _ -> do
+                    record <- QL.getRecord context.state name
+                    (state, record) <- Result.unwrap (UD.instantiateRecord context.state record parent_type)
+                    context <- context { state = state }
+                    D.RecordField field_name field_type <- atIndex record.fields index
+                    (context, normal) <- getExpr context parent_accessor.normal
+                    body <- E.FieldAccess (Ident field_name location) normal
+                    getExpr context (\id -> E.Expr body id field_type location)
+                T.Tuple items -> do
+                    field_type <- atIndex items index
+                    (context, normal) <- getExpr context parent_accessor.normal
+                    body <- E.TupleFieldAccess index normal
+                    getExpr context (\id -> E.Expr body id field_type location)
+                t -> panic "Unexpected indexed type! {}" % t
+        CC.VariantPath _ _ variant_index index _ -> do
+            case parent_type of
+                T.Named name _ -> do
+                    case QL.getAdtOpt context.state name of
+                        Some adt -> do
+                            (state, adt) <- Result.unwrap (UD.instantiateAdt context.state adt parent_type)
+                            context <- context { state = state }
+                            variant <- atIndex adt.variants variant_index
+                            item <- atIndex variant.items index
+                            body <- E.TupleFieldAccess index internal
+                            getExpr context (\id -> E.Expr body id item location)
+                        None -> do
+                            record <- QL.getRecord context.state name
+                            (state, record) <- Result.unwrap (UD.instantiateRecord context.state record parent_type)
+                            context <- context { state = state }
+                            D.RecordField field_name field_type <- atIndex record.fields index
+                            body <- E.FieldAccess (Ident field_name location) internal
+                            getExpr context (\id -> E.Expr body id field_type location)
+                T.Tuple items -> do
+                    field_type <- atIndex items index
+                    body <- E.TupleFieldAccess index internal
+                    getExpr context (\id -> E.Expr body id field_type location)
+                t -> panic "Unexpected indexed variant type {}" % t
+        _ -> (context, internal)
+
+createCase a :: (StateProvider a) =>
+                Context a ->
+                CC.Condition ->
+                CC.Choice ->
+                CC.ValuePath ->
+                Map CC.ValuePath ValuePathAccessor ->
+                [E.Expr T.Type] ->
+                [Option (E.Expr T.Type)] ->
+                Location ->
+                T.Type ->
+                (E.ExprId -> E.Expr T.Type) -> (Context a, E.Case T.Type)
+createCase context cond choice path path_info_map case_bodies guards location body_type pattern_var_ref = do
+    (context, path_info_map, case_pattern) <- case cond of
+        CC.IntegerCondition literal -> do
+            (context, pat_id) <- getNextPatternId context
+            case_pattern <- P.Pattern (P.IntegerLiteral literal) pat_id body_type location
+            (context, path_info_map, case_pattern)
+        CC.StringCondition literal -> do
+            (context, pat_id) <- getNextPatternId context
+            case_pattern <- P.Pattern (P.StringLiteral literal) pat_id body_type location
+            (context, path_info_map, case_pattern)
+        CC.CharCondition literal -> do
+            (context, pat_id) <- getNextPatternId context
+            case_pattern <- P.Pattern (P.CharLiteral literal) pat_id body_type location
+            (context, path_info_map, case_pattern)
+        CC.CharRangeCondition s e kind -> do
+            (context, pat_id) <- getNextPatternId context
+            case_pattern <- P.Pattern (P.CharRange s e kind) pat_id body_type location
+            (context, path_info_map, case_pattern)
+        CC.VariantCondition index -> do
+            case body_type of
+                T.Named name _ -> do
+                    adt <- QL.getAdt context.state name
+                    (context, pat_id) <- getNextPatternId context
+                    (context, pat2_id) <- getNextPatternId context
+                    (context, pat3_id) <- getNextPatternId context
+                    (state, adt) <- Result.unwrap (UD.instantiateAdt context.state adt body_type)
+                    variant <- atIndex adt.variants index
+                    context <- context { state = state }
+                    bind_ref <- P.BindRef (SS.create "var_int") pat_id
+                    bind_pattern <- P.Binding bind_ref
+                    bind_type <- T.Tuple variant.items
+                    bind_pattern <- P.Pattern bind_pattern pat2_id bind_type location
+                    case_pattern <- P.Variant name index [bind_pattern]
+                    case_pattern <- P.Pattern case_pattern pat3_id body_type location
+                    pattern_ref <- \id -> E.Expr (E.ValueRef bind_ref) id bind_type location
+                    path_info_map <- Map.put path_info_map path (ValuePathAccessor pattern_var_ref pattern_ref)
+                    (context, path_info_map, case_pattern)
+                _ -> panic "Indexed adt is not an adt"
+        CC.WildcardCondition -> do
+            (context, pat_id) <- getNextPatternId context
+            (context, pat2_id) <- getNextPatternId context
+            bind_ref <- P.BindRef (SS.create "var_int") pat_id
+            bind_pattern <- P.Binding bind_ref
+            case_pattern <- P.Pattern bind_pattern pat2_id body_type location
+            pattern_ref <- \id -> E.Expr (E.ValueRef bind_ref) id body_type location
+            path_info_map <- Map.put path_info_map path (ValuePathAccessor pattern_var_ref pattern_ref)
+            (context, path_info_map, case_pattern)
+        CC.Else -> panic "Else found"
+    (context, choice_expr) <- processChoiceTree context choice path_info_map case_bodies guards location
+    (context, E.Case case_pattern choice_expr)
+
+processChoiceTree a :: (StateProvider a) =>
+                       Context a ->
+                       CC.Choice ->
+                       Map CC.ValuePath ValuePathAccessor ->
+                       [E.Expr T.Type] ->
+                       [Option (E.Expr T.Type)] ->
+                       Location -> (Context a, E.Expr T.Type)
+processChoiceTree context choice path_info_map case_bodies guards location = case choice of
+    CC.Choice path subchoices -> do
+        parent_path <- CC.getParentPath path
+        parent_accessor <- case get path_info_map parent_path of
+            Some parent_accessor -> parent_accessor
+            None -> panic "Parent path {} not found in path info map" % parent_path
+        (context, body_expr) <- getFieldAccessor context path parent_accessor location
+        (context, pattern_id) <- getNextPatternId context
+        E.Expr _ _ body_type _ <- body_expr
+        (context, pat_id) <- getNextPatternId context
+        (context, pat2_id) <- getNextPatternId context
+        bind_ref <- P.BindRef (SS.create "body") pat_id
+        bind_pattern <- P.Binding bind_ref
+        bind_pattern <- P.Pattern bind_pattern pat2_id body_type location
+        pattern_var_ref <- \id -> E.Expr (E.ValueRef bind_ref) id body_type location
+        (context, cases) <- Map.fold (context, []) subchoices (\(context, cases), (cond, choice) -> do
+            (context, c) <- createCase context 
+                                       cond 
+                                       choice 
+                                       path 
+                                       path_info_map 
+                                       case_bodies 
+                                       guards 
+                                       location 
+                                       body_type 
+                                       pattern_var_ref
+            cases <- push cases c
+            (context, cases))
+        body_bind <- E.Bind bind_pattern body_expr
+        (context, var_decl_expr) <- getExpr context (\id -> E.Expr body_bind id (T.Tuple []) location)
+        var_ref <- E.ValueRef bind_ref
+        (context, var_ref_expr) <- getExpr context (\id -> E.Expr var_ref id body_type location)
+        E.Case _ (E.Expr _ _ first_case_type _) <- atIndex cases 0
+        case_expr <- E.CaseOf var_ref_expr cases []
+        (context, case_of_expr) <- getExpr context (\id -> E.Expr case_expr id first_case_type location)
+        (context, do_expr) <- getExpr context (\id -> E.Expr (E.Do [var_decl_expr, case_of_expr]) id first_case_type location)
+        (context, do_expr)
+    CC.CaseEnd cs -> do
+        (context, expr) <- processCaseEnds context cs case_bodies guards path_info_map location
+        (context, expr)
+    CC.ElseNode -> panic "ElseNode found"
+
+processBind a :: (StateProvider a) => Context a -> P.Pattern T.Type -> E.Expr T.Type -> (Context a, [E.Expr T.Type])
+processBind context pat rhs = do
+    P.Pattern s_pat pat_id type location <- pat
+    case s_pat of
+        P.Binding _ -> do
+            (context, id) <- getNextExprId context
+            (context, [E.Expr (E.Bind pat rhs) id (T.Tuple []) location])
+        P.Tuple args -> do
+            (context, pat_id) <- getNextPatternId context
+            (context, pat2_id) <- getNextPatternId context
+            bind_ref <- P.BindRef (SS.create "tuple") pat_id
+            bind_pattern <- P.Binding bind_ref
+            bind_pattern <- P.Pattern bind_pattern pat2_id type location
+            (context, id) <- getNextExprId context
+            first_bind <- E.Expr (E.Bind pat rhs) id (T.Tuple []) location
+            List.foldE (context, [first_bind]) args (\(context, sub_items), index, arg -> do
+                P.Pattern _ _ arg_type _ <- arg
+                (context, id) <- getNextExprId context
+                arg_ref_expr <- E.Expr (E.ValueRef bind_ref) id type location
+                (context, id) <- getNextExprId context
+                arg_ref_expr <- E.Expr (E.TupleFieldAccess index arg_ref_expr) id arg_type location
+                (context, exs) <- processBind context arg arg_ref_expr
+                (context, sub_items + exs))
+        P.Guarded _ _ -> panic "Guarded pattern in bind!"
+        P.Wildcard -> (context, [rhs])
+        P.IntegerLiteral _ -> panic "IntegerLiteral in bind!"
+        P.StringLiteral _ -> panic "StringLiteral in bind!"
+        P.CharLiteral _ -> panic "CharLiteral in bind!"
+        P.CharRange _ _ _ -> panic "CharRange in bind!"
+        P.Typed pat _ -> processBind context pat rhs
+        P.Record name args -> do
+            record <- QL.getRecord context.state name
+            (state, record) <- Result.unwrap (UD.instantiateRecord context.state record type)
+            context <- context { state = state }
+            (context, pat_id) <- getNextPatternId context
+            (context, pat2_id) <- getNextPatternId context
+            bind_ref <- P.BindRef (SS.create "rec") pat_id
+            bind_pattern <- P.Binding bind_ref
+            bind_pattern <- P.Pattern bind_pattern pat2_id type location
+            (context, id) <- getNextExprId context
+            first_bind <- E.Expr (E.Bind pat rhs) id (T.Tuple []) location
+            List.foldE (context, [first_bind]) args (\(context, sub_items), index, arg -> do
+                D.RecordField field_name field_type <- atIndex record.fields index
+                P.Pattern _ _ arg_type _ <- arg
+                (context, id) <- getNextExprId context
+                arg_ref_expr <- E.Expr (E.ValueRef bind_ref) id type location
+                (context, id) <- getNextExprId context
+                arg_ref_expr <- E.Expr (E.FieldAccess (Ident field_name location) arg_ref_expr) id arg_type location
+                (context, exs) <- processBind context arg arg_ref_expr
+                (context, sub_items + exs))
+        P.Variant name variant_index args -> do
+            adt <- QL.getAdt context.state name
+            (state, record) <- Result.unwrap (UD.instantiateAdt context.state adt type)
+            context <- context { state = state }
+            (context, pat_id) <- getNextPatternId context
+            (context, pat2_id) <- getNextPatternId context
+            bind_ref <- P.BindRef (SS.create "adt") pat_id
+            bind_pattern <- P.Binding bind_ref
+            bind_pattern <- P.Pattern bind_pattern pat2_id type location
+            (context, id) <- getNextExprId context
+            first_bind <- E.Expr (E.Bind pat rhs) id (T.Tuple []) location
+            List.foldE (context, [first_bind]) args (\(context, sub_items), index, arg -> do
+                P.Pattern _ _ arg_type _ <- arg
+                (context, id) <- getNextExprId context
+                arg_ref_expr <- E.Expr (E.ValueRef bind_ref) id type location
+                (context, id) <- getNextExprId context
+                arg_ref_expr <- E.Expr (E.TupleFieldAccess index arg_ref_expr) id arg_type location
+                (context, exs) <- processBind context arg arg_ref_expr
+                (context, sub_items + exs))
+
+processExpr a :: (StateProvider a) => Context a -> E.Expr T.Type -> (Context a, E.Expr T.Type)
+processExpr context expr = do
+    E.Expr s_expr id expr_type location <- expr
+    case s_expr of
+        E.Do items -> do
+            (context, items) <- List.fold (context, []) items (\(context, items), item -> do
+                E.Expr s_expr id expr_type location <- item
+                (context, sub_items) <- case s_expr of
+                    E.Bind pat rhs -> processBind context pat rhs
+                    s_expr -> (context, [E.Expr s_expr id expr_type location])
+                (context, items + sub_items))
+            (context, E.Expr (E.Do items) id expr_type location)
+        E.CaseOf body cases bind_groups -> do
+            case CC.checkCase context.state id body cases of
+                Ok (state, choice_tree) -> do
+                    context <- context { state = state }
+                    p <- Option.unwrap (CC.getValuePath choice_tree)
+                    body_expr_accessor <- \_ -> body
+                    case_bodies <- List.map cases (\E.Case _ body -> body)
+                    guards <- List.map cases (\E.Case p _ -> do
+                        P.Pattern p _ _ _ <- p
+                        case p of
+                            P.Guarded _ expr -> Some expr
+                            _ -> None)
+                    path_info_map <- Map.put Map.empty p (ValuePathAccessor body_expr_accessor body_expr_accessor)
+                    processChoiceTree context choice_tree path_info_map case_bodies guards location
+                Err state -> do
+                    context <- context { state = state }
+                    (context, E.Expr (E.CaseOf body cases bind_groups) id expr_type location)
+        s_expr -> (context, E.Expr s_expr id expr_type location)
+
+processPattern a :: (StateProvider a) => Context a -> P.Pattern T.Type -> (Context a, P.Pattern T.Type)
+processPattern context pattern = (context, pattern)
+
+transformCases a :: (StateProvider a) => a -> F.Function T.Type -> (a, F.Function T.Type)
+transformCases state fn = do
+    (state, kind) <- case fn.kind of
+        F.Normal info -> do
+            context <- Context state info.expr_id_gen info.pattern_id_gen
+            traversal_context <- createTraversalContext context processExpr processPattern
+            (context, body) <- traverse traversal_context info.body
+            info <- info { body = body, expr_id_gen = context.expr_id_gen, pattern_id_gen = context.pattern_id_gen }
+            (context.state, F.Normal info)
+        kind -> (state, kind)
+    (state, fn { kind = kind })

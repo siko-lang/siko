@@ -1,12 +1,14 @@
 module Siko.HIR.Backend.Typechecker.Class where
 
 import Map
+import Siko.HIR.Backend.InstanceResolver as IR
 import Siko.HIR.Backend.StateProvider
 import Siko.HIR.Backend.TypeIsomorphism
 import Siko.HIR.Backend.Typechecker.Error
 import Siko.HIR.Backend.Unification as U
 import Siko.HIR.Backend.Unification.Substitution as S
 import Siko.HIR.Backend.Unification.Util as UUtil
+import Siko.HIR.Backend.Typechecker.ClassTypeInfo
 import Siko.HIR.Class as C
 import Siko.HIR.FullyQualifiedName as FQ
 import Siko.HIR.Function as F
@@ -17,75 +19,6 @@ import Siko.Query.Lookup as QL
 import Siko.Syntax.Location
 import Siko.Util.DependencyProcessor
 import Siko.Util.SharedString as SS
-
-data ClassMemberInfo = { type :: T.Type,
-                         has_default_impl :: Bool
-                       } deriving (Show, PartialEq, Eq)
-
-data ClassTypeInfo = { arg_type :: T.Type,
-                       associated_types :: [T.Type],
-                       members :: Map SS.SharedString ClassMemberInfo,
-                       all_dependencies :: [FQ.FullyQualifiedName]
-                     } deriving (Show, PartialEq, Eq)
-
-instance S.Transform ClassMemberInfo where
-    transform state class_member_info f = do
-        (state, type) <- S.transform state class_member_info.type f
-        (state, class_member_info { type = type })
-
-instance S.Transform ClassTypeInfo where
-    transform state class_type_info f = do
-        (state, arg_type) <- S.transform state class_type_info.arg_type f
-        (state, associated_types) <- S.transform state class_type_info.associated_types f
-        (state, members) <- S.transform state class_type_info.members f
-        (state, ClassTypeInfo arg_type associated_types members class_type_info.all_dependencies)
-
-instance S.Collectable ClassMemberInfo where
-    collect collector class_member_info = S.collect collector class_member_info.type
-
-instance S.Collectable ClassTypeInfo where
-    collect collector class_type_info = do
-        collector <- S.collect collector class_type_info.arg_type
-        collector <- S.collect collector class_type_info.associated_types
-        S.collect collector class_type_info.members
-
-data BaseType = Tuple Int
-              | Named FQ.FullyQualifiedName
-              | Function
-              | Generic
-              deriving (Show, PartialEq, Eq, PartialOrd, Ord)
-
-getBaseType :: T.Type -> BaseType
-getBaseType type = case type of
-    T.Tuple args -> Tuple (getLength args)
-    T.Named qn _ -> Named qn
-    T.Function _ _ -> Function
-    T.Var _ _ -> Generic
-    T.FixedTypeArg _ _ -> Generic
-    T.Ref _ t -> getBaseType t
-    T.Owner t -> getBaseType t
-    T.Never -> Generic
-
-data InstanceInfo = { instance_type :: T.Type,
-                      associated_types :: [T.Type],
-                      id :: FQ.FullyQualifiedName,
-                      location :: Location
-                    } deriving (Show, PartialEq, Eq)
-
-instance S.Transform InstanceInfo where
-    transform state info f = do
-        (state, instance_type) <- S.transform state info.instance_type f
-        (state, associated_types) <- S.transform state info.associated_types f
-        (state, InstanceInfo instance_type associated_types info.id info.location)
-
-instance S.Collectable InstanceInfo where
-    collect collector info = do
-        collector <- S.collect collector info.instance_type
-        S.collect collector info.associated_types
-
-data InstanceKey = { class_name :: FQ.FullyQualifiedName,
-                     base_type :: BaseType
-                   } deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
 addMemberInfo :: ClassTypeInfo ->
                  SS.SharedString ->
@@ -217,11 +150,11 @@ checkInstance state class_type_info i = do
             then state
             else addError state (MissingInstanceMember name i.location))
 
-createInstanceInfo :: C.Instance -> (InstanceKey, InstanceInfo)
+createInstanceInfo :: C.Instance -> (IR.InstanceKey, IR.InstanceInfo)
 createInstanceInfo i = do
-    base_type <- getBaseType i.type
+    base_type <- IR.getBaseType i.type
     class_name <- i.class_name
-    (InstanceKey class_name base_type, InstanceInfo i.type i.associated_types i.name i.location)
+    (IR.InstanceKey class_name base_type, IR.InstanceInfo i.type i.associated_types i.name i.location)
 
 getAllDependencies a :: (StateProvider a) => a -> FQ.FullyQualifiedName -> [FQ.FullyQualifiedName]
 getAllDependencies state class_name = do

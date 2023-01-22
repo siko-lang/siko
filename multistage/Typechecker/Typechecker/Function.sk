@@ -9,6 +9,7 @@ import Siko.HIR.Backend.Typechecker.Effect
 import Siko.HIR.Backend.Typechecker.Error
 import Siko.HIR.Backend.Typechecker.Expr
 import Siko.HIR.Backend.Typechecker.FunctionDependency
+import Siko.HIR.Backend.Typechecker.FunctionTypeInfo
 import Siko.HIR.Backend.Typechecker.Pattern
 import Siko.HIR.Backend.Typechecker.TypeStore as TS
 import Siko.HIR.Backend.Typechecker.TypedFunction as TF
@@ -23,39 +24,6 @@ import Siko.HIR.Util as Util
 import Siko.HIR.Util
 import Siko.Query.Lookup as QL
 import Siko.Util.SharedString as SS
-
-data FunctionTypeInfo = { name :: FullyQualifiedName,
-                          args :: [T.Type],
-                          function_type :: T.Type,
-                          result_type :: T.Type,
-                          effects :: Option [T.Type],
-                          defined :: Bool
-                        } deriving (Show, PartialEq, Eq)
-
-instance S.Apply FunctionTypeInfo where
-    apply func_type_info sub = do
-        args <- S.apply func_type_info.args sub
-        function_type <- S.apply func_type_info.function_type sub
-        result_type <- S.apply func_type_info.result_type sub
-        effects <- case func_type_info.effects of
-            Some effects -> Some (List.map effects (\t -> S.apply t sub))
-            None -> None
-        FunctionTypeInfo func_type_info.name args function_type result_type effects func_type_info.defined
-
-instance S.Transform FunctionTypeInfo where
-    transform state func_type_info f = do
-        (state, args) <- S.transform state func_type_info.args f
-        (state, function_type) <- S.transform state func_type_info.function_type f
-        (state, result_type) <- S.transform state func_type_info.result_type f
-        (state, effects) <- S.transform state func_type_info.effects f
-        (state, FunctionTypeInfo func_type_info.name args function_type result_type effects func_type_info.defined)
-
-instance S.Collectable FunctionTypeInfo where
-    collect collector func_type_info = do
-        collector <- S.collect collector func_type_info.args
-        collector <- S.collect collector func_type_info.function_type
-        collector <- S.collect collector func_type_info.result_type
-        S.collect collector func_type_info.effects
 
 data FunctionDependencyInfo = { deps :: [FullyQualifiedName] } deriving (Show, PartialEq, Eq)
 
