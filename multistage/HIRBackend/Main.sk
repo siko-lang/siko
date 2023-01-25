@@ -1,42 +1,42 @@
 module Main where
 
-import Siko.Cache
-import Siko.Constants
-import Siko.Typechecker.Cache
-import Siko.HIR.Type as HT
-import Siko.HIR.Function as HF
-import Siko.HIR.Backend.CaseTransformer
-import Siko.HIR.Backend.UpdateTransformer as UT
 import IO
 import Map
 import Siko.Cache
-import Siko.Typechecker.Cache
+import Siko.Cache
+import Siko.Constants
+import Siko.HIR.Backend.CaseTransformer
+import Siko.HIR.Backend.EffectResolver
 import Siko.HIR.Backend.InstanceResolver as IR
 import Siko.HIR.Backend.StateProvider
 import Siko.HIR.Backend.Typechecker.ClassTypeInfo as TC
 import Siko.HIR.Backend.Typechecker.FunctionTypeInfo as TF
+import Siko.HIR.Backend.UpdateTransformer as UT
 import Siko.HIR.Class as HC
 import Siko.HIR.Data as HD
 import Siko.HIR.Effect as HE
 import Siko.HIR.FullyQualifiedName as FQ
 import Siko.HIR.Function as HF
+import Siko.HIR.Function as HF
+import Siko.HIR.Type as HT
 import Siko.Query.Lookup
 import Siko.Resolver.Cache
+import Siko.Typechecker.Cache
+import Siko.Typechecker.Cache
 import Siko.Util.DependencyProcessor
-import Siko.HIR.Backend.EffectResolver
 
 data BackendStateProvider = { class_map :: Map FQ.FullyQualifiedName HC.Class,
-                                  class_type_info_map :: Map FQ.FullyQualifiedName TC.ClassTypeInfo,
-                                  function_map :: Map FQ.FullyQualifiedName (HF.Function ()),
-                                  typed_function_map :: Map FQ.FullyQualifiedName (HF.Function HT.Type),
-                                  instance_map :: Map FQ.FullyQualifiedName HC.Instance,
-                                  func_type_info_map :: Map FQ.FullyQualifiedName TF.FunctionTypeInfo,
-                                  checked_func_type_info_map :: Map FQ.FullyQualifiedName TF.FunctionTypeInfo,
-                                  record_map :: Map FQ.FullyQualifiedName HD.Record,
-                                  adt_map :: Map FQ.FullyQualifiedName HD.AlgebraicDataType,
-                                  effect_map :: Map FQ.FullyQualifiedName HE.Effect,
-                                  instance_info_map :: Map IR.InstanceKey IR.InstanceInfo,
-                                } deriving (Move)
+                              class_type_info_map :: Map FQ.FullyQualifiedName TC.ClassTypeInfo,
+                              function_map :: Map FQ.FullyQualifiedName (HF.Function ()),
+                              typed_function_map :: Map FQ.FullyQualifiedName (HF.Function HT.Type),
+                              instance_map :: Map FQ.FullyQualifiedName HC.Instance,
+                              func_type_info_map :: Map FQ.FullyQualifiedName TF.FunctionTypeInfo,
+                              checked_func_type_info_map :: Map FQ.FullyQualifiedName TF.FunctionTypeInfo,
+                              record_map :: Map FQ.FullyQualifiedName HD.Record,
+                              adt_map :: Map FQ.FullyQualifiedName HD.AlgebraicDataType,
+                              effect_map :: Map FQ.FullyQualifiedName HE.Effect,
+                              instance_info_map :: Map IR.InstanceKey IR.InstanceInfo
+                            } deriving (Move)
 
 instance ClassProvider BackendStateProvider where
     getClass p qn = case Map.get p.class_map qn of
@@ -115,17 +115,17 @@ main = do
     adt_map <- List.fold Map.empty adts (\adt_map, adt -> Map.put adt_map adt.name adt)
     record_map <- List.fold Map.empty records (\record_map, record -> Map.put record_map record.name record)
     effect_map <- List.fold Map.empty effects (\effect_map, e -> Map.put effect_map e.name e)
-    provider <- BackendStateProvider class_map
-                                         Map.empty
-                                         function_map
-                                         typed_function_map
-                                         instance_map
-                                         Map.empty
-                                         Map.empty
-                                         record_map
-                                         adt_map
-                                         effect_map
-                                         Map.empty
+    provider <- BackendStateProvider class_map 
+                                     Map.empty 
+                                     function_map 
+                                     typed_function_map 
+                                     instance_map 
+                                     Map.empty 
+                                     Map.empty 
+                                     record_map 
+                                     adt_map 
+                                     effect_map 
+                                     Map.empty
     typed_functions <- List.map typed_functions (\f -> do
         state <- createStateProvider provider
         (state, f) <- transformCases state f
@@ -147,7 +147,7 @@ main = do
             case Map.get resolved_fns last of
                 Some _ -> (resolved_fns, queue)
                 None -> do
-                    println "Resolving effects for {}" % last
+                    //println "Resolving effects for {}" % last
                     case last of
                         FQ.Effectless qn (Some resolution_set) -> do
                             state <- createStateProvider provider
@@ -160,6 +160,4 @@ main = do
                             queue <- queue + qns
                             (Map.put resolved_fns last resolved_fn, queue)
                         _ -> panic "Incorrect qn in effect resolver queue {}" % last
-
     ()
-
