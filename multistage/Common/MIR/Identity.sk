@@ -1,0 +1,15 @@
+module Siko.MIR.Identity where
+
+import Hash
+import Json
+import Json.Serialize
+import Siko.HIR.FullyQualifiedName as FQ
+
+data Identity = Identity FQ.FullyQualifiedName deriving (PartialEq, Eq, PartialOrd, Ord, Show, ToJson, FromJson)
+
+short :: Identity -> String
+short Identity qn = do
+    hasher <- Hash.create
+    hasher <- Hash.hash hasher (show qn)
+    h <- abs (Hash.finish hasher)
+    "{}_{}" % (FQ.getShortName qn, h)

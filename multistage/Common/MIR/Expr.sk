@@ -1,0 +1,120 @@
+module Siko.MIR.Expr where
+
+import Json
+import Json.Serialize
+import Siko.MIR.Backend.Rebinder
+import Siko.MIR.Identity as I
+import Siko.MIR.Type as T
+import Siko.Util.Format
+
+data Var = Named String
+         | Temp Int
+         | Arg Int
+         | LocalArg Int
+         deriving (PartialEq, Eq, PartialOrd, Ord, ToJson, FromJson)
+
+instance Show Var where
+    show v = case v of
+        Named v -> "_{}" % v
+        Temp v -> "tmp_{}" % v
+        Arg i -> "arg{}" % i
+        LocalArg i -> "local_arg{}" % i
+
+data RangeKind = Inclusive
+               | Exclusive
+               deriving (PartialEq, Eq, Show, GenericTransform(Rebinder), ToJson, FromJson)
+
+data Checker = IntegerChecker String
+             | StringChecker String
+             | CharChecker Char
+             | CharRangeChecker Char Char RangeKind
+             | VariantChecker Int Var T.Type
+             | WildcardChecker Var
+             deriving (PartialEq, Eq, GenericTransform(Rebinder), ToJson, FromJson)
+
+instance Show Checker where
+    show checker = case checker of
+        IntegerChecker lit -> "i:{}" % lit
+        StringChecker lit -> "s:{}" % lit
+        CharChecker lit -> "c:{}" % lit
+        CharRangeChecker s e kind -> "{}:{}:{}" % (s, e, kind)
+        VariantChecker i v type -> "v:{} {} :: {}" % (i, v, type)
+        WildcardChecker v -> "w({})" % v
+
+data Case = { checker :: Checker,
+              body :: Expr
+            } deriving (PartialEq, Eq, Show, GenericTransform(Rebinder), ToJson, FromJson)
+
+data ExprId = ExprId Int deriving (PartialEq, Eq, PartialOrd, Ord, Show, ToJson, FromJson)
+
+data Expr = Expr SimpleExpr T.Type ExprId deriving (PartialEq, Eq, Show, ToJson, FromJson)
+
+data DoBlock = { items :: [Expr] } deriving (PartialEq, Eq, Show, ToJson, FromJson)
+
+data LoopInfo = { var :: Var,
+                  initializer :: Expr,
+                  body :: Expr,
+                  continues :: [ExprId],
+                  breaks :: [ExprId]
+                } deriving (PartialEq, Eq, Show, ToJson, FromJson)
+
+data VarRefInfo = { var :: Var } deriving (PartialEq, Eq, Show, ToJson, FromJson)
+
+data ContinueInfo = { arg :: Expr } deriving (PartialEq, Eq, Show, ToJson, FromJson)
+
+data BreakInfo = { arg :: Expr } deriving (PartialEq, Eq, Show, ToJson, FromJson)
+
+data SimpleExpr = Do DoBlock
+                | Multi [Expr]
+                | StaticFunctionCall I.Identity [Expr]
+                | IntegerLiteral String
+                | StringLiteral String
+                | FloatLiteral String
+                | CharLiteral Char
+                | VarDecl Var Expr
+                | VarRef VarRefInfo
+                | FieldAccess Int Expr
+                | If Expr Expr Expr
+                | List [Expr]
+                | Return Expr
+                | Continue ContinueInfo
+                | Break BreakInfo
+                | Loop LoopInfo
+                | CaseOf Expr [Case]
+                | Clone Expr
+                | Deref Expr
+                | Ref Expr
+                | Move Expr
+                | Box Expr
+                | Converter Expr
+                deriving (PartialEq, Eq, Show, GenericTransform(Rebinder), ToJson, FromJson)
+
+short :: Expr -> String
+short expr = do
+    Expr s _ _ <- expr
+    case s of
+        Do block -> "Do"
+        Multi args -> "Multi"
+        StaticFunctionCall id args -> "StaticFunctionCall({})" % id
+        IntegerLiteral lit -> "IntegerLiteral"
+        StringLiteral lit -> "StringLiteral"
+        FloatLiteral lit -> "FloatLiteral"
+        CharLiteral lit -> "CharLiteral"
+        VarDecl v arg -> "VarDecl({})" % v
+        VarRef (VarRefInfo v) -> "VarRef({})" % v
+        FieldAccess n rhs -> "FieldAccess"
+        If cond true_branch false_branch -> "If"
+        List args -> "List"
+        Return arg -> "Return"
+        Continue arg -> "Continue"
+        Break arg -> "Break"
+        Loop loop_info -> "Loop"
+        CaseOf body cases -> "CaseOf"
+        Clone expr -> "Clone"
+        Deref expr -> "Deref"
+        Ref expr -> "Ref"
+        Move expr -> "Move"
+        Box expr -> "Box"
+        Converter expr -> do
+            Expr _ _ arg_id <- expr
+            "Converter({})" % arg_id

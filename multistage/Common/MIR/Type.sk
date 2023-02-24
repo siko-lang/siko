@@ -1,0 +1,33 @@
+module Siko.MIR.Type where
+
+import Json
+import Json.Serialize
+import Siko.MIR.Identity
+
+data Type = Adt Identity
+          | Record Identity
+          | Ref Int Type
+          | Owner Type
+          | Never
+          deriving (PartialEq, Eq, PartialOrd, Ord, ToJson, FromJson)
+
+instance Show Type where
+    show t = case t of
+        Adt id -> "{}" % short id
+        Record id -> "{}" % short id
+        Ref index t -> "&^{} {}" % (index, t)
+        Owner t -> "~{}" % t
+        Never -> "!"
+
+getIdentity :: Type -> Identity
+getIdentity type = case type of
+    Adt id -> id
+    Record id -> id
+    Ref _ t -> getIdentity t
+    Owner t -> getIdentity t
+    Never -> panic "getIdentity called on Never!"
+
+isNever :: Type -> Bool
+isNever type = case type of
+    Never -> True
+    _ -> False

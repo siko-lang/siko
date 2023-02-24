@@ -22,7 +22,7 @@ import Siko.HIR.Type as HT
 import Siko.Query.Lookup
 import Siko.Resolver.Cache
 import Siko.Typechecker.Cache
-import Siko.Typechecker.Cache
+import Siko.HIR.Backend.Cache
 import Siko.Util.DependencyProcessor
 
 data BackendStateProvider = { class_map :: Map FQ.FullyQualifiedName HC.Class,
@@ -115,16 +115,16 @@ main = do
     adt_map <- List.fold Map.empty adts (\adt_map, adt -> Map.put adt_map adt.name adt)
     record_map <- List.fold Map.empty records (\record_map, record -> Map.put record_map record.name record)
     effect_map <- List.fold Map.empty effects (\effect_map, e -> Map.put effect_map e.name e)
-    provider <- BackendStateProvider class_map 
-                                     Map.empty 
-                                     function_map 
-                                     typed_function_map 
-                                     instance_map 
-                                     Map.empty 
-                                     Map.empty 
-                                     record_map 
-                                     adt_map 
-                                     effect_map 
+    provider <- BackendStateProvider class_map
+                                     Map.empty
+                                     function_map
+                                     typed_function_map
+                                     instance_map
+                                     Map.empty
+                                     Map.empty
+                                     record_map
+                                     adt_map
+                                     effect_map
                                      Map.empty
     typed_functions <- List.map typed_functions (\f -> do
         state <- createStateProvider provider
@@ -139,7 +139,7 @@ main = do
     empty_resolution_set <- HE.EffectResolutionSet Map.empty Map.empty
     effectless_main_qn <- FQ.Effectless base_main_qn (Some empty_resolution_set)
     unreachable_qn <- FQ.Effectless unreachable_qn (Some empty_resolution_set)
-    resolved_fns <- loop (resolved_fns, queue) <- (Map.empty, [effectless_main_qn, unreachable_qn]) do
+    resolved_effect_fns <- loop (resolved_fns, queue) <- (Map.empty, [effectless_main_qn, unreachable_qn]) do
         if List.isEmpty queue
         then break resolved_fns
         else do
@@ -160,4 +160,6 @@ main = do
                             queue <- queue + qns
                             (Map.put resolved_fns last resolved_fn, queue)
                         _ -> panic "Incorrect qn in effect resolver queue {}" % last
+    lowered_fns <- resolved_effect_fns |> Map.iter |> Iterator.map (\(key, f) -> f) |> toList
+    updateCache getHIRBackendFunctionCachePath lowered_fns
     ()

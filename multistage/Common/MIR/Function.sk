@@ -1,0 +1,89 @@
+module Siko.MIR.Function where
+
+import Json
+import Json.Serialize
+import Map
+import Siko.MIR.Expr as E
+import Siko.MIR.Identity
+import Siko.MIR.Type as T
+import Siko.Util.Counter
+import Siko.Util.Format
+
+data Attribute = Inline deriving (Show, PartialEq, Eq, PartialOrd, Ord, ToJson, FromJson)
+
+data FunctionInfo = { body :: E.Expr,
+                      expr_id_gen :: Counter E.ExprId,
+                      temp_var_gen :: Counter E.Var,
+                      attributes :: [Attribute]
+                    } deriving (ToJson, FromJson)
+
+instance PartialEq FunctionInfo where
+    opEq info1 info2 = opEq info1.body info2.body
+
+instance Eq FunctionInfo
+
+instance Show FunctionInfo where
+    show info = show info.body
+
+data FunctionKind = Normal FunctionInfo
+                  | VariantCtor Int
+                  | RecordCtor
+                  | Extern TypeMapping
+                  deriving (PartialEq, Eq, ToJson, FromJson)
+
+instance Show FunctionKind where
+    show kind = case kind of
+        Normal _ -> "Normal"
+        VariantCtor _ -> "VariantCtor"
+        RecordCtor -> "RecordCtor"
+        Extern _ -> "Extern"
+
+data FunctionType = { args :: [T.Type],
+                      result :: T.Type
+                    } deriving (PartialEq, Eq, PartialOrd, Ord, ToJson, FromJson)
+
+instance Show FunctionType where
+    show type = "{} -> {}" % (type.args, type.result)
+
+data Function = { id :: Identity,
+                  kind :: FunctionKind,
+                  type :: FunctionType
+                } deriving (PartialEq, Eq, Show, ToJson, FromJson)
+
+data Step = External Int
+          | Variant Int
+          | Field Int
+          | Implicit Int
+          | FunctionArg Int
+          | FunctionResult
+          deriving (PartialEq, Eq, PartialOrd, Ord, ToJson, FromJson)
+
+data Position = Position [Step] deriving (PartialEq, Eq, PartialOrd, Ord, ToJson, FromJson)
+
+instance Show Position where
+    show (Position steps) = join steps ""
+
+instance Show Step where
+    show step = case step of
+        External index -> ".e{}" % index
+        Variant index -> ".v{}" % index
+        Field index -> ".f{}" % index
+        Implicit index -> ".i{}" % index
+        FunctionArg index -> "arg{}" % index
+        FunctionResult -> "R"
+
+data Converter = { from :: Position,
+                   to :: Position
+                 } deriving (PartialEq, Eq, Show, ToJson, FromJson)
+
+data Equal = { left :: Position,
+               right :: Position
+             } deriving (PartialEq, Eq, Show, ToJson, FromJson)
+
+data TypeMapping = { var_mappings :: Map String [Position],
+                     owner_positions :: [Position],
+                     ref_positions :: Map Int [Position],
+                     converters :: [Converter],
+                     equals :: [Equal],
+                     independents :: [Position]
+                   } deriving (PartialEq, Eq, Show, ToJson, FromJson)
