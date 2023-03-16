@@ -112,10 +112,10 @@ createContext expr_id_gen temp_var_gen = Context Map.empty expr_id_gen temp_var_
 processFunction :: F.Function -> F.Function
 processFunction function = case function.kind of
     F.Normal info -> do
-        context <- createContext info.expr_id_gen info.temp_var_gen
+        context <- createContext (F.getExprIdGen info.expr_id_gen) (F.getTempVarGen info.temp_var_gen)
         context <- List.foldE context function.type.args (\context, index, _ -> addArg context (E.Arg index))
         (context, body) <- rebind context info.body
-        info <- info { body = body, expr_id_gen = context.expr_id_gen, temp_var_gen = context.temp_var_gen }
+        info <- info { body = body, expr_id_gen = context.expr_id_gen.next, temp_var_gen = context.temp_var_gen.next }
         new_kind <- F.Normal info
         function { kind = new_kind }
     _ -> function

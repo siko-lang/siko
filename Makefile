@@ -20,25 +20,34 @@ altfmt: stage0 $(shell find experimental/alternative_syntax -type f)
 	@./stage0 build experimental/alternative_syntax ./std -v -o alt
 
 parser2: stage1 $(shell find multistage/Common multistage/Parser -type f)
-	@./stage1 build multistage/Parser ./std -v -o parser2
+	@echo "M: Parser"
+	@./stage1 build multistage/Parser ./std -o parser2
 
 nameresolver2: stage1 $(shell find multistage/Common multistage/NameResolver -type f)
-	@./stage1 build multistage/NameResolver ./std -v -o nameresolver2
+	@echo "M: NameResolver"
+	@./stage1 build multistage/NameResolver ./std -o nameresolver2
 
 typechecker2: stage1 $(shell find multistage/Common multistage/Typechecker -type f)
-	@./stage1 build multistage/Typechecker ./std -v -o typechecker2
+	@echo "M: Typechecker"
+	@./stage1 build multistage/Typechecker ./std -o typechecker2
 
 hirbackend2: stage1 $(shell find multistage/Common multistage/HIRBackend -type f)
-	@./stage1 build multistage/HIRBackend ./std -v -o hirbackend2
+	@echo "M: HIRBackend"
+	@./stage1 build multistage/HIRBackend ./std -o hirbackend2
 
-multistage: parser2 nameresolver2 typechecker2 hirbackend2
+mirlowering2: stage1 $(shell find multistage/Common multistage/MIRLowering -type f)
+	@echo "M: MIRLowering"
+	@./stage1 build multistage/MIRLowering ./std -o mirlowering2
+
+multistage: parser2 nameresolver2 typechecker2 hirbackend2 mirlowering2
 
 run_multistage: multistage
 	@rm -rf cache
-	./parser2 build ./incremental ./std
+	./parser2 build multistage_test ./std
 	./nameresolver2
 	./typechecker2
 	./hirbackend2
+	./mirlowering2
 
 clean:
 	@rm -f stage0

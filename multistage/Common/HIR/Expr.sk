@@ -1,5 +1,6 @@
 module Siko.HIR.Expr where
 
+import Siko.HIR.Backend.TupleTransformer
 import Json
 import Json.Serialize
 import Siko.HIR.FullyQualifiedName
@@ -10,22 +11,22 @@ import Siko.Util.SharedString as SS
 
 data Case a = { pattern :: P.Pattern a,
                 body :: Expr a
-              } deriving (Show, PartialEq, Eq, ToJson, FromJson)
+              } deriving (Show, PartialEq, Eq, ToJson, FromJson, GenericTransform(TupleTransformer))
 
 data ExprRef = { source :: ExprId,
                  location :: Location
-               } deriving (Show, PartialEq, Eq, ToJson, FromJson)
+               } deriving (Show, PartialEq, Eq, ToJson, FromJson, GenericTransform(TupleTransformer))
 
 data RecordConstructionItem a = { field_name :: Ident,
                                   body :: Expr a
-                                } deriving (Show, PartialEq, Eq, ToJson, FromJson)
+                                } deriving (Show, PartialEq, Eq, ToJson, FromJson, GenericTransform(TupleTransformer))
 
-data ExprId = ExprId Int deriving (PartialEq, Eq, PartialOrd, Ord, ToJson, FromJson)
+data ExprId = ExprId Int deriving (PartialEq, Eq, PartialOrd, Ord, ToJson, FromJson, GenericTransform(TupleTransformer))
 
 instance Show ExprId where
     show (ExprId id) = "#{}" % id
 
-data Expr a = Expr (SimpleExpr a) ExprId a Location deriving (PartialEq, Eq, ToJson, FromJson)
+data Expr a = Expr (SimpleExpr a) ExprId a Location deriving (PartialEq, Eq, ToJson, FromJson, GenericTransform(TupleTransformer))
 
 instance (Show a) => Show Expr a where
     show (Expr e id _ _) = "{}({})" % (e, id)
@@ -33,24 +34,26 @@ instance (Show a) => Show Expr a where
 data EffectHandler a = { name :: FullyQualifiedName,
                          selection :: EffectHandlerSelection a,
                          location :: Location
-                       } deriving (Show, PartialEq, Eq, ToJson, FromJson)
+                       } deriving (Show, PartialEq, Eq, ToJson, FromJson, GenericTransform(TupleTransformer))
 
 data EffectHandlerSelection a = Static FullyQualifiedName
                               | Dynamic (Expr a)
                               | Default
-                              deriving (Show, PartialEq, Eq, ToJson, FromJson)
+                              deriving (Show, PartialEq, Eq, ToJson, FromJson, GenericTransform(TupleTransformer))
 
-data EffectType a = EffectType a deriving (PartialEq, Eq, ToJson, FromJson)
+data EffectType a = EffectType a deriving (PartialEq, Eq, ToJson, FromJson, GenericTransform(TupleTransformer))
 
 instance Show EffectType a where
     show (EffectType ts) = "EffectType" // FIXME
+
+data TupleCtor a = { args :: [Expr a] } deriving (Show, PartialEq, Eq, ToJson, FromJson, GenericTransform(TupleTransformer))
 
 data SimpleExpr a = StaticFunctionCall FullyQualifiedName [Expr a]
                   | DynamicFunctionCall (Expr a) [Expr a]
                   | ClassMemberCall FullyQualifiedName [Expr a]
                   | EffectMemberCall FullyQualifiedName [Expr a]
                   | If (Expr a) (Expr a) (Expr a)
-                  | Tuple [Expr a]
+                  | Tuple (TupleCtor a)
                   | List [Expr a]
                   | IntegerLiteral SS.SharedString
                   | FloatLiteral SS.SharedString
@@ -69,4 +72,4 @@ data SimpleExpr a = StaticFunctionCall FullyQualifiedName [Expr a]
                   | ArgRef Int
                   | ValueRef P.BindRef
                   | With [EffectHandler a] (Expr a) [EffectType a]
-                  deriving (Show, PartialEq, Eq, ToJson, FromJson)
+                  deriving (Show, PartialEq, Eq, ToJson, FromJson, GenericTransform(TupleTransformer))

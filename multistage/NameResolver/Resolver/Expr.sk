@@ -290,11 +290,11 @@ shiftLambdaArgs context (HE.Expr full_body full_body_id _ full_body_location) of
         HE.CaseOf body_expr cases _ -> do
             (HE.Expr body_expr body_id _ body_location) <- body_expr
             case body_expr of
-                HE.Tuple arg_refs -> do
+                HE.Tuple ctor -> do
                     (context, extras) <- repeatSE context (createExtraArg full_body_location) offset
                     extra_arg_refs <- List.map extras (\(arg_ref, _) -> arg_ref)
                     extra_patterns <- List.map extras (\(_, pattern) -> pattern)
-                    arg_refs <- List.map arg_refs (shiftArgRef offset)
+                    arg_refs <- List.map ctor.args (shiftArgRef offset)
                     arg_refs <- extra_arg_refs + arg_refs
                     assert (getLength cases == 1)
                     only_case <- atIndex cases 0
@@ -305,7 +305,7 @@ shiftLambdaArgs context (HE.Expr full_body full_body_id _ full_body_location) of
                             HP.Pattern (HP.Tuple args) pattern_id () pattern_location
                         _ -> panic "Case body is not a tuple"
                     cases <- [HE.Case pattern only_case.body]
-                    case_of <- HE.CaseOf (HE.Expr (HE.Tuple arg_refs) body_id () body_location) cases []
+                    case_of <- HE.CaseOf (HE.Expr (HE.Tuple (HE.TupleCtor arg_refs)) body_id () body_location) cases []
                     expr <- HE.Expr case_of full_body_id () full_body_location
                     (context, expr)
                 _ -> panic "Body is not a tuple"
@@ -441,7 +441,7 @@ processExpr context env (SE.Expr expr location) = do
                                 Ok (context, result) -> case result of
                                     FunctionCall fn -> do
                                         (context, env, fn hir_args)
-                                Err context -> (context, env, HE.Tuple [])
+                                Err context -> (context, env, HE.Tuple (HE.TupleCtor []))
                     _ -> do
                         (context, _, hir_receiver) <- processExpr context env receiver
                         (context, env, HE.DynamicFunctionCall hir_receiver hir_args)
@@ -456,7 +456,7 @@ processExpr context env (SE.Expr expr location) = do
             (context, env, HE.If hir_cond hir_true_branch hir_false_branch)
         SE.Tuple items -> do
             (context, hir_items) <- processExprs context env items
-            (context, env, HE.Tuple hir_items)
+            (context, env, HE.Tuple (HE.TupleCtor hir_items))
         SE.List items -> do
             (context, hir_items) <- processExprs context env items
             (context, env, HE.List hir_items)
@@ -473,7 +473,7 @@ processExpr context env (SE.Expr expr location) = do
                     Ok (context, result) -> case result of
                         FunctionCall fn -> do
                             (context, env, fn [])
-                    Err context -> (context, env, HE.Tuple [])
+                    Err context -> (context, env, HE.Tuple (HE.TupleCtor []))
         SE.IntegerLiteral lit -> (context, env, HE.IntegerLiteral lit)
         SE.FloatLiteral lit -> (context, env, HE.FloatLiteral lit)
         SE.StringLiteral lit -> (context, env, HE.StringLiteral lit)
@@ -545,13 +545,13 @@ processExpr context env (SE.Expr expr location) = do
                                     context <- if not (List.isEmpty multi_used)
                                     then addErrorToContext context (MultiInitFields multi_used)
                                     else context
-                                    (context, env, HE.Tuple [])
+                                    (context, env, HE.Tuple (HE.TupleCtor []))
                         _ -> do
                             context <- addErrorToContext context (NotARecord name)
-                            (context, env, HE.Tuple [])
+                            (context, env, HE.Tuple (HE.TupleCtor []))
                 Err err -> do
                     context <- addErrorToContext context err
-                    (context, env, HE.Tuple [])
+                    (context, env, HE.Tuple (HE.TupleCtor []))
         SE.RecordUpdate path updates -> do
             (context, env, updates, fields) <- updates |> List.iter |> Iterator.fold (\(context, env, updates, fields), (SE.RecordConstructionItem field_name expr) -> do
                 (Ident f_name _) <- field_name
@@ -581,7 +581,7 @@ processExpr context env (SE.Expr expr location) = do
                     (context, env, HE.RecordUpdate ref_expr updates)
                 None -> do
                     context <- addErrorToContext context (NotAVariable path)
-                    (context, env, HE.Tuple [])
+                    (context, env, HE.Tuple (HE.TupleCtor []))
         SE.Return expr -> do
             (context, env, hir_expr) <- processExpr context env expr
             (context, env, HE.Return hir_expr)

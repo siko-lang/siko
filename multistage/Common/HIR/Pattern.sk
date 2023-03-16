@@ -5,25 +5,26 @@ import Json.Serialize
 import Map
 import Siko.HIR.Expr as E
 import Siko.HIR.FullyQualifiedName
+import Siko.HIR.Backend.TupleTransformer
 import Siko.HIR.Type as T
 import Siko.Syntax.Ident
 import Siko.Syntax.Location
 import Siko.Util.SharedString as SS
 
-data BindRef = BindRef SS.SharedString PatternId deriving (Show, PartialEq, Eq, PartialOrd, Ord, ToJson, FromJson)
+data BindRef = BindRef SS.SharedString PatternId deriving (Show, PartialEq, Eq, PartialOrd, Ord, ToJson, FromJson, GenericTransform(TupleTransformer))
 
-data BindGroup = { bindings :: Map SS.SharedString [BindRef] } deriving (Show, PartialEq, Eq, ToJson, FromJson)
+data BindGroup = { bindings :: Map SS.SharedString [BindRef] } deriving (Show, PartialEq, Eq, ToJson, FromJson, GenericTransform(TupleTransformer))
 
 data RangeKind = Exclusive
                | Inclusive
-               deriving (Show, PartialEq, Eq, PartialOrd, Ord, ToJson, FromJson)
+               deriving (Show, PartialEq, Eq, PartialOrd, Ord, ToJson, FromJson, GenericTransform(TupleTransformer))
 
-data PatternId = PatternId Int deriving (PartialEq, Eq, PartialOrd, Ord, ToJson, FromJson)
+data PatternId = PatternId Int deriving (PartialEq, Eq, PartialOrd, Ord, ToJson, FromJson, GenericTransform(TupleTransformer))
 
 instance Show PatternId where
     show (PatternId id) = "{}" % id
 
-data Pattern a = Pattern (SimplePattern a) PatternId a Location deriving (PartialEq, Eq, ToJson, FromJson)
+data Pattern a = Pattern (SimplePattern a) PatternId a Location deriving (PartialEq, Eq, ToJson, FromJson, GenericTransform(TupleTransformer))
 
 instance (Show a) => Show Pattern a where
     show (Pattern p _ _ _) = show p
@@ -39,4 +40,4 @@ data SimplePattern a = Binding BindRef
                      | Typed (Pattern a) T.Type
                      | Record FullyQualifiedName [Pattern a]
                      | Variant FullyQualifiedName Int [Pattern a]
-                     deriving (Show, PartialEq, Eq, ToJson, FromJson)
+                     deriving (Show, PartialEq, Eq, ToJson, FromJson, GenericTransform(TupleTransformer))

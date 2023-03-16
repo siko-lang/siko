@@ -62,12 +62,12 @@ instance (U.ClassProvider a) => U.ClassProvider Context a where
     getAssociatedTypeCount context qn = U.getAssociatedTypeCount context.state qn
 
 initializeContext a :: (StateProvider a) => a -> [FQ.FullyQualifiedName] -> Context a
-initializeContext state group_items = Context TS.initializeTypeStore 
-                                              state 
-                                              [] 
-                                              group_items 
-                                              Map.empty 
-                                              [] 
+initializeContext state group_items = Context TS.initializeTypeStore
+                                              state
+                                              []
+                                              group_items
+                                              Map.empty
+                                              []
                                               0
 
 addExprType :: Context a -> E.ExprId -> TS.ExprTypeState -> Context a
@@ -423,11 +423,8 @@ initializeExprType current_fn_name context orig_expr = do
             (context, var) <- U.getNewTypeVarType context
             context <- addExprType context id (TS.ExprType var)
             context
-        E.Tuple args -> do
-            (context, vars) <- args |> List.iter |> Iterator.fold (\(context, vars), arg -> do
-                (context, var) <- U.getNewTypeVarType context
-                vars <- push vars var
-                (context, vars)) (context, [])
+        E.Tuple ctor -> do
+            (context, vars) <- List.mapS context ctor.args (\context, arg -> U.getNewTypeVarType context)
             context <- addExprType context id (TS.ExprType (T.Tuple vars))
             context
         E.List args -> do
@@ -594,11 +591,11 @@ checkExprType context orig_expr = do
             context <- matchExprs context true_id false_id false_location
             context <- matchExprs context id false_id false_location
             context
-        E.Tuple args -> do
-            sub_ids <- List.map args (\E.Expr _ id _ _ -> id)
+        E.Tuple ctor -> do
+            sub_ids <- List.map ctor.args (\E.Expr _ id _ _ -> id)
             sub_signatures <- TEff.getExprEffectSignatures context sub_ids
             context <- TEff.setExprEffect context id sub_signatures location
-            arg_types <- args |> List.iter |> Iterator.map (\(E.Expr _ arg _ _) -> getExprType context arg) |> toList
+            arg_types <- List.map ctor.args (\(E.Expr _ arg _ _) -> getExprType context arg)
             context <- matchExprWith context id (T.Tuple arg_types) location
             context
         E.List args -> do

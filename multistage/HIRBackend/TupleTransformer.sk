@@ -1,0 +1,124 @@
+module Siko.HIR.Backend.TupleTransformer where
+
+import Siko.HIR.Type as HT
+import Siko.HIR.Function as HF
+import Siko.HIR.Data as HD
+import Siko.HIR.FullyQualifiedName as FQ
+import Siko.Util.SharedString as SS
+import Map
+import Siko.Syntax.Location
+import Siko.Syntax.Ident
+
+data Context = { tuples :: Map FQ.FullyQualifiedName HD.Record }
+
+createContext :: Context
+createContext = Context Map.empty
+
+class TupleTransformer a where
+    transform a :: Context -> a -> (Context, a)
+
+instance TupleTransformer Int where
+    transform context i = (context, i)
+
+instance TupleTransformer Char where
+    transform context c = (context, c)
+
+instance TupleTransformer Location where
+    transform context l = (context, l)
+
+instance TupleTransformer Ident where
+    transform context i = (context, i)
+
+instance TupleTransformer SS.SharedString where
+    transform context s = (context, s)
+
+instance TupleTransformer FQ.FullyQualifiedName where
+    transform context qn = (context, qn)
+
+instance (TupleTransformer a) => TupleTransformer Option a where
+    transform context o = case o of
+        Some o -> do
+            (context, o) <- transform context o
+            (context, Some o)
+        None -> (context, None)
+
+instance (TupleTransformer v, Ord k) => TupleTransformer Map k v where
+    transform context m = Map.mapS context m (\context, (k, v) -> do
+        (context, v) <- transform context v
+        (context, k, v))
+
+instance (TupleTransformer a) => TupleTransformer HF.NormalFunctionInfo a where
+    transform context info = do
+        (context, body) <- transform context info.body
+        (context, info { body = body })
+
+instance TupleTransformer HF.ExternFunctionInfo where
+    transform context info = do
+        (context, ty) <- transform context info.type_with_ownership
+        (context, info { type_with_ownership = ty })
+
+instance (TupleTransformer a) => TupleTransformer HF.FunctionKind a where
+    transform context k = case k of
+        HF.Normal info -> do
+            (context, info) <- transform context info
+            (context, HF.Normal info)
+        HF.VariantCtor i -> (context, HF.VariantCtor i)
+        HF.RecordCtor -> (context, HF.RecordCtor)
+        HF.ExternInfo info -> do
+            (context, info) <- transform context info
+            (context, HF.ExternInfo info)
+        HF.Interface s -> (context, HF.Interface s)
+
+instance (TupleTransformer a) => TupleTransformer HF.Function a where
+    transform context f = do
+        (context, type) <- transform context f.type
+        (context, kind) <- transform context f.kind
+        (context, f { type = type, kind = kind })
+
+instance (TupleTransformer a) => TupleTransformer List a where
+    transform context xs = List.mapS context xs transform
+
+instance TupleTransformer HT.Constraint where
+    transform context constraint = case constraint of
+        HT.ClassConstraint qn args -> do
+            (context, args) <- transform context args
+            (context, HT.ClassConstraint qn args)
+        HT.RowConstraint kind ty -> do
+            (context, ty) <- transform context ty
+            (context, HT.RowConstraint kind ty)
+        HT.NeverLike -> (context, HT.NeverLike)
+
+instance TupleTransformer HT.Type where
+    transform context ty = case ty of
+        HT.Var v cs -> do
+            (context, cs) <- transform context cs
+            (context, HT.Var v cs)
+        HT.FixedTypeArg n cs -> do
+            (context, cs) <- transform context cs
+            (context, HT.FixedTypeArg n cs)
+        HT.Named qn args -> do
+            (context, args) <- transform context args
+            (context, HT.Named qn args)
+        HT.Function from to -> do
+            (context, from) <- transform context from
+            (context, to) <- transform context to
+            (context, HT.Function from to)
+        HT.Never -> (context, HT.Never)
+        HT.Ref lt ty -> do
+            (context, ty) <- transform context ty
+            (context, HT.Ref lt ty)
+        HT.Owner ty -> do
+            (context, ty) <- transform context ty
+            (context, HT.Owner ty)
+        HT.Tuple args -> do
+            (context, args) <- transform context args
+            qn <- FQ.Tuple args
+            qn <- FQ.Record qn []
+            record_type <- HT.Named qn []
+            case Map.get context.tuples qn of
+                Some _ -> (context, record_type)
+                None -> do
+                    fields <- List.mapE args (\index, ty -> HD.RecordField (SS.create "field{}" % index) ty)
+                    record <- HD.Record qn emptyLocation [] fields False record_type False
+                    tuples <- Map.put context.tuples qn record
+                    (context { tuples = tuples }, record_type)

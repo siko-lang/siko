@@ -59,7 +59,7 @@ createTypedSimpleExpr context id s_expr = case s_expr of
     E.ClassMemberCall qn args -> E.ClassMemberCall (Std.Intrinsics.clone qn) (processExprs context args)
     E.EffectMemberCall qn args -> E.EffectMemberCall (Std.Intrinsics.clone qn) (processExprs context args)
     E.If cond true_branch false_branch -> E.If (createTypedExpr context cond) (createTypedExpr context true_branch) (createTypedExpr context false_branch)
-    E.Tuple items -> E.Tuple (processExprs context items)
+    E.Tuple ctor -> E.Tuple (E.TupleCtor (processExprs context ctor.args))
     E.List items -> E.List (processExprs context items)
     E.IntegerLiteral lit -> E.IntegerLiteral (Std.Intrinsics.clone lit)
     E.FloatLiteral lit -> E.FloatLiteral (Std.Intrinsics.clone lit)

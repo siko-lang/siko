@@ -69,8 +69,8 @@ instance Format E.SimpleExpr a where
             if List.contains true StartOfBlock || List.contains false StartOfBlock || total_length > 5
             then [Chunk "if "] + cond + [StartOfItem, Chunk "then "] + (addImplicitBlock true) + [EndOfItem, StartOfItem, Chunk "else "] + (addImplicitBlock false) + [EndOfItem]
             else [Chunk "if "] + cond + [Chunk " then "] + true + [Chunk " else "] + false
-        E.Tuple args -> do
-            args <- formatList args (Chunk ", ")
+        E.Tuple ctor -> do
+            args <- formatList ctor.args (Chunk ", ")
             [Chunk "("] + args + [Chunk ")"]
         E.List args -> do
             if List.getLength args > 3

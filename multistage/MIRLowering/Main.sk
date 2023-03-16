@@ -1,0 +1,71 @@
+module Main where
+
+import Siko.Cache
+import Siko.Config
+import Siko.HIR.Function as HF
+import Siko.MIR.Function as MF
+import Siko.HIR.Type as HT
+import Siko.Query.Lookup
+import Siko.MIR.Program
+import Siko.HIR.Backend.Cache
+import Siko.HIR.Backend.StateProvider
+import Siko.MIR.Backend.Cache
+import Siko.HIR.Backend.Lowering as L
+
+data LoweringStateProvider = {}
+
+instance ClassProvider LoweringStateProvider where
+    getClass p qn = panic "Class provider in lowering"
+
+    getClassTypeInfo p qn = panic "Class provider in lowering"
+
+    getAllDependencies p qn = panic "Class provider in lowering"
+
+    getInstance p qn = panic "Class provider in lowering"
+
+instance FunctionProvider LoweringStateProvider where
+    getFunction p qn = panic "Function provider in lowering"
+
+    getTypedFunction p qn = panic "Function provider in lowering"
+
+instance FunctionTypeInfoProvider LoweringStateProvider where
+    getFunctionTypeInfo p qn = panic "Function type info provider in lowering"
+
+instance CheckedFunctionTypeInfoProvider LoweringStateProvider where
+    getCheckedFunctionTypeInfo p qn = panic "Checked function type info provider in lowering"
+
+    getCheckedFunctionTypeInfoOpt p qn = panic "Checked function type info provider in lowering"
+
+instance RecordProvider LoweringStateProvider where
+    getRecord p qn = panic "Record provider in lowering"
+
+    getRecordOpt p qn = panic "Record provider in lowering"
+
+instance AdtProvider LoweringStateProvider where
+    getAdt p qn = panic "Adt provider in lowering"
+
+    getAdtOpt p qn = panic "Adt provider in lowering"
+
+instance EffectProvider LoweringStateProvider where
+    getEffect p qn = panic "Effect provider in lowering"
+    getEffectOpt p qn = panic "Effect provider in lowering"
+
+instance RegisteredInstanceProvider LoweringStateProvider where
+    getRegisteredInstance p key = panic "Instance provider in lowering"
+    getRegisteredInstanceOpt p key = panic "Instance provider in lowering"
+
+lowerFunction :: HF.Function HT.Type -> MF.Function
+lowerFunction hir_function = do
+    println "Lowering hir_function {}" % hir_function.name
+    state <- createStateProvider LoweringStateProvider
+    (state, mir_function, functions, tuples, records, adts) <- L.lowerFunction state hir_function.name hir_function
+    mir_function
+
+main = do
+    with { getConfig = \_ -> getDefaultConfig } do
+        functions :: [HF.Function HT.Type] <- loadCache getHIRBackendFunctionCachePath
+        lowered_fns :: [MF.Function] <- List.map functions lowerFunction
+        mir_program <- createProgram
+        mir_program <- List.fold mir_program lowered_fns  (\mir_program, fn -> addFunction mir_program fn.id fn)
+        updateCache getMIRBackendCachePath [mir_program]
+        ()

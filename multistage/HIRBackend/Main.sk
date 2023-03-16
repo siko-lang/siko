@@ -3,20 +3,20 @@ module Main where
 import IO
 import Map
 import Siko.Cache
-import Siko.Cache
 import Siko.Constants
 import Siko.HIR.Backend.CaseTransformer
-import Siko.HIR.Backend.EffectResolver
+import Siko.HIR.Backend.EffectResolver as ER
 import Siko.HIR.Backend.InstanceResolver as IR
 import Siko.HIR.Backend.StateProvider
 import Siko.HIR.Backend.Typechecker.ClassTypeInfo as TC
 import Siko.HIR.Backend.Typechecker.FunctionTypeInfo as TF
 import Siko.HIR.Backend.UpdateTransformer as UT
+import Siko.HIR.Backend.Monomorphization as MO
+import Siko.HIR.Backend.TupleTransformer  as TT
 import Siko.HIR.Class as HC
 import Siko.HIR.Data as HD
 import Siko.HIR.Effect as HE
 import Siko.HIR.FullyQualifiedName as FQ
-import Siko.HIR.Function as HF
 import Siko.HIR.Function as HF
 import Siko.HIR.Type as HT
 import Siko.Query.Lookup
@@ -100,6 +100,54 @@ instance RegisteredInstanceProvider BackendStateProvider where
 
     getRegisteredInstanceOpt p key = Map.get p.instance_info_map key
 
+resolveEffects provider base_main_qn unreachable_qn = do
+    empty_resolution_set <- HE.EffectResolutionSet Map.empty Map.empty
+    effectless_main_qn <- FQ.Effectless base_main_qn (Some empty_resolution_set)
+    unreachable_qn <- FQ.Effectless unreachable_qn (Some empty_resolution_set)
+    loop (resolved_fns, queue) <- (Map.empty, [effectless_main_qn, unreachable_qn]) do
+        if List.isEmpty queue
+        then break resolved_fns
+        else do
+            (last, queue) <- removeLast queue
+            case Map.get resolved_fns last of
+                Some _ -> (resolved_fns, queue)
+                None -> do
+                    //println "Resolving effects for {}" % last
+                    case last of
+                        FQ.Effectless qn (Some resolution_set) -> do
+                            state <- createStateProvider provider
+                            (state, resolved_fn, qns) <- ER.resolveEffects state qn resolution_set
+                            queue <- queue + qns
+                            (Map.put resolved_fns last resolved_fn, queue)
+                        FQ.Effectless qn None -> do
+                            state <- createStateProvider provider
+                            (state, resolved_fn, qns) <- ER.resolveEffects state qn empty_resolution_set
+                            queue <- queue + qns
+                            (Map.put resolved_fns last resolved_fn, queue)
+                        _ -> panic "Incorrect qn in effect resolver queue {}" % last
+
+monomorphize provider base_main_qn = do
+    empty_resolution_set <- HE.EffectResolutionSet Map.empty Map.empty
+    empty_tuple_qn <- FQ.Tuple []
+    empty_tuple_qn <- FQ.Record empty_tuple_qn []
+    monomorphized_main_qn <- FQ.Monomorphized (FQ.Effectless base_main_qn (Some empty_resolution_set)) (HT.Named empty_tuple_qn [])
+    loop (monomorphized_fns, queue) <- (Map.empty, [monomorphized_main_qn]) do
+        if List.isEmpty queue
+        then break monomorphized_fns
+        else do
+            (last, queue) <- removeLast queue
+            case Map.get monomorphized_fns last of
+                Some _ -> (monomorphized_fns, queue)
+                None -> do
+                    case last of
+                        FQ.Monomorphized orig_qn ty -> do
+                            state <- createStateProvider provider
+                            (state, monomorphized_fn, functions, records, adts, external_class_impls) <- MO.monomorphizeFunction state orig_qn ty
+                            monomorphized_fns <- Map.put monomorphized_fns monomorphized_fn.name monomorphized_fn
+                            queue <- queue + functions
+                            (monomorphized_fns, queue)
+                        _ -> panic "Monomorphized qn is unexpected {}" % last
+
 main = do
     typed_functions :: [HF.Function HT.Type] <- loadCache getTypedFunctionCachePath
     functions :: [HF.Function ()] <- loadCache getResolvedFunctionCachePath
@@ -136,30 +184,20 @@ main = do
         f)
     base_main_qn <- FQ.FullPath getMainModuleName getMainFunctionName
     unreachable_qn <- FQ.FullPath getStdUtilBasicModuleName getUnreachableName
-    empty_resolution_set <- HE.EffectResolutionSet Map.empty Map.empty
-    effectless_main_qn <- FQ.Effectless base_main_qn (Some empty_resolution_set)
-    unreachable_qn <- FQ.Effectless unreachable_qn (Some empty_resolution_set)
-    resolved_effect_fns <- loop (resolved_fns, queue) <- (Map.empty, [effectless_main_qn, unreachable_qn]) do
-        if List.isEmpty queue
-        then break resolved_fns
-        else do
-            (last, queue) <- removeLast queue
-            case Map.get resolved_fns last of
-                Some _ -> (resolved_fns, queue)
-                None -> do
-                    //println "Resolving effects for {}" % last
-                    case last of
-                        FQ.Effectless qn (Some resolution_set) -> do
-                            state <- createStateProvider provider
-                            (state, resolved_fn, qns) <- resolveEffects state qn resolution_set
-                            queue <- queue + qns
-                            (Map.put resolved_fns last resolved_fn, queue)
-                        FQ.Effectless qn None -> do
-                            state <- createStateProvider provider
-                            (state, resolved_fn, qns) <- resolveEffects state qn empty_resolution_set
-                            queue <- queue + qns
-                            (Map.put resolved_fns last resolved_fn, queue)
-                        _ -> panic "Incorrect qn in effect resolver queue {}" % last
-    lowered_fns <- resolved_effect_fns |> Map.iter |> Iterator.map (\(key, f) -> f) |> toList
+    resolved_effect_fns <- resolveEffects provider base_main_qn unreachable_qn
+    (tt_context, resolved_effect_fns) <- TT.transform TT.createContext resolved_effect_fns
+    provider <- BackendStateProvider class_map
+                                     Map.empty
+                                     function_map
+                                     resolved_effect_fns
+                                     instance_map
+                                     Map.empty
+                                     Map.empty
+                                     record_map
+                                     adt_map
+                                     effect_map
+                                     Map.empty
+    monomorphized_fns <- monomorphize provider base_main_qn
+    lowered_fns <- monomorphized_fns |> Map.iter |> Iterator.map (\(key, f) -> f) |> toList
     updateCache getHIRBackendFunctionCachePath lowered_fns
     ()

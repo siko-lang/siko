@@ -106,9 +106,9 @@ internalTraverse context expr = do
             (context, true_branch) <- internalTraverse context true_branch
             (context, false_branch) <- internalTraverse context false_branch
             (context, E.Expr (E.If cond true_branch false_branch) id type location)
-        E.Tuple args -> do
-            (context, args) <- processExprs context args
-            (context, E.Expr (E.Tuple args) id type location)
+        E.Tuple ctor -> do
+            (context, args) <- processExprs context ctor.args
+            (context, E.Expr (E.Tuple (E.TupleCtor args)) id type location)
         E.List args -> do
             (context, args) <- processExprs context args
             (context, E.Expr (E.List args) id type location)
@@ -182,12 +182,12 @@ internalTraverse context expr = do
     (context { user_context = user_context }, expr)
 
 createTraversalContext context b :: context -> (context -> E.Expr b -> (context, E.Expr b)) -> (context -> P.Pattern b -> (context, P.Pattern b)) -> TraversalContext context b
-createTraversalContext context expr_fn pattern_fn = TraversalContext context 
-                                                                     expr_fn 
-                                                                     pattern_fn 
-                                                                     None 
-                                                                     None 
-                                                                     None 
+createTraversalContext context expr_fn pattern_fn = TraversalContext context
+                                                                     expr_fn
+                                                                     pattern_fn
+                                                                     None
+                                                                     None
+                                                                     None
                                                                      None
 
 traverse context b :: TraversalContext context b -> E.Expr b -> (context, E.Expr b)
