@@ -56,11 +56,11 @@ processExpr context expr = do
             mapper <- UUtil.skipNever mapper
             (mapper, fn_type) <- S.transform mapper fn_type UUtil.remapType
             arg_types <- List.map args (\E.Expr _ _ t _ -> unpackType t)
-            //println "calling {}" % qn
-            //println "fn_type {}" % (TF.toString fn_type)
-            //println "arg_types {}" % (TF.toStringTypes arg_types)
-            //println "fn_type {}" % (TF.toString fn_type)
-            //println "expr_type {}" % (TF.toString expr_type)
+            // println "calling {}" % qn
+            // println "fn_type {}" % (TF.toString fn_type)
+            // println "arg_types {}" % (TF.toStringTypes arg_types)
+            // println "fn_type {}" % (TF.toString fn_type)
+            // println "expr_type {}" % (TF.toString expr_type)
             result_type <- unpackType expr_type
             (state, fn_type, sub) <- UUtil.getFunctionType state arg_types result_type fn_type
             //println "result {}" % (TF.toString fn_type)
@@ -151,23 +151,28 @@ monomorphizeType context type = case type of
     T.Var _ _ -> panic "TypeVar in monomorphizeType"
     T.FixedTypeArg _ _ -> panic "FixedTypeArg in monomorphizeType"
     T.Named qn args -> do
-        (context, args) <- List.mapS context args monomorphizeType
-        case QL.getAdtOpt context.state qn of
-            Some adt -> do
-                case qn of
-                    FQ.Adt _ _ -> (context, T.Named qn args)
-                    _ -> do
-                        qn <- FQ.Adt qn args
-                        context <- context { adts = List.push context.adts qn }
-                        (context, T.Named qn [])
-            None -> do
-                case qn of
-                    FQ.Record _ _ -> (context, T.Named qn args)
-                    FQ.Adt _ _ -> (context, T.Named qn args)
-                    _ -> do
-                        qn <- FQ.Record qn args
-                        context <- context { records = List.push context.records qn }
-                        (context, T.Named qn [])
+        if List.isEmpty args
+        then do
+            (context, T.Named qn args)
+        else do
+            (context, args) <- List.mapS context args monomorphizeType
+            case QL.getAdtOpt context.state qn of
+                Some adt -> do
+                    case qn of
+                        FQ.Adt _ _ -> (context, T.Named qn args)
+                        _ -> do
+                            qn <- FQ.Adt qn args
+                            context <- context { adts = List.push context.adts qn }
+                            (context, T.Named qn [])
+                None -> do
+                    case qn of
+                        FQ.Record _ _ -> (context, T.Named qn args)
+                        FQ.Adt _ _ -> (context, T.Named qn args)
+                        FQ.Tuple _ -> (context, T.Named qn args)
+                        _ -> do
+                            qn <- FQ.Record qn args
+                            context <- context { records = List.push context.records qn }
+                            (context, T.Named qn [])
     T.Function from to -> do
         (context, from) <- monomorphizeType context from
         (context, to) <- monomorphizeType context to
@@ -205,7 +210,7 @@ monomorphizeFunction a :: (StateProvider a) => a -> FQ.FullyQualifiedName -> T.T
                                                                                         [FQ.FullyQualifiedName],
                                                                                         [(D.ExternalClassImpl, T.Type)])
 monomorphizeFunction state orig_qn type = do
-    println "monomorphizeFunction {} with {}" % (orig_qn, TF.toString type)
+    //println "monomorphizeFunction {} with {}, {}" % (orig_qn, TF.toString type, type)
     fn <- QL.getTypedFunction state orig_qn
     sub <- S.createSubstitution
     fn_type <- case fn.type of

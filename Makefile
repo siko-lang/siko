@@ -43,7 +43,7 @@ multistage: parser2 nameresolver2 typechecker2 hirbackend2 mirlowering2
 
 run_multistage: multistage
 	@rm -rf cache
-	./parser2 build multistage_test ./std
+	./parser2 build multistage_test
 	./nameresolver2
 	./typechecker2
 	./hirbackend2

@@ -2,6 +2,8 @@ module Siko.HIR.Backend.TupleTransformer where
 
 import Siko.HIR.Type as HT
 import Siko.HIR.Function as HF
+import Siko.HIR.Expr as HE
+import Siko.HIR.Pattern as HP
 import Siko.HIR.Data as HD
 import Siko.HIR.FullyQualifiedName as FQ
 import Siko.Util.SharedString as SS
@@ -9,10 +11,25 @@ import Map
 import Siko.Syntax.Location
 import Siko.Syntax.Ident
 
-data Context = { tuples :: Map FQ.FullyQualifiedName HD.Record }
+data Context = { tuples :: Map FQ.FullyQualifiedName HD.Record,
+                 functions :: Map FQ.FullyQualifiedName (HF.Function HT.Type) }
+
+getFieldName index = "field{}" % index
 
 createContext :: Context
-createContext = Context Map.empty
+createContext = Context Map.empty Map.empty
+
+class GetType a where
+    getType a :: a -> HT.Type
+
+instance GetType () where
+    getType _ = HT.Tuple []
+
+instance GetType HT.Type where
+    getType a = a
+
+instance (GetType a) => GetType HE.Expr a where
+    getType HE.Expr _ _ a _ = getType a
 
 class TupleTransformer a where
     transform a :: Context -> a -> (Context, a)
@@ -47,7 +64,7 @@ instance (TupleTransformer v, Ord k) => TupleTransformer Map k v where
         (context, v) <- transform context v
         (context, k, v))
 
-instance (TupleTransformer a) => TupleTransformer HF.NormalFunctionInfo a where
+instance (TupleTransformer a, GetType a) => TupleTransformer HF.NormalFunctionInfo a where
     transform context info = do
         (context, body) <- transform context info.body
         (context, info { body = body })
@@ -57,7 +74,7 @@ instance TupleTransformer HF.ExternFunctionInfo where
         (context, ty) <- transform context info.type_with_ownership
         (context, info { type_with_ownership = ty })
 
-instance (TupleTransformer a) => TupleTransformer HF.FunctionKind a where
+instance (TupleTransformer a, GetType a) => TupleTransformer HF.FunctionKind a where
     transform context k = case k of
         HF.Normal info -> do
             (context, info) <- transform context info
@@ -69,7 +86,7 @@ instance (TupleTransformer a) => TupleTransformer HF.FunctionKind a where
             (context, HF.ExternInfo info)
         HF.Interface s -> (context, HF.Interface s)
 
-instance (TupleTransformer a) => TupleTransformer HF.Function a where
+instance (TupleTransformer a, GetType a) => TupleTransformer HF.Function a where
     transform context f = do
         (context, type) <- transform context f.type
         (context, kind) <- transform context f.kind
@@ -113,12 +130,163 @@ instance TupleTransformer HT.Type where
         HT.Tuple args -> do
             (context, args) <- transform context args
             qn <- FQ.Tuple args
-            qn <- FQ.Record qn []
             record_type <- HT.Named qn []
+            fn_type <- loop (args, fn_type) <- (args, record_type) do
+                if List.isEmpty args
+                then break fn_type
+                else do
+                    (last, rest) <- List.removeLast args
+                    fn_type <- HT.Function last fn_type
+                    (rest, fn_type)
             case Map.get context.tuples qn of
                 Some _ -> (context, record_type)
                 None -> do
-                    fields <- List.mapE args (\index, ty -> HD.RecordField (SS.create "field{}" % index) ty)
+                    fields <- List.mapE args (\index, ty -> HD.RecordField (SS.create (getFieldName index)) ty)
+                    //println "Tuple record qn {}" % qn
                     record <- HD.Record qn emptyLocation [] fields False record_type False
                     tuples <- Map.put context.tuples qn record
-                    (context { tuples = tuples }, record_type)
+                    arg_count <- getLength fields
+                    kind <- HF.RecordCtor
+                    type <- Some fn_type
+                    //println "tuplerecord ctor {} : {}" % (qn, fn_type)
+                    function <- HF.Function emptyLocation qn arg_count kind type []
+                    functions <- Map.put context.functions qn function
+                    (context { tuples = tuples, functions = functions }, record_type)
+
+instance (TupleTransformer a, GetType a) => TupleTransformer HE.Expr a where
+    transform context (HE.Expr sexpr id a location) = do
+        (context, sexpr) <- transform context sexpr
+        (context, a) <- transform context a
+        (context, HE.Expr sexpr id a location)
+
+instance (TupleTransformer a, GetType a) => TupleTransformer HE.EffectHandler a where
+    transform context (HE.EffectHandler name selection location) = do
+        (context, selection) <- transform context selection
+        (context, HE.EffectHandler name selection location)
+
+instance (TupleTransformer a, GetType a) => TupleTransformer HE.RecordConstructionItem a where
+    transform context (HE.RecordConstructionItem name body) = do
+        (context, body) <- transform context body
+        (context, HE.RecordConstructionItem name body)
+
+instance (TupleTransformer a, GetType a) => TupleTransformer HE.TupleCtor a where
+    transform context (HE.TupleCtor args) = do
+        (context, args) <- transform context args
+        (context, HE.TupleCtor args)
+
+instance (TupleTransformer a, GetType a) => TupleTransformer HE.Case a where
+    transform context (HE.Case pat body) = do
+        (context, pat) <- transform context pat
+        (context, body) <- transform context body
+        (context, HE.Case pat body)
+
+instance (TupleTransformer a, GetType a) => TupleTransformer HE.EffectHandlerSelection a where
+    transform context selection = case selection of
+        HE.Static qn -> (context, HE.Static qn)
+        HE.Dynamic expr -> do
+            (context, expr) <- transform context expr
+            (context, HE.Dynamic expr)
+        HE.Default -> (context, HE.Default)
+
+instance (TupleTransformer a, GetType a) => TupleTransformer HE.SimpleExpr a where
+    transform context sexpr = case sexpr of
+        HE.StaticFunctionCall qn args -> do
+            (context, args) <- transform context args
+            (context, HE.StaticFunctionCall qn args)
+        HE.DynamicFunctionCall receiver args -> do
+            (context, receiver) <- transform context receiver
+            (context, args) <- transform context args
+            (context, HE.DynamicFunctionCall receiver args)
+        HE.ClassMemberCall qn args -> do
+            (context, args) <- transform context args
+            (context, HE.ClassMemberCall qn args)
+        HE.EffectMemberCall qn args -> panic "Effect member call expr in tuple transformer"
+        HE.If cond t f -> do
+            (context, cond) <- transform context cond
+            (context, t) <- transform context t
+            (context, f) <- transform context f
+            (context, HE.If cond t f)
+        HE.Tuple ctor -> do
+            args <- ctor.args
+            types <- List.map args getType
+            qn <- FQ.Tuple types
+            //println "Tuple ctor fn qn {}" % qn
+            (context, args) <- transform context ctor.args
+            (context, HE.StaticFunctionCall qn args)
+        HE.List args -> do
+            (context, args) <- transform context args
+            (context, HE.List args)
+        HE.IntegerLiteral lit -> (context, HE.IntegerLiteral lit)
+        HE.FloatLiteral lit -> (context, HE.FloatLiteral lit)
+        HE.StringLiteral lit -> (context, HE.StringLiteral lit)
+        HE.CharLiteral lit -> (context, HE.CharLiteral lit)
+        HE.Do items -> do
+            (context, items) <- transform context items
+            (context, HE.Do items)
+        HE.Bind pat rhs -> do
+            (context, pat) <- transform context pat
+            (context, rhs) <- transform context rhs
+            (context, HE.Bind pat rhs)
+        HE.FieldAccess name receiver -> do
+            (context, receiver) <- transform context receiver
+            (context, HE.FieldAccess name receiver)
+        HE.TupleFieldAccess index receiver -> do
+            (context, receiver) <- transform context receiver
+            (context, HE.FieldAccess (createIdent (getFieldName index) emptyLocation) receiver)
+        HE.CaseOf body cases group -> do
+            (context, body) <- transform context body
+            (context, cases) <- transform context cases
+            (context, HE.CaseOf body cases group)
+        HE.RecordUpdate receiver items -> do
+            (context, receiver) <- transform context receiver
+            (context, items) <- transform context items
+            (context, HE.RecordUpdate receiver items)
+        HE.Return arg -> do
+            (context, arg) <- transform context arg
+            (context, HE.Return arg)
+        HE.Continue arg -> do
+            (context, arg) <- transform context arg
+            (context, HE.Continue arg)
+        HE.Break arg -> do
+            (context, arg) <- transform context arg
+            (context, HE.Break arg)
+        HE.Loop pat initializer body breaks continues -> do
+            (context, pat) <- transform context pat
+            (context, initializer) <- transform context initializer
+            (context, body) <- transform context body
+            (context, HE.Loop pat initializer body breaks continues)
+        HE.ArgRef index -> (context, HE.ArgRef index)
+        HE.ValueRef ref -> (context, HE.ValueRef ref)
+        HE.With handlers body eff_types -> panic "With expr in tuple transformer"
+
+instance (TupleTransformer a, GetType a) => TupleTransformer HP.SimplePattern a where
+    transform context spat = case spat of
+        HP.Binding ref -> (context, HP.Binding ref)
+        HP.Tuple pats -> do
+            (context, pats) <- transform context pats
+            (context, HP.Tuple pats)
+        HP.Guarded pat body -> do
+            (context, pat) <- transform context pat
+            (context, body) <- transform context body
+            (context, HP.Guarded pat body)
+        HP.Wildcard -> (context, HP.Wildcard)
+        HP.IntegerLiteral lit -> (context, HP.IntegerLiteral lit)
+        HP.StringLiteral lit -> (context, HP.StringLiteral lit)
+        HP.CharLiteral lit -> (context, HP.CharLiteral lit)
+        HP.CharRange start end kind -> (context, HP.CharRange start end kind)
+        HP.Typed pat ty -> do
+            (context, pat) <- transform context pat
+            (context, ty) <- transform context ty
+            (context, HP.Typed pat ty)
+        HP.Record name pats -> do
+            (context, pats) <- transform context pats
+            (context, HP.Record name pats)
+        HP.Variant name index pats -> do
+            (context, pats) <- transform context pats
+            (context, HP.Variant name index pats)
+
+instance (TupleTransformer a, GetType a) => TupleTransformer HP.Pattern a where
+    transform context (HP.Pattern spat id a location) = do
+        (context, spat) <- transform context spat
+        (context, a) <- transform context a
+        (context, HP.Pattern spat id a location)

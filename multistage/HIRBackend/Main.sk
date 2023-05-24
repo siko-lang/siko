@@ -104,7 +104,7 @@ resolveEffects provider base_main_qn unreachable_qn = do
     empty_resolution_set <- HE.EffectResolutionSet Map.empty Map.empty
     effectless_main_qn <- FQ.Effectless base_main_qn (Some empty_resolution_set)
     unreachable_qn <- FQ.Effectless unreachable_qn (Some empty_resolution_set)
-    loop (resolved_fns, queue) <- (Map.empty, [effectless_main_qn, unreachable_qn]) do
+    loop (resolved_fns, queue) <- (Map.empty, [effectless_main_qn]) do
         if List.isEmpty queue
         then break resolved_fns
         else do
@@ -129,7 +129,6 @@ resolveEffects provider base_main_qn unreachable_qn = do
 monomorphize provider base_main_qn = do
     empty_resolution_set <- HE.EffectResolutionSet Map.empty Map.empty
     empty_tuple_qn <- FQ.Tuple []
-    empty_tuple_qn <- FQ.Record empty_tuple_qn []
     monomorphized_main_qn <- FQ.Monomorphized (FQ.Effectless base_main_qn (Some empty_resolution_set)) (HT.Named empty_tuple_qn [])
     loop (monomorphized_fns, queue) <- (Map.empty, [monomorphized_main_qn]) do
         if List.isEmpty queue
@@ -185,11 +184,13 @@ main = do
     base_main_qn <- FQ.FullPath getMainModuleName getMainFunctionName
     unreachable_qn <- FQ.FullPath getStdUtilBasicModuleName getUnreachableName
     resolved_effect_fns <- resolveEffects provider base_main_qn unreachable_qn
-    (tt_context, resolved_effect_fns) <- TT.transform TT.createContext resolved_effect_fns
+    (tt_context, transformed_fns) <- TT.transform TT.createContext resolved_effect_fns
+    transformed_fns <- Map.merge transformed_fns tt_context.functions
+    record_map <- Map.merge record_map tt_context.tuples
     provider <- BackendStateProvider class_map
                                      Map.empty
                                      function_map
-                                     resolved_effect_fns
+                                     transformed_fns
                                      instance_map
                                      Map.empty
                                      Map.empty
@@ -197,7 +198,11 @@ main = do
                                      adt_map
                                      effect_map
                                      Map.empty
+    println "Mono begin"
     monomorphized_fns <- monomorphize provider base_main_qn
+    println "Mono end"
     lowered_fns <- monomorphized_fns |> Map.iter |> Iterator.map (\(key, f) -> f) |> toList
+    lowered_records <- record_map |> Map.iter |> Iterator.map (\(key, f) -> f) |> toList
     updateCache getHIRBackendFunctionCachePath lowered_fns
+    updateCache getHIRBackendRecordCachePath lowered_records
     ()

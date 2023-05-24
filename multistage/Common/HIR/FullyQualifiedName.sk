@@ -36,9 +36,11 @@ instance Show FullyQualifiedName where
         FullPathWithInstanceId m n i -> "{}_{}_instance_{}" % (m, n, i)
         ModulePath m -> show m
         SubItem p n -> "{}_sub_{}" % (p, n)
-        Effectless qn resolution_set -> "{}_{}" % (qn, resolution_set)
+        Effectless qn resolution_set -> "{} eff {}" % (qn, resolution_set)
         Tuple t -> "Tuple({})" % (t)
-        _ -> panic "QN show NYI"
+        Adt qn types -> "Adt({}, {})" % (qn, types)
+        Record qn types -> "Record({}, {})" % (qn, types)
+        qn -> "QN show NYI"
 
 getResolvableName :: FullyQualifiedName -> SS.SharedString
 getResolvableName f = do

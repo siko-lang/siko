@@ -3,16 +3,19 @@ module Main where
 import Siko.Cache
 import Siko.Config
 import Siko.HIR.Function as HF
+import Siko.HIR.FullyQualifiedName as FQ
 import Siko.MIR.Function as MF
 import Siko.HIR.Type as HT
+import Siko.HIR.Data as HD
 import Siko.Query.Lookup
 import Siko.MIR.Program
 import Siko.HIR.Backend.Cache
 import Siko.HIR.Backend.StateProvider
 import Siko.MIR.Backend.Cache
 import Siko.HIR.Backend.Lowering as L
+import Map
 
-data LoweringStateProvider = {}
+data LoweringStateProvider = { records :: Map FQ.FullyQualifiedName HD.Record }
 
 instance ClassProvider LoweringStateProvider where
     getClass p qn = panic "Class provider in lowering"
@@ -37,9 +40,11 @@ instance CheckedFunctionTypeInfoProvider LoweringStateProvider where
     getCheckedFunctionTypeInfoOpt p qn = panic "Checked function type info provider in lowering"
 
 instance RecordProvider LoweringStateProvider where
-    getRecord p qn = panic "Record provider in lowering"
+    getRecord p qn = case Map.get p.records qn of
+        Some r -> r
+        None -> panic "No record found in lowering {}" % qn
 
-    getRecordOpt p qn = panic "Record provider in lowering"
+    getRecordOpt p qn = Map.get p.records qn
 
 instance AdtProvider LoweringStateProvider where
     getAdt p qn = panic "Adt provider in lowering"
@@ -54,17 +59,20 @@ instance RegisteredInstanceProvider LoweringStateProvider where
     getRegisteredInstance p key = panic "Instance provider in lowering"
     getRegisteredInstanceOpt p key = panic "Instance provider in lowering"
 
-lowerFunction :: HF.Function HT.Type -> MF.Function
-lowerFunction hir_function = do
+lowerFunction :: StateProviderInstance LoweringStateProvider -> HF.Function HT.Type -> (StateProviderInstance LoweringStateProvider, MF.Function)
+lowerFunction state hir_function = do
     println "Lowering hir_function {}" % hir_function.name
-    state <- createStateProvider LoweringStateProvider
     (state, mir_function, functions, tuples, records, adts) <- L.lowerFunction state hir_function.name hir_function
-    mir_function
+    (state, mir_function)
 
 main = do
     with { getConfig = \_ -> getDefaultConfig } do
         functions :: [HF.Function HT.Type] <- loadCache getHIRBackendFunctionCachePath
-        lowered_fns :: [MF.Function] <- List.map functions lowerFunction
+        records :: [HD.Record] <- loadCache getHIRBackendRecordCachePath
+        println "MIR record count {}" % getLength records
+        record_map <- List.fold Map.empty records (\record_map, r -> Map.put record_map r.name r)
+        state <- createStateProvider (LoweringStateProvider record_map)
+        (state, lowered_fns) <- List.mapS state functions lowerFunction
         mir_program <- createProgram
         mir_program <- List.fold mir_program lowered_fns  (\mir_program, fn -> addFunction mir_program fn.id fn)
         updateCache getMIRBackendCachePath [mir_program]
