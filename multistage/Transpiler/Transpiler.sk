@@ -1,0 +1,454 @@
+module Siko.Transpiler where
+
+import Map
+import Siko.LIR.Data as LD
+import Siko.LIR.Expr as LE
+import Siko.LIR.Function
+import Siko.LIR.Program
+import Siko.LIR.Type as LT
+import Siko.Transpiler.Externals
+import Siko.Transpiler.Rust as R
+import Siko.Transpiler.Rust.Type as RT
+import Siko.Util.Format
+
+data ExternalId = ExternalId String String deriving (PartialEq, Eq, PartialOrd, Ord)
+
+data TypeStore = { structs :: Map String R.Struct,
+                   enums :: Map String R.Enum
+                 }
+
+data ExternStructBuilder = ExternStructBuilder ([LT.Type] -> Option LT.Lifetime -> [R.StructField])
+
+data ExternFnBuilder = ExternFnBuilder (Program ->
+                                        TypeStore ->
+                                        [LT.Type] ->
+                                        LT.Type -> R.Expr)
+
+createTypeStore :: TypeStore
+createTypeStore = TypeStore empty empty
+
+addStruct :: TypeStore -> R.Struct -> TypeStore
+addStruct type_store struct = do
+    (structs, _) <- insert type_store.structs struct.name struct
+    type_store { structs = structs }
+
+getStruct :: TypeStore -> RT.Type -> R.Struct
+getStruct type_store type = case get type_store.structs (RT.showBase type) of
+    Some struct -> struct
+    None -> panic "Struct {} not found" % RT.showBase type
+
+addEnum :: TypeStore -> R.Enum -> TypeStore
+addEnum type_store enum = do
+    (enums, _) <- insert type_store.enums enum.name enum
+    type_store { enums = enums }
+
+getEnum :: TypeStore -> RT.Type -> R.Enum
+getEnum type_store type = case get type_store.enums (RT.showBase type) of
+    Some enum -> enum
+    None -> panic "Enum {} not found" % RT.showBase type
+
+getArgName :: Int -> String
+getArgName index = "arg{}" % index
+
+innerValueField = "value"
+
+cloneName = "clone"
+
+stringTypeName = "String_String"
+
+intTypeName = "Int_Int"
+
+floatTypeName = "Float_Float"
+
+boolTypeName = "Bool_Bool"
+
+charTypeName = "Char_Char"
+
+stdOpsAdd = "std::ops::Add::add"
+
+stdOpsSub = "std::ops::Sub::sub"
+
+stdOpsMul = "std::ops::Mul::mul"
+
+stdOpsDiv = "std::ops::Div::div"
+
+stdOpsRem = "std::ops::Rem::rem"
+
+derefName = "std::ops::Deref::deref"
+
+getRustFriendlyName :: String -> String
+getRustFriendlyName input = case input of
+    "type" -> "_type"
+    "ref" -> "_ref"
+    "fn" -> "_fn"
+    _ -> do
+        output <- replace input "." "_"
+        output
+
+getFieldName :: Int -> String
+getFieldName index = "field{}" % index
+
+getRustIdentity :: Identity -> String
+getRustIdentity id = do
+    Identity mod name index <- id
+    if index == 0
+    then getRustFriendlyName ("{}_{}" % (mod, name))
+    else getRustFriendlyName ("{}_{}_{}" % (mod, name, index))
+
+convertLifetime :: LT.Lifetime -> RT.Lifetime
+convertLifetime LT.Lifetime i = RT.Lifetime i
+
+convertLifetimes :: [LT.Lifetime] -> [RT.Lifetime]
+convertLifetimes lifetimes = lifetimes |> List.iter |> Iterator.map (\l -> convertLifetime l) |> toList
+
+convertLifetimeDependency :: LifetimeDependency -> R.LifetimeDependency
+convertLifetimeDependency dep = R.LifetimeDependency (convertLifetime dep.from) (convertLifetime dep.to)
+
+convertType :: LT.Type -> RT.Type
+convertType lir_type = do
+    case lir_type of
+        LT.Adt id lifetimes -> RT.Named (getRustFriendlyName (getRustIdentity id)) (convertLifetimes lifetimes)
+        LT.Record id lifetimes -> RT.Named (getRustFriendlyName (getRustIdentity id)) (convertLifetimes lifetimes)
+        LT.Ref lifetime t -> RT.Ref (convertLifetime lifetime) (convertType t)
+        LT.Never -> RT.Never
+        LT.Box t -> typeToBoxedType (convertType t)
+
+typeToBoxedType :: RT.Type -> RT.Type
+typeToBoxedType type = RT.Box type
+
+typeToRcType :: RT.Type -> RT.Type
+typeToRcType type = RT.Rc type
+
+boxExpr :: R.Expr -> R.Expr
+boxExpr expr = R.FunctionCall "std::boxed::Box::new" [expr]
+
+getVariant :: TypeStore ->
+              Int ->
+              LE.Var ->
+              LT.Type -> R.Pattern
+getVariant type_store index v type = case type of
+    LT.Adt _ _ -> do
+        rust_type <- convertType type
+        enum <- getEnum type_store rust_type
+        variant <- atIndex enum.variants index
+        variant_name <- "{}::{}" % (RT.showBase rust_type, variant.name)
+        R.VariantPattern variant_name (Some (show v))
+    LT.Record _ _ -> do
+        R.VariantPattern (show v) None
+    LT.Ref _ t -> getVariant type_store index v t
+    _ -> panic "Transpiler: unexpected variant type {}" % type
+
+convertPattern :: TypeStore -> LE.Checker -> (R.Pattern, Option R.Expr)
+convertPattern type_store checker = case checker of
+    LE.IntegerChecker lit -> (R.IntegerPattern lit, None)
+    LE.StringChecker lit -> do
+        guard <- R.VarRef "a"
+        guard <- R.FieldAccess "value" guard
+        guard <- R.MethodCall guard "eq" [R.StringLiteral lit]
+        (R.StringPattern lit, Some guard)
+    LE.CharChecker lit -> (R.CharPattern lit, None)
+    LE.CharRangeChecker s e kind -> do
+        kind <- case kind of
+            LE.Inclusive -> R.Inclusive
+            LE.Exclusive -> R.Exclusive
+        (R.CharRangePattern s e kind, None)
+    LE.VariantChecker index v type -> (getVariant type_store index v type, None)
+    LE.WildcardChecker v -> (R.WildcardPattern (Some (show v)), None)
+
+data Constructor = { fn :: Context -> [R.Expr] -> R.Expr }
+
+data Context = { type_store :: TypeStore,
+                 constructors :: Map Identity Constructor,
+                 external_functions :: Map ExternalId ExternFnBuilder
+               }
+
+convertExpr :: Context -> Option String -> LE.Expr -> R.Expr
+convertExpr context loop_var lir_expr = do
+    LE.Expr expr expr_type <- lir_expr
+    case expr of
+        LE.Do args -> do
+            args <- args |> List.iter |> Iterator.map (\arg -> convertExpr context loop_var arg) |> toList
+            last <- List.last args
+            is_var_decl <- case last of
+                R.VarDecl _ _ _ -> True
+                R.VarDeclMut _ _ _ -> True
+                _ -> False
+            if is_var_decl
+            then do
+                rust_type <- convertType expr_type
+                unit <- R.StructCtor (RT.showBase rust_type) []
+                R.Block (push args unit)
+            else R.Block args
+        LE.StaticFunctionCall id args -> do
+            args <- args |> List.iter |> Iterator.map (\arg -> convertExpr context loop_var arg) |> toList
+            case get context.constructors id of
+                Some ctor -> ctor.fn context args
+                None -> do
+                    rust_function_name <- getRustIdentity id
+                    R.FunctionCall rust_function_name args
+        LE.IntegerLiteral lit -> R.StructCtor intTypeName [R.FieldInitItem innerValueField (R.IntegerLiteral lit)]
+        LE.FloatLiteral lit -> R.StructCtor floatTypeName [R.FieldInitItem innerValueField (R.FloatLiteral lit)]
+        LE.StringLiteral lit -> do
+            literal <- R.StringLiteral lit
+            to_string_call <- R.MethodCall literal "to_string" []
+            R.StructCtor stringTypeName [R.FieldInitItem innerValueField to_string_call]
+        LE.CharLiteral lit -> R.StructCtor charTypeName [R.FieldInitItem innerValueField (R.CharLiteral lit)]
+        LE.VarDecl v rhs -> do
+            n <- show v
+            LE.Expr _ rhs_type <- rhs
+            rhs_expr <- convertExpr context loop_var rhs
+            t <- Some (convertType rhs_type)
+            R.VarDecl n rhs_expr t
+        LE.VarRef v -> case v of
+            LE.Arg index -> R.VarRef (getArgName index)
+            _ -> R.VarRef (show v)
+        LE.CaseOf body cases -> do
+            cases <- cases |> List.iter |> Iterator.map (\c -> do
+                (case_pattern, case_guard) <- convertPattern context.type_store c.checker
+                case_body <- convertExpr context loop_var c.body
+                R.MatchCase case_pattern case_body case_guard) |> toList
+            body <- convertExpr context loop_var body
+            R.Match body cases
+        LE.FieldAccess index receiver -> R.FieldAccess (getFieldName index) (convertExpr context loop_var receiver)
+        LE.If cond true_branch false_branch -> do
+            true_pattern <- R.VariantPattern ("{}::True" % boolTypeName) (Some "_")
+            false_pattern <- R.VariantPattern ("{}::False" % boolTypeName) (Some "_")
+            true_case <- R.MatchCase true_pattern (convertExpr context loop_var true_branch) None
+            false_case <- R.MatchCase false_pattern (convertExpr context loop_var false_branch) None
+            cases <- [true_case, false_case]
+            R.Match (convertExpr context loop_var cond) cases
+        LE.Loop v initializer body -> do
+            n <- show v
+            var_decl <- R.VarDeclMut n (convertExpr context loop_var initializer) None
+            loop_body <- R.Assign (R.VarRef n) (convertExpr context (Some n) body)
+            loop_expr <- R.Loop [loop_body]
+            R.Block [var_decl, loop_expr]
+        LE.Break e -> R.Break (convertExpr context loop_var e)
+        LE.Continue e -> do
+            case loop_var of
+                Some n -> do
+                    assign <- R.Assign (R.VarRef n) (convertExpr context loop_var e)
+                    R.Block [assign, R.Continue]
+                None -> panic "No loop var found for continue"
+        LE.Return e -> R.Return (convertExpr context loop_var e)
+        LE.List args -> do
+            rust_type <- convertType expr_type
+            args <- args |> List.iter |> Iterator.map (\arg -> convertExpr context loop_var arg) |> toList
+            R.StructCtor (RT.showBase rust_type) [R.FieldInitItem innerValueField (R.List args)]
+        LE.Clone expr -> do
+            expr <- convertExpr context loop_var expr
+            R.MethodCall expr cloneName []
+        LE.Deref expr -> do
+            expr <- convertExpr context loop_var expr
+            R.Deref expr
+        LE.DerefClone expr -> do
+            expr <- convertExpr context loop_var expr
+            R.MethodCall (R.Deref expr) cloneName []
+        LE.Ref expr -> do
+            expr <- convertExpr context loop_var expr
+            R.Ref expr
+        LE.Move expr -> convertExpr context loop_var expr
+        LE.Box expr -> do
+            expr <- convertExpr context loop_var expr
+            boxExpr expr
+
+convertRecord :: LD.Record -> Map ExternalId ExternStructBuilder -> R.Struct
+convertRecord record external_struct_gens = do
+    lifetimes <- convertLifetimes record.lifetimes
+    rust_fields <- case record.external_info of
+        Some info -> do
+            info :: LD.ExternalRecordInfo <- info
+            Identity mod name _ <- record.id
+            id <- ExternalId mod name
+            case get external_struct_gens id of
+                Some struct_gen -> do
+                    ExternStructBuilder struct_gen <- struct_gen
+                    struct_gen info.type_args record.implicit_member_lifetime
+                None -> panic "Extern struct {}/{} is not implemented" % (mod, name)
+        None -> List.mapE record.fields (\index, field -> R.StructField (getFieldName index) (convertType field.type))
+    name <- getRustIdentity record.id
+    R.Struct name lifetimes rust_fields [R.Clone]
+
+convertAdt :: LD.AlgebraicDataType -> R.Enum
+convertAdt adt = do
+    name <- getRustIdentity adt.id
+    lifetimes <- convertLifetimes adt.lifetimes
+    rust_variants <- adt.variants |> List.iter |> Iterator.map (\variant -> do
+        R.Variant (getRustFriendlyName variant.name) (convertType variant.type)) |> toList
+    R.Enum name lifetimes rust_variants [R.Clone]
+
+convertImplArg :: Program -> Identity -> R.Expr -> R.Expr
+convertImplArg lir_program fn_id arg = do
+    fn <- getFunction lir_program fn_id
+    if LT.isRef (atIndex fn.type.args 0)
+    then R.Ref arg
+    else panic "Non ref arg in impl!"
+
+processImpl :: Program ->
+               R.Program ->
+               Context ->
+               String ->
+               LD.ExternalClassImpl ->
+               [RT.Lifetime] -> R.Program
+processImpl lir_program program context type_name impl lifetimes = do
+    rust_type_name <- RT.Named type_name []
+    (name, methods) <- case impl of
+        LD.PartialEq fn_id -> do
+            args <- [(getArgName 1, (RT.Named "&{}" % type_name) [])]
+            result <- RT.Named "bool" []
+            op_call <- R.FunctionCall (getRustIdentity fn_id) [convertImplArg lir_program fn_id (R.VarRef "self"), convertImplArg lir_program fn_id (R.VarRef (getArgName 1))]
+            body <- R.Block [sikoBoolToRustBool op_call (RT.Named boolTypeName [])]
+            method <- R.Function "eq" 
+                                 [] 
+                                 True 
+                                 args 
+                                 result 
+                                 body 
+                                 []
+            ("std::cmp::PartialEq", [method])
+        LD.Eq -> do
+            ("std::cmp::Eq", [])
+        LD.PartialOrd fn_id -> do
+            args <- [(getArgName 1, (RT.Named "&{}" % type_name) [])]
+            result <- RT.Named "Option<std::cmp::Ordering>" []
+            op_call <- R.FunctionCall (getRustIdentity fn_id) [convertImplArg lir_program fn_id (R.VarRef "self"), convertImplArg lir_program fn_id (R.VarRef (getArgName 1))]
+            fn <- getFunction lir_program fn_id
+            body <- R.Block [sikoOptionalOrderingToRustOptionalOrdering lir_program op_call fn.type.result]
+            method <- R.Function "partial_cmp" 
+                                 [] 
+                                 True 
+                                 args 
+                                 result 
+                                 body 
+                                 []
+            ("std::cmp::PartialOrd", [method])
+        LD.Ord fn_id -> do
+            args <- [(getArgName 1, (RT.Named "&{}" % type_name) [])]
+            result <- RT.Named "std::cmp::Ordering" []
+            op_call <- R.FunctionCall (getRustIdentity fn_id) [convertImplArg lir_program fn_id (R.VarRef "self"), convertImplArg lir_program fn_id (R.VarRef (getArgName 1))]
+            fn <- getFunction lir_program fn_id
+            ordering_result <- convertType fn.type.result
+            body <- R.Block [sikoOrderingToRustOrdering op_call ordering_result]
+            method <- R.Function "cmp" 
+                                 [] 
+                                 True 
+                                 args 
+                                 result 
+                                 body 
+                                 []
+            ("std::cmp::Ord", [method])
+    //println "processImpl: {} {}" % (name, rust_type_name)
+    trait_impl <- R.TraitImpl name rust_type_name methods lifetimes
+    impls <- push program.impls trait_impl
+    program { impls = impls }
+
+createVariantCtor :: RT.Type ->
+                     Int ->
+                     Context ->
+                     [R.Expr] -> R.Expr
+createVariantCtor result index context args = do
+    enum <- getEnum context.type_store result
+    variant <- atIndex enum.variants index
+    ctor <- createRecordCtor (RT.getInnerType variant.type) context args
+    name <- "{}::{}" % (enum.name, variant.name)
+    R.FunctionCall name [ctor]
+
+createRecordCtor :: RT.Type -> Context -> [R.Expr] -> R.Expr
+createRecordCtor result context args = do
+    struct <- getStruct context.type_store result
+    fields <- List.zipS [] struct.fields args (\fields, field, arg -> do
+        field_init_item <- R.FieldInitItem field.name arg
+        fields <- push fields field_init_item
+        fields)
+    R.StructCtor struct.name fields
+
+createConstructors :: Program -> Map Identity Constructor
+createConstructors program = do
+    constructors <- program.functions |> Map.iter |> Iterator.fold (\constructors, (_, lir_function) -> do
+        rust_result <- convertType lir_function.type.result
+        ctor <- case lir_function.kind of
+            Normal lir_body -> return constructors
+            Extern -> return constructors
+            VariantCtor index -> createVariantCtor rust_result index
+            RecordCtor -> createRecordCtor rust_result
+        (constructors, _) <- Map.insert constructors lir_function.id (Constructor ctor)
+        constructors) Map.empty
+    constructors
+
+processFunction :: (Context,
+                    Program,
+                    TypeStore,
+                    R.Program) -> (Identity, Function) -> (Context,
+                                                           Program,
+                                                           TypeStore,
+                                                           R.Program)
+processFunction (context, program, type_store, rust_program) (_, lir_function) = do
+    rust_function_name <- getRustIdentity lir_function.id
+    (rust_args, _) <- lir_function.type.args |> List.iter |> Iterator.fold (\(args, index), arg -> do
+        arg_type <- convertType arg
+        arg_name <- getArgName index
+        args <- push args (arg_name, arg_type)
+        (args, index + 1)) ([], 0)
+    rust_result <- convertType lir_function.type.result
+    rust_body <- case lir_function.kind of
+        Normal lir_body -> do
+            LE.Expr b _ <- lir_body
+            case b of
+                LE.Do _ -> convertExpr context None lir_body
+                _ -> R.Block [convertExpr context None lir_body]
+        Extern -> do
+            Identity mod name _ <- lir_function.id
+            id <- ExternalId mod name
+            case get context.external_functions id of
+                Some external_gen -> do
+                    ExternFnBuilder external_gen <- external_gen
+                    external_gen program type_store lir_function.type.args lir_function.type.result
+                None -> do
+                    println "Extern function {}/{} is not implemented" % (mod, name)
+                    R.Block [R.FunctionCall "unimplemented!" []]
+        VariantCtor index -> return (context, program, type_store, rust_program)
+        RecordCtor -> return (context, program, type_store, rust_program)
+    lifetimes <- convertLifetimes lir_function.lifetimes
+    lifetime_dependencies <- List.map lir_function.lifetime_dependencies convertLifetimeDependency
+    rust_function <- R.Function rust_function_name 
+                                lifetimes 
+                                False 
+                                rust_args 
+                                rust_result 
+                                rust_body 
+                                lifetime_dependencies
+    functions <- push rust_program.functions rust_function
+    (context, program, type_store, rust_program { functions = functions })
+
+transpile :: Program -> String
+transpile program = do
+    external_functions <- initializeExternalFunctions
+    external_structs <- initializeExternalStructFields
+    type_store <- createTypeStore
+    rust_program <- R.Program [] [] [] [] (getRustIdentity getMainIdentity)
+    (type_store, rust_program) <- Map.fold (type_store, rust_program) program.adts (\(type_store, rust_program), (_, adt) -> do
+        enum <- convertAdt adt
+        type_store <- addEnum type_store enum
+        enums <- push rust_program.enums enum
+        rust_program <- rust_program { enums = enums }
+        (type_store, rust_program))
+    (type_store, rust_program) <- Map.fold (type_store, rust_program) program.records (\(type_store, rust_program), (_, record) -> do
+        struct <- convertRecord record external_structs
+        type_store <- addStruct type_store struct
+        structs <- push rust_program.structs struct
+        rust_program <- rust_program { structs = structs }
+        (type_store, rust_program))
+    constructors <- createConstructors program
+    context <- Context type_store constructors external_functions
+    rust_program <- Map.fold rust_program program.adts (\rust_program, (_, adt) -> do
+        name <- getRustIdentity adt.id
+        lifetimes <- convertLifetimes adt.lifetimes
+        List.fold rust_program adt.external_class_impls (\rust_program, external_class_impl -> do
+            processImpl program rust_program context name external_class_impl lifetimes))
+    rust_program <- Map.fold rust_program program.records (\rust_program, (_, record) -> do
+        name <- getRustIdentity record.id
+        lifetimes <- convertLifetimes record.lifetimes
+        List.fold rust_program record.external_class_impls (\rust_program, external_class_impl -> do
+            processImpl program rust_program context name external_class_impl lifetimes))
+    (context, program, type_store, rust_program) <- Map.fold (context, program, type_store, rust_program) program.functions processFunction
+    R.generateProgram rust_program

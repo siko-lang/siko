@@ -1,0 +1,37 @@
+module Main where
+
+import IO
+import Siko.Cache
+import Siko.Config
+import Siko.LIR.Program
+import Siko.Transpiler
+import Siko.LIR.Backend.Cache
+import Siko.Trace
+
+main = do
+    println "Siko Transpiler"
+    config <- getDefaultConfig
+    config <- config { trace_level = Level2, output_file_name = Some "multistage_output" }
+    with { getConfig = \_ -> config } do
+        programs :: [Program] <- loadCache getLIRBackendCachePath
+        lir_program <- atIndex programs 0
+        trace "Transpiling.."
+        rust_output <- transpile lir_program
+        rust_source_file <- getOutputFileName Rust
+        binary_file <- getOutputFileName Binary
+        writeTextFile rust_source_file rust_output
+        trace "Compiling.."
+        compilation_result <- if config.optimized
+        then runCommand ["rustc",
+                        "-O",
+                        "-o",
+                        binary_file,
+                        rust_source_file]
+        else runCommand ["rustc",
+                        "-o",
+                        binary_file,
+                        rust_source_file]
+        if compilation_result
+        then exit 0
+        else exit 1
+        ()

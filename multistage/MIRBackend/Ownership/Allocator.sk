@@ -1,0 +1,57 @@
+module Siko.MIR.Backend.Ownership.Allocator where
+
+import Siko.MIR.Backend.Ownership.BorrowId
+import Siko.MIR.Backend.Ownership.TypeVariableInfo
+
+data Allocator = { group_type_var :: Int,
+                   ownership_type_var :: Int,
+                   borrow :: Int
+                 } deriving (PartialEq, Eq, PartialOrd, Ord, Show)
+
+createAllocator :: Allocator
+createAllocator = Allocator 0 0 0
+
+getNextGroupTypeVariable :: Allocator -> (Allocator, GroupTypeVariable)
+getNextGroupTypeVariable allocator = do
+    (group_type_var, v) <- (allocator.group_type_var + 1, GroupTypeVariable allocator.group_type_var)
+    (allocator { group_type_var = group_type_var }, v)
+
+getNextOwnershipTypeVariable :: Allocator -> (Allocator, OwnershipTypeVariable)
+getNextOwnershipTypeVariable allocator = do
+    (ownership_type_var, v) <- (allocator.ownership_type_var + 1, OwnershipTypeVariable allocator.ownership_type_var)
+    (allocator { ownership_type_var = ownership_type_var }, v)
+
+getNextTypeVariableInfo :: Allocator -> (Allocator, TypeVariableInfo)
+getNextTypeVariableInfo allocator = do
+    (allocator, var1) <- getNextOwnershipTypeVariable allocator
+    (allocator, var2) <- getNextGroupTypeVariable allocator
+    (allocator, TypeVariableInfo var1 var2)
+
+getNextBorrowId :: Allocator -> (Allocator, BorrowId)
+getNextBorrowId allocator = do
+    (borrow, id) <- (allocator.borrow + 1, BorrowId allocator.borrow)
+    (allocator { borrow = borrow }, id)
+
+addGroupTypeVariable :: Allocator -> GroupTypeVariable -> Allocator
+addGroupTypeVariable allocator (GroupTypeVariable v) = do
+    group_type_var <- Std.Ops.max allocator.group_type_var (v + 1)
+    allocator { group_type_var = group_type_var }
+
+addOwnershipTypeVariable :: Allocator -> OwnershipTypeVariable -> Allocator
+addOwnershipTypeVariable allocator (OwnershipTypeVariable v) = do
+    ownership_type_var <- Std.Ops.max allocator.ownership_type_var (v + 1)
+    allocator { ownership_type_var = ownership_type_var }
+
+addTypeVariableInfo :: Allocator -> TypeVariableInfo -> Allocator
+addTypeVariableInfo allocator info = do
+    allocator <- addOwnershipTypeVariable allocator info.ownership_var
+    allocator <- addGroupTypeVariable allocator info.arg_group_var
+    allocator
+
+resetBorrows :: Allocator -> Allocator
+resetBorrows allocator = allocator { borrow = 0 }
+
+addBorrowId :: Allocator -> BorrowId -> Allocator
+addBorrowId allocator (BorrowId id) = do
+    borrow <- Std.Ops.max allocator.borrow (id + 1)
+    allocator { borrow = borrow }

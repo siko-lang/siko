@@ -1,0 +1,122 @@
+module Siko.MIR.Backend.Inliner where
+
+import Map
+import Set
+import Siko.MIR.Backend.Rebinder as Rebinder
+import Siko.MIR.Backend.Traversal
+import Siko.MIR.Data as D
+import Siko.MIR.Expr as E
+import Siko.MIR.Function as F
+import Siko.MIR.Identity as I
+import Siko.MIR.Program as P
+import Siko.MIR.Type as T
+import Siko.Util.Counter
+import Siko.Util.DependencyProcessor
+
+data Context = { program :: P.Program,
+                 group :: [I.Identity],
+                 expr_id_gen :: Counter E.ExprId,
+                 temp_var_gen :: Counter E.Var,
+                 kept_functions :: Set I.Identity,
+                 inlined :: Bool
+               } deriving (Move)
+
+bindArg :: T.Type ->
+           Rebinder.Context ->
+           Int ->
+           E.Expr -> (Rebinder.Context, E.Expr)
+bindArg unit_type context index arg = do
+    (context, id) <- Rebinder.getNextExprId context
+    arg_var <- E.Arg index
+    (context, arg_var) <- Rebinder.addVar context arg_var
+    arg <- E.Expr (E.VarDecl arg_var arg) unit_type id
+    (context, arg)
+
+getInlinedBody :: T.Type ->
+                  Context ->
+                  E.Expr ->
+                  [E.Expr] -> (Context, E.Expr)
+getInlinedBody unit_type context body args = do
+    E.Expr _ body_type _ <- body
+    r_context <- Rebinder.createContext context.expr_id_gen context.temp_var_gen
+    (r_context, do_id) <- Rebinder.getNextExprId r_context
+    (r_context, args) <- List.mapSE r_context args (bindArg unit_type)
+    (r_context, body) <- Rebinder.rebind r_context body
+    items <- push args body
+    do_expr <- E.Expr (E.Do (E.DoBlock items)) body_type do_id
+    context <- context { expr_id_gen = r_context.expr_id_gen, temp_var_gen = r_context.temp_var_gen }
+    (context, do_expr)
+
+inlined :: F.FunctionInfo -> Bool
+inlined info = List.contains info.attributes F.Inline
+
+canBeInlined :: E.Expr -> Bool
+canBeInlined body = do
+    (can_be_inlined, body) <- traverse True body (Some checkReturn) None None
+    can_be_inlined
+    where
+        checkReturn :: Bool -> E.Expr -> (Bool, E.Expr)
+        checkReturn can_be_inlined expr = do
+            E.Expr s_expr _ _ <- expr
+            case s_expr of
+                E.Return _ -> (False, expr)
+                _ -> (can_be_inlined, expr)
+
+processExpr :: Context -> E.Expr -> (Context, E.Expr)
+processExpr context expr = do
+    E.Expr s_expr _ _ <- expr
+    case s_expr of
+        E.StaticFunctionCall id args -> do
+            function <- P.getFunction context.program id
+            case function.kind of
+                F.Normal info -> do
+                    if not (inlined info) || List.contains context.group id || not (canBeInlined info.body)
+                    then do
+                        //println "{} cannot be inline" % id
+                        kept_functions <- Set.put context.kept_functions id
+                        context <- context { kept_functions = kept_functions }
+                        (context, expr)
+                    else do
+                        unit_type <- P.getUnitType context.program
+                        (context, expr) <- getInlinedBody unit_type context info.body args
+                        context <- context { inlined = True }
+                        (context, expr)
+                _ -> (context, expr)
+        _ -> (context, expr)
+
+processFunction :: [I.Identity] -> (P.Program, Set I.Identity) -> I.Identity -> (P.Program, Set I.Identity)
+processFunction group (program, kept_functions) function_id = do
+    function <- P.getFunction program function_id
+    //println "Processing {}" % function_id
+    case function.kind of
+        F.Normal info -> do
+            context <- Context program group (F.getExprIdGen info.expr_id_gen) (F.getTempVarGen info.temp_var_gen) kept_functions False
+            (context, body) <- loop (context, body) <- (context, info.body) do
+                (context, body) <- traverse context body (Some processExpr) None None
+                if context.inlined
+                then (context { inlined = False }, body)
+                else break (context, body)
+            info <- info { body = body, expr_id_gen = context.expr_id_gen.next, temp_var_gen = context.temp_var_gen.next }
+            new_kind <- F.Normal info
+            program <- P.updateFunctionKind context.program function_id new_kind
+            (program, context.kept_functions)
+        _ -> (program, kept_functions)
+
+processFunctionGroup :: (P.Program, Set I.Identity) -> DependencyGroup I.Identity -> (P.Program, Set I.Identity)
+processFunctionGroup (program, kept_functions) group = do
+    List.fold (program, kept_functions) group.items (processFunction group.items)
+
+filterInlined :: Set I.Identity -> (I.Identity, F.Function) -> Bool
+filterInlined kept_functions (id, function) = do
+    case function.kind of
+        F.Normal info -> if False && not (Set.contains kept_functions id)
+            then False
+            else True
+        _ -> True
+
+processProgram :: P.Program -> [DependencyGroup I.Identity] -> P.Program
+processProgram program groups = do
+    kept_functions <- Set.empty
+    (program, kept_functions) <- List.fold (program, kept_functions) groups processFunctionGroup
+    functions <- Map.filter program.functions (filterInlined kept_functions)
+    program { functions = functions }

@@ -39,7 +39,15 @@ mirlowering2: stage1 $(shell find multistage/Common multistage/MIRLowering -type
 	@echo "M: MIRLowering"
 	@./stage1 build multistage/MIRLowering ./std -o mirlowering2
 
-multistage: parser2 nameresolver2 typechecker2 hirbackend2 mirlowering2
+mirbackend2: stage1 $(shell find multistage/Common multistage/MIRBackend -type f)
+	@echo "M: MIRBackend"
+	@./stage1 build multistage/MIRBackend ./std -o mirbackend2
+
+transpiler2: stage1 $(shell find multistage/Common multistage/Transpiler -type f)
+	@echo "M: Transpiler"
+	@./stage1 build multistage/Transpiler ./std -o transpiler2
+
+multistage: parser2 nameresolver2 typechecker2 hirbackend2 mirlowering2 mirbackend2 transpiler2
 
 run_multistage: multistage
 	@rm -rf cache
@@ -48,6 +56,8 @@ run_multistage: multistage
 	./typechecker2
 	./hirbackend2
 	./mirlowering2
+	./mirbackend2
+	./transpiler2
 
 clean:
 	@rm -f stage0

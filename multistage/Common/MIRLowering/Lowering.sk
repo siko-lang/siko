@@ -23,13 +23,12 @@ import Siko.Util.SharedString as SS
 
 data Context a = { state :: a,
                    functions :: [MI.Identity],
-                   tuples :: [MI.Identity],
                    records :: [MI.Identity],
                    adts :: [MI.Identity]
                  }
 
 createContext a :: a -> Context a
-createContext state = Context state [] [] [] []
+createContext state = Context state [] [] []
 
 addFunction a :: Context a -> MI.Identity -> Context a
 addFunction context mir_id = do
@@ -37,13 +36,6 @@ addFunction context mir_id = do
 
 lowerFullyQualifiedName :: FQ.FullyQualifiedName -> MI.Identity
 lowerFullyQualifiedName qn = MI.Identity qn
-
-lowerTuple a :: (StateProvider a) => Context a -> [HT.Type] -> (Context a, MI.Identity)
-lowerTuple context args = do
-    qn <- FQ.Tuple args
-    mir_id <- lowerFullyQualifiedName qn
-    context <- context { tuples = List.push context.tuples mir_id }
-    (context, mir_id)
 
 lowerType a :: (StateProvider a) => Context a -> HT.Type -> (Context a, MT.Type)
 lowerType context hir_type = case hir_type of
@@ -86,9 +78,7 @@ lowerType context hir_type = case hir_type of
     HT.Owner ty -> do
         (context, ty) <- lowerType context ty
         (context, MT.Owner ty)
-    HT.Tuple args -> do
-        (context, mir_id) <- lowerTuple context args
-        (context, MT.Record mir_id)
+    HT.Tuple args -> panic "Tuple found in MIR lowering"
 
 bindRefToVar :: HP.BindRef -> ME.Var
 bindRefToVar HP.BindRef name id = ME.Named "{}_{}" % (name, id)
@@ -209,7 +199,6 @@ lowerFunction a :: (StateProvider a) => a -> FQ.FullyQualifiedName -> HF.Functio
                                                                                               MF.Function,
                                                                                               [MI.Identity],
                                                                                               [MI.Identity],
-                                                                                              [MI.Identity],
                                                                                               [MI.Identity])
 lowerFunction state qn hir_function = do
     mir_id <- lowerFullyQualifiedName qn
@@ -244,24 +233,9 @@ lowerFunction state qn hir_function = do
     mir_function_type <- MF.FunctionType mir_args mir_result_type
     //println "MIR function type {}" % mir_function_type
     functions <- context.functions |> List.sort |> List.dedup
-    tuples <- context.tuples |> List.sort |> List.dedup
     records <- context.records |> List.sort |> List.dedup
     adts <- context.adts |> List.sort |> List.dedup
-    (context.state, MF.Function mir_id kind mir_function_type, functions, tuples, records, adts)
-
-createTuple a :: (StateProvider a) => a -> MI.Identity -> [HT.Type] -> (a,
-                                                                        MD.Record,
-                                                                        MF.Function,
-                                                                        [MI.Identity],
-                                                                        [MI.Identity])
-createTuple state id args = do
-    trace2 "Creating tuple {} {}" % (id, TF.toStringTypes args)
-    context <- createContext state
-    (context, mir_args) <- List.mapS context args lowerType
-    fields <- List.mapE mir_args (\index, ty -> MD.RecordField ("field{}" % index) index ty False)
-    result_type <- MT.Record id
-    mir_function_type <- MF.FunctionType mir_args result_type
-    (context.state, MD.Record id fields None [] [], MF.Function id MF.RecordCtor mir_function_type, context.records, context.adts)
+    (context.state, MF.Function mir_id kind mir_function_type, functions, records, adts)
 
 createVariantRecord a :: (StateProvider a) => a -> MI.Identity -> [HT.Type] -> (a,
                                                                                 MD.Record,
@@ -280,7 +254,6 @@ createVariantRecord state id args = do
 lowerRecord a :: (StateProvider a) => a -> FQ.FullyQualifiedName -> HD.Record -> (a,
                                                                                   MD.Record,
                                                                                   [MI.Identity],
-                                                                                  [MI.Identity],
                                                                                   [MI.Identity])
 lowerRecord state qn record = do
     trace2 "Lowering record {}" % qn
@@ -293,7 +266,7 @@ lowerRecord state qn record = do
     (context, fields) <- List.mapSE context record.fields (\context, index, HD.RecordField _ type -> do
         (context, mir_type) <- lowerType context type
         (context, MD.RecordField ("field{}" % index) index mir_type False))
-    (context.state, MD.Record (lowerFullyQualifiedName qn) fields external_record_info [] [], context.tuples, context.adts, context.records)
+    (context.state, MD.Record (lowerFullyQualifiedName qn) fields external_record_info [] [], context.adts, context.records)
 
 lowerAdt a :: (StateProvider a) => a -> FQ.FullyQualifiedName -> HD.AlgebraicDataType -> (a, MD.AlgebraicDataType, [MI.Identity])
 lowerAdt state qn adt = do

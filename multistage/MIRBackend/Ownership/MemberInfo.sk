@@ -1,0 +1,80 @@
+module Siko.MIR.Backend.Ownership.MemberInfo where
+
+import Map
+import Set
+import Siko.MIR.Backend.Ownership.BorrowId
+import Siko.MIR.Backend.Ownership.TypeVariableInfo
+import Siko.MIR.Type as T
+import Siko.Trace
+import Siko.Util.DependencyProcessor
+
+data OwnershipKind = Unknown
+                   | Owner
+                   | Borrower BorrowId
+                   deriving (Show, PartialEq, Eq, PartialOrd, Ord)
+
+data MemberKind = Variant Int
+                | Field Int
+                | Extern Int
+                deriving (PartialEq, Eq, PartialOrd, Ord)
+
+data MemberInfo = { kind :: MemberKind,
+                    root :: GroupTypeVariable,
+                    info :: TypeVariableInfo
+                  } deriving (PartialEq, Eq, PartialOrd, Ord)
+
+instance Show MemberInfo where
+    show member = case member.kind of
+        Variant index -> "V{}.{}/{}" % (member.root, index, member.info)
+        Field index -> "F{}.{}/{}" % (member.root, index, member.info)
+        Extern index -> "E{}.{}/{}" % (member.root, index, member.info)
+
+data OwnershipInfo = { var :: OwnershipTypeVariable,
+                       kind :: OwnershipKind
+                     } deriving (PartialEq, Eq, PartialOrd, Ord)
+
+instance Show OwnershipInfo where
+    show info = case info.kind of
+        Unknown -> "u{}" % info.var
+        Owner -> "o{}" % info.var
+        Borrower id -> "b{}/{}" % (id, info.var)
+
+toOwnershipInfo :: Map OwnershipTypeVariable OwnershipKind -> [OwnershipInfo]
+toOwnershipInfo kinds = Map.fold (List.withCapacity (Map.getSize kinds)) kinds (\infos, (var, kind) -> List.push infos (OwnershipInfo var kind))
+
+toOwnershipKind :: [OwnershipInfo] -> Map OwnershipTypeVariable OwnershipKind
+toOwnershipKind infos = List.fold Map.empty infos (\kinds, info -> Map.put kinds info.var info.kind)
+
+isSubMember :: [GroupTypeVariable] -> MemberInfo -> Bool
+isSubMember vars member = List.contains vars member.root
+
+filterOwnershipInfo :: [OwnershipTypeVariable] -> OwnershipInfo -> Bool
+filterOwnershipInfo vars ownershipinfo = List.contains vars ownershipinfo.var
+
+getGroupDependencyMap :: [MemberInfo] -> Map GroupTypeVariable [GroupTypeVariable]
+getGroupDependencyMap members = do
+    deps_map <- Map.empty
+    deps_map <- List.fold deps_map members (\deps_map, member -> Map.put deps_map member.info.arg_group_var [])
+    deps_map <- List.fold deps_map members (\deps_map, member -> addDep deps_map member.root member.info.arg_group_var)
+    deps_map
+    where
+        addDep :: Map GroupTypeVariable [GroupTypeVariable] -> GroupTypeVariable -> GroupTypeVariable -> Map GroupTypeVariable [GroupTypeVariable]
+        addDep deps_map root dep = do
+            (deps_map, _) <- alter (\old -> case old of
+                Some deps -> Some (List.push deps dep)
+                None -> Some [dep]) root deps_map
+            deps_map
+
+getInfoDependencyMap :: [MemberInfo] -> Map GroupTypeVariable [TypeVariableInfo]
+getInfoDependencyMap members = do
+    deps_map <- Map.empty
+    deps_map <- List.fold deps_map members (\deps_map, member -> Map.put deps_map member.info.arg_group_var [])
+    deps_map <- List.fold deps_map members (\deps_map, member -> addInfoDep deps_map member.root member.info)
+    deps_map
+    where
+        addInfoDep :: Map GroupTypeVariable [TypeVariableInfo] -> GroupTypeVariable -> TypeVariableInfo -> Map GroupTypeVariable [TypeVariableInfo]
+        addInfoDep deps_map root dep = do
+            (deps_map, _) <- alter (\old -> case old of
+                Some deps -> Some (List.push deps dep)
+                None -> Some [dep]) root deps_map
+            deps_map

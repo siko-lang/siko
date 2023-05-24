@@ -12,9 +12,12 @@ import Siko.MIR.Function as F
 import Siko.MIR.Identity
 import Siko.MIR.Type
 import Siko.Util.SharedString as SS
+import Siko.HIR.Effect as HE
 
 getMainIdentity :: Identity
-getMainIdentity = Identity (FQ.Monomorphized (FQ.Effectless (FQ.FullPath getMainModuleName getMainFunctionName) None) (HT.Tuple []))
+getMainIdentity = do
+    empty_resolution_set <- HE.EffectResolutionSet Map.empty Map.empty
+    Identity (FQ.Monomorphized (FQ.Effectless (FQ.FullPath getMainModuleName getMainFunctionName) (Some empty_resolution_set)) (HT.Named (FQ.Tuple []) []))
 
 isDebugged :: Identity -> Bool
 isDebugged id = do

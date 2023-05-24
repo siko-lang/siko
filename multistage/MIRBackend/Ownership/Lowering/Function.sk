@@ -1,0 +1,144 @@
+module Siko.MIR.Backend.Ownership.Lowering.Function where
+
+import Map
+import Siko.LIR.Function as LF
+import Siko.LIR.Program as LP
+import Siko.LIR.Type as LT
+import Siko.MIR.Backend.Ownership.BorrowChecker
+import Siko.MIR.Backend.Ownership.BorrowId
+import Siko.MIR.Backend.Ownership.BorrowInfo
+import Siko.MIR.Backend.Ownership.CallContext as CC
+import Siko.MIR.Backend.Ownership.Converter
+import Siko.MIR.Backend.Ownership.DumpOwnership
+import Siko.MIR.Backend.Ownership.EqualityGeneration
+import Siko.MIR.Backend.Ownership.FunctionInfoStore
+import Siko.MIR.Backend.Ownership.Inference.ConstraintCollection
+import Siko.MIR.Backend.Ownership.Inference.ConstraintProcessor
+import Siko.MIR.Backend.Ownership.InferenceInfo
+import Siko.MIR.Backend.Ownership.Initializer
+import Siko.MIR.Backend.Ownership.Lowering.Context
+import Siko.MIR.Backend.Ownership.Lowering.Expr
+import Siko.MIR.Backend.Ownership.Lowering.LoweringInfo
+import Siko.MIR.Backend.Ownership.Lowering.LoweringInfo.FilterInfo
+import Siko.MIR.Backend.Ownership.Lowering.Naming
+import Siko.MIR.Backend.Ownership.Lowering.Type
+import Siko.MIR.Backend.Ownership.MemberInfo as M
+import Siko.MIR.Backend.Ownership.OrderedDependencyMap
+import Siko.MIR.Backend.Ownership.OwnershipDependencyMap
+import Siko.MIR.Backend.Ownership.TypeVariableInfo
+import Siko.MIR.Function as MF
+import Siko.MIR.Identity as I
+import Siko.MIR.Program as MP
+import Siko.Trace
+
+lowerLifetimeDependency :: LifetimeDependency -> LF.LifetimeDependency
+lowerLifetimeDependency dep = LF.LifetimeDependency (toLifetime dep.from) (toLifetime dep.to)
+    where
+        toLifetime :: BorrowId -> LT.Lifetime
+        toLifetime BorrowId i = LT.Lifetime i
+
+lowerFunction :: Context ->
+                 FunctionLoweringInfo ->
+                 I.Identity ->
+                 LP.Identity -> Context
+lowerFunction context lowering_info mir_id lir_id = do
+    trace2 "Lowering function {}/{} {}" % (mir_id, lir_id, lowering_info)
+    function <- MP.getFunction context.mir_program mir_id
+    context <- case function.kind of
+        MF.Normal info -> do
+            (inference_info, external_borrows) <- createInferenceInfoFromLoweringInfo lowering_info mir_id
+            inference_info <- initializeTypeVariables inference_info mir_id info.body
+            checkInitials inference_info "after initializeTypeVariables"
+            //trace2 "after initializeTypeVariables {} {}" % (lir_id, inference_info)
+            function_info_store <- context.function_info_store
+            (equals, inference_info) <- processFunctionEqualities mir_id 
+                                                                  [] 
+                                                                  [] 
+                                                                  inference_info 
+                                                                  function_info_store 
+                                                                  context.mir_program 
+                                                                  info.body 
+                                                                  context.data_group_info_store
+            inference_info <- processEqualities equals inference_info context.mir_program
+            checkInitials inference_info "after processEqualities"
+            //trace2 "after processEqualities {} {}" % (lir_id, inference_info)
+            borrow_info <- checkBorrows info.body
+            inference_info <- updateOwnershipDepMap inference_info
+            inference_info <- unpackOwnerships mir_id inference_info external_borrows
+            checkInitials inference_info "after unpackOwnerships"
+            //trace2 "after unpackOwnerships {} {}" % (lir_id, inference_info)
+            inference_info <- updateGroupDependencyMapInfo inference_info
+            converter_merge_info_base <- createConverterMergeInfoBase inference_info.converters
+            inference_info <- createFunctionInfoBase inference_info mir_id converter_merge_info_base
+            inference_info <- CC.createBaseCallContexts inference_info
+            (inference_info, constraints, invalid_borrow_map, ownership_expr_map, group_expr_map, ownership_group_map, result_vars, mir_program, call_context_map, call_args) <- collectConstraints mir_id context.mir_program borrow_info inference_info info.body
+            context <- context { mir_program = mir_program }
+            inference_info <- processConstraints mir_id 
+                                                 inference_info 
+                                                 constraints 
+                                                 invalid_borrow_map 
+                                                 ownership_expr_map 
+                                                 group_expr_map 
+                                                 ownership_group_map 
+                                                 result_vars 
+                                                 call_context_map 
+                                                 Full 
+                                                 call_args
+            //trace2 "after processConstraints {} {}" % (lir_id, inference_info)
+            if MP.isDebugged mir_id
+            then do
+                println "Inference info {}" % inference_info
+                println "Borrow info {}" % borrow_info
+                dumpOwnership inference_info mir_id info.body
+            else ()
+            checkInitials inference_info "after processConstraints"
+            filter_info <- buildFilterInfoFromInferenceInfo inference_info
+            lowering_context <- LoweringContext mir_id inference_info borrow_info.borrows filter_info Map.empty Map.empty
+            (lowering_context, context, lir_body) <- lowerExpr lowering_context context info.body
+            lir_kind <- LF.Normal lir_body
+            (context, lir_function_type, lifetimes) <- lowerFunctionType context lowering_info function.type
+            lifetime_dependencies <- List.map lowering_info.lifetime_dependencies lowerLifetimeDependency
+            lir_function <- LF.Function lir_id lifetimes lifetime_dependencies lir_kind lir_function_type
+            context <- addFunction context lir_function
+            context
+        MF.RecordCtor -> do
+            lir_kind <- LF.RecordCtor
+            (context, lir_function_type, lifetimes) <- lowerFunctionType context lowering_info function.type
+            lifetime_dependencies <- []
+            lir_function <- LF.Function lir_id lifetimes lifetime_dependencies lir_kind lir_function_type
+            context <- addFunction context lir_function
+            context
+        MF.VariantCtor index -> do
+            lir_kind <- LF.VariantCtor index
+            (context, lir_function_type, lifetimes) <- lowerFunctionType context lowering_info function.type
+            lifetime_dependencies <- []
+            lir_function <- LF.Function lir_id lifetimes lifetime_dependencies lir_kind lir_function_type
+            context <- addFunction context lir_function
+            context
+        MF.Extern type_mapping -> do
+            lir_kind <- LF.Extern
+            (context, lir_function_type, lifetimes) <- lowerFunctionType context lowering_info function.type
+            lifetime_dependencies <- List.map lowering_info.lifetime_dependencies lowerLifetimeDependency
+            lir_function <- LF.Function lir_id lifetimes lifetime_dependencies lir_kind lir_function_type
+            context <- addFunction context lir_function
+            context
+    //trace "Lowering done"
+    context
+
+unpackOwnerships :: I.Identity -> InferenceInfo -> [BorrowId] -> InferenceInfo
+unpackOwnerships function_id inference_info external_borrows = do
+    // Ownership information is present in the lowering info
+    // in a packed way. For example an owned record implies
+    // that every field of the record is also owned.
+    // The ownership inference does not know this, thus we 'unpack'
+    // the ownerships, i.e. fill out member ownerships which are implied from
+    // the arguments, result.
+    function_inference_info <- getFunctionInferenceInfo inference_info function_id
+    vars <- List.fold [] function_inference_info.args (\vars, info -> do
+        vars <- List.push vars info.arg_group_var
+        vars)
+    vars <- List.push vars function_inference_info.result.arg_group_var
+    List.fold inference_info vars (\inference_info, var -> do
+        case Map.get inference_info.ownership_dep_map_info.ownership_dep_map var of
+            Some ownership_vars -> List.fold inference_info ownership_vars (\inference_info, var -> enforceOwner inference_info var external_borrows)
+            None -> inference_info)

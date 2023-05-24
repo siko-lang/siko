@@ -142,7 +142,8 @@ monomorphize provider base_main_qn = do
                         FQ.Monomorphized orig_qn ty -> do
                             state <- createStateProvider provider
                             (state, monomorphized_fn, functions, records, adts, external_class_impls) <- MO.monomorphizeFunction state orig_qn ty
-                            monomorphized_fns <- Map.put monomorphized_fns monomorphized_fn.name monomorphized_fn
+                            monomorphized_fn <- monomorphized_fn { name = last }
+                            monomorphized_fns <- Map.put monomorphized_fns last monomorphized_fn
                             queue <- queue + functions
                             (monomorphized_fns, queue)
                         _ -> panic "Monomorphized qn is unexpected {}" % last

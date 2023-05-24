@@ -1,0 +1,79 @@
+module Siko.MIR.Backend.SanityCheck where
+
+import Map
+import Set
+import Siko.MIR.Backend.Traversal
+import Siko.MIR.Data as D
+import Siko.MIR.Expr as E
+import Siko.MIR.Function as F
+import Siko.MIR.Identity as I
+import Siko.MIR.Program as P
+import Siko.MIR.Type as T
+import Siko.Util.Counter
+
+data Context = { expr_ids :: Set E.ExprId,
+                 vars :: Set E.Var,
+                 breaks :: [E.ExprId],
+                 continues :: [E.ExprId]
+               }
+
+createContext :: Context
+createContext = Context Set.empty Set.empty [] []
+
+addVar :: I.Identity -> Context -> E.Var -> Context
+addVar id context var = do
+    (vars, inserted) <- Set.insert context.vars var
+    if inserted
+    then context { vars = vars }
+    else panic "ICE: duplicated var decl {} in function {}" % (var, id)
+
+check :: I.Identity -> Context -> E.Expr -> (Context, E.Expr)
+check id context expr = do
+    E.Expr s_expr expr_type expr_id <- expr
+    (expr_ids, inserted) <- Set.insert context.expr_ids expr_id
+    context <- if inserted
+    then context { expr_ids = expr_ids }
+    else panic "ICE: duplicated expr id {} in function {}/{}" % (expr_id, id, E.short expr)
+    context <- case s_expr of
+        E.Do (E.DoBlock items) -> if List.isEmpty items
+            then panic "ICE: empty do block found in {}" % id
+            else context
+        E.VarDecl v _ -> addVar id context v
+        E.Loop (E.LoopInfo v _ _ continues breaks) -> do
+            // FIXME, TODO: this does not seem to work with nested loops, fix it or remove it!
+            // loop_continues <- continues |> sort
+            // context_continues <- context.continues |> sort
+            // loop_breaks <- breaks |> sort
+            // context_breaks <- context.breaks |> sort
+            // if loop_continues != context_continues
+            // then panic "ICE: loop continue set mismatch {} != {}" % (loop_continues, context_continues)
+            // else ()
+            // if loop_breaks != context_breaks
+            // then panic "ICE: loop break set mismatch {} != {}" % (loop_breaks, context_breaks)
+            // else ()
+            // context <- context { continues = [], breaks = [] }
+            addVar id context v
+        E.CaseOf _ cases -> do
+            List.fold context cases (\context, c -> case c.checker of
+                E.VariantChecker _ v _ -> addVar id context v
+                _ -> context)
+        E.Continue (E.ContinueInfo arg) -> do
+            E.Expr _ _ arg_id <- arg
+            context { continues = List.push context.continues arg_id }
+        E.Break (E.BreakInfo arg) -> do
+            E.Expr _ _ arg_id <- arg
+            context { breaks = List.push context.breaks arg_id }
+        _ -> context
+    (context, expr)
+
+processFunction :: F.Function -> ()
+processFunction function = case function.kind of
+    F.Normal info -> do
+        context <- createContext
+        (context, body) <- traverse context info.body (Some (check function.id)) None None
+        ()
+    _ -> ()
+
+processProgram :: P.Program -> ()
+processProgram program = do
+    program.functions |> Map.iter |> Iterator.forEach (\(id, function) -> processFunction function)
