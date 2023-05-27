@@ -49,6 +49,9 @@ transpiler2: stage1 $(shell find multistage/Common multistage/Transpiler -type f
 
 multistage: parser2 nameresolver2 typechecker2 hirbackend2 mirlowering2 mirbackend2 transpiler2
 
+multistage_clean:
+	@rm -rf parser2 nameresolver2 typechecker2 hirbackend2 mirlowering2 mirbackend2 transpiler2
+
 run_multistage: multistage
 	@rm -rf cache
 	./parser2 build multistage_test

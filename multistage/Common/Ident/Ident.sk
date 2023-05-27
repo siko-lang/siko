@@ -4,6 +4,7 @@ import Json
 import Json.Serialize
 import Siko.Syntax.Location
 import Siko.Util.SharedString as SS
+import Siko.Format
 
 data Ident = Ident SS.SharedString Location deriving (PartialEq, Eq, PartialOrd, Ord, ToJson, FromJson)
 
@@ -21,3 +22,6 @@ instance Show Ident where
 
 path :: Ident -> Ident -> Ident
 path (Ident s1 _) (Ident s2 l2) = Ident (SS.create "{}.{}" % (s1, s2)) l2
+
+instance Format Ident where
+    format name = [Chunk (show name)]

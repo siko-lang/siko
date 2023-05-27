@@ -290,3 +290,29 @@ instance (TupleTransformer a, GetType a) => TupleTransformer HP.Pattern a where
         (context, spat) <- transform context spat
         (context, a) <- transform context a
         (context, HP.Pattern spat id a location)
+
+instance TupleTransformer HE.ExprRef where
+    transform context (HE.ExprRef source location) = do
+        (context, source) <- transform context source
+        (context, location) <- transform context location
+        (context, HE.ExprRef source location)
+
+instance TupleTransformer HE.ExprId where
+    transform context id = (context, id)
+
+instance (TupleTransformer a, GetType a) => TupleTransformer HE.EffectType a where
+    transform context (HE.EffectType ty) = do
+        (context, ty) <- transform context ty
+        (context, HE.EffectType ty)
+
+instance TupleTransformer HP.BindRef where
+    transform context ref = (context, ref)
+
+instance TupleTransformer HP.BindGroup where
+    transform context group = (context, group)
+
+instance TupleTransformer HP.RangeKind where
+    transform context kind = (context, kind)
+
+instance TupleTransformer HP.PatternId where
+    transform context id = (context, id)

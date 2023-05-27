@@ -1,6 +1,5 @@
 module Siko.HIR.Expr where
 
-import Siko.HIR.Backend.TupleTransformer
 import Json
 import Json.Serialize
 import Siko.HIR.FullyQualifiedName
@@ -15,13 +14,13 @@ data Case a = { pattern :: P.Pattern a,
 
 data ExprRef = { source :: ExprId,
                  location :: Location
-               } deriving (Show, PartialEq, Eq, ToJson, FromJson, GenericTransform(TupleTransformer))
+               } deriving (Show, PartialEq, Eq, ToJson, FromJson)
 
 data RecordConstructionItem a = { field_name :: Ident,
                                   body :: Expr a
                                 } deriving (Show, PartialEq, Eq, ToJson, FromJson)
 
-data ExprId = ExprId Int deriving (PartialEq, Eq, PartialOrd, Ord, ToJson, FromJson, GenericTransform(TupleTransformer))
+data ExprId = ExprId Int deriving (PartialEq, Eq, PartialOrd, Ord, ToJson, FromJson)
 
 instance Show ExprId where
     show (ExprId id) = "#{}" % id
@@ -41,7 +40,7 @@ data EffectHandlerSelection a = Static FullyQualifiedName
                               | Default
                               deriving (Show, PartialEq, Eq, ToJson, FromJson)
 
-data EffectType a = EffectType a deriving (PartialEq, Eq, ToJson, FromJson, GenericTransform(TupleTransformer))
+data EffectType a = EffectType a deriving (PartialEq, Eq, ToJson, FromJson)
 
 instance Show EffectType a where
     show (EffectType ts) = "EffectType" // FIXME
