@@ -1,0 +1,218 @@
+module Siko.HIR.Backend.Core where
+
+import IO
+import Map
+import Siko.Constants
+import Siko.HIR.Backend.CaseTransformer
+import Siko.HIR.Backend.EffectResolver as ER
+import Siko.HIR.Backend.InstanceResolver as IR
+import Siko.HIR.Backend.StateProvider
+import Siko.HIR.Backend.Typechecker.ClassTypeInfo as TC
+import Siko.HIR.Backend.Typechecker.FunctionTypeInfo as TF
+import Siko.HIR.Backend.UpdateTransformer as UT
+import Siko.HIR.Backend.Monomorphization as MO
+import Siko.HIR.Backend.TupleTransformer  as TT
+import Siko.HIR.Backend.ClosureConverter as CC
+import Siko.HIR.Class as HC
+import Siko.HIR.Data as HD
+import Siko.HIR.Effect as HE
+import Siko.Format
+import Siko.HIR.FullyQualifiedName as FQ
+import Siko.HIR.Function as HF
+import Siko.HIR.Type as HT
+import Siko.Query.Lookup
+import Siko.Util.DependencyProcessor
+import Siko.HIR.Backend.VariantTransformer as VT
+
+data BackendStateProvider = { class_map :: Map FQ.FullyQualifiedName HC.Class,
+                              class_type_info_map :: Map FQ.FullyQualifiedName TC.ClassTypeInfo,
+                              function_map :: Map FQ.FullyQualifiedName (HF.Function ()),
+                              typed_function_map :: Map FQ.FullyQualifiedName (HF.Function HT.Type),
+                              instance_map :: Map FQ.FullyQualifiedName HC.Instance,
+                              func_type_info_map :: Map FQ.FullyQualifiedName TF.FunctionTypeInfo,
+                              checked_func_type_info_map :: Map FQ.FullyQualifiedName TF.FunctionTypeInfo,
+                              record_map :: Map FQ.FullyQualifiedName HD.Record,
+                              adt_map :: Map FQ.FullyQualifiedName HD.AlgebraicDataType,
+                              effect_map :: Map FQ.FullyQualifiedName HE.Effect,
+                              instance_info_map :: Map IR.InstanceKey IR.InstanceInfo
+                            } deriving (Move)
+
+instance ClassProvider BackendStateProvider where
+    getClass p qn = case Map.get p.class_map qn of
+        Some c -> c
+        None -> panic "No class found"
+
+    getClassTypeInfo p qn = case Map.get p.class_type_info_map qn of
+        Some i -> i
+        None -> panic "No class type info found"
+
+    getAllDependencies p qn = (getClassTypeInfo p qn).all_dependencies
+
+    getInstance p qn = panic "getInstance in typechecker NYI"
+
+instance FunctionProvider BackendStateProvider where
+    getFunction p qn = case Map.get p.function_map qn of
+        Some f -> f
+        None -> panic "No function found {}" % qn
+
+    getTypedFunction p qn = case Map.get p.typed_function_map qn of
+        Some f -> f
+        None -> panic "No typed function found {}" % qn
+
+instance FunctionTypeInfoProvider BackendStateProvider where
+    getFunctionTypeInfo p qn = case Map.get p.func_type_info_map qn of
+        Some f -> f
+        None -> panic "No functypeinfo found {}" % qn
+
+instance CheckedFunctionTypeInfoProvider BackendStateProvider where
+    getCheckedFunctionTypeInfo p qn = case Map.get p.checked_func_type_info_map qn of
+        Some f -> f
+        None -> panic "No checked functypeinfo found {}" % qn
+
+    getCheckedFunctionTypeInfoOpt p qn = Map.get p.checked_func_type_info_map qn
+
+instance RecordProvider BackendStateProvider where
+    getRecord p qn = case Map.get p.record_map qn of
+        Some r -> r
+        None -> panic "No record found {}" % qn
+
+    getRecordOpt p qn = Map.get p.record_map qn
+
+instance AdtProvider BackendStateProvider where
+    getAdt p qn = case Map.get p.adt_map qn of
+        Some a -> a
+        None -> panic "No adt found {}" % qn
+
+    getAdtOpt p qn = Map.get p.adt_map qn
+
+instance EffectProvider BackendStateProvider where
+    getEffect p qn = case Map.get p.effect_map qn of
+        Some e -> e
+        None -> panic "No effect found {}" % qn
+
+    getEffectOpt p qn = Map.get p.effect_map qn
+
+instance RegisteredInstanceProvider BackendStateProvider where
+    getRegisteredInstance p key = case Map.get p.instance_info_map key of
+        Some i -> i
+        None -> panic "No instance info found {}" % key
+
+    getRegisteredInstanceOpt p key = Map.get p.instance_info_map key
+
+resolveEffects provider base_main_qn unreachable_qn = do
+    empty_resolution_set <- HE.EffectResolutionSet Map.empty Map.empty
+    effectless_main_qn <- FQ.Effectless base_main_qn (Some empty_resolution_set)
+    unreachable_qn <- FQ.Effectless unreachable_qn (Some empty_resolution_set)
+    loop (resolved_fns, queue) <- (Map.empty, [effectless_main_qn]) do
+        if List.isEmpty queue
+        then break resolved_fns
+        else do
+            (last, queue) <- removeLast queue
+            case Map.get resolved_fns last of
+                Some _ -> (resolved_fns, queue)
+                None -> do
+                    //println "Resolving effects for {}" % last
+                    case last of
+                        FQ.Effectless qn (Some resolution_set) -> do
+                            state <- createStateProvider provider
+                            (state, resolved_fn, qns) <- ER.resolveEffects state qn resolution_set
+                            queue <- queue + qns
+                            (Map.put resolved_fns last resolved_fn, queue)
+                        FQ.Effectless qn None -> do
+                            state <- createStateProvider provider
+                            (state, resolved_fn, qns) <- ER.resolveEffects state qn empty_resolution_set
+                            queue <- queue + qns
+                            (Map.put resolved_fns last resolved_fn, queue)
+                        _ -> panic "Incorrect qn in effect resolver queue {}" % last
+
+monomorphize provider base_main_qn = do
+    empty_resolution_set <- HE.EffectResolutionSet Map.empty Map.empty
+    empty_tuple_qn <- FQ.Tuple []
+    monomorphized_main_qn <- FQ.Monomorphized (FQ.Effectless base_main_qn (Some empty_resolution_set)) (HT.Named empty_tuple_qn [])
+    loop (monomorphized_fns, queue) <- (Map.empty, [monomorphized_main_qn]) do
+        if List.isEmpty queue
+        then break monomorphized_fns
+        else do
+            (last, queue) <- removeLast queue
+            case Map.get monomorphized_fns last of
+                Some _ -> (monomorphized_fns, queue)
+                None -> do
+                    case last of
+                        FQ.Monomorphized orig_qn ty -> do
+                            state <- createStateProvider provider
+                            (state, monomorphized_fn, functions, records, adts, external_class_impls) <- MO.monomorphizeFunction state orig_qn ty
+                            monomorphized_fn <- monomorphized_fn { name = last }
+                            monomorphized_fns <- Map.put monomorphized_fns last monomorphized_fn
+                            queue <- queue + functions
+                            (monomorphized_fns, queue)
+                        _ -> panic "Monomorphized qn is unexpected {}" % last
+
+process :: [HF.Function HT.Type] -> [HF.Function ()] -> [HC.Class] -> [HC.Instance] -> [HE.Effect] -> [HD.AlgebraicDataType] -> [HD.Record] -> ([HF.Function HT.Type], [HD.Record], [HD.AlgebraicDataType])
+process typed_functions functions classes instances effects adts records = do
+    class_map <- List.fold Map.empty classes (\class_map, c -> Map.put class_map c.name c)
+    function_map <- List.fold Map.empty functions (\function_map, f -> Map.put function_map f.name f)
+    typed_function_map <- List.fold Map.empty typed_functions (\typed_function_map, f -> Map.put typed_function_map f.name f)
+    instance_map <- List.fold Map.empty instances (\instance_map, i -> Map.put instance_map i.name i)
+    adt_map <- List.fold Map.empty adts (\adt_map, adt -> Map.put adt_map adt.name adt)
+    record_map <- List.fold Map.empty records (\record_map, record -> Map.put record_map record.name record)
+    effect_map <- List.fold Map.empty effects (\effect_map, e -> Map.put effect_map e.name e)
+    provider <- BackendStateProvider class_map
+                                     Map.empty
+                                     function_map
+                                     typed_function_map
+                                     instance_map
+                                     Map.empty
+                                     Map.empty
+                                     record_map
+                                     adt_map
+                                     effect_map
+                                     Map.empty
+    typed_functions <- List.map typed_functions (\f -> do
+        state <- createStateProvider provider
+        (state, f) <- transformCases state f
+        f)
+    vt_context <- VT.createContext
+    (vt_context, adts) <- List.mapS vt_context adts VT.processAlgebraicDataType
+    adt_map <- List.fold Map.empty adts (\adt_map, adt -> Map.put adt_map adt.name adt)
+    typed_functions <- List.map typed_functions (\f -> do
+        state <- createStateProvider provider
+        (state, f) <- UT.processFunction state f
+        f)
+    typed_function_map <- List.fold Map.empty typed_functions (\typed_function_map, f -> Map.put typed_function_map f.name f)
+    typed_function_map <- Map.merge typed_function_map vt_context.functions
+    record_map <- Map.merge record_map vt_context.records
+    provider <- BackendStateProvider class_map
+                                     Map.empty
+                                     function_map
+                                     typed_function_map
+                                     instance_map
+                                     Map.empty
+                                     Map.empty
+                                     record_map
+                                     adt_map
+                                     effect_map
+                                     Map.empty
+    base_main_qn <- FQ.FullPath getMainModuleName getMainFunctionName
+    unreachable_qn <- FQ.FullPath getStdUtilBasicModuleName getUnreachableName
+    resolved_effect_fns <- resolveEffects provider base_main_qn unreachable_qn
+    (tt_context, transformed_fns) <- TT.transform TT.createContext resolved_effect_fns
+    transformed_fns <- Map.merge transformed_fns tt_context.functions
+    record_map <- Map.merge record_map tt_context.tuples
+    provider <- BackendStateProvider class_map
+                                     Map.empty
+                                     function_map
+                                     transformed_fns
+                                     instance_map
+                                     Map.empty
+                                     Map.empty
+                                     record_map
+                                     adt_map
+                                     effect_map
+                                     Map.empty
+    println "Mono begin"
+    monomorphized_fns <- monomorphize provider base_main_qn
+    println "Mono end"
+    lowered_fns <- monomorphized_fns |> Map.iter |> Iterator.map (\(key, f) -> f) |> toList
+    lowered_records <- record_map |> Map.iter |> Iterator.map (\(key, f) -> f) |> toList
+    lowered_adts <- adt_map |> Map.iter |> Iterator.map (\(key, f) -> f) |> toList
+    (lowered_fns, lowered_records, lowered_adts)

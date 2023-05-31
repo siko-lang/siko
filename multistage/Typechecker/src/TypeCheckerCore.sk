@@ -1,0 +1,206 @@
+module Siko.Typechecker.Core where
+
+import IO
+import Map
+import Siko.HIR.Backend.InstanceResolver as IR
+import Siko.HIR.Backend.StateProvider
+import Siko.HIR.Backend.Typechecker.Class as TC
+import Siko.HIR.Backend.Typechecker.ClassTypeInfo as TC
+import Siko.HIR.Backend.Typechecker.Function as TF
+import Siko.HIR.Backend.Typechecker.FunctionTypeInfo as TF
+import Siko.HIR.Class as HC
+import Siko.HIR.Type as HT
+import Siko.HIR.Data as HD
+import Siko.HIR.Effect as HE
+import Siko.HIR.FullyQualifiedName as FQ
+import Siko.HIR.Function as HF
+import Siko.Query.Lookup
+import Siko.Util.DependencyProcessor
+
+data TypecheckerStateProvider = { class_map :: Map FQ.FullyQualifiedName HC.Class,
+                                  class_type_info_map :: Map FQ.FullyQualifiedName TC.ClassTypeInfo,
+                                  function_map :: Map FQ.FullyQualifiedName (HF.Function ()),
+                                  instance_map :: Map FQ.FullyQualifiedName HC.Instance,
+                                  func_type_info_map :: Map FQ.FullyQualifiedName TF.FunctionTypeInfo,
+                                  checked_func_type_info_map :: Map FQ.FullyQualifiedName TF.FunctionTypeInfo,
+                                  record_map :: Map FQ.FullyQualifiedName HD.Record,
+                                  adt_map :: Map FQ.FullyQualifiedName HD.AlgebraicDataType,
+                                  effect_map :: Map FQ.FullyQualifiedName HE.Effect,
+                                  instance_info_map :: Map IR.InstanceKey IR.InstanceInfo
+                                }
+
+instance ClassProvider TypecheckerStateProvider where
+    getClass p qn = case Map.get p.class_map qn of
+        Some c -> c
+        None -> panic "No class found"
+
+    getClassTypeInfo p qn = case Map.get p.class_type_info_map qn of
+        Some i -> i
+        None -> panic "No class type info found"
+
+    getAllDependencies p qn = (getClassTypeInfo p qn).all_dependencies
+
+    getInstance p qn = panic "getInstance in typechecker NYI"
+
+instance FunctionProvider TypecheckerStateProvider where
+    getFunction p qn = case Map.get p.function_map qn of
+        Some f -> f
+        None -> panic "No function found {}" % qn
+
+    getTypedFunction = unimplemented
+
+instance FunctionTypeInfoProvider TypecheckerStateProvider where
+    getFunctionTypeInfo p qn = case Map.get p.func_type_info_map qn of
+        Some f -> f
+        None -> panic "No functypeinfo found {}" % qn
+
+instance CheckedFunctionTypeInfoProvider TypecheckerStateProvider where
+    getCheckedFunctionTypeInfo p qn = case Map.get p.checked_func_type_info_map qn of
+        Some f -> f
+        None -> panic "No checked functypeinfo found {}" % qn
+
+    getCheckedFunctionTypeInfoOpt p qn = Map.get p.checked_func_type_info_map qn
+
+instance RecordProvider TypecheckerStateProvider where
+    getRecord p qn = case Map.get p.record_map qn of
+        Some r -> r
+        None -> panic "No record found {}" % qn
+
+    getRecordOpt p qn = Map.get p.record_map qn
+
+instance AdtProvider TypecheckerStateProvider where
+    getAdt p qn = case Map.get p.adt_map qn of
+        Some a -> a
+        None -> panic "No adt found {}" % qn
+
+    getAdtOpt p qn = Map.get p.adt_map qn
+
+instance EffectProvider TypecheckerStateProvider where
+    getEffect p qn = case Map.get p.effect_map qn of
+        Some e -> e
+        None -> panic "No effect found {}" % qn
+
+    getEffectOpt p qn = Map.get p.effect_map qn
+
+instance RegisteredInstanceProvider TypecheckerStateProvider where
+    getRegisteredInstance p key = case Map.get p.instance_info_map key of
+        Some i -> i
+        None -> panic "No instance info found {}" % key
+
+    getRegisteredInstanceOpt p key = Map.get p.instance_info_map key
+
+createFunctionTypeInfo :: TypecheckerStateProvider -> HF.Function () -> TF.FunctionTypeInfo
+createFunctionTypeInfo provider function = do
+    state <- createStateProvider provider
+    case function.kind of
+        HF.Normal info -> case info.source of
+            Some (HF.InstanceMember instance_qn) -> do
+                i <- Option.unwrap (Map.get provider.instance_map instance_qn)
+                c <- getClass provider i.class_name
+                class_type_info <- getClassTypeInfo provider i.class_name
+                (state, type) <- TC.getMemberType state i function class_type_info
+                // TODO: error
+                case type of
+                    Some type -> do
+                        function <- function { type = Some type }
+                        (state, func_type_info) <- TF.createFunctionTypeInfo state function
+                        // TODO: error
+                        func_type_info
+                    None -> do
+                        //FIXME: TODO: use result!!
+                        panic "getMemberType in createFunctionTypeInfo failed"
+            _ -> do
+                (state, func_type_info) <- TF.createFunctionTypeInfo state function
+                // TODO: error
+                func_type_info
+        _ -> do
+            (state, func_type_info) <- TF.createFunctionTypeInfo state function
+            // TODO: error
+            func_type_info
+
+typecheck :: [HF.Function ()] -> [HC.Class] -> [HC.Instance] -> [HE.Effect] -> [HD.AlgebraicDataType] -> [HD.Record] -> [HF.Function HT.Type]
+typecheck functions classes instances effects adts records = do
+    println "found {} functions" % getLength functions
+    println "found {} classes" % getLength classes
+    println "found {} instances" % getLength instances
+    println "found {} effects" % getLength effects
+    println "found {} adts" % getLength adts
+    println "found {} records" % getLength records
+    errors <- TC.checkClassDependencies classes
+    if List.isEmpty errors
+    then ()
+    else do
+        println "checkClassDependencies failed {}" % errors
+    ()
+    class_map <- List.fold Map.empty classes (\class_map, c -> Map.put class_map c.name c)
+    function_map <- List.fold Map.empty functions (\function_map, f -> Map.put function_map f.name f)
+    instance_map <- List.fold Map.empty instances (\instance_map, i -> Map.put instance_map i.name i)
+    adt_map <- List.fold Map.empty adts (\adt_map, adt -> Map.put adt_map adt.name adt)
+    record_map <- List.fold Map.empty records (\record_map, record -> Map.put record_map record.name record)
+    effect_map <- List.fold Map.empty effects (\effect_map, e -> Map.put effect_map e.name e)
+    provider <- TypecheckerStateProvider class_map
+                                         Map.empty
+                                         function_map
+                                         instance_map
+                                         Map.empty
+                                         Map.empty
+                                         record_map
+                                         adt_map
+                                         effect_map
+                                         Map.empty
+    class_type_info_map <- Map.map class_map (\(name, c) -> do
+        state <- createStateProvider provider
+        (state, class_type_info) <- TC.createClassTypeInfo state c
+        (name, class_type_info))
+    provider <- TypecheckerStateProvider class_map
+                                         class_type_info_map
+                                         function_map
+                                         instance_map
+                                         Map.empty
+                                         Map.empty
+                                         record_map
+                                         adt_map
+                                         effect_map
+                                         Map.empty
+    instance_info_map <- List.fold Map.empty instances (\instance_info_map, i -> do
+        class_type_info <- Option.unwrap (Map.get class_type_info_map i.class_name)
+        state <- createStateProvider provider
+        state <- TC.checkInstance state class_type_info i
+        // TODO: error
+        (instance_key, instance_info) <- TC.createInstanceInfo i
+        Map.put instance_info_map instance_key instance_info)
+    func_dep_info_map <- Map.map function_map (\(name, f) -> do
+        state <- createStateProvider provider
+        func_dep_info <- TF.createFunctionDependencyInfo state f
+        (name, func_dep_info))
+    func_type_info_map <- Map.map function_map (\(name, f) -> do
+        func_type_info <- createFunctionTypeInfo provider f
+        (name, func_type_info))
+    deps <- Map.map func_dep_info_map (\(name, func_dep_info) -> do
+        (name, func_dep_info.deps))
+    provider <- TypecheckerStateProvider class_map
+                                         class_type_info_map
+                                         function_map
+                                         instance_map
+                                         func_type_info_map
+                                         Map.empty
+                                         record_map
+                                         adt_map
+                                         effect_map
+                                         instance_info_map
+    groups <- processDependencies deps
+    (typed_function_map, provider) <- List.fold (Map.empty, provider) groups (\(typed_function_map, provider), function_group -> do
+        state <- createStateProvider provider
+        (state, typed_functions) <- TF.processGroup state function_group.items
+        if not (List.isEmpty state.errors)
+        then panic "TYPECHECK FAILED {}, NYI {}" % (function_group, state.errors)
+        else ()
+        Map.fold (typed_function_map, provider) typed_functions (\(typed_function_map, provider), (name, fn) -> do
+            state <- createStateProvider provider
+            (state, func_type_info) <- TF.createFunctionTypeInfo state fn
+            typed_function_map <- Map.put typed_function_map name fn
+            checked_func_type_info_map <- Map.put provider.checked_func_type_info_map name func_type_info
+            provider <- provider { checked_func_type_info_map = checked_func_type_info_map }
+            (typed_function_map, provider)))
+    typed_functions <- typed_function_map |> Map.iter |> Iterator.map (\(_, fn) -> fn) |> toList
+    typed_functions

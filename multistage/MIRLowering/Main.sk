@@ -2,86 +2,18 @@ module Main where
 
 import Siko.Cache
 import Siko.Config
+import Siko.HIR.Backend.Cache
+import Siko.MIR.Backend.Cache
+import Siko.HIR.Backend.Lowering.Core
 import Siko.HIR.Function as HF
-import Siko.HIR.FullyQualifiedName as FQ
-import Siko.MIR.Function as MF
 import Siko.HIR.Type as HT
 import Siko.HIR.Data as HD
-import Siko.MIR.Data as MD
-import Siko.Query.Lookup
-import Siko.MIR.Program
-import Siko.HIR.Backend.Cache
-import Siko.HIR.Backend.StateProvider
-import Siko.MIR.Backend.Cache
-import Siko.HIR.Backend.Lowering as L
-import Map
-
-data LoweringStateProvider = { records :: Map FQ.FullyQualifiedName HD.Record }
-
-instance ClassProvider LoweringStateProvider where
-    getClass p qn = panic "Class provider in lowering"
-
-    getClassTypeInfo p qn = panic "Class provider in lowering"
-
-    getAllDependencies p qn = panic "Class provider in lowering"
-
-    getInstance p qn = panic "Class provider in lowering"
-
-instance FunctionProvider LoweringStateProvider where
-    getFunction p qn = panic "Function provider in lowering"
-
-    getTypedFunction p qn = panic "Function provider in lowering"
-
-instance FunctionTypeInfoProvider LoweringStateProvider where
-    getFunctionTypeInfo p qn = panic "Function type info provider in lowering"
-
-instance CheckedFunctionTypeInfoProvider LoweringStateProvider where
-    getCheckedFunctionTypeInfo p qn = panic "Checked function type info provider in lowering"
-
-    getCheckedFunctionTypeInfoOpt p qn = panic "Checked function type info provider in lowering"
-
-instance RecordProvider LoweringStateProvider where
-    getRecord p qn = case Map.get p.records qn of
-        Some r -> r
-        None -> panic "No record found in lowering {}" % qn
-
-    getRecordOpt p qn = Map.get p.records qn
-
-instance AdtProvider LoweringStateProvider where
-    getAdt p qn = panic "Adt provider in lowering"
-
-    getAdtOpt p qn = panic "Adt provider in lowering"
-
-instance EffectProvider LoweringStateProvider where
-    getEffect p qn = panic "Effect provider in lowering"
-    getEffectOpt p qn = panic "Effect provider in lowering"
-
-instance RegisteredInstanceProvider LoweringStateProvider where
-    getRegisteredInstance p key = panic "Instance provider in lowering"
-    getRegisteredInstanceOpt p key = panic "Instance provider in lowering"
-
-lowerFunction :: StateProviderInstance LoweringStateProvider -> HF.Function HT.Type -> (StateProviderInstance LoweringStateProvider, MF.Function)
-lowerFunction state hir_function = do
-    println "Lowering hir_function {}" % hir_function.name
-    (state, mir_function, functions, records, adts) <- L.lowerFunction state hir_function.name hir_function
-    (state, mir_function)
-
-lowerRecord :: StateProviderInstance LoweringStateProvider -> HD.Record -> (StateProviderInstance LoweringStateProvider, MD.Record)
-lowerRecord state hir_record = do
-    (state, mir_record, _, _) <- L.lowerRecord state hir_record.name hir_record
-    (state, mir_record)
 
 main = do
     with { getConfig = \_ -> getDefaultConfig } do
         functions :: [HF.Function HT.Type] <- loadCache getHIRBackendFunctionCachePath
         records :: [HD.Record] <- loadCache getHIRBackendRecordCachePath
-        println "MIR record count {}" % getLength records
-        record_map <- List.fold Map.empty records (\record_map, r -> Map.put record_map r.name r)
-        state <- createStateProvider (LoweringStateProvider record_map)
-        (state, lowered_fns) <- List.mapS state functions lowerFunction
-        (state, lowered_records) <- List.mapS state records lowerRecord
-        mir_program <- createProgram
-        mir_program <- List.fold mir_program lowered_fns (\mir_program, fn -> addFunction mir_program fn.id fn)
-        mir_program <- List.fold mir_program lowered_records (\mir_program, r -> addRecord mir_program r.id r)
+        adts :: [HD.AlgebraicDataType] <- loadCache getHIRBackendAdtCachePath
+        mir_program <- process functions records adts
         updateCache getMIRBackendCachePath [mir_program]
         ()

@@ -268,16 +268,16 @@ lowerRecord state qn record = do
         (context, MD.RecordField ("field{}" % index) index mir_type False))
     (context.state, MD.Record (lowerFullyQualifiedName qn) fields external_record_info [] [], context.adts, context.records)
 
-lowerAdt a :: (StateProvider a) => a -> FQ.FullyQualifiedName -> HD.AlgebraicDataType -> (a, MD.AlgebraicDataType, [MI.Identity])
+lowerAdt a :: (StateProvider a) => a -> FQ.FullyQualifiedName -> HD.AlgebraicDataType -> (a, MD.AlgebraicDataType)
 lowerAdt state qn adt = do
     trace2 "Lowering adt {}" % qn
     context <- createContext state
-    (anonymous_records, variants) <- List.mapSE [] adt.variants (\anonymous_records, index, HD.Variant name _ items -> do
-        anonymous_record <- FQ.Adt name items
-        mir_id <- lowerFullyQualifiedName anonymous_record
-        anonymous_records <- List.push anonymous_records mir_id
+    variants <- List.mapE adt.variants (\index, HD.Variant name _ items -> do
+        mir_id <- case atIndex items 0 of
+            HT.Named variant_record _ -> lowerFullyQualifiedName variant_record
+            t -> panic "Unexpected variant item {} in MIR lowerAdt" % t
         name <- case name of
             FQ.FullPathWithVariant m n v -> SS.get v
             _ -> "variant_{}" % index
-        (anonymous_records, MD.Variant name (MT.Record mir_id)))
-    (context.state, MD.AlgebraicDataType (lowerFullyQualifiedName qn) variants [] [], anonymous_records)
+        (MD.Variant name (MT.Record mir_id)))
+    (context.state, MD.AlgebraicDataType (lowerFullyQualifiedName qn) variants [] [])

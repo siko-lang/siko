@@ -1,70 +1,71 @@
-stage0: bootstrap/source.rs
-	@rustc bootstrap/source.rs -O -o stage0
+export PATH := $(PWD)/bin:$(PATH)
 
-stage1: stage0 $(shell find src -type f)
-	@./stage0 build ./src ./std -v -o ./stage1
+bin:
+	@mkdir -p bin
 
-stage2: stage1 $(shell find src -type f)
-	@./stage1 build ./src ./std -v -o ./stage2
+stage0: bootstrap/source.rs bin
+	@rustc bootstrap/source.rs -O -o bin/stage0
 
-siko: stage0 $(shell find incremental -type f)
-	@./stage0 build ./incremental/src ./std -v -o ./siko
+stage1: bin/stage0 $(shell find src -type f)
+	@stage0 build ./src ./std -v -o bin/stage1
 
-test: stage1 testrunner
-	@./testrunner stage1
+stage2: bin/stage1 $(shell find src -type f)
+	@stage1 build ./src ./std -v -o bin/stage2
 
-testrunner: stage0 $(shell find test_runner -type f)
-	@./stage0 build ./test_runner ./std -o ./testrunner
+siko: bin/stage0 $(shell find incremental -type f)
+	@stage0 build ./incremental/src ./std -v -o bin/siko
 
-altfmt: stage0 $(shell find experimental/alternative_syntax -type f)
-	@./stage0 build experimental/alternative_syntax ./std -v -o alt
+test: bin/stage1 bin/testrunner
+	@testrunner stage1
 
-parser2: stage1 $(shell find multistage/Common multistage/Parser -type f)
+testrunner: bin/stage0 $(shell find test_runner -type f)
+	@stage0 build ./test_runner ./std -o bin/testrunner
+
+parser: bin/stage1 $(shell find multistage/Common multistage/Parser -type f)
 	@echo "M: Parser"
-	@./stage1 build multistage/Parser ./std -o parser2
+	@stage1 build multistage/Parser ./std -o bin/multi_parser
 
-nameresolver2: stage1 $(shell find multistage/Common multistage/NameResolver -type f)
+nameresolver: bin/stage1 $(shell find multistage/Common multistage/NameResolver -type f)
 	@echo "M: NameResolver"
-	@./stage1 build multistage/NameResolver ./std -o nameresolver2
+	@stage1 build multistage/NameResolver ./std -o bin/multi_nameresolver
 
-typechecker2: stage1 $(shell find multistage/Common multistage/Typechecker -type f)
+typechecker: bin/stage1 $(shell find multistage/Common multistage/Typechecker -type f)
 	@echo "M: Typechecker"
-	@./stage1 build multistage/Typechecker ./std -o typechecker2
+	@stage1 build multistage/Typechecker ./std -o bin/multi_typechecker
 
-hirbackend2: stage1 $(shell find multistage/Common multistage/HIRBackend -type f)
+hirbackend: bin/stage1 $(shell find multistage/Common multistage/HIRBackend -type f)
 	@echo "M: HIRBackend"
-	@./stage1 build multistage/HIRBackend ./std -o hirbackend2
+	@stage1 build multistage/HIRBackend ./std -o bin/multi_hirbackend
 
-mirlowering2: stage1 $(shell find multistage/Common multistage/MIRLowering -type f)
+mirlowering: bin/stage1 $(shell find multistage/Common multistage/MIRLowering -type f)
 	@echo "M: MIRLowering"
-	@./stage1 build multistage/MIRLowering ./std -o mirlowering2
+	@stage1 build multistage/MIRLowering ./std -o bin/multi_mirlowering
 
-mirbackend2: stage1 $(shell find multistage/Common multistage/MIRBackend -type f)
+mirbackend: bin/stage1 $(shell find multistage/Common multistage/MIRBackend -type f)
 	@echo "M: MIRBackend"
-	@./stage1 build multistage/MIRBackend ./std -o mirbackend2
+	@stage1 build multistage/MIRBackend ./std -o bin/multi_mirbackend
 
-transpiler2: stage1 $(shell find multistage/Common multistage/Transpiler -type f)
+transpiler: bin/stage1 $(shell find multistage/Common multistage/Transpiler -type f)
 	@echo "M: Transpiler"
-	@./stage1 build multistage/Transpiler ./std -o transpiler2
+	@stage1 build multistage/Transpiler ./std -o bin/multi_transpiler
 
-multistage: parser2 nameresolver2 typechecker2 hirbackend2 mirlowering2 mirbackend2 transpiler2
+merged: bin/stage1 $(shell find multistage/Common multistage/Merged -type f)
+	@stage1 build multistage/Merged ./std -o bin/merged
+
+multistage: bin/multi_parser bin/multi_nameresolver bin/multi_typechecker bin/multi_hirbackend bin/multi_mirlowering bin/multi_mirbackend bin/multi_transpiler
 
 multistage_clean:
-	@rm -rf parser2 nameresolver2 typechecker2 hirbackend2 mirlowering2 mirbackend2 transpiler2
+	@rm -rf bin/multi_*
 
 run_multistage: multistage
 	@rm -rf cache
-	./parser2 build multistage_test
-	./nameresolver2
-	./typechecker2
-	./hirbackend2
-	./mirlowering2
-	./mirbackend2
-	./transpiler2
+	multi_parser build multistage_test
+	multi_nameresolver
+	multi_typechecker
+	multi_hirbackend
+	multi_mirlowering
+	multi_mirbackend
+	multi_transpiler
 
 clean:
-	@rm -f stage0
-	@rm -f stage1
-	@rm -f stage2
-	@rm -f siko
-	@rm -rf testrunner
+	@rm -rf bin

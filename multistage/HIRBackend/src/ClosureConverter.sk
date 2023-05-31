@@ -1,0 +1,342 @@
+module Siko.HIR.Backend.ClosureConverter where
+
+import Siko.Constants
+import Siko.Format
+import Siko.HIR.Backend.StateProvider
+import Siko.HIR.Backend.Traversal
+import Siko.HIR.Closure
+import Siko.HIR.Data as D
+import Siko.HIR.Expr as E
+import Siko.HIR.ExprIdGenerator
+import Siko.HIR.FullyQualifiedName as FQ
+import Siko.HIR.Function as F
+import Siko.HIR.Pattern as P
+import Siko.HIR.PatternIdGenerator
+import Siko.HIR.Type as T
+import Siko.HIR.TypeFormatter as TF
+import Siko.Query.Lookup as QL
+import Siko.Syntax.Location
+import Siko.Util.SharedString as SS
+
+data ClosureContext a = { state :: a,
+                          closure_names :: [FQ.FullyQualifiedName],
+                          closure_instances :: [ClosureInstance]
+                        }
+
+data Context a = { closure_context :: ClosureContext a,
+                   expr_id_gen :: ExprIdGenerator,
+                   pattern_id_gen :: PatternIdGenerator
+                 }
+
+createClosureContext a :: a -> ClosureContext a
+createClosureContext state = ClosureContext state [] []
+
+getExpr a :: Context a -> (E.ExprId -> E.Expr T.Type) -> (Context a, E.Expr T.Type)
+getExpr context gen = do
+    (context, id) <- getNextExprId context
+    expr <- gen id
+    (context, expr)
+
+getNextExprId a :: Context a -> (Context a, E.ExprId)
+getNextExprId context = do
+    (expr_id_gen, id) <- getNewExprId context.expr_id_gen
+    (context { expr_id_gen = expr_id_gen }, id)
+
+getNextPatternId a :: Context a -> (Context a, P.PatternId)
+getNextPatternId context = do
+    (pattern_id_gen, id) <- getNewPatternId context.pattern_id_gen
+    (context { pattern_id_gen = pattern_id_gen }, id)
+
+getClosureName a :: ClosureContext a -> T.Type -> (ClosureContext a, FQ.FullyQualifiedName)
+getClosureName context closure_type = do
+    closure_name <- FQ.ClosureName closure_type
+    context <- context { closure_names = List.push context.closure_names closure_name }
+    (context, closure_name)
+
+getClosureNameC a :: Context a -> T.Type -> (Context a, FQ.FullyQualifiedName)
+getClosureNameC context closure_type = do
+    (closure_context, closure_name) <- getClosureName context.closure_context closure_type
+    context <- context { closure_context = closure_context }
+    (context, closure_name)
+
+processDynamicFunctionCall a :: (StateProvider a) =>
+                                Context a ->
+                                T.Type ->
+                                [E.Expr T.Type] ->
+                                E.Expr T.Type ->
+                                Location -> (Context a, [E.Expr T.Type])
+processDynamicFunctionCall context receiver_type args receiver location = do
+    loop (context, receiver_type, args, receiver, calls) <- (context, receiver_type, args, receiver, []) do
+        case pop args of
+            Some (arg, rest) -> do
+                (context, closure_name) <- getClosureNameC context receiver_type
+                result_type <- T.getResultType receiver_type 1
+                (context, pat_id) <- getNextPatternId context
+                (context, pat2_id) <- getNextPatternId context
+                bind_ref <- P.BindRef (SS.create "dyn_var") pat_id
+                bind_pattern <- P.Binding bind_ref
+                bind_pattern <- P.Pattern bind_pattern pat2_id receiver_type location
+                call <- E.StaticFunctionCall closure_name [receiver, arg]
+                (context, call_expr) <- getExpr context (\id -> E.Expr call id result_type location)
+                decl <- E.Bind bind_pattern call_expr
+                (context, decl_expr) <- getExpr context (\id -> E.Expr decl id (T.Tuple []) location)
+                receiver <- E.ValueRef bind_ref
+                (context, receiver_expr) <- getExpr context (\id -> E.Expr receiver id result_type location)
+                calls <- push calls decl_expr
+                (context, result_type, rest, receiver_expr, calls)
+            None -> do
+                calls <- push calls receiver
+                break (context, calls)
+
+processStaticFunctionCall a :: (StateProvider a) =>
+                               Context a ->
+                               [E.Expr T.Type] ->
+                               T.Type ->
+                               FQ.FullyQualifiedName ->
+                               Int ->
+                               Location -> (Context a, E.Expr T.Type)
+processStaticFunctionCall context args function_type qn arg_count location = do
+    arg_types <- T.getArgsLimited function_type (getLength args)
+    current_arg_count <- getLength args
+    result_type <- T.getResultType function_type current_arg_count
+    if arg_count == current_arg_count
+    then do
+        (context, call_expr) <- getExpr context (\id -> E.Expr (E.StaticFunctionCall qn args) id result_type location)
+        (context, call_expr)
+    else if arg_count > current_arg_count // partial application
+        then do
+            diff <- arg_count - current_arg_count
+            closures <- loop (closure_type, arg_types, closures) <- (result_type, arg_types, []) do
+                if getLength closures < diff
+                then do
+                    closures <- push closures (ClosureType closure_type arg_types)
+                    first_arg <- T.getArgsLimited closure_type 1
+                    closure_type <- T.getResultType closure_type 1
+                    (closure_type, arg_types + first_arg, closures)
+                else break closures
+            (context, qn) <- loop (context, closures, next, qn) <- (context, closures, List.getLength closures, qn) do
+                next <- next - 1
+                if next == -1
+                then break (context, qn)
+                else do
+                    closure <- List.atIndex closures next
+                    (context, closure_name) <- getClosureNameC context closure.closure_type
+                    closure_instance <- ClosureInstance closure_name closure.arg_types qn
+                    closure_context <- context.closure_context
+                    closure_context <- closure_context { closure_instances = List.push closure_context.closure_instances closure_instance }
+                    context <- context { closure_context = closure_context }
+                    next_fn_qn <- FQ.ClosureInstance closure_instance
+                    (context, closures, next, next_fn_qn)
+            (context, call_expr) <- getExpr context (\id -> E.Expr (E.StaticFunctionCall qn args) id result_type location)
+            (context, call_expr)
+        else do
+            (static_args, dynamic_args) <- List.split args arg_count
+            receiver_type <- T.getResultType function_type (getLength static_args)
+            static_call <- E.StaticFunctionCall qn static_args
+            (context, static_call_expr) <- getExpr context (\id -> E.Expr static_call id receiver_type location)
+            (context, pat_id) <- getNextPatternId context
+            (context, pat2_id) <- getNextPatternId context
+            bind_ref <- P.BindRef (SS.create "dyn_var") pat_id
+            bind_pattern <- P.Binding bind_ref
+            bind_pattern <- P.Pattern bind_pattern pat2_id receiver_type location
+            decl <- E.Bind bind_pattern static_call_expr
+            (context, decl_expr) <- getExpr context (\id -> E.Expr decl id (T.Tuple []) location)
+            var_ref <- E.ValueRef bind_ref
+            (context, var_ref_expr) <- getExpr context (\id -> E.Expr var_ref id receiver_type location)
+            (context, calls) <- processDynamicFunctionCall context receiver_type dynamic_args var_ref_expr location
+            result_type <- T.getResultType function_type current_arg_count
+            (context, do_expr) <- getExpr context (\id -> E.Expr (E.Do ([decl_expr] + calls)) id result_type location)
+            (context, do_expr)
+
+processExpr a :: (StateProvider a) => Context a -> E.Expr T.Type -> (Context a, E.Expr T.Type)
+processExpr context expr = do
+    E.Expr s_expr id expr_type location <- expr
+    case s_expr of
+        E.StaticFunctionCall qn args -> do
+            fn <- QL.getTypedFunction context.closure_context.state qn
+            function_type <- Option.expect fn.type "function has no type"
+            processStaticFunctionCall context args function_type qn fn.arg_count location
+        E.ClassMemberCall _ _ -> panic "Class member call in closure converter/after monomorphization!"
+        E.DynamicFunctionCall receiver args -> do
+            E.Expr _ _ receiver_type _ <- receiver
+            (context, calls) <- processDynamicFunctionCall context receiver_type args receiver location
+            getExpr context (\id -> E.Expr (E.Do calls) id expr_type location)
+        s_expr -> (context, E.Expr s_expr id expr_type location)
+
+processPattern a :: (StateProvider a) => Context a -> P.Pattern T.Type -> (Context a, P.Pattern T.Type)
+processPattern context pattern = (context, pattern)
+
+typeConverter a :: (StateProvider a) => Context a -> T.Type -> (Context a, T.Type)
+typeConverter context type = do
+    (closure_context, type) <- convertType context.closure_context type
+    context <- context { closure_context = closure_context }
+    (context, type)
+
+convertType a :: (StateProvider a) => ClosureContext a -> T.Type -> (ClosureContext a, T.Type)
+convertType closure_context type = do
+    case type of
+        T.Function _ _ -> do
+            (closure_context, name) <- getClosureName closure_context type
+            (closure_context, T.Named name [])
+        T.Tuple items -> do
+            (closure_context, items) <- List.mapS closure_context items convertType
+            (closure_context, T.Tuple items)
+        T.Named name args -> do
+            (closure_context, args) <- List.mapS closure_context args convertType
+            (closure_context, T.Named name args)
+        t -> (closure_context, t)
+
+convertFnType a :: (StateProvider a) => ClosureContext a -> T.Type -> Int -> (ClosureContext a, T.Type)
+convertFnType closure_context fn_type arg_count = do
+    args <- T.getArgsLimited fn_type arg_count
+    (closure_context, args) <- List.mapS closure_context args convertType
+    result_type <- T.getResultType fn_type arg_count
+    (closure_context, result_type) <- convertType closure_context result_type
+    args <- List.reverse args
+    fn_type <- List.fold result_type args (\result, arg_type -> T.Function arg_type result)
+    (closure_context, fn_type)
+
+closureConvertFunction a :: (StateProvider a) => a -> F.Function T.Type -> (a,
+                                                                            F.Function T.Type,
+                                                                            [FQ.FullyQualifiedName],
+                                                                            [ClosureInstance])
+closureConvertFunction state fn = do
+    closure_context <- createClosureContext state
+    (fn, closure_context) <- case fn.kind of
+        F.Normal info -> do
+            context <- Context closure_context info.expr_id_gen info.pattern_id_gen
+            traversal_context <- createTraversalContext context processExpr processPattern
+            (context, body) <- traverse traversal_context info.body
+            traversal_context <- createTraversalContext context (\c, e -> (c, e)) (\c, p -> (c, p))
+            traversal_context <- setTypeConverterWithContext traversal_context typeConverter
+            (context, body) <- traverse traversal_context body
+            info <- info { body = body, expr_id_gen = context.expr_id_gen, pattern_id_gen = context.pattern_id_gen }
+            kind <- F.Normal info
+            (fn { kind = kind }, context.closure_context)
+        kind -> (fn { kind = kind }, closure_context)
+    fn_type <- Option.unwrap fn.type
+    (closure_context, fn_type) <- convertFnType closure_context fn_type fn.arg_count
+    fn <- fn { type = Some fn_type }
+    (state, fn, closure_context.closure_names |> List.sort |> List.dedup, closure_context.closure_instances |> List.sort |> List.dedup)
+
+getClosureType :: FQ.FullyQualifiedName -> T.Type
+getClosureType closure_name = case closure_name of
+    FQ.ClosureName type -> type
+    closure_name -> panic "Closure is not a closure in createClosureAdt {}" % closure_name
+
+createClosureAdt a :: (StateProvider a) => a -> [ClosureInstance] -> FQ.FullyQualifiedName -> (a, D.AlgebraicDataType)
+createClosureAdt state closure_instances closure_name = do
+    closure_context <- createClosureContext state
+    type_args <- []
+    type <- getClosureType closure_name
+    (closure_context, variants) <- List.mapS closure_context closure_instances (\closure_context, closure_instance -> do
+        (closure_context, arg_types) <- List.mapS closure_context closure_instance.arg_types convertType
+        variant <- D.Variant (FQ.ClosureInstance closure_instance) emptyLocation arg_types
+        (closure_context, variant))
+    (closure_context.state, D.AlgebraicDataType closure_name emptyLocation type_args variants (closureConvertType type))
+
+createVariantCtor a :: (StateProvider a) => a -> ClosureInstance -> Int -> (a, F.Function T.Type)
+createVariantCtor state closure_instance index = do
+    closure_context <- createClosureContext state
+    location <- emptyLocation
+    qn <- FQ.ClosureInstance closure_instance
+    arg_count <- List.getLength closure_instance.arg_types
+    kind <- F.VariantCtor index
+    adt_type <- T.Named closure_instance.closure_name []
+    arg_types <- List.reverse closure_instance.arg_types
+    (closure_context, arg_types) <- List.mapS closure_context arg_types convertType
+    type <- List.fold adt_type arg_types (\result, arg_type -> T.Function arg_type result)
+    attributes <- []
+    (closure_context.state, F.Function location qn arg_count kind (Some type) attributes)
+
+closureConvertType :: T.Type -> T.Type
+closureConvertType type = case type of
+    T.Function _ _ -> T.Named (FQ.ClosureName type) []
+    t -> t
+
+createClosureCall a :: (StateProvider a) => a -> [ClosureInstance] -> FQ.FullyQualifiedName -> (a, F.Function T.Type)
+createClosureCall state closure_instances closure_name = do
+    location <- emptyLocation
+    arg_count <- 2
+    type <- getClosureType closure_name
+    //println "createClosureCall {}" % TF.toString type
+    args <- T.getArgsLimited type 1
+    //println "args {}" % TF.toStringTypes args
+    closure_arg_type <- T.Named closure_name []
+    second_arg_type <- atIndex args 0
+    second_arg_type <- closureConvertType second_arg_type
+    closure_type <- closureConvertType type
+    result_type <- T.getResultType type 1
+    result_type <- closureConvertType result_type
+    //println "createClosureCall {}" % TF.toString type
+    //println "closure_arg_type {}" % TF.toString closure_arg_type
+    //println "second_arg_type {}" % TF.toString second_arg_type
+    //println "result_type {}" % TF.toString result_type
+    type <- T.Function closure_arg_type (T.Function second_arg_type result_type)
+    effects <- None
+    attributes <- []
+    closure_context <- createClosureContext state
+    context <- Context closure_context createExprIdGenerator createPatternIdGenerator
+    (context, body) <- if List.isEmpty closure_instances
+    then do
+        (context, expr_id) <- getNextExprId context
+        qn <- FQ.Effectless (FQ.FullPath getStdUtilBasicModuleName getUnreachableName) None
+        qn <- FQ.Monomorphized qn T.Never
+        (context, E.Expr (E.StaticFunctionCall qn []) expr_id result_type location)
+    else do
+        (context, arg0_expr_id) <- getNextExprId context
+        arg0_ref <- E.Expr (E.ArgRef 0) arg0_expr_id closure_arg_type location
+        (context, cases) <- List.foldE (context, []) closure_instances (\(context, cases), index, closure_instance -> do
+            (context, bind_pat_id) <- getNextPatternId context
+            (context, bind_pat2_id) <- getNextPatternId context
+            bind_ref <- P.BindRef (SS.create "variant_var") bind_pat_id
+            arg_types <- List.map closure_instance.arg_types closureConvertType
+            bind_pattern <- P.Pattern (P.Binding bind_ref) bind_pat2_id (T.Tuple arg_types) location
+            (context, args) <- List.mapSE context arg_types (\context, index, arg -> do
+                (context, expr_id) <- getNextExprId context
+                value_ref <- E.Expr (E.ValueRef bind_ref) expr_id (T.Tuple arg_types) location
+                (context, expr_id) <- getNextExprId context
+                (context, E.Expr (E.TupleFieldAccess index value_ref) expr_id arg location))
+            (context, arg1_expr_id) <- getNextExprId context
+            arg1_ref <- E.Expr (E.ArgRef 1) arg1_expr_id second_arg_type location
+            args <- List.push args arg1_ref
+            (context, variant_pat_id) <- getNextPatternId context
+            case_pattern <- P.Pattern (P.Variant closure_name index [bind_pattern]) variant_pat_id closure_type location
+            (context, fn_call_expr_id) <- getNextExprId context
+            case_body <- E.Expr (E.StaticFunctionCall closure_instance.successor args) fn_call_expr_id result_type location
+            c <- E.Case case_pattern case_body
+            (context, List.push cases c))
+        (context, caseof_expr_id) <- getNextExprId context
+        (context, E.Expr (E.CaseOf arg0_ref cases []) caseof_expr_id result_type location)
+    // tokens <- format body
+    // output <- formatToken tokens
+    // println "closure call fn {}" % closure_name
+    // println output
+    // println "------------"
+    kind <- F.Normal (F.NormalFunctionInfo body effects context.expr_id_gen context.pattern_id_gen None)
+    closure_call_fn <- F.Function location closure_name arg_count kind (Some type) attributes
+    (state, closure_call_fn)
+
+closureConvertRecord a :: (StateProvider a) => a -> D.Record -> (a,
+                                                                 D.Record,
+                                                                 [FQ.FullyQualifiedName],
+                                                                 [ClosureInstance])
+closureConvertRecord state record = do
+    closure_context <- createClosureContext state
+    (closure_context, fields) <- List.mapS closure_context record.fields (\context, D.RecordField name t -> do
+        (closure_context, t) <- convertType closure_context t
+        (closure_context, D.RecordField name t))
+    record <- record { fields = fields }
+    (closure_context.state, record, closure_context.closure_names |> List.sort |> List.dedup, closure_context.closure_instances |> List.sort |> List.dedup)
+
+closureConvertAdt a :: (StateProvider a) => a -> D.AlgebraicDataType -> (a,
+                                                                         D.AlgebraicDataType,
+                                                                         [FQ.FullyQualifiedName],
+                                                                         [ClosureInstance])
+closureConvertAdt state adt = do
+    closure_context <- createClosureContext state
+    (closure_context, variants) <- List.mapS closure_context adt.variants (\context, variant -> do
+        (closure_context, items) <- List.mapS closure_context variant.items convertType
+        (closure_context, variant { items = items }))
+    adt <- adt { variants = variants }
+    (closure_context.state, adt, closure_context.closure_names |> List.sort |> List.dedup, closure_context.closure_instances |> List.sort |> List.dedup)

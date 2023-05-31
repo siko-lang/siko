@@ -10,11 +10,10 @@ import Siko.Util.SharedString as SS
 import Map
 import Siko.Syntax.Location
 import Siko.Syntax.Ident
+import Siko.HIR.Backend.Util
 
 data Context = { tuples :: Map FQ.FullyQualifiedName HD.Record,
                  functions :: Map FQ.FullyQualifiedName (HF.Function HT.Type) }
-
-getFieldName index = "field{}" % index
 
 createContext :: Context
 createContext = Context Map.empty Map.empty
@@ -131,25 +130,11 @@ instance TupleTransformer HT.Type where
             (context, args) <- transform context args
             qn <- FQ.Tuple args
             record_type <- HT.Named qn []
-            fn_type <- loop (args, fn_type) <- (args, record_type) do
-                if List.isEmpty args
-                then break fn_type
-                else do
-                    (last, rest) <- List.removeLast args
-                    fn_type <- HT.Function last fn_type
-                    (rest, fn_type)
             case Map.get context.tuples qn of
                 Some _ -> (context, record_type)
                 None -> do
-                    fields <- List.mapE args (\index, ty -> HD.RecordField (SS.create (getFieldName index)) ty)
-                    //println "Tuple record qn {}" % qn
-                    record <- HD.Record qn emptyLocation [] fields False record_type False
+                    (record, function) <- createRecordFromTypes qn record_type args
                     tuples <- Map.put context.tuples qn record
-                    arg_count <- getLength fields
-                    kind <- HF.RecordCtor
-                    type <- Some fn_type
-                    //println "tuplerecord ctor {} : {}" % (qn, fn_type)
-                    function <- HF.Function emptyLocation qn arg_count kind type []
                     functions <- Map.put context.functions qn function
                     (context { tuples = tuples, functions = functions }, record_type)
 

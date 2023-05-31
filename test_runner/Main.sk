@@ -62,8 +62,10 @@ runTest :: String ->
            Statistics ->
            TestInfo ->
            Bool ->
-           Bool -> Statistics
-runTest binary total index stats test level2 dump = do
+           Bool ->
+           Bool ->
+           [String] -> Statistics
+runTest binary total index stats test level2 dump pfi mir_functions = do
     i1 <- now
     print "--- Running test {} - {}/{} --- " % (test.name, total, index + 1)
     createDir "test_runs/{}" % test.name
@@ -81,6 +83,10 @@ runTest binary total index stats test level2 dump = do
     cmd <- if dump
     then List.push cmd "-d"
     else cmd
+    cmd <- if pfi
+    then List.push cmd "-pfi"
+    else cmd
+    cmd <- List.fold cmd mir_functions (\cmd, f -> cmd + ["-m", f])
     //println "cmd {}" % cmd
     stats <- if runCommand cmd
     then do
@@ -102,7 +108,12 @@ main = do
     argparser <- createArgParser "Siko"
     traceLevel2Option <- "trace level 2"
     dumpOption <- "dump"
-    options <- [Simple (SimpleOption traceLevel2Option "-vv" "Enable level 2 traces" "Disabled"), Simple (SimpleOption dumpOption "-d" "Dump IR" "Disabled")]
+    pfiOption <- "print function info"
+    tracedMirFunctionOption <- "trace mir function"
+    options <- [Simple (SimpleOption traceLevel2Option "-vv" "Enable level 2 traces" "Disabled"),
+                Simple (SimpleOption dumpOption "-d" "Dump IR" "Disabled"),
+                Simple (SimpleOption pfiOption "-pfi" "Print function info" "Disabled"),
+                WithArg (WithArgOption tracedMirFunctionOption "-m" "Traced MIR function" "-")]
     stage0_cmd <- Command "stage0" options "Run tests with stage0"
     stage1_cmd <- Command "stage1" options "Run tests with stage1"
     stage2_cmd <- Command "stage2" options "Run tests with stage2"
@@ -115,6 +126,10 @@ main = do
         Ok result -> do
             level2 <- isValueSet result traceLevel2Option
             dump <- isValueSet result dumpOption
+            pfi <- isValueSet result pfiOption
+            mir_functions <- case getMultiValue result tracedMirFunctionOption of
+                Some values -> values
+                None -> []
             case result.command of
                 cmd -> do
                     cmd <- "./" + cmd
@@ -122,12 +137,14 @@ main = do
                     total <- List.getLength tests
                     tests <- tests |> List.sort
                     stats <- Statistics 0 0
-                    stats <- List.foldE stats tests (\stats, index, test -> runTest cmd
-                                                                                    total
-                                                                                    index
-                                                                                    stats
-                                                                                    test
-                                                                                    level2
-                                                                                    dump)
+                    stats <- List.foldE stats tests (\stats, index, test -> runTest cmd 
+                                                                                    total 
+                                                                                    index 
+                                                                                    stats 
+                                                                                    test 
+                                                                                    level2 
+                                                                                    dump 
+                                                                                    pfi 
+                                                                                    mir_functions)
                     println "Success {}, failure {}" % (stats.success, stats.failure)
         Err _ -> ()

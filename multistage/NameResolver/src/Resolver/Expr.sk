@@ -136,9 +136,25 @@ createCaseBody patterns location = do
 desugarFunctionArgs :: [SP.Pattern] -> SE.Expr -> SE.Expr
 desugarFunctionArgs patterns orig_body = do
     (pattern_tuple, location) <- processFunctionArgs patterns
-    case_body <- createCaseBody patterns location
-    c <- SE.Case pattern_tuple orig_body
-    SE.Expr (SE.CaseOf case_body [c]) location
+    if isSimple patterns
+    then do
+        arg_refs <- List.mapE patterns (\index, pattern -> do
+            arg <- SE.Expr (SE.ArgRef index) location
+            SE.Expr (SE.Bind pattern arg) location)
+        items <- push arg_refs orig_body
+        SE.Expr (SE.Do items) location
+    else do
+        case_body <- createCaseBody patterns location
+        c <- SE.Case pattern_tuple orig_body
+        SE.Expr (SE.CaseOf case_body [c]) location
+    where
+        isSimple :: [SP.Pattern] -> Bool
+        isSimple patterns = do
+            List.fold True patterns (\all_simple, p -> do
+                SP.Pattern s _ <- p
+                case s of
+                    SP.Binding _ -> all_simple
+                    _ -> False)
 
 desugarFunctionArgsMulti :: [([SP.Pattern], SE.Expr)] -> SE.Expr
 desugarFunctionArgsMulti arg_cases = do
