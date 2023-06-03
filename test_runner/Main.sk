@@ -117,10 +117,12 @@ main = do
     stage0_cmd <- Command "stage0" options "Run tests with stage0"
     stage1_cmd <- Command "stage1" options "Run tests with stage1"
     stage2_cmd <- Command "stage2" options "Run tests with stage2"
+    merged_cmd <- Command "merged" options "Run tests with merged"
     siko_cmd <- Command "siko" options "Run tests with siko"
     argparser <- addCommand argparser stage0_cmd
     argparser <- addCommand argparser stage1_cmd
     argparser <- addCommand argparser stage2_cmd
+    argparser <- addCommand argparser merged_cmd
     argparser <- addCommand argparser siko_cmd
     case processArgs argparser args of
         Ok result -> do
@@ -132,19 +134,18 @@ main = do
                 None -> []
             case result.command of
                 cmd -> do
-                    cmd <- "./" + cmd
                     tests <- collectTests "./test" "./test" result.unused []
                     total <- List.getLength tests
                     tests <- tests |> List.sort
                     stats <- Statistics 0 0
-                    stats <- List.foldE stats tests (\stats, index, test -> runTest cmd 
-                                                                                    total 
-                                                                                    index 
-                                                                                    stats 
-                                                                                    test 
-                                                                                    level2 
-                                                                                    dump 
-                                                                                    pfi 
+                    stats <- List.foldE stats tests (\stats, index, test -> runTest cmd
+                                                                                    total
+                                                                                    index
+                                                                                    stats
+                                                                                    test
+                                                                                    level2
+                                                                                    dump
+                                                                                    pfi
                                                                                     mir_functions)
                     println "Success {}, failure {}" % (stats.success, stats.failure)
         Err _ -> ()
