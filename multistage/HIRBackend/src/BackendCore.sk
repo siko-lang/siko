@@ -125,27 +125,55 @@ resolveEffects provider base_main_qn unreachable_qn = do
                             (Map.put resolved_fns last resolved_fn, queue)
                         _ -> panic "Incorrect qn in effect resolver queue {}" % last
 
+data MonomorphizationContext = { functions :: Map FQ.FullyQualifiedName (HF.Function HT.Type),
+                                 records :: Map FQ.FullyQualifiedName HD.Record,
+                                 adts :: Map FQ.FullyQualifiedName HD.AlgebraicDataType, }
+
 monomorphize provider base_main_qn = do
     empty_resolution_set <- HE.EffectResolutionSet Map.empty Map.empty
     empty_tuple_qn <- FQ.Tuple []
+    context <- MonomorphizationContext Map.empty Map.empty Map.empty
     monomorphized_main_qn <- FQ.Monomorphized (FQ.Effectless base_main_qn (Some empty_resolution_set)) (HT.Named empty_tuple_qn [])
-    loop (monomorphized_fns, queue) <- (Map.empty, [monomorphized_main_qn]) do
+    loop (context, queue) <- (context, [monomorphized_main_qn]) do
         if List.isEmpty queue
-        then break monomorphized_fns
+        then break context
         else do
             (last, queue) <- removeLast queue
-            case Map.get monomorphized_fns last of
-                Some _ -> (monomorphized_fns, queue)
-                None -> do
-                    case last of
-                        FQ.Monomorphized orig_qn ty -> do
+            case last of
+                FQ.Monomorphized orig_qn ty -> do
+                    //println "MONO fn {} " % last
+                    case Map.get context.functions last of
+                        Some _ -> (context, queue)
+                        None -> do
                             state <- createStateProvider provider
                             (state, monomorphized_fn, functions, records, adts, external_class_impls) <- MO.monomorphizeFunction state orig_qn ty
+                            queue <- queue + functions + records + adts
                             monomorphized_fn <- monomorphized_fn { name = last }
-                            monomorphized_fns <- Map.put monomorphized_fns last monomorphized_fn
-                            queue <- queue + functions
-                            (monomorphized_fns, queue)
-                        _ -> panic "Monomorphized qn is unexpected {}" % last
+                            functions <- Map.put context.functions last monomorphized_fn
+                            (context { functions = functions }, queue)
+                FQ.Record orig_qn args -> do
+                    //println "MONO record {} " % last
+                    case Map.get context.records last of
+                        Some _ -> (context, queue)
+                        None -> do
+                            state <- createStateProvider provider
+                            (state, record, records, adts) <- MO.monomorphizeRecord state orig_qn args
+                            queue <- queue + records + adts
+                            record <- record { name = last }
+                            records <- Map.put context.records last record
+                            (context { records = records }, queue)
+                FQ.Adt orig_qn args -> do
+                    //println "MONO adt {} " % last
+                    case Map.get context.adts last of
+                        Some _ -> (context, queue)
+                        None -> do
+                            state <- createStateProvider provider
+                            (state, adt, records, adts) <- MO.monomorphizeAdt state orig_qn args
+                            queue <- queue + records + adts
+                            adt <- adt { name = last }
+                            adts <- Map.put context.adts last adt
+                            (context { adts = adts }, queue)
+                _ -> panic "Monomorphized qn is unexpected {}" % last
 
 process :: [HF.Function HT.Type] -> [HF.Function ()] -> [HC.Class] -> [HC.Instance] -> [HE.Effect] -> [HD.AlgebraicDataType] -> [HD.Record] -> ([HF.Function HT.Type], [HD.Record], [HD.AlgebraicDataType])
 process typed_functions functions classes instances effects adts records = do
@@ -209,10 +237,8 @@ process typed_functions functions classes instances effects adts records = do
                                      adt_map
                                      effect_map
                                      Map.empty
-    println "Mono begin"
-    monomorphized_fns <- monomorphize provider base_main_qn
-    println "Mono end"
-    lowered_fns <- monomorphized_fns |> Map.iter |> Iterator.map (\(key, f) -> f) |> toList
-    lowered_records <- record_map |> Map.iter |> Iterator.map (\(key, f) -> f) |> toList
-    lowered_adts <- adt_map |> Map.iter |> Iterator.map (\(key, f) -> f) |> toList
+    monomorphize_context <- monomorphize provider base_main_qn
+    lowered_fns <- monomorphize_context.functions |> Map.iter |> Iterator.map (\(key, f) -> f) |> toList
+    lowered_records <- monomorphize_context.records |> Map.iter |> Iterator.map (\(key, f) -> f) |> toList
+    lowered_adts <- monomorphize_context.adts |> Map.iter |> Iterator.map (\(key, f) -> f) |> toList
     (lowered_fns, lowered_records, lowered_adts)

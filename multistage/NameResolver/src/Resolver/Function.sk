@@ -208,7 +208,7 @@ processSingleFunction state type_resolver unresolved_function_info effects type 
     (state, attributes) <- processAttributes state unresolved_function_info.function
     (state, effects, desugared_body) <- case function.body of
         Some body if List.isEmpty function.arguments -> (state, effects, Some body)
-        Some body -> (state, effects, Some (desugarFunctionArgs function.arguments body))
+        Some body -> (state, effects, Some (desugarFunctionArgs function.arguments body False))
         None -> do
             state <- function.arguments |> List.iter |> Iterator.fold (\state, p -> case p of
                 SP.Pattern binding location -> case binding of
@@ -323,18 +323,18 @@ processUnresolvedFunction state unresolved_function_info = do
                 None -> panic "interface function has no source! {}" % unresolved_function_info.name
             function <- HF.Function location unresolved_function_info.name arg_count (HF.Interface source) type attributes
             (state, [function], [])
-        1 -> processSingleFunction state 
-                                   type_resolver 
-                                   unresolved_function_info 
-                                   effects 
-                                   type 
-                                   expr_id_gen 
+        1 -> processSingleFunction state
+                                   type_resolver
+                                   unresolved_function_info
+                                   effects
+                                   type
+                                   expr_id_gen
                                    pattern_id_gen
-        _ -> processFunctionMulti state 
-                                  type_resolver 
-                                  unresolved_function_info 
-                                  effects 
-                                  type 
-                                  expr_id_gen 
+        _ -> processFunctionMulti state
+                                  type_resolver
+                                  unresolved_function_info
+                                  effects
+                                  type
+                                  expr_id_gen
                                   pattern_id_gen
     (state, functions, sub_unresolved_function_infos)

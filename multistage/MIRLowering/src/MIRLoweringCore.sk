@@ -62,7 +62,6 @@ instance RegisteredInstanceProvider LoweringStateProvider where
 
 lowerFunction :: StateProviderInstance LoweringStateProvider -> HF.Function HT.Type -> (StateProviderInstance LoweringStateProvider, MF.Function)
 lowerFunction state hir_function = do
-    println "Lowering hir_function {}" % hir_function.name
     (state, mir_function, functions, records, adts) <- L.lowerFunction state hir_function.name hir_function
     (state, mir_function)
 
@@ -76,8 +75,6 @@ lowerAdt state hir_adt = L.lowerAdt state hir_adt.name hir_adt
 
 process :: [HF.Function HT.Type] -> [HD.Record] -> [HD.AlgebraicDataType] -> Program
 process functions records adts = do
-        println "MIR record count {}" % getLength records
-        println "MIR adt count {}" % getLength adts
         record_map <- List.fold Map.empty records (\record_map, r -> Map.put record_map r.name r)
         adt_map <- List.fold Map.empty adts (\adt_map, a -> Map.put adt_map a.name a)
         state <- createStateProvider (LoweringStateProvider record_map adt_map)

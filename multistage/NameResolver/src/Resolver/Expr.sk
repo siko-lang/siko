@@ -133,10 +133,10 @@ createCaseBody patterns location = do
     arg_refs <- List.mapE patterns (\index, _ -> SE.Expr (SE.ArgRef index) location)
     SE.Expr (SE.Tuple arg_refs) location
 
-desugarFunctionArgs :: [SP.Pattern] -> SE.Expr -> SE.Expr
-desugarFunctionArgs patterns orig_body = do
+desugarFunctionArgs :: [SP.Pattern] -> SE.Expr -> Bool -> SE.Expr
+desugarFunctionArgs patterns orig_body from_lambda = do
     (pattern_tuple, location) <- processFunctionArgs patterns
-    if isSimple patterns
+    if isSimple patterns && not from_lambda
     then do
         arg_refs <- List.mapE patterns (\index, pattern -> do
             arg <- SE.Expr (SE.ArgRef index) location
@@ -325,7 +325,7 @@ shiftLambdaArgs context (HE.Expr full_body full_body_id _ full_body_location) of
                     expr <- HE.Expr case_of full_body_id () full_body_location
                     (context, expr)
                 _ -> panic "Body is not a tuple"
-        _ -> panic "Unexpected lambda body in shiftLambdaArgs"
+        e -> panic "Unexpected lambda body in shiftLambdaArgs {}" % e
     where
         createExtraArg a :: (ResolverState a) => Location -> Context a -> Int -> (Context a, (HE.Expr (), HP.Pattern ()))
         createExtraArg location context index = do
@@ -416,7 +416,7 @@ processExpr a :: (ResolverState a) => Context a -> Environment -> SE.Expr -> (Co
 processExpr context env (SE.Expr expr location) = do
     (context, env, hir_expr) <- case expr of
         SE.Lambda arg_patterns lambda_body -> do
-            desugared_body <- desugarFunctionArgs arg_patterns lambda_body
+            desugared_body <- desugarFunctionArgs arg_patterns lambda_body True
             (context, lambda_id, lambda_name) <- createLambdaName context
             lambda_env <- createEnvironment lambda_id (Some env)
             parent_lambda_helper <- context.lambda_helper
