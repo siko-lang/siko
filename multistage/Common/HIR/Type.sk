@@ -11,7 +11,8 @@ module Siko.HIR.Type(Type(..),
                      removeOwnership,
                      traverse,
                      fixedType,
-                     getNameFromType) where
+                     getNameFromType,
+                     collectFixedTypeArgs) where
 
 import Json
 import Json.Serialize
@@ -65,6 +66,21 @@ collectVars type = case type of
     Owner t -> collectVars t
     Tuple args -> List.fold [] args (\vars, arg -> do
             vs <- collectVars arg
+            vars + vs)
+
+collectFixedTypeArgs :: Type -> [Type]
+collectFixedTypeArgs type = case type of
+    Var var constraints -> []
+    FixedTypeArg _ constraints -> [type]
+    Named _ args -> List.fold [] args (\vars, arg -> do
+            vs <- collectFixedTypeArgs arg
+            vars + vs)
+    Function from to -> collectFixedTypeArgs from + collectFixedTypeArgs to
+    Never -> []
+    Ref _ t -> collectFixedTypeArgs t
+    Owner t -> collectFixedTypeArgs t
+    Tuple args -> List.fold [] args (\vars, arg -> do
+            vs <- collectFixedTypeArgs arg
             vars + vs)
 
 getArgs :: Type -> [Type]

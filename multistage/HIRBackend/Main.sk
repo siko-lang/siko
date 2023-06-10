@@ -7,28 +7,32 @@ import Siko.HIR.Effect as HE
 import Siko.HIR.Function as HF
 import Siko.HIR.Type as HT
 import Siko.Cache
+import Siko.Config
 import Siko.Resolver.Cache
 import Siko.HIR.Backend.Cache
 import Siko.Typechecker.Cache
 
 main = do
-    typed_functions :: [HF.Function HT.Type] <- loadCache getTypedFunctionCachePath
-    functions :: [HF.Function ()] <- loadCache getResolvedFunctionCachePath
-    classes :: [HC.Class] <- loadCache getResolvedClassCachePath
-    instances :: [HC.Instance] <- loadCache getResolvedInstanceCachePath
-    effects :: [HE.Effect] <- loadCache getResolvedEffectCachePath
-    adts :: [HD.AlgebraicDataType] <- loadCache getResolvedAdtCachePath
-    records :: [HD.Record] <- loadCache getResolvedRecordCachePath
-    (lowered_fns, lowered_records, lowered_adts) <- process typed_functions functions classes instances effects adts records
-    updateCache getHIRBackendFunctionCachePath lowered_fns
-    updateCache getHIRBackendRecordCachePath lowered_records
-    updateCache getHIRBackendAdtCachePath lowered_adts
-    // List.forEach lowered_fns (\fn -> case fn.kind of
-    //     HF.Normal info -> do
-    //         tokens <- format info.body
-    //         formatted_body <- formatToken tokens
-    //         formatted_body_filename <- "{}/{}.sk" % (getHIRBackendFunctionCachePath, fn.name)
-    //         println "file [{}]" % formatted_body_filename
-    //         writeTextFile formatted_body_filename formatted_body
-    //     _ -> ())
-    ()
+    config <- getDefaultConfig
+    //config <- config { trace_level = Level2 }
+    with {getConfig = \_ -> config} do
+        typed_functions :: [HF.Function HT.Type] <- loadCache getTypedFunctionCachePath
+        functions :: [HF.Function ()] <- loadCache getResolvedFunctionCachePath
+        classes :: [HC.Class] <- loadCache getResolvedClassCachePath
+        instances :: [HC.Instance] <- loadCache getResolvedInstanceCachePath
+        effects :: [HE.Effect] <- loadCache getResolvedEffectCachePath
+        adts :: [HD.AlgebraicDataType] <- loadCache getResolvedAdtCachePath
+        records :: [HD.Record] <- loadCache getResolvedRecordCachePath
+        (lowered_fns, lowered_records, lowered_adts) <- process typed_functions functions classes instances effects adts records
+        updateCache getHIRBackendFunctionCachePath lowered_fns
+        updateCache getHIRBackendRecordCachePath lowered_records
+        updateCache getHIRBackendAdtCachePath lowered_adts
+        // List.forEach lowered_fns (\fn -> case fn.kind of
+        //     HF.Normal info -> do
+        //         tokens <- format info.body
+        //         formatted_body <- formatToken tokens
+        //         formatted_body_filename <- "{}/{}.sk" % (getHIRBackendFunctionCachePath, fn.name)
+        //         println "file [{}]" % formatted_body_filename
+        //         writeTextFile formatted_body_filename formatted_body
+        //     _ -> ())
+        ()

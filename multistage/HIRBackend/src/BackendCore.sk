@@ -2,6 +2,7 @@ module Siko.HIR.Backend.Core where
 
 import IO
 import Map
+import Siko.Trace
 import Siko.Constants
 import Siko.HIR.Backend.CaseTransformer
 import Siko.HIR.Backend.EffectResolver as ER
@@ -141,7 +142,7 @@ monomorphize provider base_main_qn = do
             (last, queue) <- removeLast queue
             case last of
                 FQ.Monomorphized orig_qn ty -> do
-                    //println "MONO fn {} " % last
+                    trace "MONO fn {} " % last
                     case Map.get context.functions last of
                         Some _ -> (context, queue)
                         None -> do
@@ -152,7 +153,7 @@ monomorphize provider base_main_qn = do
                             functions <- Map.put context.functions last monomorphized_fn
                             (context { functions = functions }, queue)
                 FQ.Record orig_qn args -> do
-                    //println "MONO record {} " % last
+                    trace "MONO record {} " % last
                     case Map.get context.records last of
                         Some _ -> (context, queue)
                         None -> do
@@ -163,7 +164,7 @@ monomorphize provider base_main_qn = do
                             records <- Map.put context.records last record
                             (context { records = records }, queue)
                 FQ.Adt orig_qn args -> do
-                    //println "MONO adt {} " % last
+                    trace "MONO adt {} " % last
                     case Map.get context.adts last of
                         Some _ -> (context, queue)
                         None -> do

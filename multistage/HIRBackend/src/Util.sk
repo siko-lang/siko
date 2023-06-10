@@ -25,3 +25,20 @@ createRecordFromTypes qn record_type types = do
     type <- Some fn_type
     function <- HF.Function emptyLocation qn arg_count kind type []
     (record, function)
+
+createVariantRecordFromTypes :: FQ.FullyQualifiedName -> Int -> HT.Type -> HT.Type -> [HT.Type] -> (HD.Record, HF.Function HT.Type)
+createVariantRecordFromTypes qn index record_type adt_type types = do
+    fn_type <- loop (types, fn_type) <- (types, adt_type) do
+        if List.isEmpty types
+        then break fn_type
+        else do
+            (last, rest) <- List.removeLast types
+            fn_type <- HT.Function last fn_type
+            (rest, fn_type)
+    fields <- List.mapE types (\index, ty -> HD.RecordField (SS.create (getFieldName index)) ty)
+    record <- HD.Record qn emptyLocation [] fields False record_type False
+    arg_count <- getLength fields
+    kind <- HF.VariantCtor index
+    type <- Some fn_type
+    function <- HF.Function emptyLocation qn arg_count kind type []
+    (record, function)

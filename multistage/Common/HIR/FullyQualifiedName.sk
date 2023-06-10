@@ -8,6 +8,7 @@ import Siko.HIR.Function as F
 import Siko.HIR.Type as T
 import Siko.HIR.TypeFormatter as TF
 import Siko.Syntax.Location
+import Hash
 import Siko.Util.SharedString as SS
 
 data FullyQualifiedName = FullPath SS.SharedString SS.SharedString
@@ -24,7 +25,6 @@ data FullyQualifiedName = FullPath SS.SharedString SS.SharedString
                         | Tuple [T.Type]
                         | Adt FullyQualifiedName [T.Type]
                         | Record FullyQualifiedName [T.Type]
-                        | VariantRecord FullyQualifiedName [T.Type]
                         deriving (PartialEq, Eq, PartialOrd, Ord, ToJson, FromJson)
 
 instance Show FullyQualifiedName where
@@ -43,7 +43,6 @@ instance Show FullyQualifiedName where
         ClosureInstance i -> "ClosureInstance({})" % i
         ClosureName t -> "ClosureName({})" % t
         Monomorphized qn t -> "Mono({}, {})" % (qn, t)
-        VariantRecord qn types -> "Variant({}, {})" % (qn, types)
 
 getResolvableName :: FullyQualifiedName -> SS.SharedString
 getResolvableName f = do
@@ -62,7 +61,6 @@ getResolvableName f = do
         Tuple args -> "Tuple({})" % TF.toStringTypes args
         Adt name args -> "Adt({}, {})" % (name, TF.toStringTypes args)
         Record name args -> "Record({}, {})" % (name, TF.toStringTypes args)
-        VariantRecord name args -> "Variant({}, {})" % (name, TF.toStringTypes args)
     SS.create s
 
 getShortName :: FullyQualifiedName -> SS.SharedString
@@ -81,7 +79,6 @@ getShortName f = case f of
     Tuple args -> SS.create "Tuple_{}" % (getLength args)
     Adt name args -> getShortName name
     Record name args -> getShortName name
-    VariantRecord name args -> getShortName name
 
 getInternalModule :: SS.SharedString
 getInternalModule = SS.create "siko"
@@ -102,4 +99,10 @@ getModuleName f = case f of
     Tuple args -> getInternalModule
     Adt name args -> getModuleName name
     Record name args -> getModuleName name
-    VariantRecord name args -> getModuleName name
+
+getHashed :: FullyQualifiedName -> String
+getHashed qn = do
+    hasher <- Hash.create
+    hasher <- Hash.hash hasher (show qn)
+    h <- abs (Hash.finish hasher)
+    "{}_{}" % (getShortName qn, h)
