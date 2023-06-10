@@ -47,6 +47,15 @@ bin/multi_transpiler: bin/stage1 $(shell find multistage/Common multistage/Trans
 bin/merged: bin/stage1 $(shell find multistage/Common multistage/Merged -type f)
 	@stage1 build multistage/Merged ./std -o bin/merged
 
+.PHONY: stage0
+stage0: bin/stage0
+
+.PHONY: stage1
+stage1: bin/stage1
+
+.PHONY: stage2
+stage2: bin/stage2
+
 .PHONY: multistage
 multistage: bin/multi_parser bin/multi_nameresolver bin/multi_typechecker bin/multi_hirbackend bin/multi_mirlowering bin/multi_mirbackend bin/multi_transpiler
 
