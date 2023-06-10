@@ -56,6 +56,9 @@ stage1: bin/stage1
 .PHONY: stage2
 stage2: bin/stage2
 
+.PHONY: testrunner
+testrunner: bin/testrunner
+
 .PHONY: multistage
 multistage: bin/multi_parser bin/multi_nameresolver bin/multi_typechecker bin/multi_hirbackend bin/multi_mirlowering bin/multi_mirbackend bin/multi_transpiler
 
