@@ -174,8 +174,8 @@ main = do
                     typed_functions <- typecheck functions  classes  instances  effects adts  records
                     config <- parseConfig result
                     with { getConfig = \_ -> getDefaultConfig } do
-                        (functions, records, adts) <- HB.process typed_functions functions  classes  instances  effects adts  records
-                        mir_program <- HL.process functions records adts
+                        (functions, m_records, m_adts) <- HB.process typed_functions functions  classes  instances  effects adts  records
+                        mir_program <- HL.process functions m_records m_adts records adts
                         lir_program <- MB.processProgram mir_program
                         trace "Transpiling.."
                         rust_output <- transpile lir_program

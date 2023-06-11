@@ -7,6 +7,7 @@ import Siko.HIR.Backend.TypeIsomorphism
 import Siko.HIR.Backend.Unification as U
 import Siko.HIR.Backend.Unification.Substitution as S
 import Siko.HIR.Backend.Unification.Util as UUtil
+import Siko.HIR.Backend.Typechecker.Error
 import Siko.HIR.Class as C
 import Siko.HIR.FullyQualifiedName as FQ
 import Siko.HIR.Function as F
@@ -48,3 +49,41 @@ instance S.Collectable ClassTypeInfo where
         collector <- S.collect collector class_type_info.arg_type
         collector <- S.collect collector class_type_info.associated_types
         S.collect collector class_type_info.members
+
+addMemberInfo :: ClassTypeInfo ->
+                 SS.SharedString ->
+                 T.Type ->
+                 Bool -> ClassTypeInfo
+addMemberInfo class_type_info name type has_default_impl = do
+    (members, _) <- Map.insert class_type_info.members name (ClassMemberInfo type has_default_impl)
+    class_type_info { members = members }
+
+createClassTypeInfo a :: (StateProvider a) => a -> C.Class -> (a, ClassTypeInfo)
+createClassTypeInfo state c = do
+    all_dependencies <- getAllDependencies state c.name
+    class_type_info <- ClassTypeInfo c.arg_type c.associated_types Map.empty all_dependencies
+    List.fold (state, class_type_info) c.members (\(state, class_type_info), qn -> do
+        member <- QL.getFunction state qn
+        short_name <- FQ.getShortName qn
+        (state, class_type_info) <- case member.type of
+            Some type -> do
+                class_type_info <- addMemberInfo class_type_info short_name type (F.isNormal member.kind)
+                (state, class_type_info)
+            None -> do
+                state <- addError state (ClassMemberWithoutType short_name member.location)
+                (state, class_type_info)
+        (state, class_type_info))
+
+getAllDependencies a :: (StateProvider a) => a -> FQ.FullyQualifiedName -> [FQ.FullyQualifiedName]
+getAllDependencies state class_name = do
+    c <- QL.getClass state class_name
+    deps <- List.fold c.dependencies c.dependencies (\deps, dep -> do
+        recursive_deps <- getAllDependencies state dep
+        deps + recursive_deps)
+    deps |> List.sort |> List.dedup
+
+createInstanceInfo :: C.Instance -> (IR.InstanceKey, IR.InstanceInfo)
+createInstanceInfo i = do
+    base_type <- IR.getBaseType i.type
+    class_name <- i.class_name
+    (IR.InstanceKey class_name base_type, IR.InstanceInfo i.type i.associated_types i.name i.location)

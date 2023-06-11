@@ -14,7 +14,9 @@ import Siko.HIR.Backend.Lowering as L
 import Map
 
 data LoweringStateProvider = { records :: Map FQ.FullyQualifiedName HD.Record,
-                               adts :: Map FQ.FullyQualifiedName HD.AlgebraicDataType,  }
+                               adts :: Map FQ.FullyQualifiedName HD.AlgebraicDataType,
+                               resolved_record_map :: Map FQ.FullyQualifiedName HD.Record,
+                               resolved_adt_map :: Map FQ.FullyQualifiedName HD.AlgebraicDataType, }
 
 instance ClassProvider LoweringStateProvider where
     getClass p qn = panic "Class provider in lowering"
@@ -45,10 +47,16 @@ instance RecordProvider LoweringStateProvider where
 
     getRecordOpt p qn = Map.get p.records qn
 
+    getResolvedRecordOpt p qn = Map.get p.resolved_record_map qn
+
 instance AdtProvider LoweringStateProvider where
     getAdt p qn = case Map.get p.adts qn of
         Some a -> a
         None -> panic "No adt found in lowering {}" % qn
+
+    getResolvedAdt p qn = case Map.get p.resolved_adt_map qn of
+        Some a -> a
+        None -> panic "No resolved adt found in lowering {}" % qn
 
     getAdtOpt p qn = Map.get p.adts qn
 
@@ -71,13 +79,16 @@ lowerRecord state hir_record = do
     (state, mir_record)
 
 lowerAdt :: StateProviderInstance LoweringStateProvider -> HD.AlgebraicDataType -> (StateProviderInstance LoweringStateProvider, MD.AlgebraicDataType)
-lowerAdt state hir_adt = L.lowerAdt state hir_adt.name hir_adt
+lowerAdt state hir_adt = do
+    L.lowerAdt state hir_adt.name hir_adt
 
-process :: [HF.Function HT.Type] -> [HD.Record] -> [HD.AlgebraicDataType] -> Program
-process functions records adts = do
+process :: [HF.Function HT.Type] -> [HD.Record] -> [HD.AlgebraicDataType] -> [HD.Record] -> [HD.AlgebraicDataType] -> Program
+process functions records adts resolved_records resolved_adts = do
         record_map <- List.fold Map.empty records (\record_map, r -> Map.put record_map r.name r)
         adt_map <- List.fold Map.empty adts (\adt_map, a -> Map.put adt_map a.name a)
-        state <- createStateProvider (LoweringStateProvider record_map adt_map)
+        resolved_record_map <- List.fold Map.empty resolved_records (\record_map, r -> Map.put record_map r.name r)
+        resolved_adt_map <- List.fold Map.empty resolved_adts (\adt_map, a -> Map.put adt_map a.name a)
+        state <- createStateProvider (LoweringStateProvider record_map adt_map resolved_record_map resolved_adt_map)
         (state, lowered_fns) <- List.mapS state functions lowerFunction
         (state, lowered_records) <- List.mapS state records lowerRecord
         (state, lowered_adts) <- List.mapS state adts lowerAdt

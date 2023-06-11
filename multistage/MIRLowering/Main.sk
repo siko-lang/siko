@@ -3,6 +3,7 @@ module Main where
 import Siko.Cache
 import Siko.Config
 import Siko.HIR.Backend.Cache
+import Siko.Resolver.Cache
 import Siko.MIR.Backend.Cache
 import Siko.HIR.Backend.Lowering.Core
 import Siko.HIR.Function as HF
@@ -16,6 +17,8 @@ main = do
         functions :: [HF.Function HT.Type] <- loadCache getHIRBackendFunctionCachePath
         records :: [HD.Record] <- loadCache getHIRBackendRecordCachePath
         adts :: [HD.AlgebraicDataType] <- loadCache getHIRBackendAdtCachePath
-        mir_program <- process functions records adts
+        resolved_records :: [HD.Record] <- loadCache getResolvedRecordCachePath
+        resolved_adts :: [HD.AlgebraicDataType] <- loadCache getResolvedAdtCachePath
+        mir_program <- process functions records adts resolved_records resolved_adts
         updateCache getMIRBackendCachePath [mir_program]
         ()

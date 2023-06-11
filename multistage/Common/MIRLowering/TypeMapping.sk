@@ -87,7 +87,7 @@ mapType context steps type = case type of
     HT.FixedTypeArg name _ -> do
         addVarPosition context (SS.get name) steps
     HT.Named qn args -> do
-        case QL.getRecordOpt context.state qn of
+        case QL.getResolvedRecordOpt context.state qn of
             Some record -> do
                 if record.external
                 then List.foldE context args (\context, index, arg -> do
@@ -103,7 +103,7 @@ mapType context steps type = case type of
                         steps <- push steps (MF.Field index)
                         mapType context steps field_type)
             None -> do
-                adt <- QL.getAdt context.state qn
+                adt <- QL.getResolvedAdt context.state qn
                 (state, adt) <- Result.unwrap (UD.instantiateAdt context.state adt type)
                 context <- context { state = state }
                 List.foldE context adt.variants (\context, index, v -> do

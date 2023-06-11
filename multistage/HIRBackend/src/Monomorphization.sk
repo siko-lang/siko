@@ -11,6 +11,7 @@ import Siko.HIR.Backend.Unification.Substitution as S
 import Siko.HIR.Backend.Unification.Util as UUtil
 import Siko.HIR.Data as D
 import Siko.HIR.Expr as E
+import Siko.HIR.Effect as Eff
 import Siko.HIR.ExprIdGenerator
 import Siko.HIR.FullyQualifiedName as FQ
 import Siko.HIR.Function as F
@@ -71,7 +72,6 @@ processExpr context expr = do
             (context, E.Expr (E.StaticFunctionCall monomorphized_qn args) id expr_type location)
         E.ClassMemberCall qn args -> do
             arg_types <- List.map args (\E.Expr _ _ t _ -> unpackType t)
-            qn <- addEffectless qn
             fn <- QL.getTypedFunction context.state qn
             fn_type <- Option.expect fn.type "function has no type"
             class_name <- case fn.kind of
@@ -107,7 +107,7 @@ processExpr context expr = do
                         Some selected_member_name -> selected_member_name
                         None -> qn
                     (context, function_type) <- monomorphizeType context function_type
-                    monomorphized_qn <- FQ.Monomorphized (addEffectless selected_member_name) function_type
+                    monomorphized_qn <- FQ.Monomorphized selected_member_name function_type
                     context <- context { functions = List.push context.functions monomorphized_qn }
                     (context, E.Expr (E.StaticFunctionCall monomorphized_qn args) id expr_type location)
                 None -> panic "class member {} not found" % member_name
