@@ -28,8 +28,12 @@ data Context a = { state :: a,
                    functions :: [FQ.FullyQualifiedName],
                    records :: [FQ.FullyQualifiedName],
                    adts :: [FQ.FullyQualifiedName],
-                   mapper :: UUtil.Mapper
+                   mapper :: UUtil.Mapper,
+                   external_class_impls :: [D.ExternalClassImplInfo],
                  }
+
+createContext a :: a -> UUtil.Mapper -> Context a
+createContext state mapper = Context state [] [] [] mapper []
 
 typeConverter a :: (StateProvider a) => S.Substitution -> Context a -> T.Type -> (Context a, T.Type)
 typeConverter sub context type = do
@@ -44,7 +48,7 @@ typeConverter sub context type = do
 addEffectless :: FQ.FullyQualifiedName -> FQ.FullyQualifiedName
 addEffectless qn = case qn of
     FQ.Effectless _ _ -> qn
-    _ -> FQ.Effectless qn None
+    _ -> FQ.Effectless qn (Some (Eff.EffectResolutionSet Map.empty Map.empty))
 
 processExpr a :: (StateProvider a) => Context a -> E.Expr T.Type -> (Context a, E.Expr T.Type)
 processExpr context expr = do
@@ -72,6 +76,7 @@ processExpr context expr = do
             (context, E.Expr (E.StaticFunctionCall monomorphized_qn args) id expr_type location)
         E.ClassMemberCall qn args -> do
             arg_types <- List.map args (\E.Expr _ _ t _ -> unpackType t)
+            qn <- addEffectless qn
             fn <- QL.getTypedFunction context.state qn
             fn_type <- Option.expect fn.type "function has no type"
             class_name <- case fn.kind of
@@ -107,7 +112,7 @@ processExpr context expr = do
                         Some selected_member_name -> selected_member_name
                         None -> qn
                     (context, function_type) <- monomorphizeType context function_type
-                    monomorphized_qn <- FQ.Monomorphized selected_member_name function_type
+                    monomorphized_qn <- FQ.Monomorphized (addEffectless selected_member_name) function_type
                     context <- context { functions = List.push context.functions monomorphized_qn }
                     (context, E.Expr (E.StaticFunctionCall monomorphized_qn args) id expr_type location)
                 None -> panic "class member {} not found" % member_name
@@ -179,7 +184,9 @@ monomorphizeType context type = case type of
     T.Owner t -> do
         (context, t) <- monomorphizeType context t
         (context, T.Owner t)
-    T.Tuple args -> panic "Tuple found in monomorphizeation"
+    T.Tuple args -> do
+        (context, args) <- List.mapS context args monomorphizeType
+        (context, T.Tuple args)
 
 collectExternalClassConstraint :: T.Type -> [(FQ.FullyQualifiedName, T.Type)]
 collectExternalClassConstraint type = case type of
@@ -201,7 +208,7 @@ monomorphizeFunction a :: (StateProvider a) => a -> FQ.FullyQualifiedName -> T.T
                                                                                         [FQ.FullyQualifiedName],
                                                                                         [FQ.FullyQualifiedName],
                                                                                         [FQ.FullyQualifiedName],
-                                                                                        [(D.ExternalClassImpl, T.Type)])
+                                                                                        [D.ExternalClassImplInfo])
 monomorphizeFunction state orig_qn type = do
     //println "monomorphizeFunction {} with {}, {}" % (orig_qn, TF.toString type, type)
     fn <- QL.getTypedFunction state orig_qn
@@ -212,7 +219,7 @@ monomorphizeFunction state orig_qn type = do
     (mapper, state) <- UUtil.instantiateGenericMapper fn_type state
     mapper <- UUtil.skipNever mapper
     (mapper, fn_type) <- S.transform mapper fn_type UUtil.remapType
-    context <- Context state [] [] [] mapper
+    context <- createContext state mapper
     input_type <- unpackType type
     (context, sub) <- case U.unify context.state sub input_type fn_type of
         Ok (state, sub) -> (context { state = state }, sub)
@@ -228,13 +235,13 @@ monomorphizeFunction state orig_qn type = do
             info <- info { body = body }
             (context, F.Normal info, [])
         F.ExternInfo info -> do
-            external_class_impls <- collectExternalClassConstraint fn_type
+            external_class_impls <- collectExternalClassConstraint info.type_with_ownership
             external_class_impls <- external_class_impls |> List.sort |> List.dedup
             partial_eq <- FQ.FullPath getStdOpsModuleName getPartialEqClassName
             eq <- FQ.FullPath getStdOpsModuleName getEqClassName
             partial_ord <- FQ.FullPath getStdOpsModuleName getPartialOrdClassName
             ord <- FQ.FullPath getStdOpsModuleName getOrdClassName
-            (context, external_class_impls) <- List.fold (context, []) external_class_impls (\(context, external_class_impls), (class_name, type) -> do
+            context <- List.fold context external_class_impls (\context, (class_name, type) -> do
                 (context, type) <- typeConverter sub context type
                 impls <- case class_name of
                     c if c == partial_eq -> [D.PartialEqKind]
@@ -245,12 +252,13 @@ monomorphizeFunction state orig_qn type = do
                                       D.EqKind,
                                       D.PartialEqKind]
                     _ -> []
-                impls <- List.map impls (\impl -> (impl, type))
-                (context, external_class_impls + impls))
+                impls <- List.map impls (\impl -> D.ExternalClassImplInfo impl type)
+                external_class_impls <- context.external_class_impls + impls
+                (context { external_class_impls = external_class_impls }))
             (context, F.ExternInfo info, external_class_impls)
         kind -> (context, kind, [])
     fn <- fn { kind = kind }
-    (state, fn, context.functions, context.records, context.adts, external_class_impls)
+    (state, fn, context.functions, context.records, context.adts, context.external_class_impls)
 
 monomorphizeRecord a :: (StateProvider a) => a -> FQ.FullyQualifiedName -> [T.Type] -> (a,
                                                                                         D.Record,
@@ -262,7 +270,7 @@ monomorphizeRecord state qn args = do
         Ok ok -> ok
         Err _ -> panic "instantiateRecord failed with {} {}" % (qn, TF.toStringTypes args)
     (mapper, state) <- UUtil.initMapper [] 0 state
-    context <- Context state [] [] [] mapper
+    context <- createContext state mapper
     (context, fields) <- List.mapS context record.fields (\context, D.RecordField name t -> do
         (context, t) <- monomorphizeType context t
         (context, D.RecordField name t))
@@ -279,7 +287,7 @@ monomorphizeAdt state qn args = do
         Ok ok -> ok
         Err _ -> panic "instantiateAdt failed with {} {}" % (qn, TF.toStringTypes args)
     (mapper, state) <- UUtil.initMapper [] 0 state
-    context <- Context state [] [] [] mapper
+    context <- createContext state mapper
     (context, variants) <- List.mapS context adt.variants (\context, variant -> do
         (context, items) <- List.mapS context variant.items monomorphizeType
         (context, variant { items = items }))
@@ -296,7 +304,7 @@ getClassImpl state class_name qn fn_type arg_type = do
     (mapper, state) <- UUtil.instantiateGenericMapper fn_type state
     mapper <- UUtil.skipNever mapper
     (mapper, function_type) <- S.transform mapper fn_type UUtil.remapType
-    context <- Context state [] [] [] mapper
+    context <- createContext state mapper
     (state, instance_info) <- do
         case IR.checkInstance context.state arg_type class_name of
             Ok (state, sub, instance_info) -> (state, instance_info)

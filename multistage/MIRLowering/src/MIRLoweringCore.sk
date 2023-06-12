@@ -70,31 +70,64 @@ instance RegisteredInstanceProvider LoweringStateProvider where
 
 lowerFunction :: StateProviderInstance LoweringStateProvider -> HF.Function HT.Type -> (StateProviderInstance LoweringStateProvider, MF.Function)
 lowerFunction state hir_function = do
+    //println "lowerFunction {}" % hir_function.name
     (state, mir_function, functions, records, adts) <- L.lowerFunction state hir_function.name hir_function
     (state, mir_function)
 
-lowerRecord :: StateProviderInstance LoweringStateProvider -> HD.Record -> (StateProviderInstance LoweringStateProvider, MD.Record)
-lowerRecord state hir_record = do
+getExternalClassImpl :: HD.ExternalClassImplInfoDb -> FQ.FullyQualifiedName -> [MD.ExternalClassImpl]
+getExternalClassImpl db qn = do
+    type <- HT.Named qn []
+    impl_kinds <- [HD.PartialEqKind,
+                   HD.EqKind,
+                   HD.PartialOrdKind,
+                   HD.OrdKind]
+    List.fold [] impl_kinds (\external_class_impls, kind -> do
+        case Map.get db.external_class_impls (HD.ExternalClassImplInfo kind type) of
+            Some impl -> do
+                impl <- case (kind, impl) of
+                    (HD.PartialEqKind, Some impl) -> do
+                        mir_id <- L.lowerFullyQualifiedName impl
+                        MD.PartialEq mir_id
+                    (HD.EqKind, None) -> MD.Eq
+                    (HD.PartialOrdKind, Some impl) -> do
+                        mir_id <- L.lowerFullyQualifiedName impl
+                        MD.PartialOrd mir_id
+                    (HD.OrdKind, Some impl) -> do
+                        mir_id <- L.lowerFullyQualifiedName impl
+                        MD.Ord mir_id
+                    _ -> panic "Unexpected external class impl {}/{}" % (kind, impl)
+                List.push external_class_impls impl
+            None -> external_class_impls)
+
+lowerRecord :: HD.ExternalClassImplInfoDb -> StateProviderInstance LoweringStateProvider -> HD.Record -> (StateProviderInstance LoweringStateProvider, MD.Record)
+lowerRecord external_class_impl_info_db state hir_record = do
+    //println "lowerRecord {}" % hir_record.name
     (state, mir_record, _, _) <- L.lowerRecord state hir_record.name hir_record
+    impls <- getExternalClassImpl external_class_impl_info_db hir_record.name
+    mir_record <- mir_record { external_class_impls = impls }
     (state, mir_record)
 
-lowerAdt :: StateProviderInstance LoweringStateProvider -> HD.AlgebraicDataType -> (StateProviderInstance LoweringStateProvider, MD.AlgebraicDataType)
-lowerAdt state hir_adt = do
-    L.lowerAdt state hir_adt.name hir_adt
+lowerAdt :: HD.ExternalClassImplInfoDb -> StateProviderInstance LoweringStateProvider -> HD.AlgebraicDataType -> (StateProviderInstance LoweringStateProvider, MD.AlgebraicDataType)
+lowerAdt external_class_impl_info_db state hir_adt = do
+    //println "lowerAdt {}" % hir_adt.name
+    (state, mir_adt) <- L.lowerAdt state hir_adt.name hir_adt
+    impls <- getExternalClassImpl external_class_impl_info_db hir_adt.name
+    mir_adt <- mir_adt { external_class_impls = impls }
+    (state, mir_adt)
 
-process :: [HF.Function HT.Type] -> [HD.Record] -> [HD.AlgebraicDataType] -> [HD.Record] -> [HD.AlgebraicDataType] -> Program
-process functions records adts resolved_records resolved_adts = do
-        record_map <- List.fold Map.empty records (\record_map, r -> Map.put record_map r.name r)
-        adt_map <- List.fold Map.empty adts (\adt_map, a -> Map.put adt_map a.name a)
-        resolved_record_map <- List.fold Map.empty resolved_records (\record_map, r -> Map.put record_map r.name r)
-        resolved_adt_map <- List.fold Map.empty resolved_adts (\adt_map, a -> Map.put adt_map a.name a)
-        state <- createStateProvider (LoweringStateProvider record_map adt_map resolved_record_map resolved_adt_map)
-        (state, lowered_fns) <- List.mapS state functions lowerFunction
-        (state, lowered_records) <- List.mapS state records lowerRecord
-        (state, lowered_adts) <- List.mapS state adts lowerAdt
-        mir_program <- createProgram
-        mir_program <- List.fold mir_program lowered_fns (\mir_program, fn -> addFunction mir_program fn.id fn)
-        mir_program <- List.fold mir_program lowered_records (\mir_program, r -> addRecord mir_program r.id r)
-        mir_program <- List.fold mir_program lowered_adts (\mir_program, a -> addAdt mir_program a.id a)
-        mir_program
+process :: [HF.Function HT.Type] -> [HD.Record] -> [HD.AlgebraicDataType] -> [HD.Record] -> [HD.AlgebraicDataType] -> HD.ExternalClassImplInfoDb -> Program
+process functions records adts resolved_records resolved_adts external_class_impl_info_db = do
+    record_map <- List.fold Map.empty records (\record_map, r -> Map.put record_map r.name r)
+    adt_map <- List.fold Map.empty adts (\adt_map, a -> Map.put adt_map a.name a)
+    resolved_record_map <- List.fold Map.empty resolved_records (\record_map, r -> Map.put record_map r.name r)
+    resolved_adt_map <- List.fold Map.empty resolved_adts (\adt_map, a -> Map.put adt_map a.name a)
+    state <- createStateProvider (LoweringStateProvider record_map adt_map resolved_record_map resolved_adt_map)
+    (state, lowered_fns) <- List.mapS state functions lowerFunction
+    (state, lowered_records) <- List.mapS state records (lowerRecord external_class_impl_info_db)
+    (state, lowered_adts) <- List.mapS state adts (lowerAdt external_class_impl_info_db)
+    mir_program <- createProgram
+    mir_program <- List.fold mir_program lowered_fns (\mir_program, fn -> addFunction mir_program fn.id fn)
+    mir_program <- List.fold mir_program lowered_records (\mir_program, r -> addRecord mir_program r.id r)
+    mir_program <- List.fold mir_program lowered_adts (\mir_program, a -> addAdt mir_program a.id a)
+    mir_program
 

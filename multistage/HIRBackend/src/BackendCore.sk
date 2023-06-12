@@ -24,6 +24,8 @@ import Siko.HIR.Type as HT
 import Siko.Query.Lookup
 import Siko.Util.DependencyProcessor
 import Siko.HIR.Backend.VariantTransformer as VT
+import Siko.HIR.Closure
+import Siko.HIR.Backend.Util
 
 data BackendStateProvider = { class_map :: Map FQ.FullyQualifiedName HC.Class,
                               class_type_info_map :: Map FQ.FullyQualifiedName TC.ClassTypeInfo,
@@ -102,11 +104,10 @@ instance RegisteredInstanceProvider BackendStateProvider where
 
     getRegisteredInstanceOpt p key = Map.get p.instance_info_map key
 
-resolveEffects provider base_main_qn unreachable_qn = do
+resolveEffects provider entry_points = do
     empty_resolution_set <- HE.EffectResolutionSet Map.empty Map.empty
-    effectless_main_qn <- FQ.Effectless base_main_qn (Some empty_resolution_set)
-    unreachable_qn <- FQ.Effectless unreachable_qn (Some empty_resolution_set)
-    loop (resolved_fns, queue) <- (Map.empty, [effectless_main_qn]) do
+    entry_points <- List.map entry_points (\qn -> FQ.Effectless qn (Some empty_resolution_set))
+    loop (resolved_fns, queue) <- (Map.empty, entry_points) do
         if List.isEmpty queue
         then break resolved_fns
         else do
@@ -130,35 +131,44 @@ resolveEffects provider base_main_qn unreachable_qn = do
 
 data MonomorphizationContext = { functions :: Map FQ.FullyQualifiedName (HF.Function HT.Type),
                                  records :: Map FQ.FullyQualifiedName HD.Record,
-                                 adts :: Map FQ.FullyQualifiedName HD.AlgebraicDataType, }
+                                 adts :: Map FQ.FullyQualifiedName HD.AlgebraicDataType,
+                                 external_class_impl_info_db :: HD.ExternalClassImplInfoDb, }
 
-monomorphize provider base_main_qn = do
+monomorphize provider base_main_qn unreachable_qn = do
     empty_resolution_set <- HE.EffectResolutionSet Map.empty Map.empty
-    empty_tuple_qn <- FQ.Tuple []
-    context <- MonomorphizationContext Map.empty Map.empty Map.empty
-    monomorphized_main_qn <- FQ.Monomorphized (FQ.Effectless base_main_qn (Some empty_resolution_set)) (HT.Named empty_tuple_qn [])
-    loop (context, queue) <- (context, [monomorphized_main_qn]) do
+    context <- MonomorphizationContext Map.empty Map.empty Map.empty HD.createExternalClassImplInfoDb
+    monomorphized_unreachable_qn <- FQ.Monomorphized (FQ.Effectless unreachable_qn (Some empty_resolution_set)) (HT.Never)
+    monomorphized_main_qn <- FQ.Monomorphized (FQ.Effectless base_main_qn (Some empty_resolution_set)) (HT.Tuple [])
+    loop (context, queue) <- (context, [monomorphized_main_qn, monomorphized_unreachable_qn]) do
         if List.isEmpty queue
         then break context
         else do
             (last, queue) <- removeLast queue
             case last of
                 FQ.Monomorphized orig_qn ty -> do
-                    trace "MONO fn {} " % last
                     case Map.get context.functions last of
                         Some _ -> (context, queue)
                         None -> do
+                            trace "MONO fn {} " % last
                             state <- createStateProvider provider
+                            state <- state { ignore_never = True }
                             (state, monomorphized_fn, functions, records, adts, external_class_impls) <- MO.monomorphizeFunction state orig_qn ty
-                            queue <- queue + functions + records + adts
+                            (state, external_class_impl_info_db, qns) <- List.fold (state, context.external_class_impl_info_db, []) external_class_impls (\(state, external_class_impl_info_db, qns), info -> do
+                                (state, qn) <- MO.monomorphizeClassImpl state (info.external_class_impl, info.type)
+                                qns <- case qn of
+                                    Some qn -> List.push qns qn
+                                    None -> qns
+                                external_class_impl_info_db <- HD.addExternalClassImplInfo external_class_impl_info_db info qn
+                                (state, external_class_impl_info_db, qns))
+                            queue <- queue + functions + records + adts + qns
                             monomorphized_fn <- monomorphized_fn { name = last }
                             functions <- Map.put context.functions last monomorphized_fn
-                            (context { functions = functions }, queue)
+                            (context { functions = functions, external_class_impl_info_db = external_class_impl_info_db }, queue)
                 FQ.Record orig_qn args -> do
-                    trace "MONO record {} " % last
                     case Map.get context.records last of
                         Some _ -> (context, queue)
                         None -> do
+                            trace "MONO record {} " % last
                             state <- createStateProvider provider
                             (state, record, records, adts) <- MO.monomorphizeRecord state orig_qn args
                             queue <- queue + records + adts
@@ -166,10 +176,10 @@ monomorphize provider base_main_qn = do
                             records <- Map.put context.records last record
                             (context { records = records }, queue)
                 FQ.Adt orig_qn args -> do
-                    trace "MONO adt {} " % last
                     case Map.get context.adts last of
                         Some _ -> (context, queue)
                         None -> do
+                            trace "MONO adt {} " % last
                             state <- createStateProvider provider
                             (state, adt, records, adts) <- MO.monomorphizeAdt state orig_qn args
                             queue <- queue + records + adts
@@ -178,7 +188,57 @@ monomorphize provider base_main_qn = do
                             (context { adts = adts }, queue)
                 _ -> panic "Monomorphized qn is unexpected {}" % last
 
-process :: [HF.Function HT.Type] -> [HF.Function ()] -> [HC.Class] -> [HC.Instance] -> [HE.Effect] -> [HD.AlgebraicDataType] -> [HD.Record] -> ([HF.Function HT.Type], [HD.Record], [HD.AlgebraicDataType])
+data ClosureConverterContext = { closure_names :: [FQ.FullyQualifiedName],
+                                 closure_instances :: [ClosureInstance] }
+
+processClosureInstance closure_instance index = do
+    adt_type <- CC.closureConvertType (CC.getClosureType closure_instance.closure_name)
+    variant_qn <- FQ.ClosureInstance closure_instance
+    record_type <- HT.Named variant_qn []
+    arg_types <- List.map closure_instance.arg_types CC.closureConvertType
+    (record, function) <- createVariantRecordFromTypes variant_qn index record_type adt_type arg_types
+    (function, record)
+
+convertClosures provider functions records = do
+    context <- ClosureConverterContext [] []
+    (context, functions) <- Map.mapS context functions (\context, (qn, fn) -> do
+        state <- createStateProvider provider
+        (state, fn, closure_names, closure_instances) <- CC.closureConvertFunction state fn
+        closure_names <- context.closure_names + closure_names
+        closure_instances <- context.closure_instances + closure_instances
+        context <- context { closure_names = closure_names, closure_instances = closure_instances }
+        (context, qn, fn))
+    (context, records) <- Map.mapS context records (\context, (qn, record) -> do
+        state <- createStateProvider provider
+        (state, record, closure_names, closure_instances) <- CC.closureConvertRecord state record
+        closure_names <- context.closure_names + closure_names
+        closure_instances <- context.closure_instances + closure_instances
+        context <- context { closure_names = closure_names, closure_instances = closure_instances }
+        (context, qn, record))
+    closures <- Map.empty
+    closure_instances <- context.closure_instances |> List.sort |> List.dedup
+    closure_names <- context.closure_names |> List.sort |> List.dedup
+    context <- context { closure_instances = closure_instances, closure_names = closure_names }
+    closures <- List.fold closures context.closure_names (\closures, closure_name -> Map.put closures closure_name [])
+    closures <- List.fold closures context.closure_instances (\closures, closure_instance -> Map.add closures closure_instance.closure_name closure_instance)
+    //println "found {} closures" % Map.getSize closures
+    //println "closures: {}" % closures
+    (functions, records, adts) <- Map.fold (functions, records, Map.empty) closures (\(functions, records, adts), (closure_name, closure_instances) -> do
+        //println "Processing closure {} with {} instances" % (closure_name, List.getLength closure_instances)
+        (functions, records) <- List.foldE (functions, records) closure_instances (\(functions, records), index, closure_instance -> do
+            (function, record) <- processClosureInstance closure_instance index
+            records <- Map.put records record.name record
+            functions <- Map.put functions function.name function
+            (functions, records))
+        state <- createStateProvider provider
+        (state, closure_call) <- CC.createClosureCall state closure_instances closure_name
+        (state, closure_adt) <- CC.createClosureAdt state closure_instances closure_name
+        adts <- Map.put adts closure_adt.name closure_adt
+        functions <- Map.put functions closure_call.name closure_call
+        (functions, records, adts))
+    (functions, records, adts)
+
+process :: [HF.Function HT.Type] -> [HF.Function ()] -> [HC.Class] -> [HC.Instance] -> [HE.Effect] -> [HD.AlgebraicDataType] -> [HD.Record] -> ([HF.Function HT.Type], [HD.Record], [HD.AlgebraicDataType], HD.ExternalClassImplInfoDb)
 process typed_functions functions classes instances effects adts records = do
     class_map <- List.fold Map.empty classes (\class_map, c -> Map.put class_map c.name c)
     function_map <- List.fold Map.empty functions (\function_map, f -> Map.put function_map f.name f)
@@ -231,25 +291,45 @@ process typed_functions functions classes instances effects adts records = do
                                      effect_map
                                      registered_instance_map
     base_main_qn <- FQ.FullPath getMainModuleName getMainFunctionName
+    members <- Map.fold [] typed_function_map (\members, (qn, fn) -> case fn.kind of
+        HF.Normal info ->
+            if isSome info.source
+            then List.push members qn
+            else members
+        HF.Interface _ -> List.push members qn
+        _ -> members)
     unreachable_qn <- FQ.FullPath getStdUtilBasicModuleName getUnreachableName
-    resolved_effect_fns <- resolveEffects provider base_main_qn unreachable_qn
-    resolved_effect_fns <- Map.merge resolved_effect_fns typed_function_map
-    (tt_context, transformed_fns) <- TT.transform TT.createContext resolved_effect_fns
-    transformed_fns <- Map.merge transformed_fns tt_context.functions
-    record_map <- Map.merge record_map tt_context.tuples
+    resolved_effect_fns <- resolveEffects provider ([base_main_qn, unreachable_qn] + members)
     provider <- BackendStateProvider class_map
                                      class_type_info_map
                                      instance_map
                                      function_map
-                                     transformed_fns
+                                     resolved_effect_fns
                                      Map.empty
                                      Map.empty
                                      record_map
                                      adt_map
                                      effect_map
                                      registered_instance_map
-    monomorphize_context <- monomorphize provider base_main_qn
-    lowered_fns <- monomorphize_context.functions |> Map.iter |> Iterator.map (\(key, f) -> f) |> toList
-    lowered_records <- monomorphize_context.records |> Map.iter |> Iterator.map (\(key, f) -> f) |> toList
-    lowered_adts <- monomorphize_context.adts |> Map.iter |> Iterator.map (\(key, f) -> f) |> toList
-    (lowered_fns, lowered_records, lowered_adts)
+    monomorphize_context <- monomorphize provider base_main_qn unreachable_qn
+    provider <- BackendStateProvider class_map
+                                     class_type_info_map
+                                     instance_map
+                                     function_map
+                                     monomorphize_context.functions
+                                     Map.empty
+                                     Map.empty
+                                     monomorphize_context.records
+                                     monomorphize_context.adts
+                                     effect_map
+                                     registered_instance_map
+    (functions, records, closure_adts) <- convertClosures provider monomorphize_context.functions monomorphize_context.records
+    (tt_context, functions) <- TT.transform TT.createContext functions
+    (tt_context, records) <- TT.transform tt_context records
+    functions <- Map.merge functions tt_context.functions
+    records <- Map.merge records tt_context.tuples
+    adts <- Map.merge monomorphize_context.adts closure_adts
+    lowered_fns <- functions |> Map.iter |> Iterator.map (\(key, f) -> f) |> toList
+    lowered_records <- records |> Map.iter |> Iterator.map (\(key, r) -> r) |> toList
+    lowered_adts <- adts |> Map.iter |> Iterator.map (\(key, a) -> a) |> toList
+    (lowered_fns, lowered_records, lowered_adts, monomorphize_context.external_class_impl_info_db)

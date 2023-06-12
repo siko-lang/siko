@@ -152,9 +152,6 @@ lowerExpr context hir_expr = do
                 HT.Named record_name _ -> record_name
                 _ -> panic "Receiver type is not named in fieldaccess"
             (context, mir_receiver) <- lowerExpr context receiver
-            record_name <- case record_name of
-                FQ.Record qn _ -> qn
-                record_name -> record_name
             record <- QL.getRecord context.state record_name
             index <- loop index <- 0 do
                 HD.RecordField fname _ <- atIndex record.fields index

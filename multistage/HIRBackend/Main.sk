@@ -23,10 +23,11 @@ main = do
         effects :: [HE.Effect] <- loadCache getResolvedEffectCachePath
         adts :: [HD.AlgebraicDataType] <- loadCache getResolvedAdtCachePath
         records :: [HD.Record] <- loadCache getResolvedRecordCachePath
-        (lowered_fns, lowered_records, lowered_adts) <- process typed_functions functions classes instances effects adts records
+        (lowered_fns, lowered_records, lowered_adts, external_class_impl_info_db) <- process typed_functions functions classes instances effects adts records
         updateCache getHIRBackendFunctionCachePath lowered_fns
         updateCache getHIRBackendRecordCachePath lowered_records
         updateCache getHIRBackendAdtCachePath lowered_adts
+        updateCache getHIRBackendExternalClassImplInfoDbCachePath [external_class_impl_info_db]
         // List.forEach lowered_fns (\fn -> case fn.kind of
         //     HF.Normal info -> do
         //         tokens <- format info.body

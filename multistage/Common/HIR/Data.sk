@@ -6,6 +6,21 @@ import Siko.HIR.FullyQualifiedName
 import Siko.HIR.Type
 import Siko.Syntax.Location
 import Siko.Util.SharedString as SS
+import Map
+
+data ExternalClassImplInfo = { external_class_impl :: ExternalClassImpl,
+                               type :: Type } deriving (PartialEq, Eq, PartialOrd, Ord, ToJson, FromJson, Show)
+
+data ExternalClassImplInfoDb = { external_class_impls :: Map ExternalClassImplInfo (Option FullyQualifiedName)}
+    deriving (Show, PartialEq, Eq, ToJson, FromJson)
+
+createExternalClassImplInfoDb :: ExternalClassImplInfoDb
+createExternalClassImplInfoDb = ExternalClassImplInfoDb Map.empty
+
+addExternalClassImplInfo :: ExternalClassImplInfoDb -> ExternalClassImplInfo -> Option FullyQualifiedName -> ExternalClassImplInfoDb
+addExternalClassImplInfo db info qn = do
+    external_class_impls <- Map.put db.external_class_impls info qn
+    db { external_class_impls = external_class_impls }
 
 data ExternalClassImpl = PartialEqKind
                        | EqKind

@@ -53,8 +53,12 @@ instantiateGenericMapper data_type context = do
 
 data Mapper = { vars :: Map SS.SharedString T.TypeVar,
                 nevers :: [T.TypeVar],
-                skip_never :: Bool
+                skip_never :: Bool,
+                partial :: Bool,
               } deriving (Show)
+
+emptyMapper :: Mapper
+emptyMapper = Mapper Map.empty [] True False
 
 initMapper a :: (U.TypeVarGenerator a) => [SS.SharedString] -> Int -> a -> (Mapper, a)
 initMapper vars never_count var_gen = do
@@ -63,16 +67,21 @@ initMapper vars never_count var_gen = do
         (vars, _) <- insert vars old_var new_var
         (vars, var_gen))
     (var_gen, nevers) <- repeatS var_gen U.getNewTypeVar never_count
-    (Mapper vars nevers False, var_gen)
+    (Mapper vars nevers False False, var_gen)
 
 skipNever :: Mapper -> Mapper
 skipNever mapper = mapper { skip_never = True }
+
+partial :: Mapper -> Mapper
+partial mapper = mapper { partial = True }
 
 remapType :: Mapper -> T.Type -> (Mapper, T.Type)
 remapType mapper type = case type of
     T.FixedTypeArg n constraints -> case get mapper.vars n of
         Some new_var -> (mapper, T.Var new_var constraints)
-        None -> panic "remapType: fixed var {} not found" % n
+        None -> if mapper.partial
+            then (mapper, T.FixedTypeArg n constraints)
+            else panic "remapType: fixed var {} not found" % n
     T.Never -> do
         if mapper.skip_never
         then (mapper, T.Never)

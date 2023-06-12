@@ -38,8 +38,12 @@ instance Show FullyQualifiedName where
         SubItem p n -> "{}_sub_{}" % (p, n)
         Effectless qn resolution_set -> "{} eff {}" % (qn, resolution_set)
         Tuple t -> "Tuple({})" % (t)
-        Adt qn types -> "Adt({}, {})" % (qn, types)
-        Record qn types -> "Record({}, {})" % (qn, types)
+        Adt qn types -> if List.isEmpty types
+            then ".adt.{}" % qn
+            else ".adt.{}.{}" % (qn, types)
+        Record qn types -> if List.isEmpty types
+            then ".record.{}" % qn
+            else ".record.{}.{}" % (qn, types)
         ClosureInstance i -> "ClosureInstance({})" % i
         ClosureName t -> "ClosureName({})" % t
         Monomorphized qn t -> "Mono({}, {})" % (qn, t)

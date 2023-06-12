@@ -19,6 +19,8 @@ main = do
         adts :: [HD.AlgebraicDataType] <- loadCache getHIRBackendAdtCachePath
         resolved_records :: [HD.Record] <- loadCache getResolvedRecordCachePath
         resolved_adts :: [HD.AlgebraicDataType] <- loadCache getResolvedAdtCachePath
-        mir_program <- process functions records adts resolved_records resolved_adts
+        external_class_impl_info_dbs :: [HD.ExternalClassImplInfoDb] <- loadCache getHIRBackendExternalClassImplInfoDbCachePath
+        external_class_impl_info_db <- atIndex external_class_impl_info_dbs 0
+        mir_program <- process functions records adts resolved_records resolved_adts external_class_impl_info_db
         updateCache getMIRBackendCachePath [mir_program]
         ()

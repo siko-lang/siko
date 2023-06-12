@@ -6,6 +6,7 @@ import Siko.HIR.Backend.StateProvider
 import Siko.HIR.Backend.Traversal
 import Siko.HIR.Backend.Unification as U
 import Siko.HIR.Backend.Unification.Substitution as S
+import Siko.HIR.Backend.Unification.Util as UUtil
 import Siko.HIR.Effect as Eff
 import Siko.HIR.Expr as E
 import Siko.HIR.ExprIdGenerator
@@ -33,7 +34,8 @@ data Context a = { effect_contexts :: [EffectContextInfo],
                    pattern_id_gen :: PatternIdGenerator,
                    context_binds :: Map E.ExprId (E.Expr T.Type),
                    state :: a,
-                   queue :: [FQ.FullyQualifiedName]
+                   queue :: [FQ.FullyQualifiedName],
+                   mapper :: UUtil.Mapper,
                  }
 
 getNextExprId a :: (StateProvider a) => Context a -> (Context a, E.ExprId)
@@ -221,15 +223,20 @@ processExpr context expr = do
 processPattern a :: (StateProvider a) => Context a -> P.Pattern T.Type -> (Context a, P.Pattern T.Type)
 processPattern context pattern = (context, pattern)
 
-typeConverter :: S.Substitution -> T.Type -> T.Type
-typeConverter sub type = S.apply type sub
+typeConverter a :: (StateProvider a) => S.Substitution -> Context a -> T.Type -> (Context a, T.Type)
+typeConverter sub context type = do
+    (mapper, type) <- S.transform context.mapper type UUtil.remapType
+    (context { mapper = mapper }, S.apply type sub)
 
 resolveEffects a :: (StateProvider a) => a -> FQ.FullyQualifiedName -> Eff.EffectResolutionSet -> (a, F.Function T.Type, [FQ.FullyQualifiedName])
 resolveEffects state orig_qn resolution_set = do
+    //println "resolveEffects {} {}" % (orig_qn, resolution_set)
     fn <- QL.getTypedFunction state orig_qn
     (state, queue, kind) <- case fn.kind of
         F.Normal info -> do
-            context <- Context [] info.expr_id_gen info.pattern_id_gen Map.empty state []
+            mapper <- UUtil.emptyMapper
+            mapper <- UUtil.partial mapper
+            context <- Context [] info.expr_id_gen info.pattern_id_gen Map.empty state [] mapper
             context <- addEffectContext context resolution_set (Some FromArg)
             (context, sub) <- case fn.kind of
                 F.Normal info -> case info.effects of
@@ -238,9 +245,12 @@ resolveEffects state orig_qn resolution_set = do
                             eff_name <- T.getNameFromType eff
                             case get resolution_set.effect_types eff_name of
                                 Some specific_eff -> do
-                                    eff <- T.fixedType eff
-                                    case U.unify context.state sub specific_eff eff of
-                                        Ok (state, sub) -> (context { state = state }, sub)
+                                    (mapper, state) <- UUtil.instantiateGenericMapper eff context.state
+                                    mapper <- UUtil.skipNever mapper
+                                    mapper <- UUtil.partial mapper
+                                    (mapper, eff) <- S.transform mapper eff UUtil.remapType
+                                    case U.unify state sub specific_eff eff of
+                                        Ok (state, sub) -> (context { state = state, mapper = mapper }, sub)
                                         Err _ -> panic "EffectResolver: failed to unify {} {}" % (TF.toString specific_eff, TF.toString eff)
                                 None -> panic "Eff type {} not found in resolution" % eff_name)
                     None -> (context, S.createSubstitution)
@@ -248,7 +258,7 @@ resolveEffects state orig_qn resolution_set = do
             traversal_context <- createTraversalContext context processExpr processPattern
             traversal_context <- setPreWithHook traversal_context preWithHook
             traversal_context <- setPostWithHook traversal_context postWithHook
-            traversal_context <- setTypeConverter traversal_context (typeConverter sub)
+            traversal_context <- setTypeConverterWithContext traversal_context (typeConverter sub)
             (context, body) <- traverse traversal_context info.body
             info <- info { body = body, expr_id_gen = context.expr_id_gen, pattern_id_gen = context.pattern_id_gen }
             (context.state, context.queue, F.Normal info)

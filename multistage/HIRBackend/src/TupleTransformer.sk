@@ -128,8 +128,9 @@ instance TupleTransformer HT.Type where
             (context, HT.Owner ty)
         HT.Tuple args -> do
             (context, args) <- transform context args
+            type_args <- HT.collectFixedTypeArgs ty
             qn <- FQ.Tuple args
-            record_type <- HT.Named qn []
+            record_type <- HT.Named qn type_args
             case Map.get context.tuples qn of
                 Some _ -> (context, record_type)
                 None -> do
@@ -192,11 +193,10 @@ instance (TupleTransformer a, GetType a) => TupleTransformer HE.SimpleExpr a whe
             (context, f) <- transform context f
             (context, HE.If cond t f)
         HE.Tuple ctor -> do
-            args <- ctor.args
+            (context, args) <- transform context ctor.args
             types <- List.map args getType
             qn <- FQ.Tuple types
             //println "Tuple ctor fn qn {}" % qn
-            (context, args) <- transform context ctor.args
             (context, HE.StaticFunctionCall qn args)
         HE.List args -> do
             (context, args) <- transform context args
@@ -301,3 +301,15 @@ instance TupleTransformer HP.RangeKind where
 
 instance TupleTransformer HP.PatternId where
     transform context id = (context, id)
+
+instance TupleTransformer HD.Record where
+    transform context record = do
+        (context, fields) <- transform context record.fields
+        (context, type) <- transform context record.type
+        (context, record { fields = fields, type = type })
+
+instance TupleTransformer HD.RecordField where
+    transform context (HD.RecordField name ty) = do
+        (context, ty) <- transform context ty
+        (context, HD.RecordField name ty)
+

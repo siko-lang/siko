@@ -1,20 +1,94 @@
+module Std.Util.Basic where
+
+@Inline
+println a :: (Show a) => a -> ()
+println msg = printStr "{}\n" % msg
+
+printStr :: String -> ~()
+printStr msg = extern
+
+abort :: !
+abort = extern (result == *)
+
+panic a :: (Show a) => a -> !
+panic msg = do
+    println msg
+    abort
+
+unreachable :: !
+unreachable = panic "foo"
+
 module Std.Ops where
+
+class Show a where
+    show a :: a -> String
 
 class Add a where
     opAdd a :: a -> a -> a
+
+class PartialEq a where
+    opEq a :: a -> a -> Bool
+
+    opNotEq a :: a -> a -> Bool
+    opNotEq a b = (opEq a b)
+
+class (PartialEq a) => Eq a
+
+module String where
+
+data String = extern
+
+instance Add String where
+    opAdd a b = addString a b
+
+instance Show String where
+    show s = s
+
+instance PartialEq String where
+    opEq a b = False
+
+instance Eq String
+
+addString :: ~String -> ~String -> ~String
+addString a b = extern
+
+module Bool where
+
+data Bool = True | False
+
+module Std.Util where
+
+assert :: ~Bool -> ~()
+assert value = extern
 
 module Int where
 
 data Int = extern
 
-instance Add Int where
-    opAdd a b = addInt a b
+instance Show Int where
+    show _ = "0"
 
-addInt :: ~Int -> ~Int -> ~Int
-addInt a b = extern
+module Option where
+
+data Option a = Some a | None
+
+module Result where
+
+data Result ok err = Ok ok | Err err
 
 module Main where
 
+import Std.Util
+
+p a = "{}" % a
+
+composition a b c :: (a -> b) -> (b -> c) -> a -> c
+composition f g x = g (f x)
+
+f =  composition show p
+g x = show x |> p
+
 main = do
-    1 + 1
-    ()
+    assert(f 5 == g 5)
+
+

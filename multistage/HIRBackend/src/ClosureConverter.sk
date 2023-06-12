@@ -7,14 +7,18 @@ import Siko.HIR.Backend.Traversal
 import Siko.HIR.Closure
 import Siko.HIR.Data as D
 import Siko.HIR.Expr as E
+import Siko.HIR.Effect as Eff
 import Siko.HIR.ExprIdGenerator
+import Map
 import Siko.HIR.FullyQualifiedName as FQ
 import Siko.HIR.Function as F
 import Siko.HIR.Pattern as P
 import Siko.HIR.PatternIdGenerator
 import Siko.HIR.Type as T
+import Siko.HIR.Backend.Util
 import Siko.HIR.TypeFormatter as TF
 import Siko.Query.Lookup as QL
+import Siko.Syntax.Ident
 import Siko.Syntax.Location
 import Siko.Util.SharedString as SS
 
@@ -66,6 +70,7 @@ processDynamicFunctionCall a :: (StateProvider a) =>
                                 E.Expr T.Type ->
                                 Location -> (Context a, [E.Expr T.Type])
 processDynamicFunctionCall context receiver_type args receiver location = do
+    unit <- T.Tuple []
     loop (context, receiver_type, args, receiver, calls) <- (context, receiver_type, args, receiver, []) do
         case pop args of
             Some (arg, rest) -> do
@@ -79,7 +84,7 @@ processDynamicFunctionCall context receiver_type args receiver location = do
                 call <- E.StaticFunctionCall closure_name [receiver, arg]
                 (context, call_expr) <- getExpr context (\id -> E.Expr call id result_type location)
                 decl <- E.Bind bind_pattern call_expr
-                (context, decl_expr) <- getExpr context (\id -> E.Expr decl id (T.Tuple []) location)
+                (context, decl_expr) <- getExpr context (\id -> E.Expr decl id unit location)
                 receiver <- E.ValueRef bind_ref
                 (context, receiver_expr) <- getExpr context (\id -> E.Expr receiver id result_type location)
                 calls <- push calls decl_expr
@@ -130,6 +135,7 @@ processStaticFunctionCall context args function_type qn arg_count location = do
             (context, call_expr) <- getExpr context (\id -> E.Expr (E.StaticFunctionCall qn args) id result_type location)
             (context, call_expr)
         else do
+            unit <- T.Tuple []
             (static_args, dynamic_args) <- List.split args arg_count
             receiver_type <- T.getResultType function_type (getLength static_args)
             static_call <- E.StaticFunctionCall qn static_args
@@ -140,7 +146,7 @@ processStaticFunctionCall context args function_type qn arg_count location = do
             bind_pattern <- P.Binding bind_ref
             bind_pattern <- P.Pattern bind_pattern pat2_id receiver_type location
             decl <- E.Bind bind_pattern static_call_expr
-            (context, decl_expr) <- getExpr context (\id -> E.Expr decl id (T.Tuple []) location)
+            (context, decl_expr) <- getExpr context (\id -> E.Expr decl id unit location)
             var_ref <- E.ValueRef bind_ref
             (context, var_ref_expr) <- getExpr context (\id -> E.Expr var_ref id receiver_type location)
             (context, calls) <- processDynamicFunctionCall context receiver_type dynamic_args var_ref_expr location
@@ -231,7 +237,8 @@ createClosureAdt state closure_instances closure_name = do
     type <- getClosureType closure_name
     (closure_context, variants) <- List.mapS closure_context closure_instances (\closure_context, closure_instance -> do
         (closure_context, arg_types) <- List.mapS closure_context closure_instance.arg_types convertType
-        variant <- D.Variant (FQ.ClosureInstance closure_instance) emptyLocation arg_types
+        record_type <- T.Named (FQ.ClosureInstance closure_instance) []
+        variant <- D.Variant (FQ.ClosureInstance closure_instance) emptyLocation [record_type]
         (closure_context, variant))
     (closure_context.state, D.AlgebraicDataType closure_name emptyLocation type_args variants (closureConvertType type))
 
@@ -280,7 +287,8 @@ createClosureCall state closure_instances closure_name = do
     (context, body) <- if List.isEmpty closure_instances
     then do
         (context, expr_id) <- getNextExprId context
-        qn <- FQ.Effectless (FQ.FullPath getStdUtilBasicModuleName getUnreachableName) None
+        empty_resolution_set <- Eff.EffectResolutionSet Map.empty Map.empty
+        qn <- FQ.Effectless (FQ.FullPath getStdUtilBasicModuleName getUnreachableName) (Some empty_resolution_set)
         qn <- FQ.Monomorphized qn T.Never
         (context, E.Expr (E.StaticFunctionCall qn []) expr_id result_type location)
     else do
@@ -291,12 +299,14 @@ createClosureCall state closure_instances closure_name = do
             (context, bind_pat2_id) <- getNextPatternId context
             bind_ref <- P.BindRef (SS.create "variant_var") bind_pat_id
             arg_types <- List.map closure_instance.arg_types closureConvertType
-            bind_pattern <- P.Pattern (P.Binding bind_ref) bind_pat2_id (T.Tuple arg_types) location
+            args_record_type <- T.Named (FQ.ClosureInstance closure_instance) []
+            bind_pattern <- P.Pattern (P.Binding bind_ref) bind_pat2_id args_record_type location
             (context, args) <- List.mapSE context arg_types (\context, index, arg -> do
                 (context, expr_id) <- getNextExprId context
-                value_ref <- E.Expr (E.ValueRef bind_ref) expr_id (T.Tuple arg_types) location
+                value_ref <- E.Expr (E.ValueRef bind_ref) expr_id args_record_type location
                 (context, expr_id) <- getNextExprId context
-                (context, E.Expr (E.TupleFieldAccess index value_ref) expr_id arg location))
+                field_name <- createIdent (getFieldName index) location
+                (context, E.Expr (E.FieldAccess field_name value_ref) expr_id arg location))
             (context, arg1_expr_id) <- getNextExprId context
             arg1_ref <- E.Expr (E.ArgRef 1) arg1_expr_id second_arg_type location
             args <- List.push args arg1_ref

@@ -139,6 +139,11 @@ processFunctions unresolved_function_infos variant_infos adts records = do
             List.fold ([], functions) unresolved_function_infos (\(unresolved_function_infos, functions), unresolved_function_info -> do
                 state <- createStateProvider variant_infos adts records
                 (state, fs, ufs) <- processUnresolvedFunction state unresolved_function_info
+                if List.isEmpty state.errors
+                then ()
+                else do
+                    println "Resolve error {}" % state.errors
+                    exit 1
                 (unresolved_function_infos + ufs, functions + fs))
 
 
