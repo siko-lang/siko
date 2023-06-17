@@ -333,10 +333,13 @@ process typed_functions functions classes instances effects adts records = do
                                      monomorphize_context.adts
                                      effect_map
                                      registered_instance_map
+    //Map.forEach monomorphize_context.functions (\(qn, _) -> println "Mono func {}" % qn)
     (functions, records, closure_adts) <- convertClosures provider monomorphize_context.functions monomorphize_context.records
+    //Map.forEach functions (\(qn, _) -> println "convertClosures func {}" % qn)
     (tt_context, functions) <- TT.transform TT.createContext functions
     (tt_context, records) <- TT.transform tt_context records
     functions <- Map.merge functions tt_context.functions
+    //Map.forEach functions (\(qn, _) -> println "final func {}" % qn)
     records <- Map.merge records tt_context.tuples
     adts <- Map.merge monomorphize_context.adts closure_adts
     lowered_fns <- functions |> Map.iter |> Iterator.map (\(key, f) -> f) |> toList

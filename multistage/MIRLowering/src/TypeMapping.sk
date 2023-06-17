@@ -125,4 +125,7 @@ mapType context steps type = case type of
     HT.Owner t -> do
         context <- addOwnerPosition context steps
         mapType context steps t
-    HT.Tuple args -> panic "Tuple found in TypeMapping {}" % args
+    HT.Tuple args -> List.foldE context args (\context, index, arg -> do
+            steps <- push steps (MF.Field index)
+            mapType context steps arg)
+
