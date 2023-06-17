@@ -75,12 +75,12 @@ generateCase field_info location cmp_fn success_p success_e failure_e index = do
         info <- atIndex field_info index
         cmp_fn_expr <- E.Expr (E.Path cmp_fn) location
         case_body <- E.Expr (E.FunctionCall cmp_fn_expr [info.lhs, info.rhs]) location
-        true_case <- E.Case success_p (generateCase field_info 
-                                                    location 
-                                                    cmp_fn 
-                                                    success_p 
-                                                    success_e 
-                                                    failure_e 
+        true_case <- E.Case success_p (generateCase field_info
+                                                    location
+                                                    cmp_fn
+                                                    success_p
+                                                    success_e
+                                                    failure_e
                                                     (index + 1))
         false_case_pattern <- P.Pattern (P.Binding (createIdent "failure_value" location)) location
         false_case <- E.Case false_case_pattern failure_e
@@ -107,12 +107,12 @@ deriveRecordGeneralCompare record comparator = do
         List.push constraints constraint)
     fn_args <- [P.Pattern (P.Binding (getLhsIdent location)) location, P.Pattern (P.Binding (getRhsIdent location)) location]
     field_info <- getFieldInfoForRecord record location
-    body <- generateCase field_info 
-                         location 
-                         comparator.fn_name 
-                         comparator.success_pattern 
-                         comparator.success_expr 
-                         comparator.failure_expr 
+    body <- generateCase field_info
+                         location
+                         comparator.fn_name
+                         comparator.success_pattern
+                         comparator.success_expr
+                         comparator.failure_expr
                          0
     body <- Some body
     sub_items <- []
@@ -140,12 +140,12 @@ deriveAdtGeneralCompare adt comparator mod_name = do
         rhs_ctor_pattern <- P.Pattern (P.Constructor (createIdent ("{}.{}" % (mod_name, variant_name)) location) rhs_patterns) location
         case_pattern <- P.Pattern (P.Tuple [lhs_ctor_pattern, rhs_ctor_pattern]) location
         field_info <- getFieldInfoForVariant variant location
-        body <- generateCase field_info 
-                             location 
-                             comparator.fn_name 
-                             comparator.success_pattern 
-                             comparator.success_expr 
-                             comparator.failure_expr 
+        body <- generateCase field_info
+                             location
+                             comparator.fn_name
+                             comparator.success_pattern
+                             comparator.success_expr
+                             comparator.failure_expr
                              0
         E.Case case_pattern body)
     cases <- if getLength adt.variants > 1

@@ -1,22 +1,23 @@
 module Siko.HIR.Backend.Lowering.Core where
 
-import Siko.Config
-import Siko.HIR.Function as HF
-import Siko.HIR.FullyQualifiedName as FQ
-import Siko.MIR.Function as MF
-import Siko.HIR.Type as HT
-import Siko.HIR.Data as HD
-import Siko.MIR.Data as MD
-import Siko.Query.Lookup
-import Siko.MIR.Program
-import Siko.HIR.Backend.StateProvider
-import Siko.HIR.Backend.Lowering as L
 import Map
+import Siko.Config
+import Siko.HIR.Backend.Lowering as L
+import Siko.HIR.Backend.StateProvider
+import Siko.HIR.Data as HD
+import Siko.HIR.FullyQualifiedName as FQ
+import Siko.HIR.Function as HF
+import Siko.HIR.Type as HT
+import Siko.MIR.Data as MD
+import Siko.MIR.Function as MF
+import Siko.MIR.Program
+import Siko.Query.Lookup
 
 data LoweringStateProvider = { records :: Map FQ.FullyQualifiedName HD.Record,
                                adts :: Map FQ.FullyQualifiedName HD.AlgebraicDataType,
                                resolved_record_map :: Map FQ.FullyQualifiedName HD.Record,
-                               resolved_adt_map :: Map FQ.FullyQualifiedName HD.AlgebraicDataType, }
+                               resolved_adt_map :: Map FQ.FullyQualifiedName HD.AlgebraicDataType
+                             }
 
 instance ClassProvider LoweringStateProvider where
     getClass p qn = panic "Class provider in lowering"
@@ -62,10 +63,12 @@ instance AdtProvider LoweringStateProvider where
 
 instance EffectProvider LoweringStateProvider where
     getEffect p qn = panic "Effect provider in lowering"
+
     getEffectOpt p qn = panic "Effect provider in lowering"
 
 instance RegisteredInstanceProvider LoweringStateProvider where
     getRegisteredInstance p key = panic "Instance provider in lowering"
+
     getRegisteredInstanceOpt p key = panic "Instance provider in lowering"
 
 lowerFunction :: StateProviderInstance LoweringStateProvider -> HF.Function HT.Type -> (StateProviderInstance LoweringStateProvider, MF.Function)
@@ -115,7 +118,12 @@ lowerAdt external_class_impl_info_db state hir_adt = do
     mir_adt <- mir_adt { external_class_impls = impls }
     (state, mir_adt)
 
-process :: [HF.Function HT.Type] -> [HD.Record] -> [HD.AlgebraicDataType] -> [HD.Record] -> [HD.AlgebraicDataType] -> HD.ExternalClassImplInfoDb -> Program
+process :: [HF.Function HT.Type] ->
+           [HD.Record] ->
+           [HD.AlgebraicDataType] ->
+           [HD.Record] ->
+           [HD.AlgebraicDataType] ->
+           HD.ExternalClassImplInfoDb -> Program
 process functions records adts resolved_records resolved_adts external_class_impl_info_db = do
     record_map <- List.fold Map.empty records (\record_map, r -> Map.put record_map r.name r)
     adt_map <- List.fold Map.empty adts (\adt_map, a -> Map.put adt_map a.name a)
@@ -130,4 +138,3 @@ process functions records adts resolved_records resolved_adts external_class_imp
     mir_program <- List.fold mir_program lowered_records (\mir_program, r -> addRecord mir_program r.id r)
     mir_program <- List.fold mir_program lowered_adts (\mir_program, a -> addAdt mir_program a.id a)
     mir_program
-

@@ -1,21 +1,21 @@
 module Main where
 
+import Siko.Cache
+import Siko.Config
+import Siko.HIR.Backend.Cache
 import Siko.HIR.Backend.Core
 import Siko.HIR.Class as HC
 import Siko.HIR.Data as HD
 import Siko.HIR.Effect as HE
 import Siko.HIR.Function as HF
 import Siko.HIR.Type as HT
-import Siko.Cache
-import Siko.Config
 import Siko.Resolver.Cache
-import Siko.HIR.Backend.Cache
 import Siko.Typechecker.Cache
 
 main = do
     config <- getDefaultConfig
     //config <- config { trace_level = Level2 }
-    with {getConfig = \_ -> config} do
+    with { getConfig = \_ -> config } do
         typed_functions :: [HF.Function HT.Type] <- loadCache getTypedFunctionCachePath
         functions :: [HF.Function ()] <- loadCache getResolvedFunctionCachePath
         classes :: [HC.Class] <- loadCache getResolvedClassCachePath
@@ -23,7 +23,13 @@ main = do
         effects :: [HE.Effect] <- loadCache getResolvedEffectCachePath
         adts :: [HD.AlgebraicDataType] <- loadCache getResolvedAdtCachePath
         records :: [HD.Record] <- loadCache getResolvedRecordCachePath
-        (lowered_fns, lowered_records, lowered_adts, external_class_impl_info_db) <- process typed_functions functions classes instances effects adts records
+        (lowered_fns, lowered_records, lowered_adts, external_class_impl_info_db) <- process typed_functions
+                                                                                             functions
+                                                                                             classes
+                                                                                             instances
+                                                                                             effects
+                                                                                             adts
+                                                                                             records
         updateCache getHIRBackendFunctionCachePath lowered_fns
         updateCache getHIRBackendRecordCachePath lowered_records
         updateCache getHIRBackendAdtCachePath lowered_adts

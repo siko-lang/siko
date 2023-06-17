@@ -60,16 +60,16 @@ lowerType context hir_type = case hir_type of
                 context <- context { adts = List.push context.adts mir_id }
                 (context, MT.Adt mir_id)
             qn -> case QL.getRecordOpt context.state qn of
-                        Some record -> do
-                            mir_id <- lowerFullyQualifiedName qn
-                            context <- context { records = List.push context.records mir_id }
-                            (context, MT.Record mir_id)
-                        None -> case QL.getAdtOpt context.state qn of
-                                    Some adt -> do
-                                        mir_id <- lowerFullyQualifiedName qn
-                                        context <- context { adts = List.push context.adts mir_id }
-                                        (context, MT.Adt mir_id)
-                                    None -> panic "Invalid qn in MIR lowerType {}" % qn
+                Some record -> do
+                    mir_id <- lowerFullyQualifiedName qn
+                    context <- context { records = List.push context.records mir_id }
+                    (context, MT.Record mir_id)
+                None -> case QL.getAdtOpt context.state qn of
+                    Some adt -> do
+                        mir_id <- lowerFullyQualifiedName qn
+                        context <- context { adts = List.push context.adts mir_id }
+                        (context, MT.Adt mir_id)
+                    None -> panic "Invalid qn in MIR lowerType {}" % qn
     HT.Function from to -> panic "Function type in MIR lowering: {}" % TF.toString hir_type
     HT.Never -> (context, MT.Never)
     HT.Ref lifetime ty -> do

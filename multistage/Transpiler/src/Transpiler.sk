@@ -298,12 +298,12 @@ processImpl lir_program program context type_name impl lifetimes = do
             result <- RT.Named "bool" []
             op_call <- R.FunctionCall (getRustIdentity fn_id) [convertImplArg lir_program fn_id (R.VarRef "self"), convertImplArg lir_program fn_id (R.VarRef (getArgName 1))]
             body <- R.Block [sikoBoolToRustBool op_call (RT.Named boolTypeName [])]
-            method <- R.Function "eq" 
-                                 [] 
-                                 True 
-                                 args 
-                                 result 
-                                 body 
+            method <- R.Function "eq"
+                                 []
+                                 True
+                                 args
+                                 result
+                                 body
                                  []
             ("std::cmp::PartialEq", [method])
         LD.Eq -> do
@@ -314,12 +314,12 @@ processImpl lir_program program context type_name impl lifetimes = do
             op_call <- R.FunctionCall (getRustIdentity fn_id) [convertImplArg lir_program fn_id (R.VarRef "self"), convertImplArg lir_program fn_id (R.VarRef (getArgName 1))]
             fn <- getFunction lir_program fn_id
             body <- R.Block [sikoOptionalOrderingToRustOptionalOrdering lir_program op_call fn.type.result]
-            method <- R.Function "partial_cmp" 
-                                 [] 
-                                 True 
-                                 args 
-                                 result 
-                                 body 
+            method <- R.Function "partial_cmp"
+                                 []
+                                 True
+                                 args
+                                 result
+                                 body
                                  []
             ("std::cmp::PartialOrd", [method])
         LD.Ord fn_id -> do
@@ -329,12 +329,12 @@ processImpl lir_program program context type_name impl lifetimes = do
             fn <- getFunction lir_program fn_id
             ordering_result <- convertType fn.type.result
             body <- R.Block [sikoOrderingToRustOrdering op_call ordering_result]
-            method <- R.Function "cmp" 
-                                 [] 
-                                 True 
-                                 args 
-                                 result 
-                                 body 
+            method <- R.Function "cmp"
+                                 []
+                                 True
+                                 args
+                                 result
+                                 body
                                  []
             ("std::cmp::Ord", [method])
     //println "processImpl: {} {}" % (name, rust_type_name)
@@ -410,12 +410,12 @@ processFunction (context, program, type_store, rust_program) (_, lir_function) =
         RecordCtor -> return (context, program, type_store, rust_program)
     lifetimes <- convertLifetimes lir_function.lifetimes
     lifetime_dependencies <- List.map lir_function.lifetime_dependencies convertLifetimeDependency
-    rust_function <- R.Function rust_function_name 
-                                lifetimes 
-                                False 
-                                rust_args 
-                                rust_result 
-                                rust_body 
+    rust_function <- R.Function rust_function_name
+                                lifetimes
+                                False
+                                rust_args
+                                rust_result
+                                rust_body
                                 lifetime_dependencies
     functions <- push rust_program.functions rust_function
     (context, program, type_store, rust_program { functions = functions })

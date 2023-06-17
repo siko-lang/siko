@@ -35,7 +35,7 @@ data Context a = { effect_contexts :: [EffectContextInfo],
                    context_binds :: Map E.ExprId (E.Expr T.Type),
                    state :: a,
                    queue :: [FQ.FullyQualifiedName],
-                   mapper :: UUtil.Mapper,
+                   mapper :: UUtil.Mapper
                  }
 
 getNextExprId a :: (StateProvider a) => Context a -> (Context a, E.ExprId)
@@ -236,7 +236,13 @@ resolveEffects state orig_qn resolution_set = do
         F.Normal info -> do
             mapper <- UUtil.emptyMapper
             mapper <- UUtil.partial mapper
-            context <- Context [] info.expr_id_gen info.pattern_id_gen Map.empty state [] mapper
+            context <- Context []
+                               info.expr_id_gen
+                               info.pattern_id_gen
+                               Map.empty
+                               state
+                               []
+                               mapper
             context <- addEffectContext context resolution_set (Some FromArg)
             (context, sub) <- case fn.kind of
                 F.Normal info -> case info.effects of

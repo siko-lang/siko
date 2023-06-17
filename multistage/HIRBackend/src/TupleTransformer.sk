@@ -1,19 +1,20 @@
 module Siko.HIR.Backend.TupleTransformer where
 
-import Siko.HIR.Type as HT
-import Siko.HIR.Function as HF
-import Siko.HIR.Expr as HE
-import Siko.HIR.Pattern as HP
-import Siko.HIR.Data as HD
-import Siko.HIR.FullyQualifiedName as FQ
-import Siko.Util.SharedString as SS
 import Map
-import Siko.Syntax.Location
-import Siko.Syntax.Ident
 import Siko.HIR.Backend.Util
+import Siko.HIR.Data as HD
+import Siko.HIR.Expr as HE
+import Siko.HIR.FullyQualifiedName as FQ
+import Siko.HIR.Function as HF
+import Siko.HIR.Pattern as HP
+import Siko.HIR.Type as HT
+import Siko.Syntax.Ident
+import Siko.Syntax.Location
+import Siko.Util.SharedString as SS
 
 data Context = { tuples :: Map FQ.FullyQualifiedName HD.Record,
-                 functions :: Map FQ.FullyQualifiedName (HF.Function HT.Type) }
+                 functions :: Map FQ.FullyQualifiedName (HF.Function HT.Type)
+               }
 
 createContext :: Context
 createContext = Context Map.empty Map.empty
@@ -60,8 +61,8 @@ instance (TupleTransformer a) => TupleTransformer Option a where
 
 instance (TupleTransformer v, Ord k) => TupleTransformer Map k v where
     transform context m = Map.mapS context m (\context, (k, v) -> do
-        (context, v) <- transform context v
-        (context, k, v))
+            (context, v) <- transform context v
+            (context, k, v))
 
 instance (TupleTransformer a, GetType a) => TupleTransformer HF.NormalFunctionInfo a where
     transform context info = do
@@ -312,4 +313,3 @@ instance TupleTransformer HD.RecordField where
     transform context (HD.RecordField name ty) = do
         (context, ty) <- transform context ty
         (context, HD.RecordField name ty)
-

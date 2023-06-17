@@ -6,10 +6,10 @@ import Siko.HIR.Backend.Unification as U
 import Siko.HIR.Backend.Unification.Data as UD
 import Siko.HIR.Backend.Unification.Util
 import Siko.HIR.Data as HD
+import Siko.HIR.FullyQualifiedName as FQ
 import Siko.HIR.Function as HF
 import Siko.HIR.Type as HT
 import Siko.MIR.Function as MF
-import Siko.HIR.FullyQualifiedName as FQ
 import Siko.Query.Lookup as QL
 import Siko.Util.SharedString as SS
 
@@ -90,8 +90,8 @@ mapType context steps type = case type of
     HT.Named qn args -> do
         case qn of
             FQ.Tuple args -> List.foldE context args (\context, index, arg -> do
-                steps <- push steps (MF.Field index)
-                mapType context steps arg)
+                    steps <- push steps (MF.Field index)
+                    mapType context steps arg)
             _ -> do
                 case QL.getResolvedRecordOpt context.state qn of
                     Some record -> do

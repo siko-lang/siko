@@ -1,7 +1,7 @@
 module Siko.Resolver.Core where
 
-import Map
 import IO
+import Map
 import Siko.AutoDerive as AD
 import Siko.HIR.Class as HC
 import Siko.HIR.Data as HD
@@ -146,8 +146,12 @@ processFunctions unresolved_function_infos variant_infos adts records = do
                     exit 1
                 (unresolved_function_infos + ufs, functions + fs))
 
-
-resolve :: [Module] -> ([HF.Function ()], [HC.Class], [HC.Instance], [HE.Effect], [HD.AlgebraicDataType], [HD.Record])
+resolve :: [Module] -> ([HF.Function ()],
+                        [HC.Class],
+                        [HC.Instance],
+                        [HE.Effect],
+                        [HD.AlgebraicDataType],
+                        [HD.Record])
 resolve modules = do
     module_resolvers <- getModuleResolvers modules
     (records, adts, ctors, variant_infos) <- List.fold (Map.empty, Map.empty, [], Map.empty) modules (\(records, adts, ctors, variant_infos), mod -> do

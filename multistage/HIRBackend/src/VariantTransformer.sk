@@ -1,19 +1,23 @@
 module Siko.HIR.Backend.VariantTransformer where
 
-import Siko.HIR.Data as HD
-import Siko.HIR.Type as HT
-import Siko.HIR.FullyQualifiedName as FQ
-import Siko.HIR.Backend.Util
-import Siko.HIR.Function as HF
 import Map
+import Siko.HIR.Backend.Util
+import Siko.HIR.Data as HD
+import Siko.HIR.FullyQualifiedName as FQ
+import Siko.HIR.Function as HF
+import Siko.HIR.Type as HT
 
 data Context = { records :: Map FQ.FullyQualifiedName HD.Record,
-                 functions :: Map FQ.FullyQualifiedName (HF.Function HT.Type) }
+                 functions :: Map FQ.FullyQualifiedName (HF.Function HT.Type)
+               }
 
 createContext :: Context
 createContext = Context Map.empty Map.empty
 
-processVariant :: HT.Type -> Context -> Int -> HD.Variant -> (Context, HD.Variant)
+processVariant :: HT.Type ->
+                  Context ->
+                  Int ->
+                  HD.Variant -> (Context, HD.Variant)
 processVariant adt_type context index variant = do
     vars <- List.fold [] variant.items (\vars, item -> vars + HT.collectFixedTypeArgs item)
     record_type <- HT.Named variant.name vars

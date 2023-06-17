@@ -3,21 +3,21 @@ module Main where
 import IO
 import Map
 import Siko.Args
-import Siko.Format
 import Siko.Config
+import Siko.Format
+import Siko.HIR.Backend.Core as HB
+import Siko.HIR.Backend.Lowering.Core as HL
+import Siko.LIR.Program
+import Siko.MIR.Backend as MB
 import Siko.Parser
+import Siko.Resolver.Core
 import Siko.Syntax.Ident
 import Siko.Syntax.Location
 import Siko.Syntax.Module
 import Siko.Syntax.Util
-import Siko.Resolver.Core
-import Siko.Typechecker.Core
-import Siko.HIR.Backend.Core as HB
-import Siko.HIR.Backend.Lowering.Core as HL
-import Siko.LIR.Program
-import Siko.Transpiler
-import Siko.MIR.Backend as MB
 import Siko.Trace
+import Siko.Transpiler
+import Siko.Typechecker.Core
 
 outputFileNameOption = "output-file filename"
 
@@ -171,10 +171,16 @@ main = do
                     names <- List.fold [] result.unused (\names, arg -> names + processPath arg)
                     modules <- build names
                     (functions, classes, instances, effects, adts, records) <- resolve modules
-                    typed_functions <- typecheck functions  classes  instances  effects adts  records
+                    typed_functions <- typecheck functions classes instances effects adts records
                     config <- parseConfig result
                     with { getConfig = \_ -> getDefaultConfig } do
-                        (functions, m_records, m_adts, external_class_impl_info_db) <- HB.process typed_functions functions  classes  instances  effects adts  records
+                        (functions, m_records, m_adts, external_class_impl_info_db) <- HB.process typed_functions
+                                                                                                  functions
+                                                                                                  classes
+                                                                                                  instances
+                                                                                                  effects
+                                                                                                  adts
+                                                                                                  records
                         mir_program <- HL.process functions m_records m_adts records adts external_class_impl_info_db
                         lir_program <- MB.processProgram mir_program
                         trace "Transpiling.."
