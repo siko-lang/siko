@@ -13,8 +13,15 @@ processExpr context expr = do
     Expr s_expr id type location <- expr
     case s_expr of
         StaticFunctionCall name _ -> do
-            (items, _) <- insert context.items name
+            items <- put context.items name
             (context { items = items }, expr)
+        With handlers _ _ -> do
+            context <- List.fold context handlers (\context, handler -> case handler.selection of
+                Static name -> do
+                    items <- put context.items name
+                    context { items = items }
+                _ -> context)
+            (context, expr)
         _ -> (context, expr)
 
 getFunctionDependencies :: Function () -> ([FullyQualifiedName], [FullyQualifiedName])

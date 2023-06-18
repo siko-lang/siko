@@ -179,30 +179,21 @@ fold f s iter = do
 
 module Main where
 
-import Std.Util
+effect Eff1 where
+    call1 :: ()
 
-data Value = IntegerValue Int
-    | StringValue String.String
+effect Eff2 where
+    call2 :: ()
 
-data Expr = Integer Int
-    | String String.String
-    | Sum Expr Expr
-    | Mul Expr Expr
+foo = do
+    call1
+    call2
 
-toInt :: Value -> Int
-toInt v = case v of
-    IntegerValue v -> v
-    StringValue v -> 0
+myCall1 = ()
 
-eval :: Expr -> Value
-eval expr = case expr of
-    Integer value -> IntegerValue value
-    String value -> StringValue value
-    Sum lhs rhs -> IntegerValue (toInt (eval lhs) + toInt (eval rhs))
-    Mul lhs rhs -> IntegerValue (toInt (eval lhs) * toInt (eval rhs))
+myCall2 = ()
 
 main = do
-    expr <- Mul (Sum (Integer 4) (Integer 4)) (Integer 2)
-    assert ((toInt (eval expr)) == 16)
-
-
+    with { call1 = myCall1 } do
+        with { call2 = myCall2 } do
+            foo

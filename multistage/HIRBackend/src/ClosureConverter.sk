@@ -336,7 +336,8 @@ closureConvertRecord state record = do
     (closure_context, fields) <- List.mapS closure_context record.fields (\context, D.RecordField name t -> do
         (closure_context, t) <- convertType closure_context t
         (closure_context, D.RecordField name t))
-    record <- record { fields = fields }
+    (closure_context, type_args) <- List.mapS closure_context record.type_args (\context, ty -> convertType closure_context ty)
+    record <- record { fields = fields, type_args = type_args }
     (closure_context.state, record, closure_context.closure_names |> List.sort |> List.dedup, closure_context.closure_instances |> List.sort |> List.dedup)
 
 closureConvertAdt a :: (StateProvider a) => a -> D.AlgebraicDataType -> (a,
