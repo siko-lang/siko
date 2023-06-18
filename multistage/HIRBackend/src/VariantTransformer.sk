@@ -11,6 +11,11 @@ data Context = { records :: Map FQ.FullyQualifiedName HD.Record,
                  functions :: Map FQ.FullyQualifiedName (HF.Function HT.Type)
                }
 
+getVariantRecordType :: HD.Variant -> HT.Type
+getVariantRecordType variant = do
+    vars <- List.fold [] variant.items (\vars, item -> vars + HT.collectFixedTypeArgs item)
+    HT.Named variant.name vars
+
 createContext :: Context
 createContext = Context Map.empty Map.empty
 
@@ -19,8 +24,7 @@ processVariant :: HT.Type ->
                   Int ->
                   HD.Variant -> (Context, HD.Variant)
 processVariant adt_type context index variant = do
-    vars <- List.fold [] variant.items (\vars, item -> vars + HT.collectFixedTypeArgs item)
-    record_type <- HT.Named variant.name vars
+    record_type <- getVariantRecordType variant
     (record, function) <- createVariantRecordFromTypes variant.name index record_type adt_type variant.items
     records <- Map.put context.records variant.name record
     functions <- Map.put context.functions variant.name function

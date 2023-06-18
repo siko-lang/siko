@@ -240,6 +240,23 @@ convertClosures provider functions records = do
         (functions, records, adts))
     (functions, records, adts)
 
+transformVariantsAndCases :: BackendStateProvider -> BackendStateProvider
+transformVariantsAndCases provider = do
+    vt_context <- VT.createContext
+    (vt_context, adt_map) <- Map.mapS vt_context provider.adt_map (\vt_context, (qn, adt) -> do
+        (vt_context, adt) <- VT.processAlgebraicDataType vt_context adt
+        (vt_context, qn, adt))
+    record_map <- Map.merge provider.record_map vt_context.records
+    provider <- provider { record_map = record_map, adt_map = adt_map }
+    typed_function_map <- Map.map provider.typed_function_map (\(qn, f) -> do
+        state <- createStateProvider provider
+        (state, f) <- transformCases state f
+        (qn, f))
+    provider <- provider { typed_function_map = typed_function_map }
+    typed_function_map <- Map.merge provider.typed_function_map vt_context.functions
+    record_map <- Map.merge provider.record_map vt_context.records
+    provider { typed_function_map = typed_function_map, record_map = record_map }
+
 process :: [HF.Function HT.Type] ->
            [HF.Function ()] ->
            [HC.Class] ->
@@ -276,31 +293,13 @@ process typed_functions functions classes instances effects adts records = do
         state <- createStateProvider provider
         (state, class_type_info) <- TC.createClassTypeInfo state c
         (name, class_type_info))
-    typed_functions <- List.map typed_functions (\f -> do
-        state <- createStateProvider provider
-        (state, f) <- transformCases state f
-        f)
-    vt_context <- VT.createContext
-    (vt_context, adts) <- List.mapS vt_context adts VT.processAlgebraicDataType
-    adt_map <- List.fold Map.empty adts (\adt_map, adt -> Map.put adt_map adt.name adt)
-    typed_functions <- List.map typed_functions (\f -> do
+    provider <- provider { class_type_info_map = class_type_info_map }
+    provider <- transformVariantsAndCases provider
+    typed_function_map <- Map.map provider.typed_function_map (\(qn, f) -> do
         state <- createStateProvider provider
         (state, f) <- UT.processFunction state f
-        f)
-    typed_function_map <- List.fold Map.empty typed_functions (\typed_function_map, f -> Map.put typed_function_map f.name f)
-    typed_function_map <- Map.merge typed_function_map vt_context.functions
-    record_map <- Map.merge record_map vt_context.records
-    provider <- BackendStateProvider class_map
-                                     class_type_info_map
-                                     instance_map
-                                     function_map
-                                     typed_function_map
-                                     Map.empty
-                                     Map.empty
-                                     record_map
-                                     adt_map
-                                     effect_map
-                                     registered_instance_map
+        (qn, f))
+    provider <- provider { typed_function_map = typed_function_map }
     base_main_qn <- FQ.FullPath getMainModuleName getMainFunctionName
     members <- Map.fold [] typed_function_map (\members, (qn, fn) -> case fn.kind of
         HF.Normal info -> if isSome info.source
@@ -310,29 +309,9 @@ process typed_functions functions classes instances effects adts records = do
         _ -> members)
     unreachable_qn <- FQ.FullPath getStdUtilBasicModuleName getUnreachableName
     resolved_effect_fns <- resolveEffects provider ([base_main_qn, unreachable_qn] + members)
-    provider <- BackendStateProvider class_map
-                                     class_type_info_map
-                                     instance_map
-                                     function_map
-                                     resolved_effect_fns
-                                     Map.empty
-                                     Map.empty
-                                     record_map
-                                     adt_map
-                                     effect_map
-                                     registered_instance_map
+    provider <- provider { typed_function_map = resolved_effect_fns }
     monomorphize_context <- monomorphize provider base_main_qn unreachable_qn
-    provider <- BackendStateProvider class_map
-                                     class_type_info_map
-                                     instance_map
-                                     function_map
-                                     monomorphize_context.functions
-                                     Map.empty
-                                     Map.empty
-                                     monomorphize_context.records
-                                     monomorphize_context.adts
-                                     effect_map
-                                     registered_instance_map
+    provider <- provider { typed_function_map = monomorphize_context.functions, record_map = monomorphize_context.records, adt_map = monomorphize_context.adts }
     //Map.forEach monomorphize_context.functions (\(qn, _) -> println "Mono func {}" % qn)
     (functions, records, closure_adts) <- convertClosures provider monomorphize_context.functions monomorphize_context.records
     //Map.forEach functions (\(qn, _) -> println "convertClosures func {}" % qn)

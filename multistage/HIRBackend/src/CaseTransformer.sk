@@ -5,6 +5,8 @@ import Siko.HIR.Backend.CaseChecker as CC
 import Siko.HIR.Backend.StateProvider
 import Siko.HIR.Backend.Traversal
 import Siko.HIR.Backend.Unification.Data as UD
+import Siko.HIR.Backend.Util
+import Siko.HIR.Backend.VariantTransformer as VT
 import Siko.HIR.Data as D
 import Siko.HIR.Expr as E
 import Siko.HIR.ExprIdGenerator
@@ -132,7 +134,7 @@ getFieldAccessor context path parent_accessor location = do
                             context <- context { state = state }
                             variant <- atIndex adt.variants variant_index
                             item <- atIndex variant.items index
-                            body <- E.TupleFieldAccess index internal
+                            body <- E.FieldAccess (createIdent (getFieldName index) location) internal
                             getExpr context (\id -> E.Expr body id item location)
                         None -> do
                             record <- QL.getRecord context.state name
@@ -186,10 +188,10 @@ createCase context cond choice path path_info_map case_bodies guards location bo
                     (context, pat3_id) <- getNextPatternId context
                     (state, adt) <- Result.unwrap (UD.instantiateAdt context.state adt body_type)
                     variant <- atIndex adt.variants index
+                    bind_type <- atIndex variant.items 0
                     context <- context { state = state }
                     bind_ref <- P.BindRef (SS.create "var_int") pat_id
                     bind_pattern <- P.Binding bind_ref
-                    bind_type <- T.Tuple variant.items
                     bind_pattern <- P.Pattern bind_pattern pat2_id bind_type location
                     case_pattern <- P.Variant name index [bind_pattern]
                     case_pattern <- P.Pattern case_pattern pat3_id body_type location

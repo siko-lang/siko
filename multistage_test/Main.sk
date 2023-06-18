@@ -26,6 +26,9 @@ class Show a where
 class Add a where
     opAdd a :: a -> a -> a
 
+class Mul a where
+    opMul a :: a -> a -> a
+
 class PartialEq a where
     opEq a :: a -> a -> Bool
 
@@ -73,6 +76,21 @@ data Int = extern
 
 instance Show Int where
     show _ = "0"
+
+instance Add Int where
+    opAdd a b = addInt a b
+
+instance Mul Int where
+    opMul a b = mulInt a b
+
+instance PartialEq Int where
+    opEq a b = True
+
+addInt :: ~Int -> ~Int -> ~Int
+addInt a b = extern
+
+mulInt :: ~Int -> ~Int -> ~Int
+mulInt a b = extern
 
 module Option where
 
@@ -161,25 +179,30 @@ fold f s iter = do
 
 module Main where
 
-import IO
+import Std.Util
 
-processPath :: String -> [String]
-processPath path = do
-    entries <- listDir path
-    List.fold [] entries (\files, entry -> if isDir entry
-        then files + processPath entry
-        else do
-            subs <- String.split entry "/"
-            file <- last subs
-            if endsWith file ".sk"
-            then List.push files entry
-            else files)
+data Value = IntegerValue Int
+    | StringValue String.String
+
+data Expr = Integer Int
+    | String String.String
+    | Sum Expr Expr
+    | Mul Expr Expr
+
+toInt :: Value -> Int
+toInt v = case v of
+    IntegerValue v -> v
+    StringValue v -> 0
+
+eval :: Expr -> Value
+eval expr = case expr of
+    Integer value -> IntegerValue value
+    String value -> StringValue value
+    Sum lhs rhs -> IntegerValue (toInt (eval lhs) + toInt (eval rhs))
+    Mul lhs rhs -> IntegerValue (toInt (eval lhs) * toInt (eval rhs))
 
 main = do
-    if True
-    then ()
-    else do
-        files <- processPath "/tmp"
-    ()
+    expr <- Mul (Sum (Integer 4) (Integer 4)) (Integer 2)
+    assert ((toInt (eval expr)) == 16)
 
 
