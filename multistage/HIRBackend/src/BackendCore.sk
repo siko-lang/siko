@@ -14,6 +14,7 @@ import Siko.HIR.Backend.TupleTransformer as TT
 import Siko.HIR.Backend.Typechecker.ClassTypeInfo as TC
 import Siko.HIR.Backend.Typechecker.FunctionTypeInfo as TF
 import Siko.HIR.Backend.UpdateTransformer as UT
+import Siko.HIR.Backend.Inliner as Inliner
 import Siko.HIR.Backend.Util
 import Siko.HIR.Backend.VariantTransformer as VT
 import Siko.HIR.Class as HC
@@ -315,6 +316,15 @@ process typed_functions functions classes instances effects adts records = do
     //Map.forEach monomorphize_context.functions (\(qn, _) -> println "Mono func {}" % qn)
     (functions, records, closure_adts) <- convertClosures provider monomorphize_context.functions monomorphize_context.records
     //Map.forEach functions (\(qn, _) -> println "convertClosures func {}" % qn)
+    provider <- provider { typed_function_map = functions }
+    functions <- Map.fold Map.empty functions (\functions, (qn, fn) -> do
+        if Inliner.willBeInlined fn
+        then functions
+        else do
+            state <- createStateProvider provider
+            (state, fn) <- Inliner.processFunction state fn
+            functions <- Map.put functions qn fn
+            functions)
     (tt_context, functions) <- TT.transform TT.createContext functions
     (tt_context, records) <- TT.transform tt_context records
     functions <- Map.merge functions tt_context.functions
