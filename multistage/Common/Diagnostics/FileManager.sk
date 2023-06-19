@@ -1,0 +1,23 @@
+module Siko.FileManager where
+
+import Json
+import Json.Serialize
+import Map
+import Siko.Syntax.Location
+
+data FileManager = { file_names :: Map FileId String } deriving (PartialEq, Eq, ToJson, FromJson)
+
+createFileManager :: FileManager
+createFileManager = FileManager empty
+
+addFile :: FileManager -> String -> (FileManager, FileId)
+addFile file_manager file_name = do
+    id <- getSize file_manager.file_names
+    id <- FileId id
+    (file_names, _) <- insert file_manager.file_names id file_name
+    (file_manager { file_names = file_names }, id)
+
+getFile :: FileManager -> FileId -> String
+getFile file_manager file_id = case get file_manager.file_names file_id of
+    Some file -> file
+    None -> panic "Invalid file_id!"

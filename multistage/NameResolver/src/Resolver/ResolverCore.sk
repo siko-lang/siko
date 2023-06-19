@@ -1,6 +1,5 @@
 module Siko.Resolver.Core where
 
-import IO
 import Map
 import Siko.AutoDerive as AD
 import Siko.HIR.Class as HC
@@ -12,6 +11,7 @@ import Siko.Resolver
 import Siko.Resolver.Class
 import Siko.Resolver.Data
 import Siko.Resolver.Effect
+import Siko.Resolver.Error
 import Siko.Resolver.Export
 import Siko.Resolver.Function
 import Siko.Resolver.Import
@@ -35,9 +35,10 @@ processDataTypes :: ModuleResolver -> [Item] -> (Map FQ.FullyQualifiedName HD.Re
                                                  Map FQ.FullyQualifiedName HD.VariantInfo) -> (Map FQ.FullyQualifiedName HD.Record,
                                                                                                Map FQ.FullyQualifiedName HD.AlgebraicDataType,
                                                                                                [HF.Function ()],
-                                                                                               Map FQ.FullyQualifiedName HD.VariantInfo)
+                                                                                               Map FQ.FullyQualifiedName HD.VariantInfo,
+                                                                                               [ResolverError])
 processDataTypes module_resolver items (records, adts, functions, variant_infos) = do
-    List.fold (records, adts, functions, variant_infos) items (\(records, adts, functions, variant_infos), item -> case item of
+    List.fold (records, adts, functions, variant_infos, []) items (\(records, adts, functions, variant_infos, errors), item -> case item of
         Record record -> do
             record <- Std.Intrinsics.clone record
             state <- createStateProvider Map.empty Map.empty Map.empty
@@ -45,131 +46,131 @@ processDataTypes module_resolver items (records, adts, functions, variant_infos)
             functions <- case ctor of
                 Some ctor -> List.push functions ctor
                 None -> functions
-            (Map.put records hir_record.name hir_record, adts, functions, variant_infos)
+            (Map.put records hir_record.name hir_record, adts, functions, variant_infos, errors + state.errors)
         Adt adt -> do
             adt <- Std.Intrinsics.clone adt
             state <- createStateProvider Map.empty Map.empty Map.empty
             (state, hir_adt, infos, ctors) <- processAdt state module_resolver adt
             variant_infos <- List.fold variant_infos infos (\variant_infos, (info, name) -> Map.put variant_infos name info)
-            (records, Map.put adts hir_adt.name hir_adt, functions + ctors, variant_infos)
-        _ -> (records, adts, functions, variant_infos))
+            (records, Map.put adts hir_adt.name hir_adt, functions + ctors, variant_infos, errors + state.errors)
+        _ -> (records, adts, functions, variant_infos, errors))
 
 processModuleInstances :: ModuleResolver ->
                           [Item] ->
                           Map FQ.FullyQualifiedName HC.Class ->
-                          ([UnresolvedFunctionInfo], [HC.Instance]) -> ([UnresolvedFunctionInfo], [HC.Instance])
+                          ([UnresolvedFunctionInfo], [HC.Instance]) -> ([UnresolvedFunctionInfo], [HC.Instance], [ResolverError])
 processModuleInstances module_resolver items classes (all_functions, all_instances) = do
-    (functions, instances) <- List.fold ([], []) items (\(functions, instances), item -> case item of
+    (functions, instances, errors) <- List.fold ([], [], []) items (\(functions, instances, errors), item -> case item of
         Record record -> do
             record <- Std.Intrinsics.clone record
             (record, derived_instances) <- AD.processRecordDerives record classes module_resolver
-            List.fold (functions, instances) derived_instances (\(functions, instances), derived_instance -> do
+            List.fold (functions, instances, errors) derived_instances (\(functions, instances, errors), derived_instance -> do
                 index <- List.getLength instances
-                (hir_instance, members) <- processModuleInstance module_resolver derived_instance index
-                (functions + members, List.push instances hir_instance))
+                (hir_instance, members, errs) <- processModuleInstance module_resolver derived_instance index
+                (functions + members, List.push instances hir_instance, errors + errs))
         Adt adt -> do
             adt <- Std.Intrinsics.clone adt
             (adt, derived_instances) <- AD.processAdtDerives adt classes module_resolver
-            List.fold (functions, instances) derived_instances (\(functions, instances), derived_instance -> do
+            List.fold (functions, instances, errors) derived_instances (\(functions, instances, errors), derived_instance -> do
                 index <- List.getLength instances
-                (hir_instance, members) <- processModuleInstance module_resolver derived_instance index
-                (functions + members, List.push instances hir_instance))
+                (hir_instance, members, errs) <- processModuleInstance module_resolver derived_instance index
+                (functions + members, List.push instances hir_instance, errors + errs))
         Instance i -> do
             index <- List.getLength instances
-            (hir_instance, members) <- processModuleInstance module_resolver i index
-            (functions + members, List.push instances hir_instance)
-        _ -> (functions, instances))
-    (all_functions + functions, all_instances + instances)
+            (hir_instance, members, errs) <- processModuleInstance module_resolver i index
+            (functions + members, List.push instances hir_instance, errors + errs)
+        _ -> (functions, instances, errors))
+    (all_functions + functions, all_instances + instances, errors)
     where
-        processModuleInstance :: ModuleResolver -> SC.Instance -> Int -> (HC.Instance, [UnresolvedFunctionInfo])
+        processModuleInstance :: ModuleResolver -> SC.Instance -> Int -> (HC.Instance, [UnresolvedFunctionInfo], [ResolverError])
         processModuleInstance module_resolver i index = do
             state <- createStateProvider Map.empty Map.empty Map.empty
             (state, hir_instance, members) <- processInstance state module_resolver index i
-            (hir_instance, members)
+            (hir_instance, members, state.errors)
 
-processClasses :: ModuleResolver -> [Item] -> (Map FQ.FullyQualifiedName HC.Class, [UnresolvedFunctionInfo]) -> (Map FQ.FullyQualifiedName HC.Class, [UnresolvedFunctionInfo])
+processClasses :: ModuleResolver -> [Item] -> (Map FQ.FullyQualifiedName HC.Class, [UnresolvedFunctionInfo]) -> (Map FQ.FullyQualifiedName HC.Class, [UnresolvedFunctionInfo], [ResolverError])
 processClasses module_resolver items (classes, members) = do
-    List.fold (classes, members) items (\(classes, members), item -> case item of
+    List.fold (classes, members, []) items (\(classes, members, errors), item -> case item of
         Class c -> do
             c <- Std.Intrinsics.clone c
             state <- createStateProvider Map.empty Map.empty Map.empty
             (state, hir_class, ms) <- processClass state module_resolver c
-            (Map.put classes hir_class.name hir_class, members + ms)
-        _ -> (classes, members))
+            (Map.put classes hir_class.name hir_class, members + ms, errors + state.errors)
+        _ -> (classes, members, errors))
 
-processEffects :: ModuleResolver -> [Item] -> ([HE.Effect], [UnresolvedFunctionInfo]) -> ([HE.Effect], [UnresolvedFunctionInfo])
+processEffects :: ModuleResolver -> [Item] -> ([HE.Effect], [UnresolvedFunctionInfo]) -> ([HE.Effect], [UnresolvedFunctionInfo], [ResolverError])
 processEffects module_resolver items (effects, members) = do
-    List.fold (effects, members) items (\(effects, members), item -> case item of
+    List.fold (effects, members, []) items (\(effects, members, errors), item -> case item of
         Effect e -> do
             e <- Std.Intrinsics.clone e
             state <- createStateProvider Map.empty Map.empty Map.empty
             (state, hir_effect, ms) <- processEffect state module_resolver e
-            (List.push effects hir_effect, members + ms)
-        _ -> (effects, members))
+            (List.push effects hir_effect, members + ms, errors + state.errors)
+        _ -> (effects, members, errors))
 
-getModuleResolvers :: List Module -> Map SS.SharedString ModuleResolver
+getModuleResolvers :: List Module -> (Map SS.SharedString ModuleResolver, [ResolverError])
 getModuleResolvers modules = do
     (locals, exports) <- List.fold (Map.empty, Map.empty) modules (\(locals, exports), mod -> do
         name <- getString mod.name
         (local_items, exported_items) <- processModule mod
         (Map.put locals name local_items, Map.put exports name exported_items))
-    List.fold Map.empty modules (\module_resolvers, mod -> do
+    List.fold (Map.empty, []) modules (\(module_resolvers, errors), mod -> do
         name <- getString mod.name
         name <- Std.Intrinsics.clone name
         locals <- Option.unwrap (Map.get locals name)
         export_provider <- ExportProvider (\name -> Map.get exports name)
-        (imported_items, errors) <- processImports mod export_provider locals
-        if List.isEmpty errors
+        (imported_items, errs) <- processImports mod export_provider locals
+        ((module_resolvers, errors + errs))
+        if List.isEmpty errs
         then do
             module_resolver <- createModuleResolver name imported_items
-            Map.put module_resolvers name module_resolver
+            (Map.put module_resolvers name module_resolver, errors)
         else do
-            println "error {}" % errors
-            exit 1)
+            (module_resolvers, errors))
 
 processFunctions :: [UnresolvedFunctionInfo] ->
                     Map FQ.FullyQualifiedName HD.VariantInfo ->
                     Map FQ.FullyQualifiedName HD.AlgebraicDataType ->
-                    Map FQ.FullyQualifiedName HD.Record -> [HF.Function ()]
+                    Map FQ.FullyQualifiedName HD.Record -> ([HF.Function ()], [ResolverError])
 processFunctions unresolved_function_infos variant_infos adts records = do
-    loop (unresolved_function_infos, functions) <- (unresolved_function_infos, []) do
+    loop (unresolved_function_infos, functions, errors) <- (unresolved_function_infos, [], []) do
         if List.isEmpty unresolved_function_infos
-        then break functions
+        then break (functions, errors)
         else do
-            List.fold ([], functions) unresolved_function_infos (\(unresolved_function_infos, functions), unresolved_function_info -> do
+            List.fold ([], functions, errors) unresolved_function_infos (\(unresolved_function_infos, functions, errors), unresolved_function_info -> do
                 state <- createStateProvider variant_infos adts records
                 (state, fs, ufs) <- processUnresolvedFunction state unresolved_function_info
-                if List.isEmpty state.errors
-                then ()
-                else do
-                    println "Resolve error {}" % state.errors
-                    exit 1
-                (unresolved_function_infos + ufs, functions + fs))
+                (unresolved_function_infos + ufs, functions + fs, errors + state.errors))
 
 resolve :: [Module] -> ([HF.Function ()],
                         [HC.Class],
                         [HC.Instance],
                         [HE.Effect],
                         [HD.AlgebraicDataType],
-                        [HD.Record])
+                        [HD.Record],
+                        [ResolverError])
 resolve modules = do
-    module_resolvers <- getModuleResolvers modules
-    (records, adts, ctors, variant_infos) <- List.fold (Map.empty, Map.empty, [], Map.empty) modules (\(records, adts, ctors, variant_infos), mod -> do
+    (module_resolvers, errors) <- getModuleResolvers modules
+    (records, adts, ctors, variant_infos, errors) <- List.fold (Map.empty, Map.empty, [], Map.empty, errors) modules (\(records, adts, ctors, variant_infos, errors), mod -> do
         name <- getString mod.name
         module_resolver <- Option.unwrap (Map.get module_resolvers name)
-        processDataTypes module_resolver mod.items (records, adts, ctors, variant_infos))
-    (classes, class_members) <- List.fold (Map.empty, []) modules (\(classes, members), mod -> do
+        (records, adts, ctors, variant_infos, errs) <- processDataTypes module_resolver mod.items (records, adts, ctors, variant_infos)
+        (records, adts, ctors, variant_infos, errors + errs))
+    (classes, class_members, errors) <- List.fold (Map.empty, [], errors) modules (\(classes, members, errors), mod -> do
         name <- getString mod.name
         module_resolver <- Option.unwrap (Map.get module_resolvers name)
-        processClasses module_resolver mod.items (classes, members))
-    (instance_members, instances) <- List.fold ([], []) modules (\(functions, instances), mod -> do
+        (classes, class_members, errs) <- processClasses module_resolver mod.items (classes, members)
+        (classes, class_members, errors + errs))
+    (instance_members, instances, errors) <- List.fold ([], [], errors) modules (\(functions, instances, errors), mod -> do
         name <- getString mod.name
         module_resolver <- Option.unwrap (Map.get module_resolvers name)
-        processModuleInstances module_resolver mod.items classes (functions, instances))
-    (effects, effect_members) <- List.fold ([], []) modules (\(effects, members), mod -> do
+        (instance_members, instances, errs) <- processModuleInstances module_resolver mod.items classes (functions, instances)
+        (instance_members, instances, errors + errs))
+    (effects, effect_members, errors) <- List.fold ([], [], errors) modules (\(effects, members, errors), mod -> do
         name <- getString mod.name
         module_resolver <- Option.unwrap (Map.get module_resolvers name)
-        processEffects module_resolver mod.items (effects, members))
+        (effects, effect_members, errs) <- processEffects module_resolver mod.items (effects, members)
+        (effects, effect_members, errors + errs))
     functions <- List.fold [] modules (\functions, mod -> do
         name <- getString mod.name
         module_resolver <- Option.unwrap (Map.get module_resolvers name)
@@ -179,9 +180,10 @@ resolve modules = do
             createNormalUnresolvedFunctionInfo fn qn module_resolver)
         functions + fns)
     unresolved_function_infos <- functions + class_members + instance_members + effect_members
-    functions <- processFunctions unresolved_function_infos variant_infos adts records
+    (functions, errs) <- processFunctions unresolved_function_infos variant_infos adts records
+    errors <- errors + errs
     functions <- functions + ctors
     classes <- classes |> Map.iter |> Iterator.map (\(_, c) -> c) |> toList
     adts <- adts |> Map.iter |> Iterator.map (\(_, adt) -> adt) |> toList
     records <- records |> Map.iter |> Iterator.map (\(_, record) -> record) |> toList
-    (functions, classes, instances, effects, adts, records)
+    (functions, classes, instances, effects, adts, records, errors)

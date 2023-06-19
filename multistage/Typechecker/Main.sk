@@ -1,6 +1,9 @@
 module Main where
 
+import IO
 import Siko.Cache
+import Siko.Diagnostics.Typechecker
+import Siko.FileManager.Cache
 import Siko.HIR.Class as HC
 import Siko.HIR.Data as HD
 import Siko.HIR.Effect as HE
@@ -17,5 +20,11 @@ main = do
     effects :: [HE.Effect] <- loadCache getResolvedEffectCachePath
     adts :: [HD.AlgebraicDataType] <- loadCache getResolvedAdtCachePath
     records :: [HD.Record] <- loadCache getResolvedRecordCachePath
-    typed_functions <- typecheck functions classes instances effects adts records
-    updateCache getTypedFunctionCachePath typed_functions
+    file_manager <- loadCache getFileManagerCachePath
+    file_manager <- atIndex file_manager 0
+    (typed_functions, errors) <- typecheck functions classes instances effects adts records
+    if List.isEmpty errors
+    then updateCache getTypedFunctionCachePath typed_functions
+    else do
+        printTypecheckerErrors file_manager errors
+        exit 1

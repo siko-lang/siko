@@ -4,6 +4,9 @@ import IO
 import Map
 import Siko.Args
 import Siko.Cache
+import Siko.Diagnostics.Parser
+import Siko.FileManager
+import Siko.FileManager.Cache
 import Siko.Format
 import Siko.Parser
 import Siko.Syntax.Cache
@@ -32,18 +35,18 @@ fmt :: [String] -> ()
 fmt files = do
     List.forEach files (\name -> do
         source <- readTextFile name
-        (source_file, lexer_errors, parser_errors) <- parse (FileId 0) name source True
+        file_manager <- createFileManager
+        (file_manager, file_id) <- addFile file_manager name
+        (source_file, lexer_errors, parser_errors) <- parse file_id name source True
         failed <- if List.isEmpty lexer_errors
         then False
         else do
-            println "Error in {}" % name
-            println lexer_errors
+            printLexerErrors lexer_errors
             True
         failed <- if List.isEmpty parser_errors
         then failed
         else do
-            println "Error in {}" % name
-            println parser_errors
+            printParserErrors file_manager file_id parser_errors
             True
         if failed
         then ()
@@ -62,24 +65,23 @@ fmt files = do
 
 build :: [String] -> ()
 build files = do
-    (failed, source_files) <- List.fold (False, []) files (\(failed, source_files), name -> do
+    (failed, source_files, file_manager) <- List.fold (False, [], createFileManager) files (\(failed, source_files, file_manager), name -> do
         source <- readTextFile name
-        (source_file, lexer_errors, parser_errors) <- parse (FileId 0) name source False
+        (file_manager, file_id) <- addFile file_manager name
+        (source_file, lexer_errors, parser_errors) <- parse file_id name source False
         failed <- if List.isEmpty lexer_errors
         then failed
         else do
-            println "Error in {}" % name
-            println lexer_errors
+            printLexerErrors lexer_errors
             True
         failed <- if List.isEmpty parser_errors
         then failed
         else do
-            println "Error in {}" % name
-            println parser_errors
+            printParserErrors file_manager file_id parser_errors
             True
         if failed
-        then (failed, source_files)
-        else (failed, List.push source_files source_file))
+        then (failed, source_files, file_manager)
+        else (failed, List.push source_files source_file, file_manager))
     if failed
     then exit 1
     else do
@@ -95,6 +97,7 @@ build files = do
         else ()
         modules <- modules |> Map.iter |> Iterator.map (\(name, mods) -> atIndex mods 0) |> toList
         updateCache getSyntaxModuleCachePath modules
+        updateCache getFileManagerCachePath [file_manager]
         ()
 
 processPath :: String -> [String]

@@ -1,0 +1,58 @@
+module Siko.Diagnostics.Resolver where
+
+import Siko.Diagnostics
+import Siko.FileManager
+import Siko.Resolver.Error
+import Siko.Syntax.Ident
+import Siko.Syntax.Location
+
+printResolverErrors :: FileManager -> [ResolverError] -> ()
+printResolverErrors file_manager errors = List.forEach errors (\err -> printResolverError file_manager err)
+
+printResolverError :: FileManager -> ResolverError -> ()
+printResolverError file_manager error = case error of
+    ModuleNotFound name -> printSingle file_manager "ModuleNotFound" name
+    UnknownType name -> printSingle file_manager "UnknownType" name
+    AmbiguousName name candidates -> printSingle file_manager ("AmbiguousName {}" % candidates) name
+    UnknownTypeArg name -> printSingle file_manager "UnknownTypeArg" name
+    InvalidVariant location -> printSingleL file_manager "InvalidVariant" location
+    NotAClassName name -> printSingle file_manager "NotAClassName" name
+    UnusedTypeArg name -> printSingle file_manager "UnusedTypeArg" name
+    ConflictingSignatures names -> printMulti file_manager "ConflictingSignatures" names
+    MissingImpl name -> printSingle file_manager "MissingImpl" name
+    InvalidExternArg location -> printSingleL file_manager "InvalidExternArg" location
+    ExternFnWithMultiDef name -> printSingle file_manager "ExternFnWithMultiDef" name
+    MultiDefArgCountMismatch counts -> println "MultiDefArgCountMismatch {}" % counts
+    MultiDefNoArg name -> printSingle file_manager "MultiDefNoArg" name
+    NotAFunction name -> printSingle file_manager "NotAFunction" name
+    UnknownFunction name -> printSingle file_manager "UnknownFunction" name
+    NotARecord name -> printSingle file_manager "NotARecord" name
+    NotAVariant name -> printSingle file_manager "NotAVariant" name
+    InvalidVariantArgCountInPattern name e f -> printSingle file_manager "InvalidVariantArgCountInPattern {} {}" % (e, f) name
+    InvalidRecordArgCountInPattern name e f -> printSingle file_manager "InvalidRecordArgCountInPattern {} {}" % (e, f) name
+    UninitalizedFields names -> println "UninitalizedFields {}" % names
+    MultiInitFields names -> printMulti file_manager "MultiInitFields" names
+    UnknownInitFields names -> printMulti file_manager "UnknownInitFields" names
+    UnusedFields names -> println "UnusedFields {}" % names
+    MultiUsedFields names -> printMulti file_manager "MultiUsedFields" names
+    UnknownUsedFields names -> printMulti file_manager "UnknownUsedFields" names
+    NotAVariable name -> printSingle file_manager "NotAVariable" name
+    BindNotUnique names -> printMulti file_manager "BindNotUnique" names
+    OrPatternMismatch name location -> printSingleL file_manager ("OrPatternMismatch {}" % name) location
+    UnusedClassArg name location -> printSingle file_manager "UnusedClassArg" name
+    ExternFnWithoutType name -> printSingle file_manager "ExternFnWithoutType" name
+    ContinueWithoutLoop location -> printSingleL file_manager "ContinueWithoutLoop" location
+    BreakWithoutLoop location -> printSingleL file_manager "BreakWithoutLoop" location
+    ItemConflict l1 l2 -> do
+        printSingleL file_manager "ItemConflict" l1
+        printSingleL file_manager "ItemConflict" l2
+    RecordFieldConflict names -> printMulti file_manager "RecordFieldConflict" names
+    NotIrrefutablePattern location -> printSingleL file_manager "NotIrrefutablePattern" location
+    InvalidTypeArgCount expected found location -> printSingleL file_manager ("InvalidTypeArgCount {} {}" % (expected, found)) location
+    InvalidFormatString location -> printSingleL file_manager "InvalidFormatString" location
+    InvalidAttribute name -> printSingle file_manager "Invalid attribute" name
+    NotAnEffectName name -> printSingle file_manager "NotAnEffectName" name
+    NotAnEffectMemberName name -> printSingle file_manager "NotAnEffectMemberName" name
+    InvalidEffectArgCount expected found location -> printSingleL file_manager ("InvalidEffectArgCount {} {}" % (expected, found)) location
+    TypeArgumentsNotUnique names -> printMulti file_manager "TypeArgumentsNotUnique" names
+    ExternEffect name -> printSingle file_manager "ExternEffect" name

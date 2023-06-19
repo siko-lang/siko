@@ -1,0 +1,28 @@
+module Siko.Diagnostics.Parser where
+
+import Siko.Diagnostics
+import Siko.FileManager
+import Siko.Parser.Error
+import Siko.Parser.Lexer
+import Siko.Syntax.Ident
+import Siko.Syntax.Location
+
+printLexerError error = case error of
+    InvalidEscapeSequence span -> printSpan "InvalidEscapeSequence" span
+    UnsupportedCharacter span -> printSpan "UnsupportedCharacter" span
+    InvalidOperator span -> printSpan "InvalidOperator" span
+    InvalidIdent span -> printSpan "InvalidIdent" span
+
+printParserError :: FileManager -> FileId -> ParserError -> ()
+printParserError file_manager file_id error = case error of
+    UnexpectedToken expected found span -> do
+        println "ERROR: expected: {} found: {}" % (expected, found)
+        file_name <- getFile file_manager file_id
+        println "-- {}:{}:{}\n" % (file_name, span.start.line, span.start.offset + 1)
+    InvalidTypeArgument span -> printSpan "InvalidTypeArgument" span
+
+printLexerErrors :: [LexerError] -> ()
+printLexerErrors lexer_errors = List.forEach lexer_errors (\err -> printLexerError err)
+
+printParserErrors :: FileManager -> FileId -> [ParserError] -> ()
+printParserErrors file_manager file_id parser_errors = List.forEach parser_errors (\err -> printParserError file_manager file_id err)

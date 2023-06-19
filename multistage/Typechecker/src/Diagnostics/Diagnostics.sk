@@ -1,0 +1,36 @@
+module Siko.Diagnostics.Typechecker where
+
+import Siko.Diagnostics
+import Siko.FileManager
+import Siko.HIR.Backend.Typechecker.Error
+import Siko.Syntax.Ident
+import Siko.Syntax.Location
+
+printTypecheckerErrors :: FileManager -> [TypecheckerError] -> ()
+printTypecheckerErrors file_manager errors = List.forEach errors (\err -> printTypecheckerError file_manager err)
+
+printTypecheckerError file_manager error = case error of
+    TypeMismatch expected found location -> printSingleL file_manager "TypeMismatch expected: {} found: {}" % (expected, found) location
+    TooManyArguments args type location -> printSingleL file_manager "TooManyArguments args {} {}" % (args, type) location
+    ClassMemberWithoutType name location -> printSingleL file_manager ("ClassMemberWithoutType {}" % name) location
+    InstanceMemberNotClassMember name location -> printSingleL file_manager ("InstanceMemberNotClassMember {}" % name) location
+    MissingInstanceMember name location -> printSingleL file_manager ("MissingInstanceMember {}" % name) location
+    InstanceMemberTypeMismatch expected found location -> printSingleL file_manager ("InstanceMemberTypeMismatch expected: {} found: {}" % (expected, found)) location
+    IncorrectArgCount expected found location -> printSingleL file_manager ("IncorrectArgCount {} {}" % (expected, found)) location
+    UnreachablePattern location -> printSingleL file_manager "UnreachablePattern" location
+    CircularClassDependency names locations -> do
+        List.forEach locations (\location -> printSingleL file_manager ("CircularClassDependency {}" % names) location)
+    ConflictingInstances class_name l1 l2 -> do
+        printSingleL file_manager ("ConflictingInstances {}" % class_name) l1
+        printSingleL file_manager ("ConflictingInstances {}" % class_name) l2
+    MissingInstance class_name location -> printSingleL file_manager ("MissingInstance {}" % class_name) location
+    SpecializedInstance location -> printSingleL file_manager "SpecializedInstance" location
+    AutoDeriveError type_name type class_name location -> printSingleL file_manager "AutoDeriveError {} {} {}" % (type_name, type, class_name) location
+    TypeAnnotationNeeded location -> printSingleL file_manager "TypeAnnotationNeeded" location
+    IncorrectMainType type location -> printSingleL file_manager ("IncorrectMainType {}" % type) location
+    MissingEffectMembers names location -> printSingleL file_manager ("MissingEffectMembers {}" % names) location
+    EffectMemberNotUnique name locations -> do
+        List.forEach locations (\location -> printSingleL file_manager ("EffectMemberNotUnique {}" % name) location)
+    UndeclaredEffect name location -> printSingleL file_manager ("UndeclaredEffect {}" % name) location
+    UnnecessaryEffect name location -> printSingleL file_manager ("UnnecessaryEffect {}" % name) location
+    MainEffectFound names location -> printSingleL file_manager ("MainEffectFound {}" % names) location

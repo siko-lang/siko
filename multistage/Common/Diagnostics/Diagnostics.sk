@@ -1,0 +1,50 @@
+module Siko.Diagnostics where
+
+import Siko.FileManager
+import Siko.Syntax.Ident
+import Siko.Syntax.Location
+
+printSpan :: String -> Span -> ()
+printSpan msg span = println "{} at {}" % (msg, fmtSpan span)
+
+fmtSpan :: Span -> String
+fmtSpan span = "{}:{}" % (span.start.line, span.start.offset + 1)
+
+fmtLocation :: Location -> String
+fmtLocation location = "{}" % fmtSpan location.span
+
+getLine :: Location -> Int
+getLine location = location.span.start.line
+
+getOffset :: Location -> Int
+getOffset location = location.span.start.offset + 1
+
+fmtIdent :: FileManager -> Ident -> String
+fmtIdent file_manager (Ident s location) = do
+    file_name <- getFile file_manager location.file_id
+    "-- {}:{}:{}\n" % (file_name, getLine location, getOffset location)
+
+fmtIdents :: FileManager -> [Ident] -> String
+fmtIdents file_manager idents = idents |> List.iter |> Iterator.fold (\r, i -> do
+        s <- fmtIdent file_manager i
+        r <- "{} {}" % (r, s)
+        r) ""
+
+printSingle :: FileManager -> String -> Ident -> ()
+printSingle file_manager msg (Ident n location) = do
+    println "ERROR: {} - {}" % (msg, n)
+    file_name <- getFile file_manager location.file_id
+    println "-- {}:{}:{}" % (file_name, getLine location, getOffset location)
+
+printSingleL :: FileManager -> String -> Location -> ()
+printSingleL file_manager msg location = do
+    println "ERROR: {}" % msg
+    file_name <- getFile file_manager location.file_id
+    println "-- {}:{}:{}" % (file_name, getLine location, getOffset location)
+
+printMulti :: FileManager -> String -> [Ident] -> ()
+printMulti file_manager msg idents = do
+    println "ERROR: {}" % msg
+    idents |> List.iter |> Iterator.forEach (\(Ident n location) -> do
+        file_name <- getFile file_manager location.file_id
+        println "-- {}:{}:{}" % (file_name, getLine location, getOffset location))

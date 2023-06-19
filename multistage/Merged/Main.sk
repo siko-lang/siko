@@ -4,6 +4,10 @@ import IO
 import Map
 import Siko.Args
 import Siko.Config
+import Siko.Diagnostics.Parser
+import Siko.Diagnostics.Resolver
+import Siko.Diagnostics.Typechecker
+import Siko.FileManager
 import Siko.Format
 import Siko.HIR.Backend.Core as HB
 import Siko.HIR.Backend.Lowering.Core as HL
@@ -39,18 +43,18 @@ fmt :: [String] -> ()
 fmt files = do
     List.forEach files (\name -> do
         source <- readTextFile name
-        (source_file, lexer_errors, parser_errors) <- parse (FileId 0) name source True
+        file_manager <- createFileManager
+        (file_manager, file_id) <- addFile file_manager name
+        (source_file, lexer_errors, parser_errors) <- parse file_id name source True
         failed <- if List.isEmpty lexer_errors
         then False
         else do
-            println "Error in {}" % name
-            println lexer_errors
+            printLexerErrors lexer_errors
             True
         failed <- if List.isEmpty parser_errors
         then failed
         else do
-            println "Error in {}" % name
-            println parser_errors
+            printParserErrors file_manager file_id parser_errors
             True
         if failed
         then ()
@@ -58,7 +62,7 @@ fmt files = do
             orig_source <- relocate source_file
             tokens <- format source_file
             output <- formatToken tokens
-            (new_source_file, lexer_errors, parser_errors) <- parse (FileId 0) name output True
+            (new_source_file, lexer_errors, parser_errors) <- parse file_id name output True
             new_source <- relocate new_source_file
             if new_source == orig_source
             then writeTextFile name output
@@ -67,26 +71,26 @@ fmt files = do
                 writeTextFile newname output
                 println "AST of {} changed!!" % name)
 
-build :: [String] -> [Module]
+build :: [String] -> (FileManager, [Module])
 build files = do
-    (failed, source_files) <- List.fold (False, []) files (\(failed, source_files), name -> do
+    file_manager <- createFileManager
+    (failed, source_files, file_manager) <- List.fold (False, [], file_manager) files (\(failed, source_files, file_manager), name -> do
         source <- readTextFile name
-        (source_file, lexer_errors, parser_errors) <- parse (FileId 0) name source False
+        (file_manager, file_id) <- addFile file_manager name
+        (source_file, lexer_errors, parser_errors) <- parse file_id name source False
         failed <- if List.isEmpty lexer_errors
         then failed
         else do
-            println "Error in {}" % name
-            println lexer_errors
+            printLexerErrors lexer_errors
             True
         failed <- if List.isEmpty parser_errors
         then failed
         else do
-            println "Error in {}" % name
-            println parser_errors
+            printParserErrors file_manager file_id parser_errors
             True
         if failed
-        then (failed, source_files)
-        else (failed, List.push source_files source_file))
+        then (failed, source_files, file_manager)
+        else (failed, List.push source_files source_file, file_manager))
     if failed
     then exit 1
     else do
@@ -101,7 +105,7 @@ build files = do
         then exit 1
         else ()
         modules <- modules |> Map.iter |> Iterator.map (\(name, mods) -> atIndex mods 0) |> toList
-        modules
+        (file_manager, modules)
 
 processPath :: String -> [String]
 processPath path = do
@@ -169,39 +173,49 @@ main = do
                     fmt names
                 "build" -> do
                     names <- List.fold [] result.unused (\names, arg -> names + processPath arg)
-                    modules <- build names
-                    (functions, classes, instances, effects, adts, records) <- resolve modules
-                    typed_functions <- typecheck functions classes instances effects adts records
-                    config <- parseConfig result
-                    with { getConfig = \_ -> getDefaultConfig } do
-                        (functions, m_records, m_adts, external_class_impl_info_db) <- HB.process typed_functions
-                                                                                                  functions
-                                                                                                  classes
-                                                                                                  instances
-                                                                                                  effects
-                                                                                                  adts
-                                                                                                  records
-                        mir_program <- HL.process functions m_records m_adts records adts external_class_impl_info_db
-                        lir_program <- MB.processProgram mir_program
-                        trace "Transpiling.."
-                        rust_output <- transpile lir_program
-                        rust_source_file <- getOutputFileName Rust
-                        binary_file <- getOutputFileName Binary
-                        writeTextFile rust_source_file rust_output
-                        trace "Compiling.."
-                        compilation_result <- if config.optimized
-                        then runCommand ["rustc",
-                                         "-O",
-                                         "-o",
-                                         binary_file,
-                                         rust_source_file]
-                        else runCommand ["rustc",
-                                         "-o",
-                                         binary_file,
-                                         rust_source_file]
-                        if compilation_result
-                        then exit 0
-                        else exit 1
-                        ()
+                    (file_manager, modules) <- build names
+                    (functions, classes, instances, effects, adts, records, errors) <- resolve modules
+                    if not (List.isEmpty errors)
+                    then do
+                        printResolverErrors file_manager errors
+                        exit 1
+                    else do
+                        (typed_functions, errors) <- typecheck functions classes instances effects adts records
+                        if not (List.isEmpty errors)
+                        then do
+                            printTypecheckerErrors file_manager errors
+                            exit 1
+                        else do
+                            config <- parseConfig result
+                            with { getConfig = \_ -> getDefaultConfig } do
+                                (functions, m_records, m_adts, external_class_impl_info_db) <- HB.process typed_functions
+                                                                                                          functions
+                                                                                                          classes
+                                                                                                          instances
+                                                                                                          effects
+                                                                                                          adts
+                                                                                                          records
+                                mir_program <- HL.process functions m_records m_adts records adts external_class_impl_info_db
+                                lir_program <- MB.processProgram mir_program
+                                trace "Transpiling.."
+                                rust_output <- transpile lir_program
+                                rust_source_file <- getOutputFileName Rust
+                                binary_file <- getOutputFileName Binary
+                                writeTextFile rust_source_file rust_output
+                                trace "Compiling.."
+                                compilation_result <- if config.optimized
+                                then runCommand ["rustc",
+                                                 "-O",
+                                                 "-o",
+                                                 binary_file,
+                                                 rust_source_file]
+                                else runCommand ["rustc",
+                                                 "-o",
+                                                 binary_file,
+                                                 rust_source_file]
+                                if compilation_result
+                                then exit 0
+                                else exit 1
+                                ()
                 _ -> ()
         Err _ -> ()

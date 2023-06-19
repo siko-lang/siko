@@ -1,17 +1,26 @@
 module Main where
 
+import IO
 import Siko.Cache
+import Siko.Diagnostics.Resolver
+import Siko.FileManager.Cache
 import Siko.Resolver.Cache
 import Siko.Resolver.Core
 import Siko.Syntax.Cache
 
 main = do
     modules <- loadCache getSyntaxModuleCachePath
-    (functions, classes, instances, effects, adts, records) <- resolve modules
-    updateCache getResolvedFunctionCachePath functions
-    updateCache getResolvedClassCachePath classes
-    updateCache getResolvedInstanceCachePath instances
-    updateCache getResolvedEffectCachePath effects
-    updateCache getResolvedAdtCachePath adts
-    updateCache getResolvedRecordCachePath records
-    ()
+    file_manager <- loadCache getFileManagerCachePath
+    file_manager <- atIndex file_manager 0
+    (functions, classes, instances, effects, adts, records, errors) <- resolve modules
+    if List.isEmpty errors
+    then do
+        updateCache getResolvedFunctionCachePath functions
+        updateCache getResolvedClassCachePath classes
+        updateCache getResolvedInstanceCachePath instances
+        updateCache getResolvedEffectCachePath effects
+        updateCache getResolvedAdtCachePath adts
+        updateCache getResolvedRecordCachePath records
+    else do
+        printResolverErrors file_manager errors
+        exit 1
