@@ -99,7 +99,9 @@ unifyVarWithType context var constraints sub type = do
                                     None -> (False, record, sub, context)
                             IndexedRow _ -> (False, record, sub, context)) (True, record, sub, context)
                     if success
-                    then (sub, context)
+                    then case unify context sub record.type type of
+                        Ok (context, sub) -> (sub, context)
+                        Err (context, sub) -> return Err (context, sub)
                     else return Err (context, sub)
         Tuple args -> do
             (success, args, sub, context) <- row_constraints |> List.iter |> Iterator.fold (\(success, args, sub, context), (kind, row_type) -> do
@@ -197,7 +199,7 @@ unify context sub type1 type2 = do
                 if constraints1 == constraints2 || ignoreConstraints context
                 then trySub context sub var1 type2
                 else do
-                    // FIXME: this is wrong, lost of cases are not covered, like row constraints?
+                    // FIXME: this is wrong, lots of cases are not covered, like row constraints?
                     //println "Merging {}/{} and {}/{}" % (var1, constraints1, var2, constraints2)
                     (context, sub) <- try mergeConstraints context sub constraints1 constraints2
                     constraints1 <- List.map constraints1 (\c -> apply c sub)

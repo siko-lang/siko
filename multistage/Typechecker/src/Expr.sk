@@ -595,6 +595,13 @@ checkExprType context orig_expr = do
             sub_ids <- List.map ctor.args (\E.Expr _ id _ _ -> id)
             sub_signatures <- TEff.getExprEffectSignatures context sub_ids
             context <- TEff.setExprEffect context id sub_signatures location
+            context <- List.foldE context ctor.args (\context, index, (E.Expr _ arg _ location) -> do
+                case getExprType context id of
+                    T.Tuple expr_tuple_args -> do
+                        expr_tuple_arg_type <- atIndex expr_tuple_args index
+                        arg_type <- getExprType context arg
+                        unify context S.createSubstitution expr_tuple_arg_type arg_type location
+                    _ -> context)
             arg_types <- List.map ctor.args (\(E.Expr _ arg _ _) -> getExprType context arg)
             context <- matchExprWith context id (T.Tuple arg_types) location
             context
@@ -661,10 +668,10 @@ checkExprType context orig_expr = do
             context <- TEff.setExprEffect context id ([body_sig] + case_sigs) location
             E.Case (P.Pattern _ pattern_id () pattern_location) (E.Expr _ case_body_id () case_body_location) <- atIndex cases 0
             context <- matchExprs context id case_body_id location
-            context <- cases |> List.iter |> Iterator.fold (\context, (E.Case (P.Pattern _ pattern_id () pattern_location) (E.Expr _ case_body_id () case_body_location)) -> do
+            context <- List.fold context cases (\context, (E.Case (P.Pattern _ pattern_id () pattern_location) (E.Expr _ case_body_id () case_body_location)) -> do
                 context <- matchExprWithPattern context body_id pattern_id pattern_location
                 context <- matchExprs context id case_body_id case_body_location
-                context) context
+                context)
             context <- bind_groups |> List.iter |> Iterator.fold (\context, bind_group -> do
                 bind_group.bindings |> Map.iter |> Iterator.fold (\context, (name, instances) -> do
                     P.BindRef _ first_pattern_id <- atIndex instances 0
