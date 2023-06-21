@@ -327,6 +327,7 @@ process typed_functions functions classes instances effects adts records = do
             functions)
     (tt_context, functions) <- TT.transform TT.createContext functions
     (tt_context, records) <- TT.transform tt_context records
+    (tt_context, external_class_impl_info_db) <- TT.transform tt_context monomorphize_context.external_class_impl_info_db
     functions <- Map.merge functions tt_context.functions
     //Map.forEach functions (\(qn, _) -> println "final func {}" % qn)
     records <- Map.merge records tt_context.tuples
@@ -334,4 +335,4 @@ process typed_functions functions classes instances effects adts records = do
     lowered_fns <- functions |> Map.iter |> Iterator.map (\(key, f) -> f) |> toList
     lowered_records <- records |> Map.iter |> Iterator.map (\(key, r) -> r) |> toList
     lowered_adts <- adts |> Map.iter |> Iterator.map (\(key, a) -> a) |> toList
-    (lowered_fns, lowered_records, lowered_adts, monomorphize_context.external_class_impl_info_db)
+    (lowered_fns, lowered_records, lowered_adts, external_class_impl_info_db)

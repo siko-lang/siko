@@ -312,3 +312,15 @@ instance TupleTransformer HD.RecordField where
     transform context (HD.RecordField name ty) = do
         (context, ty) <- transform context ty
         (context, HD.RecordField name ty)
+
+instance TupleTransformer HD.ExternalClassImplInfo where
+    transform context (HD.ExternalClassImplInfo impl ty) = do
+        (context, ty) <- transform context ty
+        (context, HD.ExternalClassImplInfo impl ty)
+
+instance TupleTransformer HD.ExternalClassImplInfoDb where
+    transform context db = do
+        (context, external_class_impls) <- Map.mapS context db.external_class_impls (\context, (k, v) -> do
+            (context, k) <- transform context k
+            (context, k, v))
+        (context, HD.ExternalClassImplInfoDb external_class_impls)
