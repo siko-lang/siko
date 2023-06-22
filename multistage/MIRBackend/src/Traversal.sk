@@ -21,10 +21,7 @@ processBlock a :: a ->
                   Option (a -> Expr -> a) -> (a, [Expr])
 processBlock context exprs process_expr process_type preCaseCheck = exprs |> List.iter |> Iterator.fold (\(context, exprs), expr -> do
         (context, expr) <- traverse context expr process_expr process_type preCaseCheck
-        Expr inner _ _ <- expr
-        exprs <- case inner of
-            Multi items -> exprs + items
-            _ -> push exprs expr
+        exprs <- push exprs expr
         (context, exprs)) (context, [])
 
 traverse a :: a ->
@@ -41,7 +38,6 @@ traverse context expr process_expr process_type preCaseCheck = do
         Do (DoBlock items) -> do
             (context, items) <- processBlock context items process_expr process_type preCaseCheck
             (context, Expr (Do (DoBlock items)) type id)
-        Multi _ -> panic "Multi expr found in traverse"
         StaticFunctionCall f_id args -> do
             (context, args) <- processArgs context args process_expr process_type preCaseCheck
             (context, Expr (StaticFunctionCall f_id args) type id)

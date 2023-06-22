@@ -2,7 +2,6 @@ module Siko.MIR.Expr where
 
 import Json
 import Json.Serialize
-import Siko.MIR.Backend.Rebinder
 import Siko.MIR.Identity as I
 import Siko.MIR.Type as T
 import Siko.Util.Format
@@ -22,7 +21,7 @@ instance Show Var where
 
 data RangeKind = Inclusive
                | Exclusive
-               deriving (PartialEq, Eq, Show, GenericTransform(Rebinder), ToJson, FromJson)
+               deriving (PartialEq, Eq, Show, ToJson, FromJson)
 
 data Checker = IntegerChecker String
              | StringChecker String
@@ -30,7 +29,7 @@ data Checker = IntegerChecker String
              | CharRangeChecker Char Char RangeKind
              | VariantChecker Int Var T.Type
              | WildcardChecker Var
-             deriving (PartialEq, Eq, GenericTransform(Rebinder), ToJson, FromJson)
+             deriving (PartialEq, Eq, ToJson, FromJson)
 
 instance Show Checker where
     show checker = case checker of
@@ -43,7 +42,7 @@ instance Show Checker where
 
 data Case = { checker :: Checker,
               body :: Expr
-            } deriving (PartialEq, Eq, Show, GenericTransform(Rebinder), ToJson, FromJson)
+            } deriving (PartialEq, Eq, Show, ToJson, FromJson)
 
 data ExprId = ExprId Int deriving (PartialEq, Eq, PartialOrd, Ord, Show, ToJson, FromJson)
 
@@ -65,7 +64,6 @@ data ContinueInfo = { arg :: Expr } deriving (PartialEq, Eq, Show, ToJson, FromJ
 data BreakInfo = { arg :: Expr } deriving (PartialEq, Eq, Show, ToJson, FromJson)
 
 data SimpleExpr = Do DoBlock
-                | Multi [Expr]
                 | StaticFunctionCall I.Identity [Expr]
                 | IntegerLiteral String
                 | StringLiteral String
@@ -87,14 +85,13 @@ data SimpleExpr = Do DoBlock
                 | Move Expr
                 | Box Expr
                 | Converter Expr
-                deriving (PartialEq, Eq, Show, GenericTransform(Rebinder), ToJson, FromJson)
+                deriving (PartialEq, Eq, Show, ToJson, FromJson)
 
 short :: Expr -> String
 short expr = do
     Expr s _ _ <- expr
     case s of
         Do block -> "Do"
-        Multi args -> "Multi"
         StaticFunctionCall id args -> "StaticFunctionCall({})" % id
         IntegerLiteral lit -> "IntegerLiteral"
         StringLiteral lit -> "StringLiteral"

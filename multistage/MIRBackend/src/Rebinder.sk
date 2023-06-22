@@ -85,6 +85,91 @@ instance Rebinder E.Expr where
         (context, s_expr) <- rebind context s_expr
         (context, E.Expr s_expr type id)
 
+instance Rebinder E.RangeKind where
+    rebind context kind = (context, kind)
+
+instance Rebinder E.Checker where
+    rebind context checker = case checker of
+        E.VariantChecker index v ty -> do
+            (context, v) <- addVar context v
+            (context, E.VariantChecker index v ty)
+        E.WildcardChecker v -> do
+            (context, v) <- addVar context v
+            (context, E.WildcardChecker v)
+        _ -> (context, checker)
+
+instance Rebinder E.Case where
+    rebind context c = do
+        (context, checker) <- rebind context c.checker
+        (context, body) <- rebind context c.body
+        (context, E.Case checker body)
+
+instance Rebinder E.SimpleExpr where
+    rebind context s_expr = case s_expr of
+        E.Do block -> do
+            (context, block) <- rebind context block
+            (context, E.Do block)
+        E.StaticFunctionCall id args -> do
+            (context, args) <- rebind context args
+            (context, E.StaticFunctionCall id args)
+        E.IntegerLiteral lit -> (context, E.IntegerLiteral lit)
+        E.StringLiteral lit -> (context, E.StringLiteral lit)
+        E.FloatLiteral lit -> (context, E.FloatLiteral lit)
+        E.CharLiteral lit -> (context, E.CharLiteral lit)
+        E.VarDecl v rhs -> do
+            (context, v) <- addVar context v
+            (context, rhs) <- rebind context rhs
+            (context, E.VarDecl v rhs)
+        E.VarRef info -> do
+            (context, info) <- rebind context info
+            (context, E.VarRef info)
+        E.FieldAccess index receiver -> do
+            (context, receiver) <- rebind context receiver
+            (context, E.FieldAccess index receiver)
+        E.If cond t f -> do
+            (context, cond) <- rebind context cond
+            (context, t) <- rebind context t
+            (context, f) <- rebind context f
+            (context, E.If cond t f)
+        E.List args -> do
+            (context, args) <- rebind context args
+            (context, E.List args)
+        E.Return arg -> do
+            (context, arg) <- rebind context arg
+            (context, E.Return arg)
+        E.Continue arg -> do
+            (context, arg) <- rebind context arg
+            (context, E.Continue arg)
+        E.Break arg -> do
+            (context, arg) <- rebind context arg
+            (context, E.Break arg)
+        E.Loop arg -> do
+            (context, arg) <- rebind context arg
+            (context, E.Loop arg)
+        E.CaseOf body cases -> do
+            (context, body) <- rebind context body
+            (context, cases) <- rebind context cases
+            (context, E.CaseOf body cases)
+        E.Clone arg -> do
+            (context, arg) <- rebind context arg
+            (context, E.Clone arg)
+        E.Deref arg -> do
+            (context, arg) <- rebind context arg
+            (context, E.Deref arg)
+        E.Ref arg -> do
+            (context, arg) <- rebind context arg
+            (context, E.Ref arg)
+        E.Move arg -> do
+            (context, arg) <- rebind context arg
+            (context, E.Move arg)
+        E.Box arg -> do
+            (context, arg) <- rebind context arg
+            (context, E.Box arg)
+        E.Converter arg -> do
+            (context, arg) <- rebind context arg
+            (context, E.Converter arg)
+
+
 getNextExprId :: Context -> (Context, E.ExprId)
 getNextExprId context = do
     (expr_id_gen, next_id) <- getNext context.expr_id_gen
