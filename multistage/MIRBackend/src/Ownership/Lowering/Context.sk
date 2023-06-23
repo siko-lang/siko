@@ -22,8 +22,6 @@ data LIRKey = FunctionKey I.Identity FunctionLoweringInfo
             deriving (PartialEq, Eq, PartialOrd, Ord, Show)
 
 data Context = { function_info_store :: FunctionInfoStore,
-                 data_group_info_store :: DataGroupInfoStore,
-                 mir_program :: MP.Program,
                  items :: [LIRKey],
                  name_map :: NameMap,
                  lir_ids :: Map LIRKey LP.Identity,
@@ -33,10 +31,8 @@ data Context = { function_info_store :: FunctionInfoStore,
                  external_member_List :: [LP.Identity]
                } deriving (Move)
 
-createContext :: FunctionInfoStore -> MP.Program -> DataGroupInfoStore -> Context
-createContext function_info_store mir_program data_group_info_store = Context function_info_store
-                                                                              data_group_info_store
-                                                                              mir_program
+createContext :: FunctionInfoStore -> Context
+createContext function_info_store = Context function_info_store
                                                                               []
                                                                               (NameMap Map.empty)
                                                                               Map.empty

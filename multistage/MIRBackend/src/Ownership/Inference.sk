@@ -7,7 +7,6 @@ import Siko.MIR.Backend.Ownership.Allocator
 import Siko.MIR.Backend.Ownership.BorrowChecker
 import Siko.MIR.Backend.Ownership.CallContext as CC
 import Siko.MIR.Backend.Ownership.Converter
-import Siko.MIR.Backend.Ownership.DataGroupInfo
 import Siko.MIR.Backend.Ownership.DumpOwnership
 import Siko.MIR.Backend.Ownership.EqualityGeneration
 import Siko.MIR.Backend.Ownership.ExternProcessor
@@ -25,19 +24,18 @@ import Siko.MIR.Expr as E
 import Siko.MIR.Function as F
 import Siko.MIR.Identity as I
 import Siko.MIR.Program as P
+import Siko.MIR.Backend.Ownership.Query as Q
 import Siko.MIR.Type as T
 import Siko.Trace
 import Siko.Util.DependencyProcessor
 
-data Context = { program :: P.Program,
-                 function_info_store :: FunctionInfoStore,
-                 data_group_info_store :: DataGroupInfoStore
+data Context = { function_info_store :: FunctionInfoStore,
                } deriving (Move)
 
 createRecordCtorFunctionInfo :: Context -> T.Type -> FunctionInfo
 createRecordCtorFunctionInfo context type = case type of
     T.Record id -> do
-        record <- P.getRecord context.program id
+        record <- Q.getRecord id
         allocator <- createAllocator
         (allocator, result) <- getNextTypeVariableInfo allocator
         ownershipinfos <- []
@@ -46,7 +44,7 @@ createRecordCtorFunctionInfo context type = case type of
             member <- M.MemberInfo (M.Field field.index) result.arg_group_var arg_info
             members <- List.push members member
             args <- List.push args arg_info
-            ownershipinfos <- if List.contains context.program.copyables (T.getIdentity field.type)
+            ownershipinfos <- if Q.isCopyable (T.getIdentity field.type)
             then List.push ownershipinfos (M.OwnershipInfo arg_info.ownership_var M.Owner)
             else ownershipinfos
             (allocator, args, members, ownershipinfos))
@@ -56,7 +54,7 @@ createRecordCtorFunctionInfo context type = case type of
 createVariantctorFunctionInfo :: Context -> Int -> T.Type -> FunctionInfo
 createVariantctorFunctionInfo context index type = case type of
     T.Adt id -> do
-        adt <- P.getAdt context.program id
+        adt <- Q.getAdt id
         allocator <- createAllocator
         (allocator, result) <- getNextTypeVariableInfo allocator
         (allocator, args, members, ownershipinfos, current) <- List.fold (allocator, [], [], [], 0) adt.variants (\(allocator, args, members, ownershipinfos, current), variant -> case variant.type of
@@ -66,13 +64,13 @@ createVariantctorFunctionInfo context index type = case type of
                 members <- List.push members (M.MemberInfo (M.Variant current) result.arg_group_var record_result)
                 if current == index
                 then do
-                    record <- P.getRecord context.program id
+                    record <- Q.getRecord id
                     (allocator, args, members, ownershipinfos) <- List.fold (allocator, args, members, ownershipinfos) record.fields (\(allocator, args, members, ownershipinfos), field -> do
                         (allocator, arg_info) <- getNextTypeVariableInfo allocator
                         member <- M.MemberInfo (M.Field field.index) record_result.arg_group_var arg_info
                         members <- List.push members member
                         args <- List.push args arg_info
-                        ownershipinfos <- if List.contains context.program.copyables (T.getIdentity field.type)
+                        ownershipinfos <- if Q.isCopyable (T.getIdentity field.type)
                         then List.push ownershipinfos (M.OwnershipInfo arg_info.ownership_var M.Owner)
                         else ownershipinfos
                         (allocator, args, members, ownershipinfos))
@@ -102,7 +100,7 @@ processFunction :: Context ->
                    Option InferenceInfo ->
                    I.Identity -> (Context, Bool, Option InferenceInfo)
 processFunction context group inference_info function_id = do
-    function <- P.getFunction context.program function_id
+    function <- Q.getFunction function_id
     case function.kind of
         F.Normal info -> do
             //trace "Ownership inference - processing {}" % function_id
@@ -121,10 +119,8 @@ processFunction context group inference_info function_id = do
                                                                           []
                                                                           inference_info
                                                                           function_info_store
-                                                                          context.program
                                                                           info.body
-                                                                          context.data_group_info_store
-                    inference_info <- processEqualities equals inference_info context.program
+                    inference_info <- processEqualities equals inference_info
                     inference_info <- updateOwnershipDepMap inference_info
                     inference_info <- updateGroupDependencyMapInfo inference_info
                     inference_info <- CC.createBaseCallContexts inference_info
@@ -134,8 +130,7 @@ processFunction context group inference_info function_id = do
             //trace "checkBorrows {}" % function_id
             borrow_info <- checkBorrows info.body
             //trace "inferOwnership {}" % function_id
-            (inference_info, constraints, invalid_borrow_map, ownership_expr_map, group_expr_map, ownership_group_map, result_vars, program, call_context_map, call_args) <- collectConstraints function_id context.program borrow_info inference_info info.body
-            context <- context { program = program }
+            (inference_info, constraints, invalid_borrow_map, ownership_expr_map, group_expr_map, ownership_group_map, result_vars, call_context_map, call_args) <- collectConstraints function_id borrow_info inference_info info.body
             inference_info <- processConstraints function_id
                                                  inference_info
                                                  constraints
@@ -187,7 +182,7 @@ processFunctionGroup index group_count context group = do
         (context, _, _) <- processFunction context group None function_id
         (index + 1, context)
     else do
-        inference_info <- prepareInferenceInfo context group
+        inference_info <- prepareInferenceInfo context.function_info_store group
         loop (context, inference_info) <- (context, Some inference_info) do
             (context, more, inference_info) <- List.fold (context, False, inference_info) group (\(context, more, inference_info), function_id -> do
                 (context, added, inference_info) <- processFunction context group inference_info function_id
@@ -197,11 +192,11 @@ processFunctionGroup index group_count context group = do
             then (context, inference_info)
             else break (index + 1, context)
     where
-        prepareInferenceInfo :: Context -> [I.Identity] -> InferenceInfo
-        prepareInferenceInfo context group = do
+        prepareInferenceInfo :: FunctionInfoStore -> [I.Identity] -> InferenceInfo
+        prepareInferenceInfo function_info_store group = do
             inference_info <- createInferenceInfo
             inference_info <- List.fold inference_info group (\inference_info, function_id -> do
-                function <- P.getFunction context.program function_id
+                function <- Q.getFunction function_id
                 case function.kind of
                     F.Normal info -> do
                         arg_count <- getLength function.type.args
@@ -210,19 +205,16 @@ processFunctionGroup index group_count context group = do
                         inference_info
                     _ -> panic "Groupped function is not normal!")
             (equals, inference_info) <- List.fold ([], inference_info) group (\(equals, inference_info), function_id -> do
-                function_info_store <- context.function_info_store
-                function <- P.getFunction context.program function_id
+                function <- Q.getFunction function_id
                 case function.kind of
                     F.Normal info -> processFunctionEqualities function_id
                                                                group
                                                                equals
                                                                inference_info
                                                                function_info_store
-                                                               context.program
                                                                info.body
-                                                               context.data_group_info_store
                     _ -> panic "Groupped function is not normal!")
-            inference_info <- processEqualities equals inference_info context.program
+            inference_info <- processEqualities equals inference_info
             converter_merge_info_base <- createConverterMergeInfoBase inference_info.converters
             inference_info <- updateOwnershipDepMap inference_info
             inference_info <- updateGroupDependencyMapInfo inference_info
@@ -230,15 +222,14 @@ processFunctionGroup index group_count context group = do
             inference_info <- CC.createBaseCallContexts inference_info
             inference_info
 
-processProgram :: P.Program -> [DependencyGroup I.Identity] -> [DependencyGroup I.Identity] -> LP.Program
-processProgram program data_groups function_groups = do
+processProgram :: [DependencyGroup I.Identity] -> LP.Program
+processProgram function_groups = do
     trace "Ownership inference started"
-    data_group_info_store <- initializeDataGroupInfoStore program data_groups
-    context <- Context program createFunctionInfoStore data_group_info_store
+    context <- Context createFunctionInfoStore
     group_count <- getLength function_groups
     (_, context) <- List.fold (1, context) function_groups (\(index, context), group -> processFunctionGroup index group_count context group.items)
     trace "Ownership inference ended"
     trace "Lowering started"
-    lir_program <- lowerProgram context.program context.function_info_store data_group_info_store
+    lir_program <- lowerProgram context.function_info_store
     trace "Lowering ended"
     lir_program

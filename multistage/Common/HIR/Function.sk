@@ -4,6 +4,7 @@ import Json
 import Json.Serialize
 import Siko.HIR.Class
 import Siko.HIR.Expr
+import Siko.Format
 import Siko.HIR.ExprIdGenerator
 import Siko.HIR.FullyQualifiedName
 import Siko.HIR.PatternIdGenerator
@@ -91,3 +92,16 @@ instance (Show a) => Show Function a where
             Some t -> TF.toString t
             None -> "<unknown>"
         "{} - {} :: {}" % (f.name, ty, f.kind)
+
+formatFunction a :: (Format a) => Function a -> ()
+formatFunction fn = case fn.kind of
+    Normal info -> do
+        tokens <- format info.body
+        formatted_body <- formatToken tokens
+        println "{} ----------" % fn.name
+        println "{}" % formatted_body
+        println "-------------"
+    _ -> do
+        println "{} ----------" % fn.name
+        println "<no-body>"
+        println "-------------"

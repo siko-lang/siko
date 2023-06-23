@@ -165,11 +165,6 @@ checkFunctionType context fn = do
                 (context, func_type_info) <- getFunctionTypeInfo context fn.name
                 context <- matchExprWith context arg_id func_type_info.result_type arg_location
                 context)
-            main <- FullPath getMainModuleName getMainFunctionName
-            context <- if fn.name == main
-            then do
-                checkMain context fn
-            else context
             context <- context { returns = [] }
             context
         _ -> context
@@ -241,6 +236,10 @@ processGroup state group_items = do
         context :: Context a <- context // FIXME: inference
         context <- context { group_index = group_index }
         fn <- QL.getFunction context.state name
+        main <- FullPath getMainModuleName getMainFunctionName
+        context <- if fn.name == main
+        then checkMain context fn
+        else context
         checkMissingTypes context fn)
     (context, typed_functions) <- List.foldE (context, Map.empty) group_items (\(context, typed_functions), group_index, name -> do
         context :: Context a <- context // FIXME: inference

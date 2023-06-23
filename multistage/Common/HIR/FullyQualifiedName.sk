@@ -104,6 +104,24 @@ getModuleName f = case f of
     Adt name args -> getModuleName name
     Record name args -> getModuleName name
 
+isSimple :: FullyQualifiedName -> Bool
+isSimple qn = case qn of
+    FullPath m n -> True
+    FullPathWithVariant m n v -> True
+    FullPathWithLambda n i -> True
+    FullPathInstance m i -> True
+    FullPathWithInstanceId m n i -> True
+    ModulePath m -> True
+    SubItem p n -> True
+    Effectless n s -> False
+    Monomorphized n type -> False
+    ClosureInstance closure_instance -> False
+    ClosureName type -> False
+    Tuple args -> False
+    Adt name args -> False
+    Record name args -> False
+
+
 getHashed :: FullyQualifiedName -> String
 getHashed qn = do
     hasher <- Hash.create

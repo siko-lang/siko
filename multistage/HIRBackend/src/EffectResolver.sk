@@ -84,9 +84,10 @@ getDynamicResolutionCount resolution = Map.fold 0 resolution.resolutions (\count
 
 getDynamicResolutionTupleType :: Eff.EffectResolutionSet -> T.Type
 getDynamicResolutionTupleType resolution = do
-    args <- Map.fold [] resolution.resolutions (\args, (_, r) -> case r of
+    args <- Map.fold Map.empty resolution.resolutions (\args, (_, r) -> case r of
         Eff.StaticResolution _ -> args
-        Eff.DynamicResolution _ type -> push args type)
+        Eff.DynamicResolution id type -> Map.put args id type)
+    args <- args |> Map.iter |> Iterator.map (\(_, ty) -> ty) |> toList
     T.Tuple args
 
 createEffectResolutionSet :: Eff.EffectResolutionSet -> [E.EffectHandler T.Type] -> [E.EffectType T.Type] -> (Eff.EffectResolutionSet, [E.Expr T.Type])

@@ -20,10 +20,10 @@ import Siko.MIR.Program as P
 import Siko.MIR.Type as T
 import Siko.Trace
 import Siko.Util.DependencyProcessor
+import Siko.MIR.Backend.Ownership.Query as Q
 
 data Context = { function_id :: I.Identity,
                  inference_info :: InferenceInfo,
-                 program :: P.Program,
                  borrow_info :: BorrowInfo,
                  invalid_borrows :: [E.ExprId],
                  constraints :: [C.Constraint],
@@ -88,7 +88,7 @@ processExpr context expr = do
             //println "{}: cc {} - {}" % (f_id, expr_id, call_context)
             call_context_map <- Map.put context.call_context_map expr_id call_context
             context <- context { call_context_map = call_context_map }
-            function <- P.getFunction context.program f_id
+            function <- Q.getFunction f_id
             context <- case function.kind of
                 F.Normal _
                  | F.Extern _ -> do
@@ -134,7 +134,7 @@ processExpr context expr = do
                 Some m -> m.info
                 _ -> panic "member info for field access not found!"
             record_id <- T.getIdentity receiver_type
-            record <- P.getRecord context.program record_id
+            record <- Q.getRecord record_id
             field <- List.atIndex record.fields index
             context <- if field.grouped
             then addOwnershipValue context member_info.ownership_var M.Owner
@@ -207,7 +207,7 @@ processExpr context expr = do
                 T.Never -> context
                 _ -> do
                     id <- T.getIdentity arg_type
-                    if List.contains context.program.copyables id
+                    if Q.isCopyable id
                     then do
                         info <- getTypeVariableInfoByExprId context.inference_info arg_id context.function_id
                         (inference_info, _) <- addInferredOwnership context.inference_info info.ownership_var M.Owner
@@ -248,7 +248,6 @@ updateInvalidBorrows context expr_id expr_info shared = do
     context
 
 collectConstraints :: I.Identity ->
-                      P.Program ->
                       BorrowInfo ->
                       InferenceInfo ->
                       E.Expr -> (InferenceInfo,
@@ -258,14 +257,12 @@ collectConstraints :: I.Identity ->
                                  Map GroupTypeVariable [E.ExprId],
                                  Map OwnershipTypeVariable [GroupTypeVariable],
                                  [OwnershipTypeVariable],
-                                 P.Program,
                                  Map E.ExprId CC.CallContext,
                                  Map E.ExprId [OwnershipTypeVariable])
-collectConstraints function_id program borrow_info inference_info body = do
+collectConstraints function_id borrow_info inference_info body = do
     //trace "collectConstraints {}" % function_id
     context <- Context function_id
                        inference_info
-                       program
                        borrow_info
                        []
                        []
@@ -284,4 +281,4 @@ collectConstraints function_id program borrow_info inference_info body = do
     context <- processExpr context body
     body_info <- getTypeVariableInfoByExprId context.inference_info body_id function_id
     result_vars <- getOwnershipVars context.inference_info.ownership_dep_map_info.ownership_dep_map body_info
-    (context.inference_info, context.constraints, context.invalid_borrow_map, context.ownership_expr_map, context.group_expr_map, context.ownership_group_map, result_vars, context.program, context.call_context_map, context.call_args)
+    (context.inference_info, context.constraints, context.invalid_borrow_map, context.ownership_expr_map, context.group_expr_map, context.ownership_group_map, result_vars, context.call_context_map, context.call_args)

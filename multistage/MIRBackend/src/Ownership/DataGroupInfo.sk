@@ -1,5 +1,7 @@
 module Siko.MIR.Backend.Ownership.DataGroupInfo(initializeDataGroupInfoStore,
+                                                getDataGroupInfoFromStore,
                                                 getDataGroupInfo,
+                                                DataGroupInfoProvider,
                                                 DataGroupInfoStore,
                                                 DataGroupInfo(..)) where
 
@@ -35,8 +37,8 @@ data Context = { program :: P.Program,
                  group :: [I.Identity]
                }
 
-getDataGroupInfo :: DataGroupInfoStore -> Allocator -> I.Identity -> (Allocator, Option (DataGroupInfo, TypeVariableInfo))
-getDataGroupInfo store allocator id = case Map.get store.group_info_map id of
+getDataGroupInfoFromStore :: DataGroupInfoStore -> Allocator -> I.Identity -> (Allocator, Option (DataGroupInfo, TypeVariableInfo))
+getDataGroupInfoFromStore store allocator id = case Map.get store.group_info_map id of
     Some info -> do
         (allocator, info) <- duplicateDataGroupInfo allocator info
         var_info <- case Map.get info.info_map id of
@@ -44,6 +46,9 @@ getDataGroupInfo store allocator id = case Map.get store.group_info_map id of
             None -> panic "Type {} not found in info map of data group info"
         (allocator, Some (info, var_info))
     None -> (allocator, None)
+
+effect DataGroupInfoProvider where
+    getDataGroupInfo :: Allocator -> I.Identity -> (Allocator, Option (DataGroupInfo, TypeVariableInfo))
 
 addMemberInfo :: Context -> M.MemberInfo -> Context
 addMemberInfo context member = do

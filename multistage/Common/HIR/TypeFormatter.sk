@@ -21,7 +21,9 @@ convertType type names = case type of
         "tv{}" % v
     FixedTypeArg n _ -> SS.get n
     Named n args -> do
-        n <- FQ.getResolvableName n
+        n <- if FQ.isSimple n
+        then FQ.getResolvableName n
+        else SS.create (FQ.getHashed n)
         if n == getFullListTypeName
         then "[{}]" % convertType (atIndex args 0) names
         else if List.isEmpty args

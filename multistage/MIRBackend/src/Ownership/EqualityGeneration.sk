@@ -24,9 +24,7 @@ data Context = { function_id :: I.Identity,
                  equals :: [Equal],
                  inference_info :: InferenceInfo,
                  function_info_store :: FunctionInfoStore,
-                 program :: P.Program,
                  group :: [I.Identity],
-                 data_group_info_store :: DataGroupInfoStore
                }
 
 addEqualInfo :: Context -> TypeVariableInfo -> TypeVariableInfo -> Context
@@ -101,7 +99,7 @@ processExpr context expr = do
         _ -> do
             type_id <- T.getIdentity expr_type
             inference_info <- context.inference_info
-            (allocator, group_info) <- getDataGroupInfo context.data_group_info_store inference_info.allocator type_id
+            (allocator, group_info) <- getDataGroupInfo inference_info.allocator type_id
             inference_info <- inference_info { allocator = allocator }
             context <- context { inference_info = inference_info }
             case group_info of
@@ -282,17 +280,14 @@ processFunctionEqualities :: I.Identity ->
                              [Equal] ->
                              InferenceInfo ->
                              FunctionInfoStore ->
-                             P.Program ->
                              E.Expr ->
-                             DataGroupInfoStore -> ([Equal], InferenceInfo)
-processFunctionEqualities function_id group equals inference_info function_info_store program body data_group_info_store = do
+                             ([Equal], InferenceInfo)
+processFunctionEqualities function_id group equals inference_info function_info_store body = do
     context <- Context function_id
                        equals
                        inference_info
                        function_info_store
-                       program
                        group
-                       data_group_info_store
     //trace "processEqualities - traverse"
     context <- processExpr context body
     body_info <- getTypeVariableInfoByExprId context.inference_info (getExprId body) context.function_id
@@ -301,8 +296,8 @@ processFunctionEqualities function_id group equals inference_info function_info_
     context <- addEqualInfo context body_info result_info
     (context.equals, context.inference_info)
 
-processEqualities :: [Equal] -> InferenceInfo -> P.Program -> InferenceInfo
-processEqualities equals inference_info program = do
+processEqualities :: [Equal] -> InferenceInfo -> InferenceInfo
+processEqualities equals inference_info = do
     //trace "processEqualities - processEquals ({})" % (List.getLength equals)
     inference_info <- processEquals equals inference_info
     converters <- inference_info.converters |> List.sort |> List.dedup

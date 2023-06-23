@@ -9,9 +9,11 @@ import Siko.MIR.Backend.LocalArgCreator as LocalArgCreator
 import Siko.MIR.Backend.Ownership.AddConverter as AddConverter
 import Siko.MIR.Backend.Ownership.Inference as Inference
 import Siko.MIR.Backend.Rebinder as Rebinder
+import Siko.MIR.Backend.Ownership.DataGroupInfo
 import Siko.MIR.Backend.SanityCheck as SanityCheck
 import Siko.MIR.Backend.Simplification.DoMerger as DoMerger
 import Siko.MIR.Backend.Simplification.VarReplacer as VarReplacer
+import Siko.MIR.Backend.Ownership.Query
 import Siko.MIR.Backend.Simplification.WildcardRemover as WildcardRemover
 import Siko.MIR.Backend.Traversal
 import Siko.MIR.Data
@@ -222,7 +224,15 @@ processProgram mir_program = do
     mir_program <- AddConverter.processProgram mir_program
     dumpProgram mir_program (MIR "addconverter")
     trace "Inference start.."
-    lir_program <- Inference.processProgram mir_program data_groups function_groups
-    dumpLIRProgram lir_program (LIR "first")
-    trace "Inference end.."
-    return lir_program
+    data_group_info_store <- initializeDataGroupInfoStore mir_program data_groups
+    with { getDataGroupInfo = \allocator, id -> getDataGroupInfoFromStore data_group_info_store allocator id,
+           getRecord = \id -> MP.getRecord mir_program id,
+           getAdt = \id -> MP.getAdt mir_program id,
+           getFunction = \id -> MP.getFunction mir_program id,
+           isCopyable = \id -> List.contains mir_program.copyables id,
+           isNonCopyable = \id -> List.contains mir_program.noncopyables id } do
+        lir_program <- Inference.processProgram function_groups
+        dumpLIRProgram lir_program (LIR "first")
+        trace "Inference end.."
+        mir_program // FIXME: TODO: this should not be needed
+        lir_program

@@ -27,7 +27,7 @@ data TypecheckerStateProvider = { class_map :: Map FQ.FullyQualifiedName HC.Clas
                                   adt_map :: Map FQ.FullyQualifiedName HD.AlgebraicDataType,
                                   effect_map :: Map FQ.FullyQualifiedName HE.Effect,
                                   instance_info_map :: Map IR.InstanceKey IR.InstanceInfo
-                                }
+                                } deriving (Move)
 
 instance ClassProvider TypecheckerStateProvider where
     getClass p qn = case Map.get p.class_map qn of
@@ -206,7 +206,8 @@ typecheck functions classes instances effects adts records = do
                         then do
                             state <- createStateProvider provider
                             (state, typed_functions) <- TF.processGroup state function_group.items
-                            if List.isEmpty state.errors
+                            errs <- state.errors
+                            if List.isEmpty errs
                             then do
                                 Map.fold (typed_function_map, provider, errors) typed_functions (\(typed_function_map, provider, errors), (name, fn) -> do
                                     state <- createStateProvider provider
@@ -216,7 +217,7 @@ typecheck functions classes instances effects adts records = do
                                     checked_func_type_info_map <- Map.put provider.checked_func_type_info_map name func_type_info
                                     provider <- provider { checked_func_type_info_map = checked_func_type_info_map }
                                     (typed_function_map, provider, errors))
-                            else (typed_function_map, provider, errors + state.errors)
+                            else (typed_function_map, provider, errors + errs)
                         else (typed_function_map, provider, errors))
                     if List.isEmpty errors
                     then do

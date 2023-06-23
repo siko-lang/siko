@@ -223,7 +223,7 @@ closureConvertFunction state fn = do
     fn_type <- Option.unwrap fn.type
     (closure_context, fn_type) <- convertFnType closure_context fn_type fn.arg_count
     fn <- fn { type = Some fn_type }
-    (state, fn, closure_context.closure_names |> List.sort |> List.dedup, closure_context.closure_instances |> List.sort |> List.dedup)
+    (closure_context.state, fn, closure_context.closure_names |> List.sort |> List.dedup, closure_context.closure_instances |> List.sort |> List.dedup)
 
 getClosureType :: FQ.FullyQualifiedName -> T.Type
 getClosureType closure_name = case closure_name of
@@ -259,6 +259,9 @@ createVariantCtor state closure_instance index = do
 closureConvertType :: T.Type -> T.Type
 closureConvertType type = case type of
     T.Function _ _ -> T.Named (FQ.ClosureName type) []
+    T.Tuple args -> do
+        args <- List.map args closureConvertType
+        T.Tuple args
     t -> t
 
 createClosureCall a :: (StateProvider a) => a -> [ClosureInstance] -> FQ.FullyQualifiedName -> (a, F.Function T.Type)
@@ -325,7 +328,7 @@ createClosureCall state closure_instances closure_name = do
     // println "------------"
     kind <- F.Normal (F.NormalFunctionInfo body effects context.expr_id_gen context.pattern_id_gen None)
     closure_call_fn <- F.Function location closure_name arg_count kind (Some type) attributes
-    (state, closure_call_fn)
+    (context.closure_context.state, closure_call_fn)
 
 closureConvertRecord a :: (StateProvider a) => a -> D.Record -> (a,
                                                                  D.Record,
@@ -333,10 +336,10 @@ closureConvertRecord a :: (StateProvider a) => a -> D.Record -> (a,
                                                                  [ClosureInstance])
 closureConvertRecord state record = do
     closure_context <- createClosureContext state
-    (closure_context, fields) <- List.mapS closure_context record.fields (\context, D.RecordField name t -> do
+    (closure_context, fields) <- List.mapS closure_context record.fields (\closure_context, D.RecordField name t -> do
         (closure_context, t) <- convertType closure_context t
         (closure_context, D.RecordField name t))
-    (closure_context, type_args) <- List.mapS closure_context record.type_args (\context, ty -> convertType closure_context ty)
+    (closure_context, type_args) <- List.mapS closure_context record.type_args (\closure_context, ty -> convertType closure_context ty)
     record <- record { fields = fields, type_args = type_args }
     (closure_context.state, record, closure_context.closure_names |> List.sort |> List.dedup, closure_context.closure_instances |> List.sort |> List.dedup)
 
@@ -346,7 +349,7 @@ closureConvertAdt a :: (StateProvider a) => a -> D.AlgebraicDataType -> (a,
                                                                          [ClosureInstance])
 closureConvertAdt state adt = do
     closure_context <- createClosureContext state
-    (closure_context, variants) <- List.mapS closure_context adt.variants (\context, variant -> do
+    (closure_context, variants) <- List.mapS closure_context adt.variants (\closure_context, variant -> do
         (closure_context, items) <- List.mapS closure_context variant.items convertType
         (closure_context, variant { items = items }))
     adt <- adt { variants = variants }

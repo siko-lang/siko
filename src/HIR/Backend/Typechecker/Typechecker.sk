@@ -169,11 +169,6 @@ checkFunctionType context fn = do
                 func_type_info <- getFunctionTypeInfo context fn.name
                 context <- matchExprWith context arg_id func_type_info.result_type arg_location
                 context)
-            main <- P.FullPath getMainModuleName getMainFunctionName
-            context <- if fn.name == main
-            then do
-                checkMain context fn
-            else context
             context <- context { returns = [] }
             context
         None -> context
@@ -229,7 +224,12 @@ processGroup state group function_store type_store = do
             None -> context)
     context <- List.fold context group.items (\context, name -> do
         fn <- P.getFunction context.state.program name
-        checkFunctionEffects context fn)
+        context <- checkFunctionEffects context fn
+        main <- P.FullPath getMainModuleName getMainFunctionName
+        if fn.name == main
+        then do
+            checkMain context fn
+        else context)
     //println "After check"
     //TS.dump context.type_store
     context <- List.fold context group.items (\context, name -> do

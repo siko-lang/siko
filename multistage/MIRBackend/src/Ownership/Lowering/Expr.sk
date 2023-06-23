@@ -18,6 +18,7 @@ import Siko.MIR.Expr as ME
 import Siko.MIR.Function as MF
 import Siko.MIR.Identity as I
 import Siko.MIR.Program as MP
+import Siko.MIR.Backend.Ownership.Query as Q
 import Siko.MIR.Type as MT
 
 data LoweringContext = { function_id :: I.Identity,
@@ -125,14 +126,14 @@ lowerExpr lowering_context context expr = do
             ((lowering_context, context), lir_args) <- List.mapS (lowering_context, context) args (\(lowering_context, context), arg -> do
                 (lowering_context, context, arg) <- lowerExpr lowering_context context arg
                 ((lowering_context, context), arg))
-            function <- MP.getFunction context.mir_program f_id
+            function <- Q.getFunction f_id
             (context, lir_args) <- case function.kind of
                 MF.VariantCtor index -> do
                     adt_id <- MT.getIdentity function.type.result
-                    adt <- MP.getAdt context.mir_program adt_id
+                    adt <- Q.getAdt adt_id
                     variant <- List.atIndex adt.variants index
                     record_id <- MT.getIdentity variant.type
-                    record <- MP.getRecord context.mir_program record_id
+                    record <- Q.getRecord record_id
                     lir_args <- List.zipS [] lir_args record.fields (\lir_args, arg, field -> do
                         if field.grouped
                         then do
@@ -143,7 +144,7 @@ lowerExpr lowering_context context expr = do
                     (context, lir_args)
                 MF.RecordCtor -> do
                     record_id <- MT.getIdentity function.type.result
-                    record <- MP.getRecord context.mir_program record_id
+                    record <- Q.getRecord record_id
                     lir_args <- List.zipS [] lir_args record.fields (\lir_args, arg, field -> do
                         if field.grouped
                         then do
@@ -168,7 +169,7 @@ lowerExpr lowering_context context expr = do
         ME.FieldAccess index receiver -> do
             ME.Expr _ receiver_type _ <- receiver
             record_id <- MT.getIdentity receiver_type
-            record <- MP.getRecord context.mir_program record_id
+            record <- Q.getRecord record_id
             field <- List.atIndex record.fields index
             (lowering_context, context, lir_receiver) <- lowerExpr lowering_context context receiver
             if field.grouped
@@ -232,7 +233,7 @@ lowerExpr lowering_context context expr = do
                 (M.Owner, M.Owner) -> if List.contains lowering_context.borrowers arg_id
                     then do
                         id <- MT.getIdentity expr_type
-                        if List.contains context.mir_program.noncopyables id
+                        if Q.isNonCopyable id
                         then println "{}: copies {}" % (lowering_context.function_id, id)
                         else ()
                         (lowering_context, context, LE.Clone lir_arg)
@@ -241,7 +242,7 @@ lowerExpr lowering_context context expr = do
                 (M.Borrower _, M.Borrower _) -> (lowering_context, context, LE.Move lir_arg)
                 (M.Borrower _, M.Owner) -> do
                     id <- MT.getIdentity expr_type
-                    if List.contains context.mir_program.noncopyables id
+                    if Q.isNonCopyable id
                     then println "{}: copies {}" % (lowering_context.function_id, id)
                     else ()
                     (lowering_context, context, LE.DerefClone lir_arg)

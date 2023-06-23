@@ -19,7 +19,7 @@ import Siko.MIR.Backend.Ownership.MemberInfo as M
 import Siko.MIR.Backend.Ownership.TypeVariableInfo
 import Siko.MIR.Data as MD
 import Siko.MIR.Identity as I
-import Siko.MIR.Program as MP
+import Siko.MIR.Backend.Ownership.Query as Q
 import Siko.MIR.Type as MT
 import Siko.Trace
 
@@ -77,7 +77,7 @@ expandMembers :: Context ->
                  I.Identity ->
                  GroupTypeVariable -> (Context, [M.MemberInfo], Allocator)
 expandMembers context members allocator type_id group_var = do
-    (allocator, group_info) <- getDataGroupInfo context.data_group_info_store allocator type_id
+    (allocator, group_info) <- getDataGroupInfo allocator type_id
     (members, equals) <- case (group_info) of
         Some (data_group_info, var_info) -> (members + data_group_info.members, [EqualGroup group_var var_info.arg_group_var])
         None -> (members, [])
@@ -136,7 +136,7 @@ lowerRecord :: Context ->
                LP.Identity -> Context
 lowerRecord context lowering_info mir_id lir_id = do
     trace2 "Lowering record {} {} {}" % (mir_id, lir_id, lowering_info)
-    mir_record <- MP.getRecord context.mir_program mir_id
+    mir_record <- Q.getRecord mir_id
     filter_info <- buildFilterInfoFromTypeLoweringInfo lowering_info
     (context, fields) <- List.mapSE context mir_record.fields (lowerField lowering_info filter_info)
     lifetimes <- collectLifetimes lowering_info.ownershipinfos
@@ -162,7 +162,7 @@ lowerAdt :: Context ->
             LP.Identity -> Context
 lowerAdt context lowering_info mir_id lir_id = do
     trace2 "Lowering adt {} {} {}" % (mir_id, lir_id, lowering_info)
-    mir_adt <- MP.getAdt context.mir_program mir_id
+    mir_adt <- Q.getAdt mir_id
     filter_info <- buildFilterInfoFromTypeLoweringInfo lowering_info
     (context, variants) <- List.mapSE context mir_adt.variants (lowerVariant lowering_info filter_info)
     lifetimes <- collectLifetimes lowering_info.ownershipinfos

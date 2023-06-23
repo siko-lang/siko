@@ -28,6 +28,7 @@ import Siko.MIR.Backend.Ownership.OwnershipDependencyMap
 import Siko.MIR.Backend.Ownership.TypeVariableInfo
 import Siko.MIR.Function as MF
 import Siko.MIR.Identity as I
+import Siko.MIR.Backend.Ownership.Query as Q
 import Siko.MIR.Program as MP
 import Siko.Trace
 
@@ -43,7 +44,7 @@ lowerFunction :: Context ->
                  LP.Identity -> Context
 lowerFunction context lowering_info mir_id lir_id = do
     trace2 "Lowering function {}/{} {}" % (mir_id, lir_id, lowering_info)
-    function <- MP.getFunction context.mir_program mir_id
+    function <- Q.getFunction mir_id
     context <- case function.kind of
         MF.Normal info -> do
             (inference_info, external_borrows) <- createInferenceInfoFromLoweringInfo lowering_info mir_id
@@ -56,10 +57,8 @@ lowerFunction context lowering_info mir_id lir_id = do
                                                                   []
                                                                   inference_info
                                                                   function_info_store
-                                                                  context.mir_program
                                                                   info.body
-                                                                  context.data_group_info_store
-            inference_info <- processEqualities equals inference_info context.mir_program
+            inference_info <- processEqualities equals inference_info
             checkInitials inference_info "after processEqualities"
             //trace2 "after processEqualities {} {}" % (lir_id, inference_info)
             borrow_info <- checkBorrows info.body
@@ -71,8 +70,7 @@ lowerFunction context lowering_info mir_id lir_id = do
             converter_merge_info_base <- createConverterMergeInfoBase inference_info.converters
             inference_info <- createFunctionInfoBase inference_info mir_id converter_merge_info_base
             inference_info <- CC.createBaseCallContexts inference_info
-            (inference_info, constraints, invalid_borrow_map, ownership_expr_map, group_expr_map, ownership_group_map, result_vars, mir_program, call_context_map, call_args) <- collectConstraints mir_id context.mir_program borrow_info inference_info info.body
-            context <- context { mir_program = mir_program }
+            (inference_info, constraints, invalid_borrow_map, ownership_expr_map, group_expr_map, ownership_group_map, result_vars, call_context_map, call_args) <- collectConstraints mir_id borrow_info inference_info info.body
             inference_info <- processConstraints mir_id
                                                  inference_info
                                                  constraints
