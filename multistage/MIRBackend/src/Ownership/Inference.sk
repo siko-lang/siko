@@ -7,14 +7,14 @@ import Siko.MIR.Backend.Ownership.Allocator
 import Siko.MIR.Backend.Ownership.BorrowChecker
 import Siko.MIR.Backend.Ownership.CallContext as CC
 import Siko.MIR.Backend.Ownership.Converter
+import Siko.MIR.Backend.Ownership.DataFlowProfile
+import Siko.MIR.Backend.Ownership.DataFlowProfileStore
 import Siko.MIR.Backend.Ownership.DumpOwnership
 import Siko.MIR.Backend.Ownership.EqualityGeneration
 import Siko.MIR.Backend.Ownership.ExternProcessor
-import Siko.MIR.Backend.Ownership.FunctionInfo
-import Siko.MIR.Backend.Ownership.FunctionInfoStore
+import Siko.MIR.Backend.Ownership.FunctionGroupInferenceData
 import Siko.MIR.Backend.Ownership.Inference.ConstraintCollection
 import Siko.MIR.Backend.Ownership.Inference.ConstraintProcessor
-import Siko.MIR.Backend.Ownership.InferenceInfo
 import Siko.MIR.Backend.Ownership.Initializer
 import Siko.MIR.Backend.Ownership.Lowering
 import Siko.MIR.Backend.Ownership.MemberInfo as M
@@ -29,10 +29,10 @@ import Siko.MIR.Type as T
 import Siko.Trace
 import Siko.Util.DependencyProcessor
 
-data Context = { function_info_store :: FunctionInfoStore } deriving (Move)
+data Context = { dataflow_profile_store :: DataFlowProfileStore } deriving (Move)
 
-createRecordCtorFunctionInfo :: T.Type -> FunctionInfo
-createRecordCtorFunctionInfo type = case type of
+createRecordCtorDataFlowProfile :: T.Type -> DataFlowProfile
+createRecordCtorDataFlowProfile type = case type of
     T.Record id -> do
         record <- Q.getRecord id
         allocator <- createAllocator
@@ -47,11 +47,11 @@ createRecordCtorFunctionInfo type = case type of
             then List.push ownershipinfos (M.OwnershipInfo arg_info.ownership_var M.Owner)
             else ownershipinfos
             (allocator, args, members, ownershipinfos))
-        FunctionInfo args result members [] ownershipinfos
-    t -> panic "createRecordCtorFunctionInfo: not a record: {}" % t
+        DataFlowProfile args result members [] ownershipinfos
+    t -> panic "createRecordCtorDataFlowProfile: not a record: {}" % t
 
-createVariantctorFunctionInfo :: Int -> T.Type -> FunctionInfo
-createVariantctorFunctionInfo index type = case type of
+createVariantctorDataFlowProfile :: Int -> T.Type -> DataFlowProfile
+createVariantctorDataFlowProfile index type = case type of
     T.Adt id -> do
         adt <- Q.getAdt id
         allocator <- createAllocator
@@ -75,93 +75,93 @@ createVariantctorFunctionInfo index type = case type of
                         (allocator, args, members, ownershipinfos))
                     (allocator, args, members, ownershipinfos, current + 1)
                 else (allocator, args, members, ownershipinfos, current + 1)
-            _ -> panic "createVariantctorFunctionInfo: not a record")
-        FunctionInfo args result members [] ownershipinfos
-    _ -> panic "createVariantctorFunctionInfo: not an adt"
+            _ -> panic "createVariantctorDataFlowProfile: not a record")
+        DataFlowProfile args result members [] ownershipinfos
+    _ -> panic "createVariantctorDataFlowProfile: not an adt"
 
-processFunctionInfo :: Context -> FunctionInfo -> I.Identity -> (Context, Bool)
-processFunctionInfo context function_info function_id = do
-    //trace "processFunctionInfo - processing {}" % function_id
-    function_info <- normalizeFunctionInfo function_info
-    //trace "processFunctionInfo - normalization done"
-    function_info_store <- context.function_info_store
+processDataFlowProfile :: Context -> DataFlowProfile -> I.Identity -> (Context, Bool)
+processDataFlowProfile context dataflow_profile function_id = do
+    //trace "processDataFlowProfile - processing {}" % function_id
+    dataflow_profile <- normalizeDataFlowProfile dataflow_profile
+    //trace "processDataFlowProfile - normalization done"
+    dataflow_profile_store <- context.dataflow_profile_store
     config <- getConfig ()
-    if config.print_function_info
-    then println "Function info added for {}/{}" % (function_id, function_info)
+    if config.print_dataflow_profile
+    then println "Function data flow profile added for {}/{}" % (function_id, dataflow_profile)
     else ()
-    (function_info_store, added) <- addFunctionInfo function_info_store function_id function_info
-    //trace "processFunctionInfo - added done"
-    context <- context { function_info_store = function_info_store }
+    (dataflow_profile_store, added) <- addDataFlowProfile dataflow_profile_store function_id dataflow_profile
+    //trace "processDataFlowProfile - added done"
+    context <- context { dataflow_profile_store = dataflow_profile_store }
     (context, added)
 
 processFunction :: Context ->
                    [I.Identity] ->
-                   Option InferenceInfo ->
-                   I.Identity -> (Context, Bool, Option InferenceInfo)
-processFunction context group inference_info function_id = do
+                   Option FunctionGroupInferenceData ->
+                   I.Identity -> (Context, Bool, Option FunctionGroupInferenceData)
+processFunction context group function_group_inference_data function_id = do
     function <- Q.getFunction function_id
     case function.kind of
         F.Normal info -> do
             //trace "Ownership inference - processing {}" % function_id
-            (context, inference_info) <- case inference_info of
-                Some inference_info -> (context, inference_info)
+            (context, function_group_inference_data) <- case function_group_inference_data of
+                Some function_group_inference_data -> (context, function_group_inference_data)
                 None -> do
                     arg_count <- getLength function.type.args
-                    inference_info <- createInferenceInfo
-                    inference_info <- addFunctionInferenceInfo inference_info function_id arg_count
+                    function_group_inference_data <- createInferenceInfo
+                    function_group_inference_data <- addFunctionInferenceInfo function_group_inference_data function_id arg_count
                     //trace "initializeTypeVariables {}" % function_id
-                    inference_info <- initializeTypeVariables inference_info function_id info.body
-                    function_info_store <- context.function_info_store
+                    function_group_inference_data <- initializeTypeVariables function_group_inference_data function_id info.body
+                    dataflow_profile_store <- context.dataflow_profile_store
                     //trace "processEqualities {}" % function_id
-                    (equals, inference_info) <- processFunctionEqualities function_id group [] inference_info function_info_store info.body
-                    inference_info <- processEqualities equals inference_info
-                    inference_info <- updateOwnershipDepMap inference_info
-                    inference_info <- updateGroupDependencyMapInfo inference_info
-                    inference_info <- CC.createBaseCallContexts inference_info
-                    converter_merge_info_base <- createConverterMergeInfoBase inference_info.converters
-                    inference_info <- createFunctionInfoBase inference_info function_id converter_merge_info_base
-                    (context, inference_info)
+                    (equals, function_group_inference_data) <- processFunctionEqualities function_id group [] function_group_inference_data dataflow_profile_store info.body
+                    function_group_inference_data <- processEqualities equals function_group_inference_data
+                    function_group_inference_data <- updateOwnershipDepMap function_group_inference_data
+                    function_group_inference_data <- updateGroupDependencyMapInfo function_group_inference_data
+                    function_group_inference_data <- CC.createBaseCallContexts function_group_inference_data
+                    converter_merge_info_base <- createConverterMergeInfoBase function_group_inference_data.converters
+                    function_group_inference_data <- createDataFlowProfileBase function_group_inference_data function_id converter_merge_info_base
+                    (context, function_group_inference_data)
             //trace "checkBorrows {}" % function_id
             borrow_info <- checkBorrows info.body
             //trace "inferOwnership {}" % function_id
-            (inference_info, constraints, invalid_borrow_map, ownership_expr_map, group_expr_map, ownership_group_map, result_vars, call_context_map, call_args) <- collectConstraints function_id borrow_info inference_info info.body
-            inference_info <- processConstraints function_id
-                                                 inference_info
-                                                 constraints
-                                                 invalid_borrow_map
-                                                 ownership_expr_map
-                                                 group_expr_map
-                                                 ownership_group_map
-                                                 result_vars
-                                                 call_context_map
-                                                 Partial
-                                                 call_args
+            (function_group_inference_data, constraints, invalid_borrow_map, ownership_expr_map, group_expr_map, ownership_group_map, result_vars, call_context_map, call_args) <- collectConstraints function_id borrow_info function_group_inference_data info.body
+            function_group_inference_data <- processConstraints function_id
+                                                                function_group_inference_data
+                                                                constraints
+                                                                invalid_borrow_map
+                                                                ownership_expr_map
+                                                                group_expr_map
+                                                                ownership_group_map
+                                                                result_vars
+                                                                call_context_map
+                                                                Partial
+                                                                call_args
             //trace "Processing {}" % function_id
             no_return <- T.isNever function.type.result
-            function_info <- toFunctionInfo inference_info function_id no_return
+            dataflow_profile <- toDataFlowProfile function_group_inference_data function_id no_return
             if P.isDebugged function_id
             then do
-                println "Function info {}" % function_info
-                println "Inference info {}" % inference_info
-                dumpOwnership inference_info function_id info.body
+                println "dataflow_profile: {}" % dataflow_profile
+                println "inference data {}" % function_group_inference_data
+                dumpOwnership function_group_inference_data function_id info.body
             else ()
-            function_info <- enforceUnknownArgOwnership function_info
-            (context, added) <- processFunctionInfo context function_info function_id
-            (context, added, Some inference_info)
+            dataflow_profile <- enforceUnknownArgOwnership dataflow_profile
+            (context, added) <- processDataFlowProfile context dataflow_profile function_id
+            (context, added, Some function_group_inference_data)
         F.VariantCtor index -> do
-            function_info <- createVariantctorFunctionInfo index function.type.result
-            //trace2 "Variant ctor {} = {}" % (function_id, function_info)
-            (context, added) <- processFunctionInfo context function_info function_id
+            dataflow_profile <- createVariantctorDataFlowProfile index function.type.result
+            //trace2 "Variant ctor {} = {}" % (function_id, dataflow_profile)
+            (context, added) <- processDataFlowProfile context dataflow_profile function_id
             (context, added, None)
         F.RecordCtor -> do
-            function_info <- createRecordCtorFunctionInfo function.type.result
-            //trace2 "Record ctor {} = {}" % (function_id, function_info)
-            (context, added) <- processFunctionInfo context function_info function_id
+            dataflow_profile <- createRecordCtorDataFlowProfile function.type.result
+            //trace2 "Record ctor {} = {}" % (function_id, dataflow_profile)
+            (context, added) <- processDataFlowProfile context dataflow_profile function_id
             (context, added, None)
         F.Extern type_mapping -> do
-            function_info <- createExternFunctionInfo function_id function.type type_mapping
-            //trace2 "Extern {} = {}" % (function_id, function_info)
-            (context, added) <- processFunctionInfo context function_info function_id
+            dataflow_profile <- createExternDataFlowProfile function_id function.type type_mapping
+            //trace2 "Extern {} = {}" % (function_id, dataflow_profile)
+            (context, added) <- processDataFlowProfile context dataflow_profile function_id
             (context, added, None)
 
 processFunctionGroup :: Int ->
@@ -176,49 +176,49 @@ processFunctionGroup index group_count context group = do
         (context, _, _) <- processFunction context group None function_id
         (index + 1, context)
     else do
-        inference_info <- prepareInferenceInfo context.function_info_store group
-        loop (context, inference_info) <- (context, Some inference_info) do
-            (context, more, inference_info) <- List.fold (context, False, inference_info) group (\(context, more, inference_info), function_id -> do
-                (context, added, inference_info) <- processFunction context group inference_info function_id
+        function_group_inference_data <- prepareInferenceInfo context.dataflow_profile_store group
+        loop (context, function_group_inference_data) <- (context, Some function_group_inference_data) do
+            (context, more, function_group_inference_data) <- List.fold (context, False, function_group_inference_data) group (\(context, more, function_group_inference_data), function_id -> do
+                (context, added, function_group_inference_data) <- processFunction context group function_group_inference_data function_id
                 more <- if added then True else more
-                (context, more, inference_info))
+                (context, more, function_group_inference_data))
             if more
-            then (context, inference_info)
+            then (context, function_group_inference_data)
             else break (index + 1, context)
     where
-        prepareInferenceInfo :: FunctionInfoStore -> [I.Identity] -> InferenceInfo
-        prepareInferenceInfo function_info_store group = do
-            inference_info <- createInferenceInfo
-            inference_info <- List.fold inference_info group (\inference_info, function_id -> do
+        prepareInferenceInfo :: DataFlowProfileStore -> [I.Identity] -> FunctionGroupInferenceData
+        prepareInferenceInfo dataflow_profile_store group = do
+            function_group_inference_data <- createInferenceInfo
+            function_group_inference_data <- List.fold function_group_inference_data group (\function_group_inference_data, function_id -> do
                 function <- Q.getFunction function_id
                 case function.kind of
                     F.Normal info -> do
                         arg_count <- getLength function.type.args
-                        inference_info <- addFunctionInferenceInfo inference_info function_id arg_count
-                        inference_info <- initializeTypeVariables inference_info function_id info.body
-                        inference_info
+                        function_group_inference_data <- addFunctionInferenceInfo function_group_inference_data function_id arg_count
+                        function_group_inference_data <- initializeTypeVariables function_group_inference_data function_id info.body
+                        function_group_inference_data
                     _ -> panic "Groupped function is not normal!")
-            (equals, inference_info) <- List.fold ([], inference_info) group (\(equals, inference_info), function_id -> do
+            (equals, function_group_inference_data) <- List.fold ([], function_group_inference_data) group (\(equals, function_group_inference_data), function_id -> do
                 function <- Q.getFunction function_id
                 case function.kind of
-                    F.Normal info -> processFunctionEqualities function_id group equals inference_info function_info_store info.body
+                    F.Normal info -> processFunctionEqualities function_id group equals function_group_inference_data dataflow_profile_store info.body
                     _ -> panic "Groupped function is not normal!")
-            inference_info <- processEqualities equals inference_info
-            converter_merge_info_base <- createConverterMergeInfoBase inference_info.converters
-            inference_info <- updateOwnershipDepMap inference_info
-            inference_info <- updateGroupDependencyMapInfo inference_info
-            inference_info <- List.fold inference_info group (\inference_info, function_id -> createFunctionInfoBase inference_info function_id converter_merge_info_base)
-            inference_info <- CC.createBaseCallContexts inference_info
-            inference_info
+            function_group_inference_data <- processEqualities equals function_group_inference_data
+            converter_merge_info_base <- createConverterMergeInfoBase function_group_inference_data.converters
+            function_group_inference_data <- updateOwnershipDepMap function_group_inference_data
+            function_group_inference_data <- updateGroupDependencyMapInfo function_group_inference_data
+            function_group_inference_data <- List.fold function_group_inference_data group (\function_group_inference_data, function_id -> createDataFlowProfileBase function_group_inference_data function_id converter_merge_info_base)
+            function_group_inference_data <- CC.createBaseCallContexts function_group_inference_data
+            function_group_inference_data
 
 processProgram :: [DependencyGroup I.Identity] -> LP.Program
 processProgram function_groups = do
     trace "Ownership inference started"
-    context <- Context createFunctionInfoStore
+    context <- Context createDataFlowProfileStore
     group_count <- getLength function_groups
     (_, context) <- List.fold (1, context) function_groups (\(index, context), group -> processFunctionGroup index group_count context group.items)
     trace "Ownership inference ended"
     trace "Lowering started"
-    lir_program <- lowerProgram context.function_info_store
+    lir_program <- lowerProgram context.dataflow_profile_store
     trace "Lowering ended"
     lir_program

@@ -6,8 +6,8 @@ import Map
 import Set
 import Siko.MIR.Backend.Ownership.BorrowId
 import Siko.MIR.Backend.Ownership.CallContext as CC
+import Siko.MIR.Backend.Ownership.FunctionGroupInferenceData
 import Siko.MIR.Backend.Ownership.Inference.Constraint as C
-import Siko.MIR.Backend.Ownership.InferenceInfo
 import Siko.MIR.Backend.Ownership.MemberInfo as M
 import Siko.MIR.Backend.Ownership.TypeVariableInfo
 import Siko.MIR.Expr as E
@@ -19,7 +19,7 @@ data InferenceMode = Partial
                    | Full
                    deriving (PartialEq, Eq, PartialOrd, Ord, Show)
 
-data Context = { inference_info :: InferenceInfo,
+data Context = { function_group_inference_data :: FunctionGroupInferenceData,
                  function_id :: I.Identity,
                  changed_ownership_vars :: Bool,
                  invalid_borrow_map :: Map E.ExprId [E.ExprId],
@@ -48,7 +48,7 @@ dumpConstraints constraints = do
 
 getOwnershipValue :: Context -> OwnershipTypeVariable -> M.OwnershipKind
 getOwnershipValue context var = do
-    result <- getOwnership context.inference_info var
+    result <- getOwnership context.function_group_inference_data var
     case result of
         Some o -> o
         None -> M.Unknown
@@ -67,8 +67,8 @@ updateOwnership context ownership_var kind = do
     old_kind <- getOwnershipValue context ownership_var
     if old_kind != kind
     then do
-        (inference_info, changed) <- addInferredOwnership context.inference_info ownership_var kind
-        context <- context { inference_info = inference_info }
+        (function_group_inference_data, changed) <- addInferredOwnership context.function_group_inference_data ownership_var kind
+        context <- context { function_group_inference_data = function_group_inference_data }
         if changed
         then do
             //debugPrint context "UpdateOwnership {} {}" % (ownership_var, kind)
@@ -110,7 +110,7 @@ isValidBorrow context ownership_var expr_id = do
 
 isInternal :: Context -> BorrowId -> Bool
 isInternal context borrow_id = do
-    borrow_set <- getBorrowSet context.inference_info borrow_id
+    borrow_set <- getBorrowSet context.function_group_inference_data borrow_id
     borrows <- borrow_set.borrows |> Set.iter |> List.toList
     List.fold True borrows (\is_internal, borrow -> case borrow of
         Internal _ -> is_internal
@@ -118,7 +118,7 @@ isInternal context borrow_id = do
 
 canPropagateBorrow :: Context -> OwnershipTypeVariable -> BorrowId -> Bool
 canPropagateBorrow context ownership_var borrow_id = do
-    borrow_set <- getBorrowSet context.inference_info borrow_id
+    borrow_set <- getBorrowSet context.function_group_inference_data borrow_id
     borrows <- borrow_set.borrows |> Set.iter |> List.toList
     expr_ids <- List.filterMap borrows (\borrow -> case borrow of
         Local expr_id -> Some expr_id
@@ -204,7 +204,7 @@ processCallContext context call_id index from to to_borrow = do
                                 (context, contains) <- case to_borrow of
                                     Some to_borrow -> do
                                         List.fold (context, True) borrows (\(context, contains), borrow -> do
-                                            c <- containsBorrows context.inference_info borrow to_borrow
+                                            c <- containsBorrows context.function_group_inference_data borrow to_borrow
                                             contains <- contains && c
                                             (context, contains))
                                     None -> (context, False)
@@ -229,8 +229,8 @@ processCallContext context call_id index from to to_borrow = do
                                         updateOwnership context to (M.Borrower first)
                                     else do
                                         (context, merged) <- List.fold (context, first) borrows (\(context, current), borrow -> do
-                                            (inference_info, id) <- mergeBorrowSets context.inference_info current borrow
-                                            context <- context { inference_info = inference_info }
+                                            (function_group_inference_data, id) <- mergeBorrowSets context.function_group_inference_data current borrow
+                                            context <- context { function_group_inference_data = function_group_inference_data }
                                             (context, id))
                                         borrows <- List.map borrows (\borrow -> FunctionConverterBorrow borrow merged)
                                         function_converter_borrows <- Map.put context.function_converter_borrows index borrows
@@ -277,14 +277,14 @@ processFunctionConverter context converter index = do
                 can_propagate <- canPropagateBorrow context to a
                 if can_propagate
                 then do
-                    contains <- containsBorrows context.inference_info a b
+                    contains <- containsBorrows context.function_group_inference_data a b
                     if contains
                     then do
                         context <- addFunctionConverterBorrow context index a b
                         context
                     else do
-                        (inference_info, id) <- mergeBorrowSets context.inference_info a b
-                        context <- context { inference_info = inference_info }
+                        (function_group_inference_data, id) <- mergeBorrowSets context.function_group_inference_data a b
+                        context <- context { function_group_inference_data = function_group_inference_data }
                         context <- addFunctionConverterBorrow context index a id
                         updateOwnership context to (M.Borrower id)
                 else updateOwnership context to M.Owner
@@ -292,8 +292,8 @@ processFunctionConverter context converter index = do
             can_propagate <- canPropagateBorrow context to a
             if can_propagate
             then do
-                (inference_info, id) <- cloneBorrowSet context.inference_info a
-                context <- context { inference_info = inference_info }
+                (function_group_inference_data, id) <- cloneBorrowSet context.function_group_inference_data a
+                context <- context { function_group_inference_data = function_group_inference_data }
                 context <- addFunctionConverterBorrow context index a id
                 updateOwnership context to (M.Borrower id)
             else updateOwnership context to M.Owner
@@ -339,9 +339,9 @@ processConverter context converter = do
                 valid <- isValidBorrow context expr_info.ownership_var converter.source_id
                 if valid
                 then do
-                    (inference_info, id) <- createBorrowSetForExpr context.inference_info converter.source_id
+                    (function_group_inference_data, id) <- createBorrowSetForExpr context.function_group_inference_data converter.source_id
                     //debugPrint context "Borrowing owner at {} {}" % (converter.source_id, id)
-                    context <- context { inference_info = inference_info }
+                    context <- context { function_group_inference_data = function_group_inference_data }
                     updateOwnership context expr_info.ownership_var (M.Borrower id)
                 else do
                     updateOwnership context expr_info.ownership_var M.Owner
@@ -350,8 +350,8 @@ processConverter context converter = do
             can_propagate <- canPropagateBorrow context expr_info.ownership_var a
             if can_propagate
             then do
-                (inference_info, id) <- cloneBorrowSet context.inference_info a
-                context <- context { inference_info = inference_info }
+                (function_group_inference_data, id) <- cloneBorrowSet context.function_group_inference_data a
+                context <- context { function_group_inference_data = function_group_inference_data }
                 updateOwnership context expr_info.ownership_var (M.Borrower id)
             else updateOwnership context expr_info.ownership_var M.Owner
         (M.Owner, M.Borrower a) -> do
@@ -361,8 +361,8 @@ processConverter context converter = do
                 if valid
                 then if isInternal context a
                     then do
-                        (inference_info, id) <- createBorrowSetForExpr context.inference_info converter.source_id
-                        context <- context { inference_info = inference_info }
+                        (function_group_inference_data, id) <- createBorrowSetForExpr context.function_group_inference_data converter.source_id
+                        context <- context { function_group_inference_data = function_group_inference_data }
                         updateOwnership context expr_info.ownership_var (M.Borrower id)
                     else context
                 else updateOwnership context expr_info.ownership_var M.Owner
@@ -371,12 +371,12 @@ processConverter context converter = do
             can_propagate <- canPropagateBorrow context expr_info.ownership_var a
             if can_propagate
             then do
-                contains <- containsBorrows context.inference_info a b
+                contains <- containsBorrows context.function_group_inference_data a b
                 if contains
                 then context
                 else do
-                    (inference_info, id) <- mergeBorrowSets context.inference_info a b
-                    context <- context { inference_info = inference_info }
+                    (function_group_inference_data, id) <- mergeBorrowSets context.function_group_inference_data a b
+                    context <- context { function_group_inference_data = function_group_inference_data }
                     updateOwnership context expr_info.ownership_var (M.Borrower id)
             else updateOwnership context expr_info.ownership_var M.Owner
         (M.Unknown, M.Borrower a) -> updateOwnership context arg_info.ownership_var expr_kind
@@ -409,19 +409,19 @@ processConstraint (context, index) constraint = do
 
 dumpOwnership :: Context -> Context
 dumpOwnership context = do
-    expr_ids <- Map.getKeys context.inference_info.expr_type_variables
+    expr_ids <- Map.getKeys context.function_group_inference_data.expr_type_variables
     function_id <- context.function_id
     expr_ids <- List.filterMap expr_ids (\(GlobalExprId f_id expr_id) -> if f_id == function_id
         then Some expr_id
         else None)
     List.fold context expr_ids (\context, expr_id -> do
-        info <- getTypeVariableInfoByExprId context.inference_info expr_id context.function_id
+        info <- getTypeVariableInfoByExprId context.function_group_inference_data expr_id context.function_id
         o1 <- getOwnershipValue context info.ownership_var
         println "dumpOwnership {} {} {}" % (expr_id, info, o1)
         context)
 
 processConstraints :: I.Identity ->
-                      InferenceInfo ->
+                      FunctionGroupInferenceData ->
                       [C.Constraint] ->
                       Map E.ExprId [E.ExprId] ->
                       Map OwnershipTypeVariable [E.ExprId] ->
@@ -430,11 +430,11 @@ processConstraints :: I.Identity ->
                       [OwnershipTypeVariable] ->
                       Map E.ExprId CC.CallContext ->
                       InferenceMode ->
-                      Map E.ExprId [OwnershipTypeVariable] -> InferenceInfo
-processConstraints function_id inference_info constraints invalid_borrow_map ownership_expr_map group_expr_map ownership_group_map result_vars call_context_map mode call_args = do
+                      Map E.ExprId [OwnershipTypeVariable] -> FunctionGroupInferenceData
+processConstraints function_id function_group_inference_data constraints invalid_borrow_map ownership_expr_map group_expr_map ownership_group_map result_vars call_context_map mode call_args = do
     // println "Invalid borrow map {}" % (invalid_borrow_map)
-    // println "InferenceInfo {}" % inference_info
-    context <- Context inference_info
+    // println "FunctionGroupInferenceData {}" % function_group_inference_data
+    context <- Context function_group_inference_data
                        function_id
                        True
                        invalid_borrow_map
@@ -470,5 +470,5 @@ processConstraints function_id inference_info constraints invalid_borrow_map own
             Some bs -> (context, borrows + bs)
             None -> (context, borrows))
         (context, expr_id, borrows))
-    inference_info <- context.inference_info
-    inference_info { function_converter_borrows = function_converter_borrows }
+    function_group_inference_data <- context.function_group_inference_data
+    function_group_inference_data { function_converter_borrows = function_converter_borrows }

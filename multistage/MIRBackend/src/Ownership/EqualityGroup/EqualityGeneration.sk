@@ -4,11 +4,11 @@ module Siko.MIR.Backend.Ownership.EqualityGeneration(processEqualities,
 import Map
 import Siko.MIR.Backend.Ownership.Allocator
 import Siko.MIR.Backend.Ownership.Converter
+import Siko.MIR.Backend.Ownership.DataFlowProfile
+import Siko.MIR.Backend.Ownership.DataFlowProfileStore
 import Siko.MIR.Backend.Ownership.DataGroupInfo
 import Siko.MIR.Backend.Ownership.EqualitySolver
-import Siko.MIR.Backend.Ownership.FunctionInfo
-import Siko.MIR.Backend.Ownership.FunctionInfoStore
-import Siko.MIR.Backend.Ownership.InferenceInfo
+import Siko.MIR.Backend.Ownership.FunctionGroupInferenceData
 import Siko.MIR.Backend.Ownership.MemberInfo as M
 import Siko.MIR.Backend.Ownership.TypeVariableInfo
 import Siko.MIR.Backend.Traversal
@@ -22,8 +22,8 @@ import Siko.Trace
 
 data Context = { function_id :: I.Identity,
                  equals :: [Equal],
-                 inference_info :: InferenceInfo,
-                 function_info_store :: FunctionInfoStore,
+                 function_group_inference_data :: FunctionGroupInferenceData,
+                 dataflow_profile_store :: DataFlowProfileStore,
                  group :: [I.Identity]
                }
 
@@ -35,287 +35,260 @@ addEqualInfo context info1 info2 = do
 
 addEqualExprs :: Context -> E.ExprId -> E.ExprId -> Context
 addEqualExprs context expr_id1 expr_id2 = do
-    inference_info <- context.inference_info
-    info1 <- getTypeVariableInfoByExprId inference_info expr_id1 context.function_id
-    info2 <- getTypeVariableInfoByExprId inference_info expr_id2 context.function_id
+    function_group_inference_data <- context.function_group_inference_data
+    info1 <- getTypeVariableInfoByExprId function_group_inference_data expr_id1 context.function_id
+    info2 <- getTypeVariableInfoByExprId function_group_inference_data expr_id2 context.function_id
     addEqualInfo context info1 info2
 
 addEqualExprVar :: Context -> E.ExprId -> E.Var -> Context
 addEqualExprVar context expr_id var = do
-    inference_info <- context.inference_info
-    info1 <- getTypeVariableInfoByExprId inference_info expr_id context.function_id
-    info2 <- getTypeVariableInfoByVar inference_info var context.function_id
+    function_group_inference_data <- context.function_group_inference_data
+    info1 <- getTypeVariableInfoByExprId function_group_inference_data expr_id context.function_id
+    info2 <- getTypeVariableInfoByVar function_group_inference_data var context.function_id
     addEqualInfo context info1 info2
 
 getExprId :: E.Expr -> E.ExprId
 getExprId (E.Expr _ _ id) = id
 
-mergeFunctionInfo :: Context ->
-                     [E.Expr] ->
-                     E.ExprId ->
-                     FunctionInfo ->
-                     Bool -> Context
-mergeFunctionInfo context args expr_id function_info in_group = do
+mergeDataFlowProfile :: Context ->
+                        [E.Expr] ->
+                        E.ExprId ->
+                        DataFlowProfile ->
+                        Bool -> Context
+mergeDataFlowProfile context args expr_id dataflow_profile in_group = do
     // arg equality
-    context <- List.zipS context function_info.args args (\context, info_arg, arg_expr -> do
+    context <- List.zipS context dataflow_profile.args args (\context, info_arg, arg_expr -> do
         E.Expr _ _ arg_id <- arg_expr
-        expr_info <- getTypeVariableInfoByExprId context.inference_info arg_id context.function_id
+        expr_info <- getTypeVariableInfoByExprId context.function_group_inference_data arg_id context.function_id
         addEqualInfo context expr_info info_arg)
     // result equality
-    result_info <- getTypeVariableInfoByExprId context.inference_info expr_id context.function_id
-    context <- addEqualInfo context result_info function_info.result
-    inference_info <- context.inference_info
-    inference_info <- if in_group
-    then inference_info
+    result_info <- getTypeVariableInfoByExprId context.function_group_inference_data expr_id context.function_id
+    context <- addEqualInfo context result_info dataflow_profile.result
+    function_group_inference_data <- context.function_group_inference_data
+    function_group_inference_data <- if in_group
+    then function_group_inference_data
     else do
         // add members
-        inference_info <- List.fold inference_info function_info.members (\inference_info, member_info -> addMemberInfo inference_info member_info)
+        function_group_inference_data <- List.fold function_group_inference_data dataflow_profile.members (\function_group_inference_data, member_info -> addMemberInfo function_group_inference_data member_info)
         // add converters
-        inference_info <- List.fold inference_info function_info.converters (\inference_info, converter -> addConverter inference_info converter)
+        function_group_inference_data <- List.fold function_group_inference_data dataflow_profile.converters (\function_group_inference_data, converter -> addConverter function_group_inference_data converter)
         global_expr_id <- GlobalExprId context.function_id expr_id
-        (function_converters, _) <- Map.insert inference_info.function_converters global_expr_id function_info.converters
-        //println "Adding function converters {} {}" % (global_expr_id, function_info.converters)
-        inference_info <- inference_info { function_converters = function_converters }
-        inference_info <- List.fold inference_info function_info.converters (\inference_info, converter -> do
-            inference_info <- maybeAddOwnership inference_info converter.from M.Unknown
-            inference_info <- maybeAddOwnership inference_info converter.to M.Unknown
-            inference_info)
-        inference_info
+        (function_converters, _) <- Map.insert function_group_inference_data.function_converters global_expr_id dataflow_profile.converters
+        //println "Adding function converters {} {}" % (global_expr_id, dataflow_profile.converters)
+        function_group_inference_data <- function_group_inference_data { function_converters = function_converters }
+        function_group_inference_data <- List.fold function_group_inference_data dataflow_profile.converters (\function_group_inference_data, converter -> do
+            function_group_inference_data <- maybeAddOwnership function_group_inference_data converter.from M.Unknown
+            function_group_inference_data <- maybeAddOwnership function_group_inference_data converter.to M.Unknown
+            function_group_inference_data)
+        function_group_inference_data
     // add ownershipinfos
-    inference_info <- List.fold inference_info function_info.ownershipinfos (\inference_info, ownershipinfo -> case ownershipinfo of
-        M.OwnershipInfo v M.Unknown -> addOwnership inference_info v M.Unknown
-        M.OwnershipInfo v M.Owner -> addOwnership inference_info v M.Owner
+    function_group_inference_data <- List.fold function_group_inference_data dataflow_profile.ownershipinfos (\function_group_inference_data, ownershipinfo -> case ownershipinfo of
+        M.OwnershipInfo v M.Unknown -> addOwnership function_group_inference_data v M.Unknown
+        M.OwnershipInfo v M.Owner -> addOwnership function_group_inference_data v M.Owner
         M.OwnershipInfo v (M.Borrower external_id) -> do
-            (inference_info, id) <- createBorrowSetForInternal inference_info external_id
-            addOwnership inference_info v (M.Borrower id))
-    context <- context { inference_info = inference_info }
+            (function_group_inference_data, id) <- createBorrowSetForInternal function_group_inference_data external_id
+            addOwnership function_group_inference_data v (M.Borrower id))
+    context <- context { function_group_inference_data = function_group_inference_data }
     context
 
-class EqualityCollector a where
-    collectEquals a :: Context -> a -> Context
+collectEqualsL :: Context -> [E.Expr] -> Context
+collectEqualsL context exprs = List.fold context exprs collectEquals
 
-instance EqualityCollector E.Expr where
-    collectEquals context expr = do
-        E.Expr s_expr expr_type expr_id <- expr
-        context <- case expr_type of
-            T.Never -> context
-            _ -> do
-                type_id <- T.getIdentity expr_type
-                inference_info <- context.inference_info
-                (allocator, group_info) <- getDataGroupInfo inference_info.allocator type_id
-                inference_info <- inference_info { allocator = allocator }
-                context <- context { inference_info = inference_info }
-                case group_info of
-                    Some (data_group_info, var_info) -> do
-                        inference_info <- context.inference_info
-                        expr_info <- getTypeVariableInfoByExprId inference_info expr_id context.function_id
-                        inference_info <- List.fold inference_info data_group_info.members addMemberInfo
-                        equals <- List.push context.equals (EqualGroup expr_info.arg_group_var var_info.arg_group_var)
-                        context { inference_info = inference_info, equals = equals }
-                    None -> context
-        collectEquals context s_expr
-
-instance EqualityCollector E.SimpleExpr where
-    collectEquals context s_expr = context
-
-processExpr :: Context -> E.Expr -> Context
-processExpr context expr = do
+collectEquals :: Context -> E.Expr -> Context
+collectEquals context expr = do
     E.Expr s_expr expr_type expr_id <- expr
     context <- case expr_type of
         T.Never -> context
         _ -> do
             type_id <- T.getIdentity expr_type
-            inference_info <- context.inference_info
-            (allocator, group_info) <- getDataGroupInfo inference_info.allocator type_id
-            inference_info <- inference_info { allocator = allocator }
-            context <- context { inference_info = inference_info }
+            function_group_inference_data <- context.function_group_inference_data
+            (allocator, group_info) <- getDataGroupInfo function_group_inference_data.allocator type_id
+            function_group_inference_data <- function_group_inference_data { allocator = allocator }
+            context <- context { function_group_inference_data = function_group_inference_data }
             case group_info of
                 Some (data_group_info, var_info) -> do
-                    inference_info <- context.inference_info
-                    expr_info <- getTypeVariableInfoByExprId inference_info expr_id context.function_id
-                    inference_info <- List.fold inference_info data_group_info.members addMemberInfo
+                    function_group_inference_data <- context.function_group_inference_data
+                    expr_info <- getTypeVariableInfoByExprId function_group_inference_data expr_id context.function_id
+                    function_group_inference_data <- List.fold function_group_inference_data data_group_info.members addMemberInfo
                     equals <- List.push context.equals (EqualGroup expr_info.arg_group_var var_info.arg_group_var)
-                    context { inference_info = inference_info, equals = equals }
+                    context { function_group_inference_data = function_group_inference_data, equals = equals }
                 None -> context
-    case s_expr of
-        E.Do (E.DoBlock items) -> do
-            context <- List.fold context items processExpr
-            last_item_id <- getExprId (last items)
-            context <- addEqualExprs context expr_id last_item_id
+    collect context expr_id s_expr
+
+collect :: Context -> E.ExprId -> E.SimpleExpr -> Context
+collect context expr_id (E.Do (E.DoBlock items)) = do
+    context <- collectEqualsL context items
+    last_item_id <- getExprId (last items)
+    addEqualExprs context expr_id last_item_id
+collect context expr_id (E.StaticFunctionCall (E.FunctionCallInfo id args)) = do
+    context <- collectEqualsL context args
+    in_group <- List.contains context.group id
+    dataflow_profile <- getDataFlowProfile context.dataflow_profile_store id
+    context <- case dataflow_profile of
+        Some dataflow_profile -> do
+            function_group_inference_data <- context.function_group_inference_data
+            allocator <- function_group_inference_data.allocator
+            (allocator, dataflow_profile) <- duplicateDataFlowProfile allocator dataflow_profile
+            if P.isDebugged context.function_id
+            then println "dataflow_profile {} {}, caller: {}" % (id, dataflow_profile, context.function_id)
+            else ()
+            function_group_inference_data <- function_group_inference_data { allocator = allocator }
+            context <- context { function_group_inference_data = function_group_inference_data }
+            context <- mergeDataFlowProfile context args expr_id dataflow_profile in_group
             context
-        E.StaticFunctionCall info -> do
-            context <- List.fold context info.args processExpr
-            in_group <- List.contains context.group info.id
-            function_info <- getFunctionInfo context.function_info_store info.id
-            context <- case function_info of
-                Some function_info -> do
-                    inference_info <- context.inference_info
-                    allocator <- inference_info.allocator
-                    (allocator, function_info) <- duplicateFunctionInfo allocator function_info
-                    if P.isDebugged context.function_id
-                    then println "function_info {} {}, caller: {}" % (info.id, function_info, context.function_id)
-                    else ()
-                    inference_info <- inference_info { allocator = allocator }
-                    context <- context { inference_info = inference_info }
-                    context <- mergeFunctionInfo context info.args expr_id function_info in_group
-                    context
-                None -> if in_group
-                    then context
-                    else panic "No function info found for function {}" % info.id
-            if in_group
-            then do
-                function_inference_info <- getFunctionInferenceInfo context.inference_info info.id
-                // arg equality
-                context <- List.zipS context function_inference_info.args info.args (\context, info_arg, arg_expr -> do
-                    E.Expr _ _ arg_id <- arg_expr
-                    expr_info <- getTypeVariableInfoByExprId context.inference_info arg_id context.function_id
-                    addEqualInfo context expr_info info_arg)
-                // result equality
-                result_info <- getTypeVariableInfoByExprId context.inference_info expr_id context.function_id
-                context <- addEqualInfo context result_info function_inference_info.result
-                context
-            else context
-        E.IntegerLiteral _ -> context
-        E.StringLiteral _ -> context
-        E.FloatLiteral _ -> context
-        E.CharLiteral _ -> context
-        E.VarDecl info -> do
-            context <- processExpr context info.rhs
-            rhs_id <- getExprId info.rhs
-            context <- addEqualExprVar context rhs_id info.var
-            context
-        E.VarRef (E.VarRefInfo var) -> addEqualExprVar context expr_id var
-        E.If info -> do
-            context <- processExpr context info.cond
-            context <- processExpr context info.true_branch
-            context <- processExpr context info.false_branch
-            true_branch_id <- getExprId info.true_branch
-            false_branch_id <- getExprId info.false_branch
-            context <- addEqualExprs context true_branch_id expr_id
-            context <- addEqualExprs context true_branch_id false_branch_id
-            context
-        E.List list_info -> do
-            context <- List.fold context list_info.items processExpr
-            context <- if List.getLength list_info.items == 0
-            then do
-                inference_info <- context.inference_info
-                allocator <- inference_info.allocator
-                (allocator, item_info) <- getNextTypeVariableInfo allocator
-                inference_info <- inference_info { allocator = allocator }
-                info <- getTypeVariableInfoByExprId inference_info expr_id context.function_id
-                inference_info <- addMemberInfo inference_info (M.MemberInfo (M.Extern 0) info.arg_group_var item_info)
-                context <- context { inference_info = inference_info }
-                context
-            else do
-                first <- List.atIndex list_info.items 0
-                first <- getExprId first
-                inference_info <- context.inference_info
-                item_info <- getTypeVariableInfoByExprId inference_info first context.function_id
-                info <- getTypeVariableInfoByExprId inference_info expr_id context.function_id
-                inference_info <- addMemberInfo inference_info (M.MemberInfo (M.Extern 0) info.arg_group_var item_info)
-                context <- context { inference_info = inference_info }
-                List.fold context list_info.items (\context, item -> addEqualExprs context first (getExprId item))
-            context
-        E.FieldAccess fa_info -> do
-            E.Expr _ _ receiver_id <- fa_info.receiver
-            context <- processExpr context fa_info.receiver
-            inference_info <- context.inference_info
-            (allocator, type_var) <- getNextOwnershipTypeVariable inference_info.allocator
-            inference_info <- inference_info { allocator = allocator }
-            receiver_info <- getTypeVariableInfoByExprId inference_info receiver_id context.function_id
-            info <- getTypeVariableInfoByExprId inference_info expr_id context.function_id
-            orig <- info.ownership_var
-            info <- info { ownership_var = type_var }
-            converter <- Converter info.ownership_var orig
-            inference_info <- addConverter inference_info converter
-            inference_info <- addMemberInfo inference_info (M.MemberInfo (M.Field fa_info.index) receiver_info.arg_group_var info)
-            context { inference_info = inference_info }
-        E.Return (E.ReturnInfo arg) -> do
-            context <- processExpr context arg
-            inference_info <- context.inference_info
-            function_inference_info <- getFunctionInferenceInfo inference_info context.function_id
-            result_info <- function_inference_info.result
-            arg_info <- getTypeVariableInfoByExprId inference_info (getExprId arg) context.function_id
-            context <- addEqualInfo context result_info arg_info
-            context
-        E.Continue (E.ContinueInfo arg) -> processExpr context arg
-        E.Break (E.BreakInfo arg) -> processExpr context arg
-        E.Loop (E.LoopInfo var initializer body continues breaks) -> do
-            context <- processExpr context initializer
-            context <- processExpr context body
-            context <- addEqualExprVar context (getExprId initializer) var
-            body_id <- getExprId body
-            context <- addEqualExprVar context body_id var
-            context <- List.fold context continues (\context, c -> addEqualExprs context c body_id)
-            context <- List.fold context breaks (\context, b -> addEqualExprs context b expr_id)
-            context
-        E.CaseOf (E.CaseInfo body cases) -> do
-            E.Expr _ body_type body_id <- body
-            context <- processExpr context body
-            context <- List.foldE context cases (\context, index, c -> do
-                context <- processExpr context c.body
-                case_body <- getExprId c.body
-                context <- addEqualExprs context case_body expr_id
-                case c.checker of
-                    E.VariantChecker index var ty -> do
-                        case ty of
-                            T.Adt _ -> do
-                                inference_info <- context.inference_info
-                                (allocator, type_var) <- getNextOwnershipTypeVariable inference_info.allocator
-                                inference_info <- inference_info { allocator = allocator }
-                                body_info <- getTypeVariableInfoByExprId inference_info body_id context.function_id
-                                var_info <- getTypeVariableInfoByVar inference_info var context.function_id
-                                orig <- var_info.ownership_var
-                                var_info <- var_info { ownership_var = type_var }
-                                converter <- Converter body_info.ownership_var var_info.ownership_var
-                                inference_info <- addConverter inference_info converter
-                                converter <- Converter var_info.ownership_var orig
-                                inference_info <- addConverter inference_info converter
-                                inference_info <- addMemberInfo inference_info (M.MemberInfo (M.Variant index) body_info.arg_group_var var_info)
-                                context { inference_info = inference_info }
-                            T.Record _ -> do
-                                inference_info <- context.inference_info
-                                body_info <- getTypeVariableInfoByExprId inference_info body_id context.function_id
-                                var_info <- getTypeVariableInfoByVar inference_info var context.function_id
-                                addEqualInfo context body_info var_info
-                            _ -> panic "VariantCheckers' type is nor adt nor record"
-                    E.WildcardChecker var -> do
-                        inference_info <- context.inference_info
-                        body_info <- getTypeVariableInfoByExprId inference_info body_id context.function_id
-                        var_info <- getTypeVariableInfoByVar inference_info var context.function_id
+        None -> if in_group
+            then context
+            else panic "No function info found for function {}" % id
+    if in_group
+    then do
+        function_inference_info <- getFunctionInferenceInfo context.function_group_inference_data id
+        // arg equality
+        context <- List.zipS context function_inference_info.args args (\context, info_arg, arg_expr -> do
+            E.Expr _ _ arg_id <- arg_expr
+            expr_info <- getTypeVariableInfoByExprId context.function_group_inference_data arg_id context.function_id
+            addEqualInfo context expr_info info_arg)
+        // result equality
+        result_info <- getTypeVariableInfoByExprId context.function_group_inference_data expr_id context.function_id
+        context <- addEqualInfo context result_info function_inference_info.result
+        context
+    else context
+collect context expr_id (E.IntegerLiteral _) = context
+collect context expr_id (E.StringLiteral _) = context
+collect context expr_id (E.FloatLiteral _) = context
+collect context expr_id (E.CharLiteral _) = context
+collect context expr_id (E.VarDecl (E.VarDeclInfo var rhs)) = do
+    context <- collectEquals context rhs
+    rhs_id <- getExprId rhs
+    addEqualExprVar context rhs_id var
+collect context expr_id (E.VarRef (E.VarRefInfo var)) = do
+    addEqualExprVar context expr_id var
+collect context expr_id (E.FieldAccess (E.FieldAccessInfo index receiver)) = do
+    E.Expr _ _ receiver_id <- receiver
+    context <- collectEquals context receiver
+    function_group_inference_data <- context.function_group_inference_data
+    (allocator, type_var) <- getNextOwnershipTypeVariable function_group_inference_data.allocator
+    function_group_inference_data <- function_group_inference_data { allocator = allocator }
+    receiver_info <- getTypeVariableInfoByExprId function_group_inference_data receiver_id context.function_id
+    info <- getTypeVariableInfoByExprId function_group_inference_data expr_id context.function_id
+    orig <- info.ownership_var
+    info <- info { ownership_var = type_var }
+    converter <- Converter info.ownership_var orig
+    function_group_inference_data <- addConverter function_group_inference_data converter
+    function_group_inference_data <- addMemberInfo function_group_inference_data (M.MemberInfo (M.Field index) receiver_info.arg_group_var info)
+    context { function_group_inference_data = function_group_inference_data }
+collect context expr_id (E.If (E.IfInfo cond true_branch false_branch)) = do
+    context <- collectEquals context cond
+    context <- collectEquals context true_branch
+    context <- collectEquals context false_branch
+    true_branch_id <- getExprId true_branch
+    false_branch_id <- getExprId false_branch
+    context <- addEqualExprs context true_branch_id expr_id
+    addEqualExprs context true_branch_id false_branch_id
+collect context expr_id (E.List (E.ListInfo items)) = do
+    context <- List.fold context items collectEquals
+    if List.getLength items == 0
+    then do
+        function_group_inference_data <- context.function_group_inference_data
+        allocator <- function_group_inference_data.allocator
+        (allocator, item_info) <- getNextTypeVariableInfo allocator
+        function_group_inference_data <- function_group_inference_data { allocator = allocator }
+        info <- getTypeVariableInfoByExprId function_group_inference_data expr_id context.function_id
+        function_group_inference_data <- addMemberInfo function_group_inference_data (M.MemberInfo (M.Extern 0) info.arg_group_var item_info)
+        context <- context { function_group_inference_data = function_group_inference_data }
+        context
+    else do
+        first <- List.atIndex items 0
+        first <- getExprId first
+        function_group_inference_data <- context.function_group_inference_data
+        item_info <- getTypeVariableInfoByExprId function_group_inference_data first context.function_id
+        info <- getTypeVariableInfoByExprId function_group_inference_data expr_id context.function_id
+        function_group_inference_data <- addMemberInfo function_group_inference_data (M.MemberInfo (M.Extern 0) info.arg_group_var item_info)
+        context <- context { function_group_inference_data = function_group_inference_data }
+        List.fold context items (\context, item -> addEqualExprs context first (getExprId item))
+collect context expr_id (E.Return (E.ReturnInfo arg)) = do
+    context <- collectEquals context arg
+    function_group_inference_data <- context.function_group_inference_data
+    function_inference_info <- getFunctionInferenceInfo function_group_inference_data context.function_id
+    result_info <- function_inference_info.result
+    arg_info <- getTypeVariableInfoByExprId function_group_inference_data (getExprId arg) context.function_id
+    addEqualInfo context result_info arg_info
+collect context expr_id (E.Continue (E.ContinueInfo arg)) = collectEquals context arg
+collect context expr_id (E.Break (E.BreakInfo arg)) = collectEquals context arg
+collect context expr_id (E.Loop (E.LoopInfo var initializer body continues breaks)) = do
+    context <- collectEquals context initializer
+    context <- collectEquals context body
+    context <- addEqualExprVar context (getExprId initializer) var
+    body_id <- getExprId body
+    context <- addEqualExprVar context body_id var
+    context <- List.fold context continues (\context, c -> addEqualExprs context c body_id)
+    context <- List.fold context breaks (\context, b -> addEqualExprs context b expr_id)
+    context
+collect context expr_id (E.CaseOf (E.CaseInfo body cases)) = do
+    E.Expr _ body_type body_id <- body
+    context <- collectEquals context body
+    List.foldE context cases (\context, index, c -> do
+        context <- collectEquals context c.body
+        case_body <- getExprId c.body
+        context <- addEqualExprs context case_body expr_id
+        case c.checker of
+            E.VariantChecker index var ty -> do
+                case ty of
+                    T.Adt _ -> do
+                        function_group_inference_data <- context.function_group_inference_data
+                        (allocator, type_var) <- getNextOwnershipTypeVariable function_group_inference_data.allocator
+                        function_group_inference_data <- function_group_inference_data { allocator = allocator }
+                        body_info <- getTypeVariableInfoByExprId function_group_inference_data body_id context.function_id
+                        var_info <- getTypeVariableInfoByVar function_group_inference_data var context.function_id
+                        orig <- var_info.ownership_var
+                        var_info <- var_info { ownership_var = type_var }
+                        converter <- Converter body_info.ownership_var var_info.ownership_var
+                        function_group_inference_data <- addConverter function_group_inference_data converter
+                        converter <- Converter var_info.ownership_var orig
+                        function_group_inference_data <- addConverter function_group_inference_data converter
+                        function_group_inference_data <- addMemberInfo function_group_inference_data (M.MemberInfo (M.Variant index) body_info.arg_group_var var_info)
+                        context { function_group_inference_data = function_group_inference_data }
+                    T.Record _ -> do
+                        function_group_inference_data <- context.function_group_inference_data
+                        body_info <- getTypeVariableInfoByExprId function_group_inference_data body_id context.function_id
+                        var_info <- getTypeVariableInfoByVar function_group_inference_data var context.function_id
                         addEqualInfo context body_info var_info
-                    _ -> context)
-            context
-        E.Converter (E.ConverterInfo arg) -> do
-            context <- processExpr context arg
-            inference_info <- context.inference_info
-            equals <- context.equals
-            info1 <- getTypeVariableInfoByExprId inference_info (getExprId arg) context.function_id
-            info2 <- getTypeVariableInfoByExprId inference_info expr_id context.function_id
-            converter <- Converter info1.ownership_var info2.ownership_var
-            inference_info <- addConverter inference_info converter
-            equals <- List.push equals (EqualGroup info1.arg_group_var info2.arg_group_var)
-            context { inference_info = inference_info, equals = equals }
+                    _ -> panic "VariantCheckers' type is nor adt nor record"
+            E.WildcardChecker var -> do
+                function_group_inference_data <- context.function_group_inference_data
+                body_info <- getTypeVariableInfoByExprId function_group_inference_data body_id context.function_id
+                var_info <- getTypeVariableInfoByVar function_group_inference_data var context.function_id
+                addEqualInfo context body_info var_info
+            _ -> context)
+collect context expr_id (E.Converter (E.ConverterInfo arg)) = do
+    context <- collectEquals context arg
+    function_group_inference_data <- context.function_group_inference_data
+    equals <- context.equals
+    info1 <- getTypeVariableInfoByExprId function_group_inference_data (getExprId arg) context.function_id
+    info2 <- getTypeVariableInfoByExprId function_group_inference_data expr_id context.function_id
+    converter <- Converter info1.ownership_var info2.ownership_var
+    function_group_inference_data <- addConverter function_group_inference_data converter
+    equals <- List.push equals (EqualGroup info1.arg_group_var info2.arg_group_var)
+    context { function_group_inference_data = function_group_inference_data, equals = equals }
 
 processFunctionEqualities :: I.Identity ->
                              [I.Identity] ->
                              [Equal] ->
-                             InferenceInfo ->
-                             FunctionInfoStore ->
-                             E.Expr -> ([Equal], InferenceInfo)
-processFunctionEqualities function_id group equals inference_info function_info_store body = do
-    context <- Context function_id equals inference_info function_info_store group
+                             FunctionGroupInferenceData ->
+                             DataFlowProfileStore ->
+                             E.Expr -> ([Equal], FunctionGroupInferenceData)
+processFunctionEqualities function_id group equals function_group_inference_data dataflow_profile_store body = do
+    context <- Context function_id equals function_group_inference_data dataflow_profile_store group
     //trace "processEqualities - traverse"
-    context <- processExpr context body
-    body_info <- getTypeVariableInfoByExprId context.inference_info (getExprId body) context.function_id
-    function_inference_info <- getFunctionInferenceInfo context.inference_info function_id
+    context <- collectEquals context body
+    body_info <- getTypeVariableInfoByExprId context.function_group_inference_data (getExprId body) context.function_id
+    function_inference_info <- getFunctionInferenceInfo context.function_group_inference_data function_id
     result_info <- function_inference_info.result
     context <- addEqualInfo context body_info result_info
-    (context.equals, context.inference_info)
+    (context.equals, context.function_group_inference_data)
 
-processEqualities :: [Equal] -> InferenceInfo -> InferenceInfo
-processEqualities equals inference_info = do
+processEqualities :: [Equal] -> FunctionGroupInferenceData -> FunctionGroupInferenceData
+processEqualities equals function_group_inference_data = do
     //trace "processEqualities - processEquals ({})" % (List.getLength equals)
-    inference_info <- processEquals equals inference_info
-    converters <- inference_info.converters |> List.sort |> List.dedup
-    inference_info { converters = converters }
+    function_group_inference_data <- processEquals equals function_group_inference_data
+    converters <- function_group_inference_data.converters |> List.sort |> List.dedup
+    function_group_inference_data { converters = converters }

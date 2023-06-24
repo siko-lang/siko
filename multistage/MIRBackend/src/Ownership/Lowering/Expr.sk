@@ -4,7 +4,7 @@ import Map
 import Siko.LIR.Expr as LE
 import Siko.LIR.Type as LT
 import Siko.MIR.Backend.Ownership.Converter
-import Siko.MIR.Backend.Ownership.InferenceInfo
+import Siko.MIR.Backend.Ownership.FunctionGroupInferenceData
 import Siko.MIR.Backend.Ownership.Lowering.Context
 import Siko.MIR.Backend.Ownership.Lowering.LoweringInfo
 import Siko.MIR.Backend.Ownership.Lowering.LoweringInfo.FilterInfo
@@ -22,7 +22,7 @@ import Siko.MIR.Program as MP
 import Siko.MIR.Type as MT
 
 data LoweringContext = { function_id :: I.Identity,
-                         inference_info :: InferenceInfo,
+                         function_group_inference_data :: FunctionGroupInferenceData,
                          borrowers :: [ME.ExprId],
                          filter_info :: FilterInfo,
                          type_cache :: Map TypeVariableInfo LT.Type,
@@ -34,7 +34,7 @@ getTypeLoweringInfo lowering_context info = do
     case Map.get lowering_context.type_lowering_info_cache info of
         Some lowering_info -> (lowering_context, lowering_info)
         None -> do
-            lowering_info <- createTypeLoweringInfoFromInferenceInfo lowering_context.inference_info info lowering_context.filter_info
+            lowering_info <- createTypeLoweringInfoFromInferenceInfo lowering_context.function_group_inference_data info lowering_context.filter_info
             (lowering_info, _) <- normalizeTypeLoweringInfo lowering_info
             type_lowering_info_cache <- Map.put lowering_context.type_lowering_info_cache info lowering_info
             lowering_context <- lowering_context { type_lowering_info_cache = type_lowering_info_cache }
@@ -54,7 +54,7 @@ getType context lowering_context info mir_type = do
 
 getOwnershipValue :: LoweringContext -> OwnershipTypeVariable -> M.OwnershipKind
 getOwnershipValue lowering_context var = do
-    result <- getOwnership lowering_context.inference_info var
+    result <- getOwnership lowering_context.function_group_inference_data var
     case result of
         Some o -> o
         None -> panic "Ownership value not found for {}" % var
@@ -92,7 +92,7 @@ lowerCase (lowering_context, lowering_info, context) c = do
 lowerExpr :: LoweringContext -> Context -> ME.Expr -> (LoweringContext, Context, LE.Expr)
 lowerExpr lowering_context context expr = do
     ME.Expr s_expr expr_type expr_id <- expr
-    expr_info <- getTypeVariableInfoByExprId lowering_context.inference_info expr_id lowering_context.function_id
+    expr_info <- getTypeVariableInfoByExprId lowering_context.function_group_inference_data expr_id lowering_context.function_id
     (context, lowering_context, lir_type) <- getType context lowering_context expr_info expr_type
     (lowering_context, context, lir_s_expr) <- case s_expr of
         ME.Do (ME.DoBlock items) -> do
@@ -103,14 +103,14 @@ lowerExpr lowering_context context expr = do
         ME.StaticFunctionCall f_info -> do
             args_info <- List.map f_info.args (\arg -> do
                 ME.Expr _ arg_type arg_id <- arg
-                getTypeVariableInfoByExprId lowering_context.inference_info arg_id lowering_context.function_id)
-            lifetime_dependencies <- case Map.get lowering_context.inference_info.function_converter_borrows expr_id of
+                getTypeVariableInfoByExprId lowering_context.function_group_inference_data arg_id lowering_context.function_id)
+            lifetime_dependencies <- case Map.get lowering_context.function_group_inference_data.function_converter_borrows expr_id of
                 Some function_converter_borrows -> do
                     lifetime_dependencies <- List.fold ([]) function_converter_borrows (\lifetime_dependencies, function_converter_borrow -> do
                         List.push lifetime_dependencies (LifetimeDependency function_converter_borrow.from function_converter_borrow.to))
                     lifetime_dependencies |> List.sort |> List.dedup
                 None -> []
-            lowering_info <- convertToFunctionLoweringInfo lowering_context.inference_info args_info expr_info lowering_context.filter_info lifetime_dependencies
+            lowering_info <- convertToFunctionLoweringInfo lowering_context.function_group_inference_data args_info expr_info lowering_context.filter_info lifetime_dependencies
             if MP.isDebugged lowering_context.function_id
             then do
                 println "-----------------------------------------"
@@ -213,14 +213,14 @@ lowerExpr lowering_context context expr = do
             (lowering_context, context, LE.Loop lir_var lir_initializer lir_body)
         ME.CaseOf (ME.CaseInfo body cases) -> do
             ME.Expr _ _ body_id <- body
-            body_info <- getTypeVariableInfoByExprId lowering_context.inference_info body_id lowering_context.function_id
+            body_info <- getTypeVariableInfoByExprId lowering_context.function_group_inference_data body_id lowering_context.function_id
             (lowering_context, lowering_info) <- getTypeLoweringInfo lowering_context body_info
             (lowering_context, context, lir_body) <- lowerExpr lowering_context context body
             ((lowering_context, lowering_info, context), lir_cases) <- List.mapS (lowering_context, lowering_info, context) cases lowerCase
             (lowering_context, context, LE.CaseOf lir_body lir_cases)
         ME.Converter (ME.ConverterInfo arg) -> do
             ME.Expr _ _ arg_id <- arg
-            arg_info <- getTypeVariableInfoByExprId lowering_context.inference_info arg_id lowering_context.function_id
+            arg_info <- getTypeVariableInfoByExprId lowering_context.function_group_inference_data arg_id lowering_context.function_id
             from <- getOwnershipValue lowering_context arg_info.ownership_var
             to <- getOwnershipValue lowering_context expr_info.ownership_var
             (lowering_context, context, lir_arg) <- lowerExpr lowering_context context arg

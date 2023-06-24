@@ -1,0 +1,30 @@
+module Siko.MIR.Backend.Ownership.DataFlowProfileStore where
+
+import Map
+import Siko.MIR.Backend.Ownership.DataFlowProfile
+import Siko.MIR.Identity as I
+
+data DataFlowProfileStore = { functions :: Map I.Identity DataFlowProfile } deriving (Move)
+
+createDataFlowProfileStore :: DataFlowProfileStore
+createDataFlowProfileStore = DataFlowProfileStore Map.empty
+
+getDataFlowProfile :: DataFlowProfileStore -> I.Identity -> Option DataFlowProfile
+getDataFlowProfile dataflow_profile_store id = Map.get dataflow_profile_store.functions id
+
+addDataFlowProfile :: DataFlowProfileStore -> I.Identity -> DataFlowProfile -> (DataFlowProfileStore, Bool)
+addDataFlowProfile dataflow_profile_store id dataflow_profile = do
+    (added, functions, _) <- alterS (\_, old -> case old of
+        Some old -> do
+            // if old != dataflow_profile
+            // then do
+            //     println "addDataFlowProfile: info changed"
+            //     println "addDataFlowProfile: old {}" % old
+            //     println "addDataFlowProfile: new {}" % dataflow_profile
+            //     println "{} members: {}, converters: {}, ownershipinfos: {}" % (id, List.getLength old.members, List.getLength old.converters, List.getLength old.ownershipinfos)
+            //     println "{} members: {}, converters: {}, ownershipinfos: {}" % (id, List.getLength dataflow_profile.members, List.getLength dataflow_profile.converters, List.getLength dataflow_profile.ownershipinfos)
+            // else ()
+            (old != dataflow_profile, Some dataflow_profile)
+        None -> (True, Some dataflow_profile)) True id dataflow_profile_store.functions
+    dataflow_profile_store <- dataflow_profile_store { functions = functions }
+    (dataflow_profile_store, added)

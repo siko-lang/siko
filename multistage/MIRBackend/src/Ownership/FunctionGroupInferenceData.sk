@@ -1,0 +1,554 @@
+module Siko.MIR.Backend.Ownership.FunctionGroupInferenceData where
+
+import Map
+import Set
+import Siko.MIR.Backend.Ownership.Allocator
+import Siko.MIR.Backend.Ownership.BorrowId
+import Siko.MIR.Backend.Ownership.CallContext as CC
+import Siko.MIR.Backend.Ownership.Converter
+import Siko.MIR.Backend.Ownership.DataFlowProfile
+import Siko.MIR.Backend.Ownership.EqualitySolver
+import Siko.MIR.Backend.Ownership.GroupDependencyMap
+import Siko.MIR.Backend.Ownership.Inference.Constraint as C
+import Siko.MIR.Backend.Ownership.Lowering.LoweringInfo
+import Siko.MIR.Backend.Ownership.Lowering.LoweringInfo.FilterInfo
+import Siko.MIR.Backend.Ownership.MemberInfo as M
+import Siko.MIR.Backend.Ownership.OwnershipDependencyMap
+import Siko.MIR.Backend.Ownership.TypeVariableInfo
+import Siko.MIR.Expr as E
+import Siko.MIR.Identity as I
+import Siko.Trace
+import Siko.Util.DependencyProcessor
+
+data Borrow = Local E.ExprId
+            | External BorrowId
+            | Internal BorrowId
+            deriving (PartialEq, Eq, PartialOrd, Ord, Show)
+
+data BorrowSet = { borrows :: Set Borrow } deriving (Show, PartialEq, Eq, PartialOrd, Ord)
+
+data FunctionConverterBorrow = { from :: BorrowId,
+                                 to :: BorrowId
+                               } deriving (Show)
+
+data FunctionInferenceInfo = { args :: [TypeVariableInfo],
+                               result :: TypeVariableInfo
+                             } deriving (PartialEq, Eq, PartialOrd, Ord, Show)
+
+data GlobalExprId = { function_id :: I.Identity,
+                      expr_id :: E.ExprId
+                    } deriving (PartialEq, Eq, PartialOrd, Ord, Show)
+
+data GlobalVar = { function_id :: I.Identity,
+                   var :: E.Var
+                 } deriving (PartialEq, Eq, PartialOrd, Ord, Show)
+
+data DataFlowProfileBase = { args :: [TypeVariableInfo],
+                             result :: TypeVariableInfo,
+                             members :: [M.MemberInfo],
+                             converters :: [Converter],
+                             relevant_ownership_vars :: [OwnershipTypeVariable],
+                             result_only_vars :: [OwnershipTypeVariable]
+                           } deriving (Show)
+
+data FunctionGroupInferenceData = { expr_type_variables :: Map GlobalExprId TypeVariableInfo,
+                                    var_type_variables :: Map GlobalVar TypeVariableInfo,
+                                    group :: [I.Identity],
+                                    dataflow_profiles :: Map I.Identity FunctionInferenceInfo,
+                                    ownership_values :: Map OwnershipTypeVariable M.OwnershipKind,
+                                    members :: [M.MemberInfo],
+                                    converters :: [Converter],
+                                    allocator :: Allocator,
+                                    function_converters :: Map GlobalExprId [Converter],
+                                    group_function_converters :: Map I.Identity [Converter],
+                                    borrow_sets :: Map BorrowId BorrowSet,
+                                    external_borrows :: Map BorrowId BorrowId,
+                                    interrnal_borrows :: Map BorrowId BorrowId,
+                                    initials :: Map OwnershipTypeVariable M.OwnershipKind,
+                                    dataflow_profile_bases :: Map I.Identity DataFlowProfileBase,
+                                    function_converter_borrows :: Map E.ExprId [FunctionConverterBorrow],
+                                    base_call_contexts :: [CC.CallContext],
+                                    ownership_dep_map_info :: OwnershipDependencyMapInfo,
+                                    group_dep_map_info :: GroupDependencyMapInfo
+                                  } deriving (Move)
+
+instance Show FunctionGroupInferenceData where
+    show function_group_inference_data = "FunctionGroupInferenceData(ownership_values {}, members {}, converters {}, borrow_sets {}, initials {})" % (function_group_inference_data.ownership_values, function_group_inference_data.members, function_group_inference_data.converters, function_group_inference_data.borrow_sets, function_group_inference_data.initials)
+
+createInferenceInfoFromLoweringInfo :: FunctionLoweringInfo -> I.Identity -> (FunctionGroupInferenceData, [BorrowId])
+createInferenceInfoFromLoweringInfo lowering_info function_id = do
+    expr_type_variables <- Map.empty
+    var_type_variables <- Map.empty
+    ownership_values <- Map.empty
+    args <- lowering_info.args
+    var_type_variables <- List.foldE var_type_variables args (\var_type_variables, index, arg -> Map.put var_type_variables (GlobalVar function_id (E.Arg index)) arg)
+    result <- lowering_info.result
+    function_inference_info <- FunctionInferenceInfo args result
+    dataflow_profiles <- Map.put Map.empty function_id function_inference_info
+    allocator <- lowering_info.allocator
+    members <- lowering_info.members
+    converters <- []
+    function_converters <- Map.empty
+    group_function_converters <- Map.empty
+    borrow_sets <- Map.empty
+    group <- [function_id]
+    function_group_inference_data <- FunctionGroupInferenceData expr_type_variables
+                                                                var_type_variables
+                                                                group
+                                                                dataflow_profiles
+                                                                ownership_values
+                                                                members
+                                                                converters
+                                                                allocator
+                                                                function_converters
+                                                                group_function_converters
+                                                                borrow_sets
+                                                                Map.empty
+                                                                Map.empty
+                                                                Map.empty
+                                                                Map.empty
+                                                                Map.empty
+                                                                List.empty
+                                                                createOwnershipDependencyMapInfo
+                                                                createGroupDependencyMapInfo
+    (function_group_inference_data, external_borrows) <- List.fold (function_group_inference_data, []) lowering_info.ownershipinfos (\(function_group_inference_data, external_borrows), ownershipinfo -> do
+        (function_group_inference_data, external_borrows, v, kind) <- case ownershipinfo of
+            M.OwnershipInfo v M.Unknown -> panic "Unknown ownership in createInferenceInfoFromLoweringInfo"
+            M.OwnershipInfo v M.Owner -> panic "Owner ownership in createInferenceInfoFromLoweringInfo"
+            M.OwnershipInfo v (M.Borrower external_id) -> do
+                (function_group_inference_data, id) <- createBorrowSetForExternal function_group_inference_data external_id
+                (function_group_inference_data, List.push external_borrows id, v, M.Borrower id)
+        (ownership_values, _) <- Map.insert function_group_inference_data.ownership_values v kind
+        initials <- Map.put function_group_inference_data.initials v kind
+        function_group_inference_data <- function_group_inference_data { ownership_values = ownership_values, initials = initials }
+        (function_group_inference_data, external_borrows))
+    (ownership_values, initials) <- List.fold (function_group_inference_data.ownership_values, function_group_inference_data.initials) members (\(ownership_values, initials), member -> do
+        case Map.get ownership_values member.info.ownership_var of
+            Some _ -> (ownership_values, initials)
+            None -> (Map.put ownership_values member.info.ownership_var M.Owner, Map.put initials member.info.ownership_var M.Owner))
+    (ownership_values, initials) <- List.fold (ownership_values, initials) args (\(ownership_values, initials), arg -> do
+        case Map.get ownership_values arg.ownership_var of
+            Some _ -> (ownership_values, initials)
+            None -> (Map.put ownership_values arg.ownership_var M.Owner, Map.put initials arg.ownership_var M.Owner))
+    (ownership_values, initials) <- case Map.get ownership_values result.ownership_var of
+        Some _ -> (ownership_values, initials)
+        None -> (Map.put ownership_values result.ownership_var M.Owner, Map.put initials result.ownership_var M.Owner)
+    function_group_inference_data <- function_group_inference_data { ownership_values = ownership_values, initials = initials }
+    (function_group_inference_data, external_borrows)
+
+addFunctionInferenceInfo :: FunctionGroupInferenceData -> I.Identity -> Int -> FunctionGroupInferenceData
+addFunctionInferenceInfo function_group_inference_data id arg_count = do
+    var_type_variables <- function_group_inference_data.var_type_variables
+    args <- []
+    allocator <- function_group_inference_data.allocator
+    (var_type_variables, args, allocator) <- loop (var_type_variables, args, allocator, index) <- (var_type_variables, args, allocator, 0) do
+        if index >= arg_count
+        then break (var_type_variables, args, allocator)
+        else do
+            (allocator, info) <- getNextTypeVariableInfo allocator
+            arg <- E.Arg index
+            var_type_variables <- Map.put var_type_variables (GlobalVar id arg) info
+            args <- List.push args info
+            (var_type_variables, args, allocator, index + 1)
+    (allocator, result) <- getNextTypeVariableInfo allocator
+    function_inference_info <- FunctionInferenceInfo args result
+    dataflow_profiles <- Map.put function_group_inference_data.dataflow_profiles id function_inference_info
+    group <- List.push function_group_inference_data.group id
+    function_group_inference_data { var_type_variables = var_type_variables, group = group, allocator = allocator, dataflow_profiles = dataflow_profiles }
+
+createInferenceInfo :: FunctionGroupInferenceData
+createInferenceInfo = do
+    allocator <- createAllocator
+    dataflow_profiles <- Map.empty
+    ownership_values <- Map.empty
+    function_converters <- Map.empty
+    group_function_converters <- Map.empty
+    borrow_sets <- Map.empty
+    FunctionGroupInferenceData Map.empty
+                               Map.empty
+                               []
+                               dataflow_profiles
+                               ownership_values
+                               []
+                               []
+                               allocator
+                               function_converters
+                               group_function_converters
+                               borrow_sets
+                               Map.empty
+                               Map.empty
+                               Map.empty
+                               Map.empty
+                               Map.empty
+                               List.empty
+                               createOwnershipDependencyMapInfo
+                               createGroupDependencyMapInfo
+
+createBorrowSet :: FunctionGroupInferenceData -> Borrow -> (FunctionGroupInferenceData, BorrowId)
+createBorrowSet function_group_inference_data borrow = do
+    allocator <- function_group_inference_data.allocator
+    (allocator, id) <- getNextBorrowId allocator
+    borrows <- Set.empty
+    borrow_set <- BorrowSet (Set.put borrows borrow)
+    borrow_sets <- Map.put function_group_inference_data.borrow_sets id borrow_set
+    (function_group_inference_data { allocator = allocator, borrow_sets = borrow_sets }, id)
+
+createBorrowSetForExpr :: FunctionGroupInferenceData -> E.ExprId -> (FunctionGroupInferenceData, BorrowId)
+createBorrowSetForExpr function_group_inference_data expr_id = createBorrowSet function_group_inference_data (Local expr_id)
+
+createBorrowSetForExternal :: FunctionGroupInferenceData -> BorrowId -> (FunctionGroupInferenceData, BorrowId)
+createBorrowSetForExternal function_group_inference_data external_id = do
+    case Map.get function_group_inference_data.external_borrows external_id of
+        Some id -> (function_group_inference_data, id)
+        None -> do
+            (function_group_inference_data, id) <- createBorrowSet function_group_inference_data (External external_id)
+            external_borrows <- Map.put function_group_inference_data.external_borrows external_id id
+            (function_group_inference_data { external_borrows = external_borrows }, id)
+
+createBorrowSetForInternal :: FunctionGroupInferenceData -> BorrowId -> (FunctionGroupInferenceData, BorrowId)
+createBorrowSetForInternal function_group_inference_data external_id = do
+    case Map.get function_group_inference_data.interrnal_borrows external_id of
+        Some id -> (function_group_inference_data, id)
+        None -> do
+            (function_group_inference_data, id) <- createBorrowSet function_group_inference_data (Internal external_id)
+            interrnal_borrows <- Map.put function_group_inference_data.interrnal_borrows external_id id
+            (function_group_inference_data { interrnal_borrows = interrnal_borrows }, id)
+
+isExternalBorrowSet :: BorrowSet -> Bool
+isExternalBorrowSet borrow_set = Set.fold True borrow_set.borrows (\is_external, borrow -> case borrow of
+        External _ -> is_external
+        _ -> False)
+
+containsBorrows :: FunctionGroupInferenceData -> BorrowId -> BorrowId -> Bool
+containsBorrows function_group_inference_data needle haystack = do
+    if haystack == needle
+    then True
+    else do
+        haystack_set <- getBorrowSet function_group_inference_data haystack
+        needle_set <- getBorrowSet function_group_inference_data needle
+        if isExternalBorrowSet haystack_set && isExternalBorrowSet needle_set
+        then True
+        else do
+            rest <- needle_set.borrows - haystack_set.borrows
+            Set.isEmpty rest
+
+mergeBorrowSets :: FunctionGroupInferenceData -> BorrowId -> BorrowId -> (FunctionGroupInferenceData, BorrowId)
+mergeBorrowSets function_group_inference_data id1 id2 = do
+    set1 <- getBorrowSet function_group_inference_data id1
+    set2 <- getBorrowSet function_group_inference_data id2
+    allocator <- function_group_inference_data.allocator
+    (allocator, id) <- getNextBorrowId allocator
+    merged <- set1.borrows + set2.borrows
+    merged_set <- BorrowSet merged
+    borrow_sets <- Map.put function_group_inference_data.borrow_sets id merged_set
+    (function_group_inference_data { allocator = allocator, borrow_sets = borrow_sets }, id)
+
+cloneBorrowSet :: FunctionGroupInferenceData -> BorrowId -> (FunctionGroupInferenceData, BorrowId)
+cloneBorrowSet function_group_inference_data id = do
+    set <- getBorrowSet function_group_inference_data id
+    allocator <- function_group_inference_data.allocator
+    (allocator, new_id) <- getNextBorrowId allocator
+    merged_set <- BorrowSet set.borrows
+    borrow_sets <- Map.put function_group_inference_data.borrow_sets new_id merged_set
+    (function_group_inference_data { allocator = allocator, borrow_sets = borrow_sets }, new_id)
+
+getBorrowSet :: FunctionGroupInferenceData -> BorrowId -> BorrowSet
+getBorrowSet function_group_inference_data id = case Map.get function_group_inference_data.borrow_sets id of
+    Some borrow_set -> borrow_set
+    None -> panic "No borrow set found for {}" % id
+
+addVar :: FunctionGroupInferenceData -> I.Identity -> E.Var -> FunctionGroupInferenceData
+addVar function_group_inference_data function_id var = do
+    (allocator, info) <- getNextTypeVariableInfo function_group_inference_data.allocator
+    var_type_variables <- Map.put function_group_inference_data.var_type_variables (GlobalVar function_id var) info
+    function_group_inference_data <- function_group_inference_data { var_type_variables = var_type_variables, allocator = allocator }
+    function_group_inference_data
+
+addExpr :: FunctionGroupInferenceData -> I.Identity -> E.ExprId -> FunctionGroupInferenceData
+addExpr function_group_inference_data function_id expr_id = do
+    (allocator, info) <- getNextTypeVariableInfo function_group_inference_data.allocator
+    expr_type_variables <- Map.put function_group_inference_data.expr_type_variables (GlobalExprId function_id expr_id) info
+    function_group_inference_data <- function_group_inference_data { expr_type_variables = expr_type_variables, allocator = allocator }
+    function_group_inference_data
+
+addMemberInfo :: FunctionGroupInferenceData -> M.MemberInfo -> FunctionGroupInferenceData
+addMemberInfo function_group_inference_data member_info = do
+    members <- List.push function_group_inference_data.members member_info
+    function_group_inference_data { members = members }
+
+addConverter :: FunctionGroupInferenceData -> Converter -> FunctionGroupInferenceData
+addConverter function_group_inference_data converter = do
+    converters <- List.push function_group_inference_data.converters converter
+    function_group_inference_data { converters = converters }
+
+addOwnership :: FunctionGroupInferenceData -> OwnershipTypeVariable -> M.OwnershipKind -> FunctionGroupInferenceData
+addOwnership function_group_inference_data var kind = do
+    (ownership_values, _) <- Map.insert function_group_inference_data.ownership_values var kind
+    function_group_inference_data { ownership_values = ownership_values }
+
+changeInitialOwnership :: Map OwnershipTypeVariable M.OwnershipKind ->
+                          Map OwnershipTypeVariable M.OwnershipKind ->
+                          OwnershipTypeVariable ->
+                          M.OwnershipKind ->
+                          Bool -> (Map OwnershipTypeVariable M.OwnershipKind, Map OwnershipTypeVariable M.OwnershipKind, Bool)
+changeInitialOwnership ownership_values initials var kind force = do
+    (kind, update) <- case Map.get initials var of
+        Some M.Unknown -> (kind, True)
+        Some kind -> (kind, force)
+        None -> (kind, True)
+    ownership_values <- if update
+    then Map.put ownership_values var kind
+    else ownership_values
+    (ownership_values, initials, update)
+
+addInferredOwnership :: FunctionGroupInferenceData -> OwnershipTypeVariable -> M.OwnershipKind -> (FunctionGroupInferenceData, Bool)
+addInferredOwnership function_group_inference_data var kind = do
+    (ownership_values, initials, update) <- changeInitialOwnership function_group_inference_data.ownership_values function_group_inference_data.initials var kind False
+    (function_group_inference_data { ownership_values = ownership_values, initials = initials }, update)
+
+maybeAddOwnership :: FunctionGroupInferenceData -> OwnershipTypeVariable -> M.OwnershipKind -> FunctionGroupInferenceData
+maybeAddOwnership function_group_inference_data var kind = do
+    (ownership_values, _) <- Map.alter (\old -> case old of
+        Some old -> case old of
+            M.Unknown -> do
+                //println "maybeAddOwnership: Added {} to {}" % (kind, var)
+                Some kind
+            old -> Some old
+        None -> do
+            //println "maybeAddOwnership: Added {} to {} 2" % (kind, var)
+            Some kind) var function_group_inference_data.ownership_values
+    function_group_inference_data { ownership_values = ownership_values }
+
+enforceOwner :: FunctionGroupInferenceData -> OwnershipTypeVariable -> [BorrowId] -> FunctionGroupInferenceData
+enforceOwner function_group_inference_data var external_borrows = do
+    kind <- case Map.get function_group_inference_data.ownership_values var of
+        Some old -> case old of
+            M.Unknown -> M.Owner
+            M.Borrower id -> if List.contains external_borrows id
+                then old
+                else M.Owner
+            M.Owner -> M.Owner
+        None -> M.Owner
+    (function_group_inference_data, update) <- addInferredOwnership function_group_inference_data var kind
+    initials <- if update
+    then Map.put function_group_inference_data.initials var kind
+    else function_group_inference_data.initials
+    function_group_inference_data { initials = initials }
+
+getOwnership :: FunctionGroupInferenceData -> OwnershipTypeVariable -> Option M.OwnershipKind
+getOwnership function_group_inference_data var = Map.get function_group_inference_data.ownership_values var
+
+getFunctionInferenceInfo :: FunctionGroupInferenceData -> I.Identity -> FunctionInferenceInfo
+getFunctionInferenceInfo function_group_inference_data function_id = case Map.get function_group_inference_data.dataflow_profiles function_id of
+    Some function_inference_info -> function_inference_info
+    None -> panic "function_inference_info not found in getFunctionInferenceInfo"
+
+getTypeVariableInfoByExprId :: FunctionGroupInferenceData -> E.ExprId -> I.Identity -> TypeVariableInfo
+getTypeVariableInfoByExprId function_group_inference_data expr_id function_id = do
+    case Map.get function_group_inference_data.expr_type_variables (GlobalExprId function_id expr_id) of
+        Some i -> i
+        None -> panic "TypeVariableInfo not found for expr {}" % expr_id
+
+getTypeVariableInfoByVar :: FunctionGroupInferenceData -> E.Var -> I.Identity -> TypeVariableInfo
+getTypeVariableInfoByVar function_group_inference_data var function_id = do
+    case Map.get function_group_inference_data.var_type_variables (GlobalVar function_id var) of
+        Some i -> i
+        None -> panic "TypeVariableInfo not found for var {}" % var
+
+createDataFlowProfileBase :: FunctionGroupInferenceData -> I.Identity -> ConverterMergeInfoBase -> FunctionGroupInferenceData
+createDataFlowProfileBase function_group_inference_data function_id converter_merge_info_base = do
+    function_inference_info <- getFunctionInferenceInfo function_group_inference_data function_id
+    // println "createDataFlowProfileBase"
+    // println "members: {}" % List.getLength function_group_inference_data.members
+    // println "converters: {}" % List.getLength function_group_inference_data.converters
+    // println "expr_type_variables: {}" % Map.getSize function_group_inference_data.expr_type_variables
+    // println "var_type_variables: {}" % Map.getSize function_group_inference_data.var_type_variables
+    // println "ownership_values: {}" % Map.getSize function_group_inference_data.ownership_values
+    // println "borrow_sets: {}" % Map.getSize function_group_inference_data.borrow_sets
+    members <- function_group_inference_data.members
+    group_dep_map <- function_group_inference_data.group_dep_map_info.group_dep_map
+    input_group_vars <- List.fold [] function_inference_info.args (\input_group_vars, info -> do
+        input_group_vars <- case Map.get group_dep_map info.arg_group_var of
+            Some group_vars -> input_group_vars + group_vars
+            None -> input_group_vars
+        List.push input_group_vars info.arg_group_var)
+    input_group_vars <- input_group_vars |> List.sort |> List.dedup
+    output_group_vars <- case Map.get group_dep_map function_inference_info.result.arg_group_var of
+        Some group_vars -> group_vars
+        None -> []
+    output_group_vars <- List.push output_group_vars function_inference_info.result.arg_group_var
+    output_group_vars <- output_group_vars |> List.sort |> List.dedup
+    input_members <- List.filter members (M.isSubMember input_group_vars)
+    output_members <- List.filter members (M.isSubMember output_group_vars)
+    output_ownership_vars <- [function_inference_info.result.ownership_var]
+    input_ownership_vars <- List.fold [] function_inference_info.args (\ownership_vars, info -> List.push ownership_vars info.ownership_var)
+    input_ownership_vars <- List.fold input_ownership_vars input_members (\vars, member -> List.push vars member.info.ownership_var)
+    output_ownership_vars <- List.fold output_ownership_vars output_members (\vars, member -> List.push vars member.info.ownership_var)
+    converter_merge_info <- mergeConverters input_ownership_vars converter_merge_info_base
+    ((input_ownership_vars, output_ownership_vars), filtered_converters) <- List.filterS (input_ownership_vars, output_ownership_vars) converter_merge_info.converters (\(input_ownership_vars, output_ownership_vars), converter -> do
+        match <- List.contains input_ownership_vars converter.from && List.contains output_ownership_vars converter.to
+        ((input_ownership_vars, output_ownership_vars), match))
+    (input_ownership_vars, output_ownership_vars, filtered_converters) <- List.fold (input_ownership_vars, output_ownership_vars, filtered_converters) converter_merge_info.cycle_groups (\(input_ownership_vars, output_ownership_vars, filtered_converters), group -> do
+        inputs <- List.filter input_ownership_vars (\var -> List.contains group var)
+        outputs <- List.filter output_ownership_vars (\var -> List.contains group var)
+        filtered_converters <- List.fold filtered_converters inputs (\filtered_converters, input -> List.fold filtered_converters outputs (\filtered_converters, output -> List.push filtered_converters (Converter input output)))
+        (input_ownership_vars, output_ownership_vars, filtered_converters))
+    output_in_input <- List.fold False output_ownership_vars (\contains, output_var -> contains || List.contains input_ownership_vars output_var)
+    (members, relevant_ownership_vars) <- if List.isEmpty filtered_converters && not output_in_input
+    then (output_members, output_ownership_vars)
+    else ((input_members + output_members) |> List.sort |> List.dedup, input_ownership_vars + output_ownership_vars)
+    result_only_vars <- output_ownership_vars
+    converter_results <- List.fold [] filtered_converters (\converter_results, converter -> List.push converter_results converter.to)
+    (_, result_only_vars) <- List.filterS input_ownership_vars result_only_vars (\input_ownership_vars, var -> do
+        r <- not (List.contains input_ownership_vars var)
+        (input_ownership_vars, r))
+    (_, result_only_vars) <- List.filterS converter_results result_only_vars (\converter_results, var -> do
+        r <- not (List.contains converter_results var)
+        (converter_results, r))
+    dataflow_profile_base <- DataFlowProfileBase function_inference_info.args function_inference_info.result members filtered_converters relevant_ownership_vars result_only_vars
+    group_function_converters <- Map.put function_group_inference_data.group_function_converters function_id filtered_converters
+    dataflow_profile_bases <- Map.put function_group_inference_data.dataflow_profile_bases function_id dataflow_profile_base
+    function_group_inference_data { dataflow_profile_bases = dataflow_profile_bases, group_function_converters = group_function_converters }
+
+toDataFlowProfile :: FunctionGroupInferenceData -> I.Identity -> Bool -> DataFlowProfile
+toDataFlowProfile function_group_inference_data function_id no_return = do
+    dataflow_profile_base <- case Map.get function_group_inference_data.dataflow_profile_bases function_id of
+        Some dataflow_profile_base -> dataflow_profile_base
+        None -> panic "Not function info base found for {}" % function_id
+    (filtered_ownershipinfos, ownership_values, result_only_vars) <- loop (filtered_ownershipinfos, relevant_ownership_vars, ownership_values, index, result_only_vars) <- ([], dataflow_profile_base.relevant_ownership_vars, function_group_inference_data.ownership_values, 0, dataflow_profile_base.result_only_vars) do
+        if index >= List.getLength relevant_ownership_vars
+        then break (filtered_ownershipinfos, ownership_values, result_only_vars)
+        else do
+            var <- List.atIndex relevant_ownership_vars index
+            filtered_ownershipinfos <- if List.contains result_only_vars var && not no_return
+            then List.push filtered_ownershipinfos (M.OwnershipInfo var M.Owner)
+            else case Map.get ownership_values var of
+                Some kind -> List.push filtered_ownershipinfos (M.OwnershipInfo var kind)
+                None -> filtered_ownershipinfos // FIXME: investigate, why is this possible??
+            (filtered_ownershipinfos, relevant_ownership_vars, ownership_values, index + 1, result_only_vars)
+    filtered_ownershipinfos <- filtered_ownershipinfos |> List.sort |> List.dedup
+    dataflow_profile <- DataFlowProfile dataflow_profile_base.args dataflow_profile_base.result dataflow_profile_base.members dataflow_profile_base.converters filtered_ownershipinfos
+    dataflow_profile
+
+instance Apply FunctionInferenceInfo where
+    apply applier function_inference_info = do
+        (applier, args) <- apply applier function_inference_info.args
+        (applier, result) <- apply applier function_inference_info.result
+        function_inference_info <- FunctionInferenceInfo args result
+        (applier, function_inference_info)
+
+instance Apply FunctionGroupInferenceData where
+    apply applier function_group_inference_data = do
+        (applier, expr_type_variables) <- apply applier function_group_inference_data.expr_type_variables
+        (applier, var_type_variables) <- apply applier function_group_inference_data.var_type_variables
+        (applier, dataflow_profiles) <- apply applier function_group_inference_data.dataflow_profiles
+        (applier, merged_ownership_values) <- Map.fold (applier, Map.empty) function_group_inference_data.ownership_values (\(applier, merged_ownership_values), (var, kind) -> do
+            (applier, new_var) <- apply applier var
+            //println "changed {} => {}" % (var, new_var)
+            merged_ownership_values <- Map.add merged_ownership_values new_var kind
+            (applier, merged_ownership_values))
+        (applier, merged_initials) <- Map.fold (applier, Map.empty) function_group_inference_data.initials (\(applier, merged_initials), (var, kind) -> do
+            (applier, new_var) <- apply applier var
+            merged_initials <- Map.add merged_initials new_var kind
+            (applier, merged_initials))
+        initials <- Map.fold Map.empty merged_initials (\initials, (var, kinds) -> do
+            kinds <- kinds |> List.sort |> List.dedup
+            kind <- if List.getLength kinds > 1
+            then panic "initials with multiple kinds {}" % kinds
+            else List.atIndex kinds 0
+            Map.put initials var kind)
+        function_group_inference_data <- function_group_inference_data { initials = initials }
+        (applier, members) <- apply applier function_group_inference_data.members
+        (applier, converters) <- apply applier function_group_inference_data.converters
+        (applier, function_converters) <- apply applier function_group_inference_data.function_converters
+        (applier, group_function_converters) <- apply applier function_group_inference_data.group_function_converters
+        members <- List.dedup (List.sort members)
+        converters <- List.dedup (List.sort converters)
+        function_group_inference_data <- FunctionGroupInferenceData expr_type_variables
+                                                                    var_type_variables
+                                                                    function_group_inference_data.group
+                                                                    dataflow_profiles
+                                                                    function_group_inference_data.ownership_values
+                                                                    members
+                                                                    converters
+                                                                    function_group_inference_data.allocator
+                                                                    function_converters
+                                                                    group_function_converters
+                                                                    function_group_inference_data.borrow_sets
+                                                                    function_group_inference_data.external_borrows
+                                                                    function_group_inference_data.interrnal_borrows
+                                                                    function_group_inference_data.initials
+                                                                    function_group_inference_data.dataflow_profile_bases
+                                                                    function_group_inference_data.function_converter_borrows
+                                                                    function_group_inference_data.base_call_contexts
+                                                                    function_group_inference_data.ownership_dep_map_info
+                                                                    function_group_inference_data.group_dep_map_info
+        (function_group_inference_data, ownership_values) <- Map.fold (function_group_inference_data, Map.empty) merged_ownership_values (\(function_group_inference_data, ownership_values), (var, kinds) -> do
+            kinds <- kinds |> List.sort |> List.dedup
+            kinds <- List.filter kinds (\kind -> case kind of
+                M.Unknown -> False
+                _ -> True)
+            (function_group_inference_data, kind) <- if List.contains kinds M.Owner
+            then (function_group_inference_data, M.Owner)
+            else case List.getLength kinds of
+                0 -> (function_group_inference_data, M.Unknown)
+                1 -> (function_group_inference_data, List.atIndex kinds 0)
+                _ -> do
+                    all_borrows <- List.fold ([]) kinds (\all_borrows, kind -> case kind of
+                        M.Borrower id -> do
+                            set <- getBorrowSet function_group_inference_data id
+                            Set.fold all_borrows set.borrows (\all_borrows, borrow -> List.push all_borrows borrow)
+                        _ -> panic "Non borrower {} found in borrow merge!" % kind)
+                    allocator <- function_group_inference_data.allocator
+                    (allocator, id) <- getNextBorrowId allocator
+                    borrows <- List.fold Set.empty all_borrows (\borrows, borrow -> Set.put borrows borrow)
+                    borrow_set <- BorrowSet borrows
+                    borrow_sets <- Map.put function_group_inference_data.borrow_sets id borrow_set
+                    function_group_inference_data <- function_group_inference_data { borrow_sets = borrow_sets, allocator = allocator }
+                    (function_group_inference_data, M.Borrower id)
+            (ownership_values, initials, update) <- changeInitialOwnership ownership_values function_group_inference_data.initials var kind True
+            function_group_inference_data <- function_group_inference_data { initials = initials }
+            (function_group_inference_data, ownership_values))
+        function_group_inference_data <- function_group_inference_data { ownership_values = ownership_values }
+        (applier, function_group_inference_data)
+
+instance MemberOwner FunctionGroupInferenceData where
+    getMembers function_group_inference_data = function_group_inference_data.members
+
+buildFilterInfoFromInferenceInfo :: FunctionGroupInferenceData -> FilterInfo
+buildFilterInfoFromInferenceInfo function_group_inference_data = do
+    ownershipinfos <- M.toOwnershipInfo function_group_inference_data.ownership_values
+    sources <- Map.fold [] function_group_inference_data.dataflow_profiles (\sources, (_, dataflow_profile) -> do
+        sources <- List.push sources dataflow_profile.result
+        sources <- sources + dataflow_profile.args
+        sources)
+    sources <- Map.fold sources function_group_inference_data.expr_type_variables (\sources, (_, info) -> List.push sources info)
+    sources <- Map.fold sources function_group_inference_data.var_type_variables (\sources, (_, info) -> List.push sources info)
+    filter_info <- buildFilterInfo function_group_inference_data.members ownershipinfos sources
+    filter_info
+
+checkInitials :: FunctionGroupInferenceData -> String -> ()
+checkInitials function_group_inference_data phase = do
+    initials <- function_group_inference_data.initials
+    Map.fold () initials (\_, (var, kind) -> do
+        current <- getOwnership function_group_inference_data var
+        case current of
+            Some current -> do
+                if current != kind
+                then do
+                    println function_group_inference_data
+                    panic "Initial {} changed ownership {} ! {} => {}" % (var, phase, kind, current)
+                else ()
+            None -> do
+                println function_group_inference_data
+                panic "Initial {} has no ownership {} ! {}" % (var, phase, kind))
+
+updateOwnershipDepMap :: FunctionGroupInferenceData -> FunctionGroupInferenceData
+updateOwnershipDepMap function_group_inference_data = do
+    ownership_dep_map_info <- calculateOwnershipDepMap function_group_inference_data.members
+    function_group_inference_data { ownership_dep_map_info = ownership_dep_map_info }
+
+updateGroupDependencyMapInfo :: FunctionGroupInferenceData -> FunctionGroupInferenceData
+updateGroupDependencyMapInfo function_group_inference_data = do
+    group_dep_map_info <- calculateGroupDepMap function_group_inference_data.members
+    function_group_inference_data { group_dep_map_info = group_dep_map_info }

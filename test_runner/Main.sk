@@ -65,7 +65,7 @@ runTest :: String ->
            Bool ->
            Bool ->
            [String] -> Statistics
-runTest binary total index stats test level2 dump pfi mir_functions = do
+runTest binary total index stats test level2 dump pdp mir_functions = do
     i1 <- now
     print "--- Running test {} - {}/{} --- " % (test.name, total, index + 1)
     createDir "test_runs/{}" % test.name
@@ -83,8 +83,8 @@ runTest binary total index stats test level2 dump pfi mir_functions = do
     cmd <- if dump
     then List.push cmd "-d"
     else cmd
-    cmd <- if pfi
-    then List.push cmd "-pfi"
+    cmd <- if pdp
+    then List.push cmd "-pdp"
     else cmd
     cmd <- List.fold cmd mir_functions (\cmd, f -> cmd + ["-m", f])
     //println "cmd {}" % cmd
@@ -108,11 +108,11 @@ main = do
     argparser <- createArgParser "Siko"
     traceLevel2Option <- "trace level 2"
     dumpOption <- "dump"
-    pfiOption <- "print function info"
+    pdpOption <- "print dataflow profile info"
     tracedMirFunctionOption <- "trace mir function"
     options <- [Simple (SimpleOption traceLevel2Option "-vv" "Enable level 2 traces" "Disabled"),
                 Simple (SimpleOption dumpOption "-d" "Dump IR" "Disabled"),
-                Simple (SimpleOption pfiOption "-pfi" "Print function info" "Disabled"),
+                Simple (SimpleOption pdpOption "-pdp" "Print dataflow profiles" "Disabled"),
                 WithArg (WithArgOption tracedMirFunctionOption "-m" "Traced MIR function" "-")]
     stage0_cmd <- Command "stage0" options "Run tests with stage0"
     stage1_cmd <- Command "stage1" options "Run tests with stage1"
@@ -128,7 +128,7 @@ main = do
         Ok result -> do
             level2 <- isValueSet result traceLevel2Option
             dump <- isValueSet result dumpOption
-            pfi <- isValueSet result pfiOption
+            pdp <- isValueSet result pdpOption
             mir_functions <- case getMultiValue result tracedMirFunctionOption of
                 Some values -> values
                 None -> []
@@ -145,7 +145,7 @@ main = do
                                                                                     test
                                                                                     level2
                                                                                     dump
-                                                                                    pfi
+                                                                                    pdp
                                                                                     mir_functions)
                     println "Success {}, failure {}" % (stats.success, stats.failure)
         Err _ -> ()

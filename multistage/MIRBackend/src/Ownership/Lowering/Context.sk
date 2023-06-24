@@ -5,8 +5,8 @@ import Siko.LIR.Data as LD
 import Siko.LIR.Function as LF
 import Siko.LIR.Program as LP
 import Siko.LIR.Type as LT
+import Siko.MIR.Backend.Ownership.DataFlowProfileStore
 import Siko.MIR.Backend.Ownership.DataGroupInfo
-import Siko.MIR.Backend.Ownership.FunctionInfoStore
 import Siko.MIR.Backend.Ownership.Lowering.Data
 import Siko.MIR.Backend.Ownership.Lowering.Expr
 import Siko.MIR.Backend.Ownership.Lowering.Function
@@ -21,7 +21,7 @@ data LIRKey = FunctionKey I.Identity FunctionLoweringInfo
             | AdtKey I.Identity TypeLoweringInfo
             deriving (PartialEq, Eq, PartialOrd, Ord, Show)
 
-data Context = { function_info_store :: FunctionInfoStore,
+data Context = { dataflow_profile_store :: DataFlowProfileStore,
                  items :: [LIRKey],
                  name_map :: NameMap,
                  lir_ids :: Map LIRKey LP.Identity,
@@ -31,15 +31,15 @@ data Context = { function_info_store :: FunctionInfoStore,
                  external_member_List :: [LP.Identity]
                } deriving (Move)
 
-createContext :: FunctionInfoStore -> Context
-createContext function_info_store = Context function_info_store
-                                            []
-                                            (NameMap Map.empty)
-                                            Map.empty
-                                            Map.empty
-                                            Map.empty
-                                            Map.empty
-                                            []
+createContext :: DataFlowProfileStore -> Context
+createContext dataflow_profile_store = Context dataflow_profile_store
+                                               []
+                                               (NameMap Map.empty)
+                                               Map.empty
+                                               Map.empty
+                                               Map.empty
+                                               Map.empty
+                                               []
 
 addItem :: Context -> LIRKey -> Context
 addItem context key = do

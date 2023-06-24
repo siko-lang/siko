@@ -1,10 +1,10 @@
-module Siko.MIR.Backend.Ownership.ExternProcessor(createExternFunctionInfo) where
+module Siko.MIR.Backend.Ownership.ExternProcessor(createExternDataFlowProfile) where
 
 import Map
 import Siko.MIR.Backend.Ownership.Allocator
 import Siko.MIR.Backend.Ownership.Converter
+import Siko.MIR.Backend.Ownership.DataFlowProfile
 import Siko.MIR.Backend.Ownership.EqualitySolver
-import Siko.MIR.Backend.Ownership.FunctionInfo
 import Siko.MIR.Backend.Ownership.MemberInfo as M
 import Siko.MIR.Backend.Ownership.TypeVariableInfo
 import Siko.MIR.Data as D
@@ -76,8 +76,8 @@ processPos context position = do
             current <- List.push current first
             (context, current, rest, info)
 
-createExternFunctionInfo :: I.Identity -> F.FunctionType -> F.TypeMapping -> FunctionInfo
-createExternFunctionInfo id function_type type_mapping = do
+createExternDataFlowProfile :: I.Identity -> F.FunctionType -> F.TypeMapping -> DataFlowProfile
+createExternDataFlowProfile id function_type type_mapping = do
     //println "type_mapping {}" % type_mapping
     allocator <- createAllocator
     context <- Context []
@@ -143,6 +143,6 @@ createExternFunctionInfo id function_type type_mapping = do
     result <- case Map.get context.info_map (F.Position [F.FunctionResult]) of
         Some info -> info
         None -> panic "No type variable info for result step for {}" % id
-    function_info <- FunctionInfo args result context.members converters context.ownershipinfos
-    function_info <- processEquals context.equals function_info
-    function_info
+    dataflow_profile <- DataFlowProfile args result context.members converters context.ownershipinfos
+    dataflow_profile <- processEquals context.equals dataflow_profile
+    dataflow_profile

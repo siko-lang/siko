@@ -1,8 +1,8 @@
 module Siko.MIR.Backend.Ownership.CallContext where
 
 import Map
+import Siko.MIR.Backend.Ownership.FunctionGroupInferenceData
 import Siko.MIR.Backend.Ownership.GroupDependencyMap
-import Siko.MIR.Backend.Ownership.InferenceInfo
 import Siko.MIR.Backend.Ownership.MemberInfo as M
 import Siko.MIR.Backend.Ownership.TypeVariableInfo
 import Siko.Util.DependencyProcessor
@@ -69,15 +69,15 @@ createCallContextForGroup group_index_map group_deps_map members base_call_conte
     base_call_contexts <- List.push base_call_contexts call_context
     base_call_contexts
 
-createBaseCallContexts :: InferenceInfo -> InferenceInfo
-createBaseCallContexts inference_info = do
-    group_deps_map <- inference_info.group_dep_map_info.deps_map
-    groups <- inference_info.group_dep_map_info.groups
-    group_index_map <- inference_info.group_dep_map_info.group_index_map
+createBaseCallContexts :: FunctionGroupInferenceData -> FunctionGroupInferenceData
+createBaseCallContexts function_group_inference_data = do
+    group_deps_map <- function_group_inference_data.group_dep_map_info.deps_map
+    groups <- function_group_inference_data.group_dep_map_info.groups
+    group_index_map <- function_group_inference_data.group_dep_map_info.group_index_map
     // println "group_index_map {}" % group_index_map
     // println "members {}" % members
     // println "groups {}" % groups
     groups <- List.map groups (\g -> g.items)
-    base_call_contexts <- List.fold List.empty groups (createCallContextForGroup group_index_map group_deps_map inference_info.members)
+    base_call_contexts <- List.fold List.empty groups (createCallContextForGroup group_index_map group_deps_map function_group_inference_data.members)
     //println "Full version {}" % base_call_contexts
-    inference_info { base_call_contexts = base_call_contexts }
+    function_group_inference_data { base_call_contexts = base_call_contexts }

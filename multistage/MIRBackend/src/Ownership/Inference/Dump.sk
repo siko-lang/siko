@@ -1,8 +1,8 @@
 module Siko.MIR.Backend.Ownership.DumpOwnership(dumpOwnership) where
 
 import Siko.MIR.Backend.Ownership.BorrowInfo
-import Siko.MIR.Backend.Ownership.FunctionInfoStore
-import Siko.MIR.Backend.Ownership.InferenceInfo
+import Siko.MIR.Backend.Ownership.DataFlowProfileStore
+import Siko.MIR.Backend.Ownership.FunctionGroupInferenceData
 import Siko.MIR.Backend.Ownership.MemberInfo as M
 import Siko.MIR.Backend.Ownership.OwnershipDependencyMap
 import Siko.MIR.Backend.Ownership.TypeVariableInfo
@@ -15,18 +15,18 @@ import Siko.MIR.Type as T
 import Siko.Trace
 
 data Context = { function_id :: I.Identity,
-                 inference_info :: InferenceInfo
+                 function_group_inference_data :: FunctionGroupInferenceData
                }
 
 getOwnershipValue :: Context -> OwnershipTypeVariable -> M.OwnershipKind
 getOwnershipValue context var = do
-    result <- getOwnership context.inference_info var
+    result <- getOwnership context.function_group_inference_data var
     case result of
         Some o -> o
         None -> M.Unknown
 
 getTypeVariableInfoByExprId2 :: Context -> E.ExprId -> TypeVariableInfo
-getTypeVariableInfoByExprId2 context expr_id = getTypeVariableInfoByExprId context.inference_info expr_id context.function_id
+getTypeVariableInfoByExprId2 context expr_id = getTypeVariableInfoByExprId context.function_group_inference_data expr_id context.function_id
 
 dumpExpr :: Context -> E.Expr -> (Context, E.Expr)
 dumpExpr context expr = do
@@ -36,9 +36,9 @@ dumpExpr context expr = do
     println "dumpOwnership {}/{} {} {}" % (expr_id, E.short expr, info, o1)
     (context, expr)
 
-dumpOwnership :: InferenceInfo -> I.Identity -> E.Expr -> ()
-dumpOwnership inference_info identity body = do
-    context <- Context identity inference_info
+dumpOwnership :: FunctionGroupInferenceData -> I.Identity -> E.Expr -> ()
+dumpOwnership function_group_inference_data identity body = do
+    context <- Context identity function_group_inference_data
     println "----------- BEGIN"
     (context, body) <- traverse context body (Some dumpExpr) None None
     println "----------- END"

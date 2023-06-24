@@ -5,10 +5,10 @@ import Set
 import Siko.MIR.Backend.Ownership.BorrowInfo
 import Siko.MIR.Backend.Ownership.CallContext as CC
 import Siko.MIR.Backend.Ownership.Converter
-import Siko.MIR.Backend.Ownership.FunctionInfoStore
+import Siko.MIR.Backend.Ownership.DataFlowProfileStore
+import Siko.MIR.Backend.Ownership.FunctionGroupInferenceData
 import Siko.MIR.Backend.Ownership.GroupDependencyMap
 import Siko.MIR.Backend.Ownership.Inference.Constraint as C
-import Siko.MIR.Backend.Ownership.InferenceInfo
 import Siko.MIR.Backend.Ownership.MemberInfo as M
 import Siko.MIR.Backend.Ownership.OwnershipDependencyMap
 import Siko.MIR.Backend.Ownership.Query as Q
@@ -23,7 +23,7 @@ import Siko.Trace
 import Siko.Util.DependencyProcessor
 
 data Context = { function_id :: I.Identity,
-                 inference_info :: InferenceInfo,
+                 function_group_inference_data :: FunctionGroupInferenceData,
                  borrow_info :: BorrowInfo,
                  invalid_borrows :: [E.ExprId],
                  constraints :: [C.Constraint],
@@ -43,23 +43,23 @@ addOwnershipConstraint context constraint = do
 
 addOwnershipValue :: Context -> OwnershipTypeVariable -> M.OwnershipKind -> Context
 addOwnershipValue context var kind = do
-    inference_info <- addOwnership context.inference_info var kind
-    context { inference_info = inference_info }
+    function_group_inference_data <- addOwnership context.function_group_inference_data var kind
+    context { function_group_inference_data = function_group_inference_data }
 
 getOwnershipValue :: Context -> OwnershipTypeVariable -> M.OwnershipKind
 getOwnershipValue context var = do
-    result <- getOwnership context.inference_info var
+    result <- getOwnership context.function_group_inference_data var
     case result of
         Some o -> o
         None -> panic "Ownership value not found for {}" % var
 
 getOwnershipValueMaybe :: Context -> OwnershipTypeVariable -> Option M.OwnershipKind
-getOwnershipValueMaybe context var = getOwnership context.inference_info var
+getOwnershipValueMaybe context var = getOwnership context.function_group_inference_data var
 
 processExpr :: Context -> E.Expr -> Context
 processExpr context expr = do
     E.Expr s_expr expr_type expr_id <- expr
-    info <- getTypeVariableInfoByExprId context.inference_info expr_id context.function_id
+    info <- getTypeVariableInfoByExprId context.function_group_inference_data expr_id context.function_id
     kind <- getOwnershipValueMaybe context info.ownership_var
     context <- case kind of
         Some _ -> context
@@ -70,14 +70,14 @@ processExpr context expr = do
             context <- List.fold context f_info.args processExpr
             (context, call_context, call_args) <- List.fold (context, CC.CallContext Map.empty, []) f_info.args (\(context, call_context, call_args), arg -> do
                 E.Expr _ _ id <- arg
-                info <- getTypeVariableInfoByExprId context.inference_info id context.function_id
+                info <- getTypeVariableInfoByExprId context.function_group_inference_data id context.function_id
                 //println "{}: {}" % (f_info.id, info)
                 //println "arg_group_var {}" % info.arg_group_var
-                group_index <- getGroupIndexOpt context.inference_info.group_dep_map_info.group_index_map info.arg_group_var
+                group_index <- getGroupIndexOpt context.function_group_inference_data.group_dep_map_info.group_index_map info.arg_group_var
                 call_args <- List.push call_args info.ownership_var
                 case group_index of
                     Some group_index -> do
-                        g_call_context <- List.atIndex context.inference_info.base_call_contexts group_index
+                        g_call_context <- List.atIndex context.function_group_inference_data.base_call_contexts group_index
                         g_call_context <- CC.addOwnershipVarToCallContext g_call_context info.ownership_var
                         //println "g_call_context: {} {}" % (info, g_call_context)
                         call_context <- CC.mergeCallContexts g_call_context call_context
@@ -92,15 +92,15 @@ processExpr context expr = do
             context <- case function.kind of
                 F.Normal _
                  | F.Extern _ -> do
-                    case Map.get context.inference_info.function_converters (GlobalExprId context.function_id expr_id) of
+                    case Map.get context.function_group_inference_data.function_converters (GlobalExprId context.function_id expr_id) of
                         Some function_converters -> do
                             List.fold context function_converters (\context, converter -> do
                                 if P.isDebugged context.function_id
                                 then println "Adding function converter constraint {} {} -> {}" % (expr_id, converter.from, converter.to)
                                 else ()
                                 addOwnershipConstraint context (C.FunctionConverter (C.FunctionConverterConstraint expr_id converter.from converter.to)))
-                        None -> if List.contains context.inference_info.group f_info.id
-                            then case Map.get context.inference_info.group_function_converters f_info.id of
+                        None -> if List.contains context.function_group_inference_data.group f_info.id
+                            then case Map.get context.function_group_inference_data.group_function_converters f_info.id of
                                 Some function_converters -> do
                                     List.fold context function_converters (\context, converter -> do
                                         addOwnershipConstraint context (C.FunctionConverter (C.FunctionConverterConstraint expr_id converter.from converter.to)))
@@ -124,10 +124,10 @@ processExpr context expr = do
         E.FieldAccess fa_info -> do
             context <- processExpr context fa_info.receiver
             E.Expr _ receiver_type receiver_id <- fa_info.receiver
-            receiver_info <- getTypeVariableInfoByExprId context.inference_info receiver_id context.function_id
+            receiver_info <- getTypeVariableInfoByExprId context.function_group_inference_data receiver_id context.function_id
             receiver_kind <- getOwnershipValue context receiver_info.ownership_var
             expr_kind <- getOwnershipValue context info.ownership_var
-            member <- List.filter context.inference_info.members (\m -> case m.kind of
+            member <- List.filter context.function_group_inference_data.members (\m -> case m.kind of
                 M.Field n -> n == fa_info.index && receiver_info.arg_group_var == m.root
                 _ -> False)
             member_info <- case List.head member of
@@ -167,13 +167,13 @@ processExpr context expr = do
             context <- processExpr context body
             E.Expr _ _ body_id <- body
             saved_invalid_borrows <- context.invalid_borrows
-            body_info <- getTypeVariableInfoByExprId context.inference_info body_id context.function_id
+            body_info <- getTypeVariableInfoByExprId context.function_group_inference_data body_id context.function_id
             (context, all_invalid_borrows) <- List.fold (context, []) cases (\(context, all_invalid_borrows), c -> do
                 context <- case c.checker of
                     E.VariantChecker index var _ -> do
                         var_expr_map <- Map.put context.var_expr_map var expr_id
                         context <- context { var_expr_map = var_expr_map }
-                        var_info <- getTypeVariableInfoByVar context.inference_info var context.function_id
+                        var_info <- getTypeVariableInfoByVar context.function_group_inference_data var context.function_id
                         context <- addOwnershipValue context var_info.ownership_var M.Unknown
                         addOwnershipConstraint context (C.Variant (C.VariantConstraint var_info body_info info))
                     E.WildcardChecker var -> do
@@ -188,7 +188,7 @@ processExpr context expr = do
         E.Converter (E.ConverterInfo arg) -> do
             context <- processExpr context arg
             E.Expr arg_s_expr arg_type arg_id <- arg
-            arg_info <- getTypeVariableInfoByExprId context.inference_info arg_id context.function_id
+            arg_info <- getTypeVariableInfoByExprId context.function_group_inference_data arg_id context.function_id
             (borrowed_var, source_id) <- case arg_s_expr of
                 E.VarRef (E.VarRefInfo var) -> do
                     is_borrow <- isBorrow context.borrow_info arg_id
@@ -204,9 +204,9 @@ processExpr context expr = do
                     id <- T.getIdentity arg_type
                     if Q.isCopyable id
                     then do
-                        info <- getTypeVariableInfoByExprId context.inference_info arg_id context.function_id
-                        (inference_info, _) <- addInferredOwnership context.inference_info info.ownership_var M.Owner
-                        context { inference_info = inference_info }
+                        info <- getTypeVariableInfoByExprId context.function_group_inference_data arg_id context.function_id
+                        (function_group_inference_data, _) <- addInferredOwnership context.function_group_inference_data info.ownership_var M.Owner
+                        context { function_group_inference_data = function_group_inference_data }
                     else context
             addOwnershipConstraint context (C.Converter (C.ConverterConstraint arg_info info borrowed_var source_id expr_id))
     //trace "updateInvalidBorrows"
@@ -228,7 +228,7 @@ updateInvalidBorrows context expr_id expr_info shared = do
         Some _ -> context
         None -> do
             // first time seeing this group
-            case Map.get context.inference_info.ownership_dep_map_info.ownership_dep_map expr_info.arg_group_var of
+            case Map.get context.function_group_inference_data.ownership_dep_map_info.ownership_dep_map expr_info.arg_group_var of
                 Some vars -> List.fold context vars (\context, var -> do
                         ownership_group_map <- Map.add context.ownership_group_map var expr_info.arg_group_var
                         context { ownership_group_map = ownership_group_map })
@@ -244,8 +244,8 @@ updateInvalidBorrows context expr_id expr_info shared = do
 
 collectConstraints :: I.Identity ->
                       BorrowInfo ->
-                      InferenceInfo ->
-                      E.Expr -> (InferenceInfo,
+                      FunctionGroupInferenceData ->
+                      E.Expr -> (FunctionGroupInferenceData,
                                  [C.Constraint],
                                  Map E.ExprId [E.ExprId],
                                  Map OwnershipTypeVariable [E.ExprId],
@@ -254,10 +254,10 @@ collectConstraints :: I.Identity ->
                                  [OwnershipTypeVariable],
                                  Map E.ExprId CC.CallContext,
                                  Map E.ExprId [OwnershipTypeVariable])
-collectConstraints function_id borrow_info inference_info body = do
+collectConstraints function_id borrow_info function_group_inference_data body = do
     //trace "collectConstraints {}" % function_id
     context <- Context function_id
-                       inference_info
+                       function_group_inference_data
                        borrow_info
                        []
                        []
@@ -268,12 +268,12 @@ collectConstraints function_id borrow_info inference_info body = do
                        Map.empty
                        Map.empty
                        Map.empty
-    function_inference_info <- getFunctionInferenceInfo context.inference_info function_id
+    function_inference_info <- getFunctionInferenceInfo context.function_group_inference_data function_id
     E.Expr _ _ body_id <- body
     context <- List.foldE context function_inference_info.args (\context, index, arg -> do
         var_expr_map <- Map.put context.var_expr_map (E.Arg index) body_id
         context { var_expr_map = var_expr_map })
     context <- processExpr context body
-    body_info <- getTypeVariableInfoByExprId context.inference_info body_id function_id
-    result_vars <- getOwnershipVars context.inference_info.ownership_dep_map_info.ownership_dep_map body_info
-    (context.inference_info, context.constraints, context.invalid_borrow_map, context.ownership_expr_map, context.group_expr_map, context.ownership_group_map, result_vars, context.call_context_map, context.call_args)
+    body_info <- getTypeVariableInfoByExprId context.function_group_inference_data body_id function_id
+    result_vars <- getOwnershipVars context.function_group_inference_data.ownership_dep_map_info.ownership_dep_map body_info
+    (context.function_group_inference_data, context.constraints, context.invalid_borrow_map, context.ownership_expr_map, context.group_expr_map, context.ownership_group_map, result_vars, context.call_context_map, context.call_args)
