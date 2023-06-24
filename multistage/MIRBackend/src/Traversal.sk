@@ -38,31 +38,31 @@ traverse context expr process_expr process_type preCaseCheck = do
         Do (DoBlock items) -> do
             (context, items) <- processBlock context items process_expr process_type preCaseCheck
             (context, Expr (Do (DoBlock items)) type id)
-        StaticFunctionCall f_id args -> do
-            (context, args) <- processArgs context args process_expr process_type preCaseCheck
-            (context, Expr (StaticFunctionCall f_id args) type id)
+        StaticFunctionCall info -> do
+            (context, args) <- processArgs context info.args process_expr process_type preCaseCheck
+            (context, Expr (StaticFunctionCall info { args = args }) type id)
         IntegerLiteral lit -> (context, Expr (IntegerLiteral lit) type id)
         StringLiteral lit -> (context, Expr (StringLiteral lit) type id)
         FloatLiteral lit -> (context, Expr (FloatLiteral lit) type id)
         CharLiteral lit -> (context, Expr (CharLiteral lit) type id)
-        VarDecl v arg -> do
-            (context, arg) <- traverse context arg process_expr process_type preCaseCheck
-            (context, Expr (VarDecl v arg) type id)
+        VarDecl info -> do
+            (context, rhs) <- traverse context info.rhs process_expr process_type preCaseCheck
+            (context, Expr (VarDecl info { rhs = rhs }) type id)
         VarRef (VarRefInfo v) -> (context, Expr (VarRef (VarRefInfo v)) type id)
-        FieldAccess name arg -> do
+        FieldAccess info -> do
+            (context, receiver) <- traverse context info.receiver process_expr process_type preCaseCheck
+            (context, Expr (FieldAccess info { receiver = receiver }) type id)
+        If info -> do
+            (context, cond) <- traverse context info.cond process_expr process_type preCaseCheck
+            (context, true_branch) <- traverse context info.true_branch process_expr process_type preCaseCheck
+            (context, false_branch) <- traverse context info.false_branch process_expr process_type preCaseCheck
+            (context, Expr (If (IfInfo cond true_branch false_branch)) type id)
+        List info -> do
+            (context, items) <- processArgs context info.items process_expr process_type preCaseCheck
+            (context, Expr (List info { items = items }) type id)
+        Return (ReturnInfo arg) -> do
             (context, arg) <- traverse context arg process_expr process_type preCaseCheck
-            (context, Expr (FieldAccess name arg) type id)
-        If cond true_branch false_branch -> do
-            (context, cond) <- traverse context cond process_expr process_type preCaseCheck
-            (context, true_branch) <- traverse context true_branch process_expr process_type preCaseCheck
-            (context, false_branch) <- traverse context false_branch process_expr process_type preCaseCheck
-            (context, Expr (If cond true_branch false_branch) type id)
-        List args -> do
-            (context, args) <- processArgs context args process_expr process_type preCaseCheck
-            (context, Expr (List args) type id)
-        Return arg -> do
-            (context, arg) <- traverse context arg process_expr process_type preCaseCheck
-            (context, Expr (Return arg) type id)
+            (context, Expr (Return (ReturnInfo arg)) type id)
         Continue (ContinueInfo arg) -> do
             (context, arg) <- traverse context arg process_expr process_type preCaseCheck
             (context, Expr (Continue (ContinueInfo arg)) type id)
@@ -73,7 +73,7 @@ traverse context expr process_expr process_type preCaseCheck = do
             (context, initializer) <- traverse context initializer process_expr process_type preCaseCheck
             (context, body) <- traverse context body process_expr process_type preCaseCheck
             (context, Expr (Loop (LoopInfo v initializer body continues breaks)) type id)
-        CaseOf body cases -> do
+        CaseOf (CaseInfo body cases) -> do
             (context, body) <- traverse context body process_expr process_type preCaseCheck
             context <- case preCaseCheck of
                 Some preCaseCheck -> preCaseCheck context expr
@@ -90,25 +90,10 @@ traverse context expr process_expr process_type preCaseCheck = do
                 case_branch <- case_branch { checker = checker, body = updated_body }
                 cases <- push cases case_branch
                 (context, cases)) (context, [])
-            (context, Expr (CaseOf body cases) type id)
-        Clone arg -> do
+            (context, Expr (CaseOf (CaseInfo body cases)) type id)
+        Converter (ConverterInfo arg) -> do
             (context, arg) <- traverse context arg process_expr process_type preCaseCheck
-            (context, Expr (Clone arg) type id)
-        Deref arg -> do
-            (context, arg) <- traverse context arg process_expr process_type preCaseCheck
-            (context, Expr (Deref arg) type id)
-        Ref arg -> do
-            (context, arg) <- traverse context arg process_expr process_type preCaseCheck
-            (context, Expr (Ref arg) type id)
-        Move arg -> do
-            (context, arg) <- traverse context arg process_expr process_type preCaseCheck
-            (context, Expr (Move arg) type id)
-        Box arg -> do
-            (context, arg) <- traverse context arg process_expr process_type preCaseCheck
-            (context, Expr (Box arg) type id)
-        Converter arg -> do
-            (context, arg) <- traverse context arg process_expr process_type preCaseCheck
-            (context, Expr (Converter arg) type id)
+            (context, Expr (Converter (ConverterInfo arg)) type id)
     (context, expr) <- case process_expr of
         Some process_expr -> process_expr context expr
         None -> (context, expr)

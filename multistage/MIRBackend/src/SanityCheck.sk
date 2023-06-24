@@ -38,7 +38,7 @@ check id context expr = do
         E.Do (E.DoBlock items) -> if List.isEmpty items
             then panic "ICE: empty do block found in {}" % id
             else context
-        E.VarDecl v _ -> addVar id context v
+        E.VarDecl info -> addVar id context info.var
         E.Loop (E.LoopInfo v _ _ continues breaks) -> do
             // FIXME, TODO: this does not seem to work with nested loops, fix it or remove it!
             // loop_continues <- continues |> sort
@@ -53,7 +53,7 @@ check id context expr = do
             // else ()
             // context <- context { continues = [], breaks = [] }
             addVar id context v
-        E.CaseOf _ cases -> do
+        E.CaseOf (E.CaseInfo _ cases) -> do
             List.fold context cases (\context, c -> case c.checker of
                 E.VariantChecker _ v _ -> addVar id context v
                 _ -> context)

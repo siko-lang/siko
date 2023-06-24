@@ -29,7 +29,7 @@ bindArg unit_type context index arg = do
     (context, id) <- Rebinder.getNextExprId context
     arg_var <- E.Arg index
     (context, arg_var) <- Rebinder.addVar context arg_var
-    arg <- E.Expr (E.VarDecl arg_var arg) unit_type id
+    arg <- E.Expr (E.VarDecl (E.VarDeclInfo arg_var arg)) unit_type id
     (context, arg)
 
 getInlinedBody :: T.Type ->
@@ -66,19 +66,19 @@ processExpr :: Context -> E.Expr -> (Context, E.Expr)
 processExpr context expr = do
     E.Expr s_expr _ _ <- expr
     case s_expr of
-        E.StaticFunctionCall id args -> do
-            function <- P.getFunction context.program id
+        E.StaticFunctionCall f_info -> do
+            function <- P.getFunction context.program f_info.id
             case function.kind of
                 F.Normal info -> do
-                    if not (inlined info) || List.contains context.group id || not (canBeInlined info.body)
+                    if not (inlined info) || List.contains context.group f_info.id || not (canBeInlined info.body)
                     then do
                         //println "{} cannot be inline" % id
-                        kept_functions <- Set.put context.kept_functions id
+                        kept_functions <- Set.put context.kept_functions f_info.id
                         context <- context { kept_functions = kept_functions }
                         (context, expr)
                     else do
                         unit_type <- P.getUnitType context.program
-                        (context, expr) <- getInlinedBody unit_type context info.body args
+                        (context, expr) <- getInlinedBody unit_type context info.body f_info.args
                         context <- context { inlined = True }
                         (context, expr)
                 _ -> (context, expr)

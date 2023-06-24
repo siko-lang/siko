@@ -10,13 +10,13 @@ processExpr function_id inference_info expr = do
     E.Expr s_expr _ expr_id <- expr
     inference_info <- addExpr inference_info function_id expr_id
     case s_expr of
-        E.VarDecl var rhs -> do
-            inference_info <- addVar inference_info function_id var
+        E.VarDecl info -> do
+            inference_info <- addVar inference_info function_id info.var
             (inference_info, expr)
         E.Loop (E.LoopInfo var _ _ _ _) -> do
             inference_info <- addVar inference_info function_id var
             (inference_info, expr)
-        E.CaseOf body cases -> do
+        E.CaseOf (E.CaseInfo body cases) -> do
             inference_info <- List.fold inference_info cases (\inference_info, c -> do
                 case c.checker of
                     E.VariantChecker index var variant_type -> do

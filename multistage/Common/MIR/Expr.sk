@@ -63,28 +63,58 @@ data ContinueInfo = { arg :: Expr } deriving (PartialEq, Eq, Show, ToJson, FromJ
 
 data BreakInfo = { arg :: Expr } deriving (PartialEq, Eq, Show, ToJson, FromJson)
 
+data FunctionCallInfo = { id :: I.Identity,
+                          args :: [Expr]
+                        } deriving (PartialEq, Eq, Show, ToJson, FromJson)
+
+data IntegerLiteralInfo = { value :: String } deriving (PartialEq, Eq, Show, ToJson, FromJson)
+
+data StringLiteralInfo = { value :: String } deriving (PartialEq, Eq, Show, ToJson, FromJson)
+
+data FloatLiteralInfo = { value :: String } deriving (PartialEq, Eq, Show, ToJson, FromJson)
+
+data CharLiteralInfo = { value :: Char } deriving (PartialEq, Eq, Show, ToJson, FromJson)
+
+data VarDeclInfo = { var :: Var,
+                     rhs :: Expr
+                   } deriving (PartialEq, Eq, Show, ToJson, FromJson)
+
+data FieldAccessInfo = { index :: Int,
+                         receiver :: Expr
+                       } deriving (PartialEq, Eq, Show, ToJson, FromJson)
+
+data IfInfo = { cond :: Expr,
+                true_branch :: Expr,
+                false_branch :: Expr
+              } deriving (PartialEq, Eq, Show, ToJson, FromJson)
+
+data ListInfo = { items :: [Expr] } deriving (PartialEq, Eq, Show, ToJson, FromJson)
+
+data ReturnInfo = { arg :: Expr } deriving (PartialEq, Eq, Show, ToJson, FromJson)
+
+data CaseInfo = { body :: Expr,
+                  cases :: [Case]
+                } deriving (PartialEq, Eq, Show, ToJson, FromJson)
+
+data ConverterInfo = { arg :: Expr } deriving (PartialEq, Eq, Show, ToJson, FromJson)
+
 data SimpleExpr = Do DoBlock
-                | StaticFunctionCall I.Identity [Expr]
-                | IntegerLiteral String
-                | StringLiteral String
-                | FloatLiteral String
-                | CharLiteral Char
-                | VarDecl Var Expr
+                | StaticFunctionCall FunctionCallInfo
+                | IntegerLiteral IntegerLiteralInfo
+                | StringLiteral StringLiteralInfo
+                | FloatLiteral FloatLiteralInfo
+                | CharLiteral CharLiteralInfo
+                | VarDecl VarDeclInfo
                 | VarRef VarRefInfo
-                | FieldAccess Int Expr
-                | If Expr Expr Expr
-                | List [Expr]
-                | Return Expr
+                | FieldAccess FieldAccessInfo
+                | If IfInfo
+                | List ListInfo
+                | Return ReturnInfo
                 | Continue ContinueInfo
                 | Break BreakInfo
                 | Loop LoopInfo
-                | CaseOf Expr [Case]
-                | Clone Expr
-                | Deref Expr
-                | Ref Expr
-                | Move Expr
-                | Box Expr
-                | Converter Expr
+                | CaseOf CaseInfo
+                | Converter ConverterInfo
                 deriving (PartialEq, Eq, Show, ToJson, FromJson)
 
 short :: Expr -> String
@@ -92,26 +122,21 @@ short expr = do
     Expr s _ _ <- expr
     case s of
         Do block -> "Do"
-        StaticFunctionCall id args -> "StaticFunctionCall({})" % id
+        StaticFunctionCall info -> "StaticFunctionCall({})" % info.id
         IntegerLiteral lit -> "IntegerLiteral"
         StringLiteral lit -> "StringLiteral"
         FloatLiteral lit -> "FloatLiteral"
         CharLiteral lit -> "CharLiteral"
-        VarDecl v arg -> "VarDecl({})" % v
+        VarDecl info -> "VarDecl({})" % info.var
         VarRef (VarRefInfo v) -> "VarRef({})" % v
-        FieldAccess n rhs -> "FieldAccess"
-        If cond true_branch false_branch -> "If"
+        FieldAccess _ -> "FieldAccess"
+        If _ -> "If"
         List args -> "List"
         Return arg -> "Return"
         Continue arg -> "Continue"
         Break arg -> "Break"
         Loop loop_info -> "Loop"
-        CaseOf body cases -> "CaseOf"
-        Clone expr -> "Clone"
-        Deref expr -> "Deref"
-        Ref expr -> "Ref"
-        Move expr -> "Move"
-        Box expr -> "Box"
-        Converter expr -> do
-            Expr _ _ arg_id <- expr
+        CaseOf _ -> "CaseOf"
+        Converter info -> do
+            Expr _ _ arg_id <- info.arg
             "Converter({})" % arg_id

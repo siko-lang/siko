@@ -18,22 +18,21 @@ import Siko.MIR.Backend.Ownership.InferenceInfo
 import Siko.MIR.Backend.Ownership.Initializer
 import Siko.MIR.Backend.Ownership.Lowering
 import Siko.MIR.Backend.Ownership.MemberInfo as M
+import Siko.MIR.Backend.Ownership.Query as Q
 import Siko.MIR.Backend.Ownership.TypeVariableInfo
 import Siko.MIR.Data as D
 import Siko.MIR.Expr as E
 import Siko.MIR.Function as F
 import Siko.MIR.Identity as I
 import Siko.MIR.Program as P
-import Siko.MIR.Backend.Ownership.Query as Q
 import Siko.MIR.Type as T
 import Siko.Trace
 import Siko.Util.DependencyProcessor
 
-data Context = { function_info_store :: FunctionInfoStore,
-               } deriving (Move)
+data Context = { function_info_store :: FunctionInfoStore } deriving (Move)
 
-createRecordCtorFunctionInfo :: Context -> T.Type -> FunctionInfo
-createRecordCtorFunctionInfo context type = case type of
+createRecordCtorFunctionInfo :: T.Type -> FunctionInfo
+createRecordCtorFunctionInfo type = case type of
     T.Record id -> do
         record <- Q.getRecord id
         allocator <- createAllocator
@@ -51,8 +50,8 @@ createRecordCtorFunctionInfo context type = case type of
         FunctionInfo args result members [] ownershipinfos
     t -> panic "createRecordCtorFunctionInfo: not a record: {}" % t
 
-createVariantctorFunctionInfo :: Context -> Int -> T.Type -> FunctionInfo
-createVariantctorFunctionInfo context index type = case type of
+createVariantctorFunctionInfo :: Int -> T.Type -> FunctionInfo
+createVariantctorFunctionInfo index type = case type of
     T.Adt id -> do
         adt <- Q.getAdt id
         allocator <- createAllocator
@@ -114,12 +113,7 @@ processFunction context group inference_info function_id = do
                     inference_info <- initializeTypeVariables inference_info function_id info.body
                     function_info_store <- context.function_info_store
                     //trace "processEqualities {}" % function_id
-                    (equals, inference_info) <- processFunctionEqualities function_id
-                                                                          group
-                                                                          []
-                                                                          inference_info
-                                                                          function_info_store
-                                                                          info.body
+                    (equals, inference_info) <- processFunctionEqualities function_id group [] inference_info function_info_store info.body
                     inference_info <- processEqualities equals inference_info
                     inference_info <- updateOwnershipDepMap inference_info
                     inference_info <- updateGroupDependencyMapInfo inference_info
@@ -155,12 +149,12 @@ processFunction context group inference_info function_id = do
             (context, added) <- processFunctionInfo context function_info function_id
             (context, added, Some inference_info)
         F.VariantCtor index -> do
-            function_info <- createVariantctorFunctionInfo context index function.type.result
+            function_info <- createVariantctorFunctionInfo index function.type.result
             //trace2 "Variant ctor {} = {}" % (function_id, function_info)
             (context, added) <- processFunctionInfo context function_info function_id
             (context, added, None)
         F.RecordCtor -> do
-            function_info <- createRecordCtorFunctionInfo context function.type.result
+            function_info <- createRecordCtorFunctionInfo function.type.result
             //trace2 "Record ctor {} = {}" % (function_id, function_info)
             (context, added) <- processFunctionInfo context function_info function_id
             (context, added, None)
@@ -207,12 +201,7 @@ processFunctionGroup index group_count context group = do
             (equals, inference_info) <- List.fold ([], inference_info) group (\(equals, inference_info), function_id -> do
                 function <- Q.getFunction function_id
                 case function.kind of
-                    F.Normal info -> processFunctionEqualities function_id
-                                                               group
-                                                               equals
-                                                               inference_info
-                                                               function_info_store
-                                                               info.body
+                    F.Normal info -> processFunctionEqualities function_id group equals inference_info function_info_store info.body
                     _ -> panic "Groupped function is not normal!")
             inference_info <- processEqualities equals inference_info
             converter_merge_info_base <- createConverterMergeInfoBase inference_info.converters

@@ -25,10 +25,10 @@ import Siko.MIR.Backend.Ownership.Lowering.Type
 import Siko.MIR.Backend.Ownership.MemberInfo as M
 import Siko.MIR.Backend.Ownership.OrderedDependencyMap
 import Siko.MIR.Backend.Ownership.OwnershipDependencyMap
+import Siko.MIR.Backend.Ownership.Query as Q
 import Siko.MIR.Backend.Ownership.TypeVariableInfo
 import Siko.MIR.Function as MF
 import Siko.MIR.Identity as I
-import Siko.MIR.Backend.Ownership.Query as Q
 import Siko.MIR.Program as MP
 import Siko.Trace
 
@@ -52,12 +52,7 @@ lowerFunction context lowering_info mir_id lir_id = do
             checkInitials inference_info "after initializeTypeVariables"
             //trace2 "after initializeTypeVariables {} {}" % (lir_id, inference_info)
             function_info_store <- context.function_info_store
-            (equals, inference_info) <- processFunctionEqualities mir_id
-                                                                  []
-                                                                  []
-                                                                  inference_info
-                                                                  function_info_store
-                                                                  info.body
+            (equals, inference_info) <- processFunctionEqualities mir_id [] [] inference_info function_info_store info.body
             inference_info <- processEqualities equals inference_info
             checkInitials inference_info "after processEqualities"
             //trace2 "after processEqualities {} {}" % (lir_id, inference_info)

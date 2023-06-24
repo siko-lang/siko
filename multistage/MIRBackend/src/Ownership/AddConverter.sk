@@ -30,16 +30,16 @@ packExpr context orig_expr = do
                 T.Owner t -> t
                 T.Ref _ t -> t
                 _ -> orig_type
-            (context, E.Expr (E.Converter orig_expr) type expr_id)
+            (context, E.Expr (E.Converter (E.ConverterInfo orig_expr)) type expr_id)
 
 unpackReceiver :: E.Expr -> E.Expr
 unpackReceiver receiver = do
     E.Expr s_expr type id <- receiver
     case s_expr of
-        E.Converter arg -> return unpackReceiver arg
-        E.FieldAccess name receiver -> do
-            receiver <- unpackReceiver receiver
-            E.Expr (E.FieldAccess name receiver) type id
+        E.Converter (E.ConverterInfo arg) -> return unpackReceiver arg
+        E.FieldAccess info -> do
+            receiver <- unpackReceiver info.receiver
+            E.Expr (E.FieldAccess info { receiver = receiver }) type id
         e -> E.Expr e type id
 
 processExpr :: Context -> E.Expr -> (Context, E.Expr)
@@ -49,12 +49,11 @@ processExpr context expr = do
         E.VarRef (E.VarRefInfo v) -> do
             (context, expr) <- packExpr context expr
             packExpr context expr
-        E.FieldAccess name receiver -> do
-            receiver <- unpackReceiver receiver
-            (context, expr) <- packExpr context (E.Expr (E.FieldAccess name receiver) type id)
+        E.FieldAccess info -> do
+            receiver <- unpackReceiver info.receiver
+            (context, expr) <- packExpr context (E.Expr (E.FieldAccess info { receiver = receiver }) type id)
             packExpr context expr
-        E.StaticFunctionCall _ _ -> do
-            packExpr context expr
+        E.StaticFunctionCall _ -> packExpr context expr
         _ -> (context, expr)
 
 processFunction :: I.Identity -> F.Function -> (I.Identity, F.Function)

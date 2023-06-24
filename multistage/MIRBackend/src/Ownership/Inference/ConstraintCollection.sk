@@ -11,6 +11,7 @@ import Siko.MIR.Backend.Ownership.Inference.Constraint as C
 import Siko.MIR.Backend.Ownership.InferenceInfo
 import Siko.MIR.Backend.Ownership.MemberInfo as M
 import Siko.MIR.Backend.Ownership.OwnershipDependencyMap
+import Siko.MIR.Backend.Ownership.Query as Q
 import Siko.MIR.Backend.Ownership.TypeVariableInfo
 import Siko.MIR.Data as D
 import Siko.MIR.Expr as E
@@ -20,7 +21,6 @@ import Siko.MIR.Program as P
 import Siko.MIR.Type as T
 import Siko.Trace
 import Siko.Util.DependencyProcessor
-import Siko.MIR.Backend.Ownership.Query as Q
 
 data Context = { function_id :: I.Identity,
                  inference_info :: InferenceInfo,
@@ -66,12 +66,12 @@ processExpr context expr = do
         None -> addOwnershipValue context info.ownership_var M.Unknown
     context <- case s_expr of
         E.Do (E.DoBlock items) -> List.fold context items processExpr
-        E.StaticFunctionCall f_id args -> do
-            context <- List.fold context args processExpr
-            (context, call_context, call_args) <- List.fold (context, CC.CallContext Map.empty, []) args (\(context, call_context, call_args), arg -> do
+        E.StaticFunctionCall f_info -> do
+            context <- List.fold context f_info.args processExpr
+            (context, call_context, call_args) <- List.fold (context, CC.CallContext Map.empty, []) f_info.args (\(context, call_context, call_args), arg -> do
                 E.Expr _ _ id <- arg
                 info <- getTypeVariableInfoByExprId context.inference_info id context.function_id
-                //println "{}: {}" % (f_id, info)
+                //println "{}: {}" % (f_info.id, info)
                 //println "arg_group_var {}" % info.arg_group_var
                 group_index <- getGroupIndexOpt context.inference_info.group_dep_map_info.group_index_map info.arg_group_var
                 call_args <- List.push call_args info.ownership_var
@@ -85,10 +85,10 @@ processExpr context expr = do
                     None -> (context, call_context, call_args))
             call_args <- Map.put context.call_args expr_id call_args
             context <- context { call_args = call_args }
-            //println "{}: cc {} - {}" % (f_id, expr_id, call_context)
+            //println "{}: cc {} - {}" % (f_info.id, expr_id, call_context)
             call_context_map <- Map.put context.call_context_map expr_id call_context
             context <- context { call_context_map = call_context_map }
-            function <- Q.getFunction f_id
+            function <- Q.getFunction f_info.id
             context <- case function.kind of
                 F.Normal _
                  | F.Extern _ -> do
@@ -99,60 +99,60 @@ processExpr context expr = do
                                 then println "Adding function converter constraint {} {} -> {}" % (expr_id, converter.from, converter.to)
                                 else ()
                                 addOwnershipConstraint context (C.FunctionConverter (C.FunctionConverterConstraint expr_id converter.from converter.to)))
-                        None -> if List.contains context.inference_info.group f_id
-                            then case Map.get context.inference_info.group_function_converters f_id of
+                        None -> if List.contains context.inference_info.group f_info.id
+                            then case Map.get context.inference_info.group_function_converters f_info.id of
                                 Some function_converters -> do
                                     List.fold context function_converters (\context, converter -> do
                                         addOwnershipConstraint context (C.FunctionConverter (C.FunctionConverterConstraint expr_id converter.from converter.to)))
                                 None -> context
-                            else panic "No function converters found for {} {}" % (f_id, expr_id)
+                            else panic "No function converters found for {} {}" % (f_info.id, expr_id)
                 F.VariantCtor _ -> addOwnershipValue context info.ownership_var M.Owner
                 F.RecordCtor -> addOwnershipValue context info.ownership_var M.Owner
-            arg_ids <- List.map args (\E.Expr _ _ id -> id)
+            arg_ids <- List.map f_info.args (\E.Expr _ _ id -> id)
             return updateInvalidBorrows context expr_id info (Some arg_ids)
         E.IntegerLiteral _ -> addOwnershipValue context info.ownership_var M.Owner
         E.StringLiteral _ -> addOwnershipValue context info.ownership_var M.Owner
         E.FloatLiteral _ -> addOwnershipValue context info.ownership_var M.Owner
         E.CharLiteral _ -> addOwnershipValue context info.ownership_var M.Owner
-        E.VarDecl var rhs -> do
-            context <- processExpr context rhs
+        E.VarDecl decl_info -> do
+            context <- processExpr context decl_info.rhs
             context <- addOwnershipValue context info.ownership_var M.Owner
-            var_expr_map <- Map.put context.var_expr_map var expr_id
+            var_expr_map <- Map.put context.var_expr_map decl_info.var expr_id
             context <- context { var_expr_map = var_expr_map }
             context
         E.VarRef _ -> context
-        E.FieldAccess index receiver -> do
-            context <- processExpr context receiver
-            E.Expr _ receiver_type receiver_id <- receiver
+        E.FieldAccess fa_info -> do
+            context <- processExpr context fa_info.receiver
+            E.Expr _ receiver_type receiver_id <- fa_info.receiver
             receiver_info <- getTypeVariableInfoByExprId context.inference_info receiver_id context.function_id
             receiver_kind <- getOwnershipValue context receiver_info.ownership_var
             expr_kind <- getOwnershipValue context info.ownership_var
             member <- List.filter context.inference_info.members (\m -> case m.kind of
-                M.Field n -> n == index && receiver_info.arg_group_var == m.root
+                M.Field n -> n == fa_info.index && receiver_info.arg_group_var == m.root
                 _ -> False)
             member_info <- case List.head member of
                 Some m -> m.info
                 _ -> panic "member info for field access not found!"
             record_id <- T.getIdentity receiver_type
             record <- Q.getRecord record_id
-            field <- List.atIndex record.fields index
+            field <- List.atIndex record.fields fa_info.index
             context <- if field.grouped
             then addOwnershipValue context member_info.ownership_var M.Owner
             else context
             addOwnershipConstraint context (C.FieldAccess (C.FieldAccessConstraint expr_id receiver_info member_info info))
-        E.If cond true_branch false_branch -> do
-            context <- processExpr context cond
+        E.If if_info -> do
+            context <- processExpr context if_info.cond
             saved_invalid_borrows <- context.invalid_borrows
-            context <- processExpr context true_branch
+            context <- processExpr context if_info.true_branch
             all_invalid_borrows <- context.invalid_borrows
             context <- context { invalid_borrows = saved_invalid_borrows }
-            context <- processExpr context false_branch
+            context <- processExpr context if_info.false_branch
             all_invalid_borrows <- all_invalid_borrows + context.invalid_borrows
             context { invalid_borrows = all_invalid_borrows }
-        E.List args -> do
-            context <- List.fold context args processExpr
+        E.List list_info -> do
+            context <- List.fold context list_info.items processExpr
             addOwnershipValue context info.ownership_var M.Owner
-        E.Return arg -> processExpr context arg
+        E.Return (E.ReturnInfo arg) -> processExpr context arg
         E.Continue (E.ContinueInfo arg) -> processExpr context arg
         E.Break (E.BreakInfo arg) -> processExpr context arg
         E.Loop (E.LoopInfo var initializer body _ _) -> do
@@ -163,7 +163,7 @@ processExpr context expr = do
             case expr_type of
                 T.Never -> addOwnershipValue context info.ownership_var M.Owner
                 _ -> context
-        E.CaseOf body cases -> do
+        E.CaseOf (E.CaseInfo body cases) -> do
             context <- processExpr context body
             E.Expr _ _ body_id <- body
             saved_invalid_borrows <- context.invalid_borrows
@@ -185,12 +185,7 @@ processExpr context expr = do
                 all_invalid_borrows <- all_invalid_borrows + context.invalid_borrows
                 (context, all_invalid_borrows))
             context { invalid_borrows = all_invalid_borrows }
-        E.Clone arg -> panic "Clone in InferOwnership"
-        E.Deref arg -> panic "Deref in InferOwnership"
-        E.Ref arg -> panic "Ref in InferOwnership"
-        E.Move arg -> panic "Move in InferOwnership"
-        E.Box arg -> panic "Box in InferOwnership"
-        E.Converter arg -> do
+        E.Converter (E.ConverterInfo arg) -> do
             context <- processExpr context arg
             E.Expr arg_s_expr arg_type arg_id <- arg
             arg_info <- getTypeVariableInfoByExprId context.inference_info arg_id context.function_id
@@ -201,7 +196,7 @@ processExpr context expr = do
                         Some source_id -> source_id
                         None -> panic "No source_id found for var {}" % var
                     (is_borrow, source_id)
-                E.FieldAccess n _ -> (isBorrow context.borrow_info arg_id, arg_id)
+                E.FieldAccess _ -> (isBorrow context.borrow_info arg_id, arg_id)
                 _ -> (False, arg_id)
             context <- case arg_type of
                 T.Never -> context

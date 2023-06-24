@@ -172,22 +172,26 @@ main = do
                     names <- List.fold [] result.unused (\names, arg -> names + processPath arg)
                     fmt names
                 "build" -> do
-                    names <- List.fold [] result.unused (\names, arg -> names + processPath arg)
-                    (file_manager, modules) <- build names
-                    (functions, classes, instances, effects, adts, records, errors) <- resolve modules
-                    if not (List.isEmpty errors)
-                    then do
-                        printResolverErrors file_manager errors
-                        exit 1
-                    else do
-                        (typed_functions, errors) <- typecheck functions classes instances effects adts records
+                    config <- parseConfig result
+                    with { getConfig = \_ -> config } do
+                        names <- List.fold [] result.unused (\names, arg -> names + processPath arg)
+                        trace "Parsing.."
+                        (file_manager, modules) <- build names
+                        trace "Resolving names.."
+                        (functions, classes, instances, effects, adts, records, errors) <- resolve modules
                         if not (List.isEmpty errors)
                         then do
-                            printTypecheckerErrors file_manager errors
+                            printResolverErrors file_manager errors
                             exit 1
                         else do
-                            config <- parseConfig result
-                            with { getConfig = \_ -> getDefaultConfig } do
+                            trace "Typechecking.."
+                            (typed_functions, errors) <- typecheck functions classes instances effects adts records
+                            if not (List.isEmpty errors)
+                            then do
+                                printTypecheckerErrors file_manager errors
+                                exit 1
+                            else do
+                                trace "HIR backend processing.."
                                 (functions, m_records, m_adts, external_class_impl_info_db) <- HB.process typed_functions
                                                                                                           functions
                                                                                                           classes
@@ -195,7 +199,9 @@ main = do
                                                                                                           effects
                                                                                                           adts
                                                                                                           records
+                                trace "HIR -> MIR lowering.."
                                 mir_program <- HL.process functions m_records m_adts records adts external_class_impl_info_db
+                                trace "MIR backend processing.."
                                 lir_program <- MB.processProgram mir_program
                                 trace "Transpiling.."
                                 rust_output <- transpile lir_program

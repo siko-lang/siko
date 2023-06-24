@@ -104,36 +104,77 @@ instance Rebinder E.Case where
         (context, body) <- rebind context c.body
         (context, E.Case checker body)
 
+instance Rebinder E.FunctionCallInfo where
+    rebind context info = do
+        (context, args) <- rebind context info.args
+        (context, info { args = args })
+
+instance Rebinder E.VarDeclInfo where
+    rebind context info = do
+        (context, rhs) <- rebind context info.rhs
+        (context, v) <- addVar context info.var
+        (context, E.VarDeclInfo v rhs)
+
+instance Rebinder E.FieldAccessInfo where
+    rebind context info = do
+        (context, receiver) <- rebind context info.receiver
+        (context, info { receiver = receiver })
+
+instance Rebinder E.IfInfo where
+    rebind context (E.IfInfo cond t f) = do
+        (context, cond) <- rebind context cond
+        (context, t) <- rebind context t
+        (context, f) <- rebind context f
+        (context, E.IfInfo cond t f)
+
+instance Rebinder E.ListInfo where
+    rebind context info = do
+        (context, items) <- rebind context info.items
+        (context, info { items = items })
+
+instance Rebinder E.ReturnInfo where
+    rebind context info = do
+        (context, arg) <- rebind context info.arg
+        (context, info { arg = arg })
+
+instance Rebinder E.CaseInfo where
+    rebind context info = do
+        (context, body) <- rebind context info.body
+        (context, cases) <- rebind context info.cases
+        (context, E.CaseInfo body cases)
+
+instance Rebinder E.ConverterInfo where
+    rebind context info = do
+        (context, arg) <- rebind context info.arg
+        (context, info { arg = arg })
+
 instance Rebinder E.SimpleExpr where
     rebind context s_expr = case s_expr of
         E.Do block -> do
             (context, block) <- rebind context block
             (context, E.Do block)
-        E.StaticFunctionCall id args -> do
-            (context, args) <- rebind context args
-            (context, E.StaticFunctionCall id args)
+        E.StaticFunctionCall info -> do
+            (context, info) <- rebind context info
+            (context, E.StaticFunctionCall info)
         E.IntegerLiteral lit -> (context, E.IntegerLiteral lit)
         E.StringLiteral lit -> (context, E.StringLiteral lit)
         E.FloatLiteral lit -> (context, E.FloatLiteral lit)
         E.CharLiteral lit -> (context, E.CharLiteral lit)
-        E.VarDecl v rhs -> do
-            (context, v) <- addVar context v
-            (context, rhs) <- rebind context rhs
-            (context, E.VarDecl v rhs)
+        E.VarDecl info -> do
+            (context, info) <- rebind context info
+            (context, E.VarDecl info)
         E.VarRef info -> do
             (context, info) <- rebind context info
             (context, E.VarRef info)
-        E.FieldAccess index receiver -> do
-            (context, receiver) <- rebind context receiver
-            (context, E.FieldAccess index receiver)
-        E.If cond t f -> do
-            (context, cond) <- rebind context cond
-            (context, t) <- rebind context t
-            (context, f) <- rebind context f
-            (context, E.If cond t f)
-        E.List args -> do
-            (context, args) <- rebind context args
-            (context, E.List args)
+        E.FieldAccess info -> do
+            (context, info) <- rebind context info
+            (context, E.FieldAccess info)
+        E.If info -> do
+            (context, info) <- rebind context info
+            (context, E.If info)
+        E.List info -> do
+            (context, info) <- rebind context info
+            (context, E.List info)
         E.Return arg -> do
             (context, arg) <- rebind context arg
             (context, E.Return arg)
@@ -146,29 +187,12 @@ instance Rebinder E.SimpleExpr where
         E.Loop arg -> do
             (context, arg) <- rebind context arg
             (context, E.Loop arg)
-        E.CaseOf body cases -> do
-            (context, body) <- rebind context body
-            (context, cases) <- rebind context cases
-            (context, E.CaseOf body cases)
-        E.Clone arg -> do
-            (context, arg) <- rebind context arg
-            (context, E.Clone arg)
-        E.Deref arg -> do
-            (context, arg) <- rebind context arg
-            (context, E.Deref arg)
-        E.Ref arg -> do
-            (context, arg) <- rebind context arg
-            (context, E.Ref arg)
-        E.Move arg -> do
-            (context, arg) <- rebind context arg
-            (context, E.Move arg)
-        E.Box arg -> do
-            (context, arg) <- rebind context arg
-            (context, E.Box arg)
-        E.Converter arg -> do
-            (context, arg) <- rebind context arg
-            (context, E.Converter arg)
-
+        E.CaseOf info -> do
+            (context, info) <- rebind context info
+            (context, E.CaseOf info)
+        E.Converter info -> do
+            (context, info) <- rebind context info
+            (context, E.Converter info)
 
 getNextExprId :: Context -> (Context, E.ExprId)
 getNextExprId context = do

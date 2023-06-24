@@ -118,7 +118,7 @@ lowerExpr context hir_expr = do
             (context, args) <- List.mapS context args lowerExpr
             mir_id <- lowerFullyQualifiedName qn
             context <- addFunction context mir_id
-            (context, ME.StaticFunctionCall mir_id args)
+            (context, ME.StaticFunctionCall (ME.FunctionCallInfo mir_id args))
         HE.DynamicFunctionCall receiver args -> panic "DynamicFunctionCall found in MIR lowering"
         HE.ClassMemberCall qn args -> panic "ClassMemberCall found in MIR lowering"
         HE.EffectMemberCall qn args -> panic "EffectMemberCall found in MIR lowering"
@@ -126,15 +126,15 @@ lowerExpr context hir_expr = do
             (context, cond) <- lowerExpr context cond
             (context, true) <- lowerExpr context true
             (context, false) <- lowerExpr context false
-            (context, ME.If cond true false)
+            (context, ME.If (ME.IfInfo cond true false))
         HE.Tuple ctor -> panic "Tuple ctor in MIR lowering"
         HE.List args -> do
             (context, args) <- List.mapS context args lowerExpr
-            (context, ME.List args)
-        HE.IntegerLiteral lit -> (context, ME.IntegerLiteral (SS.get lit))
-        HE.FloatLiteral lit -> (context, ME.FloatLiteral (SS.get lit))
-        HE.StringLiteral lit -> (context, ME.StringLiteral (SS.get lit))
-        HE.CharLiteral lit -> (context, ME.CharLiteral lit)
+            (context, ME.List (ME.ListInfo args))
+        HE.IntegerLiteral lit -> (context, ME.IntegerLiteral (ME.IntegerLiteralInfo (SS.get lit)))
+        HE.FloatLiteral lit -> (context, ME.FloatLiteral (ME.FloatLiteralInfo (SS.get lit)))
+        HE.StringLiteral lit -> (context, ME.StringLiteral (ME.StringLiteralInfo (SS.get lit)))
+        HE.CharLiteral lit -> (context, ME.CharLiteral (ME.CharLiteralInfo lit))
         HE.Do args -> do
             (context, args) <- List.mapS context args lowerExpr
             (context, ME.Do (ME.DoBlock args))
@@ -144,7 +144,7 @@ lowerExpr context hir_expr = do
                 HP.Binding bind_ref -> do
                     var <- bindRefToVar bind_ref
                     (context, rhs) <- lowerExpr context rhs
-                    (context, ME.VarDecl var rhs)
+                    (context, ME.VarDecl (ME.VarDeclInfo var rhs))
                 _ -> panic "Non binding pat found in Bind expr in MIR lowering"
         HE.FieldAccess name receiver -> do
             HE.Expr _ _ receiver_type _ <- receiver
@@ -158,18 +158,18 @@ lowerExpr context hir_expr = do
                 if fname == (getString name)
                 then break index
                 else index + 1
-            (context, ME.FieldAccess index mir_receiver)
+            (context, ME.FieldAccess (ME.FieldAccessInfo index mir_receiver))
         HE.TupleFieldAccess index receiver -> do
             (context, mir_receiver) <- lowerExpr context receiver
-            (context, ME.FieldAccess index mir_receiver)
+            (context, ME.FieldAccess (ME.FieldAccessInfo index mir_receiver))
         HE.CaseOf body cases bind_groups -> do
             (context, mir_body) <- lowerExpr context body
             (context, mir_cases) <- List.mapS context cases lowerCase
-            (context, ME.CaseOf mir_body mir_cases)
+            (context, ME.CaseOf (ME.CaseInfo mir_body mir_cases))
         HE.RecordUpdate receiver items -> panic "RecordUpdate in MIR lowering"
         HE.Return arg -> do
             (context, arg) <- lowerExpr context arg
-            (context, ME.Return arg)
+            (context, ME.Return (ME.ReturnInfo arg))
         HE.Continue arg -> do
             (context, arg) <- lowerExpr context arg
             (context, ME.Continue (ME.ContinueInfo arg))

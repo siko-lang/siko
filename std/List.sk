@@ -151,26 +151,24 @@ contains l i = isSome (containsAtIndex l i)
 @Inline
 containsAtIndex a :: (PartialEq a) => [a] -> a -> Option Int
 containsAtIndex l i = do
-    loop index <- 0 do
-        if index >= getLength l
-        then break None
-        else do
-            e <- atIndex l index
-            if e == i
-            then break Some index
-            else index + 1
+    loop (it, index) <- (List.iter l, 0) do
+        (it, elem) <- Iterator.next it
+        case elem of
+            Some e -> if e == i
+                then break Some index
+                else (it, index + 1)
+            None -> break None
 
 @Inline
 find a :: [a] -> (a -> Bool) -> Option a
 find l f = do
-    loop index <- 0 do
-        if index >= getLength l
-        then break None
-        else do
-            e <- atIndex l index
-            if f e
-            then break Some e
-            else index + 1
+    loop it <- List.iter l do
+        (it, elem) <- Iterator.next it
+        case elem of
+            Some e -> if f e
+                then break Some e
+                else it
+            None -> break None
 
 join a :: (Show a) => [a] -> String -> String
 join items separator = List.foldE "" items (joiner separator)

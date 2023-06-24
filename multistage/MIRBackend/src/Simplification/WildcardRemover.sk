@@ -34,33 +34,33 @@ processExpr context expr = do
         E.Do (E.DoBlock items) -> do
             (context, items) <- List.mapS context items processExpr
             (context, E.Expr (E.Do (E.DoBlock items)) type id)
-        E.StaticFunctionCall f_id args -> do
-            (context, args) <- List.mapS context args processExpr
-            (context, E.Expr (E.StaticFunctionCall f_id args) type id)
+        E.StaticFunctionCall info -> do
+            (context, args) <- List.mapS context info.args processExpr
+            (context, E.Expr (E.StaticFunctionCall info { args = args }) type id)
         E.IntegerLiteral lit -> (context, E.Expr (E.IntegerLiteral lit) type id)
         E.StringLiteral lit -> (context, E.Expr (E.StringLiteral lit) type id)
         E.FloatLiteral lit -> (context, E.Expr (E.FloatLiteral lit) type id)
         E.CharLiteral lit -> (context, E.Expr (E.CharLiteral lit) type id)
-        E.VarDecl v rhs -> do
-            (context, rhs) <- processExpr context rhs
-            (context, E.Expr (E.VarDecl v rhs) type id)
+        E.VarDecl info -> do
+            (context, rhs) <- processExpr context info.rhs
+            (context, E.Expr (E.VarDecl info { rhs = rhs }) type id)
         E.VarRef (E.VarRefInfo v) -> do
             v <- processVar context v
             (context, E.Expr (E.VarRef (E.VarRefInfo v)) type id)
-        E.FieldAccess name arg -> do
+        E.FieldAccess info -> do
+            (context, receiver) <- processExpr context info.receiver
+            (context, E.Expr (E.FieldAccess info { receiver = receiver }) type id)
+        E.If info -> do
+            (context, cond) <- processExpr context info.cond
+            (context, true_branch) <- processExpr context info.true_branch
+            (context, false_branch) <- processExpr context info.false_branch
+            (context, E.Expr (E.If (E.IfInfo cond true_branch false_branch)) type id)
+        E.List list_info -> do
+            (context, items) <- List.mapS context list_info.items processExpr
+            (context, E.Expr (E.List list_info { items = items }) type id)
+        E.Return (E.ReturnInfo arg) -> do
             (context, arg) <- processExpr context arg
-            (context, E.Expr (E.FieldAccess name arg) type id)
-        E.If cond true_branch false_branch -> do
-            (context, cond) <- processExpr context cond
-            (context, true_branch) <- processExpr context true_branch
-            (context, false_branch) <- processExpr context false_branch
-            (context, E.Expr (E.If cond true_branch false_branch) type id)
-        E.List args -> do
-            (context, args) <- List.mapS context args processExpr
-            (context, E.Expr (E.List args) type id)
-        E.Return arg -> do
-            (context, arg) <- processExpr context arg
-            (context, E.Expr (E.Return arg) type id)
+            (context, E.Expr (E.Return (E.ReturnInfo arg)) type id)
         E.Continue (E.ContinueInfo arg) -> do
             (context, arg) <- processExpr context arg
             (context, E.Expr (E.Continue (E.ContinueInfo arg)) type id)
@@ -71,7 +71,7 @@ processExpr context expr = do
             (context, initializer) <- processExpr context initializer
             (context, body) <- processExpr context body
             (context, E.Expr (E.Loop (E.LoopInfo v initializer body continues breaks)) type id)
-        E.CaseOf body cases -> do
+        E.CaseOf (E.CaseInfo body cases) -> do
             E.Expr body_expr _ _ <- body
             body_var <- case body_expr of
                 E.VarRef (E.VarRefInfo body_var) -> body_var
@@ -89,25 +89,10 @@ processExpr context expr = do
                 ((context, simplify), case_branch))
             if simplify
             then (context, (atIndex cases 0).body)
-            else (context, E.Expr (E.CaseOf body cases) type id)
-        E.Clone arg -> do
+            else (context, E.Expr (E.CaseOf (E.CaseInfo body cases)) type id)
+        E.Converter (E.ConverterInfo arg) -> do
             (context, arg) <- processExpr context arg
-            (context, E.Expr (E.Clone arg) type id)
-        E.Deref arg -> do
-            (context, arg) <- processExpr context arg
-            (context, E.Expr (E.Deref arg) type id)
-        E.Ref arg -> do
-            (context, arg) <- processExpr context arg
-            (context, E.Expr (E.Ref arg) type id)
-        E.Move arg -> do
-            (context, arg) <- processExpr context arg
-            (context, E.Expr (E.Move arg) type id)
-        E.Box arg -> do
-            (context, arg) <- processExpr context arg
-            (context, E.Expr (E.Box arg) type id)
-        E.Converter arg -> do
-            (context, arg) <- processExpr context arg
-            (context, E.Expr (E.Converter arg) type id)
+            (context, E.Expr (E.Converter (E.ConverterInfo arg)) type id)
 
 processFunction :: Context -> F.Function -> (Context, F.Function)
 processFunction context function = case function.kind of

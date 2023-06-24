@@ -17,13 +17,9 @@ mergeCallContexts source dest = do
         (dest, _) <- Map.alter2 (\dest_parent_lists -> case dest_parent_lists of
             Some dest_parent_lists -> do
                 dest_parent_lists <- List.fold dest_parent_lists parent_lists (\dest_parent_lists, parents -> do
-                    found <- List.fold False dest_parent_lists (\found, dest_parents -> do
-                        if List.startsWith dest_parents parents
-                        then True
-                        else found)
-                    if found
-                    then dest_parent_lists
-                    else List.push dest_parent_lists parents)
+                    case List.find dest_parent_lists (\d -> List.startsWith d parents) of
+                        Some _ -> dest_parent_lists
+                        None -> List.push dest_parent_lists parents)
                 Some dest_parent_lists
             None -> Some parent_lists) var dest
         dest)
