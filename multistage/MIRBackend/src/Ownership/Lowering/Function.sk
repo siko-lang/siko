@@ -65,18 +65,8 @@ lowerFunction context lowering_info mir_id lir_id = do
             converter_merge_info_base <- createConverterMergeInfoBase function_group_inference_data.converters
             function_group_inference_data <- createDataFlowProfileBase function_group_inference_data mir_id converter_merge_info_base
             function_group_inference_data <- CC.createBaseCallContexts function_group_inference_data
-            (function_group_inference_data, constraints, invalid_borrow_map, ownership_expr_map, group_expr_map, ownership_group_map, result_vars, call_context_map, call_args) <- collectConstraints mir_id borrow_info function_group_inference_data info.body
-            function_group_inference_data <- processConstraints mir_id
-                                                                function_group_inference_data
-                                                                constraints
-                                                                invalid_borrow_map
-                                                                ownership_expr_map
-                                                                group_expr_map
-                                                                ownership_group_map
-                                                                result_vars
-                                                                call_context_map
-                                                                Full
-                                                                call_args
+            (function_group_inference_data, constraint_data, result_vars) <- collectConstraints mir_id borrow_info function_group_inference_data info.body
+            function_group_inference_data <- processConstraints mir_id function_group_inference_data constraint_data result_vars Full
             //trace2 "after processConstraints {} {}" % (lir_id, function_group_inference_data)
             if MP.isDebugged mir_id
             then do

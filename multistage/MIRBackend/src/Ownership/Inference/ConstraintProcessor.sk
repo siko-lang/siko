@@ -8,6 +8,7 @@ import Siko.MIR.Backend.Ownership.BorrowId
 import Siko.MIR.Backend.Ownership.CallContext as CC
 import Siko.MIR.Backend.Ownership.FunctionGroupInferenceData
 import Siko.MIR.Backend.Ownership.Inference.Constraint as C
+import Siko.MIR.Backend.Ownership.Inference.ConstraintCollection
 import Siko.MIR.Backend.Ownership.MemberInfo as M
 import Siko.MIR.Backend.Ownership.TypeVariableInfo
 import Siko.MIR.Expr as E
@@ -21,18 +22,13 @@ data InferenceMode = Partial
 
 data Context = { function_group_inference_data :: FunctionGroupInferenceData,
                  function_id :: I.Identity,
+                 constraint_data :: ConstraintData,
                  changed_ownership_vars :: Bool,
-                 invalid_borrow_map :: Map E.ExprId [E.ExprId],
-                 ownership_expr_map :: Map OwnershipTypeVariable [E.ExprId],
-                 group_expr_map :: Map GroupTypeVariable [E.ExprId],
-                 ownership_group_map :: Map OwnershipTypeVariable [GroupTypeVariable],
-                 call_context_map :: Map E.ExprId CC.CallContext,
                  mode :: InferenceMode,
                  result_vars :: [OwnershipTypeVariable],
                  allow_guess :: Bool,
                  function_converter_borrows :: Map Int [FunctionConverterBorrow],
-                 function_converter_borrow_keys :: Map Int E.ExprId,
-                 call_args :: Map E.ExprId [OwnershipTypeVariable]
+                 function_converter_borrow_keys :: Map Int E.ExprId
                } deriving (Move)
 
 debugPrint :: Context -> String -> ()
@@ -82,13 +78,13 @@ isValidBorrow :: Context -> OwnershipTypeVariable -> E.ExprId -> Bool
 isValidBorrow context ownership_var expr_id = do
     //debugPrint context "isValidBorrow {} {}" % (ownership_var, expr_id)
     is_valid_borrow <- True
-    is_valid_borrow <- case Map.get context.ownership_expr_map ownership_var of
+    is_valid_borrow <- case Map.get context.constraint_data.ownership_expr_map ownership_var of
         Some expr_ids -> checkExprs context is_valid_borrow expr_ids expr_id
         None -> is_valid_borrow
     if is_valid_borrow
-    then case Map.get context.ownership_group_map ownership_var of
+    then case Map.get context.constraint_data.ownership_group_map ownership_var of
         Some groups -> List.fold is_valid_borrow groups (\is_valid_borrow, group -> do
-                case Map.get context.group_expr_map group of
+                case Map.get context.constraint_data.group_expr_map group of
                     Some expr_ids -> checkExprs context is_valid_borrow expr_ids expr_id
                     None -> is_valid_borrow)
         None -> True
@@ -104,7 +100,7 @@ isValidBorrow context ownership_var expr_id = do
                 else is_valid_borrow)
 
         checkExpr :: Context -> E.ExprId -> E.ExprId -> Bool
-        checkExpr context expr_id dep = case Map.get context.invalid_borrow_map dep of
+        checkExpr context expr_id dep = case Map.get context.constraint_data.invalid_borrow_map dep of
             Some invalid_borrows -> not (List.contains invalid_borrows expr_id)
             None -> True
 
@@ -145,15 +141,15 @@ processCallContext :: Context ->
                       Option BorrowId -> Context
 processCallContext context call_id index from to to_borrow = do
     context <- eraseFunctionConverterBorrow context index
-    case Map.get context.call_context_map call_id of
+    case Map.get context.constraint_data.call_context_map call_id of
         Some call_context -> do
-            call_args <- case Map.get context.call_args call_id of
+            call_args <- case Map.get context.constraint_data.call_args call_id of
                 Some call_args -> call_args
                 None -> panic "Call args not found for call {}" % call_id
             (borrows, owners, unknowns) <- if List.contains call_args from
             then do
                 from_kind <- getOwnershipValue context from
-                args <- context.call_args
+                args <- context.constraint_data.call_args
                 //debugPrint context "using {} from {} as that is a call_arg {}" % (from_kind, from, args)
                 case from_kind of
                     M.Owner -> ([], [from_kind], [])
@@ -422,33 +418,22 @@ dumpOwnership context = do
 
 processConstraints :: I.Identity ->
                       FunctionGroupInferenceData ->
-                      [C.Constraint] ->
-                      Map E.ExprId [E.ExprId] ->
-                      Map OwnershipTypeVariable [E.ExprId] ->
-                      Map GroupTypeVariable [E.ExprId] ->
-                      Map OwnershipTypeVariable [GroupTypeVariable] ->
+                      ConstraintData ->
                       [OwnershipTypeVariable] ->
-                      Map E.ExprId CC.CallContext ->
-                      InferenceMode ->
-                      Map E.ExprId [OwnershipTypeVariable] -> FunctionGroupInferenceData
-processConstraints function_id function_group_inference_data constraints invalid_borrow_map ownership_expr_map group_expr_map ownership_group_map result_vars call_context_map mode call_args = do
-    // println "Invalid borrow map {}" % (invalid_borrow_map)
-    // println "FunctionGroupInferenceData {}" % function_group_inference_data
+                      InferenceMode -> FunctionGroupInferenceData
+processConstraints function_id function_group_inference_data constraint_data result_vars mode = do
+    //dumpConstraints
+    constraints <- constraint_data.constraints
+    constraint_data <- constraint_data { constraints = [] }
     context <- Context function_group_inference_data
                        function_id
+                       constraint_data
                        True
-                       invalid_borrow_map
-                       ownership_expr_map
-                       group_expr_map
-                       ownership_group_map
-                       call_context_map
                        mode
                        result_vars
                        False
                        Map.empty
                        Map.empty
-                       call_args
-    //dumpConstraints constraints
     context <- loop context <- context do
         if not context.changed_ownership_vars
         then case context.mode of

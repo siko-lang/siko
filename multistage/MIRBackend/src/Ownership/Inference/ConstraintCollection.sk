@@ -1,4 +1,5 @@
-module Siko.MIR.Backend.Ownership.Inference.ConstraintCollection(collectConstraints) where
+module Siko.MIR.Backend.Ownership.Inference.ConstraintCollection(collectConstraints,
+                                                                 ConstraintData) where
 
 import Map
 import Set
@@ -22,24 +23,38 @@ import Siko.MIR.Type as T
 import Siko.Trace
 import Siko.Util.DependencyProcessor
 
+data ConstraintData = { constraints :: [C.Constraint],
+                        invalid_borrow_map :: Map E.ExprId [E.ExprId],
+                        ownership_expr_map :: Map OwnershipTypeVariable [E.ExprId],
+                        group_expr_map :: Map GroupTypeVariable [E.ExprId],
+                        ownership_group_map :: Map OwnershipTypeVariable [GroupTypeVariable],
+                        call_context_map :: Map E.ExprId CC.CallContext,
+                        call_args :: Map E.ExprId [OwnershipTypeVariable]
+                      }
+
+createConstraintData :: ConstraintData
+createConstraintData = ConstraintData []
+                                      Map.empty
+                                      Map.empty
+                                      Map.empty
+                                      Map.empty
+                                      Map.empty
+                                      Map.empty
+
 data Context = { function_id :: I.Identity,
                  function_group_inference_data :: FunctionGroupInferenceData,
                  borrow_info :: BorrowInfo,
                  invalid_borrows :: [E.ExprId],
-                 constraints :: [C.Constraint],
-                 invalid_borrow_map :: Map E.ExprId [E.ExprId],
-                 ownership_expr_map :: Map OwnershipTypeVariable [E.ExprId],
-                 group_expr_map :: Map GroupTypeVariable [E.ExprId],
-                 ownership_group_map :: Map OwnershipTypeVariable [GroupTypeVariable],
-                 call_context_map :: Map E.ExprId CC.CallContext,
-                 call_args :: Map E.ExprId [OwnershipTypeVariable],
-                 var_expr_map :: Map E.Var E.ExprId
+                 var_expr_map :: Map E.Var E.ExprId,
+                 constraint_data :: ConstraintData
                }
 
 addOwnershipConstraint :: Context -> C.Constraint -> Context
 addOwnershipConstraint context constraint = do
-    constraints <- List.push context.constraints constraint
-    context { constraints = constraints }
+    constraint_data <- context.constraint_data
+    constraints <- List.push constraint_data.constraints constraint
+    constraint_data <- constraint_data { constraints = constraints }
+    context { constraint_data = constraint_data }
 
 addOwnershipValue :: Context -> OwnershipTypeVariable -> M.OwnershipKind -> Context
 addOwnershipValue context var kind = do
@@ -83,11 +98,12 @@ processExpr context expr = do
                         call_context <- CC.mergeCallContexts g_call_context call_context
                         (context, call_context, call_args)
                     None -> (context, call_context, call_args))
-            call_args <- Map.put context.call_args expr_id call_args
-            context <- context { call_args = call_args }
             //println "{}: cc {} - {}" % (f_info.id, expr_id, call_context)
-            call_context_map <- Map.put context.call_context_map expr_id call_context
-            context <- context { call_context_map = call_context_map }
+            constraint_data <- context.constraint_data
+            call_args <- Map.put constraint_data.call_args expr_id call_args
+            call_context_map <- Map.put constraint_data.call_context_map expr_id call_context
+            constraint_data <- constraint_data { call_context_map = call_context_map, call_args = call_args }
+            context <- context { constraint_data = constraint_data }
             function <- Q.getFunction f_info.id
             context <- case function.kind of
                 F.Normal _
@@ -224,50 +240,33 @@ updateInvalidBorrows context expr_id expr_info shared = do
             invalid_borrows <- invalid_borrows |> List.sort |> List.dedup
             context { invalid_borrows = invalid_borrows }
         None -> context
-    context <- case Map.get context.group_expr_map expr_info.arg_group_var of
-        Some _ -> context
+    constraint_data <- context.constraint_data
+    constraint_data <- case Map.get constraint_data.group_expr_map expr_info.arg_group_var of
+        Some _ -> constraint_data
         None -> do
             // first time seeing this group
             case Map.get context.function_group_inference_data.ownership_dep_map_info.ownership_dep_map expr_info.arg_group_var of
-                Some vars -> List.fold context vars (\context, var -> do
-                        ownership_group_map <- Map.add context.ownership_group_map var expr_info.arg_group_var
-                        context { ownership_group_map = ownership_group_map })
-                None -> context
-    group_expr_map <- Map.add context.group_expr_map expr_info.arg_group_var expr_id
-    ownership_expr_map <- Map.add context.ownership_expr_map expr_info.ownership_var expr_id
-    invalid_borrow_map <- Map.put context.invalid_borrow_map expr_id context.invalid_borrows
+                Some vars -> List.fold constraint_data vars (\constraint_data, var -> do
+                        ownership_group_map <- Map.add constraint_data.ownership_group_map var expr_info.arg_group_var
+                        constraint_data { ownership_group_map = ownership_group_map })
+                None -> constraint_data
+    group_expr_map <- Map.add constraint_data.group_expr_map expr_info.arg_group_var expr_id
+    ownership_expr_map <- Map.add constraint_data.ownership_expr_map expr_info.ownership_var expr_id
+    invalid_borrow_map <- Map.put constraint_data.invalid_borrow_map expr_id context.invalid_borrows
     invalid_borrow_map <- case shared of
         Some ids -> List.fold invalid_borrow_map ids (\invalid_borrow_map, id -> Map.put invalid_borrow_map id context.invalid_borrows)
         None -> invalid_borrow_map
-    context <- context { group_expr_map = group_expr_map, invalid_borrow_map = invalid_borrow_map, ownership_expr_map = ownership_expr_map }
+    constraint_data <- constraint_data { group_expr_map = group_expr_map, invalid_borrow_map = invalid_borrow_map, ownership_expr_map = ownership_expr_map }
+    context <- context { constraint_data = constraint_data }
     context
 
 collectConstraints :: I.Identity ->
                       BorrowInfo ->
                       FunctionGroupInferenceData ->
-                      E.Expr -> (FunctionGroupInferenceData,
-                                 [C.Constraint],
-                                 Map E.ExprId [E.ExprId],
-                                 Map OwnershipTypeVariable [E.ExprId],
-                                 Map GroupTypeVariable [E.ExprId],
-                                 Map OwnershipTypeVariable [GroupTypeVariable],
-                                 [OwnershipTypeVariable],
-                                 Map E.ExprId CC.CallContext,
-                                 Map E.ExprId [OwnershipTypeVariable])
+                      E.Expr -> (FunctionGroupInferenceData, ConstraintData, [OwnershipTypeVariable])
 collectConstraints function_id borrow_info function_group_inference_data body = do
     //trace "collectConstraints {}" % function_id
-    context <- Context function_id
-                       function_group_inference_data
-                       borrow_info
-                       []
-                       []
-                       Map.empty
-                       Map.empty
-                       Map.empty
-                       Map.empty
-                       Map.empty
-                       Map.empty
-                       Map.empty
+    context <- Context function_id function_group_inference_data borrow_info [] Map.empty createConstraintData
     function_inference_info <- getFunctionInferenceInfo context.function_group_inference_data function_id
     E.Expr _ _ body_id <- body
     context <- List.foldE context function_inference_info.args (\context, index, arg -> do
@@ -276,4 +275,4 @@ collectConstraints function_id borrow_info function_group_inference_data body = 
     context <- processExpr context body
     body_info <- getTypeVariableInfoByExprId context.function_group_inference_data body_id function_id
     result_vars <- getOwnershipVars context.function_group_inference_data.ownership_dep_map_info.ownership_dep_map body_info
-    (context.function_group_inference_data, context.constraints, context.invalid_borrow_map, context.ownership_expr_map, context.group_expr_map, context.ownership_group_map, result_vars, context.call_context_map, context.call_args)
+    (context.function_group_inference_data, context.constraint_data, result_vars)

@@ -124,18 +124,8 @@ processFunction context group function_group_inference_data function_id = do
             //trace "checkBorrows {}" % function_id
             borrow_info <- checkBorrows info.body
             //trace "inferOwnership {}" % function_id
-            (function_group_inference_data, constraints, invalid_borrow_map, ownership_expr_map, group_expr_map, ownership_group_map, result_vars, call_context_map, call_args) <- collectConstraints function_id borrow_info function_group_inference_data info.body
-            function_group_inference_data <- processConstraints function_id
-                                                                function_group_inference_data
-                                                                constraints
-                                                                invalid_borrow_map
-                                                                ownership_expr_map
-                                                                group_expr_map
-                                                                ownership_group_map
-                                                                result_vars
-                                                                call_context_map
-                                                                Partial
-                                                                call_args
+            (function_group_inference_data, constraint_data, result_vars) <- collectConstraints function_id borrow_info function_group_inference_data info.body
+            function_group_inference_data <- processConstraints function_id function_group_inference_data constraint_data result_vars Partial
             //trace "Processing {}" % function_id
             no_return <- T.isNever function.type.result
             dataflow_profile <- toDataFlowProfile function_group_inference_data function_id no_return
