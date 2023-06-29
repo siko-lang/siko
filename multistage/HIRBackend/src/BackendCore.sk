@@ -151,7 +151,7 @@ monomorphize provider base_main_qn unreachable_qn = do
                     case Map.get context.functions last of
                         Some _ -> (context, queue)
                         None -> do
-                            trace "MONO fn {} " % last
+                            trace2 "MONO fn {} " % last
                             state <- createStateProvider provider
                             state <- state { ignore_never = True }
                             (state, monomorphized_fn, functions, records, adts, external_class_impls) <- MO.monomorphizeFunction state orig_qn ty
@@ -170,7 +170,7 @@ monomorphize provider base_main_qn unreachable_qn = do
                     case Map.get context.records last of
                         Some _ -> (context, queue)
                         None -> do
-                            trace "MONO record {} " % last
+                            trace2 "MONO record {} " % last
                             state <- createStateProvider provider
                             (state, record, records, adts) <- MO.monomorphizeRecord state orig_qn args
                             queue <- queue + records + adts
@@ -181,7 +181,7 @@ monomorphize provider base_main_qn unreachable_qn = do
                     case Map.get context.adts last of
                         Some _ -> (context, queue)
                         None -> do
-                            trace "MONO adt {} " % last
+                            trace2 "MONO adt {} " % last
                             state <- createStateProvider provider
                             (state, adt, records, adts) <- MO.monomorphizeAdt state orig_qn args
                             queue <- queue + records + adts
