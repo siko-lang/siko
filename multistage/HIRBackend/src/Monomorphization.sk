@@ -123,8 +123,8 @@ processPattern context pattern = (context, pattern)
 
 unpackType :: T.Type -> T.Type
 unpackType type = case type of
+    T.Var (T.Fixed _ _) _ -> panic "Fixed in unpackType"
     T.Var _ _ -> panic "TypeVar in unpackType"
-    T.FixedTypeArg _ _ -> panic "FixedTypeArg in unpackType"
     T.Named qn args -> do
         case qn of
             FQ.Adt orig_qn args -> do
@@ -153,8 +153,8 @@ unpackType type = case type of
 
 monomorphizeType a :: (StateProvider a) => Context a -> T.Type -> (Context a, T.Type)
 monomorphizeType context type = case type of
+    T.Var (T.Fixed _ _) _ -> panic "Fixed in monomorphizeType"
     T.Var _ _ -> panic "TypeVar in monomorphizeType"
-    T.FixedTypeArg _ _ -> panic "FixedTypeArg in monomorphizeType"
     T.Named qn args -> do
         (context, args) <- List.mapS context args monomorphizeType
         case QL.getAdtOpt context.state qn of
@@ -192,9 +192,6 @@ collectExternalClassConstraint :: T.Type -> [(FQ.FullyQualifiedName, T.Type)]
 collectExternalClassConstraint type = case type of
     T.Var v cs -> List.fold [] cs (\cs, constraint -> case constraint of
             T.ClassConstraint name _ -> List.push cs (name, T.Var v [])
-            _ -> cs)
-    T.FixedTypeArg v cs -> List.fold [] cs (\cs, constraint -> case constraint of
-            T.ClassConstraint name _ -> List.push cs (name, T.FixedTypeArg v [])
             _ -> cs)
     T.Named _ args -> List.fold [] args (\cs, arg -> cs + collectExternalClassConstraint arg)
     T.Function from to -> collectExternalClassConstraint from + collectExternalClassConstraint to

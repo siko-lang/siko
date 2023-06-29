@@ -78,9 +78,7 @@ createTypedSimpleExpr context id s_expr = case s_expr of
     E.ArgRef i -> E.ArgRef i
     E.ValueRef ref -> E.ValueRef (Std.Intrinsics.clone ref)
     E.With handlers body _ -> do
-        eff_types <- Std.Intrinsics.clone (TS.getWithEffects context.type_store context.group_index id)
-        eff_types <- List.map eff_types (\t -> E.EffectType (T.fixedType t))
-        E.With (List.map (Std.Intrinsics.clone handlers) (createTypeHandler context)) (createTypedExpr context body) eff_types
+        E.With (List.map (Std.Intrinsics.clone handlers) (createTypeHandler context)) (createTypedExpr context body) []
 
 createTypedExpr :: Context -> E.Expr () -> E.Expr T.Type
 createTypedExpr context (E.Expr s_expr id _ location) = do

@@ -12,7 +12,8 @@ module Siko.HIR.Type(Type(..),
                      traverse,
                      fixedType,
                      getNameFromType,
-                     collectFixedTypeArgs) where
+                     collectFixedTypeArgs,
+                     isEffectVar) where
 
 import Json
 import Json.Serialize
@@ -21,7 +22,13 @@ import Siko.HIR.FullyQualifiedName as FQ
 import Siko.HIR.Util as Util
 import Siko.Util.SharedString as SS
 
-data TypeVar = TypeVar Int deriving (Show, PartialEq, Eq, PartialOrd, Ord, ToJson, FromJson)
+data TypeVar = TypeVar Int Bool
+             | Fixed SS.SharedString Bool
+             deriving (Show, PartialEq, Eq, PartialOrd, Ord, ToJson, FromJson)
+
+isEffectVar :: TypeVar -> Bool
+isEffectVar (TypeVar _ e) = e
+isEffectVar (Fixed _ e) = e
 
 data RowKind = NamedRow SS.SharedString
              | IndexedRow Int
@@ -33,7 +40,6 @@ data Constraint = ClassConstraint FQ.FullyQualifiedName [Type]
                 deriving (Show, PartialEq, Eq, PartialOrd, Ord, ToJson, FromJson)
 
 data Type = Var TypeVar [Constraint]
-          | FixedTypeArg SS.SharedString [Constraint]
           | Named FQ.FullyQualifiedName [Type]
           | Function Type Type
           | Never
@@ -56,7 +62,6 @@ collectVarsFromConstraints constraints = List.fold [] constraints (\all, c -> ca
 collectVars :: Type -> [TypeVar]
 collectVars type = case type of
     Var var constraints -> [var] + collectVarsFromConstraints constraints
-    FixedTypeArg _ constraints -> collectVarsFromConstraints constraints
     Named _ args -> List.fold [] args (\vars, arg -> do
             vs <- collectVars arg
             vars + vs)
@@ -70,8 +75,8 @@ collectVars type = case type of
 
 collectFixedTypeArgs :: Type -> [Type]
 collectFixedTypeArgs type = case type of
+    Var (Fixed _ _) constraints -> [type]
     Var var constraints -> []
-    FixedTypeArg _ constraints -> [type]
     Named _ args -> List.fold [] args (\vars, arg -> do
             vs <- collectFixedTypeArgs arg
             vars + vs)
@@ -105,7 +110,6 @@ getResultType type arg_count = case type of
 isConcreteType :: Type -> Bool
 isConcreteType type = case type of
     Var _ _ -> False
-    FixedTypeArg _ _ -> False
     Named _ args -> args |> List.iter |> Iterator.fold (\concrete, arg -> do
             concrete && isConcreteType arg) True
     Function from to -> isConcreteType from && isConcreteType to
@@ -126,7 +130,6 @@ traverse f type = case type of
     Var var constraints -> do
         constraints <- List.map constraints (traverseConstraints f)
         f (Var var constraints)
-    FixedTypeArg name constraints -> f (FixedTypeArg name (List.map constraints (traverseConstraints f)))
     Named qn args -> do
         args <- List.map args (traverse f)
         f (Named qn args)
@@ -163,10 +166,10 @@ convertConstraintsToFixed constraint = case constraint of
 fixedType :: Type -> Type
 fixedType type = case type of
     Var _ constraints if constraints == [NeverLike] -> Never
-    Var (TypeVar i) constraints -> do
+    Var (TypeVar i e) constraints -> do
         name <- SS.create "t{}" % i
-        FixedTypeArg name (List.map constraints convertConstraintsToFixed)
-    FixedTypeArg n constraints -> FixedTypeArg n (List.map constraints convertConstraintsToFixed)
+        Var (Fixed name e) (List.map constraints convertConstraintsToFixed)
+    Var (Fixed i e) constraints -> Var (Fixed i e) (List.map constraints convertConstraintsToFixed)
     Named n args -> do
         args <- List.map args fixedType
         Named n args

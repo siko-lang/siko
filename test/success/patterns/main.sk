@@ -1,0 +1,25 @@
+module Main where
+
+data TypeVar = TypeVar Int Bool
+             | Fixed String Bool
+             deriving (Show, PartialEq, Eq, PartialOrd, Ord)
+
+data RowKind = NamedRow String
+             | IndexedRow Int
+             deriving (Show, PartialEq, Eq, PartialOrd, Ord)
+
+data Constraint = ClassConstraint String [Type]
+                | RowConstraint RowKind Type
+                | NeverLike
+                deriving (Show, PartialEq, Eq, PartialOrd, Ord)
+
+data Type = Var TypeVar [Constraint]
+          | Never
+          deriving (Show, PartialEq, Eq, PartialOrd, Ord)
+
+main = do
+    ty <- Var (TypeVar 76 False) [NeverLike]
+    case ty of
+        Var (TypeVar _ True) constraints if constraints == [NeverLike] -> panic "Incorrect case!"
+        Var _ constraints if constraints == [NeverLike] -> ()
+        _ -> panic "Other incorrect case"

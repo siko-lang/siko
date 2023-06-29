@@ -16,10 +16,9 @@ toStringComplex type names = if Util.isSimple type
 
 convertType :: Type -> Map String Bool -> String
 convertType type names = case type of
-    Var var _ -> do
-        TypeVar v <- var
-        "tv{}" % v
-    FixedTypeArg n _ -> SS.get n
+    Var var _ -> case var of
+        TypeVar v _ -> "tv{}" % v
+        Fixed n _ -> SS.get n
     Named n args -> do
         n <- if FQ.isSimple n
         then FQ.getResolvableName n
@@ -124,8 +123,8 @@ collectNamesFromConstraints constraints = List.map constraints (\c -> case c of
 
 collectNames :: Type -> Map String [Constraint] -> ([String], Map String [Constraint])
 collectNames type constraint_map = case type of
-    Var (TypeVar v) constraints -> (collectNamesFromConstraints constraints, addConstraint ("t{}" % v) constraints constraint_map)
-    FixedTypeArg n constraints -> (collectNamesFromConstraints constraints, addConstraint (SS.get n) constraints constraint_map)
+    Var (TypeVar v _) constraints -> (collectNamesFromConstraints constraints, addConstraint ("t{}" % v) constraints constraint_map)
+    Var (Fixed n _) constraints -> (collectNamesFromConstraints constraints, addConstraint (SS.get n) constraints constraint_map)
     Named n args -> do
         n <- SS.get (FQ.getResolvableName n)
         args |> List.iter |> Iterator.fold (\(all, constraint_map), arg -> do

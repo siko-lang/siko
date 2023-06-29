@@ -84,9 +84,9 @@ addRefPosition context lifetime steps = do
 
 mapType a :: (StateProvider a) => Context a -> [MF.Step] -> HT.Type -> Context a
 mapType context steps type = case type of
-    HT.Var _ _ -> panic "Var type in type mapping!"
-    HT.FixedTypeArg name _ -> do
+    HT.Var (HT.Fixed name _) _ -> do
         addVarPosition context (SS.get name) steps
+    HT.Var _ _ -> panic "Var type in type mapping!"
     HT.Named qn args -> do
         case qn of
             FQ.Tuple args -> List.foldE context args (\context, index, arg -> do

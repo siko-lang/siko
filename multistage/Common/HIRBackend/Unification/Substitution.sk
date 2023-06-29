@@ -65,7 +65,6 @@ constraintsContainsVar constraints var = List.fold False constraints (\contains,
 containsVar :: T.Type -> T.TypeVar -> Bool
 containsVar type var = case type of
     T.Var v constraints -> v == var || constraintsContainsVar constraints var
-    T.FixedTypeArg _ constraints -> constraintsContainsVar constraints var
     T.Named _ args -> List.fold False args (\contains, arg -> contains || containsVar arg var)
     T.Function from to -> containsVar from var || containsVar to var
     T.Never -> False

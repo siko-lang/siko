@@ -9,6 +9,12 @@ someFunc = do
     f <- open "apple.txt"
     write f "this is a line"
 
+someFunc2 a :: () using ()
+someFunc2 = do
+    with { open = openDummy, write = dummyWrite } do
+        f <- open "apple.txt"
+        write f "this is a line"
+
 data DummyFile = { content :: String }
 
 openDummy :: String -> DummyFile
@@ -22,3 +28,4 @@ dummyWrite f content = do
 main = do
     with { open = openDummy, write = dummyWrite } do
         someFunc
+        someFunc2

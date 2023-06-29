@@ -43,8 +43,8 @@ reshapeFixed :: SS.SharedString -> SS.SharedString -> T.Type -> T.Type
 reshapeFixed var1 var2 type = T.traverse (reshape_ var1 var2) type
     where
         reshape_ var1 var2 type = case type of
-            T.FixedTypeArg n constraints -> if n == var1
-                then T.FixedTypeArg var2 constraints
+            T.Var (T.Fixed n e) constraints -> if n == var1
+                then T.Var (T.Fixed var2 e) constraints
                 else type
             _ -> type
 
@@ -64,14 +64,14 @@ checkIsomorphicType type1 type2 dependency_provider = do
 isIsomorphicType a :: (ClassProvider a) => T.Type -> T.Type -> a -> Result () IsomorphicTestFailure
 isIsomorphicType type1 type2 dependency_provider = do
     case (type1, type2) of
+        (T.Var (T.Fixed a _) cs1, T.Var (T.Fixed b _) cs2) -> do
+            if a == b
+            then checkIsomorphicConstraints cs1 cs2 dependency_provider
+            else Err (ReshapeFixed a b)
         (T.Var var1 cs1, T.Var var2 cs2) -> do
             if var1 == var2
             then checkIsomorphicConstraints cs1 cs2 dependency_provider
             else Err (ReshapeVar var1 var2)
-        (T.FixedTypeArg a cs1, T.FixedTypeArg b cs2) -> do
-            if a == b
-            then checkIsomorphicConstraints cs1 cs2 dependency_provider
-            else Err (ReshapeFixed a b)
         (T.Named qn1 args1, T.Named qn2 args2) -> do
             if qn1 == qn2
             then if getLength args1 != getLength args2

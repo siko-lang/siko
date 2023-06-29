@@ -14,10 +14,10 @@ instance S.Collectable T.Constraint where
 
 instance S.Collectable T.Type where
     collect collector type = case type of
-        T.Var var constraints -> S.collect collector constraints
-        T.FixedTypeArg n constraints -> do
+        T.Var (T.Fixed n _) constraints -> do
             collector <- S.addVar collector n
             S.collect collector constraints
+        T.Var var constraints -> S.collect collector constraints
         T.Named _ args -> S.collect collector args
         T.Function from to -> do
             collector <- S.collect collector from
@@ -39,7 +39,6 @@ instance S.Apply T.Type where
         T.Var var constraints -> case get sub.vars var of
             Some t -> S.apply t sub
             None -> (T.Var var (S.apply constraints sub))
-        T.FixedTypeArg n constraints -> T.FixedTypeArg n (S.apply constraints sub)
         T.Named n args -> do
             T.Named n (S.apply args sub)
         T.Function from to -> do
@@ -66,9 +65,6 @@ instance S.Transform T.Type where
         T.Var var constraints -> do
             (state, constraints) <- S.transform state constraints f
             f state (T.Var var constraints)
-        T.FixedTypeArg n constraints -> do
-            (state, constraints) <- S.transform state constraints f
-            f state (T.FixedTypeArg n constraints)
         T.Named qn args -> do
             (state, args) <- S.transform state args f
             f state (T.Named qn args)

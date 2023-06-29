@@ -5,7 +5,6 @@ import Siko.Constants
 import Siko.HIR.Backend.StateProvider
 import Siko.HIR.Backend.Traversal
 import Siko.HIR.Backend.TypeIsomorphism as HTI
-import Siko.HIR.Backend.Typechecker.Effect
 import Siko.HIR.Backend.Typechecker.Error
 import Siko.HIR.Backend.Typechecker.Expr
 import Siko.HIR.Backend.Typechecker.FunctionDependency
@@ -87,50 +86,6 @@ initializeFunctionType context fn = do
             context
         _ -> context
 
-checkFunctionEffects a :: (StateProvider a) => Context a -> F.Function () -> (Context a, [T.Type])
-checkFunctionEffects context fn = do
-    //trace "Checking function effects {}" % fn.name
-    case fn.kind of
-        F.Normal info -> do
-            (context, func_type_info) <- getFunctionTypeInfo context fn.name
-            Expr _ body_id _ location <- info.body
-            eff_signature <- TS.getExprEffectSignature context.type_store context.group_index body_id
-            inferred_effect_names <- getKeys eff_signature.signatures
-            case func_type_info.effects of
-                Some declared_effects -> do
-                    declared_effect_names <- List.map declared_effects T.getNameFromType
-                    context <- if not (List.isEmpty inferred_effect_names) || not (List.isEmpty declared_effect_names)
-                    then do
-                        context <- List.fold context inferred_effect_names (\context, inferred_effect -> do
-                            if List.contains declared_effect_names inferred_effect
-                            then context
-                            else do
-                                err <- UndeclaredEffect (SS.create (show inferred_effect)) fn.location
-                                state <- addError context.state err
-                                context { state = state })
-                        context <- List.fold context declared_effect_names (\context, declared_effect -> do
-                            if List.contains inferred_effect_names declared_effect
-                            then context
-                            else do
-                                err <- UnnecessaryEffect (SS.create (show declared_effect)) fn.location
-                                state <- addError context.state err
-                                context { state = state })
-                        context
-                    else context
-                    (context, _) <- List.fold (context, eff_signature) declared_effects (\(context, eff_signature), declared_effect -> do
-                        qn <- T.getNameFromType declared_effect
-                        case get eff_signature.signatures qn of
-                            Some inferred_effect -> do
-                                (context, sub) <- unify2 context S.createSubstitution declared_effect inferred_effect fn.location
-                                eff_signature <- S.apply eff_signature sub
-                                (context, eff_signature)
-                            None -> (context, eff_signature))
-                    (context, declared_effects)
-                None -> do
-                    inferred_effects <- eff_signature.signatures |> Map.iter |> Iterator.map (\(_, eff) -> eff) |> toList
-                    (context, inferred_effects)
-        _ -> (context, [])
-
 checkMain a :: (StateProvider a) => Context a -> F.Function () -> Context a
 checkMain context fn = do
     (context, func_type_info) <- getFunctionTypeInfo context fn.name
@@ -200,36 +155,6 @@ processGroup state group_items = do
         context <- context { group_index = group_index }
         fn <- QL.getFunction context.state name
         checkFunctionType context fn)
-    (context, group_effects) <- List.foldE (context, emptyEffectSignatureSet) group_items (\(context, group_effects), group_index, name -> do
-        context :: Context a <- context // FIXME: inference
-        context <- context { group_index = group_index }
-        fn <- QL.getFunction context.state name
-        case fn.kind of
-            F.Normal info -> do
-                (context, func_type_info) <- getFunctionTypeInfo context fn.name
-                Expr _ body_id _ location <- info.body
-                eff_signature <- TS.getExprEffectSignature context.type_store context.group_index body_id
-                (context, group_effects) <- mergeEffectSignatureSets context group_effects eff_signature location
-                (context, group_effects)
-            _ -> (context, group_effects))
-    context <- List.foldE context group_items (\context, group_index, name -> do
-        context :: Context a <- context // FIXME: inference
-        context <- context { group_index = group_index }
-        fn <- QL.getFunction context.state name
-        case fn.kind of
-            F.Normal info -> do
-                (context, func_type_info) <- getFunctionTypeInfo context fn.name
-                Expr _ body_id _ location <- info.body
-                type_store <- TS.addExprEffectSignatureSet context.type_store context.group_index body_id group_effects
-                context { type_store = type_store }
-            _ -> context)
-    (context, effect_map) <- List.foldE (context, Map.empty) group_items (\(context, effect_map), group_index, name -> do
-        context :: Context a <- context // FIXME: inference
-        context <- context { group_index = group_index }
-        fn <- QL.getFunction context.state name
-        (context, effects) <- checkFunctionEffects context fn
-        effect_map <- Map.put effect_map name effects
-        (context, effect_map))
     //println "After check"
     //TS.dump context.type_store
     context <- List.foldE context group_items (\context, group_index, name -> do
@@ -246,7 +171,7 @@ processGroup state group_items = do
         context <- context { group_index = group_index }
         fn <- QL.getFunction context.state name
         (context, func_type_info) <- getFunctionTypeInfo context name
-        effects <- Option.expect (Map.get effect_map name) "Effects not found in effect_map"
+        effects <- []
         fn <- Std.Intrinsics.clone fn
         type_store <- Std.Intrinsics.clone context.type_store
         name <- Std.Intrinsics.clone name

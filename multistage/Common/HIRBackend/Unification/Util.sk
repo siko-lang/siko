@@ -77,10 +77,14 @@ partial mapper = mapper { partial = True }
 
 remapType :: Mapper -> T.Type -> (Mapper, T.Type)
 remapType mapper type = case type of
-    T.FixedTypeArg n constraints -> case get mapper.vars n of
-        Some new_var -> (mapper, T.Var new_var constraints)
+    T.Var (T.Fixed n e) constraints -> case get mapper.vars n of
+        Some new_var -> do
+            new_var <- case new_var of
+                T.TypeVar v _ -> T.TypeVar v e
+                _ -> panic "new_var in mapper is not TypeVar!"
+            (mapper, T.Var new_var constraints)
         None -> if mapper.partial
-            then (mapper, T.FixedTypeArg n constraints)
+            then (mapper, T.Var (T.Fixed n e) constraints)
             else panic "remapType: fixed var {} not found" % n
     T.Never -> do
         if mapper.skip_never

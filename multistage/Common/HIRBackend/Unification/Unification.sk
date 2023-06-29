@@ -189,6 +189,13 @@ unify context sub type1 type2 = do
         (Named qn1 args1, Named qn2 args2) -> if qn1 == qn2
             then unifyArgs context sub args1 args2
             else Err (context, sub)
+        (Var (Fixed a _) constraints1, Var (Fixed b _) constraints2) -> if a == b
+            then if constraints1 == constraints2
+                then Ok (context, sub)
+                else Err (context, sub)
+            else Err (context, sub)
+        (Var (Fixed _ _) constraints1, Var var2 constraints2) -> unifyVarWithFixedArg context sub var2 constraints2 constraints1 type1
+        (Var var1 constraints1, Var (Fixed _ _) constraints2) -> unifyVarWithFixedArg context sub var1 constraints1 constraints2 type2
         (Var var1 constraints1, Var var2 constraints2) -> if var1 == var2
             then if constraints1 != constraints2
                 then do
@@ -197,7 +204,9 @@ unify context sub type1 type2 = do
                 else Ok (context, sub)
             else do
                 if constraints1 == constraints2 || ignoreConstraints context
-                then trySub context sub var1 type2
+                then if isEffectVar var1
+                    then trySub context sub var2 type1
+                    else trySub context sub var1 type2
                 else do
                     // FIXME: this is wrong, lots of cases are not covered, like row constraints?
                     //println "Merging {}/{} and {}/{}" % (var1, constraints1, var2, constraints2)
@@ -208,18 +217,17 @@ unify context sub type1 type2 = do
                     constraints <- constraints1 + constraints2
                     constraints <- constraints |> sort |> dedup
                     (context, new_type_var) <- getNewTypeVar context
+                    new_type_var <- if isEffectVar var1 || isEffectVar var2
+                    then do
+                        case new_type_var of
+                            TypeVar i _ -> TypeVar i True
+                            _ -> panic "new type var is not typevar in unify"
+                    else new_type_var
                     //println "Result {}/{}" % (new_type_var, constraints)
                     new_type <- Var new_type_var constraints
                     (context, sub) <- try trySub context sub var1 new_type
                     (context, sub) <- try trySub context sub var2 new_type
                     Ok (context, sub)
-        (FixedTypeArg a constraints1, FixedTypeArg b constraints2) -> if a == b
-            then if constraints1 == constraints2
-                then Ok (context, sub)
-                else Err (context, sub)
-            else Err (context, sub)
-        (FixedTypeArg _ constraints1, Var var2 constraints2) -> unifyVarWithFixedArg context sub var2 constraints2 constraints1 type1
-        (Var var1 constraints1, FixedTypeArg _ constraints2) -> unifyVarWithFixedArg context sub var1 constraints1 constraints2 type2
         (Var var constraints, type2) -> unifyVarWithType context var constraints sub type2
         (type1, Var var constraints) -> unifyVarWithType context var constraints sub type1
         (Tuple args1, Tuple args2) -> do

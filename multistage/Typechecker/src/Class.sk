@@ -42,13 +42,11 @@ checkClassDependencies classes = do
 isVar :: T.Type -> Bool
 isVar type = case type of
     T.Var _ _ -> True
-    T.FixedTypeArg _ _ -> True
     _ -> False
 
 isSpecializedType :: T.Type -> Bool
 isSpecializedType type = case type of
     T.Var _ _ -> False
-    T.FixedTypeArg _ _ -> False
     T.Named _ args -> args |> List.iter |> Iterator.fold (\specialized, arg -> specialized || not (isVar arg)) False
     T.Tuple args -> args |> List.iter |> Iterator.fold (\specialized, arg -> specialized || not (isVar arg)) False
     _ -> True
