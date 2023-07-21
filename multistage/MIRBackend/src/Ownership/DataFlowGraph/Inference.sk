@@ -1,0 +1,85 @@
+module Siko.MIR.Backend.Ownership.DataFlowGraph.Inference where
+
+import Siko.MIR.Backend.Ownership.DataFlowGraph
+import Siko.MIR.Backend.Ownership.Query as Q
+import Siko.MIR.Function as F
+import Map
+
+data Context = { data_flow_graph :: DataFlowGraph, values :: Map NodeKey Value }
+
+data RecordInfo = { fields :: [Value] } deriving (Show)
+
+data AdtInfo = { variants :: [Value] } deriving (Show)
+
+data ExternInfo = {} deriving (Show)
+
+data Value = RecordValue RecordInfo
+           | AdtValue AdtInfo
+           | ExternValue ExternInfo
+           deriving (Show)
+
+getValueForNode :: Context -> NodeKey -> Value
+getValueForNode context key = case Map.get context.values key of
+    Some v -> v
+    None -> panic "No value found for key {}" % key
+
+setValue :: Context -> NodeKey -> Value -> Context
+setValue context key value = do
+    println "Set value for {} = {}" % (key, value)
+    values <- Map.put context.values key value
+    context { values = values }
+
+processEdge :: Context -> Edge -> Context
+processEdge context edge = do
+    println "Processing edge {}" % edge
+    case edge.kind of
+        Converter -> do
+            value <- getValueForNode context edge.from
+            setValue context edge.to value
+        RecordCtorField _ -> context
+        _ -> do
+            value <- getValueForNode context edge.from
+            setValue context edge.to value
+
+processFlow :: Context -> NodeKey -> Context
+processFlow context key = do
+    node <- getNode context.data_flow_graph key
+    case node of
+        Expr n -> do
+            context <- case n.kind of
+                FnCall id -> do
+                    function <- Q.getFunction id
+                    case function.kind of
+                        F.RecordCtor -> do
+                            edges <- List.map n.incoming (getEdge context.data_flow_graph)
+                            fields <- List.map edges (\edge -> getValueForNode context edge.from)
+                            value <- RecordValue (RecordInfo fields)
+                            setValue context key value
+                        _ -> do
+                            println "Processing {}" % node
+                            context
+                Loop -> do
+                    println "Processing loop"
+                    context
+                Other -> do
+                    println "Processing {}" % node
+                    println "Other"
+                    context
+            List.fold context n.outgoing (\context, edge_id -> do
+                edge <- getEdge context.data_flow_graph edge_id
+                context <- processEdge context edge
+                processFlow context edge.to)
+        Var n -> do
+            List.fold context n.outgoing (\context, edge_id -> do
+                edge <- getEdge context.data_flow_graph edge_id
+                context <- processEdge context edge
+                processFlow context edge.to)
+
+process :: DataFlowGraph -> String -> ()
+process data_flow_graph name = do
+    sources <- getSources data_flow_graph
+    println "----------- {}: sources {} -----------" % (name, sources)
+    context <- Context data_flow_graph Map.empty
+    List.fold context sources (\context, source -> processFlow context source)
+    println "--------------------------------------"
+    ()

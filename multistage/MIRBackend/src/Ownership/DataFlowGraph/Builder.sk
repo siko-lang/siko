@@ -1,0 +1,254 @@
+module Siko.MIR.Backend.Ownership.DataFlowGraph.Builder where
+
+import Map
+import Siko.MIR.Backend.Ownership.DataFlowGraph as DFG
+import Siko.MIR.Backend.Ownership.Allocator as A
+import Siko.MIR.Backend.Ownership.Query as Q
+import Siko.MIR.Backend.Ownership.TypeVariableInfo
+import Siko.MIR.Expr as E
+import Siko.MIR.Function as F
+import Siko.MIR.Identity as I
+import Std.Intrinsics
+
+data Context = { graph :: DFG.DataFlowGraph,
+                 allocator :: A.Allocator,
+                 expr_info_map :: Map E.ExprId TypeVariableInfo,
+                 var_info_map :: Map E.Var TypeVariableInfo,
+                 expr_kinds :: Map E.ExprId DFG.ExprNodeKind,
+                 returns :: [E.ExprId]
+               }
+
+createContext :: Context
+createContext = Context DFG.createGraph A.createAllocator Map.empty Map.empty Map.empty []
+
+getNextOwnershipTypeVariable :: Context -> (Context, OwnershipTypeVariable)
+getNextOwnershipTypeVariable context = do
+    (allocator, v) <- A.getNextOwnershipTypeVariable context.allocator
+    (context { allocator = allocator }, v)
+
+getNextGroupTypeVariable :: Context -> (Context, GroupTypeVariable)
+getNextGroupTypeVariable context = do
+    (allocator, v) <- A.getNextGroupTypeVariable context.allocator
+    (context { allocator = allocator }, v)
+
+getNextTypeVariableInfo :: Context -> (Context, TypeVariableInfo)
+getNextTypeVariableInfo context = do
+    (allocator, info) <- A.getNextTypeVariableInfo context.allocator
+    (context { allocator = allocator }, info)
+
+addEdge :: Context ->
+           DFG.EdgeKind ->
+           E.ExprId ->
+           E.ExprId -> Context
+addEdge context kind from to = do
+    from <- DFG.ExprKey from
+    to <- DFG.ExprKey to
+    edge <- DFG.Edge from to kind
+    graph <- DFG.addEdge context.graph edge
+    context { graph = graph }
+
+addVarEdge :: Context ->
+              DFG.EdgeKind ->
+              E.ExprId ->
+              E.Var -> Context
+addVarEdge context kind from to = do
+    from <- DFG.ExprKey from
+    to <- DFG.VarKey (Std.Intrinsics.clone to)
+    edge <- DFG.Edge from to kind
+    graph <- DFG.addEdge context.graph edge
+    context { graph = graph }
+
+addVarEdge2 :: Context ->
+               DFG.EdgeKind ->
+               E.Var ->
+               E.ExprId -> Context
+addVarEdge2 context kind from to = do
+    from <- DFG.VarKey (Std.Intrinsics.clone from)
+    to <- DFG.ExprKey (Std.Intrinsics.clone to)
+    edge <- DFG.Edge from to kind
+    graph <- DFG.addEdge context.graph edge
+    context { graph = graph }
+
+addExpr :: Context -> E.ExprId -> Context
+addExpr context expr_id = do
+    (context, info) <- getNextTypeVariableInfo context
+    context <- addExprInfo context expr_id info
+    key <- DFG.ExprKey (Std.Intrinsics.clone expr_id)
+    node <- DFG.Expr (DFG.ExprNode expr_id info DFG.Other [] [])
+    graph <- DFG.addNode context.graph key node
+    context { graph = graph }
+
+addVar :: Context -> E.Var -> Context
+addVar context v = do
+    (context, info) <- getNextTypeVariableInfo context
+    var_info_map <- Map.put context.var_info_map v info
+    key <- DFG.VarKey (Std.Intrinsics.clone v)
+    node <- DFG.Var (DFG.VarNode v info [] [])
+    graph <- DFG.addNode context.graph key node
+    context { var_info_map = var_info_map, graph = graph }
+
+addExprKind :: Context -> E.ExprId -> DFG.ExprNodeKind -> Context
+addExprKind context id kind = do
+    expr_kinds <- Map.put context.expr_kinds id kind
+    context { expr_kinds = expr_kinds }
+
+getExprInfo :: Context -> E.ExprId -> TypeVariableInfo
+getExprInfo context id = case Map.get context.expr_info_map id of
+    Some info -> info
+    None -> panic "TypeVariableInfo not found for expr {} in Value Graph" % id
+
+getVarInfo :: Context -> E.Var -> (Context, TypeVariableInfo)
+getVarInfo context var = case Map.get context.var_info_map var of
+    Some info -> (context, info)
+    None -> do
+        case var of
+            E.Arg _ -> do
+                context <- addVar context var
+                getVarInfo context var
+            _ -> panic "TypeVariableInfo not found for var {} in Value Graph" % var
+
+addExprInfo :: Context -> E.ExprId -> TypeVariableInfo -> Context
+addExprInfo context expr_id info = do
+    expr_info_map <- Map.put context.expr_info_map expr_id info
+    context <- context { expr_info_map = expr_info_map }
+    context
+
+addVarInfo :: Context -> E.Var -> TypeVariableInfo -> Context
+addVarInfo context var info = do
+    var_info_map <- Map.put context.var_info_map var info
+    context <- context { var_info_map = var_info_map }
+    context
+
+build :: E.Expr -> String -> DFG.DataFlowGraph
+build expr name = do
+    context <- createContext
+    context <- buildDataFlowGraph context expr
+    (context, end_tv_info) <- getNextTypeVariableInfo context
+    graph <- context.graph
+    graph <- DFG.addNode graph DFG.EndKey (DFG.End (DFG.EndNode end_tv_info []))
+    E.Expr _ _ body_id <- expr
+    edge <- DFG.Edge (DFG.ExprKey body_id) DFG.EndKey DFG.Result
+    graph <- DFG.addEdge graph edge
+    graph <- List.fold graph context.returns (\graph, r -> do
+        edge <- DFG.Edge (DFG.ExprKey r) DFG.EndKey DFG.Result
+        DFG.addEdge graph edge)
+    graph <- Map.fold graph context.expr_kinds (\graph, (id, kind) -> DFG.setExprNodeKind graph (DFG.ExprKey id) kind)
+    graph <- Map.fold graph context.expr_info_map (\graph, (id, info) -> DFG.setTypeVariableInfo graph (DFG.ExprKey id) info)
+    graph <- Map.fold graph context.var_info_map (\graph, (var, info) -> DFG.setTypeVariableInfo graph (DFG.VarKey (Std.Intrinsics.clone var)) info)
+    graph <- DFG.updateEdges graph
+    graph
+
+buildDataFlowGraph :: Context -> E.Expr -> Context
+buildDataFlowGraph context expr = do
+    E.Expr s_expr _ expr_id <- expr
+    //println "{}: {}" % (expr_id, s_expr)
+    context <- addExpr context expr_id
+    case s_expr of
+        E.Do block -> do
+            E.Expr _ _ last_expr_id <- last block.items
+            context <- List.fold context block.items buildDataFlowGraph
+            context <- addEdge context DFG.Do last_expr_id expr_id
+            info <- getExprInfo context last_expr_id
+            context <- addExprInfo context expr_id info
+            context
+        E.StaticFunctionCall info -> do
+            context <- List.fold context info.args buildDataFlowGraph
+            function <- Q.getFunction info.id
+            context <- addExprKind context expr_id (DFG.FnCall (Std.Intrinsics.clone info.id))
+            case function.kind of
+                F.RecordCtor -> List.foldE context info.args (\context, index, arg -> do
+                        E.Expr _ _ arg_id <- arg
+                        kind <- DFG.RecordCtorField index
+                        addEdge context kind arg_id expr_id)
+                _ -> List.foldE context info.args (\context, index, arg -> do
+                        E.Expr _ _ arg_id <- arg
+                        kind <- DFG.FnCallArg index
+                        addEdge context kind arg_id expr_id)
+        E.IntegerLiteral _ -> context
+        E.StringLiteral _ -> context
+        E.FloatLiteral _ -> context
+        E.CharLiteral _ -> context
+        E.VarDecl info -> do
+            E.Expr _ _ rhs_expr_id <- info.rhs
+            context <- buildDataFlowGraph context info.rhs
+            rhs_info <- getExprInfo context rhs_expr_id
+            context <- addVar context info.var
+            context <- addVarInfo context info.var rhs_info
+            context <- addVarEdge context DFG.VarDecl rhs_expr_id info.var
+            addVarEdge2 context DFG.VarDeclTuple info.var expr_id
+        E.VarRef var_info -> do
+            (context, info) <- getVarInfo context var_info.var
+            context <- addExprInfo context expr_id info
+            context <- addVarEdge2 context DFG.VarRef var_info.var expr_id
+            context
+        E.FieldAccess f_info -> do
+            context <- buildDataFlowGraph context f_info.receiver
+            E.Expr _ _ receiver_expr_id <- f_info.receiver
+            addEdge context DFG.FieldAccess receiver_expr_id expr_id
+        E.If if_info -> do
+            context <- buildDataFlowGraph context if_info.cond
+            context <- buildDataFlowGraph context if_info.true_branch
+            E.Expr _ _ true_expr_id <- if_info.true_branch
+            context <- buildDataFlowGraph context if_info.false_branch
+            E.Expr _ _ false_expr_id <- if_info.false_branch
+            context <- addEdge context DFG.IfTrue true_expr_id expr_id
+            context <- addEdge context DFG.IfFalse false_expr_id expr_id
+            context
+        E.List list_info -> do
+            context <- List.fold context list_info.items buildDataFlowGraph
+            context <- List.fold context list_info.items (\context, arg -> do
+                E.Expr _ _ arg_id <- arg
+                addEdge context DFG.ListLiteralItem arg_id expr_id)
+            context
+        E.Return arg_info -> do
+            context <- buildDataFlowGraph context arg_info.arg
+            E.Expr _ _ arg_id <- arg_info.arg
+            context <- addEdge context DFG.ReturnArg arg_id expr_id
+            returns <- List.push context.returns arg_id
+            context { returns = returns }
+        E.Continue arg_info -> do
+            E.Expr _ _ arg_id <- arg_info.arg
+            context <- addEdge context DFG.ContinueArg arg_id expr_id
+            buildDataFlowGraph context arg_info.arg
+        E.Break arg_info -> do
+            E.Expr _ _ arg_id <- arg_info.arg
+            context <- addEdge context DFG.BreakArg arg_id expr_id
+            buildDataFlowGraph context arg_info.arg
+        E.Loop info -> do
+            context <- buildDataFlowGraph context info.initializer
+            context <- addVar context info.var
+            E.Expr _ _ initializer_id <- info.initializer
+            context <- addVarEdge context DFG.LoopVarInit initializer_id info.var
+            E.Expr _ _ body_id <- info.body
+            context <- addVarEdge context DFG.LoopVarBody body_id info.var
+            context <- buildDataFlowGraph context info.body
+            context <- List.fold context info.breaks (\context, b -> do
+                addEdge context DFG.Break b expr_id)
+            context <- List.fold context info.continues (\context, c -> do
+                addVarEdge context DFG.Continue c info.var)
+            context <- addExprKind context expr_id DFG.Loop
+            context
+        E.CaseOf info -> do
+            context <- buildDataFlowGraph context info.body
+            E.Expr _ _ body_id <- info.body
+            context <- List.fold context info.cases (\context, c -> do
+                context <- case c.checker of
+                    E.VariantChecker _ v _ -> do
+                        context <- addVar context v
+                        addVarEdge context DFG.VariantChecker body_id v
+                    E.WildcardChecker v -> do
+                        context <- addVar context v
+                        addVarEdge context DFG.WildcardChecker body_id v
+                    _ -> context
+                E.Expr _ _ case_body_id <- c.body
+                context <- addEdge context DFG.CaseBody case_body_id expr_id
+                buildDataFlowGraph context c.body)
+            context
+        E.Converter info -> do
+            E.Expr _ _ arg_id <- info.arg
+            context <- buildDataFlowGraph context info.arg
+            arg_info <- getExprInfo context arg_id
+            own_info <- getExprInfo context expr_id
+            own_info <- own_info { arg_group_var = arg_info.arg_group_var }
+            context <- addExprInfo context expr_id own_info
+            addEdge context DFG.Converter arg_id expr_id

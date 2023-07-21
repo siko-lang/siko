@@ -5,6 +5,12 @@ import Map
 
 data NodeId = NodeId Int
 
+data Shape = Box
+           | Ellipse
+
+data Style = Filled
+           | NoStyle
+
 instance Show NodeId where
     show (NodeId id) = show id
 
@@ -16,14 +22,25 @@ data Graph = { name :: String,
 
 data Node = { name :: String,
               id :: NodeId,
-              elements :: [String],
-              color :: String
+              color :: String,
+              style :: Style,
+              shape :: Shape,
             }
 
 data Edge = { name :: Option String,
               from :: NodeId,
               to :: NodeId
             }
+
+getStyle :: Style -> String
+getStyle s = case s of
+    Filled -> "filled"
+    NoStyle -> "none"
+
+getShape :: Shape -> String
+getShape s = case s of
+    Box -> "box"
+    Ellipse -> "ellipse"
 
 fromMap a :: (Show a, Ord a) => Map a [a] -> String -> String -> ()
 fromMap deps name filename = do
@@ -53,7 +70,7 @@ addNode :: Graph -> String -> (Graph, NodeId)
 addNode graph name = do
     id <- graph.next_id
     node_id <- NodeId id
-    node <- Node name node_id [] "yellow"
+    node <- Node name node_id "yellow" Filled Box
     nodes <- push graph.nodes node
     graph <- graph { next_id = id + 1, nodes = nodes }
     (graph, node_id)
@@ -65,13 +82,30 @@ addColor graph (NodeId id) color = do
     nodes <- write graph.nodes id node
     graph { nodes = nodes }
 
-addElement :: Graph -> NodeId -> String -> Graph
-addElement graph (NodeId id) element = do
+addShape :: Graph -> NodeId -> Shape -> Graph
+addShape graph (NodeId id) shape = do
     node <- atIndex graph.nodes id // FIXME: use update
-    elements <- push node.elements element
-    node <- node { elements = elements }
+    node <- node { shape = shape }
     nodes <- write graph.nodes id node
     graph { nodes = nodes }
+
+addStyle :: Graph -> NodeId -> Style -> Graph
+addStyle graph (NodeId id) style = do
+    node <- atIndex graph.nodes id // FIXME: use update
+    node <- node { style = style }
+    nodes <- write graph.nodes id node
+    graph { nodes = nodes }
+
+addElement :: Graph -> NodeId -> String -> Graph
+addElement graph node_id element = addElementWithColor graph node_id element "#1f77b4"
+
+addElementWithColor :: Graph -> NodeId -> String ->String -> Graph
+addElementWithColor graph node_id element color = do
+    (graph, e) <- addNode graph element
+    graph <- addColor graph e color
+    graph <- addShape graph e Ellipse
+    graph <- addEdge graph None e node_id
+    graph
 
 addEdge :: Graph ->
            Option String ->
@@ -87,12 +121,7 @@ generateDot graph = do
     s <- "digraph D {\n"
     s <- s + "node [shape=record fontname=Arial splines=ortho];\n"
     s <- graph.nodes |> List.iter |> Iterator.fold (\s, node -> do
-        s <- if List.isEmpty node.elements
-        then s + "node{} [label=\"{}\" style=filled fillcolor={}]\n" % (node.id, node.name, node.color)
-        else do
-            elements <- join node.elements "|"
-            s + "node{} [label=\"{{{}|{}}}\" style=filled fillcolor={}]\n" % (node.id, node.name, elements, node.color)
-        s) s
+        s + "node{} [label=\"{}\" style=\"{}\" shape=\"{}\" fillcolor=\"{}\"]\n" % (node.id, node.name, getStyle node.style, getShape node.shape, node.color)) s
     s <- graph.edges |> List.iter |> Iterator.fold (\s, edge -> do
         e <- case edge.name of
             Some name -> "node{} -> node{} [label=\"{}\"]\n" % (edge.from, edge.to, name)

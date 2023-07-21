@@ -37,6 +37,14 @@ class PartialEq a where
 
 class (PartialEq a) => Eq a
 
+instance (PartialEq a, PartialEq b) => PartialEq (a, b) where
+    opEq (a1, b1) (a2, b2) = if opEq a1 a2
+        then opEq b1 b2
+        else False
+
+getDiscriminant a :: a -> ~Int
+getDiscriminant a = extern
+
 module String where
 
 data String = extern
@@ -63,7 +71,7 @@ addString a b = extern
 
 module Bool where
 
-data Bool = True | False
+data Bool = True | False deriving (PartialEq, Eq, Show)
 
 module Std.Util where
 
@@ -95,6 +103,12 @@ mulInt a b = extern
 module Option where
 
 data Option a = Some a | None
+
+@Inline
+expect a :: Option a -> String -> a
+expect o msg = case o of
+    Some a -> a
+    None -> panic "Option expect failed: {}" % msg
 
 module Result where
 
@@ -136,6 +150,23 @@ instance Iterator (ListIter a) > a where
             Some a -> (iter, Some a)
             None -> (iter, None)
 
+instance (PartialEq a) => PartialEq [a] where
+    opEq a :: [a] -> [a] -> Bool
+    opEq a b = if getLength a != getLength b
+        then False
+        else do
+            iter_a :: ListIter a <- List.iter a
+            iter_b :: ListIter a <- List.iter b
+            loop zipper <- Iterator.zip iter_a iter_b do
+                // FIXME: investigate why this is needed
+                zipper :: IteratorZip (ListIter a) (ListIter a) <- zipper
+                (zipper, item) <- Iterator.next zipper
+                case item of
+                    Some (item_a, item_b) -> if item_a != item_b
+                        then break False
+                        else zipper
+                    None -> break True
+
 atIndex a :: [a] -> Int -> a
 atIndex index l = extern (arg[0].e[0] -> result)
 
@@ -147,6 +178,9 @@ last list = do
 
 getLength a :: [a] -> ~Int
 getLength l = extern
+
+dedup a :: (PartialEq a) => ~[a] -> ~[a]
+dedup l = extern
 
 @Inline
 iter it a :: [a] -> ListIter a
@@ -177,23 +211,36 @@ fold f s iter = do
                 (s, iter)
             None -> break s
 
+data IteratorZip i1 i2 = { iter1 :: i1,
+                           iter2 :: i2
+                         }
+
+instance (Iterator i1 > a, Iterator i2 > b) => Iterator (IteratorZip i1 i2) > (a, b) where
+    next i1 i2 a b :: IteratorZip i1 i2 -> (IteratorZip i1 i2, Option (a, b))
+    next iter = do
+        iter :: IteratorZip i1 i2 <- iter // FIXME
+        (iter1, value1) <- next iter.iter1
+        iter <- iter { iter1 = iter1 }
+        case value1 of
+            Some value1 -> do
+                (iter2, value2) <- next iter.iter2
+                iter <- iter { iter2 = iter2 }
+                case value2 of
+                    Some value2 -> (iter, Some (value1, value2))
+                    None -> (iter, None)
+            None -> (iter, None)
+
+@Inline
+zip i1 i2 a b :: (Iterator i1 > a, Iterator i2 > b) => i1 -> i2 -> IteratorZip i1 i2
+zip iter1 iter2 = IteratorZip iter1 iter2
+
 module Main where
 
-effect Eff1 where
-    call1 :: ()
-
-effect Eff2 where
-    call2 :: ()
-
-foo = do
-    call1
-    call2
-
-myCall1 = ()
-
-myCall2 = ()
+data Multi = One | Two | Three
 
 main = do
-    with { call1 = myCall1 } do
-        with { call2 = myCall2 } do
-            foo
+    o <- One
+    case o of
+        One -> return ()
+        Two -> return ()
+        Three -> return ()

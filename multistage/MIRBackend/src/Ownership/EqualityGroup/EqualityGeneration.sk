@@ -1,7 +1,9 @@
 module Siko.MIR.Backend.Ownership.EqualityGeneration(processEqualities,
                                                      processFunctionEqualities) where
 
+import IO
 import Map
+import Siko.Dot as D
 import Siko.MIR.Backend.Ownership.Allocator
 import Siko.MIR.Backend.Ownership.Converter
 import Siko.MIR.Backend.Ownership.DataFlowProfile
@@ -11,6 +13,9 @@ import Siko.MIR.Backend.Ownership.EqualitySolver
 import Siko.MIR.Backend.Ownership.FunctionGroupInferenceData
 import Siko.MIR.Backend.Ownership.MemberInfo as M
 import Siko.MIR.Backend.Ownership.TypeVariableInfo
+import Siko.MIR.Backend.Ownership.DataFlowGraph.Builder as B
+import Siko.MIR.Backend.Ownership.DataFlowGraph.Inference as DFGI
+import Siko.MIR.Backend.Ownership.DataFlowGraph.Visualizer as Visualizer
 import Siko.MIR.Backend.Traversal
 import Siko.MIR.Data as D
 import Siko.MIR.Expr as E
@@ -279,6 +284,9 @@ processFunctionEqualities :: I.Identity ->
 processFunctionEqualities function_id group equals function_group_inference_data dataflow_profile_store body = do
     context <- Context function_id equals function_group_inference_data dataflow_profile_store group
     //trace "processEqualities - traverse"
+    data_flow_graph <- B.build body (I.short function_id)
+    Visualizer.visualize data_flow_graph (I.short function_id)
+    //DFGI.process data_flow_graph (I.short function_id)
     context <- collectEquals context body
     body_info <- getTypeVariableInfoByExprId context.function_group_inference_data (getExprId body) context.function_id
     function_inference_info <- getFunctionInferenceInfo context.function_group_inference_data function_id
