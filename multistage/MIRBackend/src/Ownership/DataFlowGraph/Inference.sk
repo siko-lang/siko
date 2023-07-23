@@ -1,17 +1,19 @@
 module Siko.MIR.Backend.Ownership.DataFlowGraph.Inference where
 
+import Map
 import Siko.MIR.Backend.Ownership.DataFlowGraph
 import Siko.MIR.Backend.Ownership.Query as Q
 import Siko.MIR.Function as F
-import Map
 
-data Context = { data_flow_graph :: DataFlowGraph, values :: Map NodeKey Value }
+data Context = { data_flow_graph :: DataFlowGraph,
+                 values :: Map NodeKey Value
+               }
 
 data RecordInfo = { fields :: [Value] } deriving (Show)
 
 data AdtInfo = { variants :: [Value] } deriving (Show)
 
-data ExternInfo = {} deriving (Show)
+data ExternInfo = {  } deriving (Show)
 
 data Value = RecordValue RecordInfo
            | AdtValue AdtInfo
@@ -36,7 +38,7 @@ processEdge context edge = do
         Converter -> do
             value <- getValueForNode context edge.from
             setValue context edge.to value
-        RecordCtorField _ -> context
+        RecordCtorField _ _ -> context
         _ -> do
             value <- getValueForNode context edge.from
             setValue context edge.to value

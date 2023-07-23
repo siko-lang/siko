@@ -20,7 +20,7 @@ data Applier = { ownership_equals :: Map OwnershipTypeVariable OwnershipTypeVari
 
 addSingleEqual :: Applier -> Equal -> Applier
 addSingleEqual applier equal = do
-    (applier, equal) <- apply applier equal
+    equal <- apply applier equal
     case equal of
         EqualGroup id1 id2 -> do
             min_id <- Std.Ops.min id1 id2
@@ -43,58 +43,56 @@ class MemberOwner a where
     getMembers a :: a -> [M.MemberInfo]
 
 class Apply a where
-    apply a :: Applier -> a -> (Applier, a)
+    apply a :: Applier -> a -> a
 
 instance Apply GroupTypeVariable where
     apply applier type_variable = do
-        loop (applier, type_variable) <- (applier, type_variable) do
+        loop type_variable <- type_variable do
             case Map.get applier.group_equals type_variable of
-                Some t -> (applier, t)
-                None -> do
-                    break (applier, type_variable)
+                Some t -> t
+                None -> break type_variable
 
 instance Apply OwnershipTypeVariable where
     apply applier type_variable = do
-        loop (applier, type_variable) <- (applier, type_variable) do
+        loop type_variable <- type_variable do
             case Map.get applier.ownership_equals type_variable of
-                Some t -> (applier, t)
-                None -> do
-                    break (applier, type_variable)
+                Some t -> t
+                None -> break type_variable
 
 instance Apply Equal where
     apply applier equal = case equal of
         EqualGroup id1 id2 -> do
-            (applier, id1) <- apply applier id1
-            (applier, id2) <- apply applier id2
-            (applier, EqualGroup id1 id2)
+            id1 <- apply applier id1
+            id2 <- apply applier id2
+            EqualGroup id1 id2
         EqualOwnership id1 id2 -> do
-            (applier, id1) <- apply applier id1
-            (applier, id2) <- apply applier id2
-            (applier, EqualOwnership id1 id2)
+            id1 <- apply applier id1
+            id2 <- apply applier id2
+            EqualOwnership id1 id2
 
 instance (Apply a) => Apply [a] where
-    apply applier items = List.mapS applier items (\applier, item -> apply applier item)
+    apply applier items = List.map items (\item -> apply applier item)
 
 instance Apply TypeVariableInfo where
     apply applier info = do
-        (applier, ownership_var) <- apply applier info.ownership_var
-        (applier, arg_group_var) <- apply applier info.arg_group_var
-        (applier, TypeVariableInfo ownership_var arg_group_var)
+        ownership_var <- apply applier info.ownership_var
+        arg_group_var <- apply applier info.arg_group_var
+        TypeVariableInfo ownership_var arg_group_var
 
 instance Apply M.MemberInfo where
     apply applier member = do
         M.MemberInfo kind root info <- member
-        (applier, root) <- apply applier root
-        (applier, info) <- apply applier info
-        (applier, M.MemberInfo kind root info)
+        root <- apply applier root
+        info <- apply applier info
+        M.MemberInfo kind root info
 
 instance Apply M.OwnershipInfo where
     apply applier info = do
-        (applier, var) <- apply applier info.var
-        (applier, info { var = var })
+        var <- apply applier info.var
+        info { var = var }
 
 instance (Apply v, Ord k) => Apply Map k v where
-    apply applier items = Map.updateS applier items (\applier, (k, v) -> apply applier v)
+    apply applier items = Map.update items (\(k, v) -> apply applier v)
 
 addEquals :: [Equal] -> Applier -> Applier
 addEquals equals applier = do
@@ -119,12 +117,10 @@ processEquals equals owner = do
     applier <- addEquals equals (Applier Map.empty Map.empty)
     members <- getMembers owner
     loop (members, applier, count) <- (members, applier, 0) do
-        (applier, members) <- apply applier members
+        members <- apply applier members
         equals <- getEqualsFromMemberInfos members
         if List.isEmpty equals
-        then do
-            (applier, owner) <- apply applier owner
-            break owner
+        then break apply applier owner
         else (members, addEquals equals applier, count + 1)
 
 getEqualsFromMemberInfos :: [M.MemberInfo] -> [Equal]

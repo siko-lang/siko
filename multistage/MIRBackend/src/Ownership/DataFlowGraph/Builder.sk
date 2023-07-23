@@ -1,13 +1,16 @@
 module Siko.MIR.Backend.Ownership.DataFlowGraph.Builder where
 
 import Map
-import Siko.MIR.Backend.Ownership.DataFlowGraph as DFG
 import Siko.MIR.Backend.Ownership.Allocator as A
+import Siko.MIR.Backend.Ownership.DataFlowGraph as DFG
+import Siko.MIR.Backend.Ownership.DataFlowGraph.Equality
+import Siko.MIR.Backend.Ownership.MemberInfo
 import Siko.MIR.Backend.Ownership.Query as Q
 import Siko.MIR.Backend.Ownership.TypeVariableInfo
 import Siko.MIR.Expr as E
 import Siko.MIR.Function as F
 import Siko.MIR.Identity as I
+import Siko.MIR.Type as T
 import Std.Intrinsics
 
 data Context = { graph :: DFG.DataFlowGraph,
@@ -136,6 +139,7 @@ build expr name = do
     graph <- Map.fold graph context.expr_info_map (\graph, (id, info) -> DFG.setTypeVariableInfo graph (DFG.ExprKey id) info)
     graph <- Map.fold graph context.var_info_map (\graph, (var, info) -> DFG.setTypeVariableInfo graph (DFG.VarKey (Std.Intrinsics.clone var)) info)
     graph <- DFG.updateEdges graph
+    graph <- processEquals graph
     graph
 
 buildDataFlowGraph :: Context -> E.Expr -> Context
@@ -156,9 +160,26 @@ buildDataFlowGraph context expr = do
             function <- Q.getFunction info.id
             context <- addExprKind context expr_id (DFG.FnCall (Std.Intrinsics.clone info.id))
             case function.kind of
-                F.RecordCtor -> List.foldE context info.args (\context, index, arg -> do
+                F.RecordCtor -> do
+                    expr_info <- getExprInfo context expr_id
+                    List.foldE context info.args (\context, index, arg -> do
                         E.Expr _ _ arg_id <- arg
-                        kind <- DFG.RecordCtorField index
+                        arg_info <- getExprInfo context arg_id
+                        kind <- Field index
+                        member_info <- MemberInfo kind expr_info.arg_group_var arg_info
+                        kind <- DFG.RecordCtorField index member_info
+                        addEdge context kind arg_id expr_id)
+                F.VariantCtor variant_index -> do
+                    expr_info <- getExprInfo context expr_id
+                    (context, record_info) <- getNextTypeVariableInfo context
+                    kind <- Variant variant_index
+                    adt_member_info <- MemberInfo kind expr_info.arg_group_var record_info
+                    List.foldE context info.args (\context, index, arg -> do
+                        E.Expr _ _ arg_id <- arg
+                        arg_info <- getExprInfo context arg_id
+                        kind <- Field index
+                        field_member_info <- MemberInfo kind record_info.arg_group_var arg_info
+                        kind <- DFG.VariantCtorField index adt_member_info field_member_info
                         addEdge context kind arg_id expr_id)
                 _ -> List.foldE context info.args (\context, index, arg -> do
                         E.Expr _ _ arg_id <- arg
@@ -184,7 +205,10 @@ buildDataFlowGraph context expr = do
         E.FieldAccess f_info -> do
             context <- buildDataFlowGraph context f_info.receiver
             E.Expr _ _ receiver_expr_id <- f_info.receiver
-            addEdge context DFG.FieldAccess receiver_expr_id expr_id
+            expr_info <- getExprInfo context expr_id
+            receiver_info <- getExprInfo context receiver_expr_id
+            member_info <- MemberInfo (Field f_info.index) receiver_info.arg_group_var expr_info
+            addEdge context (DFG.FieldAccess member_info) receiver_expr_id expr_id
         E.If if_info -> do
             context <- buildDataFlowGraph context if_info.cond
             context <- buildDataFlowGraph context if_info.true_branch
@@ -233,9 +257,20 @@ buildDataFlowGraph context expr = do
             E.Expr _ _ body_id <- info.body
             context <- List.fold context info.cases (\context, c -> do
                 context <- case c.checker of
-                    E.VariantChecker _ v _ -> do
-                        context <- addVar context v
-                        addVarEdge context DFG.VariantChecker body_id v
+                    E.VariantChecker index v ty -> do
+                        case ty of
+                            T.Adt _ -> do
+                                context <- addVar context v
+                                body_info <- getExprInfo context body_id
+                                (context, var_info) <- getVarInfo context v
+                                variant_member_info <- MemberInfo (Variant index) body_info.arg_group_var var_info
+                                kind <- DFG.VariantChecker variant_member_info
+                                addVarEdge context kind body_id v
+                            T.Record _ -> do
+                                context <- addVar context v
+                                kind <- DFG.RecordChecker
+                                addVarEdge context kind body_id v
+                            _ -> panic "Unexpected variant type in data flow graph builder: {}" % ty
                     E.WildcardChecker v -> do
                         context <- addVar context v
                         addVarEdge context DFG.WildcardChecker body_id v

@@ -1,9 +1,10 @@
 module Siko.MIR.Backend.Ownership.DataFlowGraph where
 
+import Map
+import Siko.MIR.Backend.Ownership.MemberInfo
+import Siko.MIR.Backend.Ownership.TypeVariableInfo
 import Siko.MIR.Expr as E
 import Siko.MIR.Identity as I
-import Siko.MIR.Backend.Ownership.TypeVariableInfo
-import Map
 
 data NodeKey = ExprKey E.ExprId
              | VarKey E.Var
@@ -19,15 +20,18 @@ data ExprNode = { expr_id :: E.ExprId,
                   tv_info :: TypeVariableInfo,
                   kind :: ExprNodeKind,
                   incoming :: [Int],
-                  outgoing :: [Int]} deriving (Show)
+                  outgoing :: [Int]
+                } deriving (Show)
 
 data VarNode = { var :: E.Var,
                  tv_info :: TypeVariableInfo,
                  incoming :: [Int],
-                 outgoing :: [Int] } deriving (Show)
+                 outgoing :: [Int]
+               } deriving (Show)
 
 data EndNode = { tv_info :: TypeVariableInfo,
-                 incoming :: [Int],  } deriving (Show)
+                 incoming :: [Int]
+               } deriving (Show)
 
 data Node = Expr ExprNode
           | Var VarNode
@@ -38,11 +42,12 @@ data EdgeKind = VarRef
               | Converter
               | VarDecl
               | VarDeclTuple
-              | FieldAccess
+              | FieldAccess MemberInfo
               | IfTrue
               | IfFalse
               | Do
-              | RecordCtorField Int
+              | RecordCtorField Int MemberInfo
+              | VariantCtorField Int MemberInfo MemberInfo
               | LoopVarInit
               | LoopVarBody
               | Break
@@ -53,7 +58,8 @@ data EdgeKind = VarRef
               | CaseBody
               | FnCallArg Int
               | ListLiteralItem
-              | VariantChecker
+              | VariantChecker MemberInfo
+              | RecordChecker
               | WildcardChecker
               | Result
               deriving (Show)
@@ -64,7 +70,8 @@ data Edge = { from :: NodeKey,
             } deriving (Show)
 
 data DataFlowGraph = { nodes :: Map NodeKey Node,
-                       edges :: [Edge] }
+                       edges :: [Edge]
+                     }
 
 createGraph :: DataFlowGraph
 createGraph = DataFlowGraph Map.empty []
@@ -99,6 +106,14 @@ setTypeVariableInfo graph key tv_info = do
             nodes <- Map.put graph.nodes key (End end_node)
             graph { nodes = nodes }
         None -> panic "setTypeVariableInfo: key {} not found in data flow graph" % key
+
+getTypeVariableInfo :: DataFlowGraph -> NodeKey -> TypeVariableInfo
+getTypeVariableInfo graph key = do
+    case Map.get graph.nodes key of
+        Some (Expr n) -> n.tv_info
+        Some (Var n) -> n.tv_info
+        Some (End n) -> n.tv_info
+        None -> panic "getTypeVariableInfo: key {} not found in data flow graph" % key
 
 addIncomingEdge :: DataFlowGraph -> NodeKey -> Int -> DataFlowGraph
 addIncomingEdge graph key index = do
@@ -149,8 +164,7 @@ updateEdges graph = do
         addOutgoingEdge graph edge.from index)
 
 getSources :: DataFlowGraph -> [NodeKey]
-getSources graph = Map.fold [] graph.nodes (\sources, (key, node) ->
-    case node of
+getSources graph = Map.fold [] graph.nodes (\sources, (key, node) -> case node of
         Expr n -> if List.isEmpty n.incoming
             then List.push sources key
             else sources

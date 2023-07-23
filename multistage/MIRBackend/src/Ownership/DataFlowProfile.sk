@@ -58,15 +58,14 @@ duplicateDataFlowProfile allocator dataflow_profile = do
 
 instance Apply DataFlowProfile where
     apply applier dataflow_profile = do
-        (applier, args) <- apply applier dataflow_profile.args
-        (applier, result) <- apply applier dataflow_profile.result
-        (applier, members) <- apply applier dataflow_profile.members
-        (applier, converters) <- apply applier dataflow_profile.converters
-        (applier, ownershipinfos) <- apply applier dataflow_profile.ownershipinfos
+        args <- apply applier dataflow_profile.args
+        result <- apply applier dataflow_profile.result
+        members <- apply applier dataflow_profile.members
+        converters <- apply applier dataflow_profile.converters
+        ownershipinfos <- apply applier dataflow_profile.ownershipinfos
         members <- List.dedup (List.sort members)
         converters <- List.dedup (List.sort converters)
-        dataflow_profile <- DataFlowProfile args result members converters ownershipinfos
-        (applier, dataflow_profile)
+        DataFlowProfile args result members converters ownershipinfos
 
 instance MemberOwner DataFlowProfile where
     getMembers dataflow_profile = dataflow_profile.members

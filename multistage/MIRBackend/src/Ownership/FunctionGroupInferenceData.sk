@@ -432,25 +432,24 @@ toDataFlowProfile function_group_inference_data function_id no_return = do
 
 instance Apply FunctionInferenceInfo where
     apply applier function_inference_info = do
-        (applier, args) <- apply applier function_inference_info.args
-        (applier, result) <- apply applier function_inference_info.result
-        function_inference_info <- FunctionInferenceInfo args result
-        (applier, function_inference_info)
+        args <- apply applier function_inference_info.args
+        result <- apply applier function_inference_info.result
+        FunctionInferenceInfo args result
 
 instance Apply FunctionGroupInferenceData where
     apply applier function_group_inference_data = do
-        (applier, expr_type_variables) <- apply applier function_group_inference_data.expr_type_variables
-        (applier, var_type_variables) <- apply applier function_group_inference_data.var_type_variables
-        (applier, dataflow_profiles) <- apply applier function_group_inference_data.dataflow_profiles
-        (applier, merged_ownership_values) <- Map.fold (applier, Map.empty) function_group_inference_data.ownership_values (\(applier, merged_ownership_values), (var, kind) -> do
-            (applier, new_var) <- apply applier var
+        expr_type_variables <- apply applier function_group_inference_data.expr_type_variables
+        var_type_variables <- apply applier function_group_inference_data.var_type_variables
+        dataflow_profiles <- apply applier function_group_inference_data.dataflow_profiles
+        merged_ownership_values <- Map.fold Map.empty function_group_inference_data.ownership_values (\merged_ownership_values, (var, kind) -> do
+            new_var <- apply applier var
             //println "changed {} => {}" % (var, new_var)
             merged_ownership_values <- Map.add merged_ownership_values new_var kind
-            (applier, merged_ownership_values))
-        (applier, merged_initials) <- Map.fold (applier, Map.empty) function_group_inference_data.initials (\(applier, merged_initials), (var, kind) -> do
-            (applier, new_var) <- apply applier var
+            merged_ownership_values)
+        merged_initials <- Map.fold Map.empty function_group_inference_data.initials (\merged_initials, (var, kind) -> do
+            new_var <- apply applier var
             merged_initials <- Map.add merged_initials new_var kind
-            (applier, merged_initials))
+            merged_initials)
         initials <- Map.fold Map.empty merged_initials (\initials, (var, kinds) -> do
             kinds <- kinds |> List.sort |> List.dedup
             kind <- if List.getLength kinds > 1
@@ -458,10 +457,10 @@ instance Apply FunctionGroupInferenceData where
             else List.atIndex kinds 0
             Map.put initials var kind)
         function_group_inference_data <- function_group_inference_data { initials = initials }
-        (applier, members) <- apply applier function_group_inference_data.members
-        (applier, converters) <- apply applier function_group_inference_data.converters
-        (applier, function_converters) <- apply applier function_group_inference_data.function_converters
-        (applier, group_function_converters) <- apply applier function_group_inference_data.group_function_converters
+        members <- apply applier function_group_inference_data.members
+        converters <- apply applier function_group_inference_data.converters
+        function_converters <- apply applier function_group_inference_data.function_converters
+        group_function_converters <- apply applier function_group_inference_data.group_function_converters
         members <- List.dedup (List.sort members)
         converters <- List.dedup (List.sort converters)
         function_group_inference_data <- FunctionGroupInferenceData expr_type_variables
@@ -509,8 +508,7 @@ instance Apply FunctionGroupInferenceData where
             (ownership_values, initials, update) <- changeInitialOwnership ownership_values function_group_inference_data.initials var kind True
             function_group_inference_data <- function_group_inference_data { initials = initials }
             (function_group_inference_data, ownership_values))
-        function_group_inference_data <- function_group_inference_data { ownership_values = ownership_values }
-        (applier, function_group_inference_data)
+        function_group_inference_data { ownership_values = ownership_values }
 
 instance MemberOwner FunctionGroupInferenceData where
     getMembers function_group_inference_data = function_group_inference_data.members

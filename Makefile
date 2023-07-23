@@ -47,6 +47,9 @@ bin/multi_transpiler: bin/stage1 $(shell find multistage/Common multistage/Trans
 bin/merged: bin/stage1 $(shell find multistage/Common multistage/Merged -type f)
 	@stage1 build multistage/Merged ./std -o bin/merged
 
+bin/merged2: bin/stage1 $(shell find multistage/Common multistage/Merged -type f)
+	@merged build multistage/Merged ./std -v -o bin/merged2
+
 .PHONY: stage0
 stage0: bin/stage0
 
@@ -69,7 +72,20 @@ multistage_clean:
 .PHONY: run_multistage
 run_multistage: multistage
 	@rm -rf cache
+	@rm -f dot/*
 	multi_parser build multistage_test
+	multi_nameresolver
+	multi_typechecker
+	multi_hirbackend
+	multi_mirlowering
+	multi_mirbackend
+	multi_transpiler
+	./print_dfg.sh
+
+.PHONY: self
+self: multistage
+	@rm -rf cache
+	multi_parser build ./std multistage/Merged
 	multi_nameresolver
 	multi_typechecker
 	multi_hirbackend

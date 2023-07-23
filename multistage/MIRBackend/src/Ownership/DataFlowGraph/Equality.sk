@@ -1,0 +1,88 @@
+module Siko.MIR.Backend.Ownership.DataFlowGraph.Equality where
+
+import Map
+import Siko.MIR.Backend.Ownership.DataFlowGraph
+import Siko.MIR.Backend.Ownership.EqualitySolver as Solver
+import Siko.MIR.Backend.Ownership.TypeVariableInfo
+
+instance Solver.MemberOwner DataFlowGraph where
+    getMembers graph = List.fold [] graph.edges (\members, edge -> case edge.kind of
+            FieldAccess member_info -> List.push members member_info
+            RecordCtorField _ member_info -> List.push members member_info
+            VariantCtorField _ adt_member_info field_member_info -> do
+                members <- List.push members adt_member_info
+                List.push members field_member_info
+            VariantChecker member_info -> List.push members member_info
+            _ -> members)
+
+instance Solver.Apply Node where
+    apply applier node = case node of
+        Expr n -> do
+            tv_info <- Solver.apply applier n.tv_info
+            Expr (n { tv_info = tv_info })
+        Var n -> do
+            tv_info <- Solver.apply applier n.tv_info
+            Var (n { tv_info = tv_info })
+        End n -> do
+            tv_info <- Solver.apply applier n.tv_info
+            End (n { tv_info = tv_info })
+
+instance Solver.Apply EdgeKind where
+    apply applier kind = case kind of
+        FieldAccess member_info -> do
+            member_info <- Solver.apply applier member_info
+            FieldAccess member_info
+        RecordCtorField index member_info -> do
+            member_info <- Solver.apply applier member_info
+            RecordCtorField index member_info
+        VariantCtorField index adt_member_info field_member_info -> do
+            adt_member_info <- Solver.apply applier adt_member_info
+            field_member_info <- Solver.apply applier field_member_info
+            VariantCtorField index adt_member_info field_member_info
+        VariantChecker member_info -> do
+            member_info <- Solver.apply applier member_info
+            VariantChecker member_info
+        other -> other
+
+instance Solver.Apply Edge where
+    apply applier edge = do
+        kind <- Solver.apply applier edge.kind
+        edge { kind = kind }
+
+instance Solver.Apply DataFlowGraph where
+    apply applier graph = do
+        nodes <- Solver.apply applier graph.nodes
+        edges <- Solver.apply applier graph.edges
+        DataFlowGraph nodes edges
+
+data EqualCollector = { branches :: Map NodeKey [TypeVariableInfo] }
+
+addBranch :: EqualCollector -> NodeKey -> TypeVariableInfo -> EqualCollector
+addBranch collector key info = do
+    branches <- Map.add collector.branches key info
+    collector { branches = branches }
+
+processEquals :: DataFlowGraph -> DataFlowGraph
+processEquals graph = do
+    collector <- EqualCollector Map.empty
+    collector <- Map.fold collector graph.nodes (\collector, (key, node) -> case node of
+        Expr n -> case n.kind of
+            FnCall _ -> collector
+            _ -> if List.getLength n.incoming > 1
+                then helper collector n.tv_info n.incoming key graph
+                else collector
+        Var n -> if List.getLength n.incoming > 1
+            then helper collector n.tv_info n.incoming key graph
+            else collector
+        End n -> helper collector n.tv_info n.incoming key graph)
+    equals <- Map.fold [] collector.branches (\equals, (key, infos) -> do
+        first <- List.atIndex infos 0
+        List.fold equals infos (\equals, info -> Solver.addEqual equals info first))
+    Solver.processEquals equals graph
+    where
+        helper collector own_info incoming key graph = do
+            collector <- addBranch collector key own_info
+            List.fold collector incoming (\collector, index -> do
+                edge <- getEdge graph index
+                other_info <- getTypeVariableInfo graph edge.from
+                addBranch collector key other_info)
