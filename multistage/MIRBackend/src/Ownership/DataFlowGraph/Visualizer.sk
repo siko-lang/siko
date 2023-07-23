@@ -4,6 +4,8 @@ import IO
 import Map
 import Siko.Dot as D
 import Siko.MIR.Backend.Ownership.DataFlowGraph as DFG
+import Siko.MIR.Backend.Ownership.MemberInfo as M
+import Siko.MIR.Backend.Ownership.TypeVariableInfo
 import Siko.MIR.Identity as I
 
 data Visualizer = { id_map :: Map DFG.NodeKey D.NodeId,
@@ -14,6 +16,17 @@ getId :: Visualizer -> DFG.NodeKey -> D.NodeId
 getId visualizer key = case Map.get visualizer.id_map key of
     Some id -> id
     None -> panic "key not found"
+
+addTypeVariableInfo :: DFG.DataFlowGraph ->
+                       D.Graph ->
+                       D.NodeId ->
+                       TypeVariableInfo -> D.Graph
+addTypeVariableInfo data_flow_graph dot_graph node_id info = do
+    color <- case DFG.getOwnership data_flow_graph info.ownership_var of
+        M.Owner -> "#03fc98"
+        M.Borrower _ -> "#cf03fc"
+        M.Unknown -> "#a3a3a3"
+    D.addElementWithColor dot_graph node_id ("{}" % info) color
 
 visualize :: DFG.DataFlowGraph -> String -> ()
 visualize data_flow_graph name = do
@@ -34,15 +47,15 @@ visualize data_flow_graph name = do
                 dot_graph <- if List.isEmpty n.incoming
                 then D.addElementWithColor dot_graph node_id "<source>" "red"
                 else dot_graph
-                D.addElement dot_graph node_id "{}" % n.tv_info
+                addTypeVariableInfo data_flow_graph dot_graph node_id n.tv_info
             DFG.Var n -> do
                 dot_graph <- if List.isEmpty n.incoming
                 then D.addElementWithColor dot_graph node_id "<source>" "red"
                 else dot_graph
-                D.addElement dot_graph node_id "{}" % n.tv_info
+                addTypeVariableInfo data_flow_graph dot_graph node_id n.tv_info
             DFG.End n -> do
                 dot_graph <- D.addColor dot_graph node_id "red"
-                D.addElement dot_graph node_id "{}" % n.tv_info
+                addTypeVariableInfo data_flow_graph dot_graph node_id n.tv_info
         visualizer { dot_graph = dot_graph, id_map = id_map })
     visualizer <- List.fold visualizer data_flow_graph.edges (\visualizer, edge -> do
         from <- getId visualizer edge.from

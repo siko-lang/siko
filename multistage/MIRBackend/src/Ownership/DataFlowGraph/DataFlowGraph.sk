@@ -1,7 +1,7 @@
 module Siko.MIR.Backend.Ownership.DataFlowGraph where
 
 import Map
-import Siko.MIR.Backend.Ownership.MemberInfo
+import Siko.MIR.Backend.Ownership.MemberInfo as M
 import Siko.MIR.Backend.Ownership.TypeVariableInfo
 import Siko.MIR.Expr as E
 import Siko.MIR.Identity as I
@@ -42,12 +42,12 @@ data EdgeKind = VarRef
               | Converter
               | VarDecl
               | VarDeclTuple
-              | FieldAccess MemberInfo
+              | FieldAccess M.MemberInfo
               | IfTrue
               | IfFalse
               | Do
-              | RecordCtorField Int MemberInfo
-              | VariantCtorField Int MemberInfo MemberInfo
+              | RecordCtorField Int M.MemberInfo
+              | VariantCtorField Int M.MemberInfo M.MemberInfo
               | LoopVarInit
               | LoopVarBody
               | Break
@@ -58,7 +58,7 @@ data EdgeKind = VarRef
               | CaseBody
               | FnCallArg Int
               | ListLiteralItem
-              | VariantChecker MemberInfo
+              | VariantChecker M.MemberInfo
               | RecordChecker
               | WildcardChecker
               | Result
@@ -70,11 +70,12 @@ data Edge = { from :: NodeKey,
             } deriving (Show)
 
 data DataFlowGraph = { nodes :: Map NodeKey Node,
-                       edges :: [Edge]
+                       edges :: [Edge],
+                       ownership :: Map OwnershipTypeVariable M.OwnershipKind
                      }
 
 createGraph :: DataFlowGraph
-createGraph = DataFlowGraph Map.empty []
+createGraph = DataFlowGraph Map.empty [] Map.empty
 
 addEdge :: DataFlowGraph -> Edge -> DataFlowGraph
 addEdge graph edge = do
@@ -180,3 +181,14 @@ getNode graph key = case Map.get graph.nodes key of
 
 getEdge :: DataFlowGraph -> Int -> Edge
 getEdge graph index = List.atIndex graph.edges index
+
+setOwnership :: DataFlowGraph -> OwnershipTypeVariable -> M.OwnershipKind -> DataFlowGraph
+setOwnership graph ownership_var kind = do
+    ownership <- Map.put graph.ownership ownership_var kind
+    graph { ownership = ownership }
+
+getOwnership :: DataFlowGraph -> OwnershipTypeVariable -> M.OwnershipKind
+getOwnership graph ownership_var = do
+    case Map.get graph.ownership ownership_var of
+        Some kind -> kind
+        None -> M.Unknown
