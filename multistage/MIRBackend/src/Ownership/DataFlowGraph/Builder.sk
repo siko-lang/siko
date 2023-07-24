@@ -11,7 +11,6 @@ import Siko.MIR.Expr as E
 import Siko.MIR.Function as F
 import Siko.MIR.Identity as I
 import Siko.MIR.Type as T
-import Std.Intrinsics
 
 data Context = { graph :: DFG.DataFlowGraph,
                  allocator :: A.Allocator,
@@ -200,6 +199,7 @@ buildDataFlowGraph context expr = do
         E.VarRef var_info -> do
             (context, info) <- getVarInfo context var_info.var
             context <- addExprInfo context expr_id info
+            context <- addExprKind context expr_id (DFG.VarRefDef var_info.var)
             context <- addVarEdge2 context DFG.VarRef var_info.var expr_id
             context
         E.FieldAccess f_info -> do

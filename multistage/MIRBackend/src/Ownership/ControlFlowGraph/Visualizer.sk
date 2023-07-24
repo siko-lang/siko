@@ -1,0 +1,52 @@
+module Siko.MIR.Backend.Ownership.ControlFlowGraph.Visualizer where
+
+import IO
+import Map
+import Siko.Dot as D
+import Siko.MIR.Backend.Ownership.ControlFlowGraph as CFG
+import Siko.MIR.Backend.Ownership.MemberInfo as M
+import Siko.MIR.Backend.Ownership.TypeVariableInfo
+import Siko.MIR.Identity as I
+
+data Visualizer = { id_map :: Map CFG.NodeKey D.NodeId,
+                    dot_graph :: D.Graph
+                  }
+
+getId :: Visualizer -> CFG.NodeKey -> D.NodeId
+getId visualizer key = case Map.get visualizer.id_map key of
+    Some id -> id
+    None -> panic "{} key not found" % key
+
+visualize :: CFG.ControlFlowGraph -> String -> ()
+visualize control_flow_graph name = do
+    visualizer <- Visualizer Map.empty (D.createGraph name)
+    visualizer <- Map.fold visualizer control_flow_graph.nodes (\visualizer, (key, node) -> do
+        name <- case key of
+            CFG.ExprKey e -> show e
+            CFG.ChoiceKey e -> show e
+            CFG.LoopStartKey e -> show e
+            CFG.LoopEndKey e -> show e
+            CFG.EndKey -> "<end>"
+        (dot_graph, node_id) <- D.addNode visualizer.dot_graph name
+        dot_graph <- case node of
+            CFG.Expr n -> do
+                D.addElement dot_graph node_id n.description
+            CFG.LoopStart -> do
+                D.addElementWithColor dot_graph node_id "<loop_start>" "purple"
+            CFG.LoopEnd -> do
+                D.addElementWithColor dot_graph node_id "<loop_end>" "purple"
+            CFG.ChoiceEnd -> do
+                D.addElementWithColor dot_graph node_id "<choice>" "purple"
+            CFG.End -> do
+                D.addElementWithColor dot_graph node_id "<end>" "purple"
+        id_map <- Map.put visualizer.id_map key node_id
+        visualizer { dot_graph = dot_graph, id_map = id_map })
+    visualizer <- List.fold visualizer control_flow_graph.edges (\visualizer, edge -> do
+        from <- getId visualizer edge.from
+        to <- getId visualizer edge.to
+        name <- show edge.kind
+        dot_graph <- D.addEdge visualizer.dot_graph (Some name) from to
+        visualizer { dot_graph = dot_graph })
+    dot <- D.generateDot visualizer.dot_graph
+    writeTextFile ("dot/cfg_{}.dot" % name) dot
+    ()

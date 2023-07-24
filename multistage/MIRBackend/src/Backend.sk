@@ -223,6 +223,9 @@ processProgram mir_program = do
     trace "AddConverter.."
     mir_program <- AddConverter.processProgram mir_program
     dumpProgram mir_program (MIR "addconverter")
+    trace "Rebinder.."
+    mir_program <- Rebinder.processProgram mir_program
+    dumpProgram mir_program (MIR "rebinder_addconverter")
     trace "Inference start.."
     data_group_info_store <- initializeDataGroupInfoStore mir_program data_groups
     with { getDataGroupInfo = \allocator, id -> getDataGroupInfoFromStore data_group_info_store allocator id, getRecord = \id -> MP.getRecord mir_program id, getAdt = \id -> MP.getAdt mir_program id, getFunction = \id -> MP.getFunction mir_program id, isCopyable = \id -> List.contains mir_program.copyables id, isNonCopyable = \id -> List.contains mir_program.noncopyables id } do

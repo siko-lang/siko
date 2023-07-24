@@ -43,6 +43,7 @@ visualize data_flow_graph name = do
                 dot_graph <- case n.kind of
                     DFG.FnCall id -> D.addElement dot_graph node_id "FnCall({})" % (I.short id)
                     DFG.Loop -> D.addElement dot_graph node_id "Loop"
+                    DFG.VarRefDef var -> D.addElement dot_graph node_id "VarRefDef({})" % var
                     DFG.Other -> dot_graph
                 dot_graph <- if List.isEmpty n.incoming
                 then D.addElementWithColor dot_graph node_id "<source>" "red"
@@ -64,5 +65,5 @@ visualize data_flow_graph name = do
         dot_graph <- D.addEdge visualizer.dot_graph (Some name) from to
         visualizer { dot_graph = dot_graph })
     dot <- D.generateDot visualizer.dot_graph
-    writeTextFile ("dot/{}.dot" % name) dot
+    writeTextFile ("dot/dfg_{}.dot" % name) dot
     ()

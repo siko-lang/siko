@@ -6,9 +6,6 @@ import Map
 import Siko.Dot as D
 import Siko.MIR.Backend.Ownership.Allocator
 import Siko.MIR.Backend.Ownership.Converter
-import Siko.MIR.Backend.Ownership.DataFlowGraph.Builder as B
-import Siko.MIR.Backend.Ownership.DataFlowGraph.Inference as DFGI
-import Siko.MIR.Backend.Ownership.DataFlowGraph.Visualizer as Visualizer
 import Siko.MIR.Backend.Ownership.DataFlowProfile
 import Siko.MIR.Backend.Ownership.DataFlowProfileStore
 import Siko.MIR.Backend.Ownership.DataGroupInfo
@@ -284,9 +281,6 @@ processFunctionEqualities :: I.Identity ->
 processFunctionEqualities function_id group equals function_group_inference_data dataflow_profile_store body = do
     context <- Context function_id equals function_group_inference_data dataflow_profile_store group
     //trace "processEqualities - traverse"
-    data_flow_graph <- B.build body (I.short function_id)
-    data_flow_graph <- DFGI.process data_flow_graph (I.short function_id)
-    Visualizer.visualize data_flow_graph (I.short function_id)
     context <- collectEquals context body
     body_info <- getTypeVariableInfoByExprId context.function_group_inference_data (getExprId body) context.function_id
     function_inference_info <- getFunctionInferenceInfo context.function_group_inference_data function_id

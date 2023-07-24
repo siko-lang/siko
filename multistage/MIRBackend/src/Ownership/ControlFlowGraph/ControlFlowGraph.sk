@@ -1,0 +1,50 @@
+module Siko.MIR.Backend.Ownership.ControlFlowGraph where
+
+import Map
+import Siko.MIR.Expr as E
+
+data NodeKey = ExprKey E.ExprId
+             | LoopStartKey E.ExprId
+             | LoopEndKey E.ExprId
+             | ChoiceKey E.ExprId
+             | EndKey
+             deriving (PartialEq, Eq, PartialOrd, Ord, Show)
+
+data ExprNode = { id :: E.ExprId,
+                  description :: String
+                } deriving (Show)
+
+data Node = Expr ExprNode
+          | LoopStart
+          | LoopEnd
+          | ChoiceEnd
+          | End
+          deriving (Show)
+
+data EdgeKind = Next
+              | ConditionalNext
+              | Break
+              | Continue
+               deriving (Show)
+
+data Edge = { from :: NodeKey,
+              to :: NodeKey,
+              kind :: EdgeKind
+            } deriving (Show)
+
+data ControlFlowGraph = { nodes :: Map NodeKey Node,
+                          edges :: [Edge]
+                        }
+
+createGraph :: ControlFlowGraph
+createGraph = ControlFlowGraph Map.empty []
+
+addNode :: ControlFlowGraph -> NodeKey -> Node -> ControlFlowGraph
+addNode graph key node = do
+    nodes <- Map.put graph.nodes key node
+    graph { nodes = nodes }
+
+addEdge :: ControlFlowGraph -> Edge -> ControlFlowGraph
+addEdge graph edge = do
+    edges <- List.push graph.edges edge
+    graph { edges = edges }

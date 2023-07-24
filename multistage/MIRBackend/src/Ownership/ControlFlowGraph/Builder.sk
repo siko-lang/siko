@@ -1,0 +1,137 @@
+module Siko.MIR.Backend.Ownership.ControlFlowGraph.Builder where
+
+import Map
+import Siko.MIR.Backend.Ownership.ControlFlowGraph as CFG
+import Siko.MIR.Expr as E
+
+data Context = { graph :: CFG.ControlFlowGraph,
+                 last :: Option CFG.NodeKey,
+                 edge_kind :: CFG.EdgeKind,
+                 jumps :: Map E.ExprId CFG.NodeKey
+               }
+
+addExpr :: Context -> E.ExprId -> String -> Context
+addExpr context expr_id description = do
+    key <- CFG.ExprKey (Std.Intrinsics.clone expr_id)
+    node <- CFG.Expr (CFG.ExprNode expr_id description)
+    graph <- CFG.addNode context.graph key node
+    graph <- case context.last of
+        Some last -> do
+            edge <- CFG.Edge last key context.edge_kind
+            CFG.addEdge graph edge
+        None -> graph
+    context { graph = graph, last = Some key, edge_kind = CFG.Next }
+
+addChoice :: Context -> E.ExprId -> Context
+addChoice context expr_id = do
+    key <- CFG.ChoiceKey (Std.Intrinsics.clone expr_id)
+    node <- CFG.ChoiceEnd
+    graph <- CFG.addNode context.graph key node
+    context { graph = graph }
+
+addLoopStart :: Context -> E.ExprId -> Context
+addLoopStart context expr_id = do
+    key <- CFG.LoopStartKey (Std.Intrinsics.clone expr_id)
+    node <- CFG.LoopStart
+    graph <- CFG.addNode context.graph key node
+    context { graph = graph, last = Some key }
+
+addLoopEnd :: Context -> E.ExprId -> Context
+addLoopEnd context expr_id = do
+    key <- CFG.LoopEndKey (Std.Intrinsics.clone expr_id)
+    node <- CFG.LoopEnd
+    graph <- CFG.addNode context.graph key node
+    context { graph = graph }
+
+addEdge :: Context -> CFG.NodeKey -> CFG.NodeKey -> Context
+addEdge context from to = addEdgeWithKind context from to CFG.Next
+
+addEdgeWithKind :: Context -> CFG.NodeKey -> CFG.NodeKey -> CFG.EdgeKind -> Context
+addEdgeWithKind context from to kind = do
+    graph <- context.graph
+    graph <- CFG.addEdge graph (CFG.Edge from to kind)
+    context { graph = graph }
+
+buildControlFlowGraph :: Context -> E.Expr -> Context
+buildControlFlowGraph context expr = do
+    E.Expr s_expr _ expr_id <- expr
+    //println "expr {}/{}" % (expr_id, E.short expr)
+    context <- case s_expr of
+        E.Do block -> List.fold context block.items buildControlFlowGraph
+        E.StaticFunctionCall info -> List.fold context info.args buildControlFlowGraph
+        E.IntegerLiteral _ -> context
+        E.StringLiteral _ -> context
+        E.FloatLiteral _ -> context
+        E.CharLiteral _ -> context
+        E.VarDecl info -> buildControlFlowGraph context info.rhs
+        E.VarRef var_info -> context
+        E.FieldAccess f_info -> buildControlFlowGraph context f_info.receiver
+        E.If if_info -> do
+            context <- buildControlFlowGraph context if_info.cond
+            cond_last <- context.last
+            context <- context { edge_kind = CFG.ConditionalNext }
+            context <- buildControlFlowGraph context if_info.true_branch
+            true_last <- context.last
+            context <- context { last = cond_last, edge_kind = CFG.ConditionalNext }
+            context <- buildControlFlowGraph context if_info.false_branch
+            false_last <- context.last
+            context <- addChoice context expr_id
+            choice_key <- CFG.ChoiceKey (Std.Intrinsics.clone expr_id)
+            context <- addEdge context (Option.unwrap true_last) choice_key
+            context <- addEdge context (Option.unwrap false_last) choice_key
+            context { last = Some choice_key }
+        E.List list_info -> List.fold context list_info.items buildControlFlowGraph
+        E.Return arg_info -> do
+            context <- buildControlFlowGraph context arg_info.arg
+            last <- context.last
+            context <- context { last = None }
+            context <- addEdge context (Option.unwrap last) CFG.EndKey
+            context
+        E.Continue arg_info -> do
+            context <- buildControlFlowGraph context arg_info.arg
+            E.Expr _ _ arg_id <- arg_info.arg
+            jump_key <- Option.unwrap context.last
+            jumps <- Map.put context.jumps arg_id jump_key
+            context { last = None, jumps = jumps }
+        E.Break arg_info -> do
+            context <- buildControlFlowGraph context arg_info.arg
+            E.Expr _ _ arg_id <- arg_info.arg
+            jump_key <- Option.unwrap context.last
+            jumps <- Map.put context.jumps arg_id jump_key
+            context { last = None, jumps = jumps }
+        E.Loop info -> do
+            context <- addLoopEnd context expr_id
+            context <- buildControlFlowGraph context info.initializer
+            initializer_last <- Option.unwrap context.last
+            context <- addLoopStart context expr_id
+            loop_end_key <- CFG.LoopEndKey expr_id
+            loop_start_key <- CFG.LoopStartKey expr_id
+            context <- buildControlFlowGraph context info.body
+            E.Expr _ _ body_id <- info.body
+            context <- List.fold context info.breaks (\context, b -> do
+                jump_key <- case Map.get context.jumps b of
+                    Some k -> k
+                    None -> panic "break not found in jumps {}" % b
+                addEdgeWithKind context jump_key loop_end_key CFG.Break)
+            context <- List.fold context info.continues (\context, c -> do
+                jump_key <- case Map.get context.jumps c of
+                    Some k -> k
+                    None -> panic "continue not found in jumps {}" % c
+                addEdgeWithKind context jump_key loop_start_key CFG.Continue)
+            context <- addEdge context initializer_last loop_start_key
+            context <- addEdge context (CFG.ExprKey body_id) loop_start_key
+            context { last = Some (CFG.LoopEndKey expr_id) }
+        E.CaseOf info -> do
+            context <- buildControlFlowGraph context info.body
+            context <- List.fold context info.cases (\context, c -> buildControlFlowGraph context c.body)
+            context
+        E.Converter info -> buildControlFlowGraph context info.arg
+    addExpr context expr_id (E.short expr)
+
+build :: E.Expr -> String -> CFG.ControlFlowGraph
+build expr name = do
+    graph <- CFG.createGraph
+    graph <- CFG.addNode graph CFG.EndKey CFG.End
+    context <- Context graph None CFG.Next Map.empty
+    context <- buildControlFlowGraph context expr
+    context.graph
