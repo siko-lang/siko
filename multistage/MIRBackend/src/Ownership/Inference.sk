@@ -6,6 +6,7 @@ import Siko.LIR.Program as LP
 import Siko.MIR.Backend.Ownership.Allocator
 import Siko.MIR.Backend.Ownership.BorrowChecker
 import Siko.MIR.Backend.Ownership.CallContext as CC
+import Siko.MIR.Backend.Ownership.ControlFlowGraph.BorrowChecker as CFGBorrow
 import Siko.MIR.Backend.Ownership.ControlFlowGraph.Builder as CFGB
 import Siko.MIR.Backend.Ownership.ControlFlowGraph.Visualizer as CFGVisualizer
 import Siko.MIR.Backend.Ownership.Converter
@@ -112,6 +113,7 @@ processFunction context group function_group_inference_data function_id = do
             data_flow_graph <- DFGI.process data_flow_graph (I.short function_id)
             DFGVisualizer.visualize data_flow_graph (I.short function_id)
             control_flow_graph <- CFGB.build info.body (I.short function_id)
+            control_flow_graph <- CFGBorrow.checkBorrows control_flow_graph
             CFGVisualizer.visualize control_flow_graph (I.short function_id)
             (context, function_group_inference_data) <- case function_group_inference_data of
                 Some function_group_inference_data -> (context, function_group_inference_data)

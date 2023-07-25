@@ -40,7 +40,7 @@ processEdge context edge_id = do
         _ -> do
             //println "Processing edge {}" % edge
             context
-    processFlow context edge.to
+    processNode context edge.to
 
 setOwner :: Context -> OwnershipTypeVariable -> Context
 setOwner context var = do
@@ -49,8 +49,8 @@ setOwner context var = do
     data_flow_graph <- setOwnership context.data_flow_graph var M.Owner
     context { data_flow_graph = data_flow_graph }
 
-processFlow :: Context -> NodeKey -> Context
-processFlow context key = do
+processNode :: Context -> NodeKey -> Context
+processNode context key = do
     node <- getNode context.data_flow_graph key
     case node of
         Expr n -> do
@@ -73,6 +73,6 @@ process data_flow_graph name = do
     sources <- getSources data_flow_graph
     //println "----------- {}: sources {} -----------" % (name, sources)
     context <- Context data_flow_graph (BI.BorrowInfo [] Map.empty)
-    context <- List.fold context sources (\context, source -> processFlow context source)
+    context <- List.fold context sources processNode
     //println "--------------------------------------"
     context.data_flow_graph

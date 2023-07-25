@@ -10,22 +10,34 @@ data NodeKey = ExprKey E.ExprId
              | EndKey
              deriving (PartialEq, Eq, PartialOrd, Ord, Show)
 
+data ExprKind = VarRef E.Var
+              | FieldAccess E.Var [Int]
+              | Other
+              deriving (Show)
+
 data ExprNode = { id :: E.ExprId,
-                  description :: String
+                  description :: String,
+                  kind :: ExprKind,
+                  incoming :: [Int],
+                  outgoing :: [Int]
                 } deriving (Show)
 
+data HelperNode = { incoming :: [Int],
+                    outgoing :: [Int]
+                  } deriving (Show)
+
 data Node = Expr ExprNode
-          | LoopStart
-          | LoopEnd
-          | ChoiceEnd
-          | End
+          | LoopStart HelperNode
+          | LoopEnd HelperNode
+          | ChoiceEnd HelperNode
+          | End HelperNode
           deriving (Show)
 
 data EdgeKind = Next
               | ConditionalNext
               | Break
               | Continue
-               deriving (Show)
+              deriving (Show)
 
 data Edge = { from :: NodeKey,
               to :: NodeKey,
@@ -48,3 +60,90 @@ addEdge :: ControlFlowGraph -> Edge -> ControlFlowGraph
 addEdge graph edge = do
     edges <- List.push graph.edges edge
     graph { edges = edges }
+
+addIncomingEdge :: ControlFlowGraph -> NodeKey -> Int -> ControlFlowGraph
+addIncomingEdge graph key index = do
+    case Map.get graph.nodes key of
+        Some (Expr expr_node) -> do
+            incoming <- List.push expr_node.incoming index
+            expr_node <- expr_node { incoming = incoming }
+            nodes <- Map.put graph.nodes key (Expr expr_node)
+            graph { nodes = nodes }
+        Some (LoopStart node) -> do
+            incoming <- List.push node.incoming index
+            node <- node { incoming = incoming }
+            nodes <- Map.put graph.nodes key (LoopStart node)
+            graph { nodes = nodes }
+        Some (LoopEnd node) -> do
+            incoming <- List.push node.incoming index
+            node <- node { incoming = incoming }
+            nodes <- Map.put graph.nodes key (LoopEnd node)
+            graph { nodes = nodes }
+        Some (ChoiceEnd node) -> do
+            incoming <- List.push node.incoming index
+            node <- node { incoming = incoming }
+            nodes <- Map.put graph.nodes key (ChoiceEnd node)
+            graph { nodes = nodes }
+        Some (End node) -> do
+            incoming <- List.push node.incoming index
+            node <- node { incoming = incoming }
+            nodes <- Map.put graph.nodes key (End node)
+            graph { nodes = nodes }
+        None -> panic "addIncomingEdge: key {} not found in control flow graph" % key
+
+addOutgoingEdge :: ControlFlowGraph -> NodeKey -> Int -> ControlFlowGraph
+addOutgoingEdge graph key index = do
+    case Map.get graph.nodes key of
+        Some (Expr expr_node) -> do
+            outgoing <- List.push expr_node.outgoing index
+            expr_node <- expr_node { outgoing = outgoing }
+            nodes <- Map.put graph.nodes key (Expr expr_node)
+            graph { nodes = nodes }
+        Some (LoopStart node) -> do
+            outgoing <- List.push node.outgoing index
+            node <- node { outgoing = outgoing }
+            nodes <- Map.put graph.nodes key (LoopStart node)
+            graph { nodes = nodes }
+        Some (LoopEnd node) -> do
+            outgoing <- List.push node.outgoing index
+            node <- node { outgoing = outgoing }
+            nodes <- Map.put graph.nodes key (LoopEnd node)
+            graph { nodes = nodes }
+        Some (ChoiceEnd node) -> do
+            outgoing <- List.push node.outgoing index
+            node <- node { outgoing = outgoing }
+            nodes <- Map.put graph.nodes key (ChoiceEnd node)
+            graph { nodes = nodes }
+        Some (End _) -> panic "Outgoing edge from end node!"
+        None -> panic "addOutgoingEdge: key {} not found in control flow graph" % key
+
+updateEdges :: ControlFlowGraph -> ControlFlowGraph
+updateEdges graph = do
+    edges <- graph.edges
+    List.foldE graph edges (\graph, index, edge -> do
+        graph <- addIncomingEdge graph edge.to index
+        addOutgoingEdge graph edge.from index)
+
+getSources :: ControlFlowGraph -> [NodeKey]
+getSources graph = Map.fold [] graph.nodes (\sources, (key, node) -> case node of
+        Expr n -> if List.isEmpty n.incoming
+            then List.push sources key
+            else sources
+        LoopStart n -> if List.isEmpty n.incoming
+            then List.push sources key
+            else sources
+        LoopEnd n -> if List.isEmpty n.incoming
+            then List.push sources key
+            else sources
+        ChoiceEnd n -> if List.isEmpty n.incoming
+            then List.push sources key
+            else sources
+        End _ -> sources)
+
+getNode :: ControlFlowGraph -> NodeKey -> Node
+getNode graph key = case Map.get graph.nodes key of
+    Some n -> n
+    None -> panic "Node {} not found in control flow graph" % key
+
+getEdge :: ControlFlowGraph -> Int -> Edge
+getEdge graph index = List.atIndex graph.edges index

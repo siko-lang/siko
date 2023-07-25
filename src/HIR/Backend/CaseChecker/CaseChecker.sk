@@ -414,7 +414,7 @@ validateChoiceTree context choice location cases = do
     (missing_cases, found_cases) <- checkBranches choice
     (context, _) <- cases |> List.iter |> Iterator.fold (\(context, case_index), c -> do
         P.Pattern p _ _ location <- c.pattern
-        context <- if contains found_cases case_index
+        context <- if List.contains found_cases case_index
         then context
         else addError context (UnreachableCase location)
         (context, case_index + 1)) (context, 0)

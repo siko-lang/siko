@@ -7,13 +7,17 @@ import Siko.MIR.Expr as E
 data Context = { graph :: CFG.ControlFlowGraph,
                  last :: Option CFG.NodeKey,
                  edge_kind :: CFG.EdgeKind,
-                 jumps :: Map E.ExprId CFG.NodeKey
+                 jumps :: Map E.ExprId CFG.NodeKey,
+                 inside_fieldaccess :: Bool
                }
 
-addExpr :: Context -> E.ExprId -> String -> Context
-addExpr context expr_id description = do
+addExpr :: Context ->
+           E.ExprId ->
+           CFG.ExprKind ->
+           String -> Context
+addExpr context expr_id kind description = do
     key <- CFG.ExprKey (Std.Intrinsics.clone expr_id)
-    node <- CFG.Expr (CFG.ExprNode expr_id description)
+    node <- CFG.Expr (CFG.ExprNode expr_id description kind [] [])
     graph <- CFG.addNode context.graph key node
     graph <- case context.last of
         Some last -> do
@@ -25,28 +29,31 @@ addExpr context expr_id description = do
 addChoice :: Context -> E.ExprId -> Context
 addChoice context expr_id = do
     key <- CFG.ChoiceKey (Std.Intrinsics.clone expr_id)
-    node <- CFG.ChoiceEnd
+    node <- CFG.ChoiceEnd (CFG.HelperNode [] [])
     graph <- CFG.addNode context.graph key node
     context { graph = graph }
 
 addLoopStart :: Context -> E.ExprId -> Context
 addLoopStart context expr_id = do
     key <- CFG.LoopStartKey (Std.Intrinsics.clone expr_id)
-    node <- CFG.LoopStart
+    node <- CFG.LoopStart (CFG.HelperNode [] [])
     graph <- CFG.addNode context.graph key node
     context { graph = graph, last = Some key }
 
 addLoopEnd :: Context -> E.ExprId -> Context
 addLoopEnd context expr_id = do
     key <- CFG.LoopEndKey (Std.Intrinsics.clone expr_id)
-    node <- CFG.LoopEnd
+    node <- CFG.LoopEnd (CFG.HelperNode [] [])
     graph <- CFG.addNode context.graph key node
     context { graph = graph }
 
 addEdge :: Context -> CFG.NodeKey -> CFG.NodeKey -> Context
 addEdge context from to = addEdgeWithKind context from to CFG.Next
 
-addEdgeWithKind :: Context -> CFG.NodeKey -> CFG.NodeKey -> CFG.EdgeKind -> Context
+addEdgeWithKind :: Context ->
+                   CFG.NodeKey ->
+                   CFG.NodeKey ->
+                   CFG.EdgeKind -> Context
 addEdgeWithKind context from to kind = do
     graph <- context.graph
     graph <- CFG.addEdge graph (CFG.Edge from to kind)
@@ -65,7 +72,13 @@ buildControlFlowGraph context expr = do
         E.CharLiteral _ -> context
         E.VarDecl info -> buildControlFlowGraph context info.rhs
         E.VarRef var_info -> context
-        E.FieldAccess f_info -> buildControlFlowGraph context f_info.receiver
+        E.FieldAccess f_info -> do
+            inside_fieldaccess <- context.inside_fieldaccess
+            context <- context { inside_fieldaccess = True }
+            context <- buildControlFlowGraph context f_info.receiver
+            if not inside_fieldaccess
+            then context { inside_fieldaccess = False }
+            else context
         E.If if_info -> do
             context <- buildControlFlowGraph context if_info.cond
             cond_last <- context.last
@@ -133,13 +146,27 @@ buildControlFlowGraph context expr = do
                 addEdge context (Option.unwrap branch_last) choice_key)
             context { last = Some choice_key }
         E.Converter info -> buildControlFlowGraph context info.arg
-    addExpr context expr_id (E.short expr)
+    expr_kind <- if context.inside_fieldaccess
+    then CFG.Other
+    else case s_expr of
+        E.VarRef info -> CFG.VarRef info.var
+        E.FieldAccess info -> loop (path, receiver) <- ([info.index], info.receiver) do
+            E.Expr s_receiver _ _ <- receiver
+            case s_receiver of
+                E.FieldAccess info -> ([info.index] + path, info.receiver)
+                E.VarRef (E.VarRefInfo var) -> do
+                    break CFG.FieldAccess var path
+                _ -> break CFG.Other
+        _ -> CFG.Other
+    addExpr context expr_id expr_kind (E.short expr)
 
 build :: E.Expr -> String -> CFG.ControlFlowGraph
 build expr name = do
     graph <- CFG.createGraph
-    graph <- CFG.addNode graph CFG.EndKey CFG.End
-    context <- Context graph None CFG.Next Map.empty
+    graph <- CFG.addNode graph CFG.EndKey (CFG.End (CFG.HelperNode [] []))
+    context <- Context graph None CFG.Next Map.empty False
     context <- buildControlFlowGraph context expr
     context <- addEdge context (Option.unwrap context.last) CFG.EndKey
-    context.graph
+    graph <- context.graph
+    graph <- CFG.updateEdges graph
+    graph

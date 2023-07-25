@@ -30,14 +30,18 @@ visualize control_flow_graph name = do
         (dot_graph, node_id) <- D.addNode visualizer.dot_graph name
         dot_graph <- case node of
             CFG.Expr n -> do
+                dot_graph <- case n.kind of
+                    CFG.VarRef v -> D.addElementWithColor dot_graph node_id ("VarRef({})" % v) "red"
+                    CFG.FieldAccess v path -> D.addElementWithColor dot_graph node_id ("FieldAccess({}, {})" % (v, path)) "red"
+                    _ -> dot_graph
                 D.addElement dot_graph node_id n.description
-            CFG.LoopStart -> do
+            CFG.LoopStart _ -> do
                 D.addElementWithColor dot_graph node_id "<loop_start>" "purple"
-            CFG.LoopEnd -> do
+            CFG.LoopEnd _ -> do
                 D.addElementWithColor dot_graph node_id "<loop_end>" "purple"
-            CFG.ChoiceEnd -> do
+            CFG.ChoiceEnd _ -> do
                 D.addElementWithColor dot_graph node_id "<choice>" "purple"
-            CFG.End -> do
+            CFG.End _ -> do
                 D.addElementWithColor dot_graph node_id "<end>" "purple"
         id_map <- Map.put visualizer.id_map key node_id
         visualizer { dot_graph = dot_graph, id_map = id_map })

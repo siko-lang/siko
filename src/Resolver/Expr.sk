@@ -270,9 +270,9 @@ validateUsedFields :: [Ident] -> HD.Record -> Result () ([SS.SharedString], [Ide
 validateUsedFields used_fields record = do
     used_fields_s <- used_fields |> List.iter |> Iterator.map (\i -> getString i) |> toList
     real_fields <- record.fields |> List.iter |> Iterator.map (\(HD.RecordField field_name _) -> field_name) |> toList
-    unused_fields <- real_fields |> List.iter |> Iterator.filter (\f -> not (contains used_fields_s f)) |> toList
-    not_real_fields <- used_fields |> List.iter |> Iterator.filter (\(Ident f _) -> not (contains real_fields f)) |> toList
-    multi_used <- used_fields |> List.iter |> Iterator.filter (\f -> not (contains not_real_fields f)) |> Iterator.filter (\f -> do
+    unused_fields <- real_fields |> List.iter |> Iterator.filter (\f -> not (List.contains used_fields_s f)) |> toList
+    not_real_fields <- used_fields |> List.iter |> Iterator.filter (\(Ident f _) -> not (List.contains real_fields f)) |> toList
+    multi_used <- used_fields |> List.iter |> Iterator.filter (\f -> not (List.contains not_real_fields f)) |> Iterator.filter (\f -> do
         arg_list <- used_fields |> List.iter |> Iterator.filter (\i -> getString i == getString f) |> toList
         getLength arg_list > 1) |> toList
     if List.isEmpty unused_fields && List.isEmpty not_real_fields && List.isEmpty multi_used

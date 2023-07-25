@@ -1,0 +1,41 @@
+module Siko.MIR.Backend.Ownership.ControlFlowGraph.BorrowChecker where
+
+import Siko.MIR.Backend.Ownership.ControlFlowGraph
+import Siko.MIR.Expr as E
+import Map
+
+data Path = Whole
+          | Partial [Int]
+          deriving (Show, PartialEq, Eq, PartialOrd, Ord)
+
+data Usage = { expr_id :: E.ExprId,
+               path :: Path
+             } deriving (Show, PartialEq, Eq, PartialOrd, Ord)
+
+data Context = { control_flow_graph :: ControlFlowGraph,
+                 usages :: Map NodeKey [Usage]  }
+
+processEdge :: Context -> Int -> Context
+processEdge context edge_id = do
+    edge <- getEdge context.control_flow_graph edge_id
+    processNode context edge.to
+
+processNode :: Context -> NodeKey -> Context
+processNode context key = do
+    node <- getNode context.control_flow_graph key
+    println "processNode {}" % key
+    case node of
+        Expr n -> do
+            List.fold context n.outgoing processEdge
+        LoopStart n -> List.fold context n.outgoing processEdge
+        LoopEnd n -> List.fold context n.outgoing processEdge
+        ChoiceEnd n -> List.fold context n.outgoing processEdge
+        End n -> context
+
+checkBorrows :: ControlFlowGraph -> ControlFlowGraph
+checkBorrows control_flow_graph = do
+    sources <- getSources control_flow_graph
+    println "sources {}" % sources
+    context <- Context control_flow_graph Map.empty
+    context <- List.fold context sources processNode
+    context.control_flow_graph
