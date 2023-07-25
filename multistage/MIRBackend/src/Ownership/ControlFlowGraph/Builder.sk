@@ -123,8 +123,15 @@ buildControlFlowGraph context expr = do
             context { last = Some (CFG.LoopEndKey expr_id) }
         E.CaseOf info -> do
             context <- buildControlFlowGraph context info.body
-            context <- List.fold context info.cases (\context, c -> buildControlFlowGraph context c.body)
-            context
+            body_last <- context.last
+            context <- addChoice context expr_id
+            choice_key <- CFG.ChoiceKey (Std.Intrinsics.clone expr_id)
+            context <- List.fold context info.cases (\context, c -> do
+                context <- context { last = body_last }
+                context <- buildControlFlowGraph context c.body
+                branch_last <- context.last
+                addEdge context (Option.unwrap branch_last) choice_key)
+            context { last = Some choice_key }
         E.Converter info -> buildControlFlowGraph context info.arg
     addExpr context expr_id (E.short expr)
 
@@ -134,4 +141,5 @@ build expr name = do
     graph <- CFG.addNode graph CFG.EndKey CFG.End
     context <- Context graph None CFG.Next Map.empty
     context <- buildControlFlowGraph context expr
+    context <- addEdge context (Option.unwrap context.last) CFG.EndKey
     context.graph
