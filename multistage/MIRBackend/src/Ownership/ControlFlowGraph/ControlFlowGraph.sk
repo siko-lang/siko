@@ -1,6 +1,7 @@
 module Siko.MIR.Backend.Ownership.ControlFlowGraph where
 
 import Map
+import Siko.MIR.Backend.Ownership.Path
 import Siko.MIR.Expr as E
 
 data NodeKey = ExprKey E.ExprId
@@ -19,7 +20,8 @@ data ExprNode = { id :: E.ExprId,
                   description :: String,
                   kind :: ExprKind,
                   incoming :: [Int],
-                  outgoing :: [Int]
+                  outgoing :: [Int],
+                  is_borrow :: Bool
                 } deriving (Show)
 
 data HelperNode = { incoming :: [Int],
@@ -45,11 +47,12 @@ data Edge = { from :: NodeKey,
             } deriving (Show)
 
 data ControlFlowGraph = { nodes :: Map NodeKey Node,
-                          edges :: [Edge]
+                          edges :: [Edge],
+                          moves :: Map NodeKey [Path]
                         }
 
 createGraph :: ControlFlowGraph
-createGraph = ControlFlowGraph Map.empty []
+createGraph = ControlFlowGraph Map.empty [] Map.empty
 
 addNode :: ControlFlowGraph -> NodeKey -> Node -> ControlFlowGraph
 addNode graph key node = do
@@ -60,6 +63,23 @@ addEdge :: ControlFlowGraph -> Edge -> ControlFlowGraph
 addEdge graph edge = do
     edges <- List.push graph.edges edge
     graph { edges = edges }
+
+setBorrow :: ControlFlowGraph -> E.ExprId -> ControlFlowGraph
+setBorrow graph expr_id = do
+    key <- ExprKey expr_id
+    case Map.get graph.nodes key of
+        Some (Expr expr_node) -> do
+            expr_node <- expr_node { is_borrow = True }
+            nodes <- Map.put graph.nodes key (Expr expr_node)
+            graph { nodes = nodes }
+        _ -> panic "Not expr node found with key {} in control flow graph" % key
+
+isBorrow :: ControlFlowGraph -> E.ExprId -> Bool
+isBorrow graph expr_id = do
+    key <- ExprKey expr_id
+    case Map.get graph.nodes key of
+        Some (Expr expr_node) -> expr_node.is_borrow
+        _ -> panic "Not expr node found with key {} in control flow graph" % key
 
 addIncomingEdge :: ControlFlowGraph -> NodeKey -> Int -> ControlFlowGraph
 addIncomingEdge graph key index = do

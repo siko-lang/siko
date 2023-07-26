@@ -1,41 +1,131 @@
 module Siko.MIR.Backend.Ownership.ControlFlowGraph.BorrowChecker where
 
-import Siko.MIR.Backend.Ownership.ControlFlowGraph
-import Siko.MIR.Expr as E
 import Map
-
-data Path = Whole
-          | Partial [Int]
-          deriving (Show, PartialEq, Eq, PartialOrd, Ord)
+import Set
+import Siko.MIR.Backend.Ownership.ControlFlowGraph
+import Siko.MIR.Backend.Ownership.Path
+import Siko.MIR.Expr as E
 
 data Usage = { expr_id :: E.ExprId,
                path :: Path
-             } deriving (Show, PartialEq, Eq, PartialOrd, Ord)
+             } deriving (PartialEq, Eq, PartialOrd, Ord)
+
+instance Show Usage where
+    show u = do
+        E.ExprId v <- u.expr_id
+        "#{}:{}" % (v, u.path)
 
 data Context = { control_flow_graph :: ControlFlowGraph,
-                 usages :: Map NodeKey [Usage]  }
+                 usages :: Map NodeKey (Set Usage),
+                 borrows :: Set E.ExprId
+               }
 
 processEdge :: Context -> Int -> Context
 processEdge context edge_id = do
     edge <- getEdge context.control_flow_graph edge_id
     processNode context edge.to
 
+getNodeUsage :: Node -> Option Usage
+getNodeUsage node = case node of
+    Expr n -> case n.kind of
+        VarRef v -> Some (Usage n.id (Whole v))
+        FieldAccess v path -> Some (Usage n.id (Partial v path))
+        _ -> None
+    _ -> None
+
+processUsages :: Context ->
+                 Option Usage ->
+                 [Int] ->
+                 NodeKey -> (Context, Bool)
+processUsages context usage incoming key = do
+    usages <- Set.empty
+    usages <- List.fold usages incoming (\usages, edge_id -> do
+        edge <- getEdge context.control_flow_graph edge_id
+        case Map.get context.usages edge.from of
+            Some prev_usages -> usages + prev_usages
+            None -> Set.empty)
+    //println "processUsages {} = {}, {}" % (usages, key, usage)
+    (context, merged_usages) <- case usage of
+        Some usage -> do
+            context <- invalidate context usage usages
+            (context, Set.put usages usage)
+        None -> (context, usages)
+    case Map.get context.usages key of
+        Some usages -> if usages == merged_usages
+            then (context, False)
+            else do
+                usages <- Map.put context.usages key merged_usages
+                (context { usages = usages }, True)
+        None -> do
+            usages <- Map.put context.usages key merged_usages
+            (context { usages = usages }, True)
+
+invalidates :: Path -> Path -> Bool
+invalidates current other = do
+    if getPathRoot current != getPathRoot other
+    then False
+    else case (current, other) of
+        (Whole _, Whole _) -> True
+        (Whole _, Partial _ _) -> True
+        (Partial _ _, Whole _) -> True
+        (Partial _ current_path, Partial _ other_path) -> do
+            c_len <- getLength current_path
+            o_len <- getLength other_path
+            min_len <- Std.Ops.min c_len o_len
+            (c_start, _) <- List.split current_path min_len
+            (o_start, _) <- List.split other_path min_len
+            c_start == o_start
+
+invalidate :: Context -> Usage -> Set Usage -> Context
+invalidate context usage usages = do
+    Set.fold context usages (\context, prev -> if invalidates usage.path prev.path
+        then do
+            borrows <- Set.put context.borrows prev.expr_id
+            context { borrows = borrows }
+        else context)
+
 processNode :: Context -> NodeKey -> Context
 processNode context key = do
     node <- getNode context.control_flow_graph key
-    println "processNode {}" % key
+    usage <- getNodeUsage node
     case node of
         Expr n -> do
-            List.fold context n.outgoing processEdge
-        LoopStart n -> List.fold context n.outgoing processEdge
-        LoopEnd n -> List.fold context n.outgoing processEdge
-        ChoiceEnd n -> List.fold context n.outgoing processEdge
-        End n -> context
+            (context, updated_usages) <- processUsages context usage n.incoming key
+            if updated_usages
+            then List.fold context n.outgoing processEdge
+            else context
+        LoopStart n -> do
+            (context, updated_usages) <- processUsages context usage n.incoming key
+            if updated_usages
+            then List.fold context n.outgoing processEdge
+            else context
+        LoopEnd n -> do
+            (context, updated_usages) <- processUsages context usage n.incoming key
+            if updated_usages
+            then List.fold context n.outgoing processEdge
+            else context
+        ChoiceEnd n -> do
+            (context, updated_usages) <- processUsages context usage n.incoming key
+            if updated_usages
+            then List.fold context n.outgoing processEdge
+            else context
+        End n -> do
+            (context, _) <- processUsages context usage n.incoming key
+            context
 
 checkBorrows :: ControlFlowGraph -> ControlFlowGraph
 checkBorrows control_flow_graph = do
     sources <- getSources control_flow_graph
-    println "sources {}" % sources
-    context <- Context control_flow_graph Map.empty
+    context <- Context control_flow_graph Map.empty Set.empty
     context <- List.fold context sources processNode
-    context.control_flow_graph
+    control_flow_graph <- Set.fold control_flow_graph context.borrows (\control_flow_graph, borrow -> do
+        setBorrow control_flow_graph borrow)
+    // a node in the cfg witnesses a move if it witnesses a usage and that usage is not a borrow
+    Map.fold control_flow_graph context.usages (\control_flow_graph, (key, usages) -> do
+        node <- getNode control_flow_graph key
+        moves <- case getNodeUsage node of
+            Some usage -> Set.remove usages usage
+            None -> usages
+        moves <- moves |> Set.iter |> Iterator.filter (\move -> not (Set.contains context.borrows move.expr_id)) |> Iterator.map (\usage -> usage.path) |> toList
+        moves <- Map.put control_flow_graph.moves key moves
+        control_flow_graph { moves = moves })

@@ -1,7 +1,7 @@
 module Siko.MIR.Backend.Ownership.DataFlowGraph.Inference where
 
 import Map
-import Siko.MIR.Backend.Ownership.BorrowInfo as BI
+import Siko.MIR.Backend.Ownership.ControlFlowGraph as CFG
 import Siko.MIR.Backend.Ownership.DataFlowGraph
 import Siko.MIR.Backend.Ownership.MemberInfo as M
 import Siko.MIR.Backend.Ownership.Query as Q
@@ -9,12 +9,12 @@ import Siko.MIR.Backend.Ownership.TypeVariableInfo
 import Siko.MIR.Function as F
 
 data Context = { data_flow_graph :: DataFlowGraph,
-                 borrow_info :: BI.BorrowInfo
+                 control_flow_graph :: CFG.ControlFlowGraph
                }
 
 isBorrow :: Context -> NodeKey -> Bool
 isBorrow context key = case key of
-    ExprKey id -> BI.isBorrow context.borrow_info id
+    ExprKey id -> CFG.isBorrow context.control_flow_graph id
     _ -> False
 
 processEdge :: Context -> Int -> Context
@@ -54,6 +54,10 @@ processNode context key = do
     node <- getNode context.data_flow_graph key
     case node of
         Expr n -> do
+            data_flow_graph <- case Map.get context.control_flow_graph.moves (CFG.ExprKey n.expr_id) of
+                Some forbidden_borrows -> addForbiddenBorrows context.data_flow_graph (ExprKey n.expr_id) forbidden_borrows
+                None -> context.data_flow_graph
+            context <- context { data_flow_graph = data_flow_graph }
             context <- case n.kind of
                 FnCall id -> do
                     function <- Q.getFunction id
@@ -68,11 +72,11 @@ processNode context key = do
         Var n -> List.fold context n.outgoing processEdge
         End n -> context
 
-process :: DataFlowGraph -> String -> DataFlowGraph
-process data_flow_graph name = do
+process :: DataFlowGraph -> CFG.ControlFlowGraph -> String -> DataFlowGraph
+process data_flow_graph control_flow_graph name = do
     sources <- getSources data_flow_graph
     //println "----------- {}: sources {} -----------" % (name, sources)
-    context <- Context data_flow_graph (BI.BorrowInfo [] Map.empty)
+    context <- Context data_flow_graph control_flow_graph
     context <- List.fold context sources processNode
     //println "--------------------------------------"
     context.data_flow_graph

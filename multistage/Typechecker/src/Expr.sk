@@ -335,7 +335,7 @@ getEffectHandlerType context E.EffectHandler _ selection _ = do
     case selection of
         E.Static qn -> do
             (context, func_type_info) <- getFunctionTypeInfo context qn
-            (context, function_type) <- if contains context.group_items qn
+            (context, function_type) <- if List.contains context.group_items qn
             then (context, func_type_info.function_type)
             else instantiateType context func_type_info.function_type
             //println "Static: selection type {}" % (TF.toString function_type)
@@ -384,7 +384,7 @@ initializeExprType current_fn_name context orig_expr = do
     context <- case expr of
         E.StaticFunctionCall qn args -> do
             (context, func_type_info) <- getFunctionTypeInfo context qn
-            (context, function_type) <- if contains context.group_items qn && not func_type_info.defined
+            (context, function_type) <- if List.contains context.group_items qn && not func_type_info.defined
             then (context, func_type_info.function_type)
             else instantiateType context func_type_info.function_type
             //println "static function call {} {}" % (qn, TF.toString function_type)
@@ -660,7 +660,7 @@ addUndefinedVarToContext a :: (StateProvider a) =>
                               [T.TypeVar] ->
                               T.TypeVar ->
                               Location -> (Context a, [T.TypeVar])
-addUndefinedVarToContext context undefined_vars var location = if contains undefined_vars var
+addUndefinedVarToContext context undefined_vars var location = if List.contains undefined_vars var
     then (context, undefined_vars)
     else do
         //println "TypeAnnotationNeeded"
@@ -681,7 +681,7 @@ checkUndefinedVars context undefined_vars type signature_vars location = do
         _ -> do
             type_vars <- Util.collectVars [] type
             List.fold (context, undefined_vars) type_vars (\(context, undefined_vars), v -> do
-                if contains signature_vars v
+                if List.contains signature_vars v
                 then (context, undefined_vars)
                 else case v of
                     T.TypeVar _ True -> (context, undefined_vars)

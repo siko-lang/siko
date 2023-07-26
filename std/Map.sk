@@ -1,5 +1,6 @@
 module Map where
 
+import Set
 import Json
 import Json.Serialize
 
@@ -13,7 +14,7 @@ instance (FromJson k, FromJson v, Ord k) => FromJson Map k v where
 
 instance (Show k, Show v) => Show Map k v where
     show m = do
-        size <- getSize m
+        size <- Map.getSize m
         (s, _) <- Map.fold ("{", 0) m (\(s, index), (k, v) -> do
             item <- if index + 1 == size
             then "{}:{}" % (k, v)
@@ -24,8 +25,8 @@ instance (Show k, Show v) => Show Map k v where
 instance (PartialEq k, PartialEq v) => PartialEq Map k v where
     opEq k v :: Map k v -> Map k v -> Bool
     opEq a b = do
-        len_a <- getSize a
-        len_b <- getSize b
+        len_a <- Map.getSize a
+        len_b <- Map.getSize b
         if len_a != len_b
         then False
         else do
@@ -45,8 +46,8 @@ instance (PartialEq k, PartialEq v) => PartialEq Map k v where
 instance (PartialOrd k, PartialOrd v) => PartialOrd Map k v where
     partialCmp k v :: Map k v -> Map k v -> Option Ordering
     partialCmp a b = do
-        len_a <- getSize a
-        len_b <- getSize b
+        len_a <- Map.getSize a
+        len_b <- Map.getSize b
         if len_a != len_b
         then partialCmp len_a len_b
         else do
@@ -66,8 +67,8 @@ instance (PartialOrd k, PartialOrd v) => PartialOrd Map k v where
 instance (Ord k, Ord v) => Ord Map k v where
     cmp k v :: Map k v -> Map k v -> Ordering
     cmp a b = do
-        len_a <- getSize a
-        len_b <- getSize b
+        len_a <- Map.getSize a
+        len_b <- Map.getSize b
         if len_a != len_b
         then cmp len_a len_b
         else do
@@ -90,7 +91,7 @@ empty k v :: (Ord k) => ~Map k v
 empty = extern
 
 isEmpty :: Map k v -> Bool
-isEmpty map = getSize map == 0
+isEmpty map = Map.getSize map == 0
 
 insert k v :: (Ord k) => Map k v -> k -> v -> ~(~Map k v, ~Option v)
 insert m k v = extern (arg[1] -> result.f[0].e[0],
@@ -102,7 +103,7 @@ insert m k v = extern (arg[1] -> result.f[0].e[0],
 @Inline
 put k v :: (Ord k) => Map k v -> k -> v -> Map k v
 put m k v = do
-    (m, _) <- insert m k v
+    (m, _) <- Map.insert m k v
     m
 
 get k v :: (Ord k) => Map k v -> k -> ~Option v
@@ -114,7 +115,7 @@ remove m k = extern (arg[1] == *)
 
 erase k v :: (Ord k) => Map k v -> k -> Map k v
 erase m k = do
-    (m, _) <- remove m k
+    (m, _) <- Map.remove m k
     m
 
 contains k v :: (Ord k) => Map k v -> k -> Bool
@@ -127,17 +128,17 @@ alter k v :: (Ord k) => (Option v -> Option v) -> k -> Map k v -> (Map k v, Opti
 alter f k m = do
     // FIXME: make this builtin and much faster
     case f (get m k) of
-        Some v -> insert m k v
-        None -> remove m k
+        Some v -> Map.insert m k v
+        None -> Map.remove m k
 
 @Inline
 alter2 k v :: (Ord k) => (Option v -> Option v) -> k -> Map k v -> (Map k v, Option v)
 alter2 f k m = do
     // FIXME: this is an ugly hack to make it faster (do not copy prev)
-    (m, prev) <- remove m k
+    (m, prev) <- Map.remove m k
     v <- f prev
     case v of
-        Some v -> insert m k v
+        Some v -> Map.insert m k v
         None -> (m, None)
 
 @Inline
@@ -150,18 +151,26 @@ alterS f s k m = do
     (s, v) <- f s (get m k)
     case v of
         Some v -> do
-            (m, v) <- insert m k v
+            (m, v) <- Map.insert m k v
             (s, m, v)
         None -> do
-            (m, v) <- remove m k
+            (m, v) <- Map.remove m k
             (s, m, v)
 
 @Inline
-add k v :: (Ord k) => Map k [v] -> k -> v -> Map k ([v])
+add k v :: (Ord k) => Map k [v] -> k -> v -> Map k [v]
 add m k v = do
     (m, _) <- alter (\old -> case old of
         Some vs -> Some (push vs v)
-        None -> Some ([v])) k m
+        None -> Some [v]) k m
+    m
+
+@Inline
+addUnique k v :: (Ord k, Ord v) => Map k (Set v) -> k -> v -> Map k (Set v)
+addUnique m k v = do
+    (m, _) <- alter (\old -> case old of
+        Some vs -> Some (Set.put vs v)
+        None -> Some (Set.put Set.empty v)) k m
     m
 
 @Inline
@@ -207,8 +216,8 @@ nextItem iter = extern (arg[0].i[0].e[0] -> result.f[1].v[0].f[0].f[0],
 @Inline
 toMap it k v :: (Iterator it > (k, v), Ord k) => it -> Map k v
 toMap iter = Iterator.fold (\m, (k, v) -> do
-        (m, _) <- insert m k v
-        m) empty iter
+        (m, _) <- Map.insert m k v
+        m) Map.empty iter
 
 getSize k v :: Map k v -> ~Int
 getSize m = extern
@@ -240,7 +249,7 @@ mapS s k1 v1 k2 v2 :: (Ord k1, Ord k2) => s -> Map k1 v1 -> (s -> (k1, v1) -> (s
 mapS s m f = do
     m |> Map.iter |> Iterator.fold (\(s, m2), (k, v) -> do
         (s, k, v) <- f s (k, v)
-        (m2, _) <- insert m2 k v
+        (m2, _) <- Map.insert m2 k v
         (s, m2)) (s, Map.empty)
 
 @Inline

@@ -13,13 +13,13 @@ data IsomorphicTestFailure = ReshapeVar T.TypeVar T.TypeVar
 
 checkClassConstraintIsomorphism a :: (ClassProvider a) => [FQ.FullyQualifiedName] -> [FQ.FullyQualifiedName] -> a -> Bool
 checkClassConstraintIsomorphism classes1 classes2 dependency_provider = do
-    classes1 |> List.iter |> Iterator.fold (\ok, class_name -> ok && if contains classes2 class_name
+    classes1 |> List.iter |> Iterator.fold (\ok, class_name -> ok && if List.contains classes2 class_name
         then True
         else do
             all <- classes2 |> List.iter |> Iterator.fold (\all, c -> do
                 all <- all + getAllDependencies dependency_provider c
                 all) []
-            contains all class_name) True
+            List.contains all class_name) True
 
 checkIsomorphicConstraints a :: (ClassProvider a) => [T.Constraint] -> [T.Constraint] -> a -> Result () IsomorphicTestFailure
 checkIsomorphicConstraints cs1 cs2 dependency_provider = do

@@ -51,7 +51,7 @@ isHidden imports imported_item = List.fold False imports (\total, i -> total || 
                 if module_name == source_module
                 then do
                     hidden_items <- List.map hidden_items (\name -> getString name)
-                    contains hidden_items (getItemName item)
+                    List.contains hidden_items (getItemName item)
                 else False
             _ -> False
 
@@ -110,9 +110,9 @@ tryProcessImport export_provider (all_imported_items, all_errors) import_ = do
 
 addResolvedItem :: ResolvedItem -> Option [ResolvedItem] -> Option [ResolvedItem]
 addResolvedItem resolved_item items = case items of
-    Some items -> if contains items resolved_item
+    Some items -> if List.contains items resolved_item
         then Some items
-        else Some (push items resolved_item)
+        else Some (List.push items resolved_item)
     None -> Some [resolved_item]
 
 addTypeName :: ModuleResolver -> ItemRef -> ResolvedItem -> ModuleResolver

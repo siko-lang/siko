@@ -1,0 +1,15 @@
+module Siko.MIR.Backend.Ownership.Path where
+
+import Siko.MIR.Expr as E
+
+data Path = Whole E.Var
+          | Partial E.Var [Int]
+          deriving (PartialEq, Eq, PartialOrd, Ord)
+
+instance Show Path where
+    show (Whole v) = show v
+    show (Partial v path) = "{}.{}" % (v, path)
+
+getPathRoot :: Path -> E.Var
+getPathRoot Whole v = v
+getPathRoot Partial v _ = v

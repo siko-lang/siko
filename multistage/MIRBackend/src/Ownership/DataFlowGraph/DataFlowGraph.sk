@@ -2,6 +2,7 @@ module Siko.MIR.Backend.Ownership.DataFlowGraph where
 
 import Map
 import Siko.MIR.Backend.Ownership.MemberInfo as M
+import Siko.MIR.Backend.Ownership.Path
 import Siko.MIR.Backend.Ownership.TypeVariableInfo
 import Siko.MIR.Expr as E
 import Siko.MIR.Identity as I
@@ -21,7 +22,8 @@ data ExprNode = { expr_id :: E.ExprId,
                   tv_info :: TypeVariableInfo,
                   kind :: ExprNodeKind,
                   incoming :: [Int],
-                  outgoing :: [Int]
+                  outgoing :: [Int],
+                  forbidden_borrows :: [Path]
                 } deriving (Show)
 
 data VarNode = { var :: E.Var,
@@ -82,6 +84,15 @@ addEdge :: DataFlowGraph -> Edge -> DataFlowGraph
 addEdge graph edge = do
     edges <- List.push graph.edges edge
     graph { edges = edges }
+
+addForbiddenBorrows :: DataFlowGraph -> NodeKey -> [Path] -> DataFlowGraph
+addForbiddenBorrows graph key forbidden_borrows = do
+    case Map.get graph.nodes key of
+        Some (Expr expr_node) -> do
+            expr_node <- expr_node { forbidden_borrows = forbidden_borrows }
+            nodes <- Map.put graph.nodes key (Expr expr_node)
+            graph { nodes = nodes }
+        _ -> panic "addForbiddenBorrows: expr key {} not found in data flow graph" % key
 
 setExprNodeKind :: DataFlowGraph -> NodeKey -> ExprNodeKind -> DataFlowGraph
 setExprNodeKind graph key kind = do

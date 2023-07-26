@@ -2,7 +2,12 @@ module Set where
 
 import Map
 
-data Set a = { items :: Map a () } deriving (Show)
+data Set a = { items :: Map a () }
+
+instance (Show a) => Show Set a where
+    show s = do
+        subs <- s.items |> Map.iter |> Iterator.map (\(k, v) -> show k) |> toList
+        "{" + join subs ", " + "}"
 
 instance (Ord a) => Add Set a where
     opAdd a b = Set (Map.merge a.items b.items)
@@ -21,28 +26,35 @@ instance (PartialOrd a) => PartialOrd Set a where
 instance (Ord a) => Ord Set a where
     cmp a b = cmp a.items b.items
 
+@Inline
 empty a :: (Ord a) => Set a
 empty = Set Map.empty
 
+@Inline
 contains a :: (Ord a) => Set a -> a -> Bool
 contains set item = Map.contains set.items item
 
+@Inline
 insert a :: (Ord a) => Set a -> a -> (Set a, Bool)
 insert set item = do
     (items, old) <- Map.insert set.items item ()
     (Set items, Option.isNone old)
 
+@Inline
 remove a :: (Ord a) => Set a -> a -> Set a
 remove set item = do
     items <- Map.erase set.items item
     Set items
 
+@Inline
 iter a :: Set a -> IteratorMap (Map.MapIter a ()) (a, ()) a
 iter set = set.items |> Map.iter |> Iterator.map (\(k, v) -> k)
 
+@Inline
 toSet it a :: (Iterator it > a, Ord a) => it -> Set a
 toSet iter = Set (iter |> Iterator.map (\k -> (k, ())) |> Map.toMap)
 
+@Inline
 isEmpty a :: Set a -> Bool
 isEmpty set = Map.isEmpty set.items
 
@@ -54,19 +66,28 @@ collect sources result f = loop result <- result do
         then result
         else break result
 
+@Inline
 getSize a :: Set a -> Int
 getSize set = Map.getSize set.items
 
+@Inline
 intersection a :: (Ord a) => Set a -> Set a -> Set a
 intersection s1 s2 = s1 |> Set.iter |> Iterator.filter (\i -> Set.contains s2 i) |> toSet
 
+@Inline
 put a :: (Ord a) => Set a -> a -> Set a
 put set item = do
     (set, _) <- Set.insert set item
     set
 
-map a b :: (Ord a, PartialEq a, Ord b, PartialEq b) => Set a -> (a -> b) -> Set b
+@Inline
+map a b :: (Ord a, Ord b) => Set a -> (a -> b) -> Set b
 map set f = set |> Set.iter |> Iterator.map f |> toSet
 
-fold a s :: (Ord a, PartialEq a) => s -> Set a -> (s -> a -> s) -> s
+@Inline
+fold a s :: (Ord a) => s -> Set a -> (s -> a -> s) -> s
 fold init set f = set |> Set.iter |> Iterator.fold f init
+
+@Inline
+filter a :: (Ord a) => Set a -> (a -> Bool) -> Set a
+filter set f = set |> Set.iter |> Iterator.filter f |> toSet
