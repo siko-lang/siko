@@ -13,12 +13,12 @@ processExpr context expr = do
     Expr s_expr id type location <- expr
     case s_expr of
         StaticFunctionCall name _ -> do
-            items <- put context.items name
+            items <- put context.items (Std.Intrinsics.clone name)
             (context { items = items }, expr)
         With handlers _ _ -> do
             context <- List.fold context handlers (\context, handler -> case handler.selection of
                 Static name -> do
-                    items <- put context.items name
+                    items <- put context.items (Std.Intrinsics.clone name)
                     context { items = items }
                 _ -> context)
             (context, expr)

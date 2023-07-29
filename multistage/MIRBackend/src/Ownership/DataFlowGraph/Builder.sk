@@ -3,10 +3,10 @@ module Siko.MIR.Backend.Ownership.DataFlowGraph.Builder where
 import Map
 import Set
 import Siko.MIR.Backend.Allocator as A
+import Siko.MIR.Backend.MemberInfo as M
 import Siko.MIR.Backend.Ownership.ControlFlowGraph as CFG
 import Siko.MIR.Backend.Ownership.DataFlowGraph as DFG
 import Siko.MIR.Backend.Ownership.DataFlowGraph.Equality
-import Siko.MIR.Backend.MemberInfo as M
 import Siko.MIR.Backend.Query as Q
 import Siko.MIR.Backend.TypeVariableInfo
 import Siko.MIR.Expr as E
@@ -24,7 +24,13 @@ data Context = { graph :: DFG.DataFlowGraph,
                }
 
 createContext :: CFG.ControlFlowGraph -> Context
-createContext control_flow_graph = Context DFG.createGraph A.createAllocator Map.empty Map.empty Map.empty [] control_flow_graph
+createContext control_flow_graph = Context DFG.createGraph
+                                           A.createAllocator
+                                           Map.empty
+                                           Map.empty
+                                           Map.empty
+                                           []
+                                           control_flow_graph
 
 getNextOwnershipTypeVariable :: Context -> (Context, OwnershipTypeVariable)
 getNextOwnershipTypeVariable context = do
@@ -79,7 +85,14 @@ addExpr context expr_id = do
     (context, info) <- getNextTypeVariableInfo context
     context <- addExprInfo context expr_id info
     key <- DFG.ExprKey (Std.Intrinsics.clone expr_id)
-    node <- DFG.Expr (DFG.ExprNode expr_id info DFG.Other [] [] [] Set.empty [])
+    node <- DFG.Expr (DFG.ExprNode expr_id
+                                   info
+                                   DFG.Other
+                                   []
+                                   []
+                                   []
+                                   Set.empty
+                                   [])
     graph <- DFG.addNode context.graph key node
     context { graph = graph }
 

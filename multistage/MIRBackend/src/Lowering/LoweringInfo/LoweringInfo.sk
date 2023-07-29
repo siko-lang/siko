@@ -6,11 +6,11 @@ import Set
 import Siko.MIR.Backend.Allocator
 import Siko.MIR.Backend.BorrowId
 import Siko.MIR.Backend.Duplicator
+import Siko.MIR.Backend.Lowering.LoweringDataProvider
 import Siko.MIR.Backend.Lowering.LoweringInfo.Filter
 import Siko.MIR.Backend.Lowering.LoweringInfo.FilterInfo
 import Siko.MIR.Backend.MemberInfo as M
 import Siko.MIR.Backend.OwnershipDependencyMap
-import Siko.MIR.Backend.Lowering.LoweringDataProvider
 import Siko.MIR.Backend.TypeVariableInfo
 
 data LifetimeDependency = { from :: BorrowId,
@@ -31,11 +31,12 @@ data TypeLoweringInfo = { members :: [M.MemberInfo],
                           allocator :: Allocator
                         } deriving (PartialEq, Eq, PartialOrd, Ord, Show)
 
-convertToFunctionLoweringInfo a :: (LoweringDataProvider a) => a ->
-                                 [TypeVariableInfo] ->
-                                 TypeVariableInfo ->
-                                 FilterInfo ->
-                                 [LifetimeDependency] -> FunctionLoweringInfo
+convertToFunctionLoweringInfo a :: (LoweringDataProvider a) =>
+                                   a ->
+                                   [TypeVariableInfo] ->
+                                   TypeVariableInfo ->
+                                   FilterInfo ->
+                                   [LifetimeDependency] -> FunctionLoweringInfo
 convertToFunctionLoweringInfo provider args result filter_info lifetime_dependencies = do
     //println "Creating function lowering info"
     lowering_info <- FunctionLoweringInfo (getMembers provider) args result (getOwnershipInfo provider) (getAllocator provider) lifetime_dependencies

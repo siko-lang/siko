@@ -3,17 +3,17 @@ module Siko.MIR.Backend.Lowering.Expr where
 import Map
 import Siko.LIR.Expr as LE
 import Siko.LIR.Type as LT
-import Siko.MIR.Backend.Lowering.LoweringDataProvider
-import Siko.MIR.Backend.Ownership.Converter
 import Siko.MIR.Backend.Allocator
-import Siko.MIR.Backend.Ownership.FunctionGroupInferenceData as D
 import Siko.MIR.Backend.Lowering.Context
+import Siko.MIR.Backend.Lowering.LoweringDataProvider
 import Siko.MIR.Backend.Lowering.LoweringInfo
 import Siko.MIR.Backend.Lowering.LoweringInfo.FilterInfo
 import Siko.MIR.Backend.Lowering.LoweringInfo.Normalizer
 import Siko.MIR.Backend.Lowering.Naming
 import Siko.MIR.Backend.Lowering.Type
 import Siko.MIR.Backend.MemberInfo as M
+import Siko.MIR.Backend.Ownership.Converter
+import Siko.MIR.Backend.Ownership.FunctionGroupInferenceData as D
 import Siko.MIR.Backend.Query as Q
 import Siko.MIR.Backend.TypeVariableInfo
 import Siko.MIR.Data as MD
@@ -29,7 +29,7 @@ data LoweringContext a = { function_id :: I.Identity,
                            filter_info :: FilterInfo,
                            type_cache :: Map TypeVariableInfo LT.Type,
                            type_lowering_info_cache :: Map TypeVariableInfo TypeLoweringInfo
-                       }
+                         }
 
 getTypeLoweringInfo a :: (LoweringDataProvider a) => LoweringContext a -> TypeVariableInfo -> (LoweringContext a, TypeLoweringInfo)
 getTypeLoweringInfo lowering_context info = do
@@ -42,10 +42,11 @@ getTypeLoweringInfo lowering_context info = do
             lowering_context <- lowering_context { type_lowering_info_cache = type_lowering_info_cache }
             (lowering_context, lowering_info)
 
-getType a :: (LoweringDataProvider a) => Context ->
-           LoweringContext a ->
-           TypeVariableInfo ->
-           MT.Type -> (Context, LoweringContext a, LT.Type)
+getType a :: (LoweringDataProvider a) =>
+             Context ->
+             LoweringContext a ->
+             TypeVariableInfo ->
+             MT.Type -> (Context, LoweringContext a, LT.Type)
 getType context lowering_context info mir_type = do
     case Map.get lowering_context.type_cache info of
         Some ty -> (context, lowering_context, ty)

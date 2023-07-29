@@ -3,33 +3,41 @@ module Siko.MIR.Backend.Lowering.LoweringDataProvider where
 import Map
 import Siko.MIR.Backend.Allocator
 import Siko.MIR.Backend.Lowering.LoweringInfo
-import Siko.MIR.Backend.Ownership.FunctionGroupInferenceData as D
 import Siko.MIR.Backend.MemberInfo as M
+import Siko.MIR.Backend.Ownership.FunctionGroupInferenceData as D
 import Siko.MIR.Backend.TypeVariableInfo
 import Siko.MIR.Expr as E
 import Siko.MIR.Identity as I
 
 class LoweringDataProvider a where
     getMembers a :: a -> [M.MemberInfo]
+
     getOwnershipInfo a :: a -> [M.OwnershipInfo]
+
     getAllocator a :: a -> Allocator
+
     getOwnershipValue a :: a -> OwnershipTypeVariable -> M.OwnershipKind
+
     getTypeVariableInfo a :: a -> E.ExprId -> I.Identity -> TypeVariableInfo
+
     getLifetimeDependency a :: a -> E.ExprId -> [LifetimeDependency]
 
 instance LoweringDataProvider D.FunctionGroupInferenceData where
     getMembers function_group_inference_data = function_group_inference_data.members
+
     getOwnershipInfo function_group_inference_data = M.toOwnershipInfo function_group_inference_data.ownership_values
+
     getAllocator function_group_inference_data = function_group_inference_data.allocator
-    getOwnershipValue function_group_inference_data var =
-        case D.getOwnership function_group_inference_data var of
-            Some o -> o
-            None -> panic "Ownership value not found for {}" % var
+
+    getOwnershipValue function_group_inference_data var = case D.getOwnership function_group_inference_data var of
+        Some o -> o
+        None -> panic "Ownership value not found for {}" % var
+
     getTypeVariableInfo function_group_inference_data expr_id function_id = D.getTypeVariableInfoByExprId function_group_inference_data expr_id function_id
-    getLifetimeDependency function_group_inference_data expr_id =
-        case Map.get function_group_inference_data.function_converter_borrows expr_id of
-                Some function_converter_borrows -> do
-                    lifetime_dependencies <- List.fold ([]) function_converter_borrows (\lifetime_dependencies, function_converter_borrow -> do
-                        List.push lifetime_dependencies (LifetimeDependency function_converter_borrow.from function_converter_borrow.to))
-                    lifetime_dependencies |> List.sort |> List.dedup
-                None -> []
+
+    getLifetimeDependency function_group_inference_data expr_id = case Map.get function_group_inference_data.function_converter_borrows expr_id of
+        Some function_converter_borrows -> do
+            lifetime_dependencies <- List.fold ([]) function_converter_borrows (\lifetime_dependencies, function_converter_borrow -> do
+                List.push lifetime_dependencies (LifetimeDependency function_converter_borrow.from function_converter_borrow.to))
+            lifetime_dependencies |> List.sort |> List.dedup
+        None -> []
