@@ -48,7 +48,8 @@ getType context lowering_context info mir_type = do
         None -> do
             (lowering_context, lowering_info) <- getTypeLoweringInfo lowering_context info
             (context, lir_type) <- lowerType context lowering_info mir_type
-            (context, lowering_context, lir_type)
+            type_cache <- Map.put lowering_context.type_cache info lir_type
+            (context, lowering_context { type_cache = type_cache }, lir_type)
 
 getOwnershipValue :: LoweringContext -> OwnershipTypeVariable -> M.OwnershipKind
 getOwnershipValue lowering_context var = do

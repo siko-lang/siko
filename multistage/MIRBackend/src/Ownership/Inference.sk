@@ -3,7 +3,7 @@ module Siko.MIR.Backend.Ownership.Inference where
 import Map
 import Siko.Config
 import Siko.LIR.Program as LP
-import Siko.MIR.Backend.Ownership.Allocator
+import Siko.MIR.Backend.Allocator
 import Siko.MIR.Backend.Ownership.BorrowChecker
 import Siko.MIR.Backend.Ownership.CallContext as CC
 import Siko.MIR.Backend.Ownership.ControlFlowGraph.BorrowChecker as CFGBorrow
@@ -22,10 +22,10 @@ import Siko.MIR.Backend.Ownership.FunctionGroupInferenceData
 import Siko.MIR.Backend.Ownership.Inference.ConstraintCollection
 import Siko.MIR.Backend.Ownership.Inference.ConstraintProcessor
 import Siko.MIR.Backend.Ownership.Initializer
-import Siko.MIR.Backend.Ownership.Lowering
-import Siko.MIR.Backend.Ownership.MemberInfo as M
-import Siko.MIR.Backend.Ownership.Query as Q
-import Siko.MIR.Backend.Ownership.TypeVariableInfo
+import Siko.MIR.Backend.Lowering
+import Siko.MIR.Backend.MemberInfo as M
+import Siko.MIR.Backend.Query as Q
+import Siko.MIR.Backend.TypeVariableInfo
 import Siko.MIR.Data as D
 import Siko.MIR.Expr as E
 import Siko.MIR.Function as F
@@ -112,7 +112,7 @@ processFunction context group function_group_inference_data function_id = do
             control_flow_graph <- CFGB.build info.body (I.short function_id)
             control_flow_graph <- CFGBorrow.checkBorrows control_flow_graph
             CFGVisualizer.visualize control_flow_graph (I.short function_id)
-            data_flow_graph <- DFGB.build info.body (I.short function_id)
+            data_flow_graph <- DFGB.build info.body control_flow_graph (I.short function_id)
             data_flow_graph <- DFGI.process data_flow_graph control_flow_graph (I.short function_id)
             DFGVisualizer.visualize data_flow_graph (I.short function_id)
             (context, function_group_inference_data) <- case function_group_inference_data of

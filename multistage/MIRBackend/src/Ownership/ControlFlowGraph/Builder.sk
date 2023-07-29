@@ -2,6 +2,7 @@ module Siko.MIR.Backend.Ownership.ControlFlowGraph.Builder where
 
 import Map
 import Siko.MIR.Backend.Ownership.ControlFlowGraph as CFG
+import Siko.MIR.Backend.Ownership.Path
 import Siko.MIR.Expr as E
 
 data Context = { graph :: CFG.ControlFlowGraph,
@@ -149,13 +150,13 @@ buildControlFlowGraph context expr = do
     expr_kind <- if context.inside_fieldaccess
     then CFG.Other
     else case s_expr of
-        E.VarRef info -> CFG.VarRef info.var
+        E.VarRef info -> CFG.User (Whole info.var)
         E.FieldAccess info -> loop (path, receiver) <- ([info.index], info.receiver) do
             E.Expr s_receiver _ _ <- receiver
             case s_receiver of
                 E.FieldAccess info -> ([info.index] + path, info.receiver)
                 E.VarRef (E.VarRefInfo var) -> do
-                    break CFG.FieldAccess var path
+                    break CFG.User (Partial var path)
                 _ -> break CFG.Other
         _ -> CFG.Other
     addExpr context expr_id expr_kind (E.short expr)

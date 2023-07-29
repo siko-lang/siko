@@ -1,12 +1,10 @@
-module Siko.MIR.Backend.Ownership.Duplicator where
+module Siko.MIR.Backend.Duplicator where
 
 import Map
-import Siko.MIR.Backend.Ownership.Allocator as A
-import Siko.MIR.Backend.Ownership.BorrowId
-import Siko.MIR.Backend.Ownership.Converter
-import Siko.MIR.Backend.Ownership.FunctionGroupInferenceData
-import Siko.MIR.Backend.Ownership.MemberInfo as M
-import Siko.MIR.Backend.Ownership.TypeVariableInfo
+import Siko.MIR.Backend.Allocator as A
+import Siko.MIR.Backend.BorrowId
+import Siko.MIR.Backend.MemberInfo as M
+import Siko.MIR.Backend.TypeVariableInfo
 import Siko.Util.Counter
 
 data Duplicator = { ownership_vars :: Map OwnershipTypeVariable OwnershipTypeVariable,
@@ -100,9 +98,3 @@ instance Duplicable M.OwnershipInfo where
         (duplicator, v) <- duplicate duplicator info.var
         (duplicator, kind) <- duplicate duplicator info.kind
         (duplicator, M.OwnershipInfo v kind)
-
-instance Duplicable Converter where
-    duplicate duplicator converter = do
-        (duplicator, from) <- duplicate duplicator converter.from
-        (duplicator, to) <- duplicate duplicator converter.to
-        (duplicator, Converter from to)

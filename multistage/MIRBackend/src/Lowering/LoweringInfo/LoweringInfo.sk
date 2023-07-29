@@ -1,17 +1,17 @@
-module Siko.MIR.Backend.Ownership.Lowering.LoweringInfo where
+module Siko.MIR.Backend.Lowering.LoweringInfo where
 
 import Map
 import Map
 import Set
-import Siko.MIR.Backend.Ownership.Allocator
-import Siko.MIR.Backend.Ownership.BorrowId
-import Siko.MIR.Backend.Ownership.Duplicator
-import Siko.MIR.Backend.Ownership.FunctionGroupInferenceData
-import Siko.MIR.Backend.Ownership.Lowering.LoweringInfo.Filter
-import Siko.MIR.Backend.Ownership.Lowering.LoweringInfo.FilterInfo
-import Siko.MIR.Backend.Ownership.MemberInfo as M
-import Siko.MIR.Backend.Ownership.OwnershipDependencyMap
-import Siko.MIR.Backend.Ownership.TypeVariableInfo
+import Siko.MIR.Backend.Allocator
+import Siko.MIR.Backend.BorrowId
+import Siko.MIR.Backend.Duplicator
+import Siko.MIR.Backend.Lowering.LoweringInfo.Filter
+import Siko.MIR.Backend.Lowering.LoweringInfo.FilterInfo
+import Siko.MIR.Backend.MemberInfo as M
+import Siko.MIR.Backend.OwnershipDependencyMap
+import Siko.MIR.Backend.Lowering.LoweringDataProvider
+import Siko.MIR.Backend.TypeVariableInfo
 
 data LifetimeDependency = { from :: BorrowId,
                             to :: BorrowId
@@ -31,22 +31,22 @@ data TypeLoweringInfo = { members :: [M.MemberInfo],
                           allocator :: Allocator
                         } deriving (PartialEq, Eq, PartialOrd, Ord, Show)
 
-convertToFunctionLoweringInfo :: FunctionGroupInferenceData ->
+convertToFunctionLoweringInfo a :: (LoweringDataProvider a) => a ->
                                  [TypeVariableInfo] ->
                                  TypeVariableInfo ->
                                  FilterInfo ->
                                  [LifetimeDependency] -> FunctionLoweringInfo
-convertToFunctionLoweringInfo function_group_inference_data args result filter_info lifetime_dependencies = do
+convertToFunctionLoweringInfo provider args result filter_info lifetime_dependencies = do
     //println "Creating function lowering info"
-    lowering_info <- FunctionLoweringInfo function_group_inference_data.members args result (M.toOwnershipInfo function_group_inference_data.ownership_values) function_group_inference_data.allocator lifetime_dependencies
+    lowering_info <- FunctionLoweringInfo (getMembers provider) args result (getOwnershipInfo provider) (getAllocator provider) lifetime_dependencies
     //println "Unfiltered {}" % lowering_info
     sources <- List.push args result
     filterFunctionLoweringInfo lowering_info sources filter_info
 
-createTypeLoweringInfoFromInferenceInfo :: FunctionGroupInferenceData -> TypeVariableInfo -> FilterInfo -> TypeLoweringInfo
-createTypeLoweringInfoFromInferenceInfo function_group_inference_data root filter_info = do
+createTypeLoweringInfoFromInferenceInfo a :: (LoweringDataProvider a) => a -> TypeVariableInfo -> FilterInfo -> TypeLoweringInfo
+createTypeLoweringInfoFromInferenceInfo provider root filter_info = do
     //println "Creating type lowering info"
-    lowering_info <- TypeLoweringInfo function_group_inference_data.members root (M.toOwnershipInfo function_group_inference_data.ownership_values) function_group_inference_data.allocator
+    lowering_info <- TypeLoweringInfo (getMembers provider) root (getOwnershipInfo provider) (getAllocator provider)
     filterTypeLoweringInfo lowering_info [root] filter_info
 
 createTypeLoweringInfoFromFunctionLoweringInfo :: FunctionLoweringInfo -> TypeVariableInfo -> FilterInfo -> TypeLoweringInfo

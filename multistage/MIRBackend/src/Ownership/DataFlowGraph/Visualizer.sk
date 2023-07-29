@@ -2,10 +2,11 @@ module Siko.MIR.Backend.Ownership.DataFlowGraph.Visualizer where
 
 import IO
 import Map
+import Set
 import Siko.Dot as D
 import Siko.MIR.Backend.Ownership.DataFlowGraph as DFG
-import Siko.MIR.Backend.Ownership.MemberInfo as M
-import Siko.MIR.Backend.Ownership.TypeVariableInfo
+import Siko.MIR.Backend.MemberInfo as M
+import Siko.MIR.Backend.TypeVariableInfo
 import Siko.MIR.Identity as I
 
 data Visualizer = { id_map :: Map DFG.NodeKey D.NodeId,
@@ -43,12 +44,13 @@ visualize data_flow_graph name = do
                 dot_graph <- case n.kind of
                     DFG.FnCall id -> D.addElement dot_graph node_id "FnCall({})" % (I.short id)
                     DFG.Loop -> D.addElement dot_graph node_id "Loop"
-                    DFG.VarRefDef var -> D.addElement dot_graph node_id "VarRefDef({})" % var
                     DFG.Other -> dot_graph
                 dot_graph <- if List.isEmpty n.incoming
                 then D.addElementWithColor dot_graph node_id "<source>" "red"
                 else dot_graph
-                dot_graph <- List.fold dot_graph n.forbidden_borrows (\dot_graph, move -> D.addElementWithColor dot_graph node_id ("{}" % move) "#fcdb03")
+                //dot_graph <- List.fold dot_graph n.local_forbidden_borrows (\dot_graph, move -> D.addElementWithColor dot_graph node_id ("lfb: {}" % move) "#fcdb03")
+                //dot_graph <- List.fold dot_graph n.ownership_vars (\dot_graph, ownership_var -> D.addElementWithColor dot_graph node_id ("{}" % ownership_var) "#e8d5f7")
+                //dot_graph <- Set.fold dot_graph n.merged_forbidden_borrows (\dot_graph, ownership_var -> D.addElementWithColor dot_graph node_id ("mfb: {}" % ownership_var) "#ed660c")
                 addTypeVariableInfo data_flow_graph dot_graph node_id n.tv_info
             DFG.Var n -> do
                 dot_graph <- if List.isEmpty n.incoming

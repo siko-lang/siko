@@ -1,12 +1,14 @@
 module Siko.MIR.Backend.Ownership.DataFlowGraph.Builder where
 
 import Map
-import Siko.MIR.Backend.Ownership.Allocator as A
+import Set
+import Siko.MIR.Backend.Allocator as A
+import Siko.MIR.Backend.Ownership.ControlFlowGraph as CFG
 import Siko.MIR.Backend.Ownership.DataFlowGraph as DFG
 import Siko.MIR.Backend.Ownership.DataFlowGraph.Equality
-import Siko.MIR.Backend.Ownership.MemberInfo as M
-import Siko.MIR.Backend.Ownership.Query as Q
-import Siko.MIR.Backend.Ownership.TypeVariableInfo
+import Siko.MIR.Backend.MemberInfo as M
+import Siko.MIR.Backend.Query as Q
+import Siko.MIR.Backend.TypeVariableInfo
 import Siko.MIR.Expr as E
 import Siko.MIR.Function as F
 import Siko.MIR.Identity as I
@@ -17,11 +19,12 @@ data Context = { graph :: DFG.DataFlowGraph,
                  expr_info_map :: Map E.ExprId TypeVariableInfo,
                  var_info_map :: Map E.Var TypeVariableInfo,
                  expr_kinds :: Map E.ExprId DFG.ExprNodeKind,
-                 returns :: [E.ExprId]
+                 returns :: [E.ExprId],
+                 control_flow_graph :: CFG.ControlFlowGraph
                }
 
-createContext :: Context
-createContext = Context DFG.createGraph A.createAllocator Map.empty Map.empty Map.empty []
+createContext :: CFG.ControlFlowGraph -> Context
+createContext control_flow_graph = Context DFG.createGraph A.createAllocator Map.empty Map.empty Map.empty [] control_flow_graph
 
 getNextOwnershipTypeVariable :: Context -> (Context, OwnershipTypeVariable)
 getNextOwnershipTypeVariable context = do
@@ -76,7 +79,7 @@ addExpr context expr_id = do
     (context, info) <- getNextTypeVariableInfo context
     context <- addExprInfo context expr_id info
     key <- DFG.ExprKey (Std.Intrinsics.clone expr_id)
-    node <- DFG.Expr (DFG.ExprNode expr_id info DFG.Other [] [] [])
+    node <- DFG.Expr (DFG.ExprNode expr_id info DFG.Other [] [] [] Set.empty [])
     graph <- DFG.addNode context.graph key node
     context { graph = graph }
 
@@ -121,9 +124,9 @@ addVarInfo context var info = do
     context <- context { var_info_map = var_info_map }
     context
 
-build :: E.Expr -> String -> DFG.DataFlowGraph
-build expr name = do
-    context <- createContext
+build :: E.Expr -> CFG.ControlFlowGraph -> String -> DFG.DataFlowGraph
+build expr control_flow_graph name = do
+    context <- createContext control_flow_graph
     context <- buildDataFlowGraph context expr
     (context, end_tv_info) <- getNextTypeVariableInfo context
     graph <- context.graph
@@ -199,7 +202,6 @@ buildDataFlowGraph context expr = do
         E.VarRef var_info -> do
             (context, info) <- getVarInfo context var_info.var
             context <- addExprInfo context expr_id info
-            context <- addExprKind context expr_id (DFG.VarRefDef var_info.var)
             context <- addVarEdge2 context DFG.VarRef var_info.var expr_id
             context
         E.FieldAccess f_info -> do
@@ -281,9 +283,16 @@ buildDataFlowGraph context expr = do
             context
         E.Converter info -> do
             E.Expr _ _ arg_id <- info.arg
-            context <- buildDataFlowGraph context info.arg
-            arg_info <- getExprInfo context arg_id
-            own_info <- getExprInfo context expr_id
-            own_info <- own_info { arg_group_var = arg_info.arg_group_var }
-            context <- addExprInfo context expr_id own_info
-            addEdge context DFG.Converter arg_id expr_id
+            if CFG.isBorrow context.control_flow_graph arg_id
+            then do
+                context <- buildDataFlowGraph context info.arg
+                arg_info <- getExprInfo context arg_id
+                own_info <- getExprInfo context expr_id
+                own_info <- own_info { arg_group_var = arg_info.arg_group_var }
+                context <- addExprInfo context expr_id own_info
+                addEdge context DFG.Converter arg_id expr_id
+            else do
+                context <- buildDataFlowGraph context info.arg
+                arg_info <- getExprInfo context arg_id
+                context <- addExprInfo context expr_id arg_info
+                addEdge context DFG.Converter arg_id expr_id

@@ -1,9 +1,10 @@
 module Siko.MIR.Backend.Ownership.Converter where
 
 import Map
-import Siko.MIR.Backend.Ownership.EqualitySolver
-import Siko.MIR.Backend.Ownership.TypeVariableInfo
+import Siko.MIR.Backend.EqualitySolver
+import Siko.MIR.Backend.TypeVariableInfo
 import Siko.Util.DependencyProcessor
+import Siko.MIR.Backend.Duplicator
 
 data Converter = { from :: OwnershipTypeVariable,
                    to :: OwnershipTypeVariable
@@ -27,6 +28,12 @@ instance Apply ConverterStore where
 
 instance MemberOwner ConverterStore where
     getMembers store = []
+
+instance Duplicable Converter where
+    duplicate duplicator converter = do
+        (duplicator, from) <- duplicate duplicator converter.from
+        (duplicator, to) <- duplicate duplicator converter.to
+        (duplicator, Converter from to)
 
 data ConverterMergeInfo = { converters :: [Converter],
                             cycle_groups :: [[OwnershipTypeVariable]]

@@ -1,19 +1,21 @@
-module Siko.MIR.Backend.Ownership.Lowering.Expr where
+module Siko.MIR.Backend.Lowering.Expr where
 
 import Map
 import Siko.LIR.Expr as LE
 import Siko.LIR.Type as LT
+import Siko.MIR.Backend.Lowering.LoweringDataProvider
 import Siko.MIR.Backend.Ownership.Converter
-import Siko.MIR.Backend.Ownership.FunctionGroupInferenceData
-import Siko.MIR.Backend.Ownership.Lowering.Context
-import Siko.MIR.Backend.Ownership.Lowering.LoweringInfo
-import Siko.MIR.Backend.Ownership.Lowering.LoweringInfo.FilterInfo
-import Siko.MIR.Backend.Ownership.Lowering.LoweringInfo.Normalizer
-import Siko.MIR.Backend.Ownership.Lowering.Naming
-import Siko.MIR.Backend.Ownership.Lowering.Type
-import Siko.MIR.Backend.Ownership.MemberInfo as M
-import Siko.MIR.Backend.Ownership.Query as Q
-import Siko.MIR.Backend.Ownership.TypeVariableInfo
+import Siko.MIR.Backend.Allocator
+import Siko.MIR.Backend.Ownership.FunctionGroupInferenceData as D
+import Siko.MIR.Backend.Lowering.Context
+import Siko.MIR.Backend.Lowering.LoweringInfo
+import Siko.MIR.Backend.Lowering.LoweringInfo.FilterInfo
+import Siko.MIR.Backend.Lowering.LoweringInfo.Normalizer
+import Siko.MIR.Backend.Lowering.Naming
+import Siko.MIR.Backend.Lowering.Type
+import Siko.MIR.Backend.MemberInfo as M
+import Siko.MIR.Backend.Query as Q
+import Siko.MIR.Backend.TypeVariableInfo
 import Siko.MIR.Data as MD
 import Siko.MIR.Expr as ME
 import Siko.MIR.Function as MF
@@ -21,43 +23,37 @@ import Siko.MIR.Identity as I
 import Siko.MIR.Program as MP
 import Siko.MIR.Type as MT
 
-data LoweringContext = { function_id :: I.Identity,
-                         function_group_inference_data :: FunctionGroupInferenceData,
-                         borrowers :: [ME.ExprId],
-                         filter_info :: FilterInfo,
-                         type_cache :: Map TypeVariableInfo LT.Type,
-                         type_lowering_info_cache :: Map TypeVariableInfo TypeLoweringInfo
+data LoweringContext a = { function_id :: I.Identity,
+                           provider :: a,
+                           borrowers :: [ME.ExprId],
+                           filter_info :: FilterInfo,
+                           type_cache :: Map TypeVariableInfo LT.Type,
+                           type_lowering_info_cache :: Map TypeVariableInfo TypeLoweringInfo
                        }
 
-getTypeLoweringInfo :: LoweringContext -> TypeVariableInfo -> (LoweringContext, TypeLoweringInfo)
+getTypeLoweringInfo a :: (LoweringDataProvider a) => LoweringContext a -> TypeVariableInfo -> (LoweringContext a, TypeLoweringInfo)
 getTypeLoweringInfo lowering_context info = do
     case Map.get lowering_context.type_lowering_info_cache info of
         Some lowering_info -> (lowering_context, lowering_info)
         None -> do
-            lowering_info <- createTypeLoweringInfoFromInferenceInfo lowering_context.function_group_inference_data info lowering_context.filter_info
+            lowering_info <- createTypeLoweringInfoFromInferenceInfo lowering_context.provider info lowering_context.filter_info
             (lowering_info, _) <- normalizeTypeLoweringInfo lowering_info
             type_lowering_info_cache <- Map.put lowering_context.type_lowering_info_cache info lowering_info
             lowering_context <- lowering_context { type_lowering_info_cache = type_lowering_info_cache }
             (lowering_context, lowering_info)
 
-getType :: Context ->
-           LoweringContext ->
+getType a :: (LoweringDataProvider a) => Context ->
+           LoweringContext a ->
            TypeVariableInfo ->
-           MT.Type -> (Context, LoweringContext, LT.Type)
+           MT.Type -> (Context, LoweringContext a, LT.Type)
 getType context lowering_context info mir_type = do
     case Map.get lowering_context.type_cache info of
         Some ty -> (context, lowering_context, ty)
         None -> do
             (lowering_context, lowering_info) <- getTypeLoweringInfo lowering_context info
             (context, lir_type) <- lowerType context lowering_info mir_type
-            (context, lowering_context, lir_type)
-
-getOwnershipValue :: LoweringContext -> OwnershipTypeVariable -> M.OwnershipKind
-getOwnershipValue lowering_context var = do
-    result <- getOwnership lowering_context.function_group_inference_data var
-    case result of
-        Some o -> o
-        None -> panic "Ownership value not found for {}" % var
+            type_cache <- Map.put lowering_context.type_cache info lir_type
+            (context, lowering_context { type_cache = type_cache }, lir_type)
 
 lowerVar :: ME.Var -> LE.Var
 lowerVar var = case var of
@@ -71,6 +67,9 @@ lowerRangeKind range_kind = case range_kind of
     ME.Inclusive -> LE.Inclusive
     ME.Exclusive -> LE.Exclusive
 
+getTypeVariableInfoByExprId a :: (LoweringDataProvider a) => LoweringContext a -> ME.ExprId -> TypeVariableInfo
+getTypeVariableInfoByExprId lowering_context id = getTypeVariableInfo lowering_context.provider id lowering_context.function_id
+
 lowerChecker :: TypeLoweringInfo -> Context -> ME.Checker -> (Context, LE.Checker)
 lowerChecker lowering_info context checker = do
     case checker of
@@ -83,16 +82,16 @@ lowerChecker lowering_info context checker = do
             (context, LE.VariantChecker index (lowerVar var) type)
         ME.WildcardChecker var -> (context, LE.WildcardChecker (lowerVar var))
 
-lowerCase :: (LoweringContext, TypeLoweringInfo, Context) -> ME.Case -> ((LoweringContext, TypeLoweringInfo, Context), LE.Case)
+lowerCase a :: (LoweringDataProvider a) => (LoweringContext a, TypeLoweringInfo, Context) -> ME.Case -> ((LoweringContext a, TypeLoweringInfo, Context), LE.Case)
 lowerCase (lowering_context, lowering_info, context) c = do
     (context, checker) <- lowerChecker lowering_info context c.checker
     (lowering_context, context, body) <- lowerExpr lowering_context context c.body
     ((lowering_context, lowering_info, context), LE.Case checker body)
 
-lowerExpr :: LoweringContext -> Context -> ME.Expr -> (LoweringContext, Context, LE.Expr)
+lowerExpr a :: (LoweringDataProvider a) => LoweringContext a -> Context -> ME.Expr -> (LoweringContext a, Context, LE.Expr)
 lowerExpr lowering_context context expr = do
     ME.Expr s_expr expr_type expr_id <- expr
-    expr_info <- getTypeVariableInfoByExprId lowering_context.function_group_inference_data expr_id lowering_context.function_id
+    expr_info <- getTypeVariableInfoByExprId lowering_context expr_id
     (context, lowering_context, lir_type) <- getType context lowering_context expr_info expr_type
     (lowering_context, context, lir_s_expr) <- case s_expr of
         ME.Do (ME.DoBlock items) -> do
@@ -103,14 +102,9 @@ lowerExpr lowering_context context expr = do
         ME.StaticFunctionCall f_info -> do
             args_info <- List.map f_info.args (\arg -> do
                 ME.Expr _ arg_type arg_id <- arg
-                getTypeVariableInfoByExprId lowering_context.function_group_inference_data arg_id lowering_context.function_id)
-            lifetime_dependencies <- case Map.get lowering_context.function_group_inference_data.function_converter_borrows expr_id of
-                Some function_converter_borrows -> do
-                    lifetime_dependencies <- List.fold ([]) function_converter_borrows (\lifetime_dependencies, function_converter_borrow -> do
-                        List.push lifetime_dependencies (LifetimeDependency function_converter_borrow.from function_converter_borrow.to))
-                    lifetime_dependencies |> List.sort |> List.dedup
-                None -> []
-            lowering_info <- convertToFunctionLoweringInfo lowering_context.function_group_inference_data args_info expr_info lowering_context.filter_info lifetime_dependencies
+                getTypeVariableInfoByExprId lowering_context arg_id)
+            lifetime_dependencies <- getLifetimeDependency lowering_context.provider expr_id
+            lowering_info <- convertToFunctionLoweringInfo lowering_context.provider args_info expr_info lowering_context.filter_info lifetime_dependencies
             if MP.isDebugged lowering_context.function_id
             then do
                 println "-----------------------------------------"
@@ -213,16 +207,16 @@ lowerExpr lowering_context context expr = do
             (lowering_context, context, LE.Loop lir_var lir_initializer lir_body)
         ME.CaseOf (ME.CaseInfo body cases) -> do
             ME.Expr _ _ body_id <- body
-            body_info <- getTypeVariableInfoByExprId lowering_context.function_group_inference_data body_id lowering_context.function_id
+            body_info <- getTypeVariableInfoByExprId lowering_context body_id
             (lowering_context, lowering_info) <- getTypeLoweringInfo lowering_context body_info
             (lowering_context, context, lir_body) <- lowerExpr lowering_context context body
             ((lowering_context, lowering_info, context), lir_cases) <- List.mapS (lowering_context, lowering_info, context) cases lowerCase
             (lowering_context, context, LE.CaseOf lir_body lir_cases)
         ME.Converter (ME.ConverterInfo arg) -> do
             ME.Expr _ _ arg_id <- arg
-            arg_info <- getTypeVariableInfoByExprId lowering_context.function_group_inference_data arg_id lowering_context.function_id
-            from <- getOwnershipValue lowering_context arg_info.ownership_var
-            to <- getOwnershipValue lowering_context expr_info.ownership_var
+            arg_info <- getTypeVariableInfoByExprId lowering_context arg_id
+            from <- getOwnershipValue lowering_context.provider arg_info.ownership_var
+            to <- getOwnershipValue lowering_context.provider expr_info.ownership_var
             (lowering_context, context, lir_arg) <- lowerExpr lowering_context context arg
             case (from, to) of
                 (M.Owner, M.Owner) -> if List.contains lowering_context.borrowers arg_id

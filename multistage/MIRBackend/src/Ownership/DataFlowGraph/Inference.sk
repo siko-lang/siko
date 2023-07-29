@@ -1,15 +1,20 @@
 module Siko.MIR.Backend.Ownership.DataFlowGraph.Inference where
 
 import Map
+import Set
+import Siko.MIR.Backend.Ownership.Path
 import Siko.MIR.Backend.Ownership.ControlFlowGraph as CFG
 import Siko.MIR.Backend.Ownership.DataFlowGraph
-import Siko.MIR.Backend.Ownership.MemberInfo as M
-import Siko.MIR.Backend.Ownership.Query as Q
-import Siko.MIR.Backend.Ownership.TypeVariableInfo
+import Siko.MIR.Backend.MemberInfo as M
+import Siko.MIR.Backend.Query as Q
+import Siko.MIR.Backend.TypeVariableInfo
+import Siko.MIR.Backend.OwnershipDependencyMap
+import Siko.MIR.Backend.EqualitySolver as Solver
 import Siko.MIR.Function as F
 
 data Context = { data_flow_graph :: DataFlowGraph,
-                 control_flow_graph :: CFG.ControlFlowGraph
+                 control_flow_graph :: CFG.ControlFlowGraph,
+                 forbidden_borrow_map :: Map OwnershipTypeVariable (Set Path),
                }
 
 isBorrow :: Context -> NodeKey -> Bool
@@ -17,21 +22,37 @@ isBorrow context key = case key of
     ExprKey id -> CFG.isBorrow context.control_flow_graph id
     _ -> False
 
+getExprKey :: NodeKey -> CFG.NodeKey
+getExprKey key = case key of
+    ExprKey id -> CFG.ExprKey id
+    key -> panic "getExprKey: not an expr key {}" % key
+
 processEdge :: Context -> Int -> Context
 processEdge context edge_id = do
     edge <- getEdge context.data_flow_graph edge_id
     context <- case edge.kind of
         Converter -> do
-            is_borrow <- isBorrow context edge.from
-            // if is_borrow
-            // then println "Converter is borrow! {}" % edge.from
-            // else println "Converter is not borrow! {}" % edge.from
             from_info <- getTypeVariableInfo context.data_flow_graph edge.from
             from <- getOwnership context.data_flow_graph from_info.ownership_var
             to_info <- getTypeVariableInfo context.data_flow_graph edge.to
             to <- getOwnership context.data_flow_graph to_info.ownership_var
             case (from, to) of
-                (M.Owner, M.Unknown) -> setOwner context to_info.ownership_var
+                (M.Owner, M.Unknown) -> do
+                    is_borrow <- isBorrow context edge.from
+                    if is_borrow
+                    then do
+                        //println "Converter is borrow! {}" % edge.from
+                        user_path <- case CFG.getUser context.control_flow_graph (getExprKey edge.from) of
+                            Some path -> path
+                            None -> panic "Borrowing node is not a user! {}" % edge.from
+                        if isValidBorrow context.data_flow_graph edge.from user_path
+                        then do
+                            println "Borrowing {}" % user_path
+                            context
+                        else do
+                            println "Cloning {}" % user_path
+                            setOwner context to_info.ownership_var
+                    else setOwner context to_info.ownership_var
                 _ -> context
         VarDeclTuple -> do
             to_info <- getTypeVariableInfo context.data_flow_graph edge.to
@@ -54,10 +75,6 @@ processNode context key = do
     node <- getNode context.data_flow_graph key
     case node of
         Expr n -> do
-            data_flow_graph <- case Map.get context.control_flow_graph.moves (CFG.ExprKey n.expr_id) of
-                Some forbidden_borrows -> addForbiddenBorrows context.data_flow_graph (ExprKey n.expr_id) forbidden_borrows
-                None -> context.data_flow_graph
-            context <- context { data_flow_graph = data_flow_graph }
             context <- case n.kind of
                 FnCall id -> do
                     function <- Q.getFunction id
@@ -65,18 +82,47 @@ processNode context key = do
                         F.RecordCtor -> setOwner context n.tv_info.ownership_var
                         F.VariantCtor _ -> setOwner context n.tv_info.ownership_var
                         _ -> context
-                VarRefDef _ -> context
                 Loop -> context
                 Other -> context
             List.fold context n.outgoing processEdge
         Var n -> List.fold context n.outgoing processEdge
         End n -> context
 
+updateDataFlowGraph :: DataFlowGraph -> CFG.ControlFlowGraph -> (DataFlowGraph, Map OwnershipTypeVariable (Set Path))
+updateDataFlowGraph data_flow_graph control_flow_graph = do
+    members <- Solver.getMembers data_flow_graph
+    ownership_dep_map_info <- calculateOwnershipDepMap members
+    (forbidden_borrow_map, nodes) <- Map.mapS Map.empty data_flow_graph.nodes (\forbidden_borrow_map, (key, node) -> do
+        case node of
+            Expr expr_node -> do
+                ownership_vars <- getOwnershipVars ownership_dep_map_info.ownership_dep_map expr_node.tv_info
+                expr_node <- expr_node { ownership_vars = ownership_vars }
+                (forbidden_borrow_map, expr_node) <- case Map.get control_flow_graph.moves (CFG.ExprKey expr_node.expr_id) of
+                    Some forbidden_borrows -> do
+                        forbidden_borrow_map <- List.fold forbidden_borrow_map forbidden_borrows (\forbidden_borrow_map, forbidden_borrow -> do
+                            List.fold forbidden_borrow_map ownership_vars (\forbidden_borrow_map, ownership_var -> do
+                                Map.addUnique forbidden_borrow_map ownership_var forbidden_borrow))
+                        (forbidden_borrow_map, expr_node { local_forbidden_borrows = forbidden_borrows })
+                    None -> (forbidden_borrow_map, expr_node)
+                (forbidden_borrow_map, key, Expr expr_node)
+            node -> (forbidden_borrow_map, key, node))
+    nodes <- Map.map nodes (\(key, node) -> do
+        case node of
+            Expr expr_node -> do
+                merged_forbidden_borrows <- case Map.get forbidden_borrow_map expr_node.tv_info.ownership_var of
+                    Some merged_forbidden_borrows -> merged_forbidden_borrows
+                    None -> Set.empty
+                expr_node <- expr_node { merged_forbidden_borrows = merged_forbidden_borrows }
+                (key, Expr expr_node)
+            node -> (key, node))
+    (data_flow_graph { nodes = nodes }, forbidden_borrow_map)
+
 process :: DataFlowGraph -> CFG.ControlFlowGraph -> String -> DataFlowGraph
 process data_flow_graph control_flow_graph name = do
     sources <- getSources data_flow_graph
-    //println "----------- {}: sources {} -----------" % (name, sources)
-    context <- Context data_flow_graph control_flow_graph
+    (data_flow_graph, forbidden_borrow_map) <- updateDataFlowGraph data_flow_graph control_flow_graph
+    println "Processing {}" % name
+    context <- Context data_flow_graph control_flow_graph forbidden_borrow_map
     context <- List.fold context sources processNode
     //println "--------------------------------------"
     context.data_flow_graph

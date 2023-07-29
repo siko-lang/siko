@@ -4,8 +4,8 @@ import IO
 import Map
 import Siko.Dot as D
 import Siko.MIR.Backend.Ownership.ControlFlowGraph as CFG
-import Siko.MIR.Backend.Ownership.MemberInfo as M
-import Siko.MIR.Backend.Ownership.TypeVariableInfo
+import Siko.MIR.Backend.MemberInfo as M
+import Siko.MIR.Backend.TypeVariableInfo
 import Siko.MIR.Identity as I
 
 data Visualizer = { id_map :: Map CFG.NodeKey D.NodeId,
@@ -34,9 +34,7 @@ visualize control_flow_graph name = do
                 neongreen <- "#03fc98"
                 color <- if n.is_borrow then brightpurple else neongreen
                 dot_graph <- case n.kind of
-                    CFG.VarRef v -> do
-                        D.addElementWithColor dot_graph node_id ("VarRef({})" % v) color
-                    CFG.FieldAccess v path -> D.addElementWithColor dot_graph node_id ("FieldAccess({}, {})" % (v, path)) color
+                    CFG.User path -> D.addElementWithColor dot_graph node_id ("User({})" % path) color
                     _ -> dot_graph
                 D.addElement dot_graph node_id n.description
             CFG.LoopStart _ -> do
@@ -47,11 +45,11 @@ visualize control_flow_graph name = do
                 D.addElementWithColor dot_graph node_id "<choice>" "purple"
             CFG.End _ -> do
                 D.addElementWithColor dot_graph node_id "<end>" "purple"
-        dot_graph <- case Map.get control_flow_graph.moves key of
-            Some moves -> do
-                List.fold dot_graph moves (\dot_graph, move -> do
-                    D.addElementWithColor dot_graph node_id ("{}" % move) "#fcdb03")
-            None -> dot_graph
+        // dot_graph <- case Map.get control_flow_graph.moves key of
+        //     Some moves -> do
+        //         List.fold dot_graph moves (\dot_graph, move -> do
+        //             D.addElementWithColor dot_graph node_id ("move: {}" % move) "#fcdb03")
+        //     None -> dot_graph
         id_map <- Map.put visualizer.id_map key node_id
         visualizer { dot_graph = dot_graph, id_map = id_map })
     visualizer <- List.fold visualizer control_flow_graph.edges (\visualizer, edge -> do
