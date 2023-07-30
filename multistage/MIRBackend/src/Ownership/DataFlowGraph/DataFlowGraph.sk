@@ -2,6 +2,8 @@ module Siko.MIR.Backend.Ownership.DataFlowGraph where
 
 import Map
 import Set
+import Siko.MIR.Backend.Allocator as A
+import Siko.MIR.Backend.BorrowId
 import Siko.MIR.Backend.MemberInfo as M
 import Siko.MIR.Backend.Ownership.Path
 import Siko.MIR.Backend.TypeVariableInfo
@@ -76,11 +78,32 @@ data Edge = { from :: NodeKey,
 
 data DataFlowGraph = { nodes :: Map NodeKey Node,
                        edges :: [Edge],
-                       ownership :: Map OwnershipTypeVariable M.OwnershipKind
+                       ownership :: Map OwnershipTypeVariable M.OwnershipKind,
+                       allocator :: A.Allocator
                      }
 
 createGraph :: DataFlowGraph
-createGraph = DataFlowGraph Map.empty [] Map.empty
+createGraph = DataFlowGraph Map.empty [] Map.empty A.createAllocator
+
+getNextOwnershipTypeVariable :: DataFlowGraph -> (DataFlowGraph, OwnershipTypeVariable)
+getNextOwnershipTypeVariable graph = do
+    (allocator, v) <- A.getNextOwnershipTypeVariable graph.allocator
+    (graph { allocator = allocator }, v)
+
+getNextGroupTypeVariable :: DataFlowGraph -> (DataFlowGraph, GroupTypeVariable)
+getNextGroupTypeVariable graph = do
+    (allocator, v) <- A.getNextGroupTypeVariable graph.allocator
+    (graph { allocator = allocator }, v)
+
+getNextTypeVariableInfo :: DataFlowGraph -> (DataFlowGraph, TypeVariableInfo)
+getNextTypeVariableInfo graph = do
+    (allocator, info) <- A.getNextTypeVariableInfo graph.allocator
+    (graph { allocator = allocator }, info)
+
+getNextBorrowId :: DataFlowGraph -> (DataFlowGraph, BorrowId)
+getNextBorrowId graph = do
+    (allocator, id) <- A.getNextBorrowId graph.allocator
+    (graph { allocator = allocator }, id)
 
 addEdge :: DataFlowGraph -> Edge -> DataFlowGraph
 addEdge graph edge = do

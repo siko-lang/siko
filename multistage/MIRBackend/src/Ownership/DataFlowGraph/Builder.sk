@@ -2,7 +2,6 @@ module Siko.MIR.Backend.Ownership.DataFlowGraph.Builder where
 
 import Map
 import Set
-import Siko.MIR.Backend.Allocator as A
 import Siko.MIR.Backend.MemberInfo as M
 import Siko.MIR.Backend.Ownership.ControlFlowGraph as CFG
 import Siko.MIR.Backend.Ownership.DataFlowGraph as DFG
@@ -15,37 +14,29 @@ import Siko.MIR.Identity as I
 import Siko.MIR.Type as T
 
 data Context = { graph :: DFG.DataFlowGraph,
-                 allocator :: A.Allocator,
                  expr_info_map :: Map E.ExprId TypeVariableInfo,
                  var_info_map :: Map E.Var TypeVariableInfo,
                  expr_kinds :: Map E.ExprId DFG.ExprNodeKind,
-                 returns :: [E.ExprId],
-                 control_flow_graph :: CFG.ControlFlowGraph
+                 returns :: [E.ExprId]
                }
 
-createContext :: CFG.ControlFlowGraph -> Context
-createContext control_flow_graph = Context DFG.createGraph
-                                           A.createAllocator
-                                           Map.empty
-                                           Map.empty
-                                           Map.empty
-                                           []
-                                           control_flow_graph
+createContext :: Context
+createContext = Context DFG.createGraph Map.empty Map.empty Map.empty []
 
 getNextOwnershipTypeVariable :: Context -> (Context, OwnershipTypeVariable)
 getNextOwnershipTypeVariable context = do
-    (allocator, v) <- A.getNextOwnershipTypeVariable context.allocator
-    (context { allocator = allocator }, v)
+    (graph, v) <- DFG.getNextOwnershipTypeVariable context.graph
+    (context { graph = graph }, v)
 
 getNextGroupTypeVariable :: Context -> (Context, GroupTypeVariable)
 getNextGroupTypeVariable context = do
-    (allocator, v) <- A.getNextGroupTypeVariable context.allocator
-    (context { allocator = allocator }, v)
+    (graph, v) <- DFG.getNextGroupTypeVariable context.graph
+    (context { graph = graph }, v)
 
 getNextTypeVariableInfo :: Context -> (Context, TypeVariableInfo)
 getNextTypeVariableInfo context = do
-    (allocator, info) <- A.getNextTypeVariableInfo context.allocator
-    (context { allocator = allocator }, info)
+    (graph, info) <- DFG.getNextTypeVariableInfo context.graph
+    (context { graph = graph }, info)
 
 addEdge :: Context ->
            DFG.EdgeKind ->
@@ -137,9 +128,9 @@ addVarInfo context var info = do
     context <- context { var_info_map = var_info_map }
     context
 
-build :: E.Expr -> CFG.ControlFlowGraph -> String -> DFG.DataFlowGraph
-build expr control_flow_graph name = do
-    context <- createContext control_flow_graph
+build :: E.Expr -> String -> DFG.DataFlowGraph
+build expr name = do
+    context <- createContext
     context <- buildDataFlowGraph context expr
     (context, end_tv_info) <- getNextTypeVariableInfo context
     graph <- context.graph
@@ -296,16 +287,9 @@ buildDataFlowGraph context expr = do
             context
         E.Converter info -> do
             E.Expr _ _ arg_id <- info.arg
-            if CFG.isBorrow context.control_flow_graph arg_id
-            then do
-                context <- buildDataFlowGraph context info.arg
-                arg_info <- getExprInfo context arg_id
-                own_info <- getExprInfo context expr_id
-                own_info <- own_info { arg_group_var = arg_info.arg_group_var }
-                context <- addExprInfo context expr_id own_info
-                addEdge context DFG.Converter arg_id expr_id
-            else do
-                context <- buildDataFlowGraph context info.arg
-                arg_info <- getExprInfo context arg_id
-                context <- addExprInfo context expr_id arg_info
-                addEdge context DFG.Converter arg_id expr_id
+            context <- buildDataFlowGraph context info.arg
+            arg_info <- getExprInfo context arg_id
+            own_info <- getExprInfo context expr_id
+            own_info <- own_info { arg_group_var = arg_info.arg_group_var }
+            context <- addExprInfo context expr_id own_info
+            addEdge context DFG.Converter arg_id expr_id
